@@ -1,0 +1,16 @@
+[package]
+name = "nova-protocol"
+description = "Messages exchanged between novad and the Quickshell UI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "nova-cli"
+description = "The nova command: setup, features, ipc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "nova"
+path = "src/main.rs"
+
+[dependencies]
+nova-protocol.workspace = true
+nova-features.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,10 @@
+---
+source: crates/nova-protocol/src/lib.rs
+expression: all
+---
+{"v":1,"event":"hello","data":{"daemon":"0.1.0"}}
+{"v":1,"event":"features","data":{"features":[{"id":"core","status":"ready"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
+{"v":1,"id":7,"cmd":"ping"}
+{"v":1,"cmd":"list_features"}
+{"v":1,"id":7,"result":"pong"}
+{"v":1,"id":8,"error":"bad request"}

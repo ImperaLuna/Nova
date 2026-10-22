@@ -1,0 +1,20 @@
+id = "recording"
+name = "Screen recording"
+description = "Record the screen or a region from the bar."
+default = false
+daemon = "recording"
+
+# gpu-screen-recorder encodes on the GPU (NVENC on NVIDIA).
+[variants.nvidia]
+when = { gpu = "nvidia" }
+nix = ["gpu-screen-recorder"]
+arch = ["gpu-screen-recorder"]
+
+[variants.default]
+nix = ["wf-recorder"]
+arch = ["wf-recorder"]
+fedora = ["wf-recorder"]
+debian = ["wf-recorder"]
+
+[check]
+binaries = ["gpu-screen-recorder|wf-recorder"]

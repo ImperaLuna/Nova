@@ -1,0 +1,162 @@
+{
+  description = "Nova: a desktop shell for Wayland compositors";
+
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+  outputs =
+    { self, nixpkgs }:
+    let
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+
+      # Rust sources only, so UI edits don't rebuild the daemon.
+      rustSrc =
+        lib:
+        lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [
+            ./Cargo.toml
+            ./Cargo.lock
+            ./rustfmt.toml
+            ./crates
+            ./features
+          ];
+        };
+
+      qmlImports = pkgs: [
+        "${pkgs.quickshell}/lib/qt-6/qml"
+        "${pkgs.qt6.qtdeclarative}/lib/qt-6/qml"
+      ];
+    in
+    {
+      packages = forAllSystems (pkgs: {
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
+
+        # novad, the nova CLI, feature manifests and the QML UI.
+        nova = pkgs.rustPlatform.buildRustPackage {
+          pname = "nova";
+          version = "0.1.0";
+          src = rustSrc pkgs.lib;
+          cargoLock.lockFile = ./Cargo.lock;
+          postInstall = ''
+            mkdir -p $out/share/nova
+            cp -r features $out/share/nova/features
+            cp -r ${./ui} $out/share/nova/ui
+          '';
+          meta = {
+            description = "Nova desktop shell";
+            license = pkgs.lib.licenses.mit;
+            mainProgram = "nova";
+          };
+        };
+      });
+
+      checks = forAllSystems (
+        pkgs:
+        let
+          src = rustSrc pkgs.lib;
+          cargoDeps = pkgs.rustPlatform.importCargoLock { lockFile = ./Cargo.lock; };
+          cargoCheck =
+            name: nativeBuildInputs: command:
+            pkgs.stdenv.mkDerivation {
+              inherit name src cargoDeps;
+              nativeBuildInputs = [
+                pkgs.rustPlatform.cargoSetupHook
+                pkgs.cargo
+                pkgs.rustc
+              ]
+              ++ nativeBuildInputs;
+              buildPhase = command;
+              installPhase = "touch $out";
+            };
+        in
+        {
+          # `nix build` runs `cargo test` as part of the package.
+          build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
+
+          clippy = cargoCheck "nova-clippy" [ pkgs.clippy ] ''
+            cargo clippy --workspace --all-targets --offline -- -D warnings
+          '';
+
+          rustfmt = cargoCheck "nova-rustfmt" [ pkgs.rustfmt ] ''
+            cargo fmt --all --check
+          '';
+
+          qmllint = pkgs.runCommand "nova-qmllint" { nativeBuildInputs = [ pkgs.qt6.qtdeclarative ]; } ''
+            cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
+            patchShebangs scripts
+            scripts/qmllint.sh ${pkgs.lib.escapeShellArgs (qmlImports pkgs)}
+            touch $out
+          '';
+
+          qmlformat = pkgs.runCommand "nova-qmlformat" { nativeBuildInputs = [ pkgs.qt6.qtdeclarative ]; } ''
+            cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
+            patchShebangs scripts
+            scripts/qmlformat.sh --check
+            touch $out
+          '';
+
+          nix-lint =
+            pkgs.runCommand "nova-nix-lint"
+              {
+                nativeBuildInputs = [
+                  pkgs.nixfmt
+                  pkgs.statix
+                  pkgs.deadnix
+                ];
+              }
+              ''
+                cd ${./.}
+                nixfmt --check $(find . -name '*.nix')
+                statix check .
+                deadnix --fail .
+                touch $out
+              '';
+
+          qml-tests =
+            pkgs.runCommand "nova-qml-tests"
+              {
+                nativeBuildInputs = [ pkgs.qt6.qtdeclarative ];
+                QT_QPA_PLATFORM = "offscreen";
+                QML_IMPORT_PATH = "${pkgs.qt6.qtdeclarative}/lib/qt-6/qml";
+              }
+              ''
+                export HOME=$TMPDIR
+                qmltestrunner -input ${./ui}/tests
+                touch $out
+              '';
+        }
+      );
+
+      devShells = forAllSystems (pkgs: {
+        default = pkgs.mkShell {
+          packages = [
+            pkgs.cargo
+            pkgs.rustc
+            pkgs.clippy
+            pkgs.rustfmt
+            pkgs.rust-analyzer
+            pkgs.quickshell
+            pkgs.qt6.qtdeclarative # qmllint, qmlls, qmlformat, qmltestrunner
+            pkgs.sway # headless compositor for e2e
+            pkgs.grim
+            pkgs.cargo-insta # `cargo insta review` for snapshot tests
+            pkgs.nixfmt
+            pkgs.statix
+            pkgs.deadnix
+            pkgs.just
+            pkgs.jq
+            pkgs.git
+          ];
+          # Lets `just lint-qml` and qmlls find Quickshell's types.
+          NOVA_QML_IMPORTS = builtins.concatStringsSep ":" (qmlImports pkgs);
+          QML_IMPORT_PATH = builtins.concatStringsSep ":" (qmlImports pkgs);
+        };
+      });
+
+      formatter = forAllSystems (pkgs: pkgs.nixfmt);
+    };
+}
