@@ -173,8 +173,9 @@ Every change goes through a pull request; `main` is protected. CI runs on a
 self-hosted runner on the maintainer's desktop, so PR checks wait while it is
 off (GitHub drops jobs queued over 24 hours; re-run them).
 
-Tickets live in Linear (team IMP). Start a PR's title with its ticket ID,
-like `IMP-8: nova CLI`.
+Tickets live in Linear (team IMP). PR titles are `[<ticket>] <type>:
+<description>`, where the type is the ticket's Linear label (Feature, Bug,
+Improvement), like `[IMP-8] Feature: nova CLI`.
 
 Open PRs as drafts and mark them ready for review only when the work is done.
 Codex reviews a PR automatically once, when it becomes ready, so pushes to a
