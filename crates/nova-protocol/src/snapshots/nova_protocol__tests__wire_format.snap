@@ -7,7 +7,7 @@ expression: all
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
 {"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme"]}}
-{"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","fg":"#F5E7C6","fgAlt":"#525252","fgDim":"#9A9A9A","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02","heat0":"#FFFFFF","heat1":"#FFEFE6","heat2":"#FFD2BB","heat3":"#FFB48F","heat4":"#FF9560","heat5":"#FD7014"}}}
+{"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","fg":"#F5E7C6","fgAlt":"#525252","fgDim":"#9A9A9A","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
 {"v":2,"id":10,"cmd":"status"}
 {"v":2,"id":11,"cmd":"quit"}
 {"v":2,"event":"logs","data":{"backlog":true,"entries":[{"time":"2026-10-22T13:45:09.123Z","level":"warn","source":"ui","message":"Binding loop detected: x: y"}]}}

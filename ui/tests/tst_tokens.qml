@@ -28,6 +28,19 @@ TestCase {
         verify(Qt.colorEqual(Qt.rgba(Tokens.outline.r, Tokens.outline.g, Tokens.outline.b, 1), "#F5E7C6"));
     }
 
+    function test_tint_runs_from_bg_to_the_color() {
+        Tokens.apply({
+            bg: "#000000",
+            primary: "#FF8000"
+        });
+        verify(Qt.colorEqual(Tokens.tint(Tokens.primary, 0), "#000000"));
+        verify(Qt.colorEqual(Tokens.tint(Tokens.primary, 1), "#FF8000"));
+        const half = Tokens.tint(Tokens.primary, 0.5);
+        fuzzyCompare(half.r, 0.5, 0.01);
+        fuzzyCompare(half.g, 0.25, 0.01);
+        compare(half.a, 1);
+    }
+
     function test_apply_warns_about_unknown_tokens() {
         ignoreWarning(/theme token sparkle has no property/);
         Tokens.apply({

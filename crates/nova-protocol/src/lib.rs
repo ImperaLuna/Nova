@@ -124,12 +124,6 @@ pub struct Palette {
     pub swatch6: Color,
     pub swatch7: Color,
     pub swatch8: Color,
-    pub heat0: Color,
-    pub heat1: Color,
-    pub heat2: Color,
-    pub heat3: Color,
-    pub heat4: Color,
-    pub heat5: Color,
 }
 
 /// An opaque `#RRGGBB` color. Anything else is refused when parsed.
@@ -438,7 +432,6 @@ mod tests {
             "info": "#00ADB5", "success": "#25BE6A", "warning": "#FAEB92", "error": "#EE5396",
             "swatch1": "#5988DB", "swatch2": "#E8650E", "swatch3": "#07A7A5", "swatch4": "#9067CC",
             "swatch5": "#029A43", "swatch6": "#049BE7", "swatch7": "#DD6098", "swatch8": "#9C7C02",
-            "heat0": "#FFFFFF", "heat1": "#FFEFE6", "heat2": "#FFD2BB", "heat3": "#FFB48F", "heat4": "#FF9560", "heat5": "#FD7014",
         }))
         .unwrap();
         Theme { id: "carbonfox".into(), name: "Carbonfox".into(), mode: ThemeMode::Dark, colors }

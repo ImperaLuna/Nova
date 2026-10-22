@@ -39,16 +39,8 @@ swatch6 = "#049BE7"   # cyan
 swatch7 = "#DD6098"   # magenta
 swatch8 = "#9C7C02"   # yellow
 
-# Heatmap ramp, none to full
-heat0 = "#FFFFFF"
-heat1 = "#FFEFE6"
-heat2 = "#FFD2BB"
-heat3 = "#FFB48F"
-heat4 = "#FF9560"
-heat5 = "#FD7014"
-
 # Derived from the dark set for light surfaces (the palette artifact's light
-# draft). Same token roles; the heatmap ramp is shared with dark.
+# draft). Same token roles.
 [light]
 # Backgrounds
 bg = "#F6F2EA"
@@ -80,11 +72,3 @@ swatch5 = "#017833"   # green
 swatch6 = "#0B84C5"   # cyan
 swatch7 = "#A62C69"   # magenta
 swatch8 = "#937506"   # yellow
-
-# Heatmap ramp, none to full
-heat0 = "#FFFFFF"
-heat1 = "#FFEFE6"
-heat2 = "#FFD2BB"
-heat3 = "#FFB48F"
-heat4 = "#FF9560"
-heat5 = "#FD7014"

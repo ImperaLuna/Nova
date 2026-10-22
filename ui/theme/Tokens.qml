@@ -44,14 +44,6 @@ QtObject {
     property color swatch7
     property color swatch8
 
-    // Heatmap ramp, none to full
-    property color heat0
-    property color heat1
-    property color heat2
-    property color heat3
-    property color heat4
-    property color heat5
-
     // Glass surfaces, derived from the theme
     readonly property real surfaceOpacity: 0.75
     readonly property real raisedOpacity: 0.06
@@ -59,6 +51,13 @@ QtObject {
     readonly property color surface: Qt.rgba(bg.r, bg.g, bg.b, surfaceOpacity)
     readonly property color surfaceRaised: Qt.rgba(fg.r, fg.g, fg.b, raisedOpacity)
     readonly property color outline: Qt.rgba(fg.r, fg.g, fg.b, outlineOpacity)
+
+    // `target` mixed into bg: 0 is bg, 1 is the color itself. One function for
+    // every ramp and tint, so they follow the theme: heatmaps step through
+    // tint(primary, level), status rows sit on tint(error, 0.15) and so on.
+    function tint(target: color, amount: real): color {
+        return Qt.tint(bg, Qt.rgba(target.r, target.g, target.b, amount));
+    }
 
     // Radii
     readonly property int radiusPanel: 24
