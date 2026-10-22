@@ -35,6 +35,10 @@ feature completeness, then modularity and portability, then performance.
 
 - Logic goes in novad, the UI only renders. If QML needs more than a few lines
   of JavaScript, it probably belongs in the daemon.
+- One socket between novad and the UI, with concerns split in code: each
+  service is its own QML singleton (e.g. `Workspaces`, `Media`) built on
+  `Daemon.qml`, and its own Rust module in novad. Clients subscribe to the
+  event topics they need; don't add a second socket.
 - The UI checks capabilities that novad reports, never which compositor is
   running (no `isNiri`).
 - A feature that is off or missing dependencies is never loaded by the UI.
