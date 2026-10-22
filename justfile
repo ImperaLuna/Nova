@@ -49,9 +49,9 @@ e2e: build
 build:
     cargo build --workspace
 
-# Run novad and the UI on your current session
+# Swap your running bar for this checkout's Nova; Ctrl+C puts it back
 run: build
-    target/debug/novad & qs -p ui; kill %1
+    scripts/run.sh target/debug/novad
 
 # Clone Quickshell's source (v0.3.2) into docs/ for reading its API
 docs:

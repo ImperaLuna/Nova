@@ -8,15 +8,27 @@ feature completeness, then modularity and portability, then performance.
 
 ## Layout
 
-- `crates/nova-protocol`: the JSON-lines wire format between novad and the UI.
+- `crates/nova-protocol`: the JSON-lines wire format between novad and its
+  clients (the UI and the CLI), plus the log line format.
   `ui/daemon/protocol.js` mirrors it; change both together and keep the tests
-  on both sides matching.
+  on both sides matching. Clients get `hello`, then only the topics they
+  `subscribe` to.
+- `crates/nova-paths`: where things live (socket, config, state and log
+  files, installed data). novad and the CLI both resolve paths here.
 - `crates/nova-features`: loads and validates `features/<id>/feature.toml`.
 - `crates/novad`: the daemon. Owns all logic and state (compositor IPC,
   search, clipboard, feature status). Listens on
-  `$XDG_RUNTIME_DIR/nova/novad.sock`.
-- `crates/nova-cli`: the `nova` binary (`features`, `ping`; `setup`, `doctor`
-  and `ipc` later).
+  `$XDG_RUNTIME_DIR/nova/novad.sock`, runs the Quickshell UI as its child
+  (restarting it when it crashes) and writes the log for both:
+  `~/.local/state/nova/nova.log`, rotated per novad start, with crash
+  snapshots in `crashes/`. A library with a thin `main.rs`, so CLI tests can
+  run a real novad in-process.
+- `crates/nova-cli`: the `nova` binary. `nova` starts Nova (or shows its
+  status), plus `restart`, `quit`, `status`, `logs`, `version`. It talks to
+  novad and to the `novad.service` systemd user unit; no logic of its own.
+  `nova help` also lists planned commands, marked `[planned]`.
+- `packaging/systemd/novad.service.in`: the user unit; the Nix package fills
+  in its paths. Without systemd, `nova` runs novad directly.
 - `features/`: one folder per optional feature. The manifest is the single
   source of truth for its packages per distro and GPU. Nix, `nova setup` and
   novad all read it. A manifest with `daemon = "x"` needs a matching cargo
@@ -27,8 +39,11 @@ feature completeness, then modularity and portability, then performance.
   - `daemon/Daemon.qml`: the only socket to novad. Everything else reads its
     properties or calls `Daemon.call(cmd, args, callback)`.
   - `tests/`: QtTest files (`tst_*.qml`), run headless.
-- `e2e/run.sh`: headless sway with two monitors + novad + UI. Fails on QML
-  errors or no connection; warns when the UI's Pss is over the memory target.
+- `e2e/run.sh`: headless sway with two monitors + novad, which runs the UI.
+  Fails on QML errors, a crashed UI or no connection; warns when the UI's Pss
+  is over the memory target.
+- `scripts/run.sh` (`just run`): swaps your running bar for this checkout's
+  Nova and puts the old one back on Ctrl+C or when the terminal closes.
 - `scripts/qmllint.sh`: qmllint over `ui/`, failing on any warning.
 
 ## Rules
@@ -138,7 +153,8 @@ Run inside `nix develop`:
 - `just snapshots`: review changed insta snapshots. The protocol's wire format
   is a snapshot, so a protocol change shows up here.
 - `just e2e`: the headless end-to-end run; screenshot in `e2e/out/`.
-- `just run`: novad and the UI on your current session.
+- `just run`: this checkout's Nova on your current session, in place of
+  your bar until Ctrl+C. Its log goes to `~/.local/state/nova-dev`.
 - `nix flake check -L`: the same checks as CI, sandboxed.
 
 Every change goes through a pull request; `main` is protected. CI runs on a
