@@ -5,14 +5,50 @@
 use crate::lock;
 use nova_protocol::{Event, Topic, encode};
 use std::collections::HashSet;
-use std::sync::Mutex;
-use std::sync::mpsc::{Sender, SyncSender};
+use std::net::Shutdown;
+use std::os::unix::net::UnixStream;
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::{Arc, Mutex};
+
+/// Most messages a client may have waiting. A client that stops reading
+/// fills its queue and is disconnected, so it can't grow novad's memory.
+pub const MAX_QUEUED_MESSAGES: usize = 4096;
 
 /// What a client's writer thread sends, in order.
 pub enum Outgoing {
     Line(String),
     /// Answered once every line queued before it is written.
     Flushed(SyncSender<()>),
+}
+
+/// One client's outgoing queue. Pushing never blocks.
+#[derive(Clone)]
+pub struct ClientQueue {
+    sender: SyncSender<Outgoing>,
+    stream: Arc<UnixStream>,
+}
+
+impl ClientQueue {
+    /// A queue for `stream`, and the end its writer thread drains.
+    pub fn new(stream: &UnixStream) -> std::io::Result<(Self, Receiver<Outgoing>)> {
+        let (sender, receiver) = mpsc::sync_channel(MAX_QUEUED_MESSAGES);
+        Ok((Self { sender, stream: Arc::new(stream.try_clone()?) }, receiver))
+    }
+
+    /// Queues `message`. False if the client is gone, or was just
+    /// disconnected for letting its queue fill up.
+    pub fn push(&self, message: Outgoing) -> bool {
+        match self.sender.try_send(message) {
+            Ok(()) => true,
+            Err(TrySendError::Full(_)) => {
+                // Ends both the writer's and the reader's side, so the
+                // connection closes and unregisters itself.
+                let _ = self.stream.shutdown(Shutdown::Both);
+                false
+            }
+            Err(TrySendError::Disconnected(_)) => false,
+        }
+    }
 }
 
 pub type ClientId = u64;
@@ -31,11 +67,11 @@ struct Clients {
 struct Client {
     id: ClientId,
     topics: HashSet<Topic>,
-    queue: Sender<Outgoing>,
+    queue: ClientQueue,
 }
 
 impl Hub {
-    pub fn register(&self, queue: Sender<Outgoing>) -> ClientId {
+    pub fn register(&self, queue: ClientQueue) -> ClientId {
         let mut clients = lock(&self.clients);
         clients.next_id += 1;
         let id = clients.next_id;
@@ -57,10 +93,10 @@ impl Hub {
     pub fn publish(&self, event: &Event) {
         let Some(topic) = event.topic() else { return };
         let Some(line) = encode_event(event) else { return };
-        // A failed send means the client is gone; its connection thread
-        // unregisters it, so there is nothing to do here.
+        // A failed push means the client is gone or being disconnected; its
+        // connection thread unregisters it, so there is nothing to do here.
         for client in lock(&self.clients).list.iter().filter(|client| client.topics.contains(&topic)) {
-            let _ = client.queue.send(Outgoing::Line(line.clone()));
+            client.queue.push(Outgoing::Line(line.clone()));
         }
     }
 
@@ -68,7 +104,7 @@ impl Hub {
     pub fn send_to(&self, id: ClientId, event: &Event) {
         let Some(line) = encode_event(event) else { return };
         if let Some(client) = lock(&self.clients).list.iter().find(|client| client.id == id) {
-            let _ = client.queue.send(Outgoing::Line(line));
+            client.queue.push(Outgoing::Line(line));
         }
     }
 }

@@ -2,14 +2,14 @@
 //! events they subscribed to.
 
 use crate::Daemon;
-use crate::hub::{ClientId, Outgoing};
+use crate::hub::{ClientId, ClientQueue, Outgoing};
 use nova_protocol::{Command, Event, Outcome, Response, Topic, encode};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc;
 
 /// Any local process can connect: longer request lines close the connection.
 pub const MAX_REQUEST_BYTES: u64 = 64 * 1024;
@@ -54,14 +54,14 @@ pub fn serve(listener: UnixListener, daemon: Arc<Daemon>) {
 struct Connection<'a> {
     daemon: &'a Daemon,
     id: ClientId,
-    queue: Sender<Outgoing>,
+    queue: ClientQueue,
     reader: BufReader<UnixStream>,
 }
 
 impl<'a> Connection<'a> {
     fn open(stream: UnixStream, daemon: &'a Daemon) -> std::io::Result<Self> {
         let mut writer = stream.try_clone()?;
-        let (queue, outgoing) = mpsc::channel();
+        let (queue, outgoing) = ClientQueue::new(&stream)?;
         std::thread::spawn(move || {
             for message in outgoing {
                 match message {
@@ -158,7 +158,7 @@ impl<'a> Connection<'a> {
     fn send(&self, message: impl serde::Serialize) {
         match encode(message) {
             Ok(line) => {
-                let _ = self.queue.send(Outgoing::Line(line));
+                self.queue.push(Outgoing::Line(line));
             }
             Err(e) => self.daemon.logger.error(LOG_SOURCE, &format!("can't encode a message: {e}")),
         }
@@ -167,7 +167,7 @@ impl<'a> Connection<'a> {
     /// Waits until everything queued so far is written.
     fn flush(&self) {
         let (done, flushed) = mpsc::sync_channel(1);
-        if self.queue.send(Outgoing::Flushed(done)).is_ok() {
+        if self.queue.push(Outgoing::Flushed(done)) {
             let _ = flushed.recv();
         }
     }

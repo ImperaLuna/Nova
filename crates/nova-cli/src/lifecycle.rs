@@ -26,7 +26,7 @@ pub fn start(socket: &Path) -> Result<(), String> {
     if systemd::unit_installed() {
         systemd::start()?;
     } else {
-        spawn_novad()?;
+        spawn_novad(socket)?;
     }
     wait_until("novad to start", || Client::connect(socket).is_ok())?;
     println!("Nova started.\n");
@@ -63,13 +63,15 @@ fn stop_direct(socket: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Starts the daemon (`nova daemon`) detached from this terminal. It writes
-/// its own log, so its output is dropped.
-fn spawn_novad() -> Result<(), String> {
+/// Starts the daemon (`nova daemon`) on `socket`, detached from this
+/// terminal. It writes its own log, so its output is dropped.
+fn spawn_novad(socket: &Path) -> Result<(), String> {
     let nova = std::env::current_exe().map_err(|e| format!("can't find the nova binary: {e}"))?;
     std::process::Command::new(&nova)
         .arg0(novad::PROCESS_NAME)
         .arg(DAEMON_COMMAND)
+        .arg("--socket")
+        .arg(socket)
         .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

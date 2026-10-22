@@ -69,19 +69,26 @@ snapshot() { # <pid>
   cp "/proc/$1/cmdline" "$dir/cmdline"
   cp "/proc/$1/environ" "$dir/environ"
   readlink "/proc/$1/cwd" >"$dir/cwd"
+  readlink "/proc/$1/exe" >"$dir/exe"
 }
 
 relaunch() { # <snapshot dir>
-  local argv env_vars cwd
+  local argv env_vars cwd exe
   mapfile -d '' argv <"$1/cmdline"
   mapfile -d '' env_vars <"$1/environ"
   cwd=$(<"$1/cwd")
+  # The executable itself: argv[0] may be just a name (Nova, NovaUI). If it
+  # was replaced since (an upgrade), argv[0] is the best guess left.
+  exe=$(<"$1/exe")
+  [[ -x $exe ]] || exe=${argv[0]}
   echo "run: restoring ${argv[*]}"
+  # Runs `exe` with the original argv[0]; env -i leaves no PATH, so bash is
+  # named by its full path.
+  local launch=("$(command -v env)" -i "${env_vars[@]}" "$BASH" -c 'exec -a "$0" "$@"' "${argv[0]}" "$exe" "${argv[@]:1}")
   # Started outside this terminal's scope, so it outlives the terminal;
   # setsid when there's no systemd user manager to ask.
-  systemd-run --user --quiet --collect --working-directory="$cwd" \
-    "$(command -v env)" -i "${env_vars[@]}" "${argv[@]}" >/dev/null 2>&1 ||
-    (cd "$cwd" && setsid -f env -i "${env_vars[@]}" "${argv[@]}" >/dev/null 2>&1 </dev/null)
+  systemd-run --user --quiet --collect --working-directory="$cwd" "${launch[@]}" >/dev/null 2>&1 ||
+    (cd "$cwd" && setsid -f "${launch[@]}" >/dev/null 2>&1 </dev/null)
 }
 
 restore() {

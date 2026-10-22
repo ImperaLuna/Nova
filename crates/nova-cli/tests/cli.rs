@@ -169,3 +169,18 @@ fn nova_daemon_is_named_nova_and_quits_over_the_socket() {
     assert!(!socket.exists());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_second_daemon_is_refused_before_touching_the_log() {
+    let novad = Novad::start("second-daemon");
+    let output = Command::new(env!("CARGO_BIN_EXE_nova"))
+        .args(["daemon", "--no-ui", "--log-dir", &novad.log_dir()])
+        .arg("--socket")
+        .arg(novad.dir.join("novad.sock"))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    // The running daemon's log is still nova.log, not rotated to nova.log.1.
+    let text = stdout(&novad.run(&["logs", "--no-follow", "--log-dir", &novad.log_dir()]));
+    assert!(text.contains("listening on"), "{text}");
+}

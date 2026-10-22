@@ -112,6 +112,9 @@ fn start(
     args: Args,
     socket: PathBuf,
 ) -> Result<(std::os::unix::net::UnixListener, Arc<Daemon>), Box<dyn std::error::Error>> {
+    // The socket first: a second daemon is refused before it can rotate the
+    // running one's log.
+    let listener = server::bind(&socket)?;
     let hub = Arc::new(Hub::default());
     let logger = Arc::new(Logger::open(&args.log_dir, log_level(), std::io::stderr().is_terminal(), Arc::clone(&hub))?);
     logger.info(LOG_SOURCE, &format!("novad {} starting (pid {})", env!("CARGO_PKG_VERSION"), std::process::id()));
@@ -127,7 +130,6 @@ fn start(
         logger.info("features", &format!("{} is {:?}", feature.id, feature.status));
     }
 
-    let listener = server::bind(&socket)?;
     logger.info(LOG_SOURCE, &format!("listening on {}", socket.display()));
 
     let ui = (!args.no_ui).then(|| {
