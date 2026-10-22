@@ -17,7 +17,7 @@ feature completeness, then modularity and portability, then performance.
   files, installed data). novad and the CLI both resolve paths here.
 - `crates/nova-features`: loads and validates `features/<id>/feature.toml`.
 - `crates/novad`: the daemon, a library the `nova` binary runs as
-  `nova daemon` (one binary to install; it shows as `nova` in ps and btop).
+  `nova daemon` (one binary to install; it shows as `Nova` in ps and btop).
   Owns all logic and state (compositor IPC, search, clipboard, feature
   status). Listens on
   `$XDG_RUNTIME_DIR/nova/novad.sock`, runs the Quickshell UI as its child
@@ -32,7 +32,7 @@ feature completeness, then modularity and portability, then performance.
 - `packaging/systemd/nova.service.in`: the user unit; the Nix package fills
   in its paths. Without systemd, `nova` runs `nova daemon` directly.
 - `packaging/nix/nova-ui.nix`: the `nova-ui` launcher, Quickshell under the
-  name nova-ui so ps and btop show the UI as Nova's. novad uses it when it's
+  name NovaUI so ps and btop show the UI as Nova's. novad uses it when it's
   on PATH (the dev shell has it), else plain `quickshell`.
 - `features/`: one folder per optional feature. The manifest is the single
   source of truth for its packages per distro and GPU. Nix, `nova setup` and

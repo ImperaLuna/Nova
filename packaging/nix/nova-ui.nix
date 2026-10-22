@@ -1,10 +1,10 @@
-# `nova-ui`: Quickshell under the name nova-ui, so ps and btop show the UI as
-# Nova's in both the command line and the process name.
+# `nova-ui`: runs Quickshell as NovaUI (novad's UI_PROCESS_NAME), so ps and
+# btop show the UI as Nova's in both the command line and the process name.
 #
 # The kernel names a process after the file it executes, and nixpkgs runs
-# Quickshell's real binary as `.quickshell-wrapped`. So this exec's a symlink
-# named nova-ui to that binary, from a wrapper that sets the same Qt paths
-# nixpkgs' own wrapper does. --inherit-argv0 keeps the `nova-ui` argv[0]
+# Quickshell's real binary as `.quickshell-wrapped`. So this execs a symlink
+# named NovaUI to that binary, from a wrapper that sets the same Qt paths
+# nixpkgs' own wrapper does. --inherit-argv0 keeps the `NovaUI` argv[0]
 # that novad passes.
 {
   stdenv,
@@ -27,13 +27,13 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p $out/libexec/nova $out/bin
-    ln -s ${quickshell}/bin/.quickshell-wrapped $out/libexec/nova/nova-ui
-    makeBinaryWrapper $out/libexec/nova/nova-ui $out/bin/nova-ui --inherit-argv0 \
+    ln -s ${quickshell}/bin/.quickshell-wrapped $out/libexec/nova/NovaUI
+    makeBinaryWrapper $out/libexec/nova/NovaUI $out/bin/nova-ui --inherit-argv0 \
       --prefix XDG_DATA_DIRS : ${quickshell}/share "''${qtWrapperArgs[@]}"
     runHook postInstall
   '';
   meta = {
-    description = "Quickshell, run under the name nova-ui";
+    description = "Quickshell, run under the name NovaUI";
     inherit (quickshell.meta) license platforms;
     mainProgram = "nova-ui";
   };

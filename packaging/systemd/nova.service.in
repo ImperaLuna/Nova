@@ -16,7 +16,9 @@ PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
-ExecStart=@nova@ daemon --quickshell @quickshell@
+# `@` passes the next word as argv[0], so ps and btop show `Nova daemon`
+# (novad::PROCESS_NAME).
+ExecStart=@@nova@ Nova daemon --quickshell @quickshell@
 # The daemon exits 0 when asked to quit or when the session ends; only crashes
 # bring it back.
 Restart=on-failure

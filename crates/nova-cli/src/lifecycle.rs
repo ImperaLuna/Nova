@@ -68,6 +68,7 @@ fn stop_direct(socket: &Path) -> Result<bool, String> {
 fn spawn_novad() -> Result<(), String> {
     let nova = std::env::current_exe().map_err(|e| format!("can't find the nova binary: {e}"))?;
     std::process::Command::new(&nova)
+        .arg0(novad::PROCESS_NAME)
         .arg(DAEMON_COMMAND)
         .process_group(0)
         .stdin(Stdio::null())

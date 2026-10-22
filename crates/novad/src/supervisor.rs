@@ -17,9 +17,12 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-/// The UI's process name in ps and btop: its `argv[0]`, and the name of the
-/// launcher that runs Quickshell under it, so the kernel's name matches.
-pub const UI_PROCESS_NAME: &str = "nova-ui";
+/// The UI's process name in ps and btop: its `argv[0]`, and (through the
+/// launcher) the name of the file the kernel runs.
+pub const UI_PROCESS_NAME: &str = "NovaUI";
+/// The launcher that runs Quickshell as [`UI_PROCESS_NAME`]
+/// (packaging/nix/nova-ui.nix).
+const UI_LAUNCHER: &str = "nova-ui";
 /// Quickshell itself, when no `nova-ui` launcher is installed.
 const QUICKSHELL: &str = "quickshell";
 const LOG_SOURCE: &str = "supervisor";
@@ -164,11 +167,11 @@ impl Supervisor {
 }
 
 /// The `nova-ui` launcher if it's on `path_var`, else `quickshell`. Either
-/// way the command line says `nova-ui`; only the launcher also gives the
+/// way the command line says `NovaUI`; only the launcher also gives the
 /// process that name (btop's Program column).
 pub fn default_quickshell(path_var: &str) -> PathBuf {
     std::env::split_paths(path_var)
-        .map(|dir| dir.join(UI_PROCESS_NAME))
+        .map(|dir| dir.join(UI_LAUNCHER))
         .find(|launcher| launcher.is_file())
         .unwrap_or_else(|| PathBuf::from(QUICKSHELL))
 }

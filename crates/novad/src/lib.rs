@@ -22,6 +22,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 use supervisor::{Supervisor, UiSettings};
 
+/// The daemon's process name in ps and btop. It renames itself to this, and
+/// whatever starts it passes it as `argv[0]` (`nova`, the systemd unit).
+pub const PROCESS_NAME: &str = "Nova";
 /// Sets the lowest level written to the log: debug, info (default), warn, error.
 const LOG_LEVEL_VAR: &str = "NOVA_LOG";
 const LOG_SOURCE: &str = "novad";
@@ -89,6 +92,8 @@ impl Daemon {
 
 /// Runs novad until it quits.
 pub fn run(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    // Before any thread starts, so they all inherit the name.
+    set_process_name(PROCESS_NAME)?;
     let (listener, daemon) = start(args, socket)?;
     install_panic_hook(Arc::clone(&daemon.logger));
     server::serve(listener, daemon);
@@ -181,6 +186,18 @@ fn session_path() -> String {
         }
         _ => path,
     }
+}
+
+/// Sets this thread's name, which is the process name ps and btop show for
+/// the main thread (`/proc/<pid>/comm`).
+fn set_process_name(name: &str) -> std::io::Result<()> {
+    let name = std::ffi::CString::new(name).map_err(std::io::Error::other)?;
+    // SAFETY: PR_SET_NAME reads a NUL-terminated string, which `name` is
+    // for the whole call; the kernel copies at most 16 bytes of it.
+    if unsafe { libc::prctl(libc::PR_SET_NAME, name.as_ptr()) } == -1 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 /// The compositor's socket, from `WAYLAND_DISPLAY` (a name in

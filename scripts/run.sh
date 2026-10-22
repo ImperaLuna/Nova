@@ -20,7 +20,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 nova=${1:-target/debug/nova}
-bars=${NOVA_RUN_REPLACE-"waybar quickshell qs nova-shell ags eww ironbar hyprpanel nova:daemon novad"}
+bars=${NOVA_RUN_REPLACE-"waybar quickshell qs nova-shell ags eww ironbar hyprpanel Nova:daemon nova:daemon novad"}
 unit=nova.service
 # Dev runs log apart from the installed Nova, so its log history stays intact.
 log_dir=${XDG_STATE_HOME:-$HOME/.local/state}/nova-dev
@@ -133,6 +133,7 @@ done
 for pid in "${!matched[@]}"; do kill -KILL "$pid" 2>/dev/null || true; done
 
 echo "run: starting this checkout's Nova (logs below, Ctrl+C to stop)"
-"$nova" daemon --ui ui --features-dir features --log-dir "$log_dir" &
+# argv[0] Nova, as the systemd unit and `nova` start it.
+(exec -a Nova "$nova" daemon --ui ui --features-dir features --log-dir "$log_dir") &
 dev_pid=$!
 wait "$dev_pid" || true

@@ -85,12 +85,13 @@ fi
 
 grep -q 'nova: connected to novad' "$out/ui.log" || fail "the UI never connected to novad"
 
-# ps and btop show the UI as Nova's: argv[0] always, the process name when
-# the nova-ui launcher is installed (the dev shell has it).
-[[ $(tr '\0' '\n' <"/proc/$ui/cmdline" | head -n1) == nova-ui ]] || fail "the UI's argv[0] isn't nova-ui"
+# ps and btop show the UI as NovaUI: argv[0] always, the process name when
+# the nova-ui launcher is installed (the dev shell has it). The daemon is Nova.
+[[ $(tr '\0' '\n' <"/proc/$ui/cmdline" | head -n1) == NovaUI ]] || fail "the UI's argv[0] isn't NovaUI"
 if command -v nova-ui >/dev/null; then
-  [[ $(<"/proc/$ui/comm") == nova-ui ]] || fail "the UI's process name isn't nova-ui"
+  [[ $(<"/proc/$ui/comm") == NovaUI ]] || fail "the UI's process name isn't NovaUI"
 fi
+[[ $(<"/proc/$(jq -r .pid "$out/status.json")/comm") == Nova ]] || fail "the daemon's process name isn't Nova"
 
 grim "$out/screenshot.png" || fail "screenshot failed"
 
