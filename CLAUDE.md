@@ -75,6 +75,12 @@ feature completeness, then modularity and portability, then performance.
   one job; split one that grows past that.
 - Handle errors where they happen and show them in a useful form. No silent
   `catch {}` or `unwrap()` on input that can fail (tests excepted).
+- Design for the general case, then fix root causes. Edge cases (a second
+  monitor, a missing feature, a compositor without a capability, an empty
+  list) should work because the design covers them, not through special-case
+  branches or workarounds added later. When something breaks in one case, fix
+  why it breaks; if a workaround is truly unavoidable (an upstream bug), keep
+  it in one place with a comment linking the issue and how to remove it.
 - Leave code cleaner than you found it, but keep refactors in their own commit.
 
 ## Security
