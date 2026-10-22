@@ -1,5 +1,8 @@
 # Run `just` to list recipes. Everything here works inside `nix develop`.
 
+# Codex model for `just review`
+review_model := "gpt-6.1-sol"
+
 default:
     @just --list
 
@@ -56,3 +59,8 @@ run: build
 # Clone Quickshell's source (v0.3.2) into docs/ for reading its API
 docs:
     test -d docs/quickshell || git clone --depth 1 --branch v0.3.2 https://github.com/quickshell-mirror/quickshell docs/quickshell
+
+# Needs the Codex CLI and `codex login`; not part of the dev shell or CI.
+# Codex reviews this branch against `base` (sends the diff to OpenAI)
+review base="main":
+    codex review --base {{base}} -c model="{{review_model}}" "Review against the rules in CLAUDE.md."

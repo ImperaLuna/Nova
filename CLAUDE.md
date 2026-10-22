@@ -161,6 +161,8 @@ Run inside `nix develop`:
 - `just run`: this checkout's Nova on your current session, in place of
   your bar until Ctrl+C. Its log goes to `~/.local/state/nova-dev`.
 - `nix flake check -L`: the same checks as CI, sandboxed.
+- `just review [base]`: a Codex review of the branch against `base` (default
+  `main`). Needs the Codex CLI and `codex login` outside the dev shell.
 
 Every change goes through a pull request; `main` is protected. CI runs on a
 self-hosted runner on the maintainer's desktop, so PR checks wait while it is
