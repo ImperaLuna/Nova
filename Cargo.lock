@@ -121,6 +121,7 @@ name = "nova-cli"
 version = "0.1.0"
 dependencies = [
  "nova-features",
+ "nova-paths",
  "nova-protocol",
  "serde_json",
 ]
@@ -129,9 +130,14 @@ dependencies = [
 name = "nova-features"
 version = "0.1.0"
 dependencies = [
+ "nova-paths",
  "serde",
  "toml",
 ]
+
+[[package]]
+name = "nova-paths"
+version = "0.1.0"
 
 [[package]]
 name = "nova-protocol"
@@ -147,6 +153,7 @@ name = "novad"
 version = "0.1.0"
 dependencies = [
  "nova-features",
+ "nova-paths",
  "nova-protocol",
  "serde_json",
  "toml",

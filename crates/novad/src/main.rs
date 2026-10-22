@@ -58,9 +58,9 @@ fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Config, String> {
     let mut config = Config {
-        socket: nova_protocol::default_socket_path(),
+        socket: nova_paths::socket(),
         features_dir: nova_features::default_dir(),
-        selection_file: config_dir().join("features.toml"),
+        selection_file: nova_paths::config_dir().join("features.toml"),
     };
     while let Some(arg) = args.next() {
         let mut value = || args.next().map(PathBuf::from).ok_or(format!("{arg} needs a value"));
@@ -72,14 +72,6 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Config, String> 
         }
     }
     Ok(config)
-}
-
-fn config_dir() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("nova")
 }
 
 fn feature_states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> Vec<FeatureState> {

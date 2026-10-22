@@ -15,6 +15,7 @@ toml = "0.8"
 insta = "1"
 nova-protocol = { path = "crates/nova-protocol" }
 nova-features = { path = "crates/nova-features" }
+nova-paths = { path = "crates/nova-paths" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

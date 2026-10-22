@@ -11,7 +11,6 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 /// Bumped on any incompatible change to the messages below.
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -96,19 +95,6 @@ pub fn encode<T: Serialize>(body: T) -> serde_json::Result<String> {
     let mut line = serde_json::to_string(&Envelope::new(body))?;
     line.push('\n');
     Ok(line)
-}
-
-/// `$XDG_RUNTIME_DIR/nova/novad.sock`, or `/tmp/nova-<uid>/novad.sock` without it.
-pub fn default_socket_path() -> PathBuf {
-    let base = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(format!("/tmp/nova-{}", current_uid())));
-    base.join("nova").join("novad.sock")
-}
-
-fn current_uid() -> String {
-    use std::os::unix::fs::MetadataExt;
-    std::fs::metadata("/proc/self").map(|m| m.uid().to_string()).unwrap_or_else(|_| "unknown".to_owned())
 }
 
 #[cfg(test)]

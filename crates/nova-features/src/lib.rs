@@ -165,17 +165,11 @@ fn on_path(bin: &str, path_var: &str) -> bool {
     std::env::split_paths(path_var).any(|dir| dir.join(bin).is_file())
 }
 
-/// `$NOVA_FEATURES_DIR`, else `<prefix>/share/nova/features` next to the
-/// running binary (the Nix package layout), else `./features` for a checkout.
+/// `$NOVA_FEATURES_DIR`, else the installed set, else `./features` for a checkout.
 pub fn default_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("NOVA_FEATURES_DIR") {
-        return dir.into();
-    }
-    let installed =
-        std::env::current_exe().ok().and_then(|exe| exe.parent()?.parent().map(|p| p.join("share/nova/features")));
-    match installed {
-        Some(dir) if dir.is_dir() => dir,
-        _ => PathBuf::from("features"),
+    match std::env::var_os("NOVA_FEATURES_DIR") {
+        Some(dir) => dir.into(),
+        None => nova_paths::installed_or_checkout("features"),
     }
 }
 

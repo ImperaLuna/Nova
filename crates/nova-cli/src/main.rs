@@ -104,7 +104,7 @@ fn parse_gpu(value: &str) -> Result<Gpu, String> {
 
 fn ping(args: &[&str]) -> Result<(), String> {
     let socket = match args {
-        [] => nova_protocol::default_socket_path(),
+        [] => nova_paths::socket(),
         ["--socket", path] => PathBuf::from(path),
         _ => return Err(USAGE.into()),
     };
