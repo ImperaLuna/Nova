@@ -179,12 +179,31 @@ Run inside `nix develop`:
 
 Test every change on the maintainer's desktop (NixOS + niri) before calling it
 done, whenever a session there is connected (a Remote Control session or a
-connected folder): pull the branch, run `just check`, then try the change
-itself (`just run`, the `nova` command it touches, btop for process names).
-Say in the PR what was tried there. Leave uncommitted work in that checkout
-alone (stash it with a named message if you must, never discard it), and
-don't commit or push from the desktop; changes go through the branch. With no connection, say the change is
-untested on real hardware.
+connected folder): check the branch out in your own worktree, run `just
+check`, then try the change itself (`just run`, the `nova` command it
+touches, btop for process names). Say in the PR what was tried there. Don't
+commit or push from the desktop; changes go through the branch. With no
+connection, say the change is untested on real hardware.
+
+Several sessions can test on the desktop at once, so they mustn't race:
+
+- Never switch branches in `~/Projects/Nova`; the maintainer and other
+  sessions use it. Test in a worktree of your own (its own `target/` and
+  `e2e/out/`): `git -C ~/Projects/Nova fetch origin <branch>`, then
+  `git -C ~/Projects/Nova worktree add ~/Projects/Nova-worktrees/<branch>
+  origin/<branch>`. Remove it with `git worktree remove` when the PR is done.
+- `just check`, `just e2e` and `nix flake check` are safe in parallel:
+  `just e2e` has its own runtime dir, socket and headless sway.
+- `just run` swaps out the real bar, so only one runs at a time. A second one
+  exits with "another `just run` is using the bar": wait and retry, don't kill
+  the other one. Don't touch the live bar, `nova.service` or
+  `$XDG_RUNTIME_DIR/nova` any other way.
+- Leave uncommitted work in any checkout you didn't create alone (stash it
+  with a named message if you must, never discard it).
+- CI and the other sessions share the desktop's CPU, so builds can be slow.
+  Rerun a timeout before calling it a failure.
+- CI jobs can't open `/dev/kvm`; VM tests get KVM only as Nix builds through
+  the daemon (flake checks), not as a driver started in a job step.
 
 Every change goes through a pull request; `main` is protected. CI runs on a
 self-hosted runner on the maintainer's desktop, so PR checks wait while it is
