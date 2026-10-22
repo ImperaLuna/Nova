@@ -27,8 +27,8 @@ fmt-check:
 
 # statix and deadnix over the Nix files
 lint-nix:
-    statix check .
-    deadnix --fail .
+    statix check --ignore 'docs/*' .
+    deadnix --fail $(git ls-files '*.nix')
 
 # Review changed insta snapshots (crates/*/src/snapshots)
 snapshots:
