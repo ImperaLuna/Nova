@@ -63,4 +63,4 @@ docs:
 # Needs the Codex CLI and `codex login`; not part of the dev shell or CI.
 # Codex reviews this branch against `base` (sends the diff to OpenAI)
 review base="main":
-    codex review --base {{base}} -c model="{{review_model}}" "Review against the rules in CLAUDE.md."
+    codex review --base {{base}} -c model="{{review_model}}"
