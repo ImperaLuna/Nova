@@ -58,6 +58,29 @@ feature completeness, then modularity and portability, then performance.
 - Quickshell is pinned to the nixpkgs version (0.3.2). `just docs` clones its
   source into `docs/quickshell` for checking APIs; trust it over memory.
 
+## Security
+
+Security and performance are ongoing work, reviewed at every milestone.
+
+- Anything on the socket is untrusted: any local process can connect.
+  Validate every request, reject unknown fields, and cap message sizes.
+- Never build shell strings. Launch apps and run package managers with argv
+  lists (parse `.desktop` `Exec` keys properly); never `sh -c` with user,
+  config or manifest data.
+- `nova setup` asks for root only for the package-manager call itself, and
+  shows the exact command first.
+- The clipboard can hold passwords: skip entries marked as secret by password
+  managers, cap history size, keep it in memory or a 0600 file, and make
+  clearing easy.
+- Network calls (weather, usage) use HTTPS only, and no secrets go in logs.
+
+## Performance
+
+- Event-driven, no polling loops: novad pushes changes, and QML binds to them.
+- Measure, don't guess: a change that could affect memory or frame time
+  states its before/after Pss (from `just e2e`) in the PR.
+- Animations and shaders run only while visible.
+
 ## Tests
 
 Prefer integration tests: run the real pieces together (a real novad on a
