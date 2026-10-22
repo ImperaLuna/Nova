@@ -58,6 +58,25 @@ feature completeness, then modularity and portability, then performance.
 - Quickshell is pinned to the nixpkgs version (0.3.2). `just docs` clones its
   source into `docs/quickshell` for checking APIs; trust it over memory.
 
+## Engineering principles
+
+- One source of truth. A value used in more than one place (a color, size,
+  duration, timeout, socket path, command name, event name) is defined once
+  and referenced everywhere else: design values in `theme/Tokens.qml`, wire
+  names in `nova-protocol` and `ui/daemon/protocol.js`, Rust constants in the
+  crate that owns them. Never copy a literal into a second file.
+- No magic numbers or strings. Give values a named constant or property that
+  says what they mean (`Tokens.radiusPill`, not `14`).
+- Don't repeat logic. When the same JavaScript or Rust shows up twice, move it
+  into a shared component, singleton or function before adding a third copy.
+- Names say what something is. Descriptive variable, property and file names;
+  no `tmp`, `data2` or single letters outside short loops.
+- Small, focused files and components. Each QML component or Rust module does
+  one job; split one that grows past that.
+- Handle errors where they happen and show them in a useful form. No silent
+  `catch {}` or `unwrap()` on input that can fail (tests excepted).
+- Leave code cleaner than you found it, but keep refactors in their own commit.
+
 ## Security
 
 Security and performance are ongoing work, reviewed at every milestone.
