@@ -177,3 +177,11 @@ Open PRs as drafts and mark them ready for review only when the work is done.
 Codex reviews a PR automatically once, when it becomes ready, so pushes to a
 draft don't each trigger a review. For another review after fixes, comment
 `@codex review` on the PR.
+
+Review findings (Codex, or any other reviewer bot) are claims to check, not
+orders. Before fixing one, reproduce it or trace a real path from a real
+caller or input to the failure, then weigh the code the fix adds against
+what it prevents. Fix it when the path is real and the fix is small and
+proportionate. Otherwise reply on the thread with what you traced and why
+it isn't worth the code, and leave the call to the maintainer. Don't add
+layers, options or special cases to satisfy a reviewer.
