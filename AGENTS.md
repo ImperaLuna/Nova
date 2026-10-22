@@ -60,6 +60,12 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - `e2e/run.sh`: headless sway with two monitors + novad, which runs the UI.
   Fails on QML errors, a crashed UI or no connection; warns when the UI's Pss
   is over the memory target.
+- `e2e/vm/`: NixOS VM tests on real niri and Hyprland (flake checks
+  `e2e-niri`, `e2e-hyprland`; they need KVM). One VM config and one test
+  script (`lifecycle.py`) shared by both; each compositor only says how it
+  starts and quits. They cover what needs a systemd user session: starting
+  through `nova.service`, crash restarts, `nova restart`/`quit`, and novad
+  exiting with the compositor.
 - `scripts/run.sh` (`just run`): swaps your running bar for this checkout's
   Nova and puts the old one back on Ctrl+C or when the terminal closes.
 - `scripts/qmllint.sh`: qmllint over `ui/`, failing on any warning.
@@ -153,7 +159,7 @@ are the minority.
   running novad.
 - **Unit tests:** only for small pure logic that's tricky on its own (parsers,
   version ranges, contrast math).
-- **Smoke/e2e** (`e2e/run.sh`, later the VM tests): does the whole shell start
+- **Smoke/e2e** (`e2e/run.sh`, the VM tests in `e2e/vm`): does the whole shell start
   and behave. They're a final check, not the main suite.
 
 Fake only what can't run in a test: the compositor, hardware, the network.
@@ -171,6 +177,8 @@ Run inside `nix develop`:
 - `just snapshots`: review changed insta snapshots. The protocol's wire format
   is a snapshot, so a protocol change shows up here.
 - `just e2e`: the headless end-to-end run; screenshot in `e2e/out/`.
+- `just e2e-vm [niri|hyprland]`: one VM test (needs KVM). `nix flake check`
+  runs both.
 - `just run`: this checkout's Nova on your current session, in place of
   your bar until Ctrl+C. Its log goes to `~/.local/state/nova-dev`.
 - `nix flake check -L`: the same checks as CI, sandboxed.

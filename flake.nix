@@ -86,7 +86,12 @@
               installPhase = "touch $out";
             };
         in
-        {
+        # VM tests on niri and Hyprland (e2e/vm): e2e-niri, e2e-hyprland.
+        import ./e2e/vm {
+          inherit pkgs;
+          inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) nova;
+        }
+        // {
           # `nix build` runs `cargo test` as part of the package.
           build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 

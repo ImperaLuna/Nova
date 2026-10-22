@@ -49,6 +49,10 @@ test-qml:
 e2e: build
     e2e/run.sh target/debug/nova
 
+# NixOS VM test on real niri or Hyprland: Nova's lifecycle under systemd (needs KVM)
+e2e-vm compositor="niri":
+    nix build -L --no-link .#checks.$(nix eval --raw --impure --expr builtins.currentSystem).e2e-{{compositor}}
+
 build:
     cargo build --workspace
 
