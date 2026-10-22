@@ -34,15 +34,15 @@ QtObject {
     property color warning
     property color error
 
-    // Chart series
-    property color chart1
-    property color chart2
-    property color chart3
-    property color chart4
-    property color chart5
-    property color chart6
-    property color chart7
-    property color chart8
+    // Swatches: distinct colors for things told apart by color, used in order
+    property color swatch1
+    property color swatch2
+    property color swatch3
+    property color swatch4
+    property color swatch5
+    property color swatch6
+    property color swatch7
+    property color swatch8
 
     // Heatmap ramp, none to full
     property color heat0

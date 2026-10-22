@@ -241,9 +241,9 @@ mod tests {
     fn themes_with_missing_or_extra_tokens_are_refused() {
         let scratch = Scratch::new("tokens");
         let config = scratch.write("config.toml", "[theme]\nname = \"custom\"\n");
-        let missing = DEFAULT_THEME_FILE.lines().filter(|line| !line.starts_with("chart8 ")).collect::<Vec<_>>();
+        let missing = DEFAULT_THEME_FILE.lines().filter(|line| !line.starts_with("swatch8 ")).collect::<Vec<_>>();
         let extra = DEFAULT_THEME_FILE.replace("[dark]\n", "[dark]\nsurface = \"#000000\"\n");
-        for (text, token) in [(missing.join("\n"), "chart8"), (extra, "surface")] {
+        for (text, token) in [(missing.join("\n"), "swatch8"), (extra, "surface")] {
             scratch.write("custom.toml", &text);
             let (theme, problems) = resolve(&scratch.0, &config);
             assert_eq!(theme.id, DEFAULT_THEME_ID);

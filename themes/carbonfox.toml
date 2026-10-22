@@ -28,15 +28,16 @@ success = "#25BE6A"
 warning = "#FAEB92"
 error = "#EE5396"
 
-# Chart series, in order of use
-chart1 = "#5988DB"    # blue
-chart2 = "#E8650E"    # orange
-chart3 = "#07A7A5"    # teal
-chart4 = "#9067CC"    # purple
-chart5 = "#029A43"    # green
-chart6 = "#049BE7"    # cyan
-chart7 = "#DD6098"    # magenta
-chart8 = "#9C7C02"    # yellow
+# Swatches: distinct colors for things told apart by color (workspaces,
+# tags, graph lines), used in order
+swatch1 = "#5988DB"   # blue
+swatch2 = "#E8650E"   # orange
+swatch3 = "#07A7A5"   # teal
+swatch4 = "#9067CC"   # purple
+swatch5 = "#029A43"   # green
+swatch6 = "#049BE7"   # cyan
+swatch7 = "#DD6098"   # magenta
+swatch8 = "#9C7C02"   # yellow
 
 # Heatmap ramp, none to full
 heat0 = "#FFFFFF"
@@ -69,15 +70,16 @@ success = "#167A43"
 warning = "#8A6D00"
 error = "#C8215F"
 
-# Chart series, in order of use
-chart1 = "#507ED1"    # blue
-chart2 = "#CC5809"    # orange
-chart3 = "#008D88"    # teal
-chart4 = "#7349AB"    # purple
-chart5 = "#017833"    # green
-chart6 = "#0B84C5"    # cyan
-chart7 = "#A62C69"    # magenta
-chart8 = "#937506"    # yellow
+# Swatches: distinct colors for things told apart by color (workspaces,
+# tags, graph lines), used in order
+swatch1 = "#507ED1"   # blue
+swatch2 = "#CC5809"   # orange
+swatch3 = "#008D88"   # teal
+swatch4 = "#7349AB"   # purple
+swatch5 = "#017833"   # green
+swatch6 = "#0B84C5"   # cyan
+swatch7 = "#A62C69"   # magenta
+swatch8 = "#937506"   # yellow
 
 # Heatmap ramp, none to full
 heat0 = "#FFFFFF"
