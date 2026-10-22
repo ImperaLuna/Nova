@@ -3,7 +3,7 @@
 
 use crate::Daemon;
 use crate::hub::{ClientId, Outgoing};
-use nova_protocol::{Command, Envelope, Event, Outcome, Request, Response, Topic, encode};
+use nova_protocol::{Command, Event, Outcome, Response, Topic, encode};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -104,8 +104,8 @@ impl<'a> Connection<'a> {
     }
 
     fn handle(&self, line: &str) {
-        let request = match serde_json::from_str::<Envelope<Request>>(line) {
-            Ok(request) => request.body,
+        let request = match nova_protocol::decode_request(line) {
+            Ok(request) => request,
             Err(e) => {
                 self.daemon.logger.warn(LOG_SOURCE, &format!("ignoring bad request: {e}"));
                 if let Some(id) = request_id(line) {

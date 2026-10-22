@@ -249,6 +249,37 @@ pub enum Outcome {
 }
 
 /// Encodes a message as one line, newline included.
+/// A request line exactly as it may arrive: no other fields. `Envelope` and
+/// `Request` flatten their bodies, and serde can't reject unknown fields
+/// through `flatten`, so incoming lines are checked against this first.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RequestLine {
+    v: u32,
+    #[serde(default)]
+    id: Option<u64>,
+    cmd: String,
+    #[serde(default)]
+    args: Option<serde_json::Value>,
+}
+
+/// Reads one request line from a client. Anything on the socket is
+/// untrusted: unknown fields, unknown commands, bad arguments and other
+/// protocol versions are all errors.
+pub fn decode_request(line: &str) -> Result<Request, String> {
+    let RequestLine { v, id, cmd, args } = serde_json::from_str(line).map_err(|e| e.to_string())?;
+    if v != PROTOCOL_VERSION {
+        return Err(format!("protocol version {v} isn't supported; this daemon speaks {PROTOCOL_VERSION}"));
+    }
+    let mut tagged = serde_json::Map::new();
+    tagged.insert("cmd".into(), cmd.into());
+    if let Some(args) = args {
+        tagged.insert("args".into(), args);
+    }
+    let command = serde_json::from_value(tagged.into()).map_err(|e| e.to_string())?;
+    Ok(Request { id, command })
+}
+
 pub fn encode<T: Serialize>(body: T) -> serde_json::Result<String> {
     let mut line = serde_json::to_string(&Envelope::new(body))?;
     line.push('\n');
@@ -326,12 +357,9 @@ mod tests {
 
     #[test]
     fn subscribe_parses_with_topics() {
-        let req: Envelope<Request> =
-            serde_json::from_str(r#"{"v":2,"id":1,"cmd":"subscribe","args":{"topics":["features","logs"]}}"#).unwrap();
-        assert_eq!(req.body.command, Command::Subscribe { topics: vec![Topic::Features, Topic::Logs] });
-        assert!(
-            serde_json::from_str::<Envelope<Request>>(r#"{"v":2,"cmd":"subscribe","args":{"topics":["x"]}}"#).is_err()
-        );
+        let req = decode_request(r#"{"v":2,"id":1,"cmd":"subscribe","args":{"topics":["features","logs"]}}"#).unwrap();
+        assert_eq!(req.command, Command::Subscribe { topics: vec![Topic::Features, Topic::Logs] });
+        assert!(decode_request(r#"{"v":2,"cmd":"subscribe","args":{"topics":["x"]}}"#).is_err());
     }
 
     #[test]
@@ -360,20 +388,34 @@ mod tests {
 
     #[test]
     fn request_without_args_parses() {
-        let req: Envelope<Request> = serde_json::from_str(r#"{"v":2,"id":7,"cmd":"ping"}"#).unwrap();
-        assert_eq!(req.body, Request { id: Some(7), command: Command::Ping });
+        let req = decode_request(r#"{"v":2,"id":7,"cmd":"ping"}"#).unwrap();
+        assert_eq!(req, Request { id: Some(7), command: Command::Ping });
     }
 
     #[test]
     fn request_without_id_parses() {
-        let req: Envelope<Request> = serde_json::from_str(r#"{"v":2,"cmd":"list_features"}"#).unwrap();
-        assert_eq!(req.body.id, None);
-        assert_eq!(req.body.command, Command::ListFeatures);
+        let req = decode_request(r#"{"v":2,"cmd":"list_features"}"#).unwrap();
+        assert_eq!(req.id, None);
+        assert_eq!(req.command, Command::ListFeatures);
     }
 
     #[test]
     fn unknown_command_is_rejected() {
-        assert!(serde_json::from_str::<Envelope<Request>>(r#"{"v":2,"cmd":"reboot"}"#).is_err());
+        assert!(decode_request(r#"{"v":2,"cmd":"reboot"}"#).is_err());
+    }
+
+    #[test]
+    fn unknown_fields_are_rejected() {
+        assert!(decode_request(r#"{"v":2,"id":1,"cmd":"ping"}"#).is_ok());
+        assert!(decode_request(r#"{"v":2,"id":1,"cmd":"ping","extra":true}"#).is_err());
+        assert!(decode_request(r#"{"v":2,"cmd":"ping","args":{"x":1}}"#).is_err());
+    }
+
+    #[test]
+    fn other_protocol_versions_are_rejected() {
+        let error = decode_request(r#"{"v":1,"id":1,"cmd":"ping"}"#).unwrap_err();
+        assert!(error.contains("version 1"), "{error}");
+        assert!(decode_request(r#"{"id":1,"cmd":"ping"}"#).is_err());
     }
 
     #[test]

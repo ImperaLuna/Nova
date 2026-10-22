@@ -117,6 +117,17 @@ fn bad_requests_get_an_error_when_they_have_an_id() {
 }
 
 #[test]
+fn unknown_fields_and_other_versions_are_refused() {
+    let novad = TestDaemon::start("strict", None);
+    let mut client = novad.connect();
+    client.send(&json!({"v": 2, "id": 1, "cmd": "ping", "extra": true}));
+    assert!(client.next()["error"].as_str().unwrap().contains("unknown field"));
+    client.send(&json!({"v": 1, "id": 2, "cmd": "ping"}));
+    assert!(client.next()["error"].as_str().unwrap().contains("version 1"));
+    assert_eq!(client.request(3, "ping", None)["result"], "pong");
+}
+
+#[test]
 fn oversized_requests_close_the_connection() {
     let novad = TestDaemon::start("oversized", None);
     let mut client = novad.connect();
