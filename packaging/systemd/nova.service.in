@@ -3,8 +3,7 @@
 # restarts the daemon.
 #
 # Placeholders are filled at install time (the Nix package, `nova setup`):
-#   @nova@        absolute path of the nova binary
-#   @quickshell@  what the daemon runs the UI with: the nova-ui launcher
+#   @nova@  absolute path of the nova binary
 #
 # niri and Hyprland with uwsm start graphical-session.target, which starts
 # this unit. Plain Hyprland doesn't: `exec-once = nova` hands the session's
@@ -18,7 +17,7 @@ After=graphical-session.target
 [Service]
 # `@` passes the next word as argv[0], so ps and btop show `Nova daemon`
 # (novad::PROCESS_NAME).
-ExecStart=@@nova@ Nova daemon --quickshell @quickshell@
+ExecStart=@@nova@ Nova daemon
 # The daemon exits 0 when asked to quit or when the session ends; only crashes
 # bring it back.
 Restart=on-failure

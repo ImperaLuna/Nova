@@ -23,6 +23,10 @@ pub const UI_PROCESS_NAME: &str = "NovaUI";
 /// The launcher that runs Quickshell as [`UI_PROCESS_NAME`]
 /// (packaging/nix/nova-ui.nix).
 const UI_LAUNCHER: &str = "nova-ui";
+/// The launcher's absolute path, when a package built novad with it
+/// (`NOVA_UI_LAUNCHER` at build time). Then novad finds its UI however it was
+/// started, without relying on the caller's `PATH`.
+const PACKAGED_UI_LAUNCHER: Option<&str> = option_env!("NOVA_UI_LAUNCHER");
 /// Quickshell itself, when no `nova-ui` launcher is installed.
 const QUICKSHELL: &str = "quickshell";
 const LOG_SOURCE: &str = "supervisor";
@@ -166,14 +170,13 @@ impl Supervisor {
     }
 }
 
-/// The `nova-ui` launcher if it's on `path_var`, else `quickshell`. Either
-/// way the command line says `NovaUI`; only the launcher also gives the
-/// process that name (btop's Program column).
+/// The packaged `nova-ui` launcher, else `nova-ui` if it's on `path_var`,
+/// else `quickshell`. Either way the command line says `NovaUI`; only the
+/// launcher also gives the process that name (btop's Program column).
 pub fn default_quickshell(path_var: &str) -> PathBuf {
-    std::env::split_paths(path_var)
-        .map(|dir| dir.join(UI_LAUNCHER))
-        .find(|launcher| launcher.is_file())
-        .unwrap_or_else(|| PathBuf::from(QUICKSHELL))
+    let on_path =
+        || std::env::split_paths(path_var).map(|dir| dir.join(UI_LAUNCHER)).find(|launcher| launcher.is_file());
+    PACKAGED_UI_LAUNCHER.map(PathBuf::from).or_else(on_path).unwrap_or_else(|| PathBuf::from(QUICKSHELL))
 }
 
 fn spawn(settings: &UiSettings) -> std::io::Result<Child> {

@@ -43,16 +43,15 @@
           version = "0.1.0";
           src = rustSrc pkgs.lib;
           cargoLock.lockFile = ./Cargo.lock;
+          # Compiled in, so `nova` finds its UI with or without systemd.
+          env.NOVA_UI_LAUNCHER = pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.nova-ui;
           postInstall = ''
             mkdir -p $out/share/nova
             cp -r features $out/share/nova/features
             cp -r ${./ui} $out/share/nova/ui
             install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
             substituteInPlace $out/lib/systemd/user/nova.service \
-              --replace-fail @nova@ $out/bin/nova \
-              --replace-fail @quickshell@ ${
-                pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.nova-ui
-              }
+              --replace-fail @nova@ $out/bin/nova
           '';
           meta = {
             description = "Nova desktop shell";

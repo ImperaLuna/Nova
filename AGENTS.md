@@ -36,7 +36,8 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - `packaging/systemd/nova.service.in`: the user unit; the Nix package fills
   in its paths. Without systemd, `nova` runs `nova daemon` directly.
 - `packaging/nix/nova-ui.nix`: the `nova-ui` launcher, Quickshell under the
-  name NovaUI so ps and btop show the UI as Nova's. novad uses it when it's
+  name NovaUI so ps and btop show the UI as Nova's. The Nix package compiles
+  its path into novad (`NOVA_UI_LAUNCHER`); otherwise novad uses it when it's
   on PATH (the dev shell has it), else plain `quickshell`.
 - `features/`: one folder per optional feature. The manifest is the single
   source of truth for its packages per distro and GPU. Nix, `nova setup` and
