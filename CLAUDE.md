@@ -58,6 +58,16 @@ feature completeness, then modularity and portability, then performance.
 - Quickshell is pinned to the nixpkgs version (0.3.2). `just docs` clones its
   source into `docs/quickshell` for checking APIs; trust it over memory.
 
+## Tests
+
+Prefer integration tests: run the real pieces together (a real novad on a
+temp socket, real manifest files, the real QML component) rather than
+mocking each dependency. Fake only what can't run in a test: the compositor,
+hardware, the network. Fake those with recorded real data (captured niri or
+Hyprland event streams, saved HTTP responses), not hand-written mocks. A
+test that mocks the thing it's testing proves nothing; if a test needs many
+mocks, test one level up instead.
+
 ## Commands
 
 Run inside `nix develop`:
