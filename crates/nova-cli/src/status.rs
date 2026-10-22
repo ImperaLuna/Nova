@@ -1,7 +1,8 @@
 //! `nova status` and `nova version`.
 
 use crate::client::Client;
-use nova_protocol::{FeatureStatus, PROTOCOL_VERSION, Status, UiState};
+use crate::lifecycle::RESTART_COMMAND;
+use nova_protocol::{FeatureStatus, Status, UiState};
 use std::path::Path;
 
 const KIB_PER_MB: u64 = 1024;
@@ -18,19 +19,17 @@ pub fn show(socket: &Path, json: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Prints nova's version. A running novad from another version is pointed
+/// out, since it keeps running the old code until it's restarted.
 pub fn version(socket: &Path) {
-    println!("{:<11}{}", "nova", env!("CARGO_PKG_VERSION"));
-    println!("{:<11}{PROTOCOL_VERSION}", "protocol");
-    let status = Client::connect(socket).ok().and_then(|mut client| {
+    let version = env!("CARGO_PKG_VERSION");
+    println!("nova {version}");
+    let running = Client::connect(socket).ok().and_then(|mut client| {
         let value = client.request(nova_protocol::Command::Status).ok()?;
         serde_json::from_value::<Status>(value).ok()
     });
-    match status {
-        Some(status) => {
-            println!("{:<11}{}", "novad", status.daemon);
-            println!("{:<11}{}", "quickshell", status.quickshell.as_deref().unwrap_or("unknown"));
-        }
-        None => println!("{:<11}not running (start Nova to see its and Quickshell's versions)", "novad"),
+    if let Some(status) = running.filter(|status| status.daemon != version) {
+        println!("The running novad is {}. Run `{RESTART_COMMAND}` to switch to {version}.", status.daemon);
     }
 }
 
@@ -58,9 +57,6 @@ fn describe(status: &Status) -> String {
     out += &row("UI", &line);
     if let Some(crash) = &ui.last_crash {
         out += &row("", &format!("last crash {}: see `nova logs --crash`", ago(&crash.time)));
-    }
-    if let Some(version) = &status.quickshell {
-        out += &row("Quickshell", version);
     }
 
     let features: Vec<String> = status

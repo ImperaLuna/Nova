@@ -41,7 +41,7 @@ enum NovaCommand {
     },
     /// Show novad's and the UI's logs, then follow new lines.
     Logs(logs::LogsArgs),
-    /// Print the versions of nova, novad, the protocol and Quickshell.
+    /// Print the version of nova.
     Version,
     /// [planned] Install packages for your distro and GPU, the default config and the novad service.
     Setup,

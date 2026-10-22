@@ -69,16 +69,16 @@ fn status_json_is_novads_answer() {
 fn nova_shows_status_when_already_running() {
     let novad = Novad::start("already-running");
     let text = stdout(&novad.run(&[]));
+    assert!(text.starts_with("Nova is already running. To restart it, run `nova restart`."), "{text}");
     assert!(text.contains("novad      running"), "{text}");
     assert!(text.contains("features   core on"), "{text}");
 }
 
 #[test]
-fn version_includes_the_running_novad() {
+fn version_is_one_line_when_novad_matches() {
     let novad = Novad::start("version");
     let text = stdout(&novad.run(&["version"]));
-    assert!(text.contains(&format!("novad      {}", env!("CARGO_PKG_VERSION"))), "{text}");
-    assert!(text.contains("protocol   2"), "{text}");
+    assert_eq!(text, format!("nova {}\n", env!("CARGO_PKG_VERSION")));
 }
 
 #[test]

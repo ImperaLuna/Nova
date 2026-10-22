@@ -12,10 +12,13 @@ use std::time::{Duration, Instant};
 /// How long to wait for novad to come up or go away.
 const WAIT_LIMIT: Duration = Duration::from_secs(10);
 const WAIT_STEP: Duration = Duration::from_millis(100);
+/// What to run to restart Nova, for hints.
+pub const RESTART_COMMAND: &str = "nova restart";
 
 /// `nova`: starts Nova, or shows its status when it already runs.
 pub fn start(socket: &Path) -> Result<(), String> {
     if Client::connect(socket).is_ok() {
+        println!("Nova is already running. To restart it, run `{RESTART_COMMAND}`.\n");
         return status::show(socket, false);
     }
     if systemd::unit_installed() {
