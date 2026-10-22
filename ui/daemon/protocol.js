@@ -1,8 +1,12 @@
 .pragma library
 
-// Mirror of crates/nova-protocol. One JSON object per line, {"v":1,...}.
+// Mirror of crates/nova-protocol. One JSON object per line, {"v":2,...}.
 
-var VERSION = 1;
+var VERSION = 2;
+
+// Event topics a client subscribes to (Topic in nova-protocol).
+var TOPIC_FEATURES = "features";
+var TOPIC_LOGS = "logs";
 
 // Returns {kind: "event"|"response", ...} or null for lines to ignore.
 function parse(line) {

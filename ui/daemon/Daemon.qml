@@ -65,7 +65,12 @@ Singleton {
         }
 
         onConnectionStateChanged: {
-            if (!connected) {
+            if (connected) {
+                // Only hello arrives unasked; everything else is subscribed to.
+                root.call("subscribe", {
+                    topics: [Protocol.TOPIC_FEATURES]
+                });
+            } else {
                 root._pending = {};
                 retry.start();
             }

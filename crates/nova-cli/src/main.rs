@@ -1,35 +1,86 @@
-//! `nova`: the command-line side of Nova.
-//!
-//! Today: `features` (inspect manifests and the packages they need) and
-//! `ping` (talk to a running novad). `setup`, `doctor` and `ipc` come next.
+//! `nova`: the command-line side of Nova. It starts, stops and inspects
+//! Nova by talking to novad; the logic lives in novad.
 
-use nova_features::{DISTROS, Gpu, Manifest};
-use nova_protocol::{Command, Envelope, Request, encode};
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
+mod client;
+mod lifecycle;
+mod logs;
+mod status;
+mod systemd;
+
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage:
-  nova features list
-  nova features packages --distro <nix|arch|fedora|debian> [--gpu <nvidia|amd|intel>] [--enable <id>...]
-  nova ping [--socket PATH]
+#[derive(Parser)]
+#[command(
+    name = "nova",
+    version,
+    about = "Nova, a desktop shell for Wayland",
+    long_about = "Nova, a desktop shell for Wayland.\n\nRun `nova` with no command to start Nova, or to see its status when it's already running.",
+    after_help = "Commands marked [planned] are listed so you know they're coming; they don't work yet."
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<NovaCommand>,
+    /// novad's socket, if it isn't the default.
+    #[arg(long, global = true, hide = true, default_value_os_t = nova_paths::socket())]
+    socket: PathBuf,
+}
 
-environment:
-  NOVA_FEATURES_DIR   where feature manifests live (default: the installed set, else ./features)";
+#[derive(Subcommand)]
+enum NovaCommand {
+    /// Restart novad and the UI.
+    Restart,
+    /// Stop the UI and novad.
+    Quit,
+    /// Show what's running, its memory use and each feature's state.
+    Status {
+        /// Print novad's answer as JSON, for scripts.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show novad's and the UI's logs, then follow new lines.
+    Logs(logs::LogsArgs),
+    /// Print the versions of nova, novad, the protocol and Quickshell.
+    Version,
+    /// [planned] Install packages for your distro and GPU, the default config and the novad service.
+    Setup,
+    /// [planned] Check the compositor, Quickshell, novad, packages and config, and report what's wrong.
+    Doctor,
+    /// [planned] Print the config folder, or open it in your editor.
+    Config,
+    /// [planned] Print shell completions for bash, zsh or fish.
+    Completions,
+    /// [planned] Open or close a panel, such as the launcher. Meant for keybinds.
+    Toggle,
+    /// [planned] Send a raw request to novad and print the reply, for scripts.
+    Ipc,
+}
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let result = match args.as_slice() {
-        ["features", "list"] => features_list(),
-        ["features", "packages", rest @ ..] => features_packages(rest),
-        ["ping", rest @ ..] => ping(rest),
-        ["-h" | "--help" | "help"] => {
-            println!("{USAGE}");
+    let matches = Cli::command().get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+    let result = match &cli.command {
+        None => lifecycle::start(&cli.socket),
+        Some(NovaCommand::Restart) => lifecycle::restart(&cli.socket),
+        Some(NovaCommand::Quit) => lifecycle::quit(&cli.socket),
+        Some(NovaCommand::Status { json }) => status::show(&cli.socket, *json),
+        Some(NovaCommand::Logs(args)) => logs::run(args, &cli.socket),
+        Some(NovaCommand::Version) => {
+            status::version(&cli.socket);
             Ok(())
         }
-        _ => Err(format!("unknown command\n\n{USAGE}")),
+        Some(
+            NovaCommand::Setup
+            | NovaCommand::Doctor
+            | NovaCommand::Config
+            | NovaCommand::Completions
+            | NovaCommand::Toggle
+            | NovaCommand::Ipc,
+        ) => Err(format!(
+            "`nova {}` isn't built yet; it's planned for a later version.",
+            matches.subcommand_name().unwrap_or_default()
+        )),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -38,87 +89,4 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-fn manifests() -> Result<Vec<Manifest>, String> {
-    nova_features::load_all(&nova_features::default_dir()).map_err(|e| e.to_string())
-}
-
-fn features_list() -> Result<(), String> {
-    for m in manifests()? {
-        let flag = if m.required {
-            "required"
-        } else if m.default {
-            "on"
-        } else {
-            "off"
-        };
-        println!("{:<16} {:<9} {}", m.id, flag, m.description);
-    }
-    Ok(())
-}
-
-/// Prints the packages to install, one per line, for the features that would
-/// be on. This is the core of `nova setup --dry-run`.
-fn features_packages(args: &[&str]) -> Result<(), String> {
-    let mut distro = None;
-    let mut gpu = None;
-    let mut enabled = Vec::new();
-    let mut it = args.iter();
-    while let Some(arg) = it.next() {
-        let mut value = || it.next().copied().ok_or(format!("{arg} needs a value"));
-        match *arg {
-            "--distro" => distro = Some(value()?),
-            "--gpu" => gpu = Some(parse_gpu(value()?)?),
-            "--enable" => enabled.push(value()?.to_owned()),
-            other => return Err(format!("unknown argument {other}")),
-        }
-    }
-    let distro = distro.ok_or("--distro is required")?;
-    if !DISTROS.contains(&distro) {
-        return Err(format!("unknown distro {distro} (known: {})", DISTROS.join(", ")));
-    }
-    let manifests = manifests()?;
-    if let Some(bad) = enabled.iter().find(|id| !manifests.iter().any(|m| &m.id == *id)) {
-        return Err(format!("no feature called {bad}"));
-    }
-    let selection = nova_features::Selection { enabled, disabled: vec![] };
-    let mut packages: Vec<&String> =
-        manifests.iter().filter(|m| selection.is_on(m)).flat_map(|m| m.packages(distro, gpu)).collect();
-    packages.sort();
-    packages.dedup();
-    for p in packages {
-        println!("{p}");
-    }
-    Ok(())
-}
-
-fn parse_gpu(value: &str) -> Result<Gpu, String> {
-    match value {
-        "nvidia" => Ok(Gpu::Nvidia),
-        "amd" => Ok(Gpu::Amd),
-        "intel" => Ok(Gpu::Intel),
-        other => Err(format!("unknown gpu {other} (known: nvidia, amd, intel)")),
-    }
-}
-
-fn ping(args: &[&str]) -> Result<(), String> {
-    let socket = match args {
-        [] => nova_paths::socket(),
-        ["--socket", path] => PathBuf::from(path),
-        _ => return Err(USAGE.into()),
-    };
-    let stream = UnixStream::connect(&socket).map_err(|e| format!("can't reach novad at {}: {e}", socket.display()))?;
-    let mut writer = stream.try_clone().map_err(|e| e.to_string())?;
-    let request = encode(Request { id: Some(1), command: Command::Ping }).map_err(|e| e.to_string())?;
-    writer.write_all(request.as_bytes()).map_err(|e| e.to_string())?;
-    for line in BufReader::new(stream).lines() {
-        let line = line.map_err(|e| e.to_string())?;
-        let msg: Envelope<serde_json::Value> = serde_json::from_str(&line).map_err(|e| e.to_string())?;
-        if msg.body.get("id").and_then(|id| id.as_u64()) == Some(1) {
-            println!("{}", msg.body.get("result").unwrap_or(&msg.body));
-            return Ok(());
-        }
-    }
-    Err("novad closed the connection without replying".into())
 }

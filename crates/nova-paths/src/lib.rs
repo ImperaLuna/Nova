@@ -4,7 +4,7 @@
 //! `ui/daemon/Daemon.qml` derives the socket path on its own (QML can't call
 //! Rust); keep it in step with [`socket`].
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// `$XDG_RUNTIME_DIR/nova/novad.sock`, or `/tmp/nova-<uid>/novad.sock` without it.
 pub fn socket() -> PathBuf {
@@ -48,3 +48,21 @@ fn current_uid() -> String {
     use std::os::unix::fs::MetadataExt;
     std::fs::metadata("/proc/self").map(|m| m.uid().to_string()).unwrap_or_else(|_| "unknown".to_owned())
 }
+
+/// novad's current log inside a log dir (normally [`state_dir`]).
+pub fn log_file(log_dir: &Path) -> PathBuf {
+    log_dir.join(LOG_FILE_NAME)
+}
+
+/// The log of an earlier novad run: 1 is the run before the current one.
+pub fn previous_log_file(log_dir: &Path, runs_ago: usize) -> PathBuf {
+    log_dir.join(format!("{LOG_FILE_NAME}.{runs_ago}"))
+}
+
+/// Saved log tails from crashes of the UI or novad, one file each, named by
+/// time so that sorting by name sorts by age.
+pub fn crash_dir(log_dir: &Path) -> PathBuf {
+    log_dir.join("crashes")
+}
+
+const LOG_FILE_NAME: &str = "nova.log";

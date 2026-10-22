@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Headless end-to-end run: starts sway with no real outputs, novad and the
-# Quickshell UI, then checks that
+# Headless end-to-end run: starts sway with no real outputs and novad, which
+# runs the Quickshell UI, then checks that
+#   - novad reports the UI as running,
 #   - the UI starts without QML errors,
 #   - the UI connects to novad,
 #   - memory (Pss) is within the budget: NOVA_PSS_BUDGET_MB per monitor
@@ -10,12 +11,14 @@
 # The budget is a target, not a hard limit: going over prints a warning
 # (a GitHub annotation in CI). Set NOVA_PSS_STRICT=1 to fail instead.
 #
-# Needs: sway, grim, quickshell (qs), and a built novad (cargo build).
+# Needs: sway, grim, jq, quickshell (qs), and built novad and nova binaries
+# (cargo build). Logs land in e2e/out; the UI's lines are in e2e/out/ui.log.
 # Usage: e2e/run.sh [path/to/novad]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 novad=${1:-target/debug/novad}
+nova=$(dirname "$novad")/nova
 monitors=${NOVA_E2E_MONITORS:-2}
 budget=$((${NOVA_PSS_BUDGET_MB:-250} * monitors))
 settle=${NOVA_E2E_SETTLE:-3}
@@ -44,7 +47,7 @@ trap cleanup EXIT
 
 fail() {
   echo "e2e: FAIL: $*" >&2
-  for log in "$out"/*.log; do echo "--- $log"; tail -n 30 "$log"; done >&2
+  for log in "$out"/*.log "$out"/state/nova.log; do [[ -f $log ]] && { echo "--- $log"; tail -n 30 "$log"; }; done >&2
   exit 1
 }
 
@@ -64,15 +67,17 @@ wait_for 10 "sway" bash -c 'ls "$XDG_RUNTIME_DIR"/wayland-* >/dev/null 2>&1'
 WAYLAND_DISPLAY=$(basename "$(ls "$XDG_RUNTIME_DIR"/wayland-* | grep -v lock | head -n1)")
 export WAYLAND_DISPLAY
 
-"$novad" >"$out/novad.log" 2>&1 &
+"$novad" --ui ui --log-dir "$out/state" >"$out/novad.log" 2>&1 &
 pids+=($!)
 wait_for 10 "novad socket" test -S "$XDG_RUNTIME_DIR/nova/novad.sock"
-
-qs -p ui >"$out/ui.log" 2>&1 &
-ui=$!
-pids+=($ui)
 sleep "$settle"
-kill -0 "$ui" 2>/dev/null || fail "the UI exited"
+
+"$nova" status --json >"$out/status.json" || fail "nova status failed"
+# The UI's lines, as novad logged them, for the checks below.
+grep ' ui: ' "$out/state/nova.log" >"$out/ui.log" || true
+[[ $(jq -r .ui.state "$out/status.json") == running ]] || fail "novad doesn't report the UI as running"
+[[ $(jq -r .ui.restarts "$out/status.json") == 0 ]] || fail "the UI crashed and was restarted"
+ui=$(jq -r .ui.pid "$out/status.json")
 
 if grep -E 'ERROR|TypeError|ReferenceError|is not a type|is not installed|Failed to load' "$out/ui.log"; then
   fail "QML errors in the UI log"

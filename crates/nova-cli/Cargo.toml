@@ -14,6 +14,11 @@ nova-protocol.workspace = true
 nova-features.workspace = true
 nova-paths.workspace = true
 serde_json.workspace = true
+clap.workspace = true
+jiff.workspace = true
+
+[dev-dependencies]
+novad.workspace = true
 
 [lints]
 workspace = true

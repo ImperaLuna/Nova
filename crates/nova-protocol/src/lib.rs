@@ -1,28 +1,59 @@
-//! Wire format between `novad` and the UI.
+//! Wire format between `novad` and its clients (the UI and the `nova` CLI).
 //!
 //! Every message is one JSON object per line on a Unix socket. The daemon
-//! pushes [`Event`]s, the UI sends [`Request`]s, and the daemon answers each
-//! request that carries an `id` with a [`Response`].
+//! pushes [`Event`]s, clients send [`Request`]s, and the daemon answers each
+//! request that carries an `id` with a [`Response`]. `hello` is sent on every
+//! connection; other events only for the [`Topic`]s a client subscribed to.
 //!
 //! ```text
-//! novad -> ui   {"v":1,"event":"hello","data":{"daemon":"0.1.0"}}
-//! ui -> novad   {"v":1,"id":7,"cmd":"ping"}
-//! novad -> ui   {"v":1,"id":7,"result":"pong"}
+//! novad -> ui   {"v":2,"event":"hello","data":{"daemon":"0.1.0"}}
+//! ui -> novad   {"v":2,"id":1,"cmd":"subscribe","args":{"topics":["features"]}}
+//! novad -> ui   {"v":2,"id":1,"result":null}
+//! novad -> ui   {"v":2,"event":"features","data":{"features":[...]}}
 //! ```
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::str::FromStr;
 
 /// Bumped on any incompatible change to the messages below.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Pushed by the daemon whenever its state changes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum Event {
-    /// First message on every connection.
+    /// First message on every connection, whatever the subscriptions.
     Hello { daemon: String },
-    /// Which features are usable right now.
+    /// Which features are usable right now. Topic [`Topic::Features`].
     Features { features: Vec<FeatureState> },
+    /// Log entries from novad and the UI. Topic [`Topic::Logs`]. The first
+    /// event after subscribing has `backlog: true` and holds recent entries.
+    Logs {
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        backlog: bool,
+        entries: Vec<LogEntry>,
+    },
+}
+
+/// Groups of events a client can subscribe to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Topic {
+    Features,
+    Logs,
+}
+
+impl Event {
+    /// The topic a client must subscribe to for this event, `None` for events
+    /// every client gets.
+    pub fn topic(&self) -> Option<Topic> {
+        match self {
+            Event::Hello { .. } => None,
+            Event::Features { .. } => Some(Topic::Features),
+            Event::Logs { .. } => Some(Topic::Logs),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -51,6 +82,131 @@ pub enum FeatureStatus {
 pub enum Command {
     Ping,
     ListFeatures,
+    /// Adds topics to this connection. Topics with state (features) get their
+    /// current event right away; logs get a backlog.
+    Subscribe {
+        topics: Vec<Topic>,
+    },
+    /// Replies with a [`Status`].
+    Status,
+    /// Stops the UI and exits novad.
+    Quit,
+}
+
+/// What `status` returns.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Status {
+    pub daemon: String,
+    pub pid: u32,
+    pub uptime_secs: u64,
+    /// Proportional memory use in KiB, when readable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pss_kib: Option<u64>,
+    /// `qs --version` of the Quickshell novad runs, when it answered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quickshell: Option<String>,
+    pub ui: UiStatus,
+    pub features: Vec<FeatureState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UiStatus {
+    pub state: UiState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pss_kib: Option<u64>,
+    /// Times the UI was restarted after exiting on its own.
+    pub restarts: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_crash: Option<Crash>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiState {
+    Running,
+    /// Exited; novad starts it again after a short wait.
+    Restarting,
+    /// novad was started with `--no-ui`.
+    Disabled,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Crash {
+    /// RFC 3339, UTC.
+    pub time: String,
+    /// The saved log lines leading up to it.
+    pub log: String,
+}
+
+/// One log line. On disk it's [`LogEntry::to_line`]; on the wire it's JSON.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LogEntry {
+    /// RFC 3339, UTC, millisecond precision.
+    pub time: String,
+    pub level: LogLevel,
+    /// `ui` for the UI's output, else the novad module that wrote it.
+    pub source: String,
+    pub message: String,
+}
+
+/// Source tag of lines the UI printed.
+pub const UI_LOG_SOURCE: &str = "ui";
+
+impl LogEntry {
+    /// `2026-10-22T13:45:09.123Z  WARN ui: message`, no newline.
+    pub fn to_line(&self) -> String {
+        format!("{} {:>5} {}: {}", self.time, self.level, self.source, self.message)
+    }
+
+    /// The inverse of [`LogEntry::to_line`]. `None` for lines in another format.
+    pub fn parse_line(line: &str) -> Option<Self> {
+        let (time, rest) = line.split_once(' ')?;
+        let rest = rest.trim_start();
+        let (level, rest) = rest.split_once(' ')?;
+        let (source, message) = rest.split_once(": ")?;
+        Some(Self { time: time.into(), level: level.parse().ok()?, source: source.into(), message: message.into() })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl LogLevel {
+    pub const ALL: [LogLevel; 4] = [LogLevel::Debug, LogLevel::Info, LogLevel::Warn, LogLevel::Error];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            LogLevel::Debug => "DEBUG",
+            LogLevel::Info => "INFO",
+            LogLevel::Warn => "WARN",
+            LogLevel::Error => "ERROR",
+        }
+    }
+}
+
+impl fmt::Display for LogLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(self.name())
+    }
+}
+
+impl FromStr for LogLevel {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|level| level.name().eq_ignore_ascii_case(text))
+            .ok_or_else(|| format!("unknown log level {text:?} (known: debug, info, warn, error)"))
+    }
 }
 
 /// A message with the protocol version, flattened around its body.
@@ -121,30 +277,100 @@ mod tests {
             }),
             encode(Request { id: Some(7), command: Command::Ping }),
             encode(Request { id: None, command: Command::ListFeatures }),
+            encode(Request { id: Some(9), command: Command::Subscribe { topics: vec![Topic::Features, Topic::Logs] } }),
+            encode(Request { id: Some(10), command: Command::Status }),
+            encode(Request { id: Some(11), command: Command::Quit }),
+            encode(Event::Logs { backlog: true, entries: vec![log_entry()] }),
+            encode(Event::Logs { backlog: false, entries: vec![log_entry()] }),
+            encode(Response { id: 10, outcome: Outcome::Result(serde_json::to_value(status()).unwrap()) }),
             encode(Response { id: 7, outcome: Outcome::Result(json!("pong")) }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
-        assert!(all.lines().all(|l| l.starts_with(r#"{"v":1,"#)));
+        assert!(all.lines().all(|l| l.starts_with(r#"{"v":2,"#)));
         insta::assert_snapshot!(all);
+    }
+
+    fn log_entry() -> LogEntry {
+        LogEntry {
+            time: "2026-10-22T13:45:09.123Z".into(),
+            level: LogLevel::Warn,
+            source: UI_LOG_SOURCE.into(),
+            message: "Binding loop detected: x: y".into(),
+        }
+    }
+
+    fn status() -> Status {
+        Status {
+            daemon: "0.1.0".into(),
+            pid: 100,
+            uptime_secs: 42,
+            pss_kib: Some(4096),
+            quickshell: Some("0.3.2".into()),
+            ui: UiStatus {
+                state: UiState::Running,
+                pid: Some(101),
+                pss_kib: Some(180_000),
+                restarts: 1,
+                last_crash: Some(Crash {
+                    time: "2026-10-22T13:40:00.000Z".into(),
+                    log: "/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log".into(),
+                }),
+            },
+            features: vec![FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] }],
+        }
+    }
+
+    #[test]
+    fn subscribe_parses_with_topics() {
+        let req: Envelope<Request> =
+            serde_json::from_str(r#"{"v":2,"id":1,"cmd":"subscribe","args":{"topics":["features","logs"]}}"#).unwrap();
+        assert_eq!(req.body.command, Command::Subscribe { topics: vec![Topic::Features, Topic::Logs] });
+        assert!(
+            serde_json::from_str::<Envelope<Request>>(r#"{"v":2,"cmd":"subscribe","args":{"topics":["x"]}}"#).is_err()
+        );
+    }
+
+    #[test]
+    fn log_lines_round_trip() {
+        let entry = log_entry();
+        let line = entry.to_line();
+        assert_eq!(line, "2026-10-22T13:45:09.123Z  WARN ui: Binding loop detected: x: y");
+        assert_eq!(LogEntry::parse_line(&line), Some(entry));
+        assert_eq!(LogEntry::parse_line("not a log line"), None);
+    }
+
+    #[test]
+    fn log_levels_parse_any_case_and_order_by_severity() {
+        assert_eq!("WARN".parse::<LogLevel>(), Ok(LogLevel::Warn));
+        assert_eq!("error".parse::<LogLevel>(), Ok(LogLevel::Error));
+        assert!("loud".parse::<LogLevel>().is_err());
+        assert!(LogLevel::Debug < LogLevel::Info && LogLevel::Warn < LogLevel::Error);
+    }
+
+    #[test]
+    fn only_hello_has_no_topic() {
+        assert_eq!(Event::Hello { daemon: "x".into() }.topic(), None);
+        assert_eq!(Event::Features { features: vec![] }.topic(), Some(Topic::Features));
+        assert_eq!(Event::Logs { backlog: false, entries: vec![] }.topic(), Some(Topic::Logs));
     }
 
     #[test]
     fn request_without_args_parses() {
-        let req: Envelope<Request> = serde_json::from_str(r#"{"v":1,"id":7,"cmd":"ping"}"#).unwrap();
+        let req: Envelope<Request> = serde_json::from_str(r#"{"v":2,"id":7,"cmd":"ping"}"#).unwrap();
         assert_eq!(req.body, Request { id: Some(7), command: Command::Ping });
     }
 
     #[test]
     fn request_without_id_parses() {
-        let req: Envelope<Request> = serde_json::from_str(r#"{"v":1,"cmd":"list_features"}"#).unwrap();
+        let req: Envelope<Request> = serde_json::from_str(r#"{"v":2,"cmd":"list_features"}"#).unwrap();
         assert_eq!(req.body.id, None);
         assert_eq!(req.body.command, Command::ListFeatures);
     }
 
     #[test]
     fn unknown_command_is_rejected() {
-        assert!(serde_json::from_str::<Envelope<Request>>(r#"{"v":1,"cmd":"reboot"}"#).is_err());
+        assert!(serde_json::from_str::<Envelope<Request>>(r#"{"v":2,"cmd":"reboot"}"#).is_err());
     }
 
     #[test]

@@ -23,6 +23,7 @@
             ./rustfmt.toml
             ./crates
             ./features
+            ./packaging
           ];
         };
 
@@ -45,6 +46,10 @@
             mkdir -p $out/share/nova
             cp -r features $out/share/nova/features
             cp -r ${./ui} $out/share/nova/ui
+            install -Dm644 packaging/systemd/novad.service.in $out/lib/systemd/user/novad.service
+            substituteInPlace $out/lib/systemd/user/novad.service \
+              --replace-fail @novad@ $out/bin/novad \
+              --replace-fail @quickshell@ ${pkgs.lib.getExe' pkgs.quickshell "qs"}
           '';
           meta = {
             description = "Nova desktop shell";
