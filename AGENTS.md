@@ -175,7 +175,9 @@ off (GitHub drops jobs queued over 24 hours; re-run them).
 
 Tickets live in Linear (team IMP). PR titles are `[<ticket>] <type>:
 <description>`, where the type is the ticket's Linear label (Feature, Bug,
-Improvement), like `[IMP-8] Feature: nova CLI`.
+Improvement), like `[IMP-8] Feature: nova CLI`. The body's first line is
+`Part of IMP-<n>` while the ticket has more PRs to come, or `Closes IMP-<n>`
+on the PR that finishes it, so Linear moves the ticket to Done only then.
 
 Open PRs as drafts and mark them ready for review only when the work is done.
 Codex reviews a PR automatically once, when it becomes ready, so pushes to a
