@@ -12,7 +12,8 @@
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      # Rust sources only, so UI edits don't rebuild the daemon.
+      # Rust sources only, so UI edits don't rebuild the daemon. Tokens.qml is
+      # the exception: a novad test checks it declares every theme token.
       rustSrc =
         lib:
         lib.fileset.toSource {
@@ -24,6 +25,8 @@
             ./crates
             ./features
             ./packaging
+            ./themes
+            ./ui/theme/Tokens.qml
           ];
         };
 
@@ -48,6 +51,7 @@
           postInstall = ''
             mkdir -p $out/share/nova
             cp -r features $out/share/nova/features
+            cp -r themes $out/share/nova/themes
             cp -r ${./ui} $out/share/nova/ui
             install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
             substituteInPlace $out/lib/systemd/user/nova.service \

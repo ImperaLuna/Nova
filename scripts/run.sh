@@ -12,6 +12,9 @@
 #   An entry like "nova:daemon" also needs argv[1] to match, so a Nova
 #   daemon started without systemd is replaced but `nova logs` isn't.
 #
+# Only one `just run` at a time, across every checkout and worktree: a second
+# one exits at once instead of swapping out the first one's Nova.
+#
 # NOVA_RUN_REPLACE="waybar" picks which programs count as bars; empty
 # replaces nothing.
 #
@@ -88,7 +91,7 @@ relaunch() { # <snapshot dir>
   # Started outside this terminal's scope, so it outlives the terminal;
   # setsid when there's no systemd user manager to ask.
   systemd-run --user --quiet --collect --working-directory="$cwd" "${launch[@]}" >/dev/null 2>&1 ||
-    (cd "$cwd" && setsid -f "${launch[@]}" >/dev/null 2>&1 </dev/null)
+    (cd "$cwd" && setsid -f "${launch[@]}" >/dev/null 2>&1 </dev/null 9>&-)
 }
 
 restore() {
@@ -106,6 +109,15 @@ restore() {
   fi
   rm -rf "$snapshots"
 }
+# Held until this script exits. The bars and Nova it starts don't inherit it.
+lock=${XDG_RUNTIME_DIR:-/tmp}/nova-run.lock
+exec 9>"$lock"
+if ! flock -n 9; then
+  echo "run: another \`just run\` is using the bar; wait for it to stop" >&2
+  rm -rf "$snapshots"
+  exit 1
+fi
+
 trap restore EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -141,6 +153,6 @@ for pid in "${!matched[@]}"; do kill -KILL "$pid" 2>/dev/null || true; done
 
 echo "run: starting this checkout's Nova (logs below, Ctrl+C to stop)"
 # argv[0] Nova, as the systemd unit and `nova` start it.
-(exec -a Nova "$nova" daemon --ui ui --features-dir features --log-dir "$log_dir") &
+(exec -a Nova "$nova" daemon --ui ui --features-dir features --log-dir "$log_dir" 9>&-) &
 dev_pid=$!
 wait "$dev_pid" || true

@@ -27,7 +27,9 @@ impl TestDaemon {
         let listener = server::bind(&socket).unwrap();
         let ui = ui.map(|settings| Supervisor::start(settings, Arc::clone(&logger)));
         let features = vec![FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] }];
-        let daemon = Arc::new(Daemon { started: Instant::now(), features, hub, logger, ui, socket: socket.clone() });
+        let (theme, _) = theme::resolve(&theme::default_dir(), &dir.join("no-config.toml"));
+        let daemon =
+            Arc::new(Daemon { started: Instant::now(), features, theme, hub, logger, ui, socket: socket.clone() });
         let serving = Arc::clone(&daemon);
         std::thread::spawn(move || server::serve(listener, serving));
         Self { dir, socket, daemon }
@@ -95,6 +97,18 @@ fn subscribing_to_features_sends_their_state() {
     let event = client.next();
     assert_eq!(event["event"], "features");
     assert_eq!(event["data"]["features"][0], json!({"id": "core", "status": "ready"}));
+}
+
+#[test]
+fn subscribing_to_the_theme_sends_its_colors() {
+    let novad = TestDaemon::start("theme", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["theme"]})));
+    let event = client.next();
+    assert_eq!(event["event"], "theme");
+    assert_eq!(event["data"]["id"], theme::DEFAULT_THEME_ID);
+    assert_eq!(event["data"]["mode"], "dark");
+    assert_eq!(event["data"]["colors"]["primary"], "#FD7014");
 }
 
 #[test]

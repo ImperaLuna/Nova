@@ -34,6 +34,9 @@ pub enum Event {
         backlog: bool,
         entries: Vec<LogEntry>,
     },
+    /// The active theme's colors. Topic [`Topic::Theme`], sent right after
+    /// subscribing.
+    Theme(Theme),
 }
 
 /// Groups of events a client can subscribe to.
@@ -42,6 +45,7 @@ pub enum Event {
 pub enum Topic {
     Features,
     Logs,
+    Theme,
 }
 
 impl Event {
@@ -52,6 +56,7 @@ impl Event {
             Event::Hello { .. } => None,
             Event::Features { .. } => Some(Topic::Features),
             Event::Logs { .. } => Some(Topic::Logs),
+            Event::Theme(_) => Some(Topic::Theme),
         }
     }
 }
@@ -74,6 +79,88 @@ pub enum FeatureStatus {
     MissingDeps,
     /// Turned off. The UI doesn't load it.
     Off,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Theme {
+    /// The theme file's name without `.toml`, e.g. `carbonfox`.
+    pub id: String,
+    /// Display name, e.g. `Carbonfox`.
+    pub name: String,
+    pub mode: ThemeMode,
+    pub colors: Palette,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeMode {
+    #[default]
+    Dark,
+    Light,
+}
+
+/// Every color token a theme sets, by the name `ui/theme/Tokens.qml` exposes
+/// it under. Theme files must set all of them and nothing else.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Palette {
+    pub bg: Color,
+    pub bg_alt: Color,
+    pub fg: Color,
+    pub fg_alt: Color,
+    pub fg_dim: Color,
+    pub primary: Color,
+    pub secondary: Color,
+    pub on_accent: Color,
+    pub info: Color,
+    pub success: Color,
+    pub warning: Color,
+    pub error: Color,
+    pub swatch1: Color,
+    pub swatch2: Color,
+    pub swatch3: Color,
+    pub swatch4: Color,
+    pub swatch5: Color,
+    pub swatch6: Color,
+    pub swatch7: Color,
+    pub swatch8: Color,
+}
+
+/// An opaque `#RRGGBB` color. Anything else is refused when parsed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Color([u8; 3]);
+
+impl Color {
+    pub fn rgb(&self) -> [u8; 3] {
+        self.0
+    }
+}
+
+impl FromStr for Color {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let invalid = || format!("{text:?} isn't a #RRGGBB color");
+        let hex = text.strip_prefix('#').filter(|hex| hex.len() == 6 && hex.is_ascii()).ok_or_else(invalid)?;
+        let channel = |at: usize| u8::from_str_radix(&hex[at..at + 2], 16).map_err(|_| invalid());
+        Ok(Self([channel(0)?, channel(2)?, channel(4)?]))
+    }
+}
+
+impl TryFrom<String> for Color {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        text.parse()
+    }
+}
+
+impl From<Color> for String {
+    fn from(color: Color) -> Self {
+        let [red, green, blue] = color.0;
+        format!("#{red:02X}{green:02X}{blue:02X}")
+    }
 }
 
 /// Sent by the UI or the `nova` CLI. Arguments with unknown fields are
@@ -311,7 +398,11 @@ mod tests {
             }),
             encode(Request { id: Some(7), command: Command::Ping }),
             encode(Request { id: None, command: Command::ListFeatures }),
-            encode(Request { id: Some(9), command: Command::Subscribe { topics: vec![Topic::Features, Topic::Logs] } }),
+            encode(Request {
+                id: Some(9),
+                command: Command::Subscribe { topics: vec![Topic::Features, Topic::Logs, Topic::Theme] },
+            }),
+            encode(Event::Theme(theme())),
             encode(Request { id: Some(10), command: Command::Status }),
             encode(Request { id: Some(11), command: Command::Quit }),
             encode(Event::Logs { backlog: true, entries: vec![log_entry()] }),
@@ -331,6 +422,27 @@ mod tests {
             level: LogLevel::Warn,
             source: UI_LOG_SOURCE.into(),
             message: "Binding loop detected: x: y".into(),
+        }
+    }
+
+    fn theme() -> Theme {
+        let colors: Palette = serde_json::from_value(json!({
+            "bg": "#1D1D1D", "bgAlt": "#393E46", "fg": "#F5E7C6", "fgAlt": "#525252", "fgDim": "#9A9A9A",
+            "primary": "#FD7014", "secondary": "#BE95FF", "onAccent": "#1D1D1D",
+            "info": "#00ADB5", "success": "#25BE6A", "warning": "#FAEB92", "error": "#EE5396",
+            "swatch1": "#5988DB", "swatch2": "#E8650E", "swatch3": "#07A7A5", "swatch4": "#9067CC",
+            "swatch5": "#029A43", "swatch6": "#049BE7", "swatch7": "#DD6098", "swatch8": "#9C7C02",
+        }))
+        .unwrap();
+        Theme { id: "carbonfox".into(), name: "Carbonfox".into(), mode: ThemeMode::Dark, colors }
+    }
+
+    #[test]
+    fn colors_are_six_digit_hex() {
+        assert_eq!("#fd7014".parse::<Color>().unwrap().rgb(), [0xFD, 0x70, 0x14]);
+        assert_eq!(String::from("#fd7014".parse::<Color>().unwrap()), "#FD7014");
+        for bad in ["fd7014", "#fd701", "#fd70144", "#fd70zz", "#ffffffff", "#ééé"] {
+            assert!(bad.parse::<Color>().is_err(), "{bad} parsed");
         }
     }
 
@@ -385,6 +497,7 @@ mod tests {
         assert_eq!(Event::Hello { daemon: "x".into() }.topic(), None);
         assert_eq!(Event::Features { features: vec![] }.topic(), Some(Topic::Features));
         assert_eq!(Event::Logs { backlog: false, entries: vec![] }.topic(), Some(Topic::Logs));
+        assert_eq!(Event::Theme(theme()).topic(), Some(Topic::Theme));
     }
 
     #[test]
