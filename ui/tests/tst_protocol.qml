@@ -31,9 +31,19 @@ TestCase {
 
     function test_only_ready_features_load() {
         const ready = Protocol.readyFeatures([
-            { id: "core", status: "ready" },
-            { id: "recording", status: "missing_deps", missing: ["wf-recorder"] },
-            { id: "weather", status: "off" }
+            {
+                id: "core",
+                status: "ready"
+            },
+            {
+                id: "recording",
+                status: "missing_deps",
+                missing: ["wf-recorder"]
+            },
+            {
+                id: "weather",
+                status: "off"
+            }
         ]);
         compare(ready, ["core"]);
     }

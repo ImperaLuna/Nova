@@ -116,12 +116,31 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// Every message shape on the wire. A change here changes the protocol:
+    /// update `ui/daemon/protocol.js` too, then accept with `cargo insta review`.
     #[test]
-    fn hello_matches_the_documented_shape() {
-        let line = encode(Event::Hello { daemon: "0.1.0".into() }).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&line).unwrap();
-        assert_eq!(value, json!({"v": 1, "event": "hello", "data": {"daemon": "0.1.0"}}));
-        assert!(line.ends_with('\n'));
+    fn wire_format() {
+        let lines = [
+            encode(Event::Hello { daemon: "0.1.0".into() }),
+            encode(Event::Features {
+                features: vec![
+                    FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] },
+                    FeatureState {
+                        id: "recording".into(),
+                        status: FeatureStatus::MissingDeps,
+                        missing: vec!["gpu-screen-recorder|wf-recorder".into()],
+                    },
+                    FeatureState { id: "weather".into(), status: FeatureStatus::Off, missing: vec![] },
+                ],
+            }),
+            encode(Request { id: Some(7), command: Command::Ping }),
+            encode(Request { id: None, command: Command::ListFeatures }),
+            encode(Response { id: 7, outcome: Outcome::Result(json!("pong")) }),
+            encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
+        ];
+        let all: String = lines.into_iter().map(Result::unwrap).collect();
+        assert!(all.lines().all(|l| l.starts_with(r#"{"v":1,"#)));
+        insta::assert_snapshot!(all);
     }
 
     #[test]
@@ -149,14 +168,5 @@ mod tests {
             let back: Envelope<Response> = serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();
             assert_eq!(back, msg);
         }
-    }
-
-    #[test]
-    fn features_event_omits_empty_missing() {
-        let line = encode(Event::Features {
-            features: vec![FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] }],
-        })
-        .unwrap();
-        assert!(line.contains(r#"{"id":"core","status":"ready"}"#), "{line}");
     }
 }

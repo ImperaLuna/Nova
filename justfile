@@ -4,7 +4,7 @@ default:
     @just --list
 
 # Everything CI runs, except e2e
-check: fmt-check lint test lint-qml test-qml
+check: fmt-check lint lint-nix test lint-qml test-qml
 
 # Rust unit tests
 test:
@@ -14,11 +14,25 @@ test:
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
 
+# Format Rust, QML and Nix
 fmt:
     cargo fmt --all
+    scripts/qmlformat.sh
+    nixfmt $(git ls-files '*.nix')
 
 fmt-check:
     cargo fmt --all --check
+    scripts/qmlformat.sh --check
+    nixfmt --check $(git ls-files '*.nix')
+
+# statix and deadnix over the Nix files
+lint-nix:
+    statix check .
+    deadnix --fail .
+
+# Review changed insta snapshots (crates/*/src/snapshots)
+snapshots:
+    cargo insta review
 
 # qmllint over ui/ (fails on any warning)
 lint-qml:

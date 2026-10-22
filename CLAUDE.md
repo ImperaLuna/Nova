@@ -48,7 +48,11 @@ feature completeness, then modularity and portability, then performance.
 
 Run inside `nix develop`:
 
-- `just check`: fmt, clippy, Rust tests, qmllint, QML tests (what CI runs).
+- `just check`: formatting (Rust, QML, Nix), clippy, statix/deadnix, Rust
+  tests, qmllint, QML tests (what CI runs).
+- `just fmt`: format everything.
+- `just snapshots`: review changed insta snapshots. The protocol's wire format
+  is a snapshot, so a protocol change shows up here.
 - `just e2e`: the headless end-to-end run; screenshot in `e2e/out/`.
 - `just run`: novad and the UI on your current session.
 - `nix flake check -L`: the same checks as CI, sandboxed.

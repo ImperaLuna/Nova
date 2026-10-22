@@ -33,7 +33,7 @@
     in
     {
       packages = forAllSystems (pkgs: {
-        default = self.packages.${pkgs.system}.nova;
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 
         # novad, the nova CLI, feature manifests and the QML UI.
         nova = pkgs.rustPlatform.buildRustPackage {
@@ -75,7 +75,7 @@
         in
         {
           # `nix build` runs `cargo test` as part of the package.
-          build = self.packages.${pkgs.system}.nova;
+          build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 
           clippy = cargoCheck "nova-clippy" [ pkgs.clippy ] ''
             cargo clippy --workspace --all-targets --offline -- -D warnings
@@ -91,6 +91,30 @@
             scripts/qmllint.sh ${pkgs.lib.escapeShellArgs (qmlImports pkgs)}
             touch $out
           '';
+
+          qmlformat = pkgs.runCommand "nova-qmlformat" { nativeBuildInputs = [ pkgs.qt6.qtdeclarative ]; } ''
+            cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
+            patchShebangs scripts
+            scripts/qmlformat.sh --check
+            touch $out
+          '';
+
+          nix-lint =
+            pkgs.runCommand "nova-nix-lint"
+              {
+                nativeBuildInputs = [
+                  pkgs.nixfmt
+                  pkgs.statix
+                  pkgs.deadnix
+                ];
+              }
+              ''
+                cd ${./.}
+                nixfmt --check $(find . -name '*.nix')
+                statix check .
+                deadnix --fail .
+                touch $out
+              '';
 
           qml-tests =
             pkgs.runCommand "nova-qml-tests"
@@ -119,6 +143,10 @@
             pkgs.qt6.qtdeclarative # qmllint, qmlls, qmlformat, qmltestrunner
             pkgs.sway # headless compositor for e2e
             pkgs.grim
+            pkgs.cargo-insta # `cargo insta review` for snapshot tests
+            pkgs.nixfmt
+            pkgs.statix
+            pkgs.deadnix
             pkgs.just
             pkgs.jq
             pkgs.git
@@ -129,6 +157,6 @@
         };
       });
 
-      formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
+      formatter = forAllSystems (pkgs: pkgs.nixfmt);
     };
 }
