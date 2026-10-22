@@ -6,6 +6,10 @@ feature completeness, then modularity and portability, then performance.
 
 `README.md` is written by hand by the maintainer. Don't edit it.
 
+This file is the only agent instruction file (Claude Code and Codex both read
+it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
+`AGENTS.md`.
+
 ## Layout
 
 - `crates/nova-protocol`: the JSON-lines wire format between novad and its
