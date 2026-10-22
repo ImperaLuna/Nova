@@ -38,6 +38,11 @@ feature completeness, then modularity and portability, then performance.
 - The UI checks capabilities that novad reports, never which compositor is
   running (no `isNiri`).
 - A feature that is off or missing dependencies is never loaded by the UI.
+- Window model is "stage": one full-screen, masked layer surface per monitor.
+  The bar, panels and popups are items on it so they can morph into each
+  other. Clicks pass through everywhere outside the mask, so keep the mask
+  exactly the size of what's visible. Don't add separate layer windows for UI
+  pieces without a reason (the 2px auto-hide reveal strip is one).
 - Memory budget: 250 MB Pss for the UI. Unload what isn't visible (Loader
   `active`), set `sourceSize` on images, don't create per-screen copies of
   things one screen needs.
