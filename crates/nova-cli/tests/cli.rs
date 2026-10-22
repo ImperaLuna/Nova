@@ -84,7 +84,8 @@ fn version_is_one_line_when_novad_matches() {
 #[test]
 fn logs_print_history_from_the_file() {
     let novad = Novad::start("logs-file");
-    let text = stdout(&novad.run(&["logs", "--no-follow", "--log-dir", &novad.log_dir()]));
+    // No --log-dir: the running novad says where its log is.
+    let text = stdout(&novad.run(&["logs", "--no-follow"]));
     assert!(text.contains("listening on"), "{text}");
     let ui_only = stdout(&novad.run(&["logs", "--no-follow", "--ui", "--log-dir", &novad.log_dir()]));
     assert_eq!(ui_only, "", "novad runs without a UI here");

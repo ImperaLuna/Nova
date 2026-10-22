@@ -9,13 +9,11 @@ const KIB_PER_MB: u64 = 1024;
 
 pub fn show(socket: &Path, json: bool) -> Result<(), String> {
     let mut client = Client::connect(socket).map_err(|_| "Nova isn't running. Start it with `nova`.".to_owned())?;
-    let value = client.request(nova_protocol::Command::Status)?;
     if json {
-        println!("{value}");
-        return Ok(());
+        println!("{}", client.request(nova_protocol::Command::Status)?);
+    } else {
+        print!("{}", describe(&client.status()?));
     }
-    let status: Status = serde_json::from_value(value).map_err(|e| format!("novad sent an odd status: {e}"))?;
-    print!("{}", describe(&status));
     Ok(())
 }
 
@@ -24,12 +22,10 @@ pub fn show(socket: &Path, json: bool) -> Result<(), String> {
 pub fn version(socket: &Path) {
     let version = env!("CARGO_PKG_VERSION");
     println!("nova {version}");
-    let running = Client::connect(socket).ok().and_then(|mut client| {
-        let value = client.request(nova_protocol::Command::Status).ok()?;
-        serde_json::from_value::<Status>(value).ok()
-    });
-    if let Some(status) = running.filter(|status| status.daemon != version) {
-        println!("The running novad is {}. Run `{RESTART_COMMAND}` to switch to {version}.", status.daemon);
+    if let Ok(client) = Client::connect(socket)
+        && client.daemon_version != version
+    {
+        println!("The running novad is {}. Run `{RESTART_COMMAND}` to switch to {version}.", client.daemon_version);
     }
 }
 
@@ -136,6 +132,7 @@ mod tests {
                     missing: vec!["wf-recorder".into()],
                 },
             ],
+            log_dir: "/x".into(),
         };
         let text = describe(&status);
         assert!(text.contains("novad      running, pid 10, up 1m 5s, 10 MB"), "{text}");

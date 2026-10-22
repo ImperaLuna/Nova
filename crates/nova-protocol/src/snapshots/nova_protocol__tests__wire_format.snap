@@ -11,6 +11,6 @@ expression: all
 {"v":2,"id":11,"cmd":"quit"}
 {"v":2,"event":"logs","data":{"backlog":true,"entries":[{"time":"2026-10-22T13:45:09.123Z","level":"warn","source":"ui","message":"Binding loop detected: x: y"}]}}
 {"v":2,"event":"logs","data":{"entries":[{"time":"2026-10-22T13:45:09.123Z","level":"warn","source":"ui","message":"Binding loop detected: x: y"}]}}
-{"v":2,"id":10,"result":{"daemon":"0.1.0","features":[{"id":"core","status":"ready"}],"pid":100,"pss_kib":4096,"quickshell":"0.3.2","ui":{"last_crash":{"log":"/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log","time":"2026-10-22T13:40:00.000Z"},"pid":101,"pss_kib":180000,"restarts":1,"state":"running"},"uptime_secs":42}}
+{"v":2,"id":10,"result":{"daemon":"0.1.0","features":[{"id":"core","status":"ready"}],"log_dir":"/home/me/.local/state/nova","pid":100,"pss_kib":4096,"quickshell":"0.3.2","ui":{"last_crash":{"log":"/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log","time":"2026-10-22T13:40:00.000Z"},"pid":101,"pss_kib":180000,"restarts":1,"state":"running"},"uptime_secs":42}}
 {"v":2,"id":7,"result":"pong"}
 {"v":2,"id":8,"error":"bad request"}

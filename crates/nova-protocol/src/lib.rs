@@ -107,6 +107,8 @@ pub struct Status {
     pub quickshell: Option<String>,
     pub ui: UiStatus,
     pub features: Vec<FeatureState>,
+    /// The folder novad writes its log and crash snapshots to.
+    pub log_dir: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -318,6 +320,7 @@ mod tests {
                 }),
             },
             features: vec![FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] }],
+            log_dir: "/home/me/.local/state/nova".into(),
         }
     }
 

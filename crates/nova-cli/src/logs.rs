@@ -31,31 +31,43 @@ pub struct LogsArgs {
     /// The lines saved at the latest crash.
     #[arg(long)]
     crash: bool,
-    /// Where novad keeps its logs, if it was started with --log-dir.
-    #[arg(long, hide = true, default_value_os_t = nova_paths::state_dir())]
-    log_dir: PathBuf,
+    /// Where novad keeps its logs. By default, where the running novad
+    /// says, else the usual place.
+    #[arg(long, hide = true)]
+    log_dir: Option<PathBuf>,
 }
 
 pub fn run(args: &LogsArgs, socket: &Path) -> Result<(), String> {
     let mut out = Printer { filter: Filter::from(args), color: std::io::stdout().is_terminal() };
+    let log_dir = log_dir(args, socket);
     if args.crash {
-        let crash = latest_crash(&args.log_dir)?;
+        let crash = latest_crash(&log_dir)?;
         eprintln!("{}", crash.display());
         return out.file(&crash, usize::MAX);
     }
     if args.previous {
-        return out.file(&nova_paths::previous_log_file(&args.log_dir, 1), args.lines);
+        return out.file(&nova_paths::previous_log_file(&log_dir, 1), args.lines);
     }
     if !args.no_follow
         && let Ok(client) = Client::connect(socket)
     {
         return out.follow(client, args.lines);
     }
-    out.file(&nova_paths::log_file(&args.log_dir), args.lines)?;
+    out.file(&nova_paths::log_file(&log_dir), args.lines)?;
     if !args.no_follow {
         eprintln!("novad isn't running, so this is the end of its last log. Start Nova with `nova`.");
     }
     Ok(())
+}
+
+/// `--log-dir`, else the running novad's (`just run` uses its own), else
+/// the default.
+fn log_dir(args: &LogsArgs, socket: &Path) -> PathBuf {
+    args.log_dir.clone().unwrap_or_else(|| {
+        Client::connect(socket)
+            .and_then(|mut client| client.status())
+            .map_or_else(|_| nova_paths::state_dir(), |status| PathBuf::from(status.log_dir))
+    })
 }
 
 fn latest_crash(log_dir: &Path) -> Result<PathBuf, String> {

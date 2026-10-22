@@ -75,6 +75,7 @@ impl Daemon {
             quickshell: self.ui.as_ref().and_then(|ui| ui.quickshell_version()),
             ui: self.ui.as_ref().map_or(disabled, |ui| ui.status()),
             features: self.features.clone(),
+            log_dir: self.logger.dir().display().to_string(),
         }
     }
 

@@ -1,6 +1,6 @@
 //! A connection to novad's socket.
 
-use nova_protocol::{Command, Envelope, Event, Request, encode};
+use nova_protocol::{Command, Envelope, Event, Request, Status, encode};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -24,6 +24,11 @@ impl Client {
             _ => return Err("novad didn't say hello; is it a different version?".into()),
         }
         Ok(client)
+    }
+
+    pub fn status(&mut self) -> Result<Status, String> {
+        let value = self.request(Command::Status)?;
+        serde_json::from_value(value).map_err(|e| format!("novad sent an odd status: {e}"))
     }
 
     /// Sends `command` and returns its result. Events that arrive first are dropped.

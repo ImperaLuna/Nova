@@ -55,6 +55,11 @@ impl Logger {
         Ok(Self { min_level, echo, hub, state: Mutex::new(state) })
     }
 
+    /// The folder holding the log files and crash snapshots.
+    pub fn dir(&self) -> PathBuf {
+        lock(&self.state).dir.clone()
+    }
+
     pub fn info(&self, source: &str, message: &str) {
         self.log(LogLevel::Info, source, message);
     }
