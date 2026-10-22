@@ -45,3 +45,44 @@ heat2 = "#FFD2BB"
 heat3 = "#FFB48F"
 heat4 = "#FF9560"
 heat5 = "#FD7014"
+
+# Derived from the dark set for light surfaces (the palette artifact's light
+# draft). Same token roles; the heatmap ramp is shared with dark.
+[light]
+# Backgrounds
+bg = "#F6F2EA"
+bgAlt = "#DDD6C8"
+
+# Foregrounds
+fg = "#26231F"
+fgAlt = "#A39E94"
+fgDim = "#6B665D"
+
+# Accents
+primary = "#C4520A"
+secondary = "#7A4FD0"
+onAccent = "#FFFFFF"
+
+# Status
+info = "#00838A"
+success = "#167A43"
+warning = "#8A6D00"
+error = "#C8215F"
+
+# Chart series, in order of use
+chart1 = "#507ED1"    # blue
+chart2 = "#CC5809"    # orange
+chart3 = "#008D88"    # teal
+chart4 = "#7349AB"    # purple
+chart5 = "#017833"    # green
+chart6 = "#0B84C5"    # cyan
+chart7 = "#A62C69"    # magenta
+chart8 = "#937506"    # yellow
+
+# Heatmap ramp, none to full
+heat0 = "#FFFFFF"
+heat1 = "#FFEFE6"
+heat2 = "#FFD2BB"
+heat3 = "#FFB48F"
+heat4 = "#FF9560"
+heat5 = "#FD7014"
