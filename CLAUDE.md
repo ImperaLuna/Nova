@@ -53,4 +53,6 @@ Run inside `nix develop`:
 - `just run`: novad and the UI on your current session.
 - `nix flake check -L`: the same checks as CI, sandboxed.
 
-Every change goes through a pull request; `main` is protected.
+Every change goes through a pull request; `main` is protected. CI runs on a
+self-hosted runner on the maintainer's desktop, so PR checks wait while it is
+off (GitHub drops jobs queued over 24 hours; re-run them).
