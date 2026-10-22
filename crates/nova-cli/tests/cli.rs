@@ -130,7 +130,7 @@ fn status_without_novad_fails_with_a_hint() {
 }
 
 #[test]
-fn nova_daemon_quits_over_the_socket() {
+fn nova_daemon_is_named_nova_and_quits_over_the_socket() {
     let dir = std::env::temp_dir().join(format!("nova-cli-test-daemon-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let socket = dir.join("novad.sock");
@@ -160,6 +160,8 @@ fn nova_daemon_quits_over_the_socket() {
     let mut writer = stream.try_clone().unwrap();
     let mut lines = BufReader::new(stream).lines();
     lines.next().unwrap().unwrap(); // hello
+    let comm = std::fs::read_to_string(format!("/proc/{}/comm", daemon.id())).unwrap();
+    assert_eq!(comm.trim_end(), novad::PROCESS_NAME, "ps and btop show the daemon by this name");
     writeln!(writer, r#"{{"v":2,"id":1,"cmd":"quit"}}"#).unwrap();
     assert_eq!(lines.next().unwrap().unwrap(), r#"{"v":2,"id":1,"result":null}"#);
 
