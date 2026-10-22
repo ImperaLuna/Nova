@@ -76,9 +76,10 @@ pub enum FeatureStatus {
     Off,
 }
 
-/// Sent by the UI or the `nova` CLI.
+/// Sent by the UI or the `nova` CLI. Arguments with unknown fields are
+/// refused, like unknown fields on the request line itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "cmd", content = "args", rename_all = "snake_case")]
+#[serde(tag = "cmd", content = "args", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Command {
     Ping,
     ListFeatures,
@@ -384,6 +385,13 @@ mod tests {
         assert_eq!(Event::Hello { daemon: "x".into() }.topic(), None);
         assert_eq!(Event::Features { features: vec![] }.topic(), Some(Topic::Features));
         assert_eq!(Event::Logs { backlog: false, entries: vec![] }.topic(), Some(Topic::Logs));
+    }
+
+    #[test]
+    fn unknown_argument_fields_are_rejected() {
+        let error = decode_request(r#"{"v":2,"cmd":"subscribe","args":{"topics":["logs"],"unexpected":true}}"#);
+        assert!(error.unwrap_err().contains("unknown field `unexpected`"));
+        assert!(decode_request(r#"{"v":2,"cmd":"ping","args":{"unexpected":true}}"#).is_err());
     }
 
     #[test]
