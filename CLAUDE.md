@@ -83,13 +83,25 @@ Security and performance are ongoing work, reviewed at every milestone.
 
 ## Tests
 
-Prefer integration tests: run the real pieces together (a real novad on a
-temp socket, real manifest files, the real QML component) rather than
-mocking each dependency. Fake only what can't run in a test: the compositor,
-hardware, the network. Fake those with recorded real data (captured niri or
-Hyprland event streams, saved HTTP responses), not hand-written mocks. A
-test that mocks the thing it's testing proves nothing; if a test needs many
-mocks, test one level up instead.
+Most tests are **component** and **integration** tests. Unit and smoke tests
+are the minority.
+
+- **Component tests (the main focus):** one component through its real public
+  interface, with its real internals. For example, a novad service driven
+  through its socket commands, a feature loaded from real manifest files, or
+  a QML panel loaded with its real child components.
+- **Integration tests (the main focus):** several components working together,
+  such as novad and the UI talking over the real socket, or the CLI against a
+  running novad.
+- **Unit tests:** only for small pure logic that's tricky on its own (parsers,
+  version ranges, contrast math).
+- **Smoke/e2e** (`e2e/run.sh`, later the VM tests): does the whole shell start
+  and behave. They're a final check, not the main suite.
+
+Fake only what can't run in a test: the compositor, hardware, the network.
+Fake those with recorded real data (captured niri or Hyprland event streams,
+saved HTTP responses), not hand-written mocks. If a test needs many mocks,
+test one level up instead.
 
 ## Commands
 
