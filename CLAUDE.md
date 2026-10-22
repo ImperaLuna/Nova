@@ -1,0 +1,56 @@
+# Nova
+
+A desktop shell (bar, launcher, notifications, panels) for Wayland. Niri on
+NixOS first, Hyprland and other distros after. Priorities, in order: looks and
+feature completeness, then modularity and portability, then performance.
+
+`README.md` is written by hand by the maintainer. Don't edit it.
+
+## Layout
+
+- `crates/nova-protocol`: the JSON-lines wire format between novad and the UI.
+  `ui/daemon/protocol.js` mirrors it; change both together and keep the tests
+  on both sides matching.
+- `crates/nova-features`: loads and validates `features/<id>/feature.toml`.
+- `crates/novad`: the daemon. Owns all logic and state (compositor IPC,
+  search, clipboard, feature status). Listens on
+  `$XDG_RUNTIME_DIR/nova/novad.sock`.
+- `crates/nova-cli`: the `nova` binary (`features`, `ping`; `setup`, `doctor`
+  and `ipc` later).
+- `features/`: one folder per optional feature. The manifest is the single
+  source of truth for its packages per distro and GPU. Nix, `nova setup` and
+  novad all read it. A manifest with `daemon = "x"` needs a matching cargo
+  feature `x` in `crates/novad/Cargo.toml` (a test enforces this).
+- `ui/`: the Quickshell (QML) UI. `shell.qml` is the entry point.
+  - `theme/Tokens.qml`: design tokens. Components never hard-code colors,
+    radii, sizes or durations.
+  - `daemon/Daemon.qml`: the only socket to novad. Everything else reads its
+    properties or calls `Daemon.call(cmd, args, callback)`.
+  - `tests/`: QtTest files (`tst_*.qml`), run headless.
+- `e2e/run.sh`: headless sway + novad + UI. Fails on QML errors, on no
+  connection, or when the UI's Pss is over `NOVA_PSS_BUDGET_MB` (250).
+- `scripts/qmllint.sh`: qmllint over `ui/`, failing on any warning.
+
+## Rules
+
+- Logic goes in novad, the UI only renders. If QML needs more than a few lines
+  of JavaScript, it probably belongs in the daemon.
+- The UI checks capabilities that novad reports, never which compositor is
+  running (no `isNiri`).
+- A feature that is off or missing dependencies is never loaded by the UI.
+- Memory budget: 250 MB Pss for the UI. Unload what isn't visible (Loader
+  `active`), set `sourceSize` on images, don't create per-screen copies of
+  things one screen needs.
+- Quickshell is pinned to the nixpkgs version (0.3.2). `just docs` clones its
+  source into `docs/quickshell` for checking APIs; trust it over memory.
+
+## Commands
+
+Run inside `nix develop`:
+
+- `just check`: fmt, clippy, Rust tests, qmllint, QML tests (what CI runs).
+- `just e2e`: the headless end-to-end run; screenshot in `e2e/out/`.
+- `just run`: novad and the UI on your current session.
+- `nix flake check -L`: the same checks as CI, sandboxed.
+
+Every change goes through a pull request; `main` is protected.
