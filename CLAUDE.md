@@ -43,6 +43,10 @@ feature completeness, then modularity and portability, then performance.
   other. Clicks pass through everywhere outside the mask, so keep the mask
   exactly the size of what's visible. Don't add separate layer windows for UI
   pieces without a reason (the 2px auto-hide reveal strip is one).
+- The stage surface never reserves space (`exclusionMode: ExclusionMode.Ignore`),
+  so opening the launcher or a panel never moves app windows. Space for a
+  visible bar is reserved by a separate, empty exclusion-zone surface whose
+  size changes only when the bar itself shows or hides.
 - Memory target: 250 MB Pss per monitor (500 MB on two). It's a goal, not a
   hard limit; e2e warns when it's exceeded. Unload what isn't visible (Loader
   `active`), set `sourceSize` on images, don't create per-screen copies of
