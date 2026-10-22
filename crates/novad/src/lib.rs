@@ -11,11 +11,12 @@ mod logger;
 mod procfs;
 mod server;
 mod supervisor;
+mod theme;
 
 use hub::Hub;
 use logger::Logger;
 use nova_features::Selection;
-use nova_protocol::{FeatureState, LogLevel, Status, UiState, UiStatus};
+use nova_protocol::{FeatureState, LogLevel, Status, Theme, UiState, UiStatus};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -38,6 +39,12 @@ pub struct Args {
     /// The user's feature choices.
     #[arg(long, default_value_os_t = nova_paths::config_dir().join("features.toml"))]
     selection: PathBuf,
+    /// Folder of theme files (`<id>.toml`).
+    #[arg(long, default_value_os_t = theme::default_dir())]
+    themes_dir: PathBuf,
+    /// The user's settings, including the theme.
+    #[arg(long, default_value_os_t = nova_paths::config_dir().join("config.toml"))]
+    config: PathBuf,
     /// The UI's QML folder.
     #[arg(long, default_value_os_t = nova_paths::installed_or_checkout("ui"))]
     ui: PathBuf,
@@ -58,6 +65,7 @@ pub struct Args {
 pub struct Daemon {
     started: Instant,
     features: Vec<FeatureState>,
+    theme: Theme,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     ui: Option<Arc<Supervisor>>,
@@ -130,6 +138,12 @@ fn start(
         logger.info("features", &format!("{} is {:?}", feature.id, feature.status));
     }
 
+    let (theme, problems) = theme::resolve(&args.themes_dir, &args.config);
+    for problem in problems {
+        logger.warn("theme", &problem);
+    }
+    logger.info("theme", &format!("using {} ({:?})", theme.id, theme.mode));
+
     logger.info(LOG_SOURCE, &format!("listening on {}", socket.display()));
 
     let ui = (!args.no_ui).then(|| {
@@ -151,7 +165,7 @@ fn start(
         Supervisor::start(settings, Arc::clone(&logger))
     });
 
-    let daemon = Arc::new(Daemon { started: Instant::now(), features, hub, logger, ui, socket });
+    let daemon = Arc::new(Daemon { started: Instant::now(), features, theme, hub, logger, ui, socket });
     Ok((listener, daemon))
 }
 

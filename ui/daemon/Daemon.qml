@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../theme"
 import "protocol.js" as Protocol
 
 // The UI's one connection to novad. Reconnects on its own, exposes daemon
@@ -13,6 +14,9 @@ Singleton {
     readonly property bool connected: socket.connected
     property string version: ""
     property var features: []
+    // The active theme event's data ({id, name, mode, colors}); null until
+    // the first one arrives. Its colors go to Tokens.
+    property var theme: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
 
     property int _nextId: 1
@@ -45,6 +49,9 @@ Singleton {
             console.info(`nova: connected to novad ${version}`);
         } else if (msg.event === "features") {
             features = msg.data.features;
+        } else if (msg.event === "theme") {
+            Tokens.apply(msg.data.colors);
+            theme = msg.data;
         }
     }
 
@@ -68,7 +75,7 @@ Singleton {
             if (connected) {
                 // Only hello arrives unasked; everything else is subscribed to.
                 root.call("subscribe", {
-                    topics: [Protocol.TOPIC_FEATURES]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME]
                 });
             } else {
                 root._pending = {};

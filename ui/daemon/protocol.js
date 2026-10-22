@@ -7,6 +7,7 @@ var VERSION = 2;
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
 var TOPIC_LOGS = "logs";
+var TOPIC_THEME = "theme";
 
 // Returns {kind: "event"|"response", ...} or null for lines to ignore.
 function parse(line) {

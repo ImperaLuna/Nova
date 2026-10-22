@@ -144,6 +144,10 @@ impl<'a> Connection<'a> {
                             self.send(Event::Features { features: self.daemon.features.clone() });
                         }
                         Topic::Logs => self.daemon.logger.subscribe(self.id),
+                        Topic::Theme => {
+                            self.daemon.hub.subscribe(self.id, topic);
+                            self.send(Event::Theme(self.daemon.theme.clone()));
+                        }
                     }
                 }
             }

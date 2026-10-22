@@ -14,6 +14,7 @@ clap.workspace = true
 jiff.workspace = true
 libc.workspace = true
 serde.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true
@@ -22,6 +23,3 @@ workspace = true
 # A test checks the two lists stay in sync.
 [features]
 recording = []
-
-[dev-dependencies]
-toml.workspace = true

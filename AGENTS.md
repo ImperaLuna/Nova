@@ -33,6 +33,13 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   hidden `daemon`. It talks to novad and to the `nova.service` systemd user
   unit; no logic of its own.
   `nova help` also lists planned commands, marked `[planned]`.
+- `themes/<id>.toml`: predefined color themes (no wallpaper-generated
+  colors). Each has a `[dark]` table and may have `[light]`, setting every
+  token of `Palette` in `nova-protocol` exactly once. novad loads the one
+  `~/.config/nova/config.toml` names (`[theme] name`, `mode`), falls back to
+  Carbonfox dark (compiled in) on any problem, and pushes it on the `theme`
+  topic. Tests check every theme for missing or extra tokens and for
+  contrast (fg on bg, onAccent on primary, at least 4.5:1).
 - `packaging/systemd/nova.service.in`: the user unit; the Nix package fills
   in its paths. Without systemd, `nova` runs `nova daemon` directly.
 - `packaging/nix/nova-ui.nix`: the `nova-ui` launcher, Quickshell under the
@@ -45,7 +52,8 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   feature `x` in `crates/novad/Cargo.toml` (a test enforces this).
 - `ui/`: the Quickshell (QML) UI. `shell.qml` is the entry point.
   - `theme/Tokens.qml`: design tokens. Components never hard-code colors,
-    radii, sizes or durations.
+    radii, sizes or durations. Colors are the theme's, set by `Daemon.qml`
+    from the `theme` event; the shell draws nothing until it arrives.
   - `daemon/Daemon.qml`: the only socket to novad. Everything else reads its
     properties or calls `Daemon.call(cmd, args, callback)`.
   - `tests/`: QtTest files (`tst_*.qml`), run headless.

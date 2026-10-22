@@ -4,20 +4,61 @@ import QtQuick
 
 // Design tokens from the Nova design language doc. Components read sizes,
 // colors and timings from here and never hard-code them.
+//
+// Colors come from the active theme, which novad loads and pushes over the
+// socket (themes/<id>.toml). Daemon.qml calls apply() with each theme event;
+// nothing is drawn before the first one arrives.
 QtObject {
-    // Surfaces
-    readonly property color surface: Qt.rgba(0x0E / 255, 0x0F / 255, 0x12 / 255, 0.75)
-    readonly property color surfaceRaised: Qt.rgba(1, 1, 1, 0.06)
-    readonly property color outline: Qt.rgba(1, 1, 1, 0.08)
+    id: root
 
-    // Text
-    readonly property color text: "#ECECF1"
-    readonly property color textMuted: "#9A9BA6"
+    // Theme colors, one per token in nova-protocol's Palette. A novad test
+    // checks every token has a property here.
+
+    // Backgrounds
+    property color bg
+    property color bgAlt
+
+    // Foregrounds
+    property color fg
+    property color fgAlt
+    property color fgDim
 
     // Accents
-    readonly property color accent: "#8B7CF6"
-    readonly property color good: "#5BD69A"
-    readonly property color bad: "#F2697B"
+    property color primary
+    property color secondary
+    property color onAccent
+
+    // Status
+    property color info
+    property color success
+    property color warning
+    property color error
+
+    // Chart series
+    property color chart1
+    property color chart2
+    property color chart3
+    property color chart4
+    property color chart5
+    property color chart6
+    property color chart7
+    property color chart8
+
+    // Heatmap ramp, none to full
+    property color heat0
+    property color heat1
+    property color heat2
+    property color heat3
+    property color heat4
+    property color heat5
+
+    // Glass surfaces, derived from the theme
+    readonly property real surfaceOpacity: 0.75
+    readonly property real raisedOpacity: 0.06
+    readonly property real outlineOpacity: 0.08
+    readonly property color surface: Qt.rgba(bg.r, bg.g, bg.b, surfaceOpacity)
+    readonly property color surfaceRaised: Qt.rgba(fg.r, fg.g, fg.b, raisedOpacity)
+    readonly property color outline: Qt.rgba(fg.r, fg.g, fg.b, outlineOpacity)
 
     // Radii
     readonly property int radiusPanel: 24
@@ -40,4 +81,14 @@ QtObject {
     // Motion (ms)
     readonly property int durationFast: 120
     readonly property int durationPanel: 250
+
+    // Sets the theme colors from a theme event's `colors` ({token: "#RRGGBB"}).
+    function apply(colors) {
+        for (const token in colors) {
+            if (token in root)
+                root[token] = colors[token];
+            else
+                console.warn(`nova: theme token ${token} has no property in Tokens.qml`);
+        }
+    }
 }

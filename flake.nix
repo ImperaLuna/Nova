@@ -24,6 +24,7 @@
             ./crates
             ./features
             ./packaging
+            ./themes
           ];
         };
 
@@ -48,6 +49,7 @@
           postInstall = ''
             mkdir -p $out/share/nova
             cp -r features $out/share/nova/features
+            cp -r themes $out/share/nova/themes
             cp -r ${./ui} $out/share/nova/ui
             install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
             substituteInPlace $out/lib/systemd/user/nova.service \

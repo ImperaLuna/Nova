@@ -1,0 +1,47 @@
+# Carbonfox, Nova's default theme. Mirrors modules/_lib/themes/carbonfox.nix
+# in nix-config, with upstream Carbonfox's green and red for success/error.
+#
+# A theme has a [dark] table and may have a [light] one. Each table sets
+# every color token exactly once (novad refuses missing or unknown ones).
+# The UI's Tokens.qml exposes them under these names.
+
+name = "Carbonfox"
+
+[dark]
+# Backgrounds
+bg = "#1D1D1D"        # main background
+bgAlt = "#393E46"     # secondary background, borders, selection
+
+# Foregrounds
+fg = "#F5E7C6"        # primary text
+fgAlt = "#525252"     # dimmed text, inactive elements
+fgDim = "#9A9A9A"     # visible but muted: hints, secondary labels
+
+# Accents
+primary = "#FD7014"   # main accent, highlights
+secondary = "#BE95FF" # secondary accent, "needs a decision"
+onAccent = "#1D1D1D"  # text on solid accent fills
+
+# Status
+info = "#00ADB5"
+success = "#25BE6A"
+warning = "#FAEB92"
+error = "#EE5396"
+
+# Chart series, in order of use
+chart1 = "#5988DB"    # blue
+chart2 = "#E8650E"    # orange
+chart3 = "#07A7A5"    # teal
+chart4 = "#9067CC"    # purple
+chart5 = "#029A43"    # green
+chart6 = "#049BE7"    # cyan
+chart7 = "#DD6098"    # magenta
+chart8 = "#9C7C02"    # yellow
+
+# Heatmap ramp, none to full
+heat0 = "#FFFFFF"
+heat1 = "#FFEFE6"
+heat2 = "#FFD2BB"
+heat3 = "#FFB48F"
+heat4 = "#FF9560"
+heat5 = "#FD7014"

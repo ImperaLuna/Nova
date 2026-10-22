@@ -30,7 +30,7 @@ PanelWindow { // qmllint disable uncreatable-type
             anchors.centerIn: parent
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSize
-            color: Daemon.connected ? Tokens.text : Tokens.textMuted
+            color: Daemon.connected ? Tokens.fg : Tokens.fgDim
             text: Daemon.connected ? `Nova · novad ${Daemon.version}` : "Nova · waiting for novad"
         }
     }
