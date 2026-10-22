@@ -2,7 +2,7 @@
 
 use std::process::{Command, Output};
 
-pub const UNIT: &str = "novad.service";
+pub const UNIT: &str = "nova.service";
 
 /// Session variables novad and the UI need. A compositor started without
 /// systemd (Hyprland without uwsm) never hands them to systemd itself.

@@ -1,4 +1,4 @@
-//! `novad`: Nova's background daemon. `main.rs` only parses arguments.
+//! novad: Nova's background daemon, run as `nova daemon`.
 //!
 //! It owns Nova's state, serves the socket that the UI and the `nova` CLI
 //! talk to, runs the Quickshell UI as its child (restarting it when it
@@ -12,7 +12,6 @@ mod procfs;
 mod server;
 mod supervisor;
 
-use clap::Parser;
 use hub::Hub;
 use logger::Logger;
 use nova_features::Selection;
@@ -27,12 +26,9 @@ use supervisor::{Supervisor, UiSettings};
 const LOG_LEVEL_VAR: &str = "NOVA_LOG";
 const LOG_SOURCE: &str = "novad";
 
-#[derive(Parser)]
-#[command(name = "novad", version, about = "Nova's background daemon: runs the UI and serves the nova socket")]
+/// `nova daemon`'s options. The socket comes from `nova`'s own `--socket`.
+#[derive(clap::Args)]
 pub struct Args {
-    /// Socket to listen on.
-    #[arg(long, default_value_os_t = nova_paths::socket())]
-    socket: PathBuf,
     /// Folder of feature manifests.
     #[arg(long, default_value_os_t = nova_features::default_dir())]
     features_dir: PathBuf,
@@ -42,10 +38,11 @@ pub struct Args {
     /// The UI's QML folder.
     #[arg(long, default_value_os_t = nova_paths::installed_or_checkout("ui"))]
     ui: PathBuf,
-    /// The Quickshell binary. Not its `qs` alias: on Nix, `qs` is a wrapper
-    /// that drops the `nova-ui` name novad gives the UI process.
-    #[arg(long, default_value = "quickshell")]
-    quickshell: PathBuf,
+    /// The Quickshell binary. By default the `nova-ui` launcher when it's
+    /// installed, else `quickshell`. Not its `qs` alias: on Nix, `qs` drops
+    /// the `nova-ui` name novad gives the UI process.
+    #[arg(long)]
+    quickshell: Option<PathBuf>,
     /// Don't run the UI (tests, or running it by hand).
     #[arg(long)]
     no_ui: bool,
@@ -91,8 +88,8 @@ impl Daemon {
 }
 
 /// Runs novad until it quits.
-pub fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    let (listener, daemon) = start(args)?;
+pub fn run(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let (listener, daemon) = start(args, socket)?;
     install_panic_hook(Arc::clone(&daemon.logger));
     server::serve(listener, daemon);
     Ok(())
@@ -100,13 +97,16 @@ pub fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Starts novad on background threads in this process and returns once its
 /// socket accepts connections. For tests of novad's clients.
-pub fn spawn(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    let (listener, daemon) = start(args)?;
+pub fn spawn(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let (listener, daemon) = start(args, socket)?;
     std::thread::spawn(move || server::serve(listener, daemon));
     Ok(())
 }
 
-fn start(args: Args) -> Result<(std::os::unix::net::UnixListener, Arc<Daemon>), Box<dyn std::error::Error>> {
+fn start(
+    args: Args,
+    socket: PathBuf,
+) -> Result<(std::os::unix::net::UnixListener, Arc<Daemon>), Box<dyn std::error::Error>> {
     let hub = Arc::new(Hub::default());
     let logger = Arc::new(Logger::open(&args.log_dir, log_level(), std::io::stderr().is_terminal(), Arc::clone(&hub))?);
     logger.info(LOG_SOURCE, &format!("novad {} starting (pid {})", env!("CARGO_PKG_VERSION"), std::process::id()));
@@ -122,8 +122,8 @@ fn start(args: Args) -> Result<(std::os::unix::net::UnixListener, Arc<Daemon>), 
         logger.info("features", &format!("{} is {:?}", feature.id, feature.status));
     }
 
-    let listener = server::bind(&args.socket)?;
-    logger.info(LOG_SOURCE, &format!("listening on {}", args.socket.display()));
+    let listener = server::bind(&socket)?;
+    logger.info(LOG_SOURCE, &format!("listening on {}", socket.display()));
 
     let ui = (!args.no_ui).then(|| {
         let wayland_socket = wayland_socket();
@@ -135,16 +135,16 @@ fn start(args: Args) -> Result<(std::os::unix::net::UnixListener, Arc<Daemon>), 
             );
         }
         let settings = UiSettings {
-            quickshell: args.quickshell.clone(),
+            quickshell: args.quickshell.clone().unwrap_or_else(|| supervisor::default_quickshell(&path_var)),
             ui_dir: args.ui.clone(),
-            socket: args.socket.clone(),
+            socket: socket.clone(),
             path_var,
             wayland_socket,
         };
         Supervisor::start(settings, Arc::clone(&logger))
     });
 
-    let daemon = Arc::new(Daemon { started: Instant::now(), features, hub, logger, ui, socket: args.socket });
+    let daemon = Arc::new(Daemon { started: Instant::now(), features, hub, logger, ui, socket });
     Ok((listener, daemon))
 }
 

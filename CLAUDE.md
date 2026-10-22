@@ -16,19 +16,24 @@ feature completeness, then modularity and portability, then performance.
 - `crates/nova-paths`: where things live (socket, config, state and log
   files, installed data). novad and the CLI both resolve paths here.
 - `crates/nova-features`: loads and validates `features/<id>/feature.toml`.
-- `crates/novad`: the daemon. Owns all logic and state (compositor IPC,
-  search, clipboard, feature status). Listens on
+- `crates/novad`: the daemon, a library the `nova` binary runs as
+  `nova daemon` (one binary to install; it shows as `nova` in ps and btop).
+  Owns all logic and state (compositor IPC, search, clipboard, feature
+  status). Listens on
   `$XDG_RUNTIME_DIR/nova/novad.sock`, runs the Quickshell UI as its child
   (restarting it when it crashes) and writes the log for both:
   `~/.local/state/nova/nova.log`, rotated per novad start, with crash
-  snapshots in `crashes/`. A library with a thin `main.rs`, so CLI tests can
-  run a real novad in-process.
+  snapshots in `crashes/`. CLI tests run a real novad in-process.
 - `crates/nova-cli`: the `nova` binary. `nova` starts Nova (or shows its
-  status), plus `restart`, `quit`, `status`, `logs`, `version`. It talks to
-  novad and to the `novad.service` systemd user unit; no logic of its own.
+  status), plus `restart`, `quit`, `status`, `logs`, `version`, and the
+  hidden `daemon`. It talks to novad and to the `nova.service` systemd user
+  unit; no logic of its own.
   `nova help` also lists planned commands, marked `[planned]`.
-- `packaging/systemd/novad.service.in`: the user unit; the Nix package fills
-  in its paths. Without systemd, `nova` runs novad directly.
+- `packaging/systemd/nova.service.in`: the user unit; the Nix package fills
+  in its paths. Without systemd, `nova` runs `nova daemon` directly.
+- `packaging/nix/nova-ui.nix`: the `nova-ui` launcher, Quickshell under the
+  name nova-ui so ps and btop show the UI as Nova's. novad uses it when it's
+  on PATH (the dev shell has it), else plain `quickshell`.
 - `features/`: one folder per optional feature. The manifest is the single
   source of truth for its packages per distro and GPU. Nix, `nova setup` and
   novad all read it. A manifest with `daemon = "x"` needs a matching cargo

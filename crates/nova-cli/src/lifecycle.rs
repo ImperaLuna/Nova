@@ -5,13 +5,15 @@ use crate::client::Client;
 use crate::{status, systemd};
 use nova_protocol::Command;
 use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 /// How long to wait for novad to come up or go away.
 const WAIT_LIMIT: Duration = Duration::from_secs(10);
 const WAIT_STEP: Duration = Duration::from_millis(100);
+/// The hidden subcommand that runs the daemon.
+const DAEMON_COMMAND: &str = "daemon";
 /// What to run to restart Nova, for hints.
 pub const RESTART_COMMAND: &str = "nova restart";
 
@@ -61,27 +63,19 @@ fn stop_direct(socket: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Starts novad detached from this terminal. It writes its own log, so its
-/// output is dropped.
+/// Starts the daemon (`nova daemon`) detached from this terminal. It writes
+/// its own log, so its output is dropped.
 fn spawn_novad() -> Result<(), String> {
-    let novad = novad_binary();
-    std::process::Command::new(&novad)
+    let nova = std::env::current_exe().map_err(|e| format!("can't find the nova binary: {e}"))?;
+    std::process::Command::new(&nova)
+        .arg(DAEMON_COMMAND)
         .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .map(drop)
-        .map_err(|e| format!("can't start {}: {e}", novad.display()))
-}
-
-/// `novad` next to this binary (both are installed together), else from PATH.
-fn novad_binary() -> PathBuf {
-    let sibling = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.join("novad")));
-    match sibling {
-        Some(path) if path.is_file() => path,
-        _ => PathBuf::from("novad"),
-    }
+        .map_err(|e| format!("can't start {} {DAEMON_COMMAND}: {e}", nova.display()))
 }
 
 /// Waits for `done`, checking every [`WAIT_STEP`]. The socket has no "ready"
@@ -95,7 +89,7 @@ fn wait_until(what: &str, done: impl Fn() -> bool) -> Result<(), String> {
         std::thread::sleep(WAIT_STEP);
     }
     Err(format!(
-        "gave up waiting for {what} after {} s. Run `nova logs --no-follow`, or `novad` in a terminal to see why.",
+        "gave up waiting for {what} after {} s. Run `nova logs --no-follow`, or `nova daemon` in a terminal to see why.",
         WAIT_LIMIT.as_secs()
     ))
 }

@@ -36,7 +36,8 @@
       packages = forAllSystems (pkgs: {
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 
-        # novad, the nova CLI, feature manifests and the QML UI.
+        # The nova binary (CLI and daemon), feature manifests, the QML UI and
+        # the systemd unit.
         nova = pkgs.rustPlatform.buildRustPackage {
           pname = "nova";
           version = "0.1.0";
@@ -46,10 +47,12 @@
             mkdir -p $out/share/nova
             cp -r features $out/share/nova/features
             cp -r ${./ui} $out/share/nova/ui
-            install -Dm644 packaging/systemd/novad.service.in $out/lib/systemd/user/novad.service
-            substituteInPlace $out/lib/systemd/user/novad.service \
-              --replace-fail @novad@ $out/bin/novad \
-              --replace-fail @quickshell@ ${pkgs.lib.getExe' pkgs.quickshell "quickshell"}
+            install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
+            substituteInPlace $out/lib/systemd/user/nova.service \
+              --replace-fail @nova@ $out/bin/nova \
+              --replace-fail @quickshell@ ${
+                pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.nova-ui
+              }
           '';
           meta = {
             description = "Nova desktop shell";
@@ -57,6 +60,8 @@
             mainProgram = "nova";
           };
         };
+
+        nova-ui = pkgs.callPackage ./packaging/nix/nova-ui.nix { };
       });
 
       checks = forAllSystems (
@@ -145,6 +150,8 @@
             pkgs.rustfmt
             pkgs.rust-analyzer
             pkgs.quickshell
+            # So dev runs show the UI as nova-ui too; the daemon finds it on PATH.
+            self.packages.${pkgs.stdenv.hostPlatform.system}.nova-ui
             pkgs.qt6.qtdeclarative # qmllint, qmlls, qmlformat, qmltestrunner
             pkgs.sway # headless compositor for e2e
             pkgs.grim

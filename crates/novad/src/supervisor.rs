@@ -17,8 +17,11 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-/// `argv[0]` of the UI, so `ps`, `top` and btop show it as Nova's.
+/// The UI's process name in ps and btop: its `argv[0]`, and the name of the
+/// launcher that runs Quickshell under it, so the kernel's name matches.
 pub const UI_PROCESS_NAME: &str = "nova-ui";
+/// Quickshell itself, when no `nova-ui` launcher is installed.
+const QUICKSHELL: &str = "quickshell";
 const LOG_SOURCE: &str = "supervisor";
 const FIRST_RETRY: Duration = Duration::from_secs(1);
 const MAX_RETRY: Duration = Duration::from_secs(30);
@@ -158,6 +161,16 @@ impl Supervisor {
         record.restarts += 1;
         record.last_crash = Some(Crash { time: crate::logger::now(), log: snapshot });
     }
+}
+
+/// The `nova-ui` launcher if it's on `path_var`, else `quickshell`. Either
+/// way the command line says `nova-ui`; only the launcher also gives the
+/// process that name (btop's Program column).
+pub fn default_quickshell(path_var: &str) -> PathBuf {
+    std::env::split_paths(path_var)
+        .map(|dir| dir.join(UI_PROCESS_NAME))
+        .find(|launcher| launcher.is_file())
+        .unwrap_or_else(|| PathBuf::from(QUICKSHELL))
 }
 
 fn spawn(settings: &UiSettings) -> std::io::Result<Child> {

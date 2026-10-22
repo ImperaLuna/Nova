@@ -42,16 +42,16 @@ lint-qml:
 test-qml:
     cd ui && QT_QPA_PLATFORM=offscreen qmltestrunner -input tests
 
-# Headless sway + novad + UI: QML errors, connection, Pss budget, screenshot
+# Headless sway + Nova's daemon + UI: QML errors, connection, Pss budget, screenshot
 e2e: build
-    e2e/run.sh target/debug/novad
+    e2e/run.sh target/debug/nova
 
 build:
     cargo build --workspace
 
 # Swap your running bar for this checkout's Nova; Ctrl+C puts it back
 run: build
-    scripts/run.sh target/debug/novad
+    scripts/run.sh target/debug/nova
 
 # Clone Quickshell's source (v0.3.2) into docs/ for reading its API
 docs:

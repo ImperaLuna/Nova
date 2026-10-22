@@ -1,22 +1,23 @@
-# novad as a systemd user service. novad runs the Quickshell UI as its child
-# and restarts it when it crashes; systemd restarts novad.
+# Nova's daemon (`nova daemon`) as a systemd user service. The daemon runs
+# the Quickshell UI as its child and restarts it when it crashes; systemd
+# restarts the daemon.
 #
 # Placeholders are filled at install time (the Nix package, `nova setup`):
-#   @novad@       absolute path of the novad binary
-#   @quickshell@  the Quickshell binary novad runs the UI with
+#   @nova@        absolute path of the nova binary
+#   @quickshell@  what the daemon runs the UI with: the nova-ui launcher
 #
 # niri and Hyprland with uwsm start graphical-session.target, which starts
 # this unit. Plain Hyprland doesn't: `exec-once = nova` hands the session's
 # environment to systemd and starts it. No Requisite= on the target for
 # that reason.
 [Unit]
-Description=Nova desktop shell (novad and its UI)
+Description=Nova desktop shell (its daemon and UI)
 PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
-ExecStart=@novad@ --quickshell @quickshell@
-# novad exits 0 when asked to quit or when the session ends; only crashes
+ExecStart=@nova@ daemon --quickshell @quickshell@
+# The daemon exits 0 when asked to quit or when the session ends; only crashes
 # bring it back.
 Restart=on-failure
 RestartSec=1

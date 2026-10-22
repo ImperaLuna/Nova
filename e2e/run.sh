@@ -11,14 +11,14 @@
 # The budget is a target, not a hard limit: going over prints a warning
 # (a GitHub annotation in CI). Set NOVA_PSS_STRICT=1 to fail instead.
 #
-# Needs: sway, grim, jq, quickshell, and built novad and nova binaries
+# Needs: sway, grim, jq, quickshell (or the nova-ui launcher), and a built
+# nova binary
 # (cargo build). Logs land in e2e/out; the UI's lines are in e2e/out/ui.log.
-# Usage: e2e/run.sh [path/to/novad]
+# Usage: e2e/run.sh [path/to/nova]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-novad=${1:-target/debug/novad}
-nova=$(dirname "$novad")/nova
+nova=${1:-target/debug/nova}
 monitors=${NOVA_E2E_MONITORS:-2}
 budget=$((${NOVA_PSS_BUDGET_MB:-250} * monitors))
 settle=${NOVA_E2E_SETTLE:-3}
@@ -67,7 +67,7 @@ wait_for 10 "sway" bash -c 'ls "$XDG_RUNTIME_DIR"/wayland-* >/dev/null 2>&1'
 WAYLAND_DISPLAY=$(basename "$(ls "$XDG_RUNTIME_DIR"/wayland-* | grep -v lock | head -n1)")
 export WAYLAND_DISPLAY
 
-"$novad" --ui ui --log-dir "$out/state" >"$out/novad.log" 2>&1 &
+"$nova" daemon --ui ui --log-dir "$out/state" >"$out/daemon.log" 2>&1 &
 pids+=($!)
 wait_for 10 "novad socket" test -S "$XDG_RUNTIME_DIR/nova/novad.sock"
 sleep "$settle"
@@ -84,6 +84,13 @@ if grep -E 'ERROR|TypeError|ReferenceError|is not a type|is not installed|Failed
 fi
 
 grep -q 'nova: connected to novad' "$out/ui.log" || fail "the UI never connected to novad"
+
+# ps and btop show the UI as Nova's: argv[0] always, the process name when
+# the nova-ui launcher is installed (the dev shell has it).
+[[ $(tr '\0' '\n' <"/proc/$ui/cmdline" | head -n1) == nova-ui ]] || fail "the UI's argv[0] isn't nova-ui"
+if command -v nova-ui >/dev/null; then
+  [[ $(<"/proc/$ui/comm") == nova-ui ]] || fail "the UI's process name isn't nova-ui"
+fi
 
 grim "$out/screenshot.png" || fail "screenshot failed"
 

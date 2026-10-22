@@ -1,5 +1,6 @@
-//! `nova`: the command-line side of Nova. It starts, stops and inspects
-//! Nova by talking to novad; the logic lives in novad.
+//! `nova`: Nova's one binary. Its commands start, stop and inspect Nova by
+//! talking to the daemon, which is this same binary run as `nova daemon`;
+//! the daemon's logic lives in the novad crate.
 
 mod client;
 mod lifecycle;
@@ -43,6 +44,9 @@ enum NovaCommand {
     Logs(logs::LogsArgs),
     /// Print the version of nova.
     Version,
+    /// Run Nova's daemon, which runs the UI. systemd and `nova` start it.
+    #[command(hide = true)]
+    Daemon(novad::Args),
     /// [planned] Install packages for your distro and GPU, the default config and the novad service.
     Setup,
     /// [planned] Check the compositor, Quickshell, novad, packages and config, and report what's wrong.
@@ -60,16 +64,18 @@ enum NovaCommand {
 fn main() -> ExitCode {
     let matches = Cli::command().get_matches();
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
-    let result = match &cli.command {
-        None => lifecycle::start(&cli.socket),
-        Some(NovaCommand::Restart) => lifecycle::restart(&cli.socket),
-        Some(NovaCommand::Quit) => lifecycle::quit(&cli.socket),
-        Some(NovaCommand::Status { json }) => status::show(&cli.socket, *json),
-        Some(NovaCommand::Logs(args)) => logs::run(args, &cli.socket),
+    let Cli { command, socket } = cli;
+    let result = match command {
+        None => lifecycle::start(&socket),
+        Some(NovaCommand::Restart) => lifecycle::restart(&socket),
+        Some(NovaCommand::Quit) => lifecycle::quit(&socket),
+        Some(NovaCommand::Status { json }) => status::show(&socket, json),
+        Some(NovaCommand::Logs(args)) => logs::run(&args, &socket),
         Some(NovaCommand::Version) => {
-            status::version(&cli.socket);
+            status::version(&socket);
             Ok(())
         }
+        Some(NovaCommand::Daemon(args)) => novad::run(args, socket).map_err(|e| format!("daemon: {e}")),
         Some(
             NovaCommand::Setup
             | NovaCommand::Doctor

@@ -2,40 +2,45 @@
 # `just run`: swaps the running bar for this checkout's Nova. Ctrl+C, or
 # closing the terminal, puts the old bar back as it was.
 #
-# - An installed Nova run by systemd (novad.service) is stopped, then started
+# - An installed Nova run by systemd (nova.service) is stopped, then started
 #   again afterwards.
 # - Any other bar is found by the basename of argv[0] (not comm, which Nix
 #   wrappers truncate to names like ".quickshell-wra"), snapshotted (argv,
 #   environment, working directory), killed, and relaunched from the snapshot
 #   with `env -i`, so it doesn't inherit this shell's `nix develop` variables.
 #   Only top-level matches are relaunched, so a supervisor isn't doubled.
+#   An entry like "nova:daemon" also needs argv[1] to match, so a Nova
+#   daemon started without systemd is replaced but `nova logs` isn't.
 #
 # NOVA_RUN_REPLACE="waybar" picks which programs count as bars; empty
 # replaces nothing.
 #
-# Usage: scripts/run.sh [path/to/novad]   (`just run` builds first)
+# Usage: scripts/run.sh [path/to/nova]   (`just run` builds first)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-novad=${1:-target/debug/novad}
-bars=${NOVA_RUN_REPLACE-"waybar quickshell qs nova-shell ags eww ironbar hyprpanel novad"}
-unit=novad.service
+nova=${1:-target/debug/nova}
+bars=${NOVA_RUN_REPLACE-"waybar quickshell qs nova-shell ags eww ironbar hyprpanel nova:daemon novad"}
+unit=nova.service
 # Dev runs log apart from the installed Nova, so its log history stays intact.
 log_dir=${XDG_STATE_HOME:-$HOME/.local/state}/nova-dev
 snapshots=$(mktemp -d)
 restart_unit=0
 restored=0
 
-is_bar() { # <argv0 basename>
+is_bar() { # <argv0 basename> <argv1>
   local bar
-  for bar in $bars; do [[ $1 == "$bar" ]] && return 0; done
+  for bar in $bars; do [[ $1 == "$bar" || "$1:$2" == "$bar" ]] && return 0; done
   return 1
 }
 
-argv0_name() { # <pid>
-  local argv0
-  IFS= read -r -d '' argv0 <"/proc/$1/cmdline" 2>/dev/null || return 1
-  basename -- "$argv0"
+# argv[0]'s basename and argv[1], one per line.
+process_name() { # <pid>
+  local argv
+  mapfile -d '' -n 2 argv <"/proc/$1/cmdline" 2>/dev/null || return 1
+  ((${#argv[@]})) || return 1
+  basename -- "${argv[0]}"
+  echo "${argv[1]:-}"
 }
 
 # Bars owned by this user, as "pid ppid" lines, skipping this script's own tree.
@@ -44,8 +49,9 @@ find_bars() {
   for dir in /proc/[0-9]*; do
     pid=${dir#/proc/}
     [[ -O $dir && $pid != "$$" ]] || continue
-    name=$(argv0_name "$pid") || continue
-    is_bar "$name" || continue
+    mapfile -t name < <(process_name "$pid") || continue
+    ((${#name[@]})) || continue
+    is_bar "${name[0]}" "${name[1]:-}" || continue
     ppid=$(awk '/^PPid:/ { print $2 }' "$dir/status" 2>/dev/null) || continue
     echo "$pid $ppid"
   done
@@ -127,6 +133,6 @@ done
 for pid in "${!matched[@]}"; do kill -KILL "$pid" 2>/dev/null || true; done
 
 echo "run: starting this checkout's Nova (logs below, Ctrl+C to stop)"
-"$novad" --ui ui --features-dir features --log-dir "$log_dir" &
+"$nova" daemon --ui ui --features-dir features --log-dir "$log_dir" &
 dev_pid=$!
 wait "$dev_pid" || true

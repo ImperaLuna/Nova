@@ -1,10 +1,19 @@
-//! Integration tests: the real `nova` binary against a real novad (in this
+//! Integration tests: the real `nova` binary against a real daemon (in this
 //! process, without the UI) over a real socket.
 
 use nova_protocol::{Status, UiState};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
+
+/// `nova daemon`'s arguments, parsed on their own.
+#[derive(clap::Parser)]
+struct DaemonArgs {
+    #[command(flatten)]
+    args: novad::Args,
+}
 
 struct Novad {
     dir: PathBuf,
@@ -16,10 +25,8 @@ impl Novad {
         let _ = std::fs::remove_dir_all(&dir);
         let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         let args: Vec<std::ffi::OsString> = vec![
-            "novad".into(),
+            "nova daemon".into(),
             "--no-ui".into(),
-            "--socket".into(),
-            dir.join("novad.sock").into(),
             "--log-dir".into(),
             dir.join("logs").into(),
             "--features-dir".into(),
@@ -27,7 +34,7 @@ impl Novad {
             "--selection".into(),
             dir.join("features.toml").into(),
         ];
-        novad::spawn(<novad::Args as clap::Parser>::parse_from(args)).unwrap();
+        novad::spawn(<DaemonArgs as clap::Parser>::parse_from(args).args, dir.join("novad.sock")).unwrap();
         Self { dir }
     }
 
@@ -70,7 +77,7 @@ fn nova_shows_status_when_already_running() {
     let novad = Novad::start("already-running");
     let text = stdout(&novad.run(&[]));
     assert!(text.starts_with("Nova is already running. To restart it, run `nova restart`."), "{text}");
-    assert!(text.contains("novad      running"), "{text}");
+    assert!(text.contains("daemon     running"), "{text}");
     assert!(text.contains("features   core on"), "{text}");
 }
 
@@ -120,4 +127,43 @@ fn status_without_novad_fails_with_a_hint() {
         .unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("Start it with `nova`"));
+}
+
+#[test]
+fn nova_daemon_quits_over_the_socket() {
+    let dir = std::env::temp_dir().join(format!("nova-cli-test-daemon-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let socket = dir.join("novad.sock");
+    let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+    let mut daemon = Command::new(env!("CARGO_BIN_EXE_nova"))
+        .arg("daemon")
+        .arg("--no-ui")
+        .arg("--socket")
+        .arg(&socket)
+        .arg("--log-dir")
+        .arg(dir.join("logs"))
+        .arg("--features-dir")
+        .arg(features)
+        .arg("--selection")
+        .arg(dir.join("features.toml"))
+        .spawn()
+        .unwrap();
+
+    let started = Instant::now();
+    let stream = loop {
+        if let Ok(stream) = UnixStream::connect(&socket) {
+            break stream;
+        }
+        assert!(started.elapsed() < Duration::from_secs(10), "the daemon never listened");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let mut writer = stream.try_clone().unwrap();
+    let mut lines = BufReader::new(stream).lines();
+    lines.next().unwrap().unwrap(); // hello
+    writeln!(writer, r#"{{"v":2,"id":1,"cmd":"quit"}}"#).unwrap();
+    assert_eq!(lines.next().unwrap().unwrap(), r#"{"v":2,"id":1,"result":null}"#);
+
+    assert!(daemon.wait().unwrap().success());
+    assert!(!socket.exists());
+    std::fs::remove_dir_all(dir).unwrap();
 }

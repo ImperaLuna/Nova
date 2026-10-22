@@ -1,6 +1,6 @@
 [package]
 name = "nova-cli"
-description = "The nova command: setup, features, ipc"
+description = "The nova command, and the daemon it runs as `nova daemon`"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,8 +16,6 @@ nova-paths.workspace = true
 serde_json.workspace = true
 clap.workspace = true
 jiff.workspace = true
-
-[dev-dependencies]
 novad.workspace = true
 
 [lints]

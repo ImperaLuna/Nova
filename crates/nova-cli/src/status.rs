@@ -25,7 +25,7 @@ pub fn version(socket: &Path) {
     if let Ok(client) = Client::connect(socket)
         && client.daemon_version != version
     {
-        println!("The running novad is {}. Run `{RESTART_COMMAND}` to switch to {version}.", client.daemon_version);
+        println!("The running daemon is {}. Run `{RESTART_COMMAND}` to switch to {version}.", client.daemon_version);
     }
 }
 
@@ -35,14 +35,14 @@ fn describe(status: &Status) -> String {
     if let Some(kib) = status.pss_kib {
         daemon += &format!(", {}", megabytes(kib));
     }
-    out += &row("novad", &daemon);
+    out += &row("daemon", &daemon);
 
     let ui = &status.ui;
     let mut line = match (ui.state, ui.pid) {
         (UiState::Running, Some(pid)) => format!("running, pid {pid}"),
         (UiState::Running, None) => "running".into(),
         (UiState::Restarting, _) => "stopped, starting again".into(),
-        (UiState::Disabled, _) => "not run by novad (--no-ui)".into(),
+        (UiState::Disabled, _) => "not run by the daemon (--no-ui)".into(),
     };
     if let Some(kib) = ui.pss_kib {
         line += &format!(", {}", megabytes(kib));
@@ -135,7 +135,7 @@ mod tests {
             log_dir: "/x".into(),
         };
         let text = describe(&status);
-        assert!(text.contains("novad      running, pid 10, up 1m 5s, 10 MB"), "{text}");
+        assert!(text.contains("daemon     running, pid 10, up 1m 5s, 10 MB"), "{text}");
         assert!(text.contains("UI         running, pid 11, 180 MB, restarted 2 times"), "{text}");
         assert!(text.contains("last crash not a time: see `nova logs --crash`"), "{text}");
         assert!(text.contains("features   core on, recording missing wf-recorder"), "{text}");
