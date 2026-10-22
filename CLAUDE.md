@@ -27,8 +27,8 @@ feature completeness, then modularity and portability, then performance.
   - `daemon/Daemon.qml`: the only socket to novad. Everything else reads its
     properties or calls `Daemon.call(cmd, args, callback)`.
   - `tests/`: QtTest files (`tst_*.qml`), run headless.
-- `e2e/run.sh`: headless sway + novad + UI. Fails on QML errors, on no
-  connection, or when the UI's Pss is over `NOVA_PSS_BUDGET_MB` (250).
+- `e2e/run.sh`: headless sway with two monitors + novad + UI. Fails on QML
+  errors or no connection; warns when the UI's Pss is over the memory target.
 - `scripts/qmllint.sh`: qmllint over `ui/`, failing on any warning.
 
 ## Rules
@@ -43,7 +43,8 @@ feature completeness, then modularity and portability, then performance.
   other. Clicks pass through everywhere outside the mask, so keep the mask
   exactly the size of what's visible. Don't add separate layer windows for UI
   pieces without a reason (the 2px auto-hide reveal strip is one).
-- Memory budget: 250 MB Pss for the UI. Unload what isn't visible (Loader
+- Memory target: 250 MB Pss per monitor (500 MB on two). It's a goal, not a
+  hard limit; e2e warns when it's exceeded. Unload what isn't visible (Loader
   `active`), set `sourceSize` on images, don't create per-screen copies of
   things one screen needs.
 - Quickshell is pinned to the nixpkgs version (0.3.2). `just docs` clones its

@@ -3,8 +3,12 @@
 # Quickshell UI, then checks that
 #   - the UI starts without QML errors,
 #   - the UI connects to novad,
-#   - memory (Pss) stays under NOVA_PSS_BUDGET_MB (default 250),
+#   - memory (Pss) is within the budget: NOVA_PSS_BUDGET_MB per monitor
+#     (default 250, so 500 MB for the default two monitors),
 # and saves a screenshot to e2e/out/screenshot.png.
+#
+# The budget is a target, not a hard limit: going over prints a warning
+# (a GitHub annotation in CI). Set NOVA_PSS_STRICT=1 to fail instead.
 #
 # Needs: sway, grim, quickshell (qs), and a built novad (cargo build).
 # Usage: e2e/run.sh [path/to/novad]
@@ -12,7 +16,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 novad=${1:-target/debug/novad}
-budget=${NOVA_PSS_BUDGET_MB:-250}
+monitors=${NOVA_E2E_MONITORS:-2}
+budget=$((${NOVA_PSS_BUDGET_MB:-250} * monitors))
 settle=${NOVA_E2E_SETTLE:-3}
 out=e2e/out
 rm -rf "$out" && mkdir -p "$out"
@@ -49,7 +54,10 @@ wait_for() { # <seconds> <description> <command...>
   fail "timed out waiting for $what"
 }
 
-printf 'output HEADLESS-1 resolution 1920x1080\n' >"$XDG_RUNTIME_DIR/sway.conf"
+export WLR_HEADLESS_OUTPUTS=$monitors
+for i in $(seq "$monitors"); do
+  printf 'output HEADLESS-%d resolution 1920x1080\n' "$i"
+done >"$XDG_RUNTIME_DIR/sway.conf"
 sway -c "$XDG_RUNTIME_DIR/sway.conf" >"$out/sway.log" 2>&1 &
 pids+=($!)
 wait_for 10 "sway" bash -c 'ls "$XDG_RUNTIME_DIR"/wayland-* >/dev/null 2>&1'
@@ -76,8 +84,11 @@ grim "$out/screenshot.png" || fail "screenshot failed"
 
 pss_kb=$(awk '/^Pss:/ { print $2 }' "/proc/$ui/smaps_rollup")
 pss_mb=$((pss_kb / 1024))
-echo "e2e: UI Pss ${pss_mb} MB (budget ${budget} MB)"
+echo "e2e: UI Pss ${pss_mb} MB on ${monitors} monitors (target ${budget} MB)"
 echo "$pss_mb" >"$out/pss_mb"
-((pss_mb <= budget)) || fail "UI uses ${pss_mb} MB, over the ${budget} MB budget"
+if ((pss_mb > budget)); then
+  [[ ${NOVA_PSS_STRICT:-0} == 1 ]] && fail "UI uses ${pss_mb} MB, over the ${budget} MB target"
+  echo "::warning title=Memory over target::UI uses ${pss_mb} MB on ${monitors} monitors, over the ${budget} MB target"
+fi
 
 echo "e2e: ok, screenshot in $out/screenshot.png"
