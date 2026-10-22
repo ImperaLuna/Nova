@@ -192,6 +192,11 @@ Several sessions can test on the desktop at once, so they mustn't race:
   `e2e/out/`): `git -C ~/Projects/Nova fetch origin <branch>`, then
   `git -C ~/Projects/Nova worktree add ~/Projects/Nova-worktrees/<branch>
   origin/<branch>`. Remove it with `git worktree remove` when the PR is done.
+- Threads can end before their PR does, so clean up before you add yours:
+  remove every worktree in `~/Projects/Nova-worktrees` whose PR is merged or
+  closed, then `git -C ~/Projects/Nova worktree prune`. Each one holds about
+  1 GB of build output, and its `result` links keep Nix builds from being
+  garbage-collected.
 - `just check`, `just e2e` and `nix flake check` are safe in parallel:
   `just e2e` has its own runtime dir, socket and headless sway.
 - `just run` swaps out the real bar, so only one runs at a time. A second one
