@@ -1,13 +1,21 @@
 # Nova's lifecycle under systemd and a real compositor, driven through the
-# `nova` command the way a user would. default.nix defines USER, RUNTIME_DIR
-# and QUIT_COMPOSITOR above this script.
+# `nova` command the way a user would, and a screenshot of each UI state for
+# compare.sh. default.nix defines USER, UID and QUIT_COMPOSITOR above this
+# script.
 import datetime as dt
 import json
 import shlex
 
 UNIT = "nova.service"
+RUNTIME_DIR = f"/run/user/{UID}"
 NOVA_PROCESSES = "pgrep -x 'Nova|NovaUI'"
 WAIT = dt.timedelta(minutes=2)
+# Booting, logging in and starting the compositor.
+SESSION_START = dt.timedelta(minutes=10)
+# What the bar logs once it has drawn itself (ui/bar/Bar.qml).
+BAR_SHOWN = "nova: bar shown"
+# How long the screen must stay the same before a screenshot.
+SETTLED_SECS = 5
 # How long to watch that a stopped unit stays stopped: past its RestartSec.
 STAYS_OFF_SECS = 3
 
@@ -55,6 +63,26 @@ def process_name(pid: int) -> str:
     return machine.succeed(f"cat /proc/{pid}/comm").strip()
 
 
+def screenshot(state: str) -> None:
+    """Saves <state>.png once the bar has drawn itself and the picture has
+    stopped changing. grim asks the compositor for its output, which is
+    reliable where the emulated GPU's scanout isn't always up to date."""
+    machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui | grep -qF {shlex.quote(BAR_SHOWN)}"), timeout=WAIT)
+    path = f"/tmp/{state}.png"
+    last_hash = [""]
+    unchanged = [0]
+
+    def settled(_last_try: bool) -> bool:
+        current = machine.succeed(as_user(f"grim {path} && sha256sum {path}"))
+        unchanged[0] = unchanged[0] + 1 if current == last_hash[0] else 0
+        last_hash[0] = current
+        return unchanged[0] >= SETTLED_SECS
+
+    # retry() calls this once a second.
+    retry(settled, timeout=WAIT)
+    machine.copy_from_machine(path)
+
+
 def wait_gone(pid: int) -> None:
     machine.wait_until_fails(f"test -e /proc/{pid}", timeout=WAIT)
 
@@ -68,7 +96,9 @@ def assert_stays_off(restarts: str) -> None:
 
 
 start_all()
-machine.wait_for_unit(UNIT, user=USER)
+# The autologin starts the compositor, which starts Nova. Polled, since the
+# unit has no pending job to wait on until the compositor is up.
+machine.wait_until_succeeds(as_user(f"systemctl --user is-active --quiet {UNIT}"), timeout=SESSION_START)
 
 with subtest("the session starts Nova, shown as Nova and NovaUI"):
     first = wait_running()
@@ -78,6 +108,11 @@ with subtest("the session starts Nova, shown as Nova and NovaUI"):
     machine.wait_until_succeeds(
         as_user("nova logs --no-follow --ui | grep -q 'nova: connected to novad'"), timeout=WAIT
     )
+
+with subtest("screenshot: the bar"):
+    screenshot("bar")
+    # The log next to the screenshot, for when the bar isn't on it.
+    print(machine.succeed(as_user("nova logs --no-follow -n 100")))
 
 with subtest("novad restarts a killed UI and saves the lines before it"):
     machine.succeed(f"kill -9 {first['ui']['pid']}")
@@ -127,6 +162,7 @@ with subtest("novad exits cleanly when the compositor goes away"):
     machine.succeed(as_user("nova"))
     wait_running()
     restarts = unit_property("NRestarts")
-    machine.succeed(as_user(QUIT_COMPOSITOR))
+    # Not succeed: a compositor can exit before it answers the request.
+    machine.execute(as_user(QUIT_COMPOSITOR))
     assert_stays_off(restarts)
     assert unit_property("Result") == "success", unit_property("Result")

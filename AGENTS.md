@@ -61,11 +61,13 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   Fails on QML errors, a crashed UI or no connection; warns when the UI's Pss
   is over the memory target.
 - `e2e/vm/`: NixOS VM tests on real niri and Hyprland (flake checks
-  `e2e-niri`, `e2e-hyprland`; they need KVM). One VM config and one test
-  script (`lifecycle.py`) shared by both; each compositor only says how it
-  starts and quits. They cover what needs a systemd user session: starting
-  through `nova.service`, crash restarts, `nova restart`/`quit`, and novad
-  exiting with the compositor.
+  `e2e-niri`, `e2e-hyprland`; they need KVM, so run them as Nix builds). One
+  VM config and one test script (`lifecycle.py`) shared by both; each
+  compositor only says how it starts and quits. They cover what needs a
+  systemd user session (starting through `nova.service`, crash restarts,
+  `nova restart`/`quit`, novad exiting with the compositor) and screenshot
+  each UI state. `compare.sh` diffs the screenshots against
+  `e2e/golden/<compositor>/<state>.png` with odiff.
 - `scripts/run.sh` (`just run`): swaps your running bar for this checkout's
   Nova and puts the old one back on Ctrl+C or when the terminal closes.
 - `scripts/qmllint.sh`: qmllint over `ui/`, failing on any warning.
@@ -179,6 +181,9 @@ Run inside `nix develop`:
 - `just e2e`: the headless end-to-end run; screenshot in `e2e/out/`.
 - `just e2e-vm [niri|hyprland]`: one VM test (needs KVM). `nix flake check`
   runs both.
+- `just e2e-approve [niri|hyprland]`: runs a VM test and copies its
+  screenshots into `e2e/golden/<compositor>`. Run it after an intended visual
+  change and commit the new goldens with it.
 - `just run`: this checkout's Nova on your current session, in place of
   your bar until Ctrl+C. Its log goes to `~/.local/state/nova-dev`.
 - `nix flake check -L`: the same checks as CI, sandboxed.

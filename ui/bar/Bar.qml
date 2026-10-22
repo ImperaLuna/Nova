@@ -16,6 +16,21 @@ PanelWindow { // qmllint disable uncreatable-type
     implicitHeight: Tokens.barHeight + Tokens.barMargin
     color: "transparent"
 
+    // Logs once the bar has drawn a frame while connected to novad, so the
+    // VM tests know when to screenshot it.
+    property bool shownLogged: false
+
+    Connections {
+        target: label.Window.window
+        enabled: !bar.shownLogged
+        function onFrameSwapped() {
+            if (!Daemon.connected)
+                return;
+            bar.shownLogged = true;
+            console.info("nova: bar shown");
+        }
+    }
+
     Rectangle {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
