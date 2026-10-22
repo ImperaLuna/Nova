@@ -173,8 +173,9 @@ Test every change on the maintainer's desktop (NixOS + niri) before calling it
 done, whenever a session there is connected (a Remote Control session or a
 connected folder): pull the branch, run `just check`, then try the change
 itself (`just run`, the `nova` command it touches, btop for process names).
-Say in the PR what was tried there. Don't commit or push from the desktop;
-changes go through the branch. With no connection, say the change is
+Say in the PR what was tried there. Leave uncommitted work in that checkout
+alone (stash it with a named message if you must, never discard it), and
+don't commit or push from the desktop; changes go through the branch. With no connection, say the change is
 untested on real hardware.
 
 Every change goes through a pull request; `main` is protected. CI runs on a
