@@ -1,5 +1,6 @@
 //! Starting, restarting and stopping Nova: through the systemd user service
-//! when it's installed, otherwise by running novad directly.
+//! when it's installed and the daemon is the one on the default socket (the
+//! unit's), otherwise by running novad directly.
 
 use crate::client::Client;
 use crate::{status, systemd};
@@ -23,7 +24,7 @@ pub fn start(socket: &Path) -> Result<(), String> {
         println!("Nova is already running. To restart it, run `{RESTART_COMMAND}`.\n");
         return status::show(socket, false);
     }
-    if systemd::unit_installed() {
+    if is_the_units(socket) && systemd::unit_installed() {
         systemd::start()?;
     } else {
         spawn_novad(socket)?;
@@ -34,7 +35,7 @@ pub fn start(socket: &Path) -> Result<(), String> {
 }
 
 pub fn restart(socket: &Path) -> Result<(), String> {
-    if systemd::unit_active() {
+    if is_the_units(socket) && systemd::unit_active() {
         systemd::restart()?;
         wait_until("novad to start", || Client::connect(socket).is_ok())?;
         println!("Nova restarted.\n");
@@ -45,7 +46,7 @@ pub fn restart(socket: &Path) -> Result<(), String> {
 }
 
 pub fn quit(socket: &Path) -> Result<(), String> {
-    if systemd::unit_active() {
+    if is_the_units(socket) && systemd::unit_active() {
         systemd::stop()?;
     } else if !stop_direct(socket)? {
         println!("Nova isn't running.");
@@ -53,6 +54,13 @@ pub fn quit(socket: &Path) -> Result<(), String> {
     }
     println!("Nova stopped.");
     Ok(())
+}
+
+/// True when `socket` is where the systemd unit's daemon listens. It runs
+/// `nova daemon` without `--socket`, so that's the default one; a daemon on any
+/// other socket was started directly, even while the unit runs too.
+fn is_the_units(socket: &Path) -> bool {
+    socket == nova_paths::socket()
 }
 
 /// Asks a novad that systemd doesn't manage to quit. False if none runs.

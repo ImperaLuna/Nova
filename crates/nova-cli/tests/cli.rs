@@ -129,45 +129,87 @@ fn status_without_novad_fails_with_a_hint() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("Start it with `nova`"));
 }
 
+/// `nova daemon` as its own process, for tests that stop it.
+struct DaemonProcess {
+    dir: PathBuf,
+    child: std::process::Child,
+}
+
+impl DaemonProcess {
+    fn start(name: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!("nova-cli-test-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let child = Command::new(env!("CARGO_BIN_EXE_nova"))
+            .arg("daemon")
+            .arg("--no-ui")
+            .arg("--socket")
+            .arg(dir.join("novad.sock"))
+            .arg("--log-dir")
+            .arg(dir.join("logs"))
+            .arg("--features-dir")
+            .arg(features)
+            .arg("--selection")
+            .arg(dir.join("features.toml"))
+            .spawn()
+            .unwrap();
+        Self { dir, child }
+    }
+
+    fn socket(&self) -> PathBuf {
+        self.dir.join("novad.sock")
+    }
+
+    fn connect(&self) -> UnixStream {
+        let started = Instant::now();
+        loop {
+            if let Ok(stream) = UnixStream::connect(self.socket()) {
+                return stream;
+            }
+            assert!(started.elapsed() < Duration::from_secs(10), "the daemon never listened");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    /// Waits for the daemon to exit on its own and checks it cleaned up.
+    fn assert_exits(mut self) {
+        assert!(self.child.wait().unwrap().success());
+        assert!(!self.socket().exists());
+    }
+}
+
+impl Drop for DaemonProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
 #[test]
 fn nova_daemon_is_named_nova_and_quits_over_the_socket() {
-    let dir = std::env::temp_dir().join(format!("nova-cli-test-daemon-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let socket = dir.join("novad.sock");
-    let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
-    let mut daemon = Command::new(env!("CARGO_BIN_EXE_nova"))
-        .arg("daemon")
-        .arg("--no-ui")
-        .arg("--socket")
-        .arg(&socket)
-        .arg("--log-dir")
-        .arg(dir.join("logs"))
-        .arg("--features-dir")
-        .arg(features)
-        .arg("--selection")
-        .arg(dir.join("features.toml"))
-        .spawn()
-        .unwrap();
-
-    let started = Instant::now();
-    let stream = loop {
-        if let Ok(stream) = UnixStream::connect(&socket) {
-            break stream;
-        }
-        assert!(started.elapsed() < Duration::from_secs(10), "the daemon never listened");
-        std::thread::sleep(Duration::from_millis(50));
-    };
+    let daemon = DaemonProcess::start("daemon");
+    let stream = daemon.connect();
     let mut writer = stream.try_clone().unwrap();
     let mut lines = BufReader::new(stream).lines();
     lines.next().unwrap().unwrap(); // hello
-    let comm = std::fs::read_to_string(format!("/proc/{}/comm", daemon.id())).unwrap();
+    let comm = std::fs::read_to_string(format!("/proc/{}/comm", daemon.child.id())).unwrap();
     assert_eq!(comm.trim_end(), novad::PROCESS_NAME, "ps and btop show the daemon by this name");
     writeln!(writer, r#"{{"v":2,"id":1,"cmd":"quit"}}"#).unwrap();
     assert_eq!(lines.next().unwrap().unwrap(), r#"{"v":2,"id":1,"result":null}"#);
+    daemon.assert_exits();
+}
 
-    assert!(daemon.wait().unwrap().success());
-    assert!(!socket.exists());
-    std::fs::remove_dir_all(dir).unwrap();
+/// Even while the installed `nova.service` runs (as on a desktop running
+/// Nova), `nova --socket <other> quit` stops the daemon on that socket.
+#[test]
+fn quit_stops_the_daemon_on_the_given_socket() {
+    let daemon = DaemonProcess::start("quit");
+    drop(daemon.connect());
+    let output =
+        Command::new(env!("CARGO_BIN_EXE_nova")).arg("quit").arg("--socket").arg(daemon.socket()).output().unwrap();
+    assert_eq!(stdout(&output), "Nova stopped.\n");
+    daemon.assert_exits();
 }
 
 #[test]
