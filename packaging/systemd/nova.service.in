@@ -1,0 +1,27 @@
+# Nova's daemon (`nova daemon`) as a systemd user service. The daemon runs
+# the Quickshell UI as its child and restarts it when it crashes; systemd
+# restarts the daemon.
+#
+# Placeholders are filled at install time (the Nix package, `nova setup`):
+#   @nova@  absolute path of the nova binary
+#
+# niri and Hyprland with uwsm start graphical-session.target, which starts
+# this unit. Plain Hyprland doesn't: `exec-once = nova` hands the session's
+# environment to systemd and starts it. No Requisite= on the target for
+# that reason.
+[Unit]
+Description=Nova desktop shell (its daemon and UI)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+# `@` passes the next word as argv[0], so ps and btop show `Nova daemon`
+# (novad::PROCESS_NAME).
+ExecStart=@@nova@ Nova daemon
+# The daemon exits 0 when asked to quit or when the session ends; only crashes
+# bring it back.
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=graphical-session.target

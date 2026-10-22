@@ -1,5 +1,8 @@
 # Run `just` to list recipes. Everything here works inside `nix develop`.
 
+# Codex model for `just review`
+review_model := "gpt-6.1-sol"
+
 default:
     @just --list
 
@@ -27,8 +30,8 @@ fmt-check:
 
 # statix and deadnix over the Nix files
 lint-nix:
-    statix check .
-    deadnix --fail .
+    statix check --ignore 'docs/*' .
+    deadnix --fail $(git ls-files '*.nix')
 
 # Review changed insta snapshots (crates/*/src/snapshots)
 snapshots:
@@ -42,17 +45,22 @@ lint-qml:
 test-qml:
     cd ui && QT_QPA_PLATFORM=offscreen qmltestrunner -input tests
 
-# Headless sway + novad + UI: QML errors, connection, Pss budget, screenshot
+# Headless sway + Nova's daemon + UI: QML errors, connection, Pss budget, screenshot
 e2e: build
-    e2e/run.sh target/debug/novad
+    e2e/run.sh target/debug/nova
 
 build:
     cargo build --workspace
 
-# Run novad and the UI on your current session
+# Swap your running bar for this checkout's Nova; Ctrl+C puts it back
 run: build
-    target/debug/novad & qs -p ui; kill %1
+    scripts/run.sh target/debug/nova
 
 # Clone Quickshell's source (v0.3.2) into docs/ for reading its API
 docs:
     test -d docs/quickshell || git clone --depth 1 --branch v0.3.2 https://github.com/quickshell-mirror/quickshell docs/quickshell
+
+# Needs the Codex CLI and `codex login`; not part of the dev shell or CI.
+# Codex reviews this branch against `base` (sends the diff to OpenAI)
+review base="main":
+    codex review --base {{base}} -c model="{{review_model}}"

@@ -8,7 +8,12 @@ license.workspace = true
 [dependencies]
 nova-protocol.workspace = true
 nova-features.workspace = true
+nova-paths.workspace = true
 serde_json.workspace = true
+clap.workspace = true
+jiff.workspace = true
+libc.workspace = true
+serde.workspace = true
 
 [lints]
 workspace = true

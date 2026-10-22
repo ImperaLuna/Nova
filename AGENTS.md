@@ -6,17 +6,39 @@ feature completeness, then modularity and portability, then performance.
 
 `README.md` is written by hand by the maintainer. Don't edit it.
 
+This file is the only agent instruction file (Claude Code and Codex both read
+it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
+`AGENTS.md`.
+
 ## Layout
 
-- `crates/nova-protocol`: the JSON-lines wire format between novad and the UI.
+- `crates/nova-protocol`: the JSON-lines wire format between novad and its
+  clients (the UI and the CLI), plus the log line format.
   `ui/daemon/protocol.js` mirrors it; change both together and keep the tests
-  on both sides matching.
+  on both sides matching. Clients get `hello`, then only the topics they
+  `subscribe` to.
+- `crates/nova-paths`: where things live (socket, config, state and log
+  files, installed data). novad and the CLI both resolve paths here.
 - `crates/nova-features`: loads and validates `features/<id>/feature.toml`.
-- `crates/novad`: the daemon. Owns all logic and state (compositor IPC,
-  search, clipboard, feature status). Listens on
-  `$XDG_RUNTIME_DIR/nova/novad.sock`.
-- `crates/nova-cli`: the `nova` binary (`features`, `ping`; `setup`, `doctor`
-  and `ipc` later).
+- `crates/novad`: the daemon, a library the `nova` binary runs as
+  `nova daemon` (one binary to install; it shows as `Nova` in ps and btop).
+  Owns all logic and state (compositor IPC, search, clipboard, feature
+  status). Listens on
+  `$XDG_RUNTIME_DIR/nova/novad.sock`, runs the Quickshell UI as its child
+  (restarting it when it crashes) and writes the log for both:
+  `~/.local/state/nova/nova.log`, rotated per novad start, with crash
+  snapshots in `crashes/`. CLI tests run a real novad in-process.
+- `crates/nova-cli`: the `nova` binary. `nova` starts Nova (or shows its
+  status), plus `restart`, `quit`, `status`, `logs`, `version`, and the
+  hidden `daemon`. It talks to novad and to the `nova.service` systemd user
+  unit; no logic of its own.
+  `nova help` also lists planned commands, marked `[planned]`.
+- `packaging/systemd/nova.service.in`: the user unit; the Nix package fills
+  in its paths. Without systemd, `nova` runs `nova daemon` directly.
+- `packaging/nix/nova-ui.nix`: the `nova-ui` launcher, Quickshell under the
+  name NovaUI so ps and btop show the UI as Nova's. The Nix package compiles
+  its path into novad (`NOVA_UI_LAUNCHER`); otherwise novad uses it when it's
+  on PATH (the dev shell has it), else plain `quickshell`.
 - `features/`: one folder per optional feature. The manifest is the single
   source of truth for its packages per distro and GPU. Nix, `nova setup` and
   novad all read it. A manifest with `daemon = "x"` needs a matching cargo
@@ -27,8 +49,11 @@ feature completeness, then modularity and portability, then performance.
   - `daemon/Daemon.qml`: the only socket to novad. Everything else reads its
     properties or calls `Daemon.call(cmd, args, callback)`.
   - `tests/`: QtTest files (`tst_*.qml`), run headless.
-- `e2e/run.sh`: headless sway with two monitors + novad + UI. Fails on QML
-  errors or no connection; warns when the UI's Pss is over the memory target.
+- `e2e/run.sh`: headless sway with two monitors + novad, which runs the UI.
+  Fails on QML errors, a crashed UI or no connection; warns when the UI's Pss
+  is over the memory target.
+- `scripts/run.sh` (`just run`): swaps your running bar for this checkout's
+  Nova and puts the old one back on Ctrl+C or when the terminal closes.
 - `scripts/qmllint.sh`: qmllint over `ui/`, failing on any warning.
 
 ## Rules
@@ -138,9 +163,40 @@ Run inside `nix develop`:
 - `just snapshots`: review changed insta snapshots. The protocol's wire format
   is a snapshot, so a protocol change shows up here.
 - `just e2e`: the headless end-to-end run; screenshot in `e2e/out/`.
-- `just run`: novad and the UI on your current session.
+- `just run`: this checkout's Nova on your current session, in place of
+  your bar until Ctrl+C. Its log goes to `~/.local/state/nova-dev`.
 - `nix flake check -L`: the same checks as CI, sandboxed.
+- `just review [base]`: a Codex review of the branch against `base` (default
+  `main`). Needs the Codex CLI and `codex login` outside the dev shell.
+
+Test every change on the maintainer's desktop (NixOS + niri) before calling it
+done, whenever a session there is connected (a Remote Control session or a
+connected folder): pull the branch, run `just check`, then try the change
+itself (`just run`, the `nova` command it touches, btop for process names).
+Say in the PR what was tried there. Leave uncommitted work in that checkout
+alone (stash it with a named message if you must, never discard it), and
+don't commit or push from the desktop; changes go through the branch. With no connection, say the change is
+untested on real hardware.
 
 Every change goes through a pull request; `main` is protected. CI runs on a
 self-hosted runner on the maintainer's desktop, so PR checks wait while it is
 off (GitHub drops jobs queued over 24 hours; re-run them).
+
+Tickets live in Linear (team IMP). PR titles are `[<ticket>] <type>:
+<description>`, where the type is the ticket's Linear label (Feature, Bug,
+Improvement), like `[IMP-8] Feature: nova CLI`. The body's first line is
+`Part of IMP-<n>` while the ticket has more PRs to come, or `Closes IMP-<n>`
+on the PR that finishes it, so Linear moves the ticket to Done only then.
+
+Open PRs as drafts and mark them ready for review only when the work is done.
+Codex reviews a PR automatically once, when it becomes ready, so pushes to a
+draft don't each trigger a review. For another review after fixes, comment
+`@codex review` on the PR.
+
+Review findings (Codex, or any other reviewer bot) are claims to check, not
+orders. Before fixing one, reproduce it or trace a real path from a real
+caller or input to the failure, then weigh the code the fix adds against
+what it prevents. Fix it when the path is real and the fix is small and
+proportionate. Otherwise reply on the thread with what you traced and why
+it isn't worth the code, and leave the call to the maintainer. Don't add
+layers, options or special cases to satisfy a reviewer.
