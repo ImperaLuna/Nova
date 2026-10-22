@@ -28,7 +28,7 @@ const HEALTHY_AFTER: Duration = Duration::from_secs(60);
 const EARLY_EXIT: Duration = Duration::from_secs(5);
 
 pub struct UiSettings {
-    /// The Quickshell binary (`qs`).
+    /// The Quickshell binary.
     pub quickshell: PathBuf,
     /// The UI's QML folder, the one holding `shell.qml`.
     pub ui_dir: PathBuf,

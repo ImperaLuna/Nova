@@ -102,7 +102,7 @@ pub struct Status {
     /// Proportional memory use in KiB, when readable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pss_kib: Option<u64>,
-    /// `qs --version` of the Quickshell novad runs, when it answered.
+    /// `quickshell --version` of the Quickshell novad runs, when it answered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quickshell: Option<String>,
     pub ui: UiStatus,

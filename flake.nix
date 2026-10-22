@@ -49,7 +49,7 @@
             install -Dm644 packaging/systemd/novad.service.in $out/lib/systemd/user/novad.service
             substituteInPlace $out/lib/systemd/user/novad.service \
               --replace-fail @novad@ $out/bin/novad \
-              --replace-fail @quickshell@ ${pkgs.lib.getExe' pkgs.quickshell "qs"}
+              --replace-fail @quickshell@ ${pkgs.lib.getExe' pkgs.quickshell "quickshell"}
           '';
           meta = {
             description = "Nova desktop shell";

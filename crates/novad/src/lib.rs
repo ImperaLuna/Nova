@@ -42,8 +42,9 @@ pub struct Args {
     /// The UI's QML folder.
     #[arg(long, default_value_os_t = nova_paths::installed_or_checkout("ui"))]
     ui: PathBuf,
-    /// The Quickshell binary.
-    #[arg(long, default_value = "qs")]
+    /// The Quickshell binary. Not its `qs` alias: on Nix, `qs` is a wrapper
+    /// that drops the `nova-ui` name novad gives the UI process.
+    #[arg(long, default_value = "quickshell")]
     quickshell: PathBuf,
     /// Don't run the UI (tests, or running it by hand).
     #[arg(long)]

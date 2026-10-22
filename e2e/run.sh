@@ -11,7 +11,7 @@
 # The budget is a target, not a hard limit: going over prints a warning
 # (a GitHub annotation in CI). Set NOVA_PSS_STRICT=1 to fail instead.
 #
-# Needs: sway, grim, jq, quickshell (qs), and built novad and nova binaries
+# Needs: sway, grim, jq, quickshell, and built novad and nova binaries
 # (cargo build). Logs land in e2e/out; the UI's lines are in e2e/out/ui.log.
 # Usage: e2e/run.sh [path/to/novad]
 set -euo pipefail

@@ -167,7 +167,7 @@ fn status_reports_the_daemon_ui_and_features() {
 fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
     let scripts = std::env::temp_dir().join(format!("novad-test-ui-{}", std::process::id()));
     std::fs::create_dir_all(&scripts).unwrap();
-    let fake_ui = scripts.join("qs");
+    let fake_ui = scripts.join("quickshell");
     std::fs::write(&fake_ui, "#!/bin/sh\necho '  WARN qml: about to fail'\nexit 3\n").unwrap();
     std::fs::set_permissions(&fake_ui, std::fs::Permissions::from_mode(0o755)).unwrap();
 
