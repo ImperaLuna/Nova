@@ -262,6 +262,27 @@ fn a_client_that_stops_reading_is_disconnected() {
 }
 
 #[test]
+fn a_client_that_stalls_with_its_socket_full_is_disconnected() {
+    let novad = TestDaemon::start("stalled-client", None);
+    let mut stalled = novad.connect();
+    stalled.request(1, "subscribe", Some(json!({"topics": ["logs"]})));
+    // Fills the socket buffer many times over but not the queue, so only the
+    // write deadline can cut the client off.
+    let entries = crate::hub::MAX_QUEUED_MESSAGES / 2;
+    let padding = "x".repeat(1024);
+    for entry in 0..entries {
+        novad.daemon.logger.info("test", &format!("entry {entry} {padding}"));
+    }
+    std::thread::sleep(server::WRITE_TIMEOUT * 3);
+    // Without the deadline everything arrives and the connection stays open.
+    stalled.writer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    let delivered = stalled.lines.by_ref().map_while(Result::ok).count();
+    assert!(delivered < entries, "the stalled client was never cut off");
+    let mut other = novad.connect();
+    assert_eq!(other.request(1, "ping", None)["result"], "pong");
+}
+
+#[test]
 fn a_second_novad_on_the_same_socket_is_refused() {
     let novad = TestDaemon::start("twice", None);
     let error = server::bind(&novad.socket).unwrap_err();

@@ -10,9 +10,14 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::mpsc;
+use std::time::Duration;
 
 /// Any local process can connect: longer request lines close the connection.
 pub const MAX_REQUEST_BYTES: u64 = 64 * 1024;
+/// How long a write may make no progress before the client counts as stalled
+/// and is disconnected. Only a client that stops reading with its socket
+/// buffer full gets there; the UI reconnects on its own.
+pub const WRITE_TIMEOUT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(10) };
 const SOCKET_DIR_MODE: u32 = 0o700;
 const LOG_SOURCE: &str = "server";
 
@@ -60,22 +65,11 @@ struct Connection<'a> {
 
 impl<'a> Connection<'a> {
     fn open(stream: UnixStream, daemon: &'a Daemon) -> std::io::Result<Self> {
-        let mut writer = stream.try_clone()?;
+        let writer = stream.try_clone()?;
+        writer.set_write_timeout(Some(WRITE_TIMEOUT))?;
         let (queue, outgoing) = ClientQueue::new(&stream)?;
-        std::thread::spawn(move || {
-            for message in outgoing {
-                match message {
-                    Outgoing::Line(line) => {
-                        if writer.write_all(line.as_bytes()).is_err() {
-                            return;
-                        }
-                    }
-                    Outgoing::Flushed(done) => {
-                        let _ = done.send(());
-                    }
-                }
-            }
-        });
+        let logger = Arc::clone(&daemon.logger);
+        std::thread::spawn(move || write_all_queued(writer, outgoing, &logger));
         let id = daemon.hub.register(queue.clone());
         let connection = Self { daemon, id, queue, reader: BufReader::new(stream) };
         connection.send(Event::Hello { daemon: env!("CARGO_PKG_VERSION").into() });
@@ -245,6 +239,32 @@ impl<'a> Connection<'a> {
 impl Drop for Connection<'_> {
     fn drop(&mut self) {
         self.daemon.hub.unregister(self.id);
+    }
+}
+
+/// Writes a client's queue in order until it closes. A write that fails or
+/// stalls past [`WRITE_TIMEOUT`] hangs up on the client: the reader side ends
+/// too, so the connection unregisters, and dropping the queue answers any
+/// `flush` waiting on it.
+fn write_all_queued(mut writer: UnixStream, outgoing: mpsc::Receiver<Outgoing>, logger: &crate::logger::Logger) {
+    for message in outgoing {
+        match message {
+            Outgoing::Line(line) => {
+                if let Err(e) = writer.write_all(line.as_bytes()) {
+                    if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) {
+                        logger.warn(
+                            LOG_SOURCE,
+                            &format!("a client read nothing for {} s, disconnecting it", WRITE_TIMEOUT.as_secs_f32()),
+                        );
+                    }
+                    let _ = writer.shutdown(std::net::Shutdown::Both);
+                    return;
+                }
+            }
+            Outgoing::Flushed(done) => {
+                let _ = done.send(());
+            }
+        }
     }
 }
 
