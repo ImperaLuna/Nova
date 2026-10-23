@@ -86,6 +86,7 @@ QtObject {
     readonly property int radiusPanel: 24
     readonly property int radiusCard: 16
     readonly property int radiusControl: 12
+    readonly property int radiusRow: 14
     readonly property int radiusPill: 999
 
     // Spacing
@@ -93,6 +94,24 @@ QtObject {
     readonly property int pad: 12
     readonly property int barHeight: 36
     readonly property int barMargin: 8
+    // Icons: in the bar's pills, and in panels.
+    readonly property int iconSizeSmall: 14
+    readonly property int iconSize: 16
+
+    // Panels: width, inner padding, the gap between sections, list rows and
+    // meters (usage bars).
+    readonly property int panelWidth: 300
+    readonly property int panelPad: 20
+    readonly property int panelPadBottom: 16
+    readonly property int sectionGap: 18
+    readonly property int rowHeight: 40
+    readonly property int meterHeight: 8
+    readonly property int meterHeightSmall: 4
+    // Inner padding of a list row.
+    readonly property int rowInset: 10
+    // Small labels in a pill shape, like a plan name.
+    readonly property int chipHeight: 22
+    readonly property int chipPad: 10
 
     // Type
     readonly property string fontSans: "Inter"
@@ -101,10 +120,21 @@ QtObject {
     readonly property int fontSize: 13
     readonly property int fontSizeSmall: 12
     readonly property int fontSizeTiny: 11
+    // A panel's headline number.
+    readonly property int fontSizeHero: 56
+    readonly property int lineHeightHero: 60
 
     // Motion (ms)
     readonly property int durationFast: 120
     readonly property int durationPanel: 250
+    // Content fading in once a panel has grown, and meters filling.
+    readonly property int durationFade: 140
+    readonly property int durationFill: 600
+    readonly property int durationColor: 200
+    // One turn of a loading spinner.
+    readonly property int durationSpin: 1000
+    // The cubic-bezier every panel motion uses (fast out, gentle stop).
+    readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
 
     // Sets the theme colors from a theme event's `colors` ({token: "#RRGGBB"}).
     function apply(colors) {

@@ -40,15 +40,30 @@ pub fn sessions_dir(home: &Path) -> PathBuf {
     home.join("sessions")
 }
 
-/// The newest limits in any session log, trying the most recently written
-/// logs first.
+/// The newest limits in any session log. The most recently written log
+/// needn't hold them: with two sessions open, one can log other lines after
+/// the other logged newer limits. So logs are read newest first until one
+/// was last written before the newest limits found so far.
 pub fn newest(sessions: &Path) -> Option<CodexUsage> {
     let mut logs = Vec::new();
     collect_logs(sessions, &mut logs);
     // Newest first. File times are coarse, so ties are common; Codex's file
     // names start with the session's time, so the later name is newer.
     logs.sort_by(|a, b| b.cmp(a));
-    logs.into_iter().take(LOGS_TRIED).find_map(|(_, path)| read_log(&path))
+    let mut best: Option<CodexUsage> = None;
+    for (modified, path) in logs.into_iter().take(LOGS_TRIED) {
+        if let Some(best) = &best
+            && Timestamp::try_from(modified).is_ok_and(|modified| modified < best.logged_at)
+        {
+            break;
+        }
+        if let Some(found) = read_log(&path)
+            && best.as_ref().is_none_or(|best| found.logged_at > best.logged_at)
+        {
+            best = Some(found);
+        }
+    }
+    best
 }
 
 fn collect_logs(dir: &Path, logs: &mut Vec<(SystemTime, PathBuf)>) {
@@ -193,6 +208,33 @@ mod tests {
             assert_eq!(newest(&dir).unwrap().limits[0].percent, 12, "pair {pair}");
         }
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Session A logged limits, then session B newer ones, then A wrote
+    /// another line: A is the newest file, B has the newest limits.
+    #[test]
+    fn the_newest_limits_win_over_the_newest_file() {
+        let dir = std::env::temp_dir().join(format!("novad-codex-two-sessions-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let now = SystemTime::now();
+        let older = PLUS.replace("06:40:12", "06:30:00").replace("\"used_percent\":12.0", "\"used_percent\":5.0");
+        let a = dir.join("rollout-2026-10-23T06-00-00-a.jsonl");
+        std::fs::write(
+            &a,
+            older + "\n" + r#"{"timestamp":"2026-10-23T06:50:00Z","type":"response_item","payload":{}}"#,
+        )
+        .unwrap();
+        let b = dir.join("rollout-2026-10-23T06-10-00-b.jsonl");
+        std::fs::write(&b, PLUS).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&b)
+            .unwrap()
+            .set_modified(now - std::time::Duration::from_secs(60))
+            .unwrap();
+        std::fs::File::options().write(true).open(&a).unwrap().set_modified(now).unwrap();
+        assert_eq!(newest(&dir).unwrap().limits[0].percent, 12);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

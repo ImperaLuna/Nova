@@ -514,9 +514,22 @@ fn codex_limits_come_from_its_newest_log_and_follow_new_lines() {
 
 #[test]
 fn codex_sessions_created_later_are_picked_up() {
+    codex_appears_later("ai-usage-codex-later", true);
+}
+
+#[test]
+fn codex_installed_after_novad_started_is_picked_up() {
+    codex_appears_later("ai-usage-codex-installed-later", false);
+}
+
+/// Codex's sessions (and its home too, without `home_exists`) appear after
+/// novad started.
+fn codex_appears_later(name: &str, home_exists: bool) {
     let mut root_dir = PathBuf::new();
-    let novad = TestDaemon::with_ai_usage("ai-usage-codex-later", |root| {
-        std::fs::create_dir_all(root.join("codex")).unwrap();
+    let novad = TestDaemon::with_ai_usage(name, |root| {
+        if home_exists {
+            std::fs::create_dir_all(root.join("codex")).unwrap();
+        }
         root_dir = root.to_owned();
     });
     let mut client = novad.connect();

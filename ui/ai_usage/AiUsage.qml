@@ -30,27 +30,29 @@ Item {
     readonly property bool hasIndicator: summary.state !== "ready"
 
     // Pill layout: pad, logo, gap, state icon, number, pad.
-    readonly property int logoSize: 14
+    readonly property int logoSize: Tokens.iconSizeSmall
     readonly property int logoGap: 6
-    readonly property int indicatorSize: 16
+    readonly property int indicatorSize: Tokens.iconSize
+    readonly property real indicatorRadius: indicatorSize / 2 - 2
     readonly property int indicatorSpace: hasIndicator ? indicatorSize + logoGap : 0
     readonly property real pillWidth: Tokens.pad + logoSize + logoGap + indicatorSpace + heroClosedWidth + Tokens.pad
-    // Panel layout.
-    readonly property int panelWidth: 300
-    readonly property int panelPad: 20
-    readonly property int panelBottom: 16
-    readonly property int heroTop: Tokens.barHeight + 8
-    readonly property int heroSize: 56
-    readonly property int heroLine: 60
+    // Panel layout, from the panel tokens.
+    readonly property int panelWidth: Tokens.panelWidth
+    readonly property int panelPad: Tokens.panelPad
+    readonly property int panelBottom: Tokens.panelPadBottom
+    readonly property int heroTop: Tokens.barHeight + Tokens.gap
+    readonly property int heroSize: Tokens.fontSizeHero
+    readonly property int heroLine: Tokens.lineHeightHero
+    // The % beside the open headline, relative to its digits.
     readonly property real percentSignOpen: 0.42
-    readonly property int sectionGap: 18
-    readonly property int rowHeight: 40
-    readonly property int rowRadius: 14
-    readonly property int sessionMeter: 8
-    readonly property int weeklyMeter: 4
-    readonly property int fadeDuration: 140
-    readonly property int fillDuration: 600
-    readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
+    readonly property int sectionGap: Tokens.sectionGap
+    readonly property int rowHeight: Tokens.rowHeight
+    readonly property int rowRadius: Tokens.radiusRow
+    readonly property int sessionMeter: Tokens.meterHeight
+    readonly property int weeklyMeter: Tokens.meterHeightSmall
+    readonly property int fadeDuration: Tokens.durationFade
+    readonly property int fillDuration: Tokens.durationFill
+    readonly property list<real> easing: Tokens.easing
 
     // The panel's height for what it shows now.
     readonly property real contentHeight: details.y + details.implicitHeight + sectionGap + othersBlock.implicitHeight + panelBottom
@@ -332,10 +334,10 @@ Item {
                 strokeStyle: root.summary.state === "unavailable" ? ShapePath.DashLine : ShapePath.SolidLine
                 dashPattern: [2, 2]
                 PathAngleArc {
-                    centerX: 8
-                    centerY: 8
-                    radiusX: 6
-                    radiusY: 6
+                    centerX: root.indicatorSize / 2
+                    centerY: root.indicatorSize / 2
+                    radiusX: root.indicatorRadius
+                    radiusY: root.indicatorRadius
                     sweepAngle: 360
                 }
             }
@@ -346,10 +348,10 @@ Item {
                 fillColor: "transparent"
                 capStyle: ShapePath.RoundCap
                 PathAngleArc {
-                    centerX: 8
-                    centerY: 8
-                    radiusX: 6
-                    radiusY: 6
+                    centerX: root.indicatorSize / 2
+                    centerY: root.indicatorSize / 2
+                    radiusX: root.indicatorRadius
+                    radiusY: root.indicatorRadius
                     sweepAngle: 86
                 }
             }
@@ -358,7 +360,7 @@ Item {
                 running: root.summary.state === "loading"
                 from: 0
                 to: 360
-                duration: 1000
+                duration: Tokens.durationSpin
                 loops: Animation.Infinite
             }
         }
@@ -379,10 +381,10 @@ Item {
         Rectangle {
             id: plan
             anchors.right: parent.right
-            anchors.rightMargin: 10
+            anchors.rightMargin: Tokens.chipPad
             y: (Tokens.barHeight - height) / 2
-            height: 22
-            width: planText.implicitWidth + 20
+            height: Tokens.chipHeight
+            width: planText.implicitWidth + 2 * Tokens.chipPad
             radius: height / 2
             color: Tokens.surfaceRaised
             opacity: 0
@@ -422,7 +424,7 @@ Item {
 
                 Behavior on color {
                     ColorAnimation {
-                        duration: 200
+                        duration: Tokens.durationColor
                     }
                 }
             }
@@ -556,8 +558,8 @@ Item {
                     required property var modelData
                     readonly property var info: Usage.summarize(modelData, root.now)
 
-                    x: -10
-                    width: parent.width + 20
+                    x: -Tokens.rowInset
+                    width: parent.width + 2 * Tokens.rowInset
                     height: root.rowHeight
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
@@ -574,15 +576,15 @@ Item {
                     }
 
                     ProviderLogo {
-                        x: 10
+                        x: Tokens.rowInset
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 16
+                        width: Tokens.iconSize
                         provider: row.info.id
                         opacity: row.info.state === "unavailable" ? 0.5 : 1
                     }
 
                     Text {
-                        x: 36
+                        x: 2 * Tokens.rowInset + Tokens.iconSize
                         anchors.verticalCenter: parent.verticalCenter
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSize
@@ -592,7 +594,7 @@ Item {
 
                     Text {
                         anchors.right: parent.right
-                        anchors.rightMargin: 10
+                        anchors.rightMargin: Tokens.rowInset
                         anchors.verticalCenter: parent.verticalCenter
                         font.family: Tokens.fontMono
                         font.pixelSize: Tokens.fontSize

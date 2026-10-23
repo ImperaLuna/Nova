@@ -156,12 +156,11 @@ impl Usage {
         usage
     }
 
-    /// The current numbers, as sent to a new subscriber.
+    /// The current numbers, as sent to a new subscriber. The broadcast
+    /// bookkeeping (`sent`) is left alone: a change this already shows may
+    /// still need publishing to everyone else.
     pub fn event(&self) -> Event {
-        let mut state = lock(&self.state);
-        let usage = snapshot(&state, Timestamp::now());
-        state.sent = Some(usage.clone());
-        Event::AiUsage(usage)
+        Event::AiUsage(snapshot(&lock(&self.state), Timestamp::now()))
     }
 
     pub fn show(&self, provider: AiProvider) -> Result<(), String> {
@@ -240,17 +239,18 @@ impl Usage {
     }
 
     fn update(&self, change: impl FnOnce(&mut Saved)) -> Result<(), String> {
-        let saved = {
+        {
+            // Saved under the lock, so concurrent updates reach the file in
+            // the order they were made.
             let mut state = lock(&self.state);
             let before = state.saved.clone();
             change(&mut state.saved);
             if state.saved == before {
                 return Ok(());
             }
-            state.saved.clone()
-        };
-        if let Err(e) = save(&self.state_file, &saved) {
-            self.logger.warn(LOG_SOURCE, &format!("can't save {}: {e}", self.state_file.display()));
+            if let Err(e) = save(&self.state_file, &state.saved) {
+                self.logger.warn(LOG_SOURCE, &format!("can't save {}: {e}", self.state_file.display()));
+            }
         }
         let _ = self.wake.send(Wake::Changed);
         Ok(())
@@ -296,7 +296,7 @@ impl Usage {
             Codex::Unavailable(format!("No Codex sessions in {} yet.", sessions.display()))
         } else {
             match codex::newest(&sessions) {
-                Some(found) => Codex::Found(found),
+                Some(found) => return self.offer_codex(found),
                 None => {
                     Codex::Unavailable("Codex hasn't logged its limits yet; they appear after its next reply.".into())
                 }
@@ -321,13 +321,23 @@ impl Usage {
     }
 
     /// Watches Codex's home for the sessions folder and every folder in it,
-    /// on a thread that turns changes into wakes.
+    /// on a thread that turns changes into wakes. Before Codex's first run
+    /// there's no home yet, so its parent is watched for it to appear.
     fn watch_codex(&self, home: &Path) {
-        let sessions = codex::sessions_dir(home);
+        let home = home.to_owned();
+        let sessions = codex::sessions_dir(&home);
         let watching = inotify::Inotify::new().and_then(|mut watcher| {
-            watcher.watch(home)?;
-            if sessions.is_dir() {
-                watcher.watch_tree(&sessions)?;
+            if !home.is_dir()
+                && let Some(parent) = home.parent()
+            {
+                watcher.watch(parent)?;
+            }
+            // Checked again: the home may have appeared meanwhile.
+            if home.is_dir() {
+                watcher.watch(&home)?;
+                if sessions.is_dir() {
+                    watcher.watch_tree(&sessions)?;
+                }
             }
             Ok(watcher)
         });
@@ -353,7 +363,16 @@ impl Usage {
                     }
                 };
                 for change in changes {
-                    let message = if (change.is_dir && change.path.starts_with(&sessions)) || change.path == sessions {
+                    let message = if change.is_dir && change.path == home {
+                        // The sessions folder may have come with it.
+                        let watched = watcher
+                            .watch(&home)
+                            .and_then(|()| if sessions.is_dir() { watcher.watch_tree(&sessions) } else { Ok(()) });
+                        if let Err(e) = watched {
+                            logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", home.display()));
+                        }
+                        Wake::CodexRescan
+                    } else if (change.is_dir && change.path.starts_with(&sessions)) || change.path == sessions {
                         if let Err(e) = watcher.watch_tree(&change.path) {
                             logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", change.path.display()));
                         }
