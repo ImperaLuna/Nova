@@ -432,6 +432,7 @@ dependencies = [
  "nova-quickshell",
  "novad",
  "serde_json",
+ "shlex",
 ]
 
 [[package]]
