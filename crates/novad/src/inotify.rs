@@ -25,6 +25,14 @@ pub struct Change {
     pub is_dir: bool,
 }
 
+/// What one `Inotify::read` saw.
+pub struct Changes {
+    pub found: Vec<Change>,
+    /// The kernel's queue filled up and dropped events, so `found` may miss
+    /// changes: look again at everything watched.
+    pub overflowed: bool,
+}
+
 pub struct Inotify {
     file: std::fs::File,
     mask: u32,
@@ -84,13 +92,13 @@ impl Inotify {
     }
 
     /// Blocks until something changes, or `None` once stopped.
-    pub fn read(&mut self) -> std::io::Result<Option<Vec<Change>>> {
+    pub fn read(&mut self) -> std::io::Result<Option<Changes>> {
         if !self.wait()? {
             return Ok(None);
         }
         let mut buffer = vec![0u8; BUFFER_BYTES];
         let read = self.file.read(&mut buffer)?;
-        let mut changes = Vec::new();
+        let mut changes = Changes { found: Vec::new(), overflowed: false };
         let mut at = 0;
         while at + HEADER_BYTES <= read {
             let field = |offset: usize| {
@@ -102,6 +110,10 @@ impl Inotify {
             let name_len = usize::try_from(field(12)).unwrap_or(0);
             let name = &buffer[at + HEADER_BYTES..(at + HEADER_BYTES + name_len).min(read)];
             at += HEADER_BYTES + name_len;
+            if mask & libc::IN_Q_OVERFLOW != 0 {
+                changes.overflowed = true;
+                continue;
+            }
             if mask & libc::IN_IGNORED != 0 {
                 self.dirs.remove(&wd);
                 continue;
@@ -109,7 +121,7 @@ impl Inotify {
             let name = name.split(|byte| *byte == 0).next().unwrap_or_default();
             if let (Some(dir), false) = (self.dirs.get(&wd), name.is_empty()) {
                 let path = dir.join(OsStr::from_bytes(name));
-                changes.push(Change { path, is_dir: mask & libc::IN_ISDIR != 0 });
+                changes.found.push(Change { path, is_dir: mask & libc::IN_ISDIR != 0 });
             }
         }
         Ok(Some(changes))
@@ -141,4 +153,34 @@ fn owned(fd: libc::c_int) -> std::io::Result<OwnedFd> {
     }
     // SAFETY: `fd` was just opened and nothing else owns it.
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// More events than the kernel queues are written while nobody reads.
+    #[test]
+    fn a_full_queue_is_reported_as_an_overflow() {
+        let dir = std::env::temp_dir().join(format!("nova-inotify-overflow-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut watcher = Inotify::new(WRITES).unwrap();
+        watcher.watch(&dir).unwrap();
+        let limit: usize =
+            std::fs::read_to_string("/proc/sys/fs/inotify/max_queued_events").unwrap().trim().parse().unwrap();
+        // Two files in turn: the kernel merges a repeat of the event just before.
+        let files = [dir.join("a"), dir.join("b")].map(|path| std::fs::File::create(path).unwrap());
+        for i in 0..=limit {
+            (&files[i % 2]).write_all(b"x").unwrap();
+        }
+        // Without an overflow, `read` would wait forever once the queue is empty.
+        let stopper = watcher.stopper();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            stopper.stop();
+        });
+        let overflowed = std::iter::from_fn(|| watcher.read().unwrap()).any(|changes| changes.overflowed);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(overflowed, "the dropped events went unnoticed");
+    }
 }

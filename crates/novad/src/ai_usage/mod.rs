@@ -370,12 +370,7 @@ impl Usage {
                 watcher.watch(parent)?;
             }
             // Checked again: the home may have appeared meanwhile.
-            if home.is_dir() {
-                watcher.watch(&home)?;
-                if sessions.is_dir() {
-                    watcher.watch_tree(&sessions)?;
-                }
-            }
+            watch_codex_home(&mut watcher, &home, &sessions)?;
             Ok(watcher)
         });
         let mut watcher = match watching {
@@ -407,13 +402,20 @@ impl Usage {
                         return;
                     }
                 };
-                for change in changes {
+                if changes.overflowed {
+                    // Some changes were dropped: watch everything again and rescan.
+                    if let Err(e) = watch_codex_home(&mut watcher, &home, &sessions) {
+                        logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", home.display()));
+                    }
+                    if wake.send(Wake::CodexRescan).is_err() {
+                        return;
+                    }
+                    continue;
+                }
+                for change in changes.found {
                     let message = if change.is_dir && change.path == home {
                         // The sessions folder may have come with it.
-                        let watched = watcher
-                            .watch(&home)
-                            .and_then(|()| if sessions.is_dir() { watcher.watch_tree(&sessions) } else { Ok(()) });
-                        if let Err(e) = watched {
+                        if let Err(e) = watch_codex_home(&mut watcher, &home, &sessions) {
                             logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", home.display()));
                         }
                         Wake::CodexRescan
@@ -446,6 +448,18 @@ impl Usage {
             state.sent = Some(usage);
         }
     }
+}
+
+/// Watches Codex's home and every sessions folder, once they exist.
+fn watch_codex_home(watcher: &mut inotify::Inotify, home: &Path, sessions: &Path) -> std::io::Result<()> {
+    if !home.is_dir() {
+        return Ok(());
+    }
+    watcher.watch(home)?;
+    if sessions.is_dir() {
+        watcher.watch_tree(sessions)?;
+    }
+    Ok(())
 }
 
 /// The event for `state` at `now`: windows past their reset show 0%.
