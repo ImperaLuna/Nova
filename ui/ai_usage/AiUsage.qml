@@ -217,7 +217,9 @@ Item {
                 anchors.fill: parent
                 radius: height / 2
                 color: Tokens.hover
-                visible: pill.containsMouse
+                // Only on the closed pill: open, it would sit behind the title.
+                opacity: 1 - root.t
+                visible: pill.containsMouse && opacity > 0
             }
         }
 
