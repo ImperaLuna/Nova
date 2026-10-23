@@ -5,7 +5,8 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     # RustSec's advisories for the cargo-deny check, which has no network.
     # Pinned in flake.lock like nixpkgs; `nix flake update advisory-db`
-    # brings in new advisories.
+    # brings in new advisories, and the weekly "Bump advisory-db" workflow
+    # opens a PR that does it.
     advisory-db = {
       url = "github:rustsec/advisory-db";
       flake = false;

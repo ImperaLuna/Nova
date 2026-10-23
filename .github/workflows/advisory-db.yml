@@ -1,0 +1,139 @@
+name: Bump advisory-db
+
+# Weekly, moves the `advisory-db` flake input (RustSec's advisories for the
+# cargo-deny flake check) to RustSec's newest commit and opens a PR with the
+# new flake.lock. CI on that PR runs cargo-deny against the new advisories, so
+# a red bump PR means a dependency has a new advisory. Also by hand: Actions >
+# Bump advisory-db.
+#
+# Two jobs, like approve-goldens: `update` runs `nix flake update` with a
+# read-only token on the self-hosted runner; `pr` holds the write token, runs
+# no repo code and only takes flake.lock, on a fresh GitHub-hosted machine.
+# Pushes made with GITHUB_TOKEN don't start other workflows, so `pr` then
+# starts CI on the bump branch itself.
+#
+# Opening the PR needs Settings > Actions > General > "Allow GitHub Actions to
+# create and approve pull requests".
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: advisory-db
+
+env:
+  BRANCH: bump/advisory-db
+  # A scheduled run has no repository in its event, but runs on the default
+  # branch.
+  DEFAULT_BRANCH: ${{ github.event.repository.default_branch || github.ref_name }}
+
+jobs:
+  update:
+    name: nix flake update advisory-db
+    runs-on: [self-hosted, nova]
+    timeout-minutes: 15
+    outputs:
+      sha: ${{ steps.update.outputs.sha }}
+      changed: ${{ steps.update.outputs.changed }}
+    steps:
+      # Always from the default branch, also when started from another one.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.DEFAULT_BRANCH }}
+          persist-credentials: false
+      - name: update
+        id: update
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
+          nix flake update advisory-db
+          if git diff --quiet -- flake.lock; then
+            echo "advisory-db is already at RustSec's newest commit."
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >>"$GITHUB_OUTPUT"
+          fi
+      - if: steps.update.outputs.changed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: flake-lock
+          path: flake.lock
+          if-no-files-found: error
+
+  pr:
+    name: open bump PR
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.update.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: flake-lock
+          path: ${{ runner.temp }}/lock
+      # Only the advisory-db node may differ, so nothing else rides along.
+      - name: check the new lock
+        env:
+          NEW: ${{ runner.temp }}/lock/flake.lock
+        run: |
+          others='del(.nodes["advisory-db"])'
+          if ! diff <(jq -S "$others" flake.lock) <(jq -S "$others" "$NEW"); then
+            echo "::error::the new flake.lock changes more than advisory-db"
+            exit 1
+          fi
+          cp "$NEW" flake.lock
+      - name: commit and push
+        id: push
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          rev=$(jq -r '.nodes["advisory-db"].locked.rev' flake.lock)
+          date=$(date -u -d "@$(jq -r '.nodes["advisory-db"].locked.lastModified' flake.lock)" +%F)
+          echo "rev=$rev" >>"$GITHUB_OUTPUT"
+          echo "date=$date" >>"$GITHUB_OUTPUT"
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          git() { command git -c core.hooksPath=/dev/null -c http.extraheader="AUTHORIZATION: basic $auth" "$@"; }
+          # An open bump PR that already has this lock needs nothing new.
+          if git fetch -q origin "refs/heads/$BRANCH" 2>/dev/null &&
+            git diff --quiet FETCH_HEAD -- flake.lock; then
+            echo "$BRANCH already has advisory-db $rev."
+            echo "pushed=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "Bump advisory-db to $date" -m "rustsec/advisory-db@$rev (run ${{ github.run_id }})." -- flake.lock
+          # The branch is only ever this job's: each bump replaces the last.
+          git push -q --force origin "HEAD:refs/heads/$BRANCH"
+          echo "pushed=true" >>"$GITHUB_OUTPUT"
+      - name: open the PR
+        if: steps.push.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REV: ${{ steps.push.outputs.rev }}
+          DATE: ${{ steps.push.outputs.date }}
+        run: |
+          title="Bump advisory-db to $DATE"
+          body="Moves the \`advisory-db\` flake input to rustsec/advisory-db@$REV, so the cargo-deny flake check knows RustSec's advisories up to $DATE. Opened by the weekly Bump advisory-db workflow. If CI's cargo-deny fails here, a dependency has a new advisory."
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[0].number')
+          if [[ -n $pr ]]; then
+            gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --base "$DEFAULT_BRANCH" --head "$BRANCH" --title "$title" --body "$body"
+          fi
+      - name: start CI on the new commit
+        if: steps.push.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
