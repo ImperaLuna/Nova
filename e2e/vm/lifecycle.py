@@ -215,7 +215,11 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window"):
     after = int(machine.succeed(as_user(commits)).strip() or 0)
     assert after > before, f"no surface commits logged while the panel opened and closed ({before} before, {after} after)"
     assert_idle("after the panel closed")
-    machine.succeed(as_user("setsid foot >/dev/null 2>&1 &"))
+    # A window that keeps drawing, like a video or a chat app: the output
+    # keeps redrawing, so niri sends the covered bar a frame callback once a
+    # second (IMP-38). Under an idle window it sends none.
+    busy = shlex.quote("while :; do date +%T.%N; sleep 0.05; done")
+    machine.succeed(as_user(f"setsid foot sh -c {busy} >/dev/null 2>&1 &"))
     machine.wait_until_succeeds(as_user("nova status --json | grep -qF '\"app_id\":\"foot\"'"), timeout=WAIT)
     machine.succeed(as_user(FULLSCREEN_WINDOW))
     assert_idle("under a fullscreen window")
