@@ -55,7 +55,7 @@ QtObject {
     // Glass behind pills and the panels that morph out of them: a dark tint
     // with a hint of the accent and a faint rim. A solid
     // stand-in until the blur spike (IMP-9) picks real blur.
-    readonly property real glassOpacity: 0.78
+    readonly property real glassOpacity: 0.55
     readonly property real glassAccent: 0.05
     readonly property color glass: {
         const tinted = tint(primary, glassAccent);
