@@ -325,8 +325,49 @@ fn manifest_daemon_names_match_cargo_features() {
     assert_eq!(cargo_features, declared, "novad [features] and manifest `daemon` fields differ");
 }
 
+/// Claude's endpoint is `claude_usage_url`; nothing listens there unless a
+/// test starts a fake one.
 fn ai_usage_paths(root: &Path) -> ai_usage::Paths {
-    ai_usage::Paths { codex_home: Some(root.join("codex")), state_file: root.join("state/ai-usage.json") }
+    ai_usage::Paths {
+        codex_home: Some(root.join("codex")),
+        state_file: root.join("state/ai-usage.json"),
+        claude_credentials: Some(root.join("claude/.credentials.json")),
+        claude_usage_url: std::fs::read_to_string(root.join("claude/url")).unwrap_or("http://127.0.0.1:9/".into()),
+    }
+}
+
+/// Answers every request with `body`, keeping the request heads it got.
+fn fake_anthropic(body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/api/oauth/usage", listener.local_addr().unwrap());
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&requests);
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let mut stream = stream.unwrap();
+            let mut head = String::new();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            while reader.read_line(&mut head).unwrap() > 2 {}
+            seen.lock().unwrap().push(head);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+        }
+    });
+    (url, requests)
+}
+
+/// Claude Code's credentials file, signed in to a Max plan.
+fn claude_sign_in(root: &Path, url: &str) {
+    let dir = root.join("claude");
+    std::fs::create_dir_all(&dir).unwrap();
+    let expires = jiff::Timestamp::now().as_millisecond() + 3_600_000;
+    let credentials =
+        format!(r#"{{"claudeAiOauth":{{"accessToken":"tok","expiresAt":{expires},"subscriptionType":"max"}}}}"#);
+    std::fs::write(dir.join(".credentials.json"), credentials).unwrap();
+    std::fs::write(dir.join("url"), url).unwrap();
 }
 
 /// A Codex `token_count` log line in the shape Codex writes, with limits
@@ -367,8 +408,11 @@ impl Client {
 
     fn subscribe_usage(&mut self) -> Value {
         self.request(1, "subscribe", Some(json!({"topics": ["ai_usage"]})));
-        let usage = self.next_usage();
-        if usage["providers"][1]["state"] == "loading" { self.next_usage() } else { usage }
+        let mut usage = self.next_usage();
+        while usage["providers"].as_array().unwrap().iter().any(|p| p["state"] == "loading") {
+            usage = self.next_usage();
+        }
+        usage
     }
 }
 
@@ -383,8 +427,33 @@ fn ai_usage_starts_with_setup_hints() {
     assert_eq!(usage["shown"], "claude");
     let claude = provider(&usage, "claude");
     assert_eq!(claude["state"], "unavailable");
-    assert!(claude["hint"].as_str().unwrap().contains("nova claude-statusline"));
+    assert!(claude["hint"].as_str().unwrap().contains("Sign in to Claude Code"), "{claude}");
     assert_eq!(provider(&usage, "codex")["state"], "unavailable");
+}
+
+#[test]
+fn claude_limits_come_from_anthropic_with_claude_codes_sign_in() {
+    let (url, requests) = fake_anthropic(
+        r#"{"five_hour":{"utilization":8.4,"resets_at":"2100-01-01T05:00:00.451561+00:00"},"seven_day":{"utilization":17.0,"resets_at":"2100-01-07T00:00:00+00:00"},"seven_day_opus":null}"#,
+    );
+    let novad = TestDaemon::with_ai_usage("ai-usage-claude-api", |root| claude_sign_in(root, &url));
+    let mut client = novad.connect();
+    let claude = provider(&client.subscribe_usage(), "claude").clone();
+    assert_eq!((claude["state"].as_str(), claude["plan"].as_str()), (Some("ready"), Some("Max")));
+    assert_eq!(
+        claude["limits"],
+        json!([
+            {"window": "session", "percent": 8, "resets_at": "2100-01-01T05:00:00.451561Z"},
+            {"window": "weekly", "percent": 17, "resets_at": "2100-01-07T00:00:00Z"}
+        ])
+    );
+    let head = requests.lock().unwrap()[0].to_lowercase();
+    assert!(head.contains("authorization: bearer tok\r\n") && head.contains("anthropic-beta: oauth-2025-04-20\r\n"));
+
+    // Opening the panel right after the first answer doesn't ask again.
+    client.request(2, "refresh_ai_usage", None);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(requests.lock().unwrap().len(), 1);
 }
 
 #[test]

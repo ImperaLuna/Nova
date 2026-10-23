@@ -16,5 +16,6 @@ expression: all
 {"v":2,"id":7,"result":"pong"}
 {"v":2,"event":"ai_usage","data":{"shown":"claude","providers":[{"provider":"claude","state":"ready","limits":[{"window":"session","percent":42,"resets_at":"2026-10-23T11:00:00Z"},{"window":"weekly","percent":61}]},{"provider":"codex","state":"unavailable","hint":"No Codex sessions yet."}]}}
 {"v":2,"id":12,"cmd":"show_ai_usage","args":{"provider":"codex"}}
+{"v":2,"cmd":"refresh_ai_usage"}
 {"v":2,"id":13,"cmd":"report_claude_usage","args":{"limits":[{"window":"session","percent":42,"resets_at":"2026-10-23T11:00:00Z"},{"window":"weekly","percent":61}]}}
 {"v":2,"id":8,"error":"bad request"}

@@ -73,6 +73,7 @@ PanelWindow { // qmllint disable uncreatable-type
             onShowRequested: provider => Daemon.call("show_ai_usage", {
                     provider: provider
                 })
+            onRefreshRequested: Daemon.call("refresh_ai_usage")
         }
     }
 

@@ -67,6 +67,11 @@ pub struct Args {
     /// `$CODEX_HOME`, else `~/.codex`.
     #[arg(long)]
     codex_home: Option<PathBuf>,
+    /// Claude Code's credentials file, read by the `ai-usage` feature. By
+    /// default `$CLAUDE_CONFIG_DIR/.credentials.json`, else
+    /// `~/.claude/.credentials.json`.
+    #[arg(long)]
+    claude_credentials: Option<PathBuf>,
 }
 
 /// Everything a connection needs to answer requests.
@@ -180,7 +185,7 @@ fn start(
         .any(|feature| feature.id == ai_usage::FEATURE_ID && feature.status == FeatureStatus::Ready)
         .then(|| {
             ai_usage::Usage::start(
-                ai_usage::Paths::new(&args.state_dir, args.codex_home.clone()),
+                ai_usage::Paths::new(&args.state_dir, args.codex_home.clone(), args.claude_credentials.clone()),
                 Arc::clone(&hub),
                 Arc::clone(&logger),
             )

@@ -254,6 +254,9 @@ pub enum Command {
     ShowAiUsage {
         provider: AiProvider,
     },
+    /// Asks for fresh numbers now, when the panel opens (feature
+    /// `ai-usage`). Asking again within a minute does nothing.
+    RefreshAiUsage,
     /// Claude's limits, read from Claude Code's status line by
     /// `nova claude-statusline` (feature `ai-usage`).
     ReportClaudeUsage {
@@ -493,6 +496,7 @@ mod tests {
             encode(Response { id: 7, outcome: Outcome::Result(json!("pong")) }),
             encode(Event::AiUsage(ai_usage())),
             encode(Request { id: Some(12), command: Command::ShowAiUsage { provider: AiProvider::Codex } }),
+            encode(Request { id: None, command: Command::RefreshAiUsage }),
             encode(Request {
                 id: Some(13),
                 command: Command::ReportClaudeUsage { limits: ai_usage().providers[0].limits.clone() },

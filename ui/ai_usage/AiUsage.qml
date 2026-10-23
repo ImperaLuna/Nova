@@ -17,6 +17,13 @@ Item {
 
     // A row for another provider was clicked: show it in the bar.
     signal showRequested(string provider)
+    // The panel opened: worth asking for fresh numbers.
+    signal refreshRequested
+
+    onOpenChanged: {
+        if (open)
+            refreshRequested();
+    }
 
     readonly property var summary: Usage.summarize(Usage.shown(usage), now)
     readonly property bool hasIndicator: summary.state !== "ready"

@@ -128,6 +128,12 @@ impl<'a> Connection<'a> {
             Command::ListFeatures => serde_json::to_value(&self.daemon.features),
             Command::Status => serde_json::to_value(self.daemon.status()),
             Command::Subscribe { .. } | Command::Quit => Ok(serde_json::Value::Null),
+            Command::RefreshAiUsage => {
+                return self.with_ai_usage(|usage| {
+                    usage.refresh();
+                    Ok(())
+                });
+            }
             Command::ShowAiUsage { provider } => {
                 return self.with_ai_usage(|usage| usage.show(*provider));
             }
@@ -184,6 +190,7 @@ impl<'a> Connection<'a> {
             | Command::ListFeatures
             | Command::Status
             | Command::ShowAiUsage { .. }
+            | Command::RefreshAiUsage
             | Command::ReportClaudeUsage { .. } => {}
         }
     }

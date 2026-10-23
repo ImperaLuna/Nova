@@ -44,6 +44,8 @@ impl Novad {
             dir.join("state").into(),
             "--codex-home".into(),
             dir.join("codex").into(),
+            "--claude-credentials".into(),
+            dir.join("claude/.credentials.json").into(),
         ];
         novad::spawn(<DaemonArgs as clap::Parser>::parse_from(args).args, dir.join("novad.sock")).unwrap();
         Self { dir }

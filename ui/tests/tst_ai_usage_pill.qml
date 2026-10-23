@@ -25,6 +25,11 @@ Item {
             signalName: "showRequested"
         }
 
+        SignalSpy {
+            id: refreshSpy
+            signalName: "refreshRequested"
+        }
+
         function usage(shown) {
             const soon = new Date(Date.now() + 2 * 3600 * 1000).toISOString();
             return {
@@ -75,6 +80,8 @@ Item {
             });
             showSpy.target = pill;
             showSpy.clear();
+            refreshSpy.target = pill;
+            refreshSpy.clear();
             return pill;
         }
 
@@ -96,6 +103,14 @@ Item {
             mouseClick(pill, 20, Tokens.barHeight / 2);
             tryCompare(pill, "t", 0);
             compare(pill.width, closedWidth);
+        }
+
+        function test_opening_asks_for_fresh_numbers_and_closing_does_not() {
+            const pill = createPill("claude");
+            mouseClick(pill, 20, Tokens.barHeight / 2);
+            compare(refreshSpy.count, 1);
+            mouseClick(pill, 20, Tokens.barHeight / 2);
+            compare(refreshSpy.count, 1);
         }
 
         function test_warn_color_starts_at_80() {

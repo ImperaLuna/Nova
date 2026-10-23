@@ -1,13 +1,15 @@
 //! AI usage (feature `ai-usage`): how much of their Claude and Codex plan
-//! limits the user has used. Only official, local sources: Claude Code hands
-//! its limits to its status line command (`nova claude-statusline`), and
-//! Codex logs them in its session files, which novad watches. Nothing here
-//! makes network requests or reads either tool's credentials.
+//! limits the user has used. Claude's come from Anthropic's usage endpoint
+//! with Claude Code's sign-in (see `claude_api`), polled gently, and from
+//! Claude Code's status line (`nova claude-statusline`) when a terminal
+//! session runs. Codex logs its limits in its session files, which novad
+//! watches; nothing is requested for Codex.
 //!
 //! Numbers change only when a source does, except at a window's reset time:
 //! novad wakes then and shows that window at 0% until the tool is used again.
 
 mod claude;
+mod claude_api;
 mod codex;
 mod inotify;
 
@@ -24,7 +26,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const FEATURE_ID: &str = "ai-usage";
 const LOG_SOURCE: &str = "ai-usage";
@@ -32,7 +34,12 @@ const LOG_SOURCE: &str = "ai-usage";
 const CODEX_SETTLE: Duration = Duration::from_millis(500);
 /// Longest sleep with nothing scheduled.
 const IDLE_WAKE: Duration = Duration::from_secs(24 * 60 * 60);
-const CLAUDE_HINT: &str = "Not connected yet. In ~/.claude/settings.json, set Claude Code's status line command to\nnova claude-statusline\nUsage shows after Claude's next reply.";
+/// How often Claude's limits are asked for (nova-shell asked as often).
+const CLAUDE_POLL: Duration = Duration::from_secs(5 * 60);
+/// Opening the panel asks again, but not more often than this.
+const CLAUDE_REFRESH_GAP: Duration = Duration::from_secs(60);
+/// Failed requests wait twice as long each time, up to this.
+const CLAUDE_MAX_BACKOFF: Duration = Duration::from_secs(60 * 60);
 
 /// Where the module reads and keeps things.
 pub struct Paths {
@@ -40,11 +47,19 @@ pub struct Paths {
     pub codex_home: Option<PathBuf>,
     /// The bar's provider choice and Claude's last report.
     pub state_file: PathBuf,
+    /// Claude Code's credentials file, `None` without `HOME`.
+    pub claude_credentials: Option<PathBuf>,
+    pub claude_usage_url: String,
 }
 
 impl Paths {
-    pub fn new(state_dir: &Path, codex_home: Option<PathBuf>) -> Self {
-        Self { codex_home: codex_home.or_else(codex::default_home), state_file: state_dir.join("ai-usage.json") }
+    pub fn new(state_dir: &Path, codex_home: Option<PathBuf>, claude_credentials: Option<PathBuf>) -> Self {
+        Self {
+            codex_home: codex_home.or_else(codex::default_home),
+            state_file: state_dir.join("ai-usage.json"),
+            claude_credentials: claude_credentials.or_else(claude_api::default_credentials),
+            claude_usage_url: claude_api::USAGE_URL.into(),
+        }
     }
 }
 
@@ -54,10 +69,14 @@ pub struct Usage {
     logger: Arc<Logger>,
     state_file: PathBuf,
     wake: Sender<Wake>,
+    refresh: Sender<()>,
 }
 
 struct State {
     saved: Saved,
+    /// Why there are no Claude numbers yet; `None` while the first answer
+    /// is pending.
+    claude_problem: Option<String>,
     codex: Codex,
     /// The last event published, so unchanged numbers aren't sent again.
     sent: Option<AiUsage>,
@@ -70,6 +89,8 @@ struct Saved {
     shown: Option<AiProvider>,
     #[serde(default)]
     claude: Option<Vec<UsageLimit>>,
+    #[serde(default)]
+    claude_plan: Option<String>,
 }
 
 enum Codex {
@@ -88,7 +109,8 @@ enum Wake {
 }
 
 impl Usage {
-    /// Loads the saved state and starts watching Codex's logs.
+    /// Loads the saved state, starts watching Codex's logs and asking for
+    /// Claude's limits.
     pub fn start(paths: Paths, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let saved = match std::fs::read_to_string(&paths.state_file) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
@@ -98,15 +120,20 @@ impl Usage {
             Err(_) => Saved::default(),
         };
         let (wake, wakes) = mpsc::channel();
+        let (refresh, refreshes) = mpsc::channel();
         let usage = Arc::new(Self {
-            state: Mutex::new(State { saved, codex: Codex::Loading, sent: None }),
+            state: Mutex::new(State { saved, claude_problem: None, codex: Codex::Loading, sent: None }),
             hub,
             logger,
             state_file: paths.state_file,
             wake,
+            refresh,
         });
         let worker = Arc::clone(&usage);
         std::thread::spawn(move || worker.run(paths.codex_home, wakes));
+        let poller = Arc::clone(&usage);
+        let claude = (paths.claude_credentials, paths.claude_usage_url);
+        std::thread::spawn(move || poller.poll_claude(claude.0, &claude.1, refreshes));
         usage
     }
 
@@ -125,6 +152,70 @@ impl Usage {
     pub fn report_claude(&self, limits: Vec<UsageLimit>) -> Result<(), String> {
         validate(&limits)?;
         self.update(|saved| saved.claude = Some(limits))
+    }
+
+    /// Asks for Claude's limits now, unless they were asked for less than
+    /// `CLAUDE_REFRESH_GAP` ago or requests are backing off.
+    pub fn refresh(&self) {
+        let _ = self.refresh.send(());
+    }
+
+    /// Asks for Claude's limits every `CLAUDE_POLL`, and on `refresh`.
+    fn poll_claude(&self, credentials: Option<PathBuf>, url: &str, refreshes: mpsc::Receiver<()>) {
+        let mut backoff = CLAUDE_POLL;
+        let mut last_problem: Option<String> = None;
+        loop {
+            let asked = Instant::now();
+            let result = match &credentials {
+                Some(path) => claude_api::read_token(path, Timestamp::now())
+                    .and_then(|token| claude_api::fetch(url, &token).map(|limits| (limits, token.plan))),
+                None => Err(claude_api::Problem::SignedOut),
+            };
+            // Local problems cost Anthropic nothing; only failed requests back off.
+            let wait = match &result {
+                Ok(_) | Err(claude_api::Problem::SignedOut | claude_api::Problem::Expired) => {
+                    backoff = CLAUDE_POLL;
+                    CLAUDE_POLL
+                }
+                Err(claude_api::Problem::RateLimited(after)) => {
+                    backoff = (backoff * 2).min(CLAUDE_MAX_BACKOFF);
+                    after.map_or(backoff, |after| after.max(backoff))
+                }
+                Err(claude_api::Problem::Failed(_)) => {
+                    backoff = (backoff * 2).min(CLAUDE_MAX_BACKOFF);
+                    backoff
+                }
+            };
+            let backing_off = wait > CLAUDE_POLL;
+            match result {
+                Ok((limits, plan)) => {
+                    last_problem = None;
+                    lock(&self.state).claude_problem = None;
+                    let _ = self.update(|saved| {
+                        saved.claude = Some(limits);
+                        saved.claude_plan = plan;
+                    });
+                }
+                Err(problem) => {
+                    let hint = problem.hint();
+                    if last_problem.as_ref() != Some(&hint) {
+                        self.logger.info(LOG_SOURCE, &format!("Claude's limits: {hint}"));
+                        last_problem = Some(hint.clone());
+                    }
+                    lock(&self.state).claude_problem = Some(hint);
+                    let _ = self.wake.send(Wake::Changed);
+                }
+            }
+            let deadline = asked + wait;
+            loop {
+                match refreshes.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(()) if !backing_off && asked.elapsed() >= CLAUDE_REFRESH_GAP => break,
+                    Ok(()) => {}
+                    Err(RecvTimeoutError::Timeout) => break,
+                    Err(RecvTimeoutError::Disconnected) => return,
+                }
+            }
+        }
     }
 
     fn update(&self, change: impl FnOnce(&mut Saved)) -> Result<(), String> {
@@ -271,18 +362,13 @@ impl Usage {
 
 /// The event for `state` at `now`: windows past their reset show 0%.
 fn snapshot(state: &State, now: Timestamp) -> AiUsage {
-    let claude = match &state.saved.claude {
-        Some(limits) => ready(AiProvider::Claude, None, limits, now),
-        None => unavailable(AiProvider::Claude, CLAUDE_HINT.into()),
+    let claude = match (&state.saved.claude, &state.claude_problem) {
+        (Some(limits), _) => ready(AiProvider::Claude, state.saved.claude_plan.clone(), limits, now),
+        (None, Some(hint)) => unavailable(AiProvider::Claude, hint.clone()),
+        (None, None) => loading(AiProvider::Claude),
     };
     let codex = match &state.codex {
-        Codex::Loading => ProviderUsage {
-            provider: AiProvider::Codex,
-            state: UsageState::Loading,
-            plan: None,
-            limits: vec![],
-            hint: None,
-        },
+        Codex::Loading => loading(AiProvider::Codex),
         Codex::Unavailable(hint) => unavailable(AiProvider::Codex, hint.clone()),
         Codex::Found(found) => ready(AiProvider::Codex, found.plan.clone(), &found.limits, now),
     };
@@ -298,6 +384,10 @@ fn ready(provider: AiProvider, plan: Option<String>, limits: &[UsageLimit], now:
         })
         .collect();
     ProviderUsage { provider, state: UsageState::Ready, plan, limits, hint: None }
+}
+
+fn loading(provider: AiProvider) -> ProviderUsage {
+    ProviderUsage { provider, state: UsageState::Loading, plan: None, limits: vec![], hint: None }
 }
 
 fn unavailable(provider: AiProvider, hint: String) -> ProviderUsage {
