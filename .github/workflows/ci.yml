@@ -19,7 +19,7 @@ jobs:
     runs-on: [self-hosted, nova]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: nix flake check
         run: nix flake check -L
       - name: headless e2e
@@ -35,7 +35,7 @@ jobs:
               cp -r --no-preserve=mode "$shots" "e2e/out/vm-$compositor" || true
           done
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e
           path: e2e/out
