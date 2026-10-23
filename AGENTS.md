@@ -12,144 +12,62 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 
 ## Layout
 
-- `crates/nova-protocol`: the JSON-lines wire format between novad and its
-  clients (the UI and the CLI), plus the log line format.
-  `ui/daemon/protocol.js` mirrors it; change both together and keep the tests
-  on both sides matching. Clients get `hello`, then only the topics they
-  `subscribe` to.
-- `crates/nova-paths`: where things live (socket, config, state and log
-  files, installed data). novad and the CLI both resolve paths here.
-- `crates/nova-quickshell`: the Quickshell versions Nova supports
-  (`packaging/quickshell.toml`, compiled in) and the check against them.
-- `crates/nova-features`: loads and validates `features/<id>/feature.toml`.
-- `crates/novad`: the daemon, a library the `nova` binary runs as
-  `nova daemon` (one binary to install; it shows as `Nova` in ps and btop).
-  Owns all logic and state (compositor IPC, search, clipboard, feature
-  status). Listens on
-  `$XDG_RUNTIME_DIR/nova/novad.sock`, runs the Quickshell UI as its child
-  (restarting it when it crashes) and writes the log for both:
-  `~/.local/state/nova/nova.log`, rotated per novad start, with crash
-  snapshots in `crashes/`. CLI tests run a real novad in-process.
-  `settings.rs` reads `~/.config/nova/config.toml` and `features.toml` at
-  start and again whenever either changes (inotify on their folders, so
-  saves by rename count), through the same code: the theme is re-sent,
-  features are started, stopped or restarted with new settings, and the
-  `features` event tells the UI what to load. A file that doesn't parse
-  means defaults at start and keeps the last good version after that,
-  logged as an error either way.
-- `crates/nova-cli`: the `nova` binary. `nova` starts Nova (or shows its
-  status), plus `restart`, `quit`, `status`, `logs`, `version`,
-  `claude-statusline` (Claude Code's status line command, for AI usage) and
-  the hidden `daemon`. It talks to novad and to the `nova.service` systemd user
-  unit; no logic of its own.
-  `nova help` also lists planned commands, marked `[planned]`.
-- `themes/<id>.toml`: predefined color themes (no wallpaper-generated
-  colors). Each has a `[dark]` table and may have `[light]`, setting every
-  token of `Palette` in `nova-protocol` exactly once. novad loads the one
-  `~/.config/nova/config.toml` names (`[theme] name`, `mode`), falls back to
-  Carbonfox dark (compiled in) on any problem, and pushes it on the `theme`
-  topic. Tests check every theme for missing or extra tokens and for
-  contrast (fg on bg, onAccent on primary, at least 4.5:1).
-- `packaging/systemd/nova.service.in`: the user unit; the Nix package fills
-  in its paths. Without systemd, `nova` runs `nova daemon` directly.
-- `packaging/nix/nova-ui.nix`: the `nova-ui` launcher, Quickshell under the
-  name NovaUI so ps and btop show the UI as Nova's. The Nix package compiles
-  its path into novad (`NOVA_UI_LAUNCHER`); otherwise novad uses it when it's
-  on PATH (the dev shell has it), else plain `quickshell`.
-- `features/`: one folder per optional feature. The manifest is the single
-  source of truth for its packages per distro and GPU. Nix, `nova setup` and
-  novad all read it. A manifest with `daemon = "x"` needs a matching cargo
-  feature `x` in `crates/novad/Cargo.toml` (a test enforces this).
-  - `ai-usage`: Claude and Codex plan limits on the `ai_usage` topic
-    (`crates/novad/src/ai_usage`, `ui/ai_usage`). Claude: Claude Code's
-    status line input via `nova claude-statusline`; and, only when the user
-    sets `claude-usage-endpoint = true` under `[ai-usage]` in `config.toml`
-    (Anthropic doesn't document this use), Anthropic's usage endpoint (the
-    one Claude Code's `/usage` reads) with the access token from Claude
-    Code's credentials file, every 5 minutes and on panel open (at most once
-    a minute), backing off on errors. The token is never logged, stored or
-    refreshed (refreshing would rotate Claude Code's sign-in); a credentials
-    file that isn't the user's or isn't 0600 is refused; no redirects; the
-    user agent is `nova/<version>`. Codex: the `token_count` events in its session logs, watched
-    with inotify; nothing is requested for Codex.
-- `crates/novad/src/compositor`: the compositor as one model (outputs with
-  their workspaces, the focused window, the keyboard layout, and a list of
-  capabilities) on the `compositor` topic, plus `focus_workspace` and
-  `step_workspace`. One `Backend` per compositor, picked from `NIRI_SOCKET`
-  or `HYPRLAND_INSTANCE_SIGNATURE`, each following the compositor's own
-  event stream. niri: one socket, JSON lines, full state as events.
-  Hyprland: events on `.socket2.sock`, and novad asks `.socket.sock`
-  (`j/monitors` and so on) when an event doesn't carry enough. Unknown
-  events and fields are ignored so newer releases keep working. Its tests
-  replay `recorded/<compositor>`: what real niri and Hyprland sent in a VM
-  (`e2e/vm/record.py`, `just record <compositor>`), checked step by step
-  against the compositor's own answers. Re-record after a compositor update
-  changes its IPC.
-- `ui/`: the Quickshell (QML) UI. `shell.qml` is the entry point.
-  - `theme/Tokens.qml`: design tokens. Components never hard-code colors,
-    radii, sizes or durations. Colors are the theme's, set by `Daemon.qml`
-    from the `theme` event; the shell draws nothing until it arrives.
-  - `compositor/Compositor.qml`: workspaces, focused window and layout
-    for UI pieces. Check `Compositor.has(...)` before showing something.
-  - `daemon/Daemon.qml`: the only socket to novad. Everything else reads its
-    properties or calls `Daemon.call(cmd, args, callback)`.
-  - `stage/`: the stage (see the window model rule below). `Stage.qml` is
-    one screen's full-screen layer, with its input mask and blur built from
-    the items the bar lists in `shapes` and `glassShapes` (`ShapeRegion`),
-    plus `ExclusionZone.qml`, the empty surface that reserves the bar's
-    space. `Morph` is the grow-from-a-pill motion every panel uses (its `t`
-    and `lerp()`), and `MorphReveal` fades a panel's content in after it.
-  - `tests/`: QtTest files (`tst_*.qml`), run headless. Quickshell's own
-    types (`Region`, windows) can't load there; e2e covers them.
-- `e2e/run.sh`: headless sway with two monitors + novad, which runs the UI.
-  Fails on QML errors, a crashed UI or no connection; warns when the UI's Pss
-  is over the memory target.
-- `e2e/vm/`: NixOS VM tests on real niri and Hyprland (flake checks
-  `e2e-niri`, `e2e-hyprland`; they need KVM, so run them as Nix builds). One
-  VM config and one test script (`lifecycle.py`) shared by both; each
-  compositor only says how it starts, quits and is driven. They cover what
-  needs a systemd user session (starting through `nova.service`, crash
-  restarts, `nova restart`/`quit`, novad exiting with the compositor), check
-  that a workspace switch reaches the UI (`quickshell ipc`, the `compositor`
-  IpcHandler in `shell.qml`), and screenshot each UI state. `compare.sh` diffs
-  the screenshots against `e2e/golden/<compositor>/<state>.png` with odiff.
-- `scripts/run.sh` (`just run`): swaps your running bar for this checkout's
-  Nova and puts the old one back on Ctrl+C or when the terminal closes.
-- `scripts/qmllint.sh`: qmllint over `ui/`, failing on any warning.
+How each part works is in its module's doc comment (or the comment atop a
+QML file). Read it before changing the module, and keep it true in the same
+change.
+
+- `crates/novad`: the daemon, run by the `nova` binary as `nova daemon` (it
+  shows as `Nova` in ps). Owns all logic and state, listens on
+  `$XDG_RUNTIME_DIR/nova/novad.sock`, runs the UI as its child and restarts
+  it on a crash, and logs both to `~/.local/state/nova/nova.log`. Settings
+  (`settings.rs`), the compositor (`compositor/`), themes (`theme.rs`) and
+  features (`ai_usage/`, ...) are one module each.
+- `crates/nova-cli`: the `nova` command. Talks to novad and the
+  `nova.service` user unit; no logic of its own.
+- `crates/nova-protocol`: the JSON-lines wire format. `ui/daemon/protocol.js`
+  mirrors it: change both together, with matching tests on both sides.
+- `crates/nova-paths`: every path Nova uses, for novad and the CLI.
+- `crates/nova-features`, `features/<id>/feature.toml`: optional features.
+  The manifest is the single source of truth for a feature's packages per
+  distro and GPU; `daemon = "x"` needs a cargo feature `x` in novad.
+- `crates/nova-quickshell`, `packaging/quickshell.toml`: the tested range of
+  upstream Quickshell releases (no pin, no fork). Raise `max` only after
+  testing the newer release.
+- `themes/<id>.toml`: predefined themes, `[dark]` and optional `[light]`,
+  each setting every `Palette` token once.
+- `packaging/`: the systemd user unit and the Nix launcher (`nova-ui`).
+- `ui/`: the Quickshell UI, entry point `shell.qml`. `theme/Tokens.qml`
+  holds every design value; `daemon/Daemon.qml` is the only socket to
+  novad; `stage/` is the window model below; `tests/` are QtTest files
+  (Quickshell's own types can't load there; e2e covers them).
+- `e2e/run.sh`: headless sway, two monitors. `e2e/vm/`: NixOS VM tests on
+  real niri and Hyprland, with screenshot goldens in `e2e/golden/`.
+
+`just docs` clones the dev shell's Quickshell source into `docs/quickshell`;
+check APIs there rather than from memory.
 
 ## Rules
 
 - Logic goes in novad, the UI only renders. If QML needs more than a few lines
   of JavaScript, it probably belongs in the daemon.
 - One socket between novad and the UI, with concerns split in code: each
-  service is its own QML singleton (e.g. `Workspaces`, `Media`) built on
-  `Daemon.qml`, and its own Rust module in novad. Clients subscribe to the
-  event topics they need; don't add a second socket.
+  service is its own QML singleton built on `Daemon.qml` and its own Rust
+  module in novad. Clients subscribe to the topics they need.
 - The UI checks capabilities that novad reports, never which compositor is
   running (no `isNiri`).
 - A feature that is off or missing dependencies is never loaded by the UI.
 - Window model is "stage": one full-screen, masked layer surface per monitor.
   The bar, panels and popups are items on it so they can morph into each
   other. Clicks pass through everywhere outside the mask, so keep the mask
-  exactly the size of what's visible. Don't add separate layer windows for UI
-  pieces without a reason (the 2px auto-hide reveal strip is one).
-- The stage surface never reserves space (`exclusionMode: ExclusionMode.Ignore`),
-  so opening the launcher or a panel never moves app windows. Space for a
-  visible bar is reserved by a separate, empty exclusion-zone surface whose
-  size changes only when the bar itself shows or hides.
-- Memory target: 250 MB Pss per monitor (500 MB on two). It's a goal, not a
-  hard limit; e2e warns when it's exceeded. Unload what isn't visible (Loader
-  `active`), set `sourceSize` on images, don't create per-screen copies of
-  things one screen needs.
-- Quickshell: Nova supports a tested range of upstream releases, declared
-  once in `packaging/quickshell.toml` (no exact pin across distros, no fork).
-  The flake uses the nixpkgs version flake.lock pins, and the
-  `quickshell-version` flake check fails when that leaves the range. novad
-  warns at start, and `nova status` shows a warning row, when the Quickshell
-  it runs is outside it (`crates/nova-quickshell`). Raise `max` only after
-  testing Nova on the newer release. `just docs` clones the dev shell's
-  Quickshell source into `docs/quickshell` for checking APIs; trust it over
-  memory.
+  exactly the size and shape of what's visible (rounded corners too, from the
+  same radius property the drawing uses). Don't add separate layer windows
+  without a reason (the 2px auto-hide reveal strip is one).
+- The stage never reserves space, so opening a panel never moves app
+  windows. A separate, empty exclusion-zone surface reserves the bar's space
+  and changes only when the bar shows or hides.
+- Memory target: 250 MB Pss per monitor, a goal rather than a hard limit.
+  Unload what isn't visible (Loader `active`), set `sourceSize` on images,
+  don't make per-screen copies of what one screen needs.
 
 ## Engineering principles
 
@@ -159,91 +77,126 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   names in `nova-protocol` and `ui/daemon/protocol.js`, Rust constants in the
   crate that owns them. Never copy a literal into a second file.
 - No magic numbers or strings. Give values a named constant or property that
-  says what they mean (`Tokens.radiusPill`, not `14`).
+  says what they mean (`Tokens.radiusPill`, not `14`). Every design value
+  (gradient stops, opacities and easing too) lives in `Tokens.qml`, even when
+  one component uses it; a component's own properties only alias tokens or
+  derive ratios from them.
 - Don't repeat logic. When the same JavaScript or Rust shows up twice, move it
   into a shared component, singleton or function before adding a third copy.
-- Names say what something is. Descriptive variable, property and file names;
-  no `tmp`, `data2` or single letters outside short loops.
-- Small, focused files and components. Each QML component or Rust module does
-  one job; split one that grows past that.
+- Names say what something is: no `tmp`, `data2` or single letters outside
+  short loops.
+- Small, focused files and components: each does one job.
 - Handle errors where they happen and show them in a useful form. No silent
   `catch {}` or `unwrap()` on input that can fail (tests excepted).
 - Design for the general case, then fix root causes. Edge cases (a second
   monitor, a missing feature, a compositor without a capability, an empty
   list) should work because the design covers them, not through special-case
-  branches or workarounds added later. When something breaks in one case, fix
-  why it breaks; if a workaround is truly unavoidable (an upstream bug), keep
-  it in one place with a comment linking the issue and how to remove it.
+  branches. If a workaround is truly unavoidable (an upstream bug), keep it
+  in one place with a comment linking the issue and how to remove it.
 - Leave code cleaner than you found it, but keep refactors in their own commit.
+
+## State, threads and files
+
+- A state change and what follows from it (saving it to disk, the snapshot
+  last broadcast) happen in one critical section, in order. Building a reply
+  for one client never changes shared bookkeeping.
+- A worker that can be stopped checks for the stop before each side effect
+  (a request, a write, a spawn), not only after it wakes.
+- Every wait on another process (connect, read, write, HTTP, a child) has a
+  timeout. Code that runs inside another program, like `nova
+  claude-statusline`, never waits on novad longer than that.
+- When several sources report the same value, the newest by its own
+  timestamp wins, not the newest file or the last to arrive.
+- File watching: install the watches, then read, so nothing written in
+  between is missed. Watch what may not exist yet or may be replaced (a
+  folder, a symlink, a home-manager link) through its parent and re-attach
+  when that entry changes; watch a symlink's target too. A queue overflow
+  (`IN_Q_OVERFLOW`) means lost events: rescan everything.
+- Save files by writing a temp file in the same folder and renaming it over
+  the old one. Create private files with their mode (`0600`) rather than
+  changing it afterwards.
 
 ## Security
 
-- Anything on the socket is untrusted: any local process can connect.
-  Validate every request, reject unknown fields, and cap message sizes.
+- Anything on the socket is untrusted. Validate every request, reject
+  unknown fields at every level (`deny_unknown_fields` on each struct and
+  enum Nova's wire format or config files use), and cap message sizes.
+  Compositor IPC is the exception: ignore what's unknown there, so newer
+  releases keep working.
 - Never build shell strings. Launch apps and run package managers with argv
   lists (parse `.desktop` `Exec` keys properly); never `sh -c` with user,
   config or manifest data.
 - `nova setup` asks for root only for the package-manager call itself, and
   shows the exact command first.
-- The clipboard can hold passwords: skip entries marked as secret by password
-  managers, cap history size, keep it in memory or a 0600 file, and make
+- The clipboard can hold passwords: skip entries password managers mark as
+  secret, cap history size, keep it in memory or a 0600 file, and make
   clearing easy.
-- Network calls (weather, usage) use HTTPS only, and no secrets go in logs.
+- Network calls use HTTPS only, have a timeout and a size cap on the answer,
+  and back off on errors.
+- Secrets (tokens, passwords) live in types that don't derive `Debug`,
+  `Display` or `Serialize`, so they can't reach a log, an event or a saved
+  file by accident. Check a credentials file's owner and mode on the open
+  handle, not the path.
+- Child processes get the environment they need (never novad's secrets),
+  are always waited on, and have their output pipes drained.
+- Paths that come from outside (the socket, manifests, `.desktop` files)
+  must stay inside the folder they're meant for: no `..`, no absolute paths.
+- Text from outside Nova (window titles, notifications, media info) renders
+  with `textFormat: Text.PlainText`; any markup is sanitized in novad first.
 
 ## Performance
 
 - Event-driven, no polling loops: novad pushes changes, and QML binds to them.
 - Measure, don't guess: a change that could affect memory or frame time
   states its before/after Pss (from `just e2e`) in the PR.
-- Animations and shaders run only while visible.
+- Animations and shaders run only while visible: `running` checks the
+  item's own `visible` and `opacity`, not just the state that started it.
 
 ## Tests
 
-Most tests are **component** and **integration** tests. Unit and smoke tests
-are the minority.
+Most tests are **component** tests (one component through its real public
+interface, with its real internals, like a novad service driven through its
+socket commands) and **integration** tests (several together, like the CLI
+against a running novad). Unit tests only for small, tricky pure logic
+(parsers, version ranges). Smoke/e2e is a final check, not the main suite.
 
-- **Component tests (the main focus):** one component through its real public
-  interface, with its real internals. For example, a novad service driven
-  through its socket commands, a feature loaded from real manifest files, or
-  a QML panel loaded with its real child components.
-- **Integration tests (the main focus):** several components working together,
-  such as novad and the UI talking over the real socket, or the CLI against a
-  running novad.
-- **Unit tests:** only for small pure logic that's tricky on its own (parsers,
-  version ranges, contrast math).
-- **Smoke/e2e** (`e2e/run.sh`, the VM tests in `e2e/vm`): does the whole shell start
-  and behave. They're a final check, not the main suite.
-
-Fake only what can't run in a test: the compositor, hardware, the network.
-Fake those with recorded real data (captured niri or Hyprland event streams,
-saved HTTP responses), not hand-written mocks. If a test needs many mocks,
+Fake only what can't run in a test (the compositor, hardware, the network),
+with recorded real data, not hand-written mocks. If a test needs many mocks,
 test one level up instead.
+
+Tests start from what a new user has (folders missing, no saved state)
+unless they're about something else. A bug fix comes with a test that fails
+without it.
 
 ## Commands
 
 Run inside `nix develop`:
 
-- `just check`: formatting (Rust, QML, Nix), clippy, statix/deadnix, Rust
-  tests, qmllint, QML tests (what CI runs).
-- `just fmt`: format everything.
-- `just snapshots`: review changed insta snapshots. The protocol's wire format
-  is a snapshot, so a protocol change shows up here.
+- `just check`: formatting, clippy, statix/deadnix, Rust tests, qmllint, QML
+  tests (what CI runs). `just fmt` formats everything.
+- `just snapshots`: review changed insta snapshots (the wire format is one).
 - `just e2e`: the headless end-to-end run; screenshot in `e2e/out/`.
-- `just e2e-vm [niri|hyprland]`: one VM test (needs KVM). `nix flake check`
-  runs both.
-- `just e2e-approve [niri|hyprland]`: runs a VM test and copies its
-  screenshots into `e2e/golden/<compositor>`. Run it after an intended visual
-  change and commit the new goldens with it. Without KVM (cloud sessions),
-  start the "Approve goldens" workflow from main with the PR branch instead:
-  it runs the same recipe on the KVM runner, commits the goldens to the
-  branch and re-runs CI.
+- `just e2e-vm [niri|hyprland]`: one VM test (needs KVM).
+- `just e2e-approve [niri|hyprland]`: refreshes `e2e/golden/<compositor>`
+  after an intended visual change; commit them with it. Without KVM (cloud
+  sessions), run the "Approve goldens" workflow from main on the PR branch.
 - `just record [niri|hyprland]`: records what that compositor sends novad
-  in a VM (needs KVM) into `crates/novad/src/compositor/recorded`.
-- `just run`: this checkout's Nova on your current session, in place of
-  your bar until Ctrl+C. Its log goes to `~/.local/state/nova-dev`.
+  (needs KVM). Re-record after a compositor update changes its IPC.
+- `just run`: this checkout's Nova in place of your bar until Ctrl+C. Its
+  log goes to `~/.local/state/nova-dev`.
 - `nix flake check -L`: the same checks as CI, sandboxed.
-- `just review [base]`: a Codex review of the branch against `base` (default
-  `main`). Needs the Codex CLI and `codex login` outside the dev shell.
+- `just review [base]`: a local Codex review against `base` (default `main`).
 
 Every change goes through a pull request; `main` is protected. Sessions on the
 maintainer's desktop are for testing only: don't commit or push from there.
+
+## Review guidelines
+
+For Codex reviews of pull requests.
+
+- Check the rules above, and look hardest for races, lost updates, missed
+  file changes, waits without a timeout and secrets that could reach a log.
+- Each finding names the steps that trigger it, and says when they're rare.
+- Don't flag setups a supported Wayland session can't have (no
+  `~/.config`, no `$XDG_RUNTIME_DIR`), what `just check` already enforces,
+  or ratios derived from tokens.
