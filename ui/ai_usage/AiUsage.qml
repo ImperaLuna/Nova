@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Shapes
 import "../theme"
 import "usage.js" as Usage
@@ -205,6 +206,49 @@ Item {
         visible: text !== ""
     }
 
+    // The glass's shadow, cut out where the glass is: the glass is
+    // see-through, and a shadow under it would only darken it.
+    Item {
+        id: shadow
+        x: -Tokens.shadowRoom
+        y: -Tokens.shadowRoom
+        width: surface.width + 2 * Tokens.shadowRoom
+        height: surface.height + 2 * Tokens.shadowRoom
+        layer.enabled: true
+        layer.effect: MultiEffect {
+            maskEnabled: true
+            maskInverted: true
+            maskSource: shadowCutout
+        }
+
+        RectangularShadow {
+            x: Tokens.shadowRoom
+            y: Tokens.shadowRoom
+            width: surface.width
+            height: surface.height
+            radius: surface.radius
+            offset.y: Tokens.shadowOffset
+            blur: Tokens.shadowBlur
+            color: Tokens.shadow
+        }
+    }
+
+    Item {
+        id: shadowCutout
+        width: shadow.width
+        height: shadow.height
+        visible: false
+        layer.enabled: true
+
+        Rectangle {
+            x: Tokens.shadowRoom
+            y: Tokens.shadowRoom
+            width: surface.width
+            height: surface.height
+            radius: surface.radius
+        }
+    }
+
     Rectangle {
         id: surface
 
@@ -214,6 +258,33 @@ Item {
         color: Tokens.glass
         border.color: Tokens.glassRim
         clip: true
+
+        // The top highlight, fading out where the corners curve away.
+        Rectangle {
+            x: surface.radius / 2
+            y: 1
+            width: surface.width - surface.radius
+            height: 1
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop {
+                    position: 0
+                    color: "transparent"
+                }
+                GradientStop {
+                    position: 0.2
+                    color: Tokens.glassHighlight
+                }
+                GradientStop {
+                    position: 0.8
+                    color: Tokens.glassHighlight
+                }
+                GradientStop {
+                    position: 1
+                    color: "transparent"
+                }
+            }
+        }
 
         MouseArea {
             id: pill

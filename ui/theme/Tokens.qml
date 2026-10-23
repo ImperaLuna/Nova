@@ -55,13 +55,20 @@ QtObject {
     // Glass behind pills and the panels that morph out of them: a dark tint
     // with a hint of the accent and a faint rim. A solid
     // stand-in until the blur spike (IMP-9) picks real blur.
-    readonly property real glassOpacity: 0.55
+    readonly property real glassOpacity: 0.78
     readonly property real glassAccent: 0.05
     readonly property color glass: {
         const tinted = tint(primary, glassAccent);
         return Qt.rgba(tinted.r, tinted.g, tinted.b, glassOpacity);
     }
     readonly property color glassRim: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
+    // A brighter line along the glass's top inner edge.
+    readonly property color glassHighlight: Qt.rgba(fg.r, fg.g, fg.b, 0.16)
+    // The soft shadow under glass, and the room it needs around the glass.
+    readonly property color shadow: Qt.rgba(0, 0, 0, 0.35)
+    readonly property real shadowBlur: 30
+    readonly property real shadowOffset: 10
+    readonly property real shadowRoom: shadowBlur + shadowOffset
     // Hover wash on things inside glass.
     readonly property color hover: Qt.rgba(fg.r, fg.g, fg.b, 0.06)
     // Meters: the empty track and a neutral fill.

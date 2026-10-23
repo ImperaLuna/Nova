@@ -21,7 +21,8 @@ PanelWindow { // qmllint disable uncreatable-type
         right: true
     }
     exclusiveZone: Tokens.barHeight + Tokens.barMargin
-    implicitHeight: Tokens.barMargin + Math.max(Tokens.barHeight, (aiUsage.item as AiUsage)?.openHeight ?? 0)
+    // Room below the open panel for its shadow; the mask keeps it click-through.
+    implicitHeight: Tokens.barMargin + Math.max(Tokens.barHeight, ((aiUsage.item as AiUsage)?.openHeight ?? 0) + Tokens.shadowRoom)
     color: "transparent"
 
     mask: Region {
