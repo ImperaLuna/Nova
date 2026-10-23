@@ -32,8 +32,7 @@ const LOG_SOURCE: &str = "ai-usage";
 const CODEX_SETTLE: Duration = Duration::from_millis(500);
 /// Longest sleep with nothing scheduled.
 const IDLE_WAKE: Duration = Duration::from_secs(24 * 60 * 60);
-const CLAUDE_HINT: &str =
-    "Set nova claude-statusline as Claude Code's status line command; numbers appear after Claude's next reply.";
+const CLAUDE_HINT: &str = "Not connected yet. In ~/.claude/settings.json, set the status line command to nova claude-statusline. Usage shows after Claude's next reply.";
 
 /// Where the module reads and keeps things.
 pub struct Paths {
