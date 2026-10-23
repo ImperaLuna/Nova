@@ -62,7 +62,8 @@ build_source() {
 	command -v git >/dev/null || fail "no release fits this machine, and building Nova needs git."
 	command -v cargo >/dev/null || fail "no release fits this machine, and building Nova needs Rust's cargo (rustup.rs)."
 	echo "No release fits this machine; building Nova from source."
-	git clone --quiet --depth 1 "$repo" "$work/src"
+	# A deadline like the download's; cargo's crate fetches have their own.
+	timeout 600 git clone --quiet --depth 1 "$repo" "$work/src" || fail "couldn't download Nova's source from $repo."
 	cargo build --release --locked --manifest-path "$work/src/Cargo.toml" --target-dir "$work/target" --bin nova
 	mkdir -p "$work/tree/bin" "$work/tree/share/nova"
 	cp "$work/target/release/nova" "$work/tree/bin/nova"
