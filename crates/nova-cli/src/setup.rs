@@ -197,7 +197,7 @@ pub fn plan(facts: &Facts) -> Result<Plan, String> {
     if let Some(niri_config) = &paths.niri_config {
         let rules = paths.config_dir.join(NIRI_RULES_FILE);
         steps.push(Step::Replace { path: rules.clone(), contents: NIRI_RULES.into() });
-        steps.push(Step::AppendLine { path: niri_config.clone(), line: format!("include \"{}\"", rules.display()) });
+        steps.push(Step::AppendLine { path: niri_config.clone(), line: format!("include {}", quoted(&rules)) });
     }
     Ok(Plan::Steps(steps))
 }
@@ -263,12 +263,18 @@ fn gpu_for_packages(host: &Host) -> Option<Gpu> {
     host.gpus.iter().copied().find(|gpu| *gpu != Gpu::Nvidia)
 }
 
+/// `path` as a double-quoted string, with `\\` and `"` escaped: how both
+/// KDL and systemd's command lines spell a string.
+fn quoted(path: &Path) -> String {
+    let escaped = path.display().to_string().replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
+}
+
 /// `path` as one word of a unit's command line: quoted, so a path with
 /// spaces stays one word, with `%` doubled so systemd doesn't read it as a
 /// specifier.
 fn unit_quoted(path: &Path) -> String {
-    let escaped = path.display().to_string().replace('\\', "\\\\").replace('"', "\\\"").replace('%', "%%");
-    format!("\"{escaped}\"")
+    quoted(path).replace('%', "%%")
 }
 
 fn words(words: &[&str]) -> Vec<String> {
@@ -333,6 +339,9 @@ pub fn run(args: &SetupArgs) -> Result<(), String> {
         println!("Dry run: nothing changed.");
         return Ok(());
     }
+    if !installed() {
+        return Err(NOT_INSTALLED.into());
+    }
     if !args.yes && !confirmed()? {
         return Err("stopped; nothing changed.".into());
     }
@@ -340,6 +349,16 @@ pub fn run(args: &SetupArgs) -> Result<(), String> {
         execute(step, &facts.path_var)?;
     }
     finish(&facts.path_var)
+}
+
+const NOT_INSTALLED: &str = "this nova runs from a source checkout (no share/nova next to its binary), \
+     and the service it would install couldn't find Nova's features, themes and UI. \
+     Install Nova first (install.sh or a package), then run that nova's setup.";
+
+/// Whether Nova's resources were found next to the binary, which is where
+/// the installed service looks for them; a checkout's are relative paths.
+fn installed() -> bool {
+    nova_paths::installed_or_checkout("features").is_absolute()
 }
 
 fn confirmed() -> Result<bool, String> {
@@ -593,6 +612,16 @@ mod tests {
         assert!(unit.contains(&format!("ExecStart=@\"{}\" Nova daemon", paths.nova.display())), "{unit}");
         let link = paths.bin_dir.join("NovaUI");
         assert_eq!(std::fs::read_link(&link).unwrap(), home.0.join("usr/bin/quickshell"));
+    }
+
+    #[test]
+    fn the_niri_include_escapes_the_path() {
+        let mut facts = facts(Distro::Arch, vec![], false);
+        facts.paths.config_dir = r#"/home/a "b"\c/.config/nova"#.into();
+        facts.paths.niri_config = Some("/home/me/.config/niri/config.kdl".into());
+        let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
+        let Some(Step::AppendLine { line, .. }) = steps.last() else { panic!("{steps:?}") };
+        assert_eq!(line, r#"include "/home/a \"b\"\\c/.config/nova/niri.kdl""#);
     }
 
     #[test]
