@@ -30,6 +30,8 @@ jobs:
       - name: VM screenshots
         if: always()
         run: |
+          # The headless e2e makes e2e/out, but it's skipped when the flake check fails.
+          mkdir -p e2e/out
           for compositor in niri hyprland; do
             shots=$(nix build --max-jobs 0 --no-link --print-out-paths ".#checks.x86_64-linux.e2e-$compositor.compare") &&
               cp -r --no-preserve=mode "$shots" "e2e/out/vm-$compositor" || true
