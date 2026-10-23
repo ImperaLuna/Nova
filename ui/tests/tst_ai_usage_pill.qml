@@ -95,14 +95,14 @@ Item {
         function test_clicking_the_pill_opens_it_in_place_and_again_closes_it() {
             const pill = createPill("claude");
             const closedWidth = pill.width;
+            // Wait on the sizes, not on t: tryCompare matches within 1e-5,
+            // so t can pass while the morph's last frame is still to come.
             mouseClick(pill, 20, Tokens.barHeight / 2);
-            tryCompare(pill, "t", 1);
-            compare(pill.width, pill.panelWidth);
-            compare(pill.height, pill.openHeight);
+            tryCompare(pill, "width", pill.panelWidth);
+            tryCompare(pill, "height", pill.openHeight);
             verify(pill.openHeight > 200, `open height ${pill.openHeight}`);
             mouseClick(pill, 20, Tokens.barHeight / 2);
-            tryCompare(pill, "t", 0);
-            compare(pill.width, closedWidth);
+            tryCompare(pill, "width", closedWidth);
         }
 
         function test_opening_asks_for_fresh_numbers_and_closing_does_not() {
