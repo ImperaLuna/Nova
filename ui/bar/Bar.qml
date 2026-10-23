@@ -25,12 +25,15 @@ PanelWindow { // qmllint disable uncreatable-type
     implicitHeight: Tokens.barMargin + Math.max(Tokens.barHeight, ((aiUsage.item as AiUsage)?.openHeight ?? 0) + Tokens.shadowRoom)
     color: "transparent"
 
+    // Rounded like what's drawn, so clicks at the corners reach the windows below.
     mask: Region {
         Region {
             item: center
+            radius: center.height / 2
         }
         Region {
             item: aiUsage.item as Item
+            radius: (aiUsage.item as AiUsage)?.radius ?? 0
         }
     }
 
