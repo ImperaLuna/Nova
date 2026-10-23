@@ -35,7 +35,8 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   Unload what isn't visible (Loader `active`), set `sourceSize` on images,
   don't make per-screen copies of what one screen needs.
 - `packaging/quickshell.toml` is the tested Quickshell range (no pin, no
-  fork); raise `max` only after testing the newer release. Check Quickshell
+  fork); raise `max` only after testing the newer release (the "Newest
+  Quickshell" workflow, `just newest-quickshell`). Check Quickshell
   APIs in `docs/quickshell` (`just docs`), not from memory.
 
 ## Engineering principles

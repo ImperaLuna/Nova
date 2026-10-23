@@ -98,11 +98,14 @@ impl Supervisor {
     /// Stops the UI for good; it won't be restarted.
     pub fn stop(&self) {
         self.quitting.store(true, Ordering::SeqCst);
-        if let Some(pid) = lock(&self.record).pid
+        // Signalled under the record lock: `run_once` clears the pid under
+        // it before reaping, so the pid is still the UI's (at worst a
+        // zombie) and can't have been reused by another process.
+        let record = lock(&self.record);
+        if let Some(pid) = record.pid
             && let Ok(pid) = libc::pid_t::try_from(pid)
         {
-            // SAFETY: kill has no memory effects; a stale pid at worst
-            // signals nothing, since novad hasn't reaped the child yet.
+            // SAFETY: kill has no memory effects.
             unsafe { libc::kill(pid, libc::SIGTERM) };
         }
     }
@@ -142,8 +145,13 @@ impl Supervisor {
             child.stdout.take().map(|out| forward_lines(out, Arc::clone(logger))),
             child.stderr.take().map(|err| forward_lines(err, Arc::clone(logger))),
         ];
-        let status = child.wait();
+        // The pid is forgotten between the exit and the reap, so `stop` and
+        // `status` never act on a pid the kernel may have handed out again.
+        if let Err(e) = wait_for_exit(child.id()) {
+            logger.warn(LOG_SOURCE, &format!("couldn't wait for the UI without reaping it: {e}"));
+        }
         lock(&self.record).pid = None;
+        let status = child.wait();
         // Every line the UI printed is in the log before its exit is.
         for reader in readers.into_iter().flatten() {
             let _ = reader.join();
@@ -226,6 +234,24 @@ fn forward_lines(stream: impl Read + Send + 'static, logger: Arc<Logger>) -> Joi
     })
 }
 
+/// Waits until child `pid` exits, leaving it unreaped (a zombie), so its pid
+/// can't be reused yet.
+fn wait_for_exit(pid: u32) -> std::io::Result<()> {
+    let pid = libc::id_t::from(pid);
+    loop {
+        // SAFETY: siginfo_t is plain data, and waitid only writes into it.
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: `info` is a valid siginfo_t for the whole call.
+        if unsafe { libc::waitid(libc::P_PID, pid, &mut info, libc::WEXITED | libc::WNOWAIT) } == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
+
 fn describe_exit(status: ExitStatus) -> String {
     use std::os::unix::process::ExitStatusExt;
     match (status.code(), status.signal()) {
@@ -305,6 +331,16 @@ mod tests {
         let error = stdout_within(command, Duration::from_millis(200)).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn waiting_for_exit_leaves_the_child_unreaped() {
+        let mut child = Command::new("sh").args(["-c", "exit 3"]).spawn().unwrap();
+        wait_for_exit(child.id()).unwrap();
+        let stat = std::fs::read_to_string(format!("/proc/{}/stat", child.id())).unwrap();
+        // The state follows the command name in parentheses: Z is a zombie.
+        assert_eq!(stat.rsplit_once(") ").unwrap().1.chars().next(), Some('Z'));
+        assert_eq!(child.wait().unwrap().code(), Some(3));
     }
 
     #[test]
