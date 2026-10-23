@@ -12,39 +12,18 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 
 ## Layout
 
-How each part works is in its module's doc comment (or the comment atop a
-QML file). Read it before changing the module, and keep it true in the same
-change.
+Each crate, module and QML file opens with a comment saying what it does and
+how; read it before changing that code and keep it true in the same change.
+What no single file shows:
 
-- `crates/novad`: the daemon, run by the `nova` binary as `nova daemon` (it
-  shows as `Nova` in ps). Owns all logic and state, listens on
-  `$XDG_RUNTIME_DIR/nova/novad.sock`, runs the UI as its child and restarts
-  it on a crash, and logs both to `~/.local/state/nova/nova.log`. Settings
-  (`settings.rs`), the compositor (`compositor/`), themes (`theme.rs`) and
-  features (`ai_usage/`, ...) are one module each.
-- `crates/nova-cli`: the `nova` command. Talks to novad and the
-  `nova.service` user unit; no logic of its own.
-- `crates/nova-protocol`: the JSON-lines wire format. `ui/daemon/protocol.js`
-  mirrors it: change both together, with matching tests on both sides.
-- `crates/nova-paths`: every path Nova uses, for novad and the CLI.
-- `crates/nova-features`, `features/<id>/feature.toml`: optional features.
-  The manifest is the single source of truth for a feature's packages per
-  distro and GPU; `daemon = "x"` needs a cargo feature `x` in novad.
-- `crates/nova-quickshell`, `packaging/quickshell.toml`: the tested range of
-  upstream Quickshell releases (no pin, no fork). Raise `max` only after
-  testing the newer release.
-- `themes/<id>.toml`: predefined themes, `[dark]` and optional `[light]`,
-  each setting every `Palette` token once.
-- `packaging/`: the systemd user unit and the Nix launcher (`nova-ui`).
-- `ui/`: the Quickshell UI, entry point `shell.qml`. `theme/Tokens.qml`
-  holds every design value; `daemon/Daemon.qml` is the only socket to
-  novad; `stage/` is the window model below; `tests/` are QtTest files
-  (Quickshell's own types can't load there; e2e covers them).
-- `e2e/run.sh`: headless sway, two monitors. `e2e/vm/`: NixOS VM tests on
-  real niri and Hyprland, with screenshot goldens in `e2e/golden/`.
-
-`just docs` clones the dev shell's Quickshell source into `docs/quickshell`;
-check APIs there rather than from memory.
+- `ui/daemon/protocol.js` mirrors `crates/nova-protocol`: change both
+  together, with matching tests on both sides.
+- A feature is `features/<id>/feature.toml`, the single source of truth for
+  its packages; `daemon = "x"` needs a cargo feature `x` in novad.
+- `packaging/quickshell.toml` is the tested Quickshell range (no pin, no
+  fork). Raise `max` only after testing the newer release. `just docs`
+  clones its source into `docs/quickshell`; check APIs there, not from
+  memory.
 
 ## Rules
 
@@ -154,15 +133,12 @@ check APIs there rather than from memory.
 
 ## Tests
 
-Most tests are **component** tests (one component through its real public
-interface, with its real internals, like a novad service driven through its
-socket commands) and **integration** tests (several together, like the CLI
-against a running novad). Unit tests only for small, tricky pure logic
-(parsers, version ranges). Smoke/e2e is a final check, not the main suite.
-
-Fake only what can't run in a test (the compositor, hardware, the network),
-with recorded real data, not hand-written mocks. If a test needs many mocks,
-test one level up instead.
+Mostly component tests (one component through its real interface, with its
+real internals) and integration tests (several together, like the CLI
+against a running novad). Unit tests only for small, tricky pure logic;
+e2e is the final check. Fake only the compositor, hardware and network,
+with recorded real data, not hand-written mocks. QML tests can't load
+Quickshell's own types; e2e covers those.
 
 Tests start from what a new user has (folders missing, no saved state)
 unless they're about something else. A bug fix comes with a test that fails
@@ -170,22 +146,10 @@ without it.
 
 ## Commands
 
-Run inside `nix develop`:
-
-- `just check`: formatting, clippy, statix/deadnix, Rust tests, qmllint, QML
-  tests (what CI runs). `just fmt` formats everything.
-- `just snapshots`: review changed insta snapshots (the wire format is one).
-- `just e2e`: the headless end-to-end run; screenshot in `e2e/out/`.
-- `just e2e-vm [niri|hyprland]`: one VM test (needs KVM).
-- `just e2e-approve [niri|hyprland]`: refreshes `e2e/golden/<compositor>`
-  after an intended visual change; commit them with it. Without KVM (cloud
-  sessions), run the "Approve goldens" workflow from main on the PR branch.
-- `just record [niri|hyprland]`: records what that compositor sends novad
-  (needs KVM). Re-record after a compositor update changes its IPC.
-- `just run`: this checkout's Nova in place of your bar until Ctrl+C. Its
-  log goes to `~/.local/state/nova-dev`.
-- `nix flake check -L`: the same checks as CI, sandboxed.
-- `just review [base]`: a local Codex review against `base` (default `main`).
+Run `just` inside `nix develop` to list the recipes. `just check` is what CI
+runs. Without KVM (cloud sessions), approve goldens with the "Approve
+goldens" workflow from main on the PR branch instead of `just e2e-approve`.
+`just run` logs to `~/.local/state/nova-dev`.
 
 Every change goes through a pull request; `main` is protected. Sessions on the
 maintainer's desktop are for testing only: don't commit or push from there.
