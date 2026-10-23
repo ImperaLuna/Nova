@@ -198,7 +198,7 @@ pub fn load_all(root: &Path) -> Result<Vec<Manifest>, Error> {
 }
 
 /// The user's choices from `features.toml`: `enabled = [...]`, `disabled = [...]`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Selection {
     #[serde(default)]

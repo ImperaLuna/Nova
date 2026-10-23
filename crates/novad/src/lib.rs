@@ -10,16 +10,18 @@ mod compositor;
 mod config;
 mod features;
 mod hub;
+mod inotify;
 mod logger;
 mod procfs;
 mod server;
+mod settings;
 mod supervisor;
 mod theme;
 
 use hub::Hub;
 use logger::Logger;
-use nova_features::Selection;
-use nova_protocol::{FeatureState, FeatureStatus, LogLevel, Status, Theme, UiState, UiStatus};
+use nova_protocol::{LogLevel, Status, UiState, UiStatus};
+use settings::{Settings, Sources};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -39,13 +41,13 @@ pub struct Args {
     /// Folder of feature manifests.
     #[arg(long, default_value_os_t = nova_features::default_dir())]
     features_dir: PathBuf,
-    /// The user's feature choices.
+    /// The user's feature choices. Reloaded when it changes.
     #[arg(long, default_value_os_t = nova_paths::config_dir().join("features.toml"))]
     selection: PathBuf,
     /// Folder of theme files (`<id>.toml`).
     #[arg(long, default_value_os_t = theme::default_dir())]
     themes_dir: PathBuf,
-    /// The user's settings (see `config`).
+    /// The user's settings (see `config`). Reloaded when it changes.
     #[arg(long, default_value_os_t = nova_paths::config_dir().join("config.toml"))]
     config: PathBuf,
     /// The UI's QML folder.
@@ -79,14 +81,14 @@ pub struct Args {
 /// Everything a connection needs to answer requests.
 pub struct Daemon {
     started: Instant,
-    features: Vec<FeatureState>,
-    theme: Theme,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     ui: Option<Arc<Supervisor>>,
     socket: PathBuf,
-    /// Running when the `ai-usage` feature is ready.
-    ai_usage: Option<Arc<ai_usage::Usage>>,
+    sources: Sources,
+    /// Replaced on reload. Events about it are published under this lock,
+    /// so a new subscriber's snapshot and later events arrive in order.
+    settings: Mutex<Settings>,
     /// Following the compositor, when it's one novad knows.
     compositor: Option<Arc<compositor::Compositor>>,
 }
@@ -101,10 +103,22 @@ impl Daemon {
             pss_kib: procfs::pss_kib(std::process::id()),
             quickshell: self.ui.as_ref().and_then(|ui| ui.quickshell_version()),
             ui: self.ui.as_ref().map_or(disabled, |ui| ui.status()),
-            features: self.features.clone(),
+            features: lock(&self.settings).features.clone(),
             log_dir: self.logger.dir().display().to_string(),
             desktop: self.compositor.as_ref().and_then(|compositor| compositor.desktop()),
         }
+    }
+
+    /// Reads the settings files again and applies what changed.
+    fn reload(&self) {
+        lock(&self.settings).reload(&self.sources, &self.hub, &self.logger);
+    }
+
+    /// Starts watching the settings files, reloading when they change.
+    fn watch_settings(self: &Arc<Self>) {
+        let daemon = Arc::clone(self);
+        let files = vec![self.sources.config.clone(), self.sources.selection.clone()];
+        settings::watch(files, Arc::clone(&self.logger), move || daemon.reload());
     }
 
     /// Stops the UI and exits novad. Exit code 0, so systemd leaves it off.
@@ -148,21 +162,15 @@ fn start(
     logger.info(LOG_SOURCE, &format!("novad {} starting (pid {})", env!("CARGO_PKG_VERSION"), std::process::id()));
 
     let path_var = session_path();
-    let selection = match std::fs::read_to_string(&args.selection) {
-        Ok(text) => Selection::parse(&text)?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Selection::default(),
-        Err(e) => return Err(format!("can't read {}: {e}", args.selection.display()).into()),
+    let sources = Sources {
+        config: args.config,
+        selection: args.selection,
+        themes_dir: args.themes_dir,
+        manifests: nova_features::load_all(&args.features_dir)?,
+        path_var: path_var.clone(),
+        ai_usage: ai_usage::Paths::new(&args.state_dir, args.codex_home, args.claude_credentials),
     };
-    let features = features::states(&nova_features::load_all(&args.features_dir)?, &selection, &path_var);
-    for feature in &features {
-        logger.info("features", &format!("{} is {:?}", feature.id, feature.status));
-    }
-
-    let (theme, problems) = theme::resolve(&args.themes_dir, &args.config);
-    for problem in problems {
-        logger.warn("theme", &problem);
-    }
-    logger.info("theme", &format!("using {} ({:?})", theme.id, theme.mode));
+    let settings = Settings::load(&sources, &hub, &logger);
 
     logger.info(LOG_SOURCE, &format!("listening on {}", socket.display()));
 
@@ -185,23 +193,6 @@ fn start(
         Supervisor::start(settings, Arc::clone(&logger))
     });
 
-    let ai_usage = features
-        .iter()
-        .any(|feature| feature.id == ai_usage::FEATURE_ID && feature.status == FeatureStatus::Ready)
-        .then(|| {
-            ai_usage::Usage::start(
-                ai_usage::Paths::new(
-                    &args.state_dir,
-                    args.codex_home.clone(),
-                    args.claude_credentials.clone(),
-                    // A broken config.toml is already logged by the theme.
-                    config::read(&args.config).is_ok_and(|config| config.ai_usage.claude_usage_endpoint),
-                ),
-                Arc::clone(&hub),
-                Arc::clone(&logger),
-            )
-        });
-
     let compositor = match compositor::detect(|name| std::env::var_os(name)) {
         Some(backend) => Some(compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger))),
         None => {
@@ -213,8 +204,17 @@ fn start(
         }
     };
 
-    let daemon =
-        Arc::new(Daemon { started: Instant::now(), features, theme, hub, logger, ui, socket, ai_usage, compositor });
+    let daemon = Arc::new(Daemon {
+        started: Instant::now(),
+        hub,
+        logger,
+        ui,
+        socket,
+        sources,
+        settings: Mutex::new(settings),
+        compositor,
+    });
+    daemon.watch_settings();
     Ok((listener, daemon))
 }
 

@@ -30,6 +30,13 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   (restarting it when it crashes) and writes the log for both:
   `~/.local/state/nova/nova.log`, rotated per novad start, with crash
   snapshots in `crashes/`. CLI tests run a real novad in-process.
+  `settings.rs` reads `~/.config/nova/config.toml` and `features.toml` at
+  start and again whenever either changes (inotify on their folders, so
+  saves by rename count), through the same code: the theme is re-sent,
+  features are started, stopped or restarted with new settings, and the
+  `features` event tells the UI what to load. A file that doesn't parse
+  means defaults at start and keeps the last good version after that,
+  logged as an error either way.
 - `crates/nova-cli`: the `nova` binary. `nova` starts Nova (or shows its
   status), plus `restart`, `quit`, `status`, `logs`, `version`,
   `claude-statusline` (Claude Code's status line command, for AI usage) and
