@@ -52,6 +52,23 @@ QtObject {
     readonly property color surfaceRaised: Qt.rgba(fg.r, fg.g, fg.b, raisedOpacity)
     readonly property color outline: Qt.rgba(fg.r, fg.g, fg.b, outlineOpacity)
 
+    // Glass behind pills and the panels that morph out of them: a dark tint
+    // with a hint of the accent, a faint rim and a lit top edge. A solid
+    // stand-in until the blur spike (IMP-9) picks real blur.
+    readonly property real glassOpacity: 0.78
+    readonly property real glassAccent: 0.05
+    readonly property color glass: {
+        const tinted = tint(primary, glassAccent);
+        return Qt.rgba(tinted.r, tinted.g, tinted.b, glassOpacity);
+    }
+    readonly property color glassRim: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
+    readonly property color glassHighlight: Qt.rgba(fg.r, fg.g, fg.b, 0.16)
+    // Hover wash on things inside glass.
+    readonly property color hover: Qt.rgba(fg.r, fg.g, fg.b, 0.06)
+    // Meters: the empty track and a neutral fill.
+    readonly property color track: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
+    readonly property color meter: Qt.rgba(fg.r, fg.g, fg.b, 0.85)
+
     // `target` mixed into bg: 0 is bg, 1 is the color itself. One function for
     // every ramp and tint, so they follow the theme: heatmaps step through
     // tint(primary, level), status rows sit on tint(error, 0.15) and so on.
@@ -76,6 +93,8 @@ QtObject {
     readonly property string fontMono: "JetBrains Mono"
     readonly property string fontDisplay: "Instrument Serif"
     readonly property int fontSize: 13
+    readonly property int fontSizeSmall: 12
+    readonly property int fontSizeTiny: 11
 
     // Motion (ms)
     readonly property int durationFast: 120

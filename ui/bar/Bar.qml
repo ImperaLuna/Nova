@@ -2,9 +2,15 @@ import QtQuick
 import Quickshell
 import "../theme"
 import "../daemon"
+import "../ai_usage"
 
-// Placeholder bar: one floating pill per screen. The real bar (three pills,
-// hide policies, reveal strip) lands with M2.
+// Placeholder bar: one floating pill per screen, plus the AI usage pill on
+// the left when that feature is on. The real bar (three pills, hide
+// policies, reveal strip) lands with M2.
+//
+// The window is taller than the bar when a pill has a panel to open, but it
+// only reserves the bar's height and takes input only on the pills, so it
+// never pushes windows around or blocks clicks between pills.
 PanelWindow { // qmllint disable uncreatable-type
     id: bar
 
@@ -13,8 +19,18 @@ PanelWindow { // qmllint disable uncreatable-type
         left: true
         right: true
     }
-    implicitHeight: Tokens.barHeight + Tokens.barMargin
+    exclusiveZone: Tokens.barHeight + Tokens.barMargin
+    implicitHeight: Tokens.barMargin + Math.max(Tokens.barHeight, (aiUsage.item as AiUsage)?.openHeight ?? 0)
     color: "transparent"
+
+    mask: Region {
+        Region {
+            item: center
+        }
+        Region {
+            item: aiUsage.item as Item
+        }
+    }
 
     // Logs once the bar has drawn a frame while connected to novad, so the
     // VM tests know when to screenshot it.
@@ -31,9 +47,23 @@ PanelWindow { // qmllint disable uncreatable-type
         }
     }
 
+    Loader {
+        id: aiUsage
+        x: Tokens.barMargin
+        y: Tokens.barMargin
+        active: Daemon.readyFeatures.includes("ai-usage") && Daemon.aiUsage !== null
+        sourceComponent: AiUsage {
+            usage: Daemon.aiUsage
+            onShowRequested: provider => Daemon.call("show_ai_usage", {
+                    provider: provider
+                })
+        }
+    }
+
     Rectangle {
+        id: center
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
+        y: Tokens.barMargin
         height: Tokens.barHeight
         width: label.implicitWidth + Tokens.pad * 2
         radius: Tokens.radiusPill

@@ -17,6 +17,9 @@ Singleton {
     // The active theme event's data ({id, name, mode, colors}); null until
     // the first one arrives. Its colors go to Tokens.
     property var theme: null
+    // The latest ai_usage event's data ({shown, providers}); null until one
+    // arrives, which only happens with the ai-usage feature on.
+    property var aiUsage: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
 
     property int _nextId: 1
@@ -52,6 +55,8 @@ Singleton {
         } else if (msg.event === "theme") {
             Tokens.apply(msg.data.colors);
             theme = msg.data;
+        } else if (msg.event === "ai_usage") {
+            aiUsage = msg.data;
         }
     }
 
@@ -74,8 +79,9 @@ Singleton {
         onConnectionStateChanged: {
             if (connected) {
                 // Only hello arrives unasked; everything else is subscribed to.
+                // Topics of features that are off send nothing.
                 root.call("subscribe", {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE]
                 });
             } else {
                 root._pending = {};

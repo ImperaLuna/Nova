@@ -31,8 +31,9 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   `~/.local/state/nova/nova.log`, rotated per novad start, with crash
   snapshots in `crashes/`. CLI tests run a real novad in-process.
 - `crates/nova-cli`: the `nova` binary. `nova` starts Nova (or shows its
-  status), plus `restart`, `quit`, `status`, `logs`, `version`, and the
-  hidden `daemon`. It talks to novad and to the `nova.service` systemd user
+  status), plus `restart`, `quit`, `status`, `logs`, `version`,
+  `claude-statusline` (Claude Code's status line command, for AI usage) and
+  the hidden `daemon`. It talks to novad and to the `nova.service` systemd user
   unit; no logic of its own.
   `nova help` also lists planned commands, marked `[planned]`.
 - `themes/<id>.toml`: predefined color themes (no wallpaper-generated
@@ -52,6 +53,11 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   source of truth for its packages per distro and GPU. Nix, `nova setup` and
   novad all read it. A manifest with `daemon = "x"` needs a matching cargo
   feature `x` in `crates/novad/Cargo.toml` (a test enforces this).
+  - `ai-usage`: Claude and Codex plan limits on the `ai_usage` topic
+    (`crates/novad/src/ai_usage`, `ui/ai_usage`). Only local, official
+    sources: Claude Code's status line input via `nova claude-statusline`,
+    and the `token_count` events in Codex's session logs, watched with
+    inotify. No network requests, and never read either tool's credentials.
 - `ui/`: the Quickshell (QML) UI. `shell.qml` is the entry point.
   - `theme/Tokens.qml`: design tokens. Components never hard-code colors,
     radii, sizes or durations. Colors are the theme's, set by `Daemon.qml`

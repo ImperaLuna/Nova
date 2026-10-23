@@ -33,7 +33,7 @@ const CODEX_SETTLE: Duration = Duration::from_millis(500);
 /// Longest sleep with nothing scheduled.
 const IDLE_WAKE: Duration = Duration::from_secs(24 * 60 * 60);
 const CLAUDE_HINT: &str =
-    "Set `nova claude-statusline` as Claude Code's status line command; numbers appear after Claude's next reply.";
+    "Set nova claude-statusline as Claude Code's status line command; numbers appear after Claude's next reply.";
 
 /// Where the module reads and keeps things.
 pub struct Paths {
