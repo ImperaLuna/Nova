@@ -55,6 +55,13 @@ fn describe(status: &Status) -> String {
         out += &row("", &format!("last crash {}: see `nova logs --crash`", ago(&crash.time)));
     }
 
+    // Only when it's a problem: a supported Quickshell isn't worth a row.
+    if let Some(problem) =
+        status.quickshell.as_deref().and_then(|version| nova_quickshell::Range::supported().problem(version))
+    {
+        out += &row("warning", &problem);
+    }
+
     let features: Vec<String> = status
         .features
         .iter()
@@ -139,5 +146,10 @@ mod tests {
         assert!(text.contains("UI         running, pid 11, 180 MB, restarted 2 times"), "{text}");
         assert!(text.contains("last crash not a time: see `nova logs --crash`"), "{text}");
         assert!(text.contains("features   core on, recording missing wf-recorder"), "{text}");
+        assert!(!text.contains("warning"), "a supported Quickshell gets no row: {text}");
+
+        let untested = Status { quickshell: Some("0.1.0".into()), ..status };
+        let text = describe(&untested);
+        assert!(text.contains("warning    Quickshell 0.1.0 is older than Nova is tested with"), "{text}");
     }
 }

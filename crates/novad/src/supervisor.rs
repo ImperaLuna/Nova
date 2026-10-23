@@ -238,7 +238,12 @@ fn quickshell_version(settings: &UiSettings, logger: &Logger) -> Option<String> 
         .filter(|output| output.status.success())
         .and_then(|output| String::from_utf8_lossy(&output.stdout).split_whitespace().nth(1).map(str::to_owned));
     match &version {
-        Some(version) => logger.info(LOG_SOURCE, &format!("Quickshell {version}")),
+        Some(version) => {
+            logger.info(LOG_SOURCE, &format!("Quickshell {version}"));
+            if let Some(problem) = nova_quickshell::Range::supported().problem(version) {
+                logger.warn(LOG_SOURCE, &problem);
+            }
+        }
         None => logger.warn(LOG_SOURCE, &format!("{} --version gave no version", settings.quickshell.display())),
     }
     version

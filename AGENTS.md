@@ -19,6 +19,8 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   `subscribe` to.
 - `crates/nova-paths`: where things live (socket, config, state and log
   files, installed data). novad and the CLI both resolve paths here.
+- `crates/nova-quickshell`: the Quickshell versions Nova supports
+  (`packaging/quickshell.toml`, compiled in) and the check against them.
 - `crates/nova-features`: loads and validates `features/<id>/feature.toml`.
 - `crates/novad`: the daemon, a library the `nova` binary runs as
   `nova daemon` (one binary to install; it shows as `Nova` in ps and btop).
@@ -88,8 +90,15 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   hard limit; e2e warns when it's exceeded. Unload what isn't visible (Loader
   `active`), set `sourceSize` on images, don't create per-screen copies of
   things one screen needs.
-- Quickshell is pinned to the nixpkgs version (0.3.2). `just docs` clones its
-  source into `docs/quickshell` for checking APIs; trust it over memory.
+- Quickshell: Nova supports a tested range of upstream releases, declared
+  once in `packaging/quickshell.toml` (no exact pin across distros, no fork).
+  The flake uses the nixpkgs version flake.lock pins, and the
+  `quickshell-version` flake check fails when that leaves the range. novad
+  warns at start, and `nova status` shows a warning row, when the Quickshell
+  it runs is outside it (`crates/nova-quickshell`). Raise `max` only after
+  testing Nova on the newer release. `just docs` clones the dev shell's
+  Quickshell source into `docs/quickshell` for checking APIs; trust it over
+  memory.
 
 ## Engineering principles
 
@@ -220,10 +229,10 @@ Improvement), like `[IMP-8] Feature: nova CLI`. The body's first line is
 `Part of IMP-<n>` while the ticket has more PRs to come, or `Closes IMP-<n>`
 on the PR that finishes it, so Linear moves the ticket to Done only then.
 
-Open PRs as drafts and mark them ready for review only when the work is done.
-Codex reviews a PR automatically once, when it becomes ready, so pushes to a
-draft don't each trigger a review. For another review after fixes, comment
-`@codex review` on the PR.
+Open PRs as normal (non-draft) PRs. Codex doesn't review on its own (marking
+a draft ready doesn't start one either), so when the work is done, comment
+`@codex review` on the PR to ask for a review, and again after fixes. Ask
+once per round: pushes alone never trigger a review.
 
 Review findings (Codex, or any other reviewer bot) are claims to check, not
 orders. Before fixing one, reproduce it or trace a real path from a real

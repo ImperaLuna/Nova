@@ -232,6 +232,33 @@ fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
     std::fs::remove_dir_all(scripts).unwrap();
 }
 
+#[test]
+fn a_quickshell_outside_the_tested_range_is_warned_about() {
+    let scripts = std::env::temp_dir().join(format!("novad-test-old-quickshell-{}", std::process::id()));
+    std::fs::create_dir_all(&scripts).unwrap();
+    let fake_ui = scripts.join("quickshell");
+    let script =
+        "#!/bin/sh\ncase \"$1\" in --version) echo 'Quickshell 0.1.0 (revision test)' ;; *) exec sleep 60 ;; esac\n";
+    std::fs::write(&fake_ui, script).unwrap();
+    std::fs::set_permissions(&fake_ui, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let settings = UiSettings {
+        quickshell: fake_ui,
+        ui_dir: PathBuf::from("ui"),
+        socket: PathBuf::from("unused.sock"),
+        path_var: std::env::var("PATH").unwrap_or_default(),
+        wayland_socket: None,
+    };
+    let novad = TestDaemon::start("quickshell-range", Some(settings));
+    let status = wait_for_status(&mut novad.connect(), |status| status.ui.pid.is_some());
+    assert_eq!(status.quickshell.as_deref(), Some("0.1.0"));
+    let log = read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
+    let warning = log.iter().find(|entry| entry.level == LogLevel::Warn && entry.message.contains("0.1.0"));
+    assert!(warning.is_some_and(|entry| entry.message.contains("older than Nova is tested with")), "{log:?}");
+    novad.daemon.ui.as_ref().unwrap().stop();
+    std::fs::remove_dir_all(scripts).unwrap();
+}
+
 fn wait_for_status(client: &mut Client, done: impl Fn(&Status) -> bool) -> Status {
     for attempt in 0..100 {
         let status: Status = serde_json::from_value(client.request(attempt, "status", None)["result"].clone()).unwrap();
