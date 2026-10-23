@@ -1,10 +1,23 @@
 {
   description = "Nova: a desktop shell for Wayland compositors";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # The newest stable Quickshell release, for the "Newest Quickshell"
+    # workflow, which overrides this with the newest tag it finds; the tag
+    # here is only a default. Not the Quickshell Nova ships: that is nixpkgs'.
+    quickshell-newest = {
+      url = "git+https://github.com/quickshell-mirror/quickshell?ref=refs/tags/v0.3.2&shallow=1";
+      flake = false;
+    };
+  };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      quickshell-newest,
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -34,6 +47,80 @@
       # The Quickshell releases Nova is tested with. flake.lock pins one exact
       # nixpkgs Quickshell; the quickshell-version check keeps it in this range.
       quickshellRange = builtins.fromTOML (builtins.readFile ./packaging/quickshell.toml);
+      # Whether Quickshell `version` is in that range. An `x` in max matches
+      # any number there (see the range file).
+      inQuickshellRange =
+        version:
+        let
+          inherit (quickshellRange) min max;
+          comparableMax = builtins.replaceStrings [ "x" ] [ "999999" ] max;
+        in
+        nixpkgs.lib.versionAtLeast version min && nixpkgs.lib.versionAtLeast comparableMax version;
+
+      # pkgs with Quickshell swapped for the quickshell-newest release, built
+      # with nixpkgs' recipe. The same release as nixpkgs' keeps nixpkgs'
+      # build, so the newest-Quickshell checks reuse CI's cached ones.
+      withNewestQuickshell =
+        pkgs:
+        pkgs.extend (
+          _: prev: {
+            quickshell =
+              let
+                cmake = builtins.readFile "${quickshell-newest}/CMakeLists.txt";
+                version = builtins.head (builtins.match ".*project\\(quickshell VERSION \"([^\"]+)\".*" cmake);
+              in
+              if version == prev.quickshell.version then
+                prev.quickshell
+              else
+                prev.quickshell.overrideAttrs {
+                  inherit version;
+                  src = quickshell-newest;
+                };
+          }
+        );
+
+      # The nova binary (CLI and daemon), feature manifests, the QML UI and
+      # the systemd unit, on pkgs' Quickshell.
+      novaFor =
+        pkgs:
+        let
+          nova-ui = pkgs.callPackage ./packaging/nix/nova-ui.nix { };
+        in
+        {
+          inherit nova-ui;
+          nova = pkgs.rustPlatform.buildRustPackage {
+            pname = "nova";
+            version = "0.1.0";
+            src = rustSrc pkgs.lib;
+            cargoLock.lockFile = ./Cargo.lock;
+            # Compiled in, so `nova` finds its UI with or without systemd.
+            env.NOVA_UI_LAUNCHER = pkgs.lib.getExe nova-ui;
+            postInstall = ''
+              mkdir -p $out/share/nova
+              cp -r features $out/share/nova/features
+              cp -r themes $out/share/nova/themes
+              cp -r ${./ui} $out/share/nova/ui
+              install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
+              substituteInPlace $out/lib/systemd/user/nova.service \
+                --replace-fail @nova@ $out/bin/nova
+            '';
+            meta = {
+              description = "Nova desktop shell";
+              license = pkgs.lib.licenses.mit;
+              mainProgram = "nova";
+            };
+          };
+        };
+
+      # qmllint over ui/ against pkgs' Quickshell types.
+      qmllintFor =
+        pkgs:
+        pkgs.runCommand "nova-qmllint" { nativeBuildInputs = [ pkgs.qt6.qtdeclarative ]; } ''
+          cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
+          patchShebangs scripts
+          scripts/qmllint.sh ${pkgs.lib.escapeShellArgs (qmlImports pkgs)}
+          touch $out
+        '';
 
       qmlImports = pkgs: [
         "${pkgs.quickshell}/lib/qt-6/qml"
@@ -44,33 +131,32 @@
       packages = forAllSystems (pkgs: {
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 
-        # The nova binary (CLI and daemon), feature manifests, the QML UI and
-        # the systemd unit.
-        nova = pkgs.rustPlatform.buildRustPackage {
-          pname = "nova";
-          version = "0.1.0";
-          src = rustSrc pkgs.lib;
-          cargoLock.lockFile = ./Cargo.lock;
-          # Compiled in, so `nova` finds its UI with or without systemd.
-          env.NOVA_UI_LAUNCHER = pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.nova-ui;
-          postInstall = ''
-            mkdir -p $out/share/nova
-            cp -r features $out/share/nova/features
-            cp -r themes $out/share/nova/themes
-            cp -r ${./ui} $out/share/nova/ui
-            install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
-            substituteInPlace $out/lib/systemd/user/nova.service \
-              --replace-fail @nova@ $out/bin/nova
-          '';
-          meta = {
-            description = "Nova desktop shell";
-            license = pkgs.lib.licenses.mit;
-            mainProgram = "nova";
-          };
-        };
-
-        nova-ui = pkgs.callPackage ./packaging/nix/nova-ui.nix { };
+        inherit (novaFor pkgs) nova nova-ui;
       });
+
+      # Nova on the newest stable Quickshell release instead of nixpkgs': its
+      # build, qmllint and VM tests, for .github/workflows/newest-quickshell.yml.
+      # Not checks, so `nix flake check` doesn't build a second Quickshell.
+      legacyPackages = forAllSystems (
+        pkgs:
+        let
+          newest = withNewestQuickshell pkgs;
+          inherit (novaFor newest) nova;
+        in
+        {
+          newest-quickshell =
+            import ./e2e/vm {
+              pkgs = newest;
+              inherit nova;
+            }
+            // {
+              inherit (newest) quickshell;
+              inherit nova;
+              qmllint = qmllintFor newest;
+              inRange = inQuickshellRange newest.quickshell.version;
+            };
+        }
+      );
 
       checks = forAllSystems (
         pkgs:
@@ -108,12 +194,7 @@
             cargo fmt --all --check
           '';
 
-          qmllint = pkgs.runCommand "nova-qmllint" { nativeBuildInputs = [ pkgs.qt6.qtdeclarative ]; } ''
-            cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
-            patchShebangs scripts
-            scripts/qmllint.sh ${pkgs.lib.escapeShellArgs (qmlImports pkgs)}
-            touch $out
-          '';
+          qmllint = qmllintFor pkgs;
 
           qmlformat = pkgs.runCommand "nova-qmlformat" { nativeBuildInputs = [ pkgs.qt6.qtdeclarative ]; } ''
             cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
@@ -143,12 +224,9 @@
             let
               inherit (pkgs.quickshell) version;
               inherit (quickshellRange) min max;
-              # An `x` in max matches any number there (see the range file).
-              comparableMax = builtins.replaceStrings [ "x" ] [ "999999" ] max;
-              inRange = pkgs.lib.versionAtLeast version min && pkgs.lib.versionAtLeast comparableMax version;
             in
             pkgs.runCommand "nova-quickshell-version" { } (
-              if inRange then
+              if inQuickshellRange version then
                 "touch $out"
               else
                 ''

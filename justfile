@@ -61,6 +61,10 @@ e2e-approve compositor="niri":
     cp --no-preserve=mode "$(nix build -L --no-link --print-out-paths .#checks.{{system}}.e2e-{{compositor}}.vm)"/*.png e2e/golden/{{compositor}}/
     git status --short e2e/golden/{{compositor}}
 
+# Nova's qmllint and VM tests on the newest stable Quickshell release (needs KVM)
+newest-quickshell:
+    scripts/newest-quickshell.sh
+
 # Record what niri or Hyprland sends novad, in a VM, for novad's compositor tests (needs KVM)
 record compositor="niri":
     rm -rf crates/novad/src/compositor/recorded/{{compositor}}
