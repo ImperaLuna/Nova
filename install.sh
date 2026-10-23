@@ -94,6 +94,9 @@ case ":$PATH:" in
 *":$prefix/bin:"*) ;;
 *) echo "Add $prefix/bin to your PATH to run nova from a terminal." ;;
 esac
+# exec skips the EXIT trap, so the download or source build goes first.
+rm -rf "$work"
+trap - EXIT
 # Through `curl | sh`, stdin is this script: setup asks on the terminal.
 if [ ! -t 0 ] && (exec </dev/tty) 2>/dev/null; then
 	exec "$prefix/bin/nova" setup "$@" </dev/tty

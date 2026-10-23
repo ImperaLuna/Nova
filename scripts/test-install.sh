@@ -18,8 +18,10 @@ chmod -R a-w "$work/release"
 tar -czf "$work/nova.tar.gz" -C "$work/release" bin share
 echo 'ID=arch' >"$work/os-release"
 
+# install.sh's own temporary files go under $work/tmp, to check it removes them.
 run() {
-	NOVA_PREFIX="$work/prefix" NOVA_OS_RELEASE="$work/os-release" \
+	mkdir -p "$work/tmp"
+	TMPDIR="$work/tmp" NOVA_PREFIX="$work/prefix" NOVA_OS_RELEASE="$work/os-release" \
 		NOVA_RELEASE_URL="file://$work/nova.tar.gz" sh "$script" "$@" </dev/null
 }
 
@@ -28,6 +30,7 @@ mkdir -p "$work/prefix/share/nova/old"
 run --dry-run >/dev/null
 [ -x "$work/prefix/bin/nova" ] || { echo "no bin/nova" >&2; exit 1; }
 [ -f "$work/prefix/share/nova/ui/shell.qml" ] || { echo "no share/nova/ui" >&2; exit 1; }
+[ -z "$(ls -A "$work/tmp")" ] || { echo "temporary files left behind" >&2; exit 1; }
 [ ! -e "$work/prefix/share/nova/old" ] || { echo "old files linger" >&2; exit 1; }
 [ "$(cat "$work/ran")" = "$work/prefix/bin/nova setup --dry-run" ] || { echo "ran: $(cat "$work/ran")" >&2; exit 1; }
 
