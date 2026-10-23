@@ -319,6 +319,7 @@ Item {
 
         // Unavailable: a dashed ring. Loading: a spinning arc.
         Shape {
+            id: indicator
             x: Tokens.pad + root.logoSize + root.logoGap
             y: (Tokens.barHeight - height) / 2
             width: root.indicatorSize
@@ -357,7 +358,8 @@ Item {
             }
 
             RotationAnimator on rotation {
-                running: root.summary.state === "loading"
+                // Only while it can be seen: opening the panel fades it out.
+                running: root.summary.state === "loading" && indicator.visible && indicator.opacity > 0
                 from: 0
                 to: 360
                 duration: Tokens.durationSpin

@@ -259,8 +259,9 @@ impl Usage {
     fn run(&self, codex_home: Option<PathBuf>, wakes: mpsc::Receiver<Wake>) {
         match &codex_home {
             Some(home) => {
-                self.rescan_codex(home);
+                // Watched first, so nothing written between the two is missed.
                 self.watch_codex(home);
+                self.rescan_codex(home);
             }
             None => self.set_codex(Codex::Unavailable("Can't find Codex's folder: HOME isn't set.".into())),
         }
