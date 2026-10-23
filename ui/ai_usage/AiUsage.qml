@@ -16,6 +16,10 @@ Item {
     // AiUsageService.usage: {shown, providers}.
     required property var usage
     property bool open: false
+    // MEASUREMENT ONLY (IMP-31): "cut" (main), "plain" (no layers), "off".
+    property string measureShadow: "cut"
+    // MEASUREMENT ONLY (IMP-31): drop the panel content while closed.
+    property bool measureUnload: false
 
     // A row for another provider was clicked: show it in the bar.
     signal showRequested(string provider)
@@ -56,7 +60,7 @@ Item {
     readonly property int countdownInterval: 30 * 1000
 
     // The panel's height for what it shows now.
-    readonly property real contentHeight: details.y + details.implicitHeight + sectionGap + othersBlock.implicitHeight + panelBottom
+    readonly property real contentHeight: panelContent.item ? panelContent.item.contentHeight : 0
     // The tallest it has been: it grows when a provider needs more room and
     // never shrinks back, so switching providers doesn't make it jump.
     property real tallest: 0
@@ -142,7 +146,8 @@ Item {
         y: -Tokens.shadowRoom
         width: surface.width + 2 * Tokens.shadowRoom
         height: surface.height + 2 * Tokens.shadowRoom
-        layer.enabled: true
+        visible: root.measureShadow !== "off"
+        layer.enabled: root.measureShadow === "cut"
         layer.effect: MultiEffect {
             maskEnabled: true
             maskInverted: true
@@ -166,7 +171,7 @@ Item {
         width: shadow.width
         height: shadow.height
         visible: false
-        layer.enabled: true
+        layer.enabled: root.measureShadow === "cut"
 
         Rectangle {
             x: Tokens.shadowRoom
@@ -350,176 +355,186 @@ Item {
             }
         }
 
-        Column {
-            id: details
-            x: root.panelPad
-            y: root.heroTop + root.heroLine
-            width: root.panelWidth - root.panelPad * 2
-            spacing: root.sectionGap
+        // MEASUREMENT ONLY (IMP-31): the panel content, dropped while
+        // closed when measureUnload is set.
+        Loader {
+            id: panelContent
+            active: !root.measureUnload || root.open || root.t > 0
+            sourceComponent: Item {
+                readonly property real contentHeight: details.y + details.implicitHeight + root.sectionGap + othersBlock.implicitHeight + root.panelBottom
 
-            // The bar's number: the 5-hour session, or the only window.
-            Column {
-                id: primaryBlock
-                width: parent.width
-                spacing: Tokens.gap
-                opacity: root.open ? 1 : 0
-                MorphReveal on opacity {
-                    delay: 0.55
-                }
+                Column {
+                    id: details
+                    x: root.panelPad
+                    y: root.heroTop + root.heroLine
+                    width: root.panelWidth - root.panelPad * 2
+                    spacing: root.sectionGap
 
-                Item {
-                    width: parent.width
-                    height: primaryName.height
-                    visible: root.summary.main !== null
+                    // The bar's number: the 5-hour session, or the only window.
+                    Column {
+                        id: primaryBlock
+                        width: parent.width
+                        spacing: Tokens.gap
+                        opacity: root.open ? 1 : 0
+                        MorphReveal on opacity {
+                            delay: 0.55
+                        }
 
-                    Caption {
-                        id: primaryName
-                        text: root.summary.main ? root.summary.main.name : ""
+                        Item {
+                            width: parent.width
+                            height: primaryName.height
+                            visible: root.summary.main !== null
+
+                            Caption {
+                                id: primaryName
+                                text: root.summary.main ? root.summary.main.name : ""
+                            }
+
+                            Caption {
+                                anchors.right: parent.right
+                                font.family: Tokens.fontMono
+                                text: root.summary.main && root.summary.second ? root.summary.main.left : ""
+                            }
+                        }
+
+                        Meter {
+                            width: parent.width
+                            height: root.sessionMeter
+                            visible: root.summary.main !== null
+                            row: root.summary.main
+                        }
+
+                        // A lone window says when it resets under its meter.
+                        Caption {
+                            text: root.summary.main && !root.summary.second ? root.summary.main.reset : ""
+                        }
+
+                        Caption {
+                            width: parent.width
+                            wrapMode: Text.Wrap
+                            lineHeight: Tokens.lineHeightWrapped
+                            text: root.summary.message
+                        }
                     }
 
-                    Caption {
-                        anchors.right: parent.right
-                        font.family: Tokens.fontMono
-                        text: root.summary.main && root.summary.second ? root.summary.main.left : ""
+                    Column {
+                        id: secondBlock
+                        width: parent.width
+                        spacing: Tokens.gap
+                        opacity: root.open ? 1 : 0
+                        MorphReveal on opacity {
+                            delay: 0.7
+                        }
+                        visible: root.summary.second !== null
+
+                        Item {
+                            width: parent.width
+                            height: secondName.height
+
+                            Text {
+                                id: secondName
+                                font.family: Tokens.fontSans
+                                font.pixelSize: Tokens.fontSize
+                                color: Tokens.fg
+                                textFormat: Text.PlainText
+                                text: root.summary.second ? root.summary.second.name : ""
+                            }
+
+                            Text {
+                                anchors.right: parent.right
+                                anchors.baseline: secondName.baseline
+                                font.family: Tokens.fontMono
+                                font.pixelSize: Tokens.fontSize
+                                font.weight: Font.Medium
+                                color: root.percentColor(root.summary.second)
+                                text: root.summary.second ? `${root.summary.second.percent}%` : ""
+                            }
+                        }
+
+                        Meter {
+                            width: parent.width
+                            height: root.weeklyMeter
+                            row: root.summary.second
+                        }
+
+                        Caption {
+                            text: root.summary.second ? root.summary.second.reset : ""
+                        }
                     }
                 }
-
-                Meter {
-                    width: parent.width
-                    height: root.sessionMeter
-                    visible: root.summary.main !== null
-                    row: root.summary.main
-                }
-
-                // A lone window says when it resets under its meter.
-                Caption {
-                    text: root.summary.main && !root.summary.second ? root.summary.main.reset : ""
-                }
-
-                Caption {
-                    width: parent.width
-                    wrapMode: Text.Wrap
-                    lineHeight: Tokens.lineHeightWrapped
-                    text: root.summary.message
-                }
-            }
-
-            Column {
-                id: secondBlock
-                width: parent.width
-                spacing: Tokens.gap
-                opacity: root.open ? 1 : 0
-                MorphReveal on opacity {
-                    delay: 0.7
-                }
-                visible: root.summary.second !== null
-
-                Item {
-                    width: parent.width
-                    height: secondName.height
-
-                    Text {
-                        id: secondName
-                        font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSize
-                        color: Tokens.fg
-                        textFormat: Text.PlainText
-                        text: root.summary.second ? root.summary.second.name : ""
+                // The other providers; clicking one shows it in the bar instead.
+                // Pinned to the panel's bottom, so switching providers never moves it.
+                Column {
+                    id: othersBlock
+                    x: root.panelPad
+                    y: root.openHeight - root.panelBottom - height
+                    width: details.width
+                    spacing: Tokens.gap
+                    opacity: root.open ? 1 : 0
+                    MorphReveal on opacity {
+                        delay: 0.85
                     }
-
-                    Text {
-                        anchors.right: parent.right
-                        anchors.baseline: secondName.baseline
-                        font.family: Tokens.fontMono
-                        font.pixelSize: Tokens.fontSize
-                        font.weight: Font.Medium
-                        color: root.percentColor(root.summary.second)
-                        text: root.summary.second ? `${root.summary.second.percent}%` : ""
-                    }
-                }
-
-                Meter {
-                    width: parent.width
-                    height: root.weeklyMeter
-                    row: root.summary.second
-                }
-
-                Caption {
-                    text: root.summary.second ? root.summary.second.reset : ""
-                }
-            }
-        }
-        // The other providers; clicking one shows it in the bar instead.
-        // Pinned to the panel's bottom, so switching providers never moves it.
-        Column {
-            id: othersBlock
-            x: root.panelPad
-            y: root.openHeight - root.panelBottom - height
-            width: details.width
-            spacing: Tokens.gap
-            opacity: root.open ? 1 : 0
-            MorphReveal on opacity {
-                delay: 0.85
-            }
-
-            Rectangle {
-                width: parent.width
-                height: 1
-                color: Tokens.outline
-            }
-
-            Repeater {
-                model: Usage.others(root.usage)
-
-                MouseArea {
-                    id: row
-                    required property var modelData
-                    readonly property var info: Usage.summarize(modelData, root.now)
-
-                    x: -Tokens.rowInset
-                    width: parent.width + 2 * Tokens.rowInset
-                    height: root.rowHeight
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.showRequested(row.info.id)
-
-                    Accessible.role: Accessible.Button
-                    Accessible.name: `Show ${row.info.name} in the bar${row.info.main ? `, ${row.info.main.percent} percent` : ""}`
 
                     Rectangle {
-                        anchors.fill: parent
-                        radius: root.rowRadius
-                        color: Tokens.hover
-                        visible: row.containsMouse
+                        width: parent.width
+                        height: 1
+                        color: Tokens.outline
                     }
 
-                    ProviderLogo {
-                        x: Tokens.rowInset
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Tokens.iconSize
-                        provider: row.info.id
-                        opacity: row.info.state === "unavailable" ? Tokens.dimOpacity : 1
-                    }
+                    Repeater {
+                        model: Usage.others(root.usage)
 
-                    Text {
-                        x: 2 * Tokens.rowInset + Tokens.iconSize
-                        anchors.verticalCenter: parent.verticalCenter
-                        font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSize
-                        color: Tokens.fg
-                        textFormat: Text.PlainText
-                        text: row.info.name
-                    }
+                        MouseArea {
+                            id: row
+                            required property var modelData
+                            readonly property var info: Usage.summarize(modelData, root.now)
 
-                    Text {
-                        anchors.right: parent.right
-                        anchors.rightMargin: Tokens.rowInset
-                        anchors.verticalCenter: parent.verticalCenter
-                        font.family: Tokens.fontMono
-                        font.pixelSize: Tokens.fontSize
-                        font.weight: Font.Medium
-                        color: row.info.main ? root.percentColor(row.info) : Tokens.fgDim
-                        text: row.info.main ? `${row.info.hero}%` : row.info.hero
+                            x: -Tokens.rowInset
+                            width: parent.width + 2 * Tokens.rowInset
+                            height: root.rowHeight
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.showRequested(row.info.id)
+
+                            Accessible.role: Accessible.Button
+                            Accessible.name: `Show ${row.info.name} in the bar${row.info.main ? `, ${row.info.main.percent} percent` : ""}`
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: root.rowRadius
+                                color: Tokens.hover
+                                visible: row.containsMouse
+                            }
+
+                            ProviderLogo {
+                                x: Tokens.rowInset
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Tokens.iconSize
+                                provider: row.info.id
+                                opacity: row.info.state === "unavailable" ? Tokens.dimOpacity : 1
+                            }
+
+                            Text {
+                                x: 2 * Tokens.rowInset + Tokens.iconSize
+                                anchors.verticalCenter: parent.verticalCenter
+                                font.family: Tokens.fontSans
+                                font.pixelSize: Tokens.fontSize
+                                color: Tokens.fg
+                                textFormat: Text.PlainText
+                                text: row.info.name
+                            }
+
+                            Text {
+                                anchors.right: parent.right
+                                anchors.rightMargin: Tokens.rowInset
+                                anchors.verticalCenter: parent.verticalCenter
+                                font.family: Tokens.fontMono
+                                font.pixelSize: Tokens.fontSize
+                                font.weight: Font.Medium
+                                color: row.info.main ? root.percentColor(row.info) : Tokens.fgDim
+                                text: row.info.main ? `${row.info.hero}%` : row.info.hero
+                            }
+                        }
                     }
                 }
             }

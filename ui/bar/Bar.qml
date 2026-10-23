@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import "../theme"
 import "../daemon"
 import "../ai_usage"
@@ -47,6 +48,32 @@ Item {
         }
     }
 
+    // MEASUREMENT ONLY (IMP-31): opens and closes the panel every
+    // NOVA_MEASURE_TOGGLE_MS, and logs frame intervals while it morphs.
+    Timer {
+        interval: Number(Quickshell.env("NOVA_MEASURE_TOGGLE_MS") || 0)
+        running: interval > 0 && bar.aiUsagePill !== null
+        repeat: true
+        onTriggered: bar.aiUsagePill.open = !bar.aiUsagePill.open
+    }
+    property real lastSwap: 0
+    property int tailFrames: 0
+    Connections {
+        target: label.Window.window
+        enabled: Quickshell.env("NOVA_MEASURE_TOGGLE_MS") !== null
+        function onFrameSwapped() {
+            const now = Date.now();
+            const pill = bar.aiUsagePill;
+            if (pill && pill.t > 0 && pill.t < 1)
+                bar.tailFrames = 3;
+            if (bar.tailFrames > 0) {
+                bar.tailFrames--;
+                console.info(`nova-measure: frame dt=${now - bar.lastSwap} t=${pill.t.toFixed(3)} open=${pill.open} screen=${label.Window.window.screen ? label.Window.window.screen.name : "?"}`);
+            }
+            bar.lastSwap = now;
+        }
+    }
+
     Loader {
         id: aiUsage
         x: Tokens.barMargin
@@ -55,6 +82,8 @@ Item {
         onLoaded: console.info("nova: ai usage pill shown")
         sourceComponent: AiUsage {
             usage: AiUsageService.usage
+            measureShadow: Quickshell.env("NOVA_MEASURE_SHADOW") || "cut"
+            measureUnload: Quickshell.env("NOVA_MEASURE_UNLOAD") === "1"
             onShowRequested: provider => AiUsageService.show(provider)
             onRefreshRequested: AiUsageService.refresh()
         }
