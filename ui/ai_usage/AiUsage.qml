@@ -251,42 +251,13 @@ Item {
         }
     }
 
-    Rectangle {
+    Glass {
         id: surface
 
         width: root.lerp(root.pillWidth, root.panelWidth)
         height: root.lerp(Tokens.barHeight, root.openHeight)
         radius: root.lerp(Tokens.barHeight / 2, Tokens.radiusPanel)
-        color: Tokens.glass
-        border.color: Tokens.glassRim
         clip: true
-
-        // The top highlight, fading out where the corners curve away.
-        Rectangle {
-            x: surface.radius / 2
-            y: 1
-            width: surface.width - surface.radius
-            height: 1
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop {
-                    position: 0
-                    color: "transparent"
-                }
-                GradientStop {
-                    position: 0.2
-                    color: Tokens.glassHighlight
-                }
-                GradientStop {
-                    position: 0.8
-                    color: Tokens.glassHighlight
-                }
-                GradientStop {
-                    position: 1
-                    color: "transparent"
-                }
-            }
-        }
 
         MouseArea {
             id: pill

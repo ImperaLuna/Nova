@@ -38,8 +38,8 @@ PanelWindow { // qmllint disable uncreatable-type
     }
 
     // Real blur behind the glass where the compositor offers it
-    // (ext-background-effect-v1, e.g. niri); elsewhere the tint stands alone.
-    // The blur spike (IMP-9) decides what other compositors get.
+    // (ext-background-effect-v1: niri 26.04+, Hyprland 0.56+); elsewhere the
+    // tint stands alone.
     Region {
         id: blur
         Region {
