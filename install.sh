@@ -38,7 +38,8 @@ fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-# A release archive holds bin/nova and share/nova, laid out like the prefix.
+# A release archive (`nix build .#dist`, published by release.yml) holds
+# bin/nova and share/nova, laid out like the prefix.
 from_release() {
 	command -v curl >/dev/null || return 1
 	echo "Fetching Nova from $release_url"
