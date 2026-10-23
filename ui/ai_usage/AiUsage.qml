@@ -460,7 +460,6 @@ Item {
                     text: root.summary.second ? root.summary.second.reset : ""
                 }
             }
-
         }
         // The other providers; clicking one shows it in the bar instead.
         // Pinned to the panel's bottom, so switching providers never moves it.
