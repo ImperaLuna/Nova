@@ -3,6 +3,18 @@
 
 use nova_features::{Manifest, Selection};
 use nova_protocol::{FeatureState, FeatureStatus};
+use std::path::Path;
+
+/// The user's choices in `path` (`features.toml`); a missing file means
+/// each feature's default.
+pub fn read_selection(path: &Path) -> Result<Selection, String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Selection::default()),
+        Err(e) => return Err(format!("can't read {}: {e}", path.display())),
+    };
+    Selection::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
+}
 
 pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> Vec<FeatureState> {
     manifests
@@ -21,7 +33,6 @@ pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn states_follow_selection_and_path() {

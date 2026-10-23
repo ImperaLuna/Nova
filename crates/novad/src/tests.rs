@@ -1,6 +1,7 @@
-//! Component tests: novad driven through its real socket, with a real logger
-//! and supervisor. The only stand-in is the UI process in the crash test, a
-//! shell script, since Quickshell needs a compositor.
+//! Component tests: novad driven through its real socket, with a real logger,
+//! supervisor, settings files and feature manifests. The only stand-in is the
+//! UI process in the crash test, a shell script, since Quickshell needs a
+//! compositor.
 
 use super::*;
 use nova_protocol::{FeatureStatus, LogEntry, UI_LOG_SOURCE};
@@ -17,45 +18,63 @@ struct TestDaemon {
     daemon: Arc<Daemon>,
 }
 
+/// What `ai-usage` off looks like in `features.toml`.
+const AI_USAGE_OFF: &str = "disabled = [\"ai-usage\"]\n";
+
 impl TestDaemon {
+    /// With the `ai-usage` feature off.
     fn start(name: &str, ui: Option<UiSettings>) -> Self {
-        Self::open(name, ui, |_| None)
+        Self::open(name, ui, |dir| std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap())
     }
 
-    /// With the `ai-usage` feature on, its files under `<dir>/ai-usage`.
+    /// With the `ai-usage` feature on (its default), its files under
+    /// `<dir>/ai-usage`.
     fn with_ai_usage(name: &str, prepare: impl FnOnce(&Path)) -> Self {
-        Self::open(name, None, |dir| {
-            let root = dir.join("ai-usage");
-            std::fs::create_dir_all(&root).unwrap();
-            prepare(&root);
-            Some(ai_usage_paths(&root))
-        })
+        Self::open(name, None, |dir| prepare(&dir.join("ai-usage")))
     }
 
-    fn open(name: &str, ui: Option<UiSettings>, ai_usage: impl FnOnce(&Path) -> Option<ai_usage::Paths>) -> Self {
+    /// Settings files go in `<dir>/config`, which `prepare` may fill or remove.
+    fn open(name: &str, ui: Option<UiSettings>, prepare: impl FnOnce(&Path)) -> Self {
         let dir = std::env::temp_dir().join(format!("novad-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("config")).unwrap();
+        std::fs::create_dir_all(dir.join("ai-usage")).unwrap();
+        prepare(&dir);
         let socket = dir.join("novad.sock");
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
         let listener = server::bind(&socket).unwrap();
         let ui = ui.map(|settings| Supervisor::start(settings, Arc::clone(&logger)));
-        let features = vec![FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] }];
-        let (theme, _) = theme::resolve(&theme::default_dir(), &dir.join("no-config.toml"));
-        let ai_usage = ai_usage(&dir).map(|paths| ai_usage::Usage::start(paths, Arc::clone(&hub), Arc::clone(&logger)));
+        let sources = Sources {
+            config: dir.join("config/config.toml"),
+            selection: dir.join("config/features.toml"),
+            themes_dir: theme::default_dir(),
+            manifests: nova_features::load_all(&repo_features()).unwrap(),
+            path_var: std::env::var("PATH").unwrap_or_default(),
+            ai_usage: ai_usage_paths(&dir.join("ai-usage")),
+        };
+        let settings = Settings::load(&sources, &hub, &logger);
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
-            features,
-            theme,
             hub,
             logger,
             ui,
             socket: socket.clone(),
-            ai_usage,
+            sources,
+            settings: Mutex::new(settings),
         });
+        daemon.watch_settings();
         let serving = Arc::clone(&daemon);
         std::thread::spawn(move || server::serve(listener, serving));
         Self { dir, socket, daemon }
+    }
+
+    fn config_file(&self) -> PathBuf {
+        self.daemon.sources.config.clone()
+    }
+
+    fn features_file(&self) -> PathBuf {
+        self.daemon.sources.selection.clone()
     }
 
     /// Connects and reads the hello.
@@ -82,6 +101,24 @@ struct Client {
 }
 
 impl Client {
+    /// The data of the next `name` event, skipping anything else; fails
+    /// after a while.
+    fn next_event(&mut self, name: &str) -> Value {
+        self.writer.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        loop {
+            let message = match self.early.pop_front() {
+                Some(event) => event,
+                None => {
+                    let line = self.lines.next().expect("connection closed").expect("no event in time");
+                    serde_json::from_str(&line).unwrap()
+                }
+            };
+            if message["event"] == name {
+                return message["data"].clone();
+            }
+        }
+    }
+
     fn send(&mut self, message: &Value) {
         writeln!(self.writer, "{message}").unwrap();
     }
@@ -131,7 +168,7 @@ fn subscribing_to_features_sends_their_state() {
     assert_eq!(reply["result"], Value::Null);
     let event = client.next();
     assert_eq!(event["event"], "features");
-    assert_eq!(event["data"]["features"][0], json!({"id": "core", "status": "ready"}));
+    assert!(event["data"]["features"].as_array().unwrap().contains(&json!({"id": "core", "status": "ready"})));
 }
 
 #[test]
@@ -234,7 +271,7 @@ fn status_reports_the_daemon_ui_and_features() {
     let status: Status = serde_json::from_value(client.request(1, "status", None)["result"].clone()).unwrap();
     assert_eq!(status.pid, std::process::id());
     assert_eq!(status.ui.state, UiState::Disabled);
-    assert_eq!(status.features[0].id, "core");
+    assert!(status.features.iter().any(|feature| feature.id == "core" && feature.status == FeatureStatus::Ready));
     assert!(status.pss_kib.is_some());
 }
 
@@ -325,17 +362,23 @@ fn manifest_daemon_names_match_cargo_features() {
     assert_eq!(cargo_features, declared, "novad [features] and manifest `daemon` fields differ");
 }
 
-/// Claude's endpoint is `claude_usage_url`, on when `claude/on` exists;
-/// nothing listens there unless a test starts a fake one.
+fn repo_features() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features")
+}
+
+/// Claude's endpoint is `claude_usage_url`; nothing listens there unless a
+/// test starts a fake one.
 fn ai_usage_paths(root: &Path) -> ai_usage::Paths {
     ai_usage::Paths {
         codex_home: Some(root.join("codex")),
         state_file: root.join("state/ai-usage.json"),
         claude_credentials: Some(root.join("claude/.credentials.json")),
         claude_usage_url: std::fs::read_to_string(root.join("claude/url")).unwrap_or("http://127.0.0.1:9/".into()),
-        claude_usage_endpoint: root.join("claude/on").exists(),
     }
 }
+
+/// `config.toml` with Claude's usage endpoint turned on.
+const CLAUDE_ENDPOINT_ON: &str = "[ai-usage]\nclaude-usage-endpoint = true\n";
 
 /// Answers every request with `body`, keeping the request heads it got.
 fn fake_anthropic(body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
@@ -361,7 +404,7 @@ fn fake_anthropic(body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
 }
 
 /// Claude Code's credentials file, signed in to a Max plan, and the usage
-/// endpoint at `url`, turned on.
+/// endpoint at `url` (turned on in `config.toml` separately).
 fn claude_sign_in(root: &Path, url: &str) {
     let dir = root.join("claude");
     std::fs::create_dir_all(&dir).unwrap();
@@ -372,7 +415,6 @@ fn claude_sign_in(root: &Path, url: &str) {
     std::fs::write(&path, credentials).unwrap();
     std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
     std::fs::write(dir.join("url"), url).unwrap();
-    std::fs::write(dir.join("on"), "").unwrap();
 }
 
 /// A Codex `token_count` log line in the shape Codex writes, with limits
@@ -394,21 +436,9 @@ fn codex_day(root: &Path) -> PathBuf {
 }
 
 impl Client {
-    /// The next `ai_usage` event, skipping replies; fails after a while.
+    /// The next `ai_usage` event's data, skipping anything else.
     fn next_usage(&mut self) -> Value {
-        self.writer.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        loop {
-            let message = match self.early.pop_front() {
-                Some(event) => event,
-                None => {
-                    let line = self.lines.next().expect("connection closed").expect("no ai_usage event in time");
-                    serde_json::from_str(&line).unwrap()
-                }
-            };
-            if message["event"] == "ai_usage" {
-                return message["data"].clone();
-            }
-        }
+        self.next_event("ai_usage")
     }
 
     fn subscribe_usage(&mut self) -> Value {
@@ -441,7 +471,10 @@ fn claude_limits_come_from_anthropic_with_claude_codes_sign_in() {
     let (url, requests) = fake_anthropic(
         r#"{"five_hour":{"utilization":8.4,"resets_at":"2100-01-01T05:00:00.451561+00:00"},"seven_day":{"utilization":17.0,"resets_at":"2100-01-07T00:00:00+00:00"},"seven_day_opus":null}"#,
     );
-    let novad = TestDaemon::with_ai_usage("ai-usage-claude-api", |root| claude_sign_in(root, &url));
+    let novad = TestDaemon::with_ai_usage("ai-usage-claude-api", |root| {
+        claude_sign_in(root, &url);
+        std::fs::write(root.join("../config/config.toml"), CLAUDE_ENDPOINT_ON).unwrap();
+    });
     let mut client = novad.connect();
     let claude = provider(&client.subscribe_usage(), "claude").clone();
     assert_eq!((claude["state"].as_str(), claude["plan"].as_str()), (Some("ready"), Some("Max")));
@@ -465,10 +498,7 @@ fn claude_limits_come_from_anthropic_with_claude_codes_sign_in() {
 #[test]
 fn claudes_endpoint_is_never_asked_unless_turned_on() {
     let (url, requests) = fake_anthropic(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#);
-    let novad = TestDaemon::with_ai_usage("ai-usage-claude-off", |root| {
-        claude_sign_in(root, &url);
-        std::fs::remove_file(root.join("claude/on")).unwrap();
-    });
+    let novad = TestDaemon::with_ai_usage("ai-usage-claude-off", |root| claude_sign_in(root, &url));
     let mut client = novad.connect();
     let claude = provider(&client.subscribe_usage(), "claude").clone();
     assert_eq!(claude["state"], "unavailable");
@@ -568,6 +598,7 @@ fn claude_reports_and_the_bar_choice_survive_a_restart() {
     // A second novad on the same files starts where the first left off.
     let again = ai_usage::Usage::start(
         ai_usage_paths(&novad.dir.join("ai-usage")),
+        &config::AiUsageConfig::default(),
         Arc::new(Hub::default()),
         Arc::clone(&novad.daemon.logger),
     );
@@ -610,4 +641,127 @@ fn ai_usage_commands_say_when_the_feature_is_off() {
     assert_eq!(reply["error"], "the ai-usage feature is off");
     client.request(2, "subscribe", Some(json!({"topics": ["ai_usage"]})));
     assert_eq!(client.request(3, "ping", None)["result"], "pong", "no ai_usage event without the feature");
+}
+
+/// Saves `text` to `path` the way many editors do: a new file renamed over
+/// the old one.
+fn save_by_rename(path: &Path, text: &str) {
+    let partial = path.with_extension("toml.new");
+    std::fs::write(&partial, text).unwrap();
+    std::fs::rename(partial, path).unwrap();
+}
+
+fn feature_status<'a>(features: &'a Value, id: &str) -> &'a Value {
+    &features["features"].as_array().unwrap().iter().find(|feature| feature["id"] == id).unwrap()["status"]
+}
+
+#[test]
+fn changing_the_theme_mode_recolors_live() {
+    let novad = TestDaemon::start("reload-theme", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["theme"]})));
+    let dark = client.next_event("theme");
+    assert_eq!(dark["mode"], "dark");
+
+    std::fs::write(novad.config_file(), "[theme]\nmode = \"light\"\n").unwrap();
+    let light = client.next_event("theme");
+    assert_eq!(light["mode"], "light");
+    assert_ne!(light["colors"], dark["colors"]);
+
+    save_by_rename(&novad.config_file(), "[theme]\nmode = \"dark\"\n");
+    assert_eq!(client.next_event("theme"), dark);
+}
+
+#[test]
+fn a_broken_config_keeps_the_last_good_one_and_says_why() {
+    let novad = TestDaemon::start("reload-broken", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["theme", "logs"]})));
+    assert_eq!(client.next_event("theme")["mode"], "dark");
+    std::fs::write(novad.config_file(), "[theme]\nmode = \"light\"\n").unwrap();
+    assert_eq!(client.next_event("theme")["mode"], "light");
+
+    save_by_rename(&novad.config_file(), "[theme]\nmode = \"sepia\"\n");
+    loop {
+        let message = client.next();
+        assert_ne!(message["event"], "theme", "a broken file changed the theme");
+        // TOML's error spans several lines, each its own entry.
+        let entries = message["data"]["entries"].as_array().cloned().unwrap_or_default();
+        let error = entries
+            .iter()
+            .filter(|entry| entry["level"] == "error")
+            .map(|entry| entry["message"].as_str().unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if error.contains("sepia") && error.contains("keeping the last good settings") {
+            break;
+        }
+    }
+    let mut other = novad.connect();
+    other.request(1, "subscribe", Some(json!({"topics": ["theme"]})));
+    assert_eq!(other.next_event("theme")["mode"], "light");
+
+    std::fs::write(novad.config_file(), "[theme]\nmode = \"dark\"\n").unwrap();
+    assert_eq!(client.next_event("theme")["mode"], "dark");
+}
+
+#[test]
+fn broken_files_at_start_mean_defaults() {
+    let novad = TestDaemon::open("start-broken", None, |dir| {
+        std::fs::write(dir.join("config/config.toml"), "[theme\n").unwrap();
+        std::fs::write(dir.join("config/features.toml"), "enabled = 3\n").unwrap();
+    });
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["theme", "features"]})));
+    assert_eq!(client.next_event("theme")["id"], theme::DEFAULT_THEME_ID);
+    assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "ready");
+    let log = read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
+    let errors =
+        log.iter().filter(|entry| entry.level == LogLevel::Error && entry.message.ends_with("using the defaults"));
+    assert_eq!(errors.count(), 2, "{log:?}");
+}
+
+#[test]
+fn turning_a_feature_off_and_on_stops_and_starts_it() {
+    let novad = TestDaemon::with_ai_usage("reload-feature", |_| {});
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["features", "ai_usage"]})));
+    assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "ready");
+    client.next_usage();
+
+    save_by_rename(&novad.features_file(), AI_USAGE_OFF);
+    assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "off");
+    let reply = client.request(2, "show_ai_usage", Some(json!({"provider": "codex"})));
+    assert_eq!(reply["error"], "the ai-usage feature is off");
+
+    // No features.toml means each feature's default, which is on.
+    std::fs::remove_file(novad.features_file()).unwrap();
+    assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "ready");
+    assert_eq!(client.next_usage()["shown"], "claude", "the restarted feature publishes again");
+    let reply = client.request(3, "show_ai_usage", Some(json!({"provider": "codex"})));
+    assert_eq!(reply["result"], Value::Null);
+}
+
+#[test]
+fn turning_claudes_endpoint_on_applies_without_a_restart() {
+    let (url, requests) = fake_anthropic(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#);
+    let novad = TestDaemon::with_ai_usage("reload-claude-endpoint", |root| claude_sign_in(root, &url));
+    let mut client = novad.connect();
+    assert_eq!(provider(&client.subscribe_usage(), "claude")["state"], "unavailable");
+    assert!(requests.lock().unwrap().is_empty());
+
+    std::fs::write(novad.config_file(), CLAUDE_ENDPOINT_ON).unwrap();
+    while provider(&client.next_usage(), "claude")["state"] != "ready" {}
+    assert_eq!(requests.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn a_config_folder_made_after_start_is_watched() {
+    let novad = TestDaemon::open("reload-new-folder", None, |dir| std::fs::remove_dir(dir.join("config")).unwrap());
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["theme"]})));
+    assert_eq!(client.next_event("theme")["mode"], "dark");
+    std::fs::create_dir(novad.config_file().parent().unwrap()).unwrap();
+    std::fs::write(novad.config_file(), "[theme]\nmode = \"light\"\n").unwrap();
+    assert_eq!(client.next_event("theme")["mode"], "light");
 }

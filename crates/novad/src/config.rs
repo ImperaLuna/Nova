@@ -14,7 +14,7 @@ use crate::theme::ThemeChoice;
 use serde::Deserialize;
 use std::path::Path;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
@@ -23,7 +23,7 @@ pub struct Config {
     pub ai_usage: AiUsageConfig,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct AiUsageConfig {
     /// Ask Anthropic for Claude's limits with Claude Code's sign-in. Off

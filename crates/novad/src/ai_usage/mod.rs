@@ -11,11 +11,12 @@
 mod claude;
 mod claude_api;
 mod codex;
-mod inotify;
 
 pub use claude::limits_from_statusline;
 
+use crate::config::AiUsageConfig;
 use crate::hub::Hub;
+use crate::inotify;
 use crate::lock;
 use crate::logger::Logger;
 use codex::CodexUsage;
@@ -24,6 +25,7 @@ use nova_protocol::{AiProvider, AiUsage, Event, ProviderUsage, UsageLimit, Usage
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -46,6 +48,7 @@ const CLAUDE_RATE_LIMITED: Duration = Duration::from_secs(15 * 60);
 const CLAUDE_ENDPOINT_OFF: &str = "Claude's limits show after a Claude Code session in a terminal. To see them anytime, add this to ~/.config/nova/config.toml:\n[ai-usage]\nclaude-usage-endpoint = true\nNova then asks Anthropic with Claude Code's sign-in, a use Anthropic doesn't document.";
 
 /// Where the module reads and keeps things.
+#[derive(Clone)]
 pub struct Paths {
     /// Codex's home folder, `None` when neither `CODEX_HOME` nor `HOME` is set.
     pub codex_home: Option<PathBuf>,
@@ -54,23 +57,15 @@ pub struct Paths {
     /// Claude Code's credentials file, `None` without `HOME`.
     pub claude_credentials: Option<PathBuf>,
     pub claude_usage_url: String,
-    /// Whether the user turned the usage endpoint on.
-    pub claude_usage_endpoint: bool,
 }
 
 impl Paths {
-    pub fn new(
-        state_dir: &Path,
-        codex_home: Option<PathBuf>,
-        claude_credentials: Option<PathBuf>,
-        claude_usage_endpoint: bool,
-    ) -> Self {
+    pub fn new(state_dir: &Path, codex_home: Option<PathBuf>, claude_credentials: Option<PathBuf>) -> Self {
         Self {
             codex_home: codex_home.or_else(codex::default_home),
             state_file: state_dir.join("ai-usage.json"),
             claude_credentials: claude_credentials.or_else(claude_api::default_credentials),
             claude_usage_url: claude_api::USAGE_URL.into(),
-            claude_usage_endpoint,
         }
     }
 }
@@ -82,6 +77,10 @@ pub struct Usage {
     state_file: PathBuf,
     wake: Sender<Wake>,
     refresh: Sender<()>,
+    /// Set by `stop`; every thread checks it when it wakes.
+    stopped: AtomicBool,
+    /// Ends the Codex watcher's thread; `None` until it starts.
+    codex_watch: Mutex<Option<inotify::Stopper>>,
 }
 
 struct State {
@@ -123,7 +122,7 @@ enum Wake {
 impl Usage {
     /// Loads the saved state, starts watching Codex's logs and asking for
     /// Claude's limits.
-    pub fn start(paths: Paths, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+    pub fn start(paths: Paths, config: &AiUsageConfig, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let saved = match std::fs::read_to_string(&paths.state_file) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
                 logger.warn(LOG_SOURCE, &format!("ignoring {}: {e}", paths.state_file.display()));
@@ -136,7 +135,7 @@ impl Usage {
         let usage = Arc::new(Self {
             state: Mutex::new(State {
                 saved,
-                claude_problem: (!paths.claude_usage_endpoint).then(|| CLAUDE_ENDPOINT_OFF.into()),
+                claude_problem: (!config.claude_usage_endpoint).then(|| CLAUDE_ENDPOINT_OFF.into()),
                 codex: Codex::Loading,
                 sent: None,
             }),
@@ -145,15 +144,38 @@ impl Usage {
             state_file: paths.state_file,
             wake,
             refresh,
+            stopped: AtomicBool::new(false),
+            codex_watch: Mutex::new(None),
         });
         let worker = Arc::clone(&usage);
         std::thread::spawn(move || worker.run(paths.codex_home, wakes));
-        if paths.claude_usage_endpoint {
+        if config.claude_usage_endpoint {
             let poller = Arc::clone(&usage);
             let claude = (paths.claude_credentials, paths.claude_usage_url);
             std::thread::spawn(move || poller.poll_claude(claude.0, &claude.1, refreshes));
         }
         usage
+    }
+
+    /// Ends its threads (watching, asking, publishing) and publishes nothing
+    /// more. A request already on its way is dropped when it answers.
+    pub fn stop(&self) {
+        // Under the watcher's lock, so a watcher starting right now sees it,
+        // and the state's, so nothing is published or saved after this.
+        let mut codex_watch = lock(&self.codex_watch);
+        {
+            let _state = lock(&self.state);
+            self.stopped.store(true, Ordering::SeqCst);
+        }
+        if let Some(watch) = codex_watch.take() {
+            watch.stop();
+        }
+        let _ = self.wake.send(Wake::Changed);
+        let _ = self.refresh.send(());
+    }
+
+    fn stopped(&self) -> bool {
+        self.stopped.load(Ordering::SeqCst)
     }
 
     /// The current numbers, as sent to a new subscriber. The broadcast
@@ -207,6 +229,9 @@ impl Usage {
                 }
             };
             let backing_off = wait > CLAUDE_POLL;
+            if self.stopped() {
+                return;
+            }
             match result {
                 Ok((limits, plan)) => {
                     last_problem = None;
@@ -229,6 +254,7 @@ impl Usage {
             let deadline = asked + wait;
             loop {
                 match refreshes.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(()) if self.stopped() => return,
                     Ok(()) if !backing_off && asked.elapsed() >= CLAUDE_REFRESH_GAP => break,
                     Ok(()) => {}
                     Err(RecvTimeoutError::Timeout) => break,
@@ -243,6 +269,9 @@ impl Usage {
             // Saved under the lock, so concurrent updates reach the file in
             // the order they were made.
             let mut state = lock(&self.state);
+            if self.stopped() {
+                return Err(format!("the {FEATURE_ID} feature is off"));
+            }
             let before = state.saved.clone();
             change(&mut state.saved);
             if state.saved == before {
@@ -267,6 +296,9 @@ impl Usage {
         }
         let mut written: BTreeSet<PathBuf> = BTreeSet::new();
         loop {
+            if self.stopped() {
+                return;
+            }
             self.publish();
             let until_reset = next_reset(&lock(&self.state), Timestamp::now()).unwrap_or(IDLE_WAKE);
             let timeout = if written.is_empty() { until_reset } else { until_reset.min(CODEX_SETTLE) };
@@ -327,7 +359,7 @@ impl Usage {
     fn watch_codex(&self, home: &Path) {
         let home = home.to_owned();
         let sessions = codex::sessions_dir(&home);
-        let watching = inotify::Inotify::new().and_then(|mut watcher| {
+        let watching = inotify::Inotify::new(inotify::WRITES).and_then(|mut watcher| {
             if !home.is_dir()
                 && let Some(parent) = home.parent()
             {
@@ -352,12 +384,20 @@ impl Usage {
                 return;
             }
         };
+        {
+            let mut codex_watch = lock(&self.codex_watch);
+            if self.stopped() {
+                return;
+            }
+            *codex_watch = Some(watcher.stopper());
+        }
         let wake = self.wake.clone();
         let logger = Arc::clone(&self.logger);
         std::thread::spawn(move || {
             loop {
                 let changes = match watcher.read() {
-                    Ok(changes) => changes,
+                    Ok(Some(changes)) => changes,
+                    Ok(None) => return,
                     Err(e) => {
                         logger.warn(LOG_SOURCE, &format!("stopped watching Codex's logs: {e}"));
                         return;
@@ -393,6 +433,9 @@ impl Usage {
 
     fn publish(&self) {
         let mut state = lock(&self.state);
+        if self.stopped() {
+            return;
+        }
         let usage = snapshot(&state, Timestamp::now());
         if state.sent.as_ref() != Some(&usage) {
             self.hub.publish(&Event::AiUsage(usage.clone()));
