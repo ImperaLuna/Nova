@@ -40,7 +40,8 @@ impl Novad {
 
     fn nova(&self, args: &[&str]) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_nova"));
-        command.args(args).arg("--socket").arg(self.dir.join("novad.sock"));
+        // Before the command, so it never ends up after a `--`.
+        command.arg("--socket").arg(self.dir.join("novad.sock")).args(args);
         command
     }
 
@@ -225,4 +226,33 @@ fn a_second_daemon_is_refused_before_touching_the_log() {
     // The running daemon's log is still nova.log, not rotated to nova.log.1.
     let text = stdout(&novad.run(&["logs", "--no-follow", "--log-dir", &novad.log_dir()]));
     assert!(text.contains("listening on"), "{text}");
+}
+
+#[test]
+fn claude_statusline_passes_input_on() {
+    let novad = Novad::start("claude-statusline");
+    let input = r#"{"model":{"display_name":"Opus"},"rate_limits":{"five_hour":{"used_percentage":41.6,"resets_at":4102444800}}}"#;
+    let mut child =
+        novad.nova(&["claude-statusline", "--", "cat"]).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(stdout(&output), input, "the wrapped command gets the same input");
+}
+
+#[test]
+fn claude_statusline_stays_quiet_without_novad() {
+    let dir = std::env::temp_dir().join(format!("nova-cli-test-no-novad-{}", std::process::id()));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_nova"))
+        .args(["claude-statusline", "--socket"])
+        .arg(dir.join("missing.sock"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(br#"{"rate_limits":{"seven_day":{"used_percentage":5}}}"#).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
 }

@@ -163,6 +163,26 @@ impl From<Color> for String {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UsageLimit {
+    pub window: UsageWindow,
+    /// 0 to 100.
+    pub percent: u8,
+    /// When the window starts over, RFC 3339 UTC. Absent once it has, until
+    /// the tool is used again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resets_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageWindow {
+    /// The rolling 5-hour limit.
+    Session,
+    Weekly,
+}
+
 /// Sent by the UI or the `nova` CLI. Arguments with unknown fields are
 /// refused, like unknown fields on the request line itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -179,6 +199,11 @@ pub enum Command {
     Status,
     /// Stops the UI and exits novad.
     Quit,
+    /// Claude's limits, read from Claude Code's status line by
+    /// `nova claude-statusline` (feature `ai-usage`).
+    ReportClaudeUsage {
+        limits: Vec<UsageLimit>,
+    },
 }
 
 /// What `status` returns.
@@ -409,6 +434,19 @@ mod tests {
             encode(Event::Logs { backlog: false, entries: vec![log_entry()] }),
             encode(Response { id: 10, outcome: Outcome::Result(serde_json::to_value(status()).unwrap()) }),
             encode(Response { id: 7, outcome: Outcome::Result(json!("pong")) }),
+            encode(Request {
+                id: Some(13),
+                command: Command::ReportClaudeUsage {
+                    limits: vec![
+                        UsageLimit {
+                            window: UsageWindow::Session,
+                            percent: 42,
+                            resets_at: Some("2026-10-23T11:00:00Z".into()),
+                        },
+                        UsageLimit { window: UsageWindow::Weekly, percent: 61, resets_at: None },
+                    ],
+                },
+            }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
@@ -505,6 +543,10 @@ mod tests {
         let error = decode_request(r#"{"v":2,"cmd":"subscribe","args":{"topics":["logs"],"unexpected":true}}"#);
         assert!(error.unwrap_err().contains("unknown field `unexpected`"));
         assert!(decode_request(r#"{"v":2,"cmd":"ping","args":{"unexpected":true}}"#).is_err());
+        let limit = r#"{"window":"weekly","percent":5,"extra":1}"#;
+        assert!(
+            decode_request(&format!(r#"{{"v":2,"cmd":"report_claude_usage","args":{{"limits":[{limit}]}}}}"#)).is_err()
+        );
     }
 
     #[test]

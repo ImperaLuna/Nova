@@ -5,6 +5,7 @@
 //! crashes) and keeps the log. Compositor adapters and services get added on
 //! top of this.
 
+mod ai_usage;
 mod features;
 mod hub;
 mod logger;
@@ -231,6 +232,10 @@ fn wayland_socket() -> Option<PathBuf> {
 pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
+
+/// Claude's limits from a Claude Code status line input, for
+/// `nova claude-statusline`.
+pub use ai_usage::limits_from_statusline as claude_limits_from_statusline;
 
 #[cfg(test)]
 mod tests;
