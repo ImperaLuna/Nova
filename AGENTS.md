@@ -78,7 +78,14 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
     from the `theme` event; the shell draws nothing until it arrives.
   - `daemon/Daemon.qml`: the only socket to novad. Everything else reads its
     properties or calls `Daemon.call(cmd, args, callback)`.
-  - `tests/`: QtTest files (`tst_*.qml`), run headless.
+  - `stage/`: the stage (see the window model rule below). `Stage.qml` is
+    one screen's full-screen layer, with its input mask and blur built from
+    the items the bar lists in `shapes` and `glassShapes` (`ShapeRegion`),
+    plus `ExclusionZone.qml`, the empty surface that reserves the bar's
+    space. `Morph` is the grow-from-a-pill motion every panel uses (its `t`
+    and `lerp()`), and `MorphReveal` fades a panel's content in after it.
+  - `tests/`: QtTest files (`tst_*.qml`), run headless. Quickshell's own
+    types (`Region`, windows) can't load there; e2e covers them.
 - `e2e/run.sh`: headless sway with two monitors + novad, which runs the UI.
   Fails on QML errors, a crashed UI or no connection; warns when the UI's Pss
   is over the memory target.

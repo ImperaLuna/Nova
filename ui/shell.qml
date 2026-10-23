@@ -2,7 +2,7 @@
 
 import QtQuick
 import Quickshell
-import "bar"
+import "stage"
 import "daemon"
 
 ShellRoot {
@@ -10,7 +10,7 @@ ShellRoot {
         // Nothing is drawn until novad has sent the theme's colors.
         model: Daemon.theme ? Quickshell.screens : []
 
-        Bar {
+        Stage {
             required property var modelData
             screen: modelData
         }

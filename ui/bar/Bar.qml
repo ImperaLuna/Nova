@@ -1,6 +1,4 @@
 import QtQuick
-import Quickshell
-import Quickshell.Wayland
 import "../theme"
 import "../daemon"
 import "../ai_usage"
@@ -9,43 +7,28 @@ import "../ai_usage"
 // the left when that feature is on. The real bar (three pills, hide
 // policies, reveal strip) lands with M2.
 //
-// The window is taller than the bar when a pill has a panel to open, but it
-// only reserves the bar's height and takes input only on the pills, so it
-// never pushes windows around or blocks clicks between pills.
-PanelWindow { // qmllint disable uncreatable-type
+// It's drawn on the screen's stage (ui/stage/Stage.qml), which builds its
+// input mask and blur from `shapes` and `glassShapes`, so panels can grow out
+// of the pills without a window of their own.
+Item {
     id: bar
 
-    anchors {
-        top: true
-        left: true
-        right: true
-    }
-    exclusiveZone: Tokens.barHeight + Tokens.barMargin
-    // Room below the open panel for its shadow; the mask keeps it click-through.
-    implicitHeight: Tokens.barMargin + Math.max(Tokens.barHeight, ((aiUsage.item as AiUsage)?.openHeight ?? 0) + Tokens.shadowRoom)
-    color: "transparent"
+    // The space kept free for the bar at the top of the screen.
+    readonly property int reservedHeight: Tokens.barHeight + Tokens.barMargin
 
-    // Rounded like what's drawn, so clicks at the corners reach the windows below.
-    mask: Region {
-        Region {
-            item: center
-            radius: center.height / 2
-        }
-        Region {
-            item: aiUsage.item as Item
-            radius: (aiUsage.item as AiUsage)?.radius ?? 0
-        }
-    }
+    readonly property AiUsage aiUsagePill: aiUsage.item as AiUsage
+    // What's drawn and takes clicks, each rounded by its `radius`.
+    readonly property list<Item> shapes: aiUsagePill ? [center, aiUsagePill] : [center]
+    // The glass among them, which the compositor blurs behind.
+    readonly property list<Item> glassShapes: aiUsagePill ? [aiUsagePill] : []
+    // Whether an open panel takes typing (the launcher will); while it does,
+    // the stage holds the keyboard and Esc or a click outside calls dismiss().
+    readonly property bool needsKeyboard: false
 
-    // Real blur behind the glass where the compositor offers it
-    // (ext-background-effect-v1: niri 26.04+, Hyprland 0.56+); elsewhere the
-    // tint stands alone.
-    Region {
-        id: blur
-        Region {
-            item: aiUsage.item as Item
-            radius: (aiUsage.item as AiUsage)?.radius ?? 0
-        }
+    // Closes whatever is open.
+    function dismiss() {
+        if (aiUsagePill)
+            aiUsagePill.open = false;
     }
 
     // Logs once the bar has drawn a frame while connected to novad, so the
@@ -68,10 +51,7 @@ PanelWindow { // qmllint disable uncreatable-type
         x: Tokens.barMargin
         y: Tokens.barMargin
         active: Daemon.readyFeatures.includes("ai-usage") && Daemon.aiUsage !== null
-        // Set here, not declared on the window: asking for blur at all logs a
-        // warning on compositors without it, which a bar with no glass
-        // shouldn't do.
-        onLoaded: bar.BackgroundEffect.blurRegion = blur
+        onLoaded: console.info("nova: ai usage pill shown")
         sourceComponent: AiUsage {
             usage: Daemon.aiUsage
             onShowRequested: provider => Daemon.call("show_ai_usage", {

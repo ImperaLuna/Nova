@@ -74,6 +74,8 @@ let
               after = [ "systemd-udev-settle.service" ];
             };
           };
+          # A virtual mouse for clicking Nova's pills (lifecycle.py's click).
+          programs.ydotool.enable = true;
           hardware.graphics.enable = true;
           virtualisation = {
             memorySize = 3072;
@@ -151,6 +153,10 @@ let
     cursor {
       invisible = true
     }
+    # ydotool's moves land 1:1 (lifecycle.py's click).
+    input {
+      accel_profile = flat
+    }
   '';
 in
 {
@@ -184,6 +190,12 @@ in
         }
         cursor {
           hide-after-inactive-ms 1000
+        }
+        // ydotool's moves land 1:1 (lifecycle.py's click).
+        input {
+          mouse {
+            accel-profile "flat"
+          }
         }
       '';
     };

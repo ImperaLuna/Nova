@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Effects
 import QtQuick.Shapes
 import "../theme"
+import "../stage"
 import "usage.js" as Usage
 
 // The AI usage pill: the shown provider's logo and its session percent.
@@ -50,9 +51,7 @@ Item {
     readonly property int rowRadius: Tokens.radiusRow
     readonly property int sessionMeter: Tokens.meterHeight
     readonly property int weeklyMeter: Tokens.meterHeightSmall
-    readonly property int fadeDuration: Tokens.durationFade
     readonly property int fillDuration: Tokens.durationFill
-    readonly property list<real> easing: Tokens.easing
 
     // The panel's height for what it shows now.
     readonly property real contentHeight: details.y + details.implicitHeight + sectionGap + othersBlock.implicitHeight + panelBottom
@@ -60,19 +59,26 @@ Item {
     // never shrinks back, so switching providers doesn't make it jump.
     property real tallest: 0
     onContentHeightChanged: tallest = Math.max(tallest, contentHeight)
-    // The panel's full height; the window keeps room for it.
+    // The panel's full height.
     readonly property real openHeight: Math.max(contentHeight, tallest)
-    // 0 closed, 1 open: every size and position in between follows it.
-    property real t: 0
-    property real fill: 0
+    // The pill growing into the panel: every size and position in between
+    // follows morph.t (0 closed, 1 open).
+    Morph {
+        id: morph
+        open: root.open
+    }
+    readonly property real t: morph.t
+    // The meters fill once the panel has grown, and empty as it closes.
+    property real fill: root.open ? 1 : 0
+    MorphReveal on fill {
+        delay: 0.6
+        duration: root.fillDuration
+        eased: true
+    }
     property date now: new Date()
 
     readonly property real heroClosedScale: Tokens.fontSize / heroSize
     readonly property real heroClosedWidth: heroMetrics.advanceWidth
-
-    function lerp(from: real, to: real): real {
-        return from + (to - from) * t;
-    }
 
     function percentColor(row: var): color {
         return row && row.warn ? Tokens.primary : Tokens.fg;
@@ -99,91 +105,6 @@ Item {
         repeat: true
         triggeredOnStart: true
         onTriggered: root.now = new Date()
-    }
-
-    states: State {
-        name: "open"
-        when: root.open
-        PropertyChanges {
-            root.t: 1
-            root.fill: 1
-            name.opacity: 1
-            plan.opacity: 1
-            primaryBlock.opacity: 1
-            secondBlock.opacity: 1
-            othersBlock.opacity: 1
-        }
-    }
-
-    transitions: [
-        Transition {
-            to: "open"
-            ParallelAnimation {
-                NumberAnimation {
-                    target: root
-                    property: "t"
-                    duration: Tokens.durationPanel
-                    easing.type: Easing.BezierSpline
-                    easing.bezierCurve: root.easing
-                }
-                Fade {
-                    target: name
-                    delay: 0.4
-                }
-                Fade {
-                    target: plan
-                    delay: 0.55
-                }
-                Fade {
-                    target: primaryBlock
-                    delay: 0.55
-                }
-                Fade {
-                    target: secondBlock
-                    delay: 0.7
-                }
-                Fade {
-                    target: othersBlock
-                    delay: 0.85
-                }
-                SequentialAnimation {
-                    PauseAnimation {
-                        duration: Tokens.durationPanel * 0.6
-                    }
-                    NumberAnimation {
-                        target: root
-                        property: "fill"
-                        duration: root.fillDuration
-                        easing.type: Easing.BezierSpline
-                        easing.bezierCurve: root.easing
-                    }
-                }
-            }
-        },
-        Transition {
-            from: "open"
-            NumberAnimation {
-                properties: "t,fill,opacity"
-                duration: Tokens.durationPanel
-                easing.type: Easing.BezierSpline
-                easing.bezierCurve: root.easing
-            }
-        }
-    ]
-
-    component Fade: SequentialAnimation {
-        id: fade
-        required property Item target
-        // Start, as a share of the panel's morph.
-        required property real delay
-        PauseAnimation {
-            duration: Tokens.durationPanel * fade.delay
-        }
-        NumberAnimation {
-            target: fade.target
-            property: "opacity"
-            duration: root.fadeDuration
-        }
     }
 
     component Meter: Rectangle {
@@ -254,9 +175,9 @@ Item {
     Glass {
         id: surface
 
-        width: root.lerp(root.pillWidth, root.panelWidth)
-        height: root.lerp(Tokens.barHeight, root.openHeight)
-        radius: root.lerp(Tokens.barHeight / 2, Tokens.radiusPanel)
+        width: morph.lerp(root.pillWidth, root.panelWidth)
+        height: morph.lerp(Tokens.barHeight, root.openHeight)
+        radius: morph.lerp(Tokens.barHeight / 2, Tokens.radiusPanel)
         clip: true
 
         MouseArea {
@@ -342,7 +263,10 @@ Item {
             id: name
             x: Tokens.pad + root.logoSize + root.logoGap + 1
             y: (Tokens.barHeight - height) / 2
-            opacity: 0
+            opacity: root.open ? 1 : 0
+            MorphReveal on opacity {
+                delay: 0.4
+            }
             visible: opacity > 0
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSize
@@ -360,7 +284,10 @@ Item {
             width: planText.implicitWidth + 2 * Tokens.chipPad
             radius: height / 2
             color: Tokens.surfaceRaised
-            opacity: 0
+            opacity: root.open ? 1 : 0
+            MorphReveal on opacity {
+                delay: 0.55
+            }
             visible: opacity > 0 && root.summary.plan !== ""
 
             Text {
@@ -377,11 +304,11 @@ Item {
         // The pill's number, which grows into the panel's headline.
         Item {
             id: hero
-            x: root.lerp(Tokens.pad + root.logoSize + root.logoGap + root.indicatorSpace, root.panelPad)
-            y: root.lerp((Tokens.barHeight - root.heroLine * root.heroClosedScale) / 2, root.heroTop)
+            x: morph.lerp(Tokens.pad + root.logoSize + root.logoGap + root.indicatorSpace, root.panelPad)
+            y: morph.lerp((Tokens.barHeight - root.heroLine * root.heroClosedScale) / 2, root.heroTop)
             width: number.width + percentSign.width
             height: root.heroLine
-            scale: root.lerp(root.heroClosedScale, 1)
+            scale: morph.lerp(root.heroClosedScale, 1)
             transformOrigin: Item.TopLeft
 
             Text {
@@ -391,7 +318,7 @@ Item {
                 font.family: Tokens.fontMono
                 font.pixelSize: root.heroSize
                 font.weight: Font.Medium
-                font.letterSpacing: root.lerp(0, -0.02 * root.heroSize)
+                font.letterSpacing: morph.lerp(0, -0.02 * root.heroSize)
                 color: root.summary.main ? root.percentColor(root.summary) : Tokens.fgDim
                 text: root.summary.hero
 
@@ -408,7 +335,7 @@ Item {
                 anchors.baseline: number.baseline
                 visible: root.summary.main !== null
                 font.family: Tokens.fontMono
-                font.pixelSize: root.heroSize * root.lerp(1, root.percentSignOpen)
+                font.pixelSize: root.heroSize * morph.lerp(1, root.percentSignOpen)
                 font.weight: Font.Medium
                 color: number.color
                 text: "%"
@@ -427,7 +354,10 @@ Item {
                 id: primaryBlock
                 width: parent.width
                 spacing: 8
-                opacity: 0
+                opacity: root.open ? 1 : 0
+                MorphReveal on opacity {
+                    delay: 0.55
+                }
 
                 Item {
                     width: parent.width
@@ -470,7 +400,10 @@ Item {
                 id: secondBlock
                 width: parent.width
                 spacing: 8
-                opacity: 0
+                opacity: root.open ? 1 : 0
+                MorphReveal on opacity {
+                    delay: 0.7
+                }
                 visible: root.summary.second !== null
 
                 Item {
@@ -515,7 +448,10 @@ Item {
             y: root.openHeight - root.panelBottom - height
             width: details.width
             spacing: 8
-            opacity: 0
+            opacity: root.open ? 1 : 0
+            MorphReveal on opacity {
+                delay: 0.85
+            }
 
             Rectangle {
                 width: parent.width
