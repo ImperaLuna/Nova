@@ -52,18 +52,27 @@ QtObject {
     readonly property color surfaceRaised: Qt.rgba(fg.r, fg.g, fg.b, raisedOpacity)
     readonly property color outline: Qt.rgba(fg.r, fg.g, fg.b, outlineOpacity)
 
-    // Glass behind pills and the panels that morph out of them: a dark tint
-    // with a hint of the accent and a faint rim. A solid
-    // stand-in until the blur spike (IMP-9) picks real blur.
-    readonly property real glassOpacity: 0.78
+    // Liquid glass behind pills and the panels that morph out of them
+    // (Glass.qml), over the compositor's blur of what's behind: a light tint
+    // with a hint of the accent, so the blurred windows show through.
+    readonly property real glassOpacity: 0.46
     readonly property real glassAccent: 0.05
     readonly property color glass: {
         const tinted = tint(primary, glassAccent);
         return Qt.rgba(tinted.r, tinted.g, tinted.b, glassOpacity);
     }
+    // A sheen across the top fading into a faint veil, and a shade along the
+    // bottom edge.
+    readonly property color glassSheen: Qt.rgba(fg.r, fg.g, fg.b, 0.12)
+    readonly property color glassVeil: Qt.rgba(fg.r, fg.g, fg.b, 0.03)
+    readonly property color glassShade: Qt.rgba(0, 0, 0, 0.22)
+    // The rim, lit from the top-left: brightest there, a softer glow at the
+    // bottom-right, faint along the sides between.
+    readonly property real glassRimWidth: 1.2
+    readonly property color glassRimLit: Qt.rgba(fg.r, fg.g, fg.b, 0.60)
+    readonly property color glassRimGlow: Qt.rgba(fg.r, fg.g, fg.b, 0.36)
     readonly property color glassRim: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
-    // A brighter line along the glass's top inner edge.
-    readonly property color glassHighlight: Qt.rgba(fg.r, fg.g, fg.b, 0.16)
+    readonly property color glassRimDim: Qt.rgba(fg.r, fg.g, fg.b, 0.03)
     // The soft shadow under glass, and the room it needs around the glass.
     readonly property color shadow: Qt.rgba(0, 0, 0, 0.35)
     readonly property real shadowBlur: 30
