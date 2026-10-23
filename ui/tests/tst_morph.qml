@@ -41,7 +41,9 @@ Item {
         function test_lerp_goes_from_the_closed_value_to_the_open_one() {
             compare(morph.lerp(36, 300), 36);
             morph.open = true;
-            tryCompare(morph, "t", 1);
+            // Exactly 1: tryCompare's fuzzy match also passes a frame just
+            // short of the end, which lerp scales past compare's tolerance.
+            tryVerify(() => morph.t === 1);
             compare(morph.lerp(36, 300), 300);
         }
 
