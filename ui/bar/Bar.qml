@@ -3,6 +3,7 @@ import "../theme"
 import "../daemon"
 import "../ai_usage"
 import "../ai_usage/service"
+import "../daemon/protocol.js" as Protocol
 
 // Placeholder bar: one floating pill per screen, plus the AI usage pill on
 // the left when that feature is on. The real bar (three pills, hide
@@ -13,6 +14,9 @@ import "../ai_usage/service"
 // of the pills without a window of their own.
 Item {
     id: bar
+
+    // The screen's output name (`DP-1`), which `nova toggle` names.
+    required property string screenName
 
     // The space kept free for the bar at the top of the screen.
     readonly property int reservedHeight: Tokens.barHeight + Tokens.barMargin
@@ -30,6 +34,15 @@ Item {
     function dismiss() {
         if (aiUsagePill)
             aiUsagePill.open = false;
+    }
+
+    // `nova toggle`: opens on the focused output, closes everywhere else.
+    Connections {
+        target: Daemon
+        function onToggleRequested(panel: string, output: var) {
+            if (panel === Protocol.PANEL_AI_USAGE && bar.aiUsagePill)
+                bar.aiUsagePill.open = Protocol.toggledOpen(bar.aiUsagePill.open, bar.screenName, output);
+        }
     }
 
     // Logs once the bar has drawn a frame while connected to novad, so the

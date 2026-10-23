@@ -84,6 +84,7 @@ Scope {
         Bar {
             id: bar
             anchors.fill: parent
+            screenName: root.screen.name
         }
     }
 }

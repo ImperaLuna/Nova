@@ -6,7 +6,7 @@ expression: all
 {"v":2,"event":"features","data":{"features":[{"id":"core","status":"ready"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
-{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor"]}}
+{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle"]}}
 {"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","fg":"#F5E7C6","fgAlt":"#525252","fgDim":"#9A9A9A","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
 {"v":2,"id":10,"cmd":"status"}
 {"v":2,"id":11,"cmd":"quit"}
@@ -21,4 +21,7 @@ expression: all
 {"v":2,"event":"compositor","data":{"compositor":"niri","capabilities":["workspaces","focused_window"],"outputs":[{"name":"DP-1","focused":true,"workspaces":[{"id":1,"name":"1","active":false,"focused":false,"urgent":false},{"id":2,"name":"web","active":true,"focused":true,"urgent":false}]},{"name":"HDMI-A-1","focused":false,"workspaces":[{"id":3,"name":"1","active":true,"focused":false,"urgent":true}]}],"focused_window":{"app_id":"foot","title":"~"}}}
 {"v":2,"id":14,"cmd":"focus_workspace","args":{"id":-1337}}
 {"v":2,"cmd":"step_workspace","args":{"output":"DP-1","step":"previous"}}
+{"v":2,"id":15,"cmd":"toggle","args":{"panel":"ai-usage"}}
+{"v":2,"event":"toggle","data":{"panel":"ai-usage","output":"DP-1"}}
+{"v":2,"event":"toggle","data":{"panel":"ai-usage"}}
 {"v":2,"id":8,"error":"bad request"}

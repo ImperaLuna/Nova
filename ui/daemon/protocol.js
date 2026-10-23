@@ -5,8 +5,8 @@
 var VERSION = 2;
 
 // Commands the UI sends (Command in nova-protocol). A nova-protocol test
-// checks every CMD_, EVENT_, TOPIC_, CAPABILITY_, STEP_ and FEATURE_ name
-// here is one novad knows.
+// checks every CMD_, EVENT_, TOPIC_, CAPABILITY_, STEP_, PANEL_ and FEATURE_
+// name here is one novad knows.
 var CMD_SUBSCRIBE = "subscribe";
 var CMD_SHOW_AI_USAGE = "show_ai_usage";
 var CMD_REFRESH_AI_USAGE = "refresh_ai_usage";
@@ -20,6 +20,7 @@ var EVENT_FEATURES = "features";
 var EVENT_THEME = "theme";
 var EVENT_AI_USAGE = "ai_usage";
 var EVENT_COMPOSITOR = "compositor";
+var EVENT_TOGGLE = "toggle";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
@@ -27,6 +28,7 @@ var TOPIC_LOGS = "logs";
 var TOPIC_THEME = "theme";
 var TOPIC_AI_USAGE = "ai_usage";
 var TOPIC_COMPOSITOR = "compositor";
+var TOPIC_TOGGLE = "toggle";
 
 // What a compositor can report or do (Capability in nova-protocol).
 var CAPABILITY_WORKSPACES = "workspaces";
@@ -37,6 +39,10 @@ var CAPABILITY_KEYBOARD_LAYOUT = "keyboard_layout";
 // step_workspace's directions (Step in nova-protocol).
 var STEP_NEXT = "next";
 var STEP_PREVIOUS = "previous";
+
+// Panels `nova toggle` opens and closes (Panel in nova-protocol), named
+// after their feature.
+var PANEL_AI_USAGE = "ai-usage";
 
 // Feature ids (features/<id>/feature.toml).
 var FEATURE_AI_USAGE = "ai-usage";
@@ -73,6 +79,14 @@ function readyFeatures(features) {
             ready.push(features[i].id);
     }
     return ready;
+}
+
+// Whether a panel is open after a toggle event for `output` (the focused
+// output's name, or null when novad doesn't know it), on the screen named
+// `screen`. It opens on the focused output, or closes if it's open there,
+// and closes everywhere else, so only one screen ever has it open.
+function toggledOpen(open, screen, output) {
+    return (output === null || output === undefined || output === screen) ? !open : false;
 }
 
 // The workspace shown on the focused output, from a compositor event's

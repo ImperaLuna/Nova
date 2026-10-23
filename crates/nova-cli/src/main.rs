@@ -8,6 +8,7 @@ mod logs;
 mod status;
 mod statusline;
 mod systemd;
+mod toggle;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use std::path::PathBuf;
@@ -61,8 +62,8 @@ enum NovaCommand {
     Config,
     /// [planned] Print shell completions for bash, zsh or fish.
     Completions,
-    /// [planned] Open or close a panel, such as the launcher. Meant for keybinds.
-    Toggle,
+    /// Open or close a panel on the focused output. Meant for keybinds.
+    Toggle(toggle::ToggleArgs),
     /// [planned] Send a raw request to novad and print the reply, for scripts.
     Ipc,
 }
@@ -85,13 +86,13 @@ fn main() -> ExitCode {
             Ok(code) => return code,
             Err(e) => Err(e),
         },
+        Some(NovaCommand::Toggle(args)) => toggle::run(&args, &socket),
         Some(NovaCommand::Daemon(args)) => novad::run(*args, socket).map_err(|e| format!("daemon: {e}")),
         Some(
             NovaCommand::Setup
             | NovaCommand::Doctor
             | NovaCommand::Config
             | NovaCommand::Completions
-            | NovaCommand::Toggle
             | NovaCommand::Ipc,
         ) => Err(format!(
             "`nova {}` isn't built yet; it's planned for a later version.",

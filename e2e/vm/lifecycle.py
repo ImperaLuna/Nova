@@ -166,6 +166,12 @@ with subtest("screenshot: the AI usage panel open, grown from its pill"):
     # The same spot closes it again.
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
 
+with subtest("nova toggle opens and closes the AI usage panel, as a keybind would"):
+    for line in (AI_USAGE_OPENED, AI_USAGE_CLOSED):
+        before = ui_log_count(line)
+        machine.succeed(as_user("nova toggle ai-usage"))
+        retry(lambda _last_try: ui_log_count(line) > before, timeout=CLICK_EFFECT)
+
 with subtest("a workspace switch reaches the UI"):
     running = wait_running()
     desktop = running.get("desktop")
