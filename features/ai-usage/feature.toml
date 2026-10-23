@@ -1,0 +1,5 @@
+id = "ai-usage"
+name = "AI usage"
+description = "Claude and Codex plan limits in the bar."
+default = false
+daemon = "ai-usage"

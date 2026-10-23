@@ -114,8 +114,10 @@ impl<'a> Connection<'a> {
                 return;
             }
         };
+        // Answered even without an id: some commands act as they answer.
+        let outcome = self.answer(&request.command);
         if let Some(id) = request.id {
-            self.send(Response { id, outcome: self.answer(&request.command) });
+            self.send(Response { id, outcome });
         }
         self.follow_up(request.command);
     }
@@ -126,10 +128,26 @@ impl<'a> Connection<'a> {
             Command::ListFeatures => serde_json::to_value(&self.daemon.features),
             Command::Status => serde_json::to_value(self.daemon.status()),
             Command::Subscribe { .. } | Command::Quit => Ok(serde_json::Value::Null),
+            Command::ShowAiUsage { provider } => {
+                return self.with_ai_usage(|usage| usage.show(*provider));
+            }
+            Command::ReportClaudeUsage { limits } => {
+                return self.with_ai_usage(|usage| usage.report_claude(limits.clone()));
+            }
         };
         match value {
             Ok(value) => Outcome::Result(value),
             Err(e) => Outcome::Error(e.to_string()),
+        }
+    }
+
+    fn with_ai_usage(&self, act: impl FnOnce(&crate::ai_usage::Usage) -> Result<(), String>) -> Outcome {
+        match &self.daemon.ai_usage {
+            Some(usage) => match act(usage) {
+                Ok(()) => Outcome::Result(serde_json::Value::Null),
+                Err(e) => Outcome::Error(e),
+            },
+            None => Outcome::Error(format!("the {} feature is off", crate::ai_usage::FEATURE_ID)),
         }
     }
 
@@ -148,6 +166,13 @@ impl<'a> Connection<'a> {
                             self.daemon.hub.subscribe(self.id, topic);
                             self.send(Event::Theme(self.daemon.theme.clone()));
                         }
+                        // Without the feature there are no events to send.
+                        Topic::AiUsage => {
+                            if let Some(usage) = &self.daemon.ai_usage {
+                                self.daemon.hub.subscribe(self.id, topic);
+                                self.send(usage.event());
+                            }
+                        }
                     }
                 }
             }
@@ -155,7 +180,11 @@ impl<'a> Connection<'a> {
                 self.flush();
                 self.daemon.quit();
             }
-            Command::Ping | Command::ListFeatures | Command::Status => {}
+            Command::Ping
+            | Command::ListFeatures
+            | Command::Status
+            | Command::ShowAiUsage { .. }
+            | Command::ReportClaudeUsage { .. } => {}
         }
     }
 

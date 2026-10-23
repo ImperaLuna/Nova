@@ -21,8 +21,15 @@ struct Novad {
 
 impl Novad {
     fn start(name: &str) -> Self {
+        Self::start_with(name, "")
+    }
+
+    /// With `selection` as the user's features.toml.
+    fn start_with(name: &str, selection: &str) -> Self {
         let dir = std::env::temp_dir().join(format!("nova-cli-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("features.toml"), selection).unwrap();
         let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         let args: Vec<std::ffi::OsString> = vec![
             "nova daemon".into(),
@@ -33,6 +40,10 @@ impl Novad {
             features.into(),
             "--selection".into(),
             dir.join("features.toml").into(),
+            "--state-dir".into(),
+            dir.join("state").into(),
+            "--codex-home".into(),
+            dir.join("codex").into(),
         ];
         novad::spawn(<DaemonArgs as clap::Parser>::parse_from(args).args, dir.join("novad.sock")).unwrap();
         Self { dir }
@@ -40,7 +51,8 @@ impl Novad {
 
     fn nova(&self, args: &[&str]) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_nova"));
-        command.args(args).arg("--socket").arg(self.dir.join("novad.sock"));
+        // Before the command, so it never ends up after a `--`.
+        command.arg("--socket").arg(self.dir.join("novad.sock")).args(args);
         command
     }
 
@@ -78,7 +90,8 @@ fn nova_shows_status_when_already_running() {
     let text = stdout(&novad.run(&[]));
     assert!(text.starts_with("Nova is already running. To restart it, run `nova restart`."), "{text}");
     assert!(text.contains("daemon     running"), "{text}");
-    assert!(text.contains("features   core on"), "{text}");
+    let features = text.lines().find(|line| line.starts_with("features")).unwrap_or_default();
+    assert!(features.contains("core on"), "{text}");
 }
 
 #[test]
@@ -225,4 +238,48 @@ fn a_second_daemon_is_refused_before_touching_the_log() {
     // The running daemon's log is still nova.log, not rotated to nova.log.1.
     let text = stdout(&novad.run(&["logs", "--no-follow", "--log-dir", &novad.log_dir()]));
     assert!(text.contains("listening on"), "{text}");
+}
+
+#[test]
+fn claude_statusline_reports_limits_and_passes_input_on() {
+    let novad = Novad::start_with("claude-statusline", "enabled = [\"ai-usage\"]\n");
+    let input = r#"{"model":{"display_name":"Opus"},"rate_limits":{"five_hour":{"used_percentage":41.6,"resets_at":4102444800},"seven_day":{"used_percentage":61}}}"#;
+    let mut child =
+        novad.nova(&["claude-statusline", "--", "cat"]).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    assert_eq!(stdout(&child.wait_with_output().unwrap()), input, "the wrapped command gets the same input");
+
+    let stream = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let mut writer = stream.try_clone().unwrap();
+    writeln!(writer, r#"{{"v":2,"cmd":"subscribe","args":{{"topics":["ai_usage"]}}}}"#).unwrap();
+    let event = BufReader::new(stream)
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(&line.unwrap()).unwrap())
+        // The report isn't answered, so it may land just after subscribing.
+        .find(|message| message["event"] == "ai_usage" && message["data"]["providers"][0]["state"] == "ready")
+        .unwrap();
+    let claude = &event["data"]["providers"][0];
+    assert_eq!(
+        claude["limits"][0],
+        serde_json::json!({"window": "session", "percent": 42, "resets_at": "2100-01-01T00:00:00Z"})
+    );
+    assert_eq!(claude["limits"][1], serde_json::json!({"window": "weekly", "percent": 61}));
+}
+
+#[test]
+fn claude_statusline_stays_quiet_without_novad() {
+    let dir = std::env::temp_dir().join(format!("nova-cli-test-no-novad-{}", std::process::id()));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_nova"))
+        .args(["claude-statusline", "--socket"])
+        .arg(dir.join("missing.sock"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(br#"{"rate_limits":{"seven_day":{"used_percentage":5}}}"#).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
 }
