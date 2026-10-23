@@ -17,13 +17,23 @@ jobs:
   checks:
     name: checks
     runs-on: [self-hosted, nova]
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: nix flake check
         run: nix flake check -L
       - name: headless e2e
         run: nix develop -c just e2e
+      # The VM tests' screenshots, report and odiff diffs. The flake check
+      # already built them, also when it failed on a diff; --max-jobs 0
+      # skips building them again when the VM test itself failed.
+      - name: VM screenshots
+        if: always()
+        run: |
+          for compositor in niri hyprland; do
+            shots=$(nix build --max-jobs 0 --no-link --print-out-paths ".#checks.x86_64-linux.e2e-$compositor.compare") &&
+              cp -r --no-preserve=mode "$shots" "e2e/out/vm-$compositor" || true
+          done
       - if: always()
         uses: actions/upload-artifact@v4
         with:

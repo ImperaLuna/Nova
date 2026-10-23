@@ -49,6 +49,18 @@ test-qml:
 e2e: build
     e2e/run.sh target/debug/nova
 
+system := `nix eval --raw --impure --expr builtins.currentSystem 2>/dev/null || true`
+
+# NixOS VM test on real niri or Hyprland: lifecycle and screenshots (needs KVM)
+e2e-vm compositor="niri":
+    nix build -L --no-link .#checks.{{system}}.e2e-{{compositor}}
+
+# Run the VM test and approve its screenshots as e2e/golden/<compositor>
+e2e-approve compositor="niri":
+    mkdir -p e2e/golden/{{compositor}}
+    cp --no-preserve=mode "$(nix build -L --no-link --print-out-paths .#checks.{{system}}.e2e-{{compositor}}.vm)"/*.png e2e/golden/{{compositor}}/
+    git status --short e2e/golden/{{compositor}}
+
 build:
     cargo build --workspace
 
