@@ -1,0 +1,46 @@
+name: Newest Quickshell
+
+# Runs Nova's qmllint and VM tests on the newest stable Quickshell release
+# (scripts/newest-quickshell.sh), so packaging/quickshell.toml's `max` can be
+# raised as soon as a release works. The summary says whether Nova passes and
+# whether the release is in the tested range.
+#
+# Weekly on main, by hand (Actions > Newest Quickshell), and on PRs that change
+# the range or how Nova packages Quickshell. While the newest release is the
+# one nixpkgs has, everything here is cached from CI and takes seconds.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - packaging/quickshell.toml
+      - packaging/nix/**
+      - scripts/newest-quickshell.sh
+      - .github/workflows/newest-quickshell.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: newest-quickshell-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  newest:
+    name: newest Quickshell
+    runs-on: [self-hosted, nova]
+    # A new release builds Quickshell from source once.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Nova on the newest Quickshell
+        run: nix develop -c scripts/newest-quickshell.sh
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: newest-quickshell
+          path: e2e/out
+          if-no-files-found: ignore
