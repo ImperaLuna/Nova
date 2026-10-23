@@ -62,6 +62,9 @@ Item {
         return row && row.warn ? Tokens.primary : Tokens.fg;
     }
 
+    // The glass's corner radius, for the window's blur region.
+    readonly property real radius: surface.radius
+
     implicitWidth: surface.width
     implicitHeight: surface.height
 
@@ -198,15 +201,6 @@ Item {
         color: Tokens.glass
         border.color: Tokens.glassRim
         clip: true
-
-        // The lit top edge of the glass.
-        Rectangle {
-            x: surface.radius
-            y: 1
-            width: parent.width - surface.radius * 2
-            height: 1
-            color: Tokens.glassHighlight
-        }
 
         MouseArea {
             id: pill

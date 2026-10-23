@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
 import "../theme"
 import "../daemon"
 import "../ai_usage"
@@ -32,6 +33,17 @@ PanelWindow { // qmllint disable uncreatable-type
         }
     }
 
+    // Real blur behind the glass where the compositor offers it
+    // (ext-background-effect-v1, e.g. niri); elsewhere the tint stands alone.
+    // The blur spike (IMP-9) decides what other compositors get.
+    Region {
+        id: blur
+        Region {
+            item: aiUsage.item as Item
+            radius: (aiUsage.item as AiUsage)?.radius ?? 0
+        }
+    }
+
     // Logs once the bar has drawn a frame while connected to novad, so the
     // VM tests know when to screenshot it.
     property bool shownLogged: false
@@ -52,6 +64,10 @@ PanelWindow { // qmllint disable uncreatable-type
         x: Tokens.barMargin
         y: Tokens.barMargin
         active: Daemon.readyFeatures.includes("ai-usage") && Daemon.aiUsage !== null
+        // Set here, not declared on the window: asking for blur at all logs a
+        // warning on compositors without it, which a bar with no glass
+        // shouldn't do.
+        onLoaded: bar.BackgroundEffect.blurRegion = blur
         sourceComponent: AiUsage {
             usage: Daemon.aiUsage
             onShowRequested: provider => Daemon.call("show_ai_usage", {
