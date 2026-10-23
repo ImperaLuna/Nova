@@ -89,8 +89,10 @@ relaunch() { # <snapshot dir>
   # named by its full path.
   local launch=("$(command -v env)" -i "${env_vars[@]}" "$BASH" -c 'exec -a "$0" "$@"' "${argv[0]}" "$exe" "${argv[@]:1}")
   # Started outside this terminal's scope, so it outlives the terminal;
-  # setsid when there's no systemd user manager to ask.
-  systemd-run --user --quiet --collect --working-directory="$cwd" "${launch[@]}" >/dev/null 2>&1 ||
+  # setsid when there's no systemd user manager to ask. KillMode=process:
+  # apps launched from the bar can stay in its cgroup, and the next run
+  # stopping the bar mustn't take them down with it.
+  systemd-run --user --quiet --collect -p KillMode=process --working-directory="$cwd" "${launch[@]}" >/dev/null 2>&1 ||
     (cd "$cwd" && setsid -f "${launch[@]}" >/dev/null 2>&1 </dev/null 9>&-)
 }
 
