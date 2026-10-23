@@ -226,7 +226,10 @@ Run inside `nix develop`:
   runs both.
 - `just e2e-approve [niri|hyprland]`: runs a VM test and copies its
   screenshots into `e2e/golden/<compositor>`. Run it after an intended visual
-  change and commit the new goldens with it.
+  change and commit the new goldens with it. Without KVM (cloud sessions),
+  start the "Approve goldens" workflow from main with the PR branch instead:
+  it runs the same recipe on the KVM runner, commits the goldens to the
+  branch and re-runs CI.
 - `just record [niri|hyprland]`: records what that compositor sends novad
   in a VM (needs KVM) into `crates/novad/src/compositor/recorded`.
 - `just run`: this checkout's Nova on your current session, in place of
