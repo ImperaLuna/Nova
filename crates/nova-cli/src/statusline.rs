@@ -11,6 +11,7 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::mpsc;
 use std::time::Duration;
 
 /// Claude Code's input is a few KiB; anything past this isn't read.
@@ -52,10 +53,18 @@ pub fn run(args: &StatuslineArgs, socket: &Path) -> Result<std::process::ExitCod
 }
 
 /// Sends `command` without waiting for an answer; failures are ignored.
+/// Gives up after `SOCKET_TIMEOUT` in all: connecting can block too, when a
+/// stuck novad has stopped accepting.
 fn report(socket: &Path, command: Command) {
-    let Ok(mut stream) = UnixStream::connect(socket) else { return };
-    let _ = stream.set_write_timeout(Some(SOCKET_TIMEOUT));
-    if let Ok(line) = encode(Request { id: None, command }) {
-        let _ = stream.write_all(line.as_bytes());
-    }
+    let Ok(line) = encode(Request { id: None, command }) else { return };
+    let socket = socket.to_owned();
+    let (done, finished) = mpsc::channel();
+    std::thread::spawn(move || {
+        if let Ok(mut stream) = UnixStream::connect(socket) {
+            let _ = stream.set_write_timeout(Some(SOCKET_TIMEOUT));
+            let _ = stream.write_all(line.as_bytes());
+        }
+        let _ = done.send(());
+    });
+    let _ = finished.recv_timeout(SOCKET_TIMEOUT);
 }
