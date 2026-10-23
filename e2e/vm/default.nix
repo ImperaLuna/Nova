@@ -94,6 +94,8 @@ let
           pkgs.quickshell
         ];
         systemd.packages = [ nova ];
+        # A virtual mouse for clicking Nova's pills (lifecycle.py's click).
+        programs.ydotool.enable = true;
         # NixOS ignores [Install] in packaged units; this is the unit's
         # WantedBy=.
         systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
@@ -196,9 +198,11 @@ let
     cursor {
       invisible = true
     }
-    # Two keyboard layouts, so there's a layout to switch to.
     input {
+      # Two keyboard layouts, so there's a layout to switch to.
       kb_layout = us,de
+      # ydotool's moves land 1:1 (lifecycle.py's click).
+      accel_profile = flat
     }
   '';
 in
@@ -240,6 +244,10 @@ in
             xkb {
               layout "us,de"
             }
+          }
+          // ydotool's moves land 1:1 (lifecycle.py's click).
+          mouse {
+            accel-profile "flat"
           }
         }
       '';

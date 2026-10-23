@@ -14,6 +14,13 @@ WAIT = dt.timedelta(minutes=2)
 SESSION_START = dt.timedelta(minutes=10)
 # What the bar logs once it has drawn itself (ui/bar/Bar.qml).
 BAR_SHOWN = "nova: bar shown"
+# What the bar logs once the AI usage pill is on it (ui/bar/Bar.qml).
+AI_USAGE_SHOWN = "nova: ai usage pill shown"
+# A point inside that pill: it sits Tokens.barMargin (8) from the screen's
+# top-left corner and is Tokens.barHeight (36) tall.
+AI_USAGE_PILL = (24, 26)
+# Where the pointer waits between clicks, away from the bar.
+POINTER_REST = (640, 700)
 # How long the screen must stay the same before a screenshot.
 SETTLED_SECS = 5
 # How long to watch that a stopped unit stays stopped: past its RestartSec.
@@ -83,6 +90,18 @@ def screenshot(state: str) -> None:
     machine.copy_from_machine(path)
 
 
+def click(x: int, y: int) -> None:
+    """Clicks at (x, y) on the screen with ydotool's virtual mouse, then
+    moves the pointer out of the way so no hover shows in screenshots.
+    Both compositors run it with flat acceleration, so a move is 1:1."""
+    ydotool = "YDOTOOL_SOCKET=/run/ydotoold/socket ydotool"
+    rest_x, rest_y = POINTER_REST
+    machine.succeed(
+        f"{ydotool} mousemove --absolute -x {x} -y {y} && {ydotool} click 0xC0 && "
+        f"{ydotool} mousemove --absolute -x {rest_x} -y {rest_y}"
+    )
+
+
 def wait_gone(pid: int) -> None:
     machine.wait_until_fails(f"test -e /proc/{pid}", timeout=WAIT)
 
@@ -113,6 +132,13 @@ with subtest("screenshot: the bar"):
     screenshot("bar")
     # The log next to the screenshot, for when the bar isn't on it.
     print(machine.succeed(as_user("nova logs --no-follow -n 100")))
+
+with subtest("screenshot: the AI usage panel open, grown from its pill"):
+    machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui | grep -qF {shlex.quote(AI_USAGE_SHOWN)}"), timeout=WAIT)
+    click(*AI_USAGE_PILL)
+    screenshot("panel-open")
+    # The same spot closes it again.
+    click(*AI_USAGE_PILL)
 
 with subtest("a workspace switch reaches the UI"):
     running = wait_running()

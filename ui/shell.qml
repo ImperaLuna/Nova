@@ -3,16 +3,16 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import "bar"
 import "compositor"
 import "daemon"
+import "stage"
 
 ShellRoot {
     Variants {
         // Nothing is drawn until novad has sent the theme's colors.
         model: Daemon.theme ? Quickshell.screens : []
 
-        Bar {
+        Stage {
             required property var modelData
             screen: modelData
         }
