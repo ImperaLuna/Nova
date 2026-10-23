@@ -17,8 +17,13 @@ use nova_protocol::{Capability, Desktop, Event, Step, Topic, Workspace, Workspac
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 const LOG_SOURCE: &str = "compositor";
+/// How long to wait before following the compositor again after a failure,
+/// doubling up to `MAX_RETRY` while it keeps failing.
+const FIRST_RETRY: Duration = Duration::from_secs(1);
+const MAX_RETRY: Duration = Duration::from_secs(60);
 
 /// One compositor's IPC.
 pub trait Backend: Send + Sync {
@@ -66,9 +71,24 @@ impl Compositor {
         let watcher = Arc::clone(&compositor);
         std::thread::spawn(move || {
             let name = watcher.backend.name();
-            match watcher.backend.watch(&mut |desktop| watcher.update(desktop)) {
-                Ok(()) => logger.info(LOG_SOURCE, &format!("{name} closed its IPC connection")),
-                Err(e) => logger.warn(LOG_SOURCE, &format!("lost {name}: {e}")),
+            // A failure (the compositor not up yet, a request that timed out)
+            // starts over from a fresh connection, waiting longer each time.
+            // The compositor closing the connection means it's gone.
+            let mut retry = FIRST_RETRY;
+            loop {
+                let mut reported = false;
+                let result = watcher.backend.watch(&mut |desktop| {
+                    reported = true;
+                    watcher.update(desktop);
+                });
+                match result {
+                    Ok(()) => return logger.info(LOG_SOURCE, &format!("{name} closed its IPC connection")),
+                    Err(e) => {
+                        logger.warn(LOG_SOURCE, &format!("lost {name}, trying again in {}s: {e}", retry.as_secs()))
+                    }
+                }
+                std::thread::sleep(retry);
+                retry = if reported { FIRST_RETRY } else { (retry * 2).min(MAX_RETRY) };
             }
         });
         compositor

@@ -7,7 +7,7 @@
 //! newer niri releases add, are ignored, so those releases keep working.
 
 use super::Backend;
-use nova_protocol::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace};
+use nova_protocol::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
@@ -245,7 +245,9 @@ impl State {
                     workspaces: workspaces
                         .into_iter()
                         .map(|workspace| NovaWorkspace {
-                            id: workspace.id.try_into().unwrap_or(i64::MAX),
+                            // niri counts ids up from 1; one past i64 would
+                            // take billions of years of new workspaces.
+                            id: workspace.id.try_into().unwrap_or(WorkspaceId::MAX),
                             name: workspace.name.clone().unwrap_or_else(|| workspace.idx.to_string()),
                             active: workspace.is_active,
                             focused: workspace.is_focused,
