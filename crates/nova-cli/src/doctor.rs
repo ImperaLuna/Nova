@@ -95,13 +95,16 @@ impl Facts {
     }
 }
 
+/// Tells "not running" from "stuck" by how the one connection fails, so the
+/// doctor never makes a second connection that could wait on a stuck novad.
 fn reach(socket: &Path) -> Daemon {
     use std::io::ErrorKind;
-    match Client::connect(socket) {
-        Ok(client) => Daemon::Running { version: client.daemon_version },
-        Err(problem) => match std::os::unix::net::UnixStream::connect(socket) {
-            Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) => Daemon::NotRunning,
-            _ => Daemon::NoAnswer(problem),
+    match std::os::unix::net::UnixStream::connect(socket) {
+        Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) => Daemon::NotRunning,
+        Err(e) => Daemon::NoAnswer(format!("can't reach novad at {}: {e}", socket.display())),
+        Ok(stream) => match Client::over(stream) {
+            Ok(client) => Daemon::Running { version: client.daemon_version },
+            Err(problem) => Daemon::NoAnswer(problem),
         },
     }
 }
@@ -328,6 +331,20 @@ mod tests {
         let old = daemon(&Daemon::Running { version: "0.0.1".into() });
         assert_eq!(old.level, Level::Warn);
         assert!(old.detail.contains("nova restart"), "{old}");
+    }
+
+    #[test]
+    fn reaching_novad_tells_gone_from_stuck() {
+        let root = FakeRoot::new("doctor-reach", "", &[], false);
+        let socket = root.0.join("novad.sock");
+        assert!(matches!(reach(&socket), Daemon::NotRunning));
+        // A socket file left by a novad that died.
+        drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
+        assert!(matches!(reach(&socket), Daemon::NotRunning));
+        // Listening but never answering: times out on hello.
+        std::fs::remove_file(&socket).unwrap();
+        let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        assert!(matches!(reach(&socket), Daemon::NoAnswer(_)));
     }
 
     #[test]
