@@ -51,8 +51,14 @@ Item {
     readonly property int fillDuration: 600
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
 
+    // The panel's height for what it shows now.
+    readonly property real contentHeight: details.y + details.implicitHeight + sectionGap + othersBlock.implicitHeight + panelBottom
+    // The tallest it has been: it grows when a provider needs more room and
+    // never shrinks back, so switching providers doesn't make it jump.
+    property real tallest: 0
+    onContentHeightChanged: tallest = Math.max(tallest, contentHeight)
     // The panel's full height; the window keeps room for it.
-    readonly property real openHeight: details.y + details.implicitHeight + panelBottom
+    readonly property real openHeight: Math.max(contentHeight, tallest)
     // 0 closed, 1 open: every size and position in between follows it.
     property real t: 0
     property real fill: 0
@@ -455,71 +461,74 @@ Item {
                 }
             }
 
-            // The other providers; clicking one shows it in the bar instead.
-            Column {
-                id: othersBlock
+        }
+        // The other providers; clicking one shows it in the bar instead.
+        // Pinned to the panel's bottom, so switching providers never moves it.
+        Column {
+            id: othersBlock
+            x: root.panelPad
+            y: root.openHeight - root.panelBottom - height
+            width: details.width
+            spacing: 8
+            opacity: 0
+
+            Rectangle {
                 width: parent.width
-                spacing: 8
-                opacity: 0
+                height: 1
+                color: Tokens.outline
+            }
 
-                Rectangle {
-                    width: parent.width
-                    height: 1
-                    color: Tokens.outline
-                }
+            Repeater {
+                model: Usage.others(root.usage)
 
-                Repeater {
-                    model: Usage.others(root.usage)
+                MouseArea {
+                    id: row
+                    required property var modelData
+                    readonly property var info: Usage.summarize(modelData, root.now)
 
-                    MouseArea {
-                        id: row
-                        required property var modelData
-                        readonly property var info: Usage.summarize(modelData, root.now)
+                    x: -10
+                    width: parent.width + 20
+                    height: root.rowHeight
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.showRequested(row.info.id)
 
-                        x: -10
-                        width: parent.width + 20
-                        height: root.rowHeight
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.showRequested(row.info.id)
+                    Accessible.role: Accessible.Button
+                    Accessible.name: `Show ${row.info.name} in the bar${row.info.main ? `, ${row.info.main.percent} percent` : ""}`
 
-                        Accessible.role: Accessible.Button
-                        Accessible.name: `Show ${row.info.name} in the bar${row.info.main ? `, ${row.info.main.percent} percent` : ""}`
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: root.rowRadius
+                        color: Tokens.hover
+                        visible: row.containsMouse
+                    }
 
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: root.rowRadius
-                            color: Tokens.hover
-                            visible: row.containsMouse
-                        }
+                    ProviderLogo {
+                        x: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 16
+                        provider: row.info.id
+                        opacity: row.info.state === "unavailable" ? 0.5 : 1
+                    }
 
-                        ProviderLogo {
-                            x: 10
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 16
-                            provider: row.info.id
-                            opacity: row.info.state === "unavailable" ? 0.5 : 1
-                        }
+                    Text {
+                        x: 36
+                        anchors.verticalCenter: parent.verticalCenter
+                        font.family: Tokens.fontSans
+                        font.pixelSize: Tokens.fontSize
+                        color: Tokens.fg
+                        text: row.info.name
+                    }
 
-                        Text {
-                            x: 36
-                            anchors.verticalCenter: parent.verticalCenter
-                            font.family: Tokens.fontSans
-                            font.pixelSize: Tokens.fontSize
-                            color: Tokens.fg
-                            text: row.info.name
-                        }
-
-                        Text {
-                            anchors.right: parent.right
-                            anchors.rightMargin: 10
-                            anchors.verticalCenter: parent.verticalCenter
-                            font.family: Tokens.fontMono
-                            font.pixelSize: Tokens.fontSize
-                            font.weight: Font.Medium
-                            color: row.info.main ? root.percentColor(row.info) : Tokens.fgDim
-                            text: row.info.main ? `${row.info.hero}%` : row.info.hero
-                        }
+                    Text {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        font.family: Tokens.fontMono
+                        font.pixelSize: Tokens.fontSize
+                        font.weight: Font.Medium
+                        color: row.info.main ? root.percentColor(row.info) : Tokens.fgDim
+                        text: row.info.main ? `${row.info.hero}%` : row.info.hero
                     }
                 }
             }

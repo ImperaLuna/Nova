@@ -131,10 +131,15 @@ Item {
             compare(showSpy.signalArguments[0][0], "codex");
         }
 
-        function test_weekly_only_panel_is_shorter_than_session_and_weekly() {
-            const claude = createPill("claude");
-            const codex = createPill("codex");
-            verify(codex.openHeight < claude.openHeight);
+        function test_switching_providers_keeps_the_panel_at_its_tallest() {
+            const pill = createPill("claude");
+            const tall = pill.openHeight;
+            const rowY = pill.openHeight - pill.panelBottom - pill.rowHeight;
+            pill.usage = usage("codex");
+            // Codex has only a weekly limit, but the panel and its switch row stay put.
+            tryVerify(() => pill.contentHeight < tall);
+            compare(pill.openHeight, tall);
+            compare(pill.openHeight - pill.panelBottom - pill.rowHeight, rowY);
         }
     }
 }
