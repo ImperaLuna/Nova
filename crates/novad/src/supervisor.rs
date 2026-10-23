@@ -38,6 +38,9 @@ const HEALTHY_AFTER: Duration = Duration::from_secs(60);
 const EARLY_EXIT: Duration = Duration::from_secs(5);
 /// How long `quickshell --version` may take; novad's start waits for it.
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
+/// How often `stdout_within` checks whether a command that's done printing
+/// has exited.
+const EXIT_POLL: Duration = Duration::from_millis(10);
 
 pub struct UiSettings {
     /// The Quickshell binary.
@@ -252,8 +255,9 @@ fn quickshell_version(settings: &UiSettings, logger: &Logger) -> Option<String> 
 }
 
 /// What `command` prints when it succeeds within `timeout`. One that takes
-/// longer is killed and reaped.
+/// longer, printing or exiting, is killed and reaped.
 fn stdout_within(mut command: Command, timeout: Duration) -> std::io::Result<Vec<u8>> {
+    let deadline = Instant::now() + timeout;
     let mut child = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
     let mut stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout pipe"))?;
     let (done, finished) = std::sync::mpsc::channel();
@@ -261,21 +265,22 @@ fn stdout_within(mut command: Command, timeout: Duration) -> std::io::Result<Vec
         let mut printed = Vec::new();
         let _ = done.send(stdout.read_to_end(&mut printed).map(|_| printed));
     });
-    match finished.recv_timeout(timeout) {
-        Ok(printed) => {
-            let printed = printed?;
-            match child.wait()? {
-                status if status.success() => Ok(printed),
-                status => Err(std::io::Error::other(describe_exit(status))),
+    if let Ok(printed) = finished.recv_timeout(timeout) {
+        // Closing stdout isn't exiting: the exit has to come by the same deadline.
+        while Instant::now() < deadline {
+            if let Some(status) = child.try_wait()? {
+                return match status.success() {
+                    true => printed,
+                    false => Err(std::io::Error::other(describe_exit(status))),
+                };
             }
-        }
-        Err(_) => {
-            // Still unreaped, so the pid is still this child's.
-            let _ = child.kill();
-            let _ = child.wait();
-            Err(std::io::Error::new(std::io::ErrorKind::TimedOut, format!("no answer in {} s", timeout.as_secs())))
+            std::thread::sleep(EXIT_POLL);
         }
     }
+    // Still unreaped, so the pid is still this child's.
+    let _ = child.kill();
+    let _ = child.wait();
+    Err(std::io::Error::new(std::io::ErrorKind::TimedOut, format!("no answer in {} s", timeout.as_secs())))
 }
 
 #[cfg(test)]
@@ -286,6 +291,16 @@ mod tests {
     fn a_command_that_hangs_is_killed() {
         let mut command = Command::new("sleep");
         command.arg("30");
+        let started = Instant::now();
+        let error = stdout_within(command, Duration::from_millis(200)).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_command_that_closes_its_output_but_hangs_is_killed() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "exec >&-; sleep 30"]);
         let started = Instant::now();
         let error = stdout_within(command, Duration::from_millis(200)).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);

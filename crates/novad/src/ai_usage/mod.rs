@@ -389,7 +389,9 @@ impl Usage {
     /// through its parent, so a home that appears later (before Codex's
     /// first run), is replaced, or is a symlink that's repointed is followed.
     fn watch_codex(&self, home: &Path) {
-        let home = home.to_owned();
+        // Absolute, so a relative home (`CODEX_HOME=codex`) has a parent to
+        // watch and matches the paths changes come with.
+        let home = std::path::absolute(home).unwrap_or_else(|_| home.to_owned());
         let sessions = codex::sessions_dir(&home);
         let watching = inotify::Inotify::new(inotify::WRITES).and_then(|mut watcher| {
             if let Some(parent) = home.parent() {

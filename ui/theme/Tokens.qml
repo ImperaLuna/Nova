@@ -117,6 +117,14 @@ QtObject {
     readonly property int iconGap: 6
     // Thin strokes, like a ring or a spinner's arc.
     readonly property real strokeThin: 1.5
+    // Status rings in an icon box: kept this far inside its edge, dashed when
+    // something is unavailable, a short arc spinning while it loads (degrees).
+    readonly property int ringInset: 2
+    readonly property list<real> ringDashes: [2, 2]
+    readonly property real spinnerSweep: 86
+    // A label beside an icon sits this far right, to line up optically with
+    // the icon's edge.
+    readonly property int labelNudge: 1
     // Something that can't be used right now, like an unavailable provider.
     readonly property real dimOpacity: 0.5
 
@@ -145,6 +153,12 @@ QtObject {
     // A panel's headline number.
     readonly property int fontSizeHero: 56
     readonly property int lineHeightHero: 60
+    // The headline's tracking, as a share of its size (tighter when big), and
+    // the size of a unit (like %) beside it, relative to its digits.
+    readonly property real trackingHero: -0.02
+    readonly property real heroUnitScale: 0.42
+    // Line height for text that wraps, like a hint under a meter.
+    readonly property real lineHeightWrapped: 1.5
 
     // Motion (ms)
     readonly property int durationFast: 120

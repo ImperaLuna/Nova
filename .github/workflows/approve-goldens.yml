@@ -37,6 +37,8 @@ jobs:
     name: VM screenshots
     runs-on: [self-hosted, nova]
     timeout-minutes: 45
+    outputs:
+      sha: ${{ steps.revision.outputs.sha }}
     steps:
       - name: check branch
         env:
@@ -51,6 +53,11 @@ jobs:
         with:
           ref: ${{ inputs.branch }}
           persist-credentials: false
+      # `commit` builds on this exact commit, so the goldens never land on
+      # code they weren't taken from.
+      - name: revision
+        id: revision
+        run: echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
       # Usually cached: CI on the PR already built the same VM tests.
       - name: just e2e-approve
         env:
@@ -74,9 +81,11 @@ jobs:
       contents: write
       actions: write
     steps:
+      # The commit the screenshots came from. If the branch has moved on since,
+      # the push below isn't a fast-forward and fails: approve again.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.branch }}
+          ref: ${{ needs.screenshots.outputs.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v7
         with:
