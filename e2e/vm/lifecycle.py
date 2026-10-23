@@ -115,17 +115,22 @@ with subtest("screenshot: the bar"):
     print(machine.succeed(as_user("nova logs --no-follow -n 100")))
 
 with subtest("a workspace switch reaches the UI"):
-    def ui_focused_workspace(expected: str) -> None:
-        ui = status()["ui"]["pid"]
-        ask = f"quickshell ipc --pid {ui} prop get compositor focusedWorkspace"
-        machine.wait_until_succeeds(as_user(f"test \"$({ask})\" = {expected}"), timeout=WAIT)
-
-    desktop = status().get("desktop")
+    running = wait_running()
+    desktop = running.get("desktop")
     assert desktop and desktop["compositor"].lower() == COMPOSITOR, desktop
+
+    def ui_focused_workspace(expected: str) -> None:
+        ask = f"quickshell ipc --pid {running['ui']['pid']} prop get compositor focusedWorkspace"
+        try:
+            machine.wait_until_succeeds(as_user(f"test \"$({ask})\" = {expected}"), timeout=WAIT)
+        except Exception:
+            print(machine.execute(as_user(f"nova status; echo UI: $({ask})"))[1])
+            raise
+
     ui_focused_workspace("1")
     # niri only has a next workspace once this one holds a window.
     machine.succeed(as_user("setsid foot >/dev/null 2>&1 &"))
-    machine.wait_until_succeeds(as_user("nova status --json | grep -q focused_window"), timeout=WAIT)
+    machine.wait_until_succeeds(as_user("nova status --json | grep -qF '\"app_id\":\"foot\"'"), timeout=WAIT)
     machine.succeed(as_user(FOCUS_NEXT_WORKSPACE))
     ui_focused_workspace("2")
 
