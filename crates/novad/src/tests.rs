@@ -325,14 +325,15 @@ fn manifest_daemon_names_match_cargo_features() {
     assert_eq!(cargo_features, declared, "novad [features] and manifest `daemon` fields differ");
 }
 
-/// Claude's endpoint is `claude_usage_url`; nothing listens there unless a
-/// test starts a fake one.
+/// Claude's endpoint is `claude_usage_url`, on when `claude/on` exists;
+/// nothing listens there unless a test starts a fake one.
 fn ai_usage_paths(root: &Path) -> ai_usage::Paths {
     ai_usage::Paths {
         codex_home: Some(root.join("codex")),
         state_file: root.join("state/ai-usage.json"),
         claude_credentials: Some(root.join("claude/.credentials.json")),
         claude_usage_url: std::fs::read_to_string(root.join("claude/url")).unwrap_or("http://127.0.0.1:9/".into()),
+        claude_usage_endpoint: root.join("claude/on").exists(),
     }
 }
 
@@ -359,15 +360,19 @@ fn fake_anthropic(body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
     (url, requests)
 }
 
-/// Claude Code's credentials file, signed in to a Max plan.
+/// Claude Code's credentials file, signed in to a Max plan, and the usage
+/// endpoint at `url`, turned on.
 fn claude_sign_in(root: &Path, url: &str) {
     let dir = root.join("claude");
     std::fs::create_dir_all(&dir).unwrap();
     let expires = jiff::Timestamp::now().as_millisecond() + 3_600_000;
     let credentials =
         format!(r#"{{"claudeAiOauth":{{"accessToken":"tok","expiresAt":{expires},"subscriptionType":"max"}}}}"#);
-    std::fs::write(dir.join(".credentials.json"), credentials).unwrap();
+    let path = dir.join(".credentials.json");
+    std::fs::write(&path, credentials).unwrap();
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
     std::fs::write(dir.join("url"), url).unwrap();
+    std::fs::write(dir.join("on"), "").unwrap();
 }
 
 /// A Codex `token_count` log line in the shape Codex writes, with limits
@@ -427,7 +432,7 @@ fn ai_usage_starts_with_setup_hints() {
     assert_eq!(usage["shown"], "claude");
     let claude = provider(&usage, "claude");
     assert_eq!(claude["state"], "unavailable");
-    assert!(claude["hint"].as_str().unwrap().contains("Sign in to Claude Code"), "{claude}");
+    assert!(claude["hint"].as_str().unwrap().contains("claude-usage-endpoint = true"), "{claude}");
     assert_eq!(provider(&usage, "codex")["state"], "unavailable");
 }
 
@@ -449,11 +454,28 @@ fn claude_limits_come_from_anthropic_with_claude_codes_sign_in() {
     );
     let head = requests.lock().unwrap()[0].to_lowercase();
     assert!(head.contains("authorization: bearer tok\r\n") && head.contains("anthropic-beta: oauth-2025-04-20\r\n"));
+    assert!(head.contains("user-agent: nova/"), "{head}");
 
     // Opening the panel right after the first answer doesn't ask again.
     client.request(2, "refresh_ai_usage", None);
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(requests.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn claudes_endpoint_is_never_asked_unless_turned_on() {
+    let (url, requests) = fake_anthropic(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#);
+    let novad = TestDaemon::with_ai_usage("ai-usage-claude-off", |root| {
+        claude_sign_in(root, &url);
+        std::fs::remove_file(root.join("claude/on")).unwrap();
+    });
+    let mut client = novad.connect();
+    let claude = provider(&client.subscribe_usage(), "claude").clone();
+    assert_eq!(claude["state"], "unavailable");
+    assert!(claude["hint"].as_str().unwrap().contains("doesn't document"), "{claude}");
+    client.request(2, "refresh_ai_usage", None);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(requests.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -485,8 +507,9 @@ fn codex_limits_come_from_its_newest_log_and_follow_new_lines() {
 
     let mut file = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
     writeln!(file, "{}", codex_line(13, 85)).unwrap();
-    let codex = provider(&client.next_usage(), "codex").clone();
-    assert_eq!(codex["limits"][0]["percent"], 13);
+    // An event for the first line may still be on its way; the new line's
+    // follows it (next_usage fails if it never comes).
+    while provider(&client.next_usage(), "codex")["limits"][0]["percent"] != 13 {}
 }
 
 #[test]

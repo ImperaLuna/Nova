@@ -6,6 +6,7 @@
 //! top of this.
 
 mod ai_usage;
+mod config;
 mod features;
 mod hub;
 mod logger;
@@ -43,7 +44,7 @@ pub struct Args {
     /// Folder of theme files (`<id>.toml`).
     #[arg(long, default_value_os_t = theme::default_dir())]
     themes_dir: PathBuf,
-    /// The user's settings, including the theme.
+    /// The user's settings (see `config`).
     #[arg(long, default_value_os_t = nova_paths::config_dir().join("config.toml"))]
     config: PathBuf,
     /// The UI's QML folder.
@@ -185,7 +186,13 @@ fn start(
         .any(|feature| feature.id == ai_usage::FEATURE_ID && feature.status == FeatureStatus::Ready)
         .then(|| {
             ai_usage::Usage::start(
-                ai_usage::Paths::new(&args.state_dir, args.codex_home.clone(), args.claude_credentials.clone()),
+                ai_usage::Paths::new(
+                    &args.state_dir,
+                    args.codex_home.clone(),
+                    args.claude_credentials.clone(),
+                    // A broken config.toml is already logged by the theme.
+                    config::read(&args.config).is_ok_and(|config| config.ai_usage.claude_usage_endpoint),
+                ),
                 Arc::clone(&hub),
                 Arc::clone(&logger),
             )

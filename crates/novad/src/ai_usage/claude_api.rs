@@ -2,8 +2,13 @@
 //! `/usage` screen reads, signed in with Claude Code's own OAuth token. It
 //! works however Claude Code runs; the status line only runs in a terminal.
 //!
+//! Off unless the user turns it on (`config`): Anthropic doesn't document
+//! this use of Claude Code's sign-in.
+//!
 //! The token is read from Claude Code's credentials file before each request
-//! and goes nowhere but that request's header. It is never refreshed: that
+//! and goes nowhere but that request's header, sent to Anthropic only (no
+//! redirects) under Nova's own user agent. A credentials file other users
+//! could read, or that isn't the user's, isn't used. It is never refreshed: that
 //! would rotate Claude Code's sign-in under it. When it has expired, Claude
 //! Code renews it the next time it runs.
 
@@ -11,6 +16,7 @@ use super::round_percent;
 use jiff::Timestamp;
 use nova_protocol::{UsageLimit, UsageWindow};
 use serde_json::Value;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -19,6 +25,9 @@ const BETA_HEADER: &str = "oauth-2025-04-20";
 const TIMEOUT: Duration = Duration::from_secs(10);
 /// The answer is well under 1 KiB.
 const MAX_BODY_BYTES: u64 = 64 * 1024;
+const USER_AGENT: &str = concat!("nova/", env!("CARGO_PKG_VERSION"));
+/// Permission bits for anyone but the owner.
+const GROUP_OTHER_BITS: u32 = 0o077;
 
 /// Claude Code's credentials file: `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
 pub fn default_credentials() -> Option<PathBuf> {
@@ -41,6 +50,8 @@ pub enum Problem {
     SignedOut,
     /// The token has expired, or Anthropic refused it.
     Expired,
+    /// The credentials file isn't the user's, or others can read it.
+    Unsafe(PathBuf),
     /// Anthropic asked to slow down, for this long if it said.
     RateLimited(Option<Duration>),
     Failed(String),
@@ -52,19 +63,32 @@ impl Problem {
         match self {
             Problem::SignedOut => "Sign in to Claude Code with your Claude account to see your limits.".into(),
             Problem::Expired => "Claude Code's sign-in has expired. Open Claude Code to renew it.".into(),
+            Problem::Unsafe(path) => format!(
+                "Nova won't use {} because other users could read it or it isn't yours. To fix it, run\nchmod 600 {}",
+                path.display(),
+                path.display()
+            ),
             Problem::RateLimited(_) => "Anthropic is busy; trying again in a while.".into(),
             Problem::Failed(e) => format!("Can't get Claude's limits: {e}"),
         }
     }
 }
 
-/// The token in `path`, if it's there and hasn't expired at `now`.
+/// The token in `path`, if it's there, private to the user and hasn't
+/// expired at `now`.
 pub fn read_token(path: &Path, now: Timestamp) -> Result<Token, Problem> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(Problem::SignedOut),
         Err(e) => return Err(Problem::Failed(format!("can't read {}: {e}", path.display()))),
     };
+    // SAFETY: geteuid has no preconditions and can't fail.
+    let uid = unsafe { libc::geteuid() };
+    if metadata.uid() != uid || metadata.mode() & GROUP_OTHER_BITS != 0 {
+        return Err(Problem::Unsafe(path.to_owned()));
+    }
+    let text =
+        std::fs::read_to_string(path).map_err(|e| Problem::Failed(format!("can't read {}: {e}", path.display())))?;
     // The error says where, never what: the file holds secrets.
     let json: Value = serde_json::from_str(&text)
         .map_err(|e| Problem::Failed(format!("{} isn't valid JSON (line {})", path.display(), e.line())))?;
@@ -89,8 +113,13 @@ fn plan_name(kind: &str) -> Option<String> {
 
 /// Asks `url` for the limits.
 pub fn fetch(url: &str, token: &Token) -> Result<Vec<UsageLimit>, Problem> {
-    let agent: ureq::Agent =
-        ureq::Agent::config_builder().timeout_global(Some(TIMEOUT)).http_status_as_error(false).build().into();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(TIMEOUT))
+        .http_status_as_error(false)
+        .max_redirects(0)
+        .user_agent(USER_AGENT)
+        .build()
+        .into();
     let mut response = agent
         .get(url)
         .header("Authorization", &format!("Bearer {}", token.access))
@@ -148,7 +177,21 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(".credentials.json");
         std::fs::write(&path, text).unwrap();
+        set_mode(&path, 0o600);
         path
+    }
+
+    fn set_mode(path: &Path, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    #[test]
+    fn a_file_others_can_read_is_not_used() {
+        let path = write("open", r#"{"claudeAiOauth":{"accessToken":"t"}}"#);
+        set_mode(&path, 0o644);
+        assert_eq!(read_token(&path, now()).err(), Some(Problem::Unsafe(path.clone())));
+        assert!(Problem::Unsafe(path).hint().contains("chmod 600"));
     }
 
     #[test]

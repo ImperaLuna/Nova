@@ -1,8 +1,8 @@
 //! AI usage (feature `ai-usage`): how much of their Claude and Codex plan
-//! limits the user has used. Claude's come from Anthropic's usage endpoint
-//! with Claude Code's sign-in (see `claude_api`), polled gently, and from
-//! Claude Code's status line (`nova claude-statusline`) when a terminal
-//! session runs. Codex logs its limits in its session files, which novad
+//! limits the user has used. Claude's come from Claude Code's status line
+//! (`nova claude-statusline`) when a terminal session runs and, if the user
+//! turns it on, from Anthropic's usage endpoint with Claude Code's sign-in
+//! (see `claude_api`), polled gently. Codex logs its limits in its session files, which novad
 //! watches; nothing is requested for Codex.
 //!
 //! Numbers change only when a source does, except at a window's reset time:
@@ -40,6 +40,10 @@ const CLAUDE_POLL: Duration = Duration::from_secs(5 * 60);
 const CLAUDE_REFRESH_GAP: Duration = Duration::from_secs(60);
 /// Failed requests wait twice as long each time, up to this.
 const CLAUDE_MAX_BACKOFF: Duration = Duration::from_secs(60 * 60);
+/// Being told to slow down waits at least this long.
+const CLAUDE_RATE_LIMITED: Duration = Duration::from_secs(15 * 60);
+/// What the panel says while the endpoint is off and no status line has run.
+const CLAUDE_ENDPOINT_OFF: &str = "Claude's limits show after a Claude Code session in a terminal. To see them anytime, add this to ~/.config/nova/config.toml:\n[ai-usage]\nclaude-usage-endpoint = true\nNova then asks Anthropic with Claude Code's sign-in, a use Anthropic doesn't document.";
 
 /// Where the module reads and keeps things.
 pub struct Paths {
@@ -50,15 +54,23 @@ pub struct Paths {
     /// Claude Code's credentials file, `None` without `HOME`.
     pub claude_credentials: Option<PathBuf>,
     pub claude_usage_url: String,
+    /// Whether the user turned the usage endpoint on.
+    pub claude_usage_endpoint: bool,
 }
 
 impl Paths {
-    pub fn new(state_dir: &Path, codex_home: Option<PathBuf>, claude_credentials: Option<PathBuf>) -> Self {
+    pub fn new(
+        state_dir: &Path,
+        codex_home: Option<PathBuf>,
+        claude_credentials: Option<PathBuf>,
+        claude_usage_endpoint: bool,
+    ) -> Self {
         Self {
             codex_home: codex_home.or_else(codex::default_home),
             state_file: state_dir.join("ai-usage.json"),
             claude_credentials: claude_credentials.or_else(claude_api::default_credentials),
             claude_usage_url: claude_api::USAGE_URL.into(),
+            claude_usage_endpoint,
         }
     }
 }
@@ -75,7 +87,7 @@ pub struct Usage {
 struct State {
     saved: Saved,
     /// Why there are no Claude numbers yet; `None` while the first answer
-    /// is pending.
+    /// is pending. Starts as the opt-in hint when the endpoint is off.
     claude_problem: Option<String>,
     codex: Codex,
     /// The last event published, so unchanged numbers aren't sent again.
@@ -122,7 +134,12 @@ impl Usage {
         let (wake, wakes) = mpsc::channel();
         let (refresh, refreshes) = mpsc::channel();
         let usage = Arc::new(Self {
-            state: Mutex::new(State { saved, claude_problem: None, codex: Codex::Loading, sent: None }),
+            state: Mutex::new(State {
+                saved,
+                claude_problem: (!paths.claude_usage_endpoint).then(|| CLAUDE_ENDPOINT_OFF.into()),
+                codex: Codex::Loading,
+                sent: None,
+            }),
             hub,
             logger,
             state_file: paths.state_file,
@@ -131,9 +148,11 @@ impl Usage {
         });
         let worker = Arc::clone(&usage);
         std::thread::spawn(move || worker.run(paths.codex_home, wakes));
-        let poller = Arc::clone(&usage);
-        let claude = (paths.claude_credentials, paths.claude_usage_url);
-        std::thread::spawn(move || poller.poll_claude(claude.0, &claude.1, refreshes));
+        if paths.claude_usage_endpoint {
+            let poller = Arc::clone(&usage);
+            let claude = (paths.claude_credentials, paths.claude_usage_url);
+            std::thread::spawn(move || poller.poll_claude(claude.0, &claude.1, refreshes));
+        }
         usage
     }
 
@@ -173,12 +192,14 @@ impl Usage {
             };
             // Local problems cost Anthropic nothing; only failed requests back off.
             let wait = match &result {
-                Ok(_) | Err(claude_api::Problem::SignedOut | claude_api::Problem::Expired) => {
+                Ok(_)
+                | Err(claude_api::Problem::SignedOut | claude_api::Problem::Expired | claude_api::Problem::Unsafe(_)) =>
+                {
                     backoff = CLAUDE_POLL;
                     CLAUDE_POLL
                 }
                 Err(claude_api::Problem::RateLimited(after)) => {
-                    backoff = (backoff * 2).min(CLAUDE_MAX_BACKOFF);
+                    backoff = (backoff * 2).max(CLAUDE_RATE_LIMITED).min(CLAUDE_MAX_BACKOFF);
                     after.map_or(backoff, |after| after.max(backoff))
                 }
                 Err(claude_api::Problem::Failed(_)) => {

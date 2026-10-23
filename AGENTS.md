@@ -54,13 +54,16 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   novad all read it. A manifest with `daemon = "x"` needs a matching cargo
   feature `x` in `crates/novad/Cargo.toml` (a test enforces this).
   - `ai-usage`: Claude and Codex plan limits on the `ai_usage` topic
-    (`crates/novad/src/ai_usage`, `ui/ai_usage`). Claude: Anthropic's usage
-    endpoint (the one Claude Code's `/usage` reads) with the access token
-    from Claude Code's credentials file, every 5 minutes and on panel open
-    (at most once a minute), backing off on errors; also Claude Code's
-    status line input via `nova claude-statusline`. The token is never
-    logged, stored or refreshed (refreshing would rotate Claude Code's
-    sign-in). Codex: the `token_count` events in its session logs, watched
+    (`crates/novad/src/ai_usage`, `ui/ai_usage`). Claude: Claude Code's
+    status line input via `nova claude-statusline`; and, only when the user
+    sets `claude-usage-endpoint = true` under `[ai-usage]` in `config.toml`
+    (Anthropic doesn't document this use), Anthropic's usage endpoint (the
+    one Claude Code's `/usage` reads) with the access token from Claude
+    Code's credentials file, every 5 minutes and on panel open (at most once
+    a minute), backing off on errors. The token is never logged, stored or
+    refreshed (refreshing would rotate Claude Code's sign-in); a credentials
+    file that isn't the user's or isn't 0600 is refused; no redirects; the
+    user agent is `nova/<version>`. Codex: the `token_count` events in its session logs, watched
     with inotify; nothing is requested for Codex.
 - `ui/`: the Quickshell (QML) UI. `shell.qml` is the entry point.
   - `theme/Tokens.qml`: design tokens. Components never hard-code colors,

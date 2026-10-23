@@ -1,13 +1,7 @@
-//! The active theme: the user picks one by name in `config.toml`, and its
-//! colors come from `themes/<id>.toml`. Anything wrong with either falls back
-//! to Carbonfox dark, which is compiled in so the fallback can't fail.
-//!
-//! ```toml
-//! # ~/.config/nova/config.toml
-//! [theme]
-//! name = "carbonfox"
-//! mode = "dark"
-//! ```
+//! The active theme: the user picks one by name in `config.toml` (see
+//! `config`), and its colors come from `themes/<id>.toml`. Anything wrong
+//! with either falls back to Carbonfox dark, which is compiled in so the
+//! fallback can't fail.
 
 use nova_protocol::{Palette, Theme, ThemeMode};
 use serde::Deserialize;
@@ -17,17 +11,10 @@ pub const DEFAULT_THEME_ID: &str = "carbonfox";
 const DEFAULT_THEME_FILE: &str = include_str!("../../../themes/carbonfox.toml");
 const THEME_FILE_EXTENSION: &str = "toml";
 
-/// The user's `config.toml`. Only the theme lives here so far.
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Config {
-    #[serde(default)]
-    theme: ThemeChoice,
-}
-
+/// `config.toml`'s `[theme]`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, default)]
-struct ThemeChoice {
+pub struct ThemeChoice {
     name: String,
     mode: ThemeMode,
 }
@@ -56,7 +43,7 @@ pub fn default_dir() -> PathBuf {
 /// fall back (to log as warnings).
 pub fn resolve(themes_dir: &Path, config: &Path) -> (Theme, Vec<String>) {
     let mut problems = Vec::new();
-    let choice = read_config(config).unwrap_or_else(|problem| {
+    let choice = crate::config::read(config).map(|config| config.theme).unwrap_or_else(|problem| {
         problems.push(problem);
         ThemeChoice::default()
     });
@@ -73,16 +60,6 @@ pub fn resolve(themes_dir: &Path, config: &Path) -> (Theme, Vec<String>) {
         (ThemeMode::Dark, _) => (ThemeMode::Dark, file.dark),
     };
     (Theme { id, name: file.name, mode, colors }, problems)
-}
-
-fn read_config(path: &Path) -> Result<ThemeChoice, String> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(ThemeChoice::default()),
-        Err(e) => return Err(format!("can't read {}: {e}", path.display())),
-    };
-    let config: Config = toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(config.theme)
 }
 
 fn read_theme(dir: &Path, id: &str) -> Result<(String, ThemeFile), String> {
