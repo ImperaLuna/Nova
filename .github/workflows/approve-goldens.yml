@@ -6,8 +6,14 @@ name: Approve goldens
 # tests themselves. Start it from main (the workflow then comes from main, not
 # from the branch): Actions > Approve goldens, or the API with ref main.
 #
-# Pushes made with GITHUB_TOKEN don't start other workflows, so the job then
-# starts CI on the branch itself.
+# It approves whatever the VM run captured, so use it only for a change you
+# meant to make; a test that failed by accident needs fixing, not approving.
+#
+# Two jobs: `screenshots` runs the branch's code with a read-only token and
+# hands the images over as an artifact; `commit` holds the write token and
+# runs no branch code, on a fresh GitHub-hosted machine. Pushes made with
+# GITHUB_TOKEN don't start other workflows, so `commit` then starts CI on the
+# branch itself.
 on:
   workflow_dispatch:
     inputs:
@@ -24,12 +30,11 @@ concurrency:
   group: approve-goldens-${{ inputs.branch }}
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 jobs:
-  approve:
-    name: approve goldens
+  screenshots:
+    name: VM screenshots
     runs-on: [self-hosted, nova]
     timeout-minutes: 45
     steps:
@@ -42,8 +47,6 @@ jobs:
             echo "::error::goldens change through a PR, not on $DEFAULT_BRANCH"
             exit 1
           fi
-      # No token left in .git/config while the branch's own code runs; only
-      # the push step below gets one.
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.branch }}
@@ -56,36 +59,53 @@ jobs:
           for compositor in $COMPOSITORS; do
             nix develop -c just e2e-approve "$compositor"
           done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: goldens
+          path: e2e/golden
+          if-no-files-found: error
+
+  commit:
+    name: commit goldens
+    needs: screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.branch }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: goldens
+          path: e2e/golden
       - name: commit and push
         id: push
         env:
           BRANCH: ${{ inputs.branch }}
           TOKEN: ${{ github.token }}
         run: |
-          git add e2e/golden
+          # Only the images, whatever else the artifact holds.
+          git add -- 'e2e/golden/*/*.png'
           if git diff --cached --quiet; then
             echo "Goldens already match the screenshots; nothing to commit."
             echo "pushed=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
           git diff --cached --stat
-          git -c user.name='github-actions[bot]' \
+          git -c core.hooksPath=/dev/null -c user.name='github-actions[bot]' \
             -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
             commit -q -m "Approve VM goldens" -m "From the VM tests on the KVM runner (run ${{ github.run_id }})."
           auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
           git -c core.hooksPath=/dev/null -c http.extraheader="AUTHORIZATION: basic $auth" \
             push origin "HEAD:refs/heads/$BRANCH"
           echo "pushed=true" >>"$GITHUB_OUTPUT"
-      # curl and jq from the flake's own nixpkgs: the runner has only nix and git.
       - name: start CI on the new commit
         if: steps.push.outputs.pushed == 'true'
         env:
           BRANCH: ${{ inputs.branch }}
-          TOKEN: ${{ github.token }}
-        run: |
-          body=$(nix run --inputs-from . nixpkgs#jq -- -n '{ref: env.BRANCH}')
-          nix run --inputs-from . nixpkgs#curl -- -fsS -X POST \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            --data "$body" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/dispatches"
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
