@@ -21,11 +21,11 @@ Rectangle {
                 color: Tokens.glassSheen
             }
             GradientStop {
-                position: 0.45
+                position: Tokens.glassVeilAt
                 color: Tokens.glassVeil
             }
             GradientStop {
-                position: 0.85
+                position: Tokens.glassClearAt
                 color: "transparent"
             }
             GradientStop {
@@ -54,7 +54,7 @@ Rectangle {
                     color: Tokens.glassRimLit
                 }
                 GradientStop {
-                    position: 0.28
+                    position: Tokens.glassRimFade
                     color: Tokens.glassRim
                 }
                 GradientStop {
@@ -62,7 +62,7 @@ Rectangle {
                     color: Tokens.glassRimDim
                 }
                 GradientStop {
-                    position: 0.72
+                    position: 1 - Tokens.glassRimFade
                     color: Tokens.glassRim
                 }
                 GradientStop {

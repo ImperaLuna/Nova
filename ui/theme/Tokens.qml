@@ -66,9 +66,16 @@ QtObject {
     readonly property color glassSheen: Qt.rgba(fg.r, fg.g, fg.b, 0.12)
     readonly property color glassVeil: Qt.rgba(fg.r, fg.g, fg.b, 0.03)
     readonly property color glassShade: Qt.rgba(0, 0, 0, 0.22)
+    // Where, top to bottom, the sheen has faded to the veil, and where the
+    // veil has cleared before the shade starts.
+    readonly property real glassVeilAt: 0.45
+    readonly property real glassClearAt: 0.85
     // The rim, lit from the top-left: brightest there, a softer glow at the
     // bottom-right, faint along the sides between.
     readonly property real glassRimWidth: 1.2
+    // Where, along the diagonal, the lit corner has faded to the plain rim
+    // (and, mirrored, where the glow corner starts).
+    readonly property real glassRimFade: 0.28
     readonly property color glassRimLit: Qt.rgba(fg.r, fg.g, fg.b, 0.60)
     readonly property color glassRimGlow: Qt.rgba(fg.r, fg.g, fg.b, 0.36)
     readonly property color glassRim: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
