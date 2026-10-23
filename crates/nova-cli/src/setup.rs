@@ -183,7 +183,7 @@ pub fn plan(facts: &Facts) -> Result<Plan, String> {
     });
     steps.push(Step::Replace {
         path: paths.units_dir.join(crate::systemd::UNIT),
-        contents: UNIT_TEMPLATE.replace(UNIT_NOVA_PLACEHOLDER, &paths.nova.display().to_string()),
+        contents: UNIT_TEMPLATE.replace(UNIT_NOVA_PLACEHOLDER, &unit_quoted(&paths.nova)),
     });
     steps.push(Step::Run {
         why: "reload systemd's units".into(),
@@ -261,6 +261,14 @@ fn gpu_for_packages(host: &Host) -> Option<Gpu> {
         return Some(Gpu::Nvidia);
     }
     host.gpus.iter().copied().find(|gpu| *gpu != Gpu::Nvidia)
+}
+
+/// `path` as one word of a unit's command line: quoted, so a path with
+/// spaces stays one word, with `%` doubled so systemd doesn't read it as a
+/// specifier.
+fn unit_quoted(path: &Path) -> String {
+    let escaped = path.display().to_string().replace('\\', "\\\\").replace('"', "\\\"").replace('%', "%%");
+    format!("\"{escaped}\"")
 }
 
 fn words(words: &[&str]) -> Vec<String> {
@@ -350,7 +358,12 @@ pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
     match step {
         Step::Run { argv, .. } => {
             let (program, args) = argv.split_first().ok_or("empty command")?;
-            let status = Command::new(program).args(args).status().map_err(|e| format!("can't run {program}: {e}"))?;
+            // The PATH binaries were found on, which may have more than ours.
+            let status = Command::new(program)
+                .args(args)
+                .env("PATH", path_var)
+                .status()
+                .map_err(|e| format!("can't run {program}: {e}"))?;
             if !status.success() {
                 return Err(format!("`{}` failed ({status})", argv.join(" ")));
             }
@@ -393,9 +406,17 @@ pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Writes `path` by renaming a finished temp file over it, so a failed or
+/// cut-off write leaves the old file whole.
 fn write(path: &Path, contents: &str) -> Result<(), String> {
     create_parent(path)?;
-    std::fs::write(path, contents).map_err(|e| format!("can't write {}: {e}", path.display()))
+    let name = path.file_name().ok_or_else(|| format!("{} isn't a file", path.display()))?;
+    let partial = path.with_file_name(format!(".{}.{}.partial", name.to_string_lossy(), std::process::id()));
+    let written = std::fs::write(&partial, contents).and_then(|()| std::fs::rename(&partial, path));
+    written.map_err(|e| {
+        let _ = std::fs::remove_file(&partial);
+        format!("can't write {}: {e}", path.display())
+    })
 }
 
 fn create_parent(path: &Path) -> Result<(), String> {
@@ -565,9 +586,28 @@ mod tests {
         assert_eq!(niri, format!("input {{\n}}\n{include}\n"));
         assert_eq!(std::fs::read_to_string(paths.config_dir.join(NIRI_RULES_FILE)).unwrap(), NIRI_RULES);
         let unit = std::fs::read_to_string(paths.units_dir.join("nova.service")).unwrap();
-        assert!(unit.contains(&format!("ExecStart=@{} Nova daemon", paths.nova.display())), "{unit}");
+        assert!(unit.contains(&format!("ExecStart=@\"{}\" Nova daemon", paths.nova.display())), "{unit}");
         let link = paths.bin_dir.join("NovaUI");
         assert_eq!(std::fs::read_link(&link).unwrap(), home.0.join("usr/bin/quickshell"));
+    }
+
+    #[test]
+    fn the_unit_keeps_a_path_with_spaces_as_one_word() {
+        assert_eq!(unit_quoted(Path::new("/home/me/my apps/50%/nova")), r#""/home/me/my apps/50%%/nova""#);
+    }
+
+    /// A helper found on setup's PATH (say `~/.local/bin`, missing from the
+    /// shell's) runs from there too.
+    #[test]
+    fn commands_run_with_the_path_they_were_found_on() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = Home::new("run");
+        let helper = home.0.join("usr/bin/nova-setup-test-helper");
+        std::fs::write(&helper, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let step = Step::Run { why: "test".into(), argv: words(&["nova-setup-test-helper"]) };
+        let path_var = format!("{}:/bin:/usr/bin", home.path_var());
+        assert_eq!(execute(&step, &path_var), Ok(()));
     }
 
     #[test]
