@@ -3,6 +3,13 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # RustSec's advisories for the cargo-deny check, which has no network.
+    # Pinned in flake.lock like nixpkgs; `nix flake update advisory-db`
+    # brings in new advisories.
+    advisory-db = {
+      url = "github:rustsec/advisory-db";
+      flake = false;
+    };
     # The newest stable Quickshell release, for the "Newest Quickshell"
     # workflow, which overrides this with the newest tag it finds; the tag
     # here is only a default. Not the Quickshell Nova ships: that is nixpkgs'.
@@ -16,6 +23,7 @@
     {
       self,
       nixpkgs,
+      advisory-db,
       quickshell-newest,
     }:
     let
@@ -34,6 +42,7 @@
           fileset = lib.fileset.unions [
             ./Cargo.toml
             ./Cargo.lock
+            ./deny.toml
             ./rustfmt.toml
             ./crates
             ./features
@@ -190,6 +199,26 @@
             cargo clippy --workspace --all-targets --offline -- -D warnings
           '';
 
+          # Advisories, licenses, duplicate crates and sources (deny.toml).
+          # cargo-deny reads the advisory database from a git clone in the
+          # folder it would clone the default URL to, and dates it by its
+          # commit, so the pinned input becomes a one-commit repo there.
+          cargo-deny =
+            cargoCheck "nova-cargo-deny"
+              [
+                pkgs.cargo-deny
+                pkgs.git
+              ]
+              ''
+                export CARGO_HOME=$TMPDIR/cargo-home
+                db=$CARGO_HOME/advisory-dbs/advisory-db-3157b0e258782691
+                mkdir -p $db && cp -r ${advisory-db}/. $db && chmod -R u+w $db
+                export GIT_AUTHOR_DATE=@${toString advisory-db.lastModified} GIT_COMMITTER_DATE=@${toString advisory-db.lastModified}
+                git -C $db init -q && git -C $db add -A
+                git -C $db -c user.name=nix -c user.email=nix@localhost commit -q -m advisory-db
+                cargo deny --offline check
+              '';
+
           rustfmt = cargoCheck "nova-rustfmt" [ pkgs.rustfmt ] ''
             cargo fmt --all --check
           '';
@@ -266,6 +295,7 @@
             pkgs.sway # headless compositor for e2e
             pkgs.grim
             pkgs.cargo-insta # `cargo insta review` for snapshot tests
+            pkgs.cargo-deny
             pkgs.nixfmt
             pkgs.statix
             pkgs.deadnix
