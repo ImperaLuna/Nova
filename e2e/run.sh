@@ -98,6 +98,9 @@ grep -q 'nova: connected to novad' "$out/ui.log" || fail "the UI never connected
 if command -v nova-ui >/dev/null; then
   [[ $(<"/proc/$ui/comm") == NovaUI ]] || fail "the UI's process name isn't NovaUI"
 fi
+# Covered windows don't redraw while idle (supervisor.rs, FRAME_CALLBACK_TIMEOUT).
+tr '\0' '\n' <"/proc/$ui/environ" | grep -qx QT_WAYLAND_FRAME_CALLBACK_TIMEOUT=0 ||
+  fail "the UI doesn't have QT_WAYLAND_FRAME_CALLBACK_TIMEOUT=0"
 [[ $(<"/proc/$(jq -r .pid "$out/status.json")/comm") == Nova ]] || fail "the daemon's process name isn't Nova"
 
 grim "$out/screenshot.png" || fail "screenshot failed"
