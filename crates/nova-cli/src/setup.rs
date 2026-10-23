@@ -358,6 +358,10 @@ pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
     match step {
         Step::Run { argv, .. } => {
             let (program, args) = argv.split_first().ok_or("empty command")?;
+            // No timeout, unlike Nova's other waits: these run in the user's
+            // terminal (sudo's password, the package manager's questions, AUR
+            // builds that take long), and killing a package manager midway
+            // can leave its database locked. Ctrl-C stops them.
             // The PATH binaries were found on, which may have more than ours.
             let status = Command::new(program)
                 .args(args)
