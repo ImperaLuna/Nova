@@ -1,0 +1,586 @@
+//! `nova setup`: installs what Nova needs on Arch, Fedora and Debian (and
+//! distros built on them), then sets it up for this user. NixOS uses the
+//! flake instead.
+//!
+//! Setup first makes a [`Plan`] from facts about the machine, prints it, and
+//! runs it after a yes. Making the plan changes nothing, so `--dry-run` and
+//! the tests see exactly what would run. Running it again is safe: files
+//! that are the user's (config.toml, features.toml) are only written when
+//! missing, and everything else is replaced or skipped when it's already
+//! right.
+//!
+//! The steps:
+//! - Packages: each feature that's on lists its distro's packages in
+//!   `features/<id>/feature.toml`, by GPU where that matters. A feature whose
+//!   `check.binaries` are all there already is skipped.
+//! - config.toml and features.toml, commented, when missing.
+//! - The systemd user unit, from `packaging/systemd/nova.service.in`.
+//! - A `NovaUI` link to Quickshell in `~/.local/bin`, which novad runs so
+//!   the UI shows as NovaUI in ps and btop (the Nix package has a launcher).
+//! - niri's blur behind Nova's glass (`packaging/compositor/niri.kdl`),
+//!   included from the user's niri config. Hyprland blurs what Quickshell
+//!   asks for without a rule.
+
+use crate::host::{Distro, Host};
+use nova_features::{Gpu, Manifest, Selection};
+use nova_quickshell::Range;
+use novad::checks;
+use std::fmt;
+use std::io::{BufRead, IsTerminal, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+const UNIT_TEMPLATE: &str = include_str!("../../../packaging/systemd/nova.service.in");
+const UNIT_NOVA_PLACEHOLDER: &str = "@nova@";
+const NIRI_RULES: &str = include_str!("../../../packaging/compositor/niri.kdl");
+/// Where the niri rules go, in Nova's config folder.
+const NIRI_RULES_FILE: &str = "niri.kdl";
+/// The feature whose packages hold Quickshell.
+const CORE_FEATURE: &str = "core";
+/// Fedora's Quickshell, until a Fedora release ships it.
+const FEDORA_QUICKSHELL_COPR: &str = "errornointernet/quickshell";
+/// AUR helpers, in the order setup prefers them. They install repo packages
+/// too, and ask for sudo themselves.
+const AUR_HELPERS: &[&str] = &["paru", "yay"];
+const FLAKE_HINT: &str = "On NixOS, Nova comes from its flake: add `github:ImperaLuna/Nova` to your flake inputs \
+     and turn on its NixOS or home-manager module. `nova setup` changes nothing here.";
+
+#[derive(clap::Args)]
+pub struct SetupArgs {
+    /// Print the plan and change nothing.
+    #[arg(long)]
+    dry_run: bool,
+    /// Don't ask before running the plan, and answer yes for the package manager.
+    #[arg(long, short)]
+    yes: bool,
+}
+
+/// Where setup writes, for this user.
+#[derive(Debug, Clone)]
+pub struct Paths {
+    /// Nova's config folder (`~/.config/nova`).
+    pub config_dir: PathBuf,
+    /// systemd's user units (`~/.config/systemd/user`).
+    pub units_dir: PathBuf,
+    /// `~/.local/bin`, which novad adds to its PATH.
+    pub bin_dir: PathBuf,
+    /// niri's config file (`~/.config/niri/config.kdl`), when there is one.
+    pub niri_config: Option<PathBuf>,
+    /// The running nova binary, which the unit starts.
+    pub nova: PathBuf,
+}
+
+impl Paths {
+    fn of_this_user() -> Result<Self, String> {
+        let home = std::env::var_os("HOME").filter(|home| !home.is_empty()).ok_or("HOME isn't set")?;
+        let config_home = std::env::var_os("XDG_CONFIG_HOME")
+            .filter(|dir| !dir.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(&home).join(".config"));
+        let niri_config = std::env::var_os("NIRI_CONFIG")
+            .filter(|file| !file.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| config_home.join("niri/config.kdl"));
+        let niri_config = niri_config.is_file().then_some(niri_config);
+        Ok(Self {
+            config_dir: nova_paths::config_dir(),
+            units_dir: config_home.join("systemd/user"),
+            bin_dir: PathBuf::from(&home).join(".local/bin"),
+            niri_config,
+            nova: std::env::current_exe().map_err(|e| format!("can't find the nova binary: {e}"))?,
+        })
+    }
+}
+
+/// What setup looks at.
+pub struct Facts {
+    pub host: Host,
+    pub manifests: Vec<Manifest>,
+    pub selection: Selection,
+    /// Where binaries are looked for.
+    pub path_var: String,
+    pub paths: Paths,
+    /// Answer yes for the package manager.
+    pub yes: bool,
+}
+
+impl Facts {
+    fn gather(yes: bool) -> Result<Self, String> {
+        let paths = Paths::of_this_user()?;
+        let manifests = nova_features::load_all(&nova_features::default_dir()).map_err(|e| e.to_string())?;
+        let selection = checks::read_selection(&paths.config_dir.join("features.toml"))?;
+        Ok(Self {
+            host: Host::detect(Path::new("/")),
+            manifests,
+            selection,
+            path_var: checks::session_path(),
+            paths,
+            yes,
+        })
+    }
+
+    fn on_path(&self, name: &str) -> Option<PathBuf> {
+        find_on_path(name, &self.path_var)
+    }
+}
+
+fn find_on_path(name: &str, path_var: &str) -> Option<PathBuf> {
+    std::env::split_paths(path_var).map(|dir| dir.join(name)).find(|file| file.is_file())
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Step {
+    /// Runs a command; setup stops when it fails.
+    Run { why: String, argv: Vec<String> },
+    /// Writes a file only when it doesn't exist yet.
+    Create { path: PathBuf, contents: String },
+    /// Writes a file that's Nova's, replacing what's there.
+    Replace { path: PathBuf, contents: String },
+    /// Adds a line to the end of the user's file, unless it already has it.
+    AppendLine { path: PathBuf, line: String },
+    /// Points `link` at Quickshell's binary, found on PATH when the step
+    /// runs (it may have just been installed).
+    LinkQuickshell { link: PathBuf },
+}
+
+impl fmt::Display for Step {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Run { why, argv } => write!(f, "{why}:\n    {}", argv.join(" ")),
+            Self::Create { path, .. } => write!(f, "create {}", path.display()),
+            Self::Replace { path, .. } => write!(f, "write {}", path.display()),
+            Self::AppendLine { path, line } => write!(f, "add to {}:\n    {line}", path.display()),
+            Self::LinkQuickshell { link } => write!(f, "link {} to quickshell", link.display()),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Plan {
+    /// NixOS: nothing to do here.
+    UseTheFlake,
+    Steps(Vec<Step>),
+}
+
+/// The plan for `facts`. Fails on a distro setup can't install packages on.
+pub fn plan(facts: &Facts) -> Result<Plan, String> {
+    if facts.host.distro == Distro::NixOs {
+        return Ok(Plan::UseTheFlake);
+    }
+    let Some(distro) = facts.host.distro.packages_key() else {
+        return Err(format!(
+            "nova setup installs packages on Arch, Fedora and Debian and distros built on them, not on {}. \
+             Install Quickshell and the packages in features/*/feature.toml yourself, then run `nova doctor`.",
+            facts.host.distro
+        ));
+    };
+    let mut steps = package_steps(facts, distro);
+    let paths = &facts.paths;
+    steps.push(Step::Create { path: paths.config_dir.join("config.toml"), contents: default_config() });
+    steps.push(Step::Create {
+        path: paths.config_dir.join("features.toml"),
+        contents: default_selection(&facts.manifests),
+    });
+    steps.push(Step::Replace {
+        path: paths.units_dir.join(crate::systemd::UNIT),
+        contents: UNIT_TEMPLATE.replace(UNIT_NOVA_PLACEHOLDER, &paths.nova.display().to_string()),
+    });
+    steps.push(Step::Run {
+        why: "reload systemd's units".into(),
+        argv: words(&["systemctl", "--user", "daemon-reload"]),
+    });
+    steps.push(Step::Run {
+        why: "start novad with the graphical session".into(),
+        argv: words(&["systemctl", "--user", "enable", crate::systemd::UNIT]),
+    });
+    steps.push(Step::LinkQuickshell { link: paths.bin_dir.join(checks::UI_PROCESS_NAME) });
+    if let Some(niri_config) = &paths.niri_config {
+        let rules = paths.config_dir.join(NIRI_RULES_FILE);
+        steps.push(Step::Replace { path: rules.clone(), contents: NIRI_RULES.into() });
+        steps.push(Step::AppendLine { path: niri_config.clone(), line: format!("include \"{}\"", rules.display()) });
+    }
+    Ok(Plan::Steps(steps))
+}
+
+/// Installs the packages of every feature that's on and isn't complete yet.
+fn package_steps(facts: &Facts, distro: &str) -> Vec<Step> {
+    let gpu = gpu_for_packages(&facts.host);
+    let needed: Vec<&Manifest> = facts
+        .manifests
+        .iter()
+        .filter(|manifest| facts.selection.is_on(manifest))
+        .filter(|manifest| manifest.check.binaries.is_empty() || !manifest.missing_binaries(&facts.path_var).is_empty())
+        .filter(|manifest| !manifest.packages(distro, gpu).is_empty())
+        .collect();
+    let mut packages: Vec<String> = Vec::new();
+    for manifest in &needed {
+        for package in manifest.packages(distro, gpu) {
+            if !packages.contains(package) {
+                packages.push(package.clone());
+            }
+        }
+    }
+    if packages.is_empty() {
+        return vec![];
+    }
+    let yes = facts.yes;
+    let mut why = format!(
+        "install packages for {}",
+        needed.iter().map(|manifest| manifest.id.as_str()).collect::<Vec<_>>().join(", ")
+    );
+    let mut steps = Vec::new();
+    let install = match distro {
+        "arch" => match AUR_HELPERS.iter().find(|helper| facts.on_path(helper).is_some()) {
+            Some(helper) => [words(&[helper, "-S", "--needed"]), flag(yes, "--noconfirm")].concat(),
+            None => {
+                why += " (packages only in the AUR need paru or yay installed first)";
+                [words(&["sudo", "pacman", "-S", "--needed"]), flag(yes, "--noconfirm")].concat()
+            }
+        },
+        "fedora" => {
+            let core_needed = needed.iter().any(|manifest| manifest.id == CORE_FEATURE);
+            if core_needed && facts.on_path("quickshell").is_none() {
+                steps.push(Step::Run {
+                    why: "add the Quickshell package repository".into(),
+                    argv: words(&["sudo", "dnf", "copr", "enable", "-y", FEDORA_QUICKSHELL_COPR]),
+                });
+            }
+            [words(&["sudo", "dnf", "install"]), flag(yes, "-y")].concat()
+        }
+        _ => [words(&["sudo", "apt-get", "install"]), flag(yes, "-y")].concat(),
+    };
+    steps.push(Step::Run { why, argv: [install, packages].concat() });
+    steps
+}
+
+/// The GPU whose variant a feature installs: NVIDIA's when its own driver
+/// runs (NVENC needs it; under nouveau NVIDIA's packages wouldn't work),
+/// else the first other GPU.
+fn gpu_for_packages(host: &Host) -> Option<Gpu> {
+    if host.nvidia_driver && host.gpus.contains(&Gpu::Nvidia) {
+        return Some(Gpu::Nvidia);
+    }
+    host.gpus.iter().copied().find(|gpu| *gpu != Gpu::Nvidia)
+}
+
+fn words(words: &[&str]) -> Vec<String> {
+    words.iter().map(|word| word.to_string()).collect()
+}
+
+fn flag(on: bool, flag: &str) -> Vec<String> {
+    if on { vec![flag.to_owned()] } else { vec![] }
+}
+
+/// A config.toml that sets nothing, so novad's defaults apply, and shows
+/// what can be set.
+fn default_config() -> String {
+    format!(
+        "# Nova's settings. novad applies a change as soon as you save.\n\
+         \n\
+         # [theme]\n\
+         # name = \"{}\"  # a file in Nova's themes folder, without .toml\n\
+         # mode = \"dark\"  # or \"light\"\n",
+        checks::DEFAULT_THEME_ID
+    )
+}
+
+/// A features.toml that keeps every feature's default, listing them.
+fn default_selection(manifests: &[Manifest]) -> String {
+    let listed = |default: bool| {
+        manifests
+            .iter()
+            .filter(|manifest| !manifest.required && manifest.default == default)
+            .map(|manifest| format!("#   {}: {}\n", manifest.id, manifest.name))
+            .collect::<String>()
+    };
+    format!(
+        "# Which of Nova's features are on. After turning one on, run `nova setup`\n\
+         # again so it installs what that feature needs.\n\
+         #\n\
+         # On unless listed in `disabled`:\n{}\
+         # Off unless listed in `enabled`:\n{}\
+         enabled = []\n\
+         disabled = []\n",
+        listed(true),
+        listed(false)
+    )
+}
+
+/// `nova setup`.
+pub fn run(args: &SetupArgs) -> Result<(), String> {
+    let facts = Facts::gather(args.yes)?;
+    let steps = match plan(&facts)? {
+        Plan::UseTheFlake => {
+            println!("{FLAKE_HINT}");
+            return Ok(());
+        }
+        Plan::Steps(steps) => steps,
+    };
+    println!("Setting up Nova for {}:\n", facts.host.distro);
+    for (number, step) in steps.iter().enumerate() {
+        println!("{}. {step}", number + 1);
+    }
+    println!();
+    if args.dry_run {
+        println!("Dry run: nothing changed.");
+        return Ok(());
+    }
+    if !args.yes && !confirmed()? {
+        return Err("stopped; nothing changed.".into());
+    }
+    for step in &steps {
+        execute(step, &facts.path_var)?;
+    }
+    finish(&facts.path_var)
+}
+
+fn confirmed() -> Result<bool, String> {
+    if !std::io::stdin().is_terminal() {
+        return Err("setup asks before it changes anything; run it in a terminal, or with --yes".into());
+    }
+    print!("Go ahead? [y/N] ");
+    std::io::stdout().flush().map_err(|e| e.to_string())?;
+    let mut answer = String::new();
+    std::io::stdin().lock().read_line(&mut answer).map_err(|e| e.to_string())?;
+    Ok(matches!(answer.trim(), "y" | "Y" | "yes"))
+}
+
+/// Runs one step. `path_var` is where Quickshell is looked for.
+pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
+    match step {
+        Step::Run { argv, .. } => {
+            let (program, args) = argv.split_first().ok_or("empty command")?;
+            let status = Command::new(program).args(args).status().map_err(|e| format!("can't run {program}: {e}"))?;
+            if !status.success() {
+                return Err(format!("`{}` failed ({status})", argv.join(" ")));
+            }
+        }
+        Step::Create { path, contents } => {
+            if !path.exists() {
+                write(path, contents)?;
+            }
+        }
+        Step::Replace { path, contents } => write(path, contents)?,
+        Step::AppendLine { path, line } => {
+            let text = std::fs::read_to_string(path).map_err(|e| format!("can't read {}: {e}", path.display()))?;
+            if !text.lines().any(|existing| existing.trim() == line) {
+                let separator = if text.is_empty() || text.ends_with('\n') { "" } else { "\n" };
+                let mut file = std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(path)
+                    .map_err(|e| format!("can't open {}: {e}", path.display()))?;
+                writeln!(file, "{separator}{line}").map_err(|e| format!("can't write {}: {e}", path.display()))?;
+            }
+        }
+        Step::LinkQuickshell { link } => {
+            let quickshell = find_on_path("quickshell", path_var)
+                .ok_or("quickshell isn't on PATH, so there's nothing to link NovaUI to")?;
+            let target =
+                quickshell.canonicalize().map_err(|e| format!("can't resolve {}: {e}", quickshell.display()))?;
+            if std::fs::read_link(link).is_ok_and(|existing| existing == target) {
+                return Ok(());
+            }
+            create_parent(link)?;
+            match std::fs::remove_file(link) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(format!("can't replace {}: {e}", link.display()));
+                }
+                _ => {}
+            }
+            std::os::unix::fs::symlink(&target, link).map_err(|e| format!("can't link {}: {e}", link.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn write(path: &Path, contents: &str) -> Result<(), String> {
+    create_parent(path)?;
+    std::fs::write(path, contents).map_err(|e| format!("can't write {}: {e}", path.display()))
+}
+
+fn create_parent(path: &Path) -> Result<(), String> {
+    match path.parent() {
+        Some(dir) => std::fs::create_dir_all(dir).map_err(|e| format!("can't create {}: {e}", dir.display())),
+        None => Ok(()),
+    }
+}
+
+/// After the steps: Quickshell must now be in the tested range.
+fn finish(path_var: &str) -> Result<(), String> {
+    let quickshell = checks::default_quickshell(path_var);
+    let version = checks::read_quickshell_version(&quickshell, path_var)?;
+    if let Some(problem) = Range::supported().problem(&version) {
+        return Err(format!("{problem}. Install a Quickshell in that range, then run `nova doctor`."));
+    }
+    println!("Nova is set up. Start it with `nova`; `nova doctor` checks the rest.");
+    println!("On Hyprland without uwsm, also add `exec-once = nova` to hyprland.conf so novad gets the session.");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manifests() -> Vec<Manifest> {
+        nova_features::load_all(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features")).unwrap()
+    }
+
+    fn paths(home: &Path) -> Paths {
+        Paths {
+            config_dir: home.join(".config/nova"),
+            units_dir: home.join(".config/systemd/user"),
+            bin_dir: home.join(".local/bin"),
+            niri_config: None,
+            nova: home.join(".local/bin/nova"),
+        }
+    }
+
+    /// Facts for `distro` and `gpus`, with recording turned on so GPUs
+    /// matter, an empty PATH (nothing installed) and no niri config.
+    fn facts(distro: Distro, gpus: Vec<Gpu>, nvidia_driver: bool) -> Facts {
+        Facts {
+            host: Host { distro, gpus, nvidia_driver },
+            manifests: manifests(),
+            selection: Selection { enabled: vec!["recording".into()], disabled: vec![] },
+            path_var: String::new(),
+            paths: paths(Path::new("/home/me")),
+            yes: false,
+        }
+    }
+
+    fn shown(facts: &Facts) -> String {
+        match plan(facts).unwrap() {
+            Plan::UseTheFlake => "use the flake".into(),
+            Plan::Steps(steps) => steps.iter().map(|step| format!("{step}\n")).collect(),
+        }
+    }
+
+    #[test]
+    fn arch_with_nvidia_on_niri() {
+        let mut facts = facts(Distro::Arch, vec![Gpu::Intel, Gpu::Nvidia], true);
+        facts.paths.niri_config = Some("/home/me/.config/niri/config.kdl".into());
+        insta::assert_snapshot!(shown(&facts));
+    }
+
+    #[test]
+    fn arch_with_amd() {
+        insta::assert_snapshot!(shown(&facts(Distro::Arch, vec![Gpu::Amd], false)));
+    }
+
+    #[test]
+    fn fedora() {
+        insta::assert_snapshot!(shown(&facts(Distro::Fedora, vec![Gpu::Amd], false)));
+    }
+
+    #[test]
+    fn debian() {
+        insta::assert_snapshot!(shown(&facts(Distro::Debian, vec![Gpu::Intel], false)));
+    }
+
+    #[test]
+    fn nixos_uses_the_flake_and_unknown_distros_are_refused() {
+        assert_eq!(plan(&facts(Distro::NixOs, vec![], false)), Ok(Plan::UseTheFlake));
+        let refused = plan(&facts(Distro::Other("gentoo".into()), vec![], false)).unwrap_err();
+        assert!(refused.contains("not on gentoo"), "{refused}");
+    }
+
+    #[test]
+    fn nouveau_gets_the_other_gpus_packages() {
+        let host = Host { distro: Distro::Arch, gpus: vec![Gpu::Nvidia], nvidia_driver: false };
+        assert_eq!(gpu_for_packages(&host), None);
+        let hybrid = Host { gpus: vec![Gpu::Intel, Gpu::Nvidia], ..host };
+        assert_eq!(gpu_for_packages(&hybrid), Some(Gpu::Intel));
+    }
+
+    /// A temporary home with `quickshell` and `wf-recorder` on its PATH.
+    struct Home(PathBuf);
+
+    impl Home {
+        fn new(name: &str) -> Self {
+            let home = std::env::temp_dir().join(format!("nova-setup-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&home);
+            std::fs::create_dir_all(home.join("usr/bin")).unwrap();
+            for bin in ["quickshell", "wf-recorder", "paru"] {
+                std::fs::write(home.join("usr/bin").join(bin), "").unwrap();
+            }
+            Self(home)
+        }
+
+        fn path_var(&self) -> String {
+            self.0.join("usr/bin").display().to_string()
+        }
+    }
+
+    impl Drop for Home {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn installed_features_are_skipped_and_the_aur_helper_is_used() {
+        let home = Home::new("installed");
+        let facts = Facts { path_var: home.path_var(), ..facts(Distro::Arch, vec![Gpu::Amd], false) };
+        let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
+        let Step::Run { why, argv } = &steps[0] else { panic!("{:?}", steps[0]) };
+        // recording's wf-recorder is there; core has no binary check.
+        assert_eq!(why, "install packages for core");
+        assert_eq!(argv, &words(&["paru", "-S", "--needed", "quickshell"]));
+    }
+
+    #[test]
+    fn yes_answers_the_package_manager_too() {
+        let facts = Facts { yes: true, ..facts(Distro::Debian, vec![], false) };
+        let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
+        assert_eq!(
+            steps[0],
+            Step::Run {
+                why: "install packages for core, recording".into(),
+                argv: words(&["sudo", "apt-get", "install", "-y", "quickshell", "wf-recorder"]),
+            }
+        );
+    }
+
+    /// The file steps on a real home: twice, to show a second run changes
+    /// nothing, keeps the user's files and doesn't add the include again.
+    #[test]
+    fn running_the_file_steps_twice_is_safe() {
+        let home = Home::new("files");
+        let niri_config = home.0.join(".config/niri/config.kdl");
+        std::fs::create_dir_all(niri_config.parent().unwrap()).unwrap();
+        std::fs::write(&niri_config, "input {\n}").unwrap();
+        let paths = Paths { niri_config: Some(niri_config.clone()), ..paths(&home.0) };
+        let facts = Facts { path_var: home.path_var(), paths: paths.clone(), ..facts(Distro::Arch, vec![], false) };
+        let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
+        let file_steps: Vec<&Step> = steps.iter().filter(|step| !matches!(step, Step::Run { .. })).collect();
+        for _ in 0..2 {
+            for step in &file_steps {
+                execute(step, &facts.path_var).unwrap();
+            }
+            std::fs::write(paths.config_dir.join("config.toml"), "# mine\n").unwrap();
+        }
+        assert_eq!(std::fs::read_to_string(paths.config_dir.join("config.toml")).unwrap(), "# mine\n");
+        let niri = std::fs::read_to_string(&niri_config).unwrap();
+        let include = format!("include \"{}\"", paths.config_dir.join(NIRI_RULES_FILE).display());
+        assert_eq!(niri, format!("input {{\n}}\n{include}\n"));
+        assert_eq!(std::fs::read_to_string(paths.config_dir.join(NIRI_RULES_FILE)).unwrap(), NIRI_RULES);
+        let unit = std::fs::read_to_string(paths.units_dir.join("nova.service")).unwrap();
+        assert!(unit.contains(&format!("ExecStart=@{} Nova daemon", paths.nova.display())), "{unit}");
+        let link = paths.bin_dir.join("NovaUI");
+        assert_eq!(std::fs::read_link(&link).unwrap(), home.0.join("usr/bin/quickshell"));
+        // novad then runs the link as its UI.
+        assert_eq!(checks::default_quickshell(&paths.bin_dir.display().to_string()), link);
+    }
+
+    #[test]
+    fn the_default_files_read_as_defaults() {
+        let home = Home::new("defaults");
+        let config = home.0.join("config.toml");
+        std::fs::write(&config, default_config()).unwrap();
+        let themes = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../themes");
+        assert_eq!(checks::read_config(&config, &themes), Ok(vec![]));
+        let selection = home.0.join("features.toml");
+        std::fs::write(&selection, default_selection(&manifests())).unwrap();
+        assert_eq!(checks::read_selection(&selection), Ok(Selection::default()));
+    }
+}

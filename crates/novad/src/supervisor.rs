@@ -190,12 +190,17 @@ impl Supervisor {
     }
 }
 
-/// The packaged `nova-ui` launcher, else `nova-ui` if it's on `path_var`,
-/// else `quickshell`. Either way the command line says `NovaUI`; only the
-/// launcher also gives the process that name (btop's Program column).
+/// The packaged `nova-ui` launcher, else `nova-ui` or a `NovaUI` link to
+/// Quickshell (`nova setup` makes one in `~/.local/bin`) if one is on
+/// `path_var`, else `quickshell`. Either way the command line says `NovaUI`;
+/// only the launcher and the link also give the process that name (btop's
+/// Program column).
 pub fn default_quickshell(path_var: &str) -> PathBuf {
-    let on_path =
-        || std::env::split_paths(path_var).map(|dir| dir.join(UI_LAUNCHER)).find(|launcher| launcher.is_file());
+    let on_path = || {
+        [UI_LAUNCHER, UI_PROCESS_NAME]
+            .into_iter()
+            .find_map(|name| std::env::split_paths(path_var).map(|dir| dir.join(name)).find(|file| file.is_file()))
+    };
     PACKAGED_UI_LAUNCHER.map(PathBuf::from).or_else(on_path).unwrap_or_else(|| PathBuf::from(QUICKSHELL))
 }
 

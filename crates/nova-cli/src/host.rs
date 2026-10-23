@@ -29,6 +29,18 @@ pub enum Distro {
 }
 
 impl Distro {
+    /// The key a feature manifest lists this distro's packages under
+    /// (`nova_features::DISTROS`). None where Nova has no package names.
+    pub fn packages_key(&self) -> Option<&'static str> {
+        match self {
+            Self::NixOs => Some("nix"),
+            Self::Arch => Some("arch"),
+            Self::Fedora => Some("fedora"),
+            Self::Debian => Some("debian"),
+            Self::Other(_) => None,
+        }
+    }
+
     /// Reads os-release: `ID`, else the first family in `ID_LIKE` Nova
     /// knows, so Manjaro is Arch and Ubuntu is Debian.
     fn from_os_release(text: &str) -> Self {
@@ -161,6 +173,12 @@ pub mod tests {
         assert_eq!(distro("ID=pop\nID_LIKE=\"ubuntu debian\"\n"), Distro::Debian);
         assert_eq!(distro("ID=gentoo\n"), Distro::Other("gentoo".into()));
         assert_eq!(distro(""), Distro::Other(String::new()));
+        assert_eq!(Distro::Other("gentoo".into()).packages_key(), None);
+        let keys: Vec<_> = [Distro::NixOs, Distro::Arch, Distro::Fedora, Distro::Debian]
+            .iter()
+            .map(|distro| distro.packages_key().unwrap())
+            .collect();
+        assert_eq!(keys, nova_features::DISTROS);
     }
 
     #[test]
