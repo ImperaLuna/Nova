@@ -16,6 +16,8 @@ use super::round_percent;
 use jiff::Timestamp;
 use nova_protocol::{UsageLimit, UsageWindow};
 use serde_json::Value;
+use std::fs::File;
+use std::io::Read;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -77,18 +79,26 @@ impl Problem {
 /// The token in `path`, if it's there, private to the user and hasn't
 /// expired at `now`.
 pub fn read_token(path: &Path, now: Timestamp) -> Result<Token, Problem> {
-    let metadata = match std::fs::metadata(path) {
-        Ok(metadata) => metadata,
+    let file = match File::open(path) {
+        Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(Problem::SignedOut),
         Err(e) => return Err(Problem::Failed(format!("can't read {}: {e}", path.display()))),
     };
+    token_from(file, path, now)
+}
+
+/// The token in `file`, opened from `path`. The checks look at the open
+/// file, so a file swapped in at `path` after them is never read.
+fn token_from(mut file: File, path: &Path, now: Timestamp) -> Result<Token, Problem> {
+    let unreadable = |e: std::io::Error| Problem::Failed(format!("can't read {}: {e}", path.display()));
+    let metadata = file.metadata().map_err(unreadable)?;
     // SAFETY: geteuid has no preconditions and can't fail.
     let uid = unsafe { libc::geteuid() };
     if metadata.uid() != uid || metadata.mode() & GROUP_OTHER_BITS != 0 {
         return Err(Problem::Unsafe(path.to_owned()));
     }
-    let text =
-        std::fs::read_to_string(path).map_err(|e| Problem::Failed(format!("can't read {}: {e}", path.display())))?;
+    let mut text = String::new();
+    file.read_to_string(&mut text).map_err(unreadable)?;
     // The error says where, never what: the file holds secrets.
     let json: Value = serde_json::from_str(&text)
         .map_err(|e| Problem::Failed(format!("{} isn't valid JSON (line {})", path.display(), e.line())))?;
@@ -192,6 +202,19 @@ mod tests {
         set_mode(&path, 0o644);
         assert_eq!(read_token(&path, now()).err(), Some(Problem::Unsafe(path.clone())));
         assert!(Problem::Unsafe(path).hint().contains("chmod 600"));
+    }
+
+    #[test]
+    fn the_checks_look_at_the_file_that_is_read() {
+        let path = write("swapped", r#"{"claudeAiOauth":{"accessToken":"open"}}"#);
+        set_mode(&path, 0o644);
+        let opened = File::open(&path).unwrap();
+        // A private file takes its place between the open and the checks.
+        let private = path.with_extension("new");
+        std::fs::write(&private, r#"{"claudeAiOauth":{"accessToken":"private"}}"#).unwrap();
+        set_mode(&private, 0o600);
+        std::fs::rename(&private, &path).unwrap();
+        assert_eq!(token_from(opened, &path, now()).err(), Some(Problem::Unsafe(path.clone())));
     }
 
     #[test]

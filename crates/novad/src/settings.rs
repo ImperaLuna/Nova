@@ -171,7 +171,7 @@ pub fn watch(files: Vec<PathBuf>, logger: Arc<Logger>, reload: impl Fn() + Send 
                     return;
                 }
             };
-            if !found.iter().any(|change| entries.contains(&change.path)) {
+            if !found.overflowed && !found.found.iter().any(|change| entries.contains(&change.path)) {
                 continue;
             }
             // A folder or link may have changed, so look again at what to watch.

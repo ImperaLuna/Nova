@@ -23,6 +23,8 @@ Item {
     signal refreshRequested
 
     onOpenChanged: {
+        // The VM tests wait for these before taking a screenshot.
+        console.info(`nova: ai usage panel ${open ? "opened" : "closed"}`);
         if (open)
             refreshRequested();
     }

@@ -19,6 +19,14 @@ AI_USAGE_SHOWN = "nova: ai usage pill shown"
 # A point inside that pill: it sits Tokens.barMargin (8) from the screen's
 # top-left corner and is Tokens.barHeight (36) tall.
 AI_USAGE_PILL = (24, 26)
+# What the pill logs when its panel opens or closes (ui/ai_usage/AiUsage.qml).
+AI_USAGE_OPENED = "nova: ai usage panel opened"
+AI_USAGE_CLOSED = "nova: ai usage panel closed"
+# Clicks a test gives one target before failing: the virtual mouse
+# sometimes loses one, which a screenshot alone would only show as a diff.
+CLICK_TRIES = 3
+# How long a click's effect may take to show in the UI's log.
+CLICK_EFFECT = dt.timedelta(seconds=10)
 # Where the pointer waits between clicks, away from the bar.
 POINTER_REST = (640, 700)
 # How long the screen must stay the same before a screenshot.
@@ -102,6 +110,24 @@ def click(x: int, y: int) -> None:
     )
 
 
+def ui_log_count(line: str) -> int:
+    out = machine.succeed(as_user(f"nova logs --no-follow --ui | grep -cF {shlex.quote(line)} || true"))
+    return int(out.strip() or 0)
+
+
+def click_until_logged(x: int, y: int, line: str) -> None:
+    """Clicks at (x, y) until the UI logs `line` once more than before."""
+    before = ui_log_count(line)
+    for _ in range(CLICK_TRIES):
+        click(x, y)
+        try:
+            retry(lambda _last_try: ui_log_count(line) > before, timeout=CLICK_EFFECT)
+            return
+        except Exception:
+            print(f"no {line!r} after a click at ({x}, {y}), clicking again")
+    raise AssertionError(f"{CLICK_TRIES} clicks at ({x}, {y}) never logged {line!r}")
+
+
 def wait_gone(pid: int) -> None:
     machine.wait_until_fails(f"test -e /proc/{pid}", timeout=WAIT)
 
@@ -135,10 +161,10 @@ with subtest("screenshot: the bar"):
 
 with subtest("screenshot: the AI usage panel open, grown from its pill"):
     machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui | grep -qF {shlex.quote(AI_USAGE_SHOWN)}"), timeout=WAIT)
-    click(*AI_USAGE_PILL)
+    click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
     screenshot("panel-open")
     # The same spot closes it again.
-    click(*AI_USAGE_PILL)
+    click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
 
 with subtest("a workspace switch reaches the UI"):
     running = wait_running()
