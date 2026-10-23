@@ -67,4 +67,22 @@ TestCase {
         ]);
         compare(ready, ["core"]);
     }
+
+    // The compositor event in nova-protocol's wire format snapshot.
+    readonly property string compositorLine: '{"v":2,"event":"compositor","data":{"compositor":"niri","capabilities":["workspaces","focused_window"],"outputs":[{"name":"DP-1","focused":true,"workspaces":[{"id":1,"name":"1","active":false,"focused":false,"urgent":false},{"id":2,"name":"web","active":true,"focused":true,"urgent":false}]},{"name":"HDMI-A-1","focused":false,"workspaces":[{"id":3,"name":"1","active":true,"focused":false,"urgent":true}]}],"focused_window":{"app_id":"foot","title":"~"}}}'
+
+    function test_finds_the_focused_workspace() {
+        const desktop = Protocol.parse(compositorLine).data;
+        compare(Protocol.focusedWorkspace(desktop).name, "web");
+        compare(Protocol.focusedWorkspace(null), null);
+        desktop.outputs[0].workspaces[1].focused = false;
+        compare(Protocol.focusedWorkspace(desktop), null);
+    }
+
+    function test_subscribe_can_name_the_compositor_topic() {
+        const line = Protocol.request(5, "subscribe", {
+            topics: [Protocol.TOPIC_COMPOSITOR]
+        });
+        compare(line, '{"v":2,"id":5,"cmd":"subscribe","args":{"topics":["compositor"]}}\n');
+    }
 }

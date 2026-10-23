@@ -2,7 +2,7 @@
 
 use crate::client::Client;
 use crate::lifecycle::RESTART_COMMAND;
-use nova_protocol::{FeatureStatus, Status, UiState};
+use nova_protocol::{Desktop, FeatureStatus, Status, UiState};
 use std::path::Path;
 
 const KIB_PER_MB: u64 = 1024;
@@ -62,6 +62,8 @@ fn describe(status: &Status) -> String {
         out += &row("warning", &problem);
     }
 
+    out += &describe_desktop(status.desktop.as_ref());
+
     let features: Vec<String> = status
         .features
         .iter()
@@ -73,6 +75,44 @@ fn describe(status: &Status) -> String {
         .collect();
     out += &row("features", &features.join(", "));
     out
+}
+
+/// The compositor, its workspaces per output and the focused window.
+fn describe_desktop(desktop: Option<&Desktop>) -> String {
+    let Some(desktop) = desktop else {
+        return row("compositor", "none followed (Nova knows niri and Hyprland)");
+    };
+    let mut compositor = desktop.compositor.clone();
+    if let Some(layout) = &desktop.keyboard_layout {
+        compositor += &format!(", keyboard {layout}");
+    }
+    let mut out = row("compositor", &compositor);
+    for (index, output) in desktop.outputs.iter().enumerate() {
+        let workspaces: Vec<String> = output
+            .workspaces
+            .iter()
+            .map(|workspace| {
+                let marks: Vec<&str> = [(workspace.active, "shown"), (workspace.urgent, "urgent")]
+                    .into_iter()
+                    .filter_map(|(set, mark)| set.then_some(mark))
+                    .collect();
+                if marks.is_empty() {
+                    workspace.name.clone()
+                } else {
+                    format!("{} ({})", workspace.name, marks.join(", "))
+                }
+            })
+            .collect();
+        let focused = if output.focused { " (focused)" } else { "" };
+        let label = if index == 0 { "workspaces" } else { "" };
+        out += &row(label, &format!("{}{focused}: {}", output.name, workspaces.join(", ")));
+    }
+    let window = match &desktop.focused_window {
+        Some(window) if window.app_id.is_empty() => window.title.clone(),
+        Some(window) => format!("{}: {}", window.app_id, window.title),
+        None => "none focused".into(),
+    };
+    out + &row("window", &window)
 }
 
 fn row(label: &str, value: &str) -> String {
@@ -107,7 +147,38 @@ fn ago(time: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nova_protocol::{Crash, FeatureState, UiStatus};
+    use nova_protocol::{Crash, FeatureState, FocusedWindow, Output, UiStatus, Workspace};
+
+    #[test]
+    fn the_desktop_lists_workspaces_per_output() {
+        let workspace =
+            |id, name: &str, active| Workspace { id, name: name.into(), active, focused: false, urgent: false };
+        let desktop = Desktop {
+            compositor: "niri".into(),
+            capabilities: vec![],
+            outputs: vec![
+                Output {
+                    name: "DP-1".into(),
+                    focused: true,
+                    workspaces: vec![
+                        workspace(1, "1", false),
+                        Workspace { focused: true, ..workspace(2, "web", true) },
+                        Workspace { urgent: true, ..workspace(3, "3", false) },
+                    ],
+                },
+                Output { name: "HDMI-A-1".into(), focused: false, workspaces: vec![workspace(4, "1", true)] },
+            ],
+            focused_window: Some(FocusedWindow { app_id: "foot".into(), title: "~/Projects".into() }),
+            keyboard_layout: Some("English (US)".into()),
+        };
+        assert_eq!(
+            describe_desktop(Some(&desktop)),
+            "compositor niri, keyboard English (US)\n\
+             workspaces DP-1 (focused): 1, web (shown), 3 (urgent)\n\
+             \x20          HDMI-A-1: 1 (shown)\n\
+             window     foot: ~/Projects\n"
+        );
+    }
 
     #[test]
     fn durations_read_naturally() {
@@ -140,6 +211,7 @@ mod tests {
                 },
             ],
             log_dir: "/x".into(),
+            desktop: None,
         };
         let text = describe(&status);
         assert!(text.contains("daemon     running, pid 10, up 1m 5s, 10 MB"), "{text}");
@@ -147,6 +219,7 @@ mod tests {
         assert!(text.contains("last crash not a time: see `nova logs --crash`"), "{text}");
         assert!(text.contains("features   core on, recording missing wf-recorder"), "{text}");
         assert!(!text.contains("warning"), "a supported Quickshell gets no row: {text}");
+        assert!(text.contains("compositor none followed"), "{text}");
 
         let untested = Status { quickshell: Some("0.1.0".into()), ..status };
         let text = describe(&untested);
