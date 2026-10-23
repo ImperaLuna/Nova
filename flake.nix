@@ -149,6 +149,8 @@
         pkgs.runCommand "${name}-${version}" { } ''
           mkdir -p tree $out
           cp -r ${nova}/bin ${nova}/share tree/
+          # Store files are read-only; an upgrade has to replace share/nova.
+          chmod -R u+w tree
           tar -C tree --sort=name --owner=0 --group=0 --numeric-owner --mtime=@1 -c bin share \
             | gzip -n > $out/${name}.tar.gz
           (cd $out && sha256sum ${name}.tar.gz > ${name}.tar.gz.sha256)
