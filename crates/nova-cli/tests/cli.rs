@@ -40,6 +40,8 @@ impl Novad {
             features.into(),
             "--selection".into(),
             dir.join("features.toml").into(),
+            "--config".into(),
+            dir.join("config.toml").into(),
             "--state-dir".into(),
             dir.join("state").into(),
             "--codex-home".into(),
@@ -166,6 +168,14 @@ impl DaemonProcess {
             .arg(features)
             .arg("--selection")
             .arg(dir.join("features.toml"))
+            .arg("--config")
+            .arg(dir.join("config.toml"))
+            .arg("--state-dir")
+            .arg(dir.join("state"))
+            .arg("--codex-home")
+            .arg(dir.join("codex"))
+            .arg("--claude-credentials")
+            .arg(dir.join("claude/.credentials.json"))
             .spawn()
             .unwrap();
         Self { dir, child }

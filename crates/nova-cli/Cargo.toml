@@ -3,6 +3,7 @@ name = "nova-cli"
 description = "The nova command, and the daemon it runs as `nova daemon`"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [[bin]]

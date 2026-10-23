@@ -84,7 +84,7 @@ fn describe_desktop(desktop: Option<&Desktop>) -> String {
     };
     let mut compositor = desktop.compositor.clone();
     if let Some(layout) = &desktop.keyboard_layout {
-        compositor += &format!(", keyboard {layout}");
+        compositor += &format!(", keyboard {}", printable(layout));
     }
     let mut out = row("compositor", &compositor);
     for (index, output) in desktop.outputs.iter().enumerate() {
@@ -97,22 +97,28 @@ fn describe_desktop(desktop: Option<&Desktop>) -> String {
                     .filter_map(|(set, mark)| set.then_some(mark))
                     .collect();
                 if marks.is_empty() {
-                    workspace.name.clone()
+                    printable(&workspace.name)
                 } else {
-                    format!("{} ({})", workspace.name, marks.join(", "))
+                    format!("{} ({})", printable(&workspace.name), marks.join(", "))
                 }
             })
             .collect();
         let focused = if output.focused { " (focused)" } else { "" };
         let label = if index == 0 { "workspaces" } else { "" };
-        out += &row(label, &format!("{}{focused}: {}", output.name, workspaces.join(", ")));
+        out += &row(label, &format!("{}{focused}: {}", printable(&output.name), workspaces.join(", ")));
     }
     let window = match &desktop.focused_window {
-        Some(window) if window.app_id.is_empty() => window.title.clone(),
-        Some(window) => format!("{}: {}", window.app_id, window.title),
+        Some(window) if window.app_id.is_empty() => printable(&window.title),
+        Some(window) => format!("{}: {}", printable(&window.app_id), printable(&window.title)),
         None => "none focused".into(),
     };
     out + &row("window", &window)
+}
+
+/// `text` with control characters escaped (`\u{1b}`), so text from apps,
+/// like a web page's title, can't send the terminal escape sequences.
+pub fn printable(text: &str) -> String {
+    text.chars().map(|c| if c.is_control() { c.escape_unicode().to_string() } else { c.to_string() }).collect()
 }
 
 fn row(label: &str, value: &str) -> String {
@@ -178,6 +184,20 @@ mod tests {
              \x20          HDMI-A-1: 1 (shown)\n\
              window     foot: ~/Projects\n"
         );
+    }
+
+    #[test]
+    fn window_titles_cant_send_terminal_escapes() {
+        let desktop = Desktop {
+            compositor: "niri".into(),
+            capabilities: vec![],
+            outputs: vec![],
+            focused_window: Some(FocusedWindow { app_id: "firefox".into(), title: "page\x1b]52;c;cHdu\x07".into() }),
+            keyboard_layout: None,
+        };
+        let text = describe_desktop(Some(&desktop));
+        assert!(!text.contains('\x1b') && !text.contains('\x07'), "{text:?}");
+        assert!(text.contains("page\\u{1b}]52;c;cHdu\\u{7}"), "{text:?}");
     }
 
     #[test]

@@ -406,6 +406,14 @@ const CLAUDE_ENDPOINT_ON: &str = "[ai-usage]\nclaude-usage-endpoint = true\n";
 
 /// Answers every request with `body`, keeping the request heads it got.
 fn fake_anthropic(body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
+    fake_anthropic_gated(body, None)
+}
+
+/// Like [`fake_anthropic`], answering each request only once `gate` lets it.
+fn fake_anthropic_gated(
+    body: &'static str,
+    gate: Option<std::sync::mpsc::Receiver<()>>,
+) -> (String, Arc<Mutex<Vec<String>>>) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/api/oauth/usage", listener.local_addr().unwrap());
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -417,6 +425,9 @@ fn fake_anthropic(body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
             let mut reader = BufReader::new(stream.try_clone().unwrap());
             while reader.read_line(&mut head).unwrap() > 2 {}
             seen.lock().unwrap().push(head);
+            if let Some(gate) = &gate {
+                gate.recv().unwrap();
+            }
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
@@ -520,6 +531,54 @@ fn claude_limits_come_from_anthropic_with_claude_codes_sign_in() {
 }
 
 #[test]
+fn a_status_line_report_beats_an_older_endpoint_answer() {
+    let (open_gate, gate) = std::sync::mpsc::channel();
+    let (url, requests) = fake_anthropic_gated(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#, Some(gate));
+    let novad = TestDaemon::with_ai_usage("ai-usage-claude-order", |root| {
+        claude_sign_in(root, &url);
+        std::fs::write(root.join("../config/config.toml"), CLAUDE_ENDPOINT_ON).unwrap();
+    });
+    let mut client = novad.connect();
+    while requests.lock().unwrap().is_empty() {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // While the request is out, the status line reports newer numbers.
+    let reply =
+        client.request(2, "report_claude_usage", Some(json!({"limits": [{"window": "session", "percent": 50}]})));
+    assert_eq!(reply["result"], Value::Null);
+    open_gate.send(()).unwrap();
+    // The answer is dropped: a later subscriber still sees the report.
+    std::thread::sleep(Duration::from_millis(300));
+    let usage = novad.connect().subscribe_usage();
+    assert_eq!(provider(&usage, "claude")["limits"][0]["percent"], 50, "{usage}");
+}
+
+#[test]
+fn busy_codex_sessions_are_still_read() {
+    let mut log = PathBuf::new();
+    let novad = TestDaemon::with_ai_usage("ai-usage-codex-busy", |root| {
+        log = codex_day(root).join("rollout-a.jsonl");
+        std::fs::write(&log, codex_line(1, 1) + "\n").unwrap();
+    });
+    let mut client = novad.connect();
+    assert_eq!(provider(&client.subscribe_usage(), "codex")["limits"][0]["percent"], 1);
+    // Lines faster than the settle time, for longer than the longest delay.
+    let writing = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let still_writing = Arc::clone(&writing);
+    let writer = std::thread::spawn(move || {
+        let mut file = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
+        for _ in 0..80 {
+            writeln!(file, "{}", codex_line(2, 2)).unwrap();
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        still_writing.store(false, std::sync::atomic::Ordering::SeqCst);
+    });
+    while provider(&client.next_usage(), "codex")["limits"][0]["percent"] != 2 {}
+    assert!(writing.load(std::sync::atomic::Ordering::SeqCst), "read only once the writes stopped");
+    writer.join().unwrap();
+}
+
+#[test]
 fn claudes_endpoint_is_never_asked_unless_turned_on() {
     let (url, requests) = fake_anthropic(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#);
     let novad = TestDaemon::with_ai_usage("ai-usage-claude-off", |root| claude_sign_in(root, &url));
@@ -602,6 +661,33 @@ fn codex_appears_later(name: &str, home_exists: bool) {
 }
 
 #[test]
+fn a_replaced_codex_home_is_followed() {
+    let mut root_dir = PathBuf::new();
+    let novad = TestDaemon::with_ai_usage("ai-usage-codex-replaced", |root| {
+        std::fs::write(codex_day(root).join("rollout-a.jsonl"), codex_line(7, 8) + "\n").unwrap();
+        root_dir = root.to_owned();
+    });
+    let mut client = novad.connect();
+    assert_eq!(provider(&client.subscribe_usage(), "codex")["limits"][0]["percent"], 7);
+    // Restored from a backup: a new home moved into place of the old one.
+    let restored = root_dir.join("restored");
+    let day = restored.join("sessions/2026/10/23");
+    std::fs::create_dir_all(&day).unwrap();
+    std::fs::write(day.join("rollout-b.jsonl"), codex_line(9, 10) + "\n").unwrap();
+    std::fs::rename(root_dir.join("codex"), root_dir.join("codex.old")).unwrap();
+    std::fs::rename(&restored, root_dir.join("codex")).unwrap();
+    while provider(&client.next_usage(), "codex")["limits"][0]["percent"] != 9 {}
+    // And it's watched: new lines in the new home arrive too.
+    std::thread::sleep(Duration::from_millis(200));
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(root_dir.join("codex/sessions/2026/10/23/rollout-b.jsonl"))
+        .unwrap();
+    writeln!(file, "{}", codex_line(11, 12)).unwrap();
+    while provider(&client.next_usage(), "codex")["limits"][0]["percent"] != 11 {}
+}
+
+#[test]
 fn claude_reports_and_the_bar_choice_survive_a_restart() {
     let novad = TestDaemon::with_ai_usage("ai-usage-claude", |_| {});
     let mut client = novad.connect();
@@ -629,6 +715,8 @@ fn claude_reports_and_the_bar_choice_survive_a_restart() {
     let nova_protocol::Event::AiUsage(usage) = again.event() else { panic!("not an ai_usage event") };
     assert_eq!(usage.shown, nova_protocol::AiProvider::Codex);
     assert_eq!(usage.providers[0].limits[0].percent, 42);
+    let saved = std::fs::metadata(ai_usage_paths(&novad.dir.join("ai-usage")).state_file).unwrap();
+    assert_eq!(std::os::unix::fs::PermissionsExt::mode(&saved.permissions()) & 0o777, 0o600);
 }
 
 #[test]

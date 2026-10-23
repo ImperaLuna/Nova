@@ -36,6 +36,8 @@ const MAX_RETRY: Duration = Duration::from_secs(30);
 const HEALTHY_AFTER: Duration = Duration::from_secs(60);
 /// A UI that dies this quickly most likely failed to load.
 const EARLY_EXIT: Duration = Duration::from_secs(5);
+/// How long `quickshell --version` may take; novad's start waits for it.
+const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct UiSettings {
     /// The Quickshell binary.
@@ -232,11 +234,11 @@ fn describe_exit(status: ExitStatus) -> String {
 
 /// `Quickshell 0.3.2 (revision …)` → `0.3.2`.
 fn quickshell_version(settings: &UiSettings, logger: &Logger) -> Option<String> {
-    let output = Command::new(&settings.quickshell).arg("--version").env("PATH", &settings.path_var).output();
-    let version = output
+    let mut command = Command::new(&settings.quickshell);
+    command.arg("--version").env("PATH", &settings.path_var);
+    let version = stdout_within(command, VERSION_TIMEOUT)
         .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8_lossy(&output.stdout).split_whitespace().nth(1).map(str::to_owned));
+        .and_then(|stdout| String::from_utf8_lossy(&stdout).split_whitespace().nth(1).map(str::to_owned));
     match &version {
         Some(version) => {
             logger.info(LOG_SOURCE, &format!("Quickshell {version}"));
@@ -247,4 +249,53 @@ fn quickshell_version(settings: &UiSettings, logger: &Logger) -> Option<String> 
         None => logger.warn(LOG_SOURCE, &format!("{} --version gave no version", settings.quickshell.display())),
     }
     version
+}
+
+/// What `command` prints when it succeeds within `timeout`. One that takes
+/// longer is killed and reaped.
+fn stdout_within(mut command: Command, timeout: Duration) -> std::io::Result<Vec<u8>> {
+    let mut child = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
+    let mut stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout pipe"))?;
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut printed = Vec::new();
+        let _ = done.send(stdout.read_to_end(&mut printed).map(|_| printed));
+    });
+    match finished.recv_timeout(timeout) {
+        Ok(printed) => {
+            let printed = printed?;
+            match child.wait()? {
+                status if status.success() => Ok(printed),
+                status => Err(std::io::Error::other(describe_exit(status))),
+            }
+        }
+        Err(_) => {
+            // Still unreaped, so the pid is still this child's.
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(std::io::Error::new(std::io::ErrorKind::TimedOut, format!("no answer in {} s", timeout.as_secs())))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_command_that_hangs_is_killed() {
+        let mut command = Command::new("sleep");
+        command.arg("30");
+        let started = Instant::now();
+        let error = stdout_within(command, Duration::from_millis(200)).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_quick_command_gives_its_output() {
+        let mut command = Command::new("echo");
+        command.arg("Quickshell 0.3.2");
+        assert_eq!(stdout_within(command, VERSION_TIMEOUT).unwrap(), b"Quickshell 0.3.2\n");
+    }
 }

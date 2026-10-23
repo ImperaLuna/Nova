@@ -70,9 +70,11 @@ wait_for 10 "sway" bash -c 'ls "$XDG_RUNTIME_DIR"/wayland-* >/dev/null 2>&1'
 WAYLAND_DISPLAY=$(basename "$(ls "$XDG_RUNTIME_DIR"/wayland-* | grep -v lock | head -n1)")
 export WAYLAND_DISPLAY
 
-# Its own AI usage files, so the run never touches the user's or asks Anthropic.
+# Its own settings and AI usage files, so the run starts like a new user's,
+# never touches the user's files and never asks Anthropic.
 "$nova" daemon --ui ui --log-dir "$out/state" --state-dir "$out/state" --codex-home "$out/codex" \
-  --claude-credentials "$out/claude/.credentials.json" >"$out/daemon.log" 2>&1 &
+  --claude-credentials "$out/claude/.credentials.json" \
+  --config "$out/config/config.toml" --selection "$out/config/features.toml" >"$out/daemon.log" 2>&1 &
 pids+=($!)
 wait_for 10 "novad socket" test -S "$XDG_RUNTIME_DIR/nova/novad.sock"
 sleep "$settle"

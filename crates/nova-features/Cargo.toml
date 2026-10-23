@@ -3,6 +3,7 @@ name = "nova-features"
 description = "Feature manifests: parsing, validation and package selection"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
