@@ -6,6 +6,7 @@
 //! top of this.
 
 mod ai_usage;
+mod compositor;
 mod config;
 mod features;
 mod hub;
@@ -86,6 +87,8 @@ pub struct Daemon {
     socket: PathBuf,
     /// Running when the `ai-usage` feature is ready.
     ai_usage: Option<Arc<ai_usage::Usage>>,
+    /// Following the compositor, when it's one novad knows.
+    compositor: Option<Arc<compositor::Compositor>>,
 }
 
 impl Daemon {
@@ -100,6 +103,7 @@ impl Daemon {
             ui: self.ui.as_ref().map_or(disabled, |ui| ui.status()),
             features: self.features.clone(),
             log_dir: self.logger.dir().display().to_string(),
+            desktop: self.compositor.as_ref().and_then(|compositor| compositor.desktop()),
         }
     }
 
@@ -198,7 +202,19 @@ fn start(
             )
         });
 
-    let daemon = Arc::new(Daemon { started: Instant::now(), features, theme, hub, logger, ui, socket, ai_usage });
+    let compositor = match compositor::detect(|name| std::env::var_os(name)) {
+        Some(backend) => Some(compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger))),
+        None => {
+            logger.warn(
+                LOG_SOURCE,
+                "neither NIRI_SOCKET nor HYPRLAND_INSTANCE_SIGNATURE is set, so no workspaces will show",
+            );
+            None
+        }
+    };
+
+    let daemon =
+        Arc::new(Daemon { started: Instant::now(), features, theme, hub, logger, ui, socket, ai_usage, compositor });
     Ok((listener, daemon))
 }
 

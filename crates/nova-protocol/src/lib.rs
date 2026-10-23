@@ -40,6 +40,11 @@ pub enum Event {
     /// Plan usage of AI coding tools. Topic [`Topic::AiUsage`], sent right
     /// after subscribing and whenever a number changes.
     AiUsage(AiUsage),
+    /// The compositor's workspaces, outputs, focused window and keyboard
+    /// layout. Topic [`Topic::Compositor`], sent right after subscribing and
+    /// whenever any of it changes. Never sent when novad doesn't know the
+    /// compositor.
+    Compositor(Desktop),
 }
 
 /// Groups of events a client can subscribe to.
@@ -50,6 +55,7 @@ pub enum Topic {
     Logs,
     Theme,
     AiUsage,
+    Compositor,
 }
 
 impl Event {
@@ -62,6 +68,7 @@ impl Event {
             Event::Logs { .. } => Some(Topic::Logs),
             Event::Theme(_) => Some(Topic::Theme),
             Event::AiUsage(_) => Some(Topic::AiUsage),
+            Event::Compositor(_) => Some(Topic::Compositor),
         }
     }
 }
@@ -233,6 +240,81 @@ pub enum UsageWindow {
     Weekly,
 }
 
+/// What the compositor shows, the same shape whichever compositor it is.
+/// The UI shows only what `capabilities` lists.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Desktop {
+    /// The compositor's name, for people (`nova status`). The UI checks
+    /// `capabilities`, never this.
+    pub compositor: String,
+    pub capabilities: Vec<Capability>,
+    /// Sorted by name.
+    pub outputs: Vec<Output>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focused_window: Option<FocusedWindow>,
+    /// The active keyboard layout's name, like `English (US)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyboard_layout: Option<String>,
+}
+
+/// What a compositor can report or do. Something it can't is left out, and
+/// the UI hides what depends on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Capability {
+    /// `outputs` lists each output's workspaces.
+    Workspaces,
+    /// `focus_workspace` and `step_workspace` work.
+    FocusWorkspace,
+    /// `focused_window` is reported.
+    FocusedWindow,
+    /// `keyboard_layout` is reported.
+    KeyboardLayout,
+}
+
+/// A monitor, by its connector name (`DP-1`), as Quickshell's `screen.name`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Output {
+    pub name: String,
+    /// Has the keyboard focus.
+    pub focused: bool,
+    /// In the compositor's order.
+    pub workspaces: Vec<Workspace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Workspace {
+    /// What `focus_workspace` takes.
+    pub id: WorkspaceId,
+    /// Its name, or its number when it has none.
+    pub name: String,
+    /// Shown on its output.
+    pub active: bool,
+    /// Shown on the focused output.
+    pub focused: bool,
+    /// A window on it wants attention.
+    pub urgent: bool,
+}
+
+/// The compositor's own workspace id. Hyprland's named workspaces have
+/// negative ids.
+pub type WorkspaceId = i64;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FocusedWindow {
+    /// The Wayland app id (Hyprland calls it the class), empty when unset.
+    pub app_id: String,
+    pub title: String,
+}
+
+/// Which way `step_workspace` goes in an output's workspace list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Step {
+    Next,
+    Previous,
+}
+
 /// Sent by the UI or the `nova` CLI. Arguments with unknown fields are
 /// refused, like unknown fields on the request line itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -262,6 +344,17 @@ pub enum Command {
     ReportClaudeUsage {
         limits: Vec<UsageLimit>,
     },
+    /// Shows a workspace (capability `focus_workspace`), focusing its output.
+    FocusWorkspace {
+        id: WorkspaceId,
+    },
+    /// Shows the workspace after or before the active one on `output`
+    /// (capability `focus_workspace`), like scrolling on the bar. Nothing
+    /// happens at either end.
+    StepWorkspace {
+        output: String,
+        step: Step,
+    },
 }
 
 /// What `status` returns.
@@ -280,6 +373,10 @@ pub struct Status {
     pub features: Vec<FeatureState>,
     /// The folder novad writes its log and crash snapshots to.
     pub log_dir: String,
+    /// What the compositor shows now, when novad knows the compositor and
+    /// has heard from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desktop: Option<Desktop>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -484,7 +581,7 @@ mod tests {
             encode(Request {
                 id: Some(9),
                 command: Command::Subscribe {
-                    topics: vec![Topic::Features, Topic::Logs, Topic::Theme, Topic::AiUsage],
+                    topics: vec![Topic::Features, Topic::Logs, Topic::Theme, Topic::AiUsage, Topic::Compositor],
                 },
             }),
             encode(Event::Theme(theme())),
@@ -501,11 +598,40 @@ mod tests {
                 id: Some(13),
                 command: Command::ReportClaudeUsage { limits: ai_usage().providers[0].limits.clone() },
             }),
+            encode(Event::Compositor(desktop())),
+            encode(Request { id: Some(14), command: Command::FocusWorkspace { id: -1337 } }),
+            encode(Request {
+                id: None,
+                command: Command::StepWorkspace { output: "DP-1".into(), step: Step::Previous },
+            }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
         assert!(all.lines().all(|l| l.starts_with(r#"{"v":2,"#)));
         insta::assert_snapshot!(all);
+    }
+
+    fn desktop() -> Desktop {
+        let workspace =
+            |id, name: &str, active, focused| Workspace { id, name: name.into(), active, focused, urgent: false };
+        Desktop {
+            compositor: "niri".into(),
+            capabilities: vec![Capability::Workspaces, Capability::FocusedWindow],
+            outputs: vec![
+                Output {
+                    name: "DP-1".into(),
+                    focused: true,
+                    workspaces: vec![workspace(1, "1", false, false), workspace(2, "web", true, true)],
+                },
+                Output {
+                    name: "HDMI-A-1".into(),
+                    focused: false,
+                    workspaces: vec![Workspace { urgent: true, ..workspace(3, "1", true, false) }],
+                },
+            ],
+            focused_window: Some(FocusedWindow { app_id: "foot".into(), title: "~".into() }),
+            keyboard_layout: None,
+        }
     }
 
     fn ai_usage() -> AiUsage {
@@ -586,6 +712,7 @@ mod tests {
             },
             features: vec![FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] }],
             log_dir: "/home/me/.local/state/nova".into(),
+            desktop: None,
         }
     }
 
@@ -620,6 +747,7 @@ mod tests {
         assert_eq!(Event::Logs { backlog: false, entries: vec![] }.topic(), Some(Topic::Logs));
         assert_eq!(Event::Theme(theme()).topic(), Some(Topic::Theme));
         assert_eq!(Event::AiUsage(ai_usage()).topic(), Some(Topic::AiUsage));
+        assert_eq!(Event::Compositor(desktop()).topic(), Some(Topic::Compositor));
     }
 
     #[test]

@@ -65,10 +65,25 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
     file that isn't the user's or isn't 0600 is refused; no redirects; the
     user agent is `nova/<version>`. Codex: the `token_count` events in its session logs, watched
     with inotify; nothing is requested for Codex.
+- `crates/novad/src/compositor`: the compositor as one model (outputs with
+  their workspaces, the focused window, the keyboard layout, and a list of
+  capabilities) on the `compositor` topic, plus `focus_workspace` and
+  `step_workspace`. One `Backend` per compositor, picked from `NIRI_SOCKET`
+  or `HYPRLAND_INSTANCE_SIGNATURE`, each following the compositor's own
+  event stream. niri: one socket, JSON lines, full state as events.
+  Hyprland: events on `.socket2.sock`, and novad asks `.socket.sock`
+  (`j/monitors` and so on) when an event doesn't carry enough. Unknown
+  events and fields are ignored so newer releases keep working. Its tests
+  replay `recorded/<compositor>`: what real niri and Hyprland sent in a VM
+  (`e2e/vm/record.py`, `just record <compositor>`), checked step by step
+  against the compositor's own answers. Re-record after a compositor update
+  changes its IPC.
 - `ui/`: the Quickshell (QML) UI. `shell.qml` is the entry point.
   - `theme/Tokens.qml`: design tokens. Components never hard-code colors,
     radii, sizes or durations. Colors are the theme's, set by `Daemon.qml`
     from the `theme` event; the shell draws nothing until it arrives.
+  - `compositor/Compositor.qml`: workspaces, focused window and layout
+    for UI pieces. Check `Compositor.has(...)` before showing something.
   - `daemon/Daemon.qml`: the only socket to novad. Everything else reads its
     properties or calls `Daemon.call(cmd, args, callback)`.
   - `tests/`: QtTest files (`tst_*.qml`), run headless.
@@ -78,11 +93,12 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - `e2e/vm/`: NixOS VM tests on real niri and Hyprland (flake checks
   `e2e-niri`, `e2e-hyprland`; they need KVM, so run them as Nix builds). One
   VM config and one test script (`lifecycle.py`) shared by both; each
-  compositor only says how it starts and quits. They cover what needs a
-  systemd user session (starting through `nova.service`, crash restarts,
-  `nova restart`/`quit`, novad exiting with the compositor) and screenshot
-  each UI state. `compare.sh` diffs the screenshots against
-  `e2e/golden/<compositor>/<state>.png` with odiff.
+  compositor only says how it starts, quits and is driven. They cover what
+  needs a systemd user session (starting through `nova.service`, crash
+  restarts, `nova restart`/`quit`, novad exiting with the compositor), check
+  that a workspace switch reaches the UI (`quickshell ipc`, the `compositor`
+  IpcHandler in `shell.qml`), and screenshot each UI state. `compare.sh` diffs
+  the screenshots against `e2e/golden/<compositor>/<state>.png` with odiff.
 - `scripts/run.sh` (`just run`): swaps your running bar for this checkout's
   Nova and puts the old one back on Ctrl+C or when the terminal closes.
 - `scripts/qmllint.sh`: qmllint over `ui/`, failing on any warning.
@@ -204,6 +220,8 @@ Run inside `nix develop`:
 - `just e2e-approve [niri|hyprland]`: runs a VM test and copies its
   screenshots into `e2e/golden/<compositor>`. Run it after an intended visual
   change and commit the new goldens with it.
+- `just record [niri|hyprland]`: records what that compositor sends novad
+  in a VM (needs KVM) into `crates/novad/src/compositor/recorded`.
 - `just run`: this checkout's Nova on your current session, in place of
   your bar until Ctrl+C. Its log goes to `~/.local/state/nova-dev`.
 - `nix flake check -L`: the same checks as CI, sandboxed.

@@ -19,20 +19,35 @@ struct TestDaemon {
 
 impl TestDaemon {
     fn start(name: &str, ui: Option<UiSettings>) -> Self {
-        Self::open(name, ui, |_| None)
+        Self::open(name, ui, |_| None, |_| None)
     }
 
     /// With the `ai-usage` feature on, its files under `<dir>/ai-usage`.
     fn with_ai_usage(name: &str, prepare: impl FnOnce(&Path)) -> Self {
-        Self::open(name, None, |dir| {
-            let root = dir.join("ai-usage");
-            std::fs::create_dir_all(&root).unwrap();
-            prepare(&root);
-            Some(ai_usage_paths(&root))
-        })
+        Self::open(
+            name,
+            None,
+            |dir| {
+                let root = dir.join("ai-usage");
+                std::fs::create_dir_all(&root).unwrap();
+                prepare(&root);
+                Some(ai_usage_paths(&root))
+            },
+            |_| None,
+        )
     }
 
-    fn open(name: &str, ui: Option<UiSettings>, ai_usage: impl FnOnce(&Path) -> Option<ai_usage::Paths>) -> Self {
+    /// Following the compositor `connect` sets up in the test's folder.
+    pub fn with_compositor(name: &str, connect: impl FnOnce(&Path) -> Box<dyn compositor::Backend>) -> Self {
+        Self::open(name, None, |_| None, |dir| Some(connect(dir)))
+    }
+
+    fn open(
+        name: &str,
+        ui: Option<UiSettings>,
+        ai_usage: impl FnOnce(&Path) -> Option<ai_usage::Paths>,
+        compositor: impl FnOnce(&Path) -> Option<Box<dyn compositor::Backend>>,
+    ) -> Self {
         let dir = std::env::temp_dir().join(format!("novad-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let socket = dir.join("novad.sock");
@@ -43,6 +58,9 @@ impl TestDaemon {
         let features = vec![FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] }];
         let (theme, _) = theme::resolve(&theme::default_dir(), &dir.join("no-config.toml"));
         let ai_usage = ai_usage(&dir).map(|paths| ai_usage::Usage::start(paths, Arc::clone(&hub), Arc::clone(&logger)));
+        std::fs::create_dir_all(&dir).unwrap();
+        let compositor = compositor(&dir)
+            .map(|backend| compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
             features,
@@ -52,6 +70,7 @@ impl TestDaemon {
             ui,
             socket: socket.clone(),
             ai_usage,
+            compositor,
         });
         let serving = Arc::clone(&daemon);
         std::thread::spawn(move || server::serve(listener, serving));
@@ -396,16 +415,25 @@ fn codex_day(root: &Path) -> PathBuf {
 impl Client {
     /// The next `ai_usage` event, skipping replies; fails after a while.
     fn next_usage(&mut self) -> Value {
+        self.next_event("ai_usage")
+    }
+
+    /// The data of the next `event`, skipping other messages; fails after a while.
+    fn next_event(&mut self, event: &str) -> Value {
         self.writer.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
         loop {
             let message = match self.early.pop_front() {
                 Some(event) => event,
                 None => {
-                    let line = self.lines.next().expect("connection closed").expect("no ai_usage event in time");
+                    let line = self
+                        .lines
+                        .next()
+                        .expect("connection closed")
+                        .unwrap_or_else(|e| panic!("no {event} event in time: {e}"));
                     serde_json::from_str(&line).unwrap()
                 }
             };
-            if message["event"] == "ai_usage" {
+            if message["event"] == event {
                 return message["data"].clone();
             }
         }
@@ -610,4 +638,187 @@ fn ai_usage_commands_say_when_the_feature_is_off() {
     assert_eq!(reply["error"], "the ai-usage feature is off");
     client.request(2, "subscribe", Some(json!({"topics": ["ai_usage"]})));
     assert_eq!(client.request(3, "ping", None)["result"], "pong", "no ai_usage event without the feature");
+}
+
+/// A compositor's sockets in a test's folder, serving what the real one sent
+/// in `compositor/recorded/<name>`: its whole event stream at once and, for
+/// Hyprland, its answers at the end of the recording. Every request is kept.
+struct FakeCompositor {
+    requests: Arc<Mutex<Vec<String>>>,
+}
+
+impl FakeCompositor {
+    fn recorded(compositor: &str, file: &str) -> String {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/compositor/recorded").join(compositor);
+        std::fs::read_to_string(dir.join(file)).unwrap()
+    }
+
+    /// Answers each connection's one request with `respond`, then keeps the
+    /// connection open until the client closes it, as an event stream is.
+    fn answer(&self, socket: &Path, respond: impl Fn(&str) -> String + Send + Sync + 'static) {
+        let listener = std::os::unix::net::UnixListener::bind(socket).unwrap();
+        let (requests, respond) = (Arc::clone(&self.requests), Arc::new(respond));
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let (requests, respond) = (Arc::clone(&requests), Arc::clone(&respond));
+                std::thread::spawn(move || {
+                    let mut stream = stream.unwrap();
+                    // niri's requests end with a newline; Hyprland's clients stop writing.
+                    let mut request = String::new();
+                    BufReader::new(&stream).read_line(&mut request).unwrap();
+                    let request = request.trim().to_owned();
+                    let reply = respond(&request);
+                    lock(&requests).push(request);
+                    stream.write_all(reply.as_bytes()).unwrap();
+                    let _ = std::io::copy(&mut stream, &mut std::io::sink());
+                });
+            }
+        });
+    }
+
+    /// Sends `events` to each client that connects, without waiting for a
+    /// request, and keeps the connection open.
+    fn stream(socket: &Path, events: String) {
+        let listener = std::os::unix::net::UnixListener::bind(socket).unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                stream.write_all(events.as_bytes()).unwrap();
+                std::thread::spawn(move || std::io::copy(&mut stream, &mut std::io::sink()));
+            }
+        });
+    }
+
+    fn niri(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
+        let fake = Self { requests: Arc::default() };
+        let events = Self::recorded("niri", "events.txt");
+        let socket = dir.join("niri.sock");
+        fake.answer(&socket, move |request| match request {
+            // The recording starts with niri's answer to this.
+            r#""EventStream""# => events.clone(),
+            _ => "{\"Ok\":\"Handled\"}\n".into(),
+        });
+        let backend = compositor::detect(|name| (name == "NIRI_SOCKET").then(|| socket.clone().into())).unwrap();
+        (fake, backend)
+    }
+
+    fn hyprland(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
+        const INSTANCE: &str = "recorded";
+        let fake = Self { requests: Arc::default() };
+        let instance = dir.join("hypr").join(INSTANCE);
+        std::fs::create_dir_all(&instance).unwrap();
+        let steps: Vec<Value> = serde_json::from_str(&Self::recorded("hyprland", "steps.json")).unwrap();
+        let last = format!("{:02}", steps.len() - 1);
+        let events = Self::recorded("hyprland", "events.txt");
+        Self::stream(&instance.join(".socket2.sock"), events);
+        fake.answer(&instance.join(".socket.sock"), move |request| match request.strip_prefix("j/") {
+            Some(query) => Self::recorded("hyprland", &format!("{last}/{query}.json")),
+            None => "ok".into(),
+        });
+        let runtime_dir = dir.to_owned();
+        let backend = compositor::detect(|name| match name {
+            "HYPRLAND_INSTANCE_SIGNATURE" => Some(INSTANCE.into()),
+            "XDG_RUNTIME_DIR" => Some(runtime_dir.clone().into()),
+            _ => None,
+        })
+        .unwrap();
+        (fake, backend)
+    }
+
+    /// The requests that weren't queries or the event stream.
+    fn actions(&self) -> Vec<String> {
+        let event_stream = r#""EventStream""#;
+        lock(&self.requests).iter().filter(|r| !r.starts_with("j/") && *r != event_stream).cloned().collect()
+    }
+}
+
+/// novad follows `fake` until its desktop has what the recording ends with:
+/// the second layout, a workspace named `web` and no focused window.
+fn follow_to_the_end(novad: &TestDaemon) -> (Client, Value) {
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["compositor"]})));
+    loop {
+        let desktop = client.next_event("compositor");
+        let names: Vec<&str> = desktop["outputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|output| output["workspaces"].as_array().unwrap())
+            .map(|workspace| workspace["name"].as_str().unwrap())
+            .collect();
+        if desktop["keyboard_layout"] == "German" && names.contains(&"web") && desktop.get("focused_window").is_none() {
+            return (client, desktop);
+        }
+    }
+}
+
+fn workspace_id(desktop: &Value, name: &str) -> i64 {
+    desktop["outputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|output| output["workspaces"].as_array().unwrap())
+        .find(|workspace| workspace["name"] == name)
+        .and_then(|workspace| workspace["id"].as_i64())
+        .unwrap()
+}
+
+fn focused_output(desktop: &Value) -> String {
+    let outputs = desktop["outputs"].as_array().unwrap();
+    outputs.iter().find(|output| output["focused"] == true).unwrap()["name"].as_str().unwrap().to_owned()
+}
+
+#[test]
+fn niri_reaches_subscribers_and_status_and_takes_workspace_actions() {
+    let mut fake = None;
+    let novad = TestDaemon::with_compositor("niri", |dir| {
+        let (compositor, backend) = FakeCompositor::niri(dir);
+        fake = Some(compositor);
+        backend
+    });
+    let fake = fake.unwrap();
+    let (mut client, desktop) = follow_to_the_end(&novad);
+    assert_eq!(desktop["compositor"], "niri");
+    let status = client.request(2, "status", None);
+    assert_eq!(status["result"]["desktop"], desktop);
+
+    let web = workspace_id(&desktop, "web");
+    assert_eq!(client.request(3, "focus_workspace", Some(json!({"id": web})))["result"], Value::Null);
+    let output = focused_output(&desktop);
+    assert_eq!(
+        client.request(4, "step_workspace", Some(json!({"output": output, "step": "next"})))["result"],
+        Value::Null
+    );
+    let expected = |id: i64| json!({"Action": {"FocusWorkspace": {"reference": {"Id": id}}}}).to_string();
+    assert_eq!(fake.actions(), [expected(web), expected(web)], "workspace 1 is shown, so next is web");
+
+    let unknown = client.request(5, "focus_workspace", Some(json!({"id": 999})));
+    assert!(unknown["error"].as_str().unwrap().contains("no workspace 999"), "{unknown}");
+    assert_eq!(fake.actions().len(), 2, "unknown workspaces never reach niri");
+}
+
+#[test]
+fn hyprland_reaches_subscribers_and_takes_workspace_actions() {
+    let mut fake = None;
+    let novad = TestDaemon::with_compositor("hyprland", |dir| {
+        let (compositor, backend) = FakeCompositor::hyprland(dir);
+        fake = Some(compositor);
+        backend
+    });
+    let fake = fake.unwrap();
+    let (mut client, desktop) = follow_to_the_end(&novad);
+    assert_eq!(desktop["compositor"], "Hyprland");
+
+    let web = workspace_id(&desktop, "web");
+    assert_eq!(client.request(2, "focus_workspace", Some(json!({"id": web})))["result"], Value::Null);
+    assert_eq!(fake.actions(), [format!("dispatch workspace {web}")]);
+}
+
+#[test]
+fn compositor_actions_without_a_compositor_say_so() {
+    let novad = TestDaemon::start("no-compositor", None);
+    let mut client = novad.connect();
+    let reply = client.request(1, "focus_workspace", Some(json!({"id": 1})));
+    assert!(reply["error"].as_str().unwrap().contains("doesn't know this compositor"), "{reply}");
+    assert_eq!(client.request(2, "status", None)["result"].get("desktop"), None);
 }

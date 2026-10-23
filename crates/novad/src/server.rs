@@ -140,6 +140,12 @@ impl<'a> Connection<'a> {
             Command::ReportClaudeUsage { limits } => {
                 return self.with_ai_usage(|usage| usage.report_claude(limits.clone()));
             }
+            Command::FocusWorkspace { id } => {
+                return self.with_compositor(|compositor| compositor.focus_workspace(*id));
+            }
+            Command::StepWorkspace { output, step } => {
+                return self.with_compositor(|compositor| compositor.step_workspace(output, *step));
+            }
         };
         match value {
             Ok(value) => Outcome::Result(value),
@@ -154,6 +160,16 @@ impl<'a> Connection<'a> {
                 Err(e) => Outcome::Error(e),
             },
             None => Outcome::Error(format!("the {} feature is off", crate::ai_usage::FEATURE_ID)),
+        }
+    }
+
+    fn with_compositor(&self, act: impl FnOnce(&crate::compositor::Compositor) -> Result<(), String>) -> Outcome {
+        match &self.daemon.compositor {
+            Some(compositor) => match act(compositor) {
+                Ok(()) => Outcome::Result(serde_json::Value::Null),
+                Err(e) => Outcome::Error(e),
+            },
+            None => Outcome::Error("novad doesn't know this compositor".into()),
         }
     }
 
@@ -179,6 +195,12 @@ impl<'a> Connection<'a> {
                                 self.send(usage.event());
                             }
                         }
+                        // Sent once the compositor has said what it shows.
+                        Topic::Compositor => {
+                            if let Some(compositor) = &self.daemon.compositor {
+                                compositor.subscribe(self.id);
+                            }
+                        }
                     }
                 }
             }
@@ -191,7 +213,9 @@ impl<'a> Connection<'a> {
             | Command::Status
             | Command::ShowAiUsage { .. }
             | Command::RefreshAiUsage
-            | Command::ReportClaudeUsage { .. } => {}
+            | Command::ReportClaudeUsage { .. }
+            | Command::FocusWorkspace { .. }
+            | Command::StepWorkspace { .. } => {}
         }
     }
 
