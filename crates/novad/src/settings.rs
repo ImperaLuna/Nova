@@ -145,12 +145,11 @@ fn logged<T>(read: Result<T, String>, fallback: &str, logger: &Logger) -> Option
     read.map_err(|problem| logger.error(LOG_SOURCE, &format!("{fallback}: {problem}"))).ok()
 }
 
-/// Calls `reload` on a thread of its own once `files` stop changing. Their
-/// folders are watched rather than the files, so a file that's replaced
-/// (saved by rename, a new symlink) is still seen, and a folder that doesn't
-/// exist yet is waited for in the folder above it.
+/// Calls `reload` on a thread of its own once `files` stop changing. The
+/// folders around them are watched rather than the files, so a file that's
+/// replaced (saved by rename, a new symlink) is still seen, and so is a
+/// folder that appears later or is replaced.
 pub fn watch(files: Vec<PathBuf>, logger: Arc<Logger>, reload: impl Fn() + Send + 'static) {
-    let dirs: BTreeSet<PathBuf> = files.iter().filter_map(|file| file.parent()).map(Path::to_owned).collect();
     let mut watcher = match Inotify::new(inotify::REPLACEMENTS) {
         Ok(watcher) => watcher,
         Err(e) => {
@@ -158,9 +157,7 @@ pub fn watch(files: Vec<PathBuf>, logger: Arc<Logger>, reload: impl Fn() + Send 
             return;
         }
     };
-    for dir in &dirs {
-        watch_dir(&mut watcher, dir, &logger);
-    }
+    let mut entries = watch_entries(&mut watcher, &files, &logger);
 
     let (changed, changes) = mpsc::channel();
     let watch_logger = Arc::clone(&logger);
@@ -174,16 +171,13 @@ pub fn watch(files: Vec<PathBuf>, logger: Arc<Logger>, reload: impl Fn() + Send 
                     return;
                 }
             };
-            for change in found {
-                if change.is_dir && dirs.contains(&change.path) {
-                    // The folder appeared, maybe with the files already in it.
-                    watch_dir(&mut watcher, &change.path, &watch_logger);
-                } else if !files.contains(&change.path) {
-                    continue;
-                }
-                if changed.send(()).is_err() {
-                    return;
-                }
+            if !found.iter().any(|change| entries.contains(&change.path)) {
+                continue;
+            }
+            // A folder or link may have changed, so look again at what to watch.
+            entries = watch_entries(&mut watcher, &files, &watch_logger);
+            if changed.send(()).is_err() {
+                return;
             }
         }
     });
@@ -195,19 +189,27 @@ pub fn watch(files: Vec<PathBuf>, logger: Arc<Logger>, reload: impl Fn() + Send 
     });
 }
 
-/// Watches `dir`, or the folder above it until `dir` exists.
-fn watch_dir(watcher: &mut Inotify, dir: &Path, logger: &Logger) {
-    let mut watched = Ok(());
-    if !dir.is_dir()
-        && let Some(parent) = dir.parent()
-    {
-        watched = watcher.watch(parent);
+/// Watches every folder holding an entry that decides what `files` read,
+/// and returns those entries: each file and the file it links to (a dotfiles
+/// checkout, say), and their folders, which may appear later, be replaced or
+/// be links themselves. Watching a folder that's already watched is harmless.
+fn watch_entries(watcher: &mut Inotify, files: &[PathBuf], logger: &Logger) -> BTreeSet<PathBuf> {
+    let mut entries = BTreeSet::new();
+    for file in files {
+        for entry in [Some(file.clone()), std::fs::canonicalize(file).ok()].into_iter().flatten() {
+            entries.extend(entry.parent().map(Path::to_owned));
+            entries.insert(entry);
+        }
     }
-    // Checked again: it may have appeared meanwhile.
-    if dir.is_dir() {
-        watched = watcher.watch(dir);
+    let folders: BTreeSet<&Path> = entries.iter().filter_map(|entry| entry.parent()).collect();
+    for folder in folders {
+        match watcher.watch(folder) {
+            // Not there yet: the folder above it is watched for it.
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                logger.warn(LOG_SOURCE, &format!("can't watch {} for settings changes: {e}", folder.display()));
+            }
+            _ => {}
+        }
     }
-    if let Err(e) = watched {
-        logger.warn(LOG_SOURCE, &format!("can't watch {} for settings changes: {e}", dir.display()));
-    }
+    entries
 }

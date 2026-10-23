@@ -205,6 +205,10 @@ impl Usage {
         let mut backoff = CLAUDE_POLL;
         let mut last_problem: Option<String> = None;
         loop {
+            // Before reading the sign-in: a stopped poller asks nothing more.
+            if self.stopped() {
+                return;
+            }
             let asked = Instant::now();
             let result = match &credentials {
                 Some(path) => claude_api::read_token(path, Timestamp::now())

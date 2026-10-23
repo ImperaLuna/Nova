@@ -766,3 +766,34 @@ fn a_config_folder_made_after_start_is_watched() {
     std::fs::write(novad.config_file(), "[theme]\nmode = \"light\"\n").unwrap();
     assert_eq!(client.next_event("theme")["mode"], "light");
 }
+
+#[test]
+fn edits_through_a_symlinked_config_are_seen() {
+    let novad = TestDaemon::open("reload-symlink", None, |dir| {
+        std::fs::create_dir(dir.join("dotfiles")).unwrap();
+        std::fs::write(dir.join("dotfiles/config.toml"), "[theme]\nmode = \"dark\"\n").unwrap();
+        std::os::unix::fs::symlink(dir.join("dotfiles/config.toml"), dir.join("config/config.toml")).unwrap();
+    });
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["theme"]})));
+    assert_eq!(client.next_event("theme")["mode"], "dark");
+    std::fs::write(novad.dir.join("dotfiles/config.toml"), "[theme]\nmode = \"light\"\n").unwrap();
+    assert_eq!(client.next_event("theme")["mode"], "light");
+}
+
+#[test]
+fn a_replaced_config_folder_is_followed() {
+    let novad = TestDaemon::start("reload-replaced-folder", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["theme"]})));
+    assert_eq!(client.next_event("theme")["mode"], "dark");
+    let folder = novad.config_file().parent().unwrap().to_owned();
+    std::fs::rename(&folder, novad.dir.join("config.old")).unwrap();
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(novad.features_file(), AI_USAGE_OFF).unwrap();
+    std::fs::write(novad.config_file(), "[theme]\nmode = \"light\"\n").unwrap();
+    assert_eq!(client.next_event("theme")["mode"], "light");
+    // Edits in the new folder keep applying.
+    std::fs::write(novad.config_file(), "[theme]\nmode = \"dark\"\n").unwrap();
+    assert_eq!(client.next_event("theme")["mode"], "dark");
+}
