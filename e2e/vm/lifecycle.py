@@ -1,7 +1,8 @@
 # Nova's lifecycle under systemd and a real compositor, driven through the
 # `nova` command the way a user would, and a screenshot of each UI state for
 # compare.sh. default.nix defines USER, UID, COMPOSITOR, QUIT_COMPOSITOR,
-# FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW and CLOSE_WINDOW above this script.
+# FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW, CLOSE_WINDOW, LIST_WINDOWS and
+# COMPOSITOR_LOG above this script.
 import datetime as dt
 import json
 import shlex
@@ -40,6 +41,9 @@ IDLE_SECS = 10
 LOG_HISTORY = 1_000_000
 # A frame the UI hands the compositor, in its WAYLAND_DEBUG lines.
 SURFACE_COMMIT = r"wl_surface#[0-9]*\.commit("
+# The window the tests open, and how it shows in novad's focused window.
+FOOT = "foot"
+NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
 
 
 def as_user(command: str) -> str:
@@ -162,6 +166,47 @@ def assert_idle(what: str) -> None:
         raise AssertionError(f"the UI kept drawing {what}: commits per {IDLE_SECS} s: {counts}")
 
 
+def open_foot(unit: str) -> None:
+    """Opens a foot window and waits until the compositor lists it, then
+    until novad reports it as the focused window. foot runs as a transient
+    user unit, so it doesn't hang off the `su` that starts it and its output
+    lands in the journal; on a timeout, what each side saw is printed. Not
+    with the user manager's WAYLAND_DEBUG, which is there for the UI."""
+    machine.succeed(
+        as_user(
+            f"systemd-run --user --collect --unit={unit} "
+            f"--setenv=WAYLAND_DISPLAY=$WAYLAND_DISPLAY --setenv=WAYLAND_DEBUG= {FOOT}"
+        )
+    )
+    try:
+        machine.wait_until_succeeds(as_user(f"{LIST_WINDOWS} | grep -qF '\"{FOOT}\"'"), timeout=WAIT)
+    except Exception:
+        print(f"{COMPOSITOR} never listed the {FOOT} window")
+        print_window_state(unit)
+        raise
+    try:
+        machine.wait_until_succeeds(as_user(NOVA_SEES_FOOT), timeout=WAIT)
+    except Exception:
+        print(f"{COMPOSITOR} lists the {FOOT} window, but novad doesn't report it focused")
+        print_window_state(unit)
+        raise
+
+
+def print_window_state(unit: str) -> None:
+    """What foot, the compositor and novad say, for when a window wait fails."""
+    # The journal as root: the user's own may not hold their units' lines.
+    print(machine.execute(f"journalctl --user-unit={unit} --no-pager")[1])
+    for command in (
+        f"systemctl --user status {unit} --no-pager",
+        LIST_WINDOWS,
+        COMPOSITOR_LOG,
+        "nova status --json",
+        "nova logs --no-follow -n 100",
+    ):
+        print(f"$ {command}")
+        print(machine.execute(as_user(command))[1])
+
+
 def wait_gone(pid: int) -> None:
     machine.wait_until_fails(f"test -e /proc/{pid}", timeout=WAIT)
 
@@ -218,12 +263,11 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window"):
     # Covered, as under a video or a game. On the desktop, niri then sent the
     # bar a frame callback a second and Qt redrew it each time (IMP-38); niri
     # in this VM sends none, so the headless e2e guards that fix instead.
-    machine.succeed(as_user("setsid foot >/dev/null 2>&1 &"))
-    machine.wait_until_succeeds(as_user("nova status --json | grep -qF '\"app_id\":\"foot\"'"), timeout=WAIT)
+    open_foot("foot-fullscreen")
     machine.succeed(as_user(FULLSCREEN_WINDOW))
     assert_idle("under a fullscreen window")
     machine.succeed(as_user(CLOSE_WINDOW))
-    machine.wait_until_fails(as_user("nova status --json | grep -qF '\"app_id\":\"foot\"'"), timeout=WAIT)
+    machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
     machine.systemctl("unset-environment WAYLAND_DEBUG", user=USER)
     machine.succeed(as_user("nova restart"))
     # The run the rest of the test knows.
@@ -244,8 +288,7 @@ with subtest("a workspace switch reaches the UI"):
 
     ui_focused_workspace("1")
     # niri only has a next workspace once this one holds a window.
-    machine.succeed(as_user("setsid foot >/dev/null 2>&1 &"))
-    machine.wait_until_succeeds(as_user("nova status --json | grep -qF '\"app_id\":\"foot\"'"), timeout=WAIT)
+    open_foot("foot-workspace")
     machine.succeed(as_user(FOCUS_NEXT_WORKSPACE))
     ui_focused_workspace("2")
 
