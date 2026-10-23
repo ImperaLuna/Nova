@@ -10,7 +10,7 @@ use crate::logger::Logger;
 use nova_protocol::{Crash, UiState, UiStatus};
 use std::io::{BufRead, BufReader, Read};
 use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -261,23 +261,34 @@ fn describe_exit(status: ExitStatus) -> String {
     }
 }
 
-/// `Quickshell 0.3.2 (revision …)` → `0.3.2`.
 fn quickshell_version(settings: &UiSettings, logger: &Logger) -> Option<String> {
-    let mut command = Command::new(&settings.quickshell);
-    command.arg("--version").env("PATH", &settings.path_var);
-    let version = stdout_within(command, VERSION_TIMEOUT)
-        .ok()
-        .and_then(|stdout| String::from_utf8_lossy(&stdout).split_whitespace().nth(1).map(str::to_owned));
-    match &version {
-        Some(version) => {
+    match read_quickshell_version(&settings.quickshell, &settings.path_var) {
+        Ok(version) => {
             logger.info(LOG_SOURCE, &format!("Quickshell {version}"));
-            if let Some(problem) = nova_quickshell::Range::supported().problem(version) {
+            if let Some(problem) = nova_quickshell::Range::supported().problem(&version) {
                 logger.warn(LOG_SOURCE, &problem);
             }
+            Some(version)
         }
-        None => logger.warn(LOG_SOURCE, &format!("{} --version gave no version", settings.quickshell.display())),
+        Err(problem) => {
+            logger.warn(LOG_SOURCE, &problem);
+            None
+        }
     }
-    version
+}
+
+/// `Quickshell 0.3.2 (revision …)` → `0.3.2`, from `quickshell --version`
+/// run with `path_var` as its `PATH`.
+pub fn read_quickshell_version(quickshell: &Path, path_var: &str) -> Result<String, String> {
+    let mut command = Command::new(quickshell);
+    command.arg("--version").env("PATH", path_var);
+    let stdout = stdout_within(command, VERSION_TIMEOUT)
+        .map_err(|e| format!("couldn't run {} --version: {e}", quickshell.display()))?;
+    String::from_utf8_lossy(&stdout)
+        .split_whitespace()
+        .nth(1)
+        .map(str::to_owned)
+        .ok_or_else(|| format!("{} --version gave no version", quickshell.display()))
 }
 
 /// What `command` prints when it succeeds within `timeout`. One that takes

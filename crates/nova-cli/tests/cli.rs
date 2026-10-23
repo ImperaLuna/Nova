@@ -128,6 +128,31 @@ fn logs_follow_novad_live() {
     assert!(found, "the backlog should include novad's start");
 }
 
+/// With nothing on PATH, Quickshell and the binaries of an enabled feature
+/// are missing: those fail, while the running novad passes.
+#[test]
+fn doctor_fails_on_what_is_missing() {
+    let novad = Novad::start("doctor");
+    let config = novad.dir.join("config");
+    std::fs::create_dir_all(config.join("nova")).unwrap();
+    std::fs::write(config.join("nova/features.toml"), "enabled = [\"recording\"]\n").unwrap();
+    let output = novad
+        .nova(&["doctor"])
+        // A checkout's layout, where the themes are found.
+        .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
+        .env("PATH", "")
+        .env("XDG_CONFIG_HOME", &config)
+        .env("NOVA_FEATURES_DIR", Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features"))
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(!output.status.success(), "{text}");
+    assert!(text.contains(&format!("ok    novad       running {}", env!("CARGO_PKG_VERSION"))), "{text}");
+    assert!(text.contains("FAIL  quickshell  couldn't run quickshell --version"), "{text}");
+    assert!(text.contains("FAIL  features    recording needs"), "{text}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("nova: 2 problems"), "{output:?}");
+}
+
 #[test]
 fn planned_commands_say_so_and_fail() {
     let novad = Novad::start("planned");
