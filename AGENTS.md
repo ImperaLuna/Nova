@@ -135,8 +135,6 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 
 ## Security
 
-Security and performance are ongoing work, reviewed at every milestone.
-
 - Anything on the socket is untrusted: any local process can connect.
   Validate every request, reject unknown fields, and cap message sizes.
 - Never build shell strings. Launch apps and run package managers with argv
@@ -199,58 +197,5 @@ Run inside `nix develop`:
 - `just review [base]`: a Codex review of the branch against `base` (default
   `main`). Needs the Codex CLI and `codex login` outside the dev shell.
 
-Test every change on the maintainer's desktop (NixOS + niri) before calling it
-done, whenever a session there is connected (a Remote Control session or a
-connected folder): check the branch out in your own worktree, run `just
-check`, then try the change itself (`just run`, the `nova` command it
-touches, btop for process names). Say in the PR what was tried there. Don't
-commit or push from the desktop; changes go through the branch. With no
-connection, say the change is untested on real hardware.
-
-Several sessions can test on the desktop at once, so they mustn't race:
-
-- Never switch branches in `~/Projects/Nova`; the maintainer and other
-  sessions use it. Test in a worktree of your own (its own `target/` and
-  `e2e/out/`): `git -C ~/Projects/Nova fetch origin <branch>`, then
-  `git -C ~/Projects/Nova worktree add ~/Projects/Nova-worktrees/<branch>
-  origin/<branch>`. Remove it with `git worktree remove` when the PR is done.
-- Threads can end before their PR does, so clean up before you add yours:
-  remove every worktree in `~/Projects/Nova-worktrees` whose PR is merged or
-  closed, then `git -C ~/Projects/Nova worktree prune`. Each one holds about
-  1 GB of build output, and its `result` links keep Nix builds from being
-  garbage-collected.
-- `just check`, `just e2e` and `nix flake check` are safe in parallel:
-  `just e2e` has its own runtime dir, socket and headless sway.
-- `just run` swaps out the real bar, so only one runs at a time. A second one
-  exits with "another `just run` is using the bar": wait and retry, don't kill
-  the other one. Don't touch the live bar, `nova.service` or
-  `$XDG_RUNTIME_DIR/nova` any other way.
-- Leave uncommitted work in any checkout you didn't create alone (stash it
-  with a named message if you must, never discard it).
-- CI and the other sessions share the desktop's CPU, so builds can be slow.
-  Rerun a timeout before calling it a failure.
-- CI jobs can't open `/dev/kvm`; VM tests get KVM only as Nix builds through
-  the daemon (flake checks), not as a driver started in a job step.
-
-Every change goes through a pull request; `main` is protected. CI runs on a
-self-hosted runner on the maintainer's desktop, so PR checks wait while it is
-off (GitHub drops jobs queued over 24 hours; re-run them).
-
-Tickets live in Linear (team IMP). PR titles are `[<ticket>] <type>:
-<description>`, where the type is the ticket's Linear label (Feature, Bug,
-Improvement), like `[IMP-8] Feature: nova CLI`. The body's first line is
-`Part of IMP-<n>` while the ticket has more PRs to come, or `Closes IMP-<n>`
-on the PR that finishes it, so Linear moves the ticket to Done only then.
-
-Open PRs as normal (non-draft) PRs. Codex doesn't review on its own (marking
-a draft ready doesn't start one either), so when the work is done, comment
-`@codex review` on the PR to ask for a review, and again after fixes. Ask
-once per round: pushes alone never trigger a review.
-
-Review findings (Codex, or any other reviewer bot) are claims to check, not
-orders. Before fixing one, reproduce it or trace a real path from a real
-caller or input to the failure, then weigh the code the fix adds against
-what it prevents. Fix it when the path is real and the fix is small and
-proportionate. Otherwise reply on the thread with what you traced and why
-it isn't worth the code, and leave the call to the maintainer. Don't add
-layers, options or special cases to satisfy a reviewer.
+Every change goes through a pull request; `main` is protected. Sessions on the
+maintainer's desktop are for testing only: don't commit or push from there.
