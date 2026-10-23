@@ -62,7 +62,7 @@ impl TestDaemon {
     fn connect(&self) -> Client {
         let stream = UnixStream::connect(&self.socket).unwrap();
         let writer = stream.try_clone().unwrap();
-        let mut client = Client { writer, lines: BufReader::new(stream).lines() };
+        let mut client = Client { writer, lines: BufReader::new(stream).lines(), early: Default::default() };
         assert_eq!(client.next()["event"], "hello");
         client
     }
@@ -77,6 +77,8 @@ impl Drop for TestDaemon {
 struct Client {
     writer: UnixStream,
     lines: Lines<BufReader<UnixStream>>,
+    /// Events that arrived while `request` waited for its reply.
+    early: std::collections::VecDeque<Value>,
 }
 
 impl Client {
@@ -89,6 +91,9 @@ impl Client {
     }
 
     fn next(&mut self) -> Value {
+        if let Some(event) = self.early.pop_front() {
+            return event;
+        }
         serde_json::from_str(&self.lines.next().unwrap().unwrap()).unwrap()
     }
 
@@ -98,9 +103,16 @@ impl Client {
             message["args"] = args;
         }
         self.send(&message);
-        let reply = self.next();
-        assert_eq!(reply["id"], id, "expected the reply first, got {reply}");
-        reply
+        // Events published meanwhile (ai_usage's worker) may come first;
+        // they're kept for `next`.
+        loop {
+            let message: Value = serde_json::from_str(&self.lines.next().unwrap().unwrap()).unwrap();
+            if message.get("event").is_none() {
+                assert_eq!(message["id"], id, "expected the reply to {id}, got {message}");
+                return message;
+            }
+            self.early.push_back(message);
+        }
     }
 }
 
@@ -340,8 +352,13 @@ impl Client {
     fn next_usage(&mut self) -> Value {
         self.writer.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
         loop {
-            let line = self.lines.next().expect("connection closed").expect("no ai_usage event in time");
-            let message: Value = serde_json::from_str(&line).unwrap();
+            let message = match self.early.pop_front() {
+                Some(event) => event,
+                None => {
+                    let line = self.lines.next().expect("connection closed").expect("no ai_usage event in time");
+                    serde_json::from_str(&line).unwrap()
+                }
+            };
             if message["event"] == "ai_usage" {
                 return message["data"].clone();
             }
@@ -375,7 +392,11 @@ fn codex_limits_come_from_its_newest_log_and_follow_new_lines() {
     let mut log = PathBuf::new();
     let novad = TestDaemon::with_ai_usage("ai-usage-codex", |root| {
         let day = codex_day(root);
-        std::fs::write(day.join("rollout-old.jsonl"), codex_line(1, 2) + "\n").unwrap();
+        let old = day.join("rollout-old.jsonl");
+        std::fs::write(&old, codex_line(1, 2) + "\n").unwrap();
+        // Written microseconds before the new one, it would share its time.
+        let past = std::time::SystemTime::now() - Duration::from_secs(60);
+        std::fs::File::options().write(true).open(&old).unwrap().set_modified(past).unwrap();
         log = day.join("rollout-new.jsonl");
         std::fs::write(
             &log,

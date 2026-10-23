@@ -45,7 +45,9 @@ pub fn sessions_dir(home: &Path) -> PathBuf {
 pub fn newest(sessions: &Path) -> Option<CodexUsage> {
     let mut logs = Vec::new();
     collect_logs(sessions, &mut logs);
-    logs.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+    // Newest first. File times are coarse, so ties are common; Codex's file
+    // names start with the session's time, so the later name is newer.
+    logs.sort_by(|a, b| b.cmp(a));
     logs.into_iter().take(LOGS_TRIED).find_map(|(_, path)| read_log(&path))
 }
 
@@ -170,6 +172,27 @@ mod tests {
         assert_eq!(usage.plan, None);
         assert_eq!(usage.limits[0].resets_at.as_deref(), Some("2026-10-23T06:10:00Z"));
         assert_eq!(usage.limits[1].resets_at.as_deref(), Some("2026-10-23T07:00:00Z"));
+    }
+
+    /// File times advance only every few milliseconds, so logs written close
+    /// together often share one; then the name, which starts with Codex's
+    /// timestamp, decides. Several pairs, since the directory order varies.
+    #[test]
+    fn logs_with_the_same_time_go_by_name() {
+        let root = std::env::temp_dir().join(format!("novad-codex-same-time-{}", std::process::id()));
+        let time = SystemTime::now() - std::time::Duration::from_secs(60);
+        for pair in 0..10 {
+            let dir = root.join(pair.to_string());
+            std::fs::create_dir_all(&dir).unwrap();
+            for (hour, session) in [("06", 1), ("07", 12)] {
+                let log = dir.join(format!("rollout-2026-10-23T{hour}-00-00-{pair}.jsonl"));
+                std::fs::write(&log, PLUS.replace("\"used_percent\":12.0", &format!("\"used_percent\":{session}.0")))
+                    .unwrap();
+                std::fs::File::options().write(true).open(&log).unwrap().set_modified(time).unwrap();
+            }
+            assert_eq!(newest(&dir).unwrap().limits[0].percent, 12, "pair {pair}");
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
