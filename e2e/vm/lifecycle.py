@@ -36,6 +36,8 @@ STAYS_OFF_SECS = 3
 # How long an idle UI must commit nothing to its surfaces. Long enough for
 # niri's once-a-second callbacks to a covered surface (IMP-38).
 IDLE_SECS = 10
+# Lines of `nova logs` history that reach back to the start of a run.
+LOG_HISTORY = 1_000_000
 # A frame the UI hands the compositor, in its WAYLAND_DEBUG lines.
 SURFACE_COMMIT = r"wl_surface#[0-9]*\.commit("
 
@@ -116,7 +118,9 @@ def click(x: int, y: int) -> None:
 
 
 def ui_log_count(line: str) -> int:
-    out = machine.succeed(as_user(f"nova logs --no-follow --ui | grep -cF {shlex.quote(line)} || true"))
+    # The whole run: with WAYLAND_DEBUG on, a click logs far more than the
+    # last 50 lines `nova logs` shows by default.
+    out = machine.succeed(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -cF {shlex.quote(line)} || true"))
     return int(out.strip() or 0)
 
 
@@ -201,10 +205,10 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window"):
     machine.systemctl("set-environment WAYLAND_DEBUG=client", user=USER)
     machine.succeed(as_user("nova restart"))
     watched = wait_running(not_daemon=first["pid"])
-    machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n 1000 | grep -qF {shlex.quote(AI_USAGE_SHOWN)}"), timeout=WAIT)
+    machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -qF {shlex.quote(AI_USAGE_SHOWN)}"), timeout=WAIT)
     assert_idle("with the bar shown")
     # The count sees frames when there are some: the panel opening draws.
-    commits = f"nova logs --no-follow --ui -n 100000 | grep -c {shlex.quote(SURFACE_COMMIT)} || true"
+    commits = f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -c {shlex.quote(SURFACE_COMMIT)} || true"
     before = int(machine.succeed(as_user(commits)).strip() or 0)
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
