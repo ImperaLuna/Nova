@@ -568,8 +568,6 @@ mod tests {
         assert!(unit.contains(&format!("ExecStart=@{} Nova daemon", paths.nova.display())), "{unit}");
         let link = paths.bin_dir.join("NovaUI");
         assert_eq!(std::fs::read_link(&link).unwrap(), home.0.join("usr/bin/quickshell"));
-        // novad then runs the link as its UI.
-        assert_eq!(checks::default_quickshell(&paths.bin_dir.display().to_string()), link);
     }
 
     #[test]

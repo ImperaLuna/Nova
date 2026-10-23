@@ -367,6 +367,23 @@ mod tests {
         assert_eq!(child.wait().unwrap().code(), Some(3));
     }
 
+    /// `nova setup`'s `NovaUI` link is found, after a `nova-ui` launcher.
+    #[test]
+    fn a_novaui_link_on_path_is_the_ui() {
+        if PACKAGED_UI_LAUNCHER.is_some() {
+            return; // The packaged launcher always wins.
+        }
+        let dir = std::env::temp_dir().join(format!("novad-ui-link-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path_var = dir.display().to_string();
+        assert_eq!(default_quickshell(&path_var), PathBuf::from(QUICKSHELL));
+        std::fs::write(dir.join(UI_PROCESS_NAME), "").unwrap();
+        assert_eq!(default_quickshell(&path_var), dir.join(UI_PROCESS_NAME));
+        std::fs::write(dir.join(UI_LAUNCHER), "").unwrap();
+        assert_eq!(default_quickshell(&path_var), dir.join(UI_LAUNCHER));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn a_quick_command_gives_its_output() {
         let mut command = Command::new("echo");
