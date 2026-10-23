@@ -7,7 +7,7 @@ default:
     @just --list
 
 # Everything CI runs, except e2e
-check: fmt-check lint lint-nix test lint-qml test-qml
+check: fmt-check lint lint-nix deny test lint-qml test-qml
 
 # Rust unit tests
 test:
@@ -16,6 +16,10 @@ test:
 # Clippy with warnings as errors
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
+
+# Advisories, licenses, duplicate crates and sources (deny.toml), latest advisories
+deny:
+    cargo deny check
 
 # Format Rust, QML and Nix
 fmt:

@@ -1,0 +1,24 @@
+# cargo-deny: `nix flake check` runs it offline against the advisory database
+# pinned in flake.lock; `just deny` runs it against the latest one.
+
+[graph]
+# Nova only runs on Linux, so Windows-only crates don't count.
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+
+[advisories]
+# Vulnerabilities and unmaintained crates fail. Yanked crates need the live
+# crates.io index, which the offline check can't reach.
+yanked = "allow"
+
+[licenses]
+# Permissive licenses that sit fine in an MIT project.
+allow = ["MIT", "Apache-2.0", "ISC", "BSD-3-Clause", "Unicode-3.0", "CDLA-Permissive-2.0"]
+
+[bans]
+# Two versions of one crate fail. When a dependency forces one, list it under
+# `skip` with the reason.
+multiple-versions = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
