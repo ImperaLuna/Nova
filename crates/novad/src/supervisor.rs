@@ -35,7 +35,6 @@ const QUICKSHELL: &str = "quickshell";
 /// and then (niri: once a second, e.g. under a fullscreen window), so a
 /// covered bar redrew itself every time one came. 0 turns the check off;
 /// a covered window just waits for its next callback.
-#[allow(dead_code)]
 const FRAME_CALLBACK_TIMEOUT: (&str, &str) = ("QT_WAYLAND_FRAME_CALLBACK_TIMEOUT", "0");
 const LOG_SOURCE: &str = "supervisor";
 const FIRST_RETRY: Duration = Duration::from_secs(1);
@@ -210,6 +209,7 @@ fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
         .arg(&settings.ui_dir)
         .env("NOVA_SOCKET", &settings.socket)
         .env("PATH", &settings.path_var)
+        .env(FRAME_CALLBACK_TIMEOUT.0, FRAME_CALLBACK_TIMEOUT.1)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
