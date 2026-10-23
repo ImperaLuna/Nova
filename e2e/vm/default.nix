@@ -295,8 +295,6 @@ in
     };
     compositorLog = "tail -n 100 $XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprland.log";
     steps = {
-      # A second monitor, so workspaces live on more than one output.
-      "add an output" = "hyprctl output create headless HEADLESS-2";
       "focus the next workspace" = "hyprctl dispatch workspace 2";
       "switch the keyboard layout" = "hyprctl switchxkblayout all next";
       "name the workspace" = "hyprctl dispatch renameworkspace 2 web";

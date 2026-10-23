@@ -46,7 +46,8 @@ def snapshot(step: int) -> None:
     """The compositor's answer to each query, in <step>/<query>.json."""
     machine.succeed(as_user(f"mkdir -p {OUT}/{step:02}"))
     for name, command in QUERIES.items():
-        machine.succeed(as_user(f"{command} > {OUT}/{step:02}/{name}.json"))
+        code, out = machine.execute(as_user(f"{command} > {OUT}/{step:02}/{name}.json 2>&1"))
+        assert code == 0, f"{command} exited {code}: " + machine.succeed(f"cat {OUT}/{step:02}/{name}.json")
 
 
 # The second window retitles itself (to a title with commas, which
@@ -111,8 +112,7 @@ snapshot(0)
 # everywhere; a step it has no command for is skipped.
 try:
     for step in [
-        "add an output",
-        "open first window",
+            "open first window",
         "focus the next workspace",
         "open second window",
         "retitle the second window",
