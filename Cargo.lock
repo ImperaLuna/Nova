@@ -330,6 +330,7 @@ dependencies = [
  "nova-features",
  "nova-paths",
  "nova-protocol",
+ "nova-quickshell",
  "novad",
  "serde_json",
 ]
@@ -357,6 +358,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-quickshell"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "novad"
 version = "0.1.0"
 dependencies = [
@@ -366,6 +375,7 @@ dependencies = [
  "nova-features",
  "nova-paths",
  "nova-protocol",
+ "nova-quickshell",
  "serde",
  "serde_json",
  "toml",

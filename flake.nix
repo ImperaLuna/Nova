@@ -30,6 +30,10 @@
           ];
         };
 
+      # The Quickshell releases Nova is tested with. flake.lock pins one exact
+      # nixpkgs Quickshell; the quickshell-version check keeps it in this range.
+      quickshellRange = builtins.fromTOML (builtins.readFile ./packaging/quickshell.toml);
+
       qmlImports = pkgs: [
         "${pkgs.quickshell}/lib/qt-6/qml"
         "${pkgs.qt6.qtdeclarative}/lib/qt-6/qml"
@@ -128,6 +132,25 @@
                 deadnix --fail .
                 touch $out
               '';
+
+          quickshell-version =
+            let
+              inherit (pkgs.quickshell) version;
+              inherit (quickshellRange) min max;
+              # An `x` in max matches any number there (see the range file).
+              comparableMax = builtins.replaceStrings [ "x" ] [ "999999" ] max;
+              inRange = pkgs.lib.versionAtLeast version min && pkgs.lib.versionAtLeast comparableMax version;
+            in
+            pkgs.runCommand "nova-quickshell-version" { } (
+              if inRange then
+                "touch $out"
+              else
+                ''
+                  echo "nixpkgs' Quickshell ${version} is outside the range Nova is tested with (${min} to ${max})." >&2
+                  echo "Test Nova on it, then update packaging/quickshell.toml." >&2
+                  exit 1
+                ''
+            );
 
           qml-tests =
             pkgs.runCommand "nova-qml-tests"

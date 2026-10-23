@@ -56,9 +56,9 @@ build:
 run: build
     scripts/run.sh target/debug/nova
 
-# Clone Quickshell's source (v0.3.2) into docs/ for reading its API
+# Clone the source of the dev shell's Quickshell (same version) into docs/ for reading its API
 docs:
-    test -d docs/quickshell || git clone --depth 1 --branch v0.3.2 https://github.com/quickshell-mirror/quickshell docs/quickshell
+    test -d docs/quickshell || git clone --depth 1 --branch "v$(quickshell --version | cut -d' ' -f2)" https://github.com/quickshell-mirror/quickshell docs/quickshell
 
 # Needs the Codex CLI and `codex login`; not part of the dev shell or CI.
 # Codex reviews this branch against `base` (sends the diff to OpenAI)

@@ -1,0 +1,9 @@
+# The Quickshell releases Nova is tested with: the one source of truth for the
+# flake (a check fails when nixpkgs' Quickshell leaves the range), novad (it
+# warns at start) and `nova status`; later `nova setup` and `nova doctor`.
+#
+# `min` is the oldest tested release, `max` the newest. An `x` in `max`
+# matches any number there, so "0.3.x" takes every 0.3 patch release.
+# Raise `max` once Nova has been tested on a newer release.
+min = "0.3.2"
+max = "0.3.x"
