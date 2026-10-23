@@ -46,8 +46,8 @@ def snapshot(step: int) -> None:
     """The compositor's answer to each query, in <step>/<query>.json."""
     machine.succeed(as_user(f"mkdir -p {OUT}/{step:02}"))
     for name, command in QUERIES.items():
-        code, out = machine.execute(as_user(f"{command} > {OUT}/{step:02}/{name}.json 2>&1"))
-        assert code == 0, f"{command} exited {code}: " + machine.succeed(f"cat {OUT}/{step:02}/{name}.json")
+        # Retried: under emulation a busy compositor can miss its IPC timeout.
+        machine.wait_until_succeeds(as_user(f"{command} > {OUT}/{step:02}/{name}.json"), timeout=WAIT)
 
 
 # The second window retitles itself (to a title with commas, which
