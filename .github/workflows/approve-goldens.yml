@@ -1,0 +1,91 @@
+name: Approve goldens
+
+# Runs the VM tests on the self-hosted runner, where they get KVM, and commits
+# their screenshots to `branch` as the new e2e/golden/<compositor> images. For
+# an intended visual change, so sessions without KVM don't have to run the VM
+# tests themselves. Start it from main (the workflow then comes from main, not
+# from the branch): Actions > Approve goldens, or the API with ref main.
+#
+# Pushes made with GITHUB_TOKEN don't start other workflows, so the job then
+# starts CI on the branch itself.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to commit the goldens to (a PR branch, never main)
+        required: true
+        type: string
+      compositors:
+        description: Which VM tests to approve, space-separated
+        default: niri hyprland
+        type: string
+
+concurrency:
+  group: approve-goldens-${{ inputs.branch }}
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  approve:
+    name: approve goldens
+    runs-on: [self-hosted, nova]
+    timeout-minutes: 45
+    steps:
+      - name: check branch
+        env:
+          BRANCH: ${{ inputs.branch }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ $BRANCH == "$DEFAULT_BRANCH" ]]; then
+            echo "::error::goldens change through a PR, not on $DEFAULT_BRANCH"
+            exit 1
+          fi
+      # No token left in .git/config while the branch's own code runs; only
+      # the push step below gets one.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.branch }}
+          persist-credentials: false
+      # Usually cached: CI on the PR already built the same VM tests.
+      - name: just e2e-approve
+        env:
+          COMPOSITORS: ${{ inputs.compositors }}
+        run: |
+          for compositor in $COMPOSITORS; do
+            nix develop -c just e2e-approve "$compositor"
+          done
+      - name: commit and push
+        id: push
+        env:
+          BRANCH: ${{ inputs.branch }}
+          TOKEN: ${{ github.token }}
+        run: |
+          git add e2e/golden
+          if git diff --cached --quiet; then
+            echo "Goldens already match the screenshots; nothing to commit."
+            echo "pushed=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --cached --stat
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "Approve VM goldens" -m "From the VM tests on the KVM runner (run ${{ github.run_id }})."
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          git -c core.hooksPath=/dev/null -c http.extraheader="AUTHORIZATION: basic $auth" \
+            push origin "HEAD:refs/heads/$BRANCH"
+          echo "pushed=true" >>"$GITHUB_OUTPUT"
+      # curl and jq from the flake's own nixpkgs: the runner has only nix and git.
+      - name: start CI on the new commit
+        if: steps.push.outputs.pushed == 'true'
+        env:
+          BRANCH: ${{ inputs.branch }}
+          TOKEN: ${{ github.token }}
+        run: |
+          body=$(nix run --inputs-from . nixpkgs#jq -- -n '{ref: env.BRANCH}')
+          nix run --inputs-from . nixpkgs#curl -- -fsS -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            --data "$body" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/dispatches"
