@@ -136,8 +136,12 @@ def click_until_logged(x: int, y: int, line: str) -> None:
 def surface_commits(secs: int) -> int:
     """The surface commits the UI makes over the next `secs` seconds, from
     its WAYLAND_DEBUG lines as novad logs them."""
-    follow = f"timeout {secs} nova logs --ui -n 0 | grep -c {shlex.quote(SURFACE_COMMIT)} || true"
-    return int(machine.succeed(as_user(follow)).strip() or 0)
+    follow = f"timeout {secs} nova logs --ui -n 0 > /tmp/ui-wayland.log; grep -c {shlex.quote(SURFACE_COMMIT)} /tmp/ui-wayland.log || true"
+    commits = int(machine.succeed(as_user(follow)).strip() or 0)
+    # What else the UI and the compositor said meanwhile, for when it fails.
+    print(f"{commits} commits in {secs} s; Wayland lines by kind:")
+    print(machine.succeed("grep -o '[a-z_]*#[0-9]*\\.[a-z_]*' /tmp/ui-wayland.log | sed 's/#[0-9]*//' | sort | uniq -c || true"))
+    return commits
 
 
 def assert_idle(what: str) -> None:
@@ -199,6 +203,14 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window"):
     watched = wait_running(not_daemon=first["pid"])
     machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n 1000 | grep -qF {shlex.quote(AI_USAGE_SHOWN)}"), timeout=WAIT)
     assert_idle("with the bar shown")
+    # The count sees frames when there are some: the panel opening draws.
+    commits = f"nova logs --no-follow --ui -n 100000 | grep -c {shlex.quote(SURFACE_COMMIT)} || true"
+    before = int(machine.succeed(as_user(commits)).strip() or 0)
+    click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
+    click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
+    after = int(machine.succeed(as_user(commits)).strip() or 0)
+    assert after > before, f"no surface commits logged while the panel opened and closed ({before} before, {after} after)"
+    assert_idle("after the panel closed")
     machine.succeed(as_user("setsid foot >/dev/null 2>&1 &"))
     machine.wait_until_succeeds(as_user("nova status --json | grep -qF '\"app_id\":\"foot\"'"), timeout=WAIT)
     machine.succeed(as_user(FULLSCREEN_WINDOW))
