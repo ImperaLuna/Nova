@@ -226,6 +226,23 @@
 
           qmllint = qmllintFor pkgs;
 
+          # install.sh: shellcheck, and a run against a fake release.
+          install-script =
+            pkgs.runCommand "nova-install-script"
+              {
+                nativeBuildInputs = [
+                  pkgs.shellcheck
+                  pkgs.curl
+                ];
+              }
+              ''
+                cp ${./install.sh} install.sh && cp ${./scripts/test-install.sh} test-install.sh
+                shellcheck install.sh test-install.sh
+                patchShebangs test-install.sh
+                ./test-install.sh install.sh
+                touch $out
+              '';
+
           qmlformat = pkgs.runCommand "nova-qmlformat" { nativeBuildInputs = [ pkgs.qt6.qtdeclarative ]; } ''
             cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
             patchShebangs scripts

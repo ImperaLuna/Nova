@@ -7,7 +7,7 @@ default:
     @just --list
 
 # Everything CI runs, except e2e
-check: fmt-check lint lint-nix deny test lint-qml test-qml
+check: fmt-check lint lint-nix deny test lint-qml test-qml test-install
 
 # Rust unit tests
 test:
@@ -44,6 +44,10 @@ snapshots:
 # qmllint over ui/ (fails on any warning)
 lint-qml:
     scripts/qmllint.sh $(echo "$NOVA_QML_IMPORTS" | tr ':' ' ')
+
+# install.sh against a fake release, no network needed
+test-install:
+    scripts/test-install.sh install.sh
 
 # QML unit tests (ui/tests), no display needed
 test-qml:
