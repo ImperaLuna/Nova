@@ -10,21 +10,6 @@ This file is the only agent instruction file (Claude Code and Codex both read
 it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 `AGENTS.md`.
 
-## Layout
-
-Each crate, module and QML file opens with a comment saying what it does and
-how; read it before changing that code and keep it true in the same change.
-What no single file shows:
-
-- `ui/daemon/protocol.js` mirrors `crates/nova-protocol`: change both
-  together, with matching tests on both sides.
-- A feature is `features/<id>/feature.toml`, the single source of truth for
-  its packages; `daemon = "x"` needs a cargo feature `x` in novad.
-- `packaging/quickshell.toml` is the tested Quickshell range (no pin, no
-  fork). Raise `max` only after testing the newer release. `just docs`
-  clones its source into `docs/quickshell`; check APIs there, not from
-  memory.
-
 ## Rules
 
 - Logic goes in novad, the UI only renders. If QML needs more than a few lines
@@ -34,7 +19,9 @@ What no single file shows:
   module in novad. Clients subscribe to the topics they need.
 - The UI checks capabilities that novad reports, never which compositor is
   running (no `isNiri`).
-- A feature that is off or missing dependencies is never loaded by the UI.
+- A feature is `features/<id>/feature.toml`, the single source of truth for
+  its packages; `daemon = "x"` needs a cargo feature `x` in novad. A feature
+  that is off or missing dependencies is never loaded by the UI.
 - Window model is "stage": one full-screen, masked layer surface per monitor.
   The bar, panels and popups are items on it so they can morph into each
   other. Clicks pass through everywhere outside the mask, so keep the mask
@@ -47,6 +34,9 @@ What no single file shows:
 - Memory target: 250 MB Pss per monitor, a goal rather than a hard limit.
   Unload what isn't visible (Loader `active`), set `sourceSize` on images,
   don't make per-screen copies of what one screen needs.
+- `packaging/quickshell.toml` is the tested Quickshell range (no pin, no
+  fork); raise `max` only after testing the newer release. Check Quickshell
+  APIs in `docs/quickshell` (`just docs`), not from memory.
 
 ## Engineering principles
 
@@ -55,6 +45,11 @@ What no single file shows:
   and referenced everywhere else: design values in `theme/Tokens.qml`, wire
   names in `nova-protocol` and `ui/daemon/protocol.js`, Rust constants in the
   crate that owns them. Never copy a literal into a second file.
+  `ui/daemon/protocol.js` mirrors `nova-protocol`: change both together,
+  with matching tests on both sides.
+- Each crate, module and QML file opens with a comment saying what it does
+  and how. Read it before changing that code and keep it true in the same
+  change.
 - No magic numbers or strings. Give values a named constant or property that
   says what they mean (`Tokens.radiusPill`, not `14`). Every design value
   (gradient stops, opacities and easing too) lives in `Tokens.qml`, even when
