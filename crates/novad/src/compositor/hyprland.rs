@@ -5,10 +5,11 @@
 //!
 //! Hyprland's events don't say everything (a new workspace's monitor, for
 //! one), so a workspace or monitor event makes novad ask for the monitors
-//! and workspaces again, and opening or moving a window asks for the
-//! windows; titles, focus, urgency and the layout come from the events
-//! alone. Events that arrive together are answered with one round of
-//! questions.
+//! and workspaces again; opening, moving or focusing a window asks for the
+//! windows (a focus event also comes when a window changes its class), and
+//! a layout switch asks for the keyboards (the main keyboard changes when
+//! one is unplugged). Titles, focus and urgency come from the events alone.
+//! Events that arrive together are answered with one round of questions.
 
 use super::Backend;
 use nova_protocol::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
@@ -155,7 +156,6 @@ struct Devices {
 
 #[derive(Debug, Deserialize)]
 struct Keyboard {
-    name: String,
     main: bool,
     active_keymap: String,
 }
@@ -176,29 +176,27 @@ pub(super) struct State {
     windows: HashMap<String, Window>,
     active_window: Option<String>,
     urgent: HashSet<String>,
-    /// The keyboard whose layout the bar shows: Hyprland's main one.
-    keyboard: Option<String>,
+    /// The layout of Hyprland's main keyboard.
     layout: Option<String>,
     /// What to ask again once the events that arrived together are applied.
     stale_workspaces: bool,
     stale_windows: bool,
+    stale_layout: bool,
 }
 
 impl State {
     pub(super) fn load(ask: &mut impl FnMut(&str) -> Result<String, String>) -> Result<Self, String> {
         let active: ActiveWindow = query(ask, ACTIVE_WINDOW)?;
-        let devices: Devices = query(ask, DEVICES)?;
-        let keyboard = devices.keyboards.iter().find(|keyboard| keyboard.main).or(devices.keyboards.first());
         let mut state = Self {
             monitors: Vec::new(),
             workspaces: Vec::new(),
             windows: HashMap::new(),
             active_window: active.address.map(|address| strip_address(&address).to_owned()),
             urgent: HashSet::new(),
-            keyboard: keyboard.map(|keyboard| keyboard.name.clone()),
-            layout: keyboard.map(|keyboard| keyboard.active_keymap.clone()),
+            layout: None,
             stale_workspaces: true,
             stale_windows: true,
+            stale_layout: true,
         };
         state.catch_up(ask)?;
         Ok(state)
@@ -229,19 +227,15 @@ impl State {
                 let address = data.trim_matches(',');
                 self.urgent.remove(address);
                 self.active_window = (!address.is_empty()).then(|| address.to_owned());
+                self.stale_windows = true;
             }
             "urgent" => {
                 if self.active_window.as_deref() != Some(data) {
                     self.urgent.insert(data.to_owned());
                 }
             }
-            "activelayout" => {
-                if let Some((keyboard, layout)) = data.split_once(',')
-                    && self.keyboard.as_deref().is_none_or(|main| main == keyboard)
-                {
-                    self.layout = Some(layout.to_owned());
-                }
-            }
+            // One per keyboard; which is the main one is in the devices.
+            "activelayout" => self.stale_layout = true,
             _ => {}
         }
     }
@@ -262,6 +256,12 @@ impl State {
                 })
                 .collect();
             self.urgent.retain(|address| self.windows.contains_key(address));
+        }
+        if std::mem::take(&mut self.stale_layout) {
+            let devices: Devices = query(ask, DEVICES)?;
+            let keyboards = &devices.keyboards;
+            let main = keyboards.iter().find(|keyboard| keyboard.main).or(keyboards.first());
+            self.layout = main.map(|keyboard| keyboard.active_keymap.clone());
         }
         Ok(())
     }
