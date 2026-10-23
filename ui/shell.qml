@@ -2,8 +2,10 @@
 
 import QtQuick
 import Quickshell
-import "stage"
+import Quickshell.Io
+import "compositor"
 import "daemon"
+import "stage"
 
 ShellRoot {
     Variants {
@@ -14,5 +16,12 @@ ShellRoot {
             required property var modelData
             screen: modelData
         }
+    }
+
+    // `quickshell ipc --pid <UI pid> prop get compositor focusedWorkspace`:
+    // what the UI got from novad, for the VM tests and scripts.
+    IpcHandler {
+        target: "compositor"
+        readonly property string focusedWorkspace: Compositor.focusedWorkspace?.name ?? ""
     }
 }

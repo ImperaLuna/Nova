@@ -1,0 +1,50 @@
+[
+  {
+    "name": "start",
+    "events_bytes": 104
+  },
+  {
+    "name": "open first window",
+    "events_bytes": 289
+  },
+  {
+    "name": "focus the next workspace",
+    "events_bytes": 394
+  },
+  {
+    "name": "open second window",
+    "events_bytes": 584
+  },
+  {
+    "name": "retitle the second window",
+    "events_bytes": 737
+  },
+  {
+    "name": "switch the keyboard layout",
+    "events_bytes": 829
+  },
+  {
+    "name": "name the workspace",
+    "events_bytes": 852
+  },
+  {
+    "name": "focus the previous workspace",
+    "events_bytes": 949
+  },
+  {
+    "name": "ring the second window's bell",
+    "events_bytes": 989
+  },
+  {
+    "name": "focus the other output",
+    "events_bytes": 989
+  },
+  {
+    "name": "focus the first output",
+    "events_bytes": 989
+  },
+  {
+    "name": "close the focused window",
+    "events_bytes": 1015
+  }
+]

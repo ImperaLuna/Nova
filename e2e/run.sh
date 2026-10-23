@@ -35,6 +35,9 @@ export NOVA_FEATURES_DIR=$PWD/features
 # Nix's sway wrapper starts its own session bus when none is set, which fails
 # on hosts without /etc/dbus-1. Nova doesn't need one yet.
 export DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-disabled:}
+# The compositor here is sway, not the one this runs in: novad mustn't follow
+# the session's niri or Hyprland.
+unset NIRI_SOCKET HYPRLAND_INSTANCE_SIGNATURE
 
 pids=()
 cleanup() {

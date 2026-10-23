@@ -20,6 +20,11 @@ Singleton {
     // The latest ai_usage event's data ({shown, providers}); null until one
     // arrives, which only happens with the ai-usage feature on.
     property var aiUsage: null
+    // The latest compositor event's data ({compositor, capabilities,
+    // outputs, focused_window, keyboard_layout}); null until one arrives,
+    // and always on compositors novad doesn't know. Read it through the
+    // Compositor singleton.
+    property var desktop: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
 
     property int _nextId: 1
@@ -57,6 +62,8 @@ Singleton {
             theme = msg.data;
         } else if (msg.event === "ai_usage") {
             aiUsage = msg.data;
+        } else if (msg.event === "compositor") {
+            desktop = msg.data;
         }
     }
 
@@ -81,7 +88,7 @@ Singleton {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
                 root.call("subscribe", {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR]
                 });
             } else {
                 root._pending = {};

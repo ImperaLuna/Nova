@@ -1,7 +1,7 @@
 # Nova's lifecycle under systemd and a real compositor, driven through the
 # `nova` command the way a user would, and a screenshot of each UI state for
-# compare.sh. default.nix defines USER, UID and QUIT_COMPOSITOR above this
-# script.
+# compare.sh. default.nix defines USER, UID, COMPOSITOR, QUIT_COMPOSITOR and
+# FOCUS_NEXT_WORKSPACE above this script.
 import datetime as dt
 import json
 import shlex
@@ -139,6 +139,26 @@ with subtest("screenshot: the AI usage panel open, grown from its pill"):
     screenshot("panel-open")
     # The same spot closes it again.
     click(*AI_USAGE_PILL)
+
+with subtest("a workspace switch reaches the UI"):
+    running = wait_running()
+    desktop = running.get("desktop")
+    assert desktop and desktop["compositor"].lower() == COMPOSITOR, desktop
+
+    def ui_focused_workspace(expected: str) -> None:
+        ask = f"quickshell ipc --pid {running['ui']['pid']} prop get compositor focusedWorkspace"
+        try:
+            machine.wait_until_succeeds(as_user(f"test \"$({ask})\" = {expected}"), timeout=WAIT)
+        except Exception:
+            print(machine.execute(as_user(f"nova status; echo UI: $({ask})"))[1])
+            raise
+
+    ui_focused_workspace("1")
+    # niri only has a next workspace once this one holds a window.
+    machine.succeed(as_user("setsid foot >/dev/null 2>&1 &"))
+    machine.wait_until_succeeds(as_user("nova status --json | grep -qF '\"app_id\":\"foot\"'"), timeout=WAIT)
+    machine.succeed(as_user(FOCUS_NEXT_WORKSPACE))
+    ui_focused_workspace("2")
 
 with subtest("novad restarts a killed UI and saves the lines before it"):
     machine.succeed(f"kill -9 {first['ui']['pid']}")

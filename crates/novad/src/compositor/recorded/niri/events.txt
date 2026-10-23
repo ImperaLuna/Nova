@@ -1,0 +1,24 @@
+{"Ok":"Handled"}
+{"WorkspacesChanged":{"workspaces":[{"id":1,"idx":1,"name":null,"output":"Virtual-1","is_urgent":false,"is_active":true,"is_focused":true,"active_window_id":null}]}}
+{"WindowsChanged":{"windows":[]}}
+{"KeyboardLayoutsChanged":{"keyboard_layouts":{"names":["English (US)","German"],"current_idx":0}}}
+{"OverviewOpenedOrClosed":{"is_open":false}}
+{"ConfigLoaded":{"failed":false}}
+{"CastsChanged":{"casts":[]}}
+{"WorkspacesChanged":{"workspaces":[{"id":1,"idx":1,"name":null,"output":"Virtual-1","is_urgent":false,"is_active":true,"is_focused":true,"active_window_id":2},{"id":2,"idx":2,"name":null,"output":"Virtual-1","is_urgent":false,"is_active":false,"is_focused":false,"active_window_id":null}]}}
+{"WindowOpenedOrChanged":{"window":{"id":2,"title":"First window","app_id":"nova-first","pid":1582,"workspace_id":1,"is_focused":true,"is_floating":false,"is_urgent":false,"layout":{"pos_in_scrolling_layout":[1,1],"tile_size":[612.0,767.0],"window_size":[612,767],"tile_pos_in_workspace_view":null,"window_offset_in_tile":[0.0,0.0]},"focus_timestamp":{"secs":196,"nanos":268498129}}}}
+{"WorkspaceActivated":{"id":2,"focused":true}}
+{"WindowFocusChanged":{"id":null}}
+{"WorkspacesChanged":{"workspaces":[{"id":1,"idx":1,"name":null,"output":"Virtual-1","is_urgent":false,"is_active":false,"is_focused":false,"active_window_id":2},{"id":2,"idx":2,"name":null,"output":"Virtual-1","is_urgent":false,"is_active":true,"is_focused":true,"active_window_id":3},{"id":3,"idx":3,"name":null,"output":"Virtual-1","is_urgent":false,"is_active":false,"is_focused":false,"active_window_id":null}]}}
+{"WindowOpenedOrChanged":{"window":{"id":3,"title":"Second window","app_id":"nova-second","pid":1825,"workspace_id":2,"is_focused":true,"is_floating":false,"is_urgent":false,"layout":{"pos_in_scrolling_layout":[1,1],"tile_size":[612.0,767.0],"window_size":[612,767],"tile_pos_in_workspace_view":null,"window_offset_in_tile":[0.0,0.0]},"focus_timestamp":{"secs":243,"nanos":413056441}}}}
+{"WindowOpenedOrChanged":{"window":{"id":3,"title":"Renamed, with, commas","app_id":"nova-second","pid":1825,"workspace_id":2,"is_focused":true,"is_floating":false,"is_urgent":false,"layout":{"pos_in_scrolling_layout":[1,1],"tile_size":[612.0,767.0],"window_size":[612,767],"tile_pos_in_workspace_view":null,"window_offset_in_tile":[0.0,0.0]},"focus_timestamp":{"secs":243,"nanos":413056441}}}}
+{"KeyboardLayoutSwitched":{"idx":1}}
+{"WorkspacesChanged":{"workspaces":[{"id":1,"idx":1,"name":null,"output":"Virtual-1","is_urgent":false,"is_active":false,"is_focused":false,"active_window_id":2},{"id":2,"idx":2,"name":"web","output":"Virtual-1","is_urgent":false,"is_active":true,"is_focused":true,"active_window_id":3},{"id":3,"idx":3,"name":null,"output":"Virtual-1","is_urgent":false,"is_active":false,"is_focused":false,"active_window_id":null}]}}
+{"WorkspaceActivated":{"id":1,"focused":true}}
+{"WindowFocusChanged":{"id":2}}
+{"WindowFocusTimestampChanged":{"id":2,"focus_timestamp":{"secs":315,"nanos":54909517}}}
+{"WorkspaceUrgencyChanged":{"id":2,"urgent":true}}
+{"WindowUrgencyChanged":{"id":3,"urgent":true}}
+{"WorkspaceActiveWindowChanged":{"workspace_id":1,"active_window_id":null}}
+{"WindowClosed":{"id":2}}
+{"WindowFocusChanged":{"id":null}}
