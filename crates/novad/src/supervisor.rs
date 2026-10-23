@@ -29,6 +29,13 @@ const UI_LAUNCHER: &str = "nova-ui";
 const PACKAGED_UI_LAUNCHER: Option<&str> = option_env!("NOVA_UI_LAUNCHER");
 /// Quickshell itself, when no `nova-ui` launcher is installed.
 const QUICKSHELL: &str = "quickshell";
+/// Qt's Wayland plugin marks a window unexposed when a frame callback is
+/// this many ms late (default 100), and redraws all of it when the late
+/// callback comes. Compositors send callbacks to a covered surface only now
+/// and then (niri: once a second, e.g. under a fullscreen window), so a
+/// covered bar redrew itself every time one came. 0 turns the check off;
+/// a covered window just waits for its next callback.
+const FRAME_CALLBACK_TIMEOUT: (&str, &str) = ("QT_WAYLAND_FRAME_CALLBACK_TIMEOUT", "0");
 const LOG_SOURCE: &str = "supervisor";
 const FIRST_RETRY: Duration = Duration::from_secs(1);
 const MAX_RETRY: Duration = Duration::from_secs(30);
@@ -202,6 +209,7 @@ fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
         .arg(&settings.ui_dir)
         .env("NOVA_SOCKET", &settings.socket)
         .env("PATH", &settings.path_var)
+        .env(FRAME_CALLBACK_TIMEOUT.0, FRAME_CALLBACK_TIMEOUT.1)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
