@@ -12,7 +12,7 @@ const DEFAULT_THEME_FILE: &str = include_str!("../../../themes/carbonfox.toml");
 const THEME_FILE_EXTENSION: &str = "toml";
 
 /// `config.toml`'s `[theme]`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct ThemeChoice {
     name: String,
@@ -39,14 +39,10 @@ pub fn default_dir() -> PathBuf {
     nova_paths::installed_or_checkout("themes")
 }
 
-/// The theme `config` asks for, plus a message for each problem that made it
+/// The theme `choice` names, plus a message for each problem that made it
 /// fall back (to log as warnings).
-pub fn resolve(themes_dir: &Path, config: &Path) -> (Theme, Vec<String>) {
+pub fn resolve(themes_dir: &Path, choice: &ThemeChoice) -> (Theme, Vec<String>) {
     let mut problems = Vec::new();
-    let choice = crate::config::read(config).map(|config| config.theme).unwrap_or_else(|problem| {
-        problems.push(problem);
-        ThemeChoice::default()
-    });
     let (id, file) = read_theme(themes_dir, &choice.name).unwrap_or_else(|problem| {
         problems.push(format!("{problem}; using {DEFAULT_THEME_ID}"));
         (DEFAULT_THEME_ID.into(), default_theme_file())
@@ -112,6 +108,11 @@ mod tests {
         }
     }
 
+    /// The `[theme]` of a `config.toml` holding `text`.
+    fn choice(text: &str) -> ThemeChoice {
+        toml::from_str::<crate::config::Config>(text).unwrap().theme
+    }
+
     fn shipped_theme_ids() -> Vec<String> {
         let mut ids: Vec<String> = std::fs::read_dir(themes_dir())
             .unwrap()
@@ -150,10 +151,9 @@ mod tests {
     fn every_shipped_theme_loads_without_problems_and_is_readable() {
         let ids = shipped_theme_ids();
         assert!(ids.contains(&DEFAULT_THEME_ID.to_owned()));
-        let scratch = Scratch::new("shipped");
         for id in ids {
             for mode in ["dark", "light"] {
-                let config = scratch.write("config.toml", &format!("[theme]\nname = \"{id}\"\nmode = \"{mode}\"\n"));
+                let config = choice(&format!("[theme]\nname = \"{id}\"\nmode = \"{mode}\"\n"));
                 let (theme, problems) = resolve(&themes_dir(), &config);
                 if mode == "light" && theme.mode == ThemeMode::Dark {
                     continue; // this theme has no light set
@@ -176,18 +176,16 @@ mod tests {
 
     #[test]
     fn no_config_means_carbonfox_dark() {
-        let scratch = Scratch::new("no-config");
-        let (theme, problems) = resolve(&themes_dir(), &scratch.0.join("config.toml"));
+        let (theme, problems) = resolve(&themes_dir(), &ThemeChoice::default());
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!((theme.id.as_str(), theme.mode), (DEFAULT_THEME_ID, ThemeMode::Dark));
     }
 
     #[test]
     fn unknown_or_unsafe_names_fall_back_with_a_reason() {
-        let scratch = Scratch::new("bad-names");
         for (name, reason) in [("nope", "can't read theme"), ("../../etc/passwd", "may only use"), ("", "may only use")]
         {
-            let config = scratch.write("config.toml", &format!("[theme]\nname = {name:?}\n"));
+            let config = choice(&format!("[theme]\nname = {name:?}\n"));
             let (theme, problems) = resolve(&themes_dir(), &config);
             assert_eq!(theme.id, DEFAULT_THEME_ID);
             assert!(problems.len() == 1 && problems[0].contains(reason), "{name:?}: {problems:?}");
@@ -195,20 +193,11 @@ mod tests {
     }
 
     #[test]
-    fn a_broken_config_falls_back_and_says_why() {
-        let scratch = Scratch::new("bad-config");
-        let config = scratch.write("config.toml", "[theme]\nname = \"carbonfox\"\nmode = \"sepia\"\n");
-        let (theme, problems) = resolve(&themes_dir(), &config);
-        assert_eq!(theme.id, DEFAULT_THEME_ID);
-        assert!(problems.len() == 1 && problems[0].contains("sepia"), "{problems:?}");
-    }
-
-    #[test]
     fn light_without_a_light_set_uses_dark() {
         let scratch = Scratch::new("no-light");
         let dark_only = DEFAULT_THEME_FILE.split("\n[light]").next().unwrap().replace("Carbonfox", "Dark only");
         scratch.write("dark-only.toml", &dark_only);
-        let config = scratch.write("config.toml", "[theme]\nname = \"dark-only\"\nmode = \"light\"\n");
+        let config = choice("[theme]\nname = \"dark-only\"\nmode = \"light\"\n");
         let (theme, problems) = resolve(&scratch.0, &config);
         assert_eq!((theme.name.as_str(), theme.mode), ("Dark only", ThemeMode::Dark));
         assert!(problems.len() == 1 && problems[0].contains("no light colors"), "{problems:?}");
@@ -217,7 +206,7 @@ mod tests {
     #[test]
     fn themes_with_missing_or_extra_tokens_are_refused() {
         let scratch = Scratch::new("tokens");
-        let config = scratch.write("config.toml", "[theme]\nname = \"custom\"\n");
+        let config = choice("[theme]\nname = \"custom\"\n");
         let missing = DEFAULT_THEME_FILE.lines().filter(|line| !line.starts_with("swatch8 ")).collect::<Vec<_>>();
         let extra = DEFAULT_THEME_FILE.replace("[dark]\n", "[dark]\nsurface = \"#000000\"\n");
         for (text, token) in [(missing.join("\n"), "swatch8"), (extra, "surface")] {

@@ -1,8 +1,8 @@
 //! The socket: accepts clients, answers their requests and feeds them the
 //! events they subscribed to.
 
-use crate::Daemon;
 use crate::hub::{ClientId, ClientQueue, Outgoing};
+use crate::{Daemon, lock};
 use nova_protocol::{Command, Event, Outcome, Response, Topic, encode};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -125,7 +125,7 @@ impl<'a> Connection<'a> {
     fn answer(&self, command: &Command) -> Outcome {
         let value = match command {
             Command::Ping => Ok("pong".into()),
-            Command::ListFeatures => serde_json::to_value(&self.daemon.features),
+            Command::ListFeatures => serde_json::to_value(&lock(&self.daemon.settings).features),
             Command::Status => serde_json::to_value(self.daemon.status()),
             Command::Subscribe { .. } | Command::Quit => Ok(serde_json::Value::Null),
             Command::RefreshAiUsage => {
@@ -148,8 +148,11 @@ impl<'a> Connection<'a> {
     }
 
     fn with_ai_usage(&self, act: impl FnOnce(&crate::ai_usage::Usage) -> Result<(), String>) -> Outcome {
-        match &self.daemon.ai_usage {
-            Some(usage) => match act(usage) {
+        // Out of the lock: acting may take a while, and a reload may stop it
+        // meanwhile (it then says the feature is off).
+        let usage = lock(&self.daemon.settings).ai_usage.clone();
+        match usage {
+            Some(usage) => match act(&usage) {
                 Ok(()) => Outcome::Result(serde_json::Value::Null),
                 Err(e) => Outcome::Error(e),
             },
@@ -162,23 +165,25 @@ impl<'a> Connection<'a> {
         match command {
             Command::Subscribe { topics } => {
                 for topic in topics {
+                    if topic == Topic::Logs {
+                        self.daemon.logger.subscribe(self.id);
+                        continue;
+                    }
+                    // Subscribed and sent the current state under the
+                    // settings lock, so a reload's event can't come first.
+                    let settings = lock(&self.daemon.settings);
+                    self.daemon.hub.subscribe(self.id, topic);
                     match topic {
-                        Topic::Features => {
-                            self.daemon.hub.subscribe(self.id, topic);
-                            self.send(Event::Features { features: self.daemon.features.clone() });
-                        }
-                        Topic::Logs => self.daemon.logger.subscribe(self.id),
-                        Topic::Theme => {
-                            self.daemon.hub.subscribe(self.id, topic);
-                            self.send(Event::Theme(self.daemon.theme.clone()));
-                        }
-                        // Without the feature there are no events to send.
+                        Topic::Features => self.send(Event::Features { features: settings.features.clone() }),
+                        Topic::Theme => self.send(Event::Theme(settings.theme.clone())),
+                        // Without the feature there is nothing to send until
+                        // a reload turns it on.
                         Topic::AiUsage => {
-                            if let Some(usage) = &self.daemon.ai_usage {
-                                self.daemon.hub.subscribe(self.id, topic);
+                            if let Some(usage) = &settings.ai_usage {
                                 self.send(usage.event());
                             }
                         }
+                        Topic::Logs => {}
                     }
                 }
             }
