@@ -15,6 +15,10 @@ pub const WRITES: u32 = libc::IN_MODIFY | libc::IN_CREATE | libc::IN_MOVED_TO;
 /// `WRITES`, plus files deleted or moved away: an editor that saves by
 /// renaming moves the old file out first.
 pub const REPLACEMENTS: u32 = WRITES | libc::IN_DELETE | libc::IN_MOVED_FROM;
+/// Entries that appear in a folder: created, moved in, or replaced by a
+/// rename (`ln -sfn` repointing a symlink). For a folder whose files don't
+/// matter, only one entry in it, so writes to its other files cost nothing.
+pub const ENTRIES: u32 = libc::IN_CREATE | libc::IN_MOVED_TO;
 /// `struct inotify_event` before its name: wd, mask, cookie, len.
 const HEADER_BYTES: usize = 16;
 const BUFFER_BYTES: usize = 64 * 1024;
@@ -81,9 +85,14 @@ impl Inotify {
 
     /// Watches the files directly in `dir`.
     pub fn watch(&mut self, dir: &Path) -> std::io::Result<()> {
+        self.watch_for(dir, self.mask)
+    }
+
+    /// Watches `dir` for the events in `mask` only, like [`ENTRIES`].
+    pub fn watch_for(&mut self, dir: &Path, mask: u32) -> std::io::Result<()> {
         let path = CString::new(dir.as_os_str().as_bytes()).map_err(std::io::Error::other)?;
         // SAFETY: `path` is NUL-terminated and outlives the call.
-        let wd = unsafe { libc::inotify_add_watch(self.file.as_raw_fd(), path.as_ptr(), self.mask) };
+        let wd = unsafe { libc::inotify_add_watch(self.file.as_raw_fd(), path.as_ptr(), mask) };
         if wd == -1 {
             return Err(std::io::Error::last_os_error());
         }

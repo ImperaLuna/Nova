@@ -12,8 +12,8 @@
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      # Rust sources only, so UI edits don't rebuild the daemon. Tokens.qml is
-      # the exception: a novad test checks it declares every theme token.
+      # Rust sources only, so UI edits don't rebuild the daemon. Tokens.qml and
+      # protocol.js are the exceptions: Rust tests check they match novad.
       rustSrc =
         lib:
         lib.fileset.toSource {
@@ -27,6 +27,7 @@
             ./packaging
             ./themes
             ./ui/theme/Tokens.qml
+            ./ui/daemon/protocol.js
           ];
         };
 

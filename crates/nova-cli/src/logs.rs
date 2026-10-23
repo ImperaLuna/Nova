@@ -1,6 +1,7 @@
 //! `nova logs`: novad's and the UI's log, live from novad or from its files.
 
 use crate::client::Client;
+use crate::status::printable;
 use nova_protocol::{Command, Event, LogEntry, LogLevel, Topic, UI_LOG_SOURCE};
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -116,6 +117,7 @@ struct Printer {
 impl Printer {
     fn follow(&mut self, mut client: Client, history: usize) -> Result<(), String> {
         client.request(Command::Subscribe { topics: vec![Topic::Logs] })?;
+        client.follow()?;
         while let Some(event) = client.next_event()? {
             let Event::Logs { backlog, entries } = event else { continue };
             let kept: Vec<&LogEntry> = entries.iter().filter(|entry| self.filter.keeps(entry)).collect();
@@ -147,9 +149,9 @@ impl Printer {
         let time = local_time(&entry.time);
         let line = if self.color {
             let level = format!("{}{:>5}{RESET}", level_color(entry.level), entry.level);
-            format!("{DIM}{time}{RESET} {level} {DIM}{}{RESET} {}", entry.source, entry.message)
+            format!("{DIM}{time}{RESET} {level} {DIM}{}{RESET} {}", printable(&entry.source), printable(&entry.message))
         } else {
-            format!("{time} {:>5} {} {}", entry.level, entry.source, entry.message)
+            format!("{time} {:>5} {} {}", entry.level, printable(&entry.source), printable(&entry.message))
         };
         writeln!(std::io::stdout(), "{line}").is_ok()
     }

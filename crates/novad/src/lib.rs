@@ -4,6 +4,23 @@
 //! talk to, runs the Quickshell UI as its child (restarting it when it
 //! crashes) and keeps the log. Compositor adapters and services get added on
 //! top of this.
+//!
+//! Adding a feature with its own daemon service and event topic touches, end
+//! to end (`ai_usage` is the worked example):
+//! - `features/<id>/feature.toml`: the feature, its dependencies, `daemon = "<id>"`.
+//! - `nova-protocol`: the `Topic`, the `Event` and any `Command`s, plus the
+//!   wire format snapshot.
+//! - `config.rs`: its `[<id>]` options in config.toml, if any.
+//! - `settings.rs`: start the service when the feature is ready, stop it when
+//!   it isn't, restart it when its options change.
+//! - `server.rs`: its commands (through a `with_<service>` helper that
+//!   answers when the feature is off) and the snapshot sent on subscribe.
+//! - `ui/daemon/protocol.js` (`CMD_`/`EVENT_`/`TOPIC_`/`FEATURE_` names, checked
+//!   against nova-protocol) and `Daemon.qml` (subscribe, keep the event's data).
+//! - A QML service singleton beside the feature's components
+//!   (`ui/ai_usage/service/AiUsageService.qml`, its own folder so QML tests
+//!   can load the components without Quickshell) that reads that data and sends the
+//!   commands, and the component that loads when the feature is ready.
 
 mod ai_usage;
 mod compositor;

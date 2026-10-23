@@ -3,6 +3,7 @@ name = "nova-protocol"
 description = "Messages exchanged between novad and the Quickshell UI"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

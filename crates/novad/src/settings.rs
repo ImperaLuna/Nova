@@ -160,6 +160,10 @@ pub fn watch(files: Vec<PathBuf>, logger: Arc<Logger>, reload: impl Fn() + Send 
     let mut entries = watch_entries(&mut watcher, &files, &logger);
 
     let (changed, changes) = mpsc::channel();
+    // The settings were read before the watches were in place: read them
+    // once more, so an edit in between isn't missed. Unchanged files apply
+    // nothing.
+    let _ = changed.send(());
     let watch_logger = Arc::clone(&logger);
     std::thread::spawn(move || {
         loop {
@@ -212,4 +216,27 @@ fn watch_entries(watcher: &mut Inotify, files: &[PathBuf], logger: &Logger) -> B
         }
     }
     entries
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nova_protocol::LogLevel;
+
+    /// A file changed between the first read and the watches going in is
+    /// only seen if the watcher reads once more after they're in.
+    #[test]
+    fn reads_once_more_once_watching() {
+        let dir = std::env::temp_dir().join(format!("novad-settings-watch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let logger =
+            Arc::new(Logger::open(&dir.join("logs"), LogLevel::Info, false, Arc::new(Hub::default())).unwrap());
+        let (reloaded, reloads) = mpsc::channel();
+        watch(vec![dir.join("config.toml")], logger, move || {
+            let _ = reloaded.send(());
+        });
+        assert!(reloads.recv_timeout(SETTLE * 10).is_ok(), "no reload after the watches went in");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

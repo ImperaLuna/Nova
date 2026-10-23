@@ -34,6 +34,10 @@ pub const FEATURE_ID: &str = "ai-usage";
 const LOG_SOURCE: &str = "ai-usage";
 /// Codex writes several lines per turn; they're read once it pauses.
 const CODEX_SETTLE: Duration = Duration::from_millis(500);
+/// The saved state is the user's own business.
+const STATE_FILE_MODE: u32 = 0o600;
+/// Sessions that never pause (several at once) are read this often anyway.
+const CODEX_MAX_DELAY: Duration = Duration::from_secs(5);
 /// Longest sleep with nothing scheduled.
 const IDLE_WAKE: Duration = Duration::from_secs(24 * 60 * 60);
 /// How often Claude's limits are asked for (nova-shell asked as often).
@@ -89,6 +93,9 @@ struct State {
     /// is pending. Starts as the opt-in hint when the endpoint is off.
     claude_problem: Option<String>,
     codex: Codex,
+    /// When the status line last reported Claude's limits. An endpoint
+    /// answer to a request sent before then is older, so it's dropped.
+    claude_reported: Option<Instant>,
     /// The last event published, so unchanged numbers aren't sent again.
     sent: Option<AiUsage>,
 }
@@ -137,6 +144,7 @@ impl Usage {
                 saved,
                 claude_problem: (!config.claude_usage_endpoint).then(|| CLAUDE_ENDPOINT_OFF.into()),
                 codex: Codex::Loading,
+                claude_reported: None,
                 sent: None,
             }),
             hub,
@@ -186,12 +194,15 @@ impl Usage {
     }
 
     pub fn show(&self, provider: AiProvider) -> Result<(), String> {
-        self.update(|saved| saved.shown = Some(provider))
+        self.update(|state| state.saved.shown = Some(provider))
     }
 
     pub fn report_claude(&self, limits: Vec<UsageLimit>) -> Result<(), String> {
         validate(&limits)?;
-        self.update(|saved| saved.claude = Some(limits))
+        self.update(|state| {
+            state.saved.claude = Some(limits);
+            state.claude_reported = Some(Instant::now());
+        })
     }
 
     /// Asks for Claude's limits now, unless they were asked for less than
@@ -225,7 +236,9 @@ impl Usage {
                 }
                 Err(claude_api::Problem::RateLimited(after)) => {
                     backoff = (backoff * 2).max(CLAUDE_RATE_LIMITED).min(CLAUDE_MAX_BACKOFF);
-                    after.map_or(backoff, |after| after.max(backoff))
+                    // Capped: a huge Retry-After would stop asking for good,
+                    // or overflow the deadline below.
+                    after.map_or(backoff, |after| after.max(backoff)).min(CLAUDE_MAX_BACKOFF)
                 }
                 Err(claude_api::Problem::Failed(_)) => {
                     backoff = (backoff * 2).min(CLAUDE_MAX_BACKOFF);
@@ -239,10 +252,13 @@ impl Usage {
             match result {
                 Ok((limits, plan)) => {
                     last_problem = None;
-                    lock(&self.state).claude_problem = None;
-                    let _ = self.update(|saved| {
-                        saved.claude = Some(limits);
-                        saved.claude_plan = plan;
+                    let _ = self.update(|state| {
+                        state.claude_problem = None;
+                        // The status line reported while this request was out: its numbers are newer.
+                        if state.claude_reported.is_none_or(|reported| reported < asked) {
+                            state.saved.claude = Some(limits);
+                            state.saved.claude_plan = plan;
+                        }
                     });
                 }
                 Err(problem) => {
@@ -268,7 +284,9 @@ impl Usage {
         }
     }
 
-    fn update(&self, change: impl FnOnce(&mut Saved)) -> Result<(), String> {
+    /// Applies `change` to the state, then saves and publishes what it
+    /// changed of `Saved`.
+    fn update(&self, change: impl FnOnce(&mut State)) -> Result<(), String> {
         {
             // Saved under the lock, so concurrent updates reach the file in
             // the order they were made.
@@ -277,7 +295,7 @@ impl Usage {
                 return Err(format!("the {FEATURE_ID} feature is off"));
             }
             let before = state.saved.clone();
-            change(&mut state.saved);
+            change(&mut state);
             if state.saved == before {
                 return Ok(());
             }
@@ -299,17 +317,25 @@ impl Usage {
             None => self.set_codex(Codex::Unavailable("Can't find Codex's folder: HOME isn't set.".into())),
         }
         let mut written: BTreeSet<PathBuf> = BTreeSet::new();
+        // When the oldest unread write in `written` came.
+        let mut written_since: Option<Instant> = None;
         loop {
             if self.stopped() {
                 return;
             }
             self.publish();
             let until_reset = next_reset(&lock(&self.state), Timestamp::now()).unwrap_or(IDLE_WAKE);
-            let timeout = if written.is_empty() { until_reset } else { until_reset.min(CODEX_SETTLE) };
+            let timeout = match written_since {
+                None => until_reset,
+                Some(since) => until_reset.min(CODEX_SETTLE).min(CODEX_MAX_DELAY.saturating_sub(since.elapsed())),
+            };
             match wakes.recv_timeout(timeout) {
                 Ok(Wake::CodexLog(path)) => {
                     written.insert(path);
-                    continue;
+                    let since = *written_since.get_or_insert_with(Instant::now);
+                    if since.elapsed() < CODEX_MAX_DELAY {
+                        continue;
+                    }
                 }
                 Ok(Wake::CodexRescan) => {
                     if let Some(home) = &codex_home {
@@ -319,6 +345,7 @@ impl Usage {
                 Ok(Wake::Changed) | Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return,
             }
+            written_since = None;
             for path in std::mem::take(&mut written) {
                 if let Some(found) = codex::read_log(&path) {
                     self.offer_codex(found);
@@ -358,18 +385,19 @@ impl Usage {
     }
 
     /// Watches Codex's home for the sessions folder and every folder in it,
-    /// on a thread that turns changes into wakes. Before Codex's first run
-    /// there's no home yet, so its parent is watched for it to appear.
+    /// on a thread that turns changes into wakes. The home itself is watched
+    /// through its parent, so a home that appears later (before Codex's
+    /// first run), is replaced, or is a symlink that's repointed is followed.
     fn watch_codex(&self, home: &Path) {
-        let home = home.to_owned();
+        // Absolute, so a relative home (`CODEX_HOME=codex`) has a parent to
+        // watch and matches the paths changes come with.
+        let home = std::path::absolute(home).unwrap_or_else(|_| home.to_owned());
         let sessions = codex::sessions_dir(&home);
         let watching = inotify::Inotify::new(inotify::WRITES).and_then(|mut watcher| {
-            if !home.is_dir()
-                && let Some(parent) = home.parent()
-            {
-                watcher.watch(parent)?;
+            if let Some(parent) = home.parent() {
+                watcher.watch_for(parent, inotify::ENTRIES)?;
             }
-            // Checked again: the home may have appeared meanwhile.
+            // After the parent: a home that appears meanwhile is still seen.
             watch_codex_home(&mut watcher, &home, &sessions)?;
             Ok(watcher)
         });
@@ -413,7 +441,9 @@ impl Usage {
                     continue;
                 }
                 for change in changes.found {
-                    let message = if change.is_dir && change.path == home {
+                    // Any kind of entry: a symlinked home is repointed by
+                    // renaming a new link over it.
+                    let message = if change.path == home {
                         // The sessions folder may have come with it.
                         if let Err(e) = watch_codex_home(&mut watcher, &home, &sessions) {
                             logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", home.display()));
@@ -534,12 +564,22 @@ fn validate(limits: &[UsageLimit]) -> Result<(), String> {
     Ok(())
 }
 
+/// Writes a private temp file next to `path` and renames it over `path`.
 fn save(path: &Path, saved: &Saved) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let partial = path.with_extension("json.partial");
-    std::fs::write(&partial, serde_json::to_vec_pretty(saved).map_err(std::io::Error::other)?)?;
+    // One left by a crash, or anything else in its place, goes first:
+    // `create_new` never follows a link or reuses a file.
+    match std::fs::remove_file(&partial) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(STATE_FILE_MODE).open(&partial)?;
+    file.write_all(&serde_json::to_vec_pretty(saved).map_err(std::io::Error::other)?)?;
     std::fs::rename(partial, path)
 }
 

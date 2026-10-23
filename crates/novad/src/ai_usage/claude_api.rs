@@ -28,6 +28,8 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 /// The answer is well under 1 KiB.
 const MAX_BODY_BYTES: u64 = 64 * 1024;
 const USER_AGENT: &str = concat!("nova/", env!("CARGO_PKG_VERSION"));
+/// Claude Code's credentials are well under 1 KiB; past this isn't read.
+const MAX_CREDENTIALS_BYTES: u64 = 64 * 1024;
 /// Permission bits for anyone but the owner.
 const GROUP_OTHER_BITS: u32 = 0o077;
 
@@ -89,16 +91,19 @@ pub fn read_token(path: &Path, now: Timestamp) -> Result<Token, Problem> {
 
 /// The token in `file`, opened from `path`. The checks look at the open
 /// file, so a file swapped in at `path` after them is never read.
-fn token_from(mut file: File, path: &Path, now: Timestamp) -> Result<Token, Problem> {
+fn token_from(file: File, path: &Path, now: Timestamp) -> Result<Token, Problem> {
     let unreadable = |e: std::io::Error| Problem::Failed(format!("can't read {}: {e}", path.display()));
     let metadata = file.metadata().map_err(unreadable)?;
     // SAFETY: geteuid has no preconditions and can't fail.
     let uid = unsafe { libc::geteuid() };
+    if !metadata.is_file() {
+        return Err(Problem::Failed(format!("{} isn't a file", path.display())));
+    }
     if metadata.uid() != uid || metadata.mode() & GROUP_OTHER_BITS != 0 {
         return Err(Problem::Unsafe(path.to_owned()));
     }
     let mut text = String::new();
-    file.read_to_string(&mut text).map_err(unreadable)?;
+    file.take(MAX_CREDENTIALS_BYTES).read_to_string(&mut text).map_err(unreadable)?;
     // The error says where, never what: the file holds secrets.
     let json: Value = serde_json::from_str(&text)
         .map_err(|e| Problem::Failed(format!("{} isn't valid JSON (line {})", path.display(), e.line())))?;
@@ -215,6 +220,15 @@ mod tests {
         set_mode(&private, 0o600);
         std::fs::rename(&private, &path).unwrap();
         assert_eq!(token_from(opened, &path, now()).err(), Some(Problem::Unsafe(path.clone())));
+    }
+
+    #[test]
+    fn only_a_regular_file_is_read() {
+        let dir = std::env::temp_dir().join(format!("nova-claude-api-dir-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join(".credentials.json")).unwrap();
+        let path = dir.join(".credentials.json");
+        set_mode(&path, 0o700);
+        assert_eq!(read_token(&path, now()).err(), Some(Problem::Failed(format!("{} isn't a file", path.display()))));
     }
 
     #[test]

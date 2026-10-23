@@ -58,9 +58,12 @@ impl Backend for Niri {
 
     fn watch(&self, report: &mut dyn FnMut(Desktop)) -> Result<(), String> {
         let mut stream = self.connect()?;
+        // Only the answer to the request has a deadline; events come when they come.
+        stream.set_read_timeout(Some(REPLY_TIMEOUT)).map_err(|e| e.to_string())?;
         writeln!(stream, "{EVENT_STREAM_REQUEST}").map_err(|e| format!("can't send to niri: {e}"))?;
         let mut reader = BufReader::new(stream);
         read_reply(&mut reader)?;
+        reader.get_ref().set_read_timeout(None).map_err(|e| e.to_string())?;
         let mut state = State::default();
         let mut line = String::new();
         loop {

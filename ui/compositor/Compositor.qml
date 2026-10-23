@@ -29,14 +29,14 @@ Singleton {
     }
 
     function focusWorkspace(id: int) {
-        Daemon.call("focus_workspace", {
+        Daemon.call(Protocol.CMD_FOCUS_WORKSPACE, {
             id: id
         });
     }
 
     // `step` is Protocol.STEP_NEXT or STEP_PREVIOUS.
     function stepWorkspace(outputName: string, step: string) {
-        Daemon.call("step_workspace", {
+        Daemon.call(Protocol.CMD_STEP_WORKSPACE, {
             output: outputName,
             step: step
         });

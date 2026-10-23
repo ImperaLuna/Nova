@@ -8,6 +8,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# PR code runs here; it gets a token that can only read.
+permissions:
+  contents: read
+
 # A newer push to the same PR cancels the run for the older one.
 concurrency:
   group: ci-${{ github.ref }}

@@ -2,6 +2,7 @@ import QtQuick
 import "../theme"
 import "../daemon"
 import "../ai_usage"
+import "../ai_usage/service"
 
 // Placeholder bar: one floating pill per screen, plus the AI usage pill on
 // the left when that feature is on. The real bar (three pills, hide
@@ -50,14 +51,12 @@ Item {
         id: aiUsage
         x: Tokens.barMargin
         y: Tokens.barMargin
-        active: Daemon.readyFeatures.includes("ai-usage") && Daemon.aiUsage !== null
+        active: AiUsageService.ready
         onLoaded: console.info("nova: ai usage pill shown")
         sourceComponent: AiUsage {
-            usage: Daemon.aiUsage
-            onShowRequested: provider => Daemon.call("show_ai_usage", {
-                    provider: provider
-                })
-            onRefreshRequested: Daemon.call("refresh_ai_usage")
+            usage: AiUsageService.usage
+            onShowRequested: provider => AiUsageService.show(provider)
+            onRefreshRequested: AiUsageService.refresh()
         }
     }
 
@@ -77,6 +76,7 @@ Item {
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSize
             color: Daemon.connected ? Tokens.fg : Tokens.fgDim
+            textFormat: Text.PlainText
             text: Daemon.connected ? `Nova · novad ${Daemon.version}` : "Nova · waiting for novad"
         }
     }

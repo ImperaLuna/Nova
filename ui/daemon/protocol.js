@@ -4,6 +4,23 @@
 
 var VERSION = 2;
 
+// Commands the UI sends (Command in nova-protocol). A nova-protocol test
+// checks every CMD_, EVENT_, TOPIC_, CAPABILITY_, STEP_ and FEATURE_ name
+// here is one novad knows.
+var CMD_SUBSCRIBE = "subscribe";
+var CMD_SHOW_AI_USAGE = "show_ai_usage";
+var CMD_REFRESH_AI_USAGE = "refresh_ai_usage";
+var CMD_FOCUS_WORKSPACE = "focus_workspace";
+var CMD_STEP_WORKSPACE = "step_workspace";
+
+// Events novad sends (Event in nova-protocol). Each topic's events carry the
+// topic's name.
+var EVENT_HELLO = "hello";
+var EVENT_FEATURES = "features";
+var EVENT_THEME = "theme";
+var EVENT_AI_USAGE = "ai_usage";
+var EVENT_COMPOSITOR = "compositor";
+
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
 var TOPIC_LOGS = "logs";
@@ -20,6 +37,9 @@ var CAPABILITY_KEYBOARD_LAYOUT = "keyboard_layout";
 // step_workspace's directions (Step in nova-protocol).
 var STEP_NEXT = "next";
 var STEP_PREVIOUS = "previous";
+
+// Feature ids (features/<id>/feature.toml).
+var FEATURE_AI_USAGE = "ai-usage";
 
 // Returns {kind: "event"|"response", ...} or null for lines to ignore.
 function parse(line) {

@@ -1,9 +1,15 @@
-//! A connection to novad's socket.
+//! A connection to novad's socket. Every read and write gives up after
+//! [`REPLY_TIMEOUT`], so a stuck novad can't hang the CLI (`nova restart` is
+//! what you run then); only following events (`nova logs`) waits forever.
 
 use nova_protocol::{Command, Envelope, Event, Request, Status, encode};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
+use std::time::Duration;
+
+/// How long novad may take to say hello or answer a request.
+pub const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct Client {
     reader: BufReader<UnixStream>,
@@ -17,6 +23,8 @@ impl Client {
     pub fn connect(socket: &Path) -> Result<Self, String> {
         let stream =
             UnixStream::connect(socket).map_err(|e| format!("can't reach novad at {}: {e}", socket.display()))?;
+        stream.set_read_timeout(Some(REPLY_TIMEOUT)).map_err(|e| e.to_string())?;
+        stream.set_write_timeout(Some(REPLY_TIMEOUT)).map_err(|e| e.to_string())?;
         let writer = stream.try_clone().map_err(|e| e.to_string())?;
         let mut client = Self { reader: BufReader::new(stream), writer, next_id: 1, daemon_version: String::new() };
         match client.next_message()? {
@@ -47,6 +55,12 @@ impl Client {
                 };
             }
         }
+    }
+
+    /// Waits for events as long as novad runs, for `next_event`. Requests
+    /// still time out on writing.
+    pub fn follow(&mut self) -> Result<(), String> {
+        self.reader.get_ref().set_read_timeout(None).map_err(|e| e.to_string())
     }
 
     /// The next event; replies are skipped. `None` when novad hangs up.
@@ -82,4 +96,22 @@ const HUNG_UP: &str = "novad closed the connection";
 enum Message {
     Event(Event),
     Reply { id: u64, body: serde_json::Value },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A novad that accepts connections but never answers.
+    #[test]
+    fn a_silent_novad_times_out() {
+        let dir = std::env::temp_dir().join(format!("nova-client-silent-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let socket = dir.join("novad.sock");
+        let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        let started = std::time::Instant::now();
+        assert!(Client::connect(&socket).is_err());
+        assert!(started.elapsed() < REPLY_TIMEOUT * 2);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
