@@ -6,6 +6,7 @@ mod client;
 mod lifecycle;
 mod logs;
 mod status;
+mod statusline;
 mod systemd;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
@@ -44,6 +45,11 @@ enum NovaCommand {
     Logs(logs::LogsArgs),
     /// Print the version of nova.
     Version,
+    /// Claude Code's status line command: passes Claude's plan limits to the
+    /// AI usage widget. Set it in Claude Code's settings as
+    /// `nova claude-statusline`, or `nova claude-statusline -- <your command>`
+    /// to keep a status line you already have.
+    ClaudeStatusline(statusline::StatuslineArgs),
     /// Run Nova's daemon, which runs the UI. systemd and `nova` start it.
     #[command(hide = true)]
     Daemon(novad::Args),
@@ -75,6 +81,10 @@ fn main() -> ExitCode {
             status::version(&socket);
             Ok(())
         }
+        Some(NovaCommand::ClaudeStatusline(args)) => match statusline::run(&args, &socket) {
+            Ok(code) => return code,
+            Err(e) => Err(e),
+        },
         Some(NovaCommand::Daemon(args)) => novad::run(args, socket).map_err(|e| format!("daemon: {e}")),
         Some(
             NovaCommand::Setup

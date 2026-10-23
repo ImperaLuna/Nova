@@ -112,6 +112,15 @@ fn subscribing_to_the_theme_sends_its_colors() {
 }
 
 #[test]
+fn claude_usage_is_refused_until_the_feature_exists() {
+    let novad = TestDaemon::start("claude-usage", None);
+    let mut client = novad.connect();
+    let limits = json!({"limits": [{"window": "session", "percent": 12}]});
+    let reply = client.request(1, "report_claude_usage", Some(limits));
+    assert_eq!(reply["error"], "the ai-usage feature is off");
+}
+
+#[test]
 fn requests_without_id_get_no_reply() {
     let novad = TestDaemon::start("no-id", None);
     let mut client = novad.connect();

@@ -114,8 +114,10 @@ impl<'a> Connection<'a> {
                 return;
             }
         };
+        // Answered even without an id: some commands act as they answer.
+        let outcome = self.answer(&request.command);
         if let Some(id) = request.id {
-            self.send(Response { id, outcome: self.answer(&request.command) });
+            self.send(Response { id, outcome });
         }
         self.follow_up(request.command);
     }
@@ -126,6 +128,9 @@ impl<'a> Connection<'a> {
             Command::ListFeatures => serde_json::to_value(&self.daemon.features),
             Command::Status => serde_json::to_value(self.daemon.status()),
             Command::Subscribe { .. } | Command::Quit => Ok(serde_json::Value::Null),
+            Command::ReportClaudeUsage { .. } => {
+                return Outcome::Error(format!("the {} feature is off", crate::ai_usage::FEATURE_ID));
+            }
         };
         match value {
             Ok(value) => Outcome::Result(value),
@@ -155,7 +160,7 @@ impl<'a> Connection<'a> {
                 self.flush();
                 self.daemon.quit();
             }
-            Command::Ping | Command::ListFeatures | Command::Status => {}
+            Command::Ping | Command::ListFeatures | Command::Status | Command::ReportClaudeUsage { .. } => {}
         }
     }
 
