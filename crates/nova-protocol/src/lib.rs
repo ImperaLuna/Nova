@@ -611,6 +611,36 @@ mod tests {
         insta::assert_snapshot!(all);
     }
 
+    /// Every wire name `ui/daemon/protocol.js` declares is one novad knows:
+    /// commands and events as they appear in the wire format snapshot, the
+    /// enums by parsing, feature ids by their folder in `features/`.
+    #[test]
+    fn protocol_js_names_are_known() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let js = std::fs::read_to_string(root.join("ui/daemon/protocol.js")).unwrap();
+        let wire = include_str!("snapshots/nova_protocol__tests__wire_format.snap");
+        let parses = |value: &str, kind: fn(serde_json::Value) -> bool| kind(json!(value));
+        let mut checked = 0;
+        for line in js.lines() {
+            let Some((name, value)) = line.strip_prefix("var ").and_then(|line| line.split_once(" = \"")) else {
+                continue;
+            };
+            let value = value.trim_end_matches("\";");
+            let known = match name.split('_').next().unwrap() {
+                "CMD" => wire.contains(&format!(r#""cmd":"{value}""#)),
+                "EVENT" => wire.contains(&format!(r#""event":"{value}""#)),
+                "TOPIC" => parses(value, |v| serde_json::from_value::<Topic>(v).is_ok()),
+                "CAPABILITY" => parses(value, |v| serde_json::from_value::<Capability>(v).is_ok()),
+                "STEP" => parses(value, |v| serde_json::from_value::<Step>(v).is_ok()),
+                "FEATURE" => root.join("features").join(value).join("feature.toml").is_file(),
+                _ => panic!("protocol.js: no check for {name}; add its kind to this test"),
+            };
+            assert!(known, "protocol.js: {name} = {value:?} isn't a name novad knows");
+            checked += 1;
+        }
+        assert!(checked > 0, "protocol.js declares no names");
+    }
+
     fn desktop() -> Desktop {
         let workspace =
             |id, name: &str, active, focused| Workspace { id, name: name.into(), active, focused, urgent: false };

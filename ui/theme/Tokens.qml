@@ -113,6 +113,12 @@ QtObject {
     // Icons: in the bar's pills, and in panels.
     readonly property int iconSizeSmall: 14
     readonly property int iconSize: 16
+    // Between an icon and the label or number beside it.
+    readonly property int iconGap: 6
+    // Thin strokes, like a ring or a spinner's arc.
+    readonly property real strokeThin: 1.5
+    // Something that can't be used right now, like an unavailable provider.
+    readonly property real dimOpacity: 0.5
 
     // Panels: width, inner padding, the gap between sections, list rows and
     // meters (usage bars).

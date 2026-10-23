@@ -13,7 +13,7 @@ import "usage.js" as Usage
 Item {
     id: root
 
-    // Daemon.aiUsage: {shown, providers}.
+    // AiUsageService.usage: {shown, providers}.
     required property var usage
     property bool open: false
 
@@ -34,9 +34,14 @@ Item {
 
     // Pill layout: pad, logo, gap, state icon, number, pad.
     readonly property int logoSize: Tokens.iconSizeSmall
-    readonly property int logoGap: 6
+    readonly property int logoGap: Tokens.iconGap
     readonly property int indicatorSize: Tokens.iconSize
-    readonly property real indicatorRadius: indicatorSize / 2 - 2
+    // The ring sits inside the icon box, clear of its edge.
+    readonly property int indicatorInset: 2
+    // The spinner's arc, in degrees, and the unavailable ring's dashes.
+    readonly property real spinnerSweep: 86
+    readonly property list<real> ringDashes: [2, 2]
+    readonly property real indicatorRadius: indicatorSize / 2 - indicatorInset
     readonly property int indicatorSpace: hasIndicator ? indicatorSize + logoGap : 0
     readonly property real pillWidth: Tokens.pad + logoSize + logoGap + indicatorSpace + heroClosedWidth + Tokens.pad
     // Panel layout, from the panel tokens.
@@ -48,12 +53,21 @@ Item {
     readonly property int heroLine: Tokens.lineHeightHero
     // The % beside the open headline, relative to its digits.
     readonly property real percentSignOpen: 0.42
+    // The open headline's tracking, tightened by this share of its size.
+    readonly property real heroTracking: -0.02
     readonly property int sectionGap: Tokens.sectionGap
     readonly property int rowHeight: Tokens.rowHeight
     readonly property int rowRadius: Tokens.radiusRow
     readonly property int sessionMeter: Tokens.meterHeight
     readonly property int weeklyMeter: Tokens.meterHeightSmall
     readonly property int fillDuration: Tokens.durationFill
+    // How often the "left" and "resets" texts count down.
+    readonly property int countdownInterval: 30 * 1000
+    // Caption lines that wrap, like a hint, get some air between them.
+    readonly property real wrapLineHeight: 1.5
+    // The provider name sits a pixel right, to line up optically with the
+    // logo's edge.
+    readonly property int nameNudge: 1
 
     // The panel's height for what it shows now.
     readonly property real contentHeight: details.y + details.implicitHeight + sectionGap + othersBlock.implicitHeight + panelBottom
@@ -102,7 +116,7 @@ Item {
 
     // The "left" and "resets" texts count down only while they're visible.
     Timer {
-        interval: 30 * 1000
+        interval: root.countdownInterval
         running: root.open
         repeat: true
         triggeredOnStart: true
@@ -112,7 +126,7 @@ Item {
     component Meter: Rectangle {
         id: meter
         property var row
-        implicitHeight: 4
+        implicitHeight: Tokens.meterHeightSmall
         radius: height / 2
         color: Tokens.track
 
@@ -124,7 +138,10 @@ Item {
         }
     }
 
+    // Text from novad, like hints and plan names, is shown as written: never
+    // as markup.
     component Caption: Text {
+        textFormat: Text.PlainText
         font.family: Tokens.fontSans
         font.pixelSize: Tokens.fontSizeSmall
         color: Tokens.fgDim
@@ -208,7 +225,7 @@ Item {
             y: (Tokens.barHeight - height) / 2
             width: root.logoSize
             provider: root.summary.id
-            opacity: root.summary.state === "unavailable" ? 0.5 : 1
+            opacity: root.summary.state === "unavailable" ? Tokens.dimOpacity : 1
         }
 
         // Unavailable: a dashed ring. Loading: a spinning arc.
@@ -224,10 +241,10 @@ Item {
 
             ShapePath {
                 strokeColor: Tokens.track
-                strokeWidth: 1.5
+                strokeWidth: Tokens.strokeThin
                 fillColor: "transparent"
                 strokeStyle: root.summary.state === "unavailable" ? ShapePath.DashLine : ShapePath.SolidLine
-                dashPattern: [2, 2]
+                dashPattern: root.ringDashes
                 PathAngleArc {
                     centerX: root.indicatorSize / 2
                     centerY: root.indicatorSize / 2
@@ -239,7 +256,7 @@ Item {
 
             ShapePath {
                 strokeColor: Tokens.fgDim
-                strokeWidth: root.summary.state === "loading" ? 1.5 : 0
+                strokeWidth: root.summary.state === "loading" ? Tokens.strokeThin : 0
                 fillColor: "transparent"
                 capStyle: ShapePath.RoundCap
                 PathAngleArc {
@@ -247,7 +264,7 @@ Item {
                     centerY: root.indicatorSize / 2
                     radiusX: root.indicatorRadius
                     radiusY: root.indicatorRadius
-                    sweepAngle: 86
+                    sweepAngle: root.spinnerSweep
                 }
             }
 
@@ -263,7 +280,7 @@ Item {
 
         Text {
             id: name
-            x: Tokens.pad + root.logoSize + root.logoGap + 1
+            x: Tokens.pad + root.logoSize + root.logoGap + root.nameNudge
             y: (Tokens.barHeight - height) / 2
             opacity: root.open ? 1 : 0
             MorphReveal on opacity {
@@ -274,6 +291,7 @@ Item {
             font.pixelSize: Tokens.fontSize
             font.weight: Font.DemiBold
             color: Tokens.fg
+            textFormat: Text.PlainText
             text: root.summary.name
         }
 
@@ -299,6 +317,7 @@ Item {
                 font.pixelSize: Tokens.fontSizeTiny
                 font.weight: Font.Medium
                 color: Tokens.fgDim
+                textFormat: Text.PlainText
                 text: root.summary.plan
             }
         }
@@ -320,8 +339,9 @@ Item {
                 font.family: Tokens.fontMono
                 font.pixelSize: root.heroSize
                 font.weight: Font.Medium
-                font.letterSpacing: morph.lerp(0, -0.02 * root.heroSize)
+                font.letterSpacing: morph.lerp(0, root.heroTracking * root.heroSize)
                 color: root.summary.main ? root.percentColor(root.summary) : Tokens.fgDim
+                textFormat: Text.PlainText
                 text: root.summary.hero
 
                 Behavior on color {
@@ -355,7 +375,7 @@ Item {
             Column {
                 id: primaryBlock
                 width: parent.width
-                spacing: 8
+                spacing: Tokens.gap
                 opacity: root.open ? 1 : 0
                 MorphReveal on opacity {
                     delay: 0.55
@@ -393,7 +413,7 @@ Item {
                 Caption {
                     width: parent.width
                     wrapMode: Text.Wrap
-                    lineHeight: 1.5
+                    lineHeight: root.wrapLineHeight
                     text: root.summary.message
                 }
             }
@@ -401,7 +421,7 @@ Item {
             Column {
                 id: secondBlock
                 width: parent.width
-                spacing: 8
+                spacing: Tokens.gap
                 opacity: root.open ? 1 : 0
                 MorphReveal on opacity {
                     delay: 0.7
@@ -417,6 +437,7 @@ Item {
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSize
                         color: Tokens.fg
+                        textFormat: Text.PlainText
                         text: root.summary.second ? root.summary.second.name : ""
                     }
 
@@ -449,7 +470,7 @@ Item {
             x: root.panelPad
             y: root.openHeight - root.panelBottom - height
             width: details.width
-            spacing: 8
+            spacing: Tokens.gap
             opacity: root.open ? 1 : 0
             MorphReveal on opacity {
                 delay: 0.85
@@ -491,7 +512,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         width: Tokens.iconSize
                         provider: row.info.id
-                        opacity: row.info.state === "unavailable" ? 0.5 : 1
+                        opacity: row.info.state === "unavailable" ? Tokens.dimOpacity : 1
                     }
 
                     Text {
@@ -500,6 +521,7 @@ Item {
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSize
                         color: Tokens.fg
+                        textFormat: Text.PlainText
                         text: row.info.name
                     }
 

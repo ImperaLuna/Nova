@@ -18,7 +18,8 @@ Singleton {
     // the first one arrives. Its colors go to Tokens.
     property var theme: null
     // The latest ai_usage event's data ({shown, providers}); null until one
-    // arrives, which only happens with the ai-usage feature on.
+    // arrives, which only happens with the ai-usage feature on. Read it
+    // through the AiUsageService singleton.
     property var aiUsage: null
     // The latest compositor event's data ({compositor, capabilities,
     // outputs, focused_window, keyboard_layout}); null until one arrives,
@@ -30,12 +31,20 @@ Singleton {
     property int _nextId: 1
     property var _pending: ({})
 
+    // Sends a Protocol.CMD_* command. `callback(error, result)` gets novad's
+    // reply, or an error when novad isn't there or goes away first. Without
+    // one, an error is logged, so a failed command is never silent.
     function call(cmd, args, callback) {
-        if (!socket.connected)
+        const reply = callback ?? ((error, result) => {
+                if (error)
+                    console.warn(`nova: ${cmd} failed: ${error}`);
+            });
+        if (!socket.connected) {
+            reply("not connected to novad");
             return false;
+        }
         const id = _nextId++;
-        if (callback)
-            _pending[id] = callback;
+        _pending[id] = reply;
         socket.write(Protocol.request(id, cmd, args));
         socket.flush();
         return true;
@@ -48,21 +57,21 @@ Singleton {
             return;
         }
         if (msg.kind === "response") {
-            const callback = _pending[msg.id];
+            const reply = _pending[msg.id];
             delete _pending[msg.id];
-            if (callback)
-                callback(msg.error, msg.result);
-        } else if (msg.event === "hello") {
+            if (reply)
+                reply(msg.error, msg.result);
+        } else if (msg.event === Protocol.EVENT_HELLO) {
             version = msg.data.daemon;
             console.info(`nova: connected to novad ${version}`);
-        } else if (msg.event === "features") {
+        } else if (msg.event === Protocol.EVENT_FEATURES) {
             features = msg.data.features;
-        } else if (msg.event === "theme") {
+        } else if (msg.event === Protocol.EVENT_THEME) {
             Tokens.apply(msg.data.colors);
             theme = msg.data;
-        } else if (msg.event === "ai_usage") {
+        } else if (msg.event === Protocol.EVENT_AI_USAGE) {
             aiUsage = msg.data;
-        } else if (msg.event === "compositor") {
+        } else if (msg.event === Protocol.EVENT_COMPOSITOR) {
             desktop = msg.data;
         }
     }
@@ -87,11 +96,15 @@ Singleton {
             if (connected) {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
-                root.call("subscribe", {
+                root.call(Protocol.CMD_SUBSCRIBE, {
                     topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR]
                 });
             } else {
+                // Replies to these won't come any more.
+                const pending = root._pending;
                 root._pending = {};
+                for (const id in pending)
+                    pending[id]("novad went away");
                 retry.start();
             }
         }
