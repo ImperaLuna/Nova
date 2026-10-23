@@ -110,6 +110,8 @@ let
           QUIT_COMPOSITOR = ${builtins.toJSON "${ipc} ${quitCompositor}"}
           COMPOSITOR = ${builtins.toJSON compositor}
           FOCUS_NEXT_WORKSPACE = ${builtins.toJSON "${ipcEnv} ${steps."focus the next workspace"}"}
+          FULLSCREEN_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."fullscreen the focused window"}"}
+          CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
         ''
         + builtins.readFile ./lifecycle.py;
       };
@@ -275,6 +277,7 @@ in
       "focus the other output" = "niri msg action focus-monitor-next";
       "focus the first output" = "niri msg action focus-monitor-previous";
       "close the focused window" = "niri msg action close-window";
+      "fullscreen the focused window" = "niri msg action fullscreen-window";
     };
   };
 
@@ -310,6 +313,7 @@ in
       "focus the other output" = "hyprctl dispatch focusmonitor +1";
       "focus the first output" = "hyprctl dispatch focusmonitor -1";
       "close the focused window" = "hyprctl dispatch killactive";
+      "fullscreen the focused window" = "hyprctl dispatch fullscreen 0";
     };
   };
 }
