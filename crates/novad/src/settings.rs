@@ -51,7 +51,7 @@ pub struct Settings {
 impl Settings {
     /// The settings at start: a missing or broken file means defaults.
     pub fn load(sources: &Sources, hub: &Arc<Hub>, logger: &Arc<Logger>) -> Self {
-        let fallback = "using the defaults";
+        let fallback = "broken settings, using the defaults";
         let config = logged(config::read(&sources.config), fallback, logger).unwrap_or_default();
         let selection = logged(features::read_selection(&sources.selection), fallback, logger).unwrap_or_default();
         Self::apply(config, selection, None, sources, hub, logger)
@@ -60,7 +60,7 @@ impl Settings {
     /// Reads both files again and applies what changed. A broken file keeps
     /// its last good version.
     pub fn reload(&mut self, sources: &Sources, hub: &Arc<Hub>, logger: &Arc<Logger>) {
-        let fallback = "keeping the last good settings";
+        let fallback = "broken settings, keeping the last good ones";
         let config = logged(config::read(&sources.config), fallback, logger).unwrap_or_else(|| self.config.clone());
         let selection = logged(features::read_selection(&sources.selection), fallback, logger)
             .unwrap_or_else(|| self.selection.clone());
@@ -112,6 +112,7 @@ impl Settings {
                     logger.info("features", &format!("stopped {}", ai_usage::FEATURE_ID));
                 }
                 ai_usage_ready.then(|| {
+                    logger.info("features", &format!("starting {}", ai_usage::FEATURE_ID));
                     ai_usage::Usage::start(
                         sources.ai_usage.clone(),
                         &config.ai_usage,
@@ -138,9 +139,10 @@ fn is_ready(features: &[FeatureState], id: &str) -> bool {
     features.iter().any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
 }
 
-/// `read`'s settings, or `None` after logging why not and what happens instead.
+/// `read`'s settings, or `None` after logging why not and what happens
+/// instead. The outcome goes first: a TOML error spans several lines.
 fn logged<T>(read: Result<T, String>, fallback: &str, logger: &Logger) -> Option<T> {
-    read.map_err(|problem| logger.error(LOG_SOURCE, &format!("{problem}; {fallback}"))).ok()
+    read.map_err(|problem| logger.error(LOG_SOURCE, &format!("{fallback}: {problem}"))).ok()
 }
 
 /// Calls `reload` on a thread of its own once `files` stop changing. Their
