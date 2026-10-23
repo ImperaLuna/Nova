@@ -8,6 +8,7 @@ var VERSION = 2;
 var TOPIC_FEATURES = "features";
 var TOPIC_LOGS = "logs";
 var TOPIC_THEME = "theme";
+var TOPIC_AI_USAGE = "ai_usage";
 
 // Returns {kind: "event"|"response", ...} or null for lines to ignore.
 function parse(line) {

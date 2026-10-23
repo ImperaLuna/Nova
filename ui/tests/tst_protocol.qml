@@ -36,6 +36,19 @@ TestCase {
         compare(line, '{"v":2,"id":4,"cmd":"subscribe","args":{"topics":["features"]}}\n');
     }
 
+    function test_parses_ai_usage_event() {
+        const msg = Protocol.parse('{"v":2,"event":"ai_usage","data":{"shown":"claude","providers":[{"provider":"claude","state":"ready","limits":[{"window":"session","percent":42,"resets_at":"2026-10-23T11:00:00Z"},{"window":"weekly","percent":61}]},{"provider":"codex","state":"unavailable","hint":"No Codex sessions yet."}]}}');
+        compare(msg.event, Protocol.TOPIC_AI_USAGE);
+        compare(msg.data.providers[0].limits[0].percent, 42);
+    }
+
+    function test_show_ai_usage_names_the_provider() {
+        const line = Protocol.request(5, "show_ai_usage", {
+            provider: "codex"
+        });
+        compare(line, '{"v":2,"id":5,"cmd":"show_ai_usage","args":{"provider":"codex"}}\n');
+    }
+
     function test_only_ready_features_load() {
         const ready = Protocol.readyFeatures([
             {

@@ -6,6 +6,7 @@
 //! top of this.
 
 mod ai_usage;
+mod config;
 mod features;
 mod hub;
 mod logger;
@@ -17,7 +18,7 @@ mod theme;
 use hub::Hub;
 use logger::Logger;
 use nova_features::Selection;
-use nova_protocol::{FeatureState, LogLevel, Status, Theme, UiState, UiStatus};
+use nova_protocol::{FeatureState, FeatureStatus, LogLevel, Status, Theme, UiState, UiStatus};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -43,7 +44,7 @@ pub struct Args {
     /// Folder of theme files (`<id>.toml`).
     #[arg(long, default_value_os_t = theme::default_dir())]
     themes_dir: PathBuf,
-    /// The user's settings, including the theme.
+    /// The user's settings (see `config`).
     #[arg(long, default_value_os_t = nova_paths::config_dir().join("config.toml"))]
     config: PathBuf,
     /// The UI's QML folder.
@@ -60,6 +61,18 @@ pub struct Args {
     /// Where nova.log and crash snapshots go.
     #[arg(long, default_value_os_t = nova_paths::state_dir())]
     log_dir: PathBuf,
+    /// Where features keep what survives a restart.
+    #[arg(long, default_value_os_t = nova_paths::state_dir())]
+    state_dir: PathBuf,
+    /// Codex's folder, read by the `ai-usage` feature. By default
+    /// `$CODEX_HOME`, else `~/.codex`.
+    #[arg(long)]
+    codex_home: Option<PathBuf>,
+    /// Claude Code's credentials file, read by the `ai-usage` feature. By
+    /// default `$CLAUDE_CONFIG_DIR/.credentials.json`, else
+    /// `~/.claude/.credentials.json`.
+    #[arg(long)]
+    claude_credentials: Option<PathBuf>,
 }
 
 /// Everything a connection needs to answer requests.
@@ -71,6 +84,8 @@ pub struct Daemon {
     logger: Arc<Logger>,
     ui: Option<Arc<Supervisor>>,
     socket: PathBuf,
+    /// Running when the `ai-usage` feature is ready.
+    ai_usage: Option<Arc<ai_usage::Usage>>,
 }
 
 impl Daemon {
@@ -166,7 +181,24 @@ fn start(
         Supervisor::start(settings, Arc::clone(&logger))
     });
 
-    let daemon = Arc::new(Daemon { started: Instant::now(), features, theme, hub, logger, ui, socket });
+    let ai_usage = features
+        .iter()
+        .any(|feature| feature.id == ai_usage::FEATURE_ID && feature.status == FeatureStatus::Ready)
+        .then(|| {
+            ai_usage::Usage::start(
+                ai_usage::Paths::new(
+                    &args.state_dir,
+                    args.codex_home.clone(),
+                    args.claude_credentials.clone(),
+                    // A broken config.toml is already logged by the theme.
+                    config::read(&args.config).is_ok_and(|config| config.ai_usage.claude_usage_endpoint),
+                ),
+                Arc::clone(&hub),
+                Arc::clone(&logger),
+            )
+        });
+
+    let daemon = Arc::new(Daemon { started: Instant::now(), features, theme, hub, logger, ui, socket, ai_usage });
     Ok((listener, daemon))
 }
 

@@ -16,6 +16,7 @@ insta = "1"
 clap = { version = "4", features = ["derive"] }
 jiff = "0.2"
 libc = "0.2"
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 nova-protocol = { path = "crates/nova-protocol" }
 nova-features = { path = "crates/nova-features" }
 nova-paths = { path = "crates/nova-paths" }

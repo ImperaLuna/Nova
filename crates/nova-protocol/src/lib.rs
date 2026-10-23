@@ -37,6 +37,9 @@ pub enum Event {
     /// The active theme's colors. Topic [`Topic::Theme`], sent right after
     /// subscribing.
     Theme(Theme),
+    /// Plan usage of AI coding tools. Topic [`Topic::AiUsage`], sent right
+    /// after subscribing and whenever a number changes.
+    AiUsage(AiUsage),
 }
 
 /// Groups of events a client can subscribe to.
@@ -46,6 +49,7 @@ pub enum Topic {
     Features,
     Logs,
     Theme,
+    AiUsage,
 }
 
 impl Event {
@@ -57,6 +61,7 @@ impl Event {
             Event::Features { .. } => Some(Topic::Features),
             Event::Logs { .. } => Some(Topic::Logs),
             Event::Theme(_) => Some(Topic::Theme),
+            Event::AiUsage(_) => Some(Topic::AiUsage),
         }
     }
 }
@@ -164,6 +169,51 @@ impl From<Color> for String {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AiUsage {
+    /// The provider the bar shows.
+    pub shown: AiProvider,
+    /// Every provider, in display order.
+    pub providers: Vec<ProviderUsage>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AiProvider {
+    Claude,
+    Codex,
+}
+
+impl AiProvider {
+    pub const ALL: [AiProvider; 2] = [AiProvider::Claude, AiProvider::Codex];
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProviderUsage {
+    pub provider: AiProvider,
+    pub state: UsageState,
+    /// The subscription's display name, like `Plus`, when the source says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
+    /// The windows the plan has right now, session first. Plans differ:
+    /// some have only a weekly limit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub limits: Vec<UsageLimit>,
+    /// Why there are no numbers and how to get them, when unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageState {
+    /// novad is still reading the source.
+    Loading,
+    Ready,
+    /// No numbers; `hint` says why.
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UsageLimit {
     pub window: UsageWindow,
@@ -199,6 +249,14 @@ pub enum Command {
     Status,
     /// Stops the UI and exits novad.
     Quit,
+    /// Picks the provider the bar shows (feature `ai-usage`). Remembered
+    /// across restarts.
+    ShowAiUsage {
+        provider: AiProvider,
+    },
+    /// Asks for fresh numbers now, when the panel opens (feature
+    /// `ai-usage`). Asking again within a minute does nothing.
+    RefreshAiUsage,
     /// Claude's limits, read from Claude Code's status line by
     /// `nova claude-statusline` (feature `ai-usage`).
     ReportClaudeUsage {
@@ -425,7 +483,9 @@ mod tests {
             encode(Request { id: None, command: Command::ListFeatures }),
             encode(Request {
                 id: Some(9),
-                command: Command::Subscribe { topics: vec![Topic::Features, Topic::Logs, Topic::Theme] },
+                command: Command::Subscribe {
+                    topics: vec![Topic::Features, Topic::Logs, Topic::Theme, Topic::AiUsage],
+                },
             }),
             encode(Event::Theme(theme())),
             encode(Request { id: Some(10), command: Command::Status }),
@@ -434,9 +494,28 @@ mod tests {
             encode(Event::Logs { backlog: false, entries: vec![log_entry()] }),
             encode(Response { id: 10, outcome: Outcome::Result(serde_json::to_value(status()).unwrap()) }),
             encode(Response { id: 7, outcome: Outcome::Result(json!("pong")) }),
+            encode(Event::AiUsage(ai_usage())),
+            encode(Request { id: Some(12), command: Command::ShowAiUsage { provider: AiProvider::Codex } }),
+            encode(Request { id: None, command: Command::RefreshAiUsage }),
             encode(Request {
                 id: Some(13),
-                command: Command::ReportClaudeUsage {
+                command: Command::ReportClaudeUsage { limits: ai_usage().providers[0].limits.clone() },
+            }),
+            encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
+        ];
+        let all: String = lines.into_iter().map(Result::unwrap).collect();
+        assert!(all.lines().all(|l| l.starts_with(r#"{"v":2,"#)));
+        insta::assert_snapshot!(all);
+    }
+
+    fn ai_usage() -> AiUsage {
+        AiUsage {
+            shown: AiProvider::Claude,
+            providers: vec![
+                ProviderUsage {
+                    provider: AiProvider::Claude,
+                    state: UsageState::Ready,
+                    plan: None,
                     limits: vec![
                         UsageLimit {
                             window: UsageWindow::Session,
@@ -445,13 +524,17 @@ mod tests {
                         },
                         UsageLimit { window: UsageWindow::Weekly, percent: 61, resets_at: None },
                     ],
+                    hint: None,
                 },
-            }),
-            encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
-        ];
-        let all: String = lines.into_iter().map(Result::unwrap).collect();
-        assert!(all.lines().all(|l| l.starts_with(r#"{"v":2,"#)));
-        insta::assert_snapshot!(all);
+                ProviderUsage {
+                    provider: AiProvider::Codex,
+                    state: UsageState::Unavailable,
+                    plan: None,
+                    limits: vec![],
+                    hint: Some("No Codex sessions yet.".into()),
+                },
+            ],
+        }
     }
 
     fn log_entry() -> LogEntry {
@@ -536,6 +619,7 @@ mod tests {
         assert_eq!(Event::Features { features: vec![] }.topic(), Some(Topic::Features));
         assert_eq!(Event::Logs { backlog: false, entries: vec![] }.topic(), Some(Topic::Logs));
         assert_eq!(Event::Theme(theme()).topic(), Some(Topic::Theme));
+        assert_eq!(Event::AiUsage(ai_usage()).topic(), Some(Topic::AiUsage));
     }
 
     #[test]

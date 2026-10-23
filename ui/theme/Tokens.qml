@@ -52,6 +52,29 @@ QtObject {
     readonly property color surfaceRaised: Qt.rgba(fg.r, fg.g, fg.b, raisedOpacity)
     readonly property color outline: Qt.rgba(fg.r, fg.g, fg.b, outlineOpacity)
 
+    // Glass behind pills and the panels that morph out of them: a dark tint
+    // with a hint of the accent and a faint rim. A solid
+    // stand-in until the blur spike (IMP-9) picks real blur.
+    readonly property real glassOpacity: 0.78
+    readonly property real glassAccent: 0.05
+    readonly property color glass: {
+        const tinted = tint(primary, glassAccent);
+        return Qt.rgba(tinted.r, tinted.g, tinted.b, glassOpacity);
+    }
+    readonly property color glassRim: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
+    // A brighter line along the glass's top inner edge.
+    readonly property color glassHighlight: Qt.rgba(fg.r, fg.g, fg.b, 0.16)
+    // The soft shadow under glass, and the room it needs around the glass.
+    readonly property color shadow: Qt.rgba(0, 0, 0, 0.35)
+    readonly property real shadowBlur: 30
+    readonly property real shadowOffset: 10
+    readonly property real shadowRoom: shadowBlur + shadowOffset
+    // Hover wash on things inside glass.
+    readonly property color hover: Qt.rgba(fg.r, fg.g, fg.b, 0.06)
+    // Meters: the empty track and a neutral fill.
+    readonly property color track: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
+    readonly property color meter: Qt.rgba(fg.r, fg.g, fg.b, 0.85)
+
     // `target` mixed into bg: 0 is bg, 1 is the color itself. One function for
     // every ramp and tint, so they follow the theme: heatmaps step through
     // tint(primary, level), status rows sit on tint(error, 0.15) and so on.
@@ -63,6 +86,7 @@ QtObject {
     readonly property int radiusPanel: 24
     readonly property int radiusCard: 16
     readonly property int radiusControl: 12
+    readonly property int radiusRow: 14
     readonly property int radiusPill: 999
 
     // Spacing
@@ -70,16 +94,47 @@ QtObject {
     readonly property int pad: 12
     readonly property int barHeight: 36
     readonly property int barMargin: 8
+    // Icons: in the bar's pills, and in panels.
+    readonly property int iconSizeSmall: 14
+    readonly property int iconSize: 16
+
+    // Panels: width, inner padding, the gap between sections, list rows and
+    // meters (usage bars).
+    readonly property int panelWidth: 300
+    readonly property int panelPad: 20
+    readonly property int panelPadBottom: 16
+    readonly property int sectionGap: 18
+    readonly property int rowHeight: 40
+    readonly property int meterHeight: 8
+    readonly property int meterHeightSmall: 4
+    // Inner padding of a list row.
+    readonly property int rowInset: 10
+    // Small labels in a pill shape, like a plan name.
+    readonly property int chipHeight: 22
+    readonly property int chipPad: 10
 
     // Type
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"
     readonly property string fontDisplay: "Instrument Serif"
     readonly property int fontSize: 13
+    readonly property int fontSizeSmall: 12
+    readonly property int fontSizeTiny: 11
+    // A panel's headline number.
+    readonly property int fontSizeHero: 56
+    readonly property int lineHeightHero: 60
 
     // Motion (ms)
     readonly property int durationFast: 120
     readonly property int durationPanel: 250
+    // Content fading in once a panel has grown, and meters filling.
+    readonly property int durationFade: 140
+    readonly property int durationFill: 600
+    readonly property int durationColor: 200
+    // One turn of a loading spinner.
+    readonly property int durationSpin: 1000
+    // The cubic-bezier every panel motion uses (fast out, gentle stop).
+    readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
 
     // Sets the theme colors from a theme event's `colors` ({token: "#RRGGBB"}).
     function apply(colors) {

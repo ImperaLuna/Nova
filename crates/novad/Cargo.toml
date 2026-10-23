@@ -16,6 +16,7 @@ jiff.workspace = true
 libc.workspace = true
 serde.workspace = true
 toml.workspace = true
+ureq.workspace = true
 
 [lints]
 workspace = true
@@ -23,4 +24,5 @@ workspace = true
 # One cargo feature per feature manifest that declares `daemon = "<name>"`.
 # A test checks the two lists stay in sync.
 [features]
+ai-usage = []
 recording = []

@@ -52,7 +52,7 @@ enum NovaCommand {
     ClaudeStatusline(statusline::StatuslineArgs),
     /// Run Nova's daemon, which runs the UI. systemd and `nova` start it.
     #[command(hide = true)]
-    Daemon(novad::Args),
+    Daemon(Box<novad::Args>),
     /// [planned] Install packages for your distro and GPU, the default config and the novad service.
     Setup,
     /// [planned] Check the compositor, Quickshell, novad, packages and config, and report what's wrong.
@@ -85,7 +85,7 @@ fn main() -> ExitCode {
             Ok(code) => return code,
             Err(e) => Err(e),
         },
-        Some(NovaCommand::Daemon(args)) => novad::run(args, socket).map_err(|e| format!("daemon: {e}")),
+        Some(NovaCommand::Daemon(args)) => novad::run(*args, socket).map_err(|e| format!("daemon: {e}")),
         Some(
             NovaCommand::Setup
             | NovaCommand::Doctor

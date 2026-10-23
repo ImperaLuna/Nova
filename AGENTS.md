@@ -31,8 +31,9 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   `~/.local/state/nova/nova.log`, rotated per novad start, with crash
   snapshots in `crashes/`. CLI tests run a real novad in-process.
 - `crates/nova-cli`: the `nova` binary. `nova` starts Nova (or shows its
-  status), plus `restart`, `quit`, `status`, `logs`, `version`, and the
-  hidden `daemon`. It talks to novad and to the `nova.service` systemd user
+  status), plus `restart`, `quit`, `status`, `logs`, `version`,
+  `claude-statusline` (Claude Code's status line command, for AI usage) and
+  the hidden `daemon`. It talks to novad and to the `nova.service` systemd user
   unit; no logic of its own.
   `nova help` also lists planned commands, marked `[planned]`.
 - `themes/<id>.toml`: predefined color themes (no wallpaper-generated
@@ -52,6 +53,18 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   source of truth for its packages per distro and GPU. Nix, `nova setup` and
   novad all read it. A manifest with `daemon = "x"` needs a matching cargo
   feature `x` in `crates/novad/Cargo.toml` (a test enforces this).
+  - `ai-usage`: Claude and Codex plan limits on the `ai_usage` topic
+    (`crates/novad/src/ai_usage`, `ui/ai_usage`). Claude: Claude Code's
+    status line input via `nova claude-statusline`; and, only when the user
+    sets `claude-usage-endpoint = true` under `[ai-usage]` in `config.toml`
+    (Anthropic doesn't document this use), Anthropic's usage endpoint (the
+    one Claude Code's `/usage` reads) with the access token from Claude
+    Code's credentials file, every 5 minutes and on panel open (at most once
+    a minute), backing off on errors. The token is never logged, stored or
+    refreshed (refreshing would rotate Claude Code's sign-in); a credentials
+    file that isn't the user's or isn't 0600 is refused; no redirects; the
+    user agent is `nova/<version>`. Codex: the `token_count` events in its session logs, watched
+    with inotify; nothing is requested for Codex.
 - `ui/`: the Quickshell (QML) UI. `shell.qml` is the entry point.
   - `theme/Tokens.qml`: design tokens. Components never hard-code colors,
     radii, sizes or durations. Colors are the theme's, set by `Daemon.qml`
@@ -135,8 +148,6 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 
 ## Security
 
-Security and performance are ongoing work, reviewed at every milestone.
-
 - Anything on the socket is untrusted: any local process can connect.
   Validate every request, reject unknown fields, and cap message sizes.
 - Never build shell strings. Launch apps and run package managers with argv
@@ -199,58 +210,5 @@ Run inside `nix develop`:
 - `just review [base]`: a Codex review of the branch against `base` (default
   `main`). Needs the Codex CLI and `codex login` outside the dev shell.
 
-Test every change on the maintainer's desktop (NixOS + niri) before calling it
-done, whenever a session there is connected (a Remote Control session or a
-connected folder): check the branch out in your own worktree, run `just
-check`, then try the change itself (`just run`, the `nova` command it
-touches, btop for process names). Say in the PR what was tried there. Don't
-commit or push from the desktop; changes go through the branch. With no
-connection, say the change is untested on real hardware.
-
-Several sessions can test on the desktop at once, so they mustn't race:
-
-- Never switch branches in `~/Projects/Nova`; the maintainer and other
-  sessions use it. Test in a worktree of your own (its own `target/` and
-  `e2e/out/`): `git -C ~/Projects/Nova fetch origin <branch>`, then
-  `git -C ~/Projects/Nova worktree add ~/Projects/Nova-worktrees/<branch>
-  origin/<branch>`. Remove it with `git worktree remove` when the PR is done.
-- Threads can end before their PR does, so clean up before you add yours:
-  remove every worktree in `~/Projects/Nova-worktrees` whose PR is merged or
-  closed, then `git -C ~/Projects/Nova worktree prune`. Each one holds about
-  1 GB of build output, and its `result` links keep Nix builds from being
-  garbage-collected.
-- `just check`, `just e2e` and `nix flake check` are safe in parallel:
-  `just e2e` has its own runtime dir, socket and headless sway.
-- `just run` swaps out the real bar, so only one runs at a time. A second one
-  exits with "another `just run` is using the bar": wait and retry, don't kill
-  the other one. Don't touch the live bar, `nova.service` or
-  `$XDG_RUNTIME_DIR/nova` any other way.
-- Leave uncommitted work in any checkout you didn't create alone (stash it
-  with a named message if you must, never discard it).
-- CI and the other sessions share the desktop's CPU, so builds can be slow.
-  Rerun a timeout before calling it a failure.
-- CI jobs can't open `/dev/kvm`; VM tests get KVM only as Nix builds through
-  the daemon (flake checks), not as a driver started in a job step.
-
-Every change goes through a pull request; `main` is protected. CI runs on a
-self-hosted runner on the maintainer's desktop, so PR checks wait while it is
-off (GitHub drops jobs queued over 24 hours; re-run them).
-
-Tickets live in Linear (team IMP). PR titles are `[<ticket>] <type>:
-<description>`, where the type is the ticket's Linear label (Feature, Bug,
-Improvement), like `[IMP-8] Feature: nova CLI`. The body's first line is
-`Part of IMP-<n>` while the ticket has more PRs to come, or `Closes IMP-<n>`
-on the PR that finishes it, so Linear moves the ticket to Done only then.
-
-Open PRs as normal (non-draft) PRs. Codex doesn't review on its own (marking
-a draft ready doesn't start one either), so when the work is done, comment
-`@codex review` on the PR to ask for a review, and again after fixes. Ask
-once per round: pushes alone never trigger a review.
-
-Review findings (Codex, or any other reviewer bot) are claims to check, not
-orders. Before fixing one, reproduce it or trace a real path from a real
-caller or input to the failure, then weigh the code the fix adds against
-what it prevents. Fix it when the path is real and the fix is small and
-proportionate. Otherwise reply on the thread with what you traced and why
-it isn't worth the code, and leave the call to the maintainer. Don't add
-layers, options or special cases to satisfy a reviewer.
+Every change goes through a pull request; `main` is protected. Sessions on the
+maintainer's desktop are for testing only: don't commit or push from there.
