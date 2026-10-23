@@ -55,7 +55,7 @@ QtObject {
     // Liquid glass behind pills and the panels that morph out of them
     // (Glass.qml), over the compositor's blur of what's behind: a light tint
     // with a hint of the accent, so the blurred windows show through.
-    readonly property real glassOpacity: 0.46
+    readonly property real glassOpacity: 0.40
     readonly property real glassAccent: 0.05
     readonly property color glass: {
         const tinted = tint(primary, glassAccent);
