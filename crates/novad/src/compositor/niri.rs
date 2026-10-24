@@ -10,7 +10,7 @@ use super::Backend;
 use nova_protocol::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -156,6 +156,8 @@ struct Workspace {
 struct Window {
     id: u64,
     title: Option<String>,
+    /// None while it's being opened, before niri places it.
+    workspace_id: Option<u64>,
     app_id: Option<String>,
     is_focused: bool,
 }
@@ -230,6 +232,7 @@ impl State {
     }
 
     pub(super) fn desktop(&self) -> Desktop {
+        let occupied: HashSet<u64> = self.windows.values().filter_map(|window| window.workspace_id).collect();
         let mut outputs: BTreeMap<&str, Vec<&Workspace>> = BTreeMap::new();
         // A workspace without an output belongs to one that was unplugged;
         // niri moves it back when the output returns.
@@ -255,6 +258,7 @@ impl State {
                             active: workspace.is_active,
                             focused: workspace.is_focused,
                             urgent: workspace.is_urgent,
+                            empty: !occupied.contains(&workspace.id),
                         })
                         .collect(),
                 }

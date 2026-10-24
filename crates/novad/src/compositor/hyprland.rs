@@ -269,6 +269,7 @@ impl State {
     pub(super) fn desktop(&self) -> Desktop {
         let urgent_workspaces: HashSet<WorkspaceId> =
             self.urgent.iter().filter_map(|address| self.windows.get(address)).map(|window| window.workspace).collect();
+        let occupied: HashSet<WorkspaceId> = self.windows.values().map(|window| window.workspace).collect();
         let outputs = self
             .monitors
             .iter()
@@ -295,6 +296,7 @@ impl State {
                                 active,
                                 focused: active && monitor.focused,
                                 urgent: urgent_workspaces.contains(&workspace.id),
+                                empty: !occupied.contains(&workspace.id),
                             }
                         })
                         .collect(),
