@@ -72,8 +72,9 @@ REFRESH_HZ = 60
 # twice still exceeds.
 FRAMES_PER_REFRESH = 1.5
 # How many surfaces may draw while the panel opens or closes: the stage on
-# the pill's screen and the bar's exclusion zone (IMP-49).
-MORPH_SURFACES = 2
+# the pill's screen alone. The bar's exclusion zone used to draw a frame
+# too, each time an animation started (IMP-49).
+MORPH_SURFACES = 1
 # The window the tests open, and how it shows in novad's focused window.
 FOOT = "foot"
 NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
