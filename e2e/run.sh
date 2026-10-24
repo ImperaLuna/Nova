@@ -101,6 +101,9 @@ fi
 # Covered windows don't redraw while idle (supervisor.rs, FRAME_CALLBACK_TIMEOUT).
 tr '\0' '\n' <"/proc/$ui/environ" | grep -qx QT_WAYLAND_FRAME_CALLBACK_TIMEOUT=0 ||
   fail "the UI doesn't have QT_WAYLAND_FRAME_CALLBACK_TIMEOUT=0"
+# Animations follow each screen's frames (supervisor.rs, SIMPLE_ANIMATION_DRIVER).
+tr '\0' '\n' <"/proc/$ui/environ" | grep -qx QSG_USE_SIMPLE_ANIMATION_DRIVER=1 ||
+  fail "the UI doesn't have QSG_USE_SIMPLE_ANIMATION_DRIVER=1"
 [[ $(<"/proc/$(jq -r .pid "$out/status.json")/comm") == Nova ]] || fail "the daemon's process name isn't Nova"
 
 grim "$out/screenshot.png" || fail "screenshot failed"

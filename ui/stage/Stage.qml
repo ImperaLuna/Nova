@@ -16,11 +16,20 @@ Scope {
     id: root
 
     required property ShellScreen screen
+    // Its panels just stopped and their final state (and regions) isn't in
+    // a frame yet: drawing stays on for it even while another screen moves.
+    property bool settling: false
 
     StagePanels {
         id: drawn
         panels: bar.panels
         fixed: bar.fixedShapes
+        onMovingChanged: {
+            StageMotion.setMoving(root.screen.name, moving);
+            if (!moving)
+                root.settling = true;
+        }
+        Component.onDestruction: StageMotion.setMoving(root.screen.name, false)
     }
 
     // `nova toggle <panel>`, which novad sends every screen. When novad
@@ -49,6 +58,24 @@ Scope {
         }
         exclusionMode: ExclusionMode.Ignore
         color: "transparent"
+        // Draws while something moves here, or while nothing moves anywhere
+        // (StageMotion). Its regions only change when its own panels move,
+        // and it draws until their last frame is out, so they're always
+        // sent: Quickshell sends them only with a frame.
+        updatesEnabled: drawn.moving || root.settling || StageMotion.screens.length === 0
+
+        // Qt emits afterAnimating once it has polished a frame (Quickshell
+        // sends the regions then) and right before syncing it, and that frame
+        // goes out even if updates go off now. A later frameSwapped could
+        // still be an older frame's.
+        Connections {
+            target: stage.contentItem.Window.window
+            enabled: root.settling
+            function onAfterAnimating() {
+                root.settling = false;
+            }
+        }
+
         WlrLayershell.layer: WlrLayer.Top
         WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 

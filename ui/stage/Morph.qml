@@ -11,6 +11,8 @@ QtObject {
     property bool open: false
     // 0 closed, 1 open.
     property real t: open ? 1 : 0
+    // Whether it's growing or shrinking right now.
+    readonly property bool moving: motion.running
 
     // A value between its closed (`from`) and open (`to`) form, for now.
     function lerp(from: real, to: real): real {
@@ -19,6 +21,7 @@ QtObject {
 
     Behavior on t {
         NumberAnimation {
+            id: motion
             duration: Tokens.durationPanel
             easing.type: Easing.BezierSpline
             easing.bezierCurve: Tokens.easing

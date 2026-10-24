@@ -124,6 +124,28 @@ Item {
             verify(!usageElsewhere.open);
         }
 
+        function test_it_moves_while_any_panel_moves() {
+            verify(!drawn.moving);
+            notes.moving = true;
+            verify(drawn.moving);
+            notes.moving = false;
+            verify(!drawn.moving);
+            usageElsewhere.moving = true;
+            verify(!drawn.moving, "a panel on another screen");
+            usageElsewhere.moving = false;
+        }
+
+        function test_stage_motion_lists_each_moving_screen_once() {
+            StageMotion.setMoving("DP-1", true);
+            StageMotion.setMoving("DP-1", true);
+            StageMotion.setMoving("DP-2", true);
+            compare(StageMotion.screens.length, 2);
+            StageMotion.setMoving("DP-1", false);
+            compare(StageMotion.screens, ["DP-2"]);
+            StageMotion.setMoving("DP-2", false);
+            compare(StageMotion.screens.length, 0);
+        }
+
         function test_panels_can_come_and_go() {
             drawn.panels = [usage];
             compare(drawn.shapes.length, 2);
