@@ -28,6 +28,9 @@ BUDGET_PCT=2
 TOGGLE_SECS=1.5
 # How long Nova may take to start and the panel to become ready.
 START_SECS=30
+# Left for the bar to finish drawing itself after it's shown (the pill
+# loading took 84 ms on RyzenShine), so start-up frames aren't measured.
+SETTLE_SECS=2
 # What the bar logs once it has drawn itself (ui/bar/Bar.qml).
 BAR_SHOWN="nova: bar shown"
 
@@ -79,6 +82,7 @@ until ready; do
 	sleep 0.5
 done
 
+sleep "$SETTLE_SECS"
 # Followed live from novad, so its log rotating doesn't lose lines.
 "$nova" logs --ui -n 0 >"$work/frames.log" &
 capture=$!
