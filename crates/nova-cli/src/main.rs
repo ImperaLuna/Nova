@@ -3,6 +3,8 @@
 //! the daemon's logic lives in the novad crate.
 
 mod client;
+mod doctor;
+mod host;
 mod lifecycle;
 mod logs;
 mod status;
@@ -55,7 +57,9 @@ enum NovaCommand {
     Daemon(Box<novad::Args>),
     /// [planned] Install packages for your distro and GPU, the default config and the novad service.
     Setup,
-    /// [planned] Check the compositor, Quickshell, novad, packages and config, and report what's wrong.
+    /// Check the compositor, Quickshell, novad, packages and config, and report what's wrong.
+    ///
+    /// Exits non-zero when a check fails; warnings alone don't.
     Doctor,
     /// [planned] Print the config folder, or open it in your editor.
     Config,
@@ -77,6 +81,7 @@ fn main() -> ExitCode {
         Some(NovaCommand::Quit) => lifecycle::quit(&socket),
         Some(NovaCommand::Status { json }) => status::show(&socket, json),
         Some(NovaCommand::Logs(args)) => logs::run(&args, &socket),
+        Some(NovaCommand::Doctor) => doctor::run(&socket),
         Some(NovaCommand::Version) => {
             status::version(&socket);
             Ok(())
@@ -88,7 +93,6 @@ fn main() -> ExitCode {
         Some(NovaCommand::Daemon(args)) => novad::run(*args, socket).map_err(|e| format!("daemon: {e}")),
         Some(
             NovaCommand::Setup
-            | NovaCommand::Doctor
             | NovaCommand::Config
             | NovaCommand::Completions
             | NovaCommand::Toggle
