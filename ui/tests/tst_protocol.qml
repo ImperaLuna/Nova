@@ -49,6 +49,12 @@ TestCase {
         compare(line, '{"v":2,"id":5,"cmd":"show_ai_usage","args":{"provider":"codex"}}\n');
     }
 
+    function test_parses_toggle_event() {
+        const msg = Protocol.parse('{"v":2,"event":"toggle","data":{"panel":"ai-usage","output":"DP-1"}}');
+        compare(msg.event, Protocol.EVENT_TOGGLE);
+        compare(msg.data.panel, Protocol.FEATURE_AI_USAGE);
+    }
+
     function test_only_ready_features_load() {
         const ready = Protocol.readyFeatures([
             {

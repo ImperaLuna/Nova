@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import "../bar"
+import "../daemon"
 
 // One per screen: a transparent layer over the whole screen that the bar,
 // its panels and popups are all drawn on, so a pill can grow into its panel.
@@ -20,6 +21,15 @@ Scope {
         id: drawn
         panels: bar.panels
         fixed: bar.fixedShapes
+    }
+
+    // `nova toggle <panel>`, which novad sends every screen. When novad
+    // doesn't know which output is focused, the first screen takes it.
+    Connections {
+        target: Daemon
+        function onToggleRequested(panel: string, output: var) {
+            drawn.toggle(panel, root.screen.name, output ?? Quickshell.screens[0]?.name ?? "");
+        }
     }
 
     ExclusionZone {

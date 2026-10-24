@@ -1042,6 +1042,41 @@ fn compositor_actions_without_a_compositor_say_so() {
     assert_eq!(client.request(2, "status", None)["result"].get("desktop"), None);
 }
 
+#[test]
+fn toggle_needs_the_panels_feature() {
+    let novad = TestDaemon::start("toggle-off", None);
+    let mut ui = novad.connect();
+    ui.request(1, "subscribe", Some(json!({"topics": ["toggle"]})));
+    let reply = novad.connect().request(1, "toggle", Some(json!({"panel": "ai-usage"})));
+    assert!(reply["error"].as_str().unwrap().contains("ai-usage feature isn't ready"), "{reply}");
+    assert_eq!(ui.request(2, "ping", None)["result"], "pong", "no toggle event without the feature");
+}
+
+#[test]
+fn toggle_reaches_the_ui_once_it_listens() {
+    let novad = TestDaemon::with_ai_usage("toggle", |_| {});
+    let mut cli = novad.connect();
+    let reply = cli.request(1, "toggle", Some(json!({"panel": "ai-usage"})));
+    assert!(reply["error"].as_str().unwrap().contains("UI isn't connected"), "{reply}");
+
+    let mut ui = novad.connect();
+    ui.request(1, "subscribe", Some(json!({"topics": ["toggle"]})));
+    assert_eq!(cli.request(2, "toggle", Some(json!({"panel": "ai-usage"})))["result"], Value::Null);
+    assert_eq!(ui.next_event("toggle"), json!({"panel": "ai-usage"}), "no output without a compositor");
+    assert!(cli.request(3, "toggle", Some(json!({"panel": "launcher"})))["error"].is_string());
+}
+
+#[test]
+fn toggle_names_the_focused_output() {
+    let novad = TestDaemon::open_following("toggle-niri", None, |_| {}, |dir| Some(FakeCompositor::niri(dir).1));
+    let (mut ui, desktop) = follow_to_the_end(&novad);
+    ui.request(2, "subscribe", Some(json!({"topics": ["toggle"]})));
+    let reply = novad.connect().request(1, "toggle", Some(json!({"panel": "ai-usage"})));
+    assert_eq!(reply["result"], Value::Null);
+    let toggle = ui.next_event("toggle");
+    assert_eq!(toggle, json!({"panel": "ai-usage", "output": focused_output(&desktop)}));
+}
+
 /// Saves `text` to `path` the way many editors do: a new file renamed over
 /// the old one.
 fn save_by_rename(path: &Path, text: &str) {

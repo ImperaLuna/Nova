@@ -1,0 +1,19 @@
+// Nova's blur on niri, written by `nova setup` to ~/.config/nova/niri.kdl and
+// included from niri's config. A flake check runs `niri validate` on it.
+//
+// niri blurs what Quickshell asks for (ext-background-effect), but by default
+// a layer surface blurs only the wallpaper ("xray"), which hides the windows
+// behind Nova's glass. These settings were tuned with the glass's tint in
+// ui/theme/Tokens.qml: more passes melt everything, fewer look sharp.
+layer-rule {
+    match namespace="^quickshell$"
+    background-effect {
+        xray false
+    }
+}
+
+blur {
+    passes 2
+    offset 2
+    saturation 1.8
+}

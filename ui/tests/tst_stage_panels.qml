@@ -107,6 +107,23 @@ Item {
             verify(!notes.open, "even a panel that isn't exclusive");
         }
 
+        function test_toggle_acts_only_on_the_focused_screen() {
+            drawn.toggle("ai-usage", "DP-1", "HDMI-A-1");
+            verify(!usage.open, "another screen is focused");
+            drawn.toggle("ai-usage", "DP-1", "DP-1");
+            verify(usage.open);
+            verify(!launcher.open && !notes.open, "only the named panel");
+            drawn.toggle("ai-usage", "DP-1", "DP-1");
+            verify(!usage.open, "the same toggle closes it");
+        }
+
+        function test_toggle_moves_a_panel_to_the_focused_screen() {
+            usageElsewhere.open = true;
+            drawn.toggle("ai-usage", "DP-1", "DP-1");
+            verify(usage.open);
+            verify(!usageElsewhere.open);
+        }
+
         function test_panels_can_come_and_go() {
             drawn.panels = [usage];
             compare(drawn.shapes.length, 2);

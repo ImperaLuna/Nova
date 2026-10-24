@@ -28,6 +28,11 @@ Singleton {
     property var desktop: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
 
+    // `nova toggle <panel>`: open or close the StagePanel named `panel`.
+    // `output` is the focused output's name, or null when novad doesn't
+    // know it.
+    signal toggleRequested(string panel, var output)
+
     property int _nextId: 1
     property var _pending: ({})
 
@@ -73,6 +78,8 @@ Singleton {
             aiUsage = msg.data;
         } else if (msg.event === Protocol.EVENT_COMPOSITOR) {
             desktop = msg.data;
+        } else if (msg.event === Protocol.EVENT_TOGGLE) {
+            toggleRequested(msg.data.panel, msg.data.output ?? null);
         }
     }
 
@@ -97,7 +104,7 @@ Singleton {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
                 root.call(Protocol.CMD_SUBSCRIBE, {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE]
                 });
             } else {
                 // Replies to these won't come any more.
