@@ -423,7 +423,9 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window; the
     first = wait_running(not_daemon=watched["pid"])
 
 with subtest("panels off the stage open and close without moving windows"):
-    machine.systemctl("set-environment NOVA_DEMO_PANELS=1", user=USER)
+    # With libwayland's lines (no colors), so a failure shows where the
+    # compositor sent the pointer; novad keeps them only with NOVA_LOG=debug.
+    machine.systemctl("set-environment NOVA_DEMO_PANELS=1 WAYLAND_DEBUG=client NO_COLOR=1 NOVA_LOG=debug", user=USER)
     machine.succeed(as_user("nova restart"))
     demo = wait_running(not_daemon=first["pid"])
     machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -qF {shlex.quote(BAR_SHOWN)}"), timeout=WAIT)
@@ -456,12 +458,14 @@ with subtest("panels off the stage open and close without moving windows"):
                 click_until_logged(*POINTER_REST, closed)
         except Exception:
             print(f"{close} didn't close {center}; the layer surfaces, the UI's log and the compositor's:")
-            for command in (LIST_LAYERS, "nova logs --no-follow --ui -n 60", COMPOSITOR_LOG):
+            pointer = "get_layer_surface|set_anchor|wl_pointer|wl_keyboard#[0-9]+\\.(enter|leave)"
+            ui_log = f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -E 'nova:|{pointer}' | tail -n 150"
+            for command in (LIST_LAYERS, ui_log, COMPOSITOR_LOG):
                 print(machine.execute(as_user(command))[1])
             raise
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
-    machine.systemctl("unset-environment NOVA_DEMO_PANELS", user=USER)
+    machine.systemctl("unset-environment NOVA_DEMO_PANELS WAYLAND_DEBUG NO_COLOR NOVA_LOG", user=USER)
     machine.succeed(as_user("nova restart"))
     first = wait_running(not_daemon=demo["pid"])
 
