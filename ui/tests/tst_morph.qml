@@ -27,8 +27,11 @@ Item {
 
         function cleanup() {
             morph.open = false;
-            tryCompare(morph, "t", 0);
-            tryCompare(content, "opacity", 0);
+            // Until it has settled: tryCompare's fuzzy match on t passes a
+            // frame just short of the end.
+            tryVerify(() => !morph.moving && !reveal.running);
+            compare(morph.t, 0);
+            compare(content.opacity, 0);
         }
 
         function test_t_runs_from_0_to_1_and_back() {
