@@ -1,7 +1,8 @@
 # Nova's lifecycle under systemd and a real compositor, driven through the
 # `nova` command the way a user would, and a screenshot of each UI state for
-# compare.sh. default.nix defines USER, UID, COMPOSITOR, QUIT_COMPOSITOR and
-# FOCUS_NEXT_WORKSPACE above this script.
+# compare.sh. default.nix defines USER, UID, COMPOSITOR, QUIT_COMPOSITOR,
+# FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW, CLOSE_WINDOW, LIST_WINDOWS and
+# COMPOSITOR_LOG above this script.
 import datetime as dt
 import json
 import shlex
@@ -33,6 +34,16 @@ POINTER_REST = (640, 700)
 SETTLED_SECS = 5
 # How long to watch that a stopped unit stays stopped: past its RestartSec.
 STAYS_OFF_SECS = 3
+# How long an idle UI must commit nothing to its surfaces. Long enough for
+# niri's once-a-second callbacks to a covered surface (IMP-38).
+IDLE_SECS = 10
+# Lines of `nova logs` history that reach back to the start of a run.
+LOG_HISTORY = 1_000_000
+# A frame the UI hands the compositor, in its WAYLAND_DEBUG lines.
+SURFACE_COMMIT = r"wl_surface#[0-9]*\.commit("
+# The window the tests open, and how it shows in novad's focused window.
+FOOT = "foot"
+NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
 
 
 def as_user(command: str) -> str:
@@ -111,7 +122,9 @@ def click(x: int, y: int) -> None:
 
 
 def ui_log_count(line: str) -> int:
-    out = machine.succeed(as_user(f"nova logs --no-follow --ui | grep -cF {shlex.quote(line)} || true"))
+    # The whole run: with WAYLAND_DEBUG on, a click logs far more than the
+    # last 50 lines `nova logs` shows by default.
+    out = machine.succeed(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -cF {shlex.quote(line)} || true"))
     return int(out.strip() or 0)
 
 
@@ -126,6 +139,72 @@ def click_until_logged(x: int, y: int, line: str) -> None:
         except Exception:
             print(f"no {line!r} after a click at ({x}, {y}), clicking again")
     raise AssertionError(f"{CLICK_TRIES} clicks at ({x}, {y}) never logged {line!r}")
+
+
+def surface_commits(secs: int) -> int:
+    """The surface commits the UI makes over the next `secs` seconds, from
+    its WAYLAND_DEBUG lines as novad logs them."""
+    follow = f"timeout {secs} nova logs --ui -n 0 > /tmp/ui-wayland.log; grep -c {shlex.quote(SURFACE_COMMIT)} /tmp/ui-wayland.log || true"
+    commits = int(machine.succeed(as_user(follow)).strip() or 0)
+    # What else the UI and the compositor said meanwhile, for when it fails.
+    print(f"{commits} commits in {secs} s; Wayland lines by kind:")
+    print(machine.succeed("grep -o '[a-z_]*#[0-9]*\\.[a-z_]*' /tmp/ui-wayland.log | sed 's/#[0-9]*//' | sort | uniq -c || true"))
+    return commits
+
+
+def assert_idle(what: str) -> None:
+    """Waits for the UI to go a whole IDLE_SECS without drawing a frame."""
+    counts: list[int] = []
+
+    def idle(_last_try: bool) -> bool:
+        counts.append(surface_commits(IDLE_SECS))
+        return counts[-1] == 0
+
+    try:
+        retry(idle, timeout=WAIT)
+    except Exception:
+        raise AssertionError(f"the UI kept drawing {what}: commits per {IDLE_SECS} s: {counts}")
+
+
+def open_foot(unit: str) -> None:
+    """Opens a foot window and waits until the compositor lists it, then
+    until novad reports it as the focused window. foot runs as a transient
+    user unit, so it doesn't hang off the `su` that starts it and its output
+    lands in the journal; on a timeout, what each side saw is printed. Not
+    with the user manager's WAYLAND_DEBUG, which is there for the UI."""
+    machine.succeed(
+        as_user(
+            f"systemd-run --user --collect --unit={unit} "
+            f"--setenv=WAYLAND_DISPLAY=$WAYLAND_DISPLAY --setenv=WAYLAND_DEBUG= {FOOT}"
+        )
+    )
+    try:
+        machine.wait_until_succeeds(as_user(f"{LIST_WINDOWS} | grep -qF '\"{FOOT}\"'"), timeout=WAIT)
+    except Exception:
+        print(f"{COMPOSITOR} never listed the {FOOT} window")
+        print_window_state(unit)
+        raise
+    try:
+        machine.wait_until_succeeds(as_user(NOVA_SEES_FOOT), timeout=WAIT)
+    except Exception:
+        print(f"{COMPOSITOR} lists the {FOOT} window, but novad doesn't report it focused")
+        print_window_state(unit)
+        raise
+
+
+def print_window_state(unit: str) -> None:
+    """What foot, the compositor and novad say, for when a window wait fails."""
+    # The journal as root: the user's own may not hold their units' lines.
+    print(machine.execute(f"journalctl --user-unit={unit} --no-pager")[1])
+    for command in (
+        f"systemctl --user status {unit} --no-pager",
+        LIST_WINDOWS,
+        COMPOSITOR_LOG,
+        "nova status --json",
+        "nova logs --no-follow -n 100",
+    ):
+        print(f"$ {command}")
+        print(machine.execute(as_user(command))[1])
 
 
 def wait_gone(pid: int) -> None:
@@ -172,6 +251,34 @@ with subtest("nova toggle opens and closes the AI usage panel, as a keybind woul
         machine.succeed(as_user("nova toggle ai-usage"))
         retry(lambda _last_try: ui_log_count(line) > before, timeout=CLICK_EFFECT)
 
+with subtest("an idle bar draws nothing, shown or under a fullscreen window"):
+    # novad hands its environment to the UI.
+    machine.systemctl("set-environment WAYLAND_DEBUG=client", user=USER)
+    machine.succeed(as_user("nova restart"))
+    watched = wait_running(not_daemon=first["pid"])
+    machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -qF {shlex.quote(AI_USAGE_SHOWN)}"), timeout=WAIT)
+    assert_idle("with the bar shown")
+    # The count sees frames when there are some: the panel opening draws.
+    commits = f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -c {shlex.quote(SURFACE_COMMIT)} || true"
+    before = int(machine.succeed(as_user(commits)).strip() or 0)
+    click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
+    click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
+    after = int(machine.succeed(as_user(commits)).strip() or 0)
+    assert after > before, f"no surface commits logged while the panel opened and closed ({before} before, {after} after)"
+    assert_idle("after the panel closed")
+    # Covered, as under a video or a game. On the desktop, niri then sent the
+    # bar a frame callback a second and Qt redrew it each time (IMP-38); niri
+    # in this VM sends none, so the headless e2e guards that fix instead.
+    open_foot("foot-fullscreen")
+    machine.succeed(as_user(FULLSCREEN_WINDOW))
+    assert_idle("under a fullscreen window")
+    machine.succeed(as_user(CLOSE_WINDOW))
+    machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
+    machine.systemctl("unset-environment WAYLAND_DEBUG", user=USER)
+    machine.succeed(as_user("nova restart"))
+    # The run the rest of the test knows.
+    first = wait_running(not_daemon=watched["pid"])
+
 with subtest("a workspace switch reaches the UI"):
     running = wait_running()
     desktop = running.get("desktop")
@@ -187,8 +294,7 @@ with subtest("a workspace switch reaches the UI"):
 
     ui_focused_workspace("1")
     # niri only has a next workspace once this one holds a window.
-    machine.succeed(as_user("setsid foot >/dev/null 2>&1 &"))
-    machine.wait_until_succeeds(as_user("nova status --json | grep -qF '\"app_id\":\"foot\"'"), timeout=WAIT)
+    open_foot("foot-workspace")
     machine.succeed(as_user(FOCUS_NEXT_WORKSPACE))
     ui_focused_workspace("2")
 

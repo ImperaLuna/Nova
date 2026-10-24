@@ -33,6 +33,8 @@ let
       steps,
       # Prints the compositor's recent log, for when a step fails.
       compositorLog,
+      # The `queries` entry that lists the open windows.
+      listWindows,
     }:
     let
       # The user's session on the compositor, without Nova.
@@ -110,6 +112,10 @@ let
           QUIT_COMPOSITOR = ${builtins.toJSON "${ipc} ${quitCompositor}"}
           COMPOSITOR = ${builtins.toJSON compositor}
           FOCUS_NEXT_WORKSPACE = ${builtins.toJSON "${ipcEnv} ${steps."focus the next workspace"}"}
+          FULLSCREEN_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."fullscreen the focused window"}"}
+          CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
+          LIST_WINDOWS = ${builtins.toJSON "${ipcEnv} ${listWindows}"}
+          COMPOSITOR_LOG = ${builtins.toJSON "export ${ipcEnv}; ${compositorLog}"}
         ''
         + builtins.readFile ./lifecycle.py;
       };
@@ -267,6 +273,7 @@ in
       version = "niri msg --json version";
     };
     compositorLog = "journalctl --user -u niri -n 100 --no-pager";
+    listWindows = queries.windows;
     steps = {
       "focus the next workspace" = "niri msg action focus-workspace-down";
       "switch the keyboard layout" = "niri msg action switch-layout next";
@@ -275,6 +282,7 @@ in
       "focus the other output" = "niri msg action focus-monitor-next";
       "focus the first output" = "niri msg action focus-monitor-previous";
       "close the focused window" = "niri msg action close-window";
+      "fullscreen the focused window" = "niri msg action fullscreen-window";
     };
   };
 
@@ -302,6 +310,7 @@ in
       version = "hyprctl -j version";
     };
     compositorLog = "tail -n 100 $XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprland.log";
+    listWindows = queries.clients;
     steps = {
       "focus the next workspace" = "hyprctl dispatch workspace 2";
       "switch the keyboard layout" = "hyprctl switchxkblayout all next";
@@ -310,6 +319,7 @@ in
       "focus the other output" = "hyprctl dispatch focusmonitor +1";
       "focus the first output" = "hyprctl dispatch focusmonitor -1";
       "close the focused window" = "hyprctl dispatch killactive";
+      "fullscreen the focused window" = "hyprctl dispatch fullscreen 0";
     };
   };
 }

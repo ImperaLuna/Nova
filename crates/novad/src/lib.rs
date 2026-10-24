@@ -23,6 +23,7 @@
 //!   commands, and the component that loads when the feature is ready.
 
 mod ai_usage;
+pub mod checks;
 mod compositor;
 mod config;
 mod features;
@@ -259,7 +260,7 @@ fn install_panic_hook(logger: Arc<Logger>) {
 
 /// `PATH` plus `~/.local/bin`: systemd user services don't get the login
 /// shell's PATH, which is where tools installed with pip or cargo live.
-fn session_path() -> String {
+pub(crate) fn session_path() -> String {
     let path = std::env::var("PATH").unwrap_or_default();
     let local_bin = std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/bin"));
     match local_bin {
