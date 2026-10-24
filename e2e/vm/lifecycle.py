@@ -329,9 +329,10 @@ with subtest("screenshot: the AI usage panel open, grown from its pill"):
 with subtest("an idle bar draws nothing, shown or under a fullscreen window; the panel draws briefly"):
     # novad hands its environment to the UI.
     # Without libwayland's colors, which the timestamps would hide behind.
-    # Qt's timing of each frame, for morph_frames to print.
+    # Qt's timing of each frame, for morph_frames to print. Qt logs it at
+    # debug level, which novad keeps only with NOVA_LOG=debug.
     machine.systemctl(
-        "set-environment WAYLAND_DEBUG=client NO_COLOR=1 QT_LOGGING_RULES=qt.scenegraph.time.renderloop.debug=true",
+        "set-environment WAYLAND_DEBUG=client NO_COLOR=1 QT_LOGGING_RULES=qt.scenegraph.time.renderloop.debug=true NOVA_LOG=debug",
         user=USER,
     )
     machine.succeed(as_user("nova restart"))
@@ -350,7 +351,7 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window; the
     assert_idle("under a fullscreen window")
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
-    machine.systemctl("unset-environment WAYLAND_DEBUG NO_COLOR QT_LOGGING_RULES", user=USER)
+    machine.systemctl("unset-environment WAYLAND_DEBUG NO_COLOR QT_LOGGING_RULES NOVA_LOG", user=USER)
     machine.succeed(as_user("nova restart"))
     # The run the rest of the test knows.
     first = wait_running(not_daemon=watched["pid"])
