@@ -49,6 +49,9 @@ SURFACE_COMMIT = r"wl_surface#[0-9]*\.commit("
 # `nova logs`'s own time, level and source. libwayland 1.26 stamps the wall
 # clock as [HH:MM:SS.micros]; older ones stamp milliseconds as [ms.frac].
 TIMED_COMMIT = re.compile(r"\[\s*(?:(\d+):(\d+):)?(\d+(?:\.\d+)?)\].*-> wl_surface#(\d+)\.commit\(")
+# Qt's own timing of each frame it renders (qt.scenegraph.time.renderloop):
+# sync is Nova's QML handing the scene over, render the (software) GPU work.
+QT_FRAME = re.compile(r"syncAndRender: frame rendered in (\d+)ms.*\bsync=(\d+), render=(\d+)")
 # How long the panel may go on drawing after its pill logs that it opened or
 # closed. The longest animation, the meters filling, ends at
 # Tokens.durationPanel * 0.6 + Tokens.durationFill (750 ms) after opening;
@@ -226,6 +229,10 @@ def morph_frames(what: str, logged: str) -> None:
         late = sum(gap > 2000 / REFRESH_HZ for gap in gaps)
         timing = f", {statistics.median(gaps):.1f} ms apart (longest {max(gaps):.1f} ms, {late} late)" if gaps else ""
         print(f"  wl_surface#{surface}: {len(times)} frames over {times[-1] - times[0]:.0f} ms{timing}")
+    qt = [tuple(map(int, match.groups())) for line in after_logged if (match := QT_FRAME.search(line))]
+    if qt:
+        for name, values in zip(("frame", "sync", "render"), zip(*qt)):
+            print(f"  Qt {name} time: median {statistics.median(values)} ms, longest {max(values)} ms over {len(values)} frames")
     assert len(frames) <= MORPH_SURFACES, f"{len(frames)} surfaces drew after the panel {what}, at most {MORPH_SURFACES} may"
     budget_ms = MORPH_DRAWS_FOR / dt.timedelta(milliseconds=1)
     # From the first frame any surface drew, so one that starts late counts.
@@ -322,7 +329,11 @@ with subtest("screenshot: the AI usage panel open, grown from its pill"):
 with subtest("an idle bar draws nothing, shown or under a fullscreen window; the panel draws briefly"):
     # novad hands its environment to the UI.
     # Without libwayland's colors, which the timestamps would hide behind.
-    machine.systemctl("set-environment WAYLAND_DEBUG=client NO_COLOR=1", user=USER)
+    # Qt's timing of each frame, for morph_frames to print.
+    machine.systemctl(
+        "set-environment WAYLAND_DEBUG=client NO_COLOR=1 QT_LOGGING_RULES=qt.scenegraph.time.renderloop.debug=true",
+        user=USER,
+    )
     machine.succeed(as_user("nova restart"))
     watched = wait_running(not_daemon=first["pid"])
     machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -qF {shlex.quote(AI_USAGE_SHOWN)}"), timeout=WAIT)
@@ -339,7 +350,7 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window; the
     assert_idle("under a fullscreen window")
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
-    machine.systemctl("unset-environment WAYLAND_DEBUG NO_COLOR", user=USER)
+    machine.systemctl("unset-environment WAYLAND_DEBUG NO_COLOR QT_LOGGING_RULES", user=USER)
     machine.succeed(as_user("nova restart"))
     # The run the rest of the test knows.
     first = wait_running(not_daemon=watched["pid"])
