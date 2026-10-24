@@ -1,6 +1,6 @@
 # Nova's lifecycle under systemd and a real compositor, driven through the
 # `nova` command the way a user would, and a screenshot of each UI state for
-# compare.sh. default.nix defines USER, UID, COMPOSITOR, QUIT_COMPOSITOR,
+# compare.sh. default.nix defines USER, UID, PASSWORD, COMPOSITOR, QUIT_COMPOSITOR,
 # FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW, CLOSE_WINDOW, LIST_WINDOWS,
 # LIST_LAYERS, COMPOSITOR_LOG and FRAMES_REPORT above this script.
 import datetime as dt
@@ -88,6 +88,11 @@ DEMO_CENTER_INSIDE = (640, 400)
 NO_EFFECT_SECS = 2
 # Esc, pressed and released, as ydotool names keys (Linux key codes).
 ESC = "1:1 1:0"
+ENTER = "28:1 28:0"
+# What the lock screen logs (ui/lock).
+SESSION_LOCKED = "nova: session locked"
+SESSION_UNLOCKED = "nova: session unlocked"
+WRONG_PASSWORD = "nova: lock screen: wrong password"
 # The window the tests open, and how it shows in novad's focused window.
 FOOT = "foot"
 NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
@@ -391,6 +396,16 @@ with subtest("nova toggle opens and closes the AI usage panel, as a keybind woul
         before = ui_log_count(line)
         machine.succeed(as_user("nova toggle ai-usage"))
         retry(lambda _last_try: ui_log_count(line) > before, timeout=CLICK_EFFECT)
+
+with subtest("nova lock covers the screens until the user's password checks out"):
+    before = ui_log_count(SESSION_LOCKED)
+    machine.succeed(as_user("nova lock"))
+    retry(lambda _last_try: ui_log_count(SESSION_LOCKED) > before, timeout=CLICK_EFFECT)
+    machine.succeed(f"{YDOTOOL} type {shlex.quote('not-' + PASSWORD)}")
+    press_until_logged(ENTER, WRONG_PASSWORD)
+    assert ui_log_count(SESSION_UNLOCKED) == 0, "a wrong password unlocked"
+    machine.succeed(f"{YDOTOOL} type {shlex.quote(PASSWORD)}")
+    press_until_logged(ENTER, SESSION_UNLOCKED)
 
 with subtest("an idle bar draws nothing, shown or under a fullscreen window; the panel draws briefly"):
     # novad hands its environment to the UI.

@@ -17,6 +17,8 @@ QtObject {
     // Backgrounds
     property color bg
     property color bgAlt
+    // Behind everything when nothing else is drawn, like the lock screen
+    property color backdrop
 
     // Foregrounds
     property color fg
@@ -143,6 +145,22 @@ QtObject {
     readonly property int chipHeight: 22
     readonly property int chipPad: 10
 
+    // Lock screen: the circle with the user's initial, the password field
+    // and its dots, and the space between them.
+    readonly property int lockAvatarSize: 72
+    readonly property int lockInitialSize: 28
+    readonly property int lockFieldWidth: 280
+    readonly property int lockFieldHeight: 44
+    readonly property int lockDotSize: 8
+    readonly property int lockDotGap: 6
+    readonly property int lockGap: 16
+    // How far a wrong password shakes the field.
+    readonly property int lockShake: 8
+    // Half-swings in a shake (each one smaller than the last).
+    readonly property int lockShakeSwings: 4
+    // The field's ring while it has focus.
+    readonly property real lockFocusOpacity: 0.75
+
     // Type
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"
@@ -150,6 +168,8 @@ QtObject {
     readonly property int fontSize: 13
     readonly property int fontSizeSmall: 12
     readonly property int fontSizeTiny: 11
+    // A name or heading on its own, like the user's on the lock screen.
+    readonly property int fontSizeTitle: 18
     // A panel's headline number.
     readonly property int fontSizeHero: 56
     readonly property int lineHeightHero: 60
@@ -169,6 +189,9 @@ QtObject {
     readonly property int durationColor: 200
     // One turn of a loading spinner.
     readonly property int durationSpin: 1000
+    // A wrong password's shake, and the lock screen fading before it unlocks.
+    readonly property int durationShake: 360
+    readonly property int durationUnlock: 400
     // The cubic-bezier every panel motion uses (fast out, gentle stop).
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
 

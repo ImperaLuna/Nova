@@ -12,6 +12,7 @@ var CMD_SHOW_AI_USAGE = "show_ai_usage";
 var CMD_REFRESH_AI_USAGE = "refresh_ai_usage";
 var CMD_FOCUS_WORKSPACE = "focus_workspace";
 var CMD_STEP_WORKSPACE = "step_workspace";
+var CMD_REPORT_UNLOCKED = "report_unlocked";
 
 // Events novad sends (Event in nova-protocol). Each topic's events carry the
 // topic's name.
@@ -21,6 +22,7 @@ var EVENT_THEME = "theme";
 var EVENT_AI_USAGE = "ai_usage";
 var EVENT_COMPOSITOR = "compositor";
 var EVENT_TOGGLE = "toggle";
+var EVENT_LOCK = "lock";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
@@ -29,6 +31,7 @@ var TOPIC_THEME = "theme";
 var TOPIC_AI_USAGE = "ai_usage";
 var TOPIC_COMPOSITOR = "compositor";
 var TOPIC_TOGGLE = "toggle";
+var TOPIC_LOCK = "lock";
 
 // What a compositor can report or do (Capability in nova-protocol).
 var CAPABILITY_WORKSPACES = "workspaces";
@@ -42,6 +45,7 @@ var STEP_PREVIOUS = "previous";
 
 // Feature ids (features/<id>/feature.toml).
 var FEATURE_AI_USAGE = "ai-usage";
+var FEATURE_LOCK = "lock";
 
 // Returns {kind: "event"|"response", ...} or null for lines to ignore.
 function parse(line) {

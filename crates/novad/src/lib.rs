@@ -32,6 +32,7 @@ mod inotify;
 mod logger;
 mod procfs;
 mod server;
+mod session_lock;
 mod settings;
 mod supervisor;
 mod theme;
@@ -109,6 +110,7 @@ pub struct Daemon {
     settings: Mutex<Settings>,
     /// Following the compositor, when it's one novad knows.
     compositor: Option<Arc<compositor::Compositor>>,
+    session_lock: session_lock::SessionLock,
 }
 
 impl Daemon {
@@ -231,6 +233,7 @@ fn start(
         sources,
         settings: Mutex::new(settings),
         compositor,
+        session_lock: session_lock::SessionLock::default(),
     });
     daemon.watch_settings();
     Ok((listener, daemon))

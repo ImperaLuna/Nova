@@ -141,6 +141,23 @@ impl<'a> Connection<'a> {
                 return self.with_compositor(|compositor| compositor.step_workspace(output, *step));
             }
             Command::Toggle { panel } => return self.toggle(*panel),
+            Command::Lock => {
+                if !self.feature_ready(crate::session_lock::FEATURE_ID) {
+                    return Outcome::Error(format!(
+                        "the {} feature isn't ready (see `nova status`)",
+                        crate::session_lock::FEATURE_ID
+                    ));
+                }
+                return match self.daemon.session_lock.lock(&self.daemon.hub) {
+                    Ok(()) => Outcome::Result(serde_json::Value::Null),
+                    Err(e) => Outcome::Error(e),
+                };
+            }
+            // Even with the feature off: the screen was locked while it was on.
+            Command::ReportUnlocked => {
+                self.daemon.session_lock.unlocked(&self.daemon.hub);
+                Ok(serde_json::Value::Null)
+            }
         };
         match value {
             Ok(value) => Outcome::Result(value),
@@ -173,12 +190,15 @@ impl<'a> Connection<'a> {
 
     /// Tells the UI to open or close `panel` on the focused output. The UI
     /// knows which screen has it open, so it decides which.
-    fn toggle(&self, panel: Panel) -> Outcome {
-        let ready = lock(&self.daemon.settings)
+    fn feature_ready(&self, id: &str) -> bool {
+        lock(&self.daemon.settings)
             .features
             .iter()
-            .any(|feature| feature.id == panel.name() && feature.status == FeatureStatus::Ready);
-        if !ready {
+            .any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
+    }
+
+    fn toggle(&self, panel: Panel) -> Outcome {
+        if !self.feature_ready(panel.name()) {
             return Outcome::Error(format!("the {panel} feature isn't ready (see `nova status`)"));
         }
         let output = self.daemon.compositor.as_ref().and_then(|compositor| compositor.focused_output());
@@ -217,6 +237,7 @@ impl<'a> Connection<'a> {
                                 compositor.subscribe(self.id);
                             }
                         }
+                        Topic::Lock => self.daemon.session_lock.send_state(&self.daemon.hub, self.id),
                         // Only ever sent as `nova toggle` asks.
                         Topic::Logs | Topic::Toggle => {}
                     }
@@ -234,7 +255,9 @@ impl<'a> Connection<'a> {
             | Command::ReportClaudeUsage { .. }
             | Command::FocusWorkspace { .. }
             | Command::StepWorkspace { .. }
-            | Command::Toggle { .. } => {}
+            | Command::Toggle { .. }
+            | Command::Lock
+            | Command::ReportUnlocked => {}
         }
     }
 

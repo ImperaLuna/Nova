@@ -14,6 +14,8 @@
 let
   user = "alice";
   uid = 1000;
+  # Her login password, which unlocks the lock screen.
+  password = "nova-e2e";
 
   mkTest =
     {
@@ -44,7 +46,7 @@ let
         imports = [ config ];
         users.users.${user} = {
           isNormalUser = true;
-          inherit uid;
+          inherit uid password;
           extraGroups = [ "seat" ];
         };
         services = {
@@ -111,6 +113,7 @@ let
         testScript = ''
           USER = ${builtins.toJSON user}
           UID = ${toString uid}
+          PASSWORD = ${builtins.toJSON password}
           QUIT_COMPOSITOR = ${builtins.toJSON "${ipc} ${quitCompositor}"}
           COMPOSITOR = ${builtins.toJSON compositor}
           FOCUS_NEXT_WORKSPACE = ${builtins.toJSON "${ipcEnv} ${steps."focus the next workspace"}"}
