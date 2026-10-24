@@ -23,13 +23,19 @@ AI_USAGE_PILL = (24, 26)
 # What the pill logs when its panel opens or closes (ui/ai_usage/AiUsage.qml).
 AI_USAGE_OPENED = "nova: ai usage panel opened"
 AI_USAGE_CLOSED = "nova: ai usage panel closed"
-# Clicks a test gives one target before failing: the virtual mouse
-# sometimes loses one, which a screenshot alone would only show as a diff.
+# Clicks a test gives one target before failing. A lost click would
+# otherwise show only as a screenshot diff; the known cause is handled by
+# the pointer wake-up below, but niri's side of it isn't understood.
 CLICK_TRIES = 3
 # How long a click's effect may take to show in the UI's log.
 CLICK_EFFECT = dt.timedelta(seconds=10)
 # Where the pointer waits between clicks, away from the bar.
 POINTER_REST = (640, 700)
+# How long niri gets after the session's first pointer move before a click.
+# niri at times sends the first pointer input after it starts to no surface,
+# so a test's first click would be lost (IMP-48).
+POINTER_WAKE_SECS = 1
+YDOTOOL = "YDOTOOL_SOCKET=/run/ydotoold/socket ydotool"
 # How long the screen must stay the same before a screenshot.
 SETTLED_SECS = 5
 # How long to watch that a stopped unit stays stopped: past its RestartSec.
@@ -109,16 +115,17 @@ def screenshot(state: str) -> None:
     machine.copy_from_machine(path)
 
 
+def pointer_to(x: int, y: int) -> str:
+    """The command that moves ydotool's virtual mouse to (x, y). Both
+    compositors run it with flat acceleration, so a move is 1:1. An absolute
+    move passes through (0, 0), so niri's hot corner is off."""
+    return f"{YDOTOOL} mousemove --absolute -x {x} -y {y}"
+
+
 def click(x: int, y: int) -> None:
     """Clicks at (x, y) on the screen with ydotool's virtual mouse, then
-    moves the pointer out of the way so no hover shows in screenshots.
-    Both compositors run it with flat acceleration, so a move is 1:1."""
-    ydotool = "YDOTOOL_SOCKET=/run/ydotoold/socket ydotool"
-    rest_x, rest_y = POINTER_REST
-    machine.succeed(
-        f"{ydotool} mousemove --absolute -x {x} -y {y} && {ydotool} click 0xC0 && "
-        f"{ydotool} mousemove --absolute -x {rest_x} -y {rest_y}"
-    )
+    moves the pointer out of the way so no hover shows in screenshots."""
+    machine.succeed(f"{pointer_to(x, y)} && {YDOTOOL} click 0xC0 && {pointer_to(*POINTER_REST)}")
 
 
 def ui_log_count(line: str) -> int:
@@ -223,6 +230,9 @@ start_all()
 # The autologin starts the compositor, which starts Nova. Polled, since the
 # unit has no pending job to wait on until the compositor is up.
 machine.wait_until_succeeds(as_user(f"systemctl --user is-active --quiet {UNIT}"), timeout=SESSION_START)
+# The session's first pointer input, so it isn't a test's click.
+machine.succeed(pointer_to(*POINTER_REST))
+machine.sleep(POINTER_WAKE_SECS)
 
 with subtest("the session starts Nova, shown as Nova and NovaUI"):
     first = wait_running()
