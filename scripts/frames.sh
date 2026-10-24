@@ -50,7 +50,10 @@ refresh=$(refresh_rates | tr '\n' ' ')
 work=$(mktemp -d)
 runner="" capture=""
 stop() {
-	[[ -n $capture ]] && kill "$capture" 2>/dev/null
+	if [[ -n $capture ]]; then
+		kill "$capture" 2>/dev/null || true
+		wait "$capture" 2>/dev/null || true
+	fi
 	# scripts/run.sh puts the old bar back on TERM.
 	if [[ -n $runner ]]; then
 		kill -TERM "$runner" 2>/dev/null || true
@@ -82,14 +85,23 @@ until ready; do
 	sleep 0.5
 done
 
-sleep "$SETTLE_SECS"
-# Followed live from novad, so its log rotating doesn't lose lines.
-"$nova" logs --ui -n 0 >"$work/frames.log" &
+# Followed live from novad, so its log rotating doesn't lose lines. Started
+# before the settling time, which also covers its subscribing to novad.
+"$nova" logs --ui -n 0 >>"$work/frames.log" &
 capture=$!
+sleep "$SETTLE_SECS"
+
+# Each toggle starts a burst: the report counts a screen's first frame after
+# this line as the end of idle time, not as a frame. Appended to the same
+# file, so it lands before the frames the toggle brings.
+toggle() {
+	echo "nova-frames: toggle" >>"$work/frames.log"
+	"$nova" toggle "$panel" 2>"$work/toggle.err"
+}
 
 # The first toggle also waits for the panel's feature to be ready.
 waited=0
-until "$nova" toggle "$panel" 2>"$work/toggle.err"; do
+until toggle; do
 	if ((waited++ >= START_SECS)); then
 		echo "frames: \`nova toggle $panel\` kept failing: $(<"$work/toggle.err")" >&2
 		exit 1
@@ -98,15 +110,17 @@ until "$nova" toggle "$panel" 2>"$work/toggle.err"; do
 done
 echo "frames: opening and closing $panel $times times on the focused screen"
 sleep "$TOGGLE_SECS"
-"$nova" toggle "$panel"
+toggle
 for ((i = 1; i < times; i++)); do
 	sleep "$TOGGLE_SECS"
-	"$nova" toggle "$panel"
+	toggle
 	sleep "$TOGGLE_SECS"
-	"$nova" toggle "$panel"
+	toggle
 done
 sleep "$TOGGLE_SECS"
 
 # The old bar back before the report, which may exit 1.
 stop
-awk -v refresh="$refresh" -v budget="$BUDGET_PCT" -f scripts/frames-report.awk "$work/frames.log"
+# From the first toggle on: what came before is the bar settling.
+sed -n '/^nova-frames: toggle$/,$p' "$work/frames.log" |
+	awk -v refresh="$refresh" -v budget="$BUDGET_PCT" -f scripts/frames-report.awk

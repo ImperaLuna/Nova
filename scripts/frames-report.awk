@@ -3,11 +3,13 @@
 # files named. `just frames` runs it on a live desktop; the VM tests print it.
 #
 # A frame that comes more than LATE vblanks after the one before missed a
-# vblank: the screen showed the old frame again. A frame more than
-# BURST_GAP_MS after the one before starts a new burst (an animation after
-# idle), so its gap is idle time, not frame time. A screen with no frames
-# but bursts' first ones (a lone redraw when another screen animates) has
-# nothing to report and is left out.
+# vblank: the screen showed the old frame again. A screen's first frame
+# after the start of the log or a `nova-frames: toggle` line (MARK, which
+# `just frames` writes before each toggle) starts a burst: its gap is idle
+# time, not frame time. Every later gap counts, however long, so a stall
+# inside an animation still shows. A screen with nothing but bursts' first
+# frames (a lone redraw when another screen animates) has nothing to report
+# and is left out.
 #
 # -v refresh="DP-1=144 DP-2=120": each screen's refresh rate in Hz; `*=60`
 #    stands for every screen not named. Required.
@@ -16,12 +18,17 @@
 # Exits 2 when nothing animated or a screen's refresh rate is missing.
 BEGIN {
 	LATE = 1.5
-	BURST_GAP_MS = 100
+	MARK = "nova-frames: toggle"
 	n = split(refresh, pairs, " ")
 	for (i = 1; i <= n; i++) {
 		split(pairs[i], pair, "=")
 		hz_of[pair[1]] = pair[2] + 0
 	}
+}
+
+index($0, MARK) {
+	marks++
+	next
 }
 
 match($0, /nova-frame: screen=[^ ]+ dt=[0-9]+/) {
@@ -38,7 +45,8 @@ match($0, /nova-frame: screen=[^ ]+ dt=[0-9]+/) {
 			exit 2
 		}
 	}
-	if (dt > BURST_GAP_MS) {
+	if (!(screen in seen_mark) || seen_mark[screen] != marks) {
+		seen_mark[screen] = marks
 		bursts[screen]++
 		next
 	}
