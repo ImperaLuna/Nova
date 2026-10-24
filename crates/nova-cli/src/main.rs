@@ -93,12 +93,7 @@ fn main() -> ExitCode {
         },
         Some(NovaCommand::Toggle(args)) => toggle::run(&args, &socket),
         Some(NovaCommand::Daemon(args)) => novad::run(*args, socket).map_err(|e| format!("daemon: {e}")),
-        Some(
-            NovaCommand::Setup
-            | NovaCommand::Config
-            | NovaCommand::Completions
-            | NovaCommand::Ipc,
-        ) => Err(format!(
+        Some(NovaCommand::Setup | NovaCommand::Config | NovaCommand::Completions | NovaCommand::Ipc) => Err(format!(
             "`nova {}` isn't built yet; it's planned for a later version.",
             matches.subcommand_name().unwrap_or_default()
         )),
