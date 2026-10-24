@@ -116,6 +116,7 @@ let
           CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
           LIST_WINDOWS = ${builtins.toJSON "${ipcEnv} ${listWindows}"}
           COMPOSITOR_LOG = ${builtins.toJSON "export ${ipcEnv}; ${compositorLog}"}
+          FRAMES_REPORT = ${builtins.toJSON "${pkgs.gawk}/bin/awk -f ${../../scripts/frames-report.awk}"}
         ''
         + builtins.readFile ./lifecycle.py;
       };

@@ -85,6 +85,10 @@ build:
 run: build
     scripts/run.sh target/debug/nova
 
+# Open and close a panel on this desktop and report the vblanks it misses (swaps the bar like `just run`)
+frames times="20" panel="ai-usage": build
+    scripts/frames.sh target/debug/nova {{times}} {{panel}}
+
 # Clone the source of the dev shell's Quickshell (same version) into docs/ for reading its API
 docs:
     test -d docs/quickshell || git clone --depth 1 --branch "v$(quickshell --version | cut -d' ' -f2)" https://github.com/quickshell-mirror/quickshell docs/quickshell
