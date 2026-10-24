@@ -2,8 +2,10 @@
 //! limits the user has used. Claude's come from Claude Code's status line
 //! (`nova claude-statusline`) when a terminal session runs and, if the user
 //! turns it on, from Anthropic's usage endpoint with Claude Code's sign-in
-//! (see `claude_api`), polled gently. Codex logs its limits in its session files, which novad
-//! watches; nothing is requested for Codex.
+//! (see `claude_api`), polled gently. Codex logs its limits in its session
+//! files, which novad watches, after each turn; if the user turns it on,
+//! OpenAI's usage endpoint is polled the same way (see `codex_api`), so the
+//! numbers stay current between turns.
 //!
 //! Numbers change only when a source does, except at a window's reset time:
 //! novad wakes then and shows that window at 0% until the tool is used again.
@@ -11,6 +13,8 @@
 mod claude;
 mod claude_api;
 mod codex;
+mod codex_api;
+mod endpoint;
 
 pub use claude::limits_from_statusline;
 
@@ -20,6 +24,7 @@ use crate::inotify;
 use crate::lock;
 use crate::logger::Logger;
 use codex::CodexUsage;
+use endpoint::Problem;
 use jiff::Timestamp;
 use nova_protocol::{AiProvider, AiUsage, Event, ProviderUsage, UsageLimit, UsageState};
 use serde::{Deserialize, Serialize};
@@ -40,14 +45,14 @@ const STATE_FILE_MODE: u32 = 0o600;
 const CODEX_MAX_DELAY: Duration = Duration::from_secs(5);
 /// Longest sleep with nothing scheduled.
 const IDLE_WAKE: Duration = Duration::from_secs(24 * 60 * 60);
-/// How often Claude's limits are asked for (nova-shell asked as often).
-const CLAUDE_POLL: Duration = Duration::from_secs(5 * 60);
+/// How often a usage endpoint is asked (nova-shell asked as often).
+const ENDPOINT_POLL: Duration = Duration::from_secs(5 * 60);
 /// Opening the panel asks again, but not more often than this.
-const CLAUDE_REFRESH_GAP: Duration = Duration::from_secs(60);
+const ENDPOINT_REFRESH_GAP: Duration = Duration::from_secs(60);
 /// Failed requests wait twice as long each time, up to this.
-const CLAUDE_MAX_BACKOFF: Duration = Duration::from_secs(60 * 60);
+const ENDPOINT_MAX_BACKOFF: Duration = Duration::from_secs(60 * 60);
 /// Being told to slow down waits at least this long.
-const CLAUDE_RATE_LIMITED: Duration = Duration::from_secs(15 * 60);
+const ENDPOINT_RATE_LIMITED: Duration = Duration::from_secs(15 * 60);
 /// What the panel says while the endpoint is off and no status line has run.
 const CLAUDE_ENDPOINT_OFF: &str = "Claude's limits show after a Claude Code session in a terminal. To see them anytime, add this to ~/.config/nova/config.toml:\n[ai-usage]\nclaude-usage-endpoint = true\nNova then asks Anthropic with Claude Code's sign-in, a use Anthropic doesn't document.";
 
@@ -61,6 +66,7 @@ pub struct Paths {
     /// Claude Code's credentials file, `None` without `HOME`.
     pub claude_credentials: Option<PathBuf>,
     pub claude_usage_url: String,
+    pub codex_usage_url: String,
 }
 
 impl Paths {
@@ -70,6 +76,7 @@ impl Paths {
             state_file: state_dir.join("ai-usage.json"),
             claude_credentials: claude_credentials.or_else(claude_api::default_credentials),
             claude_usage_url: claude_api::USAGE_URL.into(),
+            codex_usage_url: codex_api::USAGE_URL.into(),
         }
     }
 }
@@ -80,7 +87,8 @@ pub struct Usage {
     logger: Arc<Logger>,
     state_file: PathBuf,
     wake: Sender<Wake>,
-    refresh: Sender<()>,
+    /// One per endpoint poller.
+    refresh: Vec<Sender<()>>,
     /// Set by `stop`; every thread checks it when it wakes.
     stopped: AtomicBool,
     /// Ends the Codex watcher's thread; `None` until it starts.
@@ -126,6 +134,33 @@ enum Wake {
     CodexRescan,
 }
 
+/// A provider's usage endpoint, asked by `Usage::poll`.
+enum Endpoint {
+    Claude { credentials: Option<PathBuf>, url: String },
+    Codex { auth: Option<PathBuf>, url: String },
+}
+
+impl Endpoint {
+    fn provider(&self) -> AiProvider {
+        match self {
+            Endpoint::Claude { .. } => AiProvider::Claude,
+            Endpoint::Codex { .. } => AiProvider::Codex,
+        }
+    }
+
+    /// The limits and plan, read with the tool's sign-in.
+    fn ask(&self) -> Result<(Vec<UsageLimit>, Option<String>), Problem> {
+        match self {
+            Endpoint::Claude { credentials: Some(path), url } => claude_api::read_token(path, Timestamp::now())
+                .and_then(|token| claude_api::fetch(url, &token).map(|limits| (limits, token.plan))),
+            Endpoint::Codex { auth: Some(path), url } => {
+                codex_api::read_token(path).and_then(|token| codex_api::fetch(url, &token))
+            }
+            Endpoint::Claude { credentials: None, .. } | Endpoint::Codex { auth: None, .. } => Err(Problem::SignedOut),
+        }
+    }
+}
+
 impl Usage {
     /// Loads the saved state, starts watching Codex's logs and asking for
     /// Claude's limits.
@@ -138,7 +173,15 @@ impl Usage {
             Err(_) => Saved::default(),
         };
         let (wake, wakes) = mpsc::channel();
-        let (refresh, refreshes) = mpsc::channel();
+        let mut endpoints = Vec::new();
+        if config.claude_usage_endpoint {
+            endpoints.push(Endpoint::Claude { credentials: paths.claude_credentials, url: paths.claude_usage_url });
+        }
+        if config.codex_usage_endpoint {
+            let auth = paths.codex_home.as_deref().map(codex_api::auth_file);
+            endpoints.push(Endpoint::Codex { auth, url: paths.codex_usage_url });
+        }
+        let (refresh, refreshes): (Vec<_>, Vec<_>) = endpoints.iter().map(|_| mpsc::channel()).unzip();
         let usage = Arc::new(Self {
             state: Mutex::new(State {
                 saved,
@@ -157,10 +200,9 @@ impl Usage {
         });
         let worker = Arc::clone(&usage);
         std::thread::spawn(move || worker.run(paths.codex_home, wakes));
-        if config.claude_usage_endpoint {
+        for (endpoint, refreshes) in endpoints.into_iter().zip(refreshes) {
             let poller = Arc::clone(&usage);
-            let claude = (paths.claude_credentials, paths.claude_usage_url);
-            std::thread::spawn(move || poller.poll_claude(claude.0, &claude.1, refreshes));
+            std::thread::spawn(move || poller.poll(&endpoint, refreshes));
         }
         usage
     }
@@ -179,7 +221,7 @@ impl Usage {
             watch.stop();
         }
         let _ = self.wake.send(Wake::Changed);
-        let _ = self.refresh.send(());
+        self.refresh();
     }
 
     fn stopped(&self) -> bool {
@@ -205,15 +247,18 @@ impl Usage {
         })
     }
 
-    /// Asks for Claude's limits now, unless they were asked for less than
-    /// `CLAUDE_REFRESH_GAP` ago or requests are backing off.
+    /// Asks the endpoints that are on now, unless one was asked less than
+    /// `ENDPOINT_REFRESH_GAP` ago or is backing off.
     pub fn refresh(&self) {
-        let _ = self.refresh.send(());
+        for refresh in &self.refresh {
+            let _ = refresh.send(());
+        }
     }
 
-    /// Asks for Claude's limits every `CLAUDE_POLL`, and on `refresh`.
-    fn poll_claude(&self, credentials: Option<PathBuf>, url: &str, refreshes: mpsc::Receiver<()>) {
-        let mut backoff = CLAUDE_POLL;
+    /// Asks `endpoint` every `ENDPOINT_POLL`, and on `refresh`.
+    fn poll(&self, endpoint: &Endpoint, refreshes: mpsc::Receiver<()>) {
+        let provider = endpoint.provider();
+        let mut backoff = ENDPOINT_POLL;
         let mut last_problem: Option<String> = None;
         loop {
             // Before reading the sign-in: a stopped poller asks nothing more.
@@ -221,53 +266,60 @@ impl Usage {
                 return;
             }
             let asked = Instant::now();
-            let result = match &credentials {
-                Some(path) => claude_api::read_token(path, Timestamp::now())
-                    .and_then(|token| claude_api::fetch(url, &token).map(|limits| (limits, token.plan))),
-                None => Err(claude_api::Problem::SignedOut),
-            };
-            // Local problems cost Anthropic nothing; only failed requests back off.
+            let asked_at = Timestamp::now();
+            let result = endpoint.ask();
+            // Local problems cost the provider nothing; only failed requests back off.
             let wait = match &result {
-                Ok(_)
-                | Err(claude_api::Problem::SignedOut | claude_api::Problem::Expired | claude_api::Problem::Unsafe(_)) =>
-                {
-                    backoff = CLAUDE_POLL;
-                    CLAUDE_POLL
+                Ok(_) | Err(Problem::SignedOut | Problem::Expired | Problem::Unsafe(_)) => {
+                    backoff = ENDPOINT_POLL;
+                    ENDPOINT_POLL
                 }
-                Err(claude_api::Problem::RateLimited(after)) => {
-                    backoff = (backoff * 2).max(CLAUDE_RATE_LIMITED).min(CLAUDE_MAX_BACKOFF);
+                Err(Problem::RateLimited(after)) => {
+                    backoff = (backoff * 2).max(ENDPOINT_RATE_LIMITED).min(ENDPOINT_MAX_BACKOFF);
                     // Capped: a huge Retry-After would stop asking for good,
                     // or overflow the deadline below.
-                    after.map_or(backoff, |after| after.max(backoff)).min(CLAUDE_MAX_BACKOFF)
+                    after.map_or(backoff, |after| after.max(backoff)).min(ENDPOINT_MAX_BACKOFF)
                 }
-                Err(claude_api::Problem::Failed(_)) => {
-                    backoff = (backoff * 2).min(CLAUDE_MAX_BACKOFF);
+                Err(Problem::Failed(_)) => {
+                    backoff = (backoff * 2).min(ENDPOINT_MAX_BACKOFF);
                     backoff
                 }
             };
-            let backing_off = wait > CLAUDE_POLL;
+            let backing_off = wait > ENDPOINT_POLL;
             if self.stopped() {
                 return;
             }
             match result {
                 Ok((limits, plan)) => {
                     last_problem = None;
-                    let _ = self.update(|state| {
-                        state.claude_problem = None;
-                        // The status line reported while this request was out: its numbers are newer.
-                        if state.claude_reported.is_none_or(|reported| reported < asked) {
-                            state.saved.claude = Some(limits);
-                            state.saved.claude_plan = plan;
+                    match provider {
+                        AiProvider::Claude => {
+                            let _ = self.update(|state| {
+                                state.claude_problem = None;
+                                // The status line reported while this request was out: its numbers are newer.
+                                if state.claude_reported.is_none_or(|reported| reported < asked) {
+                                    state.saved.claude = Some(limits);
+                                    state.saved.claude_plan = plan;
+                                }
+                            });
                         }
-                    });
+                        AiProvider::Codex => {
+                            // As of the request: a log line written meanwhile is newer.
+                            self.offer_codex(CodexUsage { plan, limits, logged_at: asked_at });
+                            let _ = self.wake.send(Wake::Changed);
+                        }
+                    }
                 }
                 Err(problem) => {
-                    let hint = problem.hint();
+                    let hint = problem.hint(provider);
                     if last_problem.as_ref() != Some(&hint) {
-                        self.logger.info(LOG_SOURCE, &format!("Claude's limits: {hint}"));
+                        self.logger.info(LOG_SOURCE, &format!("{provider:?}'s limits: {hint}"));
                         last_problem = Some(hint.clone());
                     }
-                    lock(&self.state).claude_problem = Some(hint);
+                    match provider {
+                        AiProvider::Claude => lock(&self.state).claude_problem = Some(hint),
+                        AiProvider::Codex => self.codex_unavailable(hint),
+                    }
                     let _ = self.wake.send(Wake::Changed);
                 }
             }
@@ -275,7 +327,7 @@ impl Usage {
             loop {
                 match refreshes.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                     Ok(()) if self.stopped() => return,
-                    Ok(()) if !backing_off && asked.elapsed() >= CLAUDE_REFRESH_GAP => break,
+                    Ok(()) if !backing_off && asked.elapsed() >= ENDPOINT_REFRESH_GAP => break,
                     Ok(()) => {}
                     Err(RecvTimeoutError::Timeout) => break,
                     Err(RecvTimeoutError::Disconnected) => return,
@@ -314,7 +366,7 @@ impl Usage {
                 self.watch_codex(home);
                 self.rescan_codex(home);
             }
-            None => self.set_codex(Codex::Unavailable("Can't find Codex's folder: HOME isn't set.".into())),
+            None => self.codex_unavailable("Can't find Codex's folder: HOME isn't set.".into()),
         }
         let mut written: BTreeSet<PathBuf> = BTreeSet::new();
         // When the oldest unread write in `written` came.
@@ -356,20 +408,19 @@ impl Usage {
 
     fn rescan_codex(&self, home: &Path) {
         let sessions = codex::sessions_dir(home);
-        let codex = if !sessions.is_dir() {
-            Codex::Unavailable(format!("No Codex sessions in {} yet.", sessions.display()))
-        } else {
-            match codex::newest(&sessions) {
-                Some(found) => return self.offer_codex(found),
-                None => {
-                    Codex::Unavailable("Codex hasn't logged its limits yet; they appear after its next reply.".into())
-                }
+        if !sessions.is_dir() {
+            return self.codex_unavailable(format!("No Codex sessions in {} yet.", sessions.display()));
+        }
+        match codex::newest(&sessions) {
+            Some(found) => self.offer_codex(found),
+            None => {
+                self.codex_unavailable("Codex hasn't logged its limits yet; they appear after its next reply.".into())
             }
-        };
-        self.set_codex(codex);
+        }
     }
 
-    /// Takes limits from a log unless newer ones are already known.
+    /// Takes limits from a log or the endpoint unless newer ones are
+    /// already known.
     fn offer_codex(&self, found: CodexUsage) {
         let mut state = lock(&self.state);
         if let Codex::Found(current) = &state.codex
@@ -380,8 +431,13 @@ impl Usage {
         state.codex = Codex::Found(found);
     }
 
-    fn set_codex(&self, codex: Codex) {
-        lock(&self.state).codex = codex;
+    /// Says why there are no Codex numbers, unless there are some: the
+    /// endpoint's, or a log's that has since gone, still beat none.
+    fn codex_unavailable(&self, hint: String) {
+        let mut state = lock(&self.state);
+        if !matches!(state.codex, Codex::Found(_)) {
+            state.codex = Codex::Unavailable(hint);
+        }
     }
 
     /// Watches Codex's home for the sessions folder and every folder in it,
@@ -581,6 +637,13 @@ fn save(path: &Path, saved: &Saved) -> std::io::Result<()> {
     let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(STATE_FILE_MODE).open(&partial)?;
     file.write_all(&serde_json::to_vec_pretty(saved).map_err(std::io::Error::other)?)?;
     std::fs::rename(partial, path)
+}
+
+/// A plan's display name: `plus` -> `Plus`; `None` when it's empty.
+fn display_plan(plan: &str) -> Option<String> {
+    let mut chars = plan.chars();
+    let first = chars.next()?;
+    Some(first.to_uppercase().chain(chars).collect())
 }
 
 /// Whole percent, clamped to 0..=100.

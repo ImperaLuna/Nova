@@ -8,6 +8,7 @@
 //!
 //! [ai-usage]
 //! claude-usage-endpoint = true
+//! codex-usage-endpoint = true
 //! ```
 
 use crate::theme::ThemeChoice;
@@ -30,6 +31,11 @@ pub struct AiUsageConfig {
     /// unless the user turns it on: Anthropic doesn't document that use.
     #[serde(default)]
     pub claude_usage_endpoint: bool,
+    /// Ask OpenAI for Codex's limits with Codex's sign-in, so they stay
+    /// current between Codex turns. Off unless the user turns it on: OpenAI
+    /// doesn't document that use.
+    #[serde(default)]
+    pub codex_usage_endpoint: bool,
 }
 
 /// The settings in `path`; a missing file means all defaults.
@@ -47,10 +53,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_claude_endpoint_is_off_unless_turned_on() {
+    fn the_endpoints_are_off_unless_turned_on() {
         let config: Config = toml::from_str("[theme]\nname = \"carbonfox\"").unwrap();
-        assert!(!config.ai_usage.claude_usage_endpoint);
+        assert!(!config.ai_usage.claude_usage_endpoint && !config.ai_usage.codex_usage_endpoint);
         let config: Config = toml::from_str("[ai-usage]\nclaude-usage-endpoint = true").unwrap();
-        assert!(config.ai_usage.claude_usage_endpoint);
+        assert!(config.ai_usage.claude_usage_endpoint && !config.ai_usage.codex_usage_endpoint);
+        let config: Config = toml::from_str("[ai-usage]\ncodex-usage-endpoint = true").unwrap();
+        assert!(config.ai_usage.codex_usage_endpoint);
     }
 }
