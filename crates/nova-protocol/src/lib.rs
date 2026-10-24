@@ -694,7 +694,6 @@ mod tests {
                 "TOPIC" => parses(value, |v| serde_json::from_value::<Topic>(v).is_ok()),
                 "CAPABILITY" => parses(value, |v| serde_json::from_value::<Capability>(v).is_ok()),
                 "STEP" => parses(value, |v| serde_json::from_value::<Step>(v).is_ok()),
-                "PANEL" => parses(value, |v| serde_json::from_value::<Panel>(v).is_ok()),
                 "FEATURE" => root.join("features").join(value).join("feature.toml").is_file(),
                 _ => panic!("protocol.js: no check for {name}; add its kind to this test"),
             };

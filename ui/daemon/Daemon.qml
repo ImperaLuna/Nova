@@ -28,7 +28,7 @@ Singleton {
     property var desktop: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
 
-    // `nova toggle <panel>`: open or close `panel` (a Protocol.PANEL_* name).
+    // `nova toggle <panel>`: open or close the StagePanel named `panel`.
     // `output` is the focused output's name, or null when novad doesn't
     // know it.
     signal toggleRequested(string panel, var output)

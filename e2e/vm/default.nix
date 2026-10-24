@@ -236,11 +236,18 @@ in
         });
       };
       # niri's own defaults, without the key help it shows at startup or
-      # the cursor, so screenshots show only Nova.
+      # the cursor, so screenshots show only Nova, and without the hot corner.
       # Two keyboard layouts, so there's a layout to switch to.
       environment.etc."niri/config.kdl".text = ''
         hotkey-overlay {
           skip-at-startup
+        }
+        // ydotool's absolute moves pass through (0, 0), where the top-left
+        // hot corner would open the overview (lifecycle.py's pointer_to).
+        gestures {
+          hot-corners {
+            off
+          }
         }
         cursor {
           hide-after-inactive-ms 1000
