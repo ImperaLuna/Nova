@@ -411,32 +411,35 @@ fn repo_features() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features")
 }
 
-/// Claude's endpoint is `claude_usage_url`; nothing listens there unless a
-/// test starts a fake one.
+/// The usage endpoints are `claude_usage_url` and `codex_usage_url`; nothing
+/// listens there unless a test starts a fake one.
 fn ai_usage_paths(root: &Path) -> ai_usage::Paths {
     ai_usage::Paths {
         codex_home: Some(root.join("codex")),
         state_file: root.join("state/ai-usage.json"),
         claude_credentials: Some(root.join("claude/.credentials.json")),
         claude_usage_url: std::fs::read_to_string(root.join("claude/url")).unwrap_or("http://127.0.0.1:9/".into()),
+        codex_usage_url: std::fs::read_to_string(root.join("codex-url")).unwrap_or("http://127.0.0.1:9/".into()),
     }
 }
 
 /// `config.toml` with Claude's usage endpoint turned on.
 const CLAUDE_ENDPOINT_ON: &str = "[ai-usage]\nclaude-usage-endpoint = true\n";
+/// `config.toml` with Codex's usage endpoint turned on.
+const CODEX_ENDPOINT_ON: &str = "[ai-usage]\ncodex-usage-endpoint = true\n";
 
 /// Answers every request with `body`, keeping the request heads it got.
-fn fake_anthropic(body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
-    fake_anthropic_gated(body, None)
+fn fake_endpoint(body: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
+    fake_endpoint_gated(body, None)
 }
 
-/// Like [`fake_anthropic`], answering each request only once `gate` lets it.
-fn fake_anthropic_gated(
+/// Like [`fake_endpoint`], answering each request only once `gate` lets it.
+fn fake_endpoint_gated(
     body: &'static str,
     gate: Option<std::sync::mpsc::Receiver<()>>,
 ) -> (String, Arc<Mutex<Vec<String>>>) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/api/oauth/usage", listener.local_addr().unwrap());
+    let url = format!("http://{}/usage", listener.local_addr().unwrap());
     let requests = Arc::new(Mutex::new(Vec::new()));
     let seen = Arc::clone(&requests);
     std::thread::spawn(move || {
@@ -472,6 +475,20 @@ fn claude_sign_in(root: &Path, url: &str) {
     std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
     std::fs::write(dir.join("url"), url).unwrap();
 }
+
+/// Codex's sign-in with a ChatGPT account, and the usage endpoint at `url`
+/// (turned on in `config.toml` separately).
+fn codex_sign_in(root: &Path, url: &str) {
+    let home = root.join("codex");
+    std::fs::create_dir_all(&home).unwrap();
+    let path = home.join("auth.json");
+    std::fs::write(&path, r#"{"OPENAI_API_KEY":null,"tokens":{"access_token":"tok","account_id":"work"}}"#).unwrap();
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
+    std::fs::write(root.join("codex-url"), url).unwrap();
+}
+
+/// OpenAI's answer for a Plus plan with only a weekly window.
+const CODEX_ANSWER: &str = r#"{"plan_type":"plus","rate_limit":{"allowed":true,"limit_reached":false,"primary_window":{"used_percent":6,"limit_window_seconds":604800,"reset_after_seconds":400000,"reset_at":4102444800},"secondary_window":null},"credits":null}"#;
 
 /// A Codex `token_count` log line in the shape Codex writes, with limits
 /// that reset an hour and three days from now.
@@ -524,7 +541,7 @@ fn ai_usage_starts_with_setup_hints() {
 
 #[test]
 fn claude_limits_come_from_anthropic_with_claude_codes_sign_in() {
-    let (url, requests) = fake_anthropic(
+    let (url, requests) = fake_endpoint(
         r#"{"five_hour":{"utilization":8.4,"resets_at":"2100-01-01T05:00:00.451561+00:00"},"seven_day":{"utilization":17.0,"resets_at":"2100-01-07T00:00:00+00:00"},"seven_day_opus":null}"#,
     );
     let novad = TestDaemon::with_ai_usage("ai-usage-claude-api", |root| {
@@ -554,7 +571,7 @@ fn claude_limits_come_from_anthropic_with_claude_codes_sign_in() {
 #[test]
 fn a_status_line_report_beats_an_older_endpoint_answer() {
     let (open_gate, gate) = std::sync::mpsc::channel();
-    let (url, requests) = fake_anthropic_gated(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#, Some(gate));
+    let (url, requests) = fake_endpoint_gated(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#, Some(gate));
     let novad = TestDaemon::with_ai_usage("ai-usage-claude-order", |root| {
         claude_sign_in(root, &url);
         std::fs::write(root.join("../config/config.toml"), CLAUDE_ENDPOINT_ON).unwrap();
@@ -601,7 +618,7 @@ fn busy_codex_sessions_are_still_read() {
 
 #[test]
 fn claudes_endpoint_is_never_asked_unless_turned_on() {
-    let (url, requests) = fake_anthropic(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#);
+    let (url, requests) = fake_endpoint(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#);
     let novad = TestDaemon::with_ai_usage("ai-usage-claude-off", |root| claude_sign_in(root, &url));
     let mut client = novad.connect();
     let claude = provider(&client.subscribe_usage(), "claude").clone();
@@ -644,6 +661,49 @@ fn codex_limits_come_from_its_newest_log_and_follow_new_lines() {
     // An event for the first line may still be on its way; the new line's
     // follows it (next_usage fails if it never comes).
     while provider(&client.next_usage(), "codex")["limits"][0]["percent"] != 13 {}
+}
+
+/// The logs only change when Codex runs a turn; the endpoint is current.
+#[test]
+fn codex_limits_come_from_openai_with_codexs_sign_in() {
+    let (url, requests) = fake_endpoint(CODEX_ANSWER);
+    let mut log = PathBuf::new();
+    let novad = TestDaemon::with_ai_usage("ai-usage-codex-api", |root| {
+        codex_sign_in(root, &url);
+        std::fs::write(root.join("../config/config.toml"), CODEX_ENDPOINT_ON).unwrap();
+        // An older turn's numbers.
+        log = codex_day(root).join("rollout-a.jsonl");
+        std::fs::write(&log, codex_line(1, 8) + "\n").unwrap();
+    });
+    let mut client = novad.connect();
+    let mut codex = provider(&client.subscribe_usage(), "codex").clone();
+    while codex["limits"][0]["percent"] != 6 {
+        codex = provider(&client.next_usage(), "codex").clone();
+    }
+    assert_eq!(codex["plan"], "Plus");
+    assert_eq!(codex["limits"], json!([{"window": "weekly", "percent": 6, "resets_at": "2100-01-01T00:00:00Z"}]));
+    let head = requests.lock().unwrap()[0].to_lowercase();
+    assert!(head.contains("authorization: bearer tok\r\n") && head.contains("chatgpt-account-id: work\r\n"), "{head}");
+    assert!(head.contains("user-agent: nova/"), "{head}");
+
+    // A turn after the answer logs newer numbers, which win.
+    let mut file = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
+    writeln!(file, "{}", codex_line(2, 9)).unwrap();
+    while provider(&client.next_usage(), "codex")["limits"][0]["percent"] != 2 {}
+}
+
+#[test]
+fn codexs_endpoint_is_never_asked_unless_turned_on() {
+    let (url, requests) = fake_endpoint(CODEX_ANSWER);
+    let novad = TestDaemon::with_ai_usage("ai-usage-codex-off", |root| {
+        codex_sign_in(root, &url);
+        std::fs::write(codex_day(root).join("rollout-a.jsonl"), codex_line(1, 8) + "\n").unwrap();
+    });
+    let mut client = novad.connect();
+    assert_eq!(provider(&client.subscribe_usage(), "codex")["limits"][0]["percent"], 1);
+    client.request(2, "refresh_ai_usage", None);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(requests.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -1061,7 +1121,7 @@ fn turning_a_feature_off_and_on_stops_and_starts_it() {
 
 #[test]
 fn turning_claudes_endpoint_on_applies_without_a_restart() {
-    let (url, requests) = fake_anthropic(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#);
+    let (url, requests) = fake_endpoint(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#);
     let novad = TestDaemon::with_ai_usage("reload-claude-endpoint", |root| claude_sign_in(root, &url));
     let mut client = novad.connect();
     assert_eq!(provider(&client.subscribe_usage(), "claude")["state"], "unavailable");

@@ -4,7 +4,7 @@
 //! newest one is the current state. Nothing here talks to the network or
 //! reads Codex's credentials.
 
-use super::round_percent;
+use super::{display_plan, round_percent};
 use jiff::Timestamp;
 use nova_protocol::{UsageLimit, UsageWindow};
 use serde_json::Value;
@@ -19,6 +19,8 @@ const TAIL_BYTES: u64 = 512 * 1024;
 const LOGS_TRIED: usize = 20;
 /// Windows up to a day long are the session limit, longer ones weekly.
 const SESSION_WINDOW_MAX_MINUTES: i64 = 24 * 60;
+/// The id of the account's own limits; other ids are a model's.
+pub const MAIN_LIMIT_ID: &str = "codex";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodexUsage {
@@ -98,9 +100,9 @@ pub fn read_log(path: &Path) -> Option<CodexUsage> {
     text.lines().rev().filter(|line| line.contains("\"rate_limits\"")).find_map(parse_line)
 }
 
-/// One log line, when it's a `token_count` event with limits. Reads both the
-/// current shape (`window_minutes`, `resets_at` in Unix seconds) and the
-/// older one (`resets_in_seconds` from the line's time).
+/// One log line, when it's a `token_count` event with Codex's own limits.
+/// Reads both the current shape (`window_minutes`, `resets_at` in Unix
+/// seconds) and the older one (`resets_in_seconds` from the line's time).
 pub fn parse_line(line: &str) -> Option<CodexUsage> {
     let entry: Value = serde_json::from_str(line).ok()?;
     let payload = entry.get("payload")?;
@@ -108,43 +110,66 @@ pub fn parse_line(line: &str) -> Option<CodexUsage> {
         return None;
     }
     let limits = payload.get("rate_limits")?.as_object()?;
-    let logged_at: Timestamp = entry.get("timestamp")?.as_str()?.parse().ok()?;
-    let mut windows: Vec<UsageLimit> = Vec::new();
-    for (key, fallback) in [("primary", UsageWindow::Session), ("secondary", UsageWindow::Weekly)] {
-        let Some(window) = limits.get(key).filter(|window| window.is_object()) else { continue };
-        let Some(used) = window.get("used_percent").and_then(Value::as_f64) else { continue };
-        let kind = match window.get("window_minutes").and_then(Value::as_i64) {
-            Some(minutes) if minutes <= SESSION_WINDOW_MAX_MINUTES => UsageWindow::Session,
-            Some(_) => UsageWindow::Weekly,
-            None => fallback,
-        };
-        let resets_at = match window.get("resets_at").and_then(Value::as_i64) {
-            Some(seconds) => Timestamp::from_second(seconds).ok(),
-            None => window
-                .get("resets_in_seconds")
-                .and_then(Value::as_i64)
-                .and_then(|seconds| logged_at.checked_add(jiff::SignedDuration::from_secs(seconds)).ok()),
-        };
-        if windows.iter().all(|limit| limit.window != kind) {
-            windows.push(UsageLimit {
-                window: kind,
-                percent: round_percent(used),
-                resets_at: resets_at.map(|at| at.to_string()),
-            });
-        }
+    // Models with limits of their own log them under another id.
+    if limits.get("limit_id").and_then(Value::as_str).is_some_and(|id| id != MAIN_LIMIT_ID) {
+        return None;
     }
+    let logged_at: Timestamp = entry.get("timestamp")?.as_str()?.parse().ok()?;
+    let windows = [("primary", UsageWindow::Session), ("secondary", UsageWindow::Weekly)].into_iter().filter_map(
+        |(key, fallback)| {
+            let window = limits.get(key).filter(|window| window.is_object())?;
+            let resets_at = match window.get("resets_at").and_then(Value::as_i64) {
+                Some(seconds) => Timestamp::from_second(seconds).ok(),
+                None => window
+                    .get("resets_in_seconds")
+                    .and_then(Value::as_i64)
+                    .and_then(|seconds| logged_at.checked_add(jiff::SignedDuration::from_secs(seconds)).ok()),
+            };
+            Some(Window {
+                fallback,
+                minutes: window.get("window_minutes").and_then(Value::as_i64),
+                used: window.get("used_percent").and_then(Value::as_f64)?,
+                resets_at,
+            })
+        },
+    );
+    let windows = usage_limits(windows);
     if windows.is_empty() {
         return None;
     }
-    windows.sort_by_key(|limit| limit.window);
-    let plan = limits.get("plan_type").and_then(Value::as_str).filter(|plan| !plan.is_empty()).map(display_plan);
+    let plan = limits.get("plan_type").and_then(Value::as_str).and_then(display_plan);
     Some(CodexUsage { plan, limits: windows, logged_at })
 }
 
-/// `plus` -> `Plus`.
-fn display_plan(plan: &str) -> String {
-    let mut chars = plan.chars();
-    chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default()
+/// One of Codex's limit windows, as its logs and its usage endpoint give it.
+pub struct Window {
+    /// What it is when its length isn't given: the first is the session.
+    pub fallback: UsageWindow,
+    pub minutes: Option<i64>,
+    pub used: f64,
+    pub resets_at: Option<Timestamp>,
+}
+
+/// Codex's windows as limits, session first. Which window is which goes by
+/// its length: plans differ in which they have and in what order.
+pub fn usage_limits(windows: impl IntoIterator<Item = Window>) -> Vec<UsageLimit> {
+    let mut limits: Vec<UsageLimit> = Vec::new();
+    for window in windows {
+        let kind = match window.minutes {
+            Some(minutes) if minutes <= SESSION_WINDOW_MAX_MINUTES => UsageWindow::Session,
+            Some(_) => UsageWindow::Weekly,
+            None => window.fallback,
+        };
+        if limits.iter().all(|limit| limit.window != kind) {
+            limits.push(UsageLimit {
+                window: kind,
+                percent: round_percent(window.used),
+                resets_at: window.resets_at.map(|at| at.to_string()),
+            });
+        }
+    }
+    limits.sort_by_key(|limit| limit.window);
+    limits
 }
 
 #[cfg(test)]
@@ -154,6 +179,8 @@ mod tests {
     /// Shapes recorded from Codex logs, with the times swapped for fixed ones.
     const PLUS: &str = r#"{"timestamp":"2026-10-23T06:40:12.345Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":12000,"cached_input_tokens":9000,"output_tokens":800,"reasoning_output_tokens":300,"total_tokens":12800},"model_context_window":272000},"rate_limits":{"primary":{"used_percent":12.0,"window_minutes":300,"resets_at":1792746000},"secondary":{"used_percent":84.4,"window_minutes":10080,"resets_at":1793095200},"plan_type":"plus"}}}"#;
     const PRO_WEEKLY_ONLY: &str = r#"{"timestamp":"2026-10-23T06:40:12.345Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":{"used_percent":30.5,"window_minutes":10080,"resets_at":1793095200},"secondary":null,"plan_type":"pro"}}}"#;
+    /// codex-cli 0.163: Plus with only a weekly window, and more keys.
+    const PLUS_WEEKLY_ONLY: &str = r#"{"timestamp":"2026-10-23T16:58:25.483Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"limit_id":"codex","limit_name":null,"primary":{"used_percent":8.0,"window_minutes":10080,"resets_at":1793298916},"secondary":null,"credits":{"has_credits":false,"unlimited":false,"balance":"0"},"individual_limit":null,"spend_control_reached":null,"plan_type":"plus","rate_limit_reached_type":null}}}"#;
     const OLD_SHAPE: &str = r#"{"timestamp":"2026-10-23T06:00:00Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":{"used_percent":5.0,"window_minutes":299,"resets_in_seconds":600},"secondary":{"used_percent":40.0,"window_minutes":10079,"resets_in_seconds":3600}}}}"#;
 
     #[test]
@@ -179,6 +206,24 @@ mod tests {
         assert_eq!(usage.plan.as_deref(), Some("Pro"));
         assert_eq!(usage.limits.len(), 1);
         assert_eq!((usage.limits[0].window, usage.limits[0].percent), (UsageWindow::Weekly, 31));
+    }
+
+    #[test]
+    fn plus_may_have_only_a_weekly_limit() {
+        let usage = parse_line(PLUS_WEEKLY_ONLY).unwrap();
+        assert_eq!(usage.plan.as_deref(), Some("Plus"));
+        assert_eq!(
+            usage.limits,
+            [UsageLimit { window: UsageWindow::Weekly, percent: 8, resets_at: Some("2026-10-29T18:35:16Z".into()) }]
+        );
+    }
+
+    /// A model with limits of its own logs them under its id; they aren't
+    /// the account's.
+    #[test]
+    fn a_models_own_limits_are_skipped() {
+        let model = PLUS_WEEKLY_ONLY.replace(r#""limit_id":"codex""#, r#""limit_id":"codex_other_model""#);
+        assert_eq!(parse_line(&model), None);
     }
 
     #[test]
