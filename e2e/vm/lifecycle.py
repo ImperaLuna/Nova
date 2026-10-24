@@ -45,9 +45,10 @@ IDLE_SECS = 10
 LOG_HISTORY = 1_000_000
 # A frame the UI hands the compositor, in its WAYLAND_DEBUG lines.
 SURFACE_COMMIT = r"wl_surface#[0-9]*\.commit("
-# The same line, with libwayland's timestamp (ms) and the surface, after
-# `nova logs`'s own time, level and source.
-TIMED_COMMIT = re.compile(r"\[\s*([0-9.]+)\].*-> wl_surface#([0-9]+)\.commit\(")
+# The same line, with libwayland's timestamp and the surface, after
+# `nova logs`'s own time, level and source. libwayland 1.26 stamps the wall
+# clock as [HH:MM:SS.micros]; older ones stamp milliseconds as [ms.frac].
+TIMED_COMMIT = re.compile(r"\[\s*(?:(\d+):(\d+):)?(\d+(?:\.\d+)?)\].*-> wl_surface#(\d+)\.commit\(")
 # How long the panel may go on drawing after its pill logs that it opened or
 # closed. The longest animation, the meters filling, ends at
 # Tokens.durationPanel * 0.6 + Tokens.durationFill (750 ms) after opening;
@@ -212,7 +213,12 @@ def morph_frames(what: str, logged: str) -> None:
     frames: dict[str, list[float]] = {}
     for line in after_logged:
         if match := TIMED_COMMIT.search(line):
-            frames.setdefault(match[2], []).append(float(match[1]))
+            hours, minutes, seconds, surface = match.groups()
+            if hours is None:
+                ms = float(seconds)
+            else:
+                ms = ((int(hours) * 60 + int(minutes)) * 60 + float(seconds)) * 1000
+            frames.setdefault(surface, []).append(ms)
     assert frames, f"no frames drawn after the panel {what}"
     print(f"panel {what}: frames per surface:")
     for surface, times in frames.items():
@@ -315,7 +321,8 @@ with subtest("screenshot: the AI usage panel open, grown from its pill"):
 
 with subtest("an idle bar draws nothing, shown or under a fullscreen window; the panel draws briefly"):
     # novad hands its environment to the UI.
-    machine.systemctl("set-environment WAYLAND_DEBUG=client", user=USER)
+    # Without libwayland's colors, which the timestamps would hide behind.
+    machine.systemctl("set-environment WAYLAND_DEBUG=client NO_COLOR=1", user=USER)
     machine.succeed(as_user("nova restart"))
     watched = wait_running(not_daemon=first["pid"])
     machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -qF {shlex.quote(AI_USAGE_SHOWN)}"), timeout=WAIT)
@@ -332,7 +339,7 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window; the
     assert_idle("under a fullscreen window")
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
-    machine.systemctl("unset-environment WAYLAND_DEBUG", user=USER)
+    machine.systemctl("unset-environment WAYLAND_DEBUG NO_COLOR", user=USER)
     machine.succeed(as_user("nova restart"))
     # The run the rest of the test knows.
     first = wait_running(not_daemon=watched["pid"])
