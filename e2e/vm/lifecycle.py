@@ -499,27 +499,36 @@ with subtest("a volume change slides the capsule out and back, over fullscreen t
     # The volume Nova found at startup is where it starts, not a change.
     assert ui_log_count(VOLUME_SHOWN) == 0, "the capsule came out without a volume change"
 
-    def volume_change_shows(volume: str) -> None:
+    def volume() -> str:
+        """The default sink's volume as wpctl prints it, like "0.40"."""
+        out = machine.succeed(as_user(WPCTL_SINK.format("get-volume")))
+        return out.split()[1]
+
+    def volume_change_shows(target: str) -> None:
+        assert volume() != target, f"the volume is already {target}, so setting it changes nothing"
         before = ui_log_count(VOLUME_SHOWN)
-        machine.succeed(as_user(WPCTL_SINK.format("set-volume") + f" {volume}"))
-        retry(lambda _last_try: ui_log_count(VOLUME_SHOWN) > before, timeout=CLICK_EFFECT)
+        machine.succeed(as_user(WPCTL_SINK.format("set-volume") + f" {target}"))
+        try:
+            retry(lambda _last_try: ui_log_count(VOLUME_SHOWN) > before, timeout=CLICK_EFFECT)
+        except Exception:
+            print("the capsule didn't come out; wpctl and the UI's log:")
+            ui_log = f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -iE 'nova:|pipewire|volume|warn|error' | tail -n 60"
+            for command in ("wpctl status", WPCTL_SINK.format("get-volume"), WPCTL_SINK.format("inspect"), ui_log):
+                print(machine.execute(as_user(command))[1])
+            raise
 
     def hides() -> None:
         hidden = ui_log_count(VOLUME_HIDDEN)
         retry(lambda _last_try: ui_log_count(VOLUME_HIDDEN) > hidden, timeout=CLICK_EFFECT)
 
-    volume_change_shows("0.4")
+    volume_change_shows("0.30" if volume() != "0.30" else "0.35")
     hides()
     # The pointer on it holds it out, and a wheel notch steps the volume by
     # Tokens.volumeStep, which way depending on how ydotool's wheel maps.
-    volume_change_shows("0.5")
+    volume_change_shows("0.50")
     hidden = ui_log_count(VOLUME_HIDDEN)
     machine.succeed(f"{pointer_to(*CAPSULE)} && {YDOTOOL} mousemove --wheel -x 0 -y 1")
-    try:
-        machine.wait_until_succeeds(as_user(WPCTL_SINK.format("get-volume") + " | grep -qE 'Volume: 0\\.(45|55)$'"), timeout=CLICK_EFFECT)
-    except Exception:
-        print(machine.execute(as_user(WPCTL_SINK.format("get-volume")))[1])
-        raise
+    retry(lambda _last_try: volume() in ("0.45", "0.55"), timeout=CLICK_EFFECT)
     machine.sleep(CAPSULE_HOLD_SECS)
     assert ui_log_count(VOLUME_HIDDEN) == hidden, "the capsule went away under the pointer"
     machine.succeed(pointer_to(*POINTER_REST))
@@ -527,7 +536,7 @@ with subtest("a volume change slides the capsule out and back, over fullscreen t
     # On the overlay layer, so it shows over a fullscreen window.
     open_foot("foot-volume")
     machine.succeed(as_user(FULLSCREEN_WINDOW))
-    volume_change_shows("0.6")
+    volume_change_shows("0.60")
     hides()
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
