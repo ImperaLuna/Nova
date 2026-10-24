@@ -154,11 +154,20 @@ fn doctor_fails_on_what_is_missing() {
 }
 
 #[test]
-fn planned_commands_say_so_and_fail() {
-    let novad = Novad::start("planned");
-    let output = novad.run(&["config"]);
+fn ipc_prints_novads_result_and_refuses_unknown_requests() {
+    let novad = Novad::start("ipc");
+    let status: Status = serde_json::from_str(&stdout(&novad.run(&["ipc", "status"]))).unwrap();
+    assert_eq!(status.ui.state, UiState::Disabled);
+    let output = novad.run(&["ipc", "focus_workspace", r#"{"id": "three"}"#]);
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("`nova config` isn't built yet"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("no such request"), "{output:?}");
+}
+
+#[test]
+fn completions_cover_the_commands() {
+    let output = Command::new(env!("CARGO_BIN_EXE_nova")).args(["completions", "bash"]).output().unwrap();
+    let script = stdout(&output);
+    assert!(script.contains("doctor") && script.contains("--no-follow"), "{script}");
 }
 
 #[test]

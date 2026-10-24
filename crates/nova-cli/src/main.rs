@@ -3,8 +3,10 @@
 //! the daemon's logic lives in the novad crate.
 
 mod client;
+mod config;
 mod doctor;
 mod host;
+mod ipc;
 mod lifecycle;
 mod logs;
 mod setup;
@@ -22,8 +24,7 @@ use std::process::ExitCode;
     name = "nova",
     version,
     about = "Nova, a desktop shell for Wayland",
-    long_about = "Nova, a desktop shell for Wayland.\n\nRun `nova` with no command to start Nova, or to see its status when it's already running.",
-    after_help = "Commands marked [planned] are listed so you know they're coming; they don't work yet."
+    long_about = "Nova, a desktop shell for Wayland.\n\nRun `nova` with no command to start Nova, or to see its status when it's already running."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -66,14 +67,17 @@ enum NovaCommand {
     ///
     /// Exits non-zero when a check fails; warnings alone don't.
     Doctor,
-    /// [planned] Print the config folder, or open it in your editor.
-    Config,
-    /// [planned] Print shell completions for bash, zsh or fish.
-    Completions,
+    /// Print the config folder, or open config.toml in your editor.
+    Config(config::ConfigArgs),
+    /// Print shell completions, to load from your shell's startup file.
+    ///
+    /// bash: `source <(nova completions bash)`; zsh: `source <(nova completions zsh)`;
+    /// fish: `nova completions fish | source`.
+    Completions { shell: clap_complete::Shell },
     /// Open or close a panel on the focused output. Meant for keybinds.
     Toggle(toggle::ToggleArgs),
-    /// [planned] Send a raw request to novad and print the reply, for scripts.
-    Ipc,
+    /// Send a raw request to novad and print the reply as JSON, for scripts.
+    Ipc(ipc::IpcArgs),
 }
 
 fn main() -> ExitCode {
@@ -88,6 +92,12 @@ fn main() -> ExitCode {
         Some(NovaCommand::Logs(args)) => logs::run(&args, &socket),
         Some(NovaCommand::Doctor) => doctor::run(&socket),
         Some(NovaCommand::Setup(args)) => setup::run(&args),
+        Some(NovaCommand::Config(args)) => config::run(&args),
+        Some(NovaCommand::Completions { shell }) => {
+            clap_complete::generate(shell, &mut Cli::command(), "nova", &mut std::io::stdout());
+            Ok(())
+        }
+        Some(NovaCommand::Ipc(args)) => ipc::run(&args, &socket),
         Some(NovaCommand::Version) => {
             status::version(&socket);
             Ok(())
@@ -98,10 +108,6 @@ fn main() -> ExitCode {
         },
         Some(NovaCommand::Toggle(args)) => toggle::run(&args, &socket),
         Some(NovaCommand::Daemon(args)) => novad::run(*args, socket).map_err(|e| format!("daemon: {e}")),
-        Some(NovaCommand::Config | NovaCommand::Completions | NovaCommand::Ipc) => Err(format!(
-            "`nova {}` isn't built yet; it's planned for a later version.",
-            matches.subcommand_name().unwrap_or_default()
-        )),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
