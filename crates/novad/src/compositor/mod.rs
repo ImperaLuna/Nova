@@ -40,6 +40,9 @@ pub trait Backend: Send + Sync {
 
     /// Shows `workspace`, one the last report listed.
     fn focus_workspace(&self, workspace: &Workspace) -> Result<(), String>;
+
+    /// Quits the compositor, ending the session, without its own prompt.
+    fn log_out(&self) -> Result<(), String>;
 }
 
 /// The backend for the compositor this session runs, from its variables in
@@ -133,8 +136,18 @@ impl Compositor {
         }
     }
 
+    /// Whether the backend can do what `capability` names.
+    pub fn can(&self, capability: Capability) -> bool {
+        self.backend.capabilities().contains(&capability)
+    }
+
+    pub fn log_out(&self) -> Result<(), String> {
+        self.require(Capability::LogOut)?;
+        self.backend.log_out()
+    }
+
     fn require(&self, capability: Capability) -> Result<(), String> {
-        if self.backend.capabilities().contains(&capability) {
+        if self.can(capability) {
             return Ok(());
         }
         Err(format!("{} can't do that (no {capability:?} capability)", self.backend.name()))

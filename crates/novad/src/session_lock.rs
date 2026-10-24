@@ -62,6 +62,13 @@ impl SessionLock {
     /// Fails when no UI listens or the screens aren't covered in time; the
     /// session stays locked then, for a UI that's only slow.
     pub fn lock(&self, hub: &Hub) -> Result<(), String> {
+        self.request(hub)?;
+        self.wait_covered()
+    }
+
+    /// Tells the UI to lock the screen, without waiting for it. Fails when
+    /// no UI listens.
+    pub fn request(&self, hub: &Hub) -> Result<(), String> {
         // The state and its event change together, so a subscriber's
         // snapshot never misses a lock.
         let mut state = lock(&self.state);
@@ -75,6 +82,13 @@ impl SessionLock {
             state.locked = true;
             self.save(true);
         }
+        Ok(())
+    }
+
+    /// Waits until the compositor has covered the screens for the lock
+    /// asked for, at most COVER_TIMEOUT.
+    pub fn wait_covered(&self) -> Result<(), String> {
+        let state = lock(&self.state);
         let (state, wait) = self
             .covered
             .wait_timeout_while(state, COVER_TIMEOUT, |state| state.locked && !state.secured)

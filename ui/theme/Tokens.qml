@@ -172,6 +172,26 @@ QtObject {
     // The field's ring while it has focus.
     readonly property real lockFocusOpacity: 0.75
 
+    // Power menu: a tab grown out of the right screen edge, joined to it by
+    // concave fillets, from a nub of nubHeight. Rows like a list's, a bit
+    // taller, with bigger icons.
+    readonly property int edgeTabRadius: 27
+    readonly property int edgeTabFillet: 22
+    readonly property int edgeTabNub: 40
+    readonly property int powerMenuWidth: 220
+    readonly property int powerRowHeight: 46
+    readonly property int powerRowGap: 4
+    readonly property int iconSizeMenu: 18
+    // Line icons' stroke on their 24-unit grid.
+    readonly property real iconStroke: 1.8
+    // The selected row's accent fill, and the bar draining while a row
+    // waits for its second click.
+    readonly property real accentFillOpacity: 0.92
+    readonly property int drainHeight: 3
+    readonly property real drainOpacity: 0.55
+    // Rows that can't run right now, and the others while one runs.
+    readonly property real busyOpacity: 0.35
+
     // Type
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"
@@ -209,6 +229,8 @@ QtObject {
     readonly property real enterScale: 0.6
     // One breath of something that pulses for attention.
     readonly property int durationPulse: 1600
+    // How long an action that ends the session waits for its second click.
+    readonly property int durationConfirm: 4000
     // The cubic-bezier every panel motion uses (fast out, gentle stop).
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
     // The curve each half of a pulse follows: a soft breath in and out.

@@ -3,7 +3,7 @@
 
 use crate::hub::{ClientId, ClientQueue, Outgoing};
 use crate::{Daemon, lock};
-use nova_protocol::{Command, Event, FeatureStatus, Outcome, Panel, Response, Topic, encode};
+use nova_protocol::{Capability, Command, Event, FeatureStatus, Outcome, Panel, PowerAction, Response, Topic, encode};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -144,18 +144,7 @@ impl<'a> Connection<'a> {
                 return self.with_compositor(|compositor| compositor.step_workspace(output, *step));
             }
             Command::Toggle { panel } => return self.toggle(*panel),
-            Command::Lock => {
-                if !self.feature_ready(crate::session_lock::FEATURE_ID) {
-                    return Outcome::Error(format!(
-                        "the {} feature isn't ready (see `nova status`)",
-                        crate::session_lock::FEATURE_ID
-                    ));
-                }
-                return match self.daemon.session_lock.lock(&self.daemon.hub) {
-                    Ok(()) => Outcome::Result(serde_json::Value::Null),
-                    Err(e) => Outcome::Error(e),
-                };
-            }
+            Command::Lock => return self.lock_screen(),
             Command::ReportLocked => {
                 if let Err(e) = self.sent_by_the_ui() {
                     return Outcome::Error(e);
@@ -171,6 +160,18 @@ impl<'a> Connection<'a> {
                 self.daemon.session_lock.unlocked(&self.daemon.hub);
                 Ok(serde_json::Value::Null)
             }
+            Command::PowerOptions => {
+                if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
+                    return Outcome::Error(e);
+                }
+                let lock = self.require_feature(crate::session_lock::FEATURE_ID);
+                let log_out = match &self.daemon.compositor {
+                    Some(compositor) if compositor.can(Capability::LogOut) => Ok(()),
+                    _ => Err("Not on this compositor".into()),
+                };
+                serde_json::to_value(crate::power::options(lock, log_out, &self.daemon.logger))
+            }
+            Command::Power { action } => return self.power(*action),
         };
         match value {
             Ok(value) => Outcome::Result(value),
@@ -213,6 +214,72 @@ impl<'a> Connection<'a> {
             Some(pid) if self.peer_pid == Some(pid) => Ok(()),
             _ => Err("only the UI novad runs can report the lock screen's state".into()),
         }
+    }
+
+    /// An error saying the feature `id` isn't ready, when it isn't.
+    fn require_feature(&self, id: &str) -> Result<(), String> {
+        match self.feature_ready(id) {
+            true => Ok(()),
+            false => Err(format!("the {id} feature isn't ready (see `nova status`)")),
+        }
+    }
+
+    fn lock_screen(&self) -> Outcome {
+        let locked = self
+            .require_feature(crate::session_lock::FEATURE_ID)
+            .and_then(|()| self.daemon.session_lock.lock(&self.daemon.hub));
+        match locked {
+            Ok(()) => Outcome::Result(serde_json::Value::Null),
+            Err(e) => Outcome::Error(e),
+        }
+    }
+
+    /// Runs a power menu action. The menu asks over the UI's own
+    /// connection, which can't report the lock screen covering the screens
+    /// while this waits, so locking here doesn't wait for it. Suspend locks
+    /// first, when the lock screen can, and suspends once the screens are
+    /// covered (or the wait runs out), so the session wakes up locked.
+    fn power(&self, action: PowerAction) -> Outcome {
+        if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
+            return Outcome::Error(e);
+        }
+        self.daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
+        let outcome = match action {
+            PowerAction::Lock => self
+                .require_feature(crate::session_lock::FEATURE_ID)
+                .and_then(|()| self.daemon.session_lock.request(&self.daemon.hub)),
+            PowerAction::LogOut => return self.with_compositor(crate::compositor::Compositor::log_out),
+            PowerAction::Suspend if self.feature_ready(crate::session_lock::FEATURE_ID) => {
+                match self.daemon.session_lock.request(&self.daemon.hub) {
+                    Ok(()) => {
+                        self.suspend_once_covered();
+                        Ok(())
+                    }
+                    Err(e) => {
+                        self.daemon.logger.warn(LOG_SOURCE, &format!("suspending without locking: {e}"));
+                        crate::power::run_logind(action)
+                    }
+                }
+            }
+            PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff => crate::power::run_logind(action),
+        };
+        match outcome {
+            Ok(()) => Outcome::Result(serde_json::Value::Null),
+            Err(e) => Outcome::Error(e),
+        }
+    }
+
+    fn suspend_once_covered(&self) {
+        let session_lock = Arc::clone(&self.daemon.session_lock);
+        let logger = Arc::clone(&self.daemon.logger);
+        std::thread::spawn(move || {
+            if let Err(e) = session_lock.wait_covered() {
+                logger.warn(LOG_SOURCE, &format!("suspending though the screen may not be locked: {e}"));
+            }
+            if let Err(e) = crate::power::run_logind(PowerAction::Suspend) {
+                logger.warn(LOG_SOURCE, &format!("suspend failed: {e}"));
+            }
+        });
     }
 
     fn feature_ready(&self, id: &str) -> bool {
@@ -283,7 +350,9 @@ impl<'a> Connection<'a> {
             | Command::Toggle { .. }
             | Command::Lock
             | Command::ReportLocked
-            | Command::ReportUnlocked => {}
+            | Command::ReportUnlocked
+            | Command::PowerOptions
+            | Command::Power { .. } => {}
         }
     }
 

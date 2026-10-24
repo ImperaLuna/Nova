@@ -77,7 +77,7 @@ impl TestDaemon {
         let settings = Settings::load(&sources, &hub, &logger);
         let compositor = compositor(&dir)
             .map(|backend| compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
-        let session_lock = session_lock::SessionLock::open(&dir, &logger);
+        let session_lock = Arc::new(session_lock::SessionLock::open(&dir, &logger));
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
             hub,
@@ -1155,6 +1155,59 @@ fn lock_needs_its_feature_but_unlocking_doesnt() {
     assert!(reply["error"].as_str().unwrap().contains("lock feature isn't ready"), "{reply}");
     // Turned off while the screen was locked: the UI can still say it unlocked.
     assert_eq!(ui.request(2, "report_unlocked", None)["result"], Value::Null);
+}
+
+#[test]
+fn power_options_list_every_action_and_say_why_one_cant_run() {
+    let novad = TestDaemon::start("power", None);
+    let options = novad.connect().request(1, "power_options", None)["result"].clone();
+    let actions: Vec<&str> =
+        options.as_array().unwrap().iter().map(|option| option["action"].as_str().unwrap()).collect();
+    assert_eq!(actions, ["lock", "suspend", "log_out", "reboot", "power_off"]);
+    let lock = &options[0];
+    assert_eq!(lock["available"], true, "the lock feature is on by default: {lock}");
+    // No compositor here, so nothing to quit.
+    let log_out = &options[2];
+    assert_eq!(log_out["available"], false);
+    assert!(log_out["reason"].as_str().unwrap().contains("Not on this compositor"), "{log_out}");
+    for option in options.as_array().unwrap() {
+        assert!(option["available"] == true || option["reason"].is_string(), "a dimmed action says why: {option}");
+    }
+}
+
+#[test]
+fn power_needs_its_feature_and_logs_out_through_the_compositor() {
+    let novad = TestDaemon::open("power-off", None, |dir| {
+        std::fs::write(dir.join("config/features.toml"), "disabled = [\"ai-usage\", \"power\"]\n").unwrap()
+    });
+    let mut cli = novad.connect();
+    for (id, request) in [(1, json!(null)), (2, json!({"action": "lock"}))] {
+        let command = if request.is_null() { "power_options" } else { "power" };
+        let args = (!request.is_null()).then_some(request);
+        let reply = cli.request(id, command, args);
+        assert!(reply["error"].as_str().unwrap().contains("power feature isn't ready"), "{reply}");
+    }
+
+    let novad = TestDaemon::start("power-log-out", None);
+    let reply = novad.connect().request(1, "power", Some(json!({"action": "log_out"})));
+    assert!(reply["error"].as_str().unwrap().contains("doesn't know this compositor"), "{reply}");
+}
+
+#[test]
+fn power_lock_locks_like_nova_lock() {
+    let novad = TestDaemon::start("power-lock", None);
+    let mut ui = novad.connect();
+    ui.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
+    assert_eq!(ui.next_event("lock"), json!({"locked": false}));
+    // The menu asks over the UI's own connection, which reports the screens
+    // covered only after this answers: it doesn't wait for that.
+    let asked = Instant::now();
+    assert_eq!(ui.request(2, "power", Some(json!({"action": "lock"})))["result"], Value::Null);
+    assert!(asked.elapsed() < Duration::from_secs(1), "waited {:?}", asked.elapsed());
+    assert_eq!(ui.next_event("lock"), json!({"locked": true}));
+    assert_eq!(ui.request(3, "report_locked", None)["result"], Value::Null);
+    // Covered now, so `nova lock` answers at once.
+    assert_eq!(novad.connect().request(1, "lock", None)["result"], Value::Null);
 }
 
 /// Saves `text` to `path` the way many editors do: a new file renamed over

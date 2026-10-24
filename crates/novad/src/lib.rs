@@ -30,6 +30,7 @@ mod features;
 mod hub;
 mod inotify;
 mod logger;
+mod power;
 mod procfs;
 mod server;
 mod session_lock;
@@ -110,7 +111,7 @@ pub struct Daemon {
     settings: Mutex<Settings>,
     /// Following the compositor, when it's one novad knows.
     compositor: Option<Arc<compositor::Compositor>>,
-    session_lock: session_lock::SessionLock,
+    session_lock: Arc<session_lock::SessionLock>,
 }
 
 impl Daemon {
@@ -224,7 +225,7 @@ fn start(
         }
     };
 
-    let session_lock = session_lock::SessionLock::open(socket.parent().unwrap_or(Path::new(".")), &logger);
+    let session_lock = Arc::new(session_lock::SessionLock::open(socket.parent().unwrap_or(Path::new(".")), &logger));
     let daemon = Arc::new(Daemon {
         started: Instant::now(),
         hub,

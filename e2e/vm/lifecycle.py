@@ -93,6 +93,10 @@ ENTER = "28:1 28:0"
 SESSION_LOCKED = "nova: session locked"
 SESSION_UNLOCKED = "nova: session unlocked"
 WRONG_PASSWORD = "nova: lock screen: wrong password"
+# What the power menu logs (ui/power), and its key for Lock.
+POWER_OPENED = "nova: power menu opened"
+POWER_CLOSED = "nova: power menu closed"
+KEY_L = "38:1 38:0"
 # The window the tests open, and how it shows in novad's focused window.
 FOOT = "foot"
 NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
@@ -404,6 +408,15 @@ with subtest("nova lock covers the screens until the user's password checks out"
     machine.succeed(f"{YDOTOOL} type {shlex.quote('not-' + PASSWORD)}")
     press_until_logged(ENTER, WRONG_PASSWORD)
     assert ui_log_count(SESSION_UNLOCKED) == 0, "a wrong password unlocked"
+    machine.succeed(f"{YDOTOOL} type {shlex.quote(PASSWORD)}")
+    press_until_logged(ENTER, SESSION_UNLOCKED)
+
+with subtest("nova toggle power opens the power menu; Esc closes it and its L key locks"):
+    for keys, done in ((ESC, POWER_CLOSED), (KEY_L, SESSION_LOCKED)):
+        before = ui_log_count(POWER_OPENED)
+        machine.succeed(as_user("nova toggle power"))
+        retry(lambda _last_try: ui_log_count(POWER_OPENED) > before, timeout=CLICK_EFFECT)
+        press_until_logged(keys, done)
     machine.succeed(f"{YDOTOOL} type {shlex.quote(PASSWORD)}")
     press_until_logged(ENTER, SESSION_UNLOCKED)
 

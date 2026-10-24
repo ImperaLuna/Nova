@@ -23,8 +23,13 @@ use std::time::Duration;
 
 pub const INSTANCE_VAR: &str = "HYPRLAND_INSTANCE_SIGNATURE";
 const NAME: &str = "Hyprland";
-const CAPABILITIES: &[Capability] =
-    &[Capability::Workspaces, Capability::FocusWorkspace, Capability::FocusedWindow, Capability::KeyboardLayout];
+const CAPABILITIES: &[Capability] = &[
+    Capability::Workspaces,
+    Capability::FocusWorkspace,
+    Capability::FocusedWindow,
+    Capability::KeyboardLayout,
+    Capability::LogOut,
+];
 const EVENTS_SOCKET: &str = ".socket2.sock";
 const REQUEST_SOCKET: &str = ".socket.sock";
 /// Between an event's name and its data.
@@ -109,6 +114,13 @@ impl Backend for Hyprland {
         // A bare number is an id; named workspaces (negative ids) go by name.
         let target = if workspace.id > 0 { workspace.id.to_string() } else { format!("name:{}", workspace.name) };
         match self.request(&format!("dispatch workspace {target}"))?.trim() {
+            "ok" => Ok(()),
+            error => Err(format!("Hyprland: {error}")),
+        }
+    }
+
+    fn log_out(&self) -> Result<(), String> {
+        match self.request("dispatch exit")?.trim() {
             "ok" => Ok(()),
             error => Err(format!("Hyprland: {error}")),
         }

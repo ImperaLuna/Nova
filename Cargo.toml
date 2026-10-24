@@ -20,6 +20,8 @@ shlex = "2"
 jiff = "0.2"
 libc = "0.2"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+# logind over the system bus (power menu). Blocking calls; async-io runs its connection.
+zbus = { version = "6", default-features = false, features = ["default-rt"] }
 nova-protocol = { path = "crates/nova-protocol" }
 nova-features = { path = "crates/nova-features" }
 nova-paths = { path = "crates/nova-paths" }

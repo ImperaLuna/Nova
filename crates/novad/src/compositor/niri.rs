@@ -18,8 +18,13 @@ use std::time::Duration;
 
 pub const SOCKET_VAR: &str = "NIRI_SOCKET";
 const NAME: &str = "niri";
-const CAPABILITIES: &[Capability] =
-    &[Capability::Workspaces, Capability::FocusWorkspace, Capability::FocusedWindow, Capability::KeyboardLayout];
+const CAPABILITIES: &[Capability] = &[
+    Capability::Workspaces,
+    Capability::FocusWorkspace,
+    Capability::FocusedWindow,
+    Capability::KeyboardLayout,
+    Capability::LogOut,
+];
 /// The request that turns a connection into the event stream.
 const EVENT_STREAM_REQUEST: &str = r#""EventStream""#;
 /// How long niri may take to answer a request.
@@ -82,6 +87,12 @@ impl Backend for Niri {
     fn focus_workspace(&self, workspace: &NovaWorkspace) -> Result<(), String> {
         let id = u64::try_from(workspace.id).map_err(|_| format!("niri has no workspace {}", workspace.id))?;
         let action = json!({"Action": {"FocusWorkspace": {"reference": {"Id": id}}}});
+        self.request(&action.to_string()).map(drop)
+    }
+
+    fn log_out(&self) -> Result<(), String> {
+        // The power menu already asked.
+        let action = json!({"Action": {"Quit": {"skip_confirmation": true}}});
         self.request(&action.to_string()).map(drop)
     }
 }
