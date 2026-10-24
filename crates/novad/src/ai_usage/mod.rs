@@ -316,16 +316,9 @@ impl Usage {
                         self.logger.info(LOG_SOURCE, &format!("{provider:?}'s limits: {hint}"));
                         last_problem = Some(hint.clone());
                     }
-                    {
-                        let mut state = lock(&self.state);
-                        match provider {
-                            AiProvider::Claude => state.claude_problem = Some(hint),
-                            // Numbers from the logs still beat none.
-                            AiProvider::Codex if !matches!(state.codex, Codex::Found(_)) => {
-                                state.codex = Codex::Unavailable(hint)
-                            }
-                            AiProvider::Codex => {}
-                        }
+                    match provider {
+                        AiProvider::Claude => lock(&self.state).claude_problem = Some(hint),
+                        AiProvider::Codex => self.codex_unavailable(hint),
                     }
                     let _ = self.wake.send(Wake::Changed);
                 }
@@ -373,7 +366,7 @@ impl Usage {
                 self.watch_codex(home);
                 self.rescan_codex(home);
             }
-            None => self.set_codex(Codex::Unavailable("Can't find Codex's folder: HOME isn't set.".into())),
+            None => self.codex_unavailable("Can't find Codex's folder: HOME isn't set.".into()),
         }
         let mut written: BTreeSet<PathBuf> = BTreeSet::new();
         // When the oldest unread write in `written` came.
@@ -415,17 +408,15 @@ impl Usage {
 
     fn rescan_codex(&self, home: &Path) {
         let sessions = codex::sessions_dir(home);
-        let codex = if !sessions.is_dir() {
-            Codex::Unavailable(format!("No Codex sessions in {} yet.", sessions.display()))
-        } else {
-            match codex::newest(&sessions) {
-                Some(found) => return self.offer_codex(found),
-                None => {
-                    Codex::Unavailable("Codex hasn't logged its limits yet; they appear after its next reply.".into())
-                }
+        if !sessions.is_dir() {
+            return self.codex_unavailable(format!("No Codex sessions in {} yet.", sessions.display()));
+        }
+        match codex::newest(&sessions) {
+            Some(found) => self.offer_codex(found),
+            None => {
+                self.codex_unavailable("Codex hasn't logged its limits yet; they appear after its next reply.".into())
             }
-        };
-        self.set_codex(codex);
+        }
     }
 
     /// Takes limits from a log or the endpoint unless newer ones are
@@ -440,8 +431,13 @@ impl Usage {
         state.codex = Codex::Found(found);
     }
 
-    fn set_codex(&self, codex: Codex) {
-        lock(&self.state).codex = codex;
+    /// Says why there are no Codex numbers, unless there are some: the
+    /// endpoint's, or a log's that has since gone, still beat none.
+    fn codex_unavailable(&self, hint: String) {
+        let mut state = lock(&self.state);
+        if !matches!(state.codex, Codex::Found(_)) {
+            state.codex = Codex::Unavailable(hint);
+        }
     }
 
     /// Watches Codex's home for the sessions folder and every folder in it,

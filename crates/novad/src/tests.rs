@@ -692,6 +692,29 @@ fn codex_limits_come_from_openai_with_codexs_sign_in() {
     while provider(&client.next_usage(), "codex")["limits"][0]["percent"] != 2 {}
 }
 
+/// Codex's first turn creates its sessions folder before it logs limits;
+/// the endpoint's numbers stay meanwhile.
+#[test]
+fn codex_endpoint_numbers_outlast_a_rescan_without_limits() {
+    let (url, _requests) = fake_endpoint(CODEX_ANSWER);
+    let mut root_dir = PathBuf::new();
+    let novad = TestDaemon::with_ai_usage("ai-usage-codex-api-rescan", |root| {
+        codex_sign_in(root, &url);
+        std::fs::write(root.join("../config/config.toml"), CODEX_ENDPOINT_ON).unwrap();
+        root_dir = root.to_owned();
+    });
+    let mut client = novad.connect();
+    let mut codex = provider(&client.subscribe_usage(), "codex").clone();
+    while codex["state"] != "ready" {
+        codex = provider(&client.next_usage(), "codex").clone();
+    }
+    std::fs::write(codex_day(&root_dir).join("rollout-a.jsonl"), "").unwrap();
+    // Give the watcher time to rescan.
+    std::thread::sleep(Duration::from_millis(300));
+    let codex = provider(&novad.connect().subscribe_usage(), "codex").clone();
+    assert_eq!((codex["state"].as_str(), &codex["limits"][0]["percent"]), (Some("ready"), &json!(6)), "{codex}");
+}
+
 #[test]
 fn codexs_endpoint_is_never_asked_unless_turned_on() {
     let (url, requests) = fake_endpoint(CODEX_ANSWER);
