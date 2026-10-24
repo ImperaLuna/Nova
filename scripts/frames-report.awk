@@ -1,4 +1,4 @@
-# Missed vblanks per screen, from the UI's `nova-frame:` lines
+# Missed vblanks per surface, from the UI's `nova-frame:` lines
 # (ui/stage/FrameLog.qml, NOVA_FRAME_LOG=1) in any log on stdin or in the
 # files named. `just frames` runs it on a live desktop; the VM tests print it.
 #
@@ -10,6 +10,9 @@
 # inside an animation still shows. A screen with nothing but bursts' first
 # frames (a lone redraw when another screen animates) has nothing to report
 # and is left out.
+#
+# A surface is a screen's stage ("DP-1") or one of its PanelSurfaces
+# ("DP-1/right"), each reported on its own row; "screen" below means either.
 #
 # -v refresh="DP-1=144 DP-2=120": each screen's refresh rate in Hz; `*=60`
 #    stands for every screen not named. Required.
@@ -38,7 +41,10 @@ match($0, /nova-frame: screen=[^ ]+ dt=[0-9]+/) {
 	if (!(screen in frames)) {
 		order[++screens] = screen
 		frames[screen] = 0
-		hz[screen] = screen in hz_of ? hz_of[screen] : hz_of["*"]
+		# A PanelSurface runs at its screen's rate.
+		output = screen
+		sub(/\/.*/, "", output)
+		hz[screen] = output in hz_of ? hz_of[output] : hz_of["*"]
 		if (!hz[screen]) {
 			printf "frames: no refresh rate for screen %s\n", screen
 			failed = 1
@@ -73,13 +79,13 @@ END {
 		print "frames: nothing animated, only lone redraws"
 		exit 2
 	}
-	printf "%-10s %8s %7s %7s %8s %8s %14s %8s\n", "screen", "hz", "bursts", "frames", "dropped", "dropped%", "missed vblanks", "worst ms"
+	printf "%-14s %8s %7s %7s %8s %8s %14s %8s\n", "surface", "hz", "bursts", "frames", "dropped", "dropped%", "missed vblanks", "worst ms"
 	for (i = 1; i <= screens; i++) {
 		s = order[i]
 		if (!frames[s])
 			continue
 		pct = 100 * dropped[s] / frames[s]
-		printf "%-10s %8.3f %7d %7d %8d %7.1f%% %14d %8d\n", s, hz[s], bursts[s], frames[s], dropped[s], pct, missed_vblanks[s], worst[s]
+		printf "%-14s %8.3f %7d %7d %8d %7.1f%% %14d %8d\n", s, hz[s], bursts[s], frames[s], dropped[s], pct, missed_vblanks[s], worst[s]
 		if (budget != "" && pct > budget + 0)
 			warnings = warnings sprintf("warning: %s dropped %.1f%% of its frames, more than the %s%% budget\n", s, pct, budget)
 	}

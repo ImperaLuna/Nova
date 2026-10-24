@@ -24,6 +24,12 @@ Item {
     readonly property list<StagePanel> panels: aiUsagePill ? [aiUsagePill] : []
     // What else is drawn and takes clicks, each rounded by its `radius`.
     readonly property list<Item> fixedShapes: [center]
+    // The pill in the middle, which a panel in the middle of the screen can
+    // grow out of.
+    readonly property Item centralPill: center
+    // Its items a panel on another surface is drawn over (StagePanel
+    // `from`): hidden meanwhile. The stage sets it.
+    property list<Item> covered: []
 
     // Logs once the bar has drawn a frame while connected to novad, so the
     // VM tests know when to screenshot it.
@@ -55,6 +61,7 @@ Item {
 
     Rectangle {
         id: center
+        visible: !bar.covered.includes(center)
         anchors.horizontalCenter: parent.horizontalCenter
         y: Tokens.barMargin
         height: Tokens.barHeight

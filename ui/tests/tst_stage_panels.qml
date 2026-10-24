@@ -53,8 +53,11 @@ Item {
         name: "StagePanels"
 
         function cleanup() {
-            for (const panel of [usage, launcher, notes, usageElsewhere, notesElsewhere])
+            for (const panel of [usage, launcher, notes, usageElsewhere, notesElsewhere]) {
                 panel.open = false;
+                panel.moving = false;
+            }
+            usage.x = usage.y = usage.width = usage.height = 0;
             drawn.panels = [usage, launcher, notes];
         }
 
@@ -79,6 +82,42 @@ Item {
             compare(drawn.reach, 408, "a closed panel already counts at its open height");
             launcher.openHeight = 600;
             compare(drawn.reach, 600);
+        }
+
+        function test_a_hidden_item_takes_no_clicks_but_keeps_its_room() {
+            fixedPill.y = 8;
+            fixedPill.height = 36;
+            fixedPill.visible = false;
+            verify(!drawn.shapes.includes(fixedPill), "a pill a panel elsewhere covers");
+            compare(drawn.reach, 44, "the stage doesn't shrink under it");
+            fixedPill.visible = true;
+            verify(drawn.shapes.includes(fixedPill));
+        }
+
+        function test_a_click_on_a_drawn_item_is_not_outside() {
+            usage.x = 100;
+            usage.y = 8;
+            usage.width = 300;
+            usage.height = 400;
+            verify(drawn.covers(250, 200), "inside the panel, where nothing in it takes the click");
+            verify(!drawn.covers(50, 200));
+            verify(!drawn.covers(250, 500));
+        }
+
+        function test_room_covers_the_shown_panels_areas() {
+            usage.area = Qt.rect(100, 50, 300, 900);
+            notes.area = Qt.rect(450, 400, 70, 300);
+            compare(drawn.shown.length, 0);
+            compare(drawn.room.width, 0, "nothing shown, no room");
+            usage.open = true;
+            compare(drawn.room, Qt.rect(100, 50, 300, 900));
+            notes.open = true;
+            compare(drawn.room, Qt.rect(100, 50, 420, 900), "both together");
+            usage.open = false;
+            usage.moving = true;
+            compare(drawn.room, Qt.rect(100, 50, 420, 900), "still closing");
+            usage.moving = false;
+            compare(drawn.room, Qt.rect(450, 400, 70, 300));
         }
 
         function test_keyboard_is_held_only_while_a_typing_panel_is_open() {
@@ -146,15 +185,15 @@ Item {
             usageElsewhere.moving = false;
         }
 
-        function test_stage_motion_lists_each_moving_screen_once() {
-            StageMotion.setMoving("DP-1", true);
-            StageMotion.setMoving("DP-1", true);
-            StageMotion.setMoving("DP-2", true);
-            compare(StageMotion.screens.length, 2);
-            StageMotion.setMoving("DP-1", false);
-            compare(StageMotion.screens, ["DP-2"]);
-            StageMotion.setMoving("DP-2", false);
-            compare(StageMotion.screens.length, 0);
+        function test_stage_motion_lists_each_moving_surface_once() {
+            StageMotion.setMoving("DP-1/top", true);
+            StageMotion.setMoving("DP-1/top", true);
+            StageMotion.setMoving("DP-1/right", true);
+            compare(StageMotion.surfaces.length, 2);
+            StageMotion.setMoving("DP-1/top", false);
+            compare(StageMotion.surfaces, ["DP-1/right"]);
+            StageMotion.setMoving("DP-1/right", false);
+            compare(StageMotion.surfaces.length, 0);
         }
 
         function test_panels_can_come_and_go() {

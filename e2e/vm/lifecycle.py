@@ -2,7 +2,7 @@
 # `nova` command the way a user would, and a screenshot of each UI state for
 # compare.sh. default.nix defines USER, UID, COMPOSITOR, QUIT_COMPOSITOR,
 # FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW, CLOSE_WINDOW, LIST_WINDOWS,
-# COMPOSITOR_LOG and FRAMES_REPORT above this script.
+# LIST_LAYERS, COMPOSITOR_LOG and FRAMES_REPORT above this script.
 import datetime as dt
 import itertools
 import json
@@ -75,6 +75,19 @@ FRAMES_PER_REFRESH = 1.5
 # the pill's screen alone. The bar's exclusion zone used to draw a frame
 # too, each time an animation started (IMP-49).
 MORPH_SURFACES = 1
+# The placeholder panels off the stage (ui/demo/DemoPanels.qml, on with
+# NOVA_DEMO_PANELS=1), opened over Quickshell's IPC.
+DEMO_PANELS = ("demo-sidebar", "demo-tab", "demo-center")
+# A window's place and size in the compositor's window list.
+GEOMETRY_KEYS = ("layout", "at", "size")
+# Inside the center placeholder: it's 640x400 in the middle of the 1280x800
+# screen. POINTER_REST is below it.
+DEMO_CENTER_INSIDE = (640, 400)
+# How long a click that shouldn't close the center placeholder is given to
+# do so anyway.
+NO_EFFECT_SECS = 2
+# Esc, pressed and released, as ydotool names keys (Linux key codes).
+ESC = "1:1 1:0"
 # The window the tests open, and how it shows in novad's focused window.
 FOOT = "foot"
 NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
@@ -161,6 +174,33 @@ def ui_log_count(line: str) -> int:
     # last 50 lines `nova logs` shows by default.
     out = machine.succeed(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -cF {shlex.quote(line)} || true"))
     return int(out.strip() or 0)
+
+
+def window_geometry() -> list:
+    """Where each window is and how big, as the compositor lists them
+    (niri's `layout`, Hyprland's `at` and `size`), and nothing else: a panel
+    that takes typing moves the focus, but must move no window."""
+    windows = json.loads(machine.succeed(as_user(LIST_WINDOWS)))
+    return [{key: window[key] for key in GEOMETRY_KEYS if key in window} for window in windows]
+
+
+def demo_logged(panel: str, state: str) -> str:
+    """What a placeholder panel logs when it's "opened" or "closed"."""
+    return f"nova: demo panel {panel} {state}"
+
+
+def press_until_logged(keys: str, line: str) -> None:
+    """Presses `keys` (ydotool's code:state pairs) until the UI logs `line`
+    once more than before, like click_until_logged."""
+    before = ui_log_count(line)
+    for _ in range(CLICK_TRIES):
+        machine.succeed(f"{YDOTOOL} key {keys}")
+        try:
+            retry(lambda _last_try: ui_log_count(line) > before, timeout=CLICK_EFFECT)
+            return
+        except Exception:
+            print(f"no {line!r} after pressing {keys}, pressing again")
+    raise AssertionError(f"pressing {keys} {CLICK_TRIES} times never logged {line!r}")
 
 
 def click_until_logged(x: int, y: int, line: str, count=ui_log_count) -> None:
@@ -381,6 +421,53 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window; the
     machine.succeed(as_user("nova restart"))
     # The run the rest of the test knows.
     first = wait_running(not_daemon=watched["pid"])
+
+with subtest("panels off the stage open and close without moving windows"):
+    # With libwayland's lines (no colors), so a failure shows where the
+    # compositor sent the pointer; novad keeps them only with NOVA_LOG=debug.
+    machine.systemctl("set-environment NOVA_DEMO_PANELS=1 WAYLAND_DEBUG=client NO_COLOR=1 NOVA_LOG=debug", user=USER)
+    machine.succeed(as_user("nova restart"))
+    demo = wait_running(not_daemon=first["pid"])
+    machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -qF {shlex.quote(BAR_SHOWN)}"), timeout=WAIT)
+    toggle_demo = f"quickshell ipc --pid {demo['ui']['pid']} call demo toggle"
+    open_foot("foot-demo")
+    windows = window_geometry()
+    assert windows and all(windows), f"no window geometry in {LIST_WINDOWS}"
+    for panel in DEMO_PANELS:
+        for state in ("opened", "closed"):
+            before = ui_log_count(demo_logged(panel, state))
+            machine.succeed(as_user(f"{toggle_demo} {panel}"))
+            retry(lambda _last_try: ui_log_count(demo_logged(panel, state)) > before, timeout=CLICK_EFFECT)
+            assert window_geometry() == windows, f"windows moved with {panel} {state}"
+    # The center one takes typing, like the launcher will: a click on it
+    # keeps it open, one anywhere else (the click catcher) or Esc closes it.
+    center = "demo-center"
+    for close in ("click outside", "Esc"):
+        before = ui_log_count(demo_logged(center, "opened"))
+        machine.succeed(as_user(f"{toggle_demo} {center}"))
+        retry(lambda _last_try: ui_log_count(demo_logged(center, "opened")) > before, timeout=CLICK_EFFECT)
+        closed = demo_logged(center, "closed")
+        before = ui_log_count(closed)
+        click(*DEMO_CENTER_INSIDE)
+        machine.sleep(NO_EFFECT_SECS)
+        assert ui_log_count(closed) == before, "a click on the panel closed it"
+        try:
+            if close == "Esc":
+                press_until_logged(ESC, closed)
+            else:
+                click_until_logged(*POINTER_REST, closed)
+        except Exception:
+            print(f"{close} didn't close {center}; the layer surfaces, the UI's log and the compositor's:")
+            pointer = "get_layer_surface|set_anchor|wl_pointer|wl_keyboard#[0-9]+\\.(enter|leave)"
+            ui_log = f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -E 'nova:|{pointer}' | tail -n 150"
+            for command in (LIST_LAYERS, ui_log, COMPOSITOR_LOG):
+                print(machine.execute(as_user(command))[1])
+            raise
+    machine.succeed(as_user(CLOSE_WINDOW))
+    machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
+    machine.systemctl("unset-environment NOVA_DEMO_PANELS WAYLAND_DEBUG NO_COLOR NOVA_LOG", user=USER)
+    machine.succeed(as_user("nova restart"))
+    first = wait_running(not_daemon=demo["pid"])
 
 with subtest("a workspace switch reaches the UI"):
     running = wait_running()

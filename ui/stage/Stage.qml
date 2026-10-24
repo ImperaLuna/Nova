@@ -4,12 +4,14 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import "../bar"
+import "../demo"
 import "../daemon"
 import "../theme"
 
 // One per screen: a transparent layer across the top of the screen that the
 // bar, its panels and popups are all drawn on, so a pill can grow into its
-// panel. It's as tall as the tallest of them open (plus shadow), not the
+// panel. Panels elsewhere on the screen (StagePanel `placement`) are drawn
+// on a PanelSurface per placement instead. It's as tall as the tallest of them open (plus shadow), not the
 // whole screen: niri blurs the whole surface behind glass on every frame, so
 // a full-screen stage cost a full-screen blur per frame of every morph
 // (IMP-54). It reserves no space (ExclusionZone keeps the bar's) and takes
@@ -22,19 +24,45 @@ Scope {
 
     required property ShellScreen screen
     // Its panels just stopped and their final state (and regions) isn't in
-    // a frame yet: drawing stays on for it even while another screen moves.
+    // a frame yet, or a pill just showed again: drawing stays on for it even
+    // while another surface moves.
     property bool settling: false
 
+    // Every panel on this screen, whatever surface it's drawn on.
+    readonly property list<StagePanel> panels: [...bar.panels, ...(demo.item?.panels ?? [])]
+    function placed(placement: string): list<StagePanel> {
+        return panels.filter(panel => panel.placement === placement);
+    }
+
+    // The whole screen's: which panel holds the keyboard, toggling, closing.
+    StagePanels {
+        id: all
+        panels: root.panels
+    }
+
+    // What's on the stage itself.
     StagePanels {
         id: drawn
-        panels: bar.panels
+        readonly property string motionName: `${root.screen.name}/top`
+        panels: root.placed("top")
         fixed: bar.fixedShapes
         onMovingChanged: {
-            StageMotion.setMoving(root.screen.name, moving);
+            StageMotion.setMoving(motionName, moving);
             if (!moving)
                 root.settling = true;
         }
-        Component.onDestruction: StageMotion.setMoving(root.screen.name, false)
+        Component.onDestruction: StageMotion.setMoving(motionName, false)
+    }
+
+    // Placeholder panels for each placement, with NOVA_DEMO_PANELS=1 only
+    // (ui/demo).
+    LazyLoader {
+        id: demo
+        active: Quickshell.env("NOVA_DEMO_PANELS") === "1"
+        component: DemoPanels {
+            screen: root.screen
+            centralPill: bar.centralPill
+        }
     }
 
     // `nova toggle <panel>`, which novad sends every screen. When novad
@@ -42,8 +70,28 @@ Scope {
     Connections {
         target: Daemon
         function onToggleRequested(panel: string, output: var) {
-            drawn.toggle(panel, root.screen.name, output ?? Quickshell.screens[0]?.name ?? "");
+            all.toggle(panel, root.screen.name, output ?? Quickshell.screens[0]?.name ?? "");
         }
+    }
+
+    PanelSurface {
+        id: right
+        output: root.screen
+        placement: "right"
+        panels: root.placed("right")
+        clickAnywhere: all.needsKeyboard
+        holding: root.settling
+        onDismissRequested: all.dismiss()
+    }
+
+    PanelSurface {
+        id: center
+        output: root.screen
+        placement: "center"
+        panels: root.placed("center")
+        clickAnywhere: all.needsKeyboard
+        holding: root.settling
+        onDismissRequested: all.dismiss()
     }
 
     ExclusionZone {
@@ -67,7 +115,7 @@ Scope {
         // (StageMotion). Its regions only change when its own panels move,
         // and it draws until their last frame is out, so they're always
         // sent: Quickshell sends them only with a frame.
-        updatesEnabled: drawn.moving || root.settling || StageMotion.screens.length === 0
+        updatesEnabled: drawn.moving || root.settling || StageMotion.surfaces.length === 0
 
         // Qt emits afterAnimating once it has polished a frame (Quickshell
         // sends the regions then) and right before syncing it, and that frame
@@ -85,16 +133,16 @@ Scope {
         WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
         // Rounded like what's drawn, so clicks at the corners reach the
-        // windows below. While a panel holds the keyboard, the whole stage
-        // takes clicks (and `below` the rest of the screen), and one outside
-        // the panel closes it.
+        // windows below. While a panel holds the keyboard, here or on another
+        // surface, the whole stage takes clicks (and `catcher` the rest of
+        // the screen), and one outside the panel closes it.
         mask: Region {
             regions: inputRegions.instances
         }
 
         Variants {
             id: inputRegions
-            model: drawn.needsKeyboard ? [outside] : drawn.shapes
+            model: all.needsKeyboard ? [outside] : drawn.shapes
             ShapeRegion {}
         }
 
@@ -122,66 +170,41 @@ Scope {
         onHasGlassChanged: askForBlur()
         Component.onCompleted: askForBlur()
 
+        // The whole screen: Hyprland gives a surface that holds the keyboard
+        // every click on the screen (see PanelSurface's `outside`).
         MouseArea {
             id: outside
             readonly property int radius: 0
-            anchors.fill: parent
-            enabled: drawn.needsKeyboard
+            width: root.screen.width
+            height: root.screen.height
+            enabled: all.needsKeyboard
             focus: true
-            onClicked: drawn.dismiss()
-            Keys.onEscapePressed: drawn.dismiss()
+            onClicked: mouse => {
+                if (!drawn.covers(mouse.x, mouse.y))
+                    all.dismiss();
+            }
+            Keys.onEscapePressed: all.dismiss()
         }
 
         Bar {
             id: bar
             anchors.fill: parent
+            // Its items that a panel elsewhere is drawn over (StagePanel
+            // `from`), so they hide. They show again once that panel has
+            // closed, and the surface it's on stays until that's drawn.
+            covered: root.panels.filter(panel => panel.covering && panel.from).map(panel => panel.from)
+            onCoveredChanged: root.settling = true
         }
 
         FrameLog {
-            screenName: root.screen.name
+            surfaceName: root.screen.name
         }
     }
 
-    // The screen below the stage, there only while a panel holds the
-    // keyboard, so a click anywhere off the panel closes it. Empty, and
-    // never blurred.
-    PanelWindow { // qmllint disable uncreatable-type
-        id: below
-
+    ClickCatcher {
         screen: root.screen
-        visible: drawn.needsKeyboard
-        anchors {
-            bottom: true
-            left: true
-            right: true
-        }
-        implicitHeight: root.screen.height - stage.implicitHeight
-        exclusionMode: ExclusionMode.Ignore
-        color: "transparent"
-        WlrLayershell.layer: WlrLayer.Top
-
-        // Like ExclusionZone: it draws nothing, so it would only hand the
-        // compositor a new empty frame for every animation frame anywhere.
-        // It draws its own changes (layer-shell size goes out with a frame)
-        // and stops once that frame is out.
-        function redraw() {
-            updatesEnabled = true;
-        }
-        onVisibleChanged: redraw()
-        onWidthChanged: redraw()
-        onHeightChanged: redraw()
-        onDevicePixelRatioChanged: redraw()
-
-        Connections {
-            target: below.contentItem.Window.window
-            function onFrameSwapped() {
-                below.updatesEnabled = false;
-            }
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: drawn.dismiss()
-        }
+        visible: all.needsKeyboard
+        holes: [Qt.rect(0, 0, root.screen.width, stage.implicitHeight), ...[right, center].filter(surface => surface.visible).map(surface => surface.box)]
+        onClicked: all.dismiss()
     }
 }

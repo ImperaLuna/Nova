@@ -29,6 +29,12 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   exactly the size and shape of what's visible (rounded corners too, from the
   same radius property the drawing uses). Don't add separate layer windows
   without a reason (the 2px auto-hide reveal strip is one).
+- A panel that draws outside the top strip sets `StagePanel.placement`
+  ("right" or "center") and its `area` (where it draws while open or
+  moving, screen coordinates). It's then drawn on that placement's
+  PanelSurface, mapped only while one of its panels is shown and sized to
+  their areas; the stage contract (mask, blur, keyboard, dismiss, toggle)
+  is the same. One growing out of a stage pill sets `from` to that pill.
 - The stage never reserves space, so opening a panel never moves app
   windows. A separate, empty exclusion-zone surface reserves the bar's space
   and changes only when the bar shows or hides.

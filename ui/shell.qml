@@ -24,4 +24,15 @@ ShellRoot {
         target: "compositor"
         readonly property string focusedWorkspace: Compositor.focusedWorkspace?.name ?? ""
     }
+
+    // `quickshell ipc --pid <UI pid> call demo toggle <name>`: `nova toggle`
+    // for the placeholder panels (NOVA_DEMO_PANELS=1, ui/demo), which aren't
+    // features novad knows. On the focused screen, like `nova toggle`.
+    IpcHandler {
+        target: "demo"
+        function toggle(panel: string): void {
+            const focused = Compositor.outputs.find(output => output.workspaces.some(workspace => workspace.focused));
+            Daemon.toggleRequested(panel, focused?.name ?? null);
+        }
+    }
 }
