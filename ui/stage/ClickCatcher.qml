@@ -44,12 +44,18 @@ PanelWindow { // qmllint disable uncreatable-type
         }
     }
 
-    // Like ExclusionZone: it draws nothing, so it would only hand the
-    // compositor a new empty frame for every animation frame anywhere. It
-    // draws its own changes (its mask and layer-shell size go out with a
-    // frame) and stops once that frame is out.
+    // It draws nothing, so it would only hand the compositor a new empty
+    // frame for every animation frame anywhere. It draws its own changes
+    // (its mask and layer-shell size go out with a frame) and stops once a
+    // frame with them is out: Hyprland cuts the mask down to the size of the
+    // last frame, so one from before a resize would leave it taking no
+    // clicks. Qt emits afterAnimating once it has polished a frame, which
+    // holds every change made before it, and that frame goes out even if
+    // updates go off now; a frameSwapped could still be an older frame's.
+    property bool drawing: false
+    updatesEnabled: drawing
     function redraw() {
-        updatesEnabled = true;
+        drawing = true;
     }
     onVisibleChanged: redraw()
     onHolesChanged: redraw()
@@ -59,8 +65,9 @@ PanelWindow { // qmllint disable uncreatable-type
 
     Connections {
         target: catcher.contentItem.Window.window
-        function onFrameSwapped() {
-            catcher.updatesEnabled = false;
+        enabled: catcher.drawing
+        function onAfterAnimating() {
+            catcher.drawing = false;
         }
     }
 
