@@ -22,9 +22,10 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - A feature is `features/<id>/feature.toml`, the single source of truth for
   its packages; `daemon = "x"` needs a cargo feature `x` in novad. A feature
   that is off or missing dependencies is never loaded by the UI.
-- Window model is "stage": one full-screen, masked layer surface per monitor.
-  The bar, panels and popups are items on it so they can morph into each
-  other. Clicks pass through everywhere outside the mask, so keep the mask
+- Window model is "stage": one masked layer surface per monitor, across the
+  top and only as tall as the tallest panel open (niri blurs the whole
+  surface behind glass each frame, so its size is the blur cost). The bar,
+  panels and popups are items on it so they can morph into each other. Clicks pass through everywhere outside the mask, so keep the mask
   exactly the size and shape of what's visible (rounded corners too, from the
   same radius property the drawing uses). Don't add separate layer windows
   without a reason (the 2px auto-hide reveal strip is one).

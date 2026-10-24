@@ -31,6 +31,10 @@ Item {
     // the stage holds the keyboard and the whole screen takes clicks, so a
     // click outside the panel closes it.
     property bool wantsKeyboard: false
+    // Its height once open. The stage is only as tall as what's drawn on it
+    // can get, so it makes room for this before the panel opens.
+    property real openHeight: height
+
     // Whether anything in it is animating right now: its morph, content
     // fading in, a spinner. While a panel moves, the stages on other screens
     // stop drawing (StageMotion), so a pill whose animations aren't covered

@@ -70,6 +70,17 @@ Item {
             verify(!drawn.glassShapes.includes(fixedPill));
         }
 
+        function test_reach_makes_room_for_panels_before_they_open() {
+            fixedPill.y = 8;
+            fixedPill.height = 36;
+            compare(drawn.reach, 44, "closed panels are no taller than the pill");
+            usage.y = 8;
+            usage.openHeight = 400;
+            compare(drawn.reach, 408, "a closed panel already counts at its open height");
+            launcher.openHeight = 600;
+            compare(drawn.reach, 600);
+        }
+
         function test_keyboard_is_held_only_while_a_typing_panel_is_open() {
             verify(!drawn.needsKeyboard);
             usage.open = true;
