@@ -43,8 +43,9 @@ IDLE_SECS = 10
 LOG_HISTORY = 1_000_000
 # A frame the UI hands the compositor, in its WAYLAND_DEBUG lines.
 SURFACE_COMMIT = r"wl_surface#[0-9]*\.commit("
-# The same line, with libwayland's timestamp (ms) and the surface.
-TIMED_COMMIT = re.compile(r"^\[\s*([0-9.]+)\].*-> wl_surface#([0-9]+)\.commit\(")
+# The same line, with libwayland's timestamp (ms) and the surface, after
+# `nova logs`'s own time, level and source.
+TIMED_COMMIT = re.compile(r"\[\s*([0-9.]+)\].*-> wl_surface#([0-9]+)\.commit\(")
 # How long the panel may go on drawing after its pill logs that it opened or
 # closed. The longest animation, the meters filling, ends at
 # Tokens.durationPanel * 0.6 + Tokens.durationFill (750 ms) after opening;
