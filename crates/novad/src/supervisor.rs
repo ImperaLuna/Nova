@@ -190,12 +190,17 @@ impl Supervisor {
     }
 }
 
-/// The packaged `nova-ui` launcher, else `nova-ui` if it's on `path_var`,
-/// else `quickshell`. Either way the command line says `NovaUI`; only the
-/// launcher also gives the process that name (btop's Program column).
+/// The packaged `nova-ui` launcher, else `nova-ui` or a `NovaUI` link to
+/// Quickshell (`nova setup` makes one in `~/.local/bin`) if one is on
+/// `path_var`, else `quickshell`. Either way the command line says `NovaUI`;
+/// only the launcher and the link also give the process that name (btop's
+/// Program column).
 pub fn default_quickshell(path_var: &str) -> PathBuf {
-    let on_path =
-        || std::env::split_paths(path_var).map(|dir| dir.join(UI_LAUNCHER)).find(|launcher| launcher.is_file());
+    let on_path = || {
+        [UI_LAUNCHER, UI_PROCESS_NAME]
+            .into_iter()
+            .find_map(|name| std::env::split_paths(path_var).map(|dir| dir.join(name)).find(|file| file.is_file()))
+    };
     PACKAGED_UI_LAUNCHER.map(PathBuf::from).or_else(on_path).unwrap_or_else(|| PathBuf::from(QUICKSHELL))
 }
 
@@ -360,6 +365,23 @@ mod tests {
         // The state follows the command name in parentheses: Z is a zombie.
         assert_eq!(stat.rsplit_once(") ").unwrap().1.chars().next(), Some('Z'));
         assert_eq!(child.wait().unwrap().code(), Some(3));
+    }
+
+    /// `nova setup`'s `NovaUI` link is found, after a `nova-ui` launcher.
+    #[test]
+    fn a_novaui_link_on_path_is_the_ui() {
+        if PACKAGED_UI_LAUNCHER.is_some() {
+            return; // The packaged launcher always wins.
+        }
+        let dir = std::env::temp_dir().join(format!("novad-ui-link-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path_var = dir.display().to_string();
+        assert_eq!(default_quickshell(&path_var), PathBuf::from(QUICKSHELL));
+        std::fs::write(dir.join(UI_PROCESS_NAME), "").unwrap();
+        assert_eq!(default_quickshell(&path_var), dir.join(UI_PROCESS_NAME));
+        std::fs::write(dir.join(UI_LAUNCHER), "").unwrap();
+        assert_eq!(default_quickshell(&path_var), dir.join(UI_LAUNCHER));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

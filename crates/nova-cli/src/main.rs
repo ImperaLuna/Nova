@@ -7,6 +7,7 @@ mod doctor;
 mod host;
 mod lifecycle;
 mod logs;
+mod setup;
 mod status;
 mod statusline;
 mod systemd;
@@ -55,8 +56,11 @@ enum NovaCommand {
     /// Run Nova's daemon, which runs the UI. systemd and `nova` start it.
     #[command(hide = true)]
     Daemon(Box<novad::Args>),
-    /// [planned] Install packages for your distro and GPU, the default config and the novad service.
-    Setup,
+    /// Install packages for your distro and GPU, the default config and the novad service.
+    ///
+    /// Shows its plan and asks before changing anything. Run it again after
+    /// turning a feature on. On NixOS, use the flake instead.
+    Setup(setup::SetupArgs),
     /// Check the compositor, Quickshell, novad, packages and config, and report what's wrong.
     ///
     /// Exits non-zero when a check fails; warnings alone don't.
@@ -82,6 +86,7 @@ fn main() -> ExitCode {
         Some(NovaCommand::Status { json }) => status::show(&socket, json),
         Some(NovaCommand::Logs(args)) => logs::run(&args, &socket),
         Some(NovaCommand::Doctor) => doctor::run(&socket),
+        Some(NovaCommand::Setup(args)) => setup::run(&args),
         Some(NovaCommand::Version) => {
             status::version(&socket);
             Ok(())
@@ -91,13 +96,7 @@ fn main() -> ExitCode {
             Err(e) => Err(e),
         },
         Some(NovaCommand::Daemon(args)) => novad::run(*args, socket).map_err(|e| format!("daemon: {e}")),
-        Some(
-            NovaCommand::Setup
-            | NovaCommand::Config
-            | NovaCommand::Completions
-            | NovaCommand::Toggle
-            | NovaCommand::Ipc,
-        ) => Err(format!(
+        Some(NovaCommand::Config | NovaCommand::Completions | NovaCommand::Toggle | NovaCommand::Ipc) => Err(format!(
             "`nova {}` isn't built yet; it's planned for a later version.",
             matches.subcommand_name().unwrap_or_default()
         )),

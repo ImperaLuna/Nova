@@ -3,3 +3,10 @@ name = "Core shell"
 description = "Bar, launcher, notifications, volume OSD and quick settings."
 default = true
 required = true
+
+# Quickshell runs the UI. On Nix the flake brings it; Fedora's comes from a
+# COPR until it reaches a release, which `nova setup` enables.
+[variants.default]
+arch = ["quickshell"]
+fedora = ["quickshell"]
+debian = ["quickshell"]

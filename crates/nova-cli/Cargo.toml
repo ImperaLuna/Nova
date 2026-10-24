@@ -20,5 +20,8 @@ clap.workspace = true
 jiff.workspace = true
 novad.workspace = true
 
+[dev-dependencies]
+insta.workspace = true
+
 [lints]
 workspace = true
