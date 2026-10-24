@@ -252,13 +252,18 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window"):
     watched = wait_running(not_daemon=first["pid"])
     machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -qF {shlex.quote(AI_USAGE_SHOWN)}"), timeout=WAIT)
     assert_idle("with the bar shown")
-    # The count sees frames when there are some: the panel opening draws.
-    commits = f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -c {shlex.quote(SURFACE_COMMIT)} || true"
-    before = int(machine.succeed(as_user(commits)).strip() or 0)
+    # The count sees frames when there are some: the panel opening draws, on
+    # the stage alone. The exclusion zone used to draw a frame too, each
+    # time an animation started (IMP-49).
+    ui_log = f"nova logs --no-follow --ui -n {LOG_HISTORY}"
+    before = int(machine.succeed(as_user(f"{ui_log} | wc -l")).strip())
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
-    after = int(machine.succeed(as_user(commits)).strip() or 0)
-    assert after > before, f"no surface commits logged while the panel opened and closed ({before} before, {after} after)"
+    drawn = f"{ui_log} | tail -n +{before + 1} | grep -o {shlex.quote(SURFACE_COMMIT)} | sort | uniq -c || true"
+    surfaces = machine.succeed(as_user(drawn)).strip().splitlines()
+    print(f"commits while the panel opened and closed, by surface: {surfaces}")
+    assert surfaces, "no surface commits logged while the panel opened and closed"
+    assert len(surfaces) == 1, f"surfaces besides the stage drew while the panel opened and closed: {surfaces}"
     assert_idle("after the panel closed")
     # Covered, as under a video or a game. On the desktop, niri then sent the
     # bar a frame callback a second and Qt redrew it each time (IMP-38); niri
