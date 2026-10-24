@@ -1,0 +1,37 @@
+name: Release
+
+# Pushing a tag vX.Y.Z (the workspace version in Cargo.toml) builds the
+# release archive install.sh fetches, nova-<cpu>-linux.tar.gz and its
+# .sha256 (`nix build .#dist`), and publishes them as that tag's GitHub
+# release. x86_64 only: the runner is x86_64, and install.sh builds from
+# source where there's no archive.
+on:
+  push:
+    tags: ["v*"]
+
+# Only the release upload writes; the tag push already needed write access.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: release
+    runs-on: [self-hosted, nova]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tag matches the version
+        run: |
+          version=$(nix eval --raw .#nova.version)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match Cargo.toml's version $version." >&2
+            exit 1
+          fi
+      - name: Build the archive
+        run: nix build -L .#dist
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          nix shell --inputs-from . nixpkgs#gh -c \
+            gh release create "$GITHUB_REF_NAME" result/* --verify-tag --generate-notes

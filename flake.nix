@@ -89,6 +89,16 @@
           }
         );
 
+      inherit ((builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package) version;
+
+      # share/nova: what nova finds next to its binary (nova-paths).
+      installShare = ''
+        mkdir -p $out/share/nova
+        cp -r features $out/share/nova/features
+        cp -r themes $out/share/nova/themes
+        cp -r ${./ui} $out/share/nova/ui
+      '';
+
       # The nova binary (CLI and daemon), feature manifests, the QML UI and
       # the systemd unit, on pkgs' Quickshell.
       novaFor =
@@ -100,16 +110,12 @@
           inherit nova-ui;
           nova = pkgs.rustPlatform.buildRustPackage {
             pname = "nova";
-            version = "0.1.0";
+            inherit version;
             src = rustSrc pkgs.lib;
             cargoLock.lockFile = ./Cargo.lock;
             # Compiled in, so `nova` finds its UI with or without systemd.
             env.NOVA_UI_LAUNCHER = pkgs.lib.getExe nova-ui;
-            postInstall = ''
-              mkdir -p $out/share/nova
-              cp -r features $out/share/nova/features
-              cp -r themes $out/share/nova/themes
-              cp -r ${./ui} $out/share/nova/ui
+            postInstall = installShare + ''
               install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
               substituteInPlace $out/lib/systemd/user/nova.service \
                 --replace-fail @nova@ $out/bin/nova
@@ -121,6 +127,34 @@
             };
           };
         };
+
+      # The release archive install.sh fetches on other distros:
+      # nova-<cpu>-linux.tar.gz with bin/nova (static, musl) and share/nova,
+      # laid out like the prefix it unpacks into. Built without
+      # NOVA_UI_LAUNCHER: there novad runs the distro's Quickshell from PATH.
+      # Tests ran in the regular build; this one skips them.
+      distFor =
+        pkgs:
+        let
+          nova = pkgs.pkgsStatic.rustPlatform.buildRustPackage {
+            pname = "nova";
+            inherit version;
+            src = rustSrc pkgs.lib;
+            cargoLock.lockFile = ./Cargo.lock;
+            doCheck = false;
+            postInstall = installShare;
+          };
+          name = "nova-${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux";
+        in
+        pkgs.runCommand "${name}-${version}" { } ''
+          mkdir -p tree $out
+          cp -r ${nova}/bin ${nova}/share tree/
+          # Store files are read-only; an upgrade has to replace share/nova.
+          chmod -R u+w tree
+          tar -C tree --sort=name --owner=0 --group=0 --numeric-owner --mtime=@1 -c bin share \
+            | gzip -n > $out/${name}.tar.gz
+          (cd $out && sha256sum ${name}.tar.gz > ${name}.tar.gz.sha256)
+        '';
 
       # qmllint over ui/ against pkgs' Quickshell types.
       qmllintFor =
@@ -142,6 +176,8 @@
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 
         inherit (novaFor pkgs) nova nova-ui;
+        # .github/workflows/release.yml attaches this to a GitHub release.
+        dist = distFor pkgs;
       });
 
       # Nova on the newest stable Quickshell release instead of nixpkgs': its
@@ -195,6 +231,8 @@
         // {
           # `nix build` runs `cargo test` as part of the package.
           build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
+          # The release archive, so it can't break unnoticed before a tag.
+          inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) dist;
 
           clippy = cargoCheck "nova-clippy" [ pkgs.clippy ] ''
             cargo clippy --workspace --all-targets --offline -- -D warnings
@@ -225,6 +263,23 @@
           '';
 
           qmllint = qmllintFor pkgs;
+
+          # install.sh: shellcheck, and a run against a fake release.
+          install-script =
+            pkgs.runCommand "nova-install-script"
+              {
+                nativeBuildInputs = [
+                  pkgs.shellcheck
+                  pkgs.curl
+                ];
+              }
+              ''
+                cp ${./install.sh} install.sh && cp ${./scripts/test-install.sh} test-install.sh
+                shellcheck install.sh test-install.sh
+                patchShebangs test-install.sh
+                ./test-install.sh install.sh
+                touch $out
+              '';
 
           # The blur rules `nova setup` writes for niri, against this niri.
           niri-rules = pkgs.runCommand "nova-niri-rules" { nativeBuildInputs = [ pkgs.niri ]; } ''
