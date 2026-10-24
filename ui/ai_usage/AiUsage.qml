@@ -64,7 +64,7 @@ StagePanel {
     property real tallest: 0
     onContentHeightChanged: tallest = Math.max(tallest, contentHeight)
     // The panel's full height.
-    readonly property real openHeight: Math.max(contentHeight, tallest)
+    openHeight: Math.max(contentHeight, tallest)
     // The pill growing into the panel: every size and position in between
     // follows morph.t (0 closed, 1 open).
     Morph {

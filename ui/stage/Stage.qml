@@ -5,11 +5,16 @@ import Quickshell
 import Quickshell.Wayland
 import "../bar"
 import "../daemon"
+import "../theme"
 
-// One per screen: a transparent layer over the whole screen that the bar,
-// its panels and popups are all drawn on, so a pill can grow into its panel.
-// It reserves no space (ExclusionZone keeps the bar's) and takes input only
-// where something is drawn; clicks anywhere else reach the windows below.
+// One per screen: a transparent layer across the top of the screen that the
+// bar, its panels and popups are all drawn on, so a pill can grow into its
+// panel. It's as tall as the tallest of them open (plus shadow), not the
+// whole screen: niri blurs the whole surface behind glass on every frame, so
+// a full-screen stage cost a full-screen blur per frame of every morph
+// (IMP-54). It reserves no space (ExclusionZone keeps the bar's) and takes
+// input only where something is drawn; clicks anywhere else reach the
+// windows below.
 // The bar lists what it draws as `panels` (StagePanel) and `fixedShapes`;
 // everything below follows from those.
 Scope {
@@ -43,18 +48,19 @@ Scope {
         screen: root.screen
         anchors {
             top: true
-            bottom: true
             left: true
             right: true
         }
+        implicitHeight: Math.ceil(drawn.reach + Tokens.shadowRoom)
         exclusionMode: ExclusionMode.Ignore
         color: "transparent"
         WlrLayershell.layer: WlrLayer.Top
         WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
         // Rounded like what's drawn, so clicks at the corners reach the
-        // windows below. While a panel holds the keyboard, the whole screen
-        // takes clicks, and one outside the panel closes it.
+        // windows below. While a panel holds the keyboard, the whole stage
+        // takes clicks (and `below` the rest of the screen), and one outside
+        // the panel closes it.
         mask: Region {
             regions: inputRegions.instances
         }
@@ -102,6 +108,30 @@ Scope {
         Bar {
             id: bar
             anchors.fill: parent
+        }
+    }
+
+    // The screen below the stage, there only while a panel holds the
+    // keyboard, so a click anywhere off the panel closes it. Empty, and
+    // never blurred.
+    PanelWindow { // qmllint disable uncreatable-type
+        id: below
+
+        screen: root.screen
+        visible: drawn.needsKeyboard
+        anchors {
+            bottom: true
+            left: true
+            right: true
+        }
+        implicitHeight: root.screen.height - stage.implicitHeight
+        exclusionMode: ExclusionMode.Ignore
+        color: "transparent"
+        WlrLayershell.layer: WlrLayer.Top
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: drawn.dismiss()
         }
     }
 }

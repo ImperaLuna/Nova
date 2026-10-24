@@ -14,6 +14,10 @@ QtObject {
     readonly property list<Item> shapes: [...fixed, ...panels]
     // The glass among them, which the compositor blurs behind.
     readonly property list<Item> glassShapes: panels.filter(panel => panel.glass)
+    // How far down the screen anything drawn reaches, open panels included,
+    // shadows not. The stage is only this tall: the compositor blurs the
+    // whole surface behind glass every frame, however small the glass.
+    readonly property real reach: Math.max(0, ...shapes.map(item => item.mapToItem(null, 0, item.openHeight ?? item.height).y))
     // Whether an open panel takes typing.
     readonly property bool needsKeyboard: panels.some(panel => panel.open && panel.wantsKeyboard)
 
