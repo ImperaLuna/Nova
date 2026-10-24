@@ -414,6 +414,7 @@ name = "nova-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "insta",
  "jiff",
  "nova-features",
  "nova-paths",

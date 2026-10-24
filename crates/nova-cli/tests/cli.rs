@@ -156,9 +156,9 @@ fn doctor_fails_on_what_is_missing() {
 #[test]
 fn planned_commands_say_so_and_fail() {
     let novad = Novad::start("planned");
-    let output = novad.run(&["setup"]);
+    let output = novad.run(&["config"]);
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("`nova setup` isn't built yet"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("`nova config` isn't built yet"));
 }
 
 #[test]
