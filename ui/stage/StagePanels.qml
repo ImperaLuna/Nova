@@ -20,6 +20,8 @@ QtObject {
     readonly property real reach: Math.max(0, ...shapes.map(item => item.mapToItem(null, 0, item.openHeight ?? item.height).y))
     // Whether an open panel takes typing.
     readonly property bool needsKeyboard: panels.some(panel => panel.open && panel.wantsKeyboard)
+    // Whether anything drawn is animating.
+    readonly property bool moving: panels.some(panel => panel.moving)
 
     // `nova toggle <name>` on the screen named `screen`, with `output` the
     // focused one: only that screen toggles, and opening there closes the

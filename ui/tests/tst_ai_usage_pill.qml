@@ -105,6 +105,21 @@ Item {
             tryCompare(pill, "width", closedWidth);
         }
 
+        function test_it_moves_until_everything_in_it_has_settled() {
+            const pill = createPill("claude");
+            tryVerify(() => !pill.moving);
+            pill.open = true;
+            verify(pill.moving);
+            tryVerify(() => !pill.moving, Tokens.durationPanel + Tokens.durationFill * 4);
+            compare(pill.t, 1);
+            compare(pill.fill, 1);
+            pill.open = false;
+            verify(pill.moving);
+            tryVerify(() => !pill.moving, Tokens.durationPanel * 4);
+            compare(pill.t, 0);
+            compare(pill.fill, 0);
+        }
+
         function test_opening_asks_for_fresh_numbers_and_closing_does_not() {
             const pill = createPill("claude");
             mouseClick(pill, 20, Tokens.barHeight / 2);

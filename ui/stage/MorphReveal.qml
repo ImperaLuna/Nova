@@ -16,8 +16,11 @@ Behavior {
     property bool eased: false
 
     readonly property bool opening: targetValue === 1
+    // Whether it's waiting or animating right now.
+    readonly property bool running: steps.running
 
     SequentialAnimation {
+        id: steps
         PauseAnimation {
             duration: reveal.opening ? Tokens.durationPanel * reveal.delay : 0
         }

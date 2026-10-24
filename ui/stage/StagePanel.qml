@@ -35,6 +35,12 @@ Item {
     // can get, so it makes room for this before the panel opens.
     property real openHeight: height
 
+    // Whether anything in it is animating right now: its morph, content
+    // fading in, a spinner. While a panel moves, the stages on other screens
+    // stop drawing (StageMotion), so a pill whose animations aren't covered
+    // here would freeze while another screen's panel moves.
+    property bool moving: false
+
     // Whether `other` (a StagePanel) opening closes this one.
     function ruledOutBy(other: var): bool {
         return other !== panel && (other.name === name || (other.exclusive && exclusive));
