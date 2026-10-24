@@ -23,6 +23,11 @@ impl Client {
     pub fn connect(socket: &Path) -> Result<Self, String> {
         let stream =
             UnixStream::connect(socket).map_err(|e| format!("can't reach novad at {}: {e}", socket.display()))?;
+        Self::over(stream)
+    }
+
+    /// A client on a stream that's already connected to novad's socket.
+    pub fn over(stream: UnixStream) -> Result<Self, String> {
         stream.set_read_timeout(Some(REPLY_TIMEOUT)).map_err(|e| e.to_string())?;
         stream.set_write_timeout(Some(REPLY_TIMEOUT)).map_err(|e| e.to_string())?;
         let writer = stream.try_clone().map_err(|e| e.to_string())?;

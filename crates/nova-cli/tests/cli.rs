@@ -128,12 +128,70 @@ fn logs_follow_novad_live() {
     assert!(found, "the backlog should include novad's start");
 }
 
+/// With nothing on PATH, an enabled feature's binaries are missing: that
+/// fails, while the running novad passes. (Quickshell may still be found:
+/// the Nix package builds its launcher's path in.)
 #[test]
-fn planned_commands_say_so_and_fail() {
-    let novad = Novad::start("planned");
-    let output = novad.run(&["setup"]);
+fn doctor_fails_on_what_is_missing() {
+    let novad = Novad::start("doctor");
+    let config = novad.dir.join("config");
+    std::fs::create_dir_all(config.join("nova")).unwrap();
+    std::fs::write(config.join("nova/features.toml"), "enabled = [\"recording\"]\n").unwrap();
+    let output = novad
+        .nova(&["doctor"])
+        // A checkout's layout, where the themes are found.
+        .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
+        .env("PATH", "")
+        .env("XDG_CONFIG_HOME", &config)
+        .env("NOVA_FEATURES_DIR", Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features"))
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(!output.status.success(), "{text}");
+    assert!(text.contains(&format!("ok    novad       running {}", env!("CARGO_PKG_VERSION"))), "{text}");
+    assert!(text.contains("FAIL  features    recording needs"), "{text}");
+    assert!(String::from_utf8_lossy(&output.stderr).starts_with("nova: "), "{output:?}");
+}
+
+#[test]
+fn ipc_prints_novads_result_and_refuses_unknown_requests() {
+    let novad = Novad::start("ipc");
+    let status: Status = serde_json::from_str(&stdout(&novad.run(&["ipc", "status"]))).unwrap();
+    assert_eq!(status.ui.state, UiState::Disabled);
+    let output = novad.run(&["ipc", "focus_workspace", r#"{"id": "three"}"#]);
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("`nova setup` isn't built yet"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("no such request"), "{output:?}");
+}
+
+#[test]
+fn completions_cover_the_commands() {
+    let output = Command::new(env!("CARGO_BIN_EXE_nova")).args(["completions", "bash"]).output().unwrap();
+    let script = stdout(&output);
+    assert!(script.contains("doctor") && script.contains("--no-follow"), "{script}");
+}
+
+#[test]
+fn toggle_reaches_the_ui_and_says_why_when_it_cant() {
+    let novad = Novad::start("toggle");
+    let output = novad.run(&["toggle", "ai-usage"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("UI isn't connected"), "{output:?}");
+
+    // Stands in for the UI: subscribes to toggle events.
+    let ui = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
+    ui.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let mut lines = BufReader::new(ui.try_clone().unwrap()).lines();
+    writeln!(&ui, r#"{{"v":2,"id":1,"cmd":"subscribe","args":{{"topics":["toggle"]}}}}"#).unwrap();
+    assert!(lines.next().unwrap().unwrap().contains("hello"));
+    assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
+
+    assert_eq!(stdout(&novad.run(&["toggle", "ai-usage"])), "", "quiet for keybinds");
+    let event = lines.next().unwrap().unwrap();
+    assert!(event.contains(r#""event":"toggle""#) && event.contains(r#""panel":"ai-usage""#), "{event}");
+
+    let unknown = novad.run(&["toggle", "launcher"]);
+    assert!(!unknown.status.success());
+    assert!(String::from_utf8_lossy(&unknown.stderr).contains("ai-usage"), "lists the panels: {unknown:?}");
 }
 
 #[test]

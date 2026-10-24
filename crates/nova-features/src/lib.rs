@@ -109,9 +109,16 @@ impl Manifest {
             .or_else(|| self.variants.get("default"))
     }
 
-    /// Packages to install for `distro` (one of [`DISTROS`]).
+    /// Packages to install for `distro` (one of [`DISTROS`]): the matching
+    /// variant's, else `default`'s when that variant doesn't list `distro`
+    /// (gpu-screen-recorder isn't packaged everywhere).
     pub fn packages(&self, distro: &str, gpu: Option<Gpu>) -> &[String] {
-        self.variant_for(gpu).and_then(|v| v.packages.get(distro)).map(Vec::as_slice).unwrap_or(&[])
+        [self.variant_for(gpu), self.variants.get("default")]
+            .into_iter()
+            .flatten()
+            .find_map(|variant| variant.packages.get(distro))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// Entries of `check.binaries` with no match on `PATH`.
@@ -259,6 +266,21 @@ mod tests {
         let m = manifest(RECORDING);
         assert_eq!(m.packages("arch", Some(Gpu::Nvidia)), ["gpu-screen-recorder"]);
         assert_eq!(m.packages("arch", Some(Gpu::Amd)), ["wf-recorder"]);
+        // The NVIDIA variant lists no Fedora package: the default's applies.
+        let partial = manifest(
+            r#"
+            id = "recording"
+            name = "Screen recording"
+            description = "Record the screen."
+            [variants.nvidia]
+            when = { gpu = "nvidia" }
+            arch = ["gpu-screen-recorder"]
+            [variants.default]
+            fedora = ["wf-recorder"]
+        "#,
+        );
+        assert_eq!(partial.packages("fedora", Some(Gpu::Nvidia)), ["wf-recorder"]);
+        assert!(partial.packages("debian", Some(Gpu::Nvidia)).is_empty());
         assert_eq!(m.packages("arch", None), ["wf-recorder"]);
         assert!(m.packages("fedora", None).is_empty());
     }

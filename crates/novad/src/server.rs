@@ -3,7 +3,7 @@
 
 use crate::hub::{ClientId, ClientQueue, Outgoing};
 use crate::{Daemon, lock};
-use nova_protocol::{Command, Event, Outcome, Response, Topic, encode};
+use nova_protocol::{Command, Event, FeatureStatus, Outcome, Panel, Response, Topic, encode};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -140,6 +140,7 @@ impl<'a> Connection<'a> {
             Command::StepWorkspace { output, step } => {
                 return self.with_compositor(|compositor| compositor.step_workspace(output, *step));
             }
+            Command::Toggle { panel } => return self.toggle(*panel),
         };
         match value {
             Ok(value) => Outcome::Result(value),
@@ -167,6 +168,23 @@ impl<'a> Connection<'a> {
                 Err(e) => Outcome::Error(e),
             },
             None => Outcome::Error("novad doesn't know this compositor".into()),
+        }
+    }
+
+    /// Tells the UI to open or close `panel` on the focused output. The UI
+    /// knows which screen has it open, so it decides which.
+    fn toggle(&self, panel: Panel) -> Outcome {
+        let ready = lock(&self.daemon.settings)
+            .features
+            .iter()
+            .any(|feature| feature.id == panel.name() && feature.status == FeatureStatus::Ready);
+        if !ready {
+            return Outcome::Error(format!("the {panel} feature isn't ready (see `nova status`)"));
+        }
+        let output = self.daemon.compositor.as_ref().and_then(|compositor| compositor.focused_output());
+        match self.daemon.hub.publish(&Event::Toggle { panel, output }) {
+            0 => Outcome::Error("the UI isn't connected to novad, so there's nothing to toggle".into()),
+            _ => Outcome::Result(serde_json::Value::Null),
         }
     }
 
@@ -199,7 +217,8 @@ impl<'a> Connection<'a> {
                                 compositor.subscribe(self.id);
                             }
                         }
-                        Topic::Logs => {}
+                        // Only ever sent as `nova toggle` asks.
+                        Topic::Logs | Topic::Toggle => {}
                     }
                 }
             }
@@ -214,7 +233,8 @@ impl<'a> Connection<'a> {
             | Command::RefreshAiUsage
             | Command::ReportClaudeUsage { .. }
             | Command::FocusWorkspace { .. }
-            | Command::StepWorkspace { .. } => {}
+            | Command::StepWorkspace { .. }
+            | Command::Toggle { .. } => {}
         }
     }
 

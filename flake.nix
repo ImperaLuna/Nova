@@ -281,6 +281,12 @@
                 touch $out
               '';
 
+          # The blur rules `nova setup` writes for niri, against this niri.
+          niri-rules = pkgs.runCommand "nova-niri-rules" { nativeBuildInputs = [ pkgs.niri ]; } ''
+            niri validate -c ${./packaging/compositor/niri.kdl}
+            touch $out
+          '';
+
           qmlformat = pkgs.runCommand "nova-qmlformat" { nativeBuildInputs = [ pkgs.qt6.qtdeclarative ]; } ''
             cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
             patchShebangs scripts

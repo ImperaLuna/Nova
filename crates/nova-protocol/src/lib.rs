@@ -45,6 +45,13 @@ pub enum Event {
     /// whenever any of it changes. Never sent when novad doesn't know the
     /// compositor.
     Compositor(Desktop),
+    /// Open or close `panel` (`nova toggle`). Topic [`Topic::Toggle`].
+    /// `output` is the focused output's name, when novad knows it.
+    Toggle {
+        panel: Panel,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output: Option<String>,
+    },
 }
 
 /// Groups of events a client can subscribe to.
@@ -56,6 +63,7 @@ pub enum Topic {
     Theme,
     AiUsage,
     Compositor,
+    Toggle,
 }
 
 impl Event {
@@ -69,6 +77,7 @@ impl Event {
             Event::Theme(_) => Some(Topic::Theme),
             Event::AiUsage(_) => Some(Topic::AiUsage),
             Event::Compositor(_) => Some(Topic::Compositor),
+            Event::Toggle { .. } => Some(Topic::Toggle),
         }
     }
 }
@@ -315,6 +324,43 @@ pub enum Step {
     Previous,
 }
 
+/// A panel `nova toggle` opens or closes. Each belongs to the feature of the
+/// same name and exists only while that feature is ready.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Panel {
+    AiUsage,
+}
+
+impl Panel {
+    pub const ALL: [Panel; 1] = [Panel::AiUsage];
+
+    /// Its name on the wire and on the command line, which is also its
+    /// feature's id.
+    pub fn name(self) -> &'static str {
+        match self {
+            Panel::AiUsage => "ai-usage",
+        }
+    }
+}
+
+impl fmt::Display for Panel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(self.name())
+    }
+}
+
+impl FromStr for Panel {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        Self::ALL.into_iter().find(|panel| panel.name() == text).ok_or_else(|| {
+            let known: Vec<&str> = Self::ALL.iter().map(|panel| panel.name()).collect();
+            format!("unknown panel {text:?} (known: {})", known.join(", "))
+        })
+    }
+}
+
 /// Sent by the UI or the `nova` CLI. Arguments with unknown fields are
 /// refused, like unknown fields on the request line itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -354,6 +400,12 @@ pub enum Command {
     StepWorkspace {
         output: String,
         step: Step,
+    },
+    /// Opens `panel` on the focused output, or closes it if it's open there
+    /// (`nova toggle`). Fails when its feature isn't ready or no UI is
+    /// connected to show it.
+    Toggle {
+        panel: Panel,
     },
 }
 
@@ -581,7 +633,14 @@ mod tests {
             encode(Request {
                 id: Some(9),
                 command: Command::Subscribe {
-                    topics: vec![Topic::Features, Topic::Logs, Topic::Theme, Topic::AiUsage, Topic::Compositor],
+                    topics: vec![
+                        Topic::Features,
+                        Topic::Logs,
+                        Topic::Theme,
+                        Topic::AiUsage,
+                        Topic::Compositor,
+                        Topic::Toggle,
+                    ],
                 },
             }),
             encode(Event::Theme(theme())),
@@ -604,6 +663,9 @@ mod tests {
                 id: None,
                 command: Command::StepWorkspace { output: "DP-1".into(), step: Step::Previous },
             }),
+            encode(Request { id: Some(15), command: Command::Toggle { panel: Panel::AiUsage } }),
+            encode(Event::Toggle { panel: Panel::AiUsage, output: Some("DP-1".into()) }),
+            encode(Event::Toggle { panel: Panel::AiUsage, output: None }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
@@ -754,6 +816,19 @@ mod tests {
     }
 
     #[test]
+    fn panel_names_parse_and_match_the_wire() {
+        for panel in Panel::ALL {
+            assert_eq!(panel.name().parse::<Panel>(), Ok(panel));
+            assert_eq!(serde_json::to_value(panel).unwrap(), json!(panel.name()));
+        }
+        assert!("launcher".parse::<Panel>().unwrap_err().contains("known: ai-usage"));
+        let features = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        for panel in Panel::ALL {
+            assert!(features.join(panel.name()).join("feature.toml").is_file(), "{panel} has no feature");
+        }
+    }
+
+    #[test]
     fn log_lines_round_trip() {
         let entry = log_entry();
         let line = entry.to_line();
@@ -778,6 +853,7 @@ mod tests {
         assert_eq!(Event::Theme(theme()).topic(), Some(Topic::Theme));
         assert_eq!(Event::AiUsage(ai_usage()).topic(), Some(Topic::AiUsage));
         assert_eq!(Event::Compositor(desktop()).topic(), Some(Topic::Compositor));
+        assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(Topic::Toggle));
     }
 
     #[test]

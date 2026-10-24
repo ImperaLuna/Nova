@@ -99,6 +99,12 @@ impl Compositor {
         lock(&self.desktop).clone()
     }
 
+    /// The name of the output with the keyboard focus, once known.
+    pub fn focused_output(&self) -> Option<String> {
+        let desktop = lock(&self.desktop);
+        desktop.as_ref()?.outputs.iter().find(|output| output.focused).map(|output| output.name.clone())
+    }
+
     /// Subscribes `client` and sends it the current desktop, if known.
     pub fn subscribe(&self, client: ClientId) {
         let desktop = lock(&self.desktop);

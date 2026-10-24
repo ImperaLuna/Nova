@@ -5,17 +5,19 @@ import QtQuick.Effects
 import QtQuick.Shapes
 import "../theme"
 import "../stage"
+import "../daemon/protocol.js" as Protocol
 import "usage.js" as Usage
 
 // The AI usage pill: the shown provider's logo and its session percent.
 // Clicking it morphs the pill into the details panel in place, so the same
-// click closes it again. Numbers come from novad's ai_usage event.
-Item {
+// click closes it again. Numbers come from novad's ai_usage event. A
+// StagePanel, so the stage gives it clicks, blur and Esc.
+StagePanel {
     id: root
 
+    name: Protocol.FEATURE_AI_USAGE
     // AiUsageService.usage: {shown, providers}.
     required property var usage
-    property bool open: false
 
     // A row for another provider was clicked: show it in the bar.
     signal showRequested(string provider)
@@ -86,8 +88,7 @@ Item {
         return row && row.warn ? Tokens.primary : Tokens.fg;
     }
 
-    // The glass's corner radius, for the window's blur region.
-    readonly property real radius: surface.radius
+    radius: surface.radius
 
     implicitWidth: surface.width
     implicitHeight: surface.height
