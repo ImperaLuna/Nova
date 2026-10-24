@@ -170,10 +170,13 @@ Scope {
         onHasGlassChanged: askForBlur()
         Component.onCompleted: askForBlur()
 
+        // The whole screen: Hyprland gives a surface that holds the keyboard
+        // every click on the screen (see PanelSurface's `outside`).
         MouseArea {
             id: outside
             readonly property int radius: 0
-            anchors.fill: parent
+            width: root.screen.width
+            height: root.screen.height
             enabled: all.needsKeyboard
             focus: true
             onClicked: mouse => {

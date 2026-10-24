@@ -160,14 +160,22 @@ PanelWindow { // qmllint disable uncreatable-type
         adopt();
     }
 
+    // The whole screen, not just the surface: Hyprland gives a surface that
+    // holds the keyboard every click on the screen, at coordinates outside
+    // it. Other compositors clip the mask to the surface and send the rest
+    // to ClickCatcher.
     MouseArea {
         id: outside
         readonly property int radius: 0
-        anchors.fill: parent
+        x: -surface.box.x
+        y: -surface.box.y
+        width: surface.output.width
+        height: surface.output.height
         enabled: surface.clickAnywhere
         focus: true
         onClicked: mouse => {
-            if (!surface.drawn.covers(mouse.x, mouse.y))
+            const at = mapToItem(null, mouse.x, mouse.y);
+            if (!surface.drawn.covers(at.x, at.y))
                 surface.dismissRequested();
         }
         Keys.onEscapePressed: surface.dismissRequested()
