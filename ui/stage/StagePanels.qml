@@ -1,8 +1,10 @@
 import QtQuick
 
-// What the stage needs from everything drawn on it, worked out from the
-// bar's StagePanels and its other drawn items: where it takes clicks, where
-// it's glass, when it holds the keyboard, and how to close what's open.
+// What a surface needs from everything drawn on it, worked out from its
+// StagePanels and its other drawn items: where it takes clicks, where it's
+// glass, how big it has to be, when it holds the keyboard, and how to close
+// what's open. Over every panel of a screen, whatever surface each is on,
+// it says the same for the whole screen.
 QtObject {
     // The pills that open panels.
     property list<StagePanel> panels
@@ -10,14 +12,31 @@ QtObject {
     // but aren't glass.
     property list<Item> fixed
 
-    // What takes clicks, each rounded by its `radius`.
-    readonly property list<Item> shapes: [...fixed, ...panels]
+    // Everything drawn, hidden or not.
+    readonly property list<Item> items: [...fixed, ...panels]
+    // What takes clicks, each rounded by its `radius`: what's shown of it (a
+    // pill hides while a panel elsewhere covers it, StagePanel `from`).
+    readonly property list<Item> shapes: items.filter(item => item.visible)
     // The glass among them, which the compositor blurs behind.
-    readonly property list<Item> glassShapes: panels.filter(panel => panel.glass)
+    readonly property list<Item> glassShapes: panels.filter(panel => panel.glass && panel.visible)
     // How far down the screen anything drawn reaches, open panels included,
     // shadows not. The stage is only this tall: the compositor blurs the
     // whole surface behind glass every frame, however small the glass.
-    readonly property real reach: Math.max(0, ...shapes.map(item => item.mapToItem(null, 0, item.openHeight ?? item.height).y))
+    readonly property real reach: Math.max(0, ...items.map(item => item.mapToItem(null, 0, item.openHeight ?? item.height).y))
+    // The panels open or still closing: off the stage, their surface is
+    // there only while some are.
+    readonly property list<StagePanel> shown: panels.filter(panel => panel.open || panel.moving)
+    // Off the stage: what the shown panels' `area`s cover together, in screen
+    // coordinates. Empty while none are shown.
+    readonly property rect room: {
+        if (shown.length === 0)
+            return Qt.rect(0, 0, 0, 0);
+        const left = Math.min(...shown.map(panel => panel.area.x));
+        const top = Math.min(...shown.map(panel => panel.area.y));
+        const right = Math.max(...shown.map(panel => panel.area.x + panel.area.width));
+        const bottom = Math.max(...shown.map(panel => panel.area.y + panel.area.height));
+        return Qt.rect(left, top, right - left, bottom - top);
+    }
     // Whether an open panel takes typing.
     readonly property bool needsKeyboard: panels.some(panel => panel.open && panel.wantsKeyboard)
     // Whether anything drawn is animating.

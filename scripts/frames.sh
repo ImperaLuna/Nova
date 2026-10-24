@@ -13,7 +13,9 @@
 #
 # Usage: scripts/frames.sh [path/to/nova] [times] [panel]
 #   times  how often to open and close the panel (default 20)
-#   panel  which one, as `nova toggle` names it (default ai-usage)
+#   panel  which one, as `nova toggle` names it (default ai-usage), or a
+#          placeholder panel (demo-sidebar, demo-tab, demo-center: ui/demo),
+#          which this then turns on and toggles over Quickshell's IPC
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -63,7 +65,9 @@ stop() {
 }
 trap 'stop; rm -rf "$work"' EXIT
 
-NOVA_FRAME_LOG=1 scripts/run.sh "$nova" >"$work/run.log" 2>&1 &
+demo=0
+[[ $panel == demo-* ]] && demo=1
+NOVA_FRAME_LOG=1 NOVA_DEMO_PANELS=$demo scripts/run.sh "$nova" >"$work/run.log" 2>&1 &
 runner=$!
 
 # The novad answering on the socket is this run's (scripts/run.sh's child),
@@ -96,7 +100,11 @@ sleep "$SETTLE_SECS"
 # file, so it lands before the frames the toggle brings.
 toggle() {
 	echo "nova-frames: toggle" >>"$work/frames.log"
-	"$nova" toggle "$panel" 2>"$work/toggle.err"
+	if ((demo)); then
+		quickshell ipc --pid "$("$nova" status --json | jq -r .ui.pid)" call demo toggle "$panel" 2>"$work/toggle.err"
+	else
+		"$nova" toggle "$panel" 2>"$work/toggle.err"
+	fi
 }
 
 # The first toggle also waits for the panel's feature to be ready.

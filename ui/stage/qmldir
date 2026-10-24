@@ -1,9 +1,11 @@
 singleton OpenPanels OpenPanels.qml
 singleton StageMotion StageMotion.qml
+ClickCatcher 1.0 ClickCatcher.qml
 ExclusionZone 1.0 ExclusionZone.qml
 FrameLog 1.0 FrameLog.qml
 Morph 1.0 Morph.qml
 MorphReveal 1.0 MorphReveal.qml
+PanelSurface 1.0 PanelSurface.qml
 ShapeRegion 1.0 ShapeRegion.qml
 Stage 1.0 Stage.qml
 StagePanel 1.0 StagePanel.qml
