@@ -60,6 +60,11 @@ MORPH_DRAWS_FOR = dt.timedelta(milliseconds=1200)
 # The VM's outputs refresh at 60 Hz. A surface never needs more than one
 # frame per refresh.
 REFRESH_HZ = 60
+# Frames a surface may draw per refresh before the check fails. Software
+# rendering lets some come early (niri's VM closed the panel with frames
+# 14.8 ms apart on average), so one and a half, which drawing every frame
+# twice still exceeds.
+FRAMES_PER_REFRESH = 1.5
 # How many surfaces may draw while the panel opens or closes: the stage on
 # the pill's screen and the bar's exclusion zone (IMP-49).
 MORPH_SURFACES = 2
@@ -192,10 +197,11 @@ def assert_idle(what: str) -> None:
 def morph_frames(what: str, logged: str) -> None:
     """Opens or closes the panel by clicking its pill until it logs
     `logged`, waits for the UI to stop drawing, and checks the frames it drew
-    after that line: on at most MORPH_SURFACES surfaces, at most one per
-    refresh, all within MORPH_DRAWS_FOR. Prints how far apart they came,
-    the frame time a user sees; software rendering makes that a trend to
-    read, not something to fail on."""
+    after that line: on at most MORPH_SURFACES surfaces, at most
+    FRAMES_PER_REFRESH per refresh, all within MORPH_DRAWS_FOR. Prints how
+    far apart they came (the frame time a user sees) and Qt's own time per
+    frame; software rendering makes those a trend to read, not something to
+    fail on."""
     # Followed live: novad keeps only its latest RECENT_ENTRIES lines for
     # `nova logs --no-follow`, which WAYLAND_DEBUG overruns in a frame or two.
     unit = f"morph-log-{what}"
@@ -240,11 +246,10 @@ def morph_frames(what: str, logged: str) -> None:
     for surface, times in frames.items():
         drew_for = times[-1] - first
         assert drew_for <= budget_ms, f"wl_surface#{surface} drew until {drew_for:.0f} ms after the panel {what}'s first frame, at most {budget_ms:.0f} ms"
-        # Rounded up: timestamps are rounded and frames jitter, so three
-        # frames at 60 Hz can come 33.3 ms apart.
+        # Rounded up: timestamps are rounded and frames jitter.
         own = times[-1] - times[0]
-        most = math.ceil(own * REFRESH_HZ / 1000) + 1
-        assert len(times) <= most, f"wl_surface#{surface} drew {len(times)} frames in {own:.0f} ms after the panel {what}, more than one per refresh ({most})"
+        most = math.ceil(own * REFRESH_HZ * FRAMES_PER_REFRESH / 1000) + 1
+        assert len(times) <= most, f"wl_surface#{surface} drew {len(times)} frames in {own:.0f} ms after the panel {what}, more than {FRAMES_PER_REFRESH} per refresh ({most})"
 
 
 def open_foot(unit: str) -> None:
