@@ -17,10 +17,12 @@ QtObject {
     // Whether an open panel takes typing.
     readonly property bool needsKeyboard: panels.some(panel => panel.open && panel.wantsKeyboard)
 
-    // Closes whatever is open: Esc, or a click outside while the keyboard is
-    // held.
+    // Esc, or a click outside while the keyboard is held: closes the panels
+    // holding it. Others, like a notes window, stay open.
     function dismiss() {
-        for (const panel of panels)
-            panel.open = false;
+        for (const panel of panels) {
+            if (panel.wantsKeyboard)
+                panel.open = false;
+        }
     }
 }

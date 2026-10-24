@@ -5,6 +5,7 @@ import QtQuick.Effects
 import QtQuick.Shapes
 import "../theme"
 import "../stage"
+import "../daemon/protocol.js" as Protocol
 import "usage.js" as Usage
 
 // The AI usage pill: the shown provider's logo and its session percent.
@@ -14,6 +15,7 @@ import "usage.js" as Usage
 StagePanel {
     id: root
 
+    name: Protocol.FEATURE_AI_USAGE
     // AiUsageService.usage: {shown, providers}.
     required property var usage
 

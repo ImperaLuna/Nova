@@ -1,0 +1,8 @@
+singleton OpenPanels OpenPanels.qml
+ExclusionZone 1.0 ExclusionZone.qml
+Morph 1.0 Morph.qml
+MorphReveal 1.0 MorphReveal.qml
+ShapeRegion 1.0 ShapeRegion.qml
+Stage 1.0 Stage.qml
+StagePanel 1.0 StagePanel.qml
+StagePanels 1.0 StagePanels.qml
