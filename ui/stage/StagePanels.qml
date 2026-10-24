@@ -54,6 +54,13 @@ QtObject {
         }
     }
 
+    // Whether (x, y) in its window is on something drawn there, so a click
+    // there isn't one outside the panels, even where nothing in the panel
+    // takes it.
+    function covers(x: real, y: real): bool {
+        return shapes.some(item => item.contains(item.mapFromItem(null, x, y)));
+    }
+
     // Esc, or a click outside while the keyboard is held: closes the panels
     // holding it. Others, like a notes window, stay open.
     function dismiss() {

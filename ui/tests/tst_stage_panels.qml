@@ -57,6 +57,7 @@ Item {
                 panel.open = false;
                 panel.moving = false;
             }
+            usage.x = usage.y = usage.width = usage.height = 0;
             drawn.panels = [usage, launcher, notes];
         }
 
@@ -91,6 +92,16 @@ Item {
             compare(drawn.reach, 44, "the stage doesn't shrink under it");
             fixedPill.visible = true;
             verify(drawn.shapes.includes(fixedPill));
+        }
+
+        function test_a_click_on_a_drawn_item_is_not_outside() {
+            usage.x = 100;
+            usage.y = 8;
+            usage.width = 300;
+            usage.height = 400;
+            verify(drawn.covers(250, 200), "inside the panel, where nothing in it takes the click");
+            verify(!drawn.covers(50, 200));
+            verify(!drawn.covers(250, 500));
         }
 
         function test_room_covers_the_shown_panels_areas() {

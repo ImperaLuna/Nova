@@ -166,7 +166,10 @@ PanelWindow { // qmllint disable uncreatable-type
         anchors.fill: parent
         enabled: surface.clickAnywhere
         focus: true
-        onClicked: surface.dismissRequested()
+        onClicked: mouse => {
+            if (!surface.drawn.covers(mouse.x, mouse.y))
+                surface.dismissRequested();
+        }
         Keys.onEscapePressed: surface.dismissRequested()
     }
 

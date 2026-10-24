@@ -176,7 +176,10 @@ Scope {
             anchors.fill: parent
             enabled: all.needsKeyboard
             focus: true
-            onClicked: all.dismiss()
+            onClicked: mouse => {
+                if (!drawn.covers(mouse.x, mouse.y))
+                    all.dismiss();
+            }
             Keys.onEscapePressed: all.dismiss()
         }
 
