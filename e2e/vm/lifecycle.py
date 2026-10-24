@@ -4,7 +4,9 @@
 # FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW, CLOSE_WINDOW, LIST_WINDOWS and
 # COMPOSITOR_LOG above this script.
 import datetime as dt
+import itertools
 import json
+import math
 import re
 import shlex
 import statistics
@@ -144,13 +146,14 @@ def ui_log_count(line: str) -> int:
     return int(out.strip() or 0)
 
 
-def click_until_logged(x: int, y: int, line: str) -> None:
-    """Clicks at (x, y) until the UI logs `line` once more than before."""
-    before = ui_log_count(line)
+def click_until_logged(x: int, y: int, line: str, count=ui_log_count) -> None:
+    """Clicks at (x, y) until the UI logs `line` once more than before, as
+    `count` counts the UI's lines."""
+    before = count(line)
     for _ in range(CLICK_TRIES):
         click(x, y)
         try:
-            retry(lambda _last_try: ui_log_count(line) > before, timeout=CLICK_EFFECT)
+            retry(lambda _last_try: count(line) > before, timeout=CLICK_EFFECT)
             return
         except Exception:
             print(f"no {line!r} after a click at ({x}, {y}), clicking again")
@@ -182,10 +185,6 @@ def assert_idle(what: str) -> None:
         raise AssertionError(f"the UI kept drawing {what}: commits per {IDLE_SECS} s: {counts}")
 
 
-def ui_log_lines() -> list[str]:
-    return machine.succeed(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY}")).splitlines()
-
-
 def morph_frames(what: str, logged: str) -> None:
     """Opens or closes the panel by clicking its pill until it logs
     `logged`, waits for the UI to stop drawing, and checks the frames it drew
@@ -193,10 +192,22 @@ def morph_frames(what: str, logged: str) -> None:
     refresh, all within MORPH_DRAWS_FOR. Prints how far apart they came,
     the frame time a user sees; software rendering makes that a trend to
     read, not something to fail on."""
-    before = len(ui_log_lines())
-    click_until_logged(*AI_USAGE_PILL, logged)
-    assert_idle(f"after the panel {what}")
-    lines = ui_log_lines()[before:]
+    # Followed live: novad keeps only its latest RECENT_ENTRIES lines for
+    # `nova logs --no-follow`, which WAYLAND_DEBUG overruns in a frame or two.
+    unit = f"morph-log-{what}"
+    capture = f"{RUNTIME_DIR}/{unit}.log"
+    machine.succeed(as_user(f"systemd-run --user --collect --unit={unit} sh -c 'exec nova logs --ui -n 0 > {capture}'"))
+    machine.wait_until_succeeds(as_user(f"systemctl --user is-active --quiet {unit}"), timeout=WAIT)
+
+    def captured(line: str) -> int:
+        return int(machine.succeed(f"grep -cF {shlex.quote(line)} {capture} || true").strip() or 0)
+
+    try:
+        click_until_logged(*AI_USAGE_PILL, logged, count=captured)
+        assert_idle(f"after the panel {what}")
+    finally:
+        machine.succeed(as_user(f"systemctl --user stop {unit}"))
+    lines = machine.succeed(f"cat {capture}").splitlines()
     after_logged = lines[next(i for i, line in enumerate(lines) if logged in line) :]
     frames: dict[str, list[float]] = {}
     for line in after_logged:
@@ -205,17 +216,22 @@ def morph_frames(what: str, logged: str) -> None:
     assert frames, f"no frames drawn after the panel {what}"
     print(f"panel {what}: frames per surface:")
     for surface, times in frames.items():
-        gaps = [b - a for a, b in zip(times, times[1:])]
+        gaps = [b - a for a, b in itertools.pairwise(times)]
         late = sum(gap > 2000 / REFRESH_HZ for gap in gaps)
         timing = f", {statistics.median(gaps):.1f} ms apart (longest {max(gaps):.1f} ms, {late} late)" if gaps else ""
         print(f"  wl_surface#{surface}: {len(times)} frames over {times[-1] - times[0]:.0f} ms{timing}")
     assert len(frames) <= MORPH_SURFACES, f"{len(frames)} surfaces drew after the panel {what}, at most {MORPH_SURFACES} may"
     budget_ms = MORPH_DRAWS_FOR / dt.timedelta(milliseconds=1)
+    # From the first frame any surface drew, so one that starts late counts.
+    first = min(times[0] for times in frames.values())
     for surface, times in frames.items():
-        drew_for = times[-1] - times[0]
-        assert drew_for <= budget_ms, f"wl_surface#{surface} drew for {drew_for:.0f} ms after the panel {what}, at most {budget_ms:.0f} ms"
-        most = int(drew_for * REFRESH_HZ / 1000) + 1
-        assert len(times) <= most, f"wl_surface#{surface} drew {len(times)} frames in {drew_for:.0f} ms after the panel {what}, more than one per refresh ({most})"
+        drew_for = times[-1] - first
+        assert drew_for <= budget_ms, f"wl_surface#{surface} drew until {drew_for:.0f} ms after the panel {what}'s first frame, at most {budget_ms:.0f} ms"
+        # Rounded up: timestamps are rounded and frames jitter, so three
+        # frames at 60 Hz can come 33.3 ms apart.
+        own = times[-1] - times[0]
+        most = math.ceil(own * REFRESH_HZ / 1000) + 1
+        assert len(times) <= most, f"wl_surface#{surface} drew {len(times)} frames in {own:.0f} ms after the panel {what}, more than one per refresh ({most})"
 
 
 def open_foot(unit: str) -> None:
