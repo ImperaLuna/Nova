@@ -78,6 +78,8 @@ MORPH_SURFACES = 1
 # The placeholder panels off the stage (ui/demo/DemoPanels.qml, on with
 # NOVA_DEMO_PANELS=1), opened over Quickshell's IPC.
 DEMO_PANELS = ("demo-sidebar", "demo-tab", "demo-center")
+# A window's place and size in the compositor's window list.
+GEOMETRY_KEYS = ("layout", "at", "size")
 # Inside the center placeholder: it's 640x400 in the middle of the 1280x800
 # screen. POINTER_REST is below it.
 DEMO_CENTER_INSIDE = (640, 400)
@@ -172,6 +174,14 @@ def ui_log_count(line: str) -> int:
     # last 50 lines `nova logs` shows by default.
     out = machine.succeed(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -cF {shlex.quote(line)} || true"))
     return int(out.strip() or 0)
+
+
+def window_geometry() -> list:
+    """Where each window is and how big, as the compositor lists them
+    (niri's `layout`, Hyprland's `at` and `size`), and nothing else: a panel
+    that takes typing moves the focus, but must move no window."""
+    windows = json.loads(machine.succeed(as_user(LIST_WINDOWS)))
+    return [{key: window[key] for key in GEOMETRY_KEYS if key in window} for window in windows]
 
 
 def demo_logged(panel: str, state: str) -> str:
@@ -419,13 +429,14 @@ with subtest("panels off the stage open and close without moving windows"):
     machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -qF {shlex.quote(BAR_SHOWN)}"), timeout=WAIT)
     toggle_demo = f"quickshell ipc --pid {demo['ui']['pid']} call demo toggle"
     open_foot("foot-demo")
-    windows = machine.succeed(as_user(LIST_WINDOWS))
+    windows = window_geometry()
+    assert windows and all(windows), f"no window geometry in {LIST_WINDOWS}"
     for panel in DEMO_PANELS:
         for state in ("opened", "closed"):
             before = ui_log_count(demo_logged(panel, state))
             machine.succeed(as_user(f"{toggle_demo} {panel}"))
             retry(lambda _last_try: ui_log_count(demo_logged(panel, state)) > before, timeout=CLICK_EFFECT)
-            assert machine.succeed(as_user(LIST_WINDOWS)) == windows, f"windows moved with {panel} {state}"
+            assert window_geometry() == windows, f"windows moved with {panel} {state}"
     # The center one takes typing, like the launcher will: a click on it
     # keeps it open, one anywhere else (the click catcher) or Esc closes it.
     center = "demo-center"
