@@ -3,14 +3,16 @@ import "../theme"
 import "../daemon"
 import "../ai_usage"
 import "../ai_usage/service"
+import "../stage"
 
 // Placeholder bar: one floating pill per screen, plus the AI usage pill on
 // the left when that feature is on. The real bar (three pills, hide
 // policies, reveal strip) lands with M2.
 //
 // It's drawn on the screen's stage (ui/stage/Stage.qml), which builds its
-// input mask and blur from `shapes` and `glassShapes`, so panels can grow out
-// of the pills without a window of their own.
+// input mask, blur and keyboard grab from `panels` and `fixedShapes`, so
+// panels can grow out of the pills without a window of their own. A new
+// pill that opens a panel is a StagePanel added to `panels`.
 Item {
     id: bar
 
@@ -18,19 +20,10 @@ Item {
     readonly property int reservedHeight: Tokens.barHeight + Tokens.barMargin
 
     readonly property AiUsage aiUsagePill: aiUsage.item as AiUsage
-    // What's drawn and takes clicks, each rounded by its `radius`.
-    readonly property list<Item> shapes: aiUsagePill ? [center, aiUsagePill] : [center]
-    // The glass among them, which the compositor blurs behind.
-    readonly property list<Item> glassShapes: aiUsagePill ? [aiUsagePill] : []
-    // Whether an open panel takes typing (the launcher will); while it does,
-    // the stage holds the keyboard and Esc or a click outside calls dismiss().
-    readonly property bool needsKeyboard: false
-
-    // Closes whatever is open.
-    function dismiss() {
-        if (aiUsagePill)
-            aiUsagePill.open = false;
-    }
+    // The pills that open panels, for the stage (StagePanel has the contract).
+    readonly property list<StagePanel> panels: aiUsagePill ? [aiUsagePill] : []
+    // What else is drawn and takes clicks, each rounded by its `radius`.
+    readonly property list<Item> fixedShapes: [center]
 
     // Logs once the bar has drawn a frame while connected to novad, so the
     // VM tests know when to screenshot it.
