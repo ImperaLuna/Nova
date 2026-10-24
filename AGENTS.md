@@ -123,7 +123,9 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 
 - Event-driven, no polling loops: novad pushes changes, and QML binds to them.
 - Measure, don't guess: a change that could affect memory or frame time
-  states its before/after Pss (from `just e2e`) in the PR.
+  states its before/after Pss (from `just e2e`) in the PR, and one that
+  could affect animation smoothness its dropped frames from `just frames`
+  on real hardware.
 - Animations and shaders run only while visible: `running` checks the
   item's own `visible` and `opacity`, not just the state that started it.
 

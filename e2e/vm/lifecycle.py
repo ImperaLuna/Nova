@@ -1,8 +1,8 @@
 # Nova's lifecycle under systemd and a real compositor, driven through the
 # `nova` command the way a user would, and a screenshot of each UI state for
 # compare.sh. default.nix defines USER, UID, COMPOSITOR, QUIT_COMPOSITOR,
-# FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW, CLOSE_WINDOW, LIST_WINDOWS and
-# COMPOSITOR_LOG above this script.
+# FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW, CLOSE_WINDOW, LIST_WINDOWS,
+# COMPOSITOR_LOG and FRAMES_REPORT above this script.
 import datetime as dt
 import itertools
 import json
@@ -243,6 +243,10 @@ def morph_frames(what: str, logged: str) -> None:
         late = sum(gap > 2000 / REFRESH_HZ for gap in gaps)
         timing = f", {statistics.median(gaps):.1f} ms apart (longest {max(gaps):.1f} ms, {late} late)" if gaps else ""
         print(f"  wl_surface#{surface}: {len(times)} frames over {times[-1] - times[0]:.0f} ms{timing}")
+    # `just frames`'s report of the same frames (ui/stage/FrameLog.qml): it
+    # fails when the UI logged none. Software rendering misses vblanks
+    # anyway, so no budget.
+    print(machine.succeed(f"{FRAMES_REPORT} -v refresh='*={REFRESH_HZ}' {capture}"))
     qt = [tuple(map(int, match.groups())) for line in after_logged if (match := QT_FRAME.search(line))]
     if qt:
         for name, values in zip(("frame", "sync", "render"), zip(*qt)):
@@ -354,7 +358,7 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window; the
     # Qt's timing of each frame, for morph_frames to print. Qt logs it at
     # debug level, which novad keeps only with NOVA_LOG=debug.
     machine.systemctl(
-        "set-environment WAYLAND_DEBUG=client NO_COLOR=1 QT_LOGGING_RULES=qt.scenegraph.time.renderloop.debug=true NOVA_LOG=debug",
+        "set-environment WAYLAND_DEBUG=client NO_COLOR=1 QT_LOGGING_RULES=qt.scenegraph.time.renderloop.debug=true NOVA_LOG=debug NOVA_FRAME_LOG=1",
         user=USER,
     )
     machine.succeed(as_user("nova restart"))
@@ -373,7 +377,7 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window; the
     assert_idle("under a fullscreen window")
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
-    machine.systemctl("unset-environment WAYLAND_DEBUG NO_COLOR QT_LOGGING_RULES NOVA_LOG", user=USER)
+    machine.systemctl("unset-environment WAYLAND_DEBUG NO_COLOR QT_LOGGING_RULES NOVA_LOG NOVA_FRAME_LOG", user=USER)
     machine.succeed(as_user("nova restart"))
     # The run the rest of the test knows.
     first = wait_running(not_daemon=watched["pid"])

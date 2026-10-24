@@ -103,5 +103,9 @@ Scope {
             id: bar
             anchors.fill: parent
         }
+
+        FrameLog {
+            screenName: root.screen.name
+        }
     }
 }
