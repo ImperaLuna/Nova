@@ -1,4 +1,5 @@
 singleton OpenPanels OpenPanels.qml
+singleton StageMotion StageMotion.qml
 ExclusionZone 1.0 ExclusionZone.qml
 Morph 1.0 Morph.qml
 MorphReveal 1.0 MorphReveal.qml

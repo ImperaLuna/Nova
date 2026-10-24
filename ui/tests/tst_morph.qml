@@ -16,6 +16,7 @@ Item {
         id: content
         opacity: morph.open ? 1 : 0
         MorphReveal on opacity {
+            id: reveal
             delay: 0.6
         }
     }
@@ -36,6 +37,21 @@ Item {
             tryCompare(morph, "t", 1, Tokens.durationPanel * 4);
             morph.open = false;
             tryCompare(morph, "t", 0, Tokens.durationPanel * 4);
+        }
+
+        function test_it_moves_only_while_it_grows_or_shrinks() {
+            verify(!morph.moving);
+            morph.open = true;
+            verify(morph.moving);
+            tryVerify(() => !morph.moving, Tokens.durationPanel * 4);
+            compare(morph.t, 1);
+        }
+
+        function test_reveal_runs_through_its_delay_and_fade() {
+            morph.open = true;
+            verify(reveal.running);
+            tryVerify(() => !reveal.running, Tokens.durationPanel * 4);
+            compare(content.opacity, 1);
         }
 
         function test_lerp_goes_from_the_closed_value_to_the_open_one() {

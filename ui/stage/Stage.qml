@@ -21,6 +21,8 @@ Scope {
         id: drawn
         panels: bar.panels
         fixed: bar.fixedShapes
+        onMovingChanged: StageMotion.setMoving(root.screen.name, moving)
+        Component.onDestruction: StageMotion.setMoving(root.screen.name, false)
     }
 
     // `nova toggle <panel>`, which novad sends every screen. When novad
@@ -49,6 +51,10 @@ Scope {
         }
         exclusionMode: ExclusionMode.Ignore
         color: "transparent"
+        // Draws while something moves here, or while nothing moves anywhere
+        // (StageMotion). Its regions only change when its own panels move,
+        // so they're always sent: Quickshell sends them only with a frame.
+        updatesEnabled: drawn.moving || StageMotion.screens.length === 0
         WlrLayershell.layer: WlrLayer.Top
         WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 

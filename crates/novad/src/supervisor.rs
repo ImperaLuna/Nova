@@ -36,6 +36,14 @@ const QUICKSHELL: &str = "quickshell";
 /// covered bar redrew itself every time one came. 0 turns the check off;
 /// a covered window just waits for its next callback.
 const FRAME_CALLBACK_TIMEOUT: (&str, &str) = ("QT_WAYLAND_FRAME_CALLBACK_TIMEOUT", "0");
+/// Qt ties animations to vblank only while exactly one window shows; Nova
+/// always has more (a stage and an exclusion zone per screen), so Qt falls
+/// back to a 6 ms timer that steps 1000/refresh ms each tick: animations ran
+/// 1.16x fast on 144 Hz and their frames missed vblanks. This driver steps
+/// by wall-clock time on each window's own frames instead. It makes every
+/// window draw while anything animates, which the stage limits to the
+/// screens where something moves (ui/stage/StageMotion.qml).
+const SIMPLE_ANIMATION_DRIVER: (&str, &str) = ("QSG_USE_SIMPLE_ANIMATION_DRIVER", "1");
 const LOG_SOURCE: &str = "supervisor";
 const FIRST_RETRY: Duration = Duration::from_secs(1);
 const MAX_RETRY: Duration = Duration::from_secs(30);
@@ -215,6 +223,7 @@ fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
         .env("NOVA_SOCKET", &settings.socket)
         .env("PATH", &settings.path_var)
         .env(FRAME_CALLBACK_TIMEOUT.0, FRAME_CALLBACK_TIMEOUT.1)
+        .env(SIMPLE_ANIMATION_DRIVER.0, SIMPLE_ANIMATION_DRIVER.1)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

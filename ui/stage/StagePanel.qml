@@ -31,6 +31,11 @@ Item {
     // the stage holds the keyboard and the whole screen takes clicks, so a
     // click outside the panel closes it.
     property bool wantsKeyboard: false
+    // Whether anything in it is animating right now: its morph, content
+    // fading in, a spinner. While a panel moves, the stages on other screens
+    // stop drawing (StageMotion), so a pill whose animations aren't covered
+    // here would freeze while another screen's panel moves.
+    property bool moving: false
 
     // Whether `other` (a StagePanel) opening closes this one.
     function ruledOutBy(other: var): bool {
