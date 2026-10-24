@@ -2,7 +2,7 @@
 # `nova` command the way a user would, and a screenshot of each UI state for
 # compare.sh. default.nix defines USER, UID, COMPOSITOR, QUIT_COMPOSITOR,
 # FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW, CLOSE_WINDOW, LIST_WINDOWS,
-# COMPOSITOR_LOG and FRAMES_REPORT above this script.
+# LIST_LAYERS, COMPOSITOR_LOG and FRAMES_REPORT above this script.
 import datetime as dt
 import itertools
 import json
@@ -449,10 +449,16 @@ with subtest("panels off the stage open and close without moving windows"):
         click(*DEMO_CENTER_INSIDE)
         machine.sleep(NO_EFFECT_SECS)
         assert ui_log_count(closed) == before, "a click on the panel closed it"
-        if close == "Esc":
-            press_until_logged(ESC, closed)
-        else:
-            click_until_logged(*POINTER_REST, closed)
+        try:
+            if close == "Esc":
+                press_until_logged(ESC, closed)
+            else:
+                click_until_logged(*POINTER_REST, closed)
+        except Exception:
+            print(f"{close} didn't close {center}; the layer surfaces, the UI's log and the compositor's:")
+            for command in (LIST_LAYERS, "nova logs --no-follow --ui -n 60", COMPOSITOR_LOG):
+                print(machine.execute(as_user(command))[1])
+            raise
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
     machine.systemctl("unset-environment NOVA_DEMO_PANELS", user=USER)

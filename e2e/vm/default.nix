@@ -35,6 +35,8 @@ let
       compositorLog,
       # The `queries` entry that lists the open windows.
       listWindows,
+      # Lists the layer surfaces (Nova's among them), for when a test fails.
+      listLayers,
     }:
     let
       # The user's session on the compositor, without Nova.
@@ -115,6 +117,7 @@ let
           FULLSCREEN_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."fullscreen the focused window"}"}
           CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
           LIST_WINDOWS = ${builtins.toJSON "${ipcEnv} ${listWindows}"}
+          LIST_LAYERS = ${builtins.toJSON "${ipcEnv} ${listLayers}"}
           COMPOSITOR_LOG = ${builtins.toJSON "export ${ipcEnv}; ${compositorLog}"}
           FRAMES_REPORT = ${builtins.toJSON "${pkgs.gawk}/bin/awk -f ${../../scripts/frames-report.awk}"}
         ''
@@ -282,6 +285,7 @@ in
     };
     compositorLog = "journalctl --user -u niri -n 100 --no-pager";
     listWindows = queries.windows;
+    listLayers = "niri msg --json layers";
     steps = {
       "focus the next workspace" = "niri msg action focus-workspace-down";
       "switch the keyboard layout" = "niri msg action switch-layout next";
@@ -319,6 +323,7 @@ in
     };
     compositorLog = "tail -n 100 $XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprland.log";
     listWindows = queries.clients;
+    listLayers = "hyprctl -j layers";
     steps = {
       "focus the next workspace" = "hyprctl dispatch workspace 2";
       "switch the keyboard layout" = "hyprctl switchxkblayout all next";
