@@ -162,6 +162,30 @@ fn planned_commands_say_so_and_fail() {
 }
 
 #[test]
+fn toggle_reaches_the_ui_and_says_why_when_it_cant() {
+    let novad = Novad::start("toggle");
+    let output = novad.run(&["toggle", "ai-usage"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("UI isn't connected"), "{output:?}");
+
+    // Stands in for the UI: subscribes to toggle events.
+    let ui = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
+    ui.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let mut lines = BufReader::new(ui.try_clone().unwrap()).lines();
+    writeln!(&ui, r#"{{"v":2,"id":1,"cmd":"subscribe","args":{{"topics":["toggle"]}}}}"#).unwrap();
+    assert!(lines.next().unwrap().unwrap().contains("hello"));
+    assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
+
+    assert_eq!(stdout(&novad.run(&["toggle", "ai-usage"])), "", "quiet for keybinds");
+    let event = lines.next().unwrap().unwrap();
+    assert!(event.contains(r#""event":"toggle""#) && event.contains(r#""panel":"ai-usage""#), "{event}");
+
+    let unknown = novad.run(&["toggle", "launcher"]);
+    assert!(!unknown.status.success());
+    assert!(String::from_utf8_lossy(&unknown.stderr).contains("ai-usage"), "lists the panels: {unknown:?}");
+}
+
+#[test]
 fn status_without_novad_fails_with_a_hint() {
     let output = Command::new(env!("CARGO_BIN_EXE_nova"))
         .args(["status", "--socket", "/nonexistent/novad.sock"])

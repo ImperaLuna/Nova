@@ -17,6 +17,18 @@ QtObject {
     // Whether an open panel takes typing.
     readonly property bool needsKeyboard: panels.some(panel => panel.open && panel.wantsKeyboard)
 
+    // `nova toggle <name>` on the screen named `screen`, with `output` the
+    // focused one: only that screen toggles, and opening there closes the
+    // panel on the others.
+    function toggle(name: string, screen: string, output: string) {
+        if (output !== screen)
+            return;
+        for (const panel of panels) {
+            if (panel.name === name)
+                panel.open = !panel.open;
+        }
+    }
+
     // Esc, or a click outside while the keyboard is held: closes the panels
     // holding it. Others, like a notes window, stay open.
     function dismiss() {

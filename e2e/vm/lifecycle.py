@@ -342,6 +342,12 @@ with subtest("screenshot: the AI usage panel open, grown from its pill"):
     # The same spot closes it again.
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
 
+with subtest("nova toggle opens and closes the AI usage panel, as a keybind would"):
+    for line in (AI_USAGE_OPENED, AI_USAGE_CLOSED):
+        before = ui_log_count(line)
+        machine.succeed(as_user("nova toggle ai-usage"))
+        retry(lambda _last_try: ui_log_count(line) > before, timeout=CLICK_EFFECT)
+
 with subtest("an idle bar draws nothing, shown or under a fullscreen window; the panel draws briefly"):
     # novad hands its environment to the UI.
     # Without libwayland's colors, which the timestamps would hide behind.

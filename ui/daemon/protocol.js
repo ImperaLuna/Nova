@@ -20,6 +20,7 @@ var EVENT_FEATURES = "features";
 var EVENT_THEME = "theme";
 var EVENT_AI_USAGE = "ai_usage";
 var EVENT_COMPOSITOR = "compositor";
+var EVENT_TOGGLE = "toggle";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
@@ -27,6 +28,7 @@ var TOPIC_LOGS = "logs";
 var TOPIC_THEME = "theme";
 var TOPIC_AI_USAGE = "ai_usage";
 var TOPIC_COMPOSITOR = "compositor";
+var TOPIC_TOGGLE = "toggle";
 
 // What a compositor can report or do (Capability in nova-protocol).
 var CAPABILITY_WORKSPACES = "workspaces";

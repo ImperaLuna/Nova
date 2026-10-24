@@ -89,15 +89,19 @@ impl Hub {
         }
     }
 
-    /// Sends `event` to every client subscribed to its topic.
-    pub fn publish(&self, event: &Event) {
-        let Some(topic) = event.topic() else { return };
-        let Some(line) = encode_event(event) else { return };
+    /// Sends `event` to every client subscribed to its topic. Returns how
+    /// many it was queued for.
+    pub fn publish(&self, event: &Event) -> usize {
+        let Some(topic) = event.topic() else { return 0 };
+        let Some(line) = encode_event(event) else { return 0 };
         // A failed push means the client is gone or being disconnected; its
         // connection thread unregisters it, so there is nothing to do here.
-        for client in lock(&self.clients).list.iter().filter(|client| client.topics.contains(&topic)) {
-            client.queue.push(Outgoing::Line(line.clone()));
-        }
+        lock(&self.clients)
+            .list
+            .iter()
+            .filter(|client| client.topics.contains(&topic))
+            .filter(|client| client.queue.push(Outgoing::Line(line.clone())))
+            .count()
     }
 
     /// Sends `event` to one client, whatever it subscribed to.
