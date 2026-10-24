@@ -1,13 +1,18 @@
 import QtQuick
+import Quickshell
 import "../theme"
 import "../daemon"
+import "../daemon/protocol.js" as Protocol
+import "../compositor"
 import "../ai_usage"
 import "../ai_usage/service"
+import "../central_pill"
 import "../stage"
 
-// Placeholder bar: one floating pill per screen, plus the AI usage pill on
-// the left when that feature is on. The real bar (three pills, hide
-// policies, reveal strip) lands with M2.
+// The bar on one screen: the AI usage pill on the left when that feature is
+// on, and the central pill (that screen's workspaces, the day and the time)
+// with its time in the middle of the screen. The right pill and the hide
+// policies come later.
 //
 // It's drawn on the screen's stage (ui/stage/Stage.qml), which builds its
 // input mask, blur and keyboard grab from `panels` and `fixedShapes`, so
@@ -15,6 +20,10 @@ import "../stage"
 // pill that opens a panel is a StagePanel added to `panels`.
 Item {
     id: bar
+
+    // The screen's output name (Quickshell's `screen.name`), whose
+    // workspaces the central pill lists.
+    required property string screenName
 
     // The space kept free for the bar at the top of the screen.
     readonly property int reservedHeight: Tokens.barHeight + Tokens.barMargin
@@ -36,7 +45,7 @@ Item {
     property bool shownLogged: false
 
     Connections {
-        target: label.Window.window
+        target: center.Window.window
         enabled: !bar.shownLogged
         function onFrameSwapped() {
             if (!Daemon.connected)
@@ -59,25 +68,30 @@ Item {
         }
     }
 
-    Rectangle {
-        id: center
-        visible: !bar.covered.includes(center)
-        anchors.horizontalCenter: parent.horizontalCenter
-        y: Tokens.barMargin
-        height: Tokens.barHeight
-        width: label.implicitWidth + Tokens.pad * 2
-        radius: Tokens.radiusPill
-        color: Tokens.surface
-        border.color: Tokens.outline
+    // Ticks once a minute, on the minute, for the central pill's time.
+    SystemClock {
+        id: clock
+        enabled: !bar.frozenTime
+        precision: SystemClock.Minutes
+    }
+    // A fixed time to show instead (an ISO date, like 2026-10-24T16:40), so
+    // the VM tests' screenshots don't change with the clock.
+    readonly property string frozenTime: Quickshell.env("NOVA_FROZEN_TIME") ?? ""
 
-        Text {
-            id: label
-            anchors.centerIn: parent
-            font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSize
-            color: Daemon.connected ? Tokens.fg : Tokens.fgDim
-            textFormat: Text.PlainText
-            text: Daemon.connected ? `Nova · novad ${Daemon.version}` : "Nova · waiting for novad"
-        }
+    CentralPill {
+        id: center
+        readonly property var output: Compositor.output(bar.screenName)
+
+        visible: !bar.covered.includes(center)
+        x: bar.width / 2 + timeFromRight - width
+        y: Tokens.barMargin
+        width: implicitWidth
+        height: implicitHeight
+        workspaces: Compositor.has(Protocol.CAPABILITY_WORKSPACES) ? Protocol.barWorkspaces(output) : []
+        outputFocused: output?.focused ?? false
+        canFocus: Compositor.has(Protocol.CAPABILITY_FOCUS_WORKSPACE)
+        now: bar.frozenTime ? new Date(bar.frozenTime) : clock.date
+        onFocusRequested: workspaceId => Compositor.focusWorkspace(workspaceId)
+        onStepRequested: step => Compositor.stepWorkspace(bar.screenName, step)
     }
 }
