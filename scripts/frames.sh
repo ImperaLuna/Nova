@@ -119,6 +119,12 @@ for ((i = 1; i < times; i++)); do
 done
 sleep "$TOGGLE_SECS"
 
+# novad drops a subscriber that falls behind, and the follower then exits
+# quietly: the capture would end early and hide later frames.
+if ! kill -0 "$capture" 2>/dev/null; then
+	echo "frames: the log follower stopped before the end, so the capture is incomplete; run it again" >&2
+	exit 1
+fi
 # The old bar back before the report, which may exit 1.
 stop
 # From the first toggle on: what came before is the bar settling.
