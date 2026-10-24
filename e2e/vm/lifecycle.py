@@ -5,7 +5,9 @@
 # COMPOSITOR_LOG above this script.
 import datetime as dt
 import json
+import re
 import shlex
+import statistics
 
 UNIT = "nova.service"
 RUNTIME_DIR = f"/run/user/{UID}"
@@ -41,6 +43,19 @@ IDLE_SECS = 10
 LOG_HISTORY = 1_000_000
 # A frame the UI hands the compositor, in its WAYLAND_DEBUG lines.
 SURFACE_COMMIT = r"wl_surface#[0-9]*\.commit("
+# The same line, with libwayland's timestamp (ms) and the surface.
+TIMED_COMMIT = re.compile(r"^\[\s*([0-9.]+)\].*-> wl_surface#([0-9]+)\.commit\(")
+# How long the panel may go on drawing after its pill logs that it opened or
+# closed. The longest animation, the meters filling, ends at
+# Tokens.durationPanel * 0.6 + Tokens.durationFill (750 ms) after opening;
+# the rest is room for software rendering's late last frame.
+MORPH_DRAWS_FOR = dt.timedelta(milliseconds=1200)
+# The VM's outputs refresh at 60 Hz. A surface never needs more than one
+# frame per refresh.
+REFRESH_HZ = 60
+# How many surfaces may draw while the panel opens or closes: the stage on
+# the pill's screen and the bar's exclusion zone (IMP-49).
+MORPH_SURFACES = 2
 # The window the tests open, and how it shows in novad's focused window.
 FOOT = "foot"
 NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
@@ -166,6 +181,42 @@ def assert_idle(what: str) -> None:
         raise AssertionError(f"the UI kept drawing {what}: commits per {IDLE_SECS} s: {counts}")
 
 
+def ui_log_lines() -> list[str]:
+    return machine.succeed(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY}")).splitlines()
+
+
+def morph_frames(what: str, logged: str) -> None:
+    """Opens or closes the panel by clicking its pill until it logs
+    `logged`, waits for the UI to stop drawing, and checks the frames it drew
+    after that line: on at most MORPH_SURFACES surfaces, at most one per
+    refresh, all within MORPH_DRAWS_FOR. Prints how far apart they came,
+    the frame time a user sees; software rendering makes that a trend to
+    read, not something to fail on."""
+    before = len(ui_log_lines())
+    click_until_logged(*AI_USAGE_PILL, logged)
+    assert_idle(f"after the panel {what}")
+    lines = ui_log_lines()[before:]
+    after_logged = lines[next(i for i, line in enumerate(lines) if logged in line) :]
+    frames: dict[str, list[float]] = {}
+    for line in after_logged:
+        if match := TIMED_COMMIT.search(line):
+            frames.setdefault(match[2], []).append(float(match[1]))
+    assert frames, f"no frames drawn after the panel {what}"
+    print(f"panel {what}: frames per surface:")
+    for surface, times in frames.items():
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        late = sum(gap > 2000 / REFRESH_HZ for gap in gaps)
+        timing = f", {statistics.median(gaps):.1f} ms apart (longest {max(gaps):.1f} ms, {late} late)" if gaps else ""
+        print(f"  wl_surface#{surface}: {len(times)} frames over {times[-1] - times[0]:.0f} ms{timing}")
+    assert len(frames) <= MORPH_SURFACES, f"{len(frames)} surfaces drew after the panel {what}, at most {MORPH_SURFACES} may"
+    budget_ms = MORPH_DRAWS_FOR / dt.timedelta(milliseconds=1)
+    for surface, times in frames.items():
+        drew_for = times[-1] - times[0]
+        assert drew_for <= budget_ms, f"wl_surface#{surface} drew for {drew_for:.0f} ms after the panel {what}, at most {budget_ms:.0f} ms"
+        most = int(drew_for * REFRESH_HZ / 1000) + 1
+        assert len(times) <= most, f"wl_surface#{surface} drew {len(times)} frames in {drew_for:.0f} ms after the panel {what}, more than one per refresh ({most})"
+
+
 def open_foot(unit: str) -> None:
     """Opens a foot window and waits until the compositor lists it, then
     until novad reports it as the focused window. foot runs as a transient
@@ -245,21 +296,17 @@ with subtest("screenshot: the AI usage panel open, grown from its pill"):
     # The same spot closes it again.
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
 
-with subtest("an idle bar draws nothing, shown or under a fullscreen window"):
+with subtest("an idle bar draws nothing, shown or under a fullscreen window; the panel draws briefly"):
     # novad hands its environment to the UI.
     machine.systemctl("set-environment WAYLAND_DEBUG=client", user=USER)
     machine.succeed(as_user("nova restart"))
     watched = wait_running(not_daemon=first["pid"])
     machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -qF {shlex.quote(AI_USAGE_SHOWN)}"), timeout=WAIT)
     assert_idle("with the bar shown")
-    # The count sees frames when there are some: the panel opening draws.
-    commits = f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -c {shlex.quote(SURFACE_COMMIT)} || true"
-    before = int(machine.succeed(as_user(commits)).strip() or 0)
-    click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
-    click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
-    after = int(machine.succeed(as_user(commits)).strip() or 0)
-    assert after > before, f"no surface commits logged while the panel opened and closed ({before} before, {after} after)"
-    assert_idle("after the panel closed")
+    # Opening and closing draws (so the count sees frames when there are
+    # some), on few surfaces, briefly, and then stops.
+    morph_frames("opened", AI_USAGE_OPENED)
+    morph_frames("closed", AI_USAGE_CLOSED)
     # Covered, as under a video or a game. On the desktop, niri then sent the
     # bar a frame callback a second and Qt redrew it each time (IMP-38); niri
     # in this VM sends none, so the headless e2e guards that fix instead.
