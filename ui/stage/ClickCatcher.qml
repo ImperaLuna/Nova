@@ -4,13 +4,19 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 
-// While a panel holds the keyboard, the rest of the screen: a click anywhere
-// off Nova's surfaces closes that panel. Those surfaces take clicks over
-// their whole area meanwhile, so the two never overlap and it doesn't matter
-// which the compositor puts on top. Empty, and never blurred.
+// While a panel that closes on a click outside is open (`catching`), the
+// rest of the screen: a click or scroll anywhere off Nova's surfaces closes
+// that panel. Those surfaces take clicks over their whole area meanwhile, so the
+// two never overlap and it doesn't matter which the compositor puts on top.
+// Empty, and never blurred. It stays mapped, taking no clicks while not
+// catching: Quickshell builds a layer-shell window anew each time it shows,
+// with a render thread and graphics context of its own, which held up every
+// animation on the screen as the panel opened (IMP-72).
 PanelWindow { // qmllint disable uncreatable-type
     id: catcher
 
+    // Whether it takes clicks.
+    required property bool catching
     // The surfaces' areas on the screen, each a rect, cut out of it.
     required property list<rect> holes
 
@@ -27,7 +33,7 @@ PanelWindow { // qmllint disable uncreatable-type
     WlrLayershell.layer: WlrLayer.Top
 
     mask: Region {
-        item: area
+        item: catcher.catching ? area : null
         regions: cutouts.instances
     }
 
@@ -58,6 +64,7 @@ PanelWindow { // qmllint disable uncreatable-type
         drawing = true;
     }
     onVisibleChanged: redraw()
+    onCatchingChanged: redraw()
     onHolesChanged: redraw()
     onWidthChanged: redraw()
     onHeightChanged: redraw()
@@ -75,5 +82,8 @@ PanelWindow { // qmllint disable uncreatable-type
         id: area
         anchors.fill: parent
         onClicked: catcher.clicked()
+        // A scroll closes the panel too, so the next one reaches the window
+        // below: it can't pass this one on.
+        onWheel: catcher.clicked()
     }
 }

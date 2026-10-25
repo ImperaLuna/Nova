@@ -9,12 +9,14 @@ import "usage.js" as Usage
 
 // The AI usage pill: the shown provider's logo and its session percent.
 // Clicking it morphs the pill into the details panel in place, so the same
-// click closes it again. Numbers come from novad's ai_usage event. A
-// StagePanel, so the stage gives it clicks, blur and Esc.
+// click closes it again, as does the panel's whole header or a click
+// outside. Numbers come from novad's ai_usage event. A StagePanel, so the
+// stage gives it clicks and blur.
 StagePanel {
     id: root
 
     name: Protocol.FEATURE_AI_USAGE
+    closesOnClickOutside: true
     // AiUsageService.usage: {shown, providers}.
     required property var usage
 
@@ -150,9 +152,10 @@ StagePanel {
         radius: morph.lerp(Tokens.barHeight / 2, Tokens.radiusPanel)
         clip: true
 
+        // The pill, which grows into the panel's whole header row.
         MouseArea {
             id: pill
-            width: root.pillWidth
+            width: surface.width
             height: Tokens.barHeight
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor

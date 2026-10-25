@@ -51,10 +51,55 @@ TestCase {
         }), "speakers");
     }
 
+    // Default sinks' properties as PipeWire reports them (pw-cli i <id>),
+    // trimmed to the ones outputKind() reads.
+    function test_bluetooth_and_hdmi_outputs_are_told_apart() {
+        compare(Volume.outputKind(true, {
+            "node.name": "bluez_output.F8_4E_17_A1_22_9C.1",
+            "node.description": "JBL Flip 6",
+            "device.api": "bluez5",
+            "device.icon-name": "audio-card-bluetooth"
+        }), "bluetooth");
+        compare(Volume.outputKind(true, {
+            "node.name": "alsa_output.pci-0000_01_00.1.hdmi-stereo",
+            "node.description": "GA104 High Definition Audio Controller Digital Stereo (HDMI)",
+            "device.api": "alsa",
+            "device.profile.name": "hdmi-stereo"
+        }), "display");
+        compare(Volume.outputKind(true, {
+            "node.name": "alsa_output.pci-0000_0c_00.1.pro-output-3",
+            "node.description": "Navi 21 HDMI/DP Audio Controller DisplayPort 1 Output",
+            "device.api": "alsa"
+        }), "display");
+    }
+
+    function test_headphones_win_over_bluetooth_and_usb_is_not_guessed() {
+        compare(Volume.outputKind(true, {
+            "node.name": "bluez_output.AC_80_0A_3B_19_E2.1",
+            "device.api": "bluez5",
+            "device.form-factor": "headset",
+            "device.icon-name": "audio-headset-bluetooth"
+        }), "headphones");
+        compare(Volume.outputKind(true, {
+            "node.name": "alsa_output.usb-Focusrite_Scarlett_2i2_USB-00.analog-stereo",
+            "node.description": "Scarlett 2i2 USB Analog Stereo",
+            "device.api": "alsa",
+            "device.bus": "usb"
+        }), "speakers");
+        compare(Volume.outputKind(true, {
+            "node.name": "alsa_output.pci-0000_0e_00.4.analog-stereo",
+            "node.description": "Starship/Matisse HD Audio Controller Analog Stereo",
+            "device.api": "alsa"
+        }), "speakers");
+    }
+
     function test_icons_follow_output_mute_and_volume() {
         compare(Volume.icon("none", false, 0), "none");
         compare(Volume.icon("speakers", true, 0.6), "muted");
         compare(Volume.icon("headphones", false, 0.6), "headphones");
+        compare(Volume.icon("bluetooth", false, 0.6), "bluetooth");
+        compare(Volume.icon("display", false, 0), "display");
+        compare(Volume.icon("bluetooth", true, 0.6), "muted");
         compare(Volume.icon("speakers", false, 0), "off");
         compare(Volume.icon("speakers", false, 0.3), "low");
         compare(Volume.icon("speakers", false, 0.5), "high");

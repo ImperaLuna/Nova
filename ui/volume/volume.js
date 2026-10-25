@@ -35,30 +35,42 @@ function percent(volume) {
     return Math.round(volume * 100);
 }
 
-// "none" (no output to control), "headphones" or "speakers", from the
-// default sink's PipeWire properties (pw-cli i <id>). Headphones and
-// headsets say so in their form factor or icon name.
+// "none" (no output to control), "headphones", "bluetooth", "display" or
+// "speakers", from the default sink's PipeWire properties (pw-cli i <id>).
+// Headphones and headsets say so in their form factor or icon name, and win
+// over how they're connected. Bluetooth sinks come from BlueZ; HDMI and
+// DisplayPort audio (a monitor or TV) say so in their name, description or
+// profile. Nothing else is guessed: a USB sink stays speakers.
 function outputKind(available, properties) {
     if (!available)
         return "none";
     var props = properties || {};
-    var hints = [props["device.form-factor"], props["device.icon-name"], props["node.icon-name"]];
-    for (var i = 0; i < hints.length; i++) {
-        if (/head(phone|set)/.test(hints[i] || ""))
-            return "headphones";
-    }
+    if (matches(/head(phone|set)/, props, ["device.form-factor", "device.icon-name", "node.icon-name"]))
+        return "headphones";
+    if (props["device.api"] === "bluez5" || matches(/^bluez_output\./, props, ["node.name"]))
+        return "bluetooth";
+    if (matches(/hdmi|displayport/i, props, ["node.name", "node.description", "device.profile.name"]))
+        return "display";
     return "speakers";
 }
 
-// Which glyph VolumeIcon draws: "none", "muted", "headphones", or a speaker
-// with "off" (0%), "low" or "high" waves.
+// Whether any of `props`' `keys` matches `pattern`.
+function matches(pattern, props, keys) {
+    return keys.some(function (key) {
+        return pattern.test(props[key] || "");
+    });
+}
+
+// Which glyph VolumeIcon draws: "none", "muted", the output's own
+// ("headphones", "bluetooth", "display"), or a speaker with "off" (0%),
+// "low" or "high" waves.
 function icon(kind, muted, volume) {
     if (kind === "none")
         return "none";
     if (muted)
         return "muted";
-    if (kind === "headphones")
-        return "headphones";
+    if (kind !== "speakers")
+        return kind;
     if (volume <= 0)
         return "off";
     return volume < 0.5 ? "low" : "high";
