@@ -21,8 +21,9 @@ BAR_SHOWN = "nova: bar shown"
 # What the bar logs once the AI usage pill is on it (ui/bar/Bar.qml).
 AI_USAGE_SHOWN = "nova: ai usage pill shown"
 # A point inside that pill: it sits Tokens.barMargin (8) from the screen's
-# top-left corner and is Tokens.barHeight (36) tall.
-AI_USAGE_PILL = (24, 26)
+# left edge and Tokens.barGap (4) from its top, and is Tokens.barHeight (36)
+# tall.
+AI_USAGE_PILL = (24, 22)
 # What the pill logs when its panel opens or closes (ui/ai_usage/AiUsage.qml).
 AI_USAGE_OPENED = "nova: ai usage panel opened"
 AI_USAGE_CLOSED = "nova: ai usage panel closed"

@@ -27,7 +27,7 @@ QtObject {
     readonly property int deckWidth: 640
     readonly property int deckHeight: 400
     // The sidebar starts below the bar.
-    readonly property int belowBar: Tokens.barHeight + 2 * Tokens.barMargin
+    readonly property int belowBar: Tokens.barGap + Tokens.barHeight + Tokens.barMargin
 
     // A glass box with its name, growing with its morph.
     component Placeholder: StagePanel {
