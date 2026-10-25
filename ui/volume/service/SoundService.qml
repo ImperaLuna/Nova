@@ -10,7 +10,7 @@ import "../../quick_settings/quick_settings.js" as QuickSettings
 // (VolumeService has that): the default input and who records from it,
 // every output and input to switch between, and each app's own volume.
 // Lists come as plain objects ({id, name, kind, volume, muted, ready,
-// current};
+// icon, current};
 // apps also have `ids`),
 // so the pages showing them don't need PipeWire's types; acting goes
 // through the functions here by id.
@@ -53,6 +53,7 @@ Singleton {
             volume: node.ready && node.audio.volumes.length > 0 ? node.audio.volume : 0,
             muted: node.ready && node.audio.muted,
             ready: node.ready && node.audio.volumes.length > 0,
+            icon: props["application.icon-name"] || props["application.process.binary"] || "",
             current: current !== null && node.id === current.id
         };
     }
@@ -75,6 +76,15 @@ Singleton {
     function setVolumes(ids: list<int>, value: real) {
         for (const id of ids)
             setVolume(id, value);
+    }
+
+    // Every stream of an app to `muted`.
+    function setMuted(ids: list<int>, muted: bool) {
+        for (const id of ids) {
+            const found = node(id);
+            if (found?.ready)
+                found.audio.muted = muted;
+        }
     }
 
     function useOutput(id: int) {

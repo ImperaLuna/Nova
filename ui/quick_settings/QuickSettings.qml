@@ -175,6 +175,8 @@ StagePanel {
                     onOutputPicked: id => SoundService.useOutput(id)
                     onInputPicked: id => SoundService.useInput(id)
                     onAppVolumeMoved: (ids, value) => SoundService.setVolumes(ids, value)
+                    onAppMuteToggled: (ids, muted) => SoundService.setMuted(ids, muted)
+                    iconSource: name => name === "" ? "" : Quickshell.iconPath(name, true)
                 }
             }
         }

@@ -8,7 +8,8 @@ import "quick_settings.js" as QuickSettings
 
 // The sound page: the output in use with its volume, then tabs for every
 // output and input to switch to, and each app's own volume. Lists are
-// SoundService's plain objects ({id, name, kind, volume, muted, current}).
+// SoundService's plain objects ({id, name, kind, volume, muted, current};
+// apps also have `ids` and `icon`).
 Item {
     id: page
 
@@ -38,6 +39,11 @@ Item {
     signal inputPicked(int id)
     // An `apps` entry's stream ids, and their new volume.
     signal appVolumeMoved(var ids, real value)
+    // An `apps` entry's stream ids, to mute all or unmute all.
+    signal appMuteToggled(var ids, bool muted)
+    // An icon name to its file, or "" (Quickshell.iconPath, given by the
+    // drawer so tests can do without).
+    property var iconSource: name => ""
 
     // The card on top shows the input in use on the Input tab, else the
     // output.
@@ -195,18 +201,21 @@ Item {
 
                 QsSlider {
                     required property int index
-                    readonly property var app: page.apps[index] ?? {
+                    readonly property var stream: page.apps[index] ?? {
                         ids: [],
+                        icon: "",
                         name: "",
                         volume: 0,
                         muted: false
                     }
                     width: parent.width
-                    icon: Icons.APP
-                    label: app.name
-                    value: app.volume
-                    muted: app.muted
-                    onMoved: value => page.appVolumeMoved(app.ids, value)
+                    app: true
+                    appIcon: page.iconSource(stream.icon)
+                    label: stream.name
+                    value: stream.volume
+                    muted: stream.muted
+                    onMoved: value => page.appVolumeMoved(stream.ids, value)
+                    onIconClicked: page.appMuteToggled(stream.ids, !stream.muted)
                 }
             }
 

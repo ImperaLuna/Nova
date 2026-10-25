@@ -266,7 +266,7 @@ Item {
             waitForRendering(slider);
             spy.signalName = "moved";
             spy.target = slider;
-            const at = value => slider.rest + value * (slider.track - slider.rest);
+            const at = value => slider.trackX + value * slider.track;
             mousePress(slider, at(0.5), slider.height / 2);
             mouseMove(slider, at(0.8), slider.height / 2);
             // The volume set hasn't come back yet: it still shows the drag.
@@ -274,18 +274,26 @@ Item {
             compare(spy.signalArguments[spy.count - 1][0], 0.8);
             mouseRelease(slider, at(0.8), slider.height / 2);
             compare(slider.current, 0.2, "released, it shows the volume again");
-            mouseClick(slider, 2, slider.height / 2);
-            compare(spy.signalArguments[spy.count - 1][0], 0, "left of the knob's rest is 0");
+            mouseClick(slider, slider.trackX + 1, slider.height / 2);
+            compare(spy.signalArguments[spy.count - 1][0], 0, "the track's start is 0");
         }
 
-        function test_at_zero_the_knob_rests_right_of_the_icon() {
+        function test_at_zero_the_track_is_empty_and_the_icon_beside_it() {
             const slider = createTemporaryObject(sliderComponent, stage, {
                 value: 0,
                 glyph: "volume_off"
             });
             waitForRendering(slider);
             const icon = findChild(slider, "icon");
-            verify(slider.rest >= icon.x + icon.width + Tokens.sliderKnobWidth, "the knob doesn't cover the icon");
+            verify(icon.x + icon.width <= slider.trackX, "the icon isn't on the track");
+            compare(findChild(slider, "fill").width, 0);
+            spy.signalName = "iconClicked";
+            spy.target = slider;
+            mouseClick(icon);
+            compare(spy.count, 1, "the icon mutes");
+            slider.value = 0.5;
+            slider.muted = true;
+            compare(findChild(slider, "fill").width, slider.track / 2, "muted keeps the level");
             shot(slider, "slider-zero");
         }
 
@@ -429,17 +437,23 @@ Item {
             spy.target = page;
             const firefox = findChild(page, "app-/usr/lib/firefox/firefox");
             verify(firefox !== null);
-            const end = firefox.mapToItem(page, firefox.width - Tokens.segmentPad - Tokens.endButtonHeight / 2, firefox.height / 2);
-            mouseMove(page, end.x, end.y);
-            mouseClick(page, end.x, end.y);
-            compare(spy.count, 0, "the first click only arms it");
-            compare(page.armed, "/usr/lib/firefox/firefox");
+            const x = firefox.mapToItem(page, firefox.width - Tokens.segmentPad - Tokens.endButtonWidth / 2, firefox.height / 2);
+            mouseMove(page, x.x, x.y);
+            mouseClick(page, x.x, x.y);
+            compare(spy.count, 0, "✕ only asks");
+            compare(page.asked, "/usr/lib/firefox/firefox");
+            const confirm = findChild(page, "confirm-/usr/lib/firefox/firefox");
+            verify(confirm.visible);
             waitForRendering(page);
             shot(page, "resources");
-            mouseClick(page, end.x - Tokens.endButtonHeight / 2, end.y);
+            mouseClick(findChild(confirm, "endConfirm"));
             compare(spy.count, 1);
             compare(spy.signalArguments[0][0], "/usr/lib/firefox/firefox");
-            compare(page.armed, "");
+            compare(page.asked, "");
+
+            page.query = "NIR";
+            compare(page.shownApps.length, 1, "the search matches any case");
+            compare(page.shownApps[0].name, "niri");
         }
 
         function test_more_apps_than_fit_scroll() {

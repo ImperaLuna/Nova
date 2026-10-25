@@ -283,17 +283,17 @@ QtObject {
     readonly property int tileHeight: 58
     readonly property int tileArrowWidth: 22
     readonly property real tileSubOpacity: 0.72
-    // Thick sliders: the fill (at 0 just wide enough to hold the icon, its
-    // knob right of it), a short upright knob inside its end, and the
-    // arrow button at the slider's end that opens a page.
+    // Thick sliders: a round icon button (mute) beside the track, the track
+    // filled only to the value, and a button after it that opens a page. An
+    // app's slider shows the app's icon, its corners less round.
     readonly property int sliderHeight: 34
-    readonly property color sliderFill: Qt.rgba(fg.r, fg.g, fg.b, 0.20)
-    readonly property int sliderKnobWidth: 3
-    readonly property int sliderKnobInset: 6
-    readonly property int sliderKnobPad: 9
+    readonly property int sliderGap: 6
+    readonly property color sliderFill: Qt.rgba(fg.r, fg.g, fg.b, 0.22)
+    readonly property real sliderMutedOpacity: 0.3
     readonly property int sliderButtonWidth: 30
-    readonly property int sliderButtonHeight: 26
-    readonly property color sliderDivider: Qt.rgba(fg.r, fg.g, fg.b, 0.14)
+    readonly property int appIconRadius: 11
+    readonly property int appIconSize: 22
+    readonly property real appMutedOpacity: 0.45
     // The mic slider while an app records: the second accent.
     readonly property real micFillOpacity: 0.34
     // Resource rings, and the labels under them.
@@ -314,12 +314,15 @@ QtObject {
     readonly property real graphAreaOpacity: 0.22
     readonly property int processRowHeight: 30
     readonly property int processNumberWidth: 64
-    // The resources page's End button: ✕ on hover, then "End" to confirm.
-    readonly property int endButtonWidth: 40
+    // The resources page's End button (✕ on a row's hover, in the second
+    // accent), its confirm row's padding, and the search field's height.
+    readonly property int endButtonWidth: 26
     readonly property int endButtonHeight: 24
     readonly property int endIconSize: 13
-    // How long "End" waits for its second click.
-    readonly property int durationEndConfirm: 3000
+    readonly property real endHoverOpacity: 0.22
+    readonly property real confirmOpacity: 0.14
+    readonly property int confirmButtonHeight: 26
+    readonly property int searchHeight: 34
     // A legend's colored dot.
     readonly property int legendDot: 7
 

@@ -16,21 +16,16 @@ Item {
     signal back
     // Room the top row leaves on its right (the pill's buttons).
     property real headerInset: 0
-    // End on an app's row, clicked twice: novad's end_app for its key.
+    // End, confirmed on an app's row: novad's end_app for its key.
     signal endRequested(string key)
 
     readonly property var apps: reading?.apps ?? []
-    // The app whose End waits for its second click, by key.
-    property string armed: ""
-    onArmedChanged: {
-        if (armed !== "")
-            disarm.restart();
-    }
-    Timer {
-        id: disarm
-        interval: Tokens.durationEndConfirm
-        onTriggered: page.armed = ""
-    }
+    // What the search field holds, and the apps whose name has it.
+    property string query: ""
+    readonly property var shownApps: query === "" ? apps : apps.filter(app => app.name.toLowerCase().includes(query.toLowerCase()))
+    // The app whose End asks to confirm, by key.
+    property string asked: ""
+    onQueryChanged: asked = ""
 
     readonly property real memoryShare: reading ? QuickSettings.share(reading.memory_used, reading.memory_total) * 100 : 0
 
@@ -125,12 +120,55 @@ Item {
             id: appsBox
             width: parent.width
 
-            Item {
+            // Searches the apps listed by name.
+            Rectangle {
                 width: parent.width
-                height: Tokens.chipHeight
-                Text {
+                height: Tokens.searchHeight
+                radius: height / 2
+                color: Tokens.track
+
+                LineIcon {
+                    id: searchIcon
                     x: Tokens.pad
                     anchors.verticalCenter: parent.verticalCenter
+                    path: Icons.SEARCH
+                    size: Tokens.iconSizeSmall
+                    color: Tokens.fgDim
+                }
+                TextInput {
+                    id: search
+                    objectName: "search"
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: searchIcon.x + searchIcon.width + Tokens.gap
+                    width: parent.width - x - Tokens.pad
+                    clip: true
+                    font.family: Tokens.fontSans
+                    font.pixelSize: Tokens.fontSizeSmall
+                    color: Tokens.fg
+                    selectionColor: Tokens.secondary
+                    selectedTextColor: Tokens.onAccent
+                    onTextChanged: page.query = text.trim()
+                    Keys.onEscapePressed: event => {
+                        // Clears the search first; with none, Esc closes the drawer.
+                        event.accepted = text !== "";
+                        text = "";
+                    }
+
+                    Text {
+                        visible: search.text === ""
+                        font: search.font
+                        color: Tokens.fgDim
+                        text: qsTr("Search apps")
+                    }
+                }
+            }
+
+            Item {
+                width: parent.width
+                height: Tokens.chipHeight + Tokens.gap
+                Text {
+                    x: Tokens.pad
+                    anchors.bottom: parent.bottom
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeTiny
                     color: Tokens.fgDim
@@ -139,7 +177,7 @@ Item {
                 Row {
                     anchors.right: parent.right
                     anchors.rightMargin: Tokens.segmentPad + Tokens.endButtonWidth
-                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.bottom: parent.bottom
                     Cell {
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSizeTiny
@@ -160,7 +198,7 @@ Item {
                 id: list
                 objectName: "apps"
                 width: parent.width
-                height: Math.max(0, page.height - appsBox.y - Tokens.chipHeight)
+                height: Math.max(0, page.height - appsBox.y - y)
                 contentHeight: rows.height
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
@@ -169,15 +207,26 @@ Item {
                     id: rows
                     width: list.width
 
-                    // By count, so a new reading every few seconds doesn't rebuild
-                    // the rows (and drop a hover or an armed End).
-                    Repeater {
-                        model: page.apps.length
+                    Text {
+                        visible: page.shownApps.length === 0 && page.query !== ""
+                        leftPadding: Tokens.pad
+                        topPadding: Tokens.gap
+                        font.family: Tokens.fontSans
+                        font.pixelSize: Tokens.fontSizeSmall
+                        color: Tokens.fgDim
+                        textFormat: Text.PlainText
+                        text: qsTr("No app matches “%1”").arg(page.query)
+                    }
 
-                        Rectangle {
-                            id: row
+                    // By count, so a new reading every few seconds doesn't
+                    // rebuild the rows (and drop a hover or an open confirm).
+                    Repeater {
+                        model: page.shownApps.length
+
+                        Column {
+                            id: entry
                             required property int index
-                            readonly property var app: page.apps[index] ?? {
+                            readonly property var app: page.shownApps[index] ?? {
                                 name: "",
                                 key: "",
                                 processes: 0,
@@ -185,101 +234,131 @@ Item {
                                 memory: 0,
                                 protected: true
                             }
-                            readonly property bool armed: page.armed !== "" && page.armed === app.key
-                            objectName: `app-${app.key}`
-                            width: parent.width
-                            height: Tokens.processRowHeight
-                            radius: Tokens.radiusSegment
-                            color: hover.containsMouse ? Tokens.surfaceRaised : "transparent"
+                            readonly property bool asked: page.asked !== "" && page.asked === app.key
+                            width: rows.width
 
-                            MouseArea {
-                                id: hover
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                acceptedButtons: Qt.NoButton
+                            Rectangle {
+                                id: row
+                                objectName: `app-${entry.app.key}`
+                                width: parent.width
+                                height: Tokens.processRowHeight
+                                radius: Tokens.radiusSegment
+                                color: hover.containsMouse || entry.asked ? Tokens.surfaceRaised : "transparent"
+
+                                MouseArea {
+                                    id: hover
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    acceptedButtons: Qt.NoButton
+                                }
+
+                                Row {
+                                    x: Tokens.pad
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: numbers.x - x - Tokens.gap
+                                    spacing: Tokens.iconGap
+                                    Text {
+                                        id: appName
+                                        width: Math.min(implicitWidth, parent.width - count.width - parent.spacing)
+                                        elide: Text.ElideRight
+                                        font.family: Tokens.fontSans
+                                        font.pixelSize: Tokens.fontSizeSmall
+                                        color: Tokens.fg
+                                        textFormat: Text.PlainText
+                                        text: entry.app.name
+                                    }
+                                    Text {
+                                        id: count
+                                        visible: entry.app.processes > 1
+                                        anchors.baseline: appName.baseline
+                                        font.family: Tokens.fontMono
+                                        font.pixelSize: Tokens.fontSizeMicro
+                                        color: Tokens.fgDim
+                                        text: `×${entry.app.processes}`
+                                    }
+                                }
+                                Row {
+                                    id: numbers
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: Tokens.segmentPad
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    Cell {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        color: Tokens.fg
+                                        text: `${entry.app.cpu.toFixed(1)}%`
+                                    }
+                                    Cell {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        color: Tokens.fgDim
+                                        text: QuickSettings.bytes(entry.app.memory)
+                                    }
+                                    // ✕ while hovered: asks to confirm under
+                                    // the row. Nova and the session have none.
+                                    Item {
+                                        width: Tokens.endButtonWidth
+                                        height: Tokens.endButtonHeight
+                                        Rectangle {
+                                            objectName: "end"
+                                            anchors.fill: parent
+                                            radius: Tokens.radiusSegment
+                                            visible: !entry.app.protected && (hover.containsMouse || end.containsMouse || entry.asked)
+                                            color: end.containsMouse || entry.asked ? Qt.rgba(Tokens.secondary.r, Tokens.secondary.g, Tokens.secondary.b, Tokens.endHoverOpacity) : "transparent"
+
+                                            LineIcon {
+                                                anchors.centerIn: parent
+                                                path: Icons.CLOSE
+                                                size: Tokens.endIconSize
+                                                color: end.containsMouse || entry.asked ? Tokens.secondary : Tokens.fgDim
+                                            }
+                                            MouseArea {
+                                                id: end
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                onClicked: page.asked = entry.asked ? "" : entry.app.key
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
-                            Row {
-                                x: Tokens.pad
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: numbers.x - x - Tokens.gap
-                                spacing: Tokens.iconGap
+                            // Asks before ending: the app is asked to close.
+                            Rectangle {
+                                objectName: `confirm-${entry.app.key}`
+                                visible: entry.asked
+                                width: parent.width
+                                height: visible ? Math.max(question.implicitHeight, Tokens.confirmButtonHeight) + 2 * Tokens.pad : 0
+                                radius: Tokens.radiusSegment
+                                color: Qt.rgba(Tokens.secondary.r, Tokens.secondary.g, Tokens.secondary.b, Tokens.confirmOpacity)
+
                                 Text {
-                                    id: appName
-                                    width: Math.min(implicitWidth, parent.width - count.width - parent.spacing)
-                                    elide: Text.ElideRight
+                                    id: question
+                                    x: Tokens.pad
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: buttons.x - x - Tokens.gap
+                                    wrapMode: Text.Wrap
                                     font.family: Tokens.fontSans
-                                    font.pixelSize: Tokens.fontSizeSmall
+                                    font.pixelSize: Tokens.fontSizeTiny
                                     color: Tokens.fg
                                     textFormat: Text.PlainText
-                                    text: row.app.name
+                                    text: entry.app.processes > 1 ? qsTr("End %1 and its %2 processes? It's asked to close.").arg(entry.app.name).arg(entry.app.processes) : qsTr("End %1? It's asked to close.").arg(entry.app.name)
                                 }
-                                Text {
-                                    id: count
-                                    visible: row.app.processes > 1
-                                    anchors.baseline: appName.baseline
-                                    font.family: Tokens.fontMono
-                                    font.pixelSize: Tokens.fontSizeMicro
-                                    color: Tokens.fgDim
-                                    text: `×${row.app.processes}`
-                                }
-                            }
-                            Row {
-                                id: numbers
-                                anchors.right: parent.right
-                                anchors.rightMargin: Tokens.segmentPad
-                                anchors.verticalCenter: parent.verticalCenter
-                                Cell {
+                                Row {
+                                    id: buttons
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: Tokens.pad
                                     anchors.verticalCenter: parent.verticalCenter
-                                    color: Tokens.fg
-                                    text: `${row.app.cpu.toFixed(1)}%`
-                                }
-                                Cell {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    color: Tokens.fgDim
-                                    text: QuickSettings.bytes(row.app.memory)
-                                }
-                                // ✕ while hovered; a click arms it as "End", and a
-                                // second ends the app. Nova and the session have none.
-                                Item {
-                                    width: Tokens.endButtonWidth
-                                    height: Tokens.endButtonHeight
-                                    Rectangle {
-                                        anchors.right: parent.right
-                                        width: row.armed ? parent.width : height
-                                        height: parent.height
-                                        radius: Tokens.radiusSegment
-                                        visible: !row.app.protected && (hover.containsMouse || end.containsMouse || row.armed)
-                                        color: row.armed ? Tokens.error : end.containsMouse ? Tokens.hover : "transparent"
-
-                                        LineIcon {
-                                            anchors.centerIn: parent
-                                            visible: !row.armed
-                                            path: Icons.CLOSE
-                                            size: Tokens.endIconSize
-                                            color: end.containsMouse ? Tokens.fg : Tokens.fgDim
-                                        }
-                                        Text {
-                                            anchors.centerIn: parent
-                                            visible: row.armed
-                                            font.family: Tokens.fontSans
-                                            font.pixelSize: Tokens.fontSizeMicro
-                                            font.weight: Font.DemiBold
-                                            color: Tokens.onAccent
-                                            text: qsTr("End")
-                                        }
-                                        MouseArea {
-                                            id: end
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            onClicked: {
-                                                if (row.armed) {
-                                                    page.armed = "";
-                                                    page.endRequested(row.app.key);
-                                                } else {
-                                                    page.armed = row.app.key;
-                                                }
-                                            }
+                                    spacing: Tokens.iconGap
+                                    ConfirmButton {
+                                        text: qsTr("Cancel")
+                                        onClicked: page.asked = ""
+                                    }
+                                    ConfirmButton {
+                                        objectName: "endConfirm"
+                                        text: qsTr("End")
+                                        accent: true
+                                        onClicked: {
+                                            page.asked = "";
+                                            page.endRequested(entry.app.key);
                                         }
                                     }
                                 }
@@ -288,6 +367,32 @@ Item {
                     }
                 }
             }
+        }
+    }
+
+    component ConfirmButton: Rectangle {
+        id: confirmButton
+        property alias text: label.text
+        property bool accent: false
+        signal clicked
+        width: label.implicitWidth + 2 * Tokens.pad
+        height: Tokens.confirmButtonHeight
+        radius: Tokens.radiusSegment
+        color: accent ? Tokens.secondary : press.containsMouse ? Tokens.hover : Tokens.track
+
+        Text {
+            id: label
+            anchors.centerIn: parent
+            font.family: Tokens.fontSans
+            font.pixelSize: Tokens.fontSizeTiny
+            font.weight: confirmButton.accent ? Font.DemiBold : Font.Normal
+            color: confirmButton.accent ? Tokens.onAccent : Tokens.fg
+        }
+        MouseArea {
+            id: press
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: confirmButton.clicked()
         }
     }
 }

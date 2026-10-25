@@ -16,7 +16,7 @@ var SPEAKER = "M4 9h4l5-4v14l-5-4H4zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0
 var HEADPHONES = "M4 15v-3a8 8 0 0 1 16 0v3M5 14h2.5v6H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM16.5 14H19a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-2.5z";
 var MONITOR = "M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 20h8M12 16v4";
 var BLUETOOTH = "M7 7l10 10-5 4V3l5 4L7 17";
-var APP = "M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM4 9h16";
-// Nova's own mark, for a distribution without a logo: a four-point star.
 var CLOSE = "M6 6l12 12M18 6L6 18";
+var SEARCH = "M11 4.5a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13zM16 16l4.5 4.5";
+// Nova's own mark, for a distribution without a logo: a four-point star.
 var STAR = "M12 3c.6 4.6 2.4 6.4 7 7c-4.6.6-6.4 2.4-7 7c-.6-4.6-2.4-6.4-7-7c4.6-.6 6.4-2.4 7-7z";
