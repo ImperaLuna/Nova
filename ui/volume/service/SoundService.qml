@@ -96,14 +96,16 @@ Singleton {
             found.audio.muted = false;
     }
 
-    // Every stream of an app (an `apps` entry's `ids`) to `value`.
-    function setVolumes(ids: list<int>, value: real) {
+    // Every stream of an app (an `apps` entry's `ids`) to `value`. `ids` is
+    // untyped: passed on through a signal's `var` it's no longer an Array,
+    // and as `list<int>` it would come out empty.
+    function setVolumes(ids: var, value: real) {
         for (const id of ids)
             setVolume(id, value);
     }
 
     // Every stream of an app to `muted`.
-    function setMuted(ids: list<int>, muted: bool) {
+    function setMuted(ids: var, muted: bool) {
         for (const id of ids) {
             const found = node(id);
             if (found?.ready)
