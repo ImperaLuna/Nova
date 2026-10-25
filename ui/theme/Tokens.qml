@@ -117,7 +117,11 @@ QtObject {
     readonly property int gap: 8
     readonly property int pad: 12
     readonly property int barHeight: 36
+    // The bar's pills: this far in from the screen's sides, and this far
+    // from its top edge and from the windows below (the space kept free is
+    // barGap + barHeight + barGap).
     readonly property int barMargin: 8
+    readonly property int barGap: 4
     // The central pill's workspace numbers: each a round cell this big, this
     // far apart, and the line between them and the day.
     readonly property int workspaceSize: 26
