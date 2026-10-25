@@ -486,6 +486,7 @@ impl PowerAction {
 
 /// Whether a power action can run now, and why not when it can't.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PowerOption {
     pub action: PowerAction,
     pub available: bool,
@@ -496,6 +497,7 @@ pub struct PowerOption {
 
 /// What `power_options` returns.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PowerMenu {
     pub options: Vec<PowerOption>,
     /// When the system booted, in Unix seconds, for the menu's uptime; left
@@ -1028,6 +1030,15 @@ mod tests {
         assert!(decode_request(r#"{"v":2,"id":1,"cmd":"ping"}"#).is_ok());
         assert!(decode_request(r#"{"v":2,"id":1,"cmd":"ping","extra":true}"#).is_err());
         assert!(decode_request(r#"{"v":2,"cmd":"ping","args":{"x":1}}"#).is_err());
+    }
+
+    #[test]
+    fn power_menu_rejects_unknown_fields() {
+        let menu = r#"{"options":[{"action":"lock","available":true}],"booted_at":1}"#;
+        assert!(serde_json::from_str::<PowerMenu>(menu).is_ok());
+        assert!(serde_json::from_str::<PowerMenu>(r#"{"options":[],"extra":1}"#).is_err());
+        let option = r#"{"options":[{"action":"lock","available":true,"extra":1}]}"#;
+        assert!(serde_json::from_str::<PowerMenu>(option).is_err());
     }
 
     #[test]
