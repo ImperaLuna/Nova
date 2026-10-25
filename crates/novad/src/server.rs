@@ -174,6 +174,8 @@ impl<'a> Connection<'a> {
                 self.daemon.session_lock.unlocked(&self.daemon.hub);
                 Ok(serde_json::Value::Null)
             }
+            Command::WatchResources { watching } => return self.watch_resources(*watching),
+            Command::EndApp { key } => return self.end_app(key),
             Command::PowerOptions => return self.power_options()(),
             Command::Power { action } => return self.power(*action),
             Command::Screenshot { mode } => return self.screenshot(*mode)(),
@@ -242,6 +244,26 @@ impl<'a> Connection<'a> {
                 Err(e) => Outcome::Error(e),
             },
             None => Outcome::Error("novad doesn't know this compositor".into()),
+        }
+    }
+
+    fn watch_resources(&self, watching: bool) -> Outcome {
+        let resources = lock(&self.daemon.settings).resources.clone();
+        match resources {
+            Some(resources) => {
+                resources.watch(self.id, watching);
+                Outcome::Result(serde_json::Value::Null)
+            }
+            None => Outcome::Error(format!("the {} feature is off", crate::resources::FEATURE_ID)),
+        }
+    }
+
+    fn end_app(&self, key: &str) -> Outcome {
+        let resources = lock(&self.daemon.settings).resources.clone();
+        match resources.map(|resources| resources.end_app(key)) {
+            Some(Ok(())) => Outcome::Result(serde_json::Value::Null),
+            Some(Err(e)) => Outcome::Error(e),
+            None => Outcome::Error(format!("the {} feature is off", crate::resources::FEATURE_ID)),
         }
     }
 
@@ -489,6 +511,10 @@ impl<'a> Connection<'a> {
                         Topic::Lock => self.daemon.session_lock.send_state(&self.daemon.hub, self.id),
                         // A restarted UI picks up a region picker that was open.
                         Topic::Screenshot => self.daemon.screenshots.send_state(&self.daemon.hub, self.id),
+                        // Facts about the machine, there whatever the features.
+                        Topic::Host => self.send(Event::Host(settings.host())),
+                        // Sent while some connection watches them.
+                        Topic::Resources => {}
                         Topic::Launcher => {
                             if let Some(launcher) = &settings.launcher {
                                 launcher.send_state(self.id);
@@ -522,6 +548,8 @@ impl<'a> Connection<'a> {
             | Command::CancelCapture
             | Command::ScreenshotAction { .. }
             | Command::Volume { .. }
+            | Command::WatchResources { .. }
+            | Command::EndApp { .. }
             | Command::SearchApps { .. }
             | Command::LaunchApp { .. }
             | Command::PinApp { .. } => {}
@@ -549,6 +577,10 @@ impl<'a> Connection<'a> {
 impl Drop for Connection<'_> {
     fn drop(&mut self) {
         self.daemon.hub.unregister(self.id);
+        let resources = lock(&self.daemon.settings).resources.clone();
+        if let Some(resources) = resources {
+            resources.watch(self.id, false);
+        }
     }
 }
 

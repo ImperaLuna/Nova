@@ -12,6 +12,8 @@
 //!
 //! [screenshot]
 //! folder = "~/Pictures/Screenshots"
+//! [quick-settings]
+//! name = "Luna"
 //! ```
 
 use crate::theme::ThemeChoice;
@@ -27,6 +29,17 @@ pub struct Config {
     pub ai_usage: AiUsageConfig,
     #[serde(default)]
     pub screenshot: ScreenshotConfig,
+    #[serde(default, rename = "quick-settings")]
+    pub quick_settings: QuickSettingsConfig,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct QuickSettingsConfig {
+    /// What the greeting calls the user, instead of the first name from
+    /// their account; "" for no name.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -106,5 +119,13 @@ mod tests {
         assert!(folder("[screenshot]\nfolder = \"~/Shots\"").unwrap().ends_with("Shots"));
         assert!(folder("[screenshot]\nfolder = \"Shots\"").unwrap_err().contains("absolute"));
         assert!(folder("").unwrap().ends_with("Screenshots"));
+    }
+
+    #[test]
+    fn the_greeting_name_is_the_accounts_unless_set() {
+        let config: Config = toml::from_str("").unwrap();
+        assert_eq!(config.quick_settings.name, None);
+        let config: Config = toml::from_str("[quick-settings]\nname = \"Katov\"").unwrap();
+        assert_eq!(config.quick_settings.name.as_deref(), Some("Katov"));
     }
 }

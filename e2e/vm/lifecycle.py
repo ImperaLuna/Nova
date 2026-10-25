@@ -93,6 +93,9 @@ VOLUME_SHOWN = "nova: volume capsule shown"
 VOLUME_HIDDEN = "nova: volume capsule hidden"
 # The UI has the default sink's starting volume, so a change from here shows.
 VOLUME_FOUND = "nova: volume output found"
+# What quick settings logs (ui/quick_settings/QuickSettings.qml).
+QUICK_SETTINGS_OPENED = "nova: quick settings opened"
+QUICK_SETTINGS_CLOSED = "nova: quick settings closed"
 # What Quickshell logs first in each UI process.
 UI_LAUNCHED = "Launching config"
 # The VM's default output (a null sink, default.nix), as wpctl names it.
@@ -687,6 +690,25 @@ with subtest("`nova volume` steps and mutes, and shows the capsule even at 100%"
     assert "MUTED" in machine.succeed(as_user(WPCTL_SINK.format("get-volume"))), "`nova volume mute` didn't mute"
     nova_volume_shows("mute")
     assert "MUTED" not in machine.succeed(as_user(WPCTL_SINK.format("get-volume"))), "a second mute didn't unmute"
+
+with subtest("the capsule stays in while quick settings shows the volume, and slides away as it opens"):
+    qs_shown, qs_hidden = ui_log_count(VOLUME_SHOWN), ui_log_count(VOLUME_HIDDEN)
+    machine.succeed(as_user("nova volume up"))
+    retry(lambda _last_try: ui_log_count(VOLUME_SHOWN) > qs_shown, timeout=CLICK_EFFECT)
+    qs_opened = ui_log_count(QUICK_SETTINGS_OPENED)
+    machine.succeed(as_user("nova toggle quick-settings"))
+    retry(lambda _last_try: ui_log_count(QUICK_SETTINGS_OPENED) > qs_opened, timeout=CLICK_EFFECT)
+    # Well before the capsule's own hold runs out.
+    retry(lambda _last_try: ui_log_count(VOLUME_HIDDEN) > qs_hidden, timeout=dt.timedelta(seconds=CAPSULE_HOLD_SECS - 1))
+    qs_shown = ui_log_count(VOLUME_SHOWN)
+    qs_volume = volume()
+    machine.succeed(as_user("nova volume down"))
+    retry(lambda _last_try: volume() != qs_volume, timeout=CLICK_EFFECT)
+    machine.sleep(NO_EFFECT_SECS)
+    assert ui_log_count(VOLUME_SHOWN) == qs_shown, "the capsule came out over open quick settings"
+    qs_closed = ui_log_count(QUICK_SETTINGS_CLOSED)
+    machine.succeed(as_user("nova toggle quick-settings"))
+    retry(lambda _last_try: ui_log_count(QUICK_SETTINGS_CLOSED) > qs_closed, timeout=CLICK_EFFECT)
 
 with subtest("a workspace switch reaches the UI"):
     running = wait_running()

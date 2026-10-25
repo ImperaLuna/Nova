@@ -9,8 +9,11 @@ import "../launcher"
 import "../launcher/service"
 import "../power"
 import "../power/service"
+import "../quick_settings"
+import "../quick_settings/service"
 import "../daemon"
 import "../theme"
+import "../daemon/protocol.js" as Protocol
 
 // One per screen: a transparent layer across the top of the screen that the
 // bar, its panels and popups are all drawn on, so a pill can grow into its
@@ -37,7 +40,7 @@ Scope {
     property bool settling: false
 
     // Every panel on this screen, whatever surface it's drawn on.
-    readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(launcher.item ? [launcher.item] : []), ...(demo.item?.panels ?? [])]
+    readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(quickSettings.item ? [quickSettings.item] : []), ...(launcher.item ? [launcher.item] : []), ...(demo.item?.panels ?? [])]
     function placed(placement: string): list<StagePanel> {
         return panels.filter(panel => panel.placement === placement);
     }
@@ -71,6 +74,24 @@ Scope {
         active: PowerService.ready
         component: PowerMenu {
             output: root.output
+        }
+    }
+
+    // The quick settings sidebar, while its feature is on.
+    LazyLoader {
+        id: quickSettings
+        active: QuickSettingsService.ready
+        component: QuickSettings {
+            output: root.output
+            pill: bar.rightPillBox
+            pillItem: bar.rightPillItem
+            power: PowerService.ready
+            onQuickSettingsClicked: all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.output.name, root.output.name)
+            // The power menu takes its place.
+            onPowerClicked: {
+                all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.output.name, root.output.name);
+                all.toggle(Protocol.FEATURE_POWER, root.output.name, root.output.name);
+            }
         }
     }
 
@@ -245,11 +266,23 @@ Scope {
             // closed, and the surface it's on stays until that's drawn.
             covered: root.panels.filter(panel => panel.covering && panel.from).map(panel => panel.from)
             onCoveredChanged: root.settling = true
+            quickSettings: QuickSettingsService.ready
+            power: PowerService.ready
+            quickSettingsOpen: quickSettings.item?.open ?? false
+            onQuickSettingsClicked: all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.output.name, root.output.name)
+            onPowerClicked: all.toggle(Protocol.FEATURE_POWER, root.output.name, root.output.name)
             onLauncherRequested: {
                 const deck = launcher.item as Launcher;
                 if (deck)
                     deck.open = !deck.open;
             }
+        }
+
+        // Keep awake (quick settings): the compositor doesn't idle while a
+        // shown surface holds an inhibitor, and the stage always shows.
+        IdleInhibitor {
+            window: stage
+            enabled: QuickSettingsService.keepAwake
         }
 
         FrameLog {

@@ -261,6 +261,79 @@ QtObject {
     readonly property real liquidTiltGain: 0.005
     readonly property real liquidTiltMax: 0.5
 
+    // The right pill: round buttons inside it, this far from its ends and
+    // each other.
+    readonly property int pillButtonSize: 28
+    readonly property int pillButtonInset: 4
+    readonly property int pillButtonGap: 2
+
+    // Quick settings (ui/quick_settings): a glass drawer this wide against
+    // the screen's right edge, top to bottom. Its pages have this padding
+    // and gap between sections, and slide this far as they swap.
+    readonly property int quickSettingsWidth: 368
+    readonly property int quickSettingsPad: 16
+    readonly property int quickSettingsGap: 12
+    readonly property int pageSlide: 28
+    readonly property int durationPage: 280
+    // Its sections fade in one after another as it opens: the first at
+    // this share of the morph, each next one this much later.
+    readonly property real revealFirst: 0.35
+    readonly property real revealStagger: 0.14
+    // How far each section rises into place as it fades in.
+    readonly property int revealRise: 6
+    // The header: the distro logo in a circle, the greeting beside it.
+    readonly property int logoSize: 36
+    readonly property int logoMark: 24
+    readonly property int fontSizeGreeting: 22
+    // The greeting shrinks to fit beside the pill's buttons, down to this;
+    // a name still too long is cut short.
+    readonly property int fontSizeGreetingMin: 16
+    // Toggle tiles, two per row, with an arrow to a page on some.
+    readonly property int tileHeight: 58
+    readonly property int tileArrowWidth: 22
+    readonly property real tileSubOpacity: 0.72
+    // Thick sliders: a round icon button (mute) beside the track, the track
+    // filled only to the value, and a button after it that opens a page. An
+    // app's slider shows the app's icon, its corners less round.
+    readonly property int sliderHeight: 34
+    readonly property int sliderGap: 6
+    readonly property color sliderFill: Qt.rgba(fg.r, fg.g, fg.b, 0.22)
+    readonly property real sliderMutedOpacity: 0.3
+    readonly property int sliderButtonWidth: 30
+    readonly property int appIconRadius: 11
+    readonly property int appIconSize: 22
+    readonly property real appMutedOpacity: 0.45
+    // The mic slider while an app records: the second accent.
+    readonly property real micFillOpacity: 0.34
+    // Resource rings, and the labels under them.
+    readonly property int ringSize: 52
+    readonly property int ringStroke: 4
+    readonly property int fontSizeMicro: 10
+    // Small uppercase labels spread out by this share of their size.
+    readonly property real trackingLabel: 0.06
+    readonly property color fgSoft: Qt.rgba(fg.r, fg.g, fg.b, 0.72)
+    // A segmented control or tab row: its padding, its segments' height and
+    // corners.
+    readonly property int segmentPad: 4
+    readonly property int segmentHeight: 30
+    readonly property int radiusSegment: 10
+    // The resources page: its graph's height and its process rows.
+    readonly property int graphHeight: 72
+    readonly property int graphLine: 2
+    readonly property real graphAreaOpacity: 0.22
+    readonly property int processRowHeight: 30
+    readonly property int processNumberWidth: 64
+    // The resources page's End button (✕ on a row's hover, in the second
+    // accent), its confirm row's padding, and the search field's height.
+    readonly property int endButtonWidth: 26
+    readonly property int endButtonHeight: 24
+    readonly property int endIconSize: 13
+    readonly property real endHoverOpacity: 0.22
+    readonly property real confirmOpacity: 0.14
+    readonly property int confirmButtonHeight: 26
+    readonly property int searchHeight: 34
+    // A legend's colored dot.
+    readonly property int legendDot: 7
     // The launcher (ui/launcher): a deck in the middle of the screen, this
     // share of the screen's height from the top, that fades in at
     // launcherEnterScale and launcherEnterRise above its place. A search
@@ -322,6 +395,8 @@ QtObject {
     readonly property int fontSizeTiny: 11
     // A name or heading on its own, like the user's on the lock screen.
     readonly property int fontSizeTitle: 18
+    // A sub page's title, beside its back button.
+    readonly property int fontSizePageTitle: 15
     // The time in the central pill.
     readonly property int fontSizeTime: 14
     // A panel's headline number.

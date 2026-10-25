@@ -19,6 +19,8 @@ var CMD_POWER = "power";
 var CMD_SAVE_CAPTURE = "save_capture";
 var CMD_CANCEL_CAPTURE = "cancel_capture";
 var CMD_SCREENSHOT_ACTION = "screenshot_action";
+var CMD_WATCH_RESOURCES = "watch_resources";
+var CMD_END_APP = "end_app";
 var CMD_SEARCH_APPS = "search_apps";
 var CMD_LAUNCH_APP = "launch_app";
 var CMD_PIN_APP = "pin_app";
@@ -39,6 +41,8 @@ var EVENT_VOLUME = "volume";
 var EVENT_CAPTURE = "capture";
 var EVENT_CAPTURE_ENDED = "capture_ended";
 var EVENT_SCREENSHOT_SAVED = "screenshot_saved";
+var EVENT_HOST = "host";
+var EVENT_RESOURCES = "resources";
 var EVENT_LAUNCHER = "launcher";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
@@ -51,6 +55,8 @@ var TOPIC_TOGGLE = "toggle";
 var TOPIC_LOCK = "lock";
 var TOPIC_VOLUME = "volume";
 var TOPIC_SCREENSHOT = "screenshot";
+var TOPIC_HOST = "host";
+var TOPIC_RESOURCES = "resources";
 var TOPIC_LAUNCHER = "launcher";
 
 // What a compositor can report or do (Capability in nova-protocol).
@@ -75,6 +81,7 @@ var FEATURE_AI_USAGE = "ai-usage";
 var FEATURE_LOCK = "lock";
 var FEATURE_POWER = "power";
 var FEATURE_SCREENSHOT = "screenshot";
+var FEATURE_QUICK_SETTINGS = "quick-settings";
 var FEATURE_LAUNCHER = "launcher";
 
 // Power menu actions (PowerAction in nova-protocol).

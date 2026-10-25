@@ -1,3 +1,4 @@
 singleton Tokens Tokens.qml
 Glass 1.0 Glass.qml
 GlassShadow 1.0 GlassShadow.qml
+LineIcon 1.0 LineIcon.qml

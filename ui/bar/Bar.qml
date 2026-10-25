@@ -11,10 +11,10 @@ import "../launcher/service"
 import "../stage"
 
 // The bar on one screen: the AI usage pill on the left when that feature is
-// on, and the central pill (the launcher's search button, that screen's
+// on, the central pill (the launcher's search button, that screen's
 // workspaces, the day and the time) with its time in the middle of the
-// screen. The right pill and the hide
-// policies come later.
+// screen, and the right pill with the quick settings and power buttons.
+// The hide policies come later.
 //
 // While the screen shows a workspace with a window over the whole screen
 // (fullscreen), the bar steps aside: the pills slide up out of sight, then
@@ -99,7 +99,7 @@ Item {
     // The pills that open panels, for the stage (StagePanel has the contract).
     readonly property list<StagePanel> panels: aiUsagePill ? [aiUsagePill] : []
     // What else is drawn and takes clicks, each rounded by its `radius`.
-    readonly property list<Item> fixedShapes: [center, revealStrip]
+    readonly property list<Item> fixedShapes: [center, rightPill, revealStrip]
     // The pill in the middle, which a panel in the middle of the screen can
     // grow out of.
     readonly property Item centralPill: center
@@ -107,6 +107,17 @@ Item {
     // `from`): hidden meanwhile. The stage sets it.
     property list<Item> covered: []
 
+    // The right pill's buttons: whether their features are on, and whether
+    // quick settings is open on this screen.
+    property bool quickSettings: false
+    property bool power: false
+    property bool quickSettingsOpen: false
+    signal quickSettingsClicked
+    signal powerClicked
+    // Where the right pill is, in screen coordinates (the stage's top-left
+    // is the screen's): quick settings grows out of it.
+    readonly property rect rightPillBox: Qt.rect(rightPill.x, shelf.y + rightPill.y, rightPill.width, rightPill.height)
+    readonly property Item rightPillItem: rightPill
     // The central pill's search button was clicked: open or close the
     // launcher on this screen.
     signal launcherRequested
@@ -182,6 +193,20 @@ Item {
             now: bar.frozenTime ? new Date(bar.frozenTime) : clock.date
             onFocusRequested: workspaceId => Compositor.focusWorkspace(workspaceId)
             onStepRequested: step => Compositor.stepWorkspace(bar.screenName, step)
+        }
+
+        RightPill {
+            id: rightPill
+            visible: (bar.quickSettings || bar.power) && !bar.covered.includes(rightPill)
+            x: bar.width - Tokens.barMargin - width
+            y: Tokens.barGap
+            width: implicitWidth
+            height: implicitHeight
+            quickSettings: bar.quickSettings
+            power: bar.power
+            quickSettingsOpen: bar.quickSettingsOpen
+            onQuickSettingsClicked: bar.quickSettingsClicked()
+            onPowerClicked: bar.powerClicked()
         }
     }
 

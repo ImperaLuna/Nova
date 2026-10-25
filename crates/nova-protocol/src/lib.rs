@@ -71,6 +71,13 @@ pub enum Event {
     /// `screenshot`). `id` names it in `screenshot_action`. Topic
     /// [`Topic::Screenshot`].
     ScreenshotSaved(SavedScreenshot),
+    /// The machine and its user, for the quick settings header. Topic
+    /// [`Topic::Host`], sent right after subscribing.
+    Host(Host),
+    /// What the machine is busy with (feature `quick-settings`). Topic
+    /// [`Topic::Resources`], sent every few seconds while some client
+    /// watches them (`watch_resources`), and right when one starts to.
+    Resources(Resources),
     /// The apps the launcher can open, and the user's pinned and recent ones
     /// (feature `launcher`). Topic [`Topic::Launcher`], sent right after
     /// subscribing and whenever any of it changes.
@@ -90,6 +97,8 @@ pub enum Topic {
     Lock,
     Volume,
     Screenshot,
+    Host,
+    Resources,
     Launcher,
 }
 
@@ -108,6 +117,8 @@ impl Event {
             Event::Lock { .. } => Some(Topic::Lock),
             Event::Volume { .. } => Some(Topic::Volume),
             Event::Capture { .. } | Event::CaptureEnded | Event::ScreenshotSaved(_) => Some(Topic::Screenshot),
+            Event::Host(_) => Some(Topic::Host),
+            Event::Resources(_) => Some(Topic::Resources),
             Event::Launcher(_) => Some(Topic::Launcher),
         }
     }
@@ -373,11 +384,12 @@ pub enum Step {
 pub enum Panel {
     AiUsage,
     Power,
+    QuickSettings,
     Launcher,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 3] = [Panel::AiUsage, Panel::Power, Panel::Launcher];
+    pub const ALL: [Panel; 4] = [Panel::AiUsage, Panel::Power, Panel::QuickSettings, Panel::Launcher];
 
     /// Its name on the wire and on the command line, which is also its
     /// feature's id.
@@ -385,6 +397,7 @@ impl Panel {
         match self {
             Panel::AiUsage => "ai-usage",
             Panel::Power => "power",
+            Panel::QuickSettings => "quick-settings",
             Panel::Launcher => "launcher",
         }
     }
@@ -611,6 +624,20 @@ pub enum Command {
         id: u64,
         action: ScreenshotAction,
     },
+    /// Starts or stops this connection watching the machine's resources
+    /// (feature `quick-settings`): while any connection watches, novad
+    /// samples them every few seconds and sends `resources` events. A
+    /// connection that closes stops watching.
+    WatchResources {
+        watching: bool,
+    },
+    /// Asks every process of an app in the latest `resources` event to
+    /// close (SIGTERM), by its [`AppUsage::key`] (feature
+    /// `quick-settings`). Only the user's own processes, and never a
+    /// [`AppUsage::protected`] app.
+    EndApp {
+        key: String,
+    },
     /// Replies with the apps matching `query`, as [`AppMatch`]es, best first
     /// (feature `launcher`). An empty query matches nothing.
     SearchApps {
@@ -660,6 +687,94 @@ pub struct PowerOption {
     /// For people, shown under the dimmed action.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+/// The machine and its user, as the quick settings header shows them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Host {
+    /// The machine's host name.
+    pub host: String,
+    /// What to call the user: config.toml's `[quick-settings] name` ("" for
+    /// none), else the first name from their account's full name, else
+    /// their login name.
+    pub user: String,
+    /// When the machine booted, in seconds since the Unix epoch.
+    pub booted_at: i64,
+    pub os: OperatingSystem,
+}
+
+/// The distribution, from os-release.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperatingSystem {
+    /// `ID`, like `nixos` or `arch`; `linux` when unset.
+    pub id: String,
+    /// `ID_LIKE`: the distributions it derives from, closest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub id_like: Vec<String>,
+    /// `NAME`, like `NixOS`.
+    pub name: String,
+    /// `LOGO`: the icon theme's name for its logo, when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
+}
+
+/// One look at what the machine is busy with.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Resources {
+    /// Share of all CPU time in use since the last look, 0 to 100.
+    pub cpu: f32,
+    /// Memory in use (not available to start programs), in bytes.
+    pub memory_used: u64,
+    pub memory_total: u64,
+    /// Share of the GPU in use, 0 to 100, when the driver reports it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu: Option<f32>,
+    /// The CPU's temperature in °C, when a sensor reports it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    /// CPU and memory over the last few minutes, oldest first, one sample
+    /// every [`RESOURCE_HISTORY_INTERVAL_SECS`].
+    pub history: Vec<ResourceSample>,
+    /// How many samples `history` holds once it's full.
+    pub history_size: usize,
+    /// The apps using the most memory, most first. An app is every process
+    /// running the same program.
+    pub apps: Vec<AppUsage>,
+}
+
+/// Seconds between two of [`Resources::history`]'s samples.
+pub const RESOURCE_HISTORY_INTERVAL_SECS: u64 = 5;
+
+/// CPU and memory at one point in time, each 0 to 100.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResourceSample {
+    pub cpu: f32,
+    pub memory: f32,
+}
+
+/// One app's processes together.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppUsage {
+    /// The program's name, from its file (`.firefox-wrapped` is `firefox`);
+    /// `Nova` for novad and its UI.
+    pub name: String,
+    /// What `end_app` takes: the program's path, `comm:<name>` for a
+    /// program novad can't see, or `nova` for Nova.
+    pub key: String,
+    /// How many processes run it.
+    pub processes: u32,
+    /// Their share of all CPU time since the last look, 0 to 100.
+    pub cpu: f32,
+    /// Their resident memory together, in bytes.
+    pub memory: u64,
+    /// Ending it isn't offered: Nova itself, the compositor, or another
+    /// user's.
+    pub protected: bool,
 }
 
 /// What `power_options` returns.
@@ -907,6 +1022,8 @@ mod tests {
                         Topic::Lock,
                         Topic::Volume,
                         Topic::Screenshot,
+                        Topic::Host,
+                        Topic::Resources,
                         Topic::Launcher,
                     ],
                 },
@@ -998,10 +1115,15 @@ mod tests {
                 id: None,
                 command: Command::ScreenshotAction { id: 1, action: ScreenshotAction::Delete },
             }),
+            encode(Event::Host(host())),
+            encode(Request { id: Some(22), command: Command::WatchResources { watching: true } }),
+            encode(Event::Resources(resources())),
+            encode(Request { id: Some(23), command: Command::EndApp { key: "/usr/lib/firefox/firefox".into() } }),
+            encode(Request { id: None, command: Command::Toggle { panel: Panel::QuickSettings } }),
             encode(Event::Launcher(launcher())),
-            encode(Request { id: Some(22), command: Command::SearchApps { query: "fi".into() } }),
+            encode(Request { id: Some(24), command: Command::SearchApps { query: "fi".into() } }),
             encode(Response {
-                id: 22,
+                id: 24,
                 outcome: Outcome::Result(
                     serde_json::to_value(vec![AppMatch {
                         id: "org.mozilla.firefox.desktop".into(),
@@ -1014,14 +1136,14 @@ mod tests {
                 ),
             }),
             encode(Request {
-                id: Some(23),
+                id: Some(25),
                 command: Command::LaunchApp {
                     id: "foot.desktop".into(),
                     output: Some("DP-1".into()),
                     new_window: true,
                 },
             }),
-            encode(Request { id: Some(24), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
+            encode(Request { id: Some(26), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
@@ -1128,6 +1250,40 @@ mod tests {
         }
     }
 
+    fn host() -> Host {
+        Host {
+            host: "RyzenShine".into(),
+            user: "Luna".into(),
+            booted_at: 1_793_000_000,
+            os: OperatingSystem {
+                id: "nixos".into(),
+                id_like: vec![],
+                name: "NixOS".into(),
+                logo: Some("nix-snowflake".into()),
+            },
+        }
+    }
+
+    fn resources() -> Resources {
+        Resources {
+            cpu: 23.5,
+            memory_used: 10_093_173_760,
+            memory_total: 34_359_738_368,
+            gpu: Some(18.0),
+            temperature: None,
+            history: vec![ResourceSample { cpu: 21.0, memory: 29.0 }, ResourceSample { cpu: 23.5, memory: 29.4 }],
+            history_size: 36,
+            apps: vec![AppUsage {
+                name: "firefox".into(),
+                key: "/usr/lib/firefox/firefox".into(),
+                processes: 9,
+                cpu: 6.1,
+                memory: 2_400_000_000,
+                protected: false,
+            }],
+        }
+    }
+
     fn launcher() -> Launcher {
         Launcher {
             apps: vec![
@@ -1210,7 +1366,9 @@ mod tests {
             assert_eq!(panel.name().parse::<Panel>(), Ok(panel));
             assert_eq!(serde_json::to_value(panel).unwrap(), json!(panel.name()));
         }
-        assert!("calculator".parse::<Panel>().unwrap_err().contains("known: ai-usage, power, launcher"));
+        assert!(
+            "calculator".parse::<Panel>().unwrap_err().contains("known: ai-usage, power, quick-settings, launcher")
+        );
         let features = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         for panel in Panel::ALL {
             assert!(features.join(panel.name()).join("feature.toml").is_file(), "{panel} has no feature");
@@ -1246,6 +1404,8 @@ mod tests {
         assert_eq!(Event::Lock { locked: true }.topic(), Some(Topic::Lock));
         assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(Topic::Volume));
         assert_eq!(Event::CaptureEnded.topic(), Some(Topic::Screenshot));
+        assert_eq!(Event::Host(host()).topic(), Some(Topic::Host));
+        assert_eq!(Event::Resources(resources()).topic(), Some(Topic::Resources));
         assert_eq!(Event::Launcher(launcher()).topic(), Some(Topic::Launcher));
     }
 
@@ -1297,6 +1457,25 @@ mod tests {
         assert!(serde_json::from_str::<PowerMenu>(r#"{"options":[],"extra":1}"#).is_err());
         let option = r#"{"options":[{"action":"lock","available":true,"extra":1}]}"#;
         assert!(serde_json::from_str::<PowerMenu>(option).is_err());
+    }
+
+    #[test]
+    fn host_and_resources_reject_unknown_fields() {
+        fn with_extra(value: serde_json::Value, pointer: &str) -> serde_json::Value {
+            let mut value = value;
+            value.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
+            value
+        }
+        let host = serde_json::to_value(host()).unwrap();
+        assert!(serde_json::from_value::<Host>(host.clone()).is_ok());
+        for pointer in ["", "/os"] {
+            assert!(serde_json::from_value::<Host>(with_extra(host.clone(), pointer)).is_err(), "{pointer}");
+        }
+        let resources = serde_json::to_value(resources()).unwrap();
+        assert!(serde_json::from_value::<Resources>(resources.clone()).is_ok());
+        for pointer in ["", "/history/0", "/apps/0"] {
+            assert!(serde_json::from_value::<Resources>(with_extra(resources.clone(), pointer)).is_err(), "{pointer}");
+        }
     }
 
     #[test]

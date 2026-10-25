@@ -13,7 +13,10 @@ import "volume.js" as Volume
 // The volume capsule: whenever the volume, mute or output changes, it
 // slides in from the right edge of the focused screen, and slides away
 // Tokens.durationCapsuleHold after the last change (not while the pointer
-// is on it). It stays on the screen it came out on until it's gone.
+// is on it). It stays on the screen it came out on until it's gone, and
+// stays in on a screen that already shows the volume (quick settings open
+// there, VolumeService.shownElsewhere), sliding away if that opens while
+// it's out.
 Scope {
     id: osd
 
@@ -31,9 +34,13 @@ Scope {
         still: VolumeService.muted || !VolumeService.available
     }
 
+    // Out where it is, or on the focused screen; not where quick settings
+    // is open, even while it's still sliding away there.
     function reveal() {
-        if (!motion.shown)
-            screen = Compositor.focusedScreen();
+        const target = motion.shown ? screen : Compositor.focusedScreen();
+        if (VolumeService.shownElsewhere.includes(target?.name))
+            return;
+        screen = target;
         motion.openTarget = 1;
         hold.restart();
     }
@@ -42,6 +49,18 @@ Scope {
         target: VolumeService
         function onChanged() {
             osd.reveal();
+        }
+    }
+
+    // Quick settings opened where it's out: it slides away, as it would
+    // never have come out there.
+    Connections {
+        target: VolumeService
+        function onShownElsewhereChanged() {
+            if (osd.motion.shown && VolumeService.shownElsewhere.includes(osd.screen?.name)) {
+                hold.stop();
+                osd.motion.openTarget = 0;
+            }
         }
     }
 

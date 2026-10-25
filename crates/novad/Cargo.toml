@@ -31,5 +31,6 @@ workspace = true
 ai-usage = []
 launcher = []
 power = []
+quick-settings = []
 recording = []
 screenshot = []
