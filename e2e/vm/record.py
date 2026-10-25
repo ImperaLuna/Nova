@@ -112,7 +112,7 @@ snapshot(0)
 # everywhere; a step it has no command for is skipped.
 try:
     for step in [
-            "open first window",
+        "open first window",
         "focus the next workspace",
         "open second window",
         "retitle the second window",
@@ -122,6 +122,7 @@ try:
         "ring the second window's bell",
         "focus the other output",
         "focus the first output",
+        "fullscreen the focused window",
         "close the focused window",
     ]:
         if step in STEPS or step in COMMON_STEPS:

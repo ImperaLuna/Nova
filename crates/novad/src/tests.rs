@@ -913,10 +913,14 @@ impl FakeCompositor {
     fn niri(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
         let fake = Self { requests: Arc::default() };
         let events = Self::recorded("niri", "events.txt");
+        let steps: Vec<Value> = serde_json::from_str(&Self::recorded("niri", "steps.json")).unwrap();
+        let outputs = Self::recorded("niri", &format!("{:02}/outputs.json", steps.len() - 1));
+        let outputs = format!("{}\n", json!({"Ok": {"Outputs": serde_json::from_str::<Value>(&outputs).unwrap()}}));
         let socket = dir.join("niri.sock");
         fake.answer(&socket, move |request| match request {
             // The recording starts with niri's answer to this.
             r#""EventStream""# => events.clone(),
+            r#""Outputs""# => outputs.clone(),
             _ => "{\"Ok\":\"Handled\"}\n".into(),
         });
         let backend = compositor::detect(|name| (name == "NIRI_SOCKET").then(|| socket.clone().into())).unwrap();
@@ -948,8 +952,12 @@ impl FakeCompositor {
 
     /// The requests that weren't queries or the event stream.
     fn actions(&self) -> Vec<String> {
-        let event_stream = r#""EventStream""#;
-        lock(&self.requests).iter().filter(|r| !r.starts_with("j/") && *r != event_stream).cloned().collect()
+        let queries = [r#""EventStream""#, r#""Outputs""#];
+        lock(&self.requests)
+            .iter()
+            .filter(|r| !r.starts_with("j/") && !queries.contains(&r.as_str()))
+            .cloned()
+            .collect()
     }
 }
 

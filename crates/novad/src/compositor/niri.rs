@@ -3,6 +3,13 @@
 //! events, then each change. Actions are one request per connection. Both
 //! are JSON lines in niri-ipc's format.
 //!
+//! niri says nothing about fullscreen, so a workspace counts as fullscreen
+//! when a tiled window on it is as tall as its output: niri gives fullscreen
+//! (and maximized-to-edges) windows the whole output, over the bar's space.
+//! Output sizes aren't in the event stream, so novad asks for them again
+//! after workspace or window layout changes (an output's size changing
+//! resizes such windows too).
+//!
 //! Only the fields and events novad uses are read. Other events, and fields
 //! newer niri releases add, are ignored, so those releases keep working.
 
@@ -24,9 +31,13 @@ const CAPABILITIES: &[Capability] = &[
     Capability::FocusedWindow,
     Capability::KeyboardLayout,
     Capability::LogOut,
+    Capability::Fullscreen,
 ];
 /// The request that turns a connection into the event stream.
 const EVENT_STREAM_REQUEST: &str = r#""EventStream""#;
+/// The request for every output, and the key its answer comes under.
+const OUTPUTS_REQUEST: &str = r#""Outputs""#;
+const OUTPUTS_ANSWER: &str = "Outputs";
 /// How long niri may take to answer a request.
 const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -70,6 +81,13 @@ impl Backend for Niri {
         read_reply(&mut reader)?;
         reader.get_ref().set_read_timeout(None).map_err(|e| e.to_string())?;
         let mut state = State::default();
+        let mut ask = || {
+            let mut answer = self.request(OUTPUTS_REQUEST)?;
+            answer
+                .get_mut(OUTPUTS_ANSWER)
+                .map(serde_json::Value::take)
+                .ok_or_else(|| format!("niri sent an odd answer to {OUTPUTS_REQUEST}: {answer}"))
+        };
         let mut line = String::new();
         loop {
             line.clear();
@@ -79,6 +97,7 @@ impl Backend for Niri {
             state.apply(&line)?;
             // niri sends what one change causes together: report once it's all in.
             if reader.buffer().is_empty() {
+                state.catch_up(&mut ask)?;
                 report(state.desktop());
             }
         }
@@ -140,6 +159,10 @@ enum Event {
     WindowFocusChanged {
         id: Option<u64>,
     },
+    /// New layouts for some windows, as (id, layout) pairs.
+    WindowLayoutsChanged {
+        changes: Vec<(u64, Layout)>,
+    },
     KeyboardLayoutsChanged {
         keyboard_layouts: KeyboardLayouts,
     },
@@ -171,6 +194,28 @@ struct Window {
     workspace_id: Option<u64>,
     app_id: Option<String>,
     is_focused: bool,
+    /// Missing before niri 25.05.
+    layout: Option<Layout>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct Layout {
+    /// None while it floats.
+    pos_in_scrolling_layout: Option<(usize, usize)>,
+    /// Width and height in logical pixels, borders included.
+    tile_size: (f64, f64),
+}
+
+/// One output in niri's answer to `Outputs`.
+#[derive(Debug, Deserialize)]
+struct NiriOutput {
+    /// None while it's off.
+    logical: Option<LogicalSize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LogicalSize {
+    height: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -186,6 +231,10 @@ pub(super) struct State {
     windows: HashMap<u64, Window>,
     focused_window: Option<u64>,
     layouts: Option<KeyboardLayouts>,
+    /// Each output's height in logical pixels, by name.
+    output_heights: HashMap<String, f64>,
+    /// Whether `output_heights` is up to date; asked for in `catch_up`.
+    outputs_known: bool,
 }
 
 impl State {
@@ -195,6 +244,7 @@ impl State {
         match event {
             Event::WorkspacesChanged { workspaces } => {
                 self.workspaces = workspaces.into_iter().map(|workspace| (workspace.id, workspace)).collect();
+                self.outputs_known = false;
             }
             Event::WorkspaceActivated { id, focused } => {
                 let output = self.workspaces.get(&id).map(|workspace| workspace.output.clone());
@@ -231,6 +281,14 @@ impl State {
                 }
             }
             Event::WindowFocusChanged { id } => self.focused_window = id,
+            Event::WindowLayoutsChanged { changes } => {
+                for (id, layout) in changes {
+                    if let Some(window) = self.windows.get_mut(&id) {
+                        window.layout = Some(layout);
+                    }
+                }
+                self.outputs_known = false;
+            }
             Event::KeyboardLayoutsChanged { keyboard_layouts } => self.layouts = Some(keyboard_layouts),
             Event::KeyboardLayoutSwitched { idx } => {
                 if let Some(layouts) = &mut self.layouts {
@@ -240,6 +298,37 @@ impl State {
             Event::Other(_) => {}
         }
         Ok(())
+    }
+
+    /// Asks for the output sizes when they may have changed: `ask` answers
+    /// what niri answers `Outputs` with.
+    pub(super) fn catch_up(
+        &mut self,
+        ask: &mut impl FnMut() -> Result<serde_json::Value, String>,
+    ) -> Result<(), String> {
+        if self.outputs_known {
+            return Ok(());
+        }
+        let outputs: HashMap<String, NiriOutput> =
+            serde_json::from_value(ask()?).map_err(|e| format!("niri sent odd outputs ({e})"))?;
+        self.output_heights =
+            outputs.into_iter().filter_map(|(name, output)| Some((name, f64::from(output.logical?.height)))).collect();
+        self.outputs_known = true;
+        Ok(())
+    }
+
+    /// Whether a tiled window on `workspace` is as tall as its output.
+    fn has_fullscreen(&self, workspace: &Workspace) -> bool {
+        let Some(height) = workspace.output.as_ref().and_then(|output| self.output_heights.get(output)) else {
+            return false;
+        };
+        self.windows.values().any(|window| {
+            window.workspace_id == Some(workspace.id)
+                && window
+                    .layout
+                    .as_ref()
+                    .is_some_and(|layout| layout.pos_in_scrolling_layout.is_some() && layout.tile_size.1 >= *height)
+        })
     }
 
     pub(super) fn desktop(&self) -> Desktop {
@@ -270,6 +359,7 @@ impl State {
                             focused: workspace.is_focused,
                             urgent: workspace.is_urgent,
                             empty: !occupied.contains(&workspace.id),
+                            fullscreen: self.has_fullscreen(workspace),
                         })
                         .collect(),
                 }
