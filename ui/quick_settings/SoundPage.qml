@@ -28,6 +28,8 @@ Item {
     property string tab: "output"
 
     signal back
+    // Room the top row leaves on its right (the pill's buttons).
+    property real headerInset: 0
     signal volumeMoved(real value)
     signal muteToggled
     signal inputVolumeMoved(real value)
@@ -54,7 +56,7 @@ Item {
         spacing: Tokens.quickSettingsGap
 
         PageHeader {
-            width: parent.width
+            width: parent.width - page.headerInset
             title: qsTr("Sound")
             onBack: page.back()
         }

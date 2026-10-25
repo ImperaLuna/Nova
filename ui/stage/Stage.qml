@@ -75,6 +75,14 @@ Scope {
         component: QuickSettings {
             screen: root.screen
             pill: bar.rightPillBox
+            pillItem: bar.rightPillItem
+            power: PowerService.ready
+            onQuickSettingsClicked: all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.screen.name, root.screen.name)
+            // The power menu takes its place.
+            onPowerClicked: {
+                all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.screen.name, root.screen.name);
+                all.toggle(Protocol.FEATURE_POWER, root.screen.name, root.screen.name);
+            }
         }
     }
 

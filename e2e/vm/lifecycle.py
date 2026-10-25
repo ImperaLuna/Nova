@@ -645,23 +645,23 @@ with subtest("`nova volume` steps and mutes, and shows the capsule even at 100%"
     assert "MUTED" not in machine.succeed(as_user(WPCTL_SINK.format("get-volume"))), "a second mute didn't unmute"
 
 with subtest("the capsule stays in while quick settings shows the volume, and slides away as it opens"):
-    shown, hidden = ui_log_count(VOLUME_SHOWN), ui_log_count(VOLUME_HIDDEN)
+    qs_shown, qs_hidden = ui_log_count(VOLUME_SHOWN), ui_log_count(VOLUME_HIDDEN)
     machine.succeed(as_user("nova volume up"))
-    retry(lambda _last_try: ui_log_count(VOLUME_SHOWN) > shown, timeout=CLICK_EFFECT)
-    opened = ui_log_count(QUICK_SETTINGS_OPENED)
+    retry(lambda _last_try: ui_log_count(VOLUME_SHOWN) > qs_shown, timeout=CLICK_EFFECT)
+    qs_opened = ui_log_count(QUICK_SETTINGS_OPENED)
     machine.succeed(as_user("nova toggle quick-settings"))
-    retry(lambda _last_try: ui_log_count(QUICK_SETTINGS_OPENED) > opened, timeout=CLICK_EFFECT)
+    retry(lambda _last_try: ui_log_count(QUICK_SETTINGS_OPENED) > qs_opened, timeout=CLICK_EFFECT)
     # Well before the capsule's own hold runs out.
-    retry(lambda _last_try: ui_log_count(VOLUME_HIDDEN) > hidden, timeout=CAPSULE_HOLD_SECS - 1)
-    shown = ui_log_count(VOLUME_SHOWN)
-    before = volume()
+    retry(lambda _last_try: ui_log_count(VOLUME_HIDDEN) > qs_hidden, timeout=dt.timedelta(seconds=CAPSULE_HOLD_SECS - 1))
+    qs_shown = ui_log_count(VOLUME_SHOWN)
+    qs_volume = volume()
     machine.succeed(as_user("nova volume down"))
-    retry(lambda _last_try: volume() != before, timeout=CLICK_EFFECT)
+    retry(lambda _last_try: volume() != qs_volume, timeout=CLICK_EFFECT)
     machine.sleep(NO_EFFECT_SECS)
-    assert ui_log_count(VOLUME_SHOWN) == shown, "the capsule came out over open quick settings"
-    closed = ui_log_count(QUICK_SETTINGS_CLOSED)
+    assert ui_log_count(VOLUME_SHOWN) == qs_shown, "the capsule came out over open quick settings"
+    qs_closed = ui_log_count(QUICK_SETTINGS_CLOSED)
     machine.succeed(as_user("nova toggle quick-settings"))
-    retry(lambda _last_try: ui_log_count(QUICK_SETTINGS_CLOSED) > closed, timeout=CLICK_EFFECT)
+    retry(lambda _last_try: ui_log_count(QUICK_SETTINGS_CLOSED) > qs_closed, timeout=CLICK_EFFECT)
 
 with subtest("a workspace switch reaches the UI"):
     running = wait_running()

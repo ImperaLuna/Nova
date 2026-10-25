@@ -85,18 +85,22 @@ Item {
                     }
                 ],
                 history_size: 36,
-                processes: [
+                apps: [
                     {
                         name: "firefox",
-                        pid: 4242,
+                        key: "/usr/lib/firefox/firefox",
+                        processes: 9,
                         cpu: 6.1,
-                        memory: 2400000000
+                        memory: 2400000000,
+                        protected: false
                     },
                     {
                         name: "niri",
-                        pid: 1200,
+                        key: "/usr/bin/niri",
+                        processes: 1,
                         cpu: 2.3,
-                        memory: 310000000
+                        memory: 310000000,
+                        protected: true
                     }
                 ]
             };
@@ -359,8 +363,22 @@ Item {
                 reading: reading()
             });
             waitForRendering(page);
-            shot(page, "resources");
             compare(page.memoryShare.toFixed(0), "29");
+            spy.signalName = "endRequested";
+            spy.target = page;
+            const firefox = findChild(page, "app-/usr/lib/firefox/firefox");
+            verify(firefox !== null);
+            const end = firefox.mapToItem(page, firefox.width - Tokens.segmentPad - Tokens.endButtonHeight / 2, firefox.height / 2);
+            mouseMove(page, end.x, end.y);
+            mouseClick(page, end.x, end.y);
+            compare(spy.count, 0, "the first click only arms it");
+            compare(page.armed, "/usr/lib/firefox/firefox");
+            waitForRendering(page);
+            shot(page, "resources");
+            mouseClick(page, end.x - Tokens.endButtonHeight / 2, end.y);
+            compare(spy.count, 1);
+            compare(spy.signalArguments[0][0], "/usr/lib/firefox/firefox");
+            compare(page.armed, "");
         }
     }
 }

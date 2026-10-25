@@ -258,11 +258,10 @@ QtObject {
     readonly property int pillButtonInset: 4
     readonly property int pillButtonGap: 2
 
-    // Quick settings (ui/quick_settings): a full-height glass sidebar on the
-    // right, from below the bar to the screen's bottom margin. Its pages
-    // have this padding and gap between sections, and slide this far as
-    // they swap.
-    readonly property int quickSettingsWidth: 360
+    // Quick settings (ui/quick_settings): a glass drawer this wide against
+    // the screen's right edge, top to bottom. Its pages have this padding
+    // and gap between sections, and slide this far as they swap.
+    readonly property int quickSettingsWidth: 368
     readonly property int quickSettingsPad: 16
     readonly property int quickSettingsGap: 12
     readonly property int pageSlide: 28
@@ -273,9 +272,6 @@ QtObject {
     readonly property real revealStagger: 0.14
     // How far each section rises into place as it fades in.
     readonly property int revealRise: 6
-    // Grown out of a pill it's drawn over, it's fully there by this share
-    // of its morph.
-    readonly property real panelFadeShare: 0.6
     // The header: the distro logo in a circle, the greeting beside it.
     readonly property int logoSize: 36
     readonly property int logoMark: 24
@@ -316,6 +312,12 @@ QtObject {
     readonly property real graphAreaOpacity: 0.22
     readonly property int processRowHeight: 30
     readonly property int processNumberWidth: 64
+    // The resources page's End button: ✕ on hover, then "End" to confirm.
+    readonly property int endButtonWidth: 40
+    readonly property int endButtonHeight: 24
+    readonly property int endIconSize: 13
+    // How long "End" waits for its second click.
+    readonly property int durationEndConfirm: 3000
     // A legend's colored dot.
     readonly property int legendDot: 7
 

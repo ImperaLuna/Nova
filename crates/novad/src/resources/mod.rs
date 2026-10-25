@@ -1,5 +1,5 @@
 //! What the machine is busy with (feature `quick-settings`): CPU, memory,
-//! GPU, the CPU's temperature and the busiest processes, for the quick
+//! GPU, the CPU's temperature and the apps using the most memory, for the quick
 //! settings sidebar's resources card and page.
 //!
 //! One thread samples. CPU and memory go into a short history every
@@ -9,6 +9,7 @@
 //! connection watches (`watch_resources`), every [`LIVE_INTERVAL`], and
 //! each look is published then. A connection that closes stops watching.
 
+mod apps;
 mod nvidia;
 mod sensors;
 mod usage;
@@ -16,7 +17,8 @@ mod usage;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
-use nova_protocol::{Event, ProcessUsage, RESOURCE_HISTORY_INTERVAL_SECS, ResourceSample, Resources as Reading};
+use apps::Me;
+use nova_protocol::{Event, RESOURCE_HISTORY_INTERVAL_SECS, ResourceSample, Resources as Reading};
 use sensors::{GpuBusy, Temperature};
 use std::collections::{BTreeSet, VecDeque};
 use std::path::PathBuf;
@@ -35,8 +37,8 @@ const FIRST_LOOK: Duration = Duration::from_millis(250);
 const HISTORY_INTERVAL: Duration = Duration::from_secs(RESOURCE_HISTORY_INTERVAL_SECS);
 /// How far back the history goes.
 const HISTORY_SPAN: Duration = Duration::from_secs(3 * 60);
-/// How many processes a look lists.
-const TOP_PROCESSES: usize = 6;
+/// How many apps a look lists.
+const TOP_APPS: usize = 6;
 
 /// Where readings come from: the real `/proc` and `/sys`, or recorded
 /// copies in tests.
@@ -55,6 +57,8 @@ impl Sources {
 }
 
 pub struct Resources {
+    /// Where `end_app` finds processes.
+    proc_root: PathBuf,
     state: Mutex<State>,
     /// Wakes the sampler when watching starts or stops, or it should stop.
     wake: Condvar,
@@ -69,6 +73,7 @@ struct State {
 impl Resources {
     pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let resources = Arc::new(Self {
+            proc_root: sources.proc_root.clone(),
             state: Mutex::new(State { watchers: BTreeSet::new(), stopped: false }),
             wake: Condvar::new(),
             hub,
@@ -95,6 +100,11 @@ impl Resources {
         if changed {
             self.wake.notify_all();
         }
+    }
+
+    /// Asks every process of the app `key` (an `AppUsage::key`) to close.
+    pub fn end_app(&self, key: &str) -> Result<(), String> {
+        apps::end(&usage::processes(&self.proc_root), key, Me::current()).map(|_| ())
     }
 
     fn run(&self, mut sampler: Sampler) {
@@ -240,31 +250,16 @@ impl Sampler {
             temperature: self.temperature.as_ref().and_then(Temperature::read),
             history: self.history.iter().copied().collect(),
             history_size: Self::history_len(),
-            processes: self.top_processes(total_ticks),
+            apps: self.top_apps(total_ticks),
         }
     }
 
-    /// The busiest processes since the last look, `total_ticks` being all
-    /// CPUs' time over it.
-    fn top_processes(&mut self, total_ticks: u64) -> Vec<ProcessUsage> {
+    /// The apps using the most memory, with their CPU use since the last
+    /// look, `total_ticks` being all CPUs' time over it.
+    fn top_apps(&mut self, total_ticks: u64) -> Vec<nova_protocol::AppUsage> {
         let processes = usage::processes(&self.sources.proc_root);
         let used = self.process_ticks.since_last(&processes);
-        let page = page_size();
-        let mut busiest: Vec<ProcessUsage> = processes
-            .into_iter()
-            .zip(used)
-            // Kernel threads have no memory of their own.
-            .filter(|(process, _)| process.resident_pages > 0)
-            .map(|(process, ticks)| ProcessUsage {
-                name: process.name,
-                pid: process.pid,
-                cpu: usage::percent(ticks, total_ticks),
-                memory: process.resident_pages * page,
-            })
-            .collect();
-        busiest.sort_by(|a, b| b.cpu.total_cmp(&a.cpu).then(b.memory.cmp(&a.memory)));
-        busiest.truncate(TOP_PROCESSES);
-        busiest
+        apps::top(&processes, &used, total_ticks, page_size(), Me::current(), TOP_APPS)
     }
 }
 
@@ -297,8 +292,8 @@ mod tests {
         let reading = sampler.look();
         assert!((0.0..=100.0).contains(&reading.cpu));
         assert!(reading.memory_used > 0 && reading.memory_used <= reading.memory_total);
-        assert!(!reading.processes.is_empty() && reading.processes.len() <= TOP_PROCESSES);
-        assert!(reading.processes.windows(2).all(|pair| pair[0].cpu >= pair[1].cpu));
+        assert!(!reading.apps.is_empty() && reading.apps.len() <= TOP_APPS);
+        assert!(reading.apps.windows(2).all(|pair| pair[0].memory >= pair[1].memory));
         assert!(reading.history.is_empty(), "the first history sample is only a baseline");
         sampler.record_history();
         assert_eq!(sampler.look().history.len(), 1);

@@ -485,6 +485,13 @@ pub enum Command {
     WatchResources {
         watching: bool,
     },
+    /// Asks every process of an app in the latest `resources` event to
+    /// close (SIGTERM), by its [`AppUsage::key`] (feature
+    /// `quick-settings`). Only the user's own processes, and never a
+    /// [`AppUsage::protected`] app.
+    EndApp {
+        key: String,
+    },
 }
 
 /// What the power menu does, in the order it lists them.
@@ -560,8 +567,9 @@ pub struct Resources {
     pub history: Vec<ResourceSample>,
     /// How many samples `history` holds once it's full.
     pub history_size: usize,
-    /// The busiest processes, busiest first.
-    pub processes: Vec<ProcessUsage>,
+    /// The apps using the most memory, most first. An app is every process
+    /// running the same program.
+    pub apps: Vec<AppUsage>,
 }
 
 /// Seconds between two of [`Resources::history`]'s samples.
@@ -574,15 +582,23 @@ pub struct ResourceSample {
     pub memory: f32,
 }
 
+/// One app's processes together.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProcessUsage {
-    /// Its command name (`/proc/<pid>/comm`).
+pub struct AppUsage {
+    /// The program's name, from its file (`.firefox-wrapped` is `firefox`).
     pub name: String,
-    pub pid: u32,
-    /// Its share of all CPU time since the last look, 0 to 100.
+    /// What `end_app` takes: the program's path, or `comm:<name>` for a
+    /// program novad can't see.
+    pub key: String,
+    /// How many processes run it.
+    pub processes: u32,
+    /// Their share of all CPU time since the last look, 0 to 100.
     pub cpu: f32,
-    /// Resident memory, in bytes.
+    /// Their resident memory together, in bytes.
     pub memory: u64,
+    /// Ending it isn't offered: Nova itself, the compositor, or another
+    /// user's.
+    pub protected: bool,
 }
 
 /// What `status` returns.
@@ -874,6 +890,7 @@ mod tests {
             encode(Event::Host(host())),
             encode(Request { id: Some(22), command: Command::WatchResources { watching: true } }),
             encode(Event::Resources(resources())),
+            encode(Request { id: Some(23), command: Command::EndApp { key: "/usr/lib/firefox/firefox".into() } }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::QuickSettings } }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
@@ -998,7 +1015,14 @@ mod tests {
             temperature: None,
             history: vec![ResourceSample { cpu: 21.0, memory: 29.0 }, ResourceSample { cpu: 23.5, memory: 29.4 }],
             history_size: 36,
-            processes: vec![ProcessUsage { name: "firefox".into(), pid: 4242, cpu: 6.1, memory: 2_400_000_000 }],
+            apps: vec![AppUsage {
+                name: "firefox".into(),
+                key: "/usr/lib/firefox/firefox".into(),
+                processes: 9,
+                cpu: 6.1,
+                memory: 2_400_000_000,
+                protected: false,
+            }],
         }
     }
 

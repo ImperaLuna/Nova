@@ -1404,7 +1404,7 @@ fn resources_are_sent_while_watched() {
     assert_eq!(watcher.request(1, "watch_resources", Some(json!({"watching": true})))["result"], Value::Null);
     let reading = listener.next_event("resources");
     assert!(reading["memory_total"].as_u64().is_some_and(|total| total > 0));
-    assert!(reading["processes"].as_array().is_some_and(|processes| !processes.is_empty()));
+    assert!(reading["apps"].as_array().is_some_and(|apps| !apps.is_empty()));
     assert!(reading["history"].is_array());
 
     drop(watcher);
@@ -1415,6 +1415,19 @@ fn resources_are_sent_while_watched() {
     listener.writer.set_read_timeout(Some(resources::LIVE_INTERVAL * 2)).unwrap();
     let late = listener.lines.next();
     assert!(late.as_ref().is_none_or(Result::is_err), "still sent after the watcher left: {late:?}");
+}
+
+/// Ending an app only ends what Nova offers to: not Nova itself, and not
+/// what isn't running.
+#[test]
+fn ending_nova_or_a_missing_app_is_refused() {
+    let novad = TestDaemon::start("end-app", None);
+    let mut client = novad.connect();
+    let me = std::env::current_exe().unwrap().to_string_lossy().into_owned();
+    let reply = client.request(1, "end_app", Some(json!({"key": me})));
+    assert!(reply["error"].as_str().is_some_and(|error| error.contains("can't be ended")), "{reply}");
+    let reply = client.request(2, "end_app", Some(json!({"key": "/nowhere/app"})));
+    assert!(reply["error"].as_str().is_some_and(|error| error.contains("no app")), "{reply}");
 }
 
 #[test]

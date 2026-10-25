@@ -173,6 +173,7 @@ impl<'a> Connection<'a> {
                 Ok(serde_json::Value::Null)
             }
             Command::WatchResources { watching } => return self.watch_resources(*watching),
+            Command::EndApp { key } => return self.end_app(key),
             Command::PowerOptions => return self.power_options()(),
             Command::Power { action } => return self.power(*action),
         };
@@ -212,6 +213,15 @@ impl<'a> Connection<'a> {
                 resources.watch(self.id, watching);
                 Outcome::Result(serde_json::Value::Null)
             }
+            None => Outcome::Error(format!("the {} feature is off", crate::resources::FEATURE_ID)),
+        }
+    }
+
+    fn end_app(&self, key: &str) -> Outcome {
+        let resources = lock(&self.daemon.settings).resources.clone();
+        match resources.map(|resources| resources.end_app(key)) {
+            Some(Ok(())) => Outcome::Result(serde_json::Value::Null),
+            Some(Err(e)) => Outcome::Error(e),
             None => Outcome::Error(format!("the {} feature is off", crate::resources::FEATURE_ID)),
         }
     }
@@ -414,7 +424,8 @@ impl<'a> Connection<'a> {
             | Command::PowerOptions
             | Command::Power { .. }
             | Command::Volume { .. }
-            | Command::WatchResources { .. } => {}
+            | Command::WatchResources { .. }
+            | Command::EndApp { .. } => {}
         }
     }
 

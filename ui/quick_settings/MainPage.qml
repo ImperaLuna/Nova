@@ -40,6 +40,8 @@ Item {
     property real micVolume: 0
 
     property var reading: null
+    // Room the top row leaves on its right (the pill's buttons).
+    property real headerInset: 0
 
     signal keepAwakeToggled
     signal micMuteToggled
@@ -61,7 +63,7 @@ Item {
             order: 0
 
             Header {
-                width: parent.width
+                width: parent.width - page.headerInset
                 logo: page.logo
                 greeting: QuickSettings.greeting(page.now.getHours())
                 name: page.host?.user ?? ""

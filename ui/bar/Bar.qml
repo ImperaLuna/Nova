@@ -50,6 +50,7 @@ Item {
     // Where the right pill is, in screen coordinates (the stage's top-left
     // is the screen's): quick settings grows out of it.
     readonly property rect rightPillBox: Qt.rect(rightPill.x, rightPill.y, rightPill.width, rightPill.height)
+    readonly property Item rightPillItem: rightPill
 
     // Logs once the bar has drawn a frame while connected to novad, so the
     // VM tests know when to screenshot it.
@@ -108,7 +109,7 @@ Item {
 
     RightPill {
         id: rightPill
-        visible: bar.quickSettings || bar.power
+        visible: (bar.quickSettings || bar.power) && !bar.covered.includes(rightPill)
         x: bar.width - Tokens.barMargin - width
         y: Tokens.barMargin
         width: implicitWidth

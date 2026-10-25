@@ -3,7 +3,8 @@
 //! kept to compare the next one with.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 
 /// CPU time since boot, all CPUs together, in clock ticks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -69,7 +70,13 @@ pub fn read_memory(proc_root: &Path) -> Option<(u64, u64)> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Process {
     pub pid: u32,
+    pub ppid: u32,
     pub name: String,
+    /// The program it runs (`/proc/<pid>/exe`), when readable: only for
+    /// the user's own processes.
+    pub program: Option<PathBuf>,
+    /// Its owner.
+    pub uid: Option<u32>,
     /// User and system CPU time since it started, in clock ticks.
     pub ticks: u64,
     /// Resident memory in pages.
@@ -84,10 +91,19 @@ impl Process {
         let open = stat.find('(')?;
         let close = stat.rfind(')')?;
         let name = stat.get(open + 1..close)?.to_string();
-        // From the state (field 3 in proc(5)): utime is 14, stime 15, rss 24.
+        // From the state (field 3 in proc(5)): ppid is 4, utime 14, stime
+        // 15, rss 24.
         let fields: Vec<&str> = stat.get(close + 1..)?.split_whitespace().collect();
         let field = |number: usize| fields.get(number - 3)?.parse::<u64>().ok();
-        Some(Self { pid, name, ticks: field(14)? + field(15)?, resident_pages: field(24)? })
+        Some(Self {
+            pid,
+            ppid: u32::try_from(field(4)?).ok()?,
+            name,
+            program: None,
+            uid: None,
+            ticks: field(14)? + field(15)?,
+            resident_pages: field(24)?,
+        })
     }
 }
 
@@ -98,7 +114,11 @@ pub fn processes(proc_root: &Path) -> Vec<Process> {
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let pid: u32 = entry.file_name().to_str()?.parse().ok()?;
-            Process::parse(pid, &std::fs::read_to_string(entry.path().join("stat")).ok()?)
+            let dir = entry.path();
+            let mut process = Process::parse(pid, &std::fs::read_to_string(dir.join("stat")).ok()?)?;
+            process.program = std::fs::read_link(dir.join("exe")).ok();
+            process.uid = std::fs::metadata(&dir).ok().map(|meta| meta.uid());
+            Some(process)
         })
         .collect()
 }
@@ -145,6 +165,7 @@ mod tests {
         let stat = "4242 (Web Content (x)) S 1 4242 4242 0 -1 4194560 2954 0 0 0 610 40 0 0 20 0 30 0 5221 2510000000 61440 18446744073709551615 1 1 0 0 0 0 0 4096 0 0 0 0 17 3 0 0 0 0 0";
         let process = Process::parse(4242, stat).unwrap();
         assert_eq!(process.name, "Web Content (x)");
+        assert_eq!(process.ppid, 1);
         assert_eq!(process.ticks, 650);
         assert_eq!(process.resident_pages, 61440);
         assert_eq!(Process::parse(1, "1 (init) S 0"), None);
@@ -152,7 +173,8 @@ mod tests {
 
     #[test]
     fn ticks_count_from_the_last_look() {
-        let process = |pid, ticks| Process { pid, name: "x".into(), ticks, resident_pages: 1 };
+        let process =
+            |pid, ticks| Process { pid, ppid: 1, name: "x".into(), program: None, uid: None, ticks, resident_pages: 1 };
         let mut ticks = ProcessTicks::default();
         assert_eq!(ticks.since_last(&[process(1, 100)]), [100]);
         assert_eq!(ticks.since_last(&[process(1, 130), process(2, 5)]), [30, 5]);
@@ -165,6 +187,10 @@ mod tests {
         assert!(CpuTimes::read(proc_root).is_some_and(|times| times.total > 0));
         assert!(read_memory(proc_root).is_some_and(|(used, total)| used <= total && total > 0));
         let me = std::process::id();
-        assert!(processes(proc_root).iter().any(|process| process.pid == me && process.resident_pages > 0));
+        let mine = processes(proc_root).into_iter().find(|process| process.pid == me).unwrap();
+        assert!(mine.resident_pages > 0);
+        assert_eq!(mine.program, std::env::current_exe().ok());
+        // SAFETY: getuid only reads the calling process's uid.
+        assert_eq!(mine.uid, Some(unsafe { libc::getuid() }));
     }
 }

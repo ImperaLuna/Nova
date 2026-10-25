@@ -30,6 +30,14 @@ Singleton {
         if (connected && watching)
             send();
     }
+    // Asks novad to close every process of the app `key` (a resources
+    // event's apps[].key).
+    function endApp(key: string) {
+        Daemon.call(Protocol.CMD_END_APP, {
+            key: key
+        });
+    }
+
     function send() {
         Daemon.call(Protocol.CMD_WATCH_RESOURCES, {
             watching: watching

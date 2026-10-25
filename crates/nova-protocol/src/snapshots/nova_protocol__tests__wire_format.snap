@@ -38,6 +38,7 @@ expression: all
 {"v":2,"event":"volume","data":{"key":"mute"}}
 {"v":2,"event":"host","data":{"host":"RyzenShine","user":"Luna","booted_at":1793000000,"os":{"id":"nixos","name":"NixOS","logo":"nix-snowflake"}}}
 {"v":2,"id":22,"cmd":"watch_resources","args":{"watching":true}}
-{"v":2,"event":"resources","data":{"cpu":23.5,"memory_used":10093173760,"memory_total":34359738368,"gpu":18.0,"history":[{"cpu":21.0,"memory":29.0},{"cpu":23.5,"memory":29.4}],"history_size":36,"processes":[{"name":"firefox","pid":4242,"cpu":6.1,"memory":2400000000}]}}
+{"v":2,"event":"resources","data":{"cpu":23.5,"memory_used":10093173760,"memory_total":34359738368,"gpu":18.0,"history":[{"cpu":21.0,"memory":29.0},{"cpu":23.5,"memory":29.4}],"history_size":36,"apps":[{"name":"firefox","key":"/usr/lib/firefox/firefox","processes":9,"cpu":6.1,"memory":2400000000,"protected":false}]}}
+{"v":2,"id":23,"cmd":"end_app","args":{"key":"/usr/lib/firefox/firefox"}}
 {"v":2,"cmd":"toggle","args":{"panel":"quick-settings"}}
 {"v":2,"id":8,"error":"bad request"}

@@ -4,3 +4,4 @@
 /docs/quickshell
 .direnv/
 .qmlls.ini
+__pycache__/

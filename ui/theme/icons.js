@@ -18,4 +18,5 @@ var MONITOR = "M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1
 var BLUETOOTH = "M7 7l10 10-5 4V3l5 4L7 17";
 var APP = "M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM4 9h16";
 // Nova's own mark, for a distribution without a logo: a four-point star.
+var CLOSE = "M6 6l12 12M18 6L6 18";
 var STAR = "M12 3c.6 4.6 2.4 6.4 7 7c-4.6.6-6.4 2.4-7 7c-.6-4.6-2.4-6.4-7-7c4.6-.6 6.4-2.4 7-7z";

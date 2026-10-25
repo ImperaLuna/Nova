@@ -17,6 +17,7 @@ var CMD_REPORT_UNLOCKED = "report_unlocked";
 var CMD_POWER_OPTIONS = "power_options";
 var CMD_POWER = "power";
 var CMD_WATCH_RESOURCES = "watch_resources";
+var CMD_END_APP = "end_app";
 
 // Events novad sends (Event in nova-protocol). Each topic's events carry the
 // topic's name.

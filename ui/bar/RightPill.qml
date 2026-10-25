@@ -1,10 +1,10 @@
 import QtQuick
 import "../theme"
-import "../theme/icons.js" as Icons
 
-// The right pill: the quick settings button and the orange power button,
-// each shown while its feature is on. Glass, like the other pills; a fixed
-// shape on the stage, since its panels open on the right edge's surface.
+// The right pill: the quick settings button and the orange power button
+// (PillButtons), each shown while its feature is on. Glass, like the other
+// pills; a fixed shape on the stage, since its panels open on the right
+// edge's surface. Quick settings grows out of it and hides it meanwhile.
 Item {
     id: pill
 
@@ -32,54 +32,13 @@ Item {
         radius: pill.radius
     }
 
-    component PillButton: Rectangle {
-        id: button
-        required property string icon
-        property color ink: Tokens.fg
-        property bool picked: false
-        signal clicked
-
-        width: Tokens.pillButtonSize
-        height: Tokens.pillButtonSize
-        radius: width / 2
-        color: picked ? Tokens.selectedQuiet : press.containsMouse ? Tokens.hover : "transparent"
-
-        Behavior on color {
-            ColorAnimation {
-                duration: Tokens.durationFast
-            }
-        }
-
-        LineIcon {
-            anchors.centerIn: parent
-            path: button.icon
-            color: button.ink
-        }
-
-        MouseArea {
-            id: press
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: button.clicked()
-        }
-    }
-
-    Row {
+    PillButtons {
         id: buttons
         anchors.centerIn: parent
-        spacing: Tokens.pillButtonGap
-
-        PillButton {
-            visible: pill.quickSettings
-            icon: Icons.TUNE
-            picked: pill.quickSettingsOpen
-            onClicked: pill.quickSettingsClicked()
-        }
-        PillButton {
-            visible: pill.power
-            icon: Icons.POWER
-            ink: Tokens.primary
-            onClicked: pill.powerClicked()
-        }
+        quickSettings: pill.quickSettings
+        power: pill.power
+        quickSettingsOpen: pill.quickSettingsOpen
+        onQuickSettingsClicked: pill.quickSettingsClicked()
+        onPowerClicked: pill.powerClicked()
     }
 }
