@@ -10,6 +10,7 @@ import math
 import re
 import shlex
 import statistics
+import time
 
 UNIT = "nova.service"
 RUNTIME_DIR = f"/run/user/{UID}"
@@ -93,6 +94,9 @@ WPCTL_SINK = "wpctl {} @DEFAULT_AUDIO_SINK@"
 CAPSULE = (1280 - 12 - 24, 400)
 # Longer than the capsule stays out after a change (Tokens.durationCapsuleHold).
 CAPSULE_HOLD_SECS = 3
+# Long enough for it to slide out (Tokens.springCapsule), well inside
+# Tokens.durationCapsuleHold.
+CAPSULE_SLIDE_SECS = 0.6
 # A window's place and size in the compositor's window list.
 GEOMETRY_KEYS = ("layout", "at", "size")
 # Inside the center placeholder: it's 640x400 in the middle of the 1280x800
@@ -536,10 +540,26 @@ with subtest("a volume change slides the capsule out and back, over fullscreen t
     hides()
     # The pointer on it holds it out, and a wheel notch steps the volume by
     # Tokens.volumeStep, which way depending on how ydotool's wheel maps.
-    volume_change_shows("0.50")
-    hidden = ui_log_count(VOLUME_HIDDEN)
-    machine.succeed(f"{pointer_to(*CAPSULE)} && {YDOTOOL} mousemove --wheel -x 0 -y 1")
-    retry(lambda _last_try: volume() in ("0.45", "0.55"), timeout=CLICK_EFFECT)
+    # The pointer goes there once it has slid out: the compositor picks the
+    # surface under the pointer when the pointer moves. Retried like clicks,
+    # as niri can drop the odd pointer input.
+    for attempt in range(CLICK_TRIES):
+        target = ("0.50", "0.40")[attempt % 2]
+        machine.succeed(pointer_to(*POINTER_REST))
+        volume_change_shows(target)
+        time.sleep(CAPSULE_SLIDE_SECS)
+        hidden = ui_log_count(VOLUME_HIDDEN)
+        machine.succeed(f"{pointer_to(*CAPSULE)} && {YDOTOOL} mousemove --wheel -x 0 -y 1")
+        try:
+            retry(lambda _last_try: volume() != target, timeout=CLICK_EFFECT)
+            break
+        except Exception:
+            print(f"the volume is still {target} after a wheel notch on the capsule, scrolling again")
+    else:
+        print(machine.execute(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -F 'nova:' | tail -n 20"))[1])
+        raise AssertionError(f"{CLICK_TRIES} wheel notches on the capsule never changed the volume")
+    step = abs(float(volume()) - float(target))
+    assert abs(step - 0.05) < 0.001, f"one notch moved the volume from {target} to {volume()}"
     machine.sleep(CAPSULE_HOLD_SECS)
     assert ui_log_count(VOLUME_HIDDEN) == hidden, "the capsule went away under the pointer"
     machine.succeed(pointer_to(*POINTER_REST))
