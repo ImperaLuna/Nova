@@ -144,10 +144,10 @@ impl Daemon {
     }
 
     /// Starts watching the settings files, reloading when they change.
-    fn watch_settings(self: &Arc<Self>) {
+    fn watch_settings(self: &Arc<Self>) -> Option<inotify::Stopper> {
         let daemon = Arc::clone(self);
         let files = vec![self.sources.config.clone(), self.sources.selection.clone()];
-        settings::watch(files, Arc::clone(&self.logger), move || daemon.reload());
+        settings::watch(files, Arc::clone(&self.logger), move || daemon.reload())
     }
 
     /// Stops the UI and exits novad. Exit code 0, so systemd leaves it off.
@@ -246,7 +246,8 @@ fn start(
         compositor,
         session_lock,
     });
-    daemon.watch_settings();
+    // Watched for as long as novad runs.
+    let _ = daemon.watch_settings();
     // Not for a daemon without its UI (tests, a UI run by hand): logind's
     // locks and the sleep inhibitor are the whole machine's.
     if daemon.ui.is_some() {

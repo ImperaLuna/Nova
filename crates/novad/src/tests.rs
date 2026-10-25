@@ -16,30 +16,44 @@ struct TestDaemon {
     dir: PathBuf,
     socket: PathBuf,
     daemon: Arc<Daemon>,
+    watching: Option<inotify::Stopper>,
 }
 
-/// What `ai-usage` off looks like in `features.toml`.
+/// `features.toml` with features off. The features with a watcher of their own, off unless a test is about
+/// them: each watcher is an inotify instance, and the tests running at once
+/// would pass the usual limit of 128.
+const WATCHERS_OFF: &str = "disabled = [\"ai-usage\", \"launcher\"]\n";
+const LAUNCHER_OFF: &str = "disabled = [\"launcher\"]\n";
 const AI_USAGE_OFF: &str = "disabled = [\"ai-usage\"]\n";
 
 impl TestDaemon {
-    /// With the `ai-usage` feature off.
+    /// With the `ai-usage` and `launcher` features off.
     fn start(name: &str, ui: Option<UiSettings>) -> Self {
-        Self::open(name, ui, |dir| std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap())
+        Self::open(name, ui, |dir| std::fs::write(dir.join("config/features.toml"), WATCHERS_OFF).unwrap())
     }
 
-    /// With the `ai-usage` feature on (its default), its files under
-    /// `<dir>/ai-usage`.
+    /// With the `ai-usage` feature on, its files under `<dir>/ai-usage`, and
+    /// the `launcher` off.
     fn with_ai_usage(name: &str, prepare: impl FnOnce(&Path)) -> Self {
-        Self::open(name, None, |dir| prepare(&dir.join("ai-usage")))
+        Self::open(name, None, |dir| {
+            std::fs::write(dir.join("config/features.toml"), LAUNCHER_OFF).unwrap();
+            prepare(&dir.join("ai-usage"));
+        })
+    }
+
+    /// With the `launcher` feature on, its apps under
+    /// `<dir>/launcher/share`, and `ai-usage` off.
+    fn with_launcher(name: &str) -> Self {
+        Self::open(name, None, |dir| std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap())
     }
 
     /// Following the compositor `connect` sets up in the test's folder, with
-    /// the `ai-usage` feature off.
+    /// the `ai-usage` and `launcher` features off.
     pub fn with_compositor(name: &str, connect: impl FnOnce(&Path) -> Box<dyn compositor::Backend>) -> Self {
         Self::open_following(
             name,
             None,
-            |dir| std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap(),
+            |dir| std::fs::write(dir.join("config/features.toml"), WATCHERS_OFF).unwrap(),
             |dir| Some(connect(dir)),
         )
     }
@@ -91,10 +105,10 @@ impl TestDaemon {
             compositor,
             session_lock,
         });
-        daemon.watch_settings();
+        let watching = daemon.watch_settings();
         let serving = Arc::clone(&daemon);
         std::thread::spawn(move || server::serve(listener, serving));
-        Self { dir, socket, daemon }
+        Self { dir, socket, daemon, watching }
     }
 
     fn config_file(&self) -> PathBuf {
@@ -128,6 +142,9 @@ impl Drop for TestDaemon {
             usage.stop();
         }
         drop(settings);
+        if let Some(watching) = &self.watching {
+            watching.stop();
+        }
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
@@ -1336,7 +1353,7 @@ fn turning_a_feature_off_and_on_stops_and_starts_it() {
     assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "ready");
     client.next_usage();
 
-    save_by_rename(&novad.features_file(), AI_USAGE_OFF);
+    save_by_rename(&novad.features_file(), WATCHERS_OFF);
     assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "off");
     let reply = client.request(2, "show_ai_usage", Some(json!({"provider": "codex"})));
     assert_eq!(reply["error"], "the ai-usage feature is off");
@@ -1396,7 +1413,7 @@ fn a_replaced_config_folder_is_followed() {
     let folder = novad.config_file().parent().unwrap().to_owned();
     std::fs::rename(&folder, novad.dir.join("config.old")).unwrap();
     std::fs::create_dir(&folder).unwrap();
-    std::fs::write(novad.features_file(), AI_USAGE_OFF).unwrap();
+    std::fs::write(novad.features_file(), WATCHERS_OFF).unwrap();
     std::fs::write(novad.config_file(), "[theme]\nmode = \"light\"\n").unwrap();
     assert_eq!(client.next_event("theme")["mode"], "light");
     // Edits in the new folder keep applying.
@@ -1442,7 +1459,7 @@ fn ids(list: &Value) -> Vec<&str> {
 
 #[test]
 fn the_launcher_lists_apps_and_follows_installs() {
-    let novad = TestDaemon::start("launcher-apps", None);
+    let novad = TestDaemon::with_launcher("launcher-apps");
     install_app(&novad, "foot.desktop", "Name=Foot\nGenericName=Terminal\nIcon=foot\nExec=foot\n");
     install_app(&novad, "hidden.desktop", "Name=Hidden\nNoDisplay=true\nExec=x\n");
     let mut client = novad.connect();
@@ -1463,7 +1480,7 @@ fn the_launcher_lists_apps_and_follows_installs() {
 
 #[test]
 fn launcher_searches_rank_apps_and_refuse_long_queries() {
-    let novad = TestDaemon::start("launcher-search", None);
+    let novad = TestDaemon::with_launcher("launcher-search");
     install_app(&novad, "firefox.desktop", "Name=Firefox\nGenericName=Web Browser\nExec=firefox\n");
     install_app(&novad, "files.desktop", "Name=Files\nKeywords=folder;\nExec=nautilus\n");
     install_app(&novad, "fooview.desktop", "Name=Fooview\nExec=fooview\n");
@@ -1484,7 +1501,7 @@ fn launcher_searches_rank_apps_and_refuse_long_queries() {
 
 #[test]
 fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
-    let novad = TestDaemon::start("launcher-launch", None);
+    let novad = TestDaemon::with_launcher("launcher-launch");
     let marker = novad.dir.join("launched");
     // %U is dropped; the semicolon would only end a command in a shell, and
     // lands in Path= as a file.
@@ -1513,7 +1530,7 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
 
 #[test]
 fn pins_keep_their_order_and_survive_a_restart() {
-    let novad = TestDaemon::start("launcher-pins", None);
+    let novad = TestDaemon::with_launcher("launcher-pins");
     for name in ["a", "b", "c"] {
         install_app(&novad, &format!("{name}.desktop"), &format!("Name={name}\nExec=true\n"));
     }
@@ -1548,7 +1565,7 @@ fn pins_keep_their_order_and_survive_a_restart() {
 
 #[test]
 fn the_launcher_stops_with_its_feature() {
-    let novad = TestDaemon::start("launcher-off", None);
+    let novad = TestDaemon::with_launcher("launcher-off");
     let mut client = novad.connect();
     client.request(1, "subscribe", Some(json!({"topics": ["features"]})));
     client.next_event("features");
