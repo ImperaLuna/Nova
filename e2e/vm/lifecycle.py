@@ -6,7 +6,6 @@
 import datetime as dt
 import itertools
 import json
-import math
 import re
 import shlex
 import statistics
@@ -55,6 +54,9 @@ SURFACE_COMMIT = r"wl_surface#[0-9]*\.commit("
 # `nova logs`'s own time, level and source. libwayland 1.26 stamps the wall
 # clock as [HH:MM:SS.micros]; older ones stamp milliseconds as [ms.frac].
 TIMED_COMMIT = re.compile(r"\[\s*(?:(\d+):(\d+):)?(\d+(?:\.\d+)?)\].*-> wl_surface#(\d+)\.commit\(")
+# A surface asking for a frame callback, and the compositor sending one.
+FRAME_REQUEST = re.compile(r"-> wl_surface#(\d+)\.frame\(new id wl_callback#(\d+)\)")
+FRAME_DONE = re.compile(r"\] .*?\bwl_callback#(\d+)\.done\(")
 # Qt's own timing of each frame it renders (qt.scenegraph.time.renderloop):
 # sync is Nova's QML handing the scene over, render the (software) GPU work.
 QT_FRAME = re.compile(r"syncAndRender: frame rendered in (\d+)ms.*\bsync=(\d+), render=(\d+)")
@@ -63,18 +65,18 @@ QT_FRAME = re.compile(r"syncAndRender: frame rendered in (\d+)ms.*\bsync=(\d+), 
 # Tokens.durationPanel * 0.6 + Tokens.durationFill (750 ms) after opening;
 # the rest is room for software rendering's late last frame.
 MORPH_DRAWS_FOR = dt.timedelta(milliseconds=1200)
-# The VM's outputs refresh at 60 Hz. A surface never needs more than one
-# frame per refresh.
+# The VM's outputs refresh at 60 Hz, for the frames report.
 REFRESH_HZ = 60
-# Frames a surface may draw per refresh before the check fails. Software
-# rendering lets some come early (niri's VM closed the panel with frames
-# 14.8 ms apart on average), so one and a half, which drawing every frame
-# twice still exceeds.
-FRAMES_PER_REFRESH = 1.5
+# Frames a surface may draw beyond one per frame callback the compositor sent
+# it: the first, which the click starts, and one whose callback was asked for
+# before the log was followed. Counted per callback rather than per refresh:
+# the VM has no real vblank, and niri paces callbacks faster than 60 Hz while
+# a full-screen surface such as the click catcher is mapped (IMP-72).
+FRAMES_BEYOND_CALLBACKS = 2
 # How many surfaces may draw while the panel opens or closes: the stage on
 # the pill's screen, and the click catcher, which closes the panel on a click
-# outside it, as it shows or hides (ui/stage/ClickCatcher.qml draws only
-# then). The bar's exclusion zone used to draw a frame too, each time an
+# outside it, as it starts or stops catching (ui/stage/ClickCatcher.qml draws
+# only then). The bar's exclusion zone used to draw a frame too, each time an
 # animation started (IMP-49).
 MORPH_SURFACES = 2
 # The placeholder panels off the stage (ui/demo/DemoPanels.qml, on with
@@ -248,7 +250,8 @@ def morph_frames(what: str, logged: str) -> None:
     """Opens or closes the panel by clicking its pill until it logs
     `logged`, waits for the UI to stop drawing, and checks the frames it drew
     after that line: on at most MORPH_SURFACES surfaces, at most
-    FRAMES_PER_REFRESH per refresh, all within MORPH_DRAWS_FOR. Prints how
+    one per frame callback (FRAMES_BEYOND_CALLBACKS), all within
+    MORPH_DRAWS_FOR. Prints how
     far apart they came (the frame time a user sees) and Qt's own time per
     frame; software rendering makes those a trend to read, not something to
     fail on."""
@@ -270,7 +273,17 @@ def morph_frames(what: str, logged: str) -> None:
     lines = machine.succeed(f"cat {capture}").splitlines()
     after_logged = lines[next(i for i, line in enumerate(lines) if logged in line) :]
     frames: dict[str, list[float]] = {}
+    # Each callback asked for, by its id, the surface that asked; and how
+    # many each surface was sent.
+    asked: dict[str, str] = {}
+    callbacks: dict[str, int] = {}
     for line in after_logged:
+        if match := FRAME_REQUEST.search(line):
+            surface, callback = match.groups()
+            asked[callback] = surface
+        elif "->" not in line and (match := FRAME_DONE.search(line)):
+            if surface := asked.pop(match.group(1), None):
+                callbacks[surface] = callbacks.get(surface, 0) + 1
         if match := TIMED_COMMIT.search(line):
             hours, minutes, seconds, surface = match.groups()
             if hours is None:
@@ -300,10 +313,8 @@ def morph_frames(what: str, logged: str) -> None:
     for surface, times in frames.items():
         drew_for = times[-1] - first
         assert drew_for <= budget_ms, f"wl_surface#{surface} drew until {drew_for:.0f} ms after the panel {what}'s first frame, at most {budget_ms:.0f} ms"
-        # Rounded up: timestamps are rounded and frames jitter.
-        own = times[-1] - times[0]
-        most = math.ceil(own * REFRESH_HZ * FRAMES_PER_REFRESH / 1000) + 1
-        assert len(times) <= most, f"wl_surface#{surface} drew {len(times)} frames in {own:.0f} ms after the panel {what}, more than {FRAMES_PER_REFRESH} per refresh ({most})"
+        sent = callbacks.get(surface, 0)
+        assert len(times) <= sent + FRAMES_BEYOND_CALLBACKS, f"wl_surface#{surface} drew {len(times)} frames after the panel {what} but was sent {sent} frame callbacks: it drew without waiting for them"
 
 
 def open_foot(unit: str) -> None:

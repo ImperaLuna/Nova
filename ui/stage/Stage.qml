@@ -205,8 +205,9 @@ Scope {
 
     ClickCatcher {
         screen: root.screen
-        visible: all.catchesClicks
-        holes: [Qt.rect(0, 0, root.screen.width, stage.implicitHeight), ...[right, center].filter(surface => surface.visible).map(surface => surface.box)]
+        catching: all.catchesClicks
+        // Only while catching, so it doesn't redraw for every morph frame.
+        holes: all.catchesClicks ? [Qt.rect(0, 0, root.screen.width, stage.implicitHeight), ...[right, center].filter(surface => surface.visible).map(surface => surface.box)] : []
         onClicked: all.dismiss()
     }
 }
