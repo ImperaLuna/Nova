@@ -60,8 +60,8 @@ impl Fixture {
     }
 
     fn tray(&self, launcher: Option<Arc<Launcher>>) -> Arc<Tray> {
-        let bus = Bus::Address(self.address.clone());
-        Tray::start(bus, self.dir.join("proc"), launcher, Arc::clone(&self.hub), Arc::clone(&self.logger))
+        let sources = Sources { bus: Bus::Address(self.address.clone()), state_file: self.dir.join("tray.json") };
+        Tray::start(sources, self.dir.join("proc"), launcher, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
     fn connect(&self) -> Connection {
@@ -105,6 +105,8 @@ impl Drop for Fixture {
 struct Item {
     id: String,
     title: String,
+    /// Counts `Activate` calls.
+    activated: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 #[interface(name = "org.kde.StatusNotifierItem")]
@@ -118,14 +120,30 @@ impl Item {
     fn title(&self) -> String {
         self.title.clone()
     }
+
+    fn activate(&self, _x: i32, _y: i32) {
+        self.activated.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 /// Puts up an item at `path` on a new connection, owning `name` first if
 /// given, and registers `service` with the watcher.
 fn put_up(fixture: &Fixture, name: Option<&str>, path: &str, service: &str, id: &str) -> Connection {
+    put_up_counting(fixture, name, path, service, id, Arc::default())
+}
+
+/// Like `put_up`, counting the item's `Activate` calls in `activated`.
+fn put_up_counting(
+    fixture: &Fixture,
+    name: Option<&str>,
+    path: &str,
+    service: &str,
+    id: &str,
+    activated: Arc<std::sync::atomic::AtomicUsize>,
+) -> Connection {
     let connection = fixture.connect();
     zbus::block_on(async {
-        let item = Item { id: id.into(), title: format!("{id} title") };
+        let item = Item { id: id.into(), title: format!("{id} title"), activated };
         connection.object_server().at(path, item).await.unwrap();
         if let Some(name) = name {
             connection.request_name(name).await.unwrap();
@@ -175,7 +193,9 @@ fn an_electron_item_shows_with_its_app_and_goes_with_it() {
     fixture.run_in_unit("app-discord-375306.scope");
     let tray = fixture.tray(Some(Arc::clone(&launcher)));
 
-    let app = put_up(&fixture, None, "/StatusNotifierItem", "/StatusNotifierItem", "chrome_status_icon_1");
+    let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let item_id = "chrome_status_icon_1";
+    let app = put_up_counting(&fixture, None, "/StatusNotifierItem", "/StatusNotifierItem", item_id, activated.clone());
     let address = format!("{}/StatusNotifierItem", app.unique_name().unwrap());
     let items = fixture.next_items();
     assert_eq!(items[0]["address"], json!(address));
@@ -184,6 +204,11 @@ fn an_electron_item_shows_with_its_app_and_goes_with_it() {
     assert_eq!(items[0]["app"]["id"], "discord.desktop");
     let host = fixture.connect();
     assert_eq!(watcher_property::<Vec<String>>(&host, "RegisteredStatusNotifierItems"), std::slice::from_ref(&address));
+
+    // The launcher reopens an app that only sits in the tray through its item.
+    assert_eq!(tray.activate_app("discord.desktop"), Ok(true));
+    assert_eq!(activated.load(Ordering::SeqCst), 1);
+    assert_eq!(tray.activate_app("steam.desktop"), Ok(false));
 
     drop(app);
     assert_eq!(fixture.next_items(), json!([]));
@@ -242,10 +267,36 @@ fn a_queued_tray_takes_over_when_the_first_stops() {
 fn put_up_retrying(fixture: &Fixture) -> Option<Connection> {
     let connection = fixture.connect();
     zbus::block_on(async {
-        let item = Item { id: "late".into(), title: String::new() };
+        let item = Item { id: "late".into(), title: String::new(), activated: Arc::default() };
         connection.object_server().at("/StatusNotifierItem", item).await.unwrap();
         register(&connection, "/StatusNotifierItem").await.ok()?;
         Some(())
     })?;
     Some(connection)
+}
+
+#[test]
+fn hidden_apps_are_remembered_across_restarts() {
+    let fixture = Fixture::new("hidden");
+    let tray = fixture.tray(None);
+    assert!(tray.hide("steam", true).is_err(), "only an app in the tray can be hidden");
+    let _app = put_up(&fixture, None, "/StatusNotifierItem", "/StatusNotifierItem", "steam");
+    fixture.next_items();
+    tray.hide("steam", true).unwrap();
+    let event = |fixture: &Fixture| loop {
+        if let Outgoing::Line(line) = fixture.ui.recv_timeout(WAIT).expect("a tray event") {
+            let event: Value = serde_json::from_str(&line).unwrap();
+            if event["event"] == "tray" {
+                return event["data"].clone();
+            }
+        }
+    };
+    assert_eq!(event(&fixture)["hidden"], json!(["steam"]));
+    tray.stop();
+
+    // A new tray (novad restarted) still hides it, with the app gone meanwhile.
+    let tray = fixture.tray(None);
+    tray.hide("steam", false).unwrap();
+    assert!(event(&fixture).get("hidden").is_none());
+    tray.stop();
 }

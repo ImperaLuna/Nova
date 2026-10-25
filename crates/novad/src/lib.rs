@@ -208,7 +208,7 @@ fn start(
         ai_usage: ai_usage::Paths::new(&args.state_dir, args.codex_home, args.claude_credentials),
         resources: resources::Sources::system(&path_var),
         launcher: launcher::Paths::new(&args.state_dir, &path_var),
-        tray: tray::Bus::Session,
+        tray: tray::Sources::new(&args.state_dir),
     };
     let settings = Settings::load(&sources, &hub, &logger);
 

@@ -454,6 +454,11 @@ pub struct Launcher {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Tray {
     pub items: Vec<TrayItem>,
+    /// The apps the user hid from the bar's tray (`hide_tray_app`), by an
+    /// item's app id, or its own `id` when it has no app. Quick settings
+    /// still lists them, to bring them back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden: Vec<String>,
 }
 
 /// One app's tray icon. The UI draws it through Quickshell's tray host and
@@ -771,6 +776,13 @@ pub enum Command {
     PinApp {
         id: String,
         pinned: bool,
+    },
+    /// Hides a tray app from the bar, or shows it again (feature `tray`):
+    /// `id` is the item's app id, or its own id when it has none (see
+    /// [`Tray::hidden`]). Remembered across restarts.
+    HideTrayApp {
+        id: String,
+        hidden: bool,
     },
 }
 
@@ -1285,6 +1297,7 @@ mod tests {
                 },
             }),
             encode(Request { id: Some(26), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
+            encode(Request { id: Some(27), command: Command::HideTrayApp { id: "steam".into(), hidden: true } }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
             encode(Event::Tray(tray())),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
@@ -1463,6 +1476,7 @@ mod tests {
                     app: None,
                 },
             ],
+            hidden: vec!["steam".into()],
         }
     }
 

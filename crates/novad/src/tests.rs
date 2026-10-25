@@ -102,7 +102,10 @@ impl TestDaemon {
             resources: resources::Sources::system(""),
             launcher: launcher_paths(&dir),
             // No bus: the tray's own tests give it one.
-            tray: tray::Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+            tray: tray::Sources {
+                bus: tray::Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                state_file: dir.join("tray.json"),
+            },
         };
         let settings = Settings::load(&sources, &hub, &logger);
         let compositor = compositor(&dir)

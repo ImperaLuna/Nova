@@ -216,6 +216,14 @@ impl<'a> Connection<'a> {
             // Answered on its own thread (`slow_work`).
             Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window)(),
             Command::PinApp { id, pinned } => return self.with_launcher(|launcher| launcher.pin(id, *pinned)),
+            Command::HideTrayApp { id, hidden } => {
+                let tray = lock(&self.daemon.settings).tray.clone();
+                return match tray.map(|tray| tray.hide(id, *hidden)) {
+                    Some(Ok(())) => Outcome::Result(serde_json::Value::Null),
+                    Some(Err(e)) => Outcome::Error(e),
+                    None => Outcome::Error(format!("the {} feature is off", crate::tray::FEATURE_ID)),
+                };
+            }
         };
         match value {
             Ok(value) => Outcome::Result(value),
@@ -592,7 +600,8 @@ impl<'a> Connection<'a> {
             | Command::EndApp { .. }
             | Command::SearchApps { .. }
             | Command::LaunchApp { .. }
-            | Command::PinApp { .. } => {}
+            | Command::PinApp { .. }
+            | Command::HideTrayApp { .. } => {}
         }
     }
 

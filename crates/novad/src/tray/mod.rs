@@ -22,8 +22,8 @@ mod tests;
 
 use crate::hub::{ClientId, Hub};
 use crate::launcher::Launcher;
-use crate::lock;
 use crate::logger::Logger;
+use crate::{lock, state_file};
 use futures_core::Stream;
 use nova_protocol::{Event, LogLevel, Tray as TrayEvent, TrayItem};
 use std::future::poll_fn;
@@ -54,6 +54,8 @@ const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
 
 /// More than any desktop has; past it, registrations are refused.
 pub const MAX_ITEMS: usize = 64;
+/// How many apps can be hidden at once.
+const MAX_HIDDEN: usize = MAX_ITEMS;
 /// The longest service string a registration may send. Bus names are at
 /// most 255 bytes; this leaves room for a path after one.
 const MAX_SERVICE_LEN: usize = 512;
@@ -61,6 +63,20 @@ const MAX_SERVICE_LEN: usize = 512;
 const MAX_TEXT_CHARS: usize = 256;
 /// How long novad waits for an app, or the bus, to answer a call.
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Where the tray's watcher is, and what it keeps.
+#[derive(Clone)]
+pub struct Sources {
+    pub bus: Bus,
+    /// The apps hidden from the bar's tray.
+    pub state_file: PathBuf,
+}
+
+impl Sources {
+    pub fn new(state_dir: &std::path::Path) -> Self {
+        Self { bus: Bus::Session, state_file: state_dir.join("tray.json") }
+    }
+}
 
 /// Which bus the watcher is on.
 #[derive(Clone)]
@@ -82,16 +98,27 @@ struct Shared {
     logger: Arc<Logger>,
     /// Where an item's process is looked up (`/proc`, or a copy in tests).
     proc_root: PathBuf,
+    state_file: PathBuf,
     /// Finds the app an item belongs to, while the `launcher` feature runs.
     launcher: Mutex<Option<Arc<Launcher>>>,
+    /// The watcher's connection, once it's up, for `activate_app`.
+    connection: Mutex<Option<Connection>>,
     stop: Stop,
 }
 
 #[derive(Default)]
 struct State {
     items: Vec<Item>,
+    saved: Saved,
     /// The last event published, so an unchanged list isn't sent again.
     sent: Option<TrayEvent>,
+}
+
+/// What survives a restart.
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+struct Saved {
+    #[serde(default)]
+    hidden: Vec<String>,
 }
 
 struct Item {
@@ -124,18 +151,28 @@ impl Tray {
     /// watcher, or connecting failed (logged), so apps started after it
     /// find the watcher.
     pub fn start(
-        bus: Bus,
+        sources: Sources,
         proc_root: PathBuf,
         launcher: Option<Arc<Launcher>>,
         hub: Arc<Hub>,
         logger: Arc<Logger>,
     ) -> Arc<Self> {
+        let Sources { bus, state_file } = sources;
+        let saved = match std::fs::read_to_string(&state_file) {
+            Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
+                logger.warn(LOG_SOURCE, &format!("ignoring {}: {e}", state_file.display()));
+                Saved::default()
+            }),
+            Err(_) => Saved::default(),
+        };
         let shared = Arc::new(Shared {
-            state: Mutex::new(State::default()),
+            state: Mutex::new(State { saved, ..State::default() }),
             hub,
             logger,
             proc_root,
+            state_file,
             launcher: Mutex::new(launcher),
+            connection: Mutex::new(None),
             stop: Stop::default(),
         });
         let (ready, started) = std::sync::mpsc::channel();
@@ -173,6 +210,60 @@ impl Tray {
         self.shared.publish(&mut lock(&self.shared.state));
     }
 
+    /// Hides the app `id` (an item's app id, or its own id without one)
+    /// from the bar's tray, or shows it again, and remembers that. Only an
+    /// app in the tray now can be hidden.
+    pub fn hide(&self, id: &str, hidden: bool) -> Result<(), String> {
+        let mut state = lock(&self.shared.state);
+        let at = state.saved.hidden.iter().position(|kept| kept == id);
+        match (hidden, at) {
+            (true, None) => {
+                if !self.shared.event(&state).items.iter().any(|item| key(item) == id) {
+                    return Err(format!("no tray app {id:?}"));
+                }
+                if state.saved.hidden.len() >= MAX_HIDDEN {
+                    return Err(format!("at most {MAX_HIDDEN} tray apps can be hidden"));
+                }
+                state.saved.hidden.push(id.to_string());
+            }
+            (false, Some(at)) => {
+                state.saved.hidden.remove(at);
+            }
+            (true, Some(_)) | (false, None) => return Ok(()),
+        }
+        // Under the lock, so changes reach the file in the order they were made.
+        if let Err(e) = state_file::save(&self.shared.state_file, &state.saved) {
+            let message = format!("can't save {}: {e}", self.shared.state_file.display());
+            self.shared.logger.warn(LOG_SOURCE, &message);
+        }
+        self.shared.publish(&mut state);
+        Ok(())
+    }
+
+    /// Asks the tray item of the app `app_id` (a desktop entry id) to show
+    /// its window, as a click on its icon does (`Activate`). False when no
+    /// item belongs to that app. For the launcher, to reopen an app that
+    /// only sits in the tray.
+    pub fn activate_app(&self, app_id: &str) -> Result<bool, String> {
+        let address = {
+            let state = lock(&self.shared.state);
+            let event = self.shared.event(&state);
+            let Some(item) = event.items.into_iter().find(|item| item.app.as_ref().is_some_and(|app| app.id == app_id))
+            else {
+                return Ok(false);
+            };
+            item.address
+        };
+        let Some(connection) = lock(&self.shared.connection).clone() else {
+            return Ok(false);
+        };
+        let slash = address.find('/').ok_or_else(|| format!("bad tray address {address}"))?;
+        let (bus, path) = address.split_at(slash);
+        zbus::block_on(connection.call_method(Some(bus), path, Some(ITEM_INTERFACE), "Activate", &(0i32, 0i32)))
+            .map_err(|e| format!("{app_id}'s tray icon didn't answer: {e}"))?;
+        Ok(true)
+    }
+
     /// Sends a new subscriber, client `id`, the items as they are, under the
     /// lock that publishing takes, so a newer list can't arrive before it.
     pub fn send_state(&self, id: ClientId) {
@@ -201,7 +292,7 @@ impl Shared {
                 })
             })
             .collect();
-        TrayEvent { items }
+        TrayEvent { items, hidden: state.saved.hidden.clone() }
     }
 
     fn publish(&self, state: &mut State) {
@@ -311,6 +402,11 @@ impl Shared {
     }
 }
 
+/// What `hide` and `Tray::hidden` know an item's app by.
+fn key(item: &TrayItem) -> &str {
+    item.app.as_ref().map_or(&item.id, |app| &app.id)
+}
+
 /// Connects to `bus`, claims the watcher's name and serves it, dropping
 /// items whose app leaves the bus, until `stop` or the bus goes. Sends on
 /// `ready` once apps can register.
@@ -338,6 +434,7 @@ async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mpsc::Sender<(
         ),
         _ => shared.logger.info(LOG_SOURCE, &format!("watching for tray icons as {WATCHER_NAME}")),
     }
+    *lock(&shared.connection) = Some(connection.clone());
     let _ = ready.send(());
     let emitter = SignalEmitter::new(&connection, WATCHER_PATH)?;
     while let Some(message) = next_unless_stopped(&mut owners, &shared.stop).await {

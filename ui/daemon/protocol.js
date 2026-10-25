@@ -28,6 +28,7 @@ var CMD_END_APP = "end_app";
 var CMD_SEARCH_APPS = "search_apps";
 var CMD_LAUNCH_APP = "launch_app";
 var CMD_PIN_APP = "pin_app";
+var CMD_HIDE_TRAY_APP = "hide_tray_app";
 // novad refuses longer search_apps queries (SEARCH_APPS_MAX_CHARS in
 // nova-protocol, which checks this matches).
 var SEARCH_APPS_MAX_CHARS = 200;

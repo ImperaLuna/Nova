@@ -38,8 +38,7 @@ pub struct Sources {
     pub ai_usage: ai_usage::Paths,
     pub resources: resources::Sources,
     pub launcher: launcher::Paths,
-    /// The bus the tray's watcher is on.
-    pub tray: tray::Bus,
+    pub tray: tray::Sources,
 }
 
 /// The settings in effect, and the feature services they started.

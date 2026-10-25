@@ -65,6 +65,7 @@ expression: all
 {"v":2,"id":24,"result":[{"id":"org.mozilla.firefox.desktop","name":[{"matched":true,"text":"Fi"},{"text":"refox"}]}]}
 {"v":2,"id":25,"cmd":"launch_app","args":{"id":"foot.desktop","output":"DP-1","new_window":true}}
 {"v":2,"id":26,"cmd":"pin_app","args":{"id":"foot.desktop","pinned":true}}
+{"v":2,"id":27,"cmd":"hide_tray_app","args":{"id":"steam","hidden":true}}
 {"v":2,"cmd":"toggle","args":{"panel":"launcher"}}
-{"v":2,"event":"tray","data":{"items":[{"address":":1.421/StatusNotifierItem","id":"discord_status_icon_1","title":"","app":{"id":"discord.desktop","name":"Discord","description":"All-in-one cross-platform voice and text chat for gamers","icon":"discord"}},{"address":":1.607/org/ayatana/NotificationItem/steam","id":"steam","title":"Steam"}]}}
+{"v":2,"event":"tray","data":{"items":[{"address":":1.421/StatusNotifierItem","id":"discord_status_icon_1","title":"","app":{"id":"discord.desktop","name":"Discord","description":"All-in-one cross-platform voice and text chat for gamers","icon":"discord"}},{"address":":1.607/org/ayatana/NotificationItem/steam","id":"steam","title":"Steam"}],"hidden":["steam"]}}
 {"v":2,"id":8,"error":"bad request"}
