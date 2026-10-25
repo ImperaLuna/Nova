@@ -29,9 +29,9 @@ Singleton {
         });
     }
 
-    // Starts the app `id`, or brings its open window to the workspace
-    // showing on the screen `output` unless `newWindow`; `done(error)` gets
-    // novad's answer.
+    // Starts the app `id` (on the screen `output`), or focuses its open
+    // window where it is unless `newWindow`; `done(error)` gets novad's
+    // answer.
     function launch(id: string, output: string, newWindow: bool, done: var) {
         Daemon.call(Protocol.CMD_LAUNCH_APP, {
             id: id,

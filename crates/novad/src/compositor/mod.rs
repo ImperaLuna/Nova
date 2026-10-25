@@ -44,10 +44,11 @@ pub trait Backend: Send + Sync {
     /// Quits the compositor, ending the session, without its own prompt.
     fn log_out(&self) -> Result<(), String>;
 
-    /// Moves a window whose app id is one of `app_ids` (lower case) to
-    /// `workspace`, one the last report listed, and focuses it. `false`
-    /// when no window has one of them.
-    fn bring_window(&self, app_ids: &[String], workspace: &Workspace) -> Result<bool, String>;
+    /// Focuses a window whose app id is one of `app_ids` (lower case) where
+    /// it is, switching workspace and output to it. A window on `here`, one
+    /// the last report listed, wins over one elsewhere. `false` when no
+    /// window has one of them.
+    fn focus_window(&self, app_ids: &[String], here: &Workspace) -> Result<bool, String>;
 }
 
 /// The backend for the compositor this session runs, from its variables in
@@ -141,11 +142,10 @@ impl Compositor {
         }
     }
 
-    /// Whether the backend can do what `capability` names.
-    /// Brings a window of an app with one of `app_ids` (lower case) to the
-    /// workspace showing on `output` (the focused one when `None`) and
-    /// focuses it, for an app that runs once. `false` when none is open.
-    pub fn bring_app(&self, app_ids: &[String], output: Option<&str>) -> Result<bool, String> {
+    /// Focuses a window of an app with one of `app_ids` (lower case) where it
+    /// is, preferring one on the workspace showing on `output` (the focused
+    /// one when `None`). `false` when none is open.
+    pub fn focus_app(&self, app_ids: &[String], output: Option<&str>) -> Result<bool, String> {
         let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
         let output = match output {
             Some(name) => desktop.outputs.iter().find(|candidate| candidate.name == name),
@@ -154,9 +154,24 @@ impl Compositor {
         .ok_or("no such output")?;
         let workspace =
             output.workspaces.iter().find(|workspace| workspace.active).ok_or("no workspace shows there")?;
-        self.backend.bring_window(app_ids, workspace)
+        self.backend.focus_window(app_ids, workspace)
     }
 
+    /// Focuses `output` by showing its active workspace, so a window that
+    /// opens next opens there. Nothing when it's focused already.
+    pub fn focus_output(&self, output: &str) -> Result<(), String> {
+        let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
+        let output = desktop.outputs.iter().find(|candidate| candidate.name == output).ok_or("no such output")?;
+        if output.focused || !self.can(Capability::FocusWorkspace) {
+            return Ok(());
+        }
+        match output.workspaces.iter().find(|workspace| workspace.active) {
+            Some(workspace) => self.backend.focus_workspace(workspace),
+            None => Ok(()),
+        }
+    }
+
+    /// Whether the backend can do what `capability` names.
     pub fn can(&self, capability: Capability) -> bool {
         self.backend.capabilities().contains(&capability)
     }

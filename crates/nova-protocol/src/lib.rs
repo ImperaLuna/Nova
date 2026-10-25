@@ -763,10 +763,10 @@ pub enum Command {
     SearchApps {
         query: String,
     },
-    /// Opens an app by its id (feature `launcher`) and counts it towards
-    /// the recent ones. When it already has a window, that window moves to
-    /// the workspace showing on `output` (the focused output's when unset)
-    /// and takes focus, unless `new_window` asks for another one.
+    /// Opens an app by its id (feature `launcher`) on `output` (the focused
+    /// output when unset) and counts it towards the recent ones. When it
+    /// already has a window, that window takes focus where it is, unless
+    /// `new_window` asks for another one.
     LaunchApp {
         id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]

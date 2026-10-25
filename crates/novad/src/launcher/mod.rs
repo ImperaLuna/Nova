@@ -192,23 +192,22 @@ impl Launcher {
             .collect())
     }
 
-    /// Brings a window the app `id` already has, through `bring` (given the
-    /// app ids its windows may have, `false` when none is open), or else
-    /// starts the app; either counts it as launched.
-    pub fn launch(&self, id: &str, bring: impl FnOnce(&[String]) -> Result<bool, String>) -> Result<(), String> {
+    /// Focuses a window the app `id` already has, through `focus` (given the
+    /// app ids its windows may have, none for a terminal app; `false` when
+    /// none is open), or else starts the app; either counts it as launched.
+    pub fn launch(&self, id: &str, focus: impl FnOnce(&[String]) -> Result<bool, String>) -> Result<(), String> {
         let off = || format!("the {FEATURE_ID} feature is off");
         let entry = lock(&self.state).apps.get(id).cloned().ok_or_else(|| format!("no app {id:?}"))?;
         let ids = entry.window_ids();
         if self.stopped() {
             return Err(off());
         }
-        let brought = !ids.is_empty()
-            && bring(&ids).unwrap_or_else(|e| {
-                self.logger.warn(LOG_SOURCE, &format!("can't bring {id}'s window, so starting it: {e}"));
-                false
-            });
-        if !brought {
-            // Bringing may have taken a while.
+        let focused = focus(&ids).unwrap_or_else(|e| {
+            self.logger.warn(LOG_SOURCE, &format!("the compositor can't help with {id}, so starting it: {e}"));
+            false
+        });
+        if !focused {
+            // Focusing may have taken a while.
             if self.stopped() {
                 return Err(off());
             }
