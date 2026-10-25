@@ -123,6 +123,8 @@ WRONG_PASSWORD = "nova: lock screen: wrong password"
 # What the launcher logs (ui/launcher).
 LAUNCHER_OPENED = "nova: launcher opened"
 LAUNCHER_CLOSED = "nova: launcher closed"
+# Keys typed before this go to the window that had the keyboard.
+LAUNCHER_TYPING = "nova: launcher has the keyboard"
 # The systemd service novad starts an app as (crates/novad/src/launcher/launch.rs).
 FOOT_UNIT = "app-nova-foot-"
 # What the power menu logs (ui/power), and its key for Lock.
@@ -475,9 +477,9 @@ with subtest("nova toggle power opens the power menu; Esc closes it and its L ke
     press_until_logged(ENTER, SESSION_UNLOCKED)
 
 with subtest("nova toggle launcher opens the launcher; typing finds foot, Enter starts it in a scope of its own, Esc closes"):
-    before = ui_log_count(LAUNCHER_OPENED)
+    before = ui_log_count(LAUNCHER_TYPING)
     machine.succeed(as_user("nova toggle launcher"))
-    retry(lambda _last_try: ui_log_count(LAUNCHER_OPENED) > before, timeout=CLICK_EFFECT)
+    retry(lambda _last_try: ui_log_count(LAUNCHER_TYPING) > before, timeout=CLICK_EFFECT)
     machine.succeed(f"{YDOTOOL} type {FOOT}")
     screenshot("launcher")
     try:

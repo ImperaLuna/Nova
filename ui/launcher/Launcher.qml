@@ -247,6 +247,12 @@ StagePanel {
                     selectedTextColor: Tokens.onAccent
                     clip: true
                     maximumLength: Protocol.SEARCH_APPS_MAX_CHARS
+                    // Typing reaches it only once the compositor has given
+                    // the deck the keyboard, a moment after it opens.
+                    onActiveFocusChanged: {
+                        if (activeFocus && launcher.open)
+                            console.info("nova: launcher has the keyboard");
+                    }
                     cursorDelegate: Rectangle {
                         width: Tokens.caretWidth
                         color: Tokens.primary
