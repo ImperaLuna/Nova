@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: nix flake check
-        run: nix flake check -L
+        run: nix flake check -L --keep-going
       - name: headless e2e
         run: nix develop -c just e2e
       # The VM tests' screenshots, report and odiff diffs. The flake check
