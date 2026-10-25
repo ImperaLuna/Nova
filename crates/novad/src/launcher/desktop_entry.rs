@@ -57,6 +57,13 @@ impl Entry {
         ids.dedup();
         ids
     }
+
+    /// Whether `id` (lower case) is the app id it names for its windows or
+    /// its desktop file id, rather than just its program or name.
+    pub fn is_named(&self, id: &str) -> bool {
+        let desktop_id = self.id.strip_suffix(".desktop").unwrap_or(&self.id);
+        [self.window_class.as_deref(), Some(desktop_id)].into_iter().flatten().any(|named| named.to_lowercase() == id)
+    }
 }
 
 /// Why a file isn't an app the launcher lists.

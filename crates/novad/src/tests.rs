@@ -1861,6 +1861,27 @@ fn pins_keep_their_order_and_survive_a_restart() {
 }
 
 #[test]
+fn an_app_is_found_by_its_own_id_before_a_shortcut_running_it() {
+    let novad = TestDaemon::with_launcher("find-app");
+    // Steam's game shortcuts run `steam`, and sort before it.
+    install_app(&novad, "Abiotic Factor.desktop", "Name=Abiotic Factor\nExec=steam steam://rungameid/427410\n");
+    install_app(&novad, "steam.desktop", "Name=Steam\nExec=steam %U\n");
+    let launcher = launcher::Launcher::start(
+        launcher_paths(&novad.dir),
+        "",
+        Arc::new(Hub::default()),
+        Arc::clone(&novad.daemon.logger),
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while launcher.find_app(&["abiotic factor".into()]).is_none() || launcher.find_app(&["steam".into()]).is_none() {
+        assert!(Instant::now() < deadline, "the launcher found both apps");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(launcher.find_app(&["steam".into()]).unwrap().id, "steam.desktop");
+    launcher.stop();
+}
+
+#[test]
 fn the_launcher_stops_with_its_feature() {
     let novad = TestDaemon::with_launcher("launcher-off");
     let mut client = novad.connect();

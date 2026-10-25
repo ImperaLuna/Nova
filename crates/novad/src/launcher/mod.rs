@@ -233,10 +233,15 @@ impl Launcher {
 
     /// The installed app whose windows may have one of `ids` (lower case,
     /// the likeliest first), like a tray icon's process names: the first id
-    /// that any app matches decides.
+    /// that any app matches decides. Of the apps it matches, one it names
+    /// (window class or desktop id) beats one that only runs that program:
+    /// `steam` is Steam, not a game shortcut whose Exec is `steam`.
     pub fn find_app(&self, ids: &[String]) -> Option<App> {
         let state = lock(&self.state);
-        ids.iter().find_map(|id| state.apps.values().find(|entry| entry.window_ids().contains(id)).map(app))
+        ids.iter().find_map(|id| {
+            let matching: Vec<&Entry> = state.apps.values().filter(|entry| entry.window_ids().contains(id)).collect();
+            matching.iter().find(|entry| entry.is_named(id)).or(matching.first()).map(|entry| app(entry))
+        })
     }
 
     /// Pins the app `id` at the end, or unpins it.

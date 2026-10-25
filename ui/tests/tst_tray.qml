@@ -216,6 +216,7 @@ Item {
         function test_menu_text() {
             compare(Tray.label("_Open Discord"), "Open Discord");
             compare(Tray.label("snake__case"), "snake_case");
+            compare(Tray.label("Disable Notifications && Audio"), "Disable Notifications & Audio");
             verify(Tray.isQuit("Quit Discord"));
             verify(Tray.isQuit("Exit Steam"));
             verify(!Tray.isQuit("Quick Entry"));

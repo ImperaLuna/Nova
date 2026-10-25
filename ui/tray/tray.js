@@ -95,7 +95,9 @@ function isQuit(text) {
 }
 
 // A menu entry's text as shown: without the `_` mnemonic markers DBusMenu
-// labels carry (`__` is a literal underscore).
+// labels carry (`__` is a literal underscore). Electron apps written for
+// Windows menus send `&&` for a literal `&` (Ferdium's "Disable
+// Notifications && Audio").
 function label(text) {
-    return (text || "").replace(/__/g, "\u0000").replace(/_/g, "").replace(/\u0000/g, "_");
+    return (text || "").replace(/__/g, "\u0000").replace(/_/g, "").replace(/\u0000/g, "_").replace(/&&/g, "&");
 }
