@@ -39,7 +39,10 @@ StagePanel {
         }
         onCloseRequested: menu.open = false
     }
-    moving: morph.moving || reveal.running || choice.running !== "" || choice.counting
+    // An action still running after the menu closed shows nothing, so it
+    // keeps neither the surface mapped nor its spinner turning.
+    readonly property bool showsRunning: open && choice.running !== ""
+    moving: morph.moving || reveal.running || showsRunning || choice.counting
 
     // Open, it's as tall as its rows; closed, a nub at the edge.
     readonly property real openWidth: Tokens.powerMenuWidth
@@ -137,7 +140,7 @@ StagePanel {
                     reason: menu.choice.reason(action)
                     armed: menu.choice.armed === action
                     armedLeft: menu.choice.armedLeft
-                    running: menu.choice.running === action
+                    running: menu.showsRunning && menu.choice.running === action
                     busy: menu.choice.running !== "" && !running
                     onHovered: menu.choice.hover(action)
                     onClicked: menu.choice.pick(action)
