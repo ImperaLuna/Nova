@@ -141,6 +141,7 @@ Scope {
         }
 
         WlrLayershell.layer: WlrLayer.Top
+        WlrLayershell.namespace: "nova-stage"
         WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
         // Rounded like what's drawn, so clicks at the corners reach the
