@@ -268,8 +268,12 @@
               // {
                 inherit cargoArtifacts;
                 env = (novaFor pkgs).novaEnv;
-                # setpriv, for the launcher test's app that dies with its parent.
-                nativeBuildInputs = [ pkgs.util-linux ];
+                # setpriv, for the launcher test's app that dies with its parent;
+                # dbus-daemon, for the notifications' private test bus.
+                nativeBuildInputs = [
+                  pkgs.util-linux
+                  pkgs.dbus
+                ];
               }
             );
           # The release archive, so it can't break unnoticed before a tag.
@@ -414,6 +418,7 @@
             pkgs.qt6.qtshadertools # qsb, for scripts/shaders.sh
             pkgs.sway # headless compositor for e2e
             pkgs.grim
+            pkgs.dbus # dbus-daemon, for the notifications' tests
             pkgs.cargo-insta # `cargo insta review` for snapshot tests
             pkgs.cargo-deny
             pkgs.nixfmt

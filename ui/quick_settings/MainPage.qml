@@ -6,10 +6,11 @@ import "../theme/icons.js" as Icons
 import "../volume/volume.js" as Volume
 import "quick_settings.js" as QuickSettings
 
-// The sidebar's first page: the header, the toggle tiles, the sliders, and
-// the resources card pinned at the foot. The space between is kept for
-// notifications (IMP-61). Everything comes in as properties and goes out
-// as signals, so ui/tests can drive it without PipeWire or novad.
+// The sidebar's first page: the header, the toggle tiles, the sliders, the
+// notifications in the space below them (with the notifications feature
+// on), and the resources card pinned at the foot. Everything comes in as
+// properties and goes out as signals, so ui/tests can drive it without
+// PipeWire or novad.
 Item {
     id: page
 
@@ -40,6 +41,12 @@ Item {
     property real micVolume: 0
 
     property var reading: null
+
+    // Notifications (NotificationList), while their feature is on.
+    property bool notificationsShown: false
+    property var notifications: []
+    property bool doNotDisturb: false
+    property var iconSource: name => ""
     // Room the top row leaves on its right (the pill's buttons).
     property real headerInset: 0
 
@@ -49,10 +56,16 @@ Item {
     signal muteToggled
     signal micVolumeMoved(real value)
     signal pageRequested(string page)
+    signal notificationOpened(var notification)
+    signal notificationDismissed(int id)
+    signal notificationsCleared(var app)
+    signal notificationAppMuted(string app)
+    signal doNotDisturbToggled
 
-    readonly property bool revealing: [header, tiles, sliders, foot].some(section => section.running)
+    readonly property bool revealing: [header, tiles, sliders, notes, foot].some(section => section.running)
 
     Column {
+        id: sections
         width: page.width
         spacing: Tokens.quickSettingsGap
 
@@ -143,11 +156,35 @@ Item {
     }
 
     Reveal {
+        id: notes
+        y: sections.height + Tokens.quickSettingsGap
+        width: parent.width
+        height: foot.y - y - Tokens.quickSettingsGap
+        visible: page.notificationsShown
+        shown: page.shown
+        order: 3
+
+        NotificationList {
+            anchors.fill: parent
+            items: page.notifications
+            doNotDisturb: page.doNotDisturb
+            iconSource: page.iconSource
+            now: page.now.getTime() / 1000
+            onOpened: notification => page.notificationOpened(notification)
+            onDismissed: id => page.notificationDismissed(id)
+            onCleared: app => page.notificationsCleared(app)
+            onMuted: app => page.notificationAppMuted(app)
+            onDoNotDisturbToggled: page.doNotDisturbToggled()
+            onSettingsOpened: page.pageRequested("notifications")
+        }
+    }
+
+    Reveal {
         id: foot
         anchors.bottom: parent.bottom
         width: parent.width
         shown: page.shown
-        order: 3
+        order: 4
 
         ResourcesCard {
             width: parent.width

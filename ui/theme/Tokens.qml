@@ -402,6 +402,71 @@ QtObject {
     readonly property int recordMarkWidth: 3
     readonly property int recordMarkGap: 4
 
+    // Notifications (ui/notifications): pop-ups this wide under the right
+    // pill, at most notificationsShown at once, each staying
+    // durationNotification unless its app asks otherwise. Who it's from (a
+    // picture with the app's icon on its corner), its lines, buttons,
+    // progress and the line draining its time; critical ones get a rim.
+    readonly property int notificationWidth: 380
+    readonly property int notificationsShown: 3
+    readonly property int durationNotification: 6000
+    readonly property int radiusNotification: 20
+    readonly property int notificationPadBottom: 14
+    readonly property int notificationAvatar: 40
+    readonly property int notificationAppBadge: 18
+    readonly property int notificationBadgeRadius: 6
+    readonly property int notificationBadgeRing: 2
+    readonly property int notificationAppLine: 18
+    readonly property int notificationLineGap: 2
+    readonly property int notificationBodyLines: 3
+    readonly property int notificationActionsGap: 8
+    readonly property int notificationActionHeight: 28
+    readonly property int notificationProgressHeight: 6
+    readonly property int notificationTimerHeight: 2
+    readonly property color notificationTimer: Qt.rgba(fg.r, fg.g, fg.b, 0.35)
+    readonly property real notificationCriticalRim: 1.5
+    // "+2" beside the app, and the count in the list's heading.
+    readonly property int notificationChipHeight: 16
+    readonly property int notificationChipPad: 6
+    // The ✕ and ⋯ on a card's corner, shown on hover.
+    readonly property int notificationCloseSize: 24
+    readonly property int notificationCloseInset: 9
+    // A pop-up grows out of the quick settings button: from this share of
+    // its width and height, this far above its place. One that's clicked
+    // or dismissed slides this far right as it fades.
+    readonly property real notificationFold: 0.08
+    readonly property real notificationFoldHeight: 0.15
+    readonly property int notificationRise: 38
+    readonly property int notificationAway: 60
+    // The list in quick settings: the heading's round buttons, its rows
+    // (an icon, two lines of body), the gap between them, a stack's edges
+    // under its top one, the ⋯ menu and the empty list's bell.
+    readonly property int notificationButton: 26
+    readonly property int notificationRowIcon: 28
+    readonly property int notificationRowLines: 2
+    readonly property int notificationListGap: 6
+    readonly property int notificationPeek: 6
+    readonly property int notificationPeekHeight: 14
+    readonly property int notificationPeekInset: 10
+    readonly property int notificationMenuWidth: 170
+    readonly property int notificationEmptyIcon: 28
+    readonly property int fontSizeEmpty: 26
+    // On/off switches, like an app's on the notification settings page.
+    readonly property int switchWidth: 40
+    readonly property int switchHeight: 24
+    readonly property int switchKnob: 18
+    // The badge on the quick settings button: unread notifications (up to
+    // badgeMax, then "9+"), or a grey crossed-out bell during do not
+    // disturb. It sits this far past the button's corner, ringed in bg.
+    readonly property int badgeSize: 15
+    readonly property int badgePad: 4
+    readonly property int badgeOffset: 3
+    readonly property int badgeRing: 2
+    readonly property int badgeIcon: 9
+    readonly property int badgeMax: 9
+    readonly property int fontSizeBadge: 9
+    readonly property color badgeQuiet: Qt.rgba(fg.r, fg.g, fg.b, 0.55)
+
     // Type
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"

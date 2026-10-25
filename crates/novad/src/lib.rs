@@ -33,12 +33,14 @@ mod inotify;
 mod launcher;
 mod logger;
 mod logind;
+mod notifications;
 mod power;
 mod procfs;
 mod recording;
 mod resources;
 mod screenshot;
 mod server;
+mod session_bus;
 mod session_lock;
 mod settings;
 mod state_file;
@@ -207,6 +209,7 @@ fn start(
         ai_usage: ai_usage::Paths::new(&args.state_dir, args.codex_home, args.claude_credentials),
         resources: resources::Sources::system(&path_var),
         launcher: launcher::Paths::new(&args.state_dir, &path_var),
+        notifications: notifications::Sources::new(&args.state_dir),
     };
     let settings = Settings::load(&sources, &hub, &logger);
 
