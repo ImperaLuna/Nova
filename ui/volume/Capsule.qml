@@ -59,6 +59,9 @@ Item {
         readonly property real glow: Tokens.liquidGlow
         readonly property real streak: Tokens.liquidStreak
         readonly property real rimOn: capsule.unavailable ? 0 : 1
+        readonly property real rimWidth: Tokens.glassRimWidth
+        readonly property real rimShade: Tokens.glassRimShade
+        readonly property real sheenFade: Tokens.glassVeilAt
         readonly property real shadowBlur: Tokens.shadowBlur
         readonly property real shadowOffset: Tokens.shadowOffset
         readonly property color tint: Tokens.glass

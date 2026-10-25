@@ -27,6 +27,9 @@ layout(std140, binding = 0) uniform buf {
     float glow;       // light just under the surface, 0..1
     float streak;     // light down the left side, 0..1
     float rimOn;      // 1: lit rim, 0: none (the dashed outline replaces it)
+    float rimWidth;   // px
+    float rimShade;   // the rim's brightness on its unlit side, 0..1
+    float sheenFade;  // where, top to bottom, the sheen has faded, 0..1
     float shadowBlur; // px
     float shadowOffset; // px, downwards
     vec4 tint;        // glass
@@ -69,10 +72,10 @@ void main() {
     // Glass: tint, a sheen from the top fading out, a rim lit from the top-left.
     float v = clamp((p.y - box.y) / max(box.w, 1.0), 0.0, 1.0);
     vec4 col = pm(tint, 1.0);
-    col = over(pm(sheen, 1.0 - smoothstep(0.0, 0.45, v)), col);
+    col = over(pm(sheen, 1.0 - smoothstep(0.0, sheenFade, v)), col);
     vec2 g = normalize(vec2(dFdx(d), dFdy(d)) + 1e-5);
-    float rim = 1.0 - smoothstep(0.0, 1.4, abs(d + 0.7));
-    float lit = mix(0.35, 1.0, clamp(dot(-g, normalize(vec2(-1.0, -1.0))) * 0.5 + 0.5, 0.0, 1.0));
+    float rim = 1.0 - smoothstep(0.0, rimWidth, abs(d + rimWidth * 0.5));
+    float lit = mix(rimShade, 1.0, clamp(dot(-g, normalize(vec2(-1.0, -1.0))) * 0.5 + 0.5, 0.0, 1.0));
     col = over(pm(rimLit, rim * lit * rimOn), col);
 
     // Liquid: inside the capsule inset by the wall, below its surface.

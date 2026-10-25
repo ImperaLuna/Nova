@@ -78,6 +78,9 @@ QtObject {
     // Where, along the diagonal, the lit corner has faded to the plain rim
     // (and, mirrored, where the glow corner starts).
     readonly property real glassRimFade: 0.28
+    // A rim drawn in one pass (the volume capsule's shader): its brightness
+    // on the unlit side, relative to the lit corner.
+    readonly property real glassRimShade: 0.35
     readonly property color glassRimLit: Qt.rgba(fg.r, fg.g, fg.b, 0.60)
     readonly property color glassRimGlow: Qt.rgba(fg.r, fg.g, fg.b, 0.36)
     readonly property color glassRim: Qt.rgba(fg.r, fg.g, fg.b, 0.10)

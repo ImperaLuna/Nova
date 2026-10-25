@@ -40,10 +40,14 @@ PanelWindow { // qmllint disable uncreatable-type
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
     // It moves the whole time it's out, so the other surfaces hold their
-    // frames meanwhile (StageMotion).
+    // frames meanwhile (StageMotion). That's at most the hold after a
+    // change, but the pointer can hold it out for as long as it likes, so
+    // then the others draw again (the bar's clock keeps time).
     readonly property string motionName: `${output.name}/volume`
+    readonly property bool holdsOthers: !capsule.held
+    onHoldsOthersChanged: StageMotion.setMoving(motionName, holdsOthers)
     Component.onCompleted: {
-        StageMotion.setMoving(motionName, true);
+        StageMotion.setMoving(motionName, holdsOthers);
         BackgroundEffect.blurRegion = blur;
     }
     Component.onDestruction: StageMotion.setMoving(motionName, false)
