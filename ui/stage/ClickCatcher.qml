@@ -19,6 +19,9 @@ PanelWindow { // qmllint disable uncreatable-type
     required property bool catching
     // The surfaces' areas on the screen, each a rect, cut out of it.
     required property list<rect> holes
+    // The stage's layer (Stage `surfaceLayer`): over a fullscreen window while
+    // catching, and never left over one once it's done.
+    required property int surfaceLayer
 
     signal clicked
 
@@ -30,7 +33,7 @@ PanelWindow { // qmllint disable uncreatable-type
     }
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
-    WlrLayershell.layer: WlrLayer.Top
+    WlrLayershell.layer: catcher.surfaceLayer
     // Its own name, so a compositor rule meant for Nova's glass (blur) never
     // matches this full-screen surface.
     WlrLayershell.namespace: "nova-click-catcher"
@@ -69,6 +72,7 @@ PanelWindow { // qmllint disable uncreatable-type
     onVisibleChanged: redraw()
     onCatchingChanged: redraw()
     onHolesChanged: redraw()
+    onSurfaceLayerChanged: redraw()
     onWidthChanged: redraw()
     onHeightChanged: redraw()
     onDevicePixelRatioChanged: redraw()

@@ -405,14 +405,19 @@ fn app(entry: &Entry) -> App {
 }
 
 /// The event for `state`: apps by name, and the pinned and recent ones
-/// that are installed.
+/// that are installed (recent leaves the pinned ones out).
 fn snapshot(state: &State) -> nova_protocol::Launcher {
     let mut apps: Vec<App> = state.apps.values().map(app).collect();
     apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
     let installed = |id: &&String| state.apps.contains_key(*id);
     let pinned = state.saved.pinned.iter().filter(installed).cloned().collect();
-    let mut launched: Vec<(&String, &Launches)> =
-        state.saved.launches.iter().filter(|(id, _)| state.apps.contains_key(*id)).collect();
+    // A pinned app already shows among the pins.
+    let mut launched: Vec<(&String, &Launches)> = state
+        .saved
+        .launches
+        .iter()
+        .filter(|(id, _)| state.apps.contains_key(*id) && !state.saved.pinned.contains(id))
+        .collect();
     launched.sort_by(|a, b| b.1.last.cmp(&a.1.last).then_with(|| a.0.cmp(b.0)));
     let recent = launched.into_iter().take(MAX_RECENT).map(|(id, _)| id.clone()).collect();
     nova_protocol::Launcher { apps, pinned, recent }

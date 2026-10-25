@@ -138,7 +138,10 @@ PanelWindow { // qmllint disable uncreatable-type
         }
     }
 
-    WlrLayershell.layer: WlrLayer.Top
+    // It's only there while its panels are, so always over a fullscreen
+    // window (Stage `surfaceLayer`). It's made anew each time it shows, and
+    // Hyprland kept a layer changed before its first frame at Top.
+    WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "nova-panel"
     WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
