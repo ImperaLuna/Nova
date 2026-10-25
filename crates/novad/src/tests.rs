@@ -966,11 +966,14 @@ impl FakeCompositor {
         let events = Self::recorded("niri", "events.txt");
         let steps: Vec<Value> = serde_json::from_str(&Self::recorded("niri", "steps.json")).unwrap();
         let windows = Self::recorded("niri", &format!("{:02}/windows.json", steps.len() - 1));
+        let outputs = Self::recorded("niri", &format!("{:02}/outputs.json", steps.len() - 1));
+        let outputs = format!("{}\n", json!({"Ok": {"Outputs": serde_json::from_str::<Value>(&outputs).unwrap()}}));
         let socket = dir.join("niri.sock");
         fake.answer(&socket, move |request| match request {
             // The recording starts with niri's answer to this.
             r#""EventStream""# => events.clone(),
             r#""Windows""# => format!("{{\"Ok\":{{\"Windows\":{}}}}}\n", windows.trim()),
+            r#""Outputs""# => outputs.clone(),
             _ => "{\"Ok\":\"Handled\"}\n".into(),
         });
         let backend = compositor::detect(|name| (name == "NIRI_SOCKET").then(|| socket.clone().into())).unwrap();
@@ -1002,7 +1005,7 @@ impl FakeCompositor {
 
     /// The requests that weren't queries or the event stream.
     fn actions(&self) -> Vec<String> {
-        let queries = [r#""EventStream""#, r#""Windows""#];
+        let queries = [r#""EventStream""#, r#""Windows""#, r#""Outputs""#];
         lock(&self.requests)
             .iter()
             .filter(|r| !r.starts_with("j/") && !queries.contains(&r.as_str()))
@@ -1683,11 +1686,16 @@ fn launching_an_open_app_on_hyprland_brings_its_window_to_the_screen() {
     let (actions, shown, ran) = bring_the_recorded_window("launcher-bring-hyprland", FakeCompositor::hyprland);
     let id = shown["id"].as_i64().unwrap();
     assert_ne!(shown["name"], "web", "the recording shows another workspace there");
+    let steps: Vec<Value> = serde_json::from_str(&FakeCompositor::recorded("hyprland", "steps.json")).unwrap();
+    let clients = FakeCompositor::recorded("hyprland", &format!("{:02}/clients.json", steps.len() - 1));
+    let clients: Value = serde_json::from_str(&clients).unwrap();
+    let second = clients.as_array().unwrap().iter().find(|client| client["class"] == "nova-second").unwrap();
+    let address = second["address"].as_str().unwrap();
     assert_eq!(
         actions,
         [
-            format!("dispatch movetoworkspacesilent {id},address:0x5e0d97d48100"),
-            "dispatch focuswindow address:0x5e0d97d48100".to_string()
+            format!("dispatch movetoworkspacesilent {id},address:{address}"),
+            format!("dispatch focuswindow address:{address}")
         ]
     );
     assert!(ran, "asked for a new window, the app runs");

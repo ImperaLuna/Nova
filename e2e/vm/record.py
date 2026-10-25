@@ -66,13 +66,23 @@ COMMON_STEPS = {
 }
 
 
+# Steps each compositor does its own way, and what to wait for in the
+# events (any of them): under emulation a fullscreen window's new size, or
+# its closing, can come after the events have been quiet for QUIET_SECS.
+STEP_MARKERS = {
+    "fullscreen the focused window": ("WindowLayoutsChanged", "fullscreen>>1"),
+    "close the focused window": ("WindowClosed", "closewindow>>"),
+}
+
+
 def events_bytes() -> int:
     return int(machine.succeed(f"stat -c %s {OUT}/events.txt"))
 
 
-def settle(marker: str | None) -> None:
-    if marker:
-        machine.wait_until_succeeds(f"grep -qF {shlex.quote(marker)} {OUT}/events.txt", timeout=WAIT)
+def settle(markers: tuple[str, ...]) -> None:
+    if markers:
+        patterns = " ".join(f"-e {shlex.quote(marker)}" for marker in markers)
+        machine.wait_until_succeeds(f"grep -qF {patterns} {OUT}/events.txt", timeout=WAIT)
     quiet = [0, -1]
 
     def is_quiet(_last_try: bool) -> bool:
@@ -87,9 +97,10 @@ def settle(marker: str | None) -> None:
 
 def run(step: str) -> None:
     command, marker = COMMON_STEPS.get(step) or (STEPS[step], None)
+    markers = (marker,) if marker else STEP_MARKERS.get(step, ())
     print(f"step: {step}: {command}")
     machine.succeed(as_user(command))
-    settle(marker)
+    settle(markers)
 
 
 start_all()
@@ -101,7 +112,7 @@ machine.succeed(as_user(f"mkfifo {RETITLE_FIFO} {BELL_FIFO}"))
 stream = shlex.quote(f"{STREAM} > {OUT}/events.txt")
 machine.succeed(as_user(f"setsid sh -c {stream} >/dev/null 2>&1 &"))
 machine.wait_until_succeeds(f"test -e {OUT}/events.txt", timeout=WAIT)
-settle(None)
+settle(())
 
 # steps.json: each step's name and how much of events.txt had arrived once
 # it settled; <step>/ has the queries' answers at that point. Step 0 is the
@@ -112,7 +123,7 @@ snapshot(0)
 # everywhere; a step it has no command for is skipped.
 try:
     for step in [
-            "open first window",
+        "open first window",
         "focus the next workspace",
         "open second window",
         "retitle the second window",
@@ -122,6 +133,7 @@ try:
         "ring the second window's bell",
         "focus the other output",
         "focus the first output",
+        "fullscreen the focused window",
         "close the focused window",
     ]:
         if step in STEPS or step in COMMON_STEPS:

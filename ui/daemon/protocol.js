@@ -52,6 +52,7 @@ var CAPABILITY_FOCUS_WORKSPACE = "focus_workspace";
 var CAPABILITY_FOCUSED_WINDOW = "focused_window";
 var CAPABILITY_KEYBOARD_LAYOUT = "keyboard_layout";
 var CAPABILITY_LOG_OUT = "log_out";
+var CAPABILITY_FULLSCREEN = "fullscreen";
 
 // step_workspace's directions (Step in nova-protocol).
 var STEP_NEXT = "next";
@@ -132,5 +133,16 @@ function barWorkspaces(output) {
         return [];
     return output.workspaces.filter(function (workspace) {
         return !workspace.empty || workspace.active;
+    });
+}
+
+// Whether the workspace shown on an output (one of a compositor event's
+// `outputs`, or null) has a window filling the whole output, so the bar
+// steps aside there.
+function fullscreenShown(output) {
+    if (!output)
+        return false;
+    return output.workspaces.some(function (workspace) {
+        return workspace.active && workspace.fullscreen;
     });
 }

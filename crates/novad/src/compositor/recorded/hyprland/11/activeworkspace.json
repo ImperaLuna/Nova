@@ -3,10 +3,10 @@
     "name": "1",
     "monitor": "Virtual-1",
     "monitorID": 0,
-    "windows": 0,
-    "hasfullscreen": false,
-    "lastwindow": "0x0",
-    "lastwindowtitle": "",
+    "windows": 1,
+    "hasfullscreen": true,
+    "lastwindow": "0x58edea3cebb0",
+    "lastwindowtitle": "First window",
     "ispersistent": false,
     "tiledLayout": "dwindle"
 }

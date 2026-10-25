@@ -27,6 +27,10 @@ AI_USAGE_PILL = (24, 22)
 # What the pill logs when its panel opens or closes (ui/ai_usage/AiUsage.qml).
 AI_USAGE_OPENED = "nova: ai usage panel opened"
 AI_USAGE_CLOSED = "nova: ai usage panel closed"
+# What the bar logs when it gives its space to a fullscreen window, and
+# when it takes it back (ui/bar/Bar.qml).
+BAR_SPACE_GIVEN = "nova: bar space given to a fullscreen window"
+BAR_SPACE_KEPT = "nova: bar space kept"
 # Clicks a test gives one target before failing. A lost click would
 # otherwise show only as a screenshot diff; the known cause is handled by
 # the pointer wake-up below, but niri's side of it isn't understood.
@@ -505,7 +509,7 @@ with subtest("logind's lock-session locks the screen, and novad holds back sleep
     machine.succeed(f"{YDOTOOL} type {shlex.quote(PASSWORD)}")
     press_until_logged(ENTER, SESSION_UNLOCKED)
 
-with subtest("an idle bar draws nothing, shown or under a fullscreen window; the panel draws briefly"):
+with subtest("an idle bar draws nothing, shown or beside a fullscreen window; the panel draws briefly; the bar gives a fullscreen window its space"):
     # novad hands its environment to the UI.
     # Without libwayland's colors, which the timestamps would hide behind.
     # Qt's timing of each frame, for morph_frames to print. Qt logs it at
@@ -526,10 +530,14 @@ with subtest("an idle bar draws nothing, shown or under a fullscreen window; the
     # bar a frame callback a second and Qt redrew it each time (IMP-38); niri
     # in this VM sends none, so the headless e2e guards that fix instead.
     open_foot("foot-fullscreen")
+    given = ui_log_count(BAR_SPACE_GIVEN)
     machine.succeed(as_user(FULLSCREEN_WINDOW))
-    assert_idle("under a fullscreen window")
+    retry(lambda _last_try: ui_log_count(BAR_SPACE_GIVEN) > given, timeout=WAIT)
+    assert_idle("beside a fullscreen window")
+    kept = ui_log_count(BAR_SPACE_KEPT)
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
+    retry(lambda _last_try: ui_log_count(BAR_SPACE_KEPT) > kept, timeout=WAIT)
     machine.systemctl("unset-environment WAYLAND_DEBUG NO_COLOR QT_LOGGING_RULES NOVA_LOG NOVA_FRAME_LOG", user=USER)
     machine.succeed(as_user("nova restart"))
     # The run the rest of the test knows.

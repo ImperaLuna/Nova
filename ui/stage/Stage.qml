@@ -47,16 +47,19 @@ Scope {
     // What's on the stage itself.
     StagePanels {
         id: drawn
-        readonly property string motionName: `${root.screen.name}/top`
         panels: root.placed("top")
         fixed: bar.fixedShapes
-        onMovingChanged: {
-            StageMotion.setMoving(motionName, moving);
-            if (!moving)
-                root.settling = true;
-        }
-        Component.onDestruction: StageMotion.setMoving(motionName, false)
     }
+
+    // Something on the stage animates: a panel, or the bar sliding aside.
+    readonly property bool moving: drawn.moving || bar.sliding
+    readonly property string motionName: `${root.screen.name}/top`
+    onMovingChanged: {
+        StageMotion.setMoving(motionName, moving);
+        if (!moving)
+            settling = true;
+    }
+    Component.onDestruction: StageMotion.setMoving(motionName, false)
 
     // The power menu on the right edge, while its feature is on.
     LazyLoader {
@@ -146,7 +149,7 @@ Scope {
         // (StageMotion). Its regions only change when its own panels move,
         // and it draws until their last frame is out, so they're always
         // sent: Quickshell sends them only with a frame.
-        updatesEnabled: drawn.moving || root.settling || StageMotion.surfaces.length === 0
+        updatesEnabled: root.moving || root.settling || StageMotion.surfaces.length === 0
 
         // Qt emits afterAnimating once it has polished a frame (Quickshell
         // sends the regions then) and right before syncing it, and that frame
@@ -229,6 +232,10 @@ Scope {
             id: bar
             anchors.fill: parent
             screenName: root.screen.name
+            // A panel of the bar's is open: on the stage, or grown out of
+            // one of its pills. Not `moving`, which a closed pill's own
+            // animations (a loading spinner) set too.
+            held: root.panels.some(panel => panel.open && (panel.placement === "top" || panel.from !== null))
             // Its items that a panel elsewhere is drawn over (StagePanel
             // `from`), so they hide. They show again once that panel has
             // closed, and the surface it's on stays until that's drawn.
