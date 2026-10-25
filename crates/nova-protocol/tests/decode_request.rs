@@ -41,6 +41,8 @@ const NAMES: &[&str] = &[
     "claude",
     "weekly",
     "logs",
+    "watch_resources",
+    "watching",
 ];
 
 fn topic() -> impl Strategy<Value = Topic> {
@@ -76,6 +78,7 @@ fn command() -> impl Strategy<Value = Command> {
         any::<i64>().prop_map(|id| Command::FocusWorkspace { id }),
         (any::<String>(), prop_oneof![Just(Step::Next), Just(Step::Previous)])
             .prop_map(|(output, step)| Command::StepWorkspace { output, step }),
+        any::<bool>().prop_map(|watching| Command::WatchResources { watching }),
     ]
 }
 

@@ -60,6 +60,13 @@ pub enum Event {
     /// Change the default output's volume as `nova volume` asks, and show
     /// the volume capsule. Topic [`Topic::Volume`].
     Volume { key: VolumeKey },
+    /// The machine and its user, for the quick settings header. Topic
+    /// [`Topic::Host`], sent right after subscribing.
+    Host(Host),
+    /// What the machine is busy with (feature `quick-settings`). Topic
+    /// [`Topic::Resources`], sent every few seconds while some client
+    /// watches them (`watch_resources`), and right when one starts to.
+    Resources(Resources),
 }
 
 /// Groups of events a client can subscribe to.
@@ -74,6 +81,8 @@ pub enum Topic {
     Toggle,
     Lock,
     Volume,
+    Host,
+    Resources,
 }
 
 impl Event {
@@ -90,6 +99,8 @@ impl Event {
             Event::Toggle { .. } => Some(Topic::Toggle),
             Event::Lock { .. } => Some(Topic::Lock),
             Event::Volume { .. } => Some(Topic::Volume),
+            Event::Host(_) => Some(Topic::Host),
+            Event::Resources(_) => Some(Topic::Resources),
         }
     }
 }
@@ -349,10 +360,11 @@ pub enum Step {
 pub enum Panel {
     AiUsage,
     Power,
+    QuickSettings,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 2] = [Panel::AiUsage, Panel::Power];
+    pub const ALL: [Panel; 3] = [Panel::AiUsage, Panel::Power, Panel::QuickSettings];
 
     /// Its name on the wire and on the command line, which is also its
     /// feature's id.
@@ -360,6 +372,7 @@ impl Panel {
         match self {
             Panel::AiUsage => "ai-usage",
             Panel::Power => "power",
+            Panel::QuickSettings => "quick-settings",
         }
     }
 }
@@ -465,6 +478,13 @@ pub enum Command {
     Volume {
         key: VolumeKey,
     },
+    /// Starts or stops this connection watching the machine's resources
+    /// (feature `quick-settings`): while any connection watches, novad
+    /// samples them every few seconds and sends `resources` events. A
+    /// connection that closes stops watching.
+    WatchResources {
+        watching: bool,
+    },
 }
 
 /// What the power menu does, in the order it lists them.
@@ -491,6 +511,76 @@ pub struct PowerOption {
     /// For people, shown under the dimmed action.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+/// The machine and its user, as the quick settings header shows them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Host {
+    /// The machine's host name.
+    pub host: String,
+    /// What to call the user: the first name from their account's full
+    /// name, else their login name.
+    pub user: String,
+    /// When the machine booted, in seconds since the Unix epoch.
+    pub booted_at: i64,
+    pub os: OperatingSystem,
+}
+
+/// The distribution, from os-release.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OperatingSystem {
+    /// `ID`, like `nixos` or `arch`; `linux` when unset.
+    pub id: String,
+    /// `ID_LIKE`: the distributions it derives from, closest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub id_like: Vec<String>,
+    /// `NAME`, like `NixOS`.
+    pub name: String,
+    /// `LOGO`: the icon theme's name for its logo, when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
+}
+
+/// One look at what the machine is busy with.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Resources {
+    /// Share of all CPU time in use since the last look, 0 to 100.
+    pub cpu: f32,
+    /// Memory in use (not available to start programs), in bytes.
+    pub memory_used: u64,
+    pub memory_total: u64,
+    /// Share of the GPU in use, 0 to 100, when the driver reports it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu: Option<f32>,
+    /// The CPU's temperature in °C, when a sensor reports it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    /// CPU and memory over the last few minutes, oldest first, one sample
+    /// every [`RESOURCE_HISTORY_INTERVAL_SECS`].
+    pub history: Vec<ResourceSample>,
+    /// The busiest processes, busiest first.
+    pub processes: Vec<ProcessUsage>,
+}
+
+/// Seconds between two of [`Resources::history`]'s samples.
+pub const RESOURCE_HISTORY_INTERVAL_SECS: u64 = 5;
+
+/// CPU and memory at one point in time, each 0 to 100.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ResourceSample {
+    pub cpu: f32,
+    pub memory: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProcessUsage {
+    /// Its command name (`/proc/<pid>/comm`).
+    pub name: String,
+    pub pid: u32,
+    /// Its share of all CPU time since the last look, 0 to 100.
+    pub cpu: f32,
+    /// Resident memory, in bytes.
+    pub memory: u64,
 }
 
 /// What `status` returns.
@@ -726,6 +816,8 @@ mod tests {
                         Topic::Toggle,
                         Topic::Lock,
                         Topic::Volume,
+                        Topic::Host,
+                        Topic::Resources,
                     ],
                 },
             }),
@@ -777,6 +869,10 @@ mod tests {
             encode(Request { id: Some(21), command: Command::Volume { key: VolumeKey::Up } }),
             encode(Event::Volume { key: VolumeKey::Down }),
             encode(Event::Volume { key: VolumeKey::Mute }),
+            encode(Event::Host(host())),
+            encode(Request { id: Some(22), command: Command::WatchResources { watching: true } }),
+            encode(Event::Resources(resources())),
+            encode(Request { id: None, command: Command::Toggle { panel: Panel::QuickSettings } }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
@@ -874,6 +970,32 @@ mod tests {
                     hint: Some("No Codex sessions yet.".into()),
                 },
             ],
+        }
+    }
+
+    fn host() -> Host {
+        Host {
+            host: "RyzenShine".into(),
+            user: "Luna".into(),
+            booted_at: 1_793_000_000,
+            os: OperatingSystem {
+                id: "nixos".into(),
+                id_like: vec![],
+                name: "NixOS".into(),
+                logo: Some("nix-snowflake".into()),
+            },
+        }
+    }
+
+    fn resources() -> Resources {
+        Resources {
+            cpu: 23.5,
+            memory_used: 10_093_173_760,
+            memory_total: 34_359_738_368,
+            gpu: Some(18.0),
+            temperature: None,
+            history: vec![ResourceSample { cpu: 21.0, memory: 29.0 }, ResourceSample { cpu: 23.5, memory: 29.4 }],
+            processes: vec![ProcessUsage { name: "firefox".into(), pid: 4242, cpu: 6.1, memory: 2_400_000_000 }],
         }
     }
 
@@ -978,6 +1100,8 @@ mod tests {
         assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(Topic::Toggle));
         assert_eq!(Event::Lock { locked: true }.topic(), Some(Topic::Lock));
         assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(Topic::Volume));
+        assert_eq!(Event::Host(host()).topic(), Some(Topic::Host));
+        assert_eq!(Event::Resources(resources()).topic(), Some(Topic::Resources));
     }
 
     #[test]

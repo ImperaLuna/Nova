@@ -73,6 +73,7 @@ impl TestDaemon {
             manifests: nova_features::load_all(&repo_features()).unwrap(),
             path_var: std::env::var("PATH").unwrap_or_default(),
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
+            resources: resources::Sources::system(""),
         };
         let settings = Settings::load(&sources, &hub, &logger);
         let compositor = compositor(&dir)
@@ -1379,4 +1380,49 @@ fn a_replaced_config_folder_is_followed() {
     // Edits in the new folder keep applying.
     std::fs::write(novad.config_file(), "[theme]\nmode = \"dark\"\n").unwrap();
     assert_eq!(client.next_event("theme")["mode"], "dark");
+}
+
+#[test]
+fn subscribing_to_host_sends_the_machine_and_its_user() {
+    let novad = TestDaemon::start("host", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["host"]})));
+    let host = client.next_event("host");
+    assert!(host["booted_at"].as_i64().is_some_and(|booted| booted > 0));
+    assert!(host["user"].as_str().is_some_and(|user| !user.is_empty()));
+    assert!(host["os"]["id"].is_string());
+}
+
+/// Resources come only while a connection watches, and stop once the last
+/// one stops watching or hangs up.
+#[test]
+fn resources_are_sent_while_watched() {
+    let novad = TestDaemon::start("resources", None);
+    let mut listener = novad.connect();
+    listener.request(1, "subscribe", Some(json!({"topics": ["resources"]})));
+    let mut watcher = novad.connect();
+    assert_eq!(watcher.request(1, "watch_resources", Some(json!({"watching": true})))["result"], Value::Null);
+    let reading = listener.next_event("resources");
+    assert!(reading["memory_total"].as_u64().is_some_and(|total| total > 0));
+    assert!(reading["processes"].as_array().is_some_and(|processes| !processes.is_empty()));
+    assert!(reading["history"].is_array());
+
+    drop(watcher);
+    // Looks already sent when it hung up arrive first; then nothing.
+    std::thread::sleep(resources::LIVE_INTERVAL);
+    listener.writer.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+    while listener.lines.next().is_some_and(|line| line.is_ok()) {}
+    listener.writer.set_read_timeout(Some(resources::LIVE_INTERVAL * 2)).unwrap();
+    let late = listener.lines.next();
+    assert!(late.as_ref().is_none_or(Result::is_err), "still sent after the watcher left: {late:?}");
+}
+
+#[test]
+fn watching_resources_needs_the_feature() {
+    let novad = TestDaemon::open("resources-off", None, |dir| {
+        std::fs::write(dir.join("config/features.toml"), "disabled = [\"ai-usage\", \"quick-settings\"]\n").unwrap();
+    });
+    let mut client = novad.connect();
+    let reply = client.request(1, "watch_resources", Some(json!({"watching": true})));
+    assert!(reply["error"].as_str().is_some_and(|error| error.contains("quick-settings")), "{reply}");
 }

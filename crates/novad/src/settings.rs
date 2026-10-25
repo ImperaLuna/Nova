@@ -11,7 +11,7 @@ use crate::config::{self, Config};
 use crate::hub::Hub;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, theme};
+use crate::{ai_usage, features, resources, theme};
 use nova_features::{Manifest, Selection};
 use nova_protocol::{Event, FeatureState, FeatureStatus, Theme};
 use std::collections::BTreeSet;
@@ -36,6 +36,7 @@ pub struct Sources {
     /// Where features' binaries are looked for.
     pub path_var: String,
     pub ai_usage: ai_usage::Paths,
+    pub resources: resources::Sources,
 }
 
 /// The settings in effect, and the feature services they started.
@@ -46,6 +47,8 @@ pub struct Settings {
     pub theme: Theme,
     /// Running while the `ai-usage` feature is ready.
     pub ai_usage: Option<Arc<ai_usage::Usage>>,
+    /// Sampling while the `quick-settings` feature is ready.
+    pub resources: Option<Arc<resources::Resources>>,
 }
 
 impl Settings {
@@ -123,6 +126,21 @@ impl Settings {
             }
         };
 
+        let resources_ready = is_ready(&features, resources::FEATURE_ID);
+        let resources = match previous.as_deref_mut().and_then(|previous| previous.resources.take()) {
+            Some(running) if resources_ready => Some(running),
+            running => {
+                if let Some(running) = running {
+                    running.stop();
+                    logger.info("features", &format!("stopped {}", resources::FEATURE_ID));
+                }
+                resources_ready.then(|| {
+                    logger.info("features", &format!("starting {}", resources::FEATURE_ID));
+                    resources::Resources::start(sources.resources.clone(), Arc::clone(hub), Arc::clone(logger))
+                })
+            }
+        };
+
         let before = previous.as_deref().map(|previous| previous.features.as_slice()).unwrap_or_default();
         for feature in features.iter().filter(|feature| !before.contains(feature)) {
             logger.info("features", &format!("{} is {:?}", feature.id, feature.status));
@@ -131,7 +149,7 @@ impl Settings {
             hub.publish(&Event::Features { features: features.clone() });
         }
 
-        Self { config, selection, features, theme, ai_usage }
+        Self { config, selection, features, theme, ai_usage, resources }
     }
 }
 

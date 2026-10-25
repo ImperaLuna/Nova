@@ -29,4 +29,5 @@ workspace = true
 [features]
 ai-usage = []
 power = []
+quick-settings = []
 recording = []

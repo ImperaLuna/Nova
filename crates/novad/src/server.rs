@@ -172,6 +172,7 @@ impl<'a> Connection<'a> {
                 self.daemon.session_lock.unlocked(&self.daemon.hub);
                 Ok(serde_json::Value::Null)
             }
+            Command::WatchResources { watching } => return self.watch_resources(*watching),
             Command::PowerOptions => return self.power_options()(),
             Command::Power { action } => return self.power(*action),
         };
@@ -201,6 +202,17 @@ impl<'a> Connection<'a> {
                 Err(e) => Outcome::Error(e),
             },
             None => Outcome::Error("novad doesn't know this compositor".into()),
+        }
+    }
+
+    fn watch_resources(&self, watching: bool) -> Outcome {
+        let resources = lock(&self.daemon.settings).resources.clone();
+        match resources {
+            Some(resources) => {
+                resources.watch(self.id, watching);
+                Outcome::Result(serde_json::Value::Null)
+            }
+            None => Outcome::Error(format!("the {} feature is off", crate::resources::FEATURE_ID)),
         }
     }
 
@@ -374,6 +386,10 @@ impl<'a> Connection<'a> {
                             }
                         }
                         Topic::Lock => self.daemon.session_lock.send_state(&self.daemon.hub, self.id),
+                        // Facts about the machine, there whatever the features.
+                        Topic::Host => self.send(Event::Host(crate::host::read())),
+                        // Sent while some connection watches them.
+                        Topic::Resources => {}
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -397,7 +413,8 @@ impl<'a> Connection<'a> {
             | Command::ReportUnlocked
             | Command::PowerOptions
             | Command::Power { .. }
-            | Command::Volume { .. } => {}
+            | Command::Volume { .. }
+            | Command::WatchResources { .. } => {}
         }
     }
 
@@ -422,6 +439,10 @@ impl<'a> Connection<'a> {
 impl Drop for Connection<'_> {
     fn drop(&mut self) {
         self.daemon.hub.unregister(self.id);
+        let resources = lock(&self.daemon.settings).resources.clone();
+        if let Some(resources) = resources {
+            resources.watch(self.id, false);
+        }
     }
 }
 
