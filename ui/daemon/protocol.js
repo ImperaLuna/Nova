@@ -16,6 +16,7 @@ var CMD_REPORT_LOCKED = "report_locked";
 var CMD_REPORT_UNLOCKED = "report_unlocked";
 var CMD_POWER_OPTIONS = "power_options";
 var CMD_POWER = "power";
+var CMD_SCREENSHOT = "screenshot";
 var CMD_SAVE_CAPTURE = "save_capture";
 var CMD_CANCEL_CAPTURE = "cancel_capture";
 var CMD_SCREENSHOT_ACTION = "screenshot_action";

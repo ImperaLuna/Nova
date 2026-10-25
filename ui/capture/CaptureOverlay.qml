@@ -13,7 +13,9 @@ import "capture.js" as Capture
 // corner marks show around a region while it's recorded.
 Scope {
     Variants {
-        model: ScreenshotService.picking && !ScreenshotService.saving ? Quickshell.screens.filter(screen => Capture.frameFor(ScreenshotService.frames, screen.name) !== null) : []
+        // Also while the recording picker holds the frames, hidden, so its
+        // switch shows them at once with the frame already loaded.
+        model: ScreenshotService.frames !== null && !ScreenshotService.saving ? Quickshell.screens.filter(screen => Capture.frameFor(ScreenshotService.frames, screen.name) !== null) : []
 
         CaptureWindow {
             id: window
@@ -22,6 +24,7 @@ Scope {
                 screen: window.modelData
             }
             framePath: Capture.frameFor(ScreenshotService.frames, output.name)?.path ?? ""
+            visible: !ScreenshotService.held
         }
     }
 
