@@ -183,6 +183,13 @@ Item {
             compare(all.map(entry => entry.key), ["discord.desktop", "steam", "com.anthropic.Claude.desktop"], "the X11 bridge's Steam stays out");
         }
 
+        function test_with_another_watcher_every_item_shows() {
+            const all = Tray.entries(stage.quickshellItems(), {
+                items: []
+            });
+            compare(all.map(entry => entry.key), ["discord_status_icon_1", "steam", "chrome_status_icon_1"], "novad waits behind it and lists nothing");
+        }
+
         function test_two_apps_with_the_same_id_keep_their_own_apps() {
             const item = {
                 id: "chrome_status_icon_1",
