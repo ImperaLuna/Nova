@@ -80,40 +80,23 @@ Item {
                 width: parent.width - 2 * Tokens.pad
                 spacing: Tokens.rowInset
 
-                Row {
-                    spacing: Tokens.rowInset
-
-                    Rectangle {
-                        width: Tokens.logoSize
-                        height: Tokens.logoSize
-                        radius: width / 2
-                        color: Tokens.primary
-
-                        LineIcon {
-                            anchors.centerIn: parent
-                            path: page.input ? (page.inputMuted ? Icons.MIC_OFF : Icons.MIC) : page.kindIcon(page.outputKind)
-                            size: Tokens.iconSizeMenu
-                            color: Tokens.onAccent
-                        }
+                // The device in use: the slider's icon below is its one icon.
+                Column {
+                    Text {
+                        width: current.width
+                        elide: Text.ElideRight
+                        font.family: Tokens.fontSans
+                        font.pixelSize: Tokens.fontSize
+                        font.weight: Font.DemiBold
+                        color: Tokens.fg
+                        textFormat: Text.PlainText
+                        text: page.input ? (page.inputAvailable ? page.inputName : qsTr("No input")) : page.outputAvailable ? page.outputName : qsTr("No output")
                     }
-                    Column {
-                        anchors.verticalCenter: parent.verticalCenter
-                        Text {
-                            width: current.width - Tokens.logoSize - Tokens.rowInset
-                            elide: Text.ElideRight
-                            font.family: Tokens.fontSans
-                            font.pixelSize: Tokens.fontSize
-                            font.weight: Font.DemiBold
-                            color: Tokens.fg
-                            textFormat: Text.PlainText
-                            text: page.input ? (page.inputAvailable ? page.inputName : qsTr("No input")) : page.outputAvailable ? page.outputName : qsTr("No output")
-                        }
-                        Text {
-                            font.family: Tokens.fontSans
-                            font.pixelSize: Tokens.fontSizeTiny
-                            color: Tokens.fgDim
-                            text: page.input ? qsTr("Microphone") : QuickSettings.kindLabel(page.outputKind)
-                        }
+                    Text {
+                        font.family: Tokens.fontSans
+                        font.pixelSize: Tokens.fontSizeTiny
+                        color: Tokens.fgDim
+                        text: page.input ? qsTr("Microphone") : QuickSettings.kindLabel(page.outputKind)
                     }
                 }
 
