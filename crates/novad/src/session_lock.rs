@@ -107,10 +107,10 @@ impl SessionLock {
 
     /// Sends a new subscriber the current state. Under the same lock as
     /// changes, so it's never older than an event the subscriber got first.
-    /// A UI that subscribes while locked covers the screens anew.
+    /// It leaves `secured` alone: a UI that restarts while locked leaves the
+    /// compositor's lock in place, so the screens stay covered meanwhile.
     pub fn send_state(&self, hub: &Hub, id: ClientId) {
-        let mut state = lock(&self.state);
-        state.secured = false;
+        let state = lock(&self.state);
         hub.send_to(id, &Event::Lock { locked: state.locked });
     }
 
