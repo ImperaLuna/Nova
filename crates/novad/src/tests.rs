@@ -99,7 +99,7 @@ impl TestDaemon {
             manifests: nova_features::load_all(&repo_features()).unwrap(),
             path_var: std::env::var("PATH").unwrap_or_default(),
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
-            resources: resources::Sources::system(),
+            resources: resources::Sources::system(""),
             launcher: launcher_paths(&dir),
         };
         let settings = Settings::load(&sources, &hub, &logger);

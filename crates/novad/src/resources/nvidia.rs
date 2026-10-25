@@ -6,7 +6,9 @@
 //!
 //! It's the library `nvidia-smi` reads too, without running that binary: on
 //! NixOS with driver 595.104.02 and glibc 2.44, `nvidia-smi` crashed in the
-//! dynamic loader before doing anything (IMP-104).
+//! dynamic loader before doing anything (IMP-104). Where the library can't
+//! be loaded (the static musl release can't load any), `nvidia_smi` runs
+//! `nvidia-smi` instead.
 
 use std::ffi::{CString, c_char, c_int, c_uint, c_void};
 use std::os::unix::ffi::OsStrExt;
