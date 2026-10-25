@@ -22,17 +22,22 @@ use crate::hub::{ClientId, Hub};
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
 use crate::{lock, state_file};
+use futures_core::Stream;
 use nova_protocol::{
     Event, LogLevel, MAX_NOTIFICATIONS, Notification, NotificationAction, NotificationApp, NotificationList, Urgency,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::poll_fn;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::task::Poll;
 use std::time::Duration;
 use zbus::fdo::RequestNameReply;
+use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
 use zbus::wire::{OwnedVariant, Variant};
-use zbus::{Connection, interface};
+use zbus::{Connection, MatchRule, MessageStream, interface};
 
 pub const FEATURE_ID: &str = "notifications";
 const LOG_SOURCE: &str = "notifications";
@@ -111,6 +116,9 @@ struct State {
     transient: VecDeque<Notification>,
     /// Ids of notifications that stay when one of their buttons is clicked.
     resident: HashSet<u32>,
+    /// Which connection on the bus sent each live notification; when it
+    /// goes, its notifications can't be clicked through to it any more.
+    senders: HashMap<u32, String>,
     /// The last list published, so an unchanged one isn't sent again.
     sent: Option<NotificationList>,
 }
@@ -282,9 +290,10 @@ impl Notifications {
 }
 
 impl Shared {
-    /// Takes a notification an app sent. Returns its id, and the ones it
-    /// pushed off the list, whose apps are to be told.
-    fn notify(&self, sent: Sent) -> (u32, Vec<u32>) {
+    /// Takes a notification an app, the bus connection `sender`, sent.
+    /// Returns its id, and the ones it pushed off the list, whose apps are
+    /// to be told.
+    fn notify(&self, sent: Sent, sender: Option<String>) -> (u32, Vec<u32>) {
         let now = jiff::Timestamp::now().as_second();
         let mut sent = sent;
         let transient = take_bool(&mut sent.hints, "transient");
@@ -301,6 +310,12 @@ impl Shared {
         let notification = self.read(id, sent, now);
         let muted = state.saved.muted.contains(&notification.app);
         let notification = Notification { unread: !muted && !transient, ..notification };
+        // A picture the one it replaces had, and it doesn't, goes.
+        for old in state.saved.items.iter().chain(&state.transient) {
+            if old.id == id && old.image != notification.image {
+                self.forget_image(old);
+            }
+        }
         state.saved.items.retain(|kept| kept.id != id);
         state.transient.retain(|kept| kept.id != id);
         if resident {
@@ -308,13 +323,19 @@ impl Shared {
         } else {
             state.resident.remove(&id);
         }
+        match sender {
+            Some(sender) => state.senders.insert(id, sender),
+            None => state.senders.remove(&id),
+        };
         remember_app(&mut state.saved, &notification);
         let pops = !muted && (!state.saved.do_not_disturb || notification.urgency == Urgency::Critical);
         let mut gone = Vec::new();
         if transient {
             state.transient.push_back(notification.clone());
-            while state.transient.len() > MAX_TRANSIENT {
-                gone.extend(state.transient.pop_front().filter(|old| old.live).map(|old| old.id));
+            while state.transient.len() > MAX_TRANSIENT
+                && let Some(old) = state.transient.pop_front()
+            {
+                gone.extend(self.forget(&mut state, &old));
             }
         } else {
             state.saved.items.insert(0, notification.clone());
@@ -324,8 +345,7 @@ impl Shared {
                     kept += 1;
                     state.saved.items.push(old);
                 } else {
-                    self.forget_image(&old);
-                    gone.extend(old.live.then_some(old.id));
+                    gone.extend(self.forget(&mut state, &old));
                 }
             }
         }
@@ -422,25 +442,52 @@ impl Shared {
         let mut gone = Vec::new();
         let (removed, kept) = std::mem::take(&mut state.saved.items).into_iter().partition::<Vec<_>, _>(&matches);
         state.saved.items = kept;
-        for notification in removed.iter().chain(state.transient.iter().filter(|kept| matches(kept))) {
-            self.forget_image(notification);
-            state.resident.remove(&notification.id);
-            gone.extend(notification.live.then_some(notification.id));
+        let (removed_transient, kept) =
+            std::mem::take(&mut state.transient).into_iter().partition::<Vec<_>, _>(&matches);
+        state.transient = kept.into();
+        for notification in removed.iter().chain(&removed_transient) {
+            gone.extend(self.forget(state, notification));
         }
-        state.transient.retain(|kept| !matches(kept));
-        if !gone.is_empty() || !removed.is_empty() {
+        if !removed.is_empty() || !removed_transient.is_empty() {
             self.save_and_publish(state);
         }
         gone
     }
 
+    /// What novad keeps about `notification`, taken off the list: its
+    /// picture and who sent it. Its id, when its app is to be told.
+    fn forget(&self, state: &mut State, notification: &Notification) -> Option<u32> {
+        self.forget_image(notification);
+        state.resident.remove(&notification.id);
+        state.senders.remove(&notification.id);
+        notification.live.then_some(notification.id)
+    }
+
     /// Deletes the picture novad wrote for `notification`, if it wrote one.
     fn forget_image(&self, notification: &Notification) {
-        if let Some(image) = &notification.image
-            && Path::new(image).starts_with(&self.sources.images)
-        {
-            let _ = std::fs::remove_file(image);
+        let saved = image::saved(&self.sources.images, notification.id);
+        if notification.image.as_deref().is_some_and(|image| Path::new(image) == saved) {
+            let _ = std::fs::remove_file(saved);
         }
+    }
+
+    /// The bus connection `name` went: the notifications it sent stay
+    /// listed, but clicking one opens its app instead.
+    fn sender_gone(&self, name: &str) {
+        let mut state = lock(&self.state);
+        let ids: HashSet<u32> =
+            state.senders.iter().filter(|(_, sender)| sender.as_str() == name).map(|(id, _)| *id).collect();
+        if ids.is_empty() {
+            return;
+        }
+        state.senders.retain(|id, _| !ids.contains(id));
+        let State { saved, transient, .. } = &mut *state;
+        for item in saved.items.iter_mut().chain(transient.iter_mut()) {
+            if ids.contains(&item.id) {
+                item.live = false;
+            }
+        }
+        self.save_and_publish(&mut state);
     }
 
     /// Saves and publishes, under the state lock so changes reach the file
@@ -579,11 +626,32 @@ async fn serve(shared: &Arc<Shared>, ready: &std::sync::mpsc::Sender<()>) -> zbu
         ),
         _ => shared.logger.info(LOG_SOURCE, &format!("showing notifications as {BUS_NAME}")),
     }
+    // Apps that quit leave the bus; their notifications can't hear clicks.
+    let rule = MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender("org.freedesktop.DBus")
+        .interface("org.freedesktop.DBus")
+        .member("NameOwnerChanged")
+        .build()?;
+    let mut owners = MessageStream::for_match_rule(rule, &connection, None).await?;
     *lock(&shared.connection) = Some(connection.clone());
     let _ = ready.send(());
-    shared.stop.wait().await;
+    let result = loop {
+        let next = poll_fn(|cx| match shared.stop.poll(cx) {
+            Poll::Ready(()) => Poll::Ready(None),
+            Poll::Pending => Pin::new(&mut owners).poll_next(cx).map(Some),
+        });
+        // Stopped, or the bus went.
+        let Some(Some(message)) = next.await else { break Ok(()) };
+        let changed = message.and_then(|message| message.body().deserialize::<(String, String, String)>());
+        match changed {
+            Ok((name, _, owner)) if owner.is_empty() => shared.sender_gone(&name),
+            Ok(_) => {}
+            Err(e) => break Err(e),
+        }
+    };
     *lock(&shared.connection) = None;
-    Ok(())
+    result
 }
 
 /// The server apps see on the bus.
@@ -604,10 +672,11 @@ impl Server {
         actions: Vec<String>,
         hints: HashMap<String, OwnedVariant>,
         expire_timeout: i32,
+        #[zbus(header)] header: Header<'_>,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<u32> {
         let sent = Sent { app_name, replaces_id, app_icon, summary, body, actions, hints, expire_timeout };
-        let (id, gone) = self.shared.notify(sent);
+        let (id, gone) = self.shared.notify(sent, header.sender().map(|sender| sender.to_string()));
         for old in gone {
             Self::notification_closed(&emitter, old, Closed::Other as u32).await?;
         }

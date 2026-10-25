@@ -46,6 +46,9 @@ PanelWindow { // qmllint disable uncreatable-type
             target = Compositor.focusedScreen();
         console.info(`nova: notification ${notification.id} pops up on ${output.name}`);
         stack.add(notification);
+        // The list came first: a pop-up already in it is marked listed now,
+        // so it goes when the list next loses it.
+        stack.sync(NotificationsService.items);
     }
 
     Connections {

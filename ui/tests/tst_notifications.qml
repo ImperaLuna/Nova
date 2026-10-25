@@ -253,6 +253,37 @@ Item {
             compare(spy.signalArguments[0][0], "show");
         }
 
+        function test_buttons_that_dont_fit_wrap_and_stay_on_the_card() {
+            const actions = [];
+            for (let i = 0; i < 8; i++)
+                actions.push({
+                    key: `a${i}`,
+                    label: `A rather long label for button number ${i} that goes on`
+                });
+            const card = createTemporaryObject(cardComponent, stage, {
+                notification: note(8, "Chat", {
+                    actions: actions
+                })
+            });
+            const buttons = [];
+            const walk = item => {
+                for (const child of item.children) {
+                    if (child.modelData?.key)
+                        buttons.push(child);
+                    walk(child);
+                }
+            };
+            walk(card);
+            compare(buttons.length, 8);
+            const onCard = button => {
+                const at = button.mapToItem(card, 0, 0);
+                return at.x >= 0 && at.x + button.width <= card.width && at.y + button.height <= card.height;
+            };
+            // Once the buttons are laid out.
+            tryVerify(() => buttons.every(onCard), 1000, "every button fits on the card");
+            verify(buttons[7].mapToItem(card, 0, 0).y > buttons[0].mapToItem(card, 0, 0).y, "they wrap");
+        }
+
         function test_the_list_stacks_apps_and_opens_a_stack_in_place() {
             const list = createTemporaryObject(listComponent, stage, {
                 items: [note(5, "Discord", {

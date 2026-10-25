@@ -45,9 +45,15 @@ pub fn save(raw: Raw, folder: &Path, id: u32) -> Result<PathBuf, String> {
     writer.write_image_data(&pixels).map_err(failed)?;
     writer.finish().map_err(failed)?;
 
-    let path = folder.join(format!("{id}.png"));
+    let path = saved(folder, id);
     state_file::write(&path, &png).map_err(|e| format!("can't write {}: {e}", path.display()))?;
     Ok(path)
+}
+
+/// Where `save` writes notification `id`'s picture: novad deletes a picture
+/// only at this path, never one an app named.
+pub fn saved(folder: &Path, id: u32) -> PathBuf {
+    folder.join(format!("{id}.png"))
 }
 
 /// The file `reference` names, for an `image-path` hint or an app icon: an

@@ -322,7 +322,7 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
     let server = fixture.server();
     let app = fixture.app();
     let pixels = (2i32, 1i32, 8i32, true, 8i32, 4i32, vec![255u8, 0, 0, 255, 0, 255, 0, 255]);
-    let hints = HashMap::from([("image-data", Variant::from(zbus::wire::Structure::from(pixels)))]);
+    let hints = HashMap::from([("image-data", Variant::from(zbus::wire::Structure::from(pixels.clone())))]);
     let id = app.notify(("Chat", 0, "", "Mara", "", vec![], hints, -1));
     let image = fixture.dir.join("images").join(format!("{id}.png"));
     assert_eq!(fixture.next("notification_popup")["image"], image.display().to_string());
@@ -333,6 +333,59 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
     let hints = HashMap::from([("image-path", Variant::from("file:///tmp/mara.png"))]);
     app.notify(("Chat", 0, "", "Mara", "", vec![], hints, -1));
     assert_eq!(fixture.next("notification_popup")["image"], "/tmp/mara.png");
+
+    // A file an app names is never deleted, even one that reads as ours.
+    let victim = fixture.dir.join("victim");
+    std::fs::write(&victim, "keep").unwrap();
+    let named = format!("{}/../victim", fixture.dir.join("images").display());
+    let hints = HashMap::from([("image-path", Variant::from(named.as_str()))]);
+    let id = app.notify(("Chat", 0, "", "Mara", "", vec![], hints, -1));
+    server.dismiss(id);
+    assert!(victim.exists());
+
+    // Replaced by one without a picture, its picture goes.
+    let hints = HashMap::from([("image-data", Variant::from(zbus::wire::Structure::from(pixels.clone())))]);
+    let id = app.notify(("Chat", 0, "", "Mara", "", vec![], hints, -1));
+    let image = fixture.dir.join("images").join(format!("{id}.png"));
+    assert!(image.exists());
+    app.notify(("Chat", id, "", "Mara", "", vec![], HashMap::new(), -1));
+    assert!(!image.exists());
+
+    // So do transient ones' pictures, once newer ones push them out.
+    let transient = || {
+        HashMap::from([
+            ("transient", Variant::Bool(true)),
+            ("image-data", Variant::from(zbus::wire::Structure::from(pixels.clone()))),
+        ])
+    };
+    let first = app.notify(("Volume", 0, "", "50%", "", vec![], transient(), -1));
+    let image = fixture.dir.join("images").join(format!("{first}.png"));
+    assert!(image.exists());
+    for _ in 0..MAX_TRANSIENT {
+        app.notify(("Volume", 0, "", "60%", "", vec![], transient(), -1));
+    }
+    assert!(!image.exists());
+}
+
+#[test]
+fn an_app_that_quits_leaves_its_notifications_unclickable() {
+    let fixture = Fixture::new("quit");
+    let server = fixture.server();
+    // Like notify-send: connects, sends one and leaves.
+    let connection = zbus::block_on(connection::Builder::address(fixture.address.as_str()).build()).unwrap();
+    let sent: Notify<'_> = ("Chat", 0, "", "Mara", "", vec!["default", "Open"], HashMap::new(), -1);
+    let reply = zbus::block_on(connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "Notify", &sent)).unwrap();
+    let id: u32 = reply.body().deserialize().unwrap();
+    assert_eq!(fixture.next("notification_popup")["live"], true);
+    drop(connection);
+    let list = loop {
+        let list = fixture.next("notifications");
+        if list["items"][0].get("live").is_none() {
+            break list;
+        }
+    };
+    assert_eq!(list["items"][0]["id"], id);
+    assert!(server.action(id, None).is_err(), "the UI opens the app instead");
 }
 
 #[test]

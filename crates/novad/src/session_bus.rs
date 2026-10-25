@@ -2,10 +2,9 @@
 //! to, and a stop flag that ends a service's loop on the bus.
 
 use crate::lock;
-use std::future::poll_fn;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::task::{Poll, Waker};
+use std::task::{Context, Poll, Waker};
 use zbus::connection;
 
 /// Which bus a service is on.
@@ -47,13 +46,10 @@ impl Stop {
         self.stopped.load(Ordering::SeqCst)
     }
 
-    /// Waits until `stop`.
-    pub async fn wait(&self) {
-        poll_fn(|cx| {
-            // Stored before the check, so a stop in between still wakes us.
-            *lock(&self.waker) = Some(cx.waker().clone());
-            if self.stopped() { Poll::Ready(()) } else { Poll::Pending }
-        })
-        .await;
+    /// Ready once stopped; otherwise `cx` is woken by `stop`.
+    pub fn poll(&self, cx: &Context<'_>) -> Poll<()> {
+        // Stored before the check, so a stop in between still wakes us.
+        *lock(&self.waker) = Some(cx.waker().clone());
+        if self.stopped() { Poll::Ready(()) } else { Poll::Pending }
     }
 }

@@ -210,8 +210,11 @@ Item {
                     }
                 }
 
-                Row {
+                // Buttons that don't fit on a line wrap to the next.
+                Flow {
+                    id: actions
                     visible: (card.notification.actions ?? []).length > 0
+                    width: parent.width
                     topPadding: Tokens.notificationActionsGap
                     spacing: Tokens.iconGap
 
@@ -223,7 +226,7 @@ Item {
                             required property var modelData
                             required property int index
                             readonly property bool primary: index === 0
-                            width: label.implicitWidth + 2 * Tokens.pad
+                            width: Math.min(label.implicitWidth + 2 * Tokens.pad, actions.width)
                             height: Tokens.notificationActionHeight
                             radius: height / 2
                             color: primary ? Tokens.primary : press.containsMouse ? Tokens.selectedQuiet : Tokens.selected
@@ -231,6 +234,8 @@ Item {
                             Text {
                                 id: label
                                 anchors.centerIn: parent
+                                width: Math.min(implicitWidth, parent.width - 2 * Tokens.pad)
+                                elide: Text.ElideRight
                                 font.family: Tokens.fontSans
                                 font.pixelSize: Tokens.fontSizeSmall
                                 font.weight: action.primary ? Font.DemiBold : Font.Medium
