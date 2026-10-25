@@ -5,7 +5,7 @@ expression: "shown(&facts(Distro::Fedora, vec![Gpu::Amd], false))"
 add the Quickshell package repository:
     sudo dnf copr enable -y errornointernet/quickshell
 install packages for core, recording, screenshot:
-    sudo dnf install quickshell wf-recorder grim wl-clipboard
+    sudo dnf install quickshell wf-recorder grim wl-clipboard xdg-utils
 create /home/me/.config/nova/config.toml
 create /home/me/.config/nova/features.toml
 write /home/me/.config/systemd/user/nova.service

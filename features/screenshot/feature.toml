@@ -5,12 +5,13 @@ default = true
 daemon = "screenshot"
 
 # grim captures the screens (wlr-screencopy, on niri and Hyprland), wl-copy
-# puts the shot on the clipboard.
+# puts the shot on the clipboard, and xdg-open opens it or its folder from
+# the screenshot card.
 [variants.default]
-nix = ["grim", "wl-clipboard"]
-arch = ["grim", "wl-clipboard"]
-fedora = ["grim", "wl-clipboard"]
-debian = ["grim", "wl-clipboard"]
+nix = ["grim", "wl-clipboard", "xdg-utils"]
+arch = ["grim", "wl-clipboard", "xdg-utils"]
+fedora = ["grim", "wl-clipboard", "xdg-utils"]
+debian = ["grim", "wl-clipboard", "xdg-utils"]
 
 [check]
-binaries = ["grim", "wl-copy"]
+binaries = ["grim", "wl-copy", "xdg-open"]
