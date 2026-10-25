@@ -1,10 +1,12 @@
 id = "recording"
 name = "Screen recording"
-description = "Record the screen or a region from the bar."
-default = false
+description = "Super+Shift+R records a region or a screen, with the desktop's sound and the mic if you like."
+default = true
 daemon = "recording"
 
-# gpu-screen-recorder encodes on the GPU (NVENC on NVIDIA).
+# gpu-screen-recorder encodes on the GPU (NVENC on NVIDIA, VA-API elsewhere)
+# and can pause; on NixOS it also wants `programs.gpu-screen-recorder.enable`
+# for its capture helper. wf-recorder is the fallback, through wlr-screencopy.
 [variants.nvidia]
 when = { gpu = "nvidia" }
 nix = ["gpu-screen-recorder"]

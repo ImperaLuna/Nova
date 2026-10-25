@@ -42,7 +42,7 @@ mod tests {
         let states = states(&manifests, &on, "/nonexistent");
         let rec = states.iter().find(|s| s.id == "recording").unwrap();
         assert_eq!(rec.status, FeatureStatus::MissingDeps);
-        let off = super::states(&manifests, &Selection::default(), "/nonexistent");
+        let off = super::states(&manifests, &Selection::parse("disabled = [\"recording\"]").unwrap(), "/nonexistent");
         assert_eq!(off.iter().find(|s| s.id == "recording").unwrap().status, FeatureStatus::Off);
     }
 }

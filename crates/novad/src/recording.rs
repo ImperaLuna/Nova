@@ -1,0 +1,632 @@
+//! Screen recording (feature `recording`): a whole output, or a region of
+//! the layout, into the recording folder, with the desktop's sound and the
+//! mic when asked.
+//!
+//! `nova record` asks the UI to open its region picker (`pick_recording`);
+//! the UI counts down and sends `start_recording`. The same key stops the
+//! recording, as does the bar's recording pill (`stop_recording`).
+//!
+//! gpu-screen-recorder records when it's installed (it encodes on the GPU
+//! and can pause), else wf-recorder. Either writes a hidden file in the
+//! recording folder, which is moved to its name once the recorder has
+//! finished it, so a name only ever shows a whole video. The recorder is
+//! novad's child: SIGINT tells it to finish the file, and it gets that too
+//! when novad goes away, so a crash doesn't leave it recording.
+
+use crate::hub::Hub;
+use crate::lock;
+use crate::logger::Logger;
+use crate::screenshot;
+use nova_protocol::{ActiveRecording, Event, LayoutRect, RecordAudio, SavedRecording, ScreenshotAction};
+use std::collections::VecDeque;
+use std::io::Read;
+use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+/// The feature's id in `features/`.
+pub const FEATURE_ID: &str = "recording";
+const LOG_SOURCE: &str = "recording";
+
+/// Records on the GPU (NVENC, VA-API) and can pause.
+const GPU_SCREEN_RECORDER: &str = "gpu-screen-recorder";
+/// Records through wlr-screencopy, without pausing.
+const WF_RECORDER: &str = "wf-recorder";
+/// How long a recorder that fails at once (a missing capture permission, a
+/// bad output) has to say so before the start counts as a success.
+const START_GRACE: Duration = Duration::from_millis(800);
+/// How long a stopped recorder may take to finish the file before it's
+/// killed.
+const FINISH_TIMEOUT: Duration = Duration::from_secs(10);
+const POLL: Duration = Duration::from_millis(10);
+/// The most of a recorder's error output kept for its error message.
+const MAX_ERROR_BYTES: usize = 4096;
+/// Frames per second.
+const FPS: &str = "60";
+/// Saved recordings the card's buttons can still act on.
+const KEEP_SAVED: usize = 32;
+/// A saved recording's name, from the local time it started.
+const NAME_PREFIX: &str = "Recording ";
+/// The container both recorders pick from the file's extension.
+const EXTENSION: &str = "mp4";
+/// gpu-screen-recorder's names for the default output's sound and the
+/// default input; `|` mixes sources into one track.
+const GSR_DESKTOP: &str = "default_output";
+const GSR_MIC: &str = "default_input";
+/// PipeWire's (and PulseAudio's) name for the default output's monitor, for
+/// wf-recorder; without a name it records the default input.
+const WF_DESKTOP: &str = "@DEFAULT_MONITOR@";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Recorder {
+    Gpu,
+    Wf,
+}
+
+pub struct Recordings {
+    /// Where the recorders are looked for.
+    path_var: String,
+    hub: Arc<Hub>,
+    logger: Arc<Logger>,
+    state: Arc<Mutex<State>>,
+}
+
+#[derive(Default)]
+struct State {
+    active: Option<Active>,
+    /// The latest saved recordings, oldest first.
+    saved: VecDeque<SavedRecording>,
+    next_id: u64,
+    /// Tells a finished recorder apart from a newer one.
+    runs: u64,
+}
+
+struct Active {
+    run: u64,
+    pid: libc::pid_t,
+    recorder: Recorder,
+    output: String,
+    region: Option<LayoutRect>,
+    audio: RecordAudio,
+    /// The file the recorder writes, and the name it gets once finished.
+    file: PathBuf,
+    stem: PathBuf,
+    started: Instant,
+    /// Since when it's paused, and for how long it was before.
+    paused_since: Option<Instant>,
+    paused_for: Duration,
+    /// Asked to finish.
+    stopping: bool,
+}
+
+impl Active {
+    fn elapsed(&self) -> Duration {
+        let paused = self.paused_for + self.paused_since.map_or(Duration::ZERO, |since| since.elapsed());
+        self.started.elapsed().saturating_sub(paused)
+    }
+
+    fn event(&self) -> ActiveRecording {
+        ActiveRecording {
+            output: self.output.clone(),
+            region: self.region,
+            audio: self.audio,
+            elapsed_ms: millis(self.elapsed()),
+            paused: self.paused_since.is_some(),
+            can_pause: self.recorder == Recorder::Gpu,
+        }
+    }
+
+    /// Sends the recorder `signal`. Only while it's `active`: the waiter
+    /// clears that under the same lock as soon as the recorder has exited,
+    /// so the pid is still the recorder's.
+    fn signal(&self, signal: libc::c_int) {
+        // SAFETY: kill takes no pointers.
+        unsafe { libc::kill(self.pid, signal) };
+    }
+}
+
+impl Recordings {
+    pub fn new(path_var: String, hub: Arc<Hub>, logger: Arc<Logger>) -> Self {
+        Self { path_var, hub, logger, state: Arc::default() }
+    }
+
+    /// `nova record`: stops the recording, or asks the UI to open the
+    /// picker for one.
+    pub fn record(&self) -> Result<(), String> {
+        if lock(&self.state).active.is_some() {
+            return self.stop();
+        }
+        match self.hub.publish(&Event::PickRecording) {
+            0 => Err("the UI isn't connected to novad, so there's nothing to pick what to record with".into()),
+            _ => Ok(()),
+        }
+    }
+
+    /// Starts recording `output`, or `region` of the layout, into `folder`.
+    /// Answers once the recorder has had [`START_GRACE`] to fail.
+    pub fn start(
+        &self,
+        output: &str,
+        region: Option<LayoutRect>,
+        audio: RecordAudio,
+        folder: &Path,
+    ) -> Result<(), String> {
+        let mut state = lock(&self.state);
+        if state.active.is_some() {
+            return Err("already recording".into());
+        }
+        if region.is_some_and(|region| region.width == 0 || region.height == 0) {
+            return Err("the region is empty".into());
+        }
+        let (recorder, program) = self.recorder()?;
+        std::fs::create_dir_all(folder).map_err(|e| format!("can't make {}: {e}", folder.display()))?;
+        let stamp = screenshot::time_stamp();
+        let stem = folder.join(format!("{NAME_PREFIX}{stamp}"));
+        let file = folder.join(format!(".{NAME_PREFIX}{stamp}.{}.{EXTENSION}", std::process::id()));
+        let args = match recorder {
+            Recorder::Gpu => gsr_args(output, region, audio, &file),
+            Recorder::Wf => {
+                if audio.desktop && audio.mic {
+                    self.logger.warn(LOG_SOURCE, "wf-recorder takes one sound source: recording the desktop only");
+                }
+                wf_args(output, region, audio, &file)
+            }
+        };
+        let mut command = Command::new(&program);
+        command
+            .args(&args)
+            .env("PATH", &self.path_var)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        // SAFETY: prctl takes no pointers and is async-signal-safe.
+        unsafe {
+            command.pre_exec(|| {
+                // Finishes the file and exits when novad goes away.
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGINT) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        // Its own process group: a Ctrl+C on `nova daemon` in a terminal
+        // reaches novad, whose exit stops it the same way.
+        command.process_group(0);
+        let mut child = command.spawn().map_err(|e| format!("can't run {}: {e}", program.display()))?;
+        let errors = drain(child.stderr.take());
+        let deadline = Instant::now() + START_GRACE;
+        while Instant::now() < deadline {
+            if let Some(status) = child.try_wait().map_err(|e| format!("lost track of the recorder: {e}"))? {
+                let _ = std::fs::remove_file(&file);
+                let message = errors.join().unwrap_or_default();
+                return Err(format!("{} didn't start ({status}): {}", recorder.name(), message.trim()));
+            }
+            std::thread::sleep(POLL);
+        }
+        state.runs += 1;
+        let run = state.runs;
+        let active = Active {
+            run,
+            pid: child.id() as libc::pid_t,
+            recorder,
+            output: output.into(),
+            region,
+            audio,
+            file,
+            stem,
+            started: Instant::now() - START_GRACE,
+            paused_since: None,
+            paused_for: Duration::ZERO,
+            stopping: false,
+        };
+        self.logger.info(
+            LOG_SOURCE,
+            &format!("recording {} with {} into {}", what(output, region), recorder.name(), folder.display()),
+        );
+        self.hub.publish(&Event::Recording(Some(active.event())));
+        state.active = Some(active);
+        drop(state);
+
+        let (state, hub, logger) = (Arc::clone(&self.state), Arc::clone(&self.hub), Arc::clone(&self.logger));
+        std::thread::spawn(move || {
+            let status = child.wait();
+            let message = errors.join().unwrap_or_default();
+            finish(&state, &hub, &logger, run, status, message.trim());
+        });
+        Ok(())
+    }
+
+    /// Asks the recorder to finish the file; it's saved once it has. One
+    /// that doesn't within [`FINISH_TIMEOUT`] is killed.
+    pub fn stop(&self) -> Result<(), String> {
+        let mut state = lock(&self.state);
+        let active = state.active.as_mut().ok_or("nothing is being recorded")?;
+        if active.stopping {
+            return Ok(());
+        }
+        active.stopping = true;
+        // A paused gpu-screen-recorder finishes all the same.
+        active.signal(libc::SIGINT);
+        let run = active.run;
+        let state = Arc::clone(&self.state);
+        std::thread::spawn(move || {
+            std::thread::sleep(FINISH_TIMEOUT);
+            if let Some(active) = lock(&state).active.as_ref().filter(|active| active.run == run) {
+                active.signal(libc::SIGKILL);
+            }
+        });
+        Ok(())
+    }
+
+    /// Pauses or resumes the recording, when the recorder can.
+    pub fn pause(&self, paused: bool) -> Result<(), String> {
+        let mut state = lock(&self.state);
+        let active = state.active.as_mut().ok_or("nothing is being recorded")?;
+        if active.recorder != Recorder::Gpu {
+            return Err(format!("{} can't pause", active.recorder.name()));
+        }
+        if active.paused_since.is_some() == paused || active.stopping {
+            return Ok(());
+        }
+        // gpu-screen-recorder pauses and resumes on SIGUSR2.
+        active.signal(libc::SIGUSR2);
+        match active.paused_since.take() {
+            Some(since) => active.paused_for += since.elapsed(),
+            None => active.paused_since = Some(Instant::now()),
+        }
+        self.hub.publish(&Event::Recording(Some(active.event())));
+        Ok(())
+    }
+
+    /// Sends `client` what's being recorded.
+    pub fn send_state(&self, hub: &Hub, client: crate::hub::ClientId) {
+        let active = lock(&self.state).active.as_ref().map(Active::event);
+        hub.send_to(client, &Event::Recording(active));
+    }
+
+    /// Opens a saved recording, its folder, or deletes it.
+    pub fn act(&self, id: u64, action: ScreenshotAction) -> Result<(), String> {
+        let mut state = lock(&self.state);
+        let index = state
+            .saved
+            .iter()
+            .position(|saved| saved.id == id)
+            .ok_or_else(|| format!("no recording {id} (it's from before novad started, or deleted)"))?;
+        let path = PathBuf::from(&state.saved[index].path);
+        screenshot::act_on(&path, action, &self.path_var, &self.logger, LOG_SOURCE)?;
+        if action == ScreenshotAction::Delete {
+            state.saved.remove(index);
+        }
+        Ok(())
+    }
+
+    /// gpu-screen-recorder when it's installed, else wf-recorder.
+    fn recorder(&self) -> Result<(Recorder, PathBuf), String> {
+        [Recorder::Gpu, Recorder::Wf]
+            .into_iter()
+            .find_map(|recorder| {
+                crate::launcher::find_program(recorder.name(), &self.path_var).map(|program| (recorder, program))
+            })
+            .ok_or_else(|| format!("neither {GPU_SCREEN_RECORDER} nor {WF_RECORDER} is installed"))
+    }
+}
+
+impl Recorder {
+    fn name(self) -> &'static str {
+        match self {
+            Recorder::Gpu => GPU_SCREEN_RECORDER,
+            Recorder::Wf => WF_RECORDER,
+        }
+    }
+}
+
+/// The recorder `run` exited: saves what it wrote and says it stopped.
+fn finish(
+    state: &Mutex<State>,
+    hub: &Hub,
+    logger: &Logger,
+    run: u64,
+    status: std::io::Result<std::process::ExitStatus>,
+    message: &str,
+) {
+    let mut state = lock(state);
+    let Some(active) = state.active.take_if(|active| active.run == run) else {
+        return;
+    };
+    let duration = active.elapsed();
+    hub.publish(&Event::Recording(None));
+    let finished = matches!(&status, Ok(status) if status.success());
+    if !finished && !active.stopping {
+        let status = status.map_or_else(|e| e.to_string(), |status| status.to_string());
+        logger.error(LOG_SOURCE, &format!("{} stopped by itself ({status}): {message}", active.recorder.name()));
+    }
+    // Something was recorded: kept even when the recorder didn't finish
+    // cleanly, as players read most of a cut-off file.
+    let written = std::fs::metadata(&active.file).is_ok_and(|meta| meta.len() > 0);
+    if !written {
+        let _ = std::fs::remove_file(&active.file);
+        logger.warn(LOG_SOURCE, "nothing was recorded");
+        return;
+    }
+    match screenshot::place(&active.file, &active.stem, EXTENSION) {
+        Ok(path) => {
+            logger.info(LOG_SOURCE, &format!("saved {} ({} s)", path.display(), duration.as_secs()));
+            state.next_id += 1;
+            let saved =
+                SavedRecording { id: state.next_id, path: path.display().to_string(), duration_ms: millis(duration) };
+            if state.saved.len() == KEEP_SAVED {
+                state.saved.pop_front();
+            }
+            state.saved.push_back(saved.clone());
+            hub.publish(&Event::RecordingSaved(saved));
+        }
+        Err(e) => logger.error(LOG_SOURCE, &format!("the recording stays at {}: {e}", active.file.display())),
+    }
+}
+
+/// Reads the recorder's error output to the end, so it never blocks on a
+/// full pipe, keeping the last [`MAX_ERROR_BYTES`] for an error message.
+fn drain(stderr: Option<std::process::ChildStderr>) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let Some(mut stderr) = stderr else {
+            return String::new();
+        };
+        let mut kept: VecDeque<u8> = VecDeque::new();
+        let mut buffer = [0; 4096];
+        while let Ok(read) = stderr.read(&mut buffer) {
+            if read == 0 {
+                break;
+            }
+            kept.extend(&buffer[..read]);
+            let extra = kept.len().saturating_sub(MAX_ERROR_BYTES);
+            kept.drain(..extra);
+        }
+        String::from_utf8_lossy(kept.make_contiguous()).into_owned()
+    })
+}
+
+/// What's recorded, for the log.
+fn what(output: &str, region: Option<LayoutRect>) -> String {
+    match region {
+        Some(r) => format!("{}x{} at {},{} on {output}", r.width, r.height, r.x, r.y),
+        None => output.into(),
+    }
+}
+
+fn gsr_args(output: &str, region: Option<LayoutRect>, audio: RecordAudio, file: &Path) -> Vec<String> {
+    let mut args: Vec<String> = match region {
+        Some(r) => {
+            vec!["-w".into(), "region".into(), "-region".into(), format!("{}x{}+{}+{}", r.width, r.height, r.x, r.y)]
+        }
+        None => vec!["-w".into(), output.into()],
+    };
+    args.extend(["-f".into(), FPS.into()]);
+    let sources: Vec<&str> = [(audio.desktop, GSR_DESKTOP), (audio.mic, GSR_MIC)]
+        .into_iter()
+        .filter_map(|(on, source)| on.then_some(source))
+        .collect();
+    if !sources.is_empty() {
+        args.extend(["-a".into(), sources.join("|")]);
+    }
+    args.extend(["-o".into(), file.display().to_string()]);
+    args
+}
+
+fn wf_args(output: &str, region: Option<LayoutRect>, audio: RecordAudio, file: &Path) -> Vec<String> {
+    // -y: the file is new, but wf-recorder would ask on a terminal otherwise.
+    let mut args: Vec<String> = vec!["-y".into()];
+    match region {
+        Some(r) => args.extend(["-g".into(), format!("{},{} {}x{}", r.x, r.y, r.width, r.height)]),
+        None => args.extend(["-o".into(), output.into()]),
+    }
+    args.extend(["-r".into(), FPS.into()]);
+    if audio.desktop {
+        args.push(format!("--audio={WF_DESKTOP}"));
+    } else if audio.mic {
+        args.push("--audio".into());
+    }
+    args.extend(["-f".into(), file.display().to_string()]);
+    args
+}
+
+fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hub::{ClientQueue, Outgoing};
+    use nova_protocol::{LogLevel, Topic};
+    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::net::UnixStream;
+    use std::sync::mpsc::Receiver;
+
+    const WAIT: Duration = Duration::from_secs(5);
+
+    /// Recordings with a fake recorder (it writes the file it's given and
+    /// finishes it on SIGINT), and a UI subscribed to the recording topic.
+    struct Fixture {
+        dir: PathBuf,
+        recordings: Recordings,
+        ui: Receiver<Outgoing>,
+        _ui_stream: UnixStream,
+    }
+
+    impl Fixture {
+        /// `recorder` is the fake's name; `body` runs first, before it
+        /// starts writing.
+        fn new(name: &str, recorder: &str, body: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("novad-recording-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            let bin = dir.join("bin");
+            std::fs::create_dir_all(&bin).unwrap();
+            let file_flag = if recorder == WF_RECORDER { "-f" } else { "-o" };
+            let script = format!(
+                "echo \"$@\" > {dir}/args\n{body}\n\
+                 for arg; do [ \"$previous\" = {file_flag} ] && out=$arg; previous=$arg; done\n\
+                 trap 'echo finished >> \"$out\"; exit 0' INT\n\
+                 trap 'echo paused >> {dir}/signals' USR2\n\
+                 echo frames > \"$out\"\n\
+                 while :; do sleep 0.02; done",
+                dir = dir.display()
+            );
+            let path = bin.join(recorder);
+            std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let hub = Arc::new(Hub::default());
+            let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
+            let (ui_stream, other_end) = UnixStream::pair().unwrap();
+            let (queue, ui) = ClientQueue::new(&other_end).unwrap();
+            let id = hub.register(queue);
+            hub.subscribe(id, Topic::Recording);
+            // The fake first; the system's for the tools it uses.
+            let path_var = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+            let recordings = Recordings::new(path_var, hub, logger);
+            Self { dir, recordings, ui, _ui_stream: ui_stream }
+        }
+
+        fn folder(&self) -> PathBuf {
+            self.dir.join("Videos/Recordings")
+        }
+
+        fn args(&self) -> String {
+            std::fs::read_to_string(self.dir.join("args")).unwrap().trim().to_string()
+        }
+
+        fn start(&self, region: Option<LayoutRect>, audio: RecordAudio) -> Result<(), String> {
+            self.recordings.start("DP-1", region, audio, &self.folder())
+        }
+
+        /// The next event, waiting for it.
+        fn next_event(&self) -> serde_json::Value {
+            let deadline = Instant::now() + WAIT;
+            loop {
+                match self.ui.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(Outgoing::Line(line)) => return serde_json::from_str(&line).unwrap(),
+                    Ok(Outgoing::Flushed(_)) => {}
+                    Err(e) => panic!("no event in time: {e}"),
+                }
+            }
+        }
+
+        fn files(&self) -> Vec<String> {
+            let mut files: Vec<String> = std::fs::read_dir(self.folder())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            files.sort();
+            files
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = self.recordings.stop();
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    const REGION: LayoutRect = LayoutRect { x: 2560, y: -40, width: 960, height: 540 };
+
+    #[test]
+    fn a_stopped_recording_is_finished_then_saved_under_its_name() {
+        let fixture = Fixture::new("saved", GPU_SCREEN_RECORDER, "");
+        fixture.start(None, RecordAudio::default()).unwrap();
+        assert_eq!(
+            fixture.args(),
+            format!("-w DP-1 -f 60 -o {}", fixture.folder().join(fixture.files()[0].clone()).display())
+        );
+        let started = fixture.next_event();
+        assert_eq!(started["data"]["output"], "DP-1", "{started}");
+        assert_eq!(started["data"]["can_pause"], true);
+        assert_eq!(fixture.start(None, RecordAudio::default()).unwrap_err(), "already recording");
+
+        fixture.recordings.stop().unwrap();
+        assert_eq!(fixture.next_event()["data"], serde_json::Value::Null);
+        let saved = fixture.next_event();
+        assert_eq!(saved["event"], "recording_saved", "{saved}");
+        let files = fixture.files();
+        assert_eq!(files.len(), 1, "the hidden file is gone: {files:?}");
+        assert!(files[0].starts_with(NAME_PREFIX) && files[0].ends_with(".mp4"), "{files:?}");
+        let path = fixture.folder().join(&files[0]);
+        assert_eq!(saved["data"]["path"], path.display().to_string());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "frames\nfinished\n", "finished before it was moved");
+
+        fixture.recordings.act(saved["data"]["id"].as_u64().unwrap(), ScreenshotAction::Delete).unwrap();
+        assert!(fixture.files().is_empty());
+        assert!(fixture.recordings.stop().unwrap_err().contains("nothing"));
+    }
+
+    #[test]
+    fn a_region_with_sound_goes_to_gpu_screen_recorder_as_it_takes_them() {
+        let fixture = Fixture::new("gsr-args", GPU_SCREEN_RECORDER, "");
+        fixture.start(Some(REGION), RecordAudio { desktop: true, mic: true }).unwrap();
+        let args = fixture.args();
+        assert!(
+            args.starts_with("-w region -region 960x540+2560+-40 -f 60 -a default_output|default_input -o "),
+            "{args}"
+        );
+    }
+
+    #[test]
+    fn wf_recorder_records_when_gpu_screen_recorder_isnt_there() {
+        let fixture = Fixture::new("wf", WF_RECORDER, "");
+        fixture.start(Some(REGION), RecordAudio { desktop: true, mic: false }).unwrap();
+        let args = fixture.args();
+        assert!(args.starts_with("-y -g 2560,-40 960x540 -r 60 --audio=@DEFAULT_MONITOR@ -f "), "{args}");
+        assert_eq!(fixture.next_event()["data"]["can_pause"], false);
+        assert!(fixture.recordings.pause(true).unwrap_err().contains("can't pause"));
+    }
+
+    #[test]
+    fn pausing_signals_the_recorder_and_leaves_the_pause_out_of_the_time() {
+        let fixture = Fixture::new("pause", GPU_SCREEN_RECORDER, "");
+        fixture.start(None, RecordAudio::default()).unwrap();
+        fixture.next_event();
+        fixture.recordings.pause(true).unwrap();
+        let paused = fixture.next_event();
+        assert_eq!(paused["data"]["paused"], true, "{paused}");
+        std::thread::sleep(Duration::from_millis(300));
+        fixture.recordings.pause(false).unwrap();
+        let resumed = fixture.next_event();
+        assert_eq!(resumed["data"]["paused"], false);
+        assert!(
+            resumed["data"]["elapsed_ms"].as_u64().unwrap() < paused["data"]["elapsed_ms"].as_u64().unwrap() + 200,
+            "the pause isn't counted: {paused} then {resumed}"
+        );
+        let deadline = Instant::now() + WAIT;
+        while std::fs::read_to_string(fixture.dir.join("signals")).unwrap_or_default().lines().count() < 2 {
+            assert!(Instant::now() < deadline, "the recorder got no SIGUSR2");
+            std::thread::sleep(POLL);
+        }
+    }
+
+    #[test]
+    fn a_recorder_that_fails_at_once_says_why_and_leaves_nothing() {
+        let fixture = Fixture::new("fails", GPU_SCREEN_RECORDER, "echo 'no capture permission' >&2; exit 1");
+        let error = fixture.start(None, RecordAudio::default()).unwrap_err();
+        assert!(error.contains("didn't start") && error.contains("no capture permission"), "{error}");
+        assert!(fixture.files().is_empty());
+        assert!(fixture.ui.try_recv().is_err(), "nothing was announced");
+    }
+
+    #[test]
+    fn a_recorder_that_stops_by_itself_still_saves_what_it_recorded() {
+        let fixture = Fixture::new("dies", GPU_SCREEN_RECORDER, "(sleep 1.2; kill $$) &");
+        fixture.start(None, RecordAudio::default()).unwrap();
+        fixture.next_event();
+        assert_eq!(fixture.next_event()["data"], serde_json::Value::Null);
+        assert_eq!(fixture.next_event()["event"], "recording_saved");
+    }
+
+    #[test]
+    fn nothing_is_recorded_without_a_recorder_or_into_an_empty_region() {
+        let fixture = Fixture::new("none", "something-else", "");
+        assert!(fixture.start(None, RecordAudio::default()).unwrap_err().contains("neither"));
+        let empty = LayoutRect { width: 0, ..REGION };
+        assert!(fixture.start(Some(empty), RecordAudio::default()).unwrap_err().contains("empty"));
+    }
+}

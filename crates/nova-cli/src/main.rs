@@ -89,6 +89,12 @@ enum NovaCommand {
     /// Bind `nova screenshot region` to Super+Shift+S and `nova screenshot screen`
     /// to Print. The folder is `[screenshot] folder` in config.toml.
     Screenshot(toggle::ScreenshotArgs),
+    /// Record the screen, or stop recording.
+    ///
+    /// Opens the picker to choose a region or a screen and the sound; pressing
+    /// it again stops and saves the recording. Bind it to Super+Shift+R. The
+    /// folder is `[recording] folder` in config.toml.
+    Record,
     /// Send a raw request to novad and print the reply as JSON, for scripts.
     Ipc(ipc::IpcArgs),
 }
@@ -123,6 +129,7 @@ fn main() -> ExitCode {
         Some(NovaCommand::Lock) => toggle::lock(&socket),
         Some(NovaCommand::Volume(args)) => toggle::volume(&args, &socket),
         Some(NovaCommand::Screenshot(args)) => toggle::screenshot(&args, &socket),
+        Some(NovaCommand::Record) => toggle::record(&socket),
         Some(NovaCommand::Daemon(args)) => novad::run(*args, socket).map_err(|e| format!("daemon: {e}")),
     };
     match result {

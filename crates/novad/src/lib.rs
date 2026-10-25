@@ -35,6 +35,7 @@ mod logger;
 mod logind;
 mod power;
 mod procfs;
+mod recording;
 mod resources;
 mod screenshot;
 mod server;
@@ -119,6 +120,7 @@ pub struct Daemon {
     compositor: Option<Arc<compositor::Compositor>>,
     session_lock: Arc<session_lock::SessionLock>,
     screenshots: Arc<screenshot::Screenshots>,
+    recordings: Arc<recording::Recordings>,
 }
 
 impl Daemon {
@@ -247,6 +249,8 @@ fn start(
         Arc::clone(&hub),
         Arc::clone(&logger),
     ));
+    let recordings =
+        Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
     let daemon = Arc::new(Daemon {
         started: Instant::now(),
         hub,
@@ -258,6 +262,7 @@ fn start(
         compositor,
         session_lock,
         screenshots,
+        recordings,
     });
     // Watched for as long as novad runs.
     let _ = daemon.watch_settings();

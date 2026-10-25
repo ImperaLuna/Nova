@@ -1,7 +1,8 @@
-//! `nova toggle <panel>`, `nova lock`, `nova volume <key>` and
-//! `nova screenshot <mode>`: ask novad to open or close a panel on the
-//! focused output, to lock the screen, to pass a volume key to the UI, or to
-//! take a screenshot, for compositor keybinds. They print nothing
+//! `nova toggle <panel>`, `nova lock`, `nova volume <key>`,
+//! `nova screenshot <mode>` and `nova record`: ask novad to open or close a
+//! panel on the focused output, to lock the screen, to pass a volume key to
+//! the UI, to take a screenshot, or to start or stop recording, for
+//! compositor keybinds. They print nothing
 //! when it worked, so a keybind stays quiet; novad's reason goes to stderr
 //! when it didn't.
 
@@ -79,5 +80,10 @@ pub fn screenshot(args: &ScreenshotArgs, socket: &Path) -> Result<(), String> {
         ScreenshotArg::Screen => CaptureMode::Screen,
     };
     Client::connect(socket)?.request(Command::Screenshot { mode })?;
+    Ok(())
+}
+
+pub fn record(socket: &Path) -> Result<(), String> {
+    Client::connect(socket)?.request(Command::Record)?;
     Ok(())
 }

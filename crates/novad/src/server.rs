@@ -191,6 +191,17 @@ impl<'a> Connection<'a> {
                     Err(e) => Outcome::Error(e),
                 };
             }
+            Command::Record => {
+                let recordings = &self.daemon.recordings;
+                return outcome(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| recordings.record()));
+            }
+            Command::StartRecording { output, region, audio } => {
+                return self.start_recording(output.clone(), *region, *audio)();
+            }
+            // Even with the feature off, so a reload can't leave one running.
+            Command::StopRecording => return outcome(self.daemon.recordings.stop()),
+            Command::PauseRecording { paused } => return outcome(self.daemon.recordings.pause(*paused)),
+            Command::RecordingAction { id, action } => return outcome(self.daemon.recordings.act(*id, *action)),
             Command::SearchApps { query } => {
                 let launcher = lock(&self.daemon.settings).launcher.clone();
                 return match launcher.map(|launcher| launcher.search(query)) {
@@ -308,6 +319,9 @@ impl<'a> Connection<'a> {
             Command::PowerOptions => Some(self.power_options()),
             Command::Screenshot { mode } => Some(self.screenshot(*mode)),
             Command::SaveCapture { output, rect } => Some(self.save_capture(output.clone(), *rect)),
+            Command::StartRecording { output, region, audio } => {
+                Some(self.start_recording(output.clone(), *region, *audio))
+            }
             Command::Power {
                 action: action @ (PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff),
             } => Some(self.power_logind(*action)),
@@ -459,6 +473,21 @@ impl<'a> Connection<'a> {
         })
     }
 
+    /// Starts the recording the UI's picker asked for.
+    fn start_recording(
+        &self,
+        output: String,
+        region: Option<nova_protocol::LayoutRect>,
+        audio: nova_protocol::RecordAudio,
+    ) -> SlowWork {
+        if let Err(e) = self.require_feature(crate::recording::FEATURE_ID) {
+            return Box::new(move || Outcome::Error(e));
+        }
+        let recordings = Arc::clone(&self.daemon.recordings);
+        let folder = lock(&self.daemon.settings).recording_folder();
+        Box::new(move || outcome(folder.and_then(|folder| recordings.start(&output, region, audio, &folder))))
+    }
+
     fn toggle(&self, panel: Panel) -> Outcome {
         if !self.daemon.feature_ready(panel.name()) {
             return Outcome::Error(format!("the {panel} feature isn't ready (see `nova status`)"));
@@ -511,6 +540,7 @@ impl<'a> Connection<'a> {
                         Topic::Lock => self.daemon.session_lock.send_state(&self.daemon.hub, self.id),
                         // A restarted UI picks up a region picker that was open.
                         Topic::Screenshot => self.daemon.screenshots.send_state(&self.daemon.hub, self.id),
+                        Topic::Recording => self.daemon.recordings.send_state(&self.daemon.hub, self.id),
                         // Facts about the machine, there whatever the features.
                         Topic::Host => self.send(Event::Host(settings.host())),
                         // Sent while some connection watches them.
@@ -547,6 +577,11 @@ impl<'a> Connection<'a> {
             | Command::SaveCapture { .. }
             | Command::CancelCapture
             | Command::ScreenshotAction { .. }
+            | Command::Record
+            | Command::StartRecording { .. }
+            | Command::StopRecording
+            | Command::PauseRecording { .. }
+            | Command::RecordingAction { .. }
             | Command::Volume { .. }
             | Command::WatchResources { .. }
             | Command::EndApp { .. }
@@ -625,4 +660,12 @@ fn peer_pid(stream: &UnixStream) -> Option<u32> {
         libc::getsockopt(stream.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, (&raw mut cred).cast(), &mut len)
     };
     (got == 0).then(|| u32::try_from(cred.pid).ok()).flatten()
+}
+
+/// A request's answer: `null`, or its error.
+fn outcome(result: Result<(), String>) -> Outcome {
+    match result {
+        Ok(()) => Outcome::Result(serde_json::Value::Null),
+        Err(e) => Outcome::Error(e),
+    }
 }
