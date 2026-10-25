@@ -409,11 +409,6 @@ with subtest("screenshot: the AI usage panel open, grown from its pill"):
     # The same spot closes it again.
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
 
-with subtest("a click outside closes the AI usage panel"):
-    # It closes as the focus leaves it (StagePanel closesOnFocusLoss).
-    click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
-    click_until_logged(*POINTER_REST, AI_USAGE_CLOSED)
-
 with subtest("nova toggle opens and closes the AI usage panel, as a keybind would"):
     for line in (AI_USAGE_OPENED, AI_USAGE_CLOSED):
         before = ui_log_count(line)
@@ -501,6 +496,17 @@ with subtest("panels off the stage open and close without moving windows"):
             for command in (LIST_LAYERS, ui_log, COMPOSITOR_LOG):
                 print(machine.execute(as_user(command))[1])
             raise
+    # AI usage takes no typing: it closes as the focus moves on to a window
+    # (StagePanel closesOnFocusLoss), and the click reaches that window.
+    click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
+    try:
+        click_until_logged(*POINTER_REST, AI_USAGE_CLOSED)
+    except Exception:
+        print("a click on the window didn't close AI usage; the UI's log and the compositor's:")
+        focus = "nova:|wl_keyboard#[0-9]+\\.(enter|leave)|set_keyboard_interactivity"
+        for command in (f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -E '{focus}' | tail -n 80", COMPOSITOR_LOG):
+            print(machine.execute(as_user(command))[1])
+        raise
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
     machine.systemctl("unset-environment NOVA_DEMO_PANELS WAYLAND_DEBUG NO_COLOR NOVA_LOG", user=USER)

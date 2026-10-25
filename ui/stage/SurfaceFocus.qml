@@ -37,6 +37,8 @@ QtObject {
         function onActiveChanged() {
             if (!keyboard.following)
                 return;
+            // The VM tests read these when a panel doesn't close.
+            console.info(`nova: surface ${keyboard.window.active ? "has" : "lost"} the keyboard`);
             if (keyboard.window.active) {
                 keyboard.held = true;
             } else if (keyboard.held) {
