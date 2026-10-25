@@ -16,7 +16,7 @@ Item {
     StagePanel {
         id: usage
         name: "ai-usage"
-        closesOnClickOutside: true
+        closesOnFocusLoss: true
     }
 
     StagePanel {
@@ -138,18 +138,23 @@ Item {
             verify(notes.open, "notes stays");
         }
 
-        function test_the_screen_takes_clicks_while_a_panel_closes_on_one_outside() {
-            verify(launcher.closesOnClickOutside, "a typing panel does by default");
-            verify(!drawn.catchesClicks);
+        function test_losing_the_focus_closes_the_panels_that_follow_it() {
+            verify(!drawn.followsFocus);
             notes.open = true;
-            verify(!drawn.catchesClicks, "notes stays open on a click outside");
+            verify(!drawn.followsFocus, "notes stays open");
             usage.open = true;
-            verify(drawn.catchesClicks, "an open panel that takes no typing");
-            verify(!drawn.needsKeyboard);
-            drawn.dismiss();
+            verify(drawn.followsFocus);
+            verify(!drawn.needsKeyboard, "it takes no typing");
+            drawn.focusLost();
             verify(!usage.open);
             verify(notes.open, "notes stays");
-            verify(!drawn.catchesClicks);
+            verify(!drawn.followsFocus);
+        }
+
+        function test_esc_leaves_a_panel_that_takes_no_typing() {
+            usage.open = true;
+            drawn.dismiss();
+            verify(usage.open);
         }
 
         function test_opening_an_exclusive_panel_closes_the_other_exclusive_ones() {

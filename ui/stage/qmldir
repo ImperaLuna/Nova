@@ -10,3 +10,4 @@ ShapeRegion 1.0 ShapeRegion.qml
 Stage 1.0 Stage.qml
 StagePanel 1.0 StagePanel.qml
 StagePanels 1.0 StagePanels.qml
+SurfaceFocus 1.0 SurfaceFocus.qml

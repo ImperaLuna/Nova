@@ -39,9 +39,8 @@ QtObject {
     }
     // Whether an open panel takes typing.
     readonly property bool needsKeyboard: panels.some(panel => panel.open && panel.wantsKeyboard)
-    // Whether an open panel closes on a click outside it, so the whole
-    // screen takes clicks.
-    readonly property bool catchesClicks: panels.some(panel => panel.open && panel.closesOnClickOutside)
+    // Whether an open panel closes when the focus moves elsewhere.
+    readonly property bool followsFocus: panels.some(panel => panel.open && panel.closesOnFocusLoss)
     // Whether anything drawn is animating.
     readonly property bool moving: panels.some(panel => panel.moving)
 
@@ -64,11 +63,19 @@ QtObject {
         return shapes.some(item => item.contains(item.mapFromItem(null, x, y)));
     }
 
-    // Esc, or a click outside: closes the panels that close on it. Others,
-    // like a notes window, stay open.
+    // The focus moved elsewhere: closes the panels that close on that.
+    function focusLost() {
+        for (const panel of panels) {
+            if (panel.closesOnFocusLoss)
+                panel.open = false;
+        }
+    }
+
+    // Esc, or a click outside while the keyboard is held: closes the panels
+    // holding it. Others, like a notes window, stay open.
     function dismiss() {
         for (const panel of panels) {
-            if (panel.wantsKeyboard || panel.closesOnClickOutside)
+            if (panel.wantsKeyboard)
                 panel.open = false;
         }
     }
