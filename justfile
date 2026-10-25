@@ -7,7 +7,7 @@ default:
     @just --list
 
 # Everything CI runs, except e2e
-check: fmt-check lint lint-nix deny test lint-qml test-qml test-install
+check: fmt-check lint lint-nix deny test lint-qml test-qml test-install shaders-check
 
 # Rust unit tests
 test:
@@ -48,6 +48,14 @@ lint-qml:
 # install.sh against a fake release, no network needed
 test-install:
     scripts/test-install.sh install.sh
+
+# Compile ui/**/*.frag into the .qsb files QML loads (committed)
+shaders:
+    scripts/shaders.sh
+
+# Fail if a committed .qsb doesn't match its .frag
+shaders-check:
+    scripts/shaders.sh --check
 
 # QML unit tests (ui/tests), no display needed
 test-qml:

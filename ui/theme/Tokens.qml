@@ -78,6 +78,9 @@ QtObject {
     // Where, along the diagonal, the lit corner has faded to the plain rim
     // (and, mirrored, where the glow corner starts).
     readonly property real glassRimFade: 0.28
+    // A rim drawn in one pass (the volume capsule's shader): its brightness
+    // on the unlit side, relative to the lit corner.
+    readonly property real glassRimShade: 0.35
     readonly property color glassRimLit: Qt.rgba(fg.r, fg.g, fg.b, 0.60)
     readonly property color glassRimGlow: Qt.rgba(fg.r, fg.g, fg.b, 0.36)
     readonly property color glassRim: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
@@ -171,6 +174,63 @@ QtObject {
     readonly property int lockShakeSwings: 4
     // The field's ring while it has focus.
     readonly property real lockFocusOpacity: 0.75
+
+    // The volume capsule (ui/volume): a glass capsule with liquid inside that
+    // slides in from the right edge, this far from it.
+    readonly property int capsuleWidth: 48
+    readonly property int capsuleHeight: 260
+    readonly property int capsuleEdgeGap: 12
+    // Glass between the rim and the liquid.
+    readonly property int capsuleWall: 4
+    // The speaker and number sit this far above the capsule's bottom.
+    readonly property int capsuleLabelPad: 13
+    // They fade in over this last share of its way out.
+    readonly property real capsuleLabelFadeIn: 0.4
+    // While it slides it stretches (thinner and taller) by up to this share,
+    // and it overshoots its full height by up to this share as it lands.
+    readonly property real capsuleStretch: 0.10
+    readonly property real capsuleOvershoot: 0.08
+    // How long it stays out after the last change, and how much one scroll
+    // notch or volume key changes the volume (1 = 100%).
+    readonly property int durationCapsuleHold: 1500
+    readonly property real volumeStep: 0.05
+    // The liquid, and the grey still liquid of a muted output.
+    readonly property real liquidOpacity: 0.95
+    readonly property color liquid: Qt.rgba(secondary.r, secondary.g, secondary.b, liquidOpacity)
+    readonly property real liquidMutedOpacity: 0.7
+    readonly property color liquidMuted: Qt.rgba(fgDim.r, fgDim.g, fgDim.b, liquidMutedOpacity)
+    // Its surface (px): a slow swell, the waves a change stirs up (at most),
+    // the swell kept while it sits still, and how far the surface creeps
+    // up the glass.
+    readonly property real liquidSwell: 1.8
+    readonly property real liquidSloshMax: 6
+    readonly property real liquidIdleWave: 1.2
+    readonly property real liquidMeniscus: 1.6
+    // How fast stirred waves settle (s), and how strongly the level's speed
+    // stirs them.
+    readonly property real liquidSloshDecay: 0.45
+    readonly property real liquidSloshGain: 32
+    // Specks drifting up through it: most at once, and the share always
+    // rising while it's calm.
+    readonly property int liquidSpecks: 14
+    readonly property real liquidFizz: 0.3
+    // How much quicker they rise at full fizz (2: three times as fast).
+    readonly property real liquidFizzPace: 2
+    // Light inside it: just under the surface, and down the left side.
+    readonly property real liquidGlow: 0.28
+    readonly property real liquidStreak: 0.16
+    // Springs (stiffness, damping ratio): the capsule sliding, the level
+    // following the volume, and the surface swinging back after a tilt.
+    readonly property real springCapsule: 170
+    readonly property real springCapsuleDamping: 0.62
+    readonly property real springLevel: 70
+    readonly property real springLevelDamping: 0.85
+    readonly property real springTilt: 90
+    readonly property real springTiltDamping: 0.18
+    // How much the capsule's sideways acceleration tilts the surface, and
+    // the steepest tilt (px per px).
+    readonly property real liquidTiltGain: 0.005
+    readonly property real liquidTiltMax: 0.5
 
     // Type
     readonly property string fontSans: "Inter"

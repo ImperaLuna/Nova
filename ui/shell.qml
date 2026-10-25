@@ -8,6 +8,7 @@ import "daemon"
 import "lock"
 import "lock/service"
 import "stage"
+import "volume"
 
 ShellRoot {
     Variants {
@@ -27,6 +28,12 @@ ShellRoot {
         component: LockScreen {}
     }
 
+    // The volume capsule, on whichever screen has focus when it comes out.
+    LazyLoader {
+        active: Daemon.theme !== null
+        component: VolumeOsd {}
+    }
+
     // `quickshell ipc --pid <UI pid> prop get compositor focusedWorkspace`:
     // what the UI got from novad, for the VM tests and scripts.
     IpcHandler {
@@ -40,8 +47,7 @@ ShellRoot {
     IpcHandler {
         target: "demo"
         function toggle(panel: string): void {
-            const focused = Compositor.outputs.find(output => output.workspaces.some(workspace => workspace.focused));
-            Daemon.toggleRequested(panel, focused?.name ?? null);
+            Daemon.toggleRequested(panel, Compositor.focusedOutput?.name ?? null);
         }
     }
 }
