@@ -1,118 +1,156 @@
-//! How busy an NVIDIA GPU is, from `nvidia-smi`. The proprietary driver
-//! reports nothing in sysfs, and asking `nvidia-smi` once per look costs a
-//! driver load each time, so one `nvidia-smi` runs while resources are
-//! watched, printing a line per interval; it's stopped (killed and reaped)
-//! when watching stops.
+//! How busy an NVIDIA GPU is, from NVIDIA's management library (NVML,
+//! `libnvidia-ml.so.1`, which comes with the driver). The proprietary driver
+//! reports nothing in sysfs. The library is loaded once, if it's there, and
+//! NVML is started only while resources are watched (starting it wakes the
+//! driver) and shut down when watching stops.
+//!
+//! It's the library `nvidia-smi` reads too, without running that binary: on
+//! NixOS with driver 595.104.02 and glibc 2.44, `nvidia-smi` crashed in the
+//! dynamic loader before doing anything (IMP-104). Where the library can't
+//! be loaded (the static musl release can't load any), `nvidia_smi` runs
+//! `nvidia-smi` instead.
 
-use std::io::{BufRead, BufReader};
+use std::ffi::{CString, c_char, c_int, c_uint, c_void};
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-const BINARY: &str = "nvidia-smi";
+/// The library's name, found by the dynamic loader's search path.
+const LIBRARY: &str = "libnvidia-ml.so.1";
+/// Where NixOS puts the driver's libraries, outside any search path.
+const NIXOS_DRIVER_DIR: &str = "/run/opengl-driver/lib";
+/// NVML_SUCCESS.
+const SUCCESS: c_int = 0;
 
-/// The `nvidia-smi` on `path_var`, if any.
-pub fn find(path_var: &str) -> Option<PathBuf> {
-    std::env::split_paths(path_var).map(|dir| dir.join(BINARY)).find(|file| file.is_file())
+/// Where the library is looked for, in order.
+pub fn library_paths() -> Vec<PathBuf> {
+    vec![PathBuf::from(LIBRARY), Path::new(NIXOS_DRIVER_DIR).join(LIBRARY)]
 }
 
-/// A running `nvidia-smi` and the last share it printed.
-pub struct NvidiaSmi {
-    // Taken when it's dropped.
-    child: Option<Child>,
-    latest: Arc<Mutex<Option<f32>>>,
+type Device = *mut c_void;
+
+/// nvmlUtilization_t: percent of time busy over the last sample period.
+#[repr(C)]
+#[derive(Default)]
+struct Utilization {
+    gpu: c_uint,
+    memory: c_uint,
 }
 
-impl NvidiaSmi {
-    /// Starts `binary`, printing the first GPU's utilization every `interval`.
-    /// It gets only `PATH` from novad's environment.
-    pub fn start(binary: &Path, path_var: &str, interval: Duration) -> std::io::Result<Self> {
-        let mut child = Command::new(binary)
-            .args(["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits", "--id=0"])
-            .arg(format!("--loop-ms={}", interval.as_millis()))
-            .env_clear()
-            .env("PATH", path_var)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
-        let stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout pipe"))?;
-        let latest = Arc::new(Mutex::new(None));
-        let shared = Arc::clone(&latest);
-        // Drains the pipe until the child exits, so it never blocks on a
-        // full one.
-        std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                *crate::lock(&shared) = parse(&line);
-            }
-        });
-        Ok(Self { child: Some(child), latest })
+/// The NVML functions used, from a library that stays loaded.
+#[derive(Clone, Copy)]
+pub struct Library {
+    init: unsafe extern "C" fn() -> c_int,
+    shutdown: unsafe extern "C" fn() -> c_int,
+    device_by_index: unsafe extern "C" fn(c_uint, *mut Device) -> c_int,
+    utilization: unsafe extern "C" fn(Device, *mut Utilization) -> c_int,
+}
+
+impl Library {
+    /// The first of `paths` that loads and has every function, if any.
+    pub fn open(paths: &[PathBuf]) -> Option<Self> {
+        paths.iter().find_map(|path| Self::open_one(path))
     }
 
-    /// The share it last printed, if it printed one.
-    pub fn latest(&self) -> Option<f32> {
-        *crate::lock(&self.latest)
-    }
-}
-
-impl Drop for NvidiaSmi {
-    // Reaped on a thread of its own: a driver stuck in the kernel can keep
-    // even a killed nvidia-smi from exiting, and this runs with resources'
-    // state locked.
-    fn drop(&mut self) {
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            std::thread::spawn(move || child.wait());
+    fn open_one(path: &Path) -> Option<Self> {
+        let name = CString::new(path.as_os_str().as_bytes()).ok()?;
+        // SAFETY: a valid C string. The handle is never closed, so the
+        // functions below stay valid for the process's life.
+        let handle = unsafe { libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+        if handle.is_null() {
+            return None;
+        }
+        let symbol = |name: &[u8]| {
+            // SAFETY: `name` is NUL-terminated and `handle` is open.
+            let found = unsafe { libc::dlsym(handle, name.as_ptr().cast::<c_char>()) };
+            (!found.is_null()).then_some(found)
+        };
+        let (init, shutdown, device_by_index, utilization) = (
+            symbol(b"nvmlInit_v2\0")?,
+            symbol(b"nvmlShutdown\0")?,
+            symbol(b"nvmlDeviceGetHandleByIndex_v2\0")?,
+            symbol(b"nvmlDeviceGetUtilizationRates\0")?,
+        );
+        // SAFETY: NVML's documented signatures for these names (nvml.h).
+        unsafe {
+            Some(Self {
+                init: std::mem::transmute::<*mut c_void, unsafe extern "C" fn() -> c_int>(init),
+                shutdown: std::mem::transmute::<*mut c_void, unsafe extern "C" fn() -> c_int>(shutdown),
+                device_by_index: std::mem::transmute::<*mut c_void, unsafe extern "C" fn(c_uint, *mut Device) -> c_int>(
+                    device_by_index,
+                ),
+                utilization: std::mem::transmute::<*mut c_void, unsafe extern "C" fn(Device, *mut Utilization) -> c_int>(
+                    utilization,
+                ),
+            })
         }
     }
+
+    /// Starts NVML and finds the first GPU.
+    pub fn start(&self) -> Result<Nvml, String> {
+        // SAFETY: no arguments; NVML counts starts and shutdowns.
+        let status = unsafe { (self.init)() };
+        if status != SUCCESS {
+            return Err(format!("nvmlInit_v2 returned {status}"));
+        }
+        let mut device: Device = std::ptr::null_mut();
+        // SAFETY: NVML is started and `device` is a valid out pointer.
+        let status = unsafe { (self.device_by_index)(0, &raw mut device) };
+        if status != SUCCESS {
+            // SAFETY: balances the start above.
+            unsafe { (self.shutdown)() };
+            return Err(format!("nvmlDeviceGetHandleByIndex_v2 returned {status}"));
+        }
+        Ok(Nvml { library: *self, device })
+    }
 }
 
-/// One line of its output: a percent, or `[N/A]` and the like.
-fn parse(line: &str) -> Option<f32> {
-    line.trim().parse::<f32>().ok().filter(|percent| (0.0..=100.0).contains(percent))
+/// NVML while it's started, and the first GPU. Shut down when dropped.
+pub struct Nvml {
+    library: Library,
+    device: Device,
+}
+
+// SAFETY: NVML's calls are thread-safe, and the device handle is only an
+// id NVML hands back to itself.
+unsafe impl Send for Nvml {}
+
+impl Nvml {
+    /// How busy the GPU is now, in percent.
+    pub fn busy(&self) -> Option<f32> {
+        let mut utilization = Utilization::default();
+        // SAFETY: a device from this started NVML, and a valid out pointer.
+        let status = unsafe { (self.library.utilization)(self.device, &raw mut utilization) };
+        (status == SUCCESS && utilization.gpu <= 100).then_some(utilization.gpu as f32)
+    }
+}
+
+impl Drop for Nvml {
+    fn drop(&mut self) {
+        // SAFETY: balances the start that made it.
+        unsafe { (self.library.shutdown)() };
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
 
     #[test]
-    fn parses_its_lines() {
-        assert_eq!(parse("18\n"), Some(18.0));
-        assert_eq!(parse(" 100"), Some(100.0));
-        assert_eq!(parse("[N/A]"), None);
-        assert_eq!(parse("101"), None);
+    fn no_library_means_no_reading() {
+        let missing = std::env::temp_dir().join("novad-no-such-dir").join(LIBRARY);
+        assert!(Library::open(&[missing]).is_none());
+        assert!(Library::open(&[]).is_none());
     }
 
-    /// A stand-in for `nvidia-smi` that prints what the real one does with
-    /// these flags, then keeps running like it.
+    /// Only where NVIDIA's driver is (the desktop, not CI's build sandbox).
     #[test]
-    fn follows_what_it_prints_and_stops_with_it() {
-        let dir = std::env::temp_dir().join(format!("novad-nvidia-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let script = dir.join(BINARY);
-        std::fs::write(&script, "#!/bin/sh\necho 7\necho 42\nexec sleep 60\n").unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let path_var = format!("{}:{}", dir.display(), std::env::var("PATH").unwrap_or_default());
-        assert_eq!(find(&path_var), Some(script.clone()));
-
-        let smi = NvidiaSmi::start(&script, &path_var, Duration::from_secs(2)).unwrap();
-        let pid = smi.child.as_ref().unwrap().id();
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while smi.latest() != Some(42.0) && std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert_eq!(smi.latest(), Some(42.0));
-        drop(smi);
-        let gone = || !Path::new(&format!("/proc/{pid}")).exists();
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !gone() && std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(gone(), "stopped and reaped");
-        std::fs::remove_dir_all(dir).unwrap();
+    fn reads_the_gpu_where_there_is_one() {
+        let Some(library) = Library::open(&library_paths()) else { return };
+        let nvml = library.start().unwrap();
+        let busy = nvml.busy().unwrap();
+        assert!((0.0..=100.0).contains(&busy));
+        drop(nvml);
+        // Started again after a shutdown, as each watch does.
+        assert!(library.start().unwrap().busy().is_some());
     }
 }

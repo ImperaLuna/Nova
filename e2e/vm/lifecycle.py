@@ -239,6 +239,36 @@ def ui_log_count(line: str) -> int:
     return sum(int(count) for count in out.split())
 
 
+# Hyprland's numbered layers, by the names niri uses.
+HYPRLAND_LEVELS = {"0": "background", "1": "bottom", "2": "top", "3": "overlay"}
+
+
+def layers_of(namespace: str) -> set[str]:
+    """The layers (lowercase) the compositor has a surface named `namespace` on."""
+    listed = json.loads(machine.succeed(as_user(LIST_LAYERS)))
+    if isinstance(listed, list):
+        return {surface["layer"].lower() for surface in listed if surface["namespace"] == namespace}
+    return {
+        HYPRLAND_LEVELS[level]
+        for monitor in listed.values()
+        for level, surfaces in monitor["levels"].items()
+        for surface in surfaces
+        if surface["namespace"] == namespace
+    }
+
+
+def assert_layers(layer: str, *namespaces: str) -> None:
+    """Every surface named one of `namespaces` comes to sit on `layer`."""
+
+    def there(last_try: bool) -> bool:
+        found = {namespace: layers_of(namespace) for namespace in namespaces}
+        if last_try:
+            print(f"wanted {namespaces} on {layer}, found {found}")
+        return all(on == {layer} for on in found.values())
+
+    retry(there, timeout=CLICK_EFFECT)
+
+
 def window_geometry() -> list:
     """Where each window is and how big, as the compositor lists them
     (niri's `layout`, Hyprland's `at` and `size`), and nothing else: a panel
@@ -511,10 +541,16 @@ with subtest("nova toggle launcher opens the launcher; typing finds foot, Enter 
     # Not in nova.service: restarting Nova leaves the app running.
     foot_running = f"systemctl --user list-units --type=service --state=running --no-legend | grep -qF {FOOT_UNIT}"
     machine.succeed(as_user(foot_running))
+    # Over foot fullscreen: the compositor draws a focused fullscreen window
+    # over the Top layer, so while it's open Nova moves to Overlay, and back
+    # once it's closed, leaving the bar below fullscreen video and games.
+    machine.succeed(as_user(FULLSCREEN_WINDOW))
     before = ui_log_count(LAUNCHER_OPENED)
     machine.succeed(as_user("nova toggle launcher"))
     retry(lambda _last_try: ui_log_count(LAUNCHER_OPENED) > before, timeout=CLICK_EFFECT)
+    assert_layers("overlay", "nova-panel", "nova-stage", "nova-click-catcher")
     press_until_logged(ESC, LAUNCHER_CLOSED)
+    assert_layers("top", "nova-stage", "nova-click-catcher")
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
 

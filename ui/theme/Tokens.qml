@@ -281,9 +281,8 @@ QtObject {
     readonly property real revealStagger: 0.14
     // How far each section rises into place as it fades in.
     readonly property int revealRise: 6
-    // The header: the distro logo in a circle, the greeting beside it.
+    // The header: the distro logo on its own, the greeting beside it.
     readonly property int logoSize: 36
-    readonly property int logoMark: 24
     readonly property int fontSizeGreeting: 22
     // The greeting shrinks to fit beside the pill's buttons, down to this;
     // a name still too long is cut short.
