@@ -31,6 +31,8 @@ jobs:
     name: merge main into PRs
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      pushed: ${{ steps.merge.outputs.pushed }}
     permissions:
       contents: write
       pull-requests: write
@@ -41,6 +43,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: merge main into each PR branch
+        id: merge
         env:
           GH_TOKEN: ${{ github.token }}
           TOKEN: ${{ github.token }}
@@ -71,6 +74,7 @@ jobs:
           }
 
           failed=0
+          pushed=()
           mapfile -t prs < <(gh pr list --repo "$GITHUB_REPOSITORY" --base "$BASE" --state open --limit 100 \
             --json number,headRefName,isCrossRepository \
             --jq '.[] | select(.isCrossRepository | not) | "\(.number) \(.headRefName)"')
@@ -87,6 +91,7 @@ jobs:
             if git merge -q --no-edit -m "Merge $BASE into $branch" "$main"; then
               if out=$(git push -q origin "HEAD:refs/heads/$branch" 2>&1); then
                 echo "#$number ($branch): merged $BASE, starting CI."
+                pushed+=("$(git rev-parse HEAD)")
                 # A failed dispatch doesn't stop the other PRs; the run goes
                 # red so the branch without CI gets noticed.
                 if ! gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"; then
@@ -119,4 +124,14 @@ jobs:
           Merge \`$BASE\` into the branch and resolve them."
             fi
           done
+          echo "pushed=${pushed[*]}" >>"$GITHUB_OUTPUT"
           exit "$failed"
+
+  drop:
+    needs: update
+    if: always() && needs.update.outputs.pushed != ''
+    permissions:
+      actions: write
+    uses: ./.github/workflows/drop-bot-pr-runs.yml
+    with:
+      shas: ${{ needs.update.outputs.pushed }}

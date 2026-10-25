@@ -77,6 +77,8 @@ jobs:
     needs: screenshots
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.push.outputs.sha }}
     permissions:
       contents: write
       actions: write
@@ -112,9 +114,19 @@ jobs:
           git -c core.hooksPath=/dev/null -c http.extraheader="AUTHORIZATION: basic $auth" \
             push origin "HEAD:refs/heads/$BRANCH"
           echo "pushed=true" >>"$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
       - name: start CI on the new commit
         if: steps.push.outputs.pushed == 'true'
         env:
           BRANCH: ${{ inputs.branch }}
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+
+  drop:
+    needs: commit
+    if: needs.commit.outputs.sha != ''
+    permissions:
+      actions: write
+    uses: ./.github/workflows/drop-bot-pr-runs.yml
+    with:
+      shas: ${{ needs.commit.outputs.sha }}
