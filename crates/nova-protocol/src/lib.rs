@@ -1550,7 +1550,10 @@ mod tests {
             assert_eq!(serde_json::to_value(panel).unwrap(), json!(panel.name()));
         }
         assert!(
-            "calculator".parse::<Panel>().unwrap_err().contains("known: ai-usage, power, quick-settings, launcher, tray")
+            "calculator"
+                .parse::<Panel>()
+                .unwrap_err()
+                .contains("known: ai-usage, power, quick-settings, launcher, tray")
         );
         let features = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         for panel in Panel::ALL {

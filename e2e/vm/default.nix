@@ -16,6 +16,12 @@ let
   uid = 1000;
   # Her login password, which unlocks the lock screen.
   password = "nova-e2e";
+  # A login app (XDG autostart) that notes whether Nova's tray was up when
+  # it started, as an Electron app checks once (IMP-107).
+  loginProbe = pkgs.writeShellScript "nova-login-probe" ''
+    ${pkgs.systemd}/bin/busctl --user call org.freedesktop.DBus /org/freedesktop/DBus \
+      org.freedesktop.DBus NameHasOwner s org.kde.StatusNotifierWatcher >"$XDG_RUNTIME_DIR/nova-login-probe"
+  '';
 
   mkTest =
     {
@@ -104,6 +110,12 @@ let
           pkgs.wireplumber
         ];
         systemd.packages = [ nova ];
+        environment.etc."xdg/autostart/nova-login-probe.desktop".text = ''
+          [Desktop Entry]
+          Type=Application
+          Name=Nova login probe
+          Exec=${loginProbe}
+        '';
         # A virtual mouse for clicking Nova's pills (lifecycle.py's click).
         programs.ydotool.enable = true;
         # PipeWire for the volume capsule. The VM has no sound card, so a

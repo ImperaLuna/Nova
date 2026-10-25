@@ -146,6 +146,7 @@
                 install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
                 substituteInPlace $out/lib/systemd/user/nova.service \
                   --replace-fail @nova@ $out/bin/nova
+                install -Dm644 packaging/systemd/app-.service.d/nova.conf $out/lib/systemd/user/app-.service.d/nova.conf
               '';
               meta = {
                 description = "Nova desktop shell";

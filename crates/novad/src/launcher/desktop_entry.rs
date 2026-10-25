@@ -12,6 +12,8 @@ const GROUP: &str = "[Desktop Entry]";
 const FILE_CODES: [char; 4] = ['f', 'F', 'u', 'U'];
 /// Field codes the spec deprecates, dropped like it says.
 const DEPRECATED_CODES: [char; 6] = ['d', 'D', 'n', 'N', 'v', 'm'];
+/// GNOME's switch for an autostart entry, which other desktops honor too.
+const AUTOSTART_ENABLED: &str = "X-GNOME-Autostart-enabled";
 
 /// An app the launcher lists.
 #[derive(Debug, Clone, PartialEq)]
@@ -121,6 +123,10 @@ pub struct Context<'a> {
     pub desktops: &'a [String],
     /// Where `TryExec` programs are looked for.
     pub path_var: &'a str,
+    /// Read for starting at login (XDG autostart), not for the launcher:
+    /// `NoDisplay` doesn't matter, and `X-GNOME-Autostart-enabled=false`
+    /// turns the entry off like `Hidden`.
+    pub autostart: bool,
 }
 
 /// The `[Desktop Entry]` group's keys: `key` or `key[locale]` to its raw value.
@@ -170,10 +176,10 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
             .filter(|value| !value.is_empty())
     };
 
-    if flag("Hidden") {
+    if flag("Hidden") || (context.autostart && raw(AUTOSTART_ENABLED).map(str::trim) == Some("false")) {
         return Err(Skipped::Hidden);
     }
-    if raw("Type").map(str::trim) != Some("Application") || flag("NoDisplay") {
+    if raw("Type").map(str::trim) != Some("Application") || (flag("NoDisplay") && !context.autostart) {
         return Err(Skipped::NotShown);
     }
     let shown_here = |key: &str| {
@@ -368,7 +374,7 @@ mod tests {
 
     fn context(locale: &Locale) -> Context<'_> {
         static DESKTOPS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| vec!["niri".into()]);
-        Context { locale, desktops: &DESKTOPS, path_var: "/bin:/usr/bin" }
+        Context { locale, desktops: &DESKTOPS, path_var: "/bin:/usr/bin", autostart: false }
     }
 
     fn entry(text: &str) -> Result<Entry, Skipped> {

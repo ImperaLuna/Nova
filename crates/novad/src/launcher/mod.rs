@@ -3,6 +3,7 @@
 //! searching them, starting them, and the user's pinned and recent ones,
 //! which survive restarts.
 
+pub mod autostart;
 mod desktop_entry;
 mod launch;
 mod rank;
@@ -112,12 +113,7 @@ impl Launcher {
             }),
             Err(_) => Saved::default(),
         };
-        let desktops = std::env::var("XDG_CURRENT_DESKTOP")
-            .unwrap_or_default()
-            .split(':')
-            .filter(|name| !name.is_empty())
-            .map(str::to_string)
-            .collect();
+        let desktops = current_desktops();
         let launcher = Arc::new(Self {
             state: Mutex::new(State { apps: BTreeMap::new(), saved, sent: None }),
             hub,
@@ -353,7 +349,8 @@ impl Launcher {
     }
 
     fn rescan(&self) {
-        let context = Context { locale: &self.locale, desktops: &self.desktops, path_var: &self.path_var };
+        let context =
+            Context { locale: &self.locale, desktops: &self.desktops, path_var: &self.path_var, autostart: false };
         let (apps, problems) = scan::scan(&self.paths.data_dirs, &context);
         let mut state = lock(&self.state);
         if self.stopped() {
@@ -378,6 +375,16 @@ impl Launcher {
 }
 
 /// Watches what `scan::watch_points` says for `data_dirs`.
+/// `XDG_CURRENT_DESKTOP`'s names, like `niri`, which entries show in or not.
+fn current_desktops() -> Vec<String> {
+    std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .split(':')
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 fn watch_all(watcher: &mut Inotify, data_dirs: &[PathBuf], logger: &Logger) -> scan::WatchPoints {
     let points = scan::watch_points(data_dirs);
     // The parents first: a folder that's both gets the trees' wider mask.

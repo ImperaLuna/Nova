@@ -33,6 +33,7 @@ mod inotify;
 mod launcher;
 mod logger;
 mod logind;
+mod notify;
 mod power;
 mod procfs;
 mod recording;
@@ -62,6 +63,9 @@ pub const PROCESS_NAME: &str = "Nova";
 /// Sets the lowest level written to the log: debug, info (default), warn, error.
 const LOG_LEVEL_VAR: &str = "NOVA_LOG";
 const LOG_SOURCE: &str = "novad";
+/// Beside the socket, in `XDG_RUNTIME_DIR`: the login apps were started this
+/// session (`--autostart`).
+const AUTOSTART_MARKER: &str = "autostarted";
 
 /// `nova daemon`'s options. The socket comes from `nova`'s own `--socket`.
 #[derive(clap::Args)]
@@ -104,6 +108,11 @@ pub struct Args {
     /// `~/.claude/.credentials.json`.
     #[arg(long)]
     claude_credentials: Option<PathBuf>,
+    /// Start the login apps (XDG autostart) once the tray is up, once a
+    /// session. `nova` asks for it when it starts novad without systemd,
+    /// whose own autostart does it otherwise.
+    #[arg(long)]
+    autostart: bool,
 }
 
 /// Everything a connection needs to answer requests.
@@ -173,8 +182,18 @@ impl Daemon {
 pub fn run(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     // Before any thread starts, so they all inherit the name.
     set_process_name(PROCESS_NAME)?;
+    // systemd's, for novad alone: neither the UI nor the apps novad starts
+    // may answer it.
+    let notify_socket = std::env::var_os(notify::SOCKET_VAR);
+    // SAFETY: no other thread runs yet to read the environment meanwhile.
+    unsafe { std::env::remove_var(notify::SOCKET_VAR) };
     let (listener, daemon) = start(args, socket)?;
     install_panic_hook(Arc::clone(&daemon.logger));
+    // Up: the socket listens and the tray's name is claimed, so login apps
+    // may start (nova.service is Type=notify).
+    if let Err(e) = notify::ready(notify_socket.as_deref()) {
+        daemon.logger.warn(LOG_SOURCE, &format!("can't tell systemd novad is ready: {e}"));
+    }
     server::serve(listener, daemon);
     Ok(())
 }
@@ -211,6 +230,9 @@ fn start(
         tray: tray::Sources::new(&args.state_dir),
     };
     let settings = Settings::load(&sources, &hub, &logger);
+    if args.autostart {
+        launcher::autostart::start(&socket.with_file_name(AUTOSTART_MARKER), path_var.clone(), Arc::clone(&logger));
+    }
 
     logger.info(LOG_SOURCE, &format!("listening on {}", socket.display()));
 
