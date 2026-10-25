@@ -78,6 +78,22 @@ impl Hyprland {
     }
 }
 
+impl Hyprland {
+    /// Runs one of Hyprland's dispatchers.
+    fn dispatch(&self, dispatcher: &str) -> Result<(), String> {
+        match self.request(&format!("dispatch {dispatcher}"))?.trim() {
+            "ok" => Ok(()),
+            error => Err(format!("Hyprland: {error}")),
+        }
+    }
+}
+
+/// How dispatchers name `workspace`: a bare number is an id; named
+/// workspaces (negative ids) go by name.
+fn workspace_target(workspace: &NovaWorkspace) -> String {
+    if workspace.id > 0 { workspace.id.to_string() } else { format!("name:{}", workspace.name) }
+}
+
 impl Backend for Hyprland {
     fn name(&self) -> &'static str {
         NAME
@@ -111,12 +127,31 @@ impl Backend for Hyprland {
     }
 
     fn focus_workspace(&self, workspace: &NovaWorkspace) -> Result<(), String> {
-        // A bare number is an id; named workspaces (negative ids) go by name.
-        let target = if workspace.id > 0 { workspace.id.to_string() } else { format!("name:{}", workspace.name) };
-        match self.request(&format!("dispatch workspace {target}"))?.trim() {
-            "ok" => Ok(()),
-            error => Err(format!("Hyprland: {error}")),
+        self.dispatch(&format!("workspace {}", workspace_target(workspace)))
+    }
+
+    fn bring_window(&self, app_ids: &[String], workspace: &NovaWorkspace) -> Result<bool, String> {
+        let answer = self.request(CLIENTS)?;
+        let clients: Vec<Client> =
+            serde_json::from_str(&answer).map_err(|e| format!("Hyprland sent odd windows ({e})"))?;
+        let mut matching: Vec<&Client> = clients
+            .iter()
+            .filter(|client| {
+                [&client.class, &client.initial_class].iter().any(|class| app_ids.contains(&class.to_lowercase()))
+            })
+            .collect();
+        // One already there needs no move.
+        matching.sort_by_key(|client| client.workspace.id != workspace.id);
+        let Some(client) = matching.first() else { return Ok(false) };
+        if client.workspace.id != workspace.id {
+            self.dispatch(&format!(
+                "movetoworkspacesilent {},address:{}",
+                workspace_target(workspace),
+                client.address
+            ))?;
         }
+        self.dispatch(&format!("focuswindow address:{}", client.address))?;
+        Ok(true)
     }
 
     fn log_out(&self) -> Result<(), String> {
@@ -151,6 +186,9 @@ struct Workspace {
 struct Client {
     address: String,
     class: String,
+    /// Its class when it opened; some apps change theirs later.
+    #[serde(rename = "initialClass", default)]
+    initial_class: String,
     title: String,
     workspace: WorkspaceRef,
 }

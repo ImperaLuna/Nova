@@ -47,6 +47,17 @@ impl TestDaemon {
         Self::open(name, None, |dir| std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap())
     }
 
+    /// Like [`TestDaemon::with_launcher`], following the compositor `connect`
+    /// sets up in the test's folder.
+    fn with_launcher_following(name: &str, connect: impl FnOnce(&Path) -> Box<dyn compositor::Backend>) -> Self {
+        Self::open_following(
+            name,
+            None,
+            |dir| std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap(),
+            |dir| Some(connect(dir)),
+        )
+    }
+
     /// Following the compositor `connect` sets up in the test's folder, with
     /// the `ai-usage` and `launcher` features off.
     pub fn with_compositor(name: &str, connect: impl FnOnce(&Path) -> Box<dyn compositor::Backend>) -> Self {
@@ -953,10 +964,13 @@ impl FakeCompositor {
     fn niri(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
         let fake = Self { requests: Arc::default() };
         let events = Self::recorded("niri", "events.txt");
+        let steps: Vec<Value> = serde_json::from_str(&Self::recorded("niri", "steps.json")).unwrap();
+        let windows = Self::recorded("niri", &format!("{:02}/windows.json", steps.len() - 1));
         let socket = dir.join("niri.sock");
         fake.answer(&socket, move |request| match request {
             // The recording starts with niri's answer to this.
             r#""EventStream""# => events.clone(),
+            r#""Windows""# => format!("{{\"Ok\":{{\"Windows\":{}}}}}\n", windows.trim()),
             _ => "{\"Ok\":\"Handled\"}\n".into(),
         });
         let backend = compositor::detect(|name| (name == "NIRI_SOCKET").then(|| socket.clone().into())).unwrap();
@@ -988,8 +1002,12 @@ impl FakeCompositor {
 
     /// The requests that weren't queries or the event stream.
     fn actions(&self) -> Vec<String> {
-        let event_stream = r#""EventStream""#;
-        lock(&self.requests).iter().filter(|r| !r.starts_with("j/") && *r != event_stream).cloned().collect()
+        let queries = [r#""EventStream""#, r#""Windows""#];
+        lock(&self.requests)
+            .iter()
+            .filter(|r| !r.starts_with("j/") && !queries.contains(&r.as_str()))
+            .cloned()
+            .collect()
     }
 }
 
@@ -1539,6 +1557,76 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     assert_eq!(fields[3], pid, "not the leader of a session of its own: {copied}");
     let missing = client.request(4, "launch_app", Some(json!({"id": "nothing.desktop"})));
     assert!(missing["error"].as_str().unwrap().contains("no app"));
+}
+
+/// Launches the app the recording's window belongs to (`nova-second`, on
+/// workspace `web`) from the focused output, and returns the actions taken
+/// and whether the app ran anyway, then the same asking for a new window.
+fn bring_the_recorded_window(
+    name: &str,
+    fake: fn(&Path) -> (FakeCompositor, Box<dyn compositor::Backend>),
+) -> (Vec<String>, Value, bool) {
+    let mut compositor = None;
+    let novad = TestDaemon::with_launcher_following(name, |dir| {
+        let (fake, backend) = fake(dir);
+        compositor = Some(fake);
+        backend
+    });
+    let compositor = compositor.unwrap();
+    let marker = novad.dir.join("ran");
+    let entry = format!("Name=Second\nExec=touch \"{}\"\nStartupWMClass=Nova-Second\n", marker.display());
+    install_app(&novad, "second.desktop", &entry);
+    let (mut client, desktop) = follow_to_the_end(&novad);
+    client.subscribe_launcher(1);
+    let output = focused_output(&desktop);
+    let launch = json!({"id": "second.desktop", "output": output});
+    assert_eq!(client.request(2, "launch_app", Some(launch))["result"], Value::Null);
+    let event = client.launcher_until(|event| !event["recent"].as_array().unwrap().is_empty());
+    assert_eq!(event["recent"], json!(["second.desktop"]), "bringing it counts as a launch");
+    let actions = compositor.actions();
+
+    let fresh = json!({"id": "second.desktop", "output": output, "new_window": true});
+    assert_eq!(client.request(3, "launch_app", Some(fresh))["result"], Value::Null);
+    let ran = (0..100).any(|_| {
+        std::thread::sleep(Duration::from_millis(50));
+        marker.exists()
+    });
+    assert_eq!(compositor.actions(), actions, "a new window leaves the open one alone");
+    let shown =
+        desktop["outputs"].as_array().unwrap().iter().find(|o| o["name"] == output.as_str()).unwrap()["workspaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|workspace| workspace["active"] == true)
+            .unwrap()
+            .clone();
+    (actions, shown, ran)
+}
+
+#[test]
+fn launching_an_open_app_on_niri_brings_its_window_to_the_screen() {
+    let (actions, shown, ran) = bring_the_recorded_window("launcher-bring-niri", FakeCompositor::niri);
+    let id = shown["id"].as_i64().unwrap();
+    let moved = json!({"Action": {"MoveWindowToWorkspace": {"window_id": 3, "reference": {"Id": id}, "focus": true}}});
+    let focused = json!({"Action": {"FocusWindow": {"id": 3}}});
+    assert_ne!(shown["name"], "web", "the recording shows another workspace there");
+    assert_eq!(actions, [moved.to_string(), focused.to_string()]);
+    assert!(ran, "asked for a new window, the app runs");
+}
+
+#[test]
+fn launching_an_open_app_on_hyprland_brings_its_window_to_the_screen() {
+    let (actions, shown, ran) = bring_the_recorded_window("launcher-bring-hyprland", FakeCompositor::hyprland);
+    let id = shown["id"].as_i64().unwrap();
+    assert_ne!(shown["name"], "web", "the recording shows another workspace there");
+    assert_eq!(
+        actions,
+        [
+            format!("dispatch movetoworkspacesilent {id},address:0x5e0d97d48100"),
+            "dispatch focuswindow address:0x5e0d97d48100".to_string()
+        ]
+    );
+    assert!(ran, "asked for a new window, the app runs");
 }
 
 #[test]

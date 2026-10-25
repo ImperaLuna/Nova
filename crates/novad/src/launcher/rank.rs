@@ -130,6 +130,7 @@ mod tests {
             terminal: false,
             path: None,
             opens_types: false,
+            window_class: None,
         }
     }
 

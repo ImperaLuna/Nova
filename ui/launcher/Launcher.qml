@@ -10,7 +10,8 @@ import "launcher.js" as LauncherLogic
 // fades in where it stands (the central pill stays). A search field, the
 // pinned apps as tiles, and a list: the recent apps (every app before the
 // first launch), or what a search matches. Up and Down move through the
-// list, Enter launches, Esc or a click outside closes. Opened by
+// list, Enter launches (bringing an open app's window here; Shift+Enter
+// opens another), Esc or a click outside closes. Opened by
 // `nova toggle launcher` (Super+Space) or the central pill's search button.
 // It gets its data and acts through its properties and signals (the stage
 // wires LauncherService to them), so the QML tests can drive it.
@@ -29,8 +30,9 @@ StagePanel {
 
     // Typed: novad's matches go to showMatches().
     signal searchRequested(string query)
-    // An app to start: the answer goes to launched().
-    signal launchRequested(string id)
+    // An app to start, or to bring here when it's open already unless
+    // `newWindow` (Shift+Enter): the answer goes to launched().
+    signal launchRequested(string id, bool newWindow)
     signal pinRequested(string id, bool pinned)
 
     // What's typed, and the matches novad sent for it.
@@ -113,13 +115,14 @@ StagePanel {
             matches = found;
     }
 
-    // Starts the app `id`, unless one is starting already.
-    function launch(id: string) {
+    // Starts the app `id` (see launchRequested), unless one is starting
+    // already.
+    function launch(id: string, newWindow: bool) {
         if (launching !== "")
             return;
         problem = "";
         launching = id;
-        launchRequested(id);
+        launchRequested(id, newWindow);
     }
 
     // novad's answer to launchRequested: closes once the app has started.
@@ -133,7 +136,7 @@ StagePanel {
     }
 
     // A key typed into the search field; true when it was the launcher's.
-    function key(key: int): bool {
+    function key(key: int, modifiers: int): bool {
         switch (key) {
         case Qt.Key_Up:
         case Qt.Key_Down:
@@ -142,7 +145,7 @@ StagePanel {
         case Qt.Key_Return:
         case Qt.Key_Enter:
             if (rows.length > 0)
-                launch(rows[selected].id);
+                launch(rows[selected].id, (modifiers & Qt.ShiftModifier) !== 0);
             return true;
         case Qt.Key_Escape:
             open = false;
@@ -222,7 +225,7 @@ StagePanel {
                             launcher.matches = [];
                     }
                     Keys.onPressed: event => {
-                        event.accepted = launcher.key(event.key);
+                        event.accepted = launcher.key(event.key, event.modifiers);
                     }
 
                     Text {
@@ -264,7 +267,7 @@ StagePanel {
                         appId: modelData.id
                         name: modelData.name
                         iconSource: launcher.iconSource(modelData.icon ?? "")
-                        onClicked: launcher.launch(appId)
+                        onClicked: launcher.launch(appId, false)
                     }
                 }
             }
@@ -365,7 +368,7 @@ StagePanel {
             pinned: launcher.pinned.includes(item.modelData.id)
             launching: launcher.launching === item.modelData.id
             onHovered: launcher.selected = item.index
-            onClicked: launcher.launch(item.modelData.id)
+            onClicked: launcher.launch(item.modelData.id, false)
             onPinClicked: launcher.pinRequested(item.modelData.id, !pinned)
         }
     }

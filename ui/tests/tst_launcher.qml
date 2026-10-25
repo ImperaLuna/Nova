@@ -169,12 +169,18 @@ Item {
             compare(launcher.selected, 1);
             keyClick(Qt.Key_Return);
             compare(launches.count, 1);
-            compare(launches.signalArguments[0][0], "firefox.desktop");
+            compare(Array.from(launches.signalArguments[0]), ["firefox.desktop", false]);
             compare(launcher.launching, "firefox.desktop");
             keyClick(Qt.Key_Return);
             compare(launches.count, 1, "one launch at a time");
             launcher.launched(null);
             tryCompare(launcher, "open", false);
+        }
+
+        function test_shift_enter_asks_for_a_new_window() {
+            make();
+            keyClick(Qt.Key_Return, Qt.ShiftModifier);
+            compare(Array.from(launches.signalArguments[0]), ["org.gnome.Nautilus.desktop", true]);
         }
 
         function test_a_failed_launch_says_why_and_stays_open() {

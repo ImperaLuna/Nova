@@ -32,6 +32,29 @@ pub struct Entry {
     /// Opens files or links of some type (`MimeType=`): the entry the
     /// system's defaults point at, when two start the same program.
     pub opens_types: bool,
+    /// The app id its windows get (`StartupWMClass=`), when it says.
+    pub window_class: Option<String>,
+}
+
+impl Entry {
+    /// The app ids (lower case) a window of this app may have: the one it
+    /// names, its desktop file id, its program and its name. None for an
+    /// app in a terminal, whose window is the terminal's.
+    pub fn window_ids(&self) -> Vec<String> {
+        if self.terminal {
+            return vec![];
+        }
+        let program = self.exec.first().map(|program| program.rsplit('/').next().unwrap_or(program));
+        let mut ids: Vec<String> =
+            [self.window_class.as_deref(), self.id.strip_suffix(".desktop"), program, Some(&self.name)]
+                .into_iter()
+                .flatten()
+                .map(str::to_lowercase)
+                .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
 }
 
 /// Why a file isn't an app the launcher lists.
@@ -191,6 +214,7 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
         terminal: flag("Terminal"),
         path: raw("Path").map(unescape).filter(|path| !path.is_empty()).map(PathBuf::from),
         opens_types: raw("MimeType").is_some_and(|types| !types.trim().is_empty()),
+        window_class: raw("StartupWMClass").map(unescape).filter(|class| !class.is_empty()),
     })
 }
 

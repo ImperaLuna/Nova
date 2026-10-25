@@ -39,7 +39,7 @@ expression: all
 {"v":2,"event":"launcher","data":{"apps":[{"id":"org.mozilla.firefox.desktop","name":"Firefox","description":"Web Browser","icon":"firefox"},{"id":"foot.desktop","name":"Foot"}],"pinned":["foot.desktop"],"recent":["org.mozilla.firefox.desktop","foot.desktop"]}}
 {"v":2,"id":22,"cmd":"search_apps","args":{"query":"fi"}}
 {"v":2,"id":22,"result":[{"id":"org.mozilla.firefox.desktop","name":[{"matched":true,"text":"Fi"},{"text":"refox"}]}]}
-{"v":2,"id":23,"cmd":"launch_app","args":{"id":"foot.desktop"}}
+{"v":2,"id":23,"cmd":"launch_app","args":{"id":"foot.desktop","output":"DP-1","new_window":true}}
 {"v":2,"id":24,"cmd":"pin_app","args":{"id":"foot.desktop","pinned":true}}
 {"v":2,"cmd":"toggle","args":{"panel":"launcher"}}
 {"v":2,"id":8,"error":"bad request"}

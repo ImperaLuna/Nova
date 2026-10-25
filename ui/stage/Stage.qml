@@ -80,7 +80,7 @@ Scope {
             recent: LauncherService.current.recent
             iconSource: icon => LauncherService.iconSource(icon)
             onSearchRequested: query => LauncherService.search(query, found => deck.showMatches(query, found))
-            onLaunchRequested: id => LauncherService.launch(id, error => deck.launched(error))
+            onLaunchRequested: (id, newWindow) => LauncherService.launch(id, root.screen.name, newWindow, error => deck.launched(error))
             onPinRequested: (id, pinned) => LauncherService.pin(id, pinned)
         }
     }

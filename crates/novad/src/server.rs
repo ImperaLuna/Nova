@@ -185,7 +185,14 @@ impl<'a> Connection<'a> {
                     None => Outcome::Error(format!("the {} feature is off", crate::launcher::FEATURE_ID)),
                 };
             }
-            Command::LaunchApp { id } => return self.with_launcher(|launcher| launcher.launch(id)),
+            Command::LaunchApp { id, output, new_window } => {
+                return self.with_launcher(|launcher| {
+                    launcher.launch(id, |ids| match &self.daemon.compositor {
+                        Some(compositor) if !new_window => compositor.bring_app(ids, output.as_deref()),
+                        _ => Ok(false),
+                    })
+                });
+            }
             Command::PinApp { id, pinned } => return self.with_launcher(|launcher| launcher.pin(id, *pinned)),
         };
         match value {

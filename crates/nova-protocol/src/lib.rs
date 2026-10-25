@@ -526,9 +526,15 @@ pub enum Command {
         query: String,
     },
     /// Opens an app by its id (feature `launcher`) and counts it towards
-    /// the recent ones.
+    /// the recent ones. When it already has a window, that window moves to
+    /// the workspace showing on `output` (the focused output's when unset)
+    /// and takes focus, unless `new_window` asks for another one.
     LaunchApp {
         id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        new_window: bool,
     },
     /// Pins an app to the launcher, at the end, or unpins it (feature
     /// `launcher`). Remembered across restarts.
@@ -864,7 +870,14 @@ mod tests {
                     .unwrap(),
                 ),
             }),
-            encode(Request { id: Some(23), command: Command::LaunchApp { id: "foot.desktop".into() } }),
+            encode(Request {
+                id: Some(23),
+                command: Command::LaunchApp {
+                    id: "foot.desktop".into(),
+                    output: Some("DP-1".into()),
+                    new_window: true,
+                },
+            }),
             encode(Request { id: Some(24), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),

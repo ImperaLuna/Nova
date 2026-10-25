@@ -182,11 +182,21 @@ impl Launcher {
             .collect())
     }
 
-    /// Starts the app `id` and counts it as launched.
-    pub fn launch(&self, id: &str) -> Result<(), String> {
+    /// Brings a window the app `id` already has, through `bring` (given the
+    /// app ids its windows may have, `false` when none is open), or else
+    /// starts the app; either counts it as launched.
+    pub fn launch(&self, id: &str, bring: impl FnOnce(&[String]) -> Result<bool, String>) -> Result<(), String> {
         let entry = lock(&self.state).apps.get(id).cloned().ok_or_else(|| format!("no app {id:?}"))?;
-        launch::launch(&entry, &self.paths.runner, &self.path_var, &self.logger)
-            .inspect_err(|e| self.logger.warn(LOG_SOURCE, &format!("can't launch {id}: {e}")))?;
+        let ids = entry.window_ids();
+        let brought = !ids.is_empty()
+            && bring(&ids).unwrap_or_else(|e| {
+                self.logger.warn(LOG_SOURCE, &format!("can't bring {id}'s window, so starting it: {e}"));
+                false
+            });
+        if !brought {
+            launch::launch(&entry, &self.paths.runner, &self.path_var, &self.logger)
+                .inspect_err(|e| self.logger.warn(LOG_SOURCE, &format!("can't launch {id}: {e}")))?;
+        }
         let now = jiff::Timestamp::now().as_millisecond();
         self.update(|saved| {
             let launches = saved.launches.entry(id.to_string()).or_insert(Launches { count: 0, last: now });
