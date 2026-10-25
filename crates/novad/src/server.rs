@@ -153,6 +153,10 @@ impl<'a> Connection<'a> {
                     Err(e) => Outcome::Error(e),
                 };
             }
+            Command::ReportLocked => {
+                self.daemon.session_lock.secured();
+                Ok(serde_json::Value::Null)
+            }
             // Even with the feature off: the screen was locked while it was on.
             Command::ReportUnlocked => {
                 self.daemon.session_lock.unlocked(&self.daemon.hub);
@@ -257,6 +261,7 @@ impl<'a> Connection<'a> {
             | Command::StepWorkspace { .. }
             | Command::Toggle { .. }
             | Command::Lock
+            | Command::ReportLocked
             | Command::ReportUnlocked => {}
         }
     }

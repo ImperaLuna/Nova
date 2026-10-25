@@ -418,9 +418,14 @@ pub enum Command {
     Toggle {
         panel: Panel,
     },
-    /// Locks the session (`nova lock`, feature `lock`). Fails when the
-    /// feature isn't ready or no UI is connected to show the lock screen.
+    /// Locks the session (`nova lock`, feature `lock`) and answers once the
+    /// compositor has covered the screens. Fails when the feature isn't
+    /// ready, no UI is connected to show the lock screen, or the screens
+    /// aren't covered in time.
     Lock,
+    /// The compositor covered the screens with the UI's lock screen
+    /// (feature `lock`).
+    ReportLocked,
     /// The UI unlocked the session after the user's password checked out
     /// (feature `lock`). Unlocking is the UI's alone: this only tells novad.
     ReportUnlocked,
@@ -686,6 +691,7 @@ mod tests {
             encode(Event::Toggle { panel: Panel::AiUsage, output: None }),
             encode(Request { id: Some(16), command: Command::Lock }),
             encode(Event::Lock { locked: true }),
+            encode(Request { id: Some(20), command: Command::ReportLocked }),
             encode(Request { id: Some(17), command: Command::ReportUnlocked }),
             encode(Event::Lock { locked: false }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),

@@ -15,6 +15,11 @@ Singleton {
     // Locked from novad's word until unlocked() runs.
     property bool locked: false
 
+    // The compositor covered the screens: `nova lock` can answer.
+    function secured() {
+        Daemon.call(Protocol.CMD_REPORT_LOCKED);
+    }
+
     // The password checked out: unlock, then tell novad.
     function unlocked() {
         locked = false;

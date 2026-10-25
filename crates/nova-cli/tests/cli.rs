@@ -210,9 +210,14 @@ fn lock_reaches_the_ui_quietly() {
     assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
     assert!(lines.next().unwrap().unwrap().contains(r#""locked":false"#));
 
-    assert_eq!(stdout(&novad.run(&["lock"])), "", "quiet for keybinds");
-    let event = lines.next().unwrap().unwrap();
-    assert!(event.contains(r#""event":"lock""#) && event.contains(r#""locked":true"#), "{event}");
+    // It answers once the UI says the screens are covered.
+    std::thread::scope(|scope| {
+        let locking = scope.spawn(|| novad.run(&["lock"]));
+        let event = lines.next().unwrap().unwrap();
+        assert!(event.contains(r#""event":"lock""#) && event.contains(r#""locked":true"#), "{event}");
+        writeln!(&ui, r#"{{"v":2,"id":2,"cmd":"report_locked"}}"#).unwrap();
+        assert_eq!(stdout(&locking.join().unwrap()), "", "quiet for keybinds");
+    });
 }
 
 #[test]

@@ -12,6 +12,7 @@ var CMD_SHOW_AI_USAGE = "show_ai_usage";
 var CMD_REFRESH_AI_USAGE = "refresh_ai_usage";
 var CMD_FOCUS_WORKSPACE = "focus_workspace";
 var CMD_STEP_WORKSPACE = "step_workspace";
+var CMD_REPORT_LOCKED = "report_locked";
 var CMD_REPORT_UNLOCKED = "report_unlocked";
 
 // Events novad sends (Event in nova-protocol). Each topic's events carry the

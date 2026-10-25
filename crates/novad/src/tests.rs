@@ -77,6 +77,7 @@ impl TestDaemon {
         let settings = Settings::load(&sources, &hub, &logger);
         let compositor = compositor(&dir)
             .map(|backend| compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
+        let session_lock = session_lock::SessionLock::open(&dir, &logger);
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
             hub,
@@ -86,7 +87,7 @@ impl TestDaemon {
             sources,
             settings: Mutex::new(settings),
             compositor,
-            session_lock: Default::default(),
+            session_lock,
         });
         daemon.watch_settings();
         let serving = Arc::clone(&daemon);
@@ -1088,8 +1089,13 @@ fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
     let mut ui = novad.connect();
     ui.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
     assert_eq!(ui.next_event("lock"), json!({"locked": false}), "the state on subscribe");
-    assert_eq!(cli.request(2, "lock", None)["result"], Value::Null);
+    // `nova lock` answers once the compositor has covered the screens.
+    let locking = std::thread::spawn(move || cli.request(2, "lock", None));
     assert_eq!(ui.next_event("lock"), json!({"locked": true}));
+    assert!(!locking.is_finished(), "answered before the screens were covered");
+    assert_eq!(ui.request(2, "report_locked", None)["result"], Value::Null);
+    assert_eq!(locking.join().unwrap()["result"], Value::Null);
+    assert!(novad.dir.join("locked").exists(), "kept for a restarted novad");
 
     // A UI that crashed while locked hears on its restart that it should lock.
     drop(ui);
@@ -1099,6 +1105,17 @@ fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
 
     assert_eq!(restarted.request(2, "report_unlocked", None)["result"], Value::Null);
     assert_eq!(restarted.next_event("lock"), json!({"locked": false}));
+    assert!(!novad.dir.join("locked").exists());
+}
+
+#[test]
+fn lock_fails_when_the_screens_arent_covered_in_time() {
+    let novad = TestDaemon::start("lock-stalled", None);
+    let mut ui = novad.connect();
+    ui.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
+    // A UI that hears the lock but never covers the screens.
+    let reply = novad.connect().request(1, "lock", None);
+    assert!(reply["error"].as_str().unwrap().contains("weren't covered"), "{reply}");
 }
 
 #[test]

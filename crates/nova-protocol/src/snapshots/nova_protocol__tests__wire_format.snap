@@ -26,6 +26,7 @@ expression: all
 {"v":2,"event":"toggle","data":{"panel":"ai-usage"}}
 {"v":2,"id":16,"cmd":"lock"}
 {"v":2,"event":"lock","data":{"locked":true}}
+{"v":2,"id":20,"cmd":"report_locked"}
 {"v":2,"id":17,"cmd":"report_unlocked"}
 {"v":2,"event":"lock","data":{"locked":false}}
 {"v":2,"id":8,"error":"bad request"}

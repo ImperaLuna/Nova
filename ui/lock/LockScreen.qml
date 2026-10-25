@@ -24,7 +24,11 @@ Scope {
         // The VM tests wait for these.
         // `secure` goes false on unlock as well; `locked` doesn't notify
         // then.
-        onSecureChanged: console.info(`nova: session ${secure ? "locked" : "unlocked"}`)
+        onSecureChanged: {
+            console.info(`nova: session ${secure ? "locked" : "unlocked"}`);
+            if (secure)
+                LockService.secured();
+        }
 
         LockSurface {
             authenticator: passwordCheck

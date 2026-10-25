@@ -42,7 +42,7 @@ use logger::Logger;
 use nova_protocol::{LogLevel, Status, UiState, UiStatus};
 use settings::{Settings, Sources};
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 use supervisor::{Supervisor, UiSettings};
@@ -224,6 +224,7 @@ fn start(
         }
     };
 
+    let session_lock = session_lock::SessionLock::open(socket.parent().unwrap_or(Path::new(".")), &logger);
     let daemon = Arc::new(Daemon {
         started: Instant::now(),
         hub,
@@ -233,7 +234,7 @@ fn start(
         sources,
         settings: Mutex::new(settings),
         compositor,
-        session_lock: session_lock::SessionLock::default(),
+        session_lock,
     });
     daemon.watch_settings();
     Ok((listener, daemon))
