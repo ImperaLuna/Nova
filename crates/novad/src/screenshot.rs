@@ -413,7 +413,7 @@ fn write(image: &Image, folder: &Path) -> Result<PathBuf, String> {
 }
 
 /// Writes `png` into `folder` under a name from the local time, never over
-/// an existing file: through a temporary file that's linked into place, so
+/// an existing file: through a temporary file that's moved into place, so
 /// the name only ever shows a whole shot.
 fn save(png: &[u8], folder: &Path) -> Result<PathBuf, String> {
     std::fs::create_dir_all(folder).map_err(|e| format!("can't make {}: {e}", folder.display()))?;
@@ -425,14 +425,31 @@ fn save(png: &[u8], folder: &Path) -> Result<PathBuf, String> {
             1 => folder.join(format!("{NAME_PREFIX}{stamp}.{EXTENSION}")),
             n => folder.join(format!("{NAME_PREFIX}{stamp} ({n}).{EXTENSION}")),
         })
-        .find_map(|path| match std::fs::hard_link(&temporary, &path) {
+        .find_map(|path| match rename_new(&temporary, &path) {
             Ok(()) => Some(Ok(path)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
             Err(e) => Some(Err(format!("can't save {}: {e}", path.display()))),
         })
         .unwrap_or_else(|| Err("no free file name".into()));
-    let _ = std::fs::remove_file(&temporary);
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
     result
+}
+
+/// Renames `from` to `to` unless `to` exists (`RENAME_NOREPLACE`, which
+/// filesystems without hard links, like exFAT, have too).
+fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = |path: &Path| std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(std::io::Error::other);
+    let (from, to) = (c(from)?, c(to)?);
+    // SAFETY: both are NUL-terminated paths that live for the whole call.
+    let renamed =
+        unsafe { libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE) };
+    match renamed {
+        0 => Ok(()),
+        _ => Err(std::io::Error::last_os_error()),
+    }
 }
 
 #[cfg(test)]
