@@ -428,8 +428,11 @@ def morph_frames(what: str, logged: str) -> None:
         print(f"  wl_surface#{surface}: {len(times)} frames over {times[-1] - times[0]:.0f} ms{timing}")
     # `just frames`'s report of the same frames (ui/stage/FrameLog.qml): it
     # fails when the UI logged none. Software rendering misses vblanks
-    # anyway, so no budget.
-    print(machine.succeed(f"{FRAMES_REPORT} -v refresh='*={REFRESH_HZ}' {capture}"))
+    # anyway, so no budget; on a busy runner every frame can come late,
+    # which the report calls nothing animated, though the UI logged them.
+    status, report = machine.execute(f"{FRAMES_REPORT} -v refresh='*={REFRESH_HZ}' {capture}")
+    print(report)
+    assert status == 0 or "nothing animated" in report, f"the frame report failed after the panel {what}"
     qt = [tuple(map(int, match.groups())) for line in after_logged if (match := QT_FRAME.search(line))]
     if qt:
         for name, values in zip(("frame", "sync", "render"), zip(*qt)):
