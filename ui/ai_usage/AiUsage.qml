@@ -16,7 +16,6 @@ StagePanel {
     id: root
 
     name: Protocol.FEATURE_AI_USAGE
-    closesOnClickOutside: true
     // AiUsageService.usage: {shown, providers}.
     required property var usage
 

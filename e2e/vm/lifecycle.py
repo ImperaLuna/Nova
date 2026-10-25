@@ -432,9 +432,15 @@ with subtest("screenshot: the AI usage panel open, grown from its pill"):
     # The same spot closes it again.
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
 
-with subtest("a click outside closes the AI usage panel"):
+with subtest("a click outside or Esc closes the AI usage panel"):
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
     click_until_logged(*POINTER_REST, AI_USAGE_CLOSED)
+    # It takes no typing, but holds the keyboard while open so Esc reaches
+    # it, also when a keybind opened it.
+    before = ui_log_count(AI_USAGE_OPENED)
+    machine.succeed(as_user("nova toggle ai-usage"))
+    retry(lambda _last_try: ui_log_count(AI_USAGE_OPENED) > before, timeout=CLICK_EFFECT)
+    press_until_logged(ESC, AI_USAGE_CLOSED)
 
 with subtest("nova toggle opens and closes the AI usage panel, as a keybind would"):
     for line in (AI_USAGE_OPENED, AI_USAGE_CLOSED):
