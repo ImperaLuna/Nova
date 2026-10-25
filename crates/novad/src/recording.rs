@@ -58,9 +58,12 @@ const EXTENSION: &str = "mp4";
 /// default input; `|` mixes sources into one track.
 const GSR_DESKTOP: &str = "default_output";
 const GSR_MIC: &str = "default_input";
-/// PipeWire's (and PulseAudio's) name for the default output's monitor, for
-/// wf-recorder; without a name it records the default input.
+/// PulseAudio's (and pipewire-pulse's) name for the default output's
+/// monitor, for wf-recorder; without a name it records the default input.
 const WF_DESKTOP: &str = "@DEFAULT_MONITOR@";
+/// The wf-recorder audio backend those names and that default are
+/// PulseAudio's for: its PipeWire one records the desktop by default.
+const WF_AUDIO_BACKEND: &str = "pulse";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Recorder {
@@ -324,7 +327,7 @@ impl Recordings {
         let Ok(entries) = std::fs::read_dir(folder) else {
             return;
         };
-        let own = std::process::id().to_string();
+        let own = std::process::id() as libc::pid_t;
         for path in entries.flatten().map(|entry| entry.path()) {
             let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
                 continue;
@@ -337,7 +340,12 @@ impl Recordings {
                 continue;
             };
             let pid = pid.split_once('-').map_or(pid, |(pid, _run)| pid);
-            if pid == own || pid.parse::<u32>().is_err() {
+            let Ok(pid) = pid.parse::<libc::pid_t>() else {
+                continue;
+            };
+            // Its own, or another novad's that's still running (one on
+            // another socket can share the folder).
+            if pid == own || running(pid) {
                 continue;
             }
             if std::fs::metadata(&path).is_ok_and(|meta| meta.len() == 0) {
@@ -448,6 +456,12 @@ impl Keeper {
             finish(&self.state, &self.hub, &self.logger, active, duration, status, message.trim());
         }
     }
+}
+
+/// Whether a process `pid` exists, someone else's included.
+fn running(pid: libc::pid_t) -> bool {
+    // SAFETY: signal 0 only checks that the process exists.
+    unsafe { libc::kill(pid, 0) == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM) }
 }
 
 /// Waits for `pid`, a child, to exit, without reaping it.
@@ -584,6 +598,9 @@ fn wf_args(output: &str, region: Option<LayoutRect>, audio: RecordAudio, file: &
     } else if audio.mic {
         args.push("--audio".into());
     }
+    if audio.desktop || audio.mic {
+        args.push(format!("--audio-backend={WF_AUDIO_BACKEND}"));
+    }
     args.extend(["-f".into(), file.display().to_string()]);
     args
 }
@@ -697,17 +714,24 @@ mod tests {
         let left = |stamp: &str, pid: u32, frames: &str| {
             std::fs::write(folder.join(format!(".{NAME_PREFIX}{stamp}.{pid}-1.{EXTENSION}")), frames).unwrap();
         };
-        left("2026-10-25 18.00.00", 1, "frames");
-        left("2026-10-25 18.05.00", 1, "");
+        let mut gone = Command::new("true").spawn().unwrap();
+        gone.wait().unwrap();
+        let mut other = Command::new("sleep").arg("5").spawn().unwrap();
+        left("2026-10-25 18.00.00", gone.id(), "frames");
+        left("2026-10-25 18.05.00", gone.id(), "");
         left("2026-10-25 18.10.00", std::process::id(), "frames");
+        left("2026-10-25 18.15.00", other.id(), "frames");
         fixture.recordings.recover(&folder);
+        let _ = other.kill();
+        let _ = other.wait();
         assert_eq!(
             fixture.files(),
             [
                 format!(".{NAME_PREFIX}2026-10-25 18.10.00.{}-1.{EXTENSION}", std::process::id()),
+                format!(".{NAME_PREFIX}2026-10-25 18.15.00.{}-1.{EXTENSION}", other.id()),
                 format!("{NAME_PREFIX}2026-10-25 18.00.00.{EXTENSION}"),
             ],
-            "an empty one goes, and this novad's own stays"
+            "an empty one goes, and this novad's own and a running one's stay"
         );
     }
 
@@ -784,7 +808,10 @@ mod tests {
         let fixture = Fixture::new("wf", WF_RECORDER, "");
         fixture.start(Some(REGION), RecordAudio { desktop: true, mic: false }).unwrap();
         let args = fixture.args();
-        assert!(args.starts_with("-y -g 2560,-40 960x540 -r 60 --audio=@DEFAULT_MONITOR@ -f "), "{args}");
+        assert!(
+            args.starts_with("-y -g 2560,-40 960x540 -r 60 --audio=@DEFAULT_MONITOR@ --audio-backend=pulse -f "),
+            "{args}"
+        );
         assert_eq!(fixture.next_event()["data"]["can_pause"], false);
         assert!(fixture.recordings.pause(true).unwrap_err().contains("can't pause"));
     }
