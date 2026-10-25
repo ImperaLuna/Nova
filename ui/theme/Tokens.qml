@@ -89,6 +89,9 @@ QtObject {
     readonly property real shadowRoom: shadowBlur + shadowOffset
     // Hover wash on things inside glass.
     readonly property color hover: Qt.rgba(fg.r, fg.g, fg.b, 0.06)
+    // What's selected where the focus isn't, like the workspace shown on a
+    // monitor you're not using: a quiet fill instead of the accent.
+    readonly property color selectedQuiet: Qt.rgba(fg.r, fg.g, fg.b, 0.14)
     // Meters: the empty track and a neutral fill.
     readonly property color track: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
     readonly property color meter: Qt.rgba(fg.r, fg.g, fg.b, 0.85)
@@ -112,6 +115,14 @@ QtObject {
     readonly property int pad: 12
     readonly property int barHeight: 36
     readonly property int barMargin: 8
+    // The central pill's workspace numbers: each a round cell this big, this
+    // far apart, and the line between them and the day.
+    readonly property int workspaceSize: 26
+    readonly property int workspaceGap: 2
+    readonly property int dividerHeight: 16
+    readonly property int dividerWidth: 1
+    // Small marks, like a workspace's "wants attention" dot.
+    readonly property int dotSize: 4
     // Icons: in the bar's pills, and in panels.
     readonly property int iconSizeSmall: 14
     readonly property int iconSize: 16
@@ -170,6 +181,8 @@ QtObject {
     readonly property int fontSizeTiny: 11
     // A name or heading on its own, like the user's on the lock screen.
     readonly property int fontSizeTitle: 18
+    // The time in the central pill.
+    readonly property int fontSizeTime: 14
     // A panel's headline number.
     readonly property int fontSizeHero: 56
     readonly property int lineHeightHero: 60
@@ -192,8 +205,14 @@ QtObject {
     // A wrong password's shake, and the lock screen fading before it unlocks.
     readonly property int durationShake: 360
     readonly property int durationUnlock: 400
+    // The scale something new grows in from.
+    readonly property real enterScale: 0.6
+    // One breath of something that pulses for attention.
+    readonly property int durationPulse: 1600
     // The cubic-bezier every panel motion uses (fast out, gentle stop).
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
+    // The curve each half of a pulse follows: a soft breath in and out.
+    readonly property int easingPulse: Easing.InOutSine
 
     // Sets the theme colors from a theme event's `colors` ({token: "#RRGGBB"}).
     function apply(colors) {

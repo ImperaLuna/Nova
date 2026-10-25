@@ -8,8 +8,8 @@ import QtQuick
 QtObject {
     // The pills that open panels.
     property list<StagePanel> panels
-    // Drawn items that open nothing, each with a `radius`. They take clicks
-    // but aren't glass.
+    // Drawn items that open nothing, each with a `radius`, and `glass: true`
+    // on those drawn as glass. They take clicks.
     property list<Item> fixed
 
     // Everything drawn, hidden or not.
@@ -18,7 +18,7 @@ QtObject {
     // pill hides while a panel elsewhere covers it, StagePanel `from`).
     readonly property list<Item> shapes: items.filter(item => item.visible)
     // The glass among them, which the compositor blurs behind.
-    readonly property list<Item> glassShapes: panels.filter(panel => panel.glass && panel.visible)
+    readonly property list<Item> glassShapes: items.filter(item => item.glass === true && item.visible)
     // How far down the screen anything drawn reaches, open panels included,
     // shadows not. The stage is only this tall: the compositor blurs the
     // whole surface behind glass every frame, however small the glass.

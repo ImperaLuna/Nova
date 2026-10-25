@@ -312,6 +312,8 @@ pub struct Workspace {
     pub focused: bool,
     /// A window on it wants attention.
     pub urgent: bool,
+    /// No windows on it.
+    pub empty: bool,
 }
 
 /// The compositor's own workspace id. Hyprland's named workspaces have
@@ -724,8 +726,14 @@ mod tests {
     }
 
     fn desktop() -> Desktop {
-        let workspace =
-            |id, name: &str, active, focused| Workspace { id, name: name.into(), active, focused, urgent: false };
+        let workspace = |id, name: &str, active, focused| Workspace {
+            id,
+            name: name.into(),
+            active,
+            focused,
+            urgent: false,
+            empty: false,
+        };
         Desktop {
             compositor: "niri".into(),
             capabilities: vec![Capability::Workspaces, Capability::FocusedWindow],
@@ -733,7 +741,10 @@ mod tests {
                 Output {
                     name: "DP-1".into(),
                     focused: true,
-                    workspaces: vec![workspace(1, "1", false, false), workspace(2, "web", true, true)],
+                    workspaces: vec![
+                        Workspace { empty: true, ..workspace(1, "1", false, false) },
+                        workspace(2, "web", true, true),
+                    ],
                 },
                 Output {
                     name: "HDMI-A-1".into(),

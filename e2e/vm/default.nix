@@ -64,6 +64,9 @@ let
           # screenshots of text would differ from run to run. Set through
           # PAM, so the systemd user manager (and nova.service) has it.
           sessionVariables.QT_SUBPIXEL_AA_TYPE = "RGB";
+          # The central pill shows this instead of the clock (ui/bar/Bar.qml),
+          # so screenshots don't change from minute to minute.
+          sessionVariables.NOVA_FROZEN_TIME = "2026-10-24T16:40:00";
           # foot is a window to have.
           systemPackages = [ pkgs.foot ];
         };
