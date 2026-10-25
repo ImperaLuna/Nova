@@ -603,7 +603,7 @@ with subtest("logind's lock-session locks the screen, and novad holds back sleep
     machine.succeed(f"{YDOTOOL} type {shlex.quote(PASSWORD)}")
     press_until_logged(ENTER, SESSION_UNLOCKED)
 
-with subtest("an idle bar draws nothing, shown or beside a fullscreen window; the panel draws briefly; the launcher over a fullscreen window moves Nova to Overlay and back, each time; the bar gives a fullscreen window its space"):
+with subtest("an idle bar draws nothing, shown or beside a fullscreen window; the panel draws briefly; the launcher over a fullscreen window moves Nova to Overlay and back, each time; the bar gives a fullscreen window its space, and its pills take clicks once back"):
     # novad hands its environment to the UI.
     # Without libwayland's colors, which the timestamps would hide behind.
     # Qt's timing of each frame, for morph_frames to print. Qt logs it at
@@ -633,6 +633,11 @@ with subtest("an idle bar draws nothing, shown or beside a fullscreen window; th
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
     retry(lambda _last_try: ui_log_count(BAR_SPACE_KEPT) > kept, timeout=WAIT)
+    # The pills slid back in with their shelf, and take clicks where they are
+    # now: they used to keep taking them where they had slid out of sight
+    # (IMP-118).
+    click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
+    press_until_logged(ESC, AI_USAGE_CLOSED)
     machine.systemctl("unset-environment WAYLAND_DEBUG NO_COLOR QT_LOGGING_RULES NOVA_LOG NOVA_FRAME_LOG", user=USER)
     machine.succeed(as_user("nova restart"))
     # The run the rest of the test knows.

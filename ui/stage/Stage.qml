@@ -205,7 +205,13 @@ Scope {
         // open, here or on another surface, the whole stage takes clicks
         // (and ClickCatcher the rest of the screen), and one outside the
         // panel closes it.
+        // Quickshell rebuilds a region when its item's own position or size
+        // changes, not an ancestor's, and the bar's pills slide with their
+        // shelf: following the slide (an otherwise empty region) rebuilds
+        // them where the pills are. Without it they kept taking clicks where
+        // they had slid out of sight (IMP-118).
         mask: Region {
+            y: bar.slideOffset
             regions: inputRegions.instances
         }
 
@@ -220,6 +226,8 @@ Scope {
         // the tint stands alone.
         Region {
             id: blur
+            // Rebuilt as the pills slide, like the mask.
+            y: bar.slideOffset
             regions: blurRegions.instances
         }
 
