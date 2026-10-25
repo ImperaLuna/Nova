@@ -10,7 +10,6 @@ import math
 import re
 import shlex
 import statistics
-import time
 
 UNIT = "nova.service"
 RUNTIME_DIR = f"/run/user/{UID}"
@@ -540,16 +539,20 @@ with subtest("a volume change slides the capsule out and back, over fullscreen t
     hides()
     # The pointer on it holds it out, and a wheel notch steps the volume by
     # Tokens.volumeStep, which way depending on how ydotool's wheel maps.
-    # The pointer goes there once it has slid out: the compositor picks the
-    # surface under the pointer when the pointer moves. Retried like clicks,
+    # The pointer goes there once it has slid out (the compositor picks the
+    # surface under the pointer when the pointer moves), in the same command
+    # as the change so it's there well within the hold. Retried like clicks,
     # as niri can drop the odd pointer input.
     for attempt in range(CLICK_TRIES):
         target = ("0.50", "0.40")[attempt % 2]
         machine.succeed(pointer_to(*POINTER_REST))
-        volume_change_shows(target)
-        time.sleep(CAPSULE_SLIDE_SECS)
-        hidden = ui_log_count(VOLUME_HIDDEN)
-        machine.succeed(f"{pointer_to(*CAPSULE)} && {YDOTOOL} mousemove --wheel -x 0 -y 1")
+        assert volume() != target, f"the volume is already {target}"
+        shown, hidden = ui_log_count(VOLUME_SHOWN), ui_log_count(VOLUME_HIDDEN)
+        machine.succeed(
+            as_user(WPCTL_SINK.format("set-volume") + f" {target}")
+            + f" && sleep {CAPSULE_SLIDE_SECS} && {pointer_to(*CAPSULE)} && {YDOTOOL} mousemove --wheel -x 0 -y 1"
+        )
+        retry(lambda _last_try: ui_log_count(VOLUME_SHOWN) > shown, timeout=CLICK_EFFECT)
         try:
             retry(lambda _last_try: volume() != target, timeout=CLICK_EFFECT)
             break
