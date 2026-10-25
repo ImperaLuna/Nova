@@ -1507,7 +1507,9 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     // lands in Path= as a file.
     let entry = format!("Name=Toucher\nExec=touch \"{}\" %U ;\nPath={}\n", marker.display(), novad.dir.display());
     install_app(&novad, "touch.desktop", &entry);
-    install_app(&novad, "other.desktop", "Name=Other\nExec=true\n");
+    // cp copies what the kernel says about it: its session.
+    let stat = novad.dir.join("stat");
+    install_app(&novad, "other.desktop", &format!("Name=Other\nExec=cp /proc/self/stat \"{}\"\n", stat.display()));
     let mut client = novad.connect();
     client.subscribe_launcher(2);
 
@@ -1525,6 +1527,16 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     assert_eq!(client.request(3, "launch_app", Some(json!({"id": "other.desktop"})))["result"], Value::Null);
     let event = client.launcher_until(|event| event["recent"].as_array().unwrap().len() == 2);
     assert_eq!(event["recent"], json!(["other.desktop", "touch.desktop"]), "the latest first");
+    // Its own session, away from novad's terminal (an app touching it would
+    // be stopped as a background job): stat's 6th field, after the name.
+    let copied = (0..100).find_map(|_| {
+        std::thread::sleep(Duration::from_millis(50));
+        std::fs::read_to_string(&stat).ok().filter(|text| text.ends_with('\n'))
+    });
+    let copied = copied.expect("the app didn't run");
+    let pid = copied.split(' ').next().unwrap();
+    let fields: Vec<&str> = copied.rsplit_once(") ").unwrap().1.split(' ').collect();
+    assert_eq!(fields[3], pid, "not the leader of a session of its own: {copied}");
     let missing = client.request(4, "launch_app", Some(json!({"id": "nothing.desktop"})));
     assert!(missing["error"].as_str().unwrap().contains("no app"));
 }

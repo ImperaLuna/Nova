@@ -2,7 +2,7 @@
 //! app runs in a scope of its own (`app-nova-<id>-<n>.scope`, the
 //! freedesktop.org naming), so it's not part of `nova.service`: restarting
 //! or stopping Nova leaves it running, and `systemctl --user` shows it by
-//! name. Without one it starts in a process group of its own. Either way
+//! name. Without one it starts in a session of its own. Either way
 //! novad waits on it, so it never lingers as a zombie, and nothing it prints
 //! reaches novad.
 
@@ -29,7 +29,7 @@ const SERVICE_VARS: [&str; 7] =
 pub enum Runner {
     /// In a scope of their own, with this `systemd-run`.
     Scope(PathBuf),
-    /// As novad's children, in a process group of their own.
+    /// As novad's children, in a session of their own.
     Direct,
 }
 
@@ -77,17 +77,18 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
     for name in SERVICE_VARS {
         command.env_remove(name);
     }
-    let mut child = command
-        .env("PATH", path_var)
-        .current_dir(dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        // Its own group: a signal to novad's group (Ctrl+C on `nova daemon`
-        // in a terminal) doesn't reach it.
-        .process_group(0)
-        .spawn()
-        .map_err(|e| format!("can't start {}: {e}", program.display()))?;
+    command.env("PATH", path_var).current_dir(dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    // Its own session, without novad's terminal: Ctrl+C on `nova daemon` in
+    // a terminal doesn't reach it, and an app that touches the terminal
+    // (Electron does) isn't stopped as a background job of it.
+    // SAFETY: setsid is async-signal-safe and touches no memory.
+    unsafe {
+        command.pre_exec(|| match libc::setsid() {
+            -1 => Err(std::io::Error::last_os_error()),
+            _ => Ok(()),
+        });
+    }
+    let mut child = command.spawn().map_err(|e| format!("can't start {}: {e}", program.display()))?;
     logger.info(LOG_SOURCE, &format!("launched {} (pid {})", entry.id, child.id()));
     let logger = Arc::clone(logger);
     let id = entry.id.clone();
