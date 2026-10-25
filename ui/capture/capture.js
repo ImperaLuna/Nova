@@ -3,6 +3,7 @@
 // The region picker's sums, kept apart from QML so tests can reach them.
 
 // CaptureIcon's names besides the capture modes and card actions.
+var ICON_CAMERA = "camera";
 var ICON_CLOSE = "close";
 var ICON_CHECK = "check";
 var ICON_DESKTOP_AUDIO = "desktop-audio";
