@@ -212,9 +212,10 @@ Scope {
             id: bar
             anchors.fill: parent
             screenName: root.screen.name
-            // A panel of the bar's is shown: on the stage, or grown out of
-            // one of its pills.
-            held: root.panels.some(panel => (panel.open || panel.moving) && (panel.placement === "top" || panel.from !== null))
+            // A panel of the bar's is open: on the stage, or grown out of
+            // one of its pills. Not `moving`, which a closed pill's own
+            // animations (a loading spinner) set too.
+            held: root.panels.some(panel => panel.open && (panel.placement === "top" || panel.from !== null))
             // Its items that a panel elsewhere is drawn over (StagePanel
             // `from`), so they hide. They show again once that panel has
             // closed, and the surface it's on stays until that's drawn.

@@ -4,8 +4,11 @@
 //! are JSON lines in niri-ipc's format.
 //!
 //! niri says nothing about fullscreen, so a workspace counts as fullscreen
-//! when a tiled window on it is as tall as its output: niri gives fullscreen
+//! when a tiled window on it is as big as its output: niri gives fullscreen
 //! (and maximized-to-edges) windows the whole output, over the bar's space.
+//! Its width counts too: once the bar gives its space up, an ordinary
+//! column can be as tall as the output (with no gaps), and taking that for
+//! fullscreen would keep the bar away for good.
 //! Output sizes aren't in the event stream, so novad asks for them again
 //! after workspace or window layout changes (an output's size changing
 //! resizes such windows too).
@@ -215,6 +218,7 @@ struct NiriOutput {
 
 #[derive(Debug, Deserialize)]
 struct LogicalSize {
+    width: u32,
     height: u32,
 }
 
@@ -231,9 +235,9 @@ pub(super) struct State {
     windows: HashMap<u64, Window>,
     focused_window: Option<u64>,
     layouts: Option<KeyboardLayouts>,
-    /// Each output's height in logical pixels, by name.
-    output_heights: HashMap<String, f64>,
-    /// Whether `output_heights` is up to date; asked for in `catch_up`.
+    /// Each output's width and height in logical pixels, by name.
+    output_sizes: HashMap<String, (f64, f64)>,
+    /// Whether `output_sizes` is up to date; asked for in `catch_up`.
     outputs_known: bool,
 }
 
@@ -311,23 +315,29 @@ impl State {
         }
         let outputs: HashMap<String, NiriOutput> =
             serde_json::from_value(ask()?).map_err(|e| format!("niri sent odd outputs ({e})"))?;
-        self.output_heights =
-            outputs.into_iter().filter_map(|(name, output)| Some((name, f64::from(output.logical?.height)))).collect();
+        self.output_sizes = outputs
+            .into_iter()
+            .filter_map(|(name, output)| {
+                let size = output.logical?;
+                Some((name, (f64::from(size.width), f64::from(size.height))))
+            })
+            .collect();
         self.outputs_known = true;
         Ok(())
     }
 
-    /// Whether a tiled window on `workspace` is as tall as its output.
+    /// Whether a tiled window on `workspace` is as big as its output.
     fn has_fullscreen(&self, workspace: &Workspace) -> bool {
-        let Some(height) = workspace.output.as_ref().and_then(|output| self.output_heights.get(output)) else {
+        let Some((width, height)) = workspace.output.as_ref().and_then(|output| self.output_sizes.get(output)) else {
             return false;
         };
         self.windows.values().any(|window| {
             window.workspace_id == Some(workspace.id)
-                && window
-                    .layout
-                    .as_ref()
-                    .is_some_and(|layout| layout.pos_in_scrolling_layout.is_some() && layout.tile_size.1 >= *height)
+                && window.layout.as_ref().is_some_and(|layout| {
+                    layout.pos_in_scrolling_layout.is_some()
+                        && layout.tile_size.0 >= *width
+                        && layout.tile_size.1 >= *height
+                })
         })
     }
 

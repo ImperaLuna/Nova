@@ -218,3 +218,32 @@ fn stepping_stops_at_either_end() {
     assert_eq!(neighbour(desktop, output, Step::Previous).unwrap(), None);
     assert!(neighbour(desktop, "nope", Step::Next).unwrap_err().contains("no output"));
 }
+
+#[test]
+fn a_column_as_tall_as_the_output_is_not_fullscreen() {
+    // With no gaps, once the bar gives its space up an ordinary column is
+    // as tall as the output; only one as wide too is fullscreen.
+    let recording = Recording::load("niri");
+    let fullscreen_step = recording.steps.iter().position(|step| step.name == "fullscreen the focused window").unwrap();
+    let mut state = niri::State::default();
+    for index in 0..=fullscreen_step {
+        for line in recording.lines(index).filter(|line| *line != NIRI_HANDLED) {
+            state.apply(line).unwrap();
+        }
+    }
+    state.catch_up(&mut niri_ask(&recording, fullscreen_step)).unwrap();
+    let shown = |desktop: &Desktop| focused_workspace(desktop).fullscreen;
+    assert!(shown(&state.desktop()));
+
+    let (width, height) = (1280.0 / 2.0, 800.0);
+    let layout = serde_json::json!({"pos_in_scrolling_layout": [1, 1], "tile_size": [width, height]});
+    let window = focused_window_id(&recording, fullscreen_step);
+    state.apply(&serde_json::json!({"WindowLayoutsChanged": {"changes": [[window, layout]]}}).to_string()).unwrap();
+    assert!(!shown(&state.desktop()));
+}
+
+/// The id of the window niri lists as focused at the end of step `index`.
+fn focused_window_id(recording: &Recording, index: usize) -> u64 {
+    let window: serde_json::Value = serde_json::from_str(&recording.answer(index, "focused-window")).unwrap();
+    window["id"].as_u64().unwrap()
+}

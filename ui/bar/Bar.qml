@@ -38,8 +38,7 @@ Item {
 
     // The shown workspace has a window over the whole screen.
     readonly property bool fullscreenBelow: Compositor.has(Protocol.CAPABILITY_FULLSCREEN) && Protocol.fullscreenShown(Compositor.output(screenName))
-    // One of the bar's panels is open or moving, so the pills stay. The
-    // stage sets it.
+    // One of the bar's panels is open, so the pills stay. The stage sets it.
     property bool held: false
     // Brought back over a fullscreen window by the pointer at the top edge.
     readonly property bool peeking: fullscreenBelow && (pointer.hovered || linger.running)
