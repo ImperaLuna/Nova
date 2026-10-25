@@ -1,6 +1,7 @@
-//! `nova toggle <panel>`: asks novad to open or close a panel on the focused
-//! output, for compositor keybinds. Prints nothing when it worked, so a
-//! keybind stays quiet; novad's reason goes to stderr when it didn't.
+//! `nova toggle <panel>` and `nova lock`: ask novad to open or close a panel
+//! on the focused output, or to lock the screen, for compositor keybinds.
+//! They print nothing when it worked, so a keybind stays quiet; novad's
+//! reason goes to stderr when it didn't.
 
 use crate::client::Client;
 use clap::builder::{PossibleValuesParser, TypedValueParser};
@@ -22,5 +23,10 @@ fn panel_names() -> impl TypedValueParser<Value = Panel> {
 
 pub fn run(args: &ToggleArgs, socket: &Path) -> Result<(), String> {
     Client::connect(socket)?.request(Command::Toggle { panel: args.panel })?;
+    Ok(())
+}
+
+pub fn lock(socket: &Path) -> Result<(), String> {
+    Client::connect(socket)?.request(Command::Lock)?;
     Ok(())
 }

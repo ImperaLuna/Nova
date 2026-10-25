@@ -61,6 +61,8 @@ struct Connection<'a> {
     id: ClientId,
     queue: ClientQueue,
     reader: BufReader<UnixStream>,
+    // The connecting process, from the kernel (SO_PEERCRED).
+    peer_pid: Option<u32>,
 }
 
 impl<'a> Connection<'a> {
@@ -71,7 +73,8 @@ impl<'a> Connection<'a> {
         let logger = Arc::clone(&daemon.logger);
         std::thread::spawn(move || write_all_queued(writer, outgoing, &logger));
         let id = daemon.hub.register(queue.clone());
-        let connection = Self { daemon, id, queue, reader: BufReader::new(stream) };
+        let peer_pid = peer_pid(&stream);
+        let connection = Self { daemon, id, queue, reader: BufReader::new(stream), peer_pid };
         connection.send(Event::Hello { daemon: env!("CARGO_PKG_VERSION").into() });
         Ok(connection)
     }
@@ -141,6 +144,33 @@ impl<'a> Connection<'a> {
                 return self.with_compositor(|compositor| compositor.step_workspace(output, *step));
             }
             Command::Toggle { panel } => return self.toggle(*panel),
+            Command::Lock => {
+                if !self.feature_ready(crate::session_lock::FEATURE_ID) {
+                    return Outcome::Error(format!(
+                        "the {} feature isn't ready (see `nova status`)",
+                        crate::session_lock::FEATURE_ID
+                    ));
+                }
+                return match self.daemon.session_lock.lock(&self.daemon.hub) {
+                    Ok(()) => Outcome::Result(serde_json::Value::Null),
+                    Err(e) => Outcome::Error(e),
+                };
+            }
+            Command::ReportLocked => {
+                if let Err(e) = self.sent_by_the_ui() {
+                    return Outcome::Error(e);
+                }
+                self.daemon.session_lock.secured();
+                Ok(serde_json::Value::Null)
+            }
+            // Even with the feature off: the screen was locked while it was on.
+            Command::ReportUnlocked => {
+                if let Err(e) = self.sent_by_the_ui() {
+                    return Outcome::Error(e);
+                }
+                self.daemon.session_lock.unlocked(&self.daemon.hub);
+                Ok(serde_json::Value::Null)
+            }
         };
         match value {
             Ok(value) => Outcome::Result(value),
@@ -173,12 +203,27 @@ impl<'a> Connection<'a> {
 
     /// Tells the UI to open or close `panel` on the focused output. The UI
     /// knows which screen has it open, so it decides which.
-    fn toggle(&self, panel: Panel) -> Outcome {
-        let ready = lock(&self.daemon.settings)
+    /// Lock reports are the UI's alone: from anyone else, `report_unlocked`
+    /// would leave a UI that restarts with no lock screen to unlock. When
+    /// novad runs no UI (`--no-ui`: tests, or a UI run by hand), it can't
+    /// tell which client is the UI and takes them from any.
+    fn sent_by_the_ui(&self) -> Result<(), String> {
+        let Some(ui) = &self.daemon.ui else { return Ok(()) };
+        match ui.status().pid {
+            Some(pid) if self.peer_pid == Some(pid) => Ok(()),
+            _ => Err("only the UI novad runs can report the lock screen's state".into()),
+        }
+    }
+
+    fn feature_ready(&self, id: &str) -> bool {
+        lock(&self.daemon.settings)
             .features
             .iter()
-            .any(|feature| feature.id == panel.name() && feature.status == FeatureStatus::Ready);
-        if !ready {
+            .any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
+    }
+
+    fn toggle(&self, panel: Panel) -> Outcome {
+        if !self.feature_ready(panel.name()) {
             return Outcome::Error(format!("the {panel} feature isn't ready (see `nova status`)"));
         }
         let output = self.daemon.compositor.as_ref().and_then(|compositor| compositor.focused_output());
@@ -217,6 +262,7 @@ impl<'a> Connection<'a> {
                                 compositor.subscribe(self.id);
                             }
                         }
+                        Topic::Lock => self.daemon.session_lock.send_state(&self.daemon.hub, self.id),
                         // Only ever sent as `nova toggle` asks.
                         Topic::Logs | Topic::Toggle => {}
                     }
@@ -234,7 +280,10 @@ impl<'a> Connection<'a> {
             | Command::ReportClaudeUsage { .. }
             | Command::FocusWorkspace { .. }
             | Command::StepWorkspace { .. }
-            | Command::Toggle { .. } => {}
+            | Command::Toggle { .. }
+            | Command::Lock
+            | Command::ReportLocked
+            | Command::ReportUnlocked => {}
         }
     }
 
@@ -291,4 +340,16 @@ fn write_all_queued(mut writer: UnixStream, outgoing: mpsc::Receiver<Outgoing>, 
 /// The `id` of a request that didn't parse, so the error can be answered.
 fn request_id(line: &str) -> Option<u64> {
     serde_json::from_str::<serde_json::Value>(line).ok()?.get("id")?.as_u64()
+}
+
+/// The pid of the process at the other end of `stream`.
+fn peer_pid(stream: &UnixStream) -> Option<u32> {
+    use std::os::fd::AsRawFd;
+    let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
+    let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    // SAFETY: `cred` and `len` are valid for the size passed.
+    let got = unsafe {
+        libc::getsockopt(stream.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, (&raw mut cred).cast(), &mut len)
+    };
+    (got == 0).then(|| u32::try_from(cred.pid).ok()).flatten()
 }

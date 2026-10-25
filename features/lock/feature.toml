@@ -1,0 +1,4 @@
+id = "lock"
+name = "Lock screen"
+description = "Locks the screen from the power menu or `nova lock`; your password unlocks it."
+default = true

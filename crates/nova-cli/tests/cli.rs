@@ -195,6 +195,32 @@ fn toggle_reaches_the_ui_and_says_why_when_it_cant() {
 }
 
 #[test]
+fn lock_reaches_the_ui_quietly() {
+    let novad = Novad::start("lock");
+    let output = novad.run(&["lock"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("UI isn't connected"), "{output:?}");
+
+    // Stands in for the UI: subscribes to lock events, and gets the state.
+    let ui = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
+    ui.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let mut lines = BufReader::new(ui.try_clone().unwrap()).lines();
+    writeln!(&ui, r#"{{"v":2,"id":1,"cmd":"subscribe","args":{{"topics":["lock"]}}}}"#).unwrap();
+    assert!(lines.next().unwrap().unwrap().contains("hello"));
+    assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
+    assert!(lines.next().unwrap().unwrap().contains(r#""locked":false"#));
+
+    // It answers once the UI says the screens are covered.
+    std::thread::scope(|scope| {
+        let locking = scope.spawn(|| novad.run(&["lock"]));
+        let event = lines.next().unwrap().unwrap();
+        assert!(event.contains(r#""event":"lock""#) && event.contains(r#""locked":true"#), "{event}");
+        writeln!(&ui, r#"{{"v":2,"id":2,"cmd":"report_locked"}}"#).unwrap();
+        assert_eq!(stdout(&locking.join().unwrap()), "", "quiet for keybinds");
+    });
+}
+
+#[test]
 fn status_without_novad_fails_with_a_hint() {
     let output = Command::new(env!("CARGO_BIN_EXE_nova"))
         .args(["status", "--socket", "/nonexistent/novad.sock"])
