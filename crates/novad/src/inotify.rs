@@ -15,10 +15,11 @@ pub const WRITES: u32 = libc::IN_MODIFY | libc::IN_CREATE | libc::IN_MOVED_TO;
 /// `WRITES`, plus files deleted or moved away: an editor that saves by
 /// renaming moves the old file out first.
 pub const REPLACEMENTS: u32 = WRITES | libc::IN_DELETE | libc::IN_MOVED_FROM;
-/// Entries that appear in a folder: created, moved in, or replaced by a
-/// rename (`ln -sfn` repointing a symlink). For a folder whose files don't
-/// matter, only one entry in it, so writes to its other files cost nothing.
-pub const ENTRIES: u32 = libc::IN_CREATE | libc::IN_MOVED_TO;
+/// Entries that come or go in a folder: created, moved in, replaced by a
+/// rename (`ln -sfn` repointing a symlink), deleted or moved away. For a
+/// folder whose files don't matter, only one entry in it, so writes to its
+/// other files cost nothing.
+pub const ENTRIES: u32 = libc::IN_CREATE | libc::IN_MOVED_TO | libc::IN_DELETE | libc::IN_MOVED_FROM;
 /// `struct inotify_event` before its name: wd, mask, cookie, len.
 const HEADER_BYTES: usize = 16;
 const BUFFER_BYTES: usize = 64 * 1024;

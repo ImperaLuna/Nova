@@ -278,7 +278,8 @@ fn install_panic_hook(logger: Arc<Logger>) {
     }));
 }
 
-/// `PATH` plus the folders packages put programs in that are there:
+/// `PATH` plus the folders packages put programs in, even ones not there
+/// yet (a first package installed later makes them):
 /// systemd user services don't get the login shell's PATH, so the user's
 /// Nix profile, NixOS's system packages, Flatpak's exports or `~/.local/bin`
 /// (pip, cargo) may be missing. Apps the launcher starts get it too.
@@ -291,7 +292,7 @@ pub(crate) fn session_path() -> String {
         .map(|home| home.join(".local/bin"))
         .chain(package_prefixes().into_iter().map(|prefix| prefix.join("bin")));
     for dir in extra {
-        if dir.is_dir() && !dirs.contains(&dir) {
+        if !dirs.contains(&dir) {
             dirs.push(dir);
         }
     }

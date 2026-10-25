@@ -1506,6 +1506,9 @@ fn the_launcher_lists_apps_and_follows_installs() {
     client.launcher_until(|event| ids(&event["apps"]) == ["a.desktop"]);
     install_app(&novad, "b.desktop", "Name=B\nExec=b\n");
     client.launcher_until(|event| ids(&event["apps"]) == ["a.desktop", "b.desktop"]);
+    // Moved away with nothing in its place, its apps go.
+    std::fs::rename(&applications, novad.dir.join("launcher/share/gone")).unwrap();
+    client.launcher_until(|event| event["apps"].as_array().unwrap().is_empty());
 }
 
 #[test]

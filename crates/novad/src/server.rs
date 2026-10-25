@@ -185,14 +185,8 @@ impl<'a> Connection<'a> {
                     None => Outcome::Error(format!("the {} feature is off", crate::launcher::FEATURE_ID)),
                 };
             }
-            Command::LaunchApp { id, output, new_window } => {
-                return self.with_launcher(|launcher| {
-                    launcher.launch(id, |ids| match &self.daemon.compositor {
-                        Some(compositor) if !new_window => compositor.bring_app(ids, output.as_deref()),
-                        _ => Ok(false),
-                    })
-                });
-            }
+            // Answered on its own thread (`slow_work`).
+            Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window)(),
             Command::PinApp { id, pinned } => return self.with_launcher(|launcher| launcher.pin(id, *pinned)),
         };
         match value {
@@ -268,10 +262,12 @@ impl<'a> Connection<'a> {
         }
     }
 
-    /// The requests that wait on logind, as work to answer them with; the
-    /// quick checks before it run here, at once.
+    /// The requests that wait on logind, the compositor or an app starting,
+    /// as work to answer them with; the quick checks before it run here, at
+    /// once.
     fn slow_work(&self, command: &Command) -> Option<SlowWork> {
         match command {
+            Command::LaunchApp { id, output, new_window } => Some(self.launch_app(id, output.clone(), *new_window)),
             Command::PowerOptions => Some(self.power_options()),
             Command::Power {
                 action: action @ (PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff),
@@ -341,6 +337,25 @@ impl<'a> Connection<'a> {
     /// Suspend, restart or shut down through logind; answers with logind's
     /// own result. A suspend locks the screen first through novad's sleep
     /// inhibitor ([`crate::logind`]), as one from anywhere else does.
+    fn launch_app(&self, id: &str, output: Option<String>, new_window: bool) -> SlowWork {
+        let Some(launcher) = lock(&self.daemon.settings).launcher.clone() else {
+            let off = format!("the {} feature is off", crate::launcher::FEATURE_ID);
+            return Box::new(move || Outcome::Error(off));
+        };
+        let compositor = self.daemon.compositor.clone().filter(|_| !new_window);
+        let id = id.to_owned();
+        Box::new(move || {
+            let brought = |ids: &[String]| match &compositor {
+                Some(compositor) => compositor.bring_app(ids, output.as_deref()),
+                None => Ok(false),
+            };
+            match launcher.launch(&id, brought) {
+                Ok(()) => Outcome::Result(serde_json::Value::Null),
+                Err(e) => Outcome::Error(e),
+            }
+        })
+    }
+
     fn power_logind(&self, action: PowerAction) -> SlowWork {
         if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
             return Box::new(move || Outcome::Error(e));
