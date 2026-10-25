@@ -450,8 +450,8 @@ fn manifest_daemon_names_match_cargo_features() {
     assert_eq!(cargo_features, declared, "novad [features] and manifest `daemon` fields differ");
 }
 
-/// Apps come from `<dir>/launcher/share` only, and start as novad's
-/// children, never in a scope of the desktop's systemd.
+/// Apps come from `<dir>/launcher/share` only, and start forked twice,
+/// never as services of the desktop's systemd.
 fn launcher_paths(dir: &Path) -> launcher::Paths {
     launcher::Paths {
         data_dirs: vec![dir.join("launcher/share")],
@@ -1545,18 +1545,54 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     assert_eq!(client.request(3, "launch_app", Some(json!({"id": "other.desktop"})))["result"], Value::Null);
     let event = client.launcher_until(|event| event["recent"].as_array().unwrap().len() == 2);
     assert_eq!(event["recent"], json!(["other.desktop", "touch.desktop"]), "the latest first");
-    // Its own session, away from novad's terminal (an app touching it would
+    // Another session, away from novad's terminal (an app touching it would
     // be stopped as a background job): stat's 6th field, after the name.
     let copied = (0..100).find_map(|_| {
         std::thread::sleep(Duration::from_millis(50));
         std::fs::read_to_string(&stat).ok().filter(|text| text.ends_with('\n'))
     });
     let copied = copied.expect("the app didn't run");
-    let pid = copied.split(' ').next().unwrap();
     let fields: Vec<&str> = copied.rsplit_once(") ").unwrap().1.split(' ').collect();
-    assert_eq!(fields[3], pid, "not the leader of a session of its own: {copied}");
+    // SAFETY: getsid only reads.
+    let ours = unsafe { libc::getsid(0) }.to_string();
+    assert_ne!(fields[3], ours, "in novad's session: {copied}");
     let missing = client.request(4, "launch_app", Some(json!({"id": "nothing.desktop"})));
     assert!(missing["error"].as_str().unwrap().contains("no app"));
+}
+
+#[test]
+fn a_launched_app_outlives_the_request_that_started_it() {
+    let novad = TestDaemon::with_launcher("launcher-outlives");
+    // Like bubblewrap's --die-with-parent (Claude Desktop): killed when its
+    // parent thread ends, here the one that answered the request.
+    let pid_file = novad.dir.join("pid");
+    let script = novad.dir.join("app.sh");
+    std::fs::write(&script, format!("#!/bin/sh\necho $$ > \"{}\"\nexec sleep 30\n", pid_file.display())).unwrap();
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    install_app(
+        &novad,
+        "doomed.desktop",
+        &format!("Name=Doomed\nExec=setpriv --pdeathsig KILL {}\n", script.display()),
+    );
+    let mut client = novad.connect();
+    client.subscribe_launcher(1);
+    assert_eq!(client.request(2, "launch_app", Some(json!({"id": "doomed.desktop"})))["result"], Value::Null);
+    let pid = (0..100).find_map(|_| {
+        std::thread::sleep(Duration::from_millis(50));
+        std::fs::read_to_string(&pid_file).ok().and_then(|text| text.trim().parse::<i32>().ok())
+    });
+    let pid = pid.expect("the app didn't run");
+    drop(client);
+    std::thread::sleep(Duration::from_millis(500));
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
+    let field = |name: &str| {
+        status.lines().find_map(|line| line.strip_prefix(name)).map(str::trim).unwrap_or_default().to_owned()
+    };
+    let alive = !status.is_empty() && !field("State:").starts_with('Z');
+    // SAFETY: kill only sends a signal.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    assert!(alive, "the app died with the thread that started it");
+    assert_ne!(field("PPid:"), std::process::id().to_string(), "the app is novad's child");
 }
 
 /// Launches the app the recording's window belongs to (`nova-second`, on

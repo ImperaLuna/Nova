@@ -1,10 +1,13 @@
-//! Starting an app from its desktop entry. With a systemd user manager each
-//! app runs in a scope of its own (`app-nova-<id>-<n>.scope`, the
-//! freedesktop.org naming), so it's not part of `nova.service`: restarting
-//! or stopping Nova leaves it running, and `systemctl --user` shows it by
-//! name. Without one it starts in a session of its own. Either way
-//! novad waits on it, so it never lingers as a zombie, and nothing it prints
-//! reaches novad.
+//! Starting an app from its desktop entry. Apps must outlive novad, and
+//! some ask the kernel to kill them when their parent goes (bubblewrap's
+//! `--die-with-parent`, which Claude Desktop's wrapper uses): an app is
+//! never novad's child, nor a child of the thread that started it.
+//!
+//! With a systemd user manager each app runs as a service of its own
+//! (`app-nova-<id>-<n>.service`, the freedesktop.org naming) that the
+//! manager starts: it's not part of `nova.service`, and `systemctl --user`
+//! shows it by name. Without one it's forked twice, so it ends up a child of
+//! init, in a session of its own. Either way nothing it prints reaches novad.
 
 use super::desktop_entry::{Entry, find_program};
 use crate::logger::Logger;
@@ -27,21 +30,21 @@ const SERVICE_VARS: [&str; 7] =
 /// How apps are started.
 #[derive(Clone, Debug)]
 pub enum Runner {
-    /// In a scope of their own, with this `systemd-run`.
-    Scope(PathBuf),
-    /// As novad's children, in a session of their own.
+    /// As services of their own, with this `systemd-run`.
+    Service(PathBuf),
+    /// Forked twice, in a session of their own.
     Direct,
 }
 
 impl Runner {
-    /// A scope when the user's systemd manager runs and `systemd-run` is on
+    /// A service when the user's systemd manager runs and `systemd-run` is on
     /// `path_var`.
     pub fn detect(path_var: &str) -> Self {
         let manager = std::env::var_os("XDG_RUNTIME_DIR")
             .map(|runtime| Path::new(&runtime).join("systemd/private"))
             .is_some_and(|socket| socket.exists());
         match find_program("systemd-run", path_var) {
-            Some(systemd_run) if manager => Runner::Scope(systemd_run),
+            Some(systemd_run) if manager => Runner::Service(systemd_run),
             _ => Runner::Direct,
         }
     }
@@ -54,42 +57,70 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
         argv.splice(0..0, terminal(path_var)?);
     }
     let program = find_program(&argv[0], path_var).ok_or_else(|| format!("{} isn't installed", argv[0]))?;
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    // A folder that isn't there would fail the start.
+    let dir = entry.path.clone().into_iter().chain(home).find(|dir| dir.is_dir()).unwrap_or_else(|| "/".into());
     let mut command = match runner {
-        Runner::Scope(systemd_run) => {
+        Runner::Service(systemd_run) => {
             let mut command = Command::new(systemd_run);
             command
-                .args(["--user", "--scope", "--quiet", "--collect", "--unit"])
-                .arg(scope_name(&entry.id))
-                .arg("--")
-                .arg(&program)
-                .args(&argv[1..]);
+                .args(["--user", "--quiet", "--collect", "--service-type=exec"])
+                // What the app leaves running when its first process ends
+                // (a launcher script's app) keeps running.
+                .args([
+                    "--property=KillMode=process",
+                    "--property=StandardOutput=null",
+                    "--property=StandardError=null",
+                ])
+                .arg(format!("--unit={}", unit_name(&entry.id)))
+                .arg(format!("--working-directory={}", dir.display()));
+            // novad's environment (Wayland's display, the session bus), by
+            // name: systemd-run reads the values from its own. A name
+            // systemd might refuse (a shell's `BASH_FUNC_x%%`) would fail
+            // the start, so it's left out.
+            for (name, _) in std::env::vars_os() {
+                if let Some(name) =
+                    name.to_str().filter(|name| plain_name(name) && !SERVICE_VARS.contains(name) && *name != "PATH")
+                {
+                    command.arg(format!("--setenv={name}"));
+                }
+            }
+            // The session's PATH, below.
+            command.arg("--setenv=PATH").arg("--").arg(&program).args(&argv[1..]);
             command
         }
         Runner::Direct => {
             let mut command = Command::new(&program);
             command.args(&argv[1..]);
+            // Its own session, without novad's terminal: Ctrl+C on `nova
+            // daemon` in a terminal doesn't reach it, and an app that
+            // touches the terminal (Electron does) isn't stopped as a
+            // background job of it. The fork's first half exits at once,
+            // well before the app has exec'd and could ask to die with it.
+            // SAFETY: setsid, fork and _exit are async-signal-safe and touch
+            // no memory.
+            unsafe {
+                command.pre_exec(|| {
+                    if libc::setsid() == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    match libc::fork() {
+                        -1 => Err(std::io::Error::last_os_error()),
+                        0 => Ok(()),
+                        _ => libc::_exit(0),
+                    }
+                });
+            }
             command
         }
     };
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    // A folder that isn't there would fail the start.
-    let dir = entry.path.clone().into_iter().chain(home).find(|dir| dir.is_dir()).unwrap_or_else(|| "/".into());
     for name in SERVICE_VARS {
         command.env_remove(name);
     }
-    command.env("PATH", path_var).current_dir(dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-    // Its own session, without novad's terminal: Ctrl+C on `nova daemon` in
-    // a terminal doesn't reach it, and an app that touches the terminal
-    // (Electron does) isn't stopped as a background job of it.
-    // SAFETY: setsid is async-signal-safe and touches no memory.
-    unsafe {
-        command.pre_exec(|| match libc::setsid() {
-            -1 => Err(std::io::Error::last_os_error()),
-            _ => Ok(()),
-        });
-    }
+    command.env("PATH", path_var).current_dir(&dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    // What novad waits on: systemd-run, or the fork's first half.
     let mut child = command.spawn().map_err(|e| format!("can't start {}: {e}", program.display()))?;
-    logger.info(LOG_SOURCE, &format!("launched {} (pid {})", entry.id, child.id()));
+    logger.info(LOG_SOURCE, &format!("launched {}", entry.id));
     let logger = Arc::clone(logger);
     let id = entry.id.clone();
     std::thread::spawn(move || match child.wait() {
@@ -98,6 +129,13 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
         Err(e) => logger.warn(LOG_SOURCE, &format!("lost track of {id}: {e}")),
     });
     Ok(())
+}
+
+/// A name of letters, digits and `_`, not starting with a digit.
+fn plain_name(name: &str) -> bool {
+    !name.starts_with(|c: char| c.is_ascii_digit())
+        && !name.is_empty()
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// What runs a terminal app: xdg-terminal-exec, else `$TERMINAL -e`.
@@ -111,10 +149,10 @@ fn terminal(path_var: &str) -> Result<Vec<String>, String> {
     }
 }
 
-/// `app-nova-<id>-<n>.scope`, the id without `.desktop` and escaped the way
+/// `app-nova-<id>-<n>.service`, the id without `.desktop` and escaped the way
 /// systemd escapes unit names (`-` separates the parts, so it's `\x2d`
 /// inside one), `n` different for every launch.
-fn scope_name(id: &str) -> String {
+fn unit_name(id: &str) -> String {
     static LAUNCHES: AtomicU64 = AtomicU64::new(0);
     let app = id.strip_suffix(".desktop").unwrap_or(id);
     let mut escaped = String::with_capacity(app.len());
@@ -125,7 +163,7 @@ fn scope_name(id: &str) -> String {
         }
     }
     let n = LAUNCHES.fetch_add(1, Ordering::Relaxed);
-    format!("app-nova-{escaped}-{}{n}.scope", std::process::id())
+    format!("app-nova-{escaped}-{}{n}.service", std::process::id())
 }
 
 #[cfg(test)]
@@ -133,12 +171,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scope_names_escape_the_id_and_never_repeat() {
-        let first = scope_name("org.gnome.Nautilus.desktop");
+    fn only_plain_variable_names_pass_to_the_service() {
+        assert!(plain_name("WAYLAND_DISPLAY") && plain_name("_x1"));
+        assert!(!plain_name("BASH_FUNC_x%%") && !plain_name("1A") && !plain_name(""));
+    }
+
+    #[test]
+    fn unit_names_escape_the_id_and_never_repeat() {
+        let first = unit_name("org.gnome.Nautilus.desktop");
         assert!(first.starts_with("app-nova-org.gnome.Nautilus-"), "{first}");
-        assert!(first.ends_with(".scope"));
-        assert_ne!(scope_name("org.gnome.Nautilus.desktop"), first);
-        assert!(scope_name("kde-dolphin.desktop").starts_with(r"app-nova-kde\x2ddolphin-"));
-        assert!(scope_name("we ird/é.desktop").starts_with(r"app-nova-we\x20ird\x2f\xc3\xa9-"));
+        assert!(first.ends_with(".service"));
+        assert_ne!(unit_name("org.gnome.Nautilus.desktop"), first);
+        assert!(unit_name("kde-dolphin.desktop").starts_with(r"app-nova-kde\x2ddolphin-"));
+        assert!(unit_name("we ird/é.desktop").starts_with(r"app-nova-we\x20ird\x2f\xc3\xa9-"));
     }
 }

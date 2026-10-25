@@ -118,8 +118,8 @@ WRONG_PASSWORD = "nova: lock screen: wrong password"
 # What the launcher logs (ui/launcher).
 LAUNCHER_OPENED = "nova: launcher opened"
 LAUNCHER_CLOSED = "nova: launcher closed"
-# The systemd scope novad starts an app in (crates/novad/src/launcher/launch.rs).
-FOOT_SCOPE = "app-nova-foot-"
+# The systemd service novad starts an app as (crates/novad/src/launcher/launch.rs).
+FOOT_UNIT = "app-nova-foot-"
 # What the power menu logs (ui/power), and its key for Lock.
 POWER_OPENED = "nova: power menu opened"
 POWER_CLOSED = "nova: power menu closed"
@@ -485,7 +485,8 @@ with subtest("nova toggle launcher opens the launcher; typing finds foot, Enter 
         raise
     machine.wait_until_succeeds(as_user(NOVA_SEES_FOOT), timeout=WAIT)
     # Not in nova.service: restarting Nova leaves the app running.
-    machine.succeed(as_user(f"systemctl --user list-units --type=scope --no-legend | grep -qF {FOOT_SCOPE}"))
+    foot_running = f"systemctl --user list-units --type=service --state=running --no-legend | grep -qF {FOOT_UNIT}"
+    machine.succeed(as_user(foot_running))
     before = ui_log_count(LAUNCHER_OPENED)
     machine.succeed(as_user("nova toggle launcher"))
     retry(lambda _last_try: ui_log_count(LAUNCHER_OPENED) > before, timeout=CLICK_EFFECT)
