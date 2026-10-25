@@ -43,9 +43,23 @@ Item {
     implicitWidth: row.implicitWidth + extras.width + Tokens.barGap + tail.implicitWidth + 2 * Tokens.barGap
     implicitHeight: Tokens.captureBarHeight
 
+    // Set for a moment while it jumps to the other kind, unanimated.
+    property bool _snap: false
+
     Component.onCompleted: Qt.callLater(() => {
         toolbar._shownVideo = Qt.binding(() => toolbar.video);
     })
+
+    // Shows it at once as the other kind's toolbar was, then moves to its
+    // own: the switch showed this one's picker, already open but hidden.
+    function arriveFrom(otherVideo: bool) {
+        _snap = true;
+        _shownVideo = otherVideo;
+        _snap = false;
+        Qt.callLater(() => {
+            toolbar._shownVideo = Qt.binding(() => toolbar.video);
+        });
+    }
 
     GlassShadow {
         glass: surface
@@ -86,6 +100,7 @@ Item {
                 visible: toolbar.canSwitch
                 enabled: !toolbar.busy
                 video: toolbar._shownVideo
+                animated: !toolbar._snap
                 onToggled: toolbar.videoRequested(!toolbar.video)
             }
 
@@ -134,6 +149,7 @@ Item {
             opacity: toolbar._shownVideo ? 1 : 0
 
             Behavior on width {
+                enabled: !toolbar._snap
                 NumberAnimation {
                     duration: Tokens.durationPanel
                     easing.type: Easing.BezierSpline
@@ -141,6 +157,7 @@ Item {
                 }
             }
             Behavior on opacity {
+                enabled: !toolbar._snap
                 NumberAnimation {
                     duration: Tokens.durationFade
                 }

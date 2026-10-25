@@ -65,6 +65,12 @@ Item {
     readonly property bool counting: recorded !== null && countdown > 0
     property point _from
 
+    // The switch showed this picker, already open but hidden (see
+    // CaptureToolbar.arriveFrom).
+    function arriveFrom(otherVideo: bool) {
+        toolbar.arriveFrom(otherVideo);
+    }
+
     // Handles a key; true when it was the picker's.
     function key(key: int): bool {
         if (key === Qt.Key_Escape) {

@@ -20,6 +20,14 @@ PanelWindow { // qmllint disable uncreatable-type
     required property StageScreen output
     required property string framePath
     property bool video: false
+    // Hidden behind the recording picker until its switch shows it.
+    property bool _wasHidden: false
+    onVisibleChanged: {
+        if (!visible)
+            _wasHidden = true;
+        else if (_wasHidden)
+            picker.arriveFrom(!video);
+    }
 
     anchors {
         top: true
@@ -33,7 +41,11 @@ PanelWindow { // qmllint disable uncreatable-type
     WlrLayershell.namespace: "nova-capture"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
 
-    Component.onCompleted: BackgroundEffect.blurRegion = blur
+    Component.onCompleted: {
+        BackgroundEffect.blurRegion = blur;
+        if (!visible)
+            _wasHidden = true;
+    }
     Region {
         id: blur
         item: picker.toolbarGlass

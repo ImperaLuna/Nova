@@ -331,6 +331,21 @@ Item {
             }
         }
 
+        function test_a_shown_hidden_picker_jumps_to_the_video_toolbar_then_shrinks() {
+            const picker = makePicker();
+            picker.canSwitch = true;
+            const close = findButtons(picker).find(button => button.icon === Capture.ICON_CLOSE);
+            const closeAt = () => close.mapToItem(picker, 0, 0).x;
+            wait(Tokens.durationPanel * 2);
+            const shortClose = closeAt();
+            picker.arriveFrom(true);
+            verify(closeAt() > shortClose, "at once where the video toolbar's close was");
+            verify(findSwitch(picker).video, "the knob on the video side");
+            wait(Tokens.durationPanel * 2);
+            compare(closeAt(), shortClose, "then shrunk to a screenshot's");
+            verify(!findSwitch(picker).video);
+        }
+
         function test_the_screen_stays_outlined_with_the_pointer_on_the_toolbar() {
             const picker = makePicker(Protocol.CAPTURE_SCREEN);
             const screenButton = findButtons(picker).find(button => button.icon === Protocol.CAPTURE_SCREEN);

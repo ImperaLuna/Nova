@@ -12,6 +12,8 @@ Rectangle {
 
     // The video side is on.
     property bool video: false
+    // The knob slides; off, it jumps.
+    property bool animated: true
     signal toggled
 
     readonly property real knobWidth: (width - 2 * Tokens.captureSwitchPad) / 2
@@ -39,6 +41,7 @@ Rectangle {
         color: Tokens.primary
 
         Behavior on x {
+            enabled: control.animated
             NumberAnimation {
                 duration: Tokens.durationPanel
                 easing.type: Easing.BezierSpline
