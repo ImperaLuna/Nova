@@ -147,11 +147,7 @@ impl Daemon {
     /// Reads the settings files again and applies what changed.
     fn reload(&self) {
         lock(&self.settings).reload(&self.sources, &self.hub, &self.logger);
-        // A recording doesn't outlive its feature: with it off, the UI drops
-        // the pill that shows and stops it.
-        if !self.feature_ready(recording::FEATURE_ID) {
-            let _ = self.recordings.stop();
-        }
+        self.recordings.allow(self.feature_ready(recording::FEATURE_ID));
     }
 
     /// Starts watching the settings files, reloading when they change.
@@ -269,6 +265,7 @@ fn start(
         screenshots,
         recordings,
     });
+    daemon.recordings.allow(daemon.feature_ready(recording::FEATURE_ID));
     // Watched for as long as novad runs.
     let _ = daemon.watch_settings();
     // Not for a daemon without its UI (tests, a UI run by hand): logind's

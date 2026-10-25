@@ -127,6 +127,7 @@ impl TestDaemon {
             screenshots,
             recordings,
         });
+        daemon.recordings.allow(daemon.feature_ready(recording::FEATURE_ID));
         let watching = daemon.watch_settings();
         let serving = Arc::clone(&daemon);
         std::thread::spawn(move || server::serve(listener, serving));

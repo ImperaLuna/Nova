@@ -75,6 +75,8 @@ pub struct Recordings {
 
 #[derive(Default)]
 struct State {
+    /// The feature is on: starts are refused while it isn't.
+    allowed: bool,
     active: Option<Active>,
     /// The latest saved recordings, oldest first.
     saved: VecDeque<SavedRecording>,
@@ -154,6 +156,9 @@ impl Recordings {
         folder: &Path,
     ) -> Result<(), String> {
         let mut state = lock(&self.state);
+        if !state.allowed {
+            return Err(format!("the {FEATURE_ID} feature isn't ready (see `nova status`)"));
+        }
         if state.active.is_some() {
             return Err("already recording".into());
         }
@@ -239,7 +244,21 @@ impl Recordings {
     /// Asks the recorder to finish the file; it's saved once it has. One
     /// that doesn't within [`FINISH_TIMEOUT`] is killed.
     pub fn stop(&self) -> Result<(), String> {
+        self.stop_in(&mut lock(&self.state))
+    }
+
+    /// Whether the feature is on, as settings say. Turning it off stops a
+    /// recording: the UI drops the pill that shows and stops it. Under the
+    /// same lock as `start`, so a start already asked for can't begin after.
+    pub fn allow(&self, allowed: bool) {
         let mut state = lock(&self.state);
+        state.allowed = allowed;
+        if !allowed && state.active.is_some() {
+            let _ = self.stop_in(&mut state);
+        }
+    }
+
+    fn stop_in(&self, state: &mut State) -> Result<(), String> {
         let active = state.active.as_mut().ok_or("nothing is being recorded")?;
         if active.stopping {
             return Ok(());
@@ -557,6 +576,7 @@ mod tests {
             // The fake first; the system's for the tools it uses.
             let path_var = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
             let recordings = Recordings::new(path_var, hub, logger);
+            recordings.allow(true);
             Self { dir, recordings, ui, _ui_stream: ui_stream }
         }
 
@@ -602,6 +622,17 @@ mod tests {
     }
 
     const REGION: LayoutRect = LayoutRect { x: 2560, y: -40, width: 960, height: 540 };
+
+    #[test]
+    fn turning_the_feature_off_stops_the_recording_and_refuses_new_ones() {
+        let fixture = Fixture::new("off", GPU_SCREEN_RECORDER, "");
+        fixture.start(None, RecordAudio::default()).unwrap();
+        fixture.next_event();
+        fixture.recordings.allow(false);
+        assert_eq!(fixture.next_event()["data"], serde_json::Value::Null);
+        assert_eq!(fixture.next_event()["event"], "recording_saved");
+        assert!(fixture.start(None, RecordAudio::default()).unwrap_err().contains("isn't ready"));
+    }
 
     #[test]
     fn the_recording_outlives_the_thread_that_started_it() {
