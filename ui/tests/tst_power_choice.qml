@@ -38,7 +38,7 @@ TestCase {
     function test_lock_runs_at_once() {
         const choice = make();
         compare(choice.selected, Protocol.POWER_LOCK);
-        verify(choice.key(Qt.Key_Return, "\r"));
+        verify(choice.key(Qt.Key_Return, "\r", false));
         compare(runs.count, 1);
         compare(runs.signalArguments[0][0], Protocol.POWER_LOCK);
         compare(choice.running, Protocol.POWER_LOCK);
@@ -46,7 +46,7 @@ TestCase {
 
     function test_shut_down_needs_a_second_pick() {
         const choice = make();
-        verify(choice.key(Qt.Key_P, "p"));
+        verify(choice.key(Qt.Key_P, "p", false));
         compare(choice.armed, Protocol.POWER_POWER_OFF);
         verify(choice.counting);
         compare(runs.count, 0);
@@ -59,10 +59,10 @@ TestCase {
     function test_esc_disarms_then_closes() {
         const choice = make();
         choice.pick(Protocol.POWER_REBOOT);
-        choice.key(Qt.Key_Escape, "");
+        choice.key(Qt.Key_Escape, "", false);
         compare(choice.armed, "");
         compare(closes.count, 0);
-        choice.key(Qt.Key_Escape, "");
+        choice.key(Qt.Key_Escape, "", false);
         compare(closes.count, 1);
     }
 
@@ -73,13 +73,13 @@ TestCase {
                 reason: "Turned off on this system"
             }
         });
-        choice.key(Qt.Key_Down, "");
+        choice.key(Qt.Key_Down, "", false);
         compare(choice.selected, Protocol.POWER_LOG_OUT);
-        choice.key(Qt.Key_Up, "");
+        choice.key(Qt.Key_Up, "", false);
         compare(choice.selected, Protocol.POWER_LOCK);
-        choice.key(Qt.Key_Up, "");
+        choice.key(Qt.Key_Up, "", false);
         compare(choice.selected, Protocol.POWER_POWER_OFF, "wraps around");
-        choice.key(Qt.Key_S, "s");
+        choice.key(Qt.Key_S, "s", false);
         compare(runs.count, 0, "suspend can't run");
         compare(choice.reason(Protocol.POWER_SUSPEND), "Turned off on this system");
     }
@@ -88,7 +88,7 @@ TestCase {
         const choice = make();
         choice.pick(Protocol.POWER_SUSPEND);
         choice.pick(Protocol.POWER_LOCK);
-        choice.key(Qt.Key_Down, "");
+        choice.key(Qt.Key_Down, "", false);
         compare(runs.count, 1);
         compare(choice.selected, Protocol.POWER_SUSPEND);
         choice.finished("logind didn't answer Suspend within 5 s");
@@ -98,7 +98,18 @@ TestCase {
         compare(choice.problem, "");
     }
 
+    function test_a_held_key_never_confirms() {
+        const choice = make();
+        verify(choice.key(Qt.Key_P, "p", false));
+        verify(choice.key(Qt.Key_P, "p", true));
+        verify(choice.key(Qt.Key_Return, "\r", true));
+        compare(runs.count, 0);
+        compare(choice.armed, Protocol.POWER_POWER_OFF);
+        choice.key(Qt.Key_Up, "", true);
+        compare(choice.selected, Protocol.POWER_REBOOT);
+    }
+
     function test_unhandled_keys_pass_through() {
-        verify(!make().key(Qt.Key_X, "x"));
+        verify(!make().key(Qt.Key_X, "x", false));
     }
 }

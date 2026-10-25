@@ -95,7 +95,7 @@ StagePanel {
         height: menu.height
         clip: true
         Keys.onPressed: event => {
-            event.accepted = menu.choice.key(event.key, event.text);
+            event.accepted = menu.choice.key(event.key, event.text, event.isAutoRepeat);
         }
 
         Column {

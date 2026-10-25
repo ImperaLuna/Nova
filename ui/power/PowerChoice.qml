@@ -133,7 +133,12 @@ QtObject {
     }
 
     // A key press in the open menu; whether it was the menu's.
-    function key(key: int, text: string): bool {
+    function key(key: int, text: string, repeat: bool): bool {
+        // A held key repeats: it may still move the selection, but never
+        // picks, so holding P can't both arm and confirm shutting down.
+        const moves = [Qt.Key_Down, Qt.Key_Tab, Qt.Key_Up, Qt.Key_Backtab];
+        if (repeat && !moves.includes(key))
+            return true;
         if (key === Qt.Key_Escape) {
             if (armed !== "")
                 disarm();

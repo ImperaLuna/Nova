@@ -19,6 +19,9 @@ pub const MAX_REQUEST_BYTES: u64 = 64 * 1024;
 /// buffer full gets there; the UI reconnects on its own.
 pub const WRITE_TIMEOUT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(10) };
 const SOCKET_DIR_MODE: u32 = 0o700;
+/// A request's answer, worked out off the connection's thread.
+type SlowWork = Box<dyn FnOnce() -> Outcome + Send>;
+
 const LOG_SOURCE: &str = "server";
 
 pub fn bind(socket: &Path) -> std::io::Result<UnixListener> {
@@ -111,6 +114,14 @@ impl<'a> Connection<'a> {
                 return;
             }
         };
+        // Asking logind can take seconds; answering on its own thread keeps
+        // this connection reading, so the UI's lock reports and other
+        // requests aren't stuck behind it.
+        if let Some(work) = self.slow_work(&request.command) {
+            self.answer_later(request.id, work);
+            self.follow_up(request.command);
+            return;
+        }
         // Answered even without an id: some commands act as they answer.
         let outcome = self.answer(&request.command);
         if let Some(id) = request.id {
@@ -160,17 +171,7 @@ impl<'a> Connection<'a> {
                 self.daemon.session_lock.unlocked(&self.daemon.hub);
                 Ok(serde_json::Value::Null)
             }
-            Command::PowerOptions => {
-                if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
-                    return Outcome::Error(e);
-                }
-                let lock = self.require_feature(crate::session_lock::FEATURE_ID);
-                let log_out = match &self.daemon.compositor {
-                    Some(compositor) if compositor.can(Capability::LogOut) => Ok(()),
-                    _ => Err("Not on this compositor".into()),
-                };
-                serde_json::to_value(crate::power::options(lock, log_out, &self.daemon.logger))
-            }
+            Command::PowerOptions => return self.power_options()(),
             Command::Power { action } => return self.power(*action),
         };
         match value {
@@ -234,52 +235,107 @@ impl<'a> Connection<'a> {
         }
     }
 
+    /// The requests that wait on logind, as work to answer them with; the
+    /// quick checks before it run here, at once.
+    fn slow_work(&self, command: &Command) -> Option<SlowWork> {
+        match command {
+            Command::PowerOptions => Some(self.power_options()),
+            Command::Power {
+                action: action @ (PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff),
+            } => Some(self.power_logind(*action)),
+            _ => None,
+        }
+    }
+
+    /// Runs `work` on its own thread and sends its answer when it's done.
+    fn answer_later(&self, id: Option<u64>, work: SlowWork) {
+        let queue = self.queue.clone();
+        let logger = Arc::clone(&self.daemon.logger);
+        std::thread::spawn(move || {
+            let outcome = work();
+            let Some(id) = id else { return };
+            match encode(Response { id, outcome }) {
+                Ok(line) => {
+                    queue.push(Outgoing::Line(line));
+                }
+                Err(e) => logger.error(LOG_SOURCE, &format!("can't encode a message: {e}")),
+            }
+        });
+    }
+
+    fn power_options(&self) -> SlowWork {
+        if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
+            return Box::new(move || Outcome::Error(e));
+        }
+        let lock = self.require_feature(crate::session_lock::FEATURE_ID);
+        let log_out = match &self.daemon.compositor {
+            Some(compositor) if compositor.can(Capability::LogOut) => Ok(()),
+            _ => Err("Not on this compositor".into()),
+        };
+        let logger = Arc::clone(&self.daemon.logger);
+        Box::new(move || match serde_json::to_value(crate::power::options(lock, log_out, &logger)) {
+            Ok(value) => Outcome::Result(value),
+            Err(e) => Outcome::Error(e.to_string()),
+        })
+    }
+
     /// Runs a power menu action. The menu asks over the UI's own
     /// connection, which can't report the lock screen covering the screens
-    /// while this waits, so locking here doesn't wait for it. Suspend locks
-    /// first, when the lock screen can, and suspends once the screens are
-    /// covered (or the wait runs out), so the session wakes up locked.
+    /// while this waits, so locking here doesn't wait for it.
     fn power(&self, action: PowerAction) -> Outcome {
         if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
             return Outcome::Error(e);
         }
-        self.daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
-        let outcome = match action {
-            PowerAction::Lock => self
-                .require_feature(crate::session_lock::FEATURE_ID)
-                .and_then(|()| self.daemon.session_lock.request(&self.daemon.hub)),
-            PowerAction::LogOut => return self.with_compositor(crate::compositor::Compositor::log_out),
-            PowerAction::Suspend if self.feature_ready(crate::session_lock::FEATURE_ID) => {
-                match self.daemon.session_lock.request(&self.daemon.hub) {
-                    Ok(()) => {
-                        self.suspend_once_covered();
-                        Ok(())
-                    }
-                    Err(e) => {
-                        self.daemon.logger.warn(LOG_SOURCE, &format!("suspending without locking: {e}"));
-                        crate::power::run_logind(action)
-                    }
+        match action {
+            PowerAction::Lock => {
+                self.daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
+                let locked = self
+                    .require_feature(crate::session_lock::FEATURE_ID)
+                    .and_then(|()| self.daemon.session_lock.request(&self.daemon.hub));
+                match locked {
+                    Ok(()) => Outcome::Result(serde_json::Value::Null),
+                    Err(e) => Outcome::Error(e),
                 }
             }
-            PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff => crate::power::run_logind(action),
-        };
-        match outcome {
-            Ok(()) => Outcome::Result(serde_json::Value::Null),
-            Err(e) => Outcome::Error(e),
+            PowerAction::LogOut => {
+                self.daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
+                self.with_compositor(crate::compositor::Compositor::log_out)
+            }
+            PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff => self.power_logind(action)(),
         }
     }
 
-    fn suspend_once_covered(&self) {
-        let session_lock = Arc::clone(&self.daemon.session_lock);
+    /// Suspend, restart or shut down through logind; answers with logind's
+    /// own result. Suspend locks first, when the lock screen can, and
+    /// suspends once the screens are covered (or the wait runs out), so the
+    /// session wakes up locked.
+    fn power_logind(&self, action: PowerAction) -> SlowWork {
+        if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
+            return Box::new(move || Outcome::Error(e));
+        }
+        self.daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
+        let mut covered = None;
+        if action == PowerAction::Suspend && self.feature_ready(crate::session_lock::FEATURE_ID) {
+            match self.daemon.session_lock.request(&self.daemon.hub) {
+                Ok(()) => covered = Some(Arc::clone(&self.daemon.session_lock)),
+                Err(e) => self.daemon.logger.warn(LOG_SOURCE, &format!("suspending without locking: {e}")),
+            }
+        }
         let logger = Arc::clone(&self.daemon.logger);
-        std::thread::spawn(move || {
-            if let Err(e) = session_lock.wait_covered() {
+        Box::new(move || {
+            if let Some(session_lock) = covered
+                && let Err(e) = session_lock.wait_covered()
+            {
                 logger.warn(LOG_SOURCE, &format!("suspending though the screen may not be locked: {e}"));
             }
-            if let Err(e) = crate::power::run_logind(PowerAction::Suspend) {
-                logger.warn(LOG_SOURCE, &format!("suspend failed: {e}"));
+            match crate::power::run_logind(action) {
+                Ok(()) => Outcome::Result(serde_json::Value::Null),
+                Err(e) => {
+                    logger.warn(LOG_SOURCE, &format!("{action:?} failed: {e}"));
+                    Outcome::Error(e)
+                }
             }
-        });
+        })
     }
 
     fn feature_ready(&self, id: &str) -> bool {

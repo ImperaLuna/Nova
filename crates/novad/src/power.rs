@@ -10,7 +10,8 @@
 
 use crate::logger::Logger;
 use nova_protocol::{PowerAction, PowerOption};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 /// The feature's id in `features/`.
@@ -84,9 +85,16 @@ pub fn run_logind(action: PowerAction) -> Result<(), String> {
 /// while connecting. Returns a `Can*` method's answer, or "" for the others.
 fn ask_logind(method: &'static str, interactive: Option<bool>) -> Result<String, String> {
     let (done, answer) = mpsc::sync_channel(1);
+    // Set once the caller stops waiting, so a slow connection can't still
+    // suspend or shut down after the menu was told it failed.
+    let abandoned = Arc::new(AtomicBool::new(false));
+    let too_late = Arc::clone(&abandoned);
     std::thread::spawn(move || {
         let result = zbus::block_on(async {
             let bus = zbus::Connection::system().await?;
+            if too_late.load(Ordering::SeqCst) {
+                return Err(zbus::Error::Failure(format!("gave up on {method} before calling it")));
+            }
             let reply = match interactive {
                 Some(interactive) => {
                     let body = (interactive,);
@@ -101,9 +109,10 @@ fn ask_logind(method: &'static str, interactive: Option<bool>) -> Result<String,
         });
         let _ = done.send(result.map_err(|e| e.to_string()));
     });
-    answer
-        .recv_timeout(LOGIND_TIMEOUT)
-        .map_err(|_| format!("logind didn't answer {method} within {} s", LOGIND_TIMEOUT.as_secs()))?
+    answer.recv_timeout(LOGIND_TIMEOUT).map_err(|_| {
+        abandoned.store(true, Ordering::SeqCst);
+        format!("logind didn't answer {method} within {} s", LOGIND_TIMEOUT.as_secs())
+    })?
 }
 
 #[cfg(test)]
