@@ -296,6 +296,8 @@ QtObject {
     readonly property int trayGridCell: 36
     readonly property int trayGridIconSize: 20
     readonly property int trayGridGap: 4
+    // Rows the quick settings tray shows before it scrolls.
+    readonly property int trayGridMaxRows: 3
 
     // Quick settings (ui/quick_settings): a glass drawer this wide against
     // the screen's right edge, top to bottom. Its pages have this padding

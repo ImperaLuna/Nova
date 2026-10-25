@@ -170,6 +170,30 @@ Item {
             compare(Tray.entries(items, stage.novadTray())[0].key, "discord.desktop");
         }
 
+        function test_two_apps_with_the_same_id_keep_their_own_apps() {
+            const item = {
+                id: "chrome_status_icon_1",
+                title: "",
+                status: 0,
+                tooltipTitle: "",
+                icon: ""
+            };
+            const app = (id, name) => ({
+                    id: item.id,
+                    title: "",
+                    app: {
+                        id: id,
+                        name: name
+                    }
+                });
+            const all = Tray.entries([item, Object.assign({}, item)], {
+                items: [app("a.desktop", "A"), app("b.desktop", "B")],
+                hidden: ["a.desktop"]
+            });
+            compare(all.map(entry => entry.key), ["a.desktop", "b.desktop"]);
+            compare(all.map(entry => entry.hidden), [true, false], "hiding one leaves the other");
+        }
+
         function test_the_bar_shows_attention_first_and_hides_hidden_apps() {
             const shown = Tray.shown(Tray.entries(stage.quickshellItems(), stage.novadTray()));
             compare(shown.map(entry => entry.key), ["com.anthropic.Claude.desktop", "discord.desktop"]);

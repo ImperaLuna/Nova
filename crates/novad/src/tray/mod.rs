@@ -307,8 +307,9 @@ impl Shared {
     }
 
     /// Takes `service` from the app on `sender`, as `RegisterStatusNotifierItem` sends it:
-    /// a bus name, or an object path on the sender's connection.
-    async fn register(&self, connection: &Connection, sender: &str, service: &str) -> Result<String, String> {
+    /// a bus name, or an object path on the sender's connection. Gives the
+    /// item's address, and whether it's new rather than registered again.
+    async fn register(&self, connection: &Connection, sender: &str, service: &str) -> Result<(String, bool), String> {
         if service.len() > MAX_SERVICE_LEN {
             return Err(format!("the service is longer than {MAX_SERVICE_LEN} bytes"));
         }
@@ -329,13 +330,13 @@ impl Shared {
             return Err("the tray is stopping".into());
         }
         if state.items.iter().any(|item| item.address == address) {
-            return Ok(address);
+            return Ok((address, false));
         }
         if state.items.len() >= MAX_ITEMS {
             return Err(format!("the tray already has {MAX_ITEMS} items"));
         }
         state.items.push(Item { address: address.clone(), bus: bus.to_string(), owner, read: None });
-        Ok(address)
+        Ok((address, true))
     }
 
     /// Reads the id and title of the item at `address`, and which process
@@ -489,11 +490,16 @@ impl Watcher {
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
         let sender = header.sender().map(|sender| sender.to_string()).unwrap_or_default();
-        let address = self.shared.register(connection, &sender, service).await.map_err(|e| {
+        let (address, new) = self.shared.register(connection, &sender, service).await.map_err(|e| {
             self.shared.logger.warn(LOG_SOURCE, &format!("refused a tray icon from {sender}: {e}"));
             zbus::fdo::Error::InvalidArgs(e)
         })?;
         emitter.status_notifier_item_registered(&address).await?;
+        // Read once, by the first registration: an app registering again
+        // doesn't get another thread.
+        if !new {
+            return Ok(());
+        }
         // On a thread of its own, so the app gets its answer first and a slow
         // one holds up nobody else.
         let shared = Arc::clone(&self.shared);

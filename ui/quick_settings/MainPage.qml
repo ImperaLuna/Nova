@@ -179,35 +179,47 @@ Item {
 
                 Rectangle {
                     width: parent.width
-                    height: trayGrid.implicitHeight + 2 * Tokens.menuPad
+                    height: trayScroll.height + 2 * Tokens.menuPad
                     radius: Tokens.radiusCard
                     color: Tokens.surfaceRaised
 
-                    Grid {
-                        id: trayGrid
+                    // A few rows, then it scrolls, so a long tray never runs
+                    // under the cards below.
+                    Flickable {
+                        id: trayScroll
+                        objectName: "trayScroll"
                         x: Tokens.menuPad
                         y: Tokens.menuPad
                         width: parent.width - 2 * Tokens.menuPad
-                        columns: Tokens.trayGridColumns
-                        spacing: Tokens.trayGridGap
-                        readonly property real cell: (width - (columns - 1) * spacing) / columns
+                        height: Math.min(trayGrid.implicitHeight, Tokens.trayGridMaxRows * (Tokens.trayGridCell + Tokens.trayGridGap) - Tokens.trayGridGap)
+                        contentHeight: trayGrid.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
 
-                        Repeater {
-                            model: page.trayApps
+                        Grid {
+                            id: trayGrid
+                            width: parent.width
+                            columns: Tokens.trayGridColumns
+                            spacing: Tokens.trayGridGap
+                            readonly property real cell: (width - (columns - 1) * spacing) / columns
 
-                            TrayIcon {
-                                id: icon
-                                required property var modelData
-                                width: trayGrid.cell
-                                height: Tokens.trayGridCell
-                                radius: Tokens.radiusControl
-                                iconSize: Tokens.trayGridIconSize
-                                source: page.trayIconSource(modelData)
-                                attention: modelData.attention
-                                dimmed: modelData.hidden
-                                onActivated: page.trayActivated(modelData)
-                                onMenuRequested: page.trayMenuRequested(modelData, icon.mapToItem(page, width / 2, height / 2))
-                                onSecondaryActivated: page.traySecondaryActivated(modelData)
+                            Repeater {
+                                model: page.trayApps
+
+                                TrayIcon {
+                                    id: icon
+                                    required property var modelData
+                                    width: trayGrid.cell
+                                    height: Tokens.trayGridCell
+                                    radius: Tokens.radiusControl
+                                    iconSize: Tokens.trayGridIconSize
+                                    source: page.trayIconSource(modelData)
+                                    attention: modelData.attention
+                                    dimmed: modelData.hidden
+                                    onActivated: page.trayActivated(modelData)
+                                    onMenuRequested: page.trayMenuRequested(modelData, icon.mapToItem(page, width / 2, height / 2))
+                                    onSecondaryActivated: page.traySecondaryActivated(modelData)
+                                }
                             }
                         }
                     }

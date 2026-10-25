@@ -18,7 +18,10 @@ var QUIT_WORDS = ["quit", "exit"];
 // The tray's apps, in the order they registered: for each of Quickshell's
 // `items` ({id, title, status, tooltipTitle, icon}), the matching item of
 // novad's `tray` event ({items: [{id, title, app}], hidden}), found by id
-// and title, or by id alone when a title changed since. Each entry is
+// and title, or by id alone when a title changed since. Quickshell doesn't
+// give an item's bus address, so each of novad's items matches once: two
+// apps' icons with the same id and title (Electron's `chrome_status_icon_1`,
+// untitled) pair up in the order both lists have them. Each entry is
 // {item, key, name, icon, appIcon, attention, hidden}: `key` is what
 // hide_tray_app knows it by, `appIcon` the desktop entry's icon name ("" when
 // novad found no app), `icon` the item's own image.
@@ -26,17 +29,19 @@ function entries(items, tray) {
     var known = tray ? tray.items : [];
     var hidden = tray && tray.hidden ? tray.hidden : [];
     var result = [];
+    var used = [];
+    function find(item, sameTitle) {
+        for (var j = 0; j < known.length; j++) {
+            if (used.indexOf(j) === -1 && known[j].id === item.id && (!sameTitle || known[j].title === item.title)) {
+                used.push(j);
+                return known[j];
+            }
+        }
+        return null;
+    }
     for (var i = 0; i < items.length; i++) {
         var item = items[i];
-        var match = null;
-        for (var j = 0; j < known.length && !match; j++) {
-            if (known[j].id === item.id && known[j].title === item.title)
-                match = known[j];
-        }
-        for (var k = 0; k < known.length && !match; k++) {
-            if (known[k].id === item.id)
-                match = known[k];
-        }
+        var match = find(item, true) || find(item, false);
         var app = match && match.app ? match.app : null;
         var key = app ? app.id : item.id;
         result.push({
