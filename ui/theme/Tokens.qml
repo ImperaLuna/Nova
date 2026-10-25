@@ -261,12 +261,11 @@ QtObject {
 
     // Type
     // Screenshots: the dim over the frozen screens outside the region, the
-    // region's outline and the crosshair, the toolbar at the top (the
+    // region's outline, the toolbar at the top (the
     // central pill grown into it), and the card a saved shot lands in.
     readonly property real captureVeilOpacity: 0.45
     readonly property color captureVeil: Qt.rgba(0, 0, 0, captureVeilOpacity)
     readonly property real captureOutline: 1.5
-    readonly property color captureGuide: Qt.rgba(fg.r, fg.g, fg.b, 0.28)
     // Smaller than this (logical px) either way is a click, not a region.
     readonly property int captureMinDrag: 4
     readonly property int captureBarHeight: 44

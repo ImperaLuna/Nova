@@ -886,7 +886,7 @@ mod tests {
             encode(Event::Capture {
                 frames: vec![CaptureFrame {
                     output: "DP-1".into(),
-                    path: "/run/user/1000/nova/capture/DP-1.png".into(),
+                    path: "/run/user/1000/nova/capture/DP-1.ppm".into(),
                 }],
             }),
             encode(Request {

@@ -38,7 +38,7 @@ expression: all
 {"v":2,"event":"volume","data":{"key":"mute"}}
 {"v":2,"id":22,"cmd":"screenshot","args":{"mode":"region"}}
 {"v":2,"id":23,"cmd":"screenshot","args":{"mode":"screen"}}
-{"v":2,"event":"capture","data":{"frames":[{"output":"DP-1","path":"/run/user/1000/nova/capture/DP-1.png"}]}}
+{"v":2,"event":"capture","data":{"frames":[{"output":"DP-1","path":"/run/user/1000/nova/capture/DP-1.ppm"}]}}
 {"v":2,"id":24,"cmd":"save_capture","args":{"output":"DP-1","rect":{"x":1460,"y":150,"width":960,"height":560}}}
 {"v":2,"id":25,"cmd":"cancel_capture"}
 {"v":2,"event":"capture_ended"}

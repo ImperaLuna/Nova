@@ -50,6 +50,11 @@ const KEEP_SAVED: usize = 32;
 const FRAMES_DIR: &str = "capture";
 const FRAMES_DIR_MODE: u32 = 0o700;
 const PNG_TYPE: &str = "image/png";
+/// grim writes frames uncompressed: PNG compression of a 4K screen takes
+/// longer than capturing it, and frames are only read back once. The UI
+/// reads them too (Qt reads PPM).
+const FRAME_TYPE: [&str; 2] = ["-t", "ppm"];
+const FRAME_EXTENSION: &str = "ppm";
 /// A saved shot's name, from the local time it was taken.
 const NAME_PREFIX: &str = "Screenshot ";
 const NAME_TIME_FORMAT: &str = "%Y-%m-%d %H-%M-%S";
@@ -105,18 +110,17 @@ impl Screenshots {
     /// doesn't know which one has focus.
     pub fn take_screen(&self, output: Option<&str>, folder: &Path) -> Result<(), String> {
         let mut state = lock(&self.state);
-        let frame = self.frames_dir.join(format!("screen.{EXTENSION}"));
+        let frame = self.frames_dir.join(format!("screen.{FRAME_EXTENSION}"));
         self.make_frames_dir()?;
-        let mut args = Vec::new();
+        let mut args: Vec<String> = FRAME_TYPE.map(String::from).to_vec();
         if let Some(output) = output {
             args.extend(["-o".to_string(), checked_output(output)?.to_string()]);
         }
         args.push(frame.display().to_string());
         let captured = self.run(GRIM, &args, None).and_then(|()| read(&frame));
         let _ = std::fs::remove_file(&frame);
-        let png = captured?;
-        let (width, height) = png_size(&png)?;
-        self.keep(&mut state, &png, width, height, folder)
+        let image = Image::from_ppm(&captured?)?;
+        self.keep(&mut state, &image, folder)
     }
 
     /// Saves `rect` of `output`'s frozen frame and closes the picker. A
@@ -126,9 +130,9 @@ impl Screenshots {
         let frames = state.frames.as_ref().ok_or("no region is being picked")?;
         let frame =
             frames.iter().find(|frame| frame.output == output).ok_or_else(|| format!("{output:?} wasn't captured"))?;
-        let (png, width, height) = crop(&read(Path::new(&frame.path))?, rect)?;
+        let image = Image::from_ppm(&read(Path::new(&frame.path))?)?.crop(rect)?;
         self.end_capture(&mut state);
-        self.keep(&mut state, &png, width, height, folder)
+        self.keep(&mut state, &image, folder)
     }
 
     /// Closes the picker without a shot.
@@ -178,7 +182,7 @@ impl Screenshots {
         let frames: Vec<CaptureFrame> = outputs
             .iter()
             .map(|output| {
-                let path = self.frames_dir.join(format!("{}.{EXTENSION}", checked_output(output)?));
+                let path = self.frames_dir.join(format!("{}.{FRAME_EXTENSION}", checked_output(output)?));
                 Ok(CaptureFrame { output: output.clone(), path: path.display().to_string() })
             })
             .collect::<Result<_, String>>()?;
@@ -186,7 +190,13 @@ impl Screenshots {
             let running: Vec<_> = frames
                 .iter()
                 .map(|frame| {
-                    let args = ["-o".to_string(), frame.output.clone(), frame.path.clone()];
+                    let args = [
+                        FRAME_TYPE[0].into(),
+                        FRAME_TYPE[1].into(),
+                        "-o".into(),
+                        frame.output.clone(),
+                        frame.path.clone(),
+                    ];
                     scope.spawn(move || self.run(GRIM, &args, None))
                 })
                 .collect();
@@ -203,8 +213,9 @@ impl Screenshots {
     }
 
     /// Writes a shot into `folder`, copies it and tells the UI.
-    fn keep(&self, state: &mut State, png: &[u8], width: u32, height: u32, folder: &Path) -> Result<(), String> {
-        let path = save(png, folder)?;
+    fn keep(&self, state: &mut State, image: &Image, folder: &Path) -> Result<(), String> {
+        let (width, height) = (image.width, image.height);
+        let path = save(&image.to_png()?, folder)?;
         self.logger.info(LOG_SOURCE, &format!("saved {} ({width}x{height})", path.display()));
         // The file is saved even when the clipboard isn't there.
         let file = std::fs::File::open(&path).map_err(|e| format!("can't read {} back: {e}", path.display()))?;
@@ -317,44 +328,82 @@ fn read(path: &Path) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|e| format!("can't read {}: {e}", path.display()))
 }
 
-/// A PNG's width and height.
-fn png_size(png: &[u8]) -> Result<(u32, u32), String> {
-    let reader = png::Decoder::new(std::io::Cursor::new(png)).read_info().map_err(|e| format!("odd PNG: {e}"))?;
-    let info = reader.info();
-    Ok((info.width, info.height))
+/// A frame or a shot: 8-bit RGB pixels, row after row.
+struct Image {
+    width: u32,
+    height: u32,
+    rgb: Vec<u8>,
 }
 
-/// `rect` of a PNG, as a PNG with its width and height. The part of `rect`
-/// outside the image is dropped; nothing left is an error.
-fn crop(png: &[u8], rect: PixelRect) -> Result<(Vec<u8>, u32, u32), String> {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
-    decoder.set_transformations(png::Transformations::normalize_to_color8());
-    let mut reader = decoder.read_info().map_err(|e| format!("odd PNG: {e}"))?;
-    let (image_width, image_height) = (reader.info().width, reader.info().height);
-    let mut pixels = vec![0; reader.output_buffer_size().ok_or("the frame is too big")?];
-    let frame = reader.next_frame(&mut pixels).map_err(|e| format!("can't decode the frame: {e}"))?;
-    let left = rect.x.min(image_width);
-    let top = rect.y.min(image_height);
-    let width = rect.width.min(image_width - left);
-    let height = rect.height.min(image_height - top);
-    if width == 0 || height == 0 {
-        return Err(format!("the region {rect:?} isn't on the {image_width}x{image_height} frame"));
+/// Bytes per RGB pixel.
+const RGB: usize = 3;
+/// The only PPM grim writes: binary RGB, 8 bits per channel.
+const PPM_MAGIC: &str = "P6";
+const PPM_MAX_VALUE: &str = "255";
+
+impl Image {
+    /// Reads a binary PPM: `P6`, width, height and 255, each followed by
+    /// one whitespace byte, then the pixels.
+    fn from_ppm(ppm: &[u8]) -> Result<Self, String> {
+        let odd = || "odd frame: not an 8-bit binary PPM".to_string();
+        let mut fields = Vec::new();
+        let mut at = 0;
+        while fields.len() < 4 {
+            while ppm.get(at).is_some_and(u8::is_ascii_whitespace) {
+                at += 1;
+            }
+            let start = at;
+            while ppm.get(at).is_some_and(|byte| !byte.is_ascii_whitespace()) {
+                at += 1;
+            }
+            let field = ppm.get(start..at).filter(|field| !field.is_empty()).ok_or_else(odd)?;
+            fields.push(std::str::from_utf8(field).map_err(|_| odd())?);
+            // The one whitespace byte after the field.
+            at += 1;
+        }
+        let parse = |field: &str| field.parse::<u32>().map_err(|_| odd());
+        if fields[0] != PPM_MAGIC || fields[3] != PPM_MAX_VALUE {
+            return Err(odd());
+        }
+        let (width, height) = (parse(fields[1])?, parse(fields[2])?);
+        let size = width as usize * height as usize * RGB;
+        let rgb = ppm.get(at..at + size).ok_or_else(|| format!("the {width}x{height} frame is cut short"))?;
+        Ok(Self { width, height, rgb: rgb.to_vec() })
     }
-    let pixel_bytes = frame.color_type.samples();
-    let row_bytes = width as usize * pixel_bytes;
-    let mut cropped = Vec::with_capacity(row_bytes * height as usize);
-    for row in top..top + height {
-        let start = row as usize * frame.line_size + left as usize * pixel_bytes;
-        cropped.extend_from_slice(&pixels[start..start + row_bytes]);
+
+    /// `rect` of the image. The part outside it is dropped; nothing left is
+    /// an error.
+    fn crop(&self, rect: PixelRect) -> Result<Self, String> {
+        let left = rect.x.min(self.width);
+        let top = rect.y.min(self.height);
+        let width = rect.width.min(self.width - left);
+        let height = rect.height.min(self.height - top);
+        if width == 0 || height == 0 {
+            return Err(format!("the region {rect:?} isn't on the {}x{} frame", self.width, self.height));
+        }
+        let row_bytes = width as usize * RGB;
+        let mut rgb = Vec::with_capacity(row_bytes * height as usize);
+        for row in top..top + height {
+            let start = (row as usize * self.width as usize + left as usize) * RGB;
+            rgb.extend_from_slice(&self.rgb[start..start + row_bytes]);
+        }
+        Ok(Self { width, height, rgb })
     }
-    let mut out = Vec::new();
-    let mut encoder = png::Encoder::new(&mut out, width, height);
-    encoder.set_color(frame.color_type);
-    encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder.write_header().map_err(|e| format!("can't encode the shot: {e}"))?;
-    writer.write_image_data(&cropped).map_err(|e| format!("can't encode the shot: {e}"))?;
-    writer.finish().map_err(|e| format!("can't encode the shot: {e}"))?;
-    Ok((out, width, height))
+
+    /// The image as a PNG, compressed fast: a 4K shot is saved in a blink,
+    /// a little bigger than at the default level.
+    fn to_png(&self) -> Result<Vec<u8>, String> {
+        let failed = |e: png::EncodingError| format!("can't encode the shot: {e}");
+        let mut out = Vec::new();
+        let mut encoder = png::Encoder::new(&mut out, self.width, self.height);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_compression(png::Compression::Fast);
+        let mut writer = encoder.write_header().map_err(failed)?;
+        writer.write_image_data(&self.rgb).map_err(failed)?;
+        writer.finish().map_err(failed)?;
+        Ok(out)
+    }
 }
 
 /// Writes `png` into `folder` under a name from the local time, never over
@@ -411,16 +460,17 @@ mod tests {
             let bin = dir.join("bin");
             std::fs::create_dir_all(&bin).unwrap();
             for output in ["DP-1", "HDMI-A-1"] {
-                std::fs::write(dir.join(format!("{output}.png")), frame(output)).unwrap();
+                std::fs::write(dir.join(format!("{output}.ppm")), frame(output)).unwrap();
             }
-            // grim [-o OUTPUT] FILE; the whole desktop is DP-1's frame.
+            // grim -t ppm [-o OUTPUT] FILE; the whole desktop is DP-1's frame.
             fake(
                 &bin,
                 GRIM,
                 &format!(
-                    "output=DP-1\nif [ \"$1\" = -o ]; then output=$2; shift 2; fi\n\
-                     [ -f {dir}/$output.png ] || {{ echo \"unknown output $output\" >&2; exit 1; }}\n\
-                     cp {dir}/$output.png \"$1\"",
+                    "[ \"$1 $2\" = \"-t ppm\" ] || {{ echo \"not asked for ppm\" >&2; exit 1; }}; shift 2\n\
+                     output=DP-1\nif [ \"$1\" = -o ]; then output=$2; shift 2; fi\n\
+                     [ -f {dir}/$output.ppm ] || {{ echo \"unknown output $output\" >&2; exit 1; }}\n\
+                     cp {dir}/$output.ppm \"$1\"",
                     dir = dir.display()
                 ),
             );
@@ -472,30 +522,24 @@ mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
-    /// An RGBA frame whose pixel (x, y) is (output's first byte, x, y, 255).
+    /// A frame as grim writes it, whose pixel (x, y) is (output's first
+    /// byte, x, y).
     fn frame(output: &str) -> Vec<u8> {
-        let mut pixels = Vec::new();
+        let mut ppm = format!("P6\n{FRAME_WIDTH} {FRAME_HEIGHT}\n255\n").into_bytes();
         for y in 0..FRAME_HEIGHT {
             for x in 0..FRAME_WIDTH {
-                pixels.extend([output.as_bytes()[0], x as u8, y as u8, 255]);
+                ppm.extend([output.as_bytes()[0], x as u8, y as u8]);
             }
         }
-        let mut png = Vec::new();
-        let mut encoder = png::Encoder::new(&mut png, FRAME_WIDTH, FRAME_HEIGHT);
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header().unwrap();
-        writer.write_image_data(&pixels).unwrap();
-        writer.finish().unwrap();
-        png
+        ppm
     }
 
-    /// A PNG's width, height and RGBA pixels.
-    fn decode(png: &[u8]) -> (u32, u32, Vec<[u8; 4]>) {
+    /// A PNG's width, height and RGB pixels.
+    fn decode(png: &[u8]) -> (u32, u32, Vec<[u8; 3]>) {
         let mut reader = png::Decoder::new(std::io::Cursor::new(png)).read_info().unwrap();
         let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
         let info = reader.next_frame(&mut pixels).unwrap();
-        let pixels = pixels[..info.buffer_size()].chunks(4).map(|pixel| pixel.try_into().unwrap()).collect();
+        let pixels = pixels[..info.buffer_size()].chunks(3).map(|pixel| pixel.try_into().unwrap()).collect();
         (info.width, info.height, pixels)
     }
 
@@ -521,8 +565,8 @@ mod tests {
         let png = std::fs::read(&saved[0]).unwrap();
         let (width, height, pixels) = decode(&png);
         assert_eq!((width, height), (3, 2));
-        assert_eq!(pixels[0], [b'H', 2, 1, 255]);
-        assert_eq!(pixels[5], [b'H', 4, 2, 255]);
+        assert_eq!(pixels[0], [b'H', 2, 1]);
+        assert_eq!(pixels[5], [b'H', 4, 2]);
         assert_eq!(std::fs::read(fixture.dir.join("clipboard")).unwrap(), png, "copied as saved");
         assert!(std::fs::read_dir(&runtime).unwrap().next().is_none(), "the frames are removed");
 
@@ -608,6 +652,19 @@ mod tests {
         fixture.screenshots.act(id, ScreenshotAction::Delete).unwrap();
         assert!(fixture.saved().is_empty());
         assert!(fixture.screenshots.act(id, ScreenshotAction::Open).is_err(), "deleted shots are forgotten");
+    }
+
+    #[test]
+    fn ppm_frames_are_read_and_odd_ones_refused() {
+        let image = Image::from_ppm(&frame("DP-1")).unwrap();
+        assert_eq!((image.width, image.height), (FRAME_WIDTH, FRAME_HEIGHT));
+        assert_eq!(&image.rgb[..RGB], &[b'D', 0, 0]);
+        let mut short = frame("DP-1");
+        short.pop();
+        assert!(Image::from_ppm(&short).err().unwrap().contains("cut short"));
+        assert!(Image::from_ppm(b"P3\n1 1\n255\n0 0 0").is_err(), "ASCII PPM");
+        assert!(Image::from_ppm(b"P6\n1 1\n65535\n\0\0\0\0\0\0").is_err(), "16-bit");
+        assert!(Image::from_ppm(b"").is_err());
     }
 
     #[test]

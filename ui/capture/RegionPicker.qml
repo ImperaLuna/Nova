@@ -81,24 +81,6 @@ Item {
         }
     }
 
-    // The crosshair, before a drag starts.
-    Rectangle {
-        visible: picker.mode === Protocol.CAPTURE_REGION && picker.hovered && !picker.dragging
-        x: 0
-        y: Math.round(input.mouseY)
-        width: picker.width
-        height: 1
-        color: Tokens.captureGuide
-    }
-    Rectangle {
-        visible: picker.mode === Protocol.CAPTURE_REGION && picker.hovered && !picker.dragging
-        x: Math.round(input.mouseX)
-        y: 0
-        width: 1
-        height: picker.height
-        color: Tokens.captureGuide
-    }
-
     // The outline, around the region or the hovered screen.
     Rectangle {
         visible: picker._clear.width > 0 && picker._clear.height > 0
