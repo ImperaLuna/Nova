@@ -104,18 +104,26 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
             // Its own session, without novad's terminal: Ctrl+C on `nova
             // daemon` in a terminal doesn't reach it, and an app that
             // touches the terminal (Electron does) isn't stopped as a
-            // background job of it. The fork's first half exits at once,
-            // well before the app has exec'd and could ask to die with it.
-            // SAFETY: setsid, fork and _exit are async-signal-safe and touch
-            // no memory.
+            // background job of it. The fork's first half exits at once, and
+            // the app waits for that before it execs: an app that asks to die
+            // with its parent (bubblewrap's --die-with-parent) would die with
+            // the first half if it asked first.
+            // SAFETY: setsid, getpid, fork, getppid, sched_yield and _exit
+            // are async-signal-safe and touch no memory.
             unsafe {
                 command.pre_exec(|| {
                     if libc::setsid() == -1 {
                         return Err(std::io::Error::last_os_error());
                     }
+                    let first_half = libc::getpid();
                     match libc::fork() {
                         -1 => Err(std::io::Error::last_os_error()),
-                        0 => Ok(()),
+                        0 => {
+                            while libc::getppid() == first_half {
+                                libc::sched_yield();
+                            }
+                            Ok(())
+                        }
                         _ => libc::_exit(0),
                     }
                 });
