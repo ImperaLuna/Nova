@@ -5,6 +5,8 @@ import Quickshell
 import Quickshell.Wayland
 import "../bar"
 import "../demo"
+import "../power"
+import "../power/service"
 import "../daemon"
 import "../theme"
 
@@ -29,7 +31,7 @@ Scope {
     property bool settling: false
 
     // Every panel on this screen, whatever surface it's drawn on.
-    readonly property list<StagePanel> panels: [...bar.panels, ...(demo.item?.panels ?? [])]
+    readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(demo.item?.panels ?? [])]
     function placed(placement: string): list<StagePanel> {
         return panels.filter(panel => panel.placement === placement);
     }
@@ -52,6 +54,15 @@ Scope {
                 root.settling = true;
         }
         Component.onDestruction: StageMotion.setMoving(motionName, false)
+    }
+
+    // The power menu on the right edge, while its feature is on.
+    LazyLoader {
+        id: power
+        active: PowerService.ready
+        component: PowerMenu {
+            screen: root.screen
+        }
     }
 
     // Placeholder panels for each placement, with NOVA_DEMO_PANELS=1 only

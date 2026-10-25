@@ -5,7 +5,7 @@
 var VERSION = 2;
 
 // Commands the UI sends (Command in nova-protocol). A nova-protocol test
-// checks every CMD_, EVENT_, TOPIC_, CAPABILITY_, STEP_, VOLUME_ and FEATURE_ name
+// checks every CMD_, EVENT_, TOPIC_, CAPABILITY_, STEP_, POWER_, VOLUME_ and FEATURE_ name
 // here is one novad knows.
 var CMD_SUBSCRIBE = "subscribe";
 var CMD_SHOW_AI_USAGE = "show_ai_usage";
@@ -14,6 +14,8 @@ var CMD_FOCUS_WORKSPACE = "focus_workspace";
 var CMD_STEP_WORKSPACE = "step_workspace";
 var CMD_REPORT_LOCKED = "report_locked";
 var CMD_REPORT_UNLOCKED = "report_unlocked";
+var CMD_POWER_OPTIONS = "power_options";
+var CMD_POWER = "power";
 
 // Events novad sends (Event in nova-protocol). Each topic's events carry the
 // topic's name.
@@ -41,6 +43,7 @@ var CAPABILITY_WORKSPACES = "workspaces";
 var CAPABILITY_FOCUS_WORKSPACE = "focus_workspace";
 var CAPABILITY_FOCUSED_WINDOW = "focused_window";
 var CAPABILITY_KEYBOARD_LAYOUT = "keyboard_layout";
+var CAPABILITY_LOG_OUT = "log_out";
 
 // step_workspace's directions (Step in nova-protocol).
 var STEP_NEXT = "next";
@@ -54,6 +57,14 @@ var VOLUME_MUTE = "mute";
 // Feature ids (features/<id>/feature.toml).
 var FEATURE_AI_USAGE = "ai-usage";
 var FEATURE_LOCK = "lock";
+var FEATURE_POWER = "power";
+
+// Power menu actions (PowerAction in nova-protocol).
+var POWER_LOCK = "lock";
+var POWER_SUSPEND = "suspend";
+var POWER_LOG_OUT = "log_out";
+var POWER_REBOOT = "reboot";
+var POWER_POWER_OFF = "power_off";
 
 // Returns {kind: "event"|"response", ...} or null for lines to ignore.
 function parse(line) {

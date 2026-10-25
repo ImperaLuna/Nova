@@ -1,0 +1,5 @@
+id = "power"
+name = "Power menu"
+description = "Lock, suspend, log out, restart and shut down from the right edge."
+default = true
+daemon = "power"

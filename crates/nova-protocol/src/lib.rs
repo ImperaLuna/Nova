@@ -293,6 +293,8 @@ pub enum Capability {
     FocusedWindow,
     /// `keyboard_layout` is reported.
     KeyboardLayout,
+    /// The power menu's log out works: it quits the compositor.
+    LogOut,
 }
 
 /// A monitor, by its connector name (`DP-1`), as Quickshell's `screen.name`.
@@ -346,16 +348,18 @@ pub enum Step {
 #[serde(rename_all = "kebab-case")]
 pub enum Panel {
     AiUsage,
+    Power,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 1] = [Panel::AiUsage];
+    pub const ALL: [Panel; 2] = [Panel::AiUsage, Panel::Power];
 
     /// Its name on the wire and on the command line, which is also its
     /// feature's id.
     pub fn name(self) -> &'static str {
         match self {
             Panel::AiUsage => "ai-usage",
+            Panel::Power => "power",
         }
     }
 }
@@ -447,12 +451,46 @@ pub enum Command {
     /// The UI unlocked the session after the user's password checked out
     /// (feature `lock`). Unlocking is the UI's alone: this only tells novad.
     ReportUnlocked,
+    /// Replies with what the power menu can do now, a [`PowerOption`] per
+    /// [`PowerAction`] (feature `power`). Asked each time the menu opens.
+    PowerOptions,
+    /// Runs a power menu action (feature `power`). The menu asks the user
+    /// to confirm the ones that end the session first.
+    Power {
+        action: PowerAction,
+    },
     /// Changes the default output's volume and shows the capsule, even at
     /// either end or without an output (`nova volume`). Fails when no UI is
     /// connected to do it.
     Volume {
         key: VolumeKey,
     },
+}
+
+/// What the power menu does, in the order it lists them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PowerAction {
+    Lock,
+    Suspend,
+    LogOut,
+    Reboot,
+    PowerOff,
+}
+
+impl PowerAction {
+    pub const ALL: [PowerAction; 5] =
+        [PowerAction::Lock, PowerAction::Suspend, PowerAction::LogOut, PowerAction::Reboot, PowerAction::PowerOff];
+}
+
+/// Whether a power action can run now, and why not when it can't.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PowerOption {
+    pub action: PowerAction,
+    pub available: bool,
+    /// For people, shown under the dimmed action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// What `status` returns.
@@ -719,7 +757,24 @@ mod tests {
             encode(Request { id: Some(20), command: Command::ReportLocked }),
             encode(Request { id: Some(17), command: Command::ReportUnlocked }),
             encode(Event::Lock { locked: false }),
-            encode(Request { id: Some(18), command: Command::Volume { key: VolumeKey::Up } }),
+            encode(Request { id: Some(18), command: Command::PowerOptions }),
+            encode(Response {
+                id: 18,
+                outcome: Outcome::Result(
+                    serde_json::to_value(vec![
+                        PowerOption { action: PowerAction::Lock, available: true, reason: None },
+                        PowerOption {
+                            action: PowerAction::Suspend,
+                            available: false,
+                            reason: Some("suspend is turned off".into()),
+                        },
+                    ])
+                    .unwrap(),
+                ),
+            }),
+            encode(Request { id: Some(19), command: Command::Power { action: PowerAction::PowerOff } }),
+            encode(Request { id: None, command: Command::Toggle { panel: Panel::Power } }),
+            encode(Request { id: Some(21), command: Command::Volume { key: VolumeKey::Up } }),
             encode(Event::Volume { key: VolumeKey::Down }),
             encode(Event::Volume { key: VolumeKey::Mute }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
@@ -751,6 +806,7 @@ mod tests {
                 "TOPIC" => parses(value, |v| serde_json::from_value::<Topic>(v).is_ok()),
                 "CAPABILITY" => parses(value, |v| serde_json::from_value::<Capability>(v).is_ok()),
                 "STEP" => parses(value, |v| serde_json::from_value::<Step>(v).is_ok()),
+                "POWER" => parses(value, |v| serde_json::from_value::<PowerAction>(v).is_ok()),
                 "VOLUME" => parses(value, |v| serde_json::from_value::<VolumeKey>(v).is_ok()),
                 "FEATURE" => root.join("features").join(value).join("feature.toml").is_file(),
                 _ => panic!("protocol.js: no check for {name}; add its kind to this test"),
