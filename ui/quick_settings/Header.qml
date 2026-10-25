@@ -2,7 +2,7 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 
-// The sidebar's top: the distribution's logo in a circle, a greeting with
+// The sidebar's top: the distribution's logo (no backdrop), a greeting with
 // the user's name, and the host with its uptime under it.
 Item {
     id: header
@@ -15,20 +15,16 @@ Item {
 
     implicitHeight: Tokens.logoSize
 
-    Rectangle {
+    Item {
         id: badge
         anchors.verticalCenter: parent.verticalCenter
         width: Tokens.logoSize
         height: Tokens.logoSize
-        radius: width / 2
-        color: Tokens.surfaceRaised
 
         Image {
-            anchors.centerIn: parent
+            anchors.fill: parent
             visible: header.logo !== "" && status === Image.Ready
-            width: Tokens.logoMark
-            height: Tokens.logoMark
-            sourceSize: Qt.size(Tokens.logoMark, Tokens.logoMark)
+            sourceSize: Qt.size(Tokens.logoSize, Tokens.logoSize)
             fillMode: Image.PreserveAspectFit
             source: header.logo
             asynchronous: true

@@ -1683,6 +1683,12 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     assert_eq!(client.request(3, "launch_app", Some(json!({"id": "other.desktop"})))["result"], Value::Null);
     let event = client.launcher_until(|event| event["recent"].as_array().unwrap().len() == 2);
     assert_eq!(event["recent"], json!(["other.desktop", "touch.desktop"]), "the latest first");
+    // A pinned app shows among the pins only, and is recent again unpinned.
+    client.request(5, "pin_app", Some(json!({"id": "touch.desktop", "pinned": true})));
+    let event = client.launcher_until(|event| event["recent"].as_array().unwrap().len() == 1);
+    assert_eq!(event["recent"], json!(["other.desktop"]));
+    client.request(6, "pin_app", Some(json!({"id": "touch.desktop", "pinned": false})));
+    client.launcher_until(|event| event["recent"] == json!(["other.desktop", "touch.desktop"]));
     // Another session, away from novad's terminal (an app touching it would
     // be stopped as a background job): stat's 6th field, after the name.
     let copied = (0..100).find_map(|_| {
@@ -1694,7 +1700,7 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     // SAFETY: getsid only reads.
     let ours = unsafe { libc::getsid(0) }.to_string();
     assert_ne!(fields[3], ours, "in novad's session: {copied}");
-    let missing = client.request(4, "launch_app", Some(json!({"id": "nothing.desktop"})));
+    let missing = client.request(7, "launch_app", Some(json!({"id": "nothing.desktop"})));
     assert!(missing["error"].as_str().unwrap().contains("no app"));
 }
 
