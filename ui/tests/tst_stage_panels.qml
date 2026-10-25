@@ -16,7 +16,6 @@ Item {
     StagePanel {
         id: usage
         name: "ai-usage"
-        closesOnClickOutside: true
     }
 
     StagePanel {
@@ -30,6 +29,7 @@ Item {
         id: notes
         name: "notes"
         exclusive: false
+        closesOnClickOutside: false
     }
 
     // The same panel on another screen.
@@ -42,6 +42,7 @@ Item {
         id: notesElsewhere
         name: "notes"
         exclusive: false
+        closesOnClickOutside: false
     }
 
     StagePanels {
@@ -121,31 +122,37 @@ Item {
             compare(drawn.room, Qt.rect(450, 400, 70, 300));
         }
 
-        function test_keyboard_is_held_only_while_a_typing_panel_is_open() {
+        function test_keyboard_is_held_while_a_panel_that_closes_on_esc_is_open() {
             verify(!drawn.needsKeyboard);
+            notes.open = true;
+            verify(!drawn.needsKeyboard, "notes stays open on Esc, so it doesn't hold the keyboard");
             usage.open = true;
-            verify(!drawn.needsKeyboard, "an open panel that takes no typing");
+            verify(drawn.needsKeyboard, "a panel that takes no typing still holds it for Esc");
+            usage.open = false;
             launcher.open = true;
             verify(drawn.needsKeyboard);
         }
 
-        function test_dismiss_closes_the_panels_holding_the_keyboard() {
+        function test_esc_closes_every_panel_but_one_that_opts_out() {
+            verify(usage.closesOnClickOutside, "a panel does by default");
             notes.open = true;
             launcher.open = true;
             drawn.dismiss();
             verify(!launcher.open);
             verify(!drawn.needsKeyboard);
             verify(notes.open, "notes stays");
+            usage.open = true;
+            drawn.dismiss();
+            verify(!usage.open);
+            verify(notes.open, "notes stays");
         }
 
         function test_the_screen_takes_clicks_while_a_panel_closes_on_one_outside() {
-            verify(launcher.closesOnClickOutside, "a typing panel does by default");
             verify(!drawn.catchesClicks);
             notes.open = true;
             verify(!drawn.catchesClicks, "notes stays open on a click outside");
             usage.open = true;
-            verify(drawn.catchesClicks, "an open panel that takes no typing");
-            verify(!drawn.needsKeyboard);
+            verify(drawn.catchesClicks);
             drawn.dismiss();
             verify(!usage.open);
             verify(notes.open, "notes stays");

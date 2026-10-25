@@ -37,8 +37,9 @@ QtObject {
         const bottom = Math.max(...shown.map(panel => panel.area.y + panel.area.height));
         return Qt.rect(left, top, right - left, bottom - top);
     }
-    // Whether an open panel takes typing.
-    readonly property bool needsKeyboard: panels.some(panel => panel.open && panel.wantsKeyboard)
+    // Whether an open panel takes typing or closes on Esc, so the surface
+    // holds the keyboard.
+    readonly property bool needsKeyboard: panels.some(panel => panel.open && closesOnEsc(panel))
     // Whether an open panel closes on a click outside it, so the whole
     // screen takes clicks.
     readonly property bool catchesClicks: panels.some(panel => panel.open && panel.closesOnClickOutside)
@@ -64,11 +65,18 @@ QtObject {
         return shapes.some(item => item.contains(item.mapFromItem(null, x, y)));
     }
 
+    // Whether Esc closes `panel`: one that takes typing does, and so does
+    // one that closes on a click outside, which is every panel but one that
+    // opts out, like a notes window.
+    function closesOnEsc(panel: StagePanel): bool {
+        return panel.wantsKeyboard || panel.closesOnClickOutside;
+    }
+
     // Esc, or a click outside: closes the panels that close on it. Others,
     // like a notes window, stay open.
     function dismiss() {
         for (const panel of panels) {
-            if (panel.wantsKeyboard || panel.closesOnClickOutside)
+            if (closesOnEsc(panel))
                 panel.open = false;
         }
     }
