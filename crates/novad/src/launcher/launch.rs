@@ -11,14 +11,17 @@
 
 use super::desktop_entry::{Entry, find_program};
 use crate::logger::Logger;
-use nova_protocol::LogLevel;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 const LOG_SOURCE: &str = "launcher";
+/// How long a launch waits to hear the app started, and how often it looks.
+const START_TIMEOUT: Duration = Duration::from_secs(2);
+const START_POLL: Duration = Duration::from_millis(10);
 /// Runs a command in a terminal, the way the freedesktop.org proposal says.
 const TERMINAL_EXEC: &str = "xdg-terminal-exec";
 /// The user's terminal, for systems without xdg-terminal-exec.
@@ -118,16 +121,30 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
         command.env_remove(name);
     }
     command.env("PATH", path_var).current_dir(&dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-    // What novad waits on: systemd-run, or the fork's first half.
+    // What novad waits on: systemd-run, which returns once the app has
+    // started or failed to, or the fork's first half, which returns at once.
     let mut child = command.spawn().map_err(|e| format!("can't start {}: {e}", program.display()))?;
+    let deadline = Instant::now() + START_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => break,
+            Ok(Some(status)) => return Err(format!("{} didn't start ({status})", program.display())),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(START_POLL),
+            // Taking long: its answer is only logged.
+            Ok(None) => {
+                let logger = Arc::clone(logger);
+                let id = entry.id.clone();
+                std::thread::spawn(move || match child.wait() {
+                    Ok(status) if !status.success() => logger.warn(LOG_SOURCE, &format!("{id} didn't start: {status}")),
+                    Ok(_) => {}
+                    Err(e) => logger.warn(LOG_SOURCE, &format!("lost track of {id}: {e}")),
+                });
+                break;
+            }
+            Err(e) => return Err(format!("lost track of {}: {e}", program.display())),
+        }
+    }
     logger.info(LOG_SOURCE, &format!("launched {}", entry.id));
-    let logger = Arc::clone(logger);
-    let id = entry.id.clone();
-    std::thread::spawn(move || match child.wait() {
-        Ok(status) if !status.success() => logger.log(LogLevel::Debug, LOG_SOURCE, &format!("{id} exited: {status}")),
-        Ok(_) => {}
-        Err(e) => logger.warn(LOG_SOURCE, &format!("lost track of {id}: {e}")),
-    });
     Ok(())
 }
 
@@ -169,6 +186,34 @@ fn unit_name(id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_service_that_fails_to_start_says_so() {
+        let dir = std::env::temp_dir().join(format!("novad-launch-fail-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let logger = Arc::new(Logger::open(&dir, nova_protocol::LogLevel::Info, false, Arc::default()).unwrap());
+        let entry = Entry {
+            id: "true.desktop".into(),
+            name: "True".into(),
+            generic_name: None,
+            comment: None,
+            icon: None,
+            keywords: vec![],
+            exec: vec!["true".into()],
+            terminal: false,
+            path: None,
+            opens_types: false,
+            window_class: None,
+        };
+        let path_var = std::env::var("PATH").unwrap_or_default();
+        // A systemd-run that fails, as one does when the app can't start.
+        let failing = find_program("false", &path_var).unwrap();
+        let error = launch(&entry, &Runner::Service(failing), &path_var, &logger).unwrap_err();
+        assert!(error.contains("didn't start"), "{error}");
+        let started = find_program("true", &path_var).unwrap();
+        assert_eq!(launch(&entry, &Runner::Service(started), &path_var, &logger), Ok(()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn only_plain_variable_names_pass_to_the_service() {

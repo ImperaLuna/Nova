@@ -38,6 +38,12 @@ StagePanel {
     // What's typed, and the matches novad sent for it.
     property string query: ""
     property var matches: []
+    // The query `matches` answer; until novad answers the latest, they're
+    // the previous query's.
+    property string matchesFor: ""
+    // Enter pressed before novad answered the latest query: launches its
+    // first match when it does ({newWindow}), or null.
+    property var enterPending: null
     // The selected row of the list.
     property int selected: 0
     // The app starting right now: its row turns the accent until it has.
@@ -71,8 +77,10 @@ StagePanel {
     readonly property real openY: Math.round(screenHeight * Tokens.launcherTop)
     // The list: launcherRows rows and the headings of the two groups they may
     // span (recent, then every app) before it scrolls.
-    readonly property real listHeight: Tokens.launcherRows * Tokens.launcherRowHeight + (Tokens.launcherRows - 1) * Tokens.launcherRowGap + 2 * Tokens.launcherLabelHeight
-    readonly property real tallest: 2 * Tokens.launcherPad + Tokens.launcherSearchHeight + 4 * Tokens.launcherGap + 2 * Tokens.launcherLabelHeight + Tokens.launcherTileSize + Tokens.launcherTileName + listHeight
+    // On a short screen, fewer: the deck ends a pad above the screen's edge.
+    readonly property real chrome: 2 * Tokens.launcherPad + Tokens.launcherSearchHeight + 4 * Tokens.launcherGap + 2 * Tokens.launcherLabelHeight + Tokens.launcherTileSize + Tokens.launcherTileName
+    readonly property real listHeight: Math.max(Tokens.launcherRowHeight, Math.min(Tokens.launcherRows * Tokens.launcherRowHeight + (Tokens.launcherRows - 1) * Tokens.launcherRowGap + 2 * Tokens.launcherLabelHeight, screenHeight - openY - chrome - Tokens.launcherPad))
+    readonly property real tallest: chrome + listHeight
     property real shownHeight: content.implicitHeight + 2 * Tokens.launcherPad
     Behavior on shownHeight {
         enabled: launcher.open && !launcher.morph.moving
@@ -99,6 +107,8 @@ StagePanel {
             return;
         field.text = "";
         matches = [];
+        matchesFor = "";
+        enterPending = null;
         selected = 0;
         launching = "";
         problem = "";
@@ -124,8 +134,14 @@ StagePanel {
     // novad's matches for `forQuery`; dropped when something else has been
     // typed since.
     function showMatches(forQuery: string, found: var) {
-        if (forQuery === query)
-            matches = found;
+        if (forQuery !== query)
+            return;
+        matches = found;
+        matchesFor = forQuery;
+        const pending = enterPending;
+        enterPending = null;
+        if (pending && rows.length > 0)
+            launch(rows[0].id, pending.newWindow);
     }
 
     // Starts the app `id` (see launchRequested), unless one is starting
@@ -157,8 +173,14 @@ StagePanel {
             return true;
         case Qt.Key_Return:
         case Qt.Key_Enter:
-            if (rows.length > 0)
-                launch(rows[selected].id, (modifiers & Qt.ShiftModifier) !== 0);
+            const newWindow = (modifiers & Qt.ShiftModifier) !== 0;
+            // The list still shows the previous query's matches.
+            if (query.trim() !== "" && matchesFor !== query)
+                enterPending = {
+                    newWindow: newWindow
+                };
+            else if (rows.length > 0)
+                launch(rows[selected].id, newWindow);
             return true;
         case Qt.Key_Escape:
             open = false;
@@ -230,6 +252,7 @@ StagePanel {
                     }
                     onTextChanged: {
                         launcher.query = text;
+                        launcher.enterPending = null;
                         launcher.selected = 0;
                         launcher.problem = "";
                         if (text.trim() !== "")

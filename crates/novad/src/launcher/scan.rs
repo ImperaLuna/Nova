@@ -147,7 +147,13 @@ pub fn watch_points(data_dirs: &[PathBuf]) -> WatchPoints {
         let applications = dir.join("applications");
         links_on_the_way(&applications, &mut points);
         match std::fs::canonicalize(&applications) {
+            // Watched through its folder too, so a replacement (one renamed
+            // over it, or one made after it was deleted) is seen.
             Ok(resolved) => {
+                if let Some(parent) = resolved.parent() {
+                    points.parents.insert(parent.to_owned());
+                    points.entries.insert(resolved.clone());
+                }
                 points.trees.insert(resolved);
             }
             // Not there (yet): the folder it would appear in is watched.

@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtTest
 import "../launcher"
+import "../theme"
 import "../launcher/launcher.js" as LauncherLogic
 
 // The launcher with apps in the shape novad sends: what its list shows
@@ -152,6 +153,55 @@ Item {
             compare(launcher.rows[0].group, "recent");
         }
 
+        function test_enter_before_the_latest_matches_waits_for_them() {
+            const launcher = make();
+            const files = [
+                {
+                    id: "org.gnome.Nautilus.desktop",
+                    name: [
+                        {
+                            text: "Files"
+                        }
+                    ]
+                }
+            ];
+            keyClick("f");
+            launcher.showMatches("f", [
+                {
+                    id: "foot.desktop",
+                    name: [
+                        {
+                            text: "Foot"
+                        }
+                    ]
+                }
+            ]);
+            keyClick("i");
+            keyClick(Qt.Key_Return, Qt.ShiftModifier);
+            compare(launches.count, 0, "foot was the previous query's");
+            launcher.showMatches("fi", files);
+            compare(launches.count, 1);
+            compare(Array.from(launches.signalArguments[0]), ["org.gnome.Nautilus.desktop", true]);
+        }
+
+        function test_typing_after_enter_drops_the_waiting_launch() {
+            const launcher = make();
+            keyClick("f");
+            keyClick(Qt.Key_Return);
+            keyClick("i");
+            launcher.showMatches("fi", [
+                {
+                    id: "firefox.desktop",
+                    name: [
+                        {
+                            text: "Firefox"
+                        }
+                    ]
+                }
+            ]);
+            compare(launches.count, 0);
+        }
+
         function test_nothing_matching_says_so() {
             const launcher = make();
             keyClick("q");
@@ -233,6 +283,22 @@ Item {
             verify(launcher.pinnedApps.length < 20, "one row of tiles");
             verify(launcher.shownHeight <= launcher.tallest, `${launcher.shownHeight} > ${launcher.tallest}`);
             verify(launcher.area.y + launcher.area.height >= launcher.y + launcher.height);
+        }
+
+        function test_on_a_short_screen_the_list_ends_above_its_edge() {
+            const launcher = make({
+                screenHeight: 540,
+                apps: Array.from({
+                    length: 30
+                }, (_, i) => ({
+                            id: `app${i}.desktop`,
+                            name: `App ${i}`
+                        })),
+                pinned: ["app0.desktop"],
+                recent: []
+            });
+            verify(launcher.openY + launcher.tallest <= 540, `${launcher.openY + launcher.tallest} > 540`);
+            verify(launcher.listHeight >= Tokens.launcherRowHeight);
         }
     }
 

@@ -1494,6 +1494,18 @@ fn the_launcher_lists_apps_and_follows_installs() {
     // And one that's removed goes.
     std::fs::remove_file(novad.dir.join("launcher/share/applications/foot.desktop")).unwrap();
     client.launcher_until(|event| ids(&event["apps"]) == ["org.kde-dolphin.desktop"]);
+
+    // A whole new applications folder renamed in place of the old one is
+    // read, and so are apps installed into it afterwards.
+    let applications = novad.dir.join("launcher/share/applications");
+    let replacement = novad.dir.join("launcher/share/applications.new");
+    std::fs::create_dir_all(&replacement).unwrap();
+    std::fs::write(replacement.join("a.desktop"), "[Desktop Entry]\nType=Application\nName=A\nExec=a\n").unwrap();
+    std::fs::rename(&applications, novad.dir.join("launcher/share/applications.old")).unwrap();
+    std::fs::rename(&replacement, &applications).unwrap();
+    client.launcher_until(|event| ids(&event["apps"]) == ["a.desktop"]);
+    install_app(&novad, "b.desktop", "Name=B\nExec=b\n");
+    client.launcher_until(|event| ids(&event["apps"]) == ["a.desktop", "b.desktop"]);
 }
 
 #[test]
