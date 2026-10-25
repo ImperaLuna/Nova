@@ -12,6 +12,9 @@
 //!
 //! [screenshot]
 //! folder = "~/Pictures/Screenshots"
+//!
+//! [recording]
+//! folder = "~/Videos/Recordings"
 //! [quick-settings]
 //! name = "Luna"
 //! ```
@@ -29,6 +32,8 @@ pub struct Config {
     pub ai_usage: AiUsageConfig,
     #[serde(default)]
     pub screenshot: ScreenshotConfig,
+    #[serde(default)]
+    pub recording: RecordingConfig,
     #[serde(default, rename = "quick-settings")]
     pub quick_settings: QuickSettingsConfig,
 }
@@ -66,27 +71,53 @@ pub struct ScreenshotConfig {
 }
 
 impl ScreenshotConfig {
-    /// The folder screenshots go in. One that isn't absolute (or under
-    /// `~/`) is an error, so a typo doesn't scatter files in novad's folder.
+    /// The folder screenshots go in (see [`folder`]).
     pub fn folder(&self) -> Result<PathBuf, String> {
-        let Some(folder) = &self.folder else {
-            return Ok(nova_paths::user_dir("PICTURES", "Pictures").join(DEFAULT_SCREENSHOT_FOLDER));
-        };
-        let path = match folder.strip_prefix("~/") {
-            Some(rest) => {
-                PathBuf::from(std::env::var_os("HOME").ok_or("HOME isn't set, so ~ means nothing")?).join(rest)
-            }
-            None => PathBuf::from(folder),
-        };
-        match path.is_absolute() {
-            true => Ok(path),
-            false => Err(format!("[screenshot] folder {folder:?} isn't an absolute path or one under ~/")),
-        }
+        folder("screenshot", self.folder.as_deref(), || {
+            nova_paths::user_dir("PICTURES", "Pictures").join(DEFAULT_SCREENSHOT_FOLDER)
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct RecordingConfig {
+    /// Where recordings are saved: an absolute path, or one starting with
+    /// `~/`. By default `Recordings` in the user's videos folder.
+    #[serde(default)]
+    pub folder: Option<String>,
+}
+
+impl RecordingConfig {
+    /// The folder recordings go in (see [`folder`]).
+    pub fn folder(&self) -> Result<PathBuf, String> {
+        folder("recording", self.folder.as_deref(), || {
+            nova_paths::user_dir("VIDEOS", "Videos").join(DEFAULT_RECORDING_FOLDER)
+        })
     }
 }
 
 /// The screenshot folder's name inside the pictures folder.
 const DEFAULT_SCREENSHOT_FOLDER: &str = "Screenshots";
+/// The recording folder's name inside the videos folder.
+const DEFAULT_RECORDING_FOLDER: &str = "Recordings";
+
+/// `[section] folder`, or `default` when it isn't set. One that isn't
+/// absolute (or under `~/`) is an error, so a typo doesn't scatter files in
+/// novad's folder.
+fn folder(section: &str, configured: Option<&str>, default: impl FnOnce() -> PathBuf) -> Result<PathBuf, String> {
+    let Some(folder) = configured else {
+        return Ok(default());
+    };
+    let path = match folder.strip_prefix("~/") {
+        Some(rest) => PathBuf::from(std::env::var_os("HOME").ok_or("HOME isn't set, so ~ means nothing")?).join(rest),
+        None => PathBuf::from(folder),
+    };
+    match path.is_absolute() {
+        true => Ok(path),
+        false => Err(format!("[{section}] folder {folder:?} isn't an absolute path or one under ~/")),
+    }
+}
 
 /// The settings in `path`; a missing file means all defaults.
 pub fn read(path: &Path) -> Result<Config, String> {
@@ -119,6 +150,9 @@ mod tests {
         assert!(folder("[screenshot]\nfolder = \"~/Shots\"").unwrap().ends_with("Shots"));
         assert!(folder("[screenshot]\nfolder = \"Shots\"").unwrap_err().contains("absolute"));
         assert!(folder("").unwrap().ends_with("Screenshots"));
+        let recordings = |text: &str| toml::from_str::<Config>(text).unwrap().recording.folder();
+        assert!(recordings("").unwrap().ends_with("Recordings"));
+        assert!(recordings("[recording]\nfolder = \"Videos\"").unwrap_err().contains("[recording]"));
     }
 
     #[test]

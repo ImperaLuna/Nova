@@ -1,1 +1,2 @@
 singleton ScreenshotService ScreenshotService.qml
+singleton RecordingService RecordingService.qml

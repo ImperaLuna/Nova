@@ -2,13 +2,15 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtTest
+import "../bar"
 import "../capture"
 import "../capture/capture.js" as Capture
 import "../daemon/protocol.js" as Protocol
 
 // The region picker's sums (capture.js), the picker taking a drag, a click
-// or a screen, and the screenshot card's buttons and drain, without novad
-// or a window: those need Quickshell, which the VM tests cover. The frame
+// or a screen, picking what to record, the screenshot card's buttons and
+// drain, and the recording pill, without novad or a window: those need
+// Quickshell, which the VM tests cover. The frame
 // is 400x300 on a 200x150 picker: a screen at scale 2. The root is an Item:
 // a TestCase root gets no mouse events.
 Item {
@@ -54,6 +56,23 @@ Item {
         SignalSpy {
             id: cancels
             signalName: "cancelRequested"
+        }
+
+        SignalSpy {
+            id: records
+            signalName: "recordRequested"
+        }
+
+        function makeVideoPicker(mode) {
+            const picker = createTemporaryObject(pickerComponent, stage, {
+                video: true,
+                mode: mode ?? Protocol.CAPTURE_REGION
+            });
+            saves.clear();
+            records.clear();
+            saves.target = picker;
+            records.target = picker;
+            return picker;
         }
 
         function makePicker(mode) {
@@ -127,6 +146,30 @@ Item {
             compare(Capture.fileUrl("/home/me/shots#1/a b?.png"), "file:///home/me/shots%231/a%20b%3F.png");
         }
 
+        function test_recording_regions_are_even_layout_rectangles() {
+            // Rounded inward, moved by the screen's place, made even.
+            compare(Capture.toLayout({
+                x: 10.5,
+                y: 20,
+                width: 101,
+                height: 50.5
+            }, 1920, 0), {
+                x: 1931,
+                y: 20,
+                width: 100,
+                height: 50
+            });
+            compare(Capture.toLayout({
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 0.5
+            }, 0, 0).width, 0);
+            compare(Capture.clock(0), "0:00");
+            compare(Capture.clock(42999), "0:42");
+            compare(Capture.clock(3723000), "1:02:03");
+        }
+
         function test_letting_go_of_a_drag_takes_the_region_in_frame_pixels() {
             const picker = makePicker();
             mousePress(picker, 20, 60);
@@ -178,6 +221,84 @@ Item {
             mouseMove(picker, 60, 90);
             mouseRelease(picker, 60, 90);
             compare(saves.count, 0);
+        }
+
+        function test_a_region_to_record_waits_for_record() {
+            const picker = makeVideoPicker();
+            // Enter does nothing until there's a region.
+            verify(!picker.key(Qt.Key_Return));
+            mousePress(picker, 20, 60);
+            mouseMove(picker, 60, 90);
+            mouseRelease(picker, 60, 90);
+            compare(saves.count, 0);
+            compare(records.count, 0);
+            verify(picker.region !== null);
+            verify(picker.key(Qt.Key_Return));
+            compare(records.count, 1);
+            compare(records.signalArguments[0][0], {
+                x: 20,
+                y: 60,
+                width: 40,
+                height: 30
+            });
+            // While it counts down, the picker takes nothing more.
+            picker.countdown = 3;
+            picker.busy = true;
+            verify(picker.counting);
+            verify(!picker.key(Qt.Key_Return));
+            mousePress(picker, 120, 100);
+            mouseMove(picker, 150, 140);
+            mouseRelease(picker, 150, 140);
+            compare(picker.region, {
+                x: 20,
+                y: 60,
+                width: 40,
+                height: 30
+            });
+            compare(records.count, 1);
+        }
+
+        function test_screen_mode_records_the_screen_on_a_click() {
+            const picker = makeVideoPicker(Protocol.CAPTURE_SCREEN);
+            mouseClick(picker, 100, 100);
+            compare(saves.count, 0);
+            compare(records.count, 1);
+            compare(records.signalArguments[0][0], null);
+        }
+
+        Component {
+            id: recordingPillComponent
+            RecordingPill {
+                elapsed: 65000
+                canPause: true
+            }
+        }
+
+        SignalSpy {
+            id: stops
+            signalName: "stopRequested"
+        }
+
+        SignalSpy {
+            id: pauses
+            signalName: "pauseRequested"
+        }
+
+        function test_the_recording_pill_opens_under_the_pointer_and_stops() {
+            const pill = createTemporaryObject(recordingPillComponent, stage);
+            stops.target = pill;
+            pauses.target = pill;
+            stops.clear();
+            pauses.clear();
+            const closedWidth = pill.implicitWidth;
+            mouseMove(pill, 4, pill.height / 2);
+            tryVerify(() => pill.open);
+            tryVerify(() => pill.implicitWidth > closedWidth);
+            mouseClick(pill, 4, pill.height / 2);
+            compare(stops.count, 1);
+            compare(pauses.count, 0);
+            mouseMove(stage, stage.width - 1, stage.height - 1);
+            tryVerify(() => !pill.open);
         }
 
         SignalSpy {

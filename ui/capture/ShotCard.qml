@@ -6,14 +6,17 @@ import "../daemon/protocol.js" as Protocol
 import "capture.js" as Capture
 
 // The card a saved screenshot lands in: the shot, that it was copied, where
-// it went and its size, and Open, Folder and Delete. A line along the
+// it went and its size, and Open, Folder and Delete. A recording's card has
+// its length where the shot would be, and where it went. A line along the
 // bottom drains over Tokens.durationShotCard, and the card leaves when it's
 // empty; the pointer on the card holds it.
 Item {
     id: card
 
-    // Daemon's screenshotSaved shot: {id, path, width, height, copied}.
+    // Daemon's screenshotSaved shot: {id, path, width, height, copied}; or
+    // with `video`, recordingSaved's {id, path, duration_ms}.
     required property var shot
+    property bool video: false
 
     readonly property bool held: hover.hovered
     // A Protocol.SHOT_* button was clicked.
@@ -69,14 +72,35 @@ Item {
                 clip: true
 
                 Image {
+                    visible: !card.video
                     anchors.fill: parent
-                    source: card.shot ? Capture.fileUrl(card.shot.path) : ""
+                    source: card.shot && !card.video ? Capture.fileUrl(card.shot.path) : ""
                     // Decoded at the card's size, not the shot's.
                     sourceSize.width: 2 * width
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     cache: false
                     smooth: true
+                }
+
+                Column {
+                    visible: card.video
+                    anchors.centerIn: parent
+                    spacing: Tokens.iconGap
+
+                    CaptureIcon {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        name: Capture.ICON_VIDEO
+                        color: Tokens.fgDim
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: card.video && card.shot ? Capture.clock(card.shot.duration_ms) : ""
+                        textFormat: Text.PlainText
+                        color: Tokens.fg
+                        font.family: Tokens.fontMono
+                        font.pixelSize: Tokens.fontSize
+                    }
                 }
             }
 
@@ -94,7 +118,7 @@ Item {
                     // Saved either way; copied unless the clipboard failed.
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: card.shot?.copied ? qsTr("Copied to clipboard") : qsTr("Saved")
+                        text: card.video ? qsTr("Recording saved") : card.shot?.copied ? qsTr("Copied to clipboard") : qsTr("Saved")
                         textFormat: Text.PlainText
                         color: Tokens.fg
                         font.family: Tokens.fontSans
@@ -106,7 +130,13 @@ Item {
                 Text {
                     width: parent.width
                     elide: Text.ElideMiddle
-                    text: card.shot ? `${Capture.folderLabel(card.shot.path)} · ${Capture.size(card.shot.width, card.shot.height)} · PNG` : ""
+                    text: {
+                        if (!card.shot)
+                            return "";
+                        if (card.video)
+                            return `${Capture.folderLabel(card.shot.path)} · ${Capture.clock(card.shot.duration_ms)} · MP4`;
+                        return `${Capture.folderLabel(card.shot.path)} · ${Capture.size(card.shot.width, card.shot.height)} · PNG`;
+                    }
                     textFormat: Text.PlainText
                     color: Tokens.fgDim
                     font.family: Tokens.fontSans

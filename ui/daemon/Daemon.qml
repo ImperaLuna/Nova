@@ -53,6 +53,13 @@ Singleton {
     property var capture: null
     // A screenshot was saved: {id, path, width, height, copied}.
     signal screenshotSaved(var shot)
+    // `nova record` with nothing recording: open or close the picker.
+    signal recordingPickRequested
+    // What's being recorded ({output, region, audio, elapsed_ms, paused,
+    // can_pause}), or null.
+    property var recording: null
+    // A recording was saved: {id, path, duration_ms}.
+    signal recordingSaved(var saved)
 
     property int _nextId: 1
     property var _pending: ({})
@@ -113,6 +120,12 @@ Singleton {
             capture = null;
         } else if (msg.event === Protocol.EVENT_SCREENSHOT_SAVED) {
             screenshotSaved(msg.data);
+        } else if (msg.event === Protocol.EVENT_PICK_RECORDING) {
+            recordingPickRequested();
+        } else if (msg.event === Protocol.EVENT_RECORDING) {
+            recording = msg.data;
+        } else if (msg.event === Protocol.EVENT_RECORDING_SAVED) {
+            recordingSaved(msg.data);
         } else if (msg.event === Protocol.EVENT_HOST) {
             host = msg.data;
         } else if (msg.event === Protocol.EVENT_RESOURCES) {
@@ -143,11 +156,12 @@ Singleton {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
                 root.call(Protocol.CMD_SUBSCRIBE, {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_LAUNCHER]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_LAUNCHER]
                 });
             } else {
                 // A picker novad still has open is sent again on reconnect.
                 root.capture = null;
+                root.recording = null;
                 // Replies to these won't come any more.
                 const pending = root._pending;
                 root._pending = {};

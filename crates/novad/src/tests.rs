@@ -112,6 +112,8 @@ impl TestDaemon {
             Arc::clone(&hub),
             Arc::clone(&logger),
         ));
+        let recordings =
+            Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
             hub,
@@ -123,7 +125,9 @@ impl TestDaemon {
             compositor,
             session_lock,
             screenshots,
+            recordings,
         });
+        daemon.recordings.allow(daemon.feature_ready(recording::FEATURE_ID));
         let watching = daemon.watch_settings();
         let serving = Arc::clone(&daemon);
         std::thread::spawn(move || server::serve(listener, serving));
@@ -1465,6 +1469,22 @@ fn screenshots_need_their_feature_but_cancelling_doesnt() {
     let rect = json!({"output": "DP-1", "rect": {"x": 0, "y": 0, "width": 1, "height": 1}});
     assert!(cli.request(3, "save_capture", Some(rect))["error"].is_string());
     assert_eq!(cli.request(4, "cancel_capture", None)["result"], Value::Null);
+}
+
+#[test]
+fn recording_needs_its_feature_but_stopping_doesnt() {
+    let novad = TestDaemon::open("recording-off", None, |dir| {
+        std::fs::write(dir.join("config/features.toml"), "disabled = [\"ai-usage\", \"recording\"]\n").unwrap()
+    });
+    let mut cli = novad.connect();
+    let reply = cli.request(1, "record", None);
+    assert!(reply["error"].as_str().unwrap().contains("recording feature isn't ready"), "{reply}");
+    let reply = cli.request(2, "start_recording", Some(json!({"output": "DP-1", "region": null})));
+    assert!(reply["error"].as_str().unwrap().contains("recording feature isn't ready"), "{reply}");
+    let reply = cli.request(3, "stop_recording", None);
+    assert!(reply["error"].as_str().unwrap().contains("nothing is being recorded"), "{reply}");
+    cli.request(4, "subscribe", Some(json!({"topics": ["recording"]})));
+    assert_eq!(cli.next_event("recording"), Value::Null, "nothing is being recorded");
 }
 
 #[test]

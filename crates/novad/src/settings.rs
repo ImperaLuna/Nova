@@ -191,6 +191,11 @@ impl Settings {
     pub fn screenshot_folder(&self) -> Result<PathBuf, String> {
         self.config.screenshot.folder()
     }
+
+    /// Where recordings are saved, from `config.toml`.
+    pub fn recording_folder(&self) -> Result<PathBuf, String> {
+        self.config.recording.folder()
+    }
 }
 
 fn is_ready(features: &[FeatureState], id: &str) -> bool {

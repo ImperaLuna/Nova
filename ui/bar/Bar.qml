@@ -8,12 +8,14 @@ import "../ai_usage"
 import "../ai_usage/service"
 import "../central_pill"
 import "../launcher/service"
+import "../capture/service"
 import "../stage"
 
 // The bar on one screen: the AI usage pill on the left when that feature is
 // on, the central pill (the launcher's search button, that screen's
 // workspaces, the day and the time) with its time in the middle of the
-// screen, and the right pill with the quick settings and power buttons.
+// screen, and the right pill with the quick settings and power buttons;
+// while a screen recording runs, its pill left of the right one.
 // The hide policies come later.
 //
 // While the screen shows a workspace with a window over the whole screen
@@ -99,7 +101,7 @@ Item {
     // The pills that open panels, for the stage (StagePanel has the contract).
     readonly property list<StagePanel> panels: aiUsagePill ? [aiUsagePill] : []
     // What else is drawn and takes clicks, each rounded by its `radius`.
-    readonly property list<Item> fixedShapes: [center, rightPill, revealStrip]
+    readonly property list<Item> fixedShapes: [center, rightPill, recordingPill, revealStrip]
     // The pill in the middle, which a panel in the middle of the screen can
     // grow out of.
     readonly property Item centralPill: center
@@ -207,6 +209,20 @@ Item {
             quickSettingsOpen: bar.quickSettingsOpen
             onQuickSettingsClicked: bar.quickSettingsClicked()
             onPowerClicked: bar.powerClicked()
+        }
+
+        RecordingPill {
+            id: recordingPill
+            visible: RecordingService.recording
+            x: (rightPill.visible ? rightPill.x - Tokens.gap : bar.width - Tokens.barMargin) - width
+            y: Tokens.barGap
+            width: implicitWidth
+            height: implicitHeight
+            elapsed: RecordingService.elapsed
+            paused: RecordingService.active?.paused ?? false
+            canPause: RecordingService.active?.can_pause ?? false
+            onPauseRequested: paused => RecordingService.pause(paused)
+            onStopRequested: RecordingService.stop()
         }
     }
 

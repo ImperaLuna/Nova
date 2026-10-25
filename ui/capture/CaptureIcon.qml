@@ -20,7 +20,13 @@ Item {
             [Protocol.SHOT_FOLDER]: "M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z",
             [Protocol.SHOT_DELETE]: "M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3",
             [Capture.ICON_CLOSE]: "M6 6l12 12M18 6L6 18",
-            [Capture.ICON_CHECK]: "M5 12.5l4.5 4.5L19 7.5"
+            [Capture.ICON_CHECK]: "M5 12.5l4.5 4.5L19 7.5",
+            [Capture.ICON_DESKTOP_AUDIO]: "M4 9h3l5-4v14l-5-4H4zM16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11",
+            [Capture.ICON_MIC]: "M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM6 11a6 6 0 0 0 12 0M12 17v4M9 21h6",
+            [Capture.ICON_PAUSE]: "M9 6v12M15 6v12",
+            [Capture.ICON_RESUME]: "M8 5.5v13l10-6.5z",
+            [Capture.ICON_STOP]: "M7 7h10v10H7z",
+            [Capture.ICON_VIDEO]: "M4 7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 10l4-2.5v9L16 14"
         })
 
     implicitWidth: Tokens.iconSize
