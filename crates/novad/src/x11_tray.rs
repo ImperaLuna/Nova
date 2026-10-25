@@ -12,6 +12,7 @@
 
 use crate::logger::Logger;
 use crate::{lock, supervisor, tray};
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -85,12 +86,22 @@ impl Shared {
                 if *lock(&self.stopped) {
                     return;
                 }
-                Command::new(PROGRAM)
-                    .env("PATH", path_var)
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .spawn()
-                    .inspect(|spawned| *child = Some(spawned.id()))
+                let mut command = Command::new(PROGRAM);
+                command.env("PATH", path_var).stdin(Stdio::null()).stdout(Stdio::null());
+                // SAFETY: the closure runs between fork and exec and only
+                // calls prctl, which is async-signal-safe.
+                unsafe {
+                    command.pre_exec(|| {
+                        // It gets SIGTERM when novad ends, however it ends,
+                        // as the UI does. The signal follows the spawning
+                        // thread, this one, which runs until `stop`.
+                        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) == -1 {
+                            return Err(std::io::Error::last_os_error());
+                        }
+                        Ok(())
+                    });
+                }
+                command.spawn().inspect(|spawned| *child = Some(spawned.id()))
             };
             let outcome = match spawned {
                 Ok(mut spawned) => {
