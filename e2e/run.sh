@@ -33,9 +33,11 @@ export QT_QPA_PLATFORM=wayland
 # No GPU in CI: render with Qt Quick's software backend.
 export QT_QUICK_BACKEND=software
 export NOVA_FEATURES_DIR=$PWD/features
-# Nix's sway wrapper starts its own session bus when none is set, which fails
-# on hosts without /etc/dbus-1. Nova doesn't need one yet.
-export DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-disabled:}
+# A session bus of its own for the tray (novad's watcher, Quickshell's
+# host), started below; never the session's, whose tray apps would show.
+# Without dbus-daemon there's none: Nix's sway wrapper would start one when
+# none is set, which fails on hosts without /etc/dbus-1.
+export DBUS_SESSION_BUS_ADDRESS=disabled:
 # The compositor here is sway, not the one this runs in: novad mustn't follow
 # the session's niri or Hyprland.
 unset NIRI_SOCKET HYPRLAND_INSTANCE_SIGNATURE
@@ -60,6 +62,18 @@ wait_for() { # <seconds> <description> <command...>
   for _ in $(seq $((t * 10))); do "$@" && return 0; sleep 0.1; done
   fail "timed out waiting for $what"
 }
+
+if command -v dbus-daemon >/dev/null; then
+  # Its own config: Nix's dbus looks for one in /etc, which hosts may lack.
+  cat >"$XDG_RUNTIME_DIR/bus.conf" <<EOF
+<busconfig><type>session</type><listen>unix:path=$XDG_RUNTIME_DIR/bus</listen><auth>EXTERNAL</auth>
+<policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy></busconfig>
+EOF
+  dbus-daemon --config-file="$XDG_RUNTIME_DIR/bus.conf" --nofork --nopidfile >"$out/dbus.log" 2>&1 &
+  pids+=($!)
+  wait_for 10 "the session bus" test -S "$XDG_RUNTIME_DIR/bus"
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+fi
 
 export WLR_HEADLESS_OUTPUTS=$monitors
 for i in $(seq "$monitors"); do

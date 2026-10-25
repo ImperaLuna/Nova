@@ -404,10 +404,12 @@ pub enum Panel {
     Power,
     QuickSettings,
     Launcher,
+    /// The tray's icons in the right pill.
+    Tray,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 4] = [Panel::AiUsage, Panel::Power, Panel::QuickSettings, Panel::Launcher];
+    pub const ALL: [Panel; 5] = [Panel::AiUsage, Panel::Power, Panel::QuickSettings, Panel::Launcher, Panel::Tray];
 
     /// Its name on the wire and on the command line, which is also its
     /// feature's id.
@@ -417,6 +419,7 @@ impl Panel {
             Panel::Power => "power",
             Panel::QuickSettings => "quick-settings",
             Panel::Launcher => "launcher",
+            Panel::Tray => "tray",
         }
     }
 }
@@ -1547,7 +1550,7 @@ mod tests {
             assert_eq!(serde_json::to_value(panel).unwrap(), json!(panel.name()));
         }
         assert!(
-            "calculator".parse::<Panel>().unwrap_err().contains("known: ai-usage, power, quick-settings, launcher")
+            "calculator".parse::<Panel>().unwrap_err().contains("known: ai-usage, power, quick-settings, launcher, tray")
         );
         let features = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         for panel in Panel::ALL {

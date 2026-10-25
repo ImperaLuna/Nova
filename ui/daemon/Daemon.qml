@@ -30,6 +30,10 @@ Singleton {
     // one arrives, which only happens with the launcher feature on. Read it
     // through the LauncherService singleton.
     property var launcher: null
+    // The latest tray event's data ({items, hidden}); null until one
+    // arrives, which only happens with the tray feature on. Read it through
+    // the TrayService singleton.
+    property var tray: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
     // novad's word on whether the session is locked. Read it through the
     // LockService singleton, which also hears lockRequested.
@@ -132,6 +136,8 @@ Singleton {
             resources = msg.data;
         } else if (msg.event === Protocol.EVENT_LAUNCHER) {
             launcher = msg.data;
+        } else if (msg.event === Protocol.EVENT_TRAY) {
+            tray = msg.data;
         }
     }
 
@@ -156,7 +162,7 @@ Singleton {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
                 root.call(Protocol.CMD_SUBSCRIBE, {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_LAUNCHER]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY]
                 });
             } else {
                 // A picker novad still has open is sent again on reconnect.

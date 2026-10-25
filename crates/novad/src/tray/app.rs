@@ -17,7 +17,7 @@ use std::path::Path;
 
 /// Program names that say nothing about the app: shared runtimes and
 /// sandbox helpers that run many apps.
-const GENERIC_PROGRAMS: &[&str] = &["electron", "xdg-dbus-proxy", "bwrap", "python", "python3", "java"];
+const GENERIC_PROGRAMS: &[&str] = &["electron", "xdg-dbus-proxy", "bwrap", "python", "java"];
 /// What Electron appends to its tray icons' ids, before a number.
 const ELECTRON_ID_SUFFIX: &str = "_status_icon_";
 
@@ -49,13 +49,15 @@ pub fn candidates(proc: &Path, pid: Option<u32>, icon_id: &str) -> Vec<String> {
 }
 
 /// The app a program path or name stands for, unless it's a shared
-/// runtime. Nix wraps programs as `.<name>-wrapped` (cut to
-/// `.<name>-wrappe` in the kernel's 15-character `comm`).
+/// runtime (whatever its version: `python3.14`). Nix wraps programs as
+/// `.<name>-wrapped` (cut to `.<name>-wrappe` in the kernel's 15-character
+/// `comm`).
 fn program_name(program: &str) -> Option<String> {
     let name = program.trim().rsplit('/').next()?;
     let name = name.strip_prefix('.').unwrap_or(name);
     let name = name.strip_suffix("-wrapped").or_else(|| name.strip_suffix("-wrappe")).unwrap_or(name);
-    (!name.is_empty() && !GENERIC_PROGRAMS.contains(&name.to_lowercase().as_str())).then(|| name.to_string())
+    let unversioned = name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.').to_lowercase();
+    (!name.is_empty() && !GENERIC_PROGRAMS.contains(&unversioned.as_str())).then(|| name.to_string())
 }
 
 /// The app ids the process's systemd unit names, from its `cgroup` file.
@@ -128,6 +130,7 @@ mod tests {
         assert_eq!(program_name("claude-desktop").as_deref(), Some("claude-desktop"));
         assert_eq!(program_name("/usr/lib/electron33/electron"), None);
         assert_eq!(program_name("Electron"), None);
+        assert_eq!(program_name("/nix/store/xahx-python3-3.14.8/bin/python3.14"), None);
     }
 
     #[test]

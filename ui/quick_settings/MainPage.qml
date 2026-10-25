@@ -5,6 +5,7 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "../volume/volume.js" as Volume
 import "quick_settings.js" as QuickSettings
+import "../tray"
 
 // The sidebar's first page: the header, the toggle tiles, the sliders, and
 // the resources card pinned at the foot. The space between is kept for
@@ -40,6 +41,10 @@ Item {
     property real micVolume: 0
 
     property var reading: null
+    // Every tray app, hidden ones too (TrayService.all), and what an Image
+    // shows for one.
+    property var trayApps: []
+    property var trayIconSource: entry => ""
     // Room the top row leaves on its right (the pill's buttons).
     property real headerInset: 0
 
@@ -49,8 +54,12 @@ Item {
     signal muteToggled
     signal micVolumeMoved(real value)
     signal pageRequested(string page)
+    // A tray app's icon was clicked; `at` is its middle, in this page.
+    signal trayActivated(var entry)
+    signal trayMenuRequested(var entry, point at)
+    signal traySecondaryActivated(var entry)
 
-    readonly property bool revealing: [header, tiles, sliders, foot].some(section => section.running)
+    readonly property bool revealing: [header, tiles, sliders, tray, foot].some(section => section.running)
 
     Column {
         width: page.width
@@ -140,6 +149,71 @@ Item {
                 }
             }
         }
+
+        // The tray's apps, all of them: the bar shows at most a few, and
+        // none of those hidden from it.
+        Reveal {
+            id: tray
+            width: parent.width
+            shown: page.shown
+            order: 3
+            visible: page.trayApps.length > 0
+
+            Column {
+                width: parent.width
+                spacing: Tokens.gap
+
+                Item {
+                    width: parent.width
+                    height: trayTitle.implicitHeight
+
+                    CardTitle {
+                        id: trayTitle
+                        text: qsTr("Tray")
+                    }
+                    CardTitle {
+                        anchors.right: parent.right
+                        text: qsTr("%n apps", "", page.trayApps.length)
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: trayGrid.implicitHeight + 2 * Tokens.menuPad
+                    radius: Tokens.radiusCard
+                    color: Tokens.surfaceRaised
+
+                    Grid {
+                        id: trayGrid
+                        x: Tokens.menuPad
+                        y: Tokens.menuPad
+                        width: parent.width - 2 * Tokens.menuPad
+                        columns: Tokens.trayGridColumns
+                        spacing: Tokens.trayGridGap
+                        readonly property real cell: (width - (columns - 1) * spacing) / columns
+
+                        Repeater {
+                            model: page.trayApps
+
+                            TrayIcon {
+                                id: icon
+                                required property var modelData
+                                width: trayGrid.cell
+                                height: Tokens.trayGridCell
+                                radius: Tokens.radiusControl
+                                iconSize: Tokens.trayGridIconSize
+                                source: page.trayIconSource(modelData)
+                                attention: modelData.attention
+                                dimmed: modelData.hidden
+                                onActivated: page.trayActivated(modelData)
+                                onMenuRequested: page.trayMenuRequested(modelData, icon.mapToItem(page, width / 2, height / 2))
+                                onSecondaryActivated: page.traySecondaryActivated(modelData)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     Reveal {
@@ -147,7 +221,7 @@ Item {
         anchors.bottom: parent.bottom
         width: parent.width
         shown: page.shown
-        order: 3
+        order: 4
 
         ResourcesCard {
             width: parent.width
