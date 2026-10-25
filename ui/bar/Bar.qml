@@ -114,6 +114,10 @@ Item {
     property bool quickSettings: false
     property bool power: false
     property bool quickSettingsOpen: false
+    // Unread notifications and do not disturb, for the quick settings
+    // button's badge (PillButtons).
+    property int unread: 0
+    property bool doNotDisturb: false
     signal quickSettingsClicked
     signal powerClicked
     // Where the right pill is, in screen coordinates (the stage's top-left
@@ -207,6 +211,8 @@ Item {
             quickSettings: bar.quickSettings
             power: bar.power
             quickSettingsOpen: bar.quickSettingsOpen
+            unread: bar.unread
+            doNotDisturb: bar.doNotDisturb
             onQuickSettingsClicked: bar.quickSettingsClicked()
             onPowerClicked: bar.powerClicked()
         }

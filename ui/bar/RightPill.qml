@@ -12,6 +12,8 @@ Item {
     property bool power: false
     // Its panel is open on this screen: the button shows it's picked.
     property bool quickSettingsOpen: false
+    property int unread: 0
+    property bool doNotDisturb: false
 
     signal quickSettingsClicked
     signal powerClicked
@@ -38,6 +40,8 @@ Item {
         quickSettings: pill.quickSettings
         power: pill.power
         quickSettingsOpen: pill.quickSettingsOpen
+        unread: pill.unread
+        doNotDisturb: pill.doNotDisturb
         onQuickSettingsClicked: pill.quickSettingsClicked()
         onPowerClicked: pill.powerClicked()
     }

@@ -7,6 +7,7 @@ import "../bar"
 import "../demo"
 import "../launcher"
 import "../launcher/service"
+import "../notifications/service"
 import "../power"
 import "../power/service"
 import "../quick_settings"
@@ -277,6 +278,8 @@ Scope {
             quickSettings: QuickSettingsService.ready
             power: PowerService.ready
             quickSettingsOpen: quickSettings.item?.open ?? false
+            unread: NotificationsService.ready ? NotificationsService.unread : 0
+            doNotDisturb: NotificationsService.ready && NotificationsService.doNotDisturb
             onQuickSettingsClicked: all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.output.name, root.output.name)
             onPowerClicked: all.toggle(Protocol.FEATURE_POWER, root.output.name, root.output.name)
             onLauncherRequested: {
