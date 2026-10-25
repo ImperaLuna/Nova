@@ -550,6 +550,7 @@ name = "novad"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "futures-core",
  "jiff",
  "libc",
  "nova-features",

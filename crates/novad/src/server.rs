@@ -3,9 +3,7 @@
 
 use crate::hub::{ClientId, ClientQueue, Outgoing};
 use crate::{Daemon, lock};
-use nova_protocol::{
-    Capability, Command, Event, FeatureStatus, Outcome, Panel, PowerAction, Response, Topic, VolumeKey, encode,
-};
+use nova_protocol::{Capability, Command, Event, Outcome, Panel, PowerAction, Response, Topic, VolumeKey, encode};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -222,7 +220,7 @@ impl<'a> Connection<'a> {
 
     /// An error saying the feature `id` isn't ready, when it isn't.
     fn require_feature(&self, id: &str) -> Result<(), String> {
-        match self.feature_ready(id) {
+        match self.daemon.feature_ready(id) {
             true => Ok(()),
             false => Err(format!("the {id} feature isn't ready (see `nova status`)")),
         }
@@ -309,47 +307,25 @@ impl<'a> Connection<'a> {
     }
 
     /// Suspend, restart or shut down through logind; answers with logind's
-    /// own result. Suspend locks first, when the lock screen can, and
-    /// suspends once the screens are covered (or the wait runs out), so the
-    /// session wakes up locked.
+    /// own result. A suspend locks the screen first through novad's sleep
+    /// inhibitor ([`crate::logind`]), as one from anywhere else does.
     fn power_logind(&self, action: PowerAction) -> SlowWork {
         if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
             return Box::new(move || Outcome::Error(e));
         }
         self.daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
-        let mut covered = None;
-        if action == PowerAction::Suspend && self.feature_ready(crate::session_lock::FEATURE_ID) {
-            match self.daemon.session_lock.request(&self.daemon.hub) {
-                Ok(()) => covered = Some(Arc::clone(&self.daemon.session_lock)),
-                Err(e) => self.daemon.logger.warn(LOG_SOURCE, &format!("suspending without locking: {e}")),
-            }
-        }
         let logger = Arc::clone(&self.daemon.logger);
-        Box::new(move || {
-            if let Some(session_lock) = covered
-                && let Err(e) = session_lock.wait_covered()
-            {
-                logger.warn(LOG_SOURCE, &format!("suspending though the screen may not be locked: {e}"));
-            }
-            match crate::power::run_logind(action) {
-                Ok(()) => Outcome::Result(serde_json::Value::Null),
-                Err(e) => {
-                    logger.warn(LOG_SOURCE, &format!("{action:?} failed: {e}"));
-                    Outcome::Error(e)
-                }
+        Box::new(move || match crate::power::run_logind(action) {
+            Ok(()) => Outcome::Result(serde_json::Value::Null),
+            Err(e) => {
+                logger.warn(LOG_SOURCE, &format!("{action:?} failed: {e}"));
+                Outcome::Error(e)
             }
         })
     }
 
-    fn feature_ready(&self, id: &str) -> bool {
-        lock(&self.daemon.settings)
-            .features
-            .iter()
-            .any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
-    }
-
     fn toggle(&self, panel: Panel) -> Outcome {
-        if !self.feature_ready(panel.name()) {
+        if !self.daemon.feature_ready(panel.name()) {
             return Outcome::Error(format!("the {panel} feature isn't ready (see `nova status`)"));
         }
         let output = self.daemon.compositor.as_ref().and_then(|compositor| compositor.focused_output());
