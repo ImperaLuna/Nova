@@ -535,9 +535,11 @@ with subtest("a volume change slides the capsule out and back, over fullscreen t
         out = machine.succeed(as_user(WPCTL_SINK.format("get-volume")))
         return out.split()[1]
 
-    def volume_change_shows(target: str) -> None:
+    def volume_change_shows(target: str) -> int:
+        """Changes the volume and waits for the capsule; returns how many
+        times it had hidden before the change, for hides()."""
         assert volume() != target, f"the volume is already {target}, so setting it changes nothing"
-        before = ui_log_count(VOLUME_SHOWN)
+        before, hidden = ui_log_count(VOLUME_SHOWN), ui_log_count(VOLUME_HIDDEN)
         machine.succeed(as_user(WPCTL_SINK.format("set-volume") + f" {target}"))
         try:
             retry(lambda _last_try: ui_log_count(VOLUME_SHOWN) > before, timeout=CLICK_EFFECT)
@@ -547,13 +549,15 @@ with subtest("a volume change slides the capsule out and back, over fullscreen t
             for command in ("wpctl status", WPCTL_SINK.format("get-volume"), WPCTL_SINK.format("inspect"), ui_log):
                 print(machine.execute(as_user(command))[1])
             raise
+        return hidden
 
-    def hides() -> None:
-        hidden = ui_log_count(VOLUME_HIDDEN)
+    # Counted from before the change: the capsule hides
+    # Tokens.durationCapsuleHold after it, which a slow log read after it
+    # can already include.
+    def hides(hidden: int) -> None:
         retry(lambda _last_try: ui_log_count(VOLUME_HIDDEN) > hidden, timeout=CLICK_EFFECT)
 
-    volume_change_shows("0.30" if volume() != "0.30" else "0.35")
-    hides()
+    hides(volume_change_shows("0.30" if volume() != "0.30" else "0.35"))
     # The pointer on it holds it out, and a wheel notch steps the volume by
     # Tokens.volumeStep, which way depending on how ydotool's wheel maps.
     # The pointer goes there once it has slid out (the compositor picks the
@@ -583,12 +587,11 @@ with subtest("a volume change slides the capsule out and back, over fullscreen t
     machine.sleep(CAPSULE_HOLD_SECS)
     assert ui_log_count(VOLUME_HIDDEN) == hidden, "the capsule went away under the pointer"
     machine.succeed(pointer_to(*POINTER_REST))
-    hides()
+    hides(hidden)
     # On the overlay layer, so it shows over a fullscreen window.
     open_foot("foot-volume")
     machine.succeed(as_user(FULLSCREEN_WINDOW))
-    volume_change_shows("0.60")
-    hides()
+    hides(volume_change_shows("0.60"))
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
 
