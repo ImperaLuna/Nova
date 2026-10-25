@@ -347,25 +347,31 @@ impl Shared {
 
     /// Reads the id and title of the item at `address`, and which process
     /// it's in, then publishes it. An item whose app has gone meanwhile is
-    /// dropped; one that answers wrongly shows with what could be read.
+    /// dropped; one that answers wrongly shows with what could be read. It
+    /// asks the connection that registered it, and keeps the answers only
+    /// while that registration stands (a name handed over meanwhile is
+    /// another app's).
     async fn read(&self, connection: &Connection, address: &str) {
-        let Some(bus) =
-            lock(&self.state).items.iter().find(|item| item.address == address).map(|item| item.bus.clone())
+        let Some((bus, owner)) = lock(&self.state)
+            .items
+            .iter()
+            .find(|item| item.address == address)
+            .map(|item| (item.bus.clone(), item.owner.clone()))
         else {
             return;
         };
         let path = &address[bus.len()..];
-        let id = item_text(connection, &bus, path, "Id").await;
-        let title = item_text(connection, &bus, path, "Title").await;
+        let id = item_text(connection, &owner, path, "Id").await;
+        let title = item_text(connection, &owner, path, "Title").await;
         let pid = connection
-            .call_method(Some(DBUS_NAME), DBUS_PATH, Some(DBUS_NAME), "GetConnectionUnixProcessID", &(bus.as_str(),))
+            .call_method(Some(DBUS_NAME), DBUS_PATH, Some(DBUS_NAME), "GetConnectionUnixProcessID", &(owner.as_str(),))
             .await
             .and_then(|reply| reply.body().deserialize::<u32>());
         if let Err(e) = &pid {
             // A name with no owner has nothing left to show.
             if matches!(e, zbus::Error::MethodError(name, ..) if name.as_str() == "org.freedesktop.DBus.Error.NameHasNoOwner")
             {
-                for address in self.drop_bus(&bus) {
+                for address in self.drop_bus(&owner) {
                     if let Ok(emitter) = SignalEmitter::new(connection, WATCHER_PATH) {
                         let _ = emitter.status_notifier_item_unregistered(&address).await;
                     }
@@ -380,7 +386,7 @@ impl Shared {
         let app_ids = app::candidates(&self.proc_root, pid.as_ref().ok().copied(), &id);
         let bridged = pid.as_ref().is_ok_and(|&pid| app::is_bridge(&self.proc_root, pid));
         let mut state = lock(&self.state);
-        let Some(item) = state.items.iter_mut().find(|item| item.address == address) else {
+        let Some(item) = state.items.iter_mut().find(|item| item.address == address && item.owner == owner) else {
             return;
         };
         self.logger.info(LOG_SOURCE, &format!("{address} came: {id} ({})", app_ids.join(", ")));
