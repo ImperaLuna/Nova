@@ -29,6 +29,9 @@ pub struct Entry {
     pub terminal: bool,
     /// The folder to run it in.
     pub path: Option<PathBuf>,
+    /// Opens files or links of some type (`MimeType=`): the entry the
+    /// system's defaults point at, when two start the same program.
+    pub opens_types: bool,
 }
 
 /// Why a file isn't an app the launcher lists.
@@ -187,6 +190,7 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
         exec,
         terminal: flag("Terminal"),
         path: raw("Path").map(unescape).filter(|path| !path.is_empty()).map(PathBuf::from),
+        opens_types: raw("MimeType").is_some_and(|types| !types.trim().is_empty()),
     })
 }
 

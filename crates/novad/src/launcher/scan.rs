@@ -66,7 +66,25 @@ pub fn scan(data_dirs: &[PathBuf], context: &Context) -> (BTreeMap<String, Entry
             }
         }
     }
-    (apps, problems)
+    (without_copies(apps), problems)
+}
+
+/// `apps` with one of each set of entries that show the same name and run
+/// the same command, like a package's entry and a copy the user's config
+/// adds under another id: the one that opens file or link types, else the
+/// first by id.
+fn without_copies(apps: BTreeMap<String, Entry>) -> BTreeMap<String, Entry> {
+    let mut kept: BTreeMap<(String, Vec<String>, bool), Entry> = BTreeMap::new();
+    for entry in apps.into_values() {
+        let key = (entry.name.clone(), entry.exec.clone(), entry.terminal);
+        match kept.get(&key) {
+            Some(other) if other.opens_types || !entry.opens_types => {}
+            _ => {
+                kept.insert(key, entry);
+            }
+        }
+    }
+    kept.into_values().map(|entry| (entry.id.clone(), entry)).collect()
 }
 
 fn read_entry(file: &Path) -> std::io::Result<String> {
@@ -204,6 +222,21 @@ mod tests {
         assert_eq!(found.get("kde-dolphin.desktop").map(String::as_str), Some("Dolphin"));
         assert!(!found.contains_key("firefox.desktop"), "the user deleted it");
         assert_eq!(found.len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_copy_of_an_app_under_another_id_shows_once() {
+        // Like a home-manager entry beside the package's own.
+        let root = temp("copies");
+        let share = root.join("share");
+        write_app(&share, "obsidian.desktop", "Obsidian", "StartupWMClass=obsidian\n");
+        let package =
+            "[Desktop Entry]\nType=Application\nName=Obsidian\nExec=true %u\nMimeType=x-scheme-handler/obsidian;\n";
+        std::fs::write(share.join("applications/md.obsidian.Obsidian.desktop"), package).unwrap();
+        write_app(&share, "other.desktop", "Other", "");
+        let found = names(std::slice::from_ref(&share));
+        assert_eq!(found.keys().collect::<Vec<_>>(), ["md.obsidian.Obsidian.desktop", "other.desktop"]);
         std::fs::remove_dir_all(root).unwrap();
     }
 

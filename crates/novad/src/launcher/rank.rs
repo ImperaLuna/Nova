@@ -129,6 +129,7 @@ mod tests {
             exec: vec![name.to_lowercase()],
             terminal: false,
             path: None,
+            opens_types: false,
         }
     }
 
