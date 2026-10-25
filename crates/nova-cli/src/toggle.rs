@@ -1,11 +1,12 @@
-//! `nova toggle <panel>` and `nova lock`: ask novad to open or close a panel
-//! on the focused output, or to lock the screen, for compositor keybinds.
-//! They print nothing when it worked, so a keybind stays quiet; novad's
-//! reason goes to stderr when it didn't.
+//! `nova toggle <panel>`, `nova lock` and `nova volume <key>`: ask novad to
+//! open or close a panel on the focused output, to lock the screen, or to
+//! pass a volume key to the UI, for compositor keybinds. They print nothing
+//! when it worked, so a keybind stays quiet; novad's reason goes to stderr
+//! when it didn't.
 
 use crate::client::Client;
 use clap::builder::{PossibleValuesParser, TypedValueParser};
-use nova_protocol::{Command, Panel};
+use nova_protocol::{Command, Panel, VolumeKey};
 use std::path::Path;
 
 #[derive(clap::Args)]
@@ -28,5 +29,31 @@ pub fn run(args: &ToggleArgs, socket: &Path) -> Result<(), String> {
 
 pub fn lock(socket: &Path) -> Result<(), String> {
     Client::connect(socket)?.request(Command::Lock)?;
+    Ok(())
+}
+
+#[derive(clap::Args)]
+pub struct VolumeArgs {
+    #[command(subcommand)]
+    key: VolumeArg,
+}
+
+#[derive(clap::Subcommand)]
+enum VolumeArg {
+    /// One step louder, up to 100%.
+    Up,
+    /// One step quieter.
+    Down,
+    /// Mute, or unmute when muted.
+    Mute,
+}
+
+pub fn volume(args: &VolumeArgs, socket: &Path) -> Result<(), String> {
+    let key = match args.key {
+        VolumeArg::Up => VolumeKey::Up,
+        VolumeArg::Down => VolumeKey::Down,
+        VolumeArg::Mute => VolumeKey::Mute,
+    };
+    Client::connect(socket)?.request(Command::Volume { key })?;
     Ok(())
 }

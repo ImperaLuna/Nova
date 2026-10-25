@@ -2,8 +2,9 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import "../compositor"
+import "../daemon"
+import "../daemon/protocol.js" as Protocol
 import "../theme"
 import "service"
 import "volume.js" as Volume
@@ -79,21 +80,22 @@ Scope {
         }
     }
 
-    // `quickshell ipc --pid <UI pid> call volume up|down|mute`: what a
-    // volume key bound to Nova would do. Shows the capsule even without an
-    // output, which then says so.
-    IpcHandler {
-        target: "volume"
-        function up(): void {
-            VolumeService.step(1);
-            osd.reveal();
-        }
-        function down(): void {
-            VolumeService.step(-1);
-            osd.reveal();
-        }
-        function mute(): void {
-            VolumeService.toggleMute();
+    // `nova volume up|down|mute`, from a volume key bound to Nova. Shows the
+    // capsule even when nothing changes (at either end, or without an
+    // output, which it then says).
+    Connections {
+        target: Daemon
+        function onVolumeRequested(key: string) {
+            if (key === Protocol.VOLUME_UP)
+                VolumeService.step(1);
+            else if (key === Protocol.VOLUME_DOWN)
+                VolumeService.step(-1);
+            else if (key === Protocol.VOLUME_MUTE)
+                VolumeService.toggleMute();
+            else {
+                console.warn(`nova: unknown volume key ${key}`);
+                return;
+            }
             osd.reveal();
         }
     }
