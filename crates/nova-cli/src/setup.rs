@@ -18,9 +18,9 @@
 //!   its drop-in that starts login apps after it (`app-.service.d`).
 //! - A `NovaUI` link to Quickshell in `~/.local/bin`, which novad runs so
 //!   the UI shows as NovaUI in ps and btop (the Nix package has a launcher).
-//! - niri's blur behind Nova's glass (`packaging/compositor/niri.kdl`),
-//!   included from the user's niri config. Hyprland blurs what Quickshell
-//!   asks for without a rule.
+//! - niri's blur behind Nova's glass and a rule hiding xembedsniproxy's
+//!   window (`packaging/compositor/niri.kdl`), included from the user's
+//!   niri config. Hyprland blurs what Quickshell asks for without a rule.
 
 use crate::host::{Distro, Host};
 use nova_features::{Gpu, Manifest, Selection};

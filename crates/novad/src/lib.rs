@@ -46,6 +46,7 @@ mod state_file;
 mod supervisor;
 mod theme;
 mod tray;
+mod x11_tray;
 
 use hub::Hub;
 use logger::Logger;

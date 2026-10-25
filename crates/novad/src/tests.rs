@@ -172,6 +172,9 @@ impl Drop for TestDaemon {
         if let Some(tray) = &settings.tray {
             tray.stop();
         }
+        if let Some(x11_tray) = &settings.x11_tray {
+            x11_tray.stop();
+        }
         drop(settings);
         if let Some(watching) = &self.watching {
             watching.stop();

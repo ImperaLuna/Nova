@@ -25,7 +25,7 @@ use crate::launcher::Launcher;
 use crate::logger::Logger;
 use crate::{lock, state_file};
 use futures_core::Stream;
-use nova_protocol::{Event, LogLevel, Tray as TrayEvent, TrayItem};
+use nova_protocol::{App, Event, LogLevel, Tray as TrayEvent, TrayItem};
 use std::future::poll_fn;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -136,6 +136,8 @@ struct Read {
     title: String,
     /// Names to look its app up by (see `app`).
     app_ids: Vec<String>,
+    /// Put up by the X11 icon bridge (see `app::is_bridge`).
+    bridged: bool,
 }
 
 /// Ends the bus loop: set once, and wakes the loop if it's waiting.
@@ -279,19 +281,23 @@ impl Shared {
 
     fn event(&self, state: &State) -> TrayEvent {
         let launcher = lock(&self.launcher).clone();
-        let items = state
+        let read: Vec<(bool, TrayItem)> = state
             .items
             .iter()
             .filter_map(|item| {
                 let read = item.read.as_ref()?;
-                Some(TrayItem {
-                    address: item.address.clone(),
-                    id: read.id.clone(),
-                    title: read.title.clone(),
-                    app: launcher.as_ref().and_then(|launcher| launcher.find_app(&read.app_ids)),
-                })
+                Some((
+                    read.bridged,
+                    TrayItem {
+                        address: item.address.clone(),
+                        id: read.id.clone(),
+                        title: read.title.clone(),
+                        app: launcher.as_ref().and_then(|launcher| launcher.find_app(&read.app_ids)),
+                    },
+                ))
             })
             .collect();
+        let items = without_bridged_twins(read);
         TrayEvent { items, hidden: state.saved.hidden.clone() }
     }
 
@@ -371,13 +377,14 @@ impl Shared {
         }
         let id = id.unwrap_or_default();
         let title = title.unwrap_or_default();
-        let app_ids = app::candidates(&self.proc_root, pid.ok(), &id);
+        let app_ids = app::candidates(&self.proc_root, pid.as_ref().ok().copied(), &id);
+        let bridged = pid.as_ref().is_ok_and(|&pid| app::is_bridge(&self.proc_root, pid));
         let mut state = lock(&self.state);
         let Some(item) = state.items.iter_mut().find(|item| item.address == address) else {
             return;
         };
         self.logger.info(LOG_SOURCE, &format!("{address} came: {id} ({})", app_ids.join(", ")));
-        item.read = Some(Read { id, title, app_ids });
+        item.read = Some(Read { id, title, app_ids, bridged });
         self.publish(&mut state);
     }
 
@@ -401,6 +408,17 @@ impl Shared {
     fn addresses(&self) -> Vec<String> {
         lock(&self.state).items.iter().map(|item| item.address.clone()).collect()
     }
+}
+
+/// The items, less those put up by the X11 icon bridge (`true`) for an app
+/// that also put up a real item: Steam does both.
+fn without_bridged_twins(items: Vec<(bool, TrayItem)>) -> Vec<TrayItem> {
+    let has_own_item = |app: &App| {
+        items.iter().any(|(bridged, item)| !bridged && item.app.as_ref().is_some_and(|own| own.id == app.id))
+    };
+    let twins: Vec<bool> =
+        items.iter().map(|(bridged, item)| *bridged && item.app.as_ref().is_some_and(has_own_item)).collect();
+    items.into_iter().zip(twins).filter(|(_, twin)| !twin).map(|((_, item), _)| item).collect()
 }
 
 /// What `hide` and `Tray::hidden` know an item's app by.

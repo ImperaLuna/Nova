@@ -11,7 +11,7 @@ use crate::config::{self, Config};
 use crate::hub::Hub;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, host, launcher, resources, theme, tray};
+use crate::{ai_usage, features, host, launcher, resources, theme, tray, x11_tray};
 use nova_features::{Manifest, Selection};
 use nova_protocol::{Event, FeatureState, FeatureStatus, Host, Theme};
 use std::collections::BTreeSet;
@@ -55,6 +55,8 @@ pub struct Settings {
     pub launcher: Option<Arc<launcher::Launcher>>,
     /// Watching for tray icons while the `tray` feature is ready.
     pub tray: Option<Arc<tray::Tray>>,
+    /// Running xembedsniproxy while the `x11-tray` feature is ready.
+    pub x11_tray: Option<Arc<x11_tray::X11Tray>>,
 }
 
 impl Settings {
@@ -205,6 +207,22 @@ impl Settings {
             });
         }
 
+        // It has no options either. Its icons reach whatever tray is up.
+        let x11_tray_ready = is_ready(&features, x11_tray::FEATURE_ID);
+        let x11_tray = match previous.as_deref_mut().and_then(|previous| previous.x11_tray.take()) {
+            Some(running) if x11_tray_ready => Some(running),
+            running => {
+                if let Some(running) = running {
+                    running.stop();
+                    logger.info("features", &format!("stopped {}", x11_tray::FEATURE_ID));
+                }
+                x11_tray_ready.then(|| {
+                    logger.info("features", &format!("starting {}", x11_tray::FEATURE_ID));
+                    x11_tray::X11Tray::start(sources.tray.bus.clone(), &sources.path_var, Arc::clone(logger))
+                })
+            }
+        };
+
         let before = previous.as_deref().map(|previous| previous.features.as_slice()).unwrap_or_default();
         for feature in features.iter().filter(|feature| !before.contains(feature)) {
             logger.info("features", &format!("{} is {:?}", feature.id, feature.status));
@@ -213,7 +231,7 @@ impl Settings {
             hub.publish(&Event::Features { features: features.clone() });
         }
 
-        Self { config, selection, features, theme, ai_usage, resources, launcher, tray }
+        Self { config, selection, features, theme, ai_usage, resources, launcher, tray, x11_tray }
     }
 }
 

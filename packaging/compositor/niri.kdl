@@ -1,5 +1,6 @@
-// Nova's blur on niri, written by `nova setup` to ~/.config/nova/niri.kdl and
-// included from niri's config. A flake check runs `niri validate` on it.
+// Nova's niri rules (blur, xembedsniproxy's window), written by `nova setup`
+// to ~/.config/nova/niri.kdl and included from niri's config. A flake check
+// runs `niri validate` on it.
 //
 // niri blurs what Quickshell asks for (ext-background-effect), but by default
 // a layer surface blurs only the wallpaper ("xray"), which hides the windows
@@ -16,4 +17,18 @@ blur {
     passes 2
     offset 2
     saturation 1.8
+}
+
+// xembedsniproxy (Nova's `x11-tray` feature, or the desktop's own) keeps a
+// 1x1 X11 window to embed old tray icons in. xwayland-satellite maps it as
+// a window niri would tile and focus, and ignores its X11 opacity: float it
+// out of the way, unfocused and see-through.
+window-rule {
+    match app-id="^xembedsniproxy$"
+    open-floating true
+    open-focused false
+    default-column-width { fixed 1; }
+    default-window-height { fixed 1; }
+    default-floating-position x=0 y=0 relative-to="bottom-right"
+    opacity 0.0
 }

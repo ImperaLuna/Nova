@@ -19,8 +19,11 @@
 use std::path::Path;
 
 /// Program names that say nothing about the app: shared runtimes and
-/// sandbox helpers that run many apps.
-const GENERIC_PROGRAMS: &[&str] = &["electron", "xdg-dbus-proxy", "bwrap", "python", "java"];
+/// sandbox helpers that run many apps, and the bridge for old X11 icons.
+const GENERIC_PROGRAMS: &[&str] = &["electron", "xdg-dbus-proxy", "bwrap", "python", "java", BRIDGE];
+/// Plasma's bridge that puts old X11 (XEmbed) tray icons up as items, all
+/// from its own process: its items are named by their own id only.
+const BRIDGE: &str = "xembedsniproxy";
 /// What Electron appends to its tray icons' ids, before a number.
 const ELECTRON_ID_SUFFIX: &str = "_status_icon_";
 
@@ -52,6 +55,12 @@ pub fn candidates(proc: &Path, pid: Option<u32>, icon_id: &str) -> Vec<String> {
         }
     }
     seen
+}
+
+/// Whether the process `pid` is the X11 icon bridge, whose items another
+/// item of the same app makes redundant.
+pub fn is_bridge(proc: &Path, pid: u32) -> bool {
+    std::fs::read_to_string(proc.join(pid.to_string()).join("comm")).is_ok_and(|comm| comm.trim() == BRIDGE)
 }
 
 /// The app a program path or name stands for, unless it's a shared
@@ -165,6 +174,15 @@ mod tests {
         std::fs::write(script.join("comm"), "python3\n").unwrap();
         std::fs::write(script.join("cgroup"), "0::/user.slice/app.slice/app-kitty-123.scope\n").unwrap();
         assert_eq!(candidates(&proc, Some(4242), "my-tray-app"), ["my-tray-app", "kitty"]);
+        assert!(!is_bridge(&proc, 4242));
+        // X11 icons through the bridge go by their own id.
+        let bridge = proc.join("2468");
+        std::fs::create_dir_all(&bridge).unwrap();
+        std::fs::write(bridge.join("cmdline"), b"/run/current-system/sw/bin/xembedsniproxy\0").unwrap();
+        std::fs::write(bridge.join("comm"), "xembedsniproxy\n").unwrap();
+        std::fs::write(bridge.join("cgroup"), "0::/user.slice/app.slice/plasma-xembedsniproxy.service\n").unwrap();
+        assert_eq!(candidates(&proc, Some(2468), "steam"), ["steam"]);
+        assert!(is_bridge(&proc, 2468));
         std::fs::remove_dir_all(&proc).unwrap();
     }
 }

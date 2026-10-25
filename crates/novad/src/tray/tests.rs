@@ -327,3 +327,21 @@ fn hidden_apps_are_remembered_across_restarts() {
     assert!(event(&fixture).get("hidden").is_none());
     tray.stop();
 }
+
+#[test]
+fn an_app_with_its_own_item_loses_its_bridged_x11_one() {
+    let item = |id: &str, app: Option<&str>| TrayItem {
+        address: format!(":1.{id}/StatusNotifierItem"),
+        id: id.into(),
+        title: id.into(),
+        app: app.map(|app| App { id: app.into(), name: app.into(), description: None, icon: None }),
+    };
+    let items = vec![
+        (false, item("steam", Some("steam.desktop"))),
+        (true, item("steam", Some("steam.desktop"))),
+        (true, item("wine-app", None)),
+        (true, item("xterm", Some("xterm.desktop"))),
+    ];
+    let ids: Vec<String> = without_bridged_twins(items).into_iter().map(|item| item.address).collect();
+    assert_eq!(ids, [":1.steam/StatusNotifierItem", ":1.wine-app/StatusNotifierItem", ":1.xterm/StatusNotifierItem"]);
+}
