@@ -190,6 +190,7 @@ Item {
             keyClick("f");
             keyClick(Qt.Key_Escape);
             verify(!launcher.open);
+            verify(!launcher.glass, "no blur left behind while it fades");
             launcher.open = true;
             compare(launcher.query, "");
             compare(launcher.selected, 0);

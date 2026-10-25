@@ -56,6 +56,9 @@ StagePanel {
     placement: "center"
     wantsKeyboard: true
     radius: Tokens.radiusPanel
+    // Unblurred once it starts closing: a compositor's blur can't fade, so it
+    // would stay a blurred box while the deck fades out over it.
+    glass: open
 
     readonly property Morph morph: Morph {
         open: launcher.open
