@@ -1521,7 +1521,8 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     assert!(ran, "the app didn't run");
     assert!(novad.dir.join(";").exists(), "`;` reached touch as a file name, not a shell");
 
-    client.request(3, "launch_app", Some(json!({"id": "other.desktop"})));
+    // No Path= and a HOME that may not exist (Nix's builds): it starts in `/`.
+    assert_eq!(client.request(3, "launch_app", Some(json!({"id": "other.desktop"})))["result"], Value::Null);
     let event = client.launcher_until(|event| event["recent"].as_array().unwrap().len() == 2);
     assert_eq!(event["recent"], json!(["other.desktop", "touch.desktop"]), "the latest first");
     let missing = client.request(4, "launch_app", Some(json!({"id": "nothing.desktop"})));

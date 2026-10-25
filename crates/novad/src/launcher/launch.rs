@@ -72,7 +72,8 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
         }
     };
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    let dir = entry.path.clone().filter(|dir| dir.is_dir()).or(home).unwrap_or_else(|| "/".into());
+    // A folder that isn't there would fail the start.
+    let dir = entry.path.clone().into_iter().chain(home).find(|dir| dir.is_dir()).unwrap_or_else(|| "/".into());
     for name in SERVICE_VARS {
         command.env_remove(name);
     }
