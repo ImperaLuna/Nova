@@ -19,6 +19,8 @@ Singleton {
     property bool picking: false
     // The toolbar's Protocol.CAPTURE_* mode; each pick starts on a region.
     property string mode: Protocol.CAPTURE_REGION
+    // The picker was opened by the toolbar's switch.
+    property bool switched: false
     // The sound to record, kept from one recording to the next.
     property bool desktopAudio: true
     property bool micAudio: false
@@ -46,6 +48,13 @@ Singleton {
     }
     onPickingChanged: {
         mode = Protocol.CAPTURE_REGION;
+        if (!picking) {
+            switched = false;
+            // Frames frozen for the switch go with the picker, unless the
+            // switch is showing them.
+            if (ScreenshotService.held)
+                ScreenshotService.cancel();
+        }
         // A count that was going is cancelled with the picker.
         step.stop();
         countdown = 0;
@@ -72,7 +81,55 @@ Singleton {
     }
 
     function cancel() {
+        _opening = false;
         picking = false;
+    }
+
+    // Opens the picker (`nova record`). With screenshots on, the screens
+    // are frozen first and the frames held behind it, so the toolbar's
+    // switch to a screenshot shows them at once instead of freezing again.
+    property bool _opening: false
+    function open() {
+        if (!ScreenshotService.ready) {
+            picking = true;
+            return;
+        }
+        _opening = true;
+        ScreenshotService.freeze(error => {
+            // Closed again (`nova record` twice) while freezing.
+            if (!root._opening) {
+                if (!error)
+                    ScreenshotService.cancel();
+                return;
+            }
+            root._opening = false;
+            if (error)
+                console.warn(`nova: recording without a frozen frame to switch to: ${error}`);
+            root.picking = true;
+        });
+    }
+
+    // Switches to a screenshot in `mode`: the held frames' picker, or a new
+    // freeze once this picker has gone.
+    function toScreenshot(mode: string) {
+        if (ScreenshotService.held && ScreenshotService.frames !== null) {
+            ScreenshotService.show(mode);
+            picking = false;
+        } else {
+            picking = false;
+            ScreenshotService.pick(mode);
+        }
+    }
+
+    // Opens the picker in `mode` (the toolbar switched from a screenshot).
+    function pick(mode: string) {
+        if (!ready || recording)
+            return;
+        switched = true;
+        // The screenshot's frames stay, for switching back.
+        ScreenshotService.held = true;
+        picking = true;
+        root.mode = mode;
     }
 
     function stop() {
@@ -113,7 +170,7 @@ Singleton {
     Timer {
         id: begin
         property var pending: null
-        interval: Tokens.recordStartDelay
+        interval: Tokens.pickerGoneDelay
         onTriggered: {
             Daemon.call(Protocol.CMD_START_RECORDING, {
                 output: pending.output,
@@ -140,8 +197,12 @@ Singleton {
     Connections {
         target: Daemon
         function onRecordingPickRequested() {
-            if (root.ready && !root.recording)
-                root.picking = !root.picking;
+            if (!root.ready || root.recording)
+                return;
+            if (root.picking || root._opening)
+                root.cancel();
+            else
+                root.open();
         }
         function onRecordingSaved(saved: var) {
             root.saved(saved);
