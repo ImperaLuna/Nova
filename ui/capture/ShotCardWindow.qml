@@ -5,7 +5,7 @@ import "../stage"
 import "../theme"
 import "service"
 
-// The screenshot card's own layer surface in the bottom-right corner of one
+// The screenshot (or recording) card's own layer surface in the bottom-right corner of one
 // screen: on the overlay layer like the volume capsule, so it shows over
 // fullscreen windows too, only as big as the card plus its shadow, taking
 // no keyboard and no space, and clicks and blur only on the card. It slides
@@ -17,6 +17,7 @@ PanelWindow { // qmllint disable uncreatable-type
     // Its screen (StageScreen), kept while it goes away.
     required property StageScreen output
     required property var shot
+    required property bool video
     // False slides the card out; `gone` follows once it's out.
     property bool shown: true
     signal gone
@@ -62,8 +63,12 @@ PanelWindow { // qmllint disable uncreatable-type
         y: Tokens.shadowRoom
         opacity: (slide.out || !window.shown) ? 0 : 1
         shot: window.shot
+        video: window.video
         onActionRequested: action => {
-            ScreenshotService.act(window.shot.id, action);
+            if (window.video)
+                RecordingService.act(window.shot.id, action);
+            else
+                ScreenshotService.act(window.shot.id, action);
             window.shown = false;
         }
         onExpired: window.shown = false
