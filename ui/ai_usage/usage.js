@@ -1,4 +1,5 @@
 .pragma library
+.import "../text/duration.js" as Duration
 
 // What the AI usage pill and panel show for one provider of novad's
 // `ai_usage` event. novad does the work (sources, resets); this only turns
@@ -18,8 +19,7 @@ var WINDOW_NAMES = {
     weekly: "Weekly"
 };
 
-var MINUTE_MS = 60 * 1000;
-var DAY_MS = 24 * 60 * MINUTE_MS;
+var DAY_MS = Duration.DAY_MINUTES * Duration.MINUTE_MS;
 var WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function isWarn(percent) {
@@ -28,15 +28,7 @@ function isWarn(percent) {
 
 // "2h 14m", "45m", "3d 2h". Rounded up, so it never reads 0m before the reset.
 function duration(ms) {
-    var minutes = Math.max(1, Math.ceil(ms / MINUTE_MS));
-    var days = Math.floor(minutes / (24 * 60));
-    var hours = Math.floor(minutes % (24 * 60) / 60);
-    var rest = minutes % 60;
-    if (days > 0)
-        return hours > 0 ? days + "d " + hours + "h" : days + "d";
-    if (hours > 0)
-        return rest > 0 ? hours + "h " + rest + "m" : hours + "h";
-    return rest + "m";
+    return Duration.minutes(Math.max(1, Math.ceil(ms / Duration.MINUTE_MS)));
 }
 
 function pad(number) {

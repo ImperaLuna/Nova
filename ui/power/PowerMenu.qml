@@ -1,22 +1,24 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell
 import "../stage"
 import "../theme"
 import "service"
 import "../daemon/protocol.js" as Protocol
+import "../text/duration.js" as Duration
 
 // The power menu: a glass tab that grows out of the right screen edge,
 // halfway down, with lock, suspend, log out, restart and shut down. Opened
 // by the right pill's power button or `nova toggle power`; it holds the
 // keyboard while open (PowerChoice has the keys). Its body runs one radius
 // past the screen edge, so only its left corners show rounded and the blur
-// region stays one rounded rect; two concave fillets curve it into the edge.
+// region stays one rounded rect; two concave fillets curve it into the edge,
+// taking clicks and blur with it.
 StagePanel {
     id: menu
 
-    required property ShellScreen screen
+    // The screen it's on (StageScreen).
+    required property StageScreen output
 
     name: Protocol.FEATURE_POWER
     placement: "right"
@@ -39,6 +41,15 @@ StagePanel {
         }
         onCloseRequested: menu.open = false
     }
+    // How long the system has been up, in whole minutes, ticking while the
+    // menu is open.
+    SystemClock {
+        id: clock
+        enabled: menu.open
+        precision: SystemClock.Minutes
+    }
+    readonly property string uptime: Duration.minutes(Math.max(0, Math.floor((clock.date.getTime() - PowerService.bootedAt) / Duration.MINUTE_MS)))
+
     // An action still running after the menu closed shows nothing, so it
     // keeps neither the surface mapped nor its spinner turning.
     readonly property bool showsRunning: open && choice.running !== ""
@@ -52,9 +63,9 @@ StagePanel {
     radius: Math.min(Tokens.edgeTabRadius, height / 2)
     width: morph.lerp(0, openWidth) + radius
     height: morph.lerp(Tokens.edgeTabNub, fullHeight)
-    x: screen.width - morph.lerp(0, openWidth)
-    y: (screen.height - height) / 2
-    area: Qt.rect(screen.width - openWidth, (screen.height - fullHeight) / 2 - Tokens.edgeTabFillet, openWidth + Tokens.edgeTabRadius, fullHeight + 2 * Tokens.edgeTabFillet)
+    x: output.width - morph.lerp(0, openWidth)
+    y: (output.height - height) / 2
+    area: Qt.rect(output.width - openWidth, (output.height - fullHeight) / 2 - Tokens.edgeTabFillet, openWidth + Tokens.edgeTabRadius, fullHeight + 2 * Tokens.edgeTabFillet)
 
     onOpenChanged: {
         console.info(`nova: power menu ${open ? "opened" : "closed"}`);
@@ -70,25 +81,32 @@ StagePanel {
     Glass {
         anchors.fill: parent
         radius: menu.radius
+        // The fillets' rims carry the outline on into the edge.
+        rimEnd: menu.width - menu.radius - menu.fillet
     }
 
-    EdgeFillet {
-        above: true
-        visible: menu.fillet > 0
-        x: menu.width - menu.radius - menu.fillet
-        y: -menu.fillet
-        width: menu.fillet
-        height: menu.fillet
-    }
-
-    EdgeFillet {
-        above: false
-        visible: menu.fillet > 0
-        x: menu.width - menu.radius - menu.fillet
-        y: menu.height
-        width: menu.fillet
-        height: menu.fillet
-    }
+    // On its parent, in screen coordinates like the tab, so the input and
+    // blur regions follow them as the tab moves.
+    parts: [
+        EdgeFillet {
+            above: true
+            parent: menu.parent
+            visible: menu.fillet > 0
+            x: menu.x + menu.width - menu.radius - menu.fillet
+            y: menu.y - menu.fillet
+            width: menu.fillet
+            height: menu.fillet
+        },
+        EdgeFillet {
+            above: false
+            parent: menu.parent
+            visible: menu.fillet > 0
+            x: menu.x + menu.width - menu.radius - menu.fillet
+            y: menu.y + menu.height
+            width: menu.fillet
+            height: menu.fillet
+        }
+    ]
 
     // The part on screen; the rows sit where they are once open and the tab
     // grows over them.
@@ -114,16 +132,33 @@ StagePanel {
                 delay: 0.5
             }
 
-            Text {
+            // "Session", and how long the system has been up.
+            Item {
                 width: rows.width - 2 * rows.padding
-                leftPadding: Tokens.pad + Tokens.labelNudge
-                topPadding: Tokens.labelNudge
-                bottomPadding: Tokens.labelNudge
-                font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeTiny
-                font.capitalization: Font.AllUppercase
-                color: Tokens.fgDim
-                text: qsTr("Session")
+                height: session.implicitHeight
+
+                Text {
+                    id: session
+                    leftPadding: Tokens.pad + Tokens.labelNudge
+                    topPadding: Tokens.labelNudge
+                    bottomPadding: Tokens.labelNudge
+                    font.family: Tokens.fontSans
+                    font.pixelSize: Tokens.fontSizeTiny
+                    font.capitalization: Font.AllUppercase
+                    color: Tokens.fgDim
+                    text: qsTr("Session")
+                }
+
+                Text {
+                    anchors.right: parent.right
+                    anchors.baseline: session.baseline
+                    rightPadding: Tokens.pad
+                    visible: PowerService.bootedAt > 0
+                    font.family: Tokens.fontMono
+                    font.pixelSize: Tokens.fontSizeTiny
+                    color: Tokens.fgDim
+                    text: qsTr("up %1").arg(menu.uptime)
+                }
             }
 
             Repeater {

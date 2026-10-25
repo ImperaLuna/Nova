@@ -14,9 +14,9 @@ import "volume.js" as Volume
 PanelWindow { // qmllint disable uncreatable-type
     id: window
 
-    screen: output
-    // Its screen, typed (the window's own `screen` isn't, to qmllint).
-    required property ShellScreen output
+    screen: output.screen
+    // Its screen (StageScreen).
+    required property StageScreen output
     required property LiquidMotion motion
     required property string kind
     required property real volume

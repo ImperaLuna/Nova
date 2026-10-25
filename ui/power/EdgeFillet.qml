@@ -5,11 +5,25 @@ import "../theme"
 // The concave corner that joins an edge tab to the screen's right edge: a
 // square of glass tint with a quarter circle cut from its far corner, and
 // the rim along the curve. `above`: it sits on top of the tab, curving up
-// into the edge; otherwise below, curving down.
+// into the edge; otherwise below, curving down. A part of the tab
+// (StagePanel `parts`): it takes clicks and is blurred like the tab, all but
+// its cutout.
 Shape {
     id: fillet
 
     property bool above: true
+
+    // The circle the curve is cut from, centred on the square's corner away
+    // from the tab and the edge.
+    readonly property Item cutout: Item {
+        parent: fillet
+        x: -fillet.width
+        y: fillet.above ? -fillet.height : 0
+        width: 2 * fillet.width
+        height: 2 * fillet.height
+    }
+    // Square: its corners are the tab's and the edge's.
+    readonly property int radius: 0
 
     preferredRendererType: Shape.CurveRenderer
 

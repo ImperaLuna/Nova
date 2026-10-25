@@ -1235,9 +1235,11 @@ fn lock_needs_its_feature_but_unlocking_doesnt() {
 }
 
 #[test]
-fn power_options_list_every_action_and_say_why_one_cant_run() {
+fn power_options_list_every_action_say_why_one_cant_run_and_when_the_system_booted() {
     let novad = TestDaemon::start("power", None);
-    let options = novad.connect().request(1, "power_options", None)["result"].clone();
+    let menu = novad.connect().request(1, "power_options", None)["result"].clone();
+    assert!(menu["booted_at"].as_u64().is_some_and(|booted| booted > 0), "the uptime's start: {menu}");
+    let options = menu["options"].clone();
     let actions: Vec<&str> =
         options.as_array().unwrap().iter().map(|option| option["action"].as_str().unwrap()).collect();
     assert_eq!(actions, ["lock", "suspend", "log_out", "reboot", "power_off"]);

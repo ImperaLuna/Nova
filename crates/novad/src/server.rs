@@ -3,7 +3,9 @@
 
 use crate::hub::{ClientId, ClientQueue, Outgoing};
 use crate::{Daemon, lock};
-use nova_protocol::{Capability, Command, Event, Outcome, Panel, PowerAction, Response, Topic, VolumeKey, encode};
+use nova_protocol::{
+    Capability, Command, Event, Outcome, Panel, PowerAction, PowerMenu, Response, Topic, VolumeKey, encode,
+};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -302,9 +304,15 @@ impl<'a> Connection<'a> {
             _ => Err("Not on this compositor".into()),
         };
         let logger = Arc::clone(&self.daemon.logger);
-        Box::new(move || match serde_json::to_value(crate::power::options(lock, log_out, &logger)) {
-            Ok(value) => Outcome::Result(value),
-            Err(e) => Outcome::Error(e.to_string()),
+        Box::new(move || {
+            let menu = PowerMenu {
+                options: crate::power::options(lock, log_out, &logger),
+                booted_at: crate::procfs::boot_time(),
+            };
+            match serde_json::to_value(menu) {
+                Ok(value) => Outcome::Result(value),
+                Err(e) => Outcome::Error(e.to_string()),
+            }
         })
     }
 
