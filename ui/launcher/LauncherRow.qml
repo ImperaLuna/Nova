@@ -19,7 +19,8 @@ Item {
     // Launching: on the accent.
     property bool launching: false
 
-    signal hovered
+    // The pointer moved over the row, to `at` on the screen.
+    signal hovered(point at)
     signal clicked
     signal pinClicked
 
@@ -33,7 +34,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onEntered: row.hovered()
+        onPositionChanged: event => row.hovered(mapToItem(null, event.x, event.y))
         onClicked: row.clicked()
     }
 

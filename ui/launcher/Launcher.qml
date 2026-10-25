@@ -108,6 +108,19 @@ StagePanel {
     onRowsChanged: selected = Math.min(selected, Math.max(0, rows.length - 1))
     onSelectedChanged: list.positionViewAtIndex(selected, ListView.Contain)
 
+    // Where the pointer last was over a row. The list scrolling under a
+    // still pointer moves rows under it too, which mustn't take the
+    // selection from the arrow keys.
+    property point pointer: Qt.point(-1, -1)
+
+    // The pointer is over row `index`, at `at`: selects it if it moved there.
+    function pointed(index: int, at: point) {
+        if (at.x === pointer.x && at.y === pointer.y)
+            return;
+        pointer = at;
+        selected = index;
+    }
+
     // novad's matches for `forQuery`; dropped when something else has been
     // typed since.
     function showMatches(forQuery: string, found: var) {
@@ -367,7 +380,7 @@ StagePanel {
             selected: item.index === launcher.selected
             pinned: launcher.pinned.includes(item.modelData.id)
             launching: launcher.launching === item.modelData.id
-            onHovered: launcher.selected = item.index
+            onHovered: at => launcher.pointed(item.index, at)
             onClicked: launcher.launch(item.modelData.id, false)
             onPinClicked: launcher.pinRequested(item.modelData.id, !pinned)
         }

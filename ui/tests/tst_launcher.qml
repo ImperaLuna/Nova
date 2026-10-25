@@ -177,6 +177,17 @@ Item {
             tryCompare(launcher, "open", false);
         }
 
+        function test_rows_scrolling_under_a_still_pointer_keep_the_selection() {
+            const launcher = make();
+            launcher.pointed(1, Qt.point(10, 40));
+            compare(launcher.selected, 1);
+            keyClick(Qt.Key_Down);
+            launcher.pointed(0, Qt.point(10, 40));
+            compare(launcher.selected, 2, "the pointer didn't move");
+            launcher.pointed(0, Qt.point(10, 20));
+            compare(launcher.selected, 0);
+        }
+
         function test_shift_enter_asks_for_a_new_window() {
             make();
             keyClick(Qt.Key_Return, Qt.ShiftModifier);
