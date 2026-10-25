@@ -32,9 +32,11 @@ Item {
     // workspaces the central pill lists.
     required property string screenName
 
-    // The space kept free for the bar at the top of the screen, none while
-    // it steps aside for a fullscreen window.
-    readonly property int reservedHeight: spaceKept ? Tokens.barHeight + Tokens.barMargin : 0
+    // The space kept free for the bar at the top of the screen: the same gap
+    // above and below the pills, none while it steps aside for a fullscreen
+    // window. The compositor's own top gap is meant to be off, so it doesn't
+    // add to the one below.
+    readonly property int reservedHeight: spaceKept ? Tokens.barGap + Tokens.barHeight + Tokens.barGap : 0
 
     // The shown workspace has a window over the whole screen.
     readonly property bool fullscreenBelow: Compositor.has(Protocol.CAPABILITY_FULLSCREEN) && Protocol.fullscreenShown(Compositor.output(screenName))
@@ -123,7 +125,7 @@ Item {
         id: shelf
         width: bar.width
         height: bar.height
-        y: bar.tucked ? -(Tokens.barMargin + Tokens.barHeight + Tokens.shadowRoom) : 0
+        y: bar.tucked ? -(Tokens.barGap + Tokens.barHeight + Tokens.shadowRoom) : 0
         opacity: bar.tucked ? 0 : 1
         // Gone once out of sight, so they take no clicks and need no blur.
         visible: !bar.tucked || slide.running
@@ -147,7 +149,7 @@ Item {
         Loader {
             id: aiUsage
             x: Tokens.barMargin
-            y: Tokens.barMargin
+            y: Tokens.barGap
             active: AiUsageService.ready
             onLoaded: console.info("nova: ai usage pill shown")
             sourceComponent: AiUsage {
@@ -163,7 +165,7 @@ Item {
 
             visible: !bar.covered.includes(center)
             x: bar.width / 2 + timeFromRight - width
-            y: Tokens.barMargin
+            y: Tokens.barGap
             width: implicitWidth
             height: implicitHeight
             workspaces: Compositor.has(Protocol.CAPABILITY_WORKSPACES) ? Protocol.barWorkspaces(output) : []
