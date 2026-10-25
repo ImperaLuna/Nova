@@ -1,5 +1,5 @@
 [{
-    "address": "0x5e0d98376c90",
+    "address": "0x58edea3cebb0",
     "mapped": true,
     "hidden": false,
     "visible": true,
@@ -16,7 +16,7 @@
     "title": "First window",
     "initialClass": "nova-first",
     "initialTitle": "First window",
-    "pid": 1574,
+    "pid": 1607,
     "xwayland": false,
     "pinned": false,
     "pinFullscreened": false,

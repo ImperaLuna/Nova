@@ -29,22 +29,26 @@
   },
   {
     "name": "focus the previous workspace",
-    "events_bytes": 3009
+    "events_bytes": 3010
   },
   {
     "name": "ring the second window's bell",
-    "events_bytes": 3108
+    "events_bytes": 3109
   },
   {
     "name": "focus the other output",
-    "events_bytes": 3108
+    "events_bytes": 3109
   },
   {
     "name": "focus the first output",
-    "events_bytes": 3108
+    "events_bytes": 3109
+  },
+  {
+    "name": "fullscreen the focused window",
+    "events_bytes": 3306
   },
   {
     "name": "close the focused window",
-    "events_bytes": 3245
+    "events_bytes": 3443
   }
 ]
