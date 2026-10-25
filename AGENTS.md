@@ -17,6 +17,10 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - One socket between novad and the UI, with concerns split in code: each
   service is its own QML singleton built on `Daemon.qml` and its own Rust
   module in novad. Clients subscribe to the topics they need.
+  Exception: audio (volume, mute, the default output) goes through
+  Quickshell's PipeWire service in `ui/volume/service/`, since a Rust
+  PipeWire library would break the static musl build and Quickshell already
+  keeps the connection. Keep its logic in `volume.js`.
 - The UI checks capabilities that novad reports, never which compositor is
   running (no `isNiri`).
 - A feature is `features/<id>/feature.toml`, the single source of truth for
