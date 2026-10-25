@@ -92,10 +92,11 @@ fn describe_desktop(desktop: Option<&Desktop>) -> String {
             .workspaces
             .iter()
             .map(|workspace| {
-                let marks: Vec<&str> = [(workspace.active, "shown"), (workspace.urgent, "urgent")]
-                    .into_iter()
-                    .filter_map(|(set, mark)| set.then_some(mark))
-                    .collect();
+                let marks: Vec<&str> =
+                    [(workspace.active, "shown"), (workspace.urgent, "urgent"), (workspace.empty, "empty")]
+                        .into_iter()
+                        .filter_map(|(set, mark)| set.then_some(mark))
+                        .collect();
                 if marks.is_empty() {
                     printable(&workspace.name)
                 } else {
@@ -157,8 +158,14 @@ mod tests {
 
     #[test]
     fn the_desktop_lists_workspaces_per_output() {
-        let workspace =
-            |id, name: &str, active| Workspace { id, name: name.into(), active, focused: false, urgent: false };
+        let workspace = |id, name: &str, active| Workspace {
+            id,
+            name: name.into(),
+            active,
+            focused: false,
+            urgent: false,
+            empty: false,
+        };
         let desktop = Desktop {
             compositor: "niri".into(),
             capabilities: vec![],
@@ -167,7 +174,7 @@ mod tests {
                     name: "DP-1".into(),
                     focused: true,
                     workspaces: vec![
-                        workspace(1, "1", false),
+                        Workspace { empty: true, ..workspace(1, "1", false) },
                         Workspace { focused: true, ..workspace(2, "web", true) },
                         Workspace { urgent: true, ..workspace(3, "3", false) },
                     ],
@@ -180,7 +187,7 @@ mod tests {
         assert_eq!(
             describe_desktop(Some(&desktop)),
             "compositor niri, keyboard English (US)\n\
-             workspaces DP-1 (focused): 1, web (shown), 3 (urgent)\n\
+             workspaces DP-1 (focused): 1 (empty), web (shown), 3 (urgent)\n\
              \x20          HDMI-A-1: 1 (shown)\n\
              window     foot: ~/Projects\n"
         );

@@ -189,6 +189,7 @@ Scope {
         Bar {
             id: bar
             anchors.fill: parent
+            screenName: root.screen.name
             // Its items that a panel elsewhere is drawn over (StagePanel
             // `from`), so they hide. They show again once that panel has
             // closed, and the surface it's on stays until that's drawn.

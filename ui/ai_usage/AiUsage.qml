@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Effects
 import QtQuick.Shapes
 import "../theme"
 import "../stage"
@@ -139,47 +138,8 @@ StagePanel {
         visible: text !== ""
     }
 
-    // The glass's shadow, cut out where the glass is: the glass is
-    // see-through, and a shadow under it would only darken it.
-    Item {
-        id: shadow
-        x: -Tokens.shadowRoom
-        y: -Tokens.shadowRoom
-        width: surface.width + 2 * Tokens.shadowRoom
-        height: surface.height + 2 * Tokens.shadowRoom
-        layer.enabled: true
-        layer.effect: MultiEffect {
-            maskEnabled: true
-            maskInverted: true
-            maskSource: shadowCutout
-        }
-
-        RectangularShadow {
-            x: Tokens.shadowRoom
-            y: Tokens.shadowRoom
-            width: surface.width
-            height: surface.height
-            radius: surface.radius
-            offset.y: Tokens.shadowOffset
-            blur: Tokens.shadowBlur
-            color: Tokens.shadow
-        }
-    }
-
-    Item {
-        id: shadowCutout
-        width: shadow.width
-        height: shadow.height
-        visible: false
-        layer.enabled: true
-
-        Rectangle {
-            x: Tokens.shadowRoom
-            y: Tokens.shadowRoom
-            width: surface.width
-            height: surface.height
-            radius: surface.radius
-        }
+    GlassShadow {
+        glass: surface
     }
 
     Glass {

@@ -125,6 +125,9 @@ fn check_the_script(followed: &Followed) {
     let on_two = step(followed, "focus the next workspace");
     assert_eq!(focused_workspace(on_two).name, "2");
     assert_eq!(window(on_two), None, "workspace 2 is empty");
+    assert!(focused_workspace(on_two).empty);
+    let first_workspace = on_two.outputs.iter().flat_map(|output| &output.workspaces).find(|w| w.name == "1");
+    assert!(!first_workspace.expect("workspace 1").empty, "the first window is on workspace 1");
 
     let renamed = step(followed, "retitle the second window");
     assert_eq!(window(renamed).unwrap().title, "Renamed, with, commas");

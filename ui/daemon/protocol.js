@@ -91,3 +91,14 @@ function focusedWorkspace(desktop) {
     }
     return null;
 }
+
+// The workspaces the bar lists for an output (one of a compositor event's
+// `outputs`, or null): those with windows, and the one shown there even
+// when it's empty.
+function barWorkspaces(output) {
+    if (!output)
+        return [];
+    return output.workspaces.filter(function (workspace) {
+        return !workspace.empty || workspace.active;
+    });
+}
