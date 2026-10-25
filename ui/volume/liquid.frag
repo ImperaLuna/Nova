@@ -17,6 +17,7 @@ layout(std140, binding = 0) uniform buf {
     float wall;       // glass between the rim and the liquid, px
     float level;      // 0..1 fill
     float time;       // seconds
+    float rise;       // how far the specks have risen: seconds, quicker while it fizzes
     float swell;      // the slow swell's height, px (0: a still surface)
     float amp;        // sloshing wave amplitude, px
     float tilt;       // surface tilt, px per px
@@ -102,22 +103,34 @@ void main() {
     lq = mix(lq, vec3(1.0), streak * exp(-side * side) * smoothstep(0.0, 18.0, below));
     col = over(pm(vec4(min(lq, vec3(1.0)), liquidColor.a), wet), col);
 
-    // Specks: soft glowing motes drifting up and across, fading in and out.
-    // More of them, and quicker, while it sloshes.
+    // Specks: soft glowing motes rising from the bottom to the surface,
+    // where they fade. Each one rises at its own pace, and every trip up starts
+    // from a new spot with a new size, drift and wobble, so they never
+    // retrace a path. Their position follows `rise`, which only ever grows,
+    // so a level change or more fizz speeds them up without making them jump.
     float bottom = box.y + box.w - wall;
+    float left = box.x + wall;
     float motes = 0.0;
     for (int i = 0; i < 32; i++) {
         float fi = float(i);
         float on = clamp(fizz * specks - fi, 0.0, 1.0);
         if (on <= 0.0)
             break;
-        float s1 = hash(fi + 1.0), s2 = hash(fi + 7.3), s3 = hash(fi + 13.9);
-        float ph = fract(time * (0.05 + 0.06 * s2 + 0.15 * fizz) + s3);
-        vec2 at = vec2(box.x + wall + inner * fract(s1 + 0.15 * sin(time * (0.4 + 0.5 * s2) + fi)), bottom - ph * span);
-        float r = 0.9 + 1.4 * s3;
+        float pace = 0.05 + 0.07 * hash(fi + 7.3);
+        float t = rise * pace + hash(fi + 1.0);
+        float ph = fract(t);
+        float n = fi * 31.7 + floor(t) * 17.3;
+        float lane = hash(n + 1.0), drift = hash(n + 2.0) - 0.5;
+        float wobble = hash(n + 3.0), size = hash(n + 4.0);
+        float y = bottom - ph * level * span;
+        float x = left + inner * (0.12 + 0.76 * lane + 0.35 * drift * ph)
+            + (1.0 + 2.5 * wobble) * sin(ph * (6.0 + 10.0 * wobble) + 6.2832 * size)
+            + tilt * (bottom - y) * 0.5;
+        vec2 at = vec2(clamp(x, left + 2.0, left + inner - 2.0), y);
+        float r = 0.8 + 1.5 * size;
         float dm = length(p - at);
-        float twinkle = 0.55 + 0.45 * sin(time * (1.5 + 2.0 * s1) + fi * 2.3);
-        motes += exp(-dm * dm / (r * r)) * twinkle * sin(3.1416 * ph) * on;
+        float twinkle = 0.55 + 0.45 * sin(time * (1.5 + 2.0 * lane) + fi * 2.3);
+        motes += exp(-dm * dm / (r * r)) * twinkle * smoothstep(0.0, 0.08, ph) * on;
     }
     motes *= clamp(below / 4.0, 0.0, 1.0);
     col = over(vec4(1.0) * clamp(motes * 0.7, 0.0, 0.85) * wet, col);

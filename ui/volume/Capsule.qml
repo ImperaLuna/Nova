@@ -44,6 +44,7 @@ Item {
         readonly property real wall: Tokens.capsuleWall
         readonly property real level: capsule.motion.level
         readonly property real time: capsule.motion.time
+        readonly property real rise: capsule.motion.rise
         property real swell: capsule.motion.still ? 0 : Tokens.liquidSwell
         Behavior on swell {
             NumberAnimation {

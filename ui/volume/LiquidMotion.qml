@@ -21,6 +21,8 @@ QtObject {
     property real openSpeed: 0
     property real level: levelTarget
     property real time: 0
+    // How far the specks have risen: time, run faster while it fizzes.
+    property real rise: 0
     property real amp: 0
     property real tilt: 0
     property real fizz: 0
@@ -58,5 +60,6 @@ QtObject {
         slosh = Math.min(Tokens.liquidSloshMax, slosh * Math.exp(-dt / Tokens.liquidSloshDecay) + Math.abs(fill.v) * Tokens.liquidSloshGain * dt);
         amp = (still ? 0 : Tokens.liquidIdleWave) + slosh;
         fizz = still ? 0 : Math.min(1, Tokens.liquidFizz + slosh / Tokens.liquidSloshMax + Math.abs(tilt) / Tokens.liquidTiltMax);
+        rise += dt * (1 + Tokens.liquidFizzPace * fizz);
     }
 }

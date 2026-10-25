@@ -211,6 +211,8 @@ QtObject {
     // rising while it's calm.
     readonly property int liquidSpecks: 14
     readonly property real liquidFizz: 0.3
+    // How much quicker they rise at full fizz (2: three times as fast).
+    readonly property real liquidFizzPace: 2
     // Light inside it: just under the surface, and down the left side.
     readonly property real liquidGlow: 0.28
     readonly property real liquidStreak: 0.16
