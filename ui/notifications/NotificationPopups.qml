@@ -7,14 +7,13 @@ import "../compositor"
 import "../stage"
 import "../theme"
 import "service"
-import "../daemon/protocol.js" as Protocol
 
 // The pop-ups' own layer surface, under the right pill of the screen that
 // had focus when the first of them came; they stay there until they've all
 // gone. On the overlay layer like the screenshot card, only as big as the
 // stack plus its shadow, taking no keyboard and no space, and clicks and
-// blur only on the cards. None while quick settings shows the list, and
-// none but critical ones over a fullscreen window: the list keeps them.
+// blur only on the cards, so they show over fullscreen windows too. None
+// while quick settings shows the list: the list has them.
 PanelWindow { // qmllint disable uncreatable-type
     id: window
 
@@ -45,12 +44,6 @@ PanelWindow { // qmllint disable uncreatable-type
             return;
         if (!stack.busy)
             target = Compositor.focusedScreen();
-        const critical = notification.urgency === Protocol.URGENCY_CRITICAL;
-        const fullscreen = Compositor.has(Protocol.CAPABILITY_FULLSCREEN) && Protocol.fullscreenShown(Compositor.output(output.name));
-        if (fullscreen && !critical) {
-            console.info(`nova: notification ${notification.id} held back over a fullscreen window`);
-            return;
-        }
         console.info(`nova: notification ${notification.id} pops up on ${output.name}`);
         stack.add(notification);
     }
