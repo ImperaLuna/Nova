@@ -9,6 +9,7 @@
 //! menu dims.
 
 use crate::logger::Logger;
+use crate::logind::{MANAGER as LOGIND_MANAGER, PATH as LOGIND_PATH, SERVICE as LOGIND_SERVICE};
 use nova_protocol::{PowerAction, PowerOption};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
@@ -18,9 +19,6 @@ use std::time::Duration;
 pub const FEATURE_ID: &str = "power";
 const LOG_SOURCE: &str = "power";
 
-const LOGIND_SERVICE: &str = "org.freedesktop.login1";
-const LOGIND_PATH: &str = "/org/freedesktop/login1";
-const LOGIND_MANAGER: &str = "org.freedesktop.login1.Manager";
 /// How long logind gets to connect and answer one call.
 const LOGIND_TIMEOUT: Duration = Duration::from_secs(5);
 

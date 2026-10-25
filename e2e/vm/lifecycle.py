@@ -119,6 +119,9 @@ WRONG_PASSWORD = "nova: lock screen: wrong password"
 POWER_OPENED = "nova: power menu opened"
 POWER_CLOSED = "nova: power menu closed"
 KEY_L = "38:1 38:0"
+# novad's sleep inhibitor (crates/novad/src/logind.rs) as `systemd-inhibit
+# --list` shows it: who, what, why and mode.
+NOVA_INHIBITOR = "Nova.*sleep.*Locking the screen before sleep.*delay"
 # The window the tests open, and how it shows in novad's focused window.
 FOOT = "foot"
 NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
@@ -452,6 +455,16 @@ with subtest("nova toggle power opens the power menu; Esc closes it and its L ke
         machine.succeed(as_user("nova toggle power"))
         retry(lambda _last_try: ui_log_count(POWER_OPENED) > before, timeout=CLICK_EFFECT)
         press_until_logged(keys, done)
+    machine.succeed(f"{YDOTOOL} type {shlex.quote(PASSWORD)}")
+    press_until_logged(ENTER, SESSION_UNLOCKED)
+
+with subtest("logind's lock-session locks the screen, and novad holds back sleep until it can lock"):
+    # Suspending the VM would stop the test, so only the inhibitor that
+    # makes a suspend wait is checked here.
+    machine.wait_until_succeeds(f"systemd-inhibit --list --no-pager | grep {shlex.quote(NOVA_INHIBITOR)}", timeout=WAIT)
+    before = ui_log_count(SESSION_LOCKED)
+    machine.succeed("loginctl lock-sessions")
+    retry(lambda _last_try: ui_log_count(SESSION_LOCKED) > before, timeout=CLICK_EFFECT)
     machine.succeed(f"{YDOTOOL} type {shlex.quote(PASSWORD)}")
     press_until_logged(ENTER, SESSION_UNLOCKED)
 

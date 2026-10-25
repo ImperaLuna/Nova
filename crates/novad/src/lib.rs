@@ -30,6 +30,7 @@ mod features;
 mod hub;
 mod inotify;
 mod logger;
+mod logind;
 mod power;
 mod procfs;
 mod server;
@@ -40,7 +41,7 @@ mod theme;
 
 use hub::Hub;
 use logger::Logger;
-use nova_protocol::{LogLevel, Status, UiState, UiStatus};
+use nova_protocol::{FeatureStatus, LogLevel, Status, UiState, UiStatus};
 use settings::{Settings, Sources};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -128,6 +129,11 @@ impl Daemon {
             log_dir: self.logger.dir().display().to_string(),
             desktop: self.compositor.as_ref().and_then(|compositor| compositor.desktop()),
         }
+    }
+
+    /// Whether the feature `id` is ready.
+    fn feature_ready(&self, id: &str) -> bool {
+        lock(&self.settings).features.iter().any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
     }
 
     /// Reads the settings files again and applies what changed.
@@ -238,6 +244,11 @@ fn start(
         session_lock,
     });
     daemon.watch_settings();
+    // Not for a daemon without its UI (tests, a UI run by hand): logind's
+    // locks and the sleep inhibitor are the whole machine's.
+    if daemon.ui.is_some() {
+        logind::follow(&daemon);
+    }
     Ok((listener, daemon))
 }
 
