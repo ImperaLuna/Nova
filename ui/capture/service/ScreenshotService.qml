@@ -31,10 +31,11 @@ Singleton {
     onFramesChanged: {
         if (frames === null)
             held = false;
-        else if (_frozen) {
+        if (_frozen) {
+            // Here, or closed before they came (the picker toggled off).
             const done = _frozen;
             _frozen = null;
-            done("");
+            done(frames === null ? "the screenshot picker closed" : "");
         }
     }
     // The last shot saved ({id, path, width, height, copied}), for the card.
@@ -71,9 +72,14 @@ Singleton {
 
     // Freezes the screens for the recording picker to hold (`held`): novad
     // takes the frames before anything covers the screens. Calls `done`
-    // with an error, or "" once they're here.
+    // with an error, or "" once they're here. The open picker's frames, if
+    // any, are held as they are: asking novad again would close them.
     function freeze(done: var) {
         held = true;
+        if (frames !== null) {
+            done("");
+            return;
+        }
         _frozen = done;
         Daemon.call(Protocol.CMD_SCREENSHOT, {
             mode: Protocol.CAPTURE_REGION
