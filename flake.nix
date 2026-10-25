@@ -264,6 +264,14 @@
 
           qmllint = qmllintFor pkgs;
 
+          # The committed .qsb shaders match their .frag sources.
+          shaders = pkgs.runCommand "nova-shaders" { nativeBuildInputs = [ pkgs.qt6.qtshadertools ]; } ''
+            cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
+            patchShebangs scripts
+            scripts/shaders.sh --check
+            touch $out
+          '';
+
           # install.sh: shellcheck, and a run against a fake release.
           install-script =
             pkgs.runCommand "nova-install-script"
@@ -354,6 +362,7 @@
             # So dev runs show the UI as nova-ui too; the daemon finds it on PATH.
             self.packages.${pkgs.stdenv.hostPlatform.system}.nova-ui
             pkgs.qt6.qtdeclarative # qmllint, qmlls, qmlformat, qmltestrunner
+            pkgs.qt6.qtshadertools # qsb, for scripts/shaders.sh
             pkgs.sway # headless compositor for e2e
             pkgs.grim
             pkgs.cargo-insta # `cargo insta review` for snapshot tests

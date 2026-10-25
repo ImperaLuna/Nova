@@ -86,7 +86,10 @@ grep ' ui: ' "$out/state/nova.log" >"$out/ui.log" || true
 [[ $(jq -r .ui.restarts "$out/status.json") == 0 ]] || fail "the UI crashed and was restarted"
 ui=$(jq -r .ui.pid "$out/status.json")
 
-if grep -E 'ERROR|TypeError|ReferenceError|is not a type|is not installed|Failed to load' "$out/ui.log"; then
+# No PipeWire runs here, which Quickshell logs as an error once; the volume
+# capsule then has no output, as on any system without PipeWire.
+no_pipewire='quickshell.service.pipewire.loop: Failed to connect pipewire context'
+if grep -vF "$no_pipewire" "$out/ui.log" | grep -E 'ERROR|TypeError|ReferenceError|is not a type|is not installed|Failed to load'; then
   fail "QML errors in the UI log"
 fi
 
