@@ -11,6 +11,7 @@ name = "Carbonfox"
 # Backgrounds
 bg = "#1D1D1D"        # main background
 bgAlt = "#393E46"     # secondary background, borders, selection
+backdrop = "#000000"  # behind everything, like the lock screen
 
 # Foregrounds
 fg = "#F5E7C6"        # primary text
@@ -45,6 +46,7 @@ swatch8 = "#9C7C02"   # yellow
 # Backgrounds
 bg = "#F6F2EA"
 bgAlt = "#DDD6C8"
+backdrop = "#FFFFFF"
 
 # Foregrounds
 fg = "#26231F"

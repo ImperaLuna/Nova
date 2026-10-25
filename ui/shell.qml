@@ -5,6 +5,8 @@ import Quickshell
 import Quickshell.Io
 import "compositor"
 import "daemon"
+import "lock"
+import "lock/service"
 import "stage"
 
 ShellRoot {
@@ -16,6 +18,13 @@ ShellRoot {
             required property var modelData
             screen: modelData
         }
+    }
+
+    // Stays loaded while locked even if the feature turns off: dropping the
+    // session lock then would leave the screens covered for good.
+    LazyLoader {
+        active: Daemon.theme !== null && (LockService.ready || LockService.locked)
+        component: LockScreen {}
     }
 
     // `quickshell ipc --pid <UI pid> prop get compositor focusedWorkspace`:

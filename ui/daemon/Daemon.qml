@@ -27,11 +27,16 @@ Singleton {
     // Compositor singleton.
     property var desktop: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
+    // novad's word on whether the session is locked. Read it through the
+    // LockService singleton, which also hears lockRequested.
+    property bool locked: false
 
     // `nova toggle <panel>`: open or close the StagePanel named `panel`.
     // `output` is the focused output's name, or null when novad doesn't
     // know it.
     signal toggleRequested(string panel, var output)
+    // A lock event said to lock the screen.
+    signal lockRequested
 
     property int _nextId: 1
     property var _pending: ({})
@@ -80,6 +85,10 @@ Singleton {
             desktop = msg.data;
         } else if (msg.event === Protocol.EVENT_TOGGLE) {
             toggleRequested(msg.data.panel, msg.data.output ?? null);
+        } else if (msg.event === Protocol.EVENT_LOCK) {
+            locked = msg.data.locked;
+            if (locked)
+                lockRequested();
         }
     }
 
@@ -104,7 +113,7 @@ Singleton {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
                 root.call(Protocol.CMD_SUBSCRIBE, {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK]
                 });
             } else {
                 // Replies to these won't come any more.

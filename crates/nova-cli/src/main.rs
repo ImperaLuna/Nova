@@ -76,6 +76,8 @@ enum NovaCommand {
     Completions { shell: clap_complete::Shell },
     /// Open or close a panel on the focused output. Meant for keybinds.
     Toggle(toggle::ToggleArgs),
+    /// Lock the screen; your password unlocks it. Meant for keybinds and idle daemons.
+    Lock,
     /// Send a raw request to novad and print the reply as JSON, for scripts.
     Ipc(ipc::IpcArgs),
 }
@@ -107,6 +109,7 @@ fn main() -> ExitCode {
             Err(e) => Err(e),
         },
         Some(NovaCommand::Toggle(args)) => toggle::run(&args, &socket),
+        Some(NovaCommand::Lock) => toggle::lock(&socket),
         Some(NovaCommand::Daemon(args)) => novad::run(*args, socket).map_err(|e| format!("daemon: {e}")),
     };
     match result {

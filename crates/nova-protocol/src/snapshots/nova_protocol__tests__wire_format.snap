@@ -6,8 +6,8 @@ expression: all
 {"v":2,"event":"features","data":{"features":[{"id":"core","status":"ready"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
-{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle"]}}
-{"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","fg":"#F5E7C6","fgAlt":"#525252","fgDim":"#9A9A9A","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
+{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock"]}}
+{"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","backdrop":"#000000","fg":"#F5E7C6","fgAlt":"#525252","fgDim":"#9A9A9A","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
 {"v":2,"id":10,"cmd":"status"}
 {"v":2,"id":11,"cmd":"quit"}
 {"v":2,"event":"logs","data":{"backlog":true,"entries":[{"time":"2026-10-22T13:45:09.123Z","level":"warn","source":"ui","message":"Binding loop detected: x: y"}]}}
@@ -24,4 +24,9 @@ expression: all
 {"v":2,"id":15,"cmd":"toggle","args":{"panel":"ai-usage"}}
 {"v":2,"event":"toggle","data":{"panel":"ai-usage","output":"DP-1"}}
 {"v":2,"event":"toggle","data":{"panel":"ai-usage"}}
+{"v":2,"id":16,"cmd":"lock"}
+{"v":2,"event":"lock","data":{"locked":true}}
+{"v":2,"id":20,"cmd":"report_locked"}
+{"v":2,"id":17,"cmd":"report_unlocked"}
+{"v":2,"event":"lock","data":{"locked":false}}
 {"v":2,"id":8,"error":"bad request"}

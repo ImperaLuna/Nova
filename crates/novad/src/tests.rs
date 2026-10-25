@@ -77,6 +77,7 @@ impl TestDaemon {
         let settings = Settings::load(&sources, &hub, &logger);
         let compositor = compositor(&dir)
             .map(|backend| compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
+        let session_lock = session_lock::SessionLock::open(&dir, &logger);
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
             hub,
@@ -86,6 +87,7 @@ impl TestDaemon {
             sources,
             settings: Mutex::new(settings),
             compositor,
+            session_lock,
         });
         daemon.watch_settings();
         let serving = Arc::clone(&daemon);
@@ -1075,6 +1077,84 @@ fn toggle_names_the_focused_output() {
     assert_eq!(reply["result"], Value::Null);
     let toggle = ui.next_event("toggle");
     assert_eq!(toggle, json!({"panel": "ai-usage", "output": focused_output(&desktop)}));
+}
+
+#[test]
+fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
+    let novad = TestDaemon::start("lock", None);
+    let mut cli = novad.connect();
+    let reply = cli.request(1, "lock", None);
+    assert!(reply["error"].as_str().unwrap().contains("UI isn't connected"), "{reply}");
+
+    let mut ui = novad.connect();
+    ui.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
+    assert_eq!(ui.next_event("lock"), json!({"locked": false}), "the state on subscribe");
+    // `nova lock` answers once the compositor has covered the screens.
+    let locking = std::thread::spawn(move || cli.request(2, "lock", None));
+    assert_eq!(ui.next_event("lock"), json!({"locked": true}));
+    assert!(!locking.is_finished(), "answered before the screens were covered");
+    assert_eq!(ui.request(2, "report_locked", None)["result"], Value::Null);
+    assert_eq!(locking.join().unwrap()["result"], Value::Null);
+    assert!(novad.dir.join("locked").exists(), "kept for a restarted novad");
+
+    // A UI that crashed while locked hears on its restart that it should lock.
+    drop(ui);
+    let mut restarted = novad.connect();
+    restarted.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
+    assert_eq!(restarted.next_event("lock"), json!({"locked": true}));
+    // The screens stayed covered, so locking again answers at once.
+    assert_eq!(novad.connect().request(1, "lock", None)["result"], Value::Null);
+
+    assert_eq!(restarted.request(2, "report_unlocked", None)["result"], Value::Null);
+    assert_eq!(restarted.next_event("lock"), json!({"locked": false}));
+    assert!(!novad.dir.join("locked").exists());
+}
+
+#[test]
+fn only_the_supervised_ui_reports_the_lock_screen() {
+    let scripts = std::env::temp_dir().join(format!("novad-test-lock-ui-{}", std::process::id()));
+    std::fs::create_dir_all(&scripts).unwrap();
+    let fake_ui = scripts.join("quickshell");
+    std::fs::write(&fake_ui, "#!/bin/sh\nexec sleep 30\n").unwrap();
+    std::fs::set_permissions(&fake_ui, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let settings = UiSettings {
+        quickshell: fake_ui,
+        ui_dir: PathBuf::from("ui"),
+        socket: PathBuf::from("unused.sock"),
+        path_var: std::env::var("PATH").unwrap_or_default(),
+        wayland_socket: None,
+    };
+    let novad = TestDaemon::start("lock-reports", Some(settings));
+    let mut other = novad.connect();
+    for report in ["report_locked", "report_unlocked"] {
+        let reply = other.request(1, report, None);
+        assert!(reply["error"].as_str().unwrap().contains("only the UI"), "{report}: {reply}");
+    }
+    novad.daemon.ui.as_ref().unwrap().stop();
+    std::fs::remove_dir_all(scripts).unwrap();
+}
+
+#[test]
+fn lock_fails_when_the_screens_arent_covered_in_time() {
+    let novad = TestDaemon::start("lock-stalled", None);
+    let mut ui = novad.connect();
+    ui.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
+    // A UI that hears the lock but never covers the screens.
+    let reply = novad.connect().request(1, "lock", None);
+    assert!(reply["error"].as_str().unwrap().contains("weren't covered"), "{reply}");
+}
+
+#[test]
+fn lock_needs_its_feature_but_unlocking_doesnt() {
+    let novad = TestDaemon::open("lock-off", None, |dir| {
+        std::fs::write(dir.join("config/features.toml"), "disabled = [\"ai-usage\", \"lock\"]\n").unwrap()
+    });
+    let mut ui = novad.connect();
+    ui.request(1, "subscribe", Some(json!({"topics": ["lock"]})));
+    let reply = novad.connect().request(1, "lock", None);
+    assert!(reply["error"].as_str().unwrap().contains("lock feature isn't ready"), "{reply}");
+    // Turned off while the screen was locked: the UI can still say it unlocked.
+    assert_eq!(ui.request(2, "report_unlocked", None)["result"], Value::Null);
 }
 
 /// Saves `text` to `path` the way many editors do: a new file renamed over

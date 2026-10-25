@@ -52,6 +52,11 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
     },
+    /// Whether the session is locked (feature `lock`). Topic [`Topic::Lock`],
+    /// sent right after subscribing and whenever it changes. The UI locks
+    /// when `locked` turns true, but only ever unlocks itself, after the
+    /// user's password checks out: `locked: false` just follows that.
+    Lock { locked: bool },
 }
 
 /// Groups of events a client can subscribe to.
@@ -64,6 +69,7 @@ pub enum Topic {
     AiUsage,
     Compositor,
     Toggle,
+    Lock,
 }
 
 impl Event {
@@ -78,6 +84,7 @@ impl Event {
             Event::AiUsage(_) => Some(Topic::AiUsage),
             Event::Compositor(_) => Some(Topic::Compositor),
             Event::Toggle { .. } => Some(Topic::Toggle),
+            Event::Lock { .. } => Some(Topic::Lock),
         }
     }
 }
@@ -127,6 +134,8 @@ pub enum ThemeMode {
 pub struct Palette {
     pub bg: Color,
     pub bg_alt: Color,
+    /// Behind everything when nothing else is drawn, like the lock screen.
+    pub backdrop: Color,
     pub fg: Color,
     pub fg_alt: Color,
     pub fg_dim: Color,
@@ -409,6 +418,17 @@ pub enum Command {
     Toggle {
         panel: Panel,
     },
+    /// Locks the session (`nova lock`, feature `lock`) and answers once the
+    /// compositor has covered the screens. Fails when the feature isn't
+    /// ready, no UI is connected to show the lock screen, or the screens
+    /// aren't covered in time.
+    Lock,
+    /// The compositor covered the screens with the UI's lock screen
+    /// (feature `lock`).
+    ReportLocked,
+    /// The UI unlocked the session after the user's password checked out
+    /// (feature `lock`). Unlocking is the UI's alone: this only tells novad.
+    ReportUnlocked,
 }
 
 /// What `status` returns.
@@ -642,6 +662,7 @@ mod tests {
                         Topic::AiUsage,
                         Topic::Compositor,
                         Topic::Toggle,
+                        Topic::Lock,
                     ],
                 },
             }),
@@ -668,6 +689,11 @@ mod tests {
             encode(Request { id: Some(15), command: Command::Toggle { panel: Panel::AiUsage } }),
             encode(Event::Toggle { panel: Panel::AiUsage, output: Some("DP-1".into()) }),
             encode(Event::Toggle { panel: Panel::AiUsage, output: None }),
+            encode(Request { id: Some(16), command: Command::Lock }),
+            encode(Event::Lock { locked: true }),
+            encode(Request { id: Some(20), command: Command::ReportLocked }),
+            encode(Request { id: Some(17), command: Command::ReportUnlocked }),
+            encode(Event::Lock { locked: false }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
@@ -777,7 +803,7 @@ mod tests {
 
     fn theme() -> Theme {
         let colors: Palette = serde_json::from_value(json!({
-            "bg": "#1D1D1D", "bgAlt": "#393E46", "fg": "#F5E7C6", "fgAlt": "#525252", "fgDim": "#9A9A9A",
+            "bg": "#1D1D1D", "bgAlt": "#393E46", "backdrop": "#000000", "fg": "#F5E7C6", "fgAlt": "#525252", "fgDim": "#9A9A9A",
             "primary": "#FD7014", "secondary": "#BE95FF", "onAccent": "#1D1D1D",
             "info": "#00ADB5", "success": "#25BE6A", "warning": "#FAEB92", "error": "#EE5396",
             "swatch1": "#5988DB", "swatch2": "#E8650E", "swatch3": "#07A7A5", "swatch4": "#9067CC",
@@ -865,6 +891,7 @@ mod tests {
         assert_eq!(Event::AiUsage(ai_usage()).topic(), Some(Topic::AiUsage));
         assert_eq!(Event::Compositor(desktop()).topic(), Some(Topic::Compositor));
         assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(Topic::Toggle));
+        assert_eq!(Event::Lock { locked: true }.topic(), Some(Topic::Lock));
     }
 
     #[test]
