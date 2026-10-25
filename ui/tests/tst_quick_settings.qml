@@ -259,6 +259,43 @@ Item {
             compare(starting[0].volume, 0.6, "a stream without a volume yet doesn't pull it to 0");
         }
 
+        function test_program_names_drop_nix_wrappers() {
+            compare(QuickSettings.programName(".zen-wrapped"), "zen");
+            compare(QuickSettings.programName("/usr/bin/firefox"), "firefox");
+            compare(QuickSettings.programName(""), "");
+        }
+
+        function test_an_app_finds_its_desktop_entrys_icon() {
+            const entries = [
+                {
+                    id: "org.gnome.Nautilus",
+                    name: "Files",
+                    startupClass: "",
+                    command: ["nautilus", "--new-window"],
+                    icon: "org.gnome.Nautilus"
+                },
+                {
+                    id: "zen-beta",
+                    name: "Zen Browser (Beta)",
+                    startupClass: "zen-beta",
+                    command: ["/nix/store/x-zen/bin/zen-beta"],
+                    icon: "zen-browser"
+                },
+                {
+                    id: "discord",
+                    name: "Discord",
+                    startupClass: "discord",
+                    command: ["Discord"],
+                    icon: ""
+                }
+            ];
+            compare(QuickSettings.entryIcon(entries, ["zen", "Zen"]), "zen-browser", "a program that begins an entry's");
+            compare(QuickSettings.entryIcon(entries, ["", "Zen"]), "zen-browser", "or the app's name");
+            compare(QuickSettings.entryIcon(entries, ["nautilus"]), "org.gnome.Nautilus", "by its command");
+            compare(QuickSettings.entryIcon(entries, ["discord"]), "", "an entry without an icon gives none");
+            compare(QuickSettings.entryIcon(entries, ["ze"]), "", "only whole words before a dash");
+        }
+
         function test_a_dragged_slider_follows_the_pointer_until_released() {
             const slider = createTemporaryObject(sliderComponent, stage, {
                 value: 0.2

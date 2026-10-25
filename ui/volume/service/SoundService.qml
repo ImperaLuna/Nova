@@ -53,9 +53,30 @@ Singleton {
             volume: node.ready && node.audio.volumes.length > 0 ? node.audio.volume : 0,
             muted: node.ready && node.audio.muted,
             ready: node.ready && node.audio.volumes.length > 0,
-            icon: props["application.icon-name"] || props["application.process.binary"] || "",
+            icon: appIcon(props),
             current: current !== null && node.id === current.id
         };
+    }
+
+    // The installed apps' desktop entries, as plain objects for
+    // quick_settings.js entryIcon. They load a moment after start, and the
+    // lists above follow.
+    // qmllint disable missing-property
+    readonly property var entries: DesktopEntries.applications.values.map(entry => ({
+                id: entry.id,
+                name: entry.name,
+                startupClass: entry.startupClass,
+                command: entry.command,
+                icon: entry.icon
+            }))
+    // qmllint enable missing-property
+
+    // An app stream's icon name: the one the stream gives, else its desktop
+    // entry's, found by its program or its name (browsers name no icon), else
+    // its program's name in case the icon theme has it.
+    function appIcon(props: var): string {
+        const program = QuickSettings.programName(props["application.process.binary"] ?? "");
+        return props["application.icon-name"] || QuickSettings.entryIcon(entries, [program, props["application.name"] ?? ""]) || program;
     }
 
     function node(id: int): PwNode {

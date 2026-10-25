@@ -123,6 +123,38 @@ function graphPath(values, width, height, count, area) {
     return path;
 }
 
+// A program's name from its file, as Nix wraps programs (`.zen-wrapped` is
+// `zen`).
+function programName(file) {
+    var name = file.split("/").pop();
+    if (name.charAt(0) === ".")
+        name = name.slice(1);
+    return name.replace(/-wrapped$/, "");
+}
+
+// The icon of the desktop entry (`entries`, each {id, name, startupClass,
+// command, icon}) for the first of `names` (a program, an app's name) that
+// one matches, or "". An entry matches a name that is its id, its window
+// class, its program or its name's first word, or begins one of those
+// before a "-" (Zen's `zen` is `zen-beta.desktop`). Case doesn't matter.
+function entryIcon(entries, names) {
+    for (var n = 0; n < names.length; n++) {
+        var name = names[n].toLowerCase();
+        if (name === "")
+            continue;
+        for (var i = 0; i < entries.length; i++) {
+            var entry = entries[i];
+            var keys = [entry.id.replace(/\.desktop$/, ""), entry.startupClass || "", programName((entry.command || [])[0] || ""), (entry.name || "").split(" ")[0]];
+            for (var k = 0; k < keys.length; k++) {
+                var key = keys[k].toLowerCase();
+                if (entry.icon && key !== "" && (key === name || key.indexOf(name + "-") === 0))
+                    return entry.icon;
+            }
+        }
+    }
+    return "";
+}
+
 // App streams (`apps`, each {id, name, icon, volume, muted, ready}) as one
 // entry per app: an app often plays more than one stream (a browser's tabs),
 // and each shows as the app. Each entry keeps the first stream's id, all its

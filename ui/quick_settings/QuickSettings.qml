@@ -176,7 +176,8 @@ StagePanel {
                     onInputPicked: id => SoundService.useInput(id)
                     onAppVolumeMoved: (ids, value) => SoundService.setVolumes(ids, value)
                     onAppMuteToggled: (ids, muted) => SoundService.setMuted(ids, muted)
-                    iconSource: name => name === "" ? "" : Quickshell.iconPath(name, true)
+                    // A desktop entry's icon may be a file instead of a name.
+                    iconSource: name => name === "" ? "" : name.startsWith("/") ? `file://${name}` : Quickshell.iconPath(name, true)
                 }
             }
         }
