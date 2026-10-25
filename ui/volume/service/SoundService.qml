@@ -9,7 +9,8 @@ import "../../quick_settings/quick_settings.js" as QuickSettings
 // Everything quick settings shows about sound beyond the default output
 // (VolumeService has that): the default input and who records from it,
 // every output and input to switch between, and each app's own volume.
-// Lists come as plain objects ({id, name, kind, volume, muted, current}),
+// Lists come as plain objects ({id, name, kind, volume, muted, current};
+// apps also have `ids`),
 // so the pages showing them don't need PipeWire's types; acting goes
 // through the functions here by id.
 Singleton {
@@ -20,6 +21,7 @@ Singleton {
     readonly property bool sourceReady: source !== null && source.audio !== null && source.ready && source.audio.volumes.length > 0
     readonly property real sourceVolume: sourceReady ? source.audio.volume : 0
     readonly property bool sourceMuted: sourceReady && source.audio.muted
+    readonly property string sourceName: source ? (source.nickname || source.description || source.name) : ""
 
     // Apps recording from the default source now, by name.
     readonly property list<string> recorders: QuickSettings.recorders(source, recording.linkGroups)
@@ -37,7 +39,9 @@ Singleton {
 
     readonly property var outputs: outputNodes.map(node => describe(node, Pipewire.defaultAudioSink))
     readonly property var inputs: inputNodes.map(node => describe(node, root.source))
-    readonly property var apps: appNodes.map(node => describe(node, null))
+    // One entry per app, with all its streams' `ids` (quick_settings.js
+    // appGroups).
+    readonly property var apps: QuickSettings.appGroups(appNodes.map(node => describe(node, null)))
 
     function describe(node: PwNode, current: PwNode): var {
         const props = node.properties ?? {};
@@ -59,6 +63,12 @@ Singleton {
         const found = node(id);
         if (found?.ready)
             found.audio.volume = value;
+    }
+
+    // Every stream of an app (an `apps` entry's `ids`) to `value`.
+    function setVolumes(ids: list<int>, value: real) {
+        for (const id of ids)
+            setVolume(id, value);
     }
 
     function useOutput(id: int) {

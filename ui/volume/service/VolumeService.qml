@@ -27,6 +27,16 @@ Singleton {
     // outputKind).
     readonly property string output: Volume.outputKind(available, ready ? sink.properties : null)
 
+    // Screens (by name) showing the volume somewhere else right now, like
+    // open quick settings: the capsule stays in there, since it would only
+    // repeat it and hold that surface's frames while it's out
+    // (StageMotion).
+    property list<string> shownElsewhere: []
+    function showElsewhere(screen: string, shown: bool) {
+        const others = shownElsewhere.filter(name => name !== screen);
+        shownElsewhere = shown ? [...others, screen] : others;
+    }
+
     // The volume, mute or output changed after Nova had seen where they
     // started, by anything: a key, an app, this capsule.
     signal changed

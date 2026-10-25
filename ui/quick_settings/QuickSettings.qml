@@ -66,6 +66,7 @@ StagePanel {
     onOpenChanged: {
         console.info(`nova: quick settings ${open ? "opened" : "closed"}`);
         QuickSettingsService.watching = open;
+        VolumeService.showElsewhere(screen.name, open);
         if (open)
             now = new Date();
     }
@@ -79,6 +80,7 @@ StagePanel {
 
     // The header's uptime, a minute at a time while it's open.
     property date now: new Date()
+    Component.onDestruction: VolumeService.showElsewhere(screen.name, false)
     Timer {
         interval: 60 * 1000
         running: panel.open
@@ -149,6 +151,12 @@ StagePanel {
                     outputKind: VolumeService.output
                     volume: VolumeService.volume
                     muted: VolumeService.muted
+                    inputAvailable: SoundService.sourceReady
+                    inputName: SoundService.sourceName
+                    inputVolume: SoundService.sourceVolume
+                    inputMuted: SoundService.sourceMuted
+                    onInputVolumeMoved: value => SoundService.setSourceVolume(value)
+                    onInputMuteToggled: SoundService.toggleSourceMute()
                     outputs: SoundService.outputs
                     inputs: SoundService.inputs
                     apps: SoundService.apps
@@ -157,7 +165,7 @@ StagePanel {
                     onMuteToggled: VolumeService.toggleMute()
                     onOutputPicked: id => SoundService.useOutput(id)
                     onInputPicked: id => SoundService.useInput(id)
-                    onAppVolumeMoved: (id, value) => SoundService.setVolume(id, value)
+                    onAppVolumeMoved: (ids, value) => SoundService.setVolumes(ids, value)
                 }
             }
         }

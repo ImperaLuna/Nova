@@ -38,6 +38,14 @@ Item {
             }
         }
 
+        Component {
+            id: sliderComponent
+            QsSlider {
+                width: 300
+                label: "Firefox"
+            }
+        }
+
         SignalSpy {
             id: spy
         }
@@ -194,6 +202,52 @@ Item {
             compare(QuickSettings.recordingText([]), "");
         }
 
+        function test_an_app_with_several_streams_is_one_entry() {
+            const groups = QuickSettings.appGroups([
+                {
+                    id: 9,
+                    name: "Firefox",
+                    volume: 0.7,
+                    muted: false
+                },
+                {
+                    id: 12,
+                    name: "Discord",
+                    volume: 1,
+                    muted: true
+                },
+                {
+                    id: 10,
+                    name: "Firefox",
+                    volume: 0.4,
+                    muted: true
+                }
+            ]);
+            compare(groups.length, 2);
+            compare(groups[0].name, "Firefox");
+            compare(groups[0].id, 9);
+            compare(groups[0].ids, [9, 10]);
+            compare(groups[0].volume, 0.7);
+            verify(!groups[0].muted, "one Firefox stream still plays");
+            verify(groups[1].muted);
+        }
+
+        function test_a_dragged_slider_follows_the_pointer_until_released() {
+            const slider = createTemporaryObject(sliderComponent, stage, {
+                value: 0.2
+            });
+            waitForRendering(slider);
+            spy.signalName = "moved";
+            spy.target = slider;
+            mousePress(slider, 150, slider.height / 2);
+            mouseMove(slider, 240, slider.height / 2);
+            // The volume set hasn't come back yet: it still shows the drag.
+            compare(slider.current, 0.8);
+            compare(spy.signalArguments[spy.count - 1][0], 0.8);
+            mouseRelease(slider, 240, slider.height / 2);
+            compare(slider.current, 0.2, "released, it shows the volume again");
+        }
+
         function test_graph_ends_at_the_right_edge() {
             compare(QuickSettings.graphPath([], 100, 50, 3, false), "");
             compare(QuickSettings.graphPath([0, 100], 100, 50, 3, false), "M50.0 50.0L100.0 0.0");
@@ -255,14 +309,20 @@ Item {
                         current: false
                     }
                 ],
-                apps: [
+                apps: QuickSettings.appGroups([
                     {
                         id: 9,
                         name: "Firefox",
                         volume: 0.72,
                         muted: false
+                    },
+                    {
+                        id: 11,
+                        name: "Firefox",
+                        volume: 0.72,
+                        muted: false
                     }
-                ]
+                ])
             });
             waitForRendering(page);
             shot(page, "sound");
@@ -272,9 +332,26 @@ Item {
             mouseClick(page, page.width / 2, 285);
             compare(spy.count, 1);
             compare(spy.signalArguments[0][0], 2);
+            page.tab = "input";
+            page.inputAvailable = true;
+            page.inputName = "Arctis Nova 5 Mic";
+            page.inputVolume = 0.8;
+            waitForRendering(page);
+            shot(page, "sound-input");
+            spy.clear();
+            spy.signalName = "inputVolumeMoved";
+            // The card's slider sets the input's volume on this tab.
+            mouseClick(page, 40 + (page.width - 2 * Tokens.pad - 40) / 2, 130);
+            compare(spy.count, 1);
             page.tab = "apps";
             waitForRendering(page);
             shot(page, "sound-apps");
+            spy.clear();
+            spy.signalName = "appVolumeMoved";
+            // The first app's slider, where the output list was.
+            mouseClick(page, page.width / 2, 235);
+            compare(spy.count, 1);
+            compare(spy.signalArguments[0][0], [9, 11]);
         }
 
         function test_resources_page_lists_processes() {

@@ -12,7 +12,9 @@ import "volume.js" as Volume
 // The volume capsule: whenever the volume, mute or output changes, it
 // slides in from the right edge of the focused screen, and slides away
 // Tokens.durationCapsuleHold after the last change (not while the pointer
-// is on it). It stays on the screen it came out on until it's gone.
+// is on it). It stays on the screen it came out on until it's gone, and
+// stays in on a screen that already shows the volume (quick settings open
+// there, VolumeService.shownElsewhere).
 Scope {
     id: osd
 
@@ -27,8 +29,12 @@ Scope {
     }
 
     function reveal() {
-        if (!motion.shown)
-            screen = focusedScreen();
+        if (!motion.shown) {
+            const focused = focusedScreen();
+            if (VolumeService.shownElsewhere.includes(focused?.name))
+                return;
+            screen = focused;
+        }
         motion.openTarget = 1;
         hold.restart();
     }

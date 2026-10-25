@@ -30,7 +30,10 @@ Item {
     opacity: available ? 1 : Tokens.dimOpacity
 
     readonly property real track: opens ? width - button.width - Tokens.segmentPad : width
-    readonly property real shown: Math.max(Tokens.sliderMinFill, Math.min(1, value))
+    // While dragged, where the pointer put it: the value set comes back a
+    // moment later, and showing that would jump behind the pointer.
+    readonly property real current: drag.pressed ? drag.value : value
+    readonly property real shown: Math.max(Tokens.sliderMinFill, Math.min(1, current))
 
     Rectangle {
         id: background
@@ -63,8 +66,13 @@ Item {
         height: parent.height
         enabled: slider.available
         preventStealing: true
+        property real value: 0
         function set(mouseX: real) {
-            slider.moved(Math.round(Math.max(0, Math.min(1, mouseX / width)) * 100) / 100);
+            const next = Math.round(Math.max(0, Math.min(1, mouseX / width)) * 100) / 100;
+            if (pressed && next === value)
+                return;
+            value = next;
+            slider.moved(next);
         }
         onPressed: mouse => set(mouse.x)
         onPositionChanged: mouse => {
@@ -118,7 +126,7 @@ Item {
         font.family: Tokens.fontMono
         font.pixelSize: Tokens.fontSizeSmall
         color: Tokens.fg
-        text: Math.round(slider.value * 100)
+        text: Math.round(slider.current * 100)
     }
 
     Rectangle {

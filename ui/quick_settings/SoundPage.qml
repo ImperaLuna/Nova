@@ -17,6 +17,10 @@ Item {
     property string outputKind: "none"
     property real volume: 0
     property bool muted: false
+    property bool inputAvailable: false
+    property string inputName: ""
+    property real inputVolume: 0
+    property bool inputMuted: false
     property var outputs: []
     property var inputs: []
     property var apps: []
@@ -26,9 +30,16 @@ Item {
     signal back
     signal volumeMoved(real value)
     signal muteToggled
+    signal inputVolumeMoved(real value)
+    signal inputMuteToggled
     signal outputPicked(int id)
     signal inputPicked(int id)
-    signal appVolumeMoved(int id, real value)
+    // An `apps` entry's stream ids, and their new volume.
+    signal appVolumeMoved(var ids, real value)
+
+    // The card on top shows the input in use on the Input tab, else the
+    // output.
+    readonly property bool input: tab === "input"
 
     function kindIcon(kind: string): string {
         return {
@@ -72,7 +83,7 @@ Item {
 
                         LineIcon {
                             anchors.centerIn: parent
-                            path: page.kindIcon(page.outputKind)
+                            path: page.input ? (page.inputMuted ? Icons.MIC_OFF : Icons.MIC) : page.kindIcon(page.outputKind)
                             size: Tokens.iconSizeMenu
                             color: Tokens.onAccent
                         }
@@ -87,25 +98,37 @@ Item {
                             font.weight: Font.DemiBold
                             color: Tokens.fg
                             textFormat: Text.PlainText
-                            text: page.outputAvailable ? page.outputName : qsTr("No output")
+                            text: page.input ? (page.inputAvailable ? page.inputName : qsTr("No input")) : page.outputAvailable ? page.outputName : qsTr("No output")
                         }
                         Text {
                             font.family: Tokens.fontSans
                             font.pixelSize: Tokens.fontSizeTiny
                             color: Tokens.fgDim
-                            text: QuickSettings.kindLabel(page.outputKind)
+                            text: page.input ? qsTr("Microphone") : QuickSettings.kindLabel(page.outputKind)
                         }
                     }
                 }
 
                 QsSlider {
                     width: parent.width
+                    visible: !page.input
                     glyph: Volume.icon(page.outputAvailable ? page.outputKind : "none", page.muted, page.volume)
                     label: qsTr("Output")
                     value: page.muted ? 0 : page.volume
                     available: page.outputAvailable
                     onMoved: value => page.volumeMoved(value)
                     onIconClicked: page.muteToggled()
+                }
+
+                QsSlider {
+                    width: parent.width
+                    visible: page.input
+                    icon: page.inputMuted ? Icons.MIC_OFF : Icons.MIC
+                    label: qsTr("Input")
+                    value: page.inputMuted ? 0 : page.inputVolume
+                    available: page.inputAvailable
+                    onMoved: value => page.inputVolumeMoved(value)
+                    onIconClicked: page.inputMuteToggled()
                 }
             }
         }
@@ -135,11 +158,16 @@ Item {
             spacing: Tokens.labelNudge * 2
             visible: page.tab !== "apps"
 
+            // By count, so a volume change elsewhere in the lists doesn't
+            // rebuild the rows.
             Repeater {
-                model: page.tab === "output" ? page.outputs : page.tab === "input" ? page.inputs : []
+                id: rows
+                readonly property var shown: page.tab === "output" ? page.outputs : page.tab === "input" ? page.inputs : []
+                model: shown.length
 
                 ListRow {
-                    required property var modelData
+                    required property int index
+                    readonly property var modelData: rows.shown[index] ?? {}
                     width: parent.width
                     icon: page.tab === "input" ? Icons.MIC : page.kindIcon(modelData.kind)
                     title: modelData.name
@@ -156,16 +184,24 @@ Item {
             spacing: Tokens.gap
             visible: page.tab === "apps"
 
+            // By count: every volume change gives a new `apps`, and a
+            // rebuilt slider would drop the drag under the pointer.
             Repeater {
-                model: page.tab === "apps" ? page.apps : []
+                model: page.tab === "apps" ? page.apps.length : 0
 
                 QsSlider {
-                    required property var modelData
+                    required property int index
+                    readonly property var app: page.apps[index] ?? {
+                        ids: [],
+                        name: "",
+                        volume: 0,
+                        muted: false
+                    }
                     width: parent.width
                     icon: Icons.APP
-                    label: modelData.name
-                    value: modelData.muted ? 0 : modelData.volume
-                    onMoved: value => page.appVolumeMoved(modelData.id, value)
+                    label: app.name
+                    value: app.muted ? 0 : app.volume
+                    onMoved: value => page.appVolumeMoved(app.ids, value)
                 }
             }
 

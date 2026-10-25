@@ -123,6 +123,33 @@ function graphPath(values, width, height, count, area) {
     return path;
 }
 
+// App streams (`apps`, each {id, name, volume, muted}) as one entry per app:
+// an app often plays more than one stream (a browser's tabs), and each
+// shows as the app. Each entry keeps the first stream's id and volume, all
+// its streams' `ids`, and is muted only while all of them are.
+function appGroups(apps) {
+    var groups = [];
+    var byName = {};
+    for (var i = 0; i < apps.length; i++) {
+        var app = apps[i];
+        var group = byName[app.name];
+        if (!group) {
+            group = {
+                id: app.id,
+                ids: [],
+                name: app.name,
+                volume: app.volume,
+                muted: true
+            };
+            byName[app.name] = group;
+            groups.push(group);
+        }
+        group.ids.push(app.id);
+        group.muted = group.muted && app.muted;
+    }
+    return groups;
+}
+
 // What an output or input is, for a list's second line, from volume.js's
 // outputKind.
 function kindLabel(kind) {
