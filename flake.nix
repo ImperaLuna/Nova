@@ -113,6 +113,8 @@
             inherit version;
             src = rustSrc pkgs.lib;
             cargoLock.lockFile = ./Cargo.lock;
+            # setpriv, for the launcher test's app that dies with its parent.
+            nativeCheckInputs = [ pkgs.util-linux ];
             # Compiled in, so `nova` finds its UI with or without systemd.
             env.NOVA_UI_LAUNCHER = pkgs.lib.getExe nova-ui;
             postInstall = installShare + ''

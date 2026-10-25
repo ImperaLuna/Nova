@@ -29,6 +29,7 @@ mod config;
 mod features;
 mod hub;
 mod inotify;
+mod launcher;
 mod logger;
 mod logind;
 mod power;
@@ -37,6 +38,7 @@ mod screenshot;
 mod server;
 mod session_lock;
 mod settings;
+mod state_file;
 mod supervisor;
 mod theme;
 
@@ -144,10 +146,10 @@ impl Daemon {
     }
 
     /// Starts watching the settings files, reloading when they change.
-    fn watch_settings(self: &Arc<Self>) {
+    fn watch_settings(self: &Arc<Self>) -> Option<inotify::Stopper> {
         let daemon = Arc::clone(self);
         let files = vec![self.sources.config.clone(), self.sources.selection.clone()];
-        settings::watch(files, Arc::clone(&self.logger), move || daemon.reload());
+        settings::watch(files, Arc::clone(&self.logger), move || daemon.reload())
     }
 
     /// Stops the UI and exits novad. Exit code 0, so systemd leaves it off.
@@ -198,6 +200,7 @@ fn start(
         manifests: nova_features::load_all(&args.features_dir)?,
         path_var: path_var.clone(),
         ai_usage: ai_usage::Paths::new(&args.state_dir, args.codex_home, args.claude_credentials),
+        launcher: launcher::Paths::new(&args.state_dir, &path_var),
     };
     let settings = Settings::load(&sources, &hub, &logger);
 
@@ -253,7 +256,8 @@ fn start(
         session_lock,
         screenshots,
     });
-    daemon.watch_settings();
+    // Watched for as long as novad runs.
+    let _ = daemon.watch_settings();
     // Not for a daemon without its UI (tests, a UI run by hand): logind's
     // locks and the sleep inhibitor are the whole machine's.
     if daemon.ui.is_some() {
@@ -284,17 +288,51 @@ fn install_panic_hook(logger: Arc<Logger>) {
     }));
 }
 
-/// `PATH` plus `~/.local/bin`: systemd user services don't get the login
-/// shell's PATH, which is where tools installed with pip or cargo live.
+/// `PATH` plus the folders packages put programs in, even ones not there
+/// yet (a first package installed later makes them):
+/// systemd user services don't get the login shell's PATH, so the user's
+/// Nix profile, NixOS's system packages, Flatpak's exports or `~/.local/bin`
+/// (pip, cargo) may be missing. Apps the launcher starts get it too.
 pub(crate) fn session_path() -> String {
-    let path = std::env::var("PATH").unwrap_or_default();
-    let local_bin = std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/bin"));
-    match local_bin {
-        Some(dir) if dir.is_dir() && !std::env::split_paths(&path).any(|entry| entry == dir) => {
-            format!("{path}:{}", dir.display())
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let mut dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+    let home = std::env::var_os("HOME").filter(|home| !home.is_empty()).map(PathBuf::from);
+    let extra = home
+        .iter()
+        .map(|home| home.join(".local/bin"))
+        .chain(package_prefixes().into_iter().map(|prefix| prefix.join("bin")));
+    for dir in extra {
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
         }
-        _ => path,
     }
+    std::env::join_paths(dirs)
+        .map(|joined| joined.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+}
+
+/// Where package managers install, each with `bin/` and `share/` below it,
+/// in the order they're searched after the session's own: the user's Nix
+/// profiles, the system's (NixOS), Flatpak's exports, then the usual.
+pub(crate) fn package_prefixes() -> Vec<PathBuf> {
+    let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
+    let home = var("HOME").map(PathBuf::from);
+    let mut prefixes = Vec::new();
+    prefixes
+        .extend(home.iter().flat_map(|home| [home.join(".nix-profile"), home.join(".local/share/flatpak/exports")]));
+    prefixes.extend(var("USER").map(|user| Path::new("/etc/profiles/per-user").join(user)));
+    prefixes.extend(
+        [
+            "/nix/var/nix/profiles/default",
+            "/run/current-system/sw",
+            "/var/lib/flatpak/exports",
+            "/usr/local",
+            "/usr",
+            "/",
+        ]
+        .map(PathBuf::from),
+    );
+    prefixes
 }
 
 /// Sets this thread's name, which is the process name ps and btop show for

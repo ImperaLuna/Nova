@@ -189,9 +189,10 @@ fn toggle_reaches_the_ui_and_says_why_when_it_cant() {
     let event = lines.next().unwrap().unwrap();
     assert!(event.contains(r#""event":"toggle""#) && event.contains(r#""panel":"ai-usage""#), "{event}");
 
-    let unknown = novad.run(&["toggle", "launcher"]);
+    let unknown = novad.run(&["toggle", "calculator"]);
     assert!(!unknown.status.success());
-    assert!(String::from_utf8_lossy(&unknown.stderr).contains("ai-usage"), "lists the panels: {unknown:?}");
+    let stderr = String::from_utf8_lossy(&unknown.stderr);
+    assert!(stderr.contains("ai-usage") && stderr.contains("launcher"), "lists the panels: {unknown:?}");
 }
 
 #[test]
