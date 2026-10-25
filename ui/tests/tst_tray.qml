@@ -290,6 +290,57 @@ Item {
             SignalSpy {}
         }
 
+        function test_the_tray_alone_has_no_divider() {
+            const pill = createTemporaryObject(pillComponent, stage, {
+                quickSettings: false,
+                power: false,
+                trayApps: [stage.entry("discord.desktop", false)]
+            });
+            verify(findChild(pill, "chevron").visible);
+            compare(pill.implicitWidth, 2 * Tokens.pillButtonInset + Tokens.pillButtonSize);
+        }
+
+        function test_a_long_menu_scrolls_and_keeps_hide_in_reach() {
+            const entries = [];
+            for (let i = 0; i < 40; i++)
+                entries.push(menuEntry(`Entry ${i}`));
+            const maxHeight = 10 * Tokens.menuRowHeight;
+            const menu = createTemporaryObject(menuComponent, stage, {
+                entry: stage.entry("big.desktop", false),
+                entries: entries,
+                maxHeight: maxHeight
+            });
+            verify(menu.implicitHeight <= maxHeight, `${menu.implicitHeight} fits ${maxHeight}`);
+            const hides = createTemporaryObject(spyComponent, stage, {
+                target: menu,
+                signalName: "hideRequested"
+            });
+            mouseClick(menu, menu.width / 2, menu.implicitHeight - menu.padding - Tokens.menuRowHeight / 2);
+            compare(hides.count, 1, "Hide from tray is still on screen");
+        }
+
+        function test_app_text_shows_as_written() {
+            const app = stage.entry("odd.desktop", false);
+            app.name = "<b>Bold</b> app";
+            const menu = createTemporaryObject(menuComponent, stage, {
+                entry: app,
+                entries: [menuEntry("<i>Italic</i>")]
+            });
+            const texts = [];
+            const walk = item => {
+                for (const child of item.children) {
+                    if (child instanceof Text && child.visible)
+                        texts.push(child);
+                    walk(child);
+                }
+            };
+            walk(menu);
+            const shown = texts.filter(text => text.text.indexOf("<") !== -1);
+            compare(shown.length, 2);
+            for (const text of shown)
+                compare(text.textFormat, Text.PlainText, text.text);
+        }
+
         function test_losing_every_app_closes_the_tray() {
             const pill = createTemporaryObject(pillComponent, stage, {
                 trayApps: [stage.entry("discord.desktop", false)]

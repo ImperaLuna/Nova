@@ -315,7 +315,7 @@ pub fn read_quickshell_version(quickshell: &Path, path_var: &str) -> Result<Stri
 
 /// What `command` prints when it succeeds within `timeout`. One that takes
 /// longer, printing or exiting, is killed and reaped.
-fn stdout_within(mut command: Command, timeout: Duration) -> std::io::Result<Vec<u8>> {
+pub(crate) fn stdout_within(mut command: Command, timeout: Duration) -> std::io::Result<Vec<u8>> {
     let deadline = Instant::now() + timeout;
     let mut child = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
     let mut stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout pipe"))?;

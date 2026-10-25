@@ -41,6 +41,7 @@ StagePanel {
     signal traySecondaryActivated(var entry)
 
     readonly property bool hasTray: trayApps.length > 0
+    readonly property bool hasButtons: quickSettings || power
     // Never open with nothing to show.
     onHasTrayChanged: {
         if (!hasTray)
@@ -60,7 +61,8 @@ StagePanel {
     readonly property real stripWidth: stripIcons > 0 ? stripIcons * Tokens.pillButtonSize + (stripIcons - 1) * Tokens.pillButtonGap : 0
     readonly property real moreWidth: trayApps.length > Tokens.trayVisible ? more.width + Tokens.pillButtonGap : 0
     readonly property real trayOpenWidth: stripWidth + moreWidth + Tokens.pillButtonGap
-    readonly property real chevronWidth: hasTray ? Tokens.pillButtonSize + 2 * Tokens.pillButtonGap + Tokens.dividerWidth : 0
+    // With a divider before the buttons, when there are any.
+    readonly property real chevronWidth: hasTray ? Tokens.pillButtonSize + (hasButtons ? 2 * Tokens.pillButtonGap + Tokens.dividerWidth : 0) : 0
 
     implicitWidth: 2 * Tokens.pillButtonInset + morph.lerp(0, trayOpenWidth) + chevronWidth + buttons.implicitWidth
     implicitHeight: Tokens.barHeight
@@ -207,7 +209,7 @@ StagePanel {
             id: chevron
             objectName: "chevron"
             visible: pill.hasTray
-            x: buttons.x - Tokens.pillButtonGap - divider.width - Tokens.pillButtonGap - width
+            x: (pill.hasButtons ? divider.x - Tokens.pillButtonGap : buttons.x) - width
             anchors.verticalCenter: parent.verticalCenter
             width: Tokens.pillButtonSize
             height: Tokens.pillButtonSize
@@ -258,7 +260,7 @@ StagePanel {
 
         Rectangle {
             id: divider
-            visible: pill.hasTray
+            visible: pill.hasTray && pill.hasButtons
             x: buttons.x - Tokens.pillButtonGap - width
             anchors.verticalCenter: parent.verticalCenter
             width: Tokens.dividerWidth

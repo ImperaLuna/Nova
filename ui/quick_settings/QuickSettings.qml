@@ -265,6 +265,8 @@ StagePanel {
             inSubmenu: opener.inSubmenu
             onSubmenuRequested: submenu => opener.open(submenu)
             onBackRequested: opener.back()
+            // Within the panel; longer menus scroll.
+            maxHeight: pages.height
             iconSource: trayMenu.entry ? TrayService.iconSource(trayMenu.entry) : ""
             onHideRequested: (key, hidden) => {
                 trayMenu.keepOpen = true;

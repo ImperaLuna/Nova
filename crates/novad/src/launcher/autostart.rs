@@ -16,6 +16,7 @@ use crate::logger::Logger;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 const LOG_SOURCE: &str = "autostart";
 const FOLDER: &str = "autostart";
@@ -24,6 +25,8 @@ const DEFAULT_CONFIG_DIRS: &str = "/etc/xdg";
 const ENTRY_EXTENSION: &str = "desktop";
 /// systemd's target for the autostart units its generator makes.
 const SYSTEMD_TARGET: &str = "xdg-desktop-autostart.target";
+/// How long systemd gets to say whether that target runs.
+const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The autostart folders, in the order they're searched.
 pub fn dirs() -> Vec<PathBuf> {
@@ -84,22 +87,24 @@ pub fn entries(dirs: &[PathBuf], context: &Context) -> (Vec<Entry>, Vec<String>)
 /// novad already did this session (it lives in `XDG_RUNTIME_DIR`, which
 /// goes at logout), so a restarted novad doesn't start them twice.
 pub fn start(marker: &Path, path_var: String, logger: Arc<Logger>) {
-    // A compositor that runs systemd's autostart itself (niri does) on a
-    // system where Nova's unit isn't installed.
-    if systemd_starts_them(&path_var) {
-        logger.info(LOG_SOURCE, "systemd starts the login apps (xdg-desktop-autostart.target)");
-        return;
-    }
-    match first_this_session(marker) {
-        Ok(true) => {}
-        Ok(false) => {
-            logger.info(LOG_SOURCE, "login apps already started this session");
+    let marker = marker.to_path_buf();
+    // On a thread from the start: asking systemd may take a while.
+    std::thread::spawn(move || {
+        // A compositor that runs systemd's autostart itself (niri does) on a
+        // system where Nova's unit isn't installed.
+        if systemd_starts_them(&path_var, &logger) {
+            logger.info(LOG_SOURCE, "systemd starts the login apps (xdg-desktop-autostart.target)");
             return;
         }
-        // Started anyway: missing them is worse than a second start.
-        Err(e) => logger.warn(LOG_SOURCE, &format!("can't write {}: {e}", marker.display())),
-    }
-    std::thread::spawn(move || {
+        match first_this_session(&marker) {
+            Ok(true) => {}
+            Ok(false) => {
+                logger.info(LOG_SOURCE, "login apps already started this session");
+                return;
+            }
+            // Started anyway: missing them is worse than a second start.
+            Err(e) => logger.warn(LOG_SOURCE, &format!("can't write {}: {e}", marker.display())),
+        }
         let locale = Locale::from_env();
         let desktops = super::current_desktops();
         let context = Context { locale: &locale, desktops: &desktops, path_var: &path_var, autostart: true };
@@ -118,16 +123,18 @@ pub fn start(marker: &Path, path_var: String, logger: Arc<Logger>) {
 }
 
 /// Whether the user's systemd runs `xdg-desktop-autostart.target`.
-fn systemd_starts_them(path_var: &str) -> bool {
+/// One that doesn't answer in time counts as no.
+fn systemd_starts_them(path_var: &str, logger: &Logger) -> bool {
     let Some(systemctl) = desktop_entry::find_program("systemctl", path_var) else { return false };
-    std::process::Command::new(systemctl)
-        .args(["--user", "show", "--property=ActiveState", "--value", SYSTEMD_TARGET])
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .is_ok_and(|output| {
-            matches!(String::from_utf8_lossy(&output.stdout).trim(), "active" | "activating" | "reloading")
-        })
+    let mut command = std::process::Command::new(systemctl);
+    command.args(["--user", "show", "--property=ActiveState", "--value", SYSTEMD_TARGET]);
+    match crate::supervisor::stdout_within(command, SYSTEMCTL_TIMEOUT) {
+        Ok(state) => matches!(String::from_utf8_lossy(&state).trim(), "active" | "activating" | "reloading"),
+        Err(e) => {
+            logger.warn(LOG_SOURCE, &format!("can't ask systemd about {SYSTEMD_TARGET}: {e}"));
+            false
+        }
+    }
 }
 
 /// Notes in `marker` that the login apps are started: false when a novad

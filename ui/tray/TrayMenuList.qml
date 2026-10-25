@@ -21,6 +21,8 @@ Column {
     // they're a submenu's (TrayMenuOpener).
     property var entries: []
     property bool inSubmenu: false
+    // The most it may take: the app's entries scroll past it.
+    property real maxHeight: Infinity
 
     // An entry ran (or Nova's own item): whatever holds the menu closes.
     signal done
@@ -33,6 +35,10 @@ Column {
     padding: Tokens.menuPad
 
     readonly property real rowWidth: width - 2 * padding
+    readonly property real separatorHeight: 2 * Tokens.menuSeparatorGap + Tokens.dividerWidth
+    // Everything but the app's entries: the padding, the app's row, Back,
+    // the separator and Nova's own entry.
+    readonly property real chromeHeight: 2 * padding + Tokens.menuRowHeight * (inSubmenu ? 3 : 2) + (entries.length > 0 ? separatorHeight : 0)
 
     // The app.
     Row {
@@ -54,6 +60,8 @@ Column {
             anchors.verticalCenter: parent.verticalCenter
             width: parent.width - Tokens.trayIconSize - Tokens.iconGap - Tokens.rowInset
             text: list.entry?.name ?? ""
+            // The app's own text.
+            textFormat: Text.PlainText
             elide: Text.ElideRight
             color: Tokens.fg
             font.family: Tokens.fontSans
@@ -70,39 +78,54 @@ Column {
         onClicked: list.backRequested()
     }
 
-    Repeater {
-        model: list.entries
+    // The app's entries, scrolling when there are more than fit.
+    Flickable {
+        width: list.rowWidth
+        height: Math.min(entryColumn.implicitHeight, Math.max(Tokens.menuRowHeight, list.maxHeight - list.chromeHeight))
+        contentHeight: entryColumn.implicitHeight
+        boundsBehavior: Flickable.StopAtBounds
+        interactive: contentHeight > height
+        clip: interactive
 
-        Item {
-            id: slot
-            required property var modelData
+        Column {
+            id: entryColumn
             width: list.rowWidth
-            height: modelData.isSeparator ? separator.height : row.height
 
-            Separator {
-                id: separator
-                visible: slot.modelData.isSeparator
-            }
+            Repeater {
+                model: list.entries
 
-            MenuRow {
-                id: row
-                visible: !slot.modelData.isSeparator
-                width: parent.width
-                text: Tray.label(slot.modelData.text)
-                enabled: slot.modelData.enabled
-                quits: Tray.isQuit(slot.modelData.text)
-                checkable: slot.modelData.buttonType !== Tray.BUTTON_NONE
-                checked: slot.modelData.checkState === Qt.Checked
-                opens: slot.modelData.hasChildren
-                onClicked: {
-                    if (slot.modelData.hasChildren) {
-                        list.submenuRequested(slot.modelData);
-                        return;
+                Item {
+                    id: slot
+                    required property var modelData
+                    width: list.rowWidth
+                    height: modelData.isSeparator ? separator.height : row.height
+
+                    Separator {
+                        id: separator
+                        visible: slot.modelData.isSeparator
                     }
-                    slot.modelData.triggered();
-                    // A checkbox flips in place; anything else is done.
-                    if (!checkable)
-                        list.done();
+
+                    MenuRow {
+                        id: row
+                        visible: !slot.modelData.isSeparator
+                        width: parent.width
+                        text: Tray.label(slot.modelData.text)
+                        enabled: slot.modelData.enabled
+                        quits: Tray.isQuit(slot.modelData.text)
+                        checkable: slot.modelData.buttonType !== Tray.BUTTON_NONE
+                        checked: slot.modelData.checkState === Qt.Checked
+                        opens: slot.modelData.hasChildren
+                        onClicked: {
+                            if (slot.modelData.hasChildren) {
+                                list.submenuRequested(slot.modelData);
+                                return;
+                            }
+                            slot.modelData.triggered();
+                            // A checkbox flips in place; anything else is done.
+                            if (!checkable)
+                                list.done();
+                        }
+                    }
                 }
             }
         }
@@ -123,7 +146,7 @@ Column {
 
     component Separator: Item {
         width: list.rowWidth
-        height: 2 * Tokens.menuSeparatorGap + Tokens.dividerWidth
+        height: list.separatorHeight
 
         Rectangle {
             anchors.centerIn: parent
@@ -190,6 +213,8 @@ Column {
             anchors.verticalCenter: parent.verticalCenter
             width: parent.width - x - Tokens.rowInset - (menuRow.opens ? Tokens.iconSizeSmall : 0)
             text: menuRow.text
+            // Apps' own labels.
+            textFormat: Text.PlainText
             elide: Text.ElideRight
             color: menuRow.ink
             font.family: Tokens.fontSans

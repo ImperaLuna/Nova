@@ -11,7 +11,10 @@
 //!    (`app-discord-375306.scope`, `app-nova-steam-4534754.scope`,
 //!    `app-blueman@autostart.service`). It comes second because an app
 //!    started from a terminal sits in the terminal's unit.
-//! 3. The icon's own id, without Electron's `_status_icon_<n>`.
+//! 3. The icon's own id, without Electron's `_status_icon_<n>`. It comes
+//!    before the unit when the process names were all shared runtimes
+//!    (`python3`): such an app started from a terminal would otherwise be
+//!    taken for the terminal.
 
 use std::path::Path;
 
@@ -34,6 +37,9 @@ pub fn candidates(proc: &Path, pid: Option<u32>, icon_id: &str) -> Vec<String> {
         let comm = std::fs::read_to_string(dir.join("comm")).ok();
         let programs = [exe.as_deref().and_then(Path::to_str), argv0.as_deref(), comm.as_deref()];
         names.extend(programs.into_iter().flatten().filter_map(program_name));
+        if names.is_empty() {
+            names.extend(icon_app_id(icon_id));
+        }
         if let Ok(cgroup) = std::fs::read_to_string(dir.join("cgroup")) {
             names.extend(unit_app_ids(&cgroup));
         }
@@ -152,6 +158,13 @@ mod tests {
         assert_eq!(candidates(&proc, Some(375306), "discord_status_icon_1"), ["discord"]);
         assert_eq!(candidates(&proc, Some(1), "Claude_status_icon_1"), ["claude"]);
         assert_eq!(candidates(&proc, None, ""), Vec::<String>::new());
+        // A runtime's app started from a terminal sits in the terminal's unit.
+        let script = proc.join("4242");
+        std::fs::create_dir_all(&script).unwrap();
+        std::fs::write(script.join("cmdline"), b"python3 /home/me/bin/my-tray-app ").unwrap();
+        std::fs::write(script.join("comm"), "python3\n").unwrap();
+        std::fs::write(script.join("cgroup"), "0::/user.slice/app.slice/app-kitty-123.scope\n").unwrap();
+        assert_eq!(candidates(&proc, Some(4242), "my-tray-app"), ["my-tray-app", "kitty"]);
         std::fs::remove_dir_all(&proc).unwrap();
     }
 }

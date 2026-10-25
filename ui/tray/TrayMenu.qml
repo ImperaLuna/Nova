@@ -15,9 +15,10 @@ StagePanel {
     // The app (a TrayService entry) and its icon.
     property var entry: null
     property string iconSource: ""
-    // The middle of the icon it opened from, and how wide the screen is.
+    // The middle of the icon it opened from, and the screen's size.
     property real anchorX: 0
     property real screenWidth: 0
+    property real screenHeight: 0
 
     signal done
     signal hideRequested(string key, bool hidden)
@@ -66,6 +67,8 @@ StagePanel {
         onSubmenuRequested: submenu => opener.open(submenu)
         onBackRequested: opener.back()
         iconSource: menu.iconSource
+        // Kept on the screen; longer menus scroll.
+        maxHeight: menu.screenHeight - menu.y - Tokens.barMargin
         onDone: menu.done()
         onHideRequested: (key, hidden) => menu.hideRequested(key, hidden)
     }

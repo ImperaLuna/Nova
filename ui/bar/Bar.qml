@@ -209,7 +209,8 @@ Item {
 
         RightPill {
             id: rightPill
-            visible: (bar.quickSettings || bar.power) && !bar.covered.includes(rightPill)
+            // Also for the tray alone, with quick settings and power off.
+            visible: (bar.quickSettings || bar.power || rightPill.hasTray) && !bar.covered.includes(rightPill)
             x: bar.width - Tokens.barMargin - width
             y: Tokens.barGap
             width: implicitWidth
@@ -243,6 +244,7 @@ Item {
         TrayMenu {
             id: trayMenu
             screenWidth: bar.width
+            screenHeight: bar.height
             iconSource: entry ? TrayService.iconSource(entry) : ""
             onDone: rightPill.open = false
             onHideRequested: (key, hidden) => TrayService.hide(key, hidden)
