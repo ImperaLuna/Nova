@@ -125,6 +125,7 @@ PanelWindow { // qmllint disable uncreatable-type
     }
 
     WlrLayershell.layer: WlrLayer.Top
+    WlrLayershell.namespace: "nova-panel"
     WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     mask: Region {

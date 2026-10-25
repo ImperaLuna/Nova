@@ -37,6 +37,7 @@ PanelWindow { // qmllint disable uncreatable-type
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
     WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.namespace: "nova-volume"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
     // It moves the whole time it's out, so the other surfaces hold their
