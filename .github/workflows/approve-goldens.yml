@@ -11,9 +11,9 @@ name: Approve goldens
 #
 # Two jobs: `screenshots` runs the branch's code with a read-only token and
 # hands the images over as an artifact; `commit` holds the write token and
-# runs no branch code, on a fresh GitHub-hosted machine. Pushes made with
-# GITHUB_TOKEN don't start other workflows, so `commit` then starts CI on the
-# branch itself.
+# runs no branch code, on a fresh GitHub-hosted machine. It pushes with the
+# PUSH_TOKEN secret, so the push starts the PR's CI like any other (see
+# update-prs.yml for why not GITHUB_TOKEN).
 on:
   workflow_dispatch:
     inputs:
@@ -77,11 +77,8 @@ jobs:
     needs: screenshots
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    outputs:
-      sha: ${{ steps.push.outputs.sha }}
     permissions:
-      contents: write
-      actions: write
+      contents: read
     steps:
       # The commit the screenshots came from. If the branch has moved on since,
       # the push below isn't a fast-forward and fails: approve again.
@@ -94,16 +91,14 @@ jobs:
           name: goldens
           path: e2e/golden
       - name: commit and push
-        id: push
         env:
           BRANCH: ${{ inputs.branch }}
-          TOKEN: ${{ github.token }}
+          TOKEN: ${{ secrets.PUSH_TOKEN }}
         run: |
           # Only the images, whatever else the artifact holds.
           git add -- 'e2e/golden/*/*.png'
           if git diff --cached --quiet; then
             echo "Goldens already match the screenshots; nothing to commit."
-            echo "pushed=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
           git diff --cached --stat
@@ -113,20 +108,3 @@ jobs:
           auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
           git -c core.hooksPath=/dev/null -c http.extraheader="AUTHORIZATION: basic $auth" \
             push origin "HEAD:refs/heads/$BRANCH"
-          echo "pushed=true" >>"$GITHUB_OUTPUT"
-          echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
-      - name: start CI on the new commit
-        if: steps.push.outputs.pushed == 'true'
-        env:
-          BRANCH: ${{ inputs.branch }}
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
-
-  drop:
-    needs: commit
-    if: needs.commit.outputs.sha != ''
-    permissions:
-      actions: write
-    uses: ./.github/workflows/drop-bot-pr-runs.yml
-    with:
-      shas: ${{ needs.commit.outputs.sha }}
