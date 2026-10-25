@@ -55,7 +55,8 @@ Item {
     property var region: null
     readonly property bool dragging: input.pressed && region !== null
     // The pointer is over this screen (Screen mode outlines all of it).
-    readonly property bool hovered: input.containsMouse
+    // The toolbar too, so the outline doesn't drop out over it.
+    readonly property bool hovered: hover.hovered
     // The toolbar's glass, the window's blur area.
     readonly property Item toolbarGlass: toolbar.glass
     // What this screen's picker asked to record (logical px), counting down
@@ -89,6 +90,10 @@ Item {
     }
 
     onModeChanged: region = null
+
+    HoverHandler {
+        id: hover
+    }
 
     Image {
         id: frame

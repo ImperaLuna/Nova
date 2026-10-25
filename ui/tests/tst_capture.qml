@@ -331,6 +331,16 @@ Item {
             }
         }
 
+        function test_the_screen_stays_outlined_with_the_pointer_on_the_toolbar() {
+            const picker = makePicker(Protocol.CAPTURE_SCREEN);
+            const screenButton = findButtons(picker).find(button => button.icon === Protocol.CAPTURE_SCREEN);
+            mouseMove(picker, 100, 120);
+            tryVerify(() => picker.hovered);
+            mouseMove(screenButton, screenButton.width / 2, screenButton.height / 2);
+            wait(50);
+            verify(picker.hovered, "still outlined over the toolbar");
+        }
+
         function test_a_picker_opened_by_the_switch_starts_as_the_other_kind() {
             const picker = createTemporaryObject(switchedPickerComponent, stage);
             const control = findSwitch(picker);

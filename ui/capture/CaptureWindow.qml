@@ -63,15 +63,10 @@ PanelWindow { // qmllint disable uncreatable-type
                 ScreenshotService.mode = mode;
         }
         onVideoRequested: video => {
-            if (video) {
-                const mode = ScreenshotService.mode;
-                ScreenshotService.cancel();
-                RecordingService.pick(mode);
-            } else {
-                const mode = RecordingService.mode;
-                RecordingService.cancel();
-                ScreenshotService.pick(mode);
-            }
+            if (video)
+                RecordingService.pick(ScreenshotService.mode);
+            else
+                RecordingService.toScreenshot(RecordingService.mode);
         }
         onDesktopAudioToggled: RecordingService.desktopAudio = !RecordingService.desktopAudio
         onMicAudioToggled: RecordingService.micAudio = !RecordingService.micAudio

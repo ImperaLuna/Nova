@@ -16,7 +16,10 @@ Singleton {
     readonly property bool ready: Daemon.readyFeatures.includes(Protocol.FEATURE_SCREENSHOT)
     // [{output, path}] while the picker is open, else null.
     readonly property var frames: ready ? Daemon.capture : null
-    readonly property bool picking: frames !== null
+    // The frames are kept behind the recording picker (RecordingService),
+    // so its switch to a screenshot shows them at once.
+    property bool held: false
+    readonly property bool picking: frames !== null && !held
     // The toolbar's Protocol.CAPTURE_* mode; each pick starts on a region.
     property string mode: Protocol.CAPTURE_REGION
     // A pick was sent and novad is saving it: the picker takes no more.
@@ -25,6 +28,15 @@ Singleton {
     property string _next: ""
     // The picker was opened by the toolbar's switch.
     property bool switched: false
+    onFramesChanged: {
+        if (frames === null)
+            held = false;
+        else if (_frozen) {
+            const done = _frozen;
+            _frozen = null;
+            done("");
+        }
+    }
     // The last shot saved ({id, path, width, height, copied}), for the card.
     property var shot: null
     signal saved(var shot)
@@ -57,8 +69,34 @@ Singleton {
         Daemon.call(Protocol.CMD_CANCEL_CAPTURE);
     }
 
+    // Freezes the screens for the recording picker to hold (`held`): novad
+    // takes the frames before anything covers the screens. Calls `done`
+    // with an error, or "" once they're here.
+    function freeze(done: var) {
+        held = true;
+        _frozen = done;
+        Daemon.call(Protocol.CMD_SCREENSHOT, {
+            mode: Protocol.CAPTURE_REGION
+        }, error => {
+            if (!error)
+                return;
+            root.held = false;
+            root._frozen = null;
+            done(error);
+        });
+    }
+    property var _frozen: null
+
+    // Shows the held frames' picker in `mode` (the toolbar switched from
+    // video).
+    function show(mode: string) {
+        _next = mode;
+        held = false;
+    }
+
     // Opens the picker in `mode` once what was on the screen has gone (the
-    // toolbar switched from video), so novad's frozen frames don't show it.
+    // toolbar switched from video without held frames), so novad's frozen
+    // frames don't show it.
     function pick(mode: string) {
         _next = mode;
         opening.restart();
