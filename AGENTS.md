@@ -164,6 +164,13 @@ goldens" workflow from main on the PR branch instead of `just e2e-approve`.
 Every change goes through a pull request; `main` is protected. Sessions on the
 maintainer's desktop are for testing only: don't commit or push from there.
 
+Scratch output (measurements, logs, screenshots, audit reports) goes in your
+session's scratchpad or the worktree's ignored `e2e/out/`, never in
+`~/Projects` or the repo root. Anything the maintainer should keep goes in the
+PR or an artifact. Worktrees on the desktop go in
+`~/Projects/Nova-worktrees/<branch>`; a daily timer removes them once their PR
+is merged or closed.
+
 ## Review guidelines
 
 For Codex reviews of pull requests.
