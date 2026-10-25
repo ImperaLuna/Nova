@@ -3,6 +3,7 @@
 # compare.sh. default.nix defines USER, UID, PASSWORD, COMPOSITOR, QUIT_COMPOSITOR,
 # FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW, CLOSE_WINDOW, LIST_WINDOWS,
 # LIST_LAYERS, COMPOSITOR_LOG and FRAMES_REPORT above this script.
+import collections
 import datetime as dt
 import itertools
 import json
@@ -89,6 +90,9 @@ FRAMES_BEYOND_CALLBACKS = 2
 # only then). The bar's exclusion zone used to draw a frame too, each time an
 # animation started (IMP-49).
 MORPH_SURFACES = 2
+# How many times the launcher opens and closes over a fullscreen window with
+# WAYLAND_DEBUG on, for a stage that stays on Overlay (IMP-116).
+LAYER_ROUNDS = 5
 # The placeholder panels off the stage (ui/demo/DemoPanels.qml, on with
 # NOVA_DEMO_PANELS=1), opened over Quickshell's IPC.
 DEMO_PANELS = ("demo-sidebar", "demo-tab", "demo-center")
@@ -280,6 +284,41 @@ def window_geometry() -> list:
 def demo_logged(panel: str, state: str) -> str:
     """What a placeholder panel logs when it's "opened" or "closed"."""
     return f"nova: demo panel {panel} {state}"
+
+
+def layers_follow_the_launcher(rounds: int) -> None:
+    """Opens and closes the launcher over the fullscreen window `rounds`
+    times, checking each time that Nova moves to Overlay and back to Top.
+    Once on Hyprland the stage stayed on Overlay after the launcher closed
+    (IMP-116), rarely, so this repeats it with WAYLAND_DEBUG on and, if it
+    happens again, prints what the UI sent after Esc: whether a set_layer
+    went out, and which surfaces committed after it."""
+    unit = "layers-log"
+    capture = f"{RUNTIME_DIR}/{unit}.log"
+    machine.succeed(as_user(f"systemd-run --user --collect --unit={unit} sh -c 'exec nova logs --ui -n 0 > {capture}'"))
+    machine.wait_until_succeeds(as_user(f"systemctl --user is-active --quiet {unit}"), timeout=WAIT)
+    try:
+        for done in range(rounds):
+            before = ui_log_count(LAUNCHER_OPENED)
+            machine.succeed(as_user("nova toggle launcher"))
+            retry(lambda _last_try: ui_log_count(LAUNCHER_OPENED) > before, timeout=CLICK_EFFECT)
+            assert_layers("overlay", "nova-panel", "nova-stage", "nova-click-catcher")
+            press_until_logged(ESC, LAUNCHER_CLOSED)
+            try:
+                assert_layers("top", "nova-stage", "nova-click-catcher")
+            except Exception:
+                lines = machine.succeed(f"cat {capture}").splitlines()
+                closed = max(i for i, line in enumerate(lines) if LAUNCHER_CLOSED in line)
+                after = lines[closed:]
+                print(f"round {done + 1} of {rounds}: what the UI sent after {LAUNCHER_CLOSED!r}:")
+                for line in after:
+                    if "set_layer(" in line or "get_layer_surface(" in line:
+                        print(f"  {line}")
+                commits = collections.Counter(match.group(4) for line in after if (match := TIMED_COMMIT.search(line)))
+                print(f"  commits after it, per wl_surface: {dict(commits)}")
+                raise
+    finally:
+        machine.succeed(as_user(f"systemctl --user stop {unit}"))
 
 
 def press_until_logged(keys: str, line: str) -> None:
@@ -564,7 +603,7 @@ with subtest("logind's lock-session locks the screen, and novad holds back sleep
     machine.succeed(f"{YDOTOOL} type {shlex.quote(PASSWORD)}")
     press_until_logged(ENTER, SESSION_UNLOCKED)
 
-with subtest("an idle bar draws nothing, shown or beside a fullscreen window; the panel draws briefly; the bar gives a fullscreen window its space"):
+with subtest("an idle bar draws nothing, shown or beside a fullscreen window; the panel draws briefly; the launcher over a fullscreen window moves Nova to Overlay and back, each time; the bar gives a fullscreen window its space, and its pills take clicks once back"):
     # novad hands its environment to the UI.
     # Without libwayland's colors, which the timestamps would hide behind.
     # Qt's timing of each frame, for morph_frames to print. Qt logs it at
@@ -589,10 +628,16 @@ with subtest("an idle bar draws nothing, shown or beside a fullscreen window; th
     machine.succeed(as_user(FULLSCREEN_WINDOW))
     retry(lambda _last_try: ui_log_count(BAR_SPACE_GIVEN) > given, timeout=WAIT)
     assert_idle("beside a fullscreen window")
+    layers_follow_the_launcher(LAYER_ROUNDS)
     kept = ui_log_count(BAR_SPACE_KEPT)
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
     retry(lambda _last_try: ui_log_count(BAR_SPACE_KEPT) > kept, timeout=WAIT)
+    # The pills slid back in with their shelf, and take clicks where they are
+    # now: they used to keep taking them where they had slid out of sight
+    # (IMP-118).
+    click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
+    press_until_logged(ESC, AI_USAGE_CLOSED)
     machine.systemctl("unset-environment WAYLAND_DEBUG NO_COLOR QT_LOGGING_RULES NOVA_LOG NOVA_FRAME_LOG", user=USER)
     machine.succeed(as_user("nova restart"))
     # The run the rest of the test knows.
