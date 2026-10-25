@@ -258,7 +258,7 @@ fn forward_lines(stream: impl Read + Send + 'static, logger: Arc<Logger>) -> Joi
 
 /// Waits until child `pid` exits, leaving it unreaped (a zombie), so its pid
 /// can't be reused yet.
-fn wait_for_exit(pid: u32) -> std::io::Result<()> {
+pub fn wait_for_exit(pid: u32) -> std::io::Result<()> {
     let pid = libc::id_t::from(pid);
     loop {
         // SAFETY: siginfo_t is plain data, and waitid only writes into it.

@@ -11,7 +11,7 @@
 //! `packaging/compositor/niri.kdl`.
 
 use crate::logger::Logger;
-use crate::{lock, tray};
+use crate::{lock, supervisor, tray};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -63,7 +63,10 @@ impl X11Tray {
     pub fn stop(&self) {
         *lock(&self.shared.stopped) = true;
         self.shared.wake.notify_all();
-        if let Some(pid) = *lock(&self.shared.child) {
+        // Signalled under the lock: `run` forgets the pid under it before
+        // reaping, so it's still xembedsniproxy's (at worst a zombie).
+        let child = lock(&self.shared.child);
+        if let Some(pid) = *child {
             // SAFETY: kill only sends a signal.
             unsafe { libc::kill(pid.cast_signed(), libc::SIGTERM) };
         }
@@ -92,8 +95,13 @@ impl Shared {
             let outcome = match spawned {
                 Ok(mut spawned) => {
                     logger.info(LOG_SOURCE, &format!("started {PROGRAM} (pid {})", spawned.id()));
-                    let status = spawned.wait();
+                    // Forgotten between the exit and the reap, so `stop`
+                    // never signals a pid the kernel may have handed out again.
+                    if let Err(e) = supervisor::wait_for_exit(spawned.id()) {
+                        logger.warn(LOG_SOURCE, &format!("couldn't wait for {PROGRAM} without reaping it: {e}"));
+                    }
                     *lock(&self.child) = None;
+                    let status = spawned.wait();
                     status.map_or_else(|e| e.to_string(), |status| status.to_string())
                 }
                 Err(e) => format!("can't start it: {e}"),
