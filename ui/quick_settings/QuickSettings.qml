@@ -37,7 +37,6 @@ StagePanel {
 
     name: Protocol.FEATURE_QUICK_SETTINGS
     placement: "right"
-    closesOnClickOutside: true
 
     // "main", "sound" or "resources".
     property string page: "main"
