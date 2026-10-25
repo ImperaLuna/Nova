@@ -32,10 +32,16 @@ Item {
     // the stage holds the keyboard and the whole screen takes clicks, so a
     // click outside the panel closes it.
     property bool wantsKeyboard: false
-    // Whether it closes when you turn to something else: a click or scroll
-    // on a window or the desktop, which still reaches it (SurfaceFocus). For
-    // a panel that takes no typing, like AI usage.
+    // Whether it closes when you turn to something else: a click on a
+    // window, which still reaches it (SurfaceFocus). For a panel that takes
+    // no typing, like AI usage.
     property bool closesOnFocusLoss: false
+    // Whether the pointer is over it.
+    readonly property bool hovered: hover.hovered
+
+    HoverHandler {
+        id: hover
+    }
     // Its height once open. The stage is only as tall as what's drawn on it
     // can get, so it makes room for this before the panel opens.
     property real openHeight: height

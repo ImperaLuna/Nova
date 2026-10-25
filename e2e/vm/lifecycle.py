@@ -497,7 +497,11 @@ with subtest("panels off the stage open and close without moving windows"):
                 print(machine.execute(as_user(command))[1])
             raise
     # AI usage takes no typing: it closes as the focus moves on to a window
-    # (StagePanel closesOnFocusLoss), and the click reaches that window.
+    # (StagePanel closesOnFocusLoss), and the click reaches that window. Its
+    # surface takes the focus on the click that opens it, which the pointer
+    # coming over the pill first offers.
+    machine.succeed(pointer_to(*AI_USAGE_PILL))
+    machine.sleep(1)
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
     try:
         click_until_logged(*POINTER_REST, AI_USAGE_CLOSED)

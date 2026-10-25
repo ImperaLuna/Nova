@@ -41,6 +41,9 @@ QtObject {
     readonly property bool needsKeyboard: panels.some(panel => panel.open && panel.wantsKeyboard)
     // Whether an open panel closes when the focus moves elsewhere.
     readonly property bool followsFocus: panels.some(panel => panel.open && panel.closesOnFocusLoss)
+    // Whether a click could open such a panel, or one is open: the pointer
+    // is over one.
+    readonly property bool offersFocus: followsFocus || panels.some(panel => panel.hovered && panel.closesOnFocusLoss)
     // Whether anything drawn is animating.
     readonly property bool moving: panels.some(panel => panel.moving)
 
