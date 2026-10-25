@@ -71,10 +71,14 @@ Item {
             return rows.map(row => row.id);
         }
 
-        function test_recent_apps_show_until_something_is_typed() {
+        function groups(rows) {
+            return rows.map(row => row.group);
+        }
+
+        function test_recent_apps_then_every_other_app_by_name_until_something_is_typed() {
             const launcher = make();
-            compare(ids(launcher.rows), ["org.gnome.Nautilus.desktop", "firefox.desktop"]);
-            compare(launcher.section, "recent");
+            compare(ids(launcher.rows), ["org.gnome.Nautilus.desktop", "firefox.desktop", "foot.desktop"]);
+            compare(groups(launcher.rows), ["recent", "recent", "apps"]);
             compare(ids(launcher.pinnedApps), ["foot.desktop"], "an app that's gone isn't shown");
             verify(launcher.showsPinned);
         }
@@ -83,8 +87,8 @@ Item {
             const launcher = make({
                 recent: []
             });
-            compare(launcher.section, "apps");
-            compare(launcher.rows.length, 3);
+            compare(ids(launcher.rows), ["org.gnome.Nautilus.desktop", "firefox.desktop", "foot.desktop"], "by name: Files, Firefox, Foot");
+            compare(groups(launcher.rows), ["apps", "apps", "apps"]);
         }
 
         function test_typing_searches_and_shows_only_the_latest_matches() {
@@ -136,7 +140,7 @@ Item {
                 }
             ]);
             compare(ids(launcher.rows), ["org.gnome.Nautilus.desktop", "firefox.desktop"]);
-            compare(launcher.section, "results");
+            compare(groups(launcher.rows), ["results", "results"]);
             compare(launcher.rows[0].runs[0], {
                 text: "Fi",
                 matched: true
@@ -145,7 +149,7 @@ Item {
             keyClick(Qt.Key_Backspace);
             keyClick(Qt.Key_Backspace);
             compare(launcher.query, "");
-            compare(launcher.section, "recent");
+            compare(launcher.rows[0].group, "recent");
         }
 
         function test_nothing_matching_says_so() {
@@ -153,14 +157,13 @@ Item {
             keyClick("q");
             launcher.showMatches("q", []);
             compare(launcher.rows.length, 0);
-            compare(launcher.section, "");
         }
 
         function test_arrows_go_round_and_enter_launches_the_selected_app() {
             const launcher = make();
             compare(launcher.selected, 0);
             keyClick(Qt.Key_Up);
-            compare(launcher.selected, 1, "up from the first goes to the last");
+            compare(launcher.selected, 2, "up from the first goes to the last");
             keyClick(Qt.Key_Down);
             keyClick(Qt.Key_Down);
             compare(launcher.selected, 1);

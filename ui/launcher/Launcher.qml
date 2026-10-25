@@ -45,7 +45,6 @@ StagePanel {
 
     readonly property var known: LauncherLogic.byId(apps)
     readonly property var rows: LauncherLogic.rows(query, matches, recent, apps, known)
-    readonly property string section: LauncherLogic.section(query, rows.length, LauncherLogic.pick(known, recent).length)
     readonly property real contentWidth: Tokens.launcherWidth - 2 * Tokens.launcherPad
     // As many tiles as fit on one row, spread to fill it.
     readonly property int tilesPerRow: Math.floor((contentWidth + Tokens.gap) / (Tokens.launcherTileSize + Tokens.gap))
@@ -68,8 +67,10 @@ StagePanel {
     // Open, it's as tall as what it shows, changing size smoothly as that
     // changes; its surface is as big as it can get, so that never resizes it.
     readonly property real openY: Math.round(screenHeight * Tokens.launcherTop)
-    readonly property real rowsHeight: Tokens.launcherRows * Tokens.launcherRowHeight + (Tokens.launcherRows - 1) * Tokens.launcherRowGap
-    readonly property real tallest: 2 * Tokens.launcherPad + Tokens.launcherSearchHeight + 4 * Tokens.launcherGap + 2 * Tokens.launcherLabelHeight + Tokens.launcherTileSize + Tokens.launcherTileName + rowsHeight
+    // The list: launcherRows rows and the headings of the two groups they may
+    // span (recent, then every app) before it scrolls.
+    readonly property real listHeight: Tokens.launcherRows * Tokens.launcherRowHeight + (Tokens.launcherRows - 1) * Tokens.launcherRowGap + 2 * Tokens.launcherLabelHeight
+    readonly property real tallest: 2 * Tokens.launcherPad + Tokens.launcherSearchHeight + 4 * Tokens.launcherGap + 2 * Tokens.launcherLabelHeight + Tokens.launcherTileSize + Tokens.launcherTileName + listHeight
     property real shownHeight: content.implicitHeight + 2 * Tokens.launcherPad
     Behavior on shownHeight {
         enabled: launcher.open && !launcher.morph.moving
@@ -268,40 +269,46 @@ StagePanel {
                 }
             }
 
-            // The list's heading, or why the last launch failed.
+            // Why the last launch failed.
             SectionLabel {
-                visible: launcher.section !== "" || launcher.problem !== ""
+                visible: launcher.problem !== ""
                 width: parent.width
                 rightPadding: Tokens.rowInset
                 elide: Text.ElideRight
-                font.capitalization: launcher.problem ? Font.MixedCase : Font.AllUppercase
-                color: launcher.problem ? Tokens.error : Tokens.fgDim
+                font.capitalization: Font.MixedCase
+                color: Tokens.error
                 textFormat: Text.PlainText
-                text: launcher.problem ? qsTr("Couldn't start it: %1").arg(launcher.problem) : ({
-                        recent: qsTr("Recent"),
-                        apps: qsTr("Apps"),
-                        results: qsTr("Results")
-                    })[launcher.section] ?? ""
+                text: qsTr("Couldn't start it: %1").arg(launcher.problem)
             }
 
             ListView {
                 id: list
                 objectName: "list"
                 width: parent.width
-                height: Math.min(count, Tokens.launcherRows) * (Tokens.launcherRowHeight + Tokens.launcherRowGap) - Tokens.launcherRowGap
+                height: Math.min(contentHeight, launcher.listHeight)
                 visible: count > 0
                 spacing: Tokens.launcherRowGap
                 clip: true
-                interactive: count > Tokens.launcherRows
+                interactive: contentHeight > height
                 boundsBehavior: Flickable.StopAtBounds
                 model: launcher.rows
                 currentIndex: launcher.selected
-                highlightMoveDuration: Tokens.durationFast
-                highlightMoveVelocity: -1
-                highlightResizeDuration: 0
+                // Behind the selected row, not its group's heading above it.
+                highlightFollowsCurrentItem: false
 
                 highlight: Rectangle {
+                    readonly property LauncherListItem current: list.currentItem as LauncherListItem
+                    y: current ? current.y + current.rowY : 0
+                    width: list.width
+                    height: Tokens.launcherRowHeight
                     radius: Tokens.radiusRow
+                    Behavior on y {
+                        NumberAnimation {
+                            duration: Tokens.durationFast
+                            easing.type: Easing.BezierSpline
+                            easing.bezierCurve: Tokens.easing
+                        }
+                    }
                     color: launcher.launching !== "" ? Qt.rgba(Tokens.primary.r, Tokens.primary.g, Tokens.primary.b, Tokens.accentFillOpacity) : Tokens.selected
                     Behavior on color {
                         ColorAnimation {
@@ -310,18 +317,8 @@ StagePanel {
                     }
                 }
 
-                delegate: LauncherRow {
-                    required property var modelData
-                    required property int index
+                delegate: LauncherListItem {
                     width: list.width
-                    app: modelData
-                    iconSource: launcher.iconSource(modelData.icon)
-                    selected: index === launcher.selected
-                    pinned: launcher.pinned.includes(modelData.id)
-                    launching: launcher.launching === modelData.id
-                    onHovered: launcher.selected = index
-                    onClicked: launcher.launch(modelData.id)
-                    onPinClicked: launcher.pinRequested(modelData.id, !pinned)
                 }
             }
 
@@ -338,6 +335,38 @@ StagePanel {
                 textFormat: Text.PlainText
                 text: qsTr("Nothing matches “%1”").arg(launcher.query.trim())
             }
+        }
+    }
+
+    // A row, under its group's heading when it's the group's first.
+    component LauncherListItem: Column {
+        id: item
+
+        required property var modelData
+        required property int index
+        readonly property bool heads: index === 0 || launcher.rows[index - 1]?.group !== modelData.group
+        // Where the row starts, below the heading.
+        readonly property real rowY: heads ? Tokens.launcherLabelHeight : 0
+
+        SectionLabel {
+            visible: item.heads
+            text: ({
+                    recent: qsTr("Recent"),
+                    apps: qsTr("All apps"),
+                    results: qsTr("Results")
+                })[item.modelData.group] ?? ""
+        }
+
+        LauncherRow {
+            width: item.width
+            app: item.modelData
+            iconSource: launcher.iconSource(item.modelData.icon)
+            selected: item.index === launcher.selected
+            pinned: launcher.pinned.includes(item.modelData.id)
+            launching: launcher.launching === item.modelData.id
+            onHovered: launcher.selected = item.index
+            onClicked: launcher.launch(item.modelData.id)
+            onPinClicked: launcher.pinRequested(item.modelData.id, !pinned)
         }
     }
 

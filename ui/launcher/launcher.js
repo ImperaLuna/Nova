@@ -26,10 +26,12 @@ function pick(known, ids) {
 }
 
 // What the list shows: the matches while there's a query (the name in runs,
-// matched letters marked), else the recent apps, else every app. Each row
-// is {id, name, runs, description, icon}.
+// matched letters marked), else the recent apps followed by every other app
+// by name, so the arrows reach any app without typing. Each row is
+// {id, name, runs, description, icon, group}, `group` being "results",
+// "recent" or "apps": the list's headings.
 function rows(query, matches, recent, apps, known) {
-    function row(app, runs) {
+    function row(app, group, runs) {
         return {
             id: app.id,
             name: app.name,
@@ -40,7 +42,8 @@ function rows(query, matches, recent, apps, known) {
                 }
             ],
             description: app.description ?? "",
-            icon: app.icon ?? ""
+            icon: app.icon ?? "",
+            group: group
         };
     }
     if (query.trim() !== "") {
@@ -48,7 +51,7 @@ function rows(query, matches, recent, apps, known) {
         for (var i = 0; i < matches.length; i++) {
             var app = known[matches[i].id];
             if (app)
-                found.push(row(app, matches[i].name.map(function (run) {
+                found.push(row(app, "results", matches[i].name.map(function (run) {
                     return {
                         text: run.text,
                         matched: run.matched === true
@@ -57,18 +60,18 @@ function rows(query, matches, recent, apps, known) {
         }
         return found;
     }
-    var shown = recent.length > 0 ? pick(known, recent) : apps;
-    return shown.map(function (app) {
-        return row(app);
+    var shown = pick(known, recent).map(function (app) {
+        return row(app, "recent");
     });
-}
-
-// Which heading the list has: "results", "recent", "apps", or "" when a
-// query matches nothing.
-function section(query, rowCount, recentCount) {
-    if (query.trim() !== "")
-        return rowCount > 0 ? "results" : "";
-    return recentCount > 0 ? "recent" : "apps";
+    var others = apps.filter(function (app) {
+        return recent.indexOf(app.id) < 0;
+    });
+    others.sort(function (a, b) {
+        return a.name.localeCompare(b.name);
+    });
+    return shown.concat(others.map(function (app) {
+        return row(app, "apps");
+    }));
 }
 
 // The selection after moving `by` rows from `index` among `count`, going
