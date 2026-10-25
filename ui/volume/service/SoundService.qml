@@ -71,12 +71,15 @@ Singleton {
             }))
     // qmllint enable missing-property
 
-    // An app stream's icon name: the one the stream gives, else its desktop
-    // entry's, found by its program or its name (browsers name no icon), else
-    // its program's name in case the icon theme has it.
+    // An app stream's icon name: its desktop entry's, found by the icon name
+    // the stream gives (often the entry's id, like Claude's
+    // `com.anthropic.Claude`), its program or its name (browsers give no
+    // icon), else the stream's icon name or program, in case the icon theme
+    // has it.
     function appIcon(props: var): string {
+        const given = props["application.icon-name"] ?? "";
         const program = QuickSettings.programName(props["application.process.binary"] ?? "");
-        return props["application.icon-name"] || QuickSettings.entryIcon(entries, [program, props["application.name"] ?? ""]) || program;
+        return QuickSettings.entryIcon(entries, [given, program, props["application.name"] ?? ""]) || given || program;
     }
 
     function node(id: int): PwNode {

@@ -292,6 +292,14 @@ Item {
             compare(QuickSettings.entryIcon(entries, ["zen", "Zen"]), "zen-browser", "a program that begins an entry's");
             compare(QuickSettings.entryIcon(entries, ["", "Zen"]), "zen-browser", "or the app's name");
             compare(QuickSettings.entryIcon(entries, ["nautilus"]), "org.gnome.Nautilus", "by its command");
+            entries.push({
+                id: "com.anthropic.Claude",
+                name: "Claude",
+                startupClass: "com.anthropic.Claude",
+                command: ["claude-desktop"],
+                icon: "claude-desktop"
+            });
+            compare(QuickSettings.entryIcon(entries, ["com.anthropic.Claude", "claude-desktop"]), "claude-desktop", "a stream's icon name that is the entry's id");
             compare(QuickSettings.entryIcon(entries, ["discord"]), "", "an entry without an icon gives none");
             compare(QuickSettings.entryIcon(entries, ["ze"]), "", "only whole words before a dash");
         }

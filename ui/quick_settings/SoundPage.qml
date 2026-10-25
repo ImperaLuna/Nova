@@ -177,7 +177,13 @@ Item {
 
                 ListRow {
                     required property int index
-                    readonly property var modelData: rows.shown[index] ?? {}
+                    // Past the end for a moment while the tab switches.
+                    readonly property var modelData: rows.shown[index] ?? {
+                        id: -1,
+                        name: "",
+                        kind: "",
+                        current: false
+                    }
                     width: parent.width
                     icon: page.tab === "input" ? Icons.MIC : page.kindIcon(modelData.kind)
                     title: modelData.name
