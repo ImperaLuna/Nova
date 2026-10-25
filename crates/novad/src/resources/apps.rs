@@ -74,7 +74,19 @@ impl Me {
 /// ranks. `used` is each process's CPU ticks since the last look,
 /// `total_ticks` all CPUs' over it, `page` the page size. Kernel threads (no
 /// memory of their own) are left out.
-pub fn top(processes: &[Process], used: &[u64], total_ticks: u64, page: u64, me: Me, top: usize) -> Vec<AppUsage> {
+///
+/// Apps rank by resident memory, which is cheap to read for every process;
+/// the ones listed then show `pss` (a process's proportional memory, where
+/// readable), which counts memory shared between processes once.
+pub fn top(
+    processes: &[Process],
+    used: &[u64],
+    total_ticks: u64,
+    page: u64,
+    me: Me,
+    top: usize,
+    pss: impl Fn(u32) -> Option<u64>,
+) -> Vec<AppUsage> {
     let mut groups: HashMap<String, (Vec<&Process>, u64)> = HashMap::new();
     for (process, ticks) in processes.iter().zip(used) {
         if process.resident_pages == 0 {
@@ -85,20 +97,25 @@ pub fn top(processes: &[Process], used: &[u64], total_ticks: u64, page: u64, me:
         group.1 += ticks;
     }
     let mut apps: Vec<AppUsage> = groups
-        .into_iter()
+        .iter()
         .map(|(key, (members, ticks))| AppUsage {
             name: name(members[0], me),
             processes: u32::try_from(members.len()).unwrap_or(u32::MAX),
-            cpu: super::usage::percent(ticks, total_ticks),
+            cpu: super::usage::percent(*ticks, total_ticks),
             memory: members.iter().map(|process| process.resident_pages * page).sum(),
-            protected: me.protects(&members),
-            key,
+            protected: me.protects(members),
+            key: key.clone(),
         })
         .collect();
     apps.sort_by(|a, b| b.memory.cmp(&a.memory).then_with(|| a.name.cmp(&b.name)));
     let nova = apps.iter().skip(top).position(|app| app.key == NOVA_KEY).map(|at| apps.remove(top + at));
     apps.truncate(top);
     apps.extend(nova);
+    for app in &mut apps {
+        app.memory =
+            groups[&app.key].0.iter().map(|process| pss(process.pid).unwrap_or(process.resident_pages * page)).sum();
+    }
+    apps.sort_by(|a, b| b.memory.cmp(&a.memory).then_with(|| a.name.cmp(&b.name)));
     apps
 }
 
@@ -151,7 +168,7 @@ mod tests {
             process(4, 1, "", 0, 50),
             process(5, 2, "/usr/bin/kworker", 0, 0),
         ];
-        let apps = top(&processes, &[10, 0, 30, 0, 99], 100, 4096, ME, 6);
+        let apps = top(&processes, &[10, 0, 30, 0, 99], 100, 4096, ME, 6, |_| None);
         let names: Vec<&str> = apps.iter().map(|app| app.name.as_str()).collect();
         assert_eq!(names, ["firefox", "foot", "comm"], "kernel threads are left out");
         assert_eq!(apps[0].processes, 2);
@@ -161,7 +178,7 @@ mod tests {
         assert!(!apps[0].protected);
         assert_eq!(apps[2].key, "comm:comm");
         assert!(apps[2].protected, "another user's");
-        assert_eq!(top(&processes, &[0; 5], 100, 4096, ME, 1).len(), 1);
+        assert_eq!(top(&processes, &[0; 5], 100, 4096, ME, 1, |_| None).len(), 1);
     }
 
     #[test]
@@ -171,7 +188,7 @@ mod tests {
             process(101, 100, "/nix/store/x/bin/.quickshell-wrapped", 1000, 10),
             process(7, 1, "/usr/bin/niri", 1000, 10),
         ];
-        let apps = top(&processes, &[0; 3], 1, 4096, ME, 6);
+        let apps = top(&processes, &[0; 3], 1, 4096, ME, 6, |_| None);
         assert!(apps.iter().all(|app| app.protected), "{apps:?}");
         assert!(end(&processes, NOVA_KEY, ME).unwrap_err().contains("can't be ended"));
         assert!(end(&processes, "/usr/bin/niri", ME).unwrap_err().contains("can't be ended"));
@@ -187,13 +204,26 @@ mod tests {
             process(3, 1, "/usr/bin/firefox", 1000, 400),
             process(4, 1, "/nix/store/x/bin/.quickshell-wrapped", 1000, 50),
         ];
-        let apps = top(&processes, &[0; 5], 1, 4096, ME, 2);
+        let apps = top(&processes, &[0; 5], 1, 4096, ME, 2, |_| None);
         let names: Vec<&str> = apps.iter().map(|app| app.name.as_str()).collect();
         assert_eq!(names, ["firefox", "foot", "Nova"], "Nova comes last when it doesn't rank");
         assert_eq!((apps[2].key.as_str(), apps[2].processes, apps[2].memory), (NOVA_KEY, 2, 30 * 4096));
-        let apps = top(&processes, &[0; 5], 1, 4096, ME, 6);
+        let apps = top(&processes, &[0; 5], 1, 4096, ME, 6, |_| None);
         let names: Vec<&str> = apps.iter().map(|app| app.name.as_str()).collect();
         assert_eq!(names, ["firefox", "foot", "quickshell", "Nova"], "another Quickshell isn't Nova");
+    }
+
+    #[test]
+    fn listed_apps_show_proportional_memory_where_readable() {
+        let processes = [
+            process(1, 1, "/usr/bin/firefox", 1000, 400),
+            process(2, 1, "/usr/bin/firefox", 1000, 400),
+            process(3, 1, "/usr/bin/foot", 1000, 300),
+        ];
+        // Firefox's two processes share most of their memory.
+        let apps = top(&processes, &[0; 3], 1, 4096, ME, 6, |pid| (pid != 3).then_some(100 * 4096));
+        let shown: Vec<(&str, u64)> = apps.iter().map(|app| (app.name.as_str(), app.memory / 4096)).collect();
+        assert_eq!(shown, [("foot", 300), ("firefox", 200)], "unreadable falls back to resident");
     }
 
     #[test]

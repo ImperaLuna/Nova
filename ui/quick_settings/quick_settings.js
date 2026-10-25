@@ -123,10 +123,11 @@ function graphPath(values, width, height, count, area) {
     return path;
 }
 
-// App streams (`apps`, each {id, name, volume, muted}) as one entry per app:
-// an app often plays more than one stream (a browser's tabs), and each
-// shows as the app. Each entry keeps the first stream's id and volume, all
-// its streams' `ids`, and is muted only while all of them are.
+// App streams (`apps`, each {id, name, volume, muted, ready}) as one entry
+// per app: an app often plays more than one stream (a browser's tabs), and
+// each shows as the app. Each entry keeps the first stream's id, all its
+// streams' `ids`, the loudest ready stream's volume, and is muted only
+// while all of them are.
 function appGroups(apps) {
     var groups = [];
     var byName = {};
@@ -138,13 +139,17 @@ function appGroups(apps) {
                 id: app.id,
                 ids: [],
                 name: app.name,
-                volume: app.volume,
+                volume: 0,
                 muted: true
             };
             byName[app.name] = group;
             groups.push(group);
         }
         group.ids.push(app.id);
+        // The loudest stream that has a volume: one still starting (no
+        // volume yet) would read 0 and pull the slider back.
+        if (app.ready !== false)
+            group.volume = Math.max(group.volume, app.volume);
         group.muted = group.muted && app.muted;
     }
     return groups;

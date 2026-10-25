@@ -76,6 +76,14 @@ Singleton {
             sink.audio.volume = value;
     }
 
+    // A slider moved to `value`: moving it means wanting to hear it, so it
+    // unmutes too.
+    function slide(value: real) {
+        set(value);
+        if (muted)
+            sink.audio.muted = false;
+    }
+
     // `direction`: 1 up, -1 down, one Tokens.volumeStep.
     function step(direction: int) {
         set(Volume.stepped(volume, direction, Tokens.volumeStep));

@@ -239,6 +239,24 @@ Item {
             compare(groups[0].volume, 0.7);
             verify(!groups[0].muted, "one Firefox stream still plays");
             verify(groups[1].muted);
+
+            const starting = QuickSettings.appGroups([
+                {
+                    id: 3,
+                    name: "Spotify",
+                    volume: 0,
+                    muted: false,
+                    ready: false
+                },
+                {
+                    id: 4,
+                    name: "Spotify",
+                    volume: 0.6,
+                    muted: false,
+                    ready: true
+                }
+            ]);
+            compare(starting[0].volume, 0.6, "a stream without a volume yet doesn't pull it to 0");
         }
 
         function test_a_dragged_slider_follows_the_pointer_until_released() {
@@ -368,6 +386,9 @@ Item {
                     }
                 ])
             });
+            waitForRendering(page);
+            compare(page.tab, "apps", "apps come first");
+            page.tab = "output";
             waitForRendering(page);
             shot(page, "sound");
             spy.signalName = "outputPicked";

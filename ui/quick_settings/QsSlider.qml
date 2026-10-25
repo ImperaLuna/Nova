@@ -21,6 +21,8 @@ Item {
     property color fill: Tokens.sliderFill
     property color iconColor: Tokens.fg
     property bool available: true
+    // Muted: the fill stays at the volume, dimmed.
+    property bool muted: false
     property bool opens: false
 
     signal moved(real value)
@@ -50,6 +52,7 @@ Item {
             height: parent.height
             radius: height / 2
             color: slider.fill
+            opacity: slider.muted ? Tokens.dimOpacity : 1
 
             Rectangle {
                 anchors.right: parent.right

@@ -137,7 +137,7 @@ StagePanel {
                 reading: QuickSettingsService.resources
                 onKeepAwakeToggled: QuickSettingsService.keepAwake = !QuickSettingsService.keepAwake
                 onMicMuteToggled: SoundService.toggleSourceMute()
-                onVolumeMoved: value => VolumeService.set(value)
+                onVolumeMoved: value => VolumeService.slide(value)
                 onMuteToggled: VolumeService.toggleMute()
                 onMicVolumeMoved: value => SoundService.setSourceVolume(value)
                 onPageRequested: page => panel.page = page
@@ -170,7 +170,7 @@ StagePanel {
                     inputs: SoundService.inputs
                     apps: SoundService.apps
                     onBack: panel.page = "main"
-                    onVolumeMoved: value => VolumeService.set(value)
+                    onVolumeMoved: value => VolumeService.slide(value)
                     onMuteToggled: VolumeService.toggleMute()
                     onOutputPicked: id => SoundService.useOutput(id)
                     onInputPicked: id => SoundService.useInput(id)

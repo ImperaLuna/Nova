@@ -118,7 +118,8 @@ Item {
                     width: parent.width
                     glyph: Volume.icon(page.outputAvailable ? page.outputKind : "none", page.muted, page.volume)
                     label: page.outputAvailable ? page.outputName : qsTr("No output")
-                    value: page.muted ? 0 : page.volume
+                    value: page.volume
+                    muted: page.muted
                     available: page.outputAvailable
                     opens: true
                     onMoved: value => page.volumeMoved(value)
@@ -132,7 +133,8 @@ Item {
                     iconColor: Tokens.secondary
                     fill: Qt.rgba(Tokens.secondary.r, Tokens.secondary.g, Tokens.secondary.b, Tokens.micFillOpacity)
                     label: QuickSettings.recordingText(page.recorders)
-                    value: page.micMuted ? 0 : page.micVolume
+                    value: page.micVolume
+                    muted: page.micMuted
                     onMoved: value => page.micVolumeMoved(value)
                     onIconClicked: page.micMuteToggled()
                 }

@@ -260,7 +260,10 @@ impl Sampler {
     fn top_apps(&mut self, total_ticks: u64) -> Vec<nova_protocol::AppUsage> {
         let processes = usage::processes(&self.sources.proc_root);
         let used = self.process_ticks.since_last(&processes);
-        apps::top(&processes, &used, total_ticks, page_size(), Me::current(), TOP_APPS)
+        let proc_root = &self.sources.proc_root;
+        apps::top(&processes, &used, total_ticks, page_size(), Me::current(), TOP_APPS, |pid| {
+            usage::read_pss(proc_root, pid)
+        })
     }
 }
 

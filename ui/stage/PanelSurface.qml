@@ -91,6 +91,20 @@ PanelWindow { // qmllint disable uncreatable-type
         if (!handingBack || !holding)
             visible = false;
     }
+    // A panel that closed while another stays open here (quick settings
+    // giving way to the power menu) hands its item back now: the surface
+    // isn't going away, so that can't wait for it to.
+    Connections {
+        target: surface.drawn
+        function onShownChanged() {
+            if (!surface.hasShown)
+                return;
+            for (const panel of surface.panels) {
+                if (panel.covering && !surface.drawn.shown.includes(panel))
+                    panel.covering = false;
+            }
+        }
+    }
     onHoldingChanged: {
         if (!holding && !hasShown)
             visible = false;

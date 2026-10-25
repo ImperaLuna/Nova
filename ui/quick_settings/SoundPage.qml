@@ -25,7 +25,7 @@ Item {
     property var inputs: []
     property var apps: []
     // "output", "input" or "apps".
-    property string tab: "output"
+    property string tab: "apps"
 
     signal back
     // Room the top row leaves on its right (the pill's buttons).
@@ -116,7 +116,8 @@ Item {
                     visible: !page.input
                     glyph: Volume.icon(page.outputAvailable ? page.outputKind : "none", page.muted, page.volume)
                     label: qsTr("Output")
-                    value: page.muted ? 0 : page.volume
+                    value: page.volume
+                    muted: page.muted
                     available: page.outputAvailable
                     onMoved: value => page.volumeMoved(value)
                     onIconClicked: page.muteToggled()
@@ -127,7 +128,8 @@ Item {
                     visible: page.input
                     icon: page.inputMuted ? Icons.MIC_OFF : Icons.MIC
                     label: qsTr("Input")
-                    value: page.inputMuted ? 0 : page.inputVolume
+                    value: page.inputVolume
+                    muted: page.inputMuted
                     available: page.inputAvailable
                     onMoved: value => page.inputVolumeMoved(value)
                     onIconClicked: page.inputMuteToggled()
@@ -140,16 +142,16 @@ Item {
             current: page.tab
             options: [
                 {
+                    key: "apps",
+                    label: qsTr("Apps")
+                },
+                {
                     key: "output",
                     label: qsTr("Output")
                 },
                 {
                     key: "input",
                     label: qsTr("Input")
-                },
-                {
-                    key: "apps",
-                    label: qsTr("Apps")
                 }
             ]
             onPicked: key => page.tab = key
@@ -202,7 +204,8 @@ Item {
                     width: parent.width
                     icon: Icons.APP
                     label: app.name
-                    value: app.muted ? 0 : app.volume
+                    value: app.volume
+                    muted: app.muted
                     onMoved: value => page.appVolumeMoved(app.ids, value)
                 }
             }

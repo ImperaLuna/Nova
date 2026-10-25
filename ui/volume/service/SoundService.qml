@@ -9,7 +9,8 @@ import "../../quick_settings/quick_settings.js" as QuickSettings
 // Everything quick settings shows about sound beyond the default output
 // (VolumeService has that): the default input and who records from it,
 // every output and input to switch between, and each app's own volume.
-// Lists come as plain objects ({id, name, kind, volume, muted, current};
+// Lists come as plain objects ({id, name, kind, volume, muted, ready,
+// current};
 // apps also have `ids`),
 // so the pages showing them don't need PipeWire's types; acting goes
 // through the functions here by id.
@@ -51,6 +52,7 @@ Singleton {
             kind: Volume.outputKind(true, props),
             volume: node.ready && node.audio.volumes.length > 0 ? node.audio.volume : 0,
             muted: node.ready && node.audio.muted,
+            ready: node.ready && node.audio.volumes.length > 0,
             current: current !== null && node.id === current.id
         };
     }
@@ -59,10 +61,14 @@ Singleton {
         return nodes.find(node => node.id === id) ?? null;
     }
 
+    // Moved by hand, so unmuted as well, like the output.
     function setVolume(id: int, value: real) {
         const found = node(id);
-        if (found?.ready)
-            found.audio.volume = value;
+        if (!found?.ready)
+            return;
+        found.audio.volume = value;
+        if (found.audio.muted)
+            found.audio.muted = false;
     }
 
     // Every stream of an app (an `apps` entry's `ids`) to `value`.
@@ -84,8 +90,11 @@ Singleton {
     }
 
     function setSourceVolume(value: real) {
-        if (sourceReady)
-            source.audio.volume = value;
+        if (!sourceReady)
+            return;
+        source.audio.volume = value;
+        if (sourceMuted)
+            source.audio.muted = false;
     }
 
     function toggleSourceMute() {
