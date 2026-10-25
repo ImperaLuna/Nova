@@ -6,7 +6,7 @@ expression: all
 {"v":2,"event":"features","data":{"features":[{"id":"core","status":"ready"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
-{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume"]}}
+{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","launcher"]}}
 {"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","backdrop":"#000000","fg":"#F5E7C6","fgAlt":"#525252","fgDim":"#9A9A9A","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
 {"v":2,"id":10,"cmd":"status"}
 {"v":2,"id":11,"cmd":"quit"}
@@ -36,4 +36,10 @@ expression: all
 {"v":2,"id":21,"cmd":"volume","args":{"key":"up"}}
 {"v":2,"event":"volume","data":{"key":"down"}}
 {"v":2,"event":"volume","data":{"key":"mute"}}
+{"v":2,"event":"launcher","data":{"apps":[{"id":"org.mozilla.firefox.desktop","name":"Firefox","description":"Web Browser","icon":"firefox"},{"id":"foot.desktop","name":"Foot"}],"pinned":["foot.desktop"],"recent":["org.mozilla.firefox.desktop","foot.desktop"]}}
+{"v":2,"id":22,"cmd":"search_apps","args":{"query":"fi"}}
+{"v":2,"id":22,"result":[{"id":"org.mozilla.firefox.desktop","name":[{"matched":true,"text":"Fi"},{"text":"refox"}]}]}
+{"v":2,"id":23,"cmd":"launch_app","args":{"id":"foot.desktop","output":"DP-1","new_window":true}}
+{"v":2,"id":24,"cmd":"pin_app","args":{"id":"foot.desktop","pinned":true}}
+{"v":2,"cmd":"toggle","args":{"panel":"launcher"}}
 {"v":2,"id":8,"error":"bad request"}

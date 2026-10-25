@@ -1,0 +1,394 @@
+//! The launcher (feature `launcher`): the apps installed, read from their
+//! desktop entries and read again when apps are installed or removed,
+//! searching them, starting them, and the user's pinned and recent ones,
+//! which survive restarts.
+
+mod desktop_entry;
+mod launch;
+mod rank;
+mod scan;
+
+use crate::hub::Hub;
+use crate::inotify::{self, Inotify};
+use crate::logger::Logger;
+use crate::{lock, state_file};
+use desktop_entry::{Context, Entry, Locale};
+pub use launch::Runner;
+use nova_protocol::{App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::Duration;
+
+pub const FEATURE_ID: &str = "launcher";
+const LOG_SOURCE: &str = "launcher";
+/// Installing a package writes many entries; they're read once it pauses.
+const SETTLE: Duration = Duration::from_millis(500);
+/// Matches a search returns at most.
+const MAX_MATCHES: usize = 50;
+/// Apps that can be pinned at once.
+const MAX_PINNED: usize = 32;
+/// Recent apps sent, the latest first.
+const MAX_RECENT: usize = 8;
+/// Apps whose launches are remembered (for recent and for ranking); the
+/// least recently launched are forgotten first.
+const MAX_REMEMBERED: usize = 200;
+
+/// Where the module reads and keeps things, and how it starts apps.
+#[derive(Clone)]
+pub struct Paths {
+    /// The XDG data folders apps are found in, in order.
+    pub data_dirs: Vec<PathBuf>,
+    /// Pinned apps and launch counts.
+    pub state_file: PathBuf,
+    pub runner: Runner,
+}
+
+impl Paths {
+    pub fn new(state_dir: &Path, path_var: &str) -> Self {
+        Self {
+            data_dirs: scan::data_dirs(),
+            state_file: state_dir.join("launcher.json"),
+            runner: Runner::detect(path_var),
+        }
+    }
+}
+
+pub struct Launcher {
+    state: Mutex<State>,
+    hub: Arc<Hub>,
+    logger: Arc<Logger>,
+    paths: Paths,
+    /// Where programs are looked for, and the `PATH` apps get.
+    path_var: String,
+    locale: Locale,
+    /// `XDG_CURRENT_DESKTOP`'s names, for `OnlyShowIn` and `NotShowIn`.
+    desktops: Vec<String>,
+    /// Set by `stop`; the scanning thread checks it when it wakes.
+    stopped: AtomicBool,
+    /// Ends the watching thread; `None` until it starts.
+    watch: Mutex<Option<inotify::Stopper>>,
+}
+
+struct State {
+    apps: BTreeMap<String, Entry>,
+    saved: Saved,
+    /// The last event published, so an unchanged list isn't sent again.
+    sent: Option<nova_protocol::Launcher>,
+}
+
+/// What survives a restart.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+struct Saved {
+    /// Ids in the user's order. Apps that are gone stay, in case they come back.
+    #[serde(default)]
+    pinned: Vec<String>,
+    #[serde(default)]
+    launches: BTreeMap<String, Launches>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+struct Launches {
+    count: u32,
+    /// The last one, in milliseconds since 1970.
+    last: i64,
+}
+
+impl Launcher {
+    /// Loads the saved state, then finds the apps and follows changes to
+    /// them on a thread of its own.
+    pub fn start(paths: Paths, path_var: &str, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+        let saved = match std::fs::read_to_string(&paths.state_file) {
+            Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
+                logger.warn(LOG_SOURCE, &format!("ignoring {}: {e}", paths.state_file.display()));
+                Saved::default()
+            }),
+            Err(_) => Saved::default(),
+        };
+        let desktops = std::env::var("XDG_CURRENT_DESKTOP")
+            .unwrap_or_default()
+            .split(':')
+            .filter(|name| !name.is_empty())
+            .map(str::to_string)
+            .collect();
+        let launcher = Arc::new(Self {
+            state: Mutex::new(State { apps: BTreeMap::new(), saved, sent: None }),
+            hub,
+            logger,
+            paths,
+            path_var: path_var.to_string(),
+            locale: Locale::from_env(),
+            desktops,
+            stopped: AtomicBool::new(false),
+            watch: Mutex::new(None),
+        });
+        let worker = Arc::clone(&launcher);
+        std::thread::spawn(move || worker.run());
+        launcher
+    }
+
+    /// Stops following the apps and publishes nothing more.
+    pub fn stop(&self) {
+        let mut watch = lock(&self.watch);
+        {
+            let _state = lock(&self.state);
+            self.stopped.store(true, Ordering::SeqCst);
+        }
+        if let Some(watch) = watch.take() {
+            watch.stop();
+        }
+    }
+
+    fn stopped(&self) -> bool {
+        self.stopped.load(Ordering::SeqCst)
+    }
+
+    /// Sends a new subscriber, client `id`, the apps as they are, under the lock that publishing
+    /// takes, so a newer state published meanwhile can't arrive before it.
+    pub fn send_state(&self, id: crate::hub::ClientId) {
+        let state = lock(&self.state);
+        self.hub.send_to(id, &Event::Launcher(snapshot(&state)));
+    }
+
+    /// The apps matching `query`, best first.
+    pub fn search(&self, query: &str) -> Result<Vec<AppMatch>, String> {
+        if query.chars().count() > SEARCH_APPS_MAX_CHARS {
+            return Err(format!("searches are at most {SEARCH_APPS_MAX_CHARS} characters"));
+        }
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let state = lock(&self.state);
+        let mut found: Vec<(u32, &Entry, Vec<nova_protocol::TextRun>)> = state
+            .apps
+            .values()
+            .filter_map(|entry| {
+                let launches = state.saved.launches.get(&entry.id).map_or(0, |launches| launches.count);
+                rank::score(entry, &query, launches).map(|(score, name)| (score, entry, name))
+            })
+            .collect();
+        found.sort_by(|(a_score, a, _), (b_score, b, _)| {
+            b_score
+                .cmp(a_score)
+                .then(a.name.chars().count().cmp(&b.name.chars().count()))
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        Ok(found
+            .into_iter()
+            .take(MAX_MATCHES)
+            .map(|(_, entry, name)| AppMatch { id: entry.id.clone(), name })
+            .collect())
+    }
+
+    /// Brings a window the app `id` already has, through `bring` (given the
+    /// app ids its windows may have, `false` when none is open), or else
+    /// starts the app; either counts it as launched.
+    pub fn launch(&self, id: &str, bring: impl FnOnce(&[String]) -> Result<bool, String>) -> Result<(), String> {
+        let off = || format!("the {FEATURE_ID} feature is off");
+        let entry = lock(&self.state).apps.get(id).cloned().ok_or_else(|| format!("no app {id:?}"))?;
+        let ids = entry.window_ids();
+        if self.stopped() {
+            return Err(off());
+        }
+        let brought = !ids.is_empty()
+            && bring(&ids).unwrap_or_else(|e| {
+                self.logger.warn(LOG_SOURCE, &format!("can't bring {id}'s window, so starting it: {e}"));
+                false
+            });
+        if !brought {
+            // Bringing may have taken a while.
+            if self.stopped() {
+                return Err(off());
+            }
+            launch::launch(&entry, &self.paths.runner, &self.path_var, &self.logger)
+                .inspect_err(|e| self.logger.warn(LOG_SOURCE, &format!("can't launch {id}: {e}")))?;
+        }
+        let now = jiff::Timestamp::now().as_millisecond();
+        self.update(|saved| {
+            let launches = saved.launches.entry(id.to_string()).or_insert(Launches { count: 0, last: now });
+            launches.count = launches.count.saturating_add(1);
+            launches.last = now;
+            if saved.launches.len() > MAX_REMEMBERED {
+                let mut by_last: Vec<(i64, String)> =
+                    saved.launches.iter().map(|(id, launches)| (launches.last, id.clone())).collect();
+                by_last.sort();
+                for (_, id) in by_last.into_iter().take(saved.launches.len() - MAX_REMEMBERED) {
+                    saved.launches.remove(&id);
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Pins the app `id` at the end, or unpins it.
+    pub fn pin(&self, id: &str, pinned: bool) -> Result<(), String> {
+        if pinned && !lock(&self.state).apps.contains_key(id) {
+            return Err(format!("no app {id:?}"));
+        }
+        self.update(|saved| {
+            let at = saved.pinned.iter().position(|pin| pin == id);
+            match (pinned, at) {
+                (true, None) if saved.pinned.len() >= MAX_PINNED => {
+                    Err(format!("at most {MAX_PINNED} apps can be pinned; unpin one first"))
+                }
+                (true, None) => {
+                    saved.pinned.push(id.to_string());
+                    Ok(())
+                }
+                (false, Some(at)) => {
+                    saved.pinned.remove(at);
+                    Ok(())
+                }
+                (true, Some(_)) | (false, None) => Ok(()),
+            }
+        })
+    }
+
+    /// Applies `change` to the saved state, then saves and publishes it.
+    fn update(&self, change: impl FnOnce(&mut Saved) -> Result<(), String>) -> Result<(), String> {
+        let mut state = lock(&self.state);
+        if self.stopped() {
+            return Err(format!("the {FEATURE_ID} feature is off"));
+        }
+        let before = state.saved.clone();
+        change(&mut state.saved)?;
+        if state.saved == before {
+            return Ok(());
+        }
+        // Under the lock, so changes reach the file in the order they were made.
+        if let Err(e) = state_file::save(&self.paths.state_file, &state.saved) {
+            self.logger.warn(LOG_SOURCE, &format!("can't save {}: {e}", self.paths.state_file.display()));
+        }
+        self.publish(&mut state);
+        Ok(())
+    }
+
+    fn publish(&self, state: &mut State) {
+        let event = snapshot(state);
+        if state.sent.as_ref() != Some(&event) {
+            self.hub.publish(&Event::Launcher(event.clone()));
+            state.sent = Some(event);
+        }
+    }
+
+    /// Reads the apps, then again whenever they change.
+    fn run(self: Arc<Self>) {
+        let (changed, changes) = mpsc::channel();
+        match Inotify::new(inotify::REPLACEMENTS) {
+            Ok(watcher) => self.follow(watcher, changed),
+            Err(e) => {
+                self.logger
+                    .warn(LOG_SOURCE, &format!("can't watch for new apps ({e}); they show after `nova restart`"));
+                drop(changed);
+            }
+        }
+        // Watched first, so an app installed meanwhile isn't missed.
+        self.rescan();
+        while changes.recv().is_ok() {
+            while changes.recv_timeout(SETTLE).is_ok() {}
+            if self.stopped() {
+                return;
+            }
+            self.rescan();
+        }
+    }
+
+    /// Watches the app folders on a thread that sends `changed` for each
+    /// change that may change the apps.
+    fn follow(&self, mut watcher: Inotify, changed: mpsc::Sender<()>) {
+        {
+            let mut watch = lock(&self.watch);
+            if self.stopped() {
+                return;
+            }
+            *watch = Some(watcher.stopper());
+        }
+        let data_dirs = self.paths.data_dirs.clone();
+        let logger = Arc::clone(&self.logger);
+        let mut points = watch_all(&mut watcher, &data_dirs, &logger);
+        std::thread::spawn(move || {
+            loop {
+                let found = match watcher.read() {
+                    Ok(Some(found)) => found,
+                    Ok(None) => return,
+                    Err(e) => {
+                        logger.warn(LOG_SOURCE, &format!("stopped watching for new apps: {e}"));
+                        return;
+                    }
+                };
+                if !found.overflowed && !found.found.iter().any(|change| points.counts(&change.path)) {
+                    continue;
+                }
+                // A folder or link may have come or gone: look again at what to watch.
+                points = watch_all(&mut watcher, &data_dirs, &logger);
+                if changed.send(()).is_err() {
+                    return;
+                }
+            }
+        });
+    }
+
+    fn rescan(&self) {
+        let context = Context { locale: &self.locale, desktops: &self.desktops, path_var: &self.path_var };
+        let (apps, problems) = scan::scan(&self.paths.data_dirs, &context);
+        let mut state = lock(&self.state);
+        if self.stopped() {
+            return;
+        }
+        if state.sent.is_none() || state.apps.len() != apps.len() {
+            self.logger.info(LOG_SOURCE, &format!("found {} apps", apps.len()));
+        }
+        // Each problem once, not on every rescan.
+        if state.sent.is_none() {
+            for problem in problems {
+                self.logger.log(nova_protocol::LogLevel::Debug, LOG_SOURCE, &problem);
+            }
+        }
+        state.apps = apps;
+        self.publish(&mut state);
+    }
+}
+
+/// Watches what `scan::watch_points` says for `data_dirs`.
+fn watch_all(watcher: &mut Inotify, data_dirs: &[PathBuf], logger: &Logger) -> scan::WatchPoints {
+    let points = scan::watch_points(data_dirs);
+    // The parents first: a folder that's both gets the trees' wider mask.
+    for parent in &points.parents {
+        if let Err(e) = watcher.watch_for(parent, inotify::ENTRIES) {
+            logger.warn(LOG_SOURCE, &format!("can't watch {} for new apps: {e}", parent.display()));
+        }
+    }
+    for tree in &points.trees {
+        if let Err(e) = watcher.watch_tree(tree) {
+            logger.warn(LOG_SOURCE, &format!("can't watch {} for new apps: {e}", tree.display()));
+        }
+    }
+    points
+}
+
+/// The event for `state`: apps by name, and the pinned and recent ones
+/// that are installed.
+fn snapshot(state: &State) -> nova_protocol::Launcher {
+    let mut apps: Vec<App> = state
+        .apps
+        .values()
+        .map(|entry| App {
+            id: entry.id.clone(),
+            name: entry.name.clone(),
+            description: entry.generic_name.clone().or_else(|| entry.comment.clone()),
+            icon: entry.icon.clone(),
+        })
+        .collect();
+    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
+    let installed = |id: &&String| state.apps.contains_key(*id);
+    let pinned = state.saved.pinned.iter().filter(installed).cloned().collect();
+    let mut launched: Vec<(&String, &Launches)> =
+        state.saved.launches.iter().filter(|(id, _)| state.apps.contains_key(*id)).collect();
+    launched.sort_by(|a, b| b.1.last.cmp(&a.1.last).then_with(|| a.0.cmp(b.0)));
+    let recent = launched.into_iter().take(MAX_RECENT).map(|(id, _)| id.clone()).collect();
+    nova_protocol::Launcher { apps, pinned, recent }
+}

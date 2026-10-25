@@ -1,0 +1,5 @@
+id = "launcher"
+name = "Launcher"
+description = "Search and open apps, with pinned and recent ones, from Super+Space or the central pill."
+default = true
+daemon = "launcher"

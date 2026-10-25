@@ -23,6 +23,7 @@ use crate::hub::Hub;
 use crate::inotify;
 use crate::lock;
 use crate::logger::Logger;
+use crate::state_file;
 use codex::CodexUsage;
 use endpoint::Problem;
 use jiff::Timestamp;
@@ -39,8 +40,6 @@ pub const FEATURE_ID: &str = "ai-usage";
 const LOG_SOURCE: &str = "ai-usage";
 /// Codex writes several lines per turn; they're read once it pauses.
 const CODEX_SETTLE: Duration = Duration::from_millis(500);
-/// The saved state is the user's own business.
-const STATE_FILE_MODE: u32 = 0o600;
 /// Sessions that never pause (several at once) are read this often anyway.
 const CODEX_MAX_DELAY: Duration = Duration::from_secs(5);
 /// Longest sleep with nothing scheduled.
@@ -351,7 +350,7 @@ impl Usage {
             if state.saved == before {
                 return Ok(());
             }
-            if let Err(e) = save(&self.state_file, &state.saved) {
+            if let Err(e) = state_file::save(&self.state_file, &state.saved) {
                 self.logger.warn(LOG_SOURCE, &format!("can't save {}: {e}", self.state_file.display()));
             }
         }
@@ -618,25 +617,6 @@ fn validate(limits: &[UsageLimit]) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-/// Writes a private temp file next to `path` and renames it over `path`.
-fn save(path: &Path, saved: &Saved) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let partial = path.with_extension("json.partial");
-    // One left by a crash, or anything else in its place, goes first:
-    // `create_new` never follows a link or reuses a file.
-    match std::fs::remove_file(&partial) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-        _ => {}
-    }
-    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(STATE_FILE_MODE).open(&partial)?;
-    file.write_all(&serde_json::to_vec_pretty(saved).map_err(std::io::Error::other)?)?;
-    std::fs::rename(partial, path)
 }
 
 /// A plan's display name: `plus` -> `Plus`; `None` when it's empty.

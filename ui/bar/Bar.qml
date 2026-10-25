@@ -7,11 +7,13 @@ import "../compositor"
 import "../ai_usage"
 import "../ai_usage/service"
 import "../central_pill"
+import "../launcher/service"
 import "../stage"
 
 // The bar on one screen: the AI usage pill on the left when that feature is
-// on, and the central pill (that screen's workspaces, the day and the time)
-// with its time in the middle of the screen. The right pill and the hide
+// on, and the central pill (the launcher's search button, that screen's
+// workspaces, the day and the time) with its time in the middle of the
+// screen. The right pill and the hide
 // policies come later.
 //
 // While the screen shows a workspace with a window over the whole screen
@@ -105,6 +107,10 @@ Item {
     // `from`): hidden meanwhile. The stage sets it.
     property list<Item> covered: []
 
+    // The central pill's search button was clicked: open or close the
+    // launcher on this screen.
+    signal launcherRequested
+
     // Logs once the bar has drawn a frame while connected to novad, so the
     // VM tests know when to screenshot it.
     property bool shownLogged: false
@@ -171,6 +177,8 @@ Item {
             workspaces: Compositor.has(Protocol.CAPABILITY_WORKSPACES) ? Protocol.barWorkspaces(output) : []
             outputFocused: output?.focused ?? false
             canFocus: Compositor.has(Protocol.CAPABILITY_FOCUS_WORKSPACE)
+            canSearch: LauncherService.ready
+            onSearchRequested: bar.launcherRequested()
             now: bar.frozenTime ? new Date(bar.frozenTime) : clock.date
             onFocusRequested: workspaceId => Compositor.focusWorkspace(workspaceId)
             onStepRequested: step => Compositor.stepWorkspace(bar.screenName, step)
