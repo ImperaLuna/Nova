@@ -84,7 +84,7 @@ relaunch() { # <snapshot dir>
   # was replaced since (an upgrade), argv[0] is the best guess left.
   exe=$(<"$1/exe")
   [[ -x $exe ]] || exe=${argv[0]}
-  echo "run: restoring ${argv[*]}"
+  say "run: restoring ${argv[*]}"
   # Runs `exe` with the original argv[0]; env -i leaves no PATH, so bash is
   # named by its full path.
   local launch=("$(command -v env)" -i "${env_vars[@]}" "$BASH" -c 'exec -a "$0" "$@"' "${argv[0]}" "$exe" "${argv[@]:1}")
@@ -96,9 +96,18 @@ relaunch() { # <snapshot dir>
     (cd "$cwd" && setsid -f "${launch[@]}" >/dev/null 2>&1 </dev/null 9>&-)
 }
 
+# A message that can't stop the run: with the terminal closed (HUP), echo
+# fails, and under `set -e` that ended restore() before it put the bar back.
+say() {
+  echo "$@" 2>/dev/null || true
+}
+
 restore() {
   ((restored)) && return
   restored=1
+  # Every step runs even if one before it fails: whatever this run stopped
+  # comes back.
+  set +e
   if [[ -n ${dev_pid:-} ]]; then
     kill "$dev_pid" 2>/dev/null || true
     wait "$dev_pid" 2>/dev/null || true
@@ -106,8 +115,8 @@ restore() {
   local dir
   for dir in "$snapshots"/*/; do [[ -d $dir ]] && relaunch "$dir"; done
   if ((restart_unit)); then
-    echo "run: starting $unit again"
     systemctl --user start "$unit"
+    say "run: started $unit again"
   fi
   rm -rf "$snapshots"
 }
