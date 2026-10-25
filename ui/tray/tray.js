@@ -21,7 +21,10 @@ var QUIT_WORDS = ["quit", "exit"];
 // and title, or by id alone when a title changed since. Quickshell doesn't
 // give an item's bus address, so each of novad's items matches once: two
 // apps' icons with the same id and title (Electron's `chrome_status_icon_1`,
-// untitled) pair up in the order both lists have them. Each entry is
+// untitled) pair up in the order both lists have them. Once novad's event
+// is there, an item it doesn't list isn't shown: novad leaves out the
+// X11 bridge's copy of an app that has its own item (Steam twice), and
+// lists a new item as soon as it has read it. Each entry is
 // {item, key, name, icon, appIcon, attention, hidden}: `key` is what
 // hide_tray_app knows it by, `appIcon` the desktop entry's icon name ("" when
 // novad found no app), `icon` the item's own image.
@@ -42,6 +45,8 @@ function entries(items, tray) {
     for (var i = 0; i < items.length; i++) {
         var item = items[i];
         var match = find(item, true) || find(item, false);
+        if (tray && !match)
+            continue;
         var app = match && match.app ? match.app : null;
         var key = app ? app.id : item.id;
         result.push({

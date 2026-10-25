@@ -170,6 +170,19 @@ Item {
             compare(Tray.entries(items, stage.novadTray())[0].key, "discord.desktop");
         }
 
+        function test_items_novad_leaves_out_are_not_shown() {
+            const items = stage.quickshellItems();
+            items.push({
+                id: "steam",
+                title: "Steam",
+                status: 1,
+                tooltipTitle: "",
+                icon: ""
+            });
+            const all = Tray.entries(items, stage.novadTray());
+            compare(all.map(entry => entry.key), ["discord.desktop", "steam", "com.anthropic.Claude.desktop"], "the X11 bridge's Steam stays out");
+        }
+
         function test_two_apps_with_the_same_id_keep_their_own_apps() {
             const item = {
                 id: "chrome_status_icon_1",
