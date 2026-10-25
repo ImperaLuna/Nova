@@ -2,8 +2,7 @@ import QtQuick
 import "../theme"
 import "../stage"
 
-// A tray app's menu under its icon in the right pill: glass on the stage,
-// opened by a right click on the icon. It opens beside the tray (not
+// A tray app's menu under its icon in the right pill: glass, opened by a right click on the icon. It opens beside the tray (not
 // exclusive), and closes with it: on Esc, a click outside, or once an
 // entry ran.
 StagePanel {
@@ -11,6 +10,10 @@ StagePanel {
 
     name: "tray-menu"
     exclusive: false
+    // Below the top strip: on a surface of its own sized to it, so the
+    // stage (and its blur) doesn't grow to a long menu's height.
+    placement: "right"
+    area: Qt.rect(x, y - Tokens.revealRise, width, height + Tokens.revealRise)
 
     // The app (a TrayService entry) and its icon.
     property var entry: null

@@ -64,7 +64,9 @@ pub const PROCESS_NAME: &str = "Nova";
 const LOG_LEVEL_VAR: &str = "NOVA_LOG";
 const LOG_SOURCE: &str = "novad";
 /// Beside the socket, in `XDG_RUNTIME_DIR`: the login apps were started this
-/// session (`--autostart`).
+/// session (`--autostart`), named after the login session (`XDG_SESSION_ID`)
+/// when there is one, since the folder outlives a graphical session while
+/// another login of the user's (SSH) stays.
 const AUTOSTART_MARKER: &str = "autostarted";
 
 /// `nova daemon`'s options. The socket comes from `nova`'s own `--socket`.
@@ -231,7 +233,7 @@ fn start(
     };
     let settings = Settings::load(&sources, &hub, &logger);
     if args.autostart {
-        launcher::autostart::start(&socket.with_file_name(AUTOSTART_MARKER), path_var.clone(), Arc::clone(&logger));
+        launcher::autostart::start(&socket.with_file_name(autostart_marker()), path_var.clone(), Arc::clone(&logger));
     }
 
     logger.info(LOG_SOURCE, &format!("listening on {}", socket.display()));
@@ -371,6 +373,15 @@ pub(crate) fn package_prefixes() -> Vec<PathBuf> {
         .map(PathBuf::from),
     );
     prefixes
+}
+
+fn autostart_marker() -> String {
+    match std::env::var("XDG_SESSION_ID") {
+        Ok(session) if !session.is_empty() && session.chars().all(|c| c.is_ascii_alphanumeric()) => {
+            format!("{AUTOSTART_MARKER}-{session}")
+        }
+        _ => AUTOSTART_MARKER.to_string(),
+    }
 }
 
 /// Sets this thread's name, which is the process name ps and btop show for
