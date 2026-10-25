@@ -9,6 +9,7 @@ use nova_protocol::Topic;
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixStream;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
@@ -16,29 +17,22 @@ use std::time::Instant;
 /// How long a test waits for something the bus should do at once.
 const WAIT: Duration = Duration::from_secs(5);
 
-struct Fixture {
-    dir: PathBuf,
+/// A private session bus, listening at the socket `path`.
+pub struct TestBus {
     bus: Child,
-    address: String,
-    hub: Arc<Hub>,
-    logger: Arc<Logger>,
-    ui: Receiver<Outgoing>,
-    _ui_stream: UnixStream,
+    pub address: String,
 }
 
-impl Fixture {
-    fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("novad-tray-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("proc")).unwrap();
-        let config = dir.join("bus.conf");
+impl TestBus {
+    pub fn start(path: &Path) -> Self {
+        let config = path.with_extension("conf");
         std::fs::write(
             &config,
             format!(
                 "<busconfig><type>session</type><listen>unix:path={}</listen><auth>EXTERNAL</auth>\
                  <policy context=\"default\"><allow send_destination=\"*\" eavesdrop=\"true\"/>\
                  <allow eavesdrop=\"true\"/><allow own=\"*\"/></policy></busconfig>",
-                dir.join("bus").display()
+                path.display()
             ),
         )
         .unwrap();
@@ -50,22 +44,52 @@ impl Fixture {
             .expect("dbus-daemon runs");
         let mut address = String::new();
         BufReader::new(bus.stdout.take().unwrap()).read_line(&mut address).unwrap();
+        Self { bus, address: address.trim().to_string() }
+    }
+
+    pub fn connect(&self) -> Connection {
+        zbus::block_on(connection::Builder::address(self.address.as_str()).build()).unwrap()
+    }
+}
+
+impl Drop for TestBus {
+    fn drop(&mut self) {
+        let _ = self.bus.kill();
+        let _ = self.bus.wait();
+    }
+}
+
+struct Fixture {
+    dir: PathBuf,
+    bus: TestBus,
+    hub: Arc<Hub>,
+    logger: Arc<Logger>,
+    ui: Receiver<Outgoing>,
+    _ui_stream: UnixStream,
+}
+
+impl Fixture {
+    fn new(name: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!("novad-tray-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("proc")).unwrap();
+        let bus = TestBus::start(&dir.join("bus"));
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let id = hub.register(queue);
         hub.subscribe(id, Topic::Tray);
-        Self { dir, bus, address: address.trim().to_string(), hub, logger, ui, _ui_stream: ui_stream }
+        Self { dir, bus, hub, logger, ui, _ui_stream: ui_stream }
     }
 
     fn tray(&self, launcher: Option<Arc<Launcher>>) -> Arc<Tray> {
-        let sources = Sources { bus: Bus::Address(self.address.clone()), state_file: self.dir.join("tray.json") };
+        let sources = Sources { bus: Bus::Address(self.bus.address.clone()), state_file: self.dir.join("tray.json") };
         Tray::start(sources, self.dir.join("proc"), launcher, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
     fn connect(&self) -> Connection {
-        zbus::block_on(connection::Builder::address(self.address.as_str()).build()).unwrap()
+        self.bus.connect()
     }
 
     /// The next tray event's items.
@@ -95,18 +119,16 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = self.bus.kill();
-        let _ = self.bus.wait();
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 
 /// An app's tray item, with the two properties the tray reads.
-struct Item {
-    id: String,
-    title: String,
+pub struct Item {
+    pub id: String,
+    pub title: String,
     /// Counts `Activate` calls.
-    activated: Arc<std::sync::atomic::AtomicUsize>,
+    pub activated: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 #[interface(name = "org.kde.StatusNotifierItem")]
@@ -142,15 +164,20 @@ fn put_up_counting(
     activated: Arc<std::sync::atomic::AtomicUsize>,
 ) -> Connection {
     let connection = fixture.connect();
+    serve_item(&connection, name, path, service, Item { id: id.into(), title: format!("{id} title"), activated });
+    connection
+}
+
+/// Serves `item` at `path` on `connection`, owning `name` first if given,
+/// and registers `service` with the watcher.
+pub fn serve_item(connection: &Connection, name: Option<&str>, path: &str, service: &str, item: Item) {
     zbus::block_on(async {
-        let item = Item { id: id.into(), title: format!("{id} title"), activated };
         connection.object_server().at(path, item).await.unwrap();
         if let Some(name) = name {
             connection.request_name(name).await.unwrap();
         }
-        register(&connection, service).await.unwrap();
+        register(connection, service).await.unwrap();
     });
-    connection
 }
 
 async fn register(connection: &Connection, service: &str) -> zbus::Result<zbus::Message> {

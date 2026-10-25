@@ -101,9 +101,9 @@ impl TestDaemon {
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
             resources: resources::Sources::system(""),
             launcher: launcher_paths(&dir),
-            // No bus: the tray's own tests give it one.
+            // No bus unless the test starts one there (`tray::tests::TestBus`).
             tray: tray::Sources {
-                bus: tray::Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                bus: tray::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
                 state_file: dir.join("tray.json"),
             },
         };
@@ -1875,4 +1875,53 @@ fn the_launcher_stops_with_its_feature() {
     assert!(off["error"].as_str().unwrap().contains("feature is off"));
     let toggle = client.request(3, "toggle", Some(json!({"panel": "launcher"})));
     assert!(toggle["error"].as_str().unwrap().contains("isn't ready"));
+}
+
+#[test]
+fn launching_an_app_that_only_sits_in_the_tray_activates_its_item() {
+    let mut bus = None;
+    let mut compositor = None;
+    let novad = TestDaemon::open_following(
+        "launcher-tray",
+        None,
+        |dir| {
+            std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
+            bus = Some(tray::tests::TestBus::start(&dir.join("bus")));
+        },
+        |dir| {
+            let (fake, backend) = FakeCompositor::niri(dir);
+            compositor = Some(fake);
+            Some(backend)
+        },
+    );
+    let (bus, compositor) = (bus.unwrap(), compositor.unwrap());
+    let marker = novad.dir.join("ran");
+    let entry = format!("Name=Third\nExec=touch \"{}\"\nStartupWMClass=Nova-Third\n", marker.display());
+    install_app(&novad, "third.desktop", &entry);
+    let (mut client, desktop) = follow_to_the_end(&novad);
+    client.subscribe_launcher(1);
+    // Its icon's id names it; the recording has no window of it.
+    let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let app = bus.connect();
+    let item = tray::tests::Item { id: "nova-third".into(), title: "Third".into(), activated: Arc::clone(&activated) };
+    tray::tests::serve_item(&app, None, "/StatusNotifierItem", "/StatusNotifierItem", item);
+    client.request(4, "subscribe", Some(json!({"topics": ["tray"]})));
+    while client.next_event("tray")["items"][0]["app"]["id"] != "third.desktop" {}
+    let output = focused_output(&desktop);
+
+    let launch = json!({"id": "third.desktop", "output": output});
+    assert_eq!(client.request(5, "launch_app", Some(launch))["result"], Value::Null);
+    assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "the tray icon shows its window");
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(!marker.exists(), "starting it again would just quit");
+    assert!(compositor.actions().is_empty(), "no window showed to focus");
+
+    let fresh = json!({"id": "third.desktop", "output": output, "new_window": true});
+    assert_eq!(client.request(6, "launch_app", Some(fresh))["result"], Value::Null);
+    let ran = (0..100).any(|_| {
+        std::thread::sleep(Duration::from_millis(50));
+        marker.exists()
+    });
+    assert!(ran, "asked for a new window, the app runs");
+    assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1);
 }

@@ -25,6 +25,10 @@ const SOCKET_DIR_MODE: u32 = 0o700;
 type SlowWork = Box<dyn FnOnce() -> Outcome + Send>;
 
 const LOG_SOURCE: &str = "server";
+/// How long the launcher waits for the window of an app it reopened from
+/// the tray, to focus it, and how often it looks.
+const TRAY_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(3) };
+const TRAY_WINDOW_RETRY: Duration = Duration::from_millis(100);
 
 pub fn bind(socket: &Path) -> std::io::Result<UnixListener> {
     if let Some(dir) = socket.parent() {
@@ -410,19 +414,39 @@ impl<'a> Connection<'a> {
             return Box::new(move || Outcome::Error(off));
         };
         let compositor = self.daemon.compositor.clone();
+        let tray = lock(&self.daemon.settings).tray.clone().filter(|_| !new_window);
+        let logger = Arc::clone(&self.daemon.logger);
         let id = id.to_owned();
         Box::new(move || {
             // An open window takes focus where it is; a new one opens on the
             // launcher's screen, which the compositor puts it on once focused.
+            // An app that only sits in the tray shows its window from there,
+            // as starting it again may just quit (Discord).
             let focused = |ids: &[String]| {
-                let Some(compositor) = &compositor else { return Ok(false) };
-                if !new_window && !ids.is_empty() && compositor.focus_app(ids, output.as_deref())? {
-                    return Ok(true);
+                if let Some(compositor) = &compositor {
+                    if !new_window && !ids.is_empty() && compositor.focus_app(ids, output.as_deref())? {
+                        return Ok(true);
+                    }
+                    if let Some(output) = &output {
+                        compositor.focus_output(output)?;
+                    }
                 }
-                if let Some(output) = &output {
-                    compositor.focus_output(output)?;
+                if !tray.as_ref().map_or(Ok(false), |tray| tray.activate_app(&id))? {
+                    return Ok(false);
                 }
-                Ok(false)
+                // The window comes back without focus on niri.
+                if let Some(compositor) = compositor.as_ref().filter(|_| !ids.is_empty()) {
+                    let deadline = std::time::Instant::now() + TRAY_WINDOW_WAIT;
+                    while !compositor.focus_app(ids, output.as_deref())? {
+                        if std::time::Instant::now() >= deadline {
+                            logger
+                                .info(LOG_SOURCE, &format!("{id}'s window didn't show after its tray icon was asked"));
+                            break;
+                        }
+                        std::thread::sleep(TRAY_WINDOW_RETRY);
+                    }
+                }
+                Ok(true)
             };
             match launcher.launch(&id, focused) {
                 Ok(()) => Outcome::Result(serde_json::Value::Null),
