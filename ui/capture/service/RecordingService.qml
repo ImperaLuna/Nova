@@ -46,6 +46,8 @@ Singleton {
     }
     onPickingChanged: {
         mode = Protocol.CAPTURE_REGION;
+        // A count that was going is cancelled with the picker.
+        step.stop();
         countdown = 0;
         _pending = null;
         // The VM tests wait for these.

@@ -23,7 +23,7 @@ use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 /// The feature's id in `features/`.
@@ -118,9 +118,9 @@ impl Active {
         }
     }
 
-    /// Sends the recorder `signal`. Only while it's `active`: the waiter
-    /// clears that under the same lock as soon as the recorder has exited,
-    /// so the pid is still the recorder's.
+    /// Sends the recorder `signal`. Only while it's `active`: its keeper
+    /// clears that under the same lock before reaping it, so the pid is
+    /// still the recorder's.
     fn signal(&self, signal: libc::c_int) {
         // SAFETY: kill takes no pointers.
         unsafe { libc::kill(self.pid, signal) };
@@ -184,7 +184,9 @@ impl Recordings {
         // SAFETY: prctl takes no pointers and is async-signal-safe.
         unsafe {
             command.pre_exec(|| {
-                // Finishes the file and exits when novad goes away.
+                // Finishes the file and exits when novad goes away. The
+                // signal comes when the thread that spawned it ends, so that
+                // thread is its keeper, which lives as long as it does.
                 if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGINT) == -1 {
                     return Err(std::io::Error::last_os_error());
                 }
@@ -194,22 +196,26 @@ impl Recordings {
         // Its own process group: a Ctrl+C on `nova daemon` in a terminal
         // reaches novad, whose exit stops it the same way.
         command.process_group(0);
-        let mut child = command.spawn().map_err(|e| format!("can't run {}: {e}", program.display()))?;
-        let errors = drain(child.stderr.take());
-        let deadline = Instant::now() + START_GRACE;
-        while Instant::now() < deadline {
-            if let Some(status) = child.try_wait().map_err(|e| format!("lost track of the recorder: {e}"))? {
+        let run = state.runs + 1;
+        let (started, start_result) = mpsc::channel();
+        let keeper = Keeper {
+            state: Arc::clone(&self.state),
+            hub: Arc::clone(&self.hub),
+            logger: Arc::clone(&self.logger),
+            run,
+        };
+        std::thread::spawn(move || keeper.keep(command, recorder, started));
+        // The keeper's answer; `state` stays locked meanwhile, so the
+        // recorder can't be finished before it's active.
+        let pid = start_result.recv().unwrap_or_else(|_| Err("the recorder's keeper went away".into())).inspect_err(
+            |_| {
                 let _ = std::fs::remove_file(&file);
-                let message = errors.join().unwrap_or_default();
-                return Err(format!("{} didn't start ({status}): {}", recorder.name(), message.trim()));
-            }
-            std::thread::sleep(POLL);
-        }
-        state.runs += 1;
-        let run = state.runs;
+            },
+        )?;
+        state.runs = run;
         let active = Active {
             run,
-            pid: child.id() as libc::pid_t,
+            pid,
             recorder,
             output: output.into(),
             region,
@@ -227,14 +233,6 @@ impl Recordings {
         );
         self.hub.publish(&Event::Recording(Some(active.event())));
         state.active = Some(active);
-        drop(state);
-
-        let (state, hub, logger) = (Arc::clone(&self.state), Arc::clone(&self.hub), Arc::clone(&self.logger));
-        std::thread::spawn(move || {
-            let status = child.wait();
-            let message = errors.join().unwrap_or_default();
-            finish(&state, &hub, &logger, run, status, message.trim());
-        });
         Ok(())
     }
 
@@ -282,8 +280,10 @@ impl Recordings {
 
     /// Sends `client` what's being recorded.
     pub fn send_state(&self, hub: &Hub, client: crate::hub::ClientId) {
-        let active = lock(&self.state).active.as_ref().map(Active::event);
-        hub.send_to(client, &Event::Recording(active));
+        // Sent under the lock, so it can't overtake a newer state published
+        // meanwhile.
+        let state = lock(&self.state);
+        hub.send_to(client, &Event::Recording(state.active.as_ref().map(Active::event)));
     }
 
     /// Opens a saved recording, its folder, or deletes it.
@@ -322,21 +322,92 @@ impl Recorder {
     }
 }
 
-/// The recorder `run` exited: saves what it wrote and says it stopped.
+/// The thread a recorder is spawned from and lives with: the kernel sends
+/// the recorder PR_SET_PDEATHSIG's signal when that thread ends, not only
+/// when novad does. It says whether the recorder started, then waits for it
+/// to exit and finishes the recording.
+struct Keeper {
+    state: Arc<Mutex<State>>,
+    hub: Arc<Hub>,
+    logger: Arc<Logger>,
+    run: u64,
+}
+
+impl Keeper {
+    fn keep(self, mut command: Command, recorder: Recorder, started: mpsc::Sender<Result<libc::pid_t, String>>) {
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(e) => {
+                let _ = started.send(Err(format!("can't run {}: {e}", recorder.name())));
+                return;
+            }
+        };
+        let errors = drain(child.stderr.take());
+        let deadline = Instant::now() + START_GRACE;
+        while Instant::now() < deadline {
+            match child.try_wait() {
+                Ok(None) => std::thread::sleep(POLL),
+                Ok(Some(status)) => {
+                    let message = errors.join().unwrap_or_default();
+                    let _ =
+                        started.send(Err(format!("{} didn't start ({status}): {}", recorder.name(), message.trim())));
+                    return;
+                }
+                Err(e) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = started.send(Err(format!("lost track of the recorder: {e}")));
+                    return;
+                }
+            }
+        }
+        let pid = child.id() as libc::pid_t;
+        if started.send(Ok(pid)).is_err() {
+            // Nothing will stop it: it's not active.
+            let _ = child.kill();
+        }
+        // Not reaped yet, so the pid stays the recorder's until it's no
+        // longer active and nothing signals it any more.
+        exited(pid);
+        let active = {
+            let mut state = lock(&self.state);
+            let active = state.active.take_if(|active| active.run == self.run);
+            if active.is_some() {
+                self.hub.publish(&Event::Recording(None));
+            }
+            active.map(|active| (active.elapsed(), active))
+        };
+        let status = child.wait();
+        let message = errors.join().unwrap_or_default();
+        if let Some((duration, active)) = active {
+            finish(&self.state, &self.hub, &self.logger, active, duration, status, message.trim());
+        }
+    }
+}
+
+/// Waits for `pid`, a child, to exit, without reaping it.
+fn exited(pid: libc::pid_t) {
+    loop {
+        // SAFETY: an all-zero siginfo_t is valid; waitid only writes to it.
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: `info` lives across the call.
+        let result = unsafe { libc::waitid(libc::P_PID, pid as libc::id_t, &mut info, libc::WEXITED | libc::WNOWAIT) };
+        if result == 0 || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+            return;
+        }
+    }
+}
+
+/// A recording's recorder exited: saves what it wrote.
 fn finish(
     state: &Mutex<State>,
     hub: &Hub,
     logger: &Logger,
-    run: u64,
+    active: Active,
+    duration: Duration,
     status: std::io::Result<std::process::ExitStatus>,
     message: &str,
 ) {
-    let mut state = lock(state);
-    let Some(active) = state.active.take_if(|active| active.run == run) else {
-        return;
-    };
-    let duration = active.elapsed();
-    hub.publish(&Event::Recording(None));
     let finished = matches!(&status, Ok(status) if status.success());
     if !finished && !active.stopping {
         let status = status.map_or_else(|e| e.to_string(), |status| status.to_string());
@@ -353,6 +424,7 @@ fn finish(
     match screenshot::place(&active.file, &active.stem, EXTENSION) {
         Ok(path) => {
             logger.info(LOG_SOURCE, &format!("saved {} ({} s)", path.display(), duration.as_secs()));
+            let mut state = lock(state);
             state.next_id += 1;
             let saved =
                 SavedRecording { id: state.next_id, path: path.display().to_string(), duration_ms: millis(duration) };
@@ -530,6 +602,23 @@ mod tests {
     }
 
     const REGION: LayoutRect = LayoutRect { x: 2560, y: -40, width: 960, height: 540 };
+
+    #[test]
+    fn the_recording_outlives_the_thread_that_started_it() {
+        // Requests start recordings on threads of their own that end once
+        // they've answered; PR_SET_PDEATHSIG fires when the spawning thread
+        // does.
+        let fixture = Fixture::new("thread", GPU_SCREEN_RECORDER, "");
+        let (recordings, folder) = (&fixture.recordings, fixture.folder());
+        std::thread::scope(|scope| {
+            scope.spawn(|| recordings.start("DP-1", None, RecordAudio::default(), &folder).unwrap());
+        });
+        assert_eq!(fixture.next_event()["data"]["output"], "DP-1");
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(lock(&fixture.recordings.state).active.is_some(), "the recorder stopped with its thread");
+        let file = fixture.folder().join(&fixture.files()[0]);
+        assert_eq!(std::fs::read_to_string(file).unwrap(), "frames\n", "it was told to finish");
+    }
 
     #[test]
     fn a_stopped_recording_is_finished_then_saved_under_its_name() {
