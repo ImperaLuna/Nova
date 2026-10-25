@@ -70,6 +70,7 @@ jobs:
           $marker"
           }
 
+          failed=0
           mapfile -t prs < <(gh pr list --repo "$GITHUB_REPOSITORY" --base "$BASE" --state open --limit 100 \
             --json number,headRefName,isCrossRepository \
             --jq '.[] | select(.isCrossRepository | not) | "\(.number) \(.headRefName)"')
@@ -86,7 +87,12 @@ jobs:
             if git merge -q --no-edit -m "Merge $BASE into $branch" "$main"; then
               if out=$(git push -q origin "HEAD:refs/heads/$branch" 2>&1); then
                 echo "#$number ($branch): merged $BASE, starting CI."
-                gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+                # A failed dispatch doesn't stop the other PRs; the run goes
+                # red so the branch without CI gets noticed.
+                if ! gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"; then
+                  echo "::error::#$number ($branch): couldn't start CI; start it by hand (Actions > CI)."
+                  failed=1
+                fi
                 continue
               fi
               # Not a fast-forward: someone pushed meanwhile, and that push
@@ -113,3 +119,4 @@ jobs:
           Merge \`$BASE\` into the branch and resolve them."
             fi
           done
+          exit "$failed"
