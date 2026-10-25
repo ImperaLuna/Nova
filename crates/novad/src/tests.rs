@@ -1742,7 +1742,7 @@ fn a_launched_app_outlives_the_request_that_started_it() {
 /// Launches the app the recording's window belongs to (`nova-second`, on
 /// workspace `web`) from the focused output, and returns the actions taken
 /// and whether the app ran anyway, then the same asking for a new window.
-fn bring_the_recorded_window(
+fn focus_the_recorded_window(
     name: &str,
     fake: fn(&Path) -> (FakeCompositor, Box<dyn compositor::Backend>),
 ) -> (Vec<String>, Value, bool) {
@@ -1762,7 +1762,7 @@ fn bring_the_recorded_window(
     let launch = json!({"id": "second.desktop", "output": output});
     assert_eq!(client.request(2, "launch_app", Some(launch))["result"], Value::Null);
     let event = client.launcher_until(|event| !event["recent"].as_array().unwrap().is_empty());
-    assert_eq!(event["recent"], json!(["second.desktop"]), "bringing it counts as a launch");
+    assert_eq!(event["recent"], json!(["second.desktop"]), "focusing it counts as a launch");
     let actions = compositor.actions();
 
     let fresh = json!({"id": "second.desktop", "output": output, "new_window": true});
@@ -1784,33 +1784,24 @@ fn bring_the_recorded_window(
 }
 
 #[test]
-fn launching_an_open_app_on_niri_brings_its_window_to_the_screen() {
-    let (actions, shown, ran) = bring_the_recorded_window("launcher-bring-niri", FakeCompositor::niri);
-    let id = shown["id"].as_i64().unwrap();
-    let moved = json!({"Action": {"MoveWindowToWorkspace": {"window_id": 3, "reference": {"Id": id}, "focus": true}}});
+fn launching_an_open_app_on_niri_focuses_its_window_where_it_is() {
+    let (actions, shown, ran) = focus_the_recorded_window("launcher-focus-niri", FakeCompositor::niri);
     let focused = json!({"Action": {"FocusWindow": {"id": 3}}});
     assert_ne!(shown["name"], "web", "the recording shows another workspace there");
-    assert_eq!(actions, [moved.to_string(), focused.to_string()]);
+    assert_eq!(actions, [focused.to_string()], "the window stays on its workspace");
     assert!(ran, "asked for a new window, the app runs");
 }
 
 #[test]
-fn launching_an_open_app_on_hyprland_brings_its_window_to_the_screen() {
-    let (actions, shown, ran) = bring_the_recorded_window("launcher-bring-hyprland", FakeCompositor::hyprland);
-    let id = shown["id"].as_i64().unwrap();
+fn launching_an_open_app_on_hyprland_focuses_its_window_where_it_is() {
+    let (actions, shown, ran) = focus_the_recorded_window("launcher-focus-hyprland", FakeCompositor::hyprland);
     assert_ne!(shown["name"], "web", "the recording shows another workspace there");
     let steps: Vec<Value> = serde_json::from_str(&FakeCompositor::recorded("hyprland", "steps.json")).unwrap();
     let clients = FakeCompositor::recorded("hyprland", &format!("{:02}/clients.json", steps.len() - 1));
     let clients: Value = serde_json::from_str(&clients).unwrap();
     let second = clients.as_array().unwrap().iter().find(|client| client["class"] == "nova-second").unwrap();
     let address = second["address"].as_str().unwrap();
-    assert_eq!(
-        actions,
-        [
-            format!("dispatch movetoworkspacesilent {id},address:{address}"),
-            format!("dispatch focuswindow address:{address}")
-        ]
-    );
+    assert_eq!(actions, [format!("dispatch focuswindow address:{address}")], "the window stays on its workspace");
     assert!(ran, "asked for a new window, the app runs");
 }
 

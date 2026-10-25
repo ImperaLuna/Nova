@@ -286,3 +286,58 @@ fn a_fullscreen_column_scrolled_out_of_view_is_not_fullscreen() {
     state.apply(&window(full, 3, (width, height))).unwrap();
     assert!(!shown(&state), "two columns away, it's out of view");
 }
+
+/// Remembers the workspaces it was asked to show.
+#[derive(Default)]
+struct Shown(Mutex<Vec<WorkspaceId>>);
+
+impl Backend for Arc<Shown> {
+    fn name(&self) -> &'static str {
+        "shown"
+    }
+
+    fn capabilities(&self) -> &'static [Capability] {
+        &[Capability::FocusWorkspace]
+    }
+
+    fn watch(&self, _: &mut dyn FnMut(Desktop)) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn focus_workspace(&self, workspace: &Workspace) -> Result<(), String> {
+        lock(&self.0).push(workspace.id);
+        Ok(())
+    }
+
+    fn log_out(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn focus_window(&self, _: &[String], _: &Workspace) -> Result<bool, String> {
+        Ok(false)
+    }
+}
+
+#[test]
+fn focusing_an_output_shows_its_workspace_unless_it_has_focus() {
+    // The recorded desktop, plus a second output without focus.
+    let mut desktop = follow_niri(&Recording::load("niri")).pop().unwrap().1;
+    let mut other = desktop.outputs[0].clone();
+    other.name = "DP-2".into();
+    other.focused = false;
+    for workspace in &mut other.workspaces {
+        workspace.id += 100;
+    }
+    let active = other.workspaces.iter().find(|workspace| workspace.active).unwrap().id;
+    let focused = desktop.outputs[0].name.clone();
+    desktop.outputs.push(other);
+    let shown = Arc::new(Shown::default());
+    let compositor =
+        Compositor { backend: Box::new(Arc::clone(&shown)), desktop: Mutex::new(Some(desktop)), hub: Arc::default() };
+
+    compositor.focus_output(&focused).unwrap();
+    assert!(lock(&shown.0).is_empty(), "the focused output stays as it is");
+    compositor.focus_output("DP-2").unwrap();
+    assert_eq!(*lock(&shown.0), [active]);
+    assert!(compositor.focus_output("nope").unwrap_err().contains("no such output"));
+}

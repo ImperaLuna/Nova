@@ -401,14 +401,22 @@ impl<'a> Connection<'a> {
             let off = format!("the {} feature is off", crate::launcher::FEATURE_ID);
             return Box::new(move || Outcome::Error(off));
         };
-        let compositor = self.daemon.compositor.clone().filter(|_| !new_window);
+        let compositor = self.daemon.compositor.clone();
         let id = id.to_owned();
         Box::new(move || {
-            let brought = |ids: &[String]| match &compositor {
-                Some(compositor) => compositor.bring_app(ids, output.as_deref()),
-                None => Ok(false),
+            // An open window takes focus where it is; a new one opens on the
+            // launcher's screen, which the compositor puts it on once focused.
+            let focused = |ids: &[String]| {
+                let Some(compositor) = &compositor else { return Ok(false) };
+                if !new_window && !ids.is_empty() && compositor.focus_app(ids, output.as_deref())? {
+                    return Ok(true);
+                }
+                if let Some(output) = &output {
+                    compositor.focus_output(output)?;
+                }
+                Ok(false)
             };
-            match launcher.launch(&id, brought) {
+            match launcher.launch(&id, focused) {
                 Ok(()) => Outcome::Result(serde_json::Value::Null),
                 Err(e) => Outcome::Error(e),
             }
