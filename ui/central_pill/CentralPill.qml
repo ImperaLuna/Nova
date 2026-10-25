@@ -2,9 +2,11 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import "../theme"
+import "../launcher"
 import "../daemon/protocol.js" as Protocol
 
-// The central pill: the output's workspace numbers, then the day and the
+// The central pill: a search button that opens the launcher (while that
+// feature is on), the output's workspace numbers, then the day and the
 // time. The bar places it so the time's middle is the screen's middle
 // (`timeFromRight`), and it grows to the left as workspaces come and go, so
 // the time never moves. The workspace shown on the output sits in a capsule
@@ -24,12 +26,16 @@ Item {
     property bool outputFocused: false
     // Whether going to a workspace works (Capability focus_workspace).
     property bool canFocus: false
+    // Whether the launcher is there to open: the search button shows.
+    property bool canSearch: false
     property date now: new Date()
 
     // A number was clicked: go to that workspace (its id).
     signal focusRequested(var workspaceId)
     // Scrolled: Protocol.STEP_NEXT or STEP_PREVIOUS.
     signal stepRequested(string step)
+    // The search button was clicked: open or close the launcher.
+    signal searchRequested
 
     // Drawn as glass (StagePanels), and rounded like it for the mask.
     readonly property bool glass: true
@@ -47,11 +53,16 @@ Item {
     // The numbers' padding: as far from the pill's edge as from its top.
     readonly property real numbersInset: (Tokens.barHeight - Tokens.workspaceSize) / 2
     readonly property real numbersWidth: list.count > 0 ? list.count * step - Tokens.workspaceGap : 0
+    // The search button and the divider after it, from the pill's left
+    // edge: as far in as the numbers would be, and a gap either side of the
+    // divider.
+    readonly property real searchRoom: canSearch ? numbersInset + Tokens.workspaceSize + 2 * Tokens.gap + Tokens.dividerWidth : 0
     // The room the numbers and the divider after them take, animated so the
     // pill's left edge glides as numbers come and go.
-    // Around the numbers: their inset, the gaps either side of the divider and
-    // the divider, less the pad the pill has anyway.
-    readonly property real numbersFrame: numbersInset + 2 * Tokens.gap + Tokens.dividerWidth - Tokens.pad
+    // Around the numbers: the gaps either side of the divider and the
+    // divider, and without the search button before them, their inset less
+    // the pad the pill has anyway.
+    readonly property real numbersFrame: 2 * Tokens.gap + Tokens.dividerWidth + (canSearch ? 0 : numbersInset - Tokens.pad)
     property real numbersRoom: list.count > 0 ? numbersWidth + numbersFrame : 0
     Behavior on numbersRoom {
         NumberAnimation {
@@ -61,7 +72,7 @@ Item {
         }
     }
 
-    implicitWidth: Tokens.pad + numbersRoom + day.implicitWidth + Tokens.gap + time.width + Tokens.pad
+    implicitWidth: (canSearch ? searchRoom : Tokens.pad) + numbersRoom + day.implicitWidth + Tokens.gap + time.width + Tokens.pad
     implicitHeight: Tokens.barHeight
 
     onWorkspacesChanged: list.sync(workspaces)
@@ -96,6 +107,48 @@ Item {
                     scrolled += down ? pill.wheelStep : -pill.wheelStep;
                 }
             }
+        }
+
+        Rectangle {
+            id: search
+            objectName: "search"
+            visible: pill.canSearch
+            x: pill.numbersInset
+            anchors.verticalCenter: parent.verticalCenter
+            width: Tokens.workspaceSize
+            height: Tokens.workspaceSize
+            radius: height / 2
+            color: searchMouse.containsMouse ? Tokens.hover : "transparent"
+            Behavior on color {
+                ColorAnimation {
+                    duration: Tokens.durationFast
+                }
+            }
+
+            LauncherIcon {
+                anchors.centerIn: parent
+                width: Tokens.iconSizeSmall
+                height: Tokens.iconSizeSmall
+                name: "search"
+                color: searchMouse.containsMouse ? Tokens.fg : Tokens.fgDim
+            }
+
+            MouseArea {
+                id: searchMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: pill.searchRequested()
+            }
+        }
+
+        Rectangle {
+            visible: pill.canSearch
+            x: search.x + search.width + Tokens.gap
+            anchors.verticalCenter: parent.verticalCenter
+            width: Tokens.dividerWidth
+            height: Tokens.dividerHeight
+            color: Tokens.glassRim
         }
 
         // The numbers, laid out from the divider leftwards.

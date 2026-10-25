@@ -30,6 +30,11 @@ Item {
             signalName: "stepRequested"
         }
 
+        Component {
+            id: signalSpy
+            SignalSpy {}
+        }
+
         function workspace(id, active, urgent) {
             return {
                 id: id,
@@ -100,6 +105,30 @@ Item {
             settle(pill);
             compare(pill.width, width);
             compare(numbers(pill).map(number => number.name), ["1", "3"]);
+        }
+
+        function test_the_search_button_sits_at_the_left_end_and_asks_for_the_launcher() {
+            for (const workspaces of [[workspace(1, true), workspace(2)], []]) {
+                const pill = createPill(workspaces);
+                settle(pill);
+                const width = pill.width;
+                const fromRight = pill.timeFromRight;
+                const search = findChild(pill, "search");
+                verify(!search.visible);
+                pill.canSearch = true;
+                settle(pill);
+                verify(search.visible);
+                verify(pill.width > width, "it grows to the left");
+                compare(pill.timeFromRight, fromRight, "the time stays");
+                for (const number of numbers(pill))
+                    verify(number.mapToItem(pill, 0, 0).x > search.x + search.width, "the numbers come after it");
+                const searched = signalSpy.createObject(pill, {
+                    target: pill,
+                    signalName: "searchRequested"
+                });
+                mouseClick(search, search.width / 2, search.height / 2);
+                compare(searched.count, 1);
+            }
         }
 
         function test_the_capsule_slides_to_the_shown_workspace() {

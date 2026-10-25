@@ -43,6 +43,11 @@ pub trait Backend: Send + Sync {
 
     /// Quits the compositor, ending the session, without its own prompt.
     fn log_out(&self) -> Result<(), String>;
+
+    /// Moves a window whose app id is one of `app_ids` (lower case) to
+    /// `workspace`, one the last report listed, and focuses it. `false`
+    /// when no window has one of them.
+    fn bring_window(&self, app_ids: &[String], workspace: &Workspace) -> Result<bool, String>;
 }
 
 /// The backend for the compositor this session runs, from its variables in
@@ -137,6 +142,21 @@ impl Compositor {
     }
 
     /// Whether the backend can do what `capability` names.
+    /// Brings a window of an app with one of `app_ids` (lower case) to the
+    /// workspace showing on `output` (the focused one when `None`) and
+    /// focuses it, for an app that runs once. `false` when none is open.
+    pub fn bring_app(&self, app_ids: &[String], output: Option<&str>) -> Result<bool, String> {
+        let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
+        let output = match output {
+            Some(name) => desktop.outputs.iter().find(|candidate| candidate.name == name),
+            None => desktop.outputs.iter().find(|candidate| candidate.focused),
+        }
+        .ok_or("no such output")?;
+        let workspace =
+            output.workspaces.iter().find(|workspace| workspace.active).ok_or("no workspace shows there")?;
+        self.backend.bring_window(app_ids, workspace)
+    }
+
     pub fn can(&self, capability: Capability) -> bool {
         self.backend.capabilities().contains(&capability)
     }

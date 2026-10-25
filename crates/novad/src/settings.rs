@@ -11,7 +11,7 @@ use crate::config::{self, Config};
 use crate::hub::Hub;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, host, resources, theme};
+use crate::{ai_usage, features, host, launcher, resources, theme};
 use nova_features::{Manifest, Selection};
 use nova_protocol::{Event, FeatureState, FeatureStatus, Host, Theme};
 use std::collections::BTreeSet;
@@ -37,6 +37,7 @@ pub struct Sources {
     pub path_var: String,
     pub ai_usage: ai_usage::Paths,
     pub resources: resources::Sources,
+    pub launcher: launcher::Paths,
 }
 
 /// The settings in effect, and the feature services they started.
@@ -49,6 +50,8 @@ pub struct Settings {
     pub ai_usage: Option<Arc<ai_usage::Usage>>,
     /// Sampling while the `quick-settings` feature is ready.
     pub resources: Option<Arc<resources::Resources>>,
+    /// Running while the `launcher` feature is ready.
+    pub launcher: Option<Arc<launcher::Launcher>>,
 }
 
 impl Settings {
@@ -144,6 +147,27 @@ impl Settings {
             }
         };
 
+        // It has no options: it only starts and stops with its feature.
+        let launcher_ready = is_ready(&features, launcher::FEATURE_ID);
+        let launcher = match previous.as_deref_mut().and_then(|previous| previous.launcher.take()) {
+            Some(running) if launcher_ready => Some(running),
+            running => {
+                if let Some(running) = running {
+                    running.stop();
+                    logger.info("features", &format!("stopped {}", launcher::FEATURE_ID));
+                }
+                launcher_ready.then(|| {
+                    logger.info("features", &format!("starting {}", launcher::FEATURE_ID));
+                    launcher::Launcher::start(
+                        sources.launcher.clone(),
+                        &sources.path_var,
+                        Arc::clone(hub),
+                        Arc::clone(logger),
+                    )
+                })
+            }
+        };
+
         let before = previous.as_deref().map(|previous| previous.features.as_slice()).unwrap_or_default();
         for feature in features.iter().filter(|feature| !before.contains(feature)) {
             logger.info("features", &format!("{} is {:?}", feature.id, feature.status));
@@ -152,7 +176,7 @@ impl Settings {
             hub.publish(&Event::Features { features: features.clone() });
         }
 
-        Self { config, selection, features, theme, ai_usage, resources }
+        Self { config, selection, features, theme, ai_usage, resources, launcher }
     }
 }
 
@@ -177,15 +201,17 @@ fn logged<T>(read: Result<T, String>, fallback: &str, logger: &Logger) -> Option
 /// Calls `reload` on a thread of its own once `files` stop changing. The
 /// folders around them are watched rather than the files, so a file that's
 /// replaced (saved by rename, a new symlink) is still seen, and so is a
-/// folder that appears later or is replaced.
-pub fn watch(files: Vec<PathBuf>, logger: Arc<Logger>, reload: impl Fn() + Send + 'static) {
+/// folder that appears later or is replaced. Watching ends when the
+/// returned stopper is used.
+pub fn watch(files: Vec<PathBuf>, logger: Arc<Logger>, reload: impl Fn() + Send + 'static) -> Option<inotify::Stopper> {
     let mut watcher = match Inotify::new(inotify::REPLACEMENTS) {
         Ok(watcher) => watcher,
         Err(e) => {
             logger.warn(LOG_SOURCE, &format!("can't watch the settings ({e}); changes apply after `nova restart`"));
-            return;
+            return None;
         }
     };
+    let stopper = watcher.stopper();
     let mut entries = watch_entries(&mut watcher, &files, &logger);
 
     let (changed, changes) = mpsc::channel();
@@ -220,6 +246,7 @@ pub fn watch(files: Vec<PathBuf>, logger: Arc<Logger>, reload: impl Fn() + Send 
             reload();
         }
     });
+    Some(stopper)
 }
 
 /// Watches every folder holding an entry that decides what `files` read,
@@ -262,10 +289,12 @@ mod tests {
         let logger =
             Arc::new(Logger::open(&dir.join("logs"), LogLevel::Info, false, Arc::new(Hub::default())).unwrap());
         let (reloaded, reloads) = mpsc::channel();
-        watch(vec![dir.join("config.toml")], logger, move || {
+        let watching = watch(vec![dir.join("config.toml")], logger, move || {
             let _ = reloaded.send(());
-        });
+        })
+        .unwrap();
         assert!(reloads.recv_timeout(SETTLE * 10).is_ok(), "no reload after the watches went in");
+        watching.stop();
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

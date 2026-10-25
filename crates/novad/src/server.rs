@@ -178,6 +178,20 @@ impl<'a> Connection<'a> {
             Command::EndApp { key } => return self.end_app(key),
             Command::PowerOptions => return self.power_options()(),
             Command::Power { action } => return self.power(*action),
+            Command::SearchApps { query } => {
+                let launcher = lock(&self.daemon.settings).launcher.clone();
+                return match launcher.map(|launcher| launcher.search(query)) {
+                    Some(Ok(found)) => match serde_json::to_value(found) {
+                        Ok(value) => Outcome::Result(value),
+                        Err(e) => Outcome::Error(e.to_string()),
+                    },
+                    Some(Err(e)) => Outcome::Error(e),
+                    None => Outcome::Error(format!("the {} feature is off", crate::launcher::FEATURE_ID)),
+                };
+            }
+            // Answered on its own thread (`slow_work`).
+            Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window)(),
+            Command::PinApp { id, pinned } => return self.with_launcher(|launcher| launcher.pin(id, *pinned)),
         };
         match value {
             Ok(value) => Outcome::Result(value),
@@ -195,6 +209,18 @@ impl<'a> Connection<'a> {
                 Err(e) => Outcome::Error(e),
             },
             None => Outcome::Error(format!("the {} feature is off", crate::ai_usage::FEATURE_ID)),
+        }
+    }
+
+    fn with_launcher(&self, act: impl FnOnce(&crate::launcher::Launcher) -> Result<(), String>) -> Outcome {
+        // Out of the lock, like `with_ai_usage`.
+        let launcher = lock(&self.daemon.settings).launcher.clone();
+        match launcher {
+            Some(launcher) => match act(&launcher) {
+                Ok(()) => Outcome::Result(serde_json::Value::Null),
+                Err(e) => Outcome::Error(e),
+            },
+            None => Outcome::Error(format!("the {} feature is off", crate::launcher::FEATURE_ID)),
         }
     }
 
@@ -260,10 +286,12 @@ impl<'a> Connection<'a> {
         }
     }
 
-    /// The requests that wait on logind, as work to answer them with; the
-    /// quick checks before it run here, at once.
+    /// The requests that wait on logind, the compositor or an app starting,
+    /// as work to answer them with; the quick checks before it run here, at
+    /// once.
     fn slow_work(&self, command: &Command) -> Option<SlowWork> {
         match command {
+            Command::LaunchApp { id, output, new_window } => Some(self.launch_app(id, output.clone(), *new_window)),
             Command::PowerOptions => Some(self.power_options()),
             Command::Power {
                 action: action @ (PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff),
@@ -339,6 +367,25 @@ impl<'a> Connection<'a> {
     /// Suspend, restart or shut down through logind; answers with logind's
     /// own result. A suspend locks the screen first through novad's sleep
     /// inhibitor ([`crate::logind`]), as one from anywhere else does.
+    fn launch_app(&self, id: &str, output: Option<String>, new_window: bool) -> SlowWork {
+        let Some(launcher) = lock(&self.daemon.settings).launcher.clone() else {
+            let off = format!("the {} feature is off", crate::launcher::FEATURE_ID);
+            return Box::new(move || Outcome::Error(off));
+        };
+        let compositor = self.daemon.compositor.clone().filter(|_| !new_window);
+        let id = id.to_owned();
+        Box::new(move || {
+            let brought = |ids: &[String]| match &compositor {
+                Some(compositor) => compositor.bring_app(ids, output.as_deref()),
+                None => Ok(false),
+            };
+            match launcher.launch(&id, brought) {
+                Ok(()) => Outcome::Result(serde_json::Value::Null),
+                Err(e) => Outcome::Error(e),
+            }
+        })
+    }
+
     fn power_logind(&self, action: PowerAction) -> SlowWork {
         if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
             return Box::new(move || Outcome::Error(e));
@@ -408,6 +455,11 @@ impl<'a> Connection<'a> {
                         Topic::Host => self.send(Event::Host(settings.host())),
                         // Sent while some connection watches them.
                         Topic::Resources => {}
+                        Topic::Launcher => {
+                            if let Some(launcher) = &settings.launcher {
+                                launcher.send_state(self.id);
+                            }
+                        }
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -433,7 +485,10 @@ impl<'a> Connection<'a> {
             | Command::Power { .. }
             | Command::Volume { .. }
             | Command::WatchResources { .. }
-            | Command::EndApp { .. } => {}
+            | Command::EndApp { .. }
+            | Command::SearchApps { .. }
+            | Command::LaunchApp { .. }
+            | Command::PinApp { .. } => {}
         }
     }
 

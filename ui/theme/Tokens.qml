@@ -92,6 +92,8 @@ QtObject {
     readonly property real shadowRoom: shadowBlur + shadowOffset
     // Hover wash on things inside glass.
     readonly property color hover: Qt.rgba(fg.r, fg.g, fg.b, 0.06)
+    // The selected row of a list, like the launcher's.
+    readonly property color selected: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
     // What's selected where the focus isn't, like the workspace shown on a
     // monitor you're not using: a quiet fill instead of the accent.
     readonly property color selectedQuiet: Qt.rgba(fg.r, fg.g, fg.b, 0.14)
@@ -332,6 +334,38 @@ QtObject {
     readonly property int searchHeight: 34
     // A legend's colored dot.
     readonly property int legendDot: 7
+    // The launcher (ui/launcher): a deck in the middle of the screen, this
+    // share of the screen's height from the top, that fades in at
+    // launcherEnterScale and launcherEnterRise above its place. A search
+    // field, then the pinned apps as tiles (the name shows on hover), then a
+    // list of rows, at most launcherRows of them before it scrolls.
+    readonly property int launcherWidth: 620
+    readonly property real launcherTop: 0.17
+    readonly property real launcherEnterScale: 0.96
+    readonly property int launcherEnterRise: 8
+    readonly property int launcherPad: 14
+    readonly property int launcherGap: 10
+    readonly property int launcherSearchHeight: 44
+    readonly property int launcherLabelHeight: 16
+    readonly property int launcherTileSize: 64
+    readonly property int launcherTileIcon: 38
+    readonly property int launcherTileName: 16
+    readonly property int launcherRowHeight: 46
+    readonly property int launcherRowGap: 2
+    readonly property int launcherRowIcon: 30
+    readonly property int launcherRows: 6
+    // The note shown when nothing matches.
+    readonly property int launcherEmptyHeight: 92
+    // An app without an icon: its letter on a swatch, this round.
+    readonly property int letterTileRadius: 9
+    // The letter's size, as a share of the tile's.
+    readonly property real letterScale: 0.47
+    // The pin button on a row.
+    readonly property int pinButtonSize: 24
+    readonly property int fontSizeSearch: 15
+    // The text cursor in a field: the accent, and steady, so an open field
+    // doesn't redraw twice a second.
+    readonly property int caretWidth: 2
 
     // Type
     readonly property string fontSans: "Inter"
@@ -363,6 +397,9 @@ QtObject {
     readonly property int durationFade: 140
     readonly property int durationFill: 600
     readonly property int durationColor: 200
+    // Something changing size as its content changes, like the launcher
+    // as results come and go.
+    readonly property int durationResize: 180
     // One turn of a loading spinner.
     readonly property int durationSpin: 1000
     // A wrong password's shake, and the lock screen fading before it unlocks.

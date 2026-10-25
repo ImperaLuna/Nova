@@ -7,12 +7,14 @@ import "../compositor"
 import "../ai_usage"
 import "../ai_usage/service"
 import "../central_pill"
+import "../launcher/service"
 import "../stage"
 
 // The bar on one screen: the AI usage pill on the left when that feature is
-// on, the central pill (that screen's workspaces, the day and the time)
-// with its time in the middle of the screen, and the right pill with the
-// quick settings and power buttons. The hide policies come later.
+// on, the central pill (the launcher's search button, that screen's
+// workspaces, the day and the time) with its time in the middle of the
+// screen, and the right pill with the quick settings and power buttons.
+// The hide policies come later.
 //
 // While the screen shows a workspace with a window over the whole screen
 // (fullscreen), the bar steps aside: the pills slide up out of sight, then
@@ -116,6 +118,9 @@ Item {
     // is the screen's): quick settings grows out of it.
     readonly property rect rightPillBox: Qt.rect(rightPill.x, shelf.y + rightPill.y, rightPill.width, rightPill.height)
     readonly property Item rightPillItem: rightPill
+    // The central pill's search button was clicked: open or close the
+    // launcher on this screen.
+    signal launcherRequested
 
     // Logs once the bar has drawn a frame while connected to novad, so the
     // VM tests know when to screenshot it.
@@ -183,6 +188,8 @@ Item {
             workspaces: Compositor.has(Protocol.CAPABILITY_WORKSPACES) ? Protocol.barWorkspaces(output) : []
             outputFocused: output?.focused ?? false
             canFocus: Compositor.has(Protocol.CAPABILITY_FOCUS_WORKSPACE)
+            canSearch: LauncherService.ready
+            onSearchRequested: bar.launcherRequested()
             now: bar.frozenTime ? new Date(bar.frozenTime) : clock.date
             onFocusRequested: workspaceId => Compositor.focusWorkspace(workspaceId)
             onStepRequested: step => Compositor.stepWorkspace(bar.screenName, step)

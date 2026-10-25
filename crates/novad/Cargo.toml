@@ -28,6 +28,7 @@ workspace = true
 # A test checks the two lists stay in sync.
 [features]
 ai-usage = []
+launcher = []
 power = []
 quick-settings = []
 recording = []

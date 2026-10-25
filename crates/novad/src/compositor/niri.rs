@@ -38,6 +38,8 @@ const CAPABILITIES: &[Capability] = &[
 ];
 /// The request that turns a connection into the event stream.
 const EVENT_STREAM_REQUEST: &str = r#""EventStream""#;
+/// The request for every window.
+const WINDOWS_REQUEST: &str = r#""Windows""#;
 /// The request for every output, and the key its answer comes under.
 const OUTPUTS_REQUEST: &str = r#""Outputs""#;
 const OUTPUTS_ANSWER: &str = "Outputs";
@@ -110,6 +112,28 @@ impl Backend for Niri {
         let id = u64::try_from(workspace.id).map_err(|_| format!("niri has no workspace {}", workspace.id))?;
         let action = json!({"Action": {"FocusWorkspace": {"reference": {"Id": id}}}});
         self.request(&action.to_string()).map(drop)
+    }
+
+    fn bring_window(&self, app_ids: &[String], workspace: &NovaWorkspace) -> Result<bool, String> {
+        let target = u64::try_from(workspace.id).map_err(|_| format!("niri has no workspace {}", workspace.id))?;
+        let reply = self.request(WINDOWS_REQUEST)?;
+        let windows: Vec<Window> =
+            serde_json::from_value(reply["Windows"].clone()).map_err(|e| format!("niri sent odd windows ({e})"))?;
+        let mut matching: Vec<&Window> = windows
+            .iter()
+            .filter(|window| window.app_id.as_ref().is_some_and(|id| app_ids.contains(&id.to_lowercase())))
+            .collect();
+        // One already there needs no move.
+        matching.sort_by_key(|window| window.workspace_id != Some(target));
+        let Some(window) = matching.first() else { return Ok(false) };
+        if window.workspace_id != Some(target) {
+            let action = json!({"Action": {"MoveWindowToWorkspace": {
+                "window_id": window.id, "reference": {"Id": target}, "focus": true
+            }}});
+            self.request(&action.to_string())?;
+        }
+        let action = json!({"Action": {"FocusWindow": {"id": window.id}}});
+        self.request(&action.to_string()).map(|_| true)
     }
 
     fn log_out(&self) -> Result<(), String> {
