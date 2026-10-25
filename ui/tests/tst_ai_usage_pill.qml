@@ -105,6 +105,18 @@ Item {
             tryCompare(pill, "width", closedWidth);
         }
 
+        function test_the_whole_open_header_closes_it() {
+            const pill = createPill("claude");
+            const closedWidth = pill.width;
+            mouseClick(pill, 20, Tokens.barHeight / 2);
+            tryCompare(pill, "width", pill.panelWidth);
+            verify(pill.closesOnClickOutside);
+            // Past the closed pill: the provider name and the plan chip.
+            mouseClick(pill, pill.panelWidth - 10, Tokens.barHeight / 2);
+            verify(!pill.open);
+            tryCompare(pill, "width", closedWidth);
+        }
+
         function test_it_moves_until_everything_in_it_has_settled() {
             const pill = createPill("claude");
             tryVerify(() => !pill.moving);
