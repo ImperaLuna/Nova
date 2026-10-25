@@ -9,7 +9,9 @@
 # `nova toggle` opens the panel on the focused screen only: focus another
 # screen and run it again to measure that one. Windows behind the panel
 # change what the compositor's blur costs, so compare runs on the same
-# workspace.
+# workspace. A fullscreen window draws over the stage on niri, which then
+# gets a frame only now and then: the report lists such a screen as idle or
+# hidden, not as dropping frames. Measure on a workspace without one.
 #
 # Usage: scripts/frames.sh [path/to/nova] [times] [panel]
 #   times  how often to open and close the panel (default 20)
