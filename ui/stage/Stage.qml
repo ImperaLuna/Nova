@@ -41,6 +41,14 @@ Scope {
 
     // Every panel on this screen, whatever surface it's drawn on.
     readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(quickSettings.item ? [quickSettings.item] : []), ...(launcher.item ? [launcher.item] : []), ...(demo.item?.panels ?? [])]
+    // While a panel is open or closing on this screen, everything Nova draws
+    // here sits on the Overlay layer: niri and Hyprland draw a focused
+    // fullscreen window over the Top layer, which hid the launcher under it.
+    // Otherwise it's Top, so the bar stays below fullscreen video and games.
+    readonly property int surfaceLayer: all.shown.length > 0 ? WlrLayer.Overlay : WlrLayer.Top
+    // A new layer goes out with a frame, and the stage may not be drawing
+    // (another surface's panel opened).
+    onSurfaceLayerChanged: settling = true
     function placed(placement: string): list<StagePanel> {
         return panels.filter(panel => panel.placement === placement);
     }
@@ -137,6 +145,7 @@ Scope {
         id: right
         output: root.output
         placement: "right"
+        surfaceLayer: root.surfaceLayer
         panels: root.placed("right")
         clickAnywhere: all.catchesClicks
         holding: root.settling
@@ -147,6 +156,7 @@ Scope {
         id: center
         output: root.output
         placement: "center"
+        surfaceLayer: root.surfaceLayer
         panels: root.placed("center")
         clickAnywhere: all.catchesClicks
         holding: root.settling
@@ -188,7 +198,7 @@ Scope {
             }
         }
 
-        WlrLayershell.layer: WlrLayer.Top
+        WlrLayershell.layer: root.surfaceLayer
         WlrLayershell.namespace: "nova-stage"
         WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
@@ -293,6 +303,7 @@ Scope {
     ClickCatcher {
         screen: root.screen
         catching: all.catchesClicks
+        surfaceLayer: root.surfaceLayer
         // Only while catching, so it doesn't redraw for every morph frame.
         holes: all.catchesClicks ? [Qt.rect(0, 0, root.output.width, stage.implicitHeight), ...[right, center].filter(surface => surface.visible).map(surface => surface.box)] : []
         onClicked: all.dismiss()
