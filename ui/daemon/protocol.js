@@ -16,6 +16,12 @@ var CMD_REPORT_LOCKED = "report_locked";
 var CMD_REPORT_UNLOCKED = "report_unlocked";
 var CMD_POWER_OPTIONS = "power_options";
 var CMD_POWER = "power";
+var CMD_SEARCH_APPS = "search_apps";
+var CMD_LAUNCH_APP = "launch_app";
+var CMD_PIN_APP = "pin_app";
+// novad refuses longer search_apps queries (SEARCH_APPS_MAX_CHARS in
+// nova-protocol, which checks this matches).
+var SEARCH_APPS_MAX_CHARS = 200;
 
 // Events novad sends (Event in nova-protocol). Each topic's events carry the
 // topic's name.
@@ -27,6 +33,7 @@ var EVENT_COMPOSITOR = "compositor";
 var EVENT_TOGGLE = "toggle";
 var EVENT_LOCK = "lock";
 var EVENT_VOLUME = "volume";
+var EVENT_LAUNCHER = "launcher";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
@@ -37,6 +44,7 @@ var TOPIC_COMPOSITOR = "compositor";
 var TOPIC_TOGGLE = "toggle";
 var TOPIC_LOCK = "lock";
 var TOPIC_VOLUME = "volume";
+var TOPIC_LAUNCHER = "launcher";
 
 // What a compositor can report or do (Capability in nova-protocol).
 var CAPABILITY_WORKSPACES = "workspaces";
@@ -58,6 +66,7 @@ var VOLUME_MUTE = "mute";
 var FEATURE_AI_USAGE = "ai-usage";
 var FEATURE_LOCK = "lock";
 var FEATURE_POWER = "power";
+var FEATURE_LAUNCHER = "launcher";
 
 // Power menu actions (PowerAction in nova-protocol).
 var POWER_LOCK = "lock";

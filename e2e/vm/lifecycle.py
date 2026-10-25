@@ -115,6 +115,11 @@ ENTER = "28:1 28:0"
 SESSION_LOCKED = "nova: session locked"
 SESSION_UNLOCKED = "nova: session unlocked"
 WRONG_PASSWORD = "nova: lock screen: wrong password"
+# What the launcher logs (ui/launcher).
+LAUNCHER_OPENED = "nova: launcher opened"
+LAUNCHER_CLOSED = "nova: launcher closed"
+# The systemd scope novad starts an app in (crates/novad/src/launcher/launch.rs).
+FOOT_SCOPE = "app-nova-foot-"
 # What the power menu logs (ui/power), and its key for Lock.
 POWER_OPENED = "nova: power menu opened"
 POWER_CLOSED = "nova: power menu closed"
@@ -457,6 +462,23 @@ with subtest("nova toggle power opens the power menu; Esc closes it and its L ke
         press_until_logged(keys, done)
     machine.succeed(f"{YDOTOOL} type {shlex.quote(PASSWORD)}")
     press_until_logged(ENTER, SESSION_UNLOCKED)
+
+with subtest("nova toggle launcher opens the launcher; typing finds foot, Enter starts it in a scope of its own, Esc closes"):
+    before = ui_log_count(LAUNCHER_OPENED)
+    machine.succeed(as_user("nova toggle launcher"))
+    retry(lambda _last_try: ui_log_count(LAUNCHER_OPENED) > before, timeout=CLICK_EFFECT)
+    machine.succeed(f"{YDOTOOL} type {FOOT}")
+    screenshot("launcher")
+    press_until_logged(ENTER, LAUNCHER_CLOSED)
+    machine.wait_until_succeeds(as_user(NOVA_SEES_FOOT), timeout=WAIT)
+    # Not in nova.service: restarting Nova leaves the app running.
+    machine.succeed(as_user(f"systemctl --user list-units --type=scope --no-legend | grep -qF {FOOT_SCOPE}"))
+    before = ui_log_count(LAUNCHER_OPENED)
+    machine.succeed(as_user("nova toggle launcher"))
+    retry(lambda _last_try: ui_log_count(LAUNCHER_OPENED) > before, timeout=CLICK_EFFECT)
+    press_until_logged(ESC, LAUNCHER_CLOSED)
+    machine.succeed(as_user(CLOSE_WINDOW))
+    machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
 
 with subtest("logind's lock-session locks the screen, and novad holds back sleep until it can lock"):
     # Suspending the VM would stop the test, so only the inhibitor that

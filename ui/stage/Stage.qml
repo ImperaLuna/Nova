@@ -5,6 +5,8 @@ import Quickshell
 import Quickshell.Wayland
 import "../bar"
 import "../demo"
+import "../launcher"
+import "../launcher/service"
 import "../power"
 import "../power/service"
 import "../daemon"
@@ -31,7 +33,7 @@ Scope {
     property bool settling: false
 
     // Every panel on this screen, whatever surface it's drawn on.
-    readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(demo.item?.panels ?? [])]
+    readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(launcher.item ? [launcher.item] : []), ...(demo.item?.panels ?? [])]
     function placed(placement: string): list<StagePanel> {
         return panels.filter(panel => panel.placement === placement);
     }
@@ -62,6 +64,24 @@ Scope {
         active: PowerService.ready
         component: PowerMenu {
             screen: root.screen
+        }
+    }
+
+    // The launcher in the middle, while its feature is on.
+    LazyLoader {
+        id: launcher
+        active: LauncherService.ready
+        component: Launcher {
+            id: deck
+            screenWidth: root.screen.width
+            screenHeight: root.screen.height
+            apps: LauncherService.current.apps
+            pinned: LauncherService.current.pinned
+            recent: LauncherService.current.recent
+            iconSource: icon => LauncherService.iconSource(icon)
+            onSearchRequested: query => LauncherService.search(query, found => deck.showMatches(query, found))
+            onLaunchRequested: id => LauncherService.launch(id, error => deck.launched(error))
+            onPinRequested: (id, pinned) => LauncherService.pin(id, pinned)
         }
     }
 
@@ -213,6 +233,11 @@ Scope {
             // closed, and the surface it's on stays until that's drawn.
             covered: root.panels.filter(panel => panel.covering && panel.from).map(panel => panel.from)
             onCoveredChanged: root.settling = true
+            onLauncherRequested: {
+                const deck = launcher.item as Launcher;
+                if (deck)
+                    deck.open = !deck.open;
+            }
         }
 
         FrameLog {

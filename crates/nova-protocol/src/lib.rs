@@ -415,6 +415,10 @@ pub struct App {
     pub icon: Option<String>,
 }
 
+/// The longest `search_apps` query, in characters: anything on the socket is
+/// capped, and nobody types more.
+pub const SEARCH_APPS_MAX_CHARS: usize = 200;
+
 /// An app that matches a launcher search, best first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppMatch {
@@ -900,6 +904,8 @@ mod tests {
             assert!(known, "protocol.js: {name} = {value:?} isn't a name novad knows");
         }
         assert!(!checked.is_empty(), "protocol.js declares no names");
+        let max_chars = format!("var SEARCH_APPS_MAX_CHARS = {SEARCH_APPS_MAX_CHARS};");
+        assert!(js.contains(&max_chars), "protocol.js: {max_chars} is missing");
     }
 
     fn desktop() -> Desktop {

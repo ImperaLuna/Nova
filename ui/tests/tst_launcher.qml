@@ -1,0 +1,241 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtTest
+import "../launcher"
+import "../launcher/launcher.js" as LauncherLogic
+
+// The launcher with apps in the shape novad sends: what its list shows
+// before and while searching, typing, the keys, launching and its
+// failures. The root is an Item: a TestCase root gets no key events.
+Item {
+    id: stage
+    width: 1280
+    height: 800
+
+    readonly property var apps: [
+        {
+            id: "firefox.desktop",
+            name: "Firefox",
+            description: "Web Browser",
+            icon: "firefox"
+        },
+        {
+            id: "foot.desktop",
+            name: "Foot"
+        },
+        {
+            id: "org.gnome.Nautilus.desktop",
+            name: "Files",
+            description: "File Manager"
+        }
+    ]
+
+    TestCase {
+        name: "Launcher"
+        when: windowShown
+
+        Component {
+            id: launcherComponent
+            Launcher {
+                screenWidth: stage.width
+                screenHeight: stage.height
+            }
+        }
+
+        SignalSpy {
+            id: searches
+            signalName: "searchRequested"
+        }
+
+        SignalSpy {
+            id: launches
+            signalName: "launchRequested"
+        }
+
+        function make(props) {
+            const launcher = createTemporaryObject(launcherComponent, stage, Object.assign({
+                apps: stage.apps,
+                pinned: ["foot.desktop", "gone.desktop"],
+                recent: ["org.gnome.Nautilus.desktop", "firefox.desktop"]
+            }, props ?? {}));
+            searches.clear();
+            launches.clear();
+            searches.target = launcher;
+            launches.target = launcher;
+            launcher.open = true;
+            return launcher;
+        }
+
+        function ids(rows) {
+            return rows.map(row => row.id);
+        }
+
+        function test_recent_apps_show_until_something_is_typed() {
+            const launcher = make();
+            compare(ids(launcher.rows), ["org.gnome.Nautilus.desktop", "firefox.desktop"]);
+            compare(launcher.section, "recent");
+            compare(ids(launcher.pinnedApps), ["foot.desktop"], "an app that's gone isn't shown");
+            verify(launcher.showsPinned);
+        }
+
+        function test_every_app_shows_before_the_first_launch() {
+            const launcher = make({
+                recent: []
+            });
+            compare(launcher.section, "apps");
+            compare(launcher.rows.length, 3);
+        }
+
+        function test_typing_searches_and_shows_only_the_latest_matches() {
+            const launcher = make();
+            keyClick("f");
+            keyClick("i");
+            compare(searches.count, 2);
+            compare(searches.signalArguments[1][0], "fi");
+            verify(!launcher.showsPinned);
+            launcher.showMatches("f", [
+                {
+                    id: "foot.desktop",
+                    name: [
+                        {
+                            text: "F",
+                            matched: true
+                        },
+                        {
+                            text: "oot"
+                        }
+                    ]
+                }
+            ]);
+            compare(launcher.rows.length, 0, "an answer to an older query is dropped");
+            launcher.showMatches("fi", [
+                {
+                    id: "org.gnome.Nautilus.desktop",
+                    name: [
+                        {
+                            text: "Fi",
+                            matched: true
+                        },
+                        {
+                            text: "les"
+                        }
+                    ]
+                },
+                {
+                    id: "firefox.desktop",
+                    name: [
+                        {
+                            text: "Fi",
+                            matched: true
+                        },
+                        {
+                            text: "refox"
+                        }
+                    ]
+                }
+            ]);
+            compare(ids(launcher.rows), ["org.gnome.Nautilus.desktop", "firefox.desktop"]);
+            compare(launcher.section, "results");
+            compare(launcher.rows[0].runs[0], {
+                text: "Fi",
+                matched: true
+            });
+            compare(launcher.rows[0].runs[1].matched, false);
+            keyClick(Qt.Key_Backspace);
+            keyClick(Qt.Key_Backspace);
+            compare(launcher.query, "");
+            compare(launcher.section, "recent");
+        }
+
+        function test_nothing_matching_says_so() {
+            const launcher = make();
+            keyClick("q");
+            launcher.showMatches("q", []);
+            compare(launcher.rows.length, 0);
+            compare(launcher.section, "");
+        }
+
+        function test_arrows_go_round_and_enter_launches_the_selected_app() {
+            const launcher = make();
+            compare(launcher.selected, 0);
+            keyClick(Qt.Key_Up);
+            compare(launcher.selected, 1, "up from the first goes to the last");
+            keyClick(Qt.Key_Down);
+            keyClick(Qt.Key_Down);
+            compare(launcher.selected, 1);
+            keyClick(Qt.Key_Return);
+            compare(launches.count, 1);
+            compare(launches.signalArguments[0][0], "firefox.desktop");
+            compare(launcher.launching, "firefox.desktop");
+            keyClick(Qt.Key_Return);
+            compare(launches.count, 1, "one launch at a time");
+            launcher.launched(null);
+            tryCompare(launcher, "open", false);
+        }
+
+        function test_a_failed_launch_says_why_and_stays_open() {
+            const launcher = make();
+            keyClick(Qt.Key_Return);
+            launcher.launched("dolphin isn't installed");
+            compare(launcher.problem, "dolphin isn't installed");
+            compare(launcher.launching, "");
+            verify(launcher.open);
+            keyClick("x");
+            compare(launcher.problem, "", "typing clears it");
+        }
+
+        function test_esc_closes_and_opening_starts_afresh() {
+            const launcher = make();
+            keyClick("f");
+            keyClick(Qt.Key_Escape);
+            verify(!launcher.open);
+            launcher.open = true;
+            compare(launcher.query, "");
+            compare(launcher.selected, 0);
+        }
+
+        function test_the_surface_fits_the_tallest_deck() {
+            const launcher = make({
+                apps: Array.from({
+                    length: 20
+                }, (_, i) => ({
+                            id: `app${i}.desktop`,
+                            name: `App ${i}`
+                        })),
+                pinned: Array.from({
+                    length: 20
+                }, (_, i) => `app${i}.desktop`),
+                recent: []
+            });
+            tryCompare(launcher.morph, "moving", false);
+            verify(launcher.pinnedApps.length < 20, "one row of tiles");
+            verify(launcher.shownHeight <= launcher.tallest, `${launcher.shownHeight} > ${launcher.tallest}`);
+            verify(launcher.area.y + launcher.area.height >= launcher.y + launcher.height);
+        }
+    }
+
+    TestCase {
+        name: "LauncherLogic"
+
+        function test_steps_go_round() {
+            compare(LauncherLogic.step(0, 3, -1), 2);
+            compare(LauncherLogic.step(2, 3, 1), 0);
+            compare(LauncherLogic.step(0, 0, 1), 0);
+        }
+
+        function test_a_missing_icon_gets_a_letter_on_a_swatch() {
+            compare(LauncherLogic.letter("firefox"), "F");
+            compare(LauncherLogic.letter("  7-Zip"), "7");
+            compare(LauncherLogic.letter("éclair"), "É");
+            compare(LauncherLogic.letter("--"), "?");
+            const swatch = LauncherLogic.swatch("org.mozilla.firefox.desktop");
+            verify(swatch >= 1 && swatch <= LauncherLogic.SWATCHES);
+            compare(LauncherLogic.swatch("org.mozilla.firefox.desktop"), swatch);
+        }
+
+        function test_icon_paths_become_escaped_file_urls() {
+            compare(LauncherLogic.fileUrl("/opt/My App/icon#1.png"), "file:///opt/My%20App/icon%231.png");
+        }
+    }
+}

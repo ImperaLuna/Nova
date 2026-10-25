@@ -14,7 +14,7 @@ use crate::logger::Logger;
 use crate::{lock, state_file};
 use desktop_entry::{Context, Entry, Locale};
 pub use launch::Runner;
-use nova_protocol::{App, AppMatch, Event};
+use nova_protocol::{App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -26,8 +26,6 @@ pub const FEATURE_ID: &str = "launcher";
 const LOG_SOURCE: &str = "launcher";
 /// Installing a package writes many entries; they're read once it pauses.
 const SETTLE: Duration = Duration::from_millis(500);
-/// Searches come over the socket; longer ones are refused.
-const MAX_QUERY_CHARS: usize = 200;
 /// Matches a search returns at most.
 const MAX_MATCHES: usize = 50;
 /// Apps that can be pinned at once.
@@ -154,8 +152,8 @@ impl Launcher {
 
     /// The apps matching `query`, best first.
     pub fn search(&self, query: &str) -> Result<Vec<AppMatch>, String> {
-        if query.chars().count() > MAX_QUERY_CHARS {
-            return Err(format!("searches are at most {MAX_QUERY_CHARS} characters"));
+        if query.chars().count() > SEARCH_APPS_MAX_CHARS {
+            return Err(format!("searches are at most {SEARCH_APPS_MAX_CHARS} characters"));
         }
         let query = query.trim().to_lowercase();
         if query.is_empty() {
