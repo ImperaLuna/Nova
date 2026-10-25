@@ -9,6 +9,9 @@
 const TAGS: [&str; 6] = ["b", "i", "u", "a", "img", "br"];
 /// The tags among them that take attributes (`href`, `src`, `alt`).
 const ATTRIBUTED: [&str; 2] = ["a", "img"];
+/// A tag's `>` is looked for this far (in bytes) at most, so a body of
+/// `<`s without one takes linear time.
+const MAX_TAG_BYTES: usize = 2048;
 
 /// `markup` without its tags and with its entities decoded, cut to
 /// `max_chars` characters (an ellipsis marks the cut).
@@ -16,6 +19,11 @@ pub fn plain(markup: &str, max_chars: usize) -> String {
     let mut text = String::with_capacity(markup.len());
     let mut rest = markup;
     while let Some(at) = rest.find(['<', '&']) {
+        // Past what's kept, at four bytes a character at most: the rest is cut anyway.
+        if text.trim_start().len() > 4 * max_chars {
+            rest = "";
+            break;
+        }
         text.push_str(&rest[..at]);
         rest = &rest[at..];
         let (replacement, length) = if rest.starts_with('<') { tag(rest) } else { entity(rest) };
@@ -50,7 +58,12 @@ pub fn cut(text: &str, max_chars: usize) -> String {
 /// becomes (a line break for `<br>`, nothing for the others) and how long
 /// it is. `None` when it isn't one.
 fn tag(text: &str) -> (Option<Option<String>>, usize) {
-    let Some(end) = text.find('>') else { return (None, 0) };
+    let mut window = MAX_TAG_BYTES.min(text.len());
+    while !text.is_char_boundary(window) {
+        window -= 1;
+    }
+    let window = &text[..window];
+    let Some(end) = window.find('>') else { return (None, 0) };
     let inside = text[1..end].trim_start_matches('/').trim_end_matches('/').trim_end();
     let (name, attributes) = inside.split_once(|c: char| c.is_ascii_whitespace()).unwrap_or((inside, ""));
     if !TAGS.iter().any(|tag| tag.eq_ignore_ascii_case(name)) {
@@ -101,6 +114,15 @@ mod tests {
     fn known_tags_go_and_entities_decode() {
         let body = r#"<b>Mara</b>: see <a href="https://example.com">the map</a><br/>it's &lt;3 &amp; &#x1F5FA;"#;
         assert_eq!(plain(body, 200), "Mara: see the map\nit's <3 & 🗺");
+    }
+
+    #[test]
+    fn a_long_run_of_unclosed_tags_takes_linear_time() {
+        let body = "<".repeat(512 * 1024);
+        let started = std::time::Instant::now();
+        let text = plain(&body, 2048);
+        assert_eq!(text.chars().count(), 2048);
+        assert!(started.elapsed() < std::time::Duration::from_secs(5), "{:?}", started.elapsed());
     }
 
     #[test]

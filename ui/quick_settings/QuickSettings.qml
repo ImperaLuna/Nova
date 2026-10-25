@@ -73,10 +73,12 @@ StagePanel {
         console.info(`nova: quick settings ${open ? "opened" : "closed"}`);
         QuickSettingsService.watching = open;
         VolumeService.showElsewhere(output.name, open);
-        NotificationsService.showList(output.name, open);
         if (open)
             now = new Date();
     }
+    // The list is on the first page: another page hides it.
+    readonly property bool listShown: open && page === "main"
+    onListShownChanged: NotificationsService.showList(output.name, listShown)
     // Back to the first page once it has closed, so it opens there.
     onMovingChanged: {
         if (!moving && !open)

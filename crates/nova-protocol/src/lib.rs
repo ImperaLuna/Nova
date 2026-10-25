@@ -506,6 +506,10 @@ pub struct NotificationList {
     /// Every app that sent one lately or is muted, the latest first, for
     /// the settings page's per-app switches.
     pub apps: Vec<NotificationApp>,
+    /// Transient notifications still open: they pop up but aren't listed,
+    /// and their pop-ups go once they leave this.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transient: Vec<Notification>,
 }
 
 /// How many notifications are kept; the oldest go first.
@@ -1622,6 +1626,7 @@ mod tests {
                 },
                 NotificationApp { name: "Discord".into(), icon: None, app_id: None },
             ],
+            transient: vec![],
         }
     }
 

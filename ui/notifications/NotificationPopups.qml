@@ -48,7 +48,7 @@ PanelWindow { // qmllint disable uncreatable-type
         stack.add(notification);
         // The list came first: a pop-up already in it is marked listed now,
         // so it goes when the list next loses it.
-        stack.sync(NotificationsService.items);
+        stack.sync(NotificationsService.popUps);
     }
 
     Connections {
@@ -56,8 +56,8 @@ PanelWindow { // qmllint disable uncreatable-type
         function onPopped(notification: var) {
             window.popUp(notification);
         }
-        function onItemsChanged() {
-            stack.sync(NotificationsService.items);
+        function onPopUpsChanged() {
+            stack.sync(NotificationsService.popUps);
         }
         function onListOpenChanged() {
             if (NotificationsService.listOpen)

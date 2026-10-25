@@ -197,6 +197,13 @@ Item {
             stack.add(note(3, "Volume"));
             stack.sync([note(2, "B")]);
             compare(stack.shownEntries().map(entry => entry.notification.id), [3, 2]);
+            // Each shows its notification as the list has it now.
+            stack.sync([note(2, "B", {
+                    live: false
+                }), note(3, "Volume")]);
+            compare(stack.shownEntries()[1].notification.live, false, "its app quit");
+            stack.sync([note(2, "B")]);
+            compare(stack.shownEntries().map(entry => entry.notification.id), [2], "a transient one closed by its app goes");
             stack.clear();
             compare(stack.shownEntries().length, 0);
             tryVerify(() => !stack.busy, 2000, "the cards fold away");

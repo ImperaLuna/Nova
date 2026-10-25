@@ -17,6 +17,11 @@ Singleton {
     readonly property bool ready: Daemon.readyFeatures.includes(Protocol.FEATURE_NOTIFICATIONS) && Daemon.notifications !== null
     readonly property var current: Daemon.notifications
     readonly property var items: current?.items ?? []
+    // Transient ones still open: not listed, but their pop-ups stay while
+    // they're here.
+    readonly property var transients: current?.transient ?? []
+    // Every notification a pop-up can be showing.
+    readonly property var popUps: items.concat(transients)
     readonly property bool doNotDisturb: current?.do_not_disturb ?? false
     readonly property var muted: current?.muted ?? []
     readonly property var apps: current?.apps ?? []
@@ -37,9 +42,13 @@ Singleton {
         }
     }
 
-    // Quick settings opened (`open`) or closed on the screen `name`.
+    // Quick settings started (`open`) or stopped showing the list on the
+    // screen `name`. What it showed is read once it's gone.
     function showList(name: string, open: bool) {
-        const others = listShown.filter(shown => shown !== name);
+        const shown = listShown.includes(name);
+        if (open === shown)
+            return;
+        const others = listShown.filter(screen => screen !== name);
         listShown = open ? [...others, name] : others;
         if (!open && unread > 0)
             Daemon.call(Protocol.CMD_READ_NOTIFICATIONS);

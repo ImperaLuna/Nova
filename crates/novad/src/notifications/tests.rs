@@ -311,9 +311,19 @@ fn transient_notifications_only_pop_up() {
     assert_eq!(fixture.next("notification_popup")["id"], id);
     assert_eq!(list["items"], json!([]));
     assert_eq!(list["apps"][0]["name"], "Volume");
+    assert_eq!(list["transient"][0]["id"], id, "listed apart, so its pop-up knows it's open");
     // Its pop-up's click still reaches the app.
     server.action(id, None).unwrap();
     assert_eq!(app.signal(), ("ActionInvoked".into(), json!([id, "default"])));
+    assert_eq!(fixture.next("notifications").get("transient"), None, "gone, so its pop-up goes");
+
+    // Closed by its app, it goes too.
+    let transient = HashMap::from([("transient", Variant::Bool(true))]);
+    let id = app.notify(("Volume", 0, "", "60%", "", vec![], transient, 0));
+    assert_eq!(fixture.next("notifications")["transient"][0]["id"], id);
+    zbus::block_on(app.connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "CloseNotification", &(id,)))
+        .unwrap();
+    assert_eq!(fixture.next("notifications").get("transient"), None);
 }
 
 #[test]
@@ -324,11 +334,18 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
     let pixels = (2i32, 1i32, 8i32, true, 8i32, 4i32, vec![255u8, 0, 0, 255, 0, 255, 0, 255]);
     let hints = HashMap::from([("image-data", Variant::from(zbus::wire::Structure::from(pixels.clone())))]);
     let id = app.notify(("Chat", 0, "", "Mara", "", vec![], hints, -1));
-    let image = fixture.dir.join("images").join(format!("{id}.png"));
+    let image = image_of(&server, id);
+    assert_eq!(image.parent(), Some(fixture.dir.join("images").as_path()));
     assert_eq!(fixture.next("notification_popup")["image"], image.display().to_string());
     assert!(image.exists());
+    // New pixels get a path of their own, so the UI doesn't show the old ones.
+    let hints = HashMap::from([("image-data", Variant::from(zbus::wire::Structure::from(pixels.clone())))]);
+    app.notify(("Chat", id, "", "Mara", "", vec![], hints, -1));
+    fixture.next("notification_popup");
+    let replaced = image_of(&server, id);
+    assert!(replaced != image && replaced.exists() && !image.exists());
     server.dismiss(id);
-    assert!(!image.exists());
+    assert!(!replaced.exists());
 
     let hints = HashMap::from([("image-path", Variant::from("file:///tmp/mara.png"))]);
     app.notify(("Chat", 0, "", "Mara", "", vec![], hints, -1));
@@ -346,7 +363,7 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
     // Replaced by one without a picture, its picture goes.
     let hints = HashMap::from([("image-data", Variant::from(zbus::wire::Structure::from(pixels.clone())))]);
     let id = app.notify(("Chat", 0, "", "Mara", "", vec![], hints, -1));
-    let image = fixture.dir.join("images").join(format!("{id}.png"));
+    let image = image_of(&server, id);
     assert!(image.exists());
     app.notify(("Chat", id, "", "Mara", "", vec![], HashMap::new(), -1));
     assert!(!image.exists());
@@ -359,12 +376,35 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
         ])
     };
     let first = app.notify(("Volume", 0, "", "50%", "", vec![], transient(), -1));
-    let image = fixture.dir.join("images").join(format!("{first}.png"));
+    let image = image_of(&server, first);
     assert!(image.exists());
     for _ in 0..MAX_TRANSIENT {
         app.notify(("Volume", 0, "", "60%", "", vec![], transient(), -1));
     }
     assert!(!image.exists());
+}
+
+/// The picture novad has for notification `id`.
+fn image_of(server: &Notifications, id: u32) -> PathBuf {
+    let state = lock(&server.shared.state);
+    PathBuf::from(find(&state, id).and_then(|kept| kept.image.clone()).expect("a picture"))
+}
+
+#[test]
+fn pictures_no_notification_keeps_are_deleted_at_start() {
+    let fixture = Fixture::new("stray");
+    let images = fixture.dir.join("images");
+    std::fs::create_dir_all(&images).unwrap();
+    let kept = images.join("2-1.png");
+    let stray = images.join("1-1.png");
+    std::fs::write(&kept, "png").unwrap();
+    std::fs::write(&stray, "png").unwrap();
+    let now = jiff::Timestamp::now().as_second();
+    let item =
+        json!({"id": 2, "app": "Chat", "summary": "hi", "body": "", "image": kept, "urgency": "normal", "time": now});
+    std::fs::write(fixture.dir.join("notifications.json"), json!({"next_id": 2, "items": [item]}).to_string()).unwrap();
+    let _server = fixture.server();
+    assert!(kept.exists() && !stray.exists());
 }
 
 #[test]

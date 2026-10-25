@@ -131,22 +131,30 @@ Item {
         }
     }
 
-    // The list as it is now (a notifications event's items): a pop-up
-    // whose notification was in it and has left it (dismissed in quick
-    // settings, closed by its app) goes too. Transient ones are never in it.
+    // The notifications open now (a notifications event's items and
+    // transient ones): a pop-up shows its notification as it is there
+    // (its app may have quit), and goes once it has left (dismissed in
+    // quick settings, closed by its app).
     function sync(items: var) {
-        const ids = items.map(item => item.id);
+        const byId = new Map(items.map(item => [item.id, item]));
         for (const entry of shownEntries()) {
-            if (ids.includes(entry.notification.id))
+            const now = byId.get(entry.notification.id);
+            if (now) {
                 entry.listed = true;
-            else if (entry.listed)
+                entry.notification = now;
+                entryChanged(entry.key);
+            } else if (entry.listed) {
                 remove(entry.key, "away");
+            }
         }
         for (const entry of waiting) {
-            if (ids.includes(entry.notification.id))
+            const now = byId.get(entry.notification.id);
+            if (now) {
                 entry.listed = true;
+                entry.notification = now;
+            }
         }
-        waiting = waiting.filter(entry => !entry.listed || ids.includes(entry.notification.id));
+        waiting = waiting.filter(entry => !entry.listed || byId.has(entry.notification.id));
     }
 
     // Every pop-up folds away (quick settings opened, with the list).

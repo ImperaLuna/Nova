@@ -30,6 +30,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::poll_fn;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::Poll;
 use std::time::Duration;
@@ -106,6 +107,8 @@ struct Shared {
     sources: Sources,
     /// The server's connection, once it's up, to tell apps about clicks.
     connection: Mutex<Option<Connection>>,
+    /// The next picture's revision (`image::save`).
+    revision: AtomicU64,
     stop: Stop,
 }
 
@@ -162,6 +165,8 @@ impl Notifications {
             logger,
             sources,
             connection: Mutex::new(None),
+            // From the clock, so a revision is never one an earlier run used.
+            revision: AtomicU64::new(jiff::Timestamp::now().as_millisecond().unsigned_abs()),
             stop: Stop::default(),
         });
         let (ready, started) = std::sync::mpsc::channel();
@@ -421,9 +426,9 @@ impl Shared {
         // Older senders use the spec's earlier names.
         for key in ["image-data", "image_data", "icon_data"] {
             let Some(raw) = hints.remove(key) else { continue };
-            let saved = image::Raw::try_from(raw)
-                .map_err(|e| format!("not a picture: {e}"))
-                .and_then(|raw| image::save(raw, &self.sources.images, id));
+            let saved = image::Raw::try_from(raw).map_err(|e| format!("not a picture: {e}")).and_then(|raw| {
+                image::save(raw, &self.sources.images, id, self.revision.fetch_add(1, Ordering::Relaxed))
+            });
             match saved {
                 Ok(path) => return Some(path.display().to_string()),
                 Err(e) => self.logger.log(LogLevel::Debug, LOG_SOURCE, &format!("skipped {key}: {e}")),
@@ -465,9 +470,10 @@ impl Shared {
 
     /// Deletes the picture novad wrote for `notification`, if it wrote one.
     fn forget_image(&self, notification: &Notification) {
-        let saved = image::saved(&self.sources.images, notification.id);
-        if notification.image.as_deref().is_some_and(|image| Path::new(image) == saved) {
-            let _ = std::fs::remove_file(saved);
+        if let Some(image) = notification.image.as_deref().map(Path::new)
+            && image::is_saved(&self.sources.images, notification.id, image)
+        {
+            let _ = std::fs::remove_file(image);
         }
     }
 
@@ -517,7 +523,8 @@ impl Shared {
 }
 
 /// The saved list, or an empty one. Kept notifications' apps are gone, as
-/// are pictures that went with novad's last run.
+/// are pictures that went with novad's last run; pictures of ones not kept
+/// (too old, or transient) are deleted.
 fn load(sources: &Sources, logger: &Logger) -> Saved {
     let mut saved: Saved = match std::fs::read_to_string(&sources.state_file) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
@@ -537,6 +544,13 @@ fn load(sources: &Sources, logger: &Logger) -> Saved {
             item.image = None;
         }
     }
+    let kept: HashSet<&Path> = saved.items.iter().filter_map(|item| item.image.as_deref()).map(Path::new).collect();
+    for entry in std::fs::read_dir(&sources.images).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if !kept.contains(path.as_path()) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
     saved
 }
 
@@ -546,6 +560,7 @@ fn list(state: &State) -> NotificationList {
         do_not_disturb: state.saved.do_not_disturb,
         muted: state.saved.muted.clone(),
         apps: state.saved.apps.clone(),
+        transient: state.transient.iter().cloned().collect(),
     }
 }
 
