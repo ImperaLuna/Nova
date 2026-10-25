@@ -11,6 +11,9 @@
       url = "github:rustsec/advisory-db";
       flake = false;
     };
+    # Builds the Rust dependencies as their own derivation, so a change to
+    # Nova's code reuses them instead of compiling every crate again.
+    crane.url = "github:ipetkov/crane";
     # The newest stable Quickshell release, for the "Newest Quickshell"
     # workflow, which overrides this with the newest tag it finds; the tag
     # here is only a default. Not the Quickshell Nova ships: that is nixpkgs'.
@@ -25,6 +28,7 @@
       self,
       nixpkgs,
       advisory-db,
+      crane,
       quickshell-newest,
     }:
     let
@@ -91,12 +95,30 @@
 
       inherit ((builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package) version;
 
+      # The Rust workspace on pkgs, built with crane: cargoArtifacts holds the
+      # compiled dependencies and only rebuilds when Cargo.lock changes.
+      rustFor =
+        pkgs:
+        let
+          craneLib = crane.mkLib pkgs;
+          common = {
+            pname = "nova";
+            inherit version;
+            src = rustSrc pkgs.lib;
+            strictDeps = true;
+          };
+        in
+        {
+          inherit craneLib common;
+          cargoArtifacts = craneLib.buildDepsOnly common;
+        };
+
       # share/nova: what nova finds next to its binary (nova-paths).
       installShare = ''
         mkdir -p $out/share/nova
         cp -r features $out/share/nova/features
         cp -r themes $out/share/nova/themes
-        cp -r ${./ui} $out/share/nova/ui
+        cp -r --no-preserve=mode ${./ui} $out/share/nova/ui
       '';
 
       # The nova binary (CLI and daemon), feature manifests, the QML UI and
@@ -105,29 +127,33 @@
         pkgs:
         let
           nova-ui = pkgs.callPackage ./packaging/nix/nova-ui.nix { };
+          inherit (rustFor pkgs) craneLib common cargoArtifacts;
         in
-        {
+        rec {
           inherit nova-ui;
-          nova = pkgs.rustPlatform.buildRustPackage {
-            pname = "nova";
-            inherit version;
-            src = rustSrc pkgs.lib;
-            cargoLock.lockFile = ./Cargo.lock;
-            # setpriv, for the launcher test's app that dies with its parent.
-            nativeCheckInputs = [ pkgs.util-linux ];
-            # Compiled in, so `nova` finds its UI with or without systemd.
-            env.NOVA_UI_LAUNCHER = pkgs.lib.getExe nova-ui;
-            postInstall = installShare + ''
-              install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
-              substituteInPlace $out/lib/systemd/user/nova.service \
-                --replace-fail @nova@ $out/bin/nova
-            '';
-            meta = {
-              description = "Nova desktop shell";
-              license = pkgs.lib.licenses.mit;
-              mainProgram = "nova";
-            };
-          };
+          # Compiled in, so `nova` finds its UI with or without systemd. The
+          # tests check builds with it too, so it reuses this build's crates.
+          novaEnv.NOVA_UI_LAUNCHER = pkgs.lib.getExe nova-ui;
+          # The `tests` check runs `cargo test`, so the VM tests, which need
+          # this package, don't wait for it.
+          nova = craneLib.buildPackage (
+            common
+            // {
+              inherit cargoArtifacts;
+              env = novaEnv;
+              doCheck = false;
+              postInstall = installShare + ''
+                install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
+                substituteInPlace $out/lib/systemd/user/nova.service \
+                  --replace-fail @nova@ $out/bin/nova
+              '';
+              meta = {
+                description = "Nova desktop shell";
+                license = pkgs.lib.licenses.mit;
+                mainProgram = "nova";
+              };
+            }
+          );
         };
 
       # The release archive install.sh fetches on other distros:
@@ -138,14 +164,15 @@
       distFor =
         pkgs:
         let
-          nova = pkgs.pkgsStatic.rustPlatform.buildRustPackage {
-            pname = "nova";
-            inherit version;
-            src = rustSrc pkgs.lib;
-            cargoLock.lockFile = ./Cargo.lock;
-            doCheck = false;
-            postInstall = installShare;
-          };
+          inherit (rustFor pkgs.pkgsStatic) craneLib common;
+          nova = craneLib.buildPackage (
+            common
+            // {
+              cargoArtifacts = craneLib.buildDepsOnly (common // { doCheck = false; });
+              doCheck = false;
+              postInstall = installShare;
+            }
+          );
           name = "nova-${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux";
         in
         pkgs.runCommand "${name}-${version}" { } ''
@@ -231,14 +258,34 @@
           inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) nova;
         }
         // {
-          # `nix build` runs `cargo test` as part of the package.
           build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
+          tests =
+            let
+              inherit (rustFor pkgs) craneLib common cargoArtifacts;
+            in
+            craneLib.cargoTest (
+              common
+              // {
+                inherit cargoArtifacts;
+                env = (novaFor pkgs).novaEnv;
+                # setpriv, for the launcher test's app that dies with its parent.
+                nativeBuildInputs = [ pkgs.util-linux ];
+              }
+            );
           # The release archive, so it can't break unnoticed before a tag.
           inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) dist;
 
-          clippy = cargoCheck "nova-clippy" [ pkgs.clippy ] ''
-            cargo clippy --workspace --all-targets --offline -- -D warnings
-          '';
+          clippy =
+            let
+              inherit (rustFor pkgs) craneLib common cargoArtifacts;
+            in
+            craneLib.cargoClippy (
+              common
+              // {
+                inherit cargoArtifacts;
+                cargoClippyExtraArgs = "--workspace --all-targets -- -D warnings";
+              }
+            );
 
           # Advisories, licenses, duplicate crates and sources (deny.toml).
           # cargo-deny reads the advisory database from a git clone in the
