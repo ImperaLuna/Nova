@@ -80,14 +80,14 @@ Scope {
         active: LauncherService.ready
         component: Launcher {
             id: deck
-            screenWidth: root.screen.width
-            screenHeight: root.screen.height
+            screenWidth: root.output.width
+            screenHeight: root.output.height
             apps: LauncherService.current.apps
             pinned: LauncherService.current.pinned
             recent: LauncherService.current.recent
             iconSource: icon => LauncherService.iconSource(icon)
             onSearchRequested: query => LauncherService.search(query, found => deck.showMatches(query, found))
-            onLaunchRequested: (id, newWindow) => LauncherService.launch(id, root.screen.name, newWindow, error => deck.launched(error))
+            onLaunchRequested: (id, newWindow) => LauncherService.launch(id, root.output.name, newWindow, error => deck.launched(error))
             onPinRequested: (id, pinned) => LauncherService.pin(id, pinned)
         }
     }
