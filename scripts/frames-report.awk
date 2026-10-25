@@ -8,15 +8,18 @@
 # each toggle); without one, the whole log is one burst. A screen's first
 # frame in a burst ends idle time, so its gap isn't frame time.
 #
-# A screen animated in a burst when at least one of its later frames came on
-# time. Then every late gap in that burst counts, however long, so a stall
-# inside an animation still shows. A burst with no frame on time is lone
-# redraws, not an animation: a screen redrawing once or twice while another
-# one animates, or a stage a fullscreen window hides, which the compositor
-# then gives a frame only now and then. Those gaps aren't stutter and aren't
-# counted; the burst shows in the "idle" column, and a screen that never
-# animated is listed apart as idle or hidden.
-#
+# A screen's animation in a burst starts with its first frame on time.
+# From there every late gap counts, however long, so a stall inside an
+# animation still shows. Late frames before it are lone redraws: the strip
+# redrawing once at the toggle and again when a panel elsewhere closes back
+# into its pill, a screen redrawing while another one animates, or a stage a
+# fullscreen window hides, which the compositor then gives a frame only now
+# and then. Those gaps aren't stutter and aren't counted; the longest one
+# before an animation shows as "start ms", so a stall right as an animation
+# begins can still be seen. A burst with no frame on time is all lone
+# redraws and shows in the "idle" column, and a screen that never animated
+# is listed apart as idle or hidden.
+
 # A surface is a screen's stage ("DP-1") or one of its PanelSurfaces
 # ("DP-1/right"), each reported on its own row; "screen" below means either.
 #
@@ -62,14 +65,19 @@ match($0, /nova-frame: screen=[^ ]+ dt=[0-9]+/) {
 		seen_mark[screen] = marks
 		next
 	}
-	burst_frames[screen]++
 	if (dt <= LATE * 1000 / hz[screen]) {
 		burst_on_time[screen]++
+	} else if (!burst_on_time[screen]) {
+		# Not animating yet: a lone redraw.
+		if (dt > burst_start[screen])
+			burst_start[screen] = dt
+		next
 	} else {
 		burst_dropped[screen]++
 		missed = int(dt * hz[screen] / 1000 + 0.5) - 1
 		burst_missed[screen] += missed > 1 ? missed : 1
 	}
+	burst_frames[screen]++
 	if (dt > burst_worst[screen])
 		burst_worst[screen] = dt
 }
@@ -86,10 +94,12 @@ function close_burst(s) {
 		missed_vblanks[s] += burst_missed[s]
 		if (burst_worst[s] > worst[s])
 			worst[s] = burst_worst[s]
+		if (burst_start[s] > start[s])
+			start[s] = burst_start[s]
 	} else {
 		idle[s]++
 	}
-	burst_frames[s] = burst_on_time[s] = burst_dropped[s] = burst_missed[s] = burst_worst[s] = 0
+	burst_frames[s] = burst_on_time[s] = burst_dropped[s] = burst_missed[s] = burst_worst[s] = burst_start[s] = 0
 }
 
 END {
@@ -107,7 +117,7 @@ END {
 		print "frames: nothing animated, only lone redraws or hidden screens"
 		exit 2
 	}
-	printf "%-14s %8s %7s %5s %7s %8s %8s %14s %8s\n", "surface", "hz", "bursts", "idle", "frames", "dropped", "dropped%", "missed vblanks", "worst ms"
+	printf "%-14s %8s %7s %5s %7s %8s %8s %14s %8s %8s\n", "surface", "hz", "bursts", "idle", "frames", "dropped", "dropped%", "missed vblanks", "worst ms", "start ms"
 	for (i = 1; i <= screens; i++) {
 		s = order[i]
 		if (!frames[s]) {
@@ -116,7 +126,7 @@ END {
 			continue
 		}
 		pct = 100 * dropped[s] / frames[s]
-		printf "%-14s %8.3f %7d %5d %7d %8d %7.1f%% %14d %8d\n", s, hz[s], bursts[s], idle[s], frames[s], dropped[s], pct, missed_vblanks[s], worst[s]
+		printf "%-14s %8.3f %7d %5d %7d %8d %7.1f%% %14d %8d %8d\n", s, hz[s], bursts[s], idle[s], frames[s], dropped[s], pct, missed_vblanks[s], worst[s], start[s]
 		if (budget != "" && pct > budget + 0)
 			warnings = warnings sprintf("warning: %s dropped %.1f%% of its frames, more than the %s%% budget\n", s, pct, budget)
 	}
