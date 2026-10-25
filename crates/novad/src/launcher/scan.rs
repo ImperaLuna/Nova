@@ -1,6 +1,6 @@
 //! Where desktop entries live and reading them all: `applications/` in each
-//! XDG data folder (the user's first), plus the folders Flatpak and Nix
-//! install into, which a systemd user service's `XDG_DATA_DIRS` often lacks.
+//! XDG data folder (the user's first), plus the folders packages install
+//! into, which a systemd user service's `XDG_DATA_DIRS` often lacks.
 //! The first folder with an id wins, as the spec says, so the user's own
 //! copy of an entry replaces the system's.
 
@@ -22,20 +22,14 @@ const MAX_ENTRY_BYTES: u64 = 1024 * 1024;
 pub fn data_dirs() -> Vec<PathBuf> {
     let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
     let home = var("HOME").map(PathBuf::from);
-    let user = var("USER");
     let mut dirs: Vec<PathBuf> = Vec::new();
     dirs.extend(
         var("XDG_DATA_HOME").map(PathBuf::from).or_else(|| home.as_ref().map(|home| home.join(".local/share"))),
     );
     let system = var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
     dirs.extend(std::env::split_paths(&system));
-    // Where Flatpak and Nix put apps, last so the session's own order wins.
-    dirs.extend(
-        home.iter().flat_map(|home| [home.join(".local/share/flatpak/exports/share"), home.join(".nix-profile/share")]),
-    );
-    dirs.push("/var/lib/flatpak/exports/share".into());
-    dirs.extend(user.map(|user| Path::new("/etc/profiles/per-user").join(user).join("share")));
-    dirs.extend(["/nix/var/nix/profiles/default/share".into(), "/run/current-system/sw/share".into()]);
+    // Where packages install, last so the session's own order wins.
+    dirs.extend(crate::package_prefixes().into_iter().map(|prefix| prefix.join("share")));
     let mut seen = BTreeSet::new();
     dirs.retain(|dir| dir.is_absolute() && seen.insert(dir.clone()));
     dirs
