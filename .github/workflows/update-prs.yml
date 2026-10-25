@@ -1,0 +1,122 @@
+name: Update PRs
+
+# Every push to main merges main into each open PR branch that is behind it,
+# drafts too, so no PR waits on main with a stale branch or a conflict nobody
+# has seen. A clean merge is pushed and CI started on it: pushes made with
+# GITHUB_TOKEN don't start other workflows. A conflicting merge isn't pushed;
+# a PR comment names the conflicting files instead, once per PR head, so the
+# PR's owner hears about it. Fork PRs are skipped: their branches aren't ours.
+#
+# A merge that brings in a change to .github/workflows can't be pushed with
+# GITHUB_TOKEN (it lacks the `workflows` permission); the PR gets a comment
+# asking for the merge by hand instead.
+#
+# Runs no repo code, on a GitHub-hosted machine, so it doesn't queue behind CI
+# on the self-hosted runner.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer main supersedes the run for the older one.
+concurrency:
+  group: update-prs
+  cancel-in-progress: true
+
+jobs:
+  update:
+    name: merge main into PRs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: merge main into each PR branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          git() {
+            command git -c core.hooksPath=/dev/null -c http.extraheader="AUTHORIZATION: basic $auth" \
+              -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' "$@"
+          }
+          # Also when started by hand from another branch.
+          main=$(git rev-parse "refs/remotes/origin/$BASE")
+
+          # Comments once per PR head: a branch nobody has pushed to since
+          # isn't told again on every push to main.
+          comment() {
+            local number=$1 head=$2 text=$3
+            local marker="<!-- update-prs head=$head -->"
+            if gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$number/comments" --jq '.[].body' |
+              grep -qF -- "$marker"; then
+              echo "#$number was already told about $head."
+              return
+            fi
+            gh pr comment "$number" --repo "$GITHUB_REPOSITORY" --body "$text
+
+          $marker"
+          }
+
+          failed=0
+          mapfile -t prs < <(gh pr list --repo "$GITHUB_REPOSITORY" --base "$BASE" --state open --limit 100 \
+            --json number,headRefName,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository | not) | "\(.number) \(.headRefName)"')
+
+          for pr in "${prs[@]}"; do
+            read -r number branch <<<"$pr"
+            git fetch -q origin "refs/heads/$branch"
+            head=$(git rev-parse FETCH_HEAD)
+            if git merge-base --is-ancestor "$main" "$head"; then
+              echo "#$number ($branch) already has $BASE."
+              continue
+            fi
+            git checkout -q --detach "$head"
+            if git merge -q --no-edit -m "Merge $BASE into $branch" "$main"; then
+              if out=$(git push -q origin "HEAD:refs/heads/$branch" 2>&1); then
+                echo "#$number ($branch): merged $BASE, starting CI."
+                # A failed dispatch doesn't stop the other PRs; the run goes
+                # red so the branch without CI gets noticed.
+                if ! gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"; then
+                  echo "::error::#$number ($branch): couldn't start CI; start it by hand (Actions > CI)."
+                  failed=1
+                fi
+                continue
+              fi
+              # Not a fast-forward: someone pushed meanwhile, and that push
+              # starts its own CI.
+              if [[ $(git ls-remote origin "refs/heads/$branch" | cut -f1) != "$head" ]]; then
+                echo "::warning::#$number ($branch) moved during the update; skipped."
+                continue
+              fi
+              echo "::warning::#$number ($branch): push refused: $out"
+              comment "$number" "$head" "\`$BASE\` moved to $main and merges cleanly into this branch, but the Update PRs workflow couldn't push the merge (usually because $BASE changed a workflow file). Merge \`$BASE\` into the branch by hand.
+
+          \`\`\`
+          $out
+          \`\`\`"
+            else
+              # shellcheck disable=SC2016 # literal backticks, for Markdown
+              files=$(git diff --name-only --diff-filter=U | sed 's/.*/- `&`/')
+              git merge --abort
+              echo "::warning::#$number ($branch) conflicts with $BASE."
+              comment "$number" "$head" "\`$BASE\` moved to $main and no longer merges cleanly into this branch. Conflicting files:
+
+          $files
+
+          Merge \`$BASE\` into the branch and resolve them."
+            fi
+          done
+          exit "$failed"
