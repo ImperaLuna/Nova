@@ -276,16 +276,18 @@ QtObject {
     readonly property int logoSize: 36
     readonly property int logoMark: 24
     readonly property int fontSizeGreeting: 22
+    // The greeting shrinks to fit beside the pill's buttons, down to this;
+    // a name still too long is cut short.
+    readonly property int fontSizeGreetingMin: 16
     // Toggle tiles, two per row, with an arrow to a page on some.
     readonly property int tileHeight: 58
     readonly property int tileArrowWidth: 22
     readonly property real tileSubOpacity: 0.72
-    // Thick sliders: the fill (never narrower than its share sliderMinFill,
-    // so the icon stays on it), a short upright knob inside its end, and the
+    // Thick sliders: the fill (at 0 just wide enough to hold the icon, its
+    // knob right of it), a short upright knob inside its end, and the
     // arrow button at the slider's end that opens a page.
     readonly property int sliderHeight: 34
     readonly property color sliderFill: Qt.rgba(fg.r, fg.g, fg.b, 0.20)
-    readonly property real sliderMinFill: 0.12
     readonly property int sliderKnobWidth: 3
     readonly property int sliderKnobInset: 6
     readonly property int sliderKnobPad: 9

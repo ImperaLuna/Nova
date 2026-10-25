@@ -525,8 +525,9 @@ pub struct PowerOption {
 pub struct Host {
     /// The machine's host name.
     pub host: String,
-    /// What to call the user: the first name from their account's full
-    /// name, else their login name.
+    /// What to call the user: config.toml's `[quick-settings] name` ("" for
+    /// none), else the first name from their account's full name, else
+    /// their login name.
     pub user: String,
     /// When the machine booted, in seconds since the Unix epoch.
     pub booted_at: i64,
@@ -585,10 +586,11 @@ pub struct ResourceSample {
 /// One app's processes together.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppUsage {
-    /// The program's name, from its file (`.firefox-wrapped` is `firefox`).
+    /// The program's name, from its file (`.firefox-wrapped` is `firefox`);
+    /// `Nova` for novad and its UI.
     pub name: String,
-    /// What `end_app` takes: the program's path, or `comm:<name>` for a
-    /// program novad can't see.
+    /// What `end_app` takes: the program's path, `comm:<name>` for a
+    /// program novad can't see, or `nova` for Nova.
     pub key: String,
     /// How many processes run it.
     pub processes: u32,

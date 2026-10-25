@@ -1,7 +1,8 @@
 //! The machine and its user, for the quick settings header (feature
 //! `quick-settings`): the host name, when it booted, the distribution from
-//! os-release, and what to call the user. All of it comes from files and
-//! the user database, read when a client subscribes.
+//! os-release, and what to call the user. All of it comes from files, the
+//! user database and the config, read when a client subscribes and again
+//! when the config's name changes.
 
 use nova_protocol::{Host, OperatingSystem};
 
@@ -14,12 +15,13 @@ const STAT: &str = "/proc/stat";
 const DEFAULT_OS_ID: &str = "linux";
 const DEFAULT_OS_NAME: &str = "Linux";
 
-/// What the header shows now.
-pub fn read() -> Host {
+/// What the header shows now. `name` is what to call the user when the
+/// config says (`[quick-settings] name`), else their account's first name.
+pub fn read(name: Option<&str>) -> Host {
     let os_release = OS_RELEASE.iter().find_map(|path| std::fs::read_to_string(path).ok()).unwrap_or_default();
     Host {
         host: std::fs::read_to_string(HOSTNAME).map(|name| name.trim().to_string()).unwrap_or_default(),
-        user: user_name(),
+        user: name.map_or_else(user_name, |name| name.trim().to_string()),
         booted_at: std::fs::read_to_string(STAT).ok().and_then(|stat| boot_time(&stat)).unwrap_or(0),
         os: operating_system(&os_release),
     }
@@ -147,9 +149,10 @@ mod tests {
 
     #[test]
     fn reads_this_machine() {
-        let host = read();
+        let host = read(None);
         assert!(host.booted_at > 0, "/proc/stat has btime");
         assert!(!host.user.is_empty(), "every user has a name or a login");
+        assert_eq!(read(Some(" Katov ")).user, "Katov", "the config's name wins");
         assert!(!host.os.id.is_empty());
         if std::path::Path::new(HOSTNAME).exists() {
             assert!(!host.host.is_empty());

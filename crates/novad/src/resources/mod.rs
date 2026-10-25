@@ -37,8 +37,9 @@ const FIRST_LOOK: Duration = Duration::from_millis(250);
 const HISTORY_INTERVAL: Duration = Duration::from_secs(RESOURCE_HISTORY_INTERVAL_SECS);
 /// How far back the history goes.
 const HISTORY_SPAN: Duration = Duration::from_secs(3 * 60);
-/// How many apps a look lists.
-const TOP_APPS: usize = 6;
+/// How many apps a look lists (and Nova, wherever it ranks): enough to
+/// scroll through, few enough to send every two seconds.
+const TOP_APPS: usize = 25;
 
 /// Where readings come from: the real `/proc` and `/sys`, or recorded
 /// copies in tests.

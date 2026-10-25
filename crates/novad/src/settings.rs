@@ -11,9 +11,9 @@ use crate::config::{self, Config};
 use crate::hub::Hub;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, resources, theme};
+use crate::{ai_usage, features, host, resources, theme};
 use nova_features::{Manifest, Selection};
-use nova_protocol::{Event, FeatureState, FeatureStatus, Theme};
+use nova_protocol::{Event, FeatureState, FeatureStatus, Host, Theme};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -101,6 +101,9 @@ impl Settings {
         if previous.as_deref().is_none_or(|previous| previous.theme != theme) {
             hub.publish(&Event::Theme(theme.clone()));
         }
+        if previous.as_deref().is_some_and(|previous| previous.config.quick_settings != config.quick_settings) {
+            hub.publish(&Event::Host(host::read(config.quick_settings.name.as_deref())));
+        }
 
         // Started before the features are published, so the UI that loads
         // the feature on that event gets its numbers.
@@ -150,6 +153,14 @@ impl Settings {
         }
 
         Self { config, selection, features, theme, ai_usage, resources }
+    }
+}
+
+impl Settings {
+    /// The quick settings header's facts, with the config's name for the
+    /// user if it has one.
+    pub fn host(&self) -> Host {
+        host::read(self.config.quick_settings.name.as_deref())
     }
 }
 

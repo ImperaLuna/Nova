@@ -4,7 +4,8 @@ import "../theme/icons.js" as Icons
 import "../volume"
 
 // A thick slider: a fill with a short knob inside its end, the icon, a
-// label and the percent on top. Drag or click to set it. The icon is a
+// label and the percent on top. At 0 the fill only holds the icon, with the
+// knob right of it, so the knob never crosses the icon. Drag or click to set it. The icon is a
 // volume glyph (VolumeIcon) or a line icon; clicking it sends
 // `iconClicked` (mute). With `opens`, an arrow button at its end opens a
 // page.
@@ -33,7 +34,9 @@ Item {
     // While dragged, where the pointer put it: the value set comes back a
     // moment later, and showing that would jump behind the pointer.
     readonly property real current: drag.pressed ? drag.value : value
-    readonly property real shown: Math.max(Tokens.sliderMinFill, Math.min(1, current))
+    readonly property real shown: Math.max(0, Math.min(1, current))
+    // The fill at 0: the icon, then the knob.
+    readonly property real rest: iconBox.x + iconBox.width + Tokens.sliderKnobInset + Tokens.sliderKnobWidth + Tokens.sliderKnobInset
 
     Rectangle {
         id: background
@@ -43,7 +46,7 @@ Item {
         clip: true
 
         Rectangle {
-            width: slider.track * slider.shown
+            width: slider.rest + (slider.track - slider.rest) * slider.shown
             height: parent.height
             radius: height / 2
             color: slider.fill
@@ -68,7 +71,7 @@ Item {
         preventStealing: true
         property real value: 0
         function set(mouseX: real) {
-            const next = Math.round(Math.max(0, Math.min(1, mouseX / width)) * 100) / 100;
+            const next = Math.round(Math.max(0, Math.min(1, (mouseX - slider.rest) / (width - slider.rest))) * 100) / 100;
             if (pressed && next === value)
                 return;
             value = next;
@@ -83,6 +86,7 @@ Item {
 
     Item {
         id: iconBox
+        objectName: "icon"
         x: Tokens.pad
         anchors.verticalCenter: parent.verticalCenter
         width: Tokens.iconSize
@@ -108,7 +112,7 @@ Item {
 
     Text {
         anchors.verticalCenter: parent.verticalCenter
-        x: iconBox.x + iconBox.width + Tokens.gap
+        x: slider.rest
         width: number.x - x - Tokens.gap
         elide: Text.ElideRight
         font.family: Tokens.fontSans

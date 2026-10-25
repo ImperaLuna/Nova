@@ -9,6 +9,9 @@
 //! [ai-usage]
 //! claude-usage-endpoint = true
 //! codex-usage-endpoint = true
+//!
+//! [quick-settings]
+//! name = "Luna"
 //! ```
 
 use crate::theme::ThemeChoice;
@@ -22,6 +25,17 @@ pub struct Config {
     pub theme: ThemeChoice,
     #[serde(default, rename = "ai-usage")]
     pub ai_usage: AiUsageConfig,
+    #[serde(default, rename = "quick-settings")]
+    pub quick_settings: QuickSettingsConfig,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct QuickSettingsConfig {
+    /// What the greeting calls the user, instead of the first name from
+    /// their account; "" for no name.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -60,5 +74,13 @@ mod tests {
         assert!(config.ai_usage.claude_usage_endpoint && !config.ai_usage.codex_usage_endpoint);
         let config: Config = toml::from_str("[ai-usage]\ncodex-usage-endpoint = true").unwrap();
         assert!(config.ai_usage.codex_usage_endpoint);
+    }
+
+    #[test]
+    fn the_greeting_name_is_the_accounts_unless_set() {
+        let config: Config = toml::from_str("").unwrap();
+        assert_eq!(config.quick_settings.name, None);
+        let config: Config = toml::from_str("[quick-settings]\nname = \"Katov\"").unwrap();
+        assert_eq!(config.quick_settings.name.as_deref(), Some("Katov"));
     }
 }

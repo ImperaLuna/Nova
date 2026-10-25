@@ -1391,6 +1391,9 @@ fn subscribing_to_host_sends_the_machine_and_its_user() {
     assert!(host["booted_at"].as_i64().is_some_and(|booted| booted > 0));
     assert!(host["user"].as_str().is_some_and(|user| !user.is_empty()));
     assert!(host["os"]["id"].is_string());
+
+    std::fs::write(novad.config_file(), "[quick-settings]\nname = \"Katov\"\n").unwrap();
+    assert_eq!(client.next_event("host")["user"], "Katov", "the config's name applies live");
 }
 
 /// Resources come only while a connection watches, and stop once the last
@@ -1405,6 +1408,8 @@ fn resources_are_sent_while_watched() {
     let reading = listener.next_event("resources");
     assert!(reading["memory_total"].as_u64().is_some_and(|total| total > 0));
     assert!(reading["apps"].as_array().is_some_and(|apps| !apps.is_empty()));
+    let nova = reading["apps"].as_array().unwrap().iter().find(|app| app["key"] == "nova");
+    assert!(nova.is_some_and(|nova| nova["name"] == "Nova" && nova["protected"] == true), "Nova is listed: {reading}");
     assert!(reading["history"].is_array());
 
     drop(watcher);
@@ -1423,8 +1428,7 @@ fn resources_are_sent_while_watched() {
 fn ending_nova_or_a_missing_app_is_refused() {
     let novad = TestDaemon::start("end-app", None);
     let mut client = novad.connect();
-    let me = std::env::current_exe().unwrap().to_string_lossy().into_owned();
-    let reply = client.request(1, "end_app", Some(json!({"key": me})));
+    let reply = client.request(1, "end_app", Some(json!({"key": "nova"})));
     assert!(reply["error"].as_str().is_some_and(|error| error.contains("can't be ended")), "{reply}");
     let reply = client.request(2, "end_app", Some(json!({"key": "/nowhere/app"})));
     assert!(reply["error"].as_str().is_some_and(|error| error.contains("no app")), "{reply}");

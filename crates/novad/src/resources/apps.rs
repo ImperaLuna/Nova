@@ -11,9 +11,18 @@ use std::path::Path;
 /// Programs whose end would end the session, by name: no End for them.
 const SESSION_PROGRAMS: [&str; 4] = ["niri", "Hyprland", "sway", "systemd"];
 
-/// The key `end_app` takes for a process: its program's path, or its
-/// command name for a program novad can't see (another user's).
-pub fn key(process: &Process) -> String {
+/// Nova's own app: novad and the UI it runs, whatever programs they are
+/// (the UI is Quickshell).
+pub const NOVA_KEY: &str = "nova";
+const NOVA_NAME: &str = "Nova";
+
+/// The key `end_app` takes for a process: Nova's for novad and its
+/// children, else its program's path, or its command name for a program
+/// novad can't see (another user's).
+pub fn key(process: &Process, me: Me) -> String {
+    if me.owns(process) {
+        return NOVA_KEY.to_string();
+    }
     match &process.program {
         Some(program) => program.to_string_lossy().into_owned(),
         None => format!("comm:{}", process.name),
@@ -23,7 +32,10 @@ pub fn key(process: &Process) -> String {
 /// An app's name from its program's file: Nix wraps programs as
 /// `.firefox-wrapped`, and a program replaced by an update reads
 /// `firefox (deleted)`.
-pub fn name(process: &Process) -> String {
+pub fn name(process: &Process, me: Me) -> String {
+    if me.owns(process) {
+        return NOVA_NAME.to_string();
+    }
     let Some(file) = process.program.as_deref().and_then(Path::file_name) else { return process.name.clone() };
     let file = file.to_string_lossy();
     let file = file.strip_suffix(" (deleted)").unwrap_or(&file);
@@ -44,33 +56,38 @@ impl Me {
         Self { pid: std::process::id(), uid: unsafe { libc::getuid() } }
     }
 
+    /// Whether `process` is Nova: novad or a process it started (the UI).
+    fn owns(&self, process: &Process) -> bool {
+        process.pid == self.pid || process.ppid == self.pid
+    }
+
     /// Whether ending the app made of `members` isn't offered: one is Nova,
     /// it's the session's, or none are the user's.
     fn protects(&self, members: &[&Process]) -> bool {
-        members.iter().any(|process| process.pid == self.pid || process.ppid == self.pid)
-            || members.iter().any(|process| SESSION_PROGRAMS.contains(&name(process).as_str()))
+        members.iter().any(|process| self.owns(process))
+            || members.iter().any(|process| SESSION_PROGRAMS.contains(&name(process, *self).as_str()))
             || !members.iter().any(|process| process.uid == Some(self.uid))
     }
 }
 
-/// The `top` apps using the most memory, most first. `used` is each
-/// process's CPU ticks since the last look, `total_ticks` all CPUs' over it,
-/// `page` the page size. Kernel threads (no memory of their own) are left
-/// out.
+/// The `top` apps using the most memory, most first, and Nova wherever it
+/// ranks. `used` is each process's CPU ticks since the last look,
+/// `total_ticks` all CPUs' over it, `page` the page size. Kernel threads (no
+/// memory of their own) are left out.
 pub fn top(processes: &[Process], used: &[u64], total_ticks: u64, page: u64, me: Me, top: usize) -> Vec<AppUsage> {
     let mut groups: HashMap<String, (Vec<&Process>, u64)> = HashMap::new();
     for (process, ticks) in processes.iter().zip(used) {
         if process.resident_pages == 0 {
             continue;
         }
-        let group = groups.entry(key(process)).or_default();
+        let group = groups.entry(key(process, me)).or_default();
         group.0.push(process);
         group.1 += ticks;
     }
     let mut apps: Vec<AppUsage> = groups
         .into_iter()
         .map(|(key, (members, ticks))| AppUsage {
-            name: name(members[0]),
+            name: name(members[0], me),
             processes: u32::try_from(members.len()).unwrap_or(u32::MAX),
             cpu: super::usage::percent(ticks, total_ticks),
             memory: members.iter().map(|process| process.resident_pages * page).sum(),
@@ -79,19 +96,21 @@ pub fn top(processes: &[Process], used: &[u64], total_ticks: u64, page: u64, me:
         })
         .collect();
     apps.sort_by(|a, b| b.memory.cmp(&a.memory).then_with(|| a.name.cmp(&b.name)));
+    let nova = apps.iter().skip(top).position(|app| app.key == NOVA_KEY).map(|at| apps.remove(top + at));
     apps.truncate(top);
+    apps.extend(nova);
     apps
 }
 
 /// Asks every process of the app `key` that the user owns to close
 /// (SIGTERM). Refuses an app `top` would mark protected, or none running.
 pub fn end(processes: &[Process], key: &str, me: Me) -> Result<usize, String> {
-    let members: Vec<&Process> = processes.iter().filter(|process| self::key(process) == key).collect();
+    let members: Vec<&Process> = processes.iter().filter(|process| self::key(process, me) == key).collect();
     if members.is_empty() {
         return Err(format!("no app {key} is running"));
     }
     if me.protects(&members) {
-        return Err(format!("{} can't be ended from Nova", name(members[0])));
+        return Err(format!("{} can't be ended from Nova", name(members[0], me)));
     }
     let mut ended = 0;
     for process in members.iter().filter(|process| process.uid == Some(me.uid)) {
@@ -149,18 +168,37 @@ mod tests {
     fn nova_and_the_session_are_protected() {
         let processes = [
             process(100, 1, "/usr/bin/nova", 1000, 10),
-            process(101, 100, "/usr/bin/quickshell", 1000, 10),
+            process(101, 100, "/nix/store/x/bin/.quickshell-wrapped", 1000, 10),
             process(7, 1, "/usr/bin/niri", 1000, 10),
         ];
         let apps = top(&processes, &[0; 3], 1, 4096, ME, 6);
         assert!(apps.iter().all(|app| app.protected), "{apps:?}");
-        assert!(end(&processes, "/usr/bin/quickshell", ME).unwrap_err().contains("can't be ended"));
+        assert!(end(&processes, NOVA_KEY, ME).unwrap_err().contains("can't be ended"));
+        assert!(end(&processes, "/usr/bin/niri", ME).unwrap_err().contains("can't be ended"));
         assert!(end(&processes, "/usr/bin/gone", ME).unwrap_err().contains("no app"));
     }
 
     #[test]
+    fn novad_and_its_ui_are_one_app_called_nova_always_listed() {
+        let processes = [
+            process(100, 1, "/usr/bin/nova", 1000, 10),
+            process(101, 100, "/nix/store/x/bin/.quickshell-wrapped", 1000, 20),
+            process(2, 1, "/usr/bin/foot", 1000, 300),
+            process(3, 1, "/usr/bin/firefox", 1000, 400),
+            process(4, 1, "/nix/store/x/bin/.quickshell-wrapped", 1000, 50),
+        ];
+        let apps = top(&processes, &[0; 5], 1, 4096, ME, 2);
+        let names: Vec<&str> = apps.iter().map(|app| app.name.as_str()).collect();
+        assert_eq!(names, ["firefox", "foot", "Nova"], "Nova comes last when it doesn't rank");
+        assert_eq!((apps[2].key.as_str(), apps[2].processes, apps[2].memory), (NOVA_KEY, 2, 30 * 4096));
+        let apps = top(&processes, &[0; 5], 1, 4096, ME, 6);
+        let names: Vec<&str> = apps.iter().map(|app| app.name.as_str()).collect();
+        assert_eq!(names, ["firefox", "foot", "quickshell", "Nova"], "another Quickshell isn't Nova");
+    }
+
+    #[test]
     fn names_drop_nix_wrappers_and_deleted_programs() {
-        let named = |program: &str| name(&process(1, 1, program, 1000, 1));
+        let named = |program: &str| name(&process(1, 1, program, 1000, 1), ME);
         assert_eq!(named("/nix/store/x/bin/.Discord-wrapped"), "Discord");
         assert_eq!(named("/usr/lib/firefox/firefox (deleted)"), "firefox");
         assert_eq!(named(""), "comm");

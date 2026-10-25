@@ -122,6 +122,7 @@ Item {
         }
 
         Column {
+            id: appsBox
             width: parent.width
 
             Item {
@@ -154,115 +155,131 @@ Item {
                 }
             }
 
-            // By count, so a new reading every few seconds doesn't rebuild
-            // the rows (and drop a hover or an armed End).
-            Repeater {
-                model: page.apps.length
+            // The rest of the page, scrolling when there are more apps.
+            Flickable {
+                id: list
+                objectName: "apps"
+                width: parent.width
+                height: Math.max(0, page.height - appsBox.y - Tokens.chipHeight)
+                contentHeight: rows.height
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
 
-                Rectangle {
-                    id: row
-                    required property int index
-                    readonly property var app: page.apps[index] ?? {
-                        name: "",
-                        key: "",
-                        processes: 0,
-                        cpu: 0,
-                        memory: 0,
-                        protected: true
-                    }
-                    readonly property bool armed: page.armed !== "" && page.armed === app.key
-                    objectName: `app-${app.key}`
-                    width: parent.width
-                    height: Tokens.processRowHeight
-                    radius: Tokens.radiusSegment
-                    color: hover.containsMouse ? Tokens.surfaceRaised : "transparent"
+                Column {
+                    id: rows
+                    width: list.width
 
-                    MouseArea {
-                        id: hover
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        acceptedButtons: Qt.NoButton
-                    }
+                    // By count, so a new reading every few seconds doesn't rebuild
+                    // the rows (and drop a hover or an armed End).
+                    Repeater {
+                        model: page.apps.length
 
-                    Row {
-                        x: Tokens.pad
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: numbers.x - x - Tokens.gap
-                        spacing: Tokens.iconGap
-                        Text {
-                            id: appName
-                            width: Math.min(implicitWidth, parent.width - count.width - parent.spacing)
-                            elide: Text.ElideRight
-                            font.family: Tokens.fontSans
-                            font.pixelSize: Tokens.fontSizeSmall
-                            color: Tokens.fg
-                            textFormat: Text.PlainText
-                            text: row.app.name
-                        }
-                        Text {
-                            id: count
-                            visible: row.app.processes > 1
-                            anchors.baseline: appName.baseline
-                            font.family: Tokens.fontMono
-                            font.pixelSize: Tokens.fontSizeMicro
-                            color: Tokens.fgDim
-                            text: `×${row.app.processes}`
-                        }
-                    }
-                    Row {
-                        id: numbers
-                        anchors.right: parent.right
-                        anchors.rightMargin: Tokens.segmentPad
-                        anchors.verticalCenter: parent.verticalCenter
-                        Cell {
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: Tokens.fg
-                            text: `${row.app.cpu.toFixed(1)}%`
-                        }
-                        Cell {
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: Tokens.fgDim
-                            text: QuickSettings.bytes(row.app.memory)
-                        }
-                        // ✕ while hovered; a click arms it as "End", and a
-                        // second ends the app. Nova and the session have none.
-                        Item {
-                            width: Tokens.endButtonWidth
-                            height: Tokens.endButtonHeight
-                            Rectangle {
-                                anchors.right: parent.right
-                                width: row.armed ? parent.width : height
-                                height: parent.height
-                                radius: Tokens.radiusSegment
-                                visible: !row.app.protected && (hover.containsMouse || end.containsMouse || row.armed)
-                                color: row.armed ? Tokens.error : end.containsMouse ? Tokens.hover : "transparent"
+                        Rectangle {
+                            id: row
+                            required property int index
+                            readonly property var app: page.apps[index] ?? {
+                                name: "",
+                                key: "",
+                                processes: 0,
+                                cpu: 0,
+                                memory: 0,
+                                protected: true
+                            }
+                            readonly property bool armed: page.armed !== "" && page.armed === app.key
+                            objectName: `app-${app.key}`
+                            width: parent.width
+                            height: Tokens.processRowHeight
+                            radius: Tokens.radiusSegment
+                            color: hover.containsMouse ? Tokens.surfaceRaised : "transparent"
 
-                                LineIcon {
-                                    anchors.centerIn: parent
-                                    visible: !row.armed
-                                    path: Icons.CLOSE
-                                    size: Tokens.endIconSize
-                                    color: end.containsMouse ? Tokens.fg : Tokens.fgDim
+                            MouseArea {
+                                id: hover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.NoButton
+                            }
+
+                            Row {
+                                x: Tokens.pad
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: numbers.x - x - Tokens.gap
+                                spacing: Tokens.iconGap
+                                Text {
+                                    id: appName
+                                    width: Math.min(implicitWidth, parent.width - count.width - parent.spacing)
+                                    elide: Text.ElideRight
+                                    font.family: Tokens.fontSans
+                                    font.pixelSize: Tokens.fontSizeSmall
+                                    color: Tokens.fg
+                                    textFormat: Text.PlainText
+                                    text: row.app.name
                                 }
                                 Text {
-                                    anchors.centerIn: parent
-                                    visible: row.armed
-                                    font.family: Tokens.fontSans
+                                    id: count
+                                    visible: row.app.processes > 1
+                                    anchors.baseline: appName.baseline
+                                    font.family: Tokens.fontMono
                                     font.pixelSize: Tokens.fontSizeMicro
-                                    font.weight: Font.DemiBold
-                                    color: Tokens.onAccent
-                                    text: qsTr("End")
+                                    color: Tokens.fgDim
+                                    text: `×${row.app.processes}`
                                 }
-                                MouseArea {
-                                    id: end
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: {
-                                        if (row.armed) {
-                                            page.armed = "";
-                                            page.endRequested(row.app.key);
-                                        } else {
-                                            page.armed = row.app.key;
+                            }
+                            Row {
+                                id: numbers
+                                anchors.right: parent.right
+                                anchors.rightMargin: Tokens.segmentPad
+                                anchors.verticalCenter: parent.verticalCenter
+                                Cell {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: Tokens.fg
+                                    text: `${row.app.cpu.toFixed(1)}%`
+                                }
+                                Cell {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: Tokens.fgDim
+                                    text: QuickSettings.bytes(row.app.memory)
+                                }
+                                // ✕ while hovered; a click arms it as "End", and a
+                                // second ends the app. Nova and the session have none.
+                                Item {
+                                    width: Tokens.endButtonWidth
+                                    height: Tokens.endButtonHeight
+                                    Rectangle {
+                                        anchors.right: parent.right
+                                        width: row.armed ? parent.width : height
+                                        height: parent.height
+                                        radius: Tokens.radiusSegment
+                                        visible: !row.app.protected && (hover.containsMouse || end.containsMouse || row.armed)
+                                        color: row.armed ? Tokens.error : end.containsMouse ? Tokens.hover : "transparent"
+
+                                        LineIcon {
+                                            anchors.centerIn: parent
+                                            visible: !row.armed
+                                            path: Icons.CLOSE
+                                            size: Tokens.endIconSize
+                                            color: end.containsMouse ? Tokens.fg : Tokens.fgDim
+                                        }
+                                        Text {
+                                            anchors.centerIn: parent
+                                            visible: row.armed
+                                            font.family: Tokens.fontSans
+                                            font.pixelSize: Tokens.fontSizeMicro
+                                            font.weight: Font.DemiBold
+                                            color: Tokens.onAccent
+                                            text: qsTr("End")
+                                        }
+                                        MouseArea {
+                                            id: end
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            onClicked: {
+                                                if (row.armed) {
+                                                    page.armed = "";
+                                                    page.endRequested(row.app.key);
+                                                } else {
+                                                    page.armed = row.app.key;
+                                                }
+                                            }
                                         }
                                     }
                                 }

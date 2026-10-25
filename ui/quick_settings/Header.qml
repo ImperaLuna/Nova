@@ -47,19 +47,42 @@ Item {
         x: badge.width + Tokens.pad
         width: header.width - x
 
+        // The greeting at its size where it fits, else smaller, down to
+        // fontSizeGreetingMin; then the name is cut short.
+        TextMetrics {
+            id: hello
+            font.family: Tokens.fontDisplay
+            font.pixelSize: Tokens.fontSizeGreeting
+            text: greeting.text
+        }
+        TextMetrics {
+            id: called
+            font.family: Tokens.fontDisplay
+            font.pixelSize: Tokens.fontSizeGreeting
+            font.italic: true
+            text: header.name
+        }
+
         Row {
+            id: greetingRow
             width: parent.width
-            clip: true
+            readonly property real wide: hello.advanceWidth + called.advanceWidth
+            readonly property int size: wide <= width ? Tokens.fontSizeGreeting : Math.max(Tokens.fontSizeGreetingMin, Math.floor(Tokens.fontSizeGreeting * width / wide))
 
             Text {
+                id: greeting
+                objectName: "greeting"
                 font.family: Tokens.fontDisplay
-                font.pixelSize: Tokens.fontSizeGreeting
+                font.pixelSize: greetingRow.size
                 color: Tokens.fg
                 text: header.name === "" ? header.greeting : qsTr("%1, ").arg(header.greeting)
             }
             Text {
+                objectName: "name"
+                width: Math.min(implicitWidth, greetingRow.width - greeting.width)
+                elide: Text.ElideRight
                 font.family: Tokens.fontDisplay
-                font.pixelSize: Tokens.fontSizeGreeting
+                font.pixelSize: greetingRow.size
                 font.italic: true
                 color: Tokens.primary
                 textFormat: Text.PlainText

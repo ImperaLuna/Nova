@@ -397,7 +397,7 @@ impl<'a> Connection<'a> {
                         }
                         Topic::Lock => self.daemon.session_lock.send_state(&self.daemon.hub, self.id),
                         // Facts about the machine, there whatever the features.
-                        Topic::Host => self.send(Event::Host(crate::host::read())),
+                        Topic::Host => self.send(Event::Host(settings.host())),
                         // Sent while some connection watches them.
                         Topic::Resources => {}
                         // Only ever sent as `nova toggle` or `nova volume` asks.

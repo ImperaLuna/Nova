@@ -39,6 +39,11 @@ Item {
         }
 
         Component {
+            id: headerComponent
+            Header {}
+        }
+
+        Component {
             id: sliderComponent
             QsSlider {
                 width: 300
@@ -243,13 +248,48 @@ Item {
             waitForRendering(slider);
             spy.signalName = "moved";
             spy.target = slider;
-            mousePress(slider, 150, slider.height / 2);
-            mouseMove(slider, 240, slider.height / 2);
+            const at = value => slider.rest + value * (slider.track - slider.rest);
+            mousePress(slider, at(0.5), slider.height / 2);
+            mouseMove(slider, at(0.8), slider.height / 2);
             // The volume set hasn't come back yet: it still shows the drag.
             compare(slider.current, 0.8);
             compare(spy.signalArguments[spy.count - 1][0], 0.8);
-            mouseRelease(slider, 240, slider.height / 2);
+            mouseRelease(slider, at(0.8), slider.height / 2);
             compare(slider.current, 0.2, "released, it shows the volume again");
+            mouseClick(slider, 2, slider.height / 2);
+            compare(spy.signalArguments[spy.count - 1][0], 0, "left of the knob's rest is 0");
+        }
+
+        function test_at_zero_the_knob_rests_right_of_the_icon() {
+            const slider = createTemporaryObject(sliderComponent, stage, {
+                value: 0,
+                glyph: "volume_off"
+            });
+            waitForRendering(slider);
+            const icon = findChild(slider, "icon");
+            verify(slider.rest >= icon.x + icon.width + Tokens.sliderKnobWidth, "the knob doesn't cover the icon");
+            shot(slider, "slider-zero");
+        }
+
+        function test_a_long_greeting_shrinks_then_cuts_the_name() {
+            const header = createTemporaryObject(headerComponent, stage, {
+                width: 220,
+                greeting: "Good afternoon",
+                name: "Katov"
+            });
+            waitForRendering(header);
+            const greeting = findChild(header, "greeting");
+            const name = findChild(header, "name");
+            verify(greeting.font.pixelSize < Tokens.fontSizeGreeting, "smaller to fit");
+            verify(greeting.width + name.width <= header.width - name.parent.x + 1);
+            compare(name.text, "Katov");
+            header.name = "Maximiliana-Bartholomea";
+            waitForRendering(header);
+            compare(greeting.font.pixelSize, Tokens.fontSizeGreetingMin);
+            verify(name.truncated, "a name too long is cut short");
+            header.name = "";
+            header.width = 400;
+            compare(greeting.font.pixelSize, Tokens.fontSizeGreeting);
         }
 
         function test_graph_ends_at_the_right_edge() {
@@ -379,6 +419,30 @@ Item {
             compare(spy.count, 1);
             compare(spy.signalArguments[0][0], "/usr/lib/firefox/firefox");
             compare(page.armed, "");
+        }
+
+        function test_more_apps_than_fit_scroll() {
+            const many = reading();
+            many.apps = Array.from({
+                length: 25
+            }, (_, i) => ({
+                        name: `app${i}`,
+                        key: `/usr/bin/app${i}`,
+                        processes: 1,
+                        cpu: 0,
+                        memory: (25 - i) * 100000000,
+                        protected: i === 24
+                    }));
+            const page = createTemporaryObject(resourcesComponent, stage, {
+                reading: many
+            });
+            waitForRendering(page);
+            const list = findChild(page, "apps");
+            const bottom = list.mapToItem(page, 0, list.height).y;
+            verify(Math.abs(bottom - page.height) < 1, "the list fills the page");
+            verify(list.contentHeight > list.height, "more than fit");
+            verify(findChild(page, "app-/usr/bin/app24") !== null, "the last is there to scroll to");
+            shot(page, "resources-many");
         }
     }
 }
