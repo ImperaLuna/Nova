@@ -252,6 +252,73 @@ QtObject {
     readonly property real liquidTiltGain: 0.005
     readonly property real liquidTiltMax: 0.5
 
+    // The right pill: round buttons inside it, this far from its ends and
+    // each other.
+    readonly property int pillButtonSize: 28
+    readonly property int pillButtonInset: 4
+    readonly property int pillButtonGap: 2
+
+    // Quick settings (ui/quick_settings): a full-height glass sidebar on the
+    // right, from below the bar to the screen's bottom margin. Its pages
+    // have this padding and gap between sections, and slide this far as
+    // they swap.
+    readonly property int quickSettingsWidth: 360
+    readonly property int quickSettingsPad: 16
+    readonly property int quickSettingsGap: 12
+    readonly property int pageSlide: 28
+    readonly property int durationPage: 280
+    // Its sections fade in one after another as it opens: the first at
+    // this share of the morph, each next one this much later.
+    readonly property real revealFirst: 0.35
+    readonly property real revealStagger: 0.14
+    // How far each section rises into place as it fades in.
+    readonly property int revealRise: 6
+    // Grown out of a pill it's drawn over, it's fully there by this share
+    // of its morph.
+    readonly property real panelFadeShare: 0.6
+    // The header: the distro logo in a circle, the greeting beside it.
+    readonly property int logoSize: 36
+    readonly property int logoMark: 24
+    readonly property int fontSizeGreeting: 22
+    // Toggle tiles, two per row, with an arrow to a page on some.
+    readonly property int tileHeight: 58
+    readonly property int tileArrowWidth: 22
+    readonly property real tileSubOpacity: 0.72
+    // Thick sliders: the fill (never narrower than its share sliderMinFill,
+    // so the icon stays on it), a short upright knob inside its end, and the
+    // arrow button at the slider's end that opens a page.
+    readonly property int sliderHeight: 34
+    readonly property color sliderFill: Qt.rgba(fg.r, fg.g, fg.b, 0.20)
+    readonly property real sliderMinFill: 0.12
+    readonly property int sliderKnobWidth: 3
+    readonly property int sliderKnobInset: 6
+    readonly property int sliderKnobPad: 9
+    readonly property int sliderButtonWidth: 30
+    readonly property int sliderButtonHeight: 26
+    readonly property color sliderDivider: Qt.rgba(fg.r, fg.g, fg.b, 0.14)
+    // The mic slider while an app records: the second accent.
+    readonly property real micFillOpacity: 0.34
+    // Resource rings, and the labels under them.
+    readonly property int ringSize: 52
+    readonly property int ringStroke: 4
+    readonly property int fontSizeMicro: 10
+    // Small uppercase labels spread out by this share of their size.
+    readonly property real trackingLabel: 0.06
+    readonly property color fgSoft: Qt.rgba(fg.r, fg.g, fg.b, 0.72)
+    // A segmented control or tab row: its padding, its segments' height and
+    // corners.
+    readonly property int segmentPad: 4
+    readonly property int segmentHeight: 30
+    readonly property int radiusSegment: 10
+    // The resources page: its graph's height and its process rows.
+    readonly property int graphHeight: 72
+    readonly property int graphLine: 2
+    readonly property real graphAreaOpacity: 0.22
+    readonly property int processRowHeight: 30
+    readonly property int processNumberWidth: 64
+    // A legend's colored dot.
+    readonly property int legendDot: 7
+
     // Type
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"
@@ -261,6 +328,8 @@ QtObject {
     readonly property int fontSizeTiny: 11
     // A name or heading on its own, like the user's on the lock screen.
     readonly property int fontSizeTitle: 18
+    // A sub page's title, beside its back button.
+    readonly property int fontSizePageTitle: 15
     // The time in the central pill.
     readonly property int fontSizeTime: 14
     // A panel's headline number.

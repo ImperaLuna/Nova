@@ -1,0 +1,289 @@
+import QtQuick
+import QtTest
+import "../quick_settings"
+import "../theme"
+import "../quick_settings/quick_settings.js" as QuickSettings
+
+// Quick settings' logic, and its pages driven with data in the shapes
+// novad and SoundService give them. The root is an Item: a TestCase root
+// gets no mouse events.
+Item {
+    id: stage
+    width: 360
+    height: 900
+
+    TestCase {
+        name: "QuickSettings"
+        when: windowShown
+
+        Component {
+            id: mainComponent
+            MainPage {
+                width: 328
+                height: 868
+            }
+        }
+        Component {
+            id: soundComponent
+            SoundPage {
+                width: 328
+                height: 868
+            }
+        }
+        Component {
+            id: resourcesComponent
+            ResourcesPage {
+                width: 328
+                height: 868
+            }
+        }
+
+        SignalSpy {
+            id: spy
+        }
+
+        function init() {
+            Tokens.apply({
+                bg: "#1D1D1D",
+                fg: "#F5E7C6",
+                fgDim: "#9A9A9A",
+                primary: "#FD7014",
+                secondary: "#BE95FF",
+                onAccent: "#1D1D1D"
+            });
+            spy.target = null;
+            spy.signalName = "";
+            spy.clear();
+        }
+
+        function reading() {
+            return {
+                cpu: 23.4,
+                memory_used: 10093173760,
+                memory_total: 34359738368,
+                gpu: 18,
+                history: [
+                    {
+                        cpu: 20,
+                        memory: 29
+                    },
+                    {
+                        cpu: 48,
+                        memory: 30
+                    },
+                    {
+                        cpu: 23,
+                        memory: 29
+                    }
+                ],
+                history_size: 36,
+                processes: [
+                    {
+                        name: "firefox",
+                        pid: 4242,
+                        cpu: 6.1,
+                        memory: 2400000000
+                    },
+                    {
+                        name: "niri",
+                        pid: 1200,
+                        cpu: 2.3,
+                        memory: 310000000
+                    }
+                ]
+            };
+        }
+
+        // Where shot() saves what a page shows, to look at it; set it by hand
+        // while working on the pages.
+        property string shotDir: ""
+        function shot(item, file) {
+            const image = grabImage(item);
+            verify(image.width > 0);
+            if (shotDir !== "")
+                image.save(`${shotDir}/${file}.png`);
+        }
+
+        function test_greeting_follows_the_hour() {
+            compare(QuickSettings.greeting(5), "Good morning");
+            compare(QuickSettings.greeting(11), "Good morning");
+            compare(QuickSettings.greeting(12), "Good afternoon");
+            compare(QuickSettings.greeting(18), "Good evening");
+            compare(QuickSettings.greeting(2), "Good evening");
+        }
+
+        function test_uptime_reads_in_the_biggest_units() {
+            compare(QuickSettings.uptime(59), "up 0 min");
+            compare(QuickSettings.uptime(12 * 60), "up 12 min");
+            compare(QuickSettings.uptime((3 * 60 + 12) * 60), "up 3 h 12 min");
+            compare(QuickSettings.uptime((50 * 60 + 5) * 60), "up 2 d 2 h");
+        }
+
+        function test_logo_prefers_bundled_then_like_then_icon_theme() {
+            const none = () => "";
+            compare(QuickSettings.logo(null, "logos", none), "");
+            compare(QuickSettings.logo({
+                id: "nixos"
+            }, "logos", none), "logos/nixos.svg");
+            compare(QuickSettings.logo({
+                id: "mynix",
+                id_like: ["nixos"]
+            }, "logos", none), "logos/nixos.svg");
+            compare(QuickSettings.logo({
+                id: "fedora",
+                logo: "fedora-logo-icon"
+            }, "logos", name => `/icons/${name}.svg`), "/icons/fedora-logo-icon.svg");
+            compare(QuickSettings.logo({
+                id: "fedora",
+                logo: "fedora-logo-icon"
+            }, "logos", none), "", "an icon theme without it shows Nova's mark");
+        }
+
+        function test_sizes_read_short() {
+            compare(QuickSettings.shortBytes(10093173760), "9.4G");
+            compare(QuickSettings.shortBytes(780 * 1024 * 1024), "780M");
+            compare(QuickSettings.shortBytes(512), "512B");
+            compare(QuickSettings.bytes(2400000000), "2.2 GB");
+            compare(QuickSettings.bytes(310 * 1024 * 1024), "310 MB");
+        }
+
+        function test_recorders_are_app_streams_on_the_default_source() {
+            const mic = {
+                id: 50
+            };
+            const discord = {
+                id: 90,
+                isStream: true,
+                properties: {
+                    "application.name": "Discord"
+                }
+            };
+            const loopback = {
+                id: 91,
+                isStream: false,
+                name: "loopback"
+            };
+            const groups = [
+                {
+                    source: mic,
+                    target: discord
+                },
+                {
+                    source: mic,
+                    target: discord
+                },
+                {
+                    source: mic,
+                    target: loopback
+                },
+                {
+                    source: {
+                        id: 51
+                    },
+                    target: {
+                        id: 92,
+                        isStream: true,
+                        name: "obs"
+                    }
+                }
+            ];
+            compare(QuickSettings.recorders(mic, groups), ["Discord"]);
+            compare(QuickSettings.recorders(null, groups), []);
+            compare(QuickSettings.recordingText(["Discord"]), "Discord is using the mic");
+            compare(QuickSettings.recordingText(["Discord", "OBS"]), "Discord and OBS are using the mic");
+            compare(QuickSettings.recordingText([]), "");
+        }
+
+        function test_graph_ends_at_the_right_edge() {
+            compare(QuickSettings.graphPath([], 100, 50, 3, false), "");
+            compare(QuickSettings.graphPath([0, 100], 100, 50, 3, false), "M50.0 50.0L100.0 0.0");
+            compare(QuickSettings.graphPath([50], 100, 50, 3, true), "M100.0 25.0L100 50L100.0 50Z");
+        }
+
+        function test_main_page_shows_and_acts() {
+            const page = createTemporaryObject(mainComponent, stage, {
+                host: {
+                    host: "RyzenShine",
+                    user: "Luna",
+                    booted_at: Date.now() / 1000 - 3 * 3600,
+                    os: {
+                        id: "nixos",
+                        name: "NixOS"
+                    }
+                },
+                outputAvailable: true,
+                outputName: "Arctis Nova 5",
+                outputKind: "headphones",
+                volume: 0.64,
+                micAvailable: true,
+                recorders: ["Discord"],
+                micVolume: 0.8,
+                reading: reading()
+            });
+            waitForRendering(page);
+            shot(page, "main");
+
+            spy.signalName = "keepAwakeToggled";
+            spy.target = page;
+            mouseClick(page, 60, 80);
+            compare(spy.count, 1, "the first tile is keep awake");
+
+            spy.signalName = "pageRequested";
+            spy.clear();
+            mouseClick(page, page.width / 2, page.height - 40);
+            compare(spy.count, 1);
+            compare(spy.signalArguments[0][0], "resources");
+        }
+
+        function test_sound_page_switches_outputs() {
+            const page = createTemporaryObject(soundComponent, stage, {
+                outputAvailable: true,
+                outputName: "Arctis Nova 5",
+                outputKind: "headphones",
+                volume: 0.64,
+                outputs: [
+                    {
+                        id: 1,
+                        name: "Arctis Nova 5",
+                        kind: "headphones",
+                        current: true
+                    },
+                    {
+                        id: 2,
+                        name: "GB206 HD Audio",
+                        kind: "display",
+                        current: false
+                    }
+                ],
+                apps: [
+                    {
+                        id: 9,
+                        name: "Firefox",
+                        volume: 0.72,
+                        muted: false
+                    }
+                ]
+            });
+            waitForRendering(page);
+            shot(page, "sound");
+            spy.signalName = "outputPicked";
+            spy.target = page;
+            // The second row, under the header, the output card and the tabs.
+            mouseClick(page, page.width / 2, 285);
+            compare(spy.count, 1);
+            compare(spy.signalArguments[0][0], 2);
+            page.tab = "apps";
+            waitForRendering(page);
+            shot(page, "sound-apps");
+        }
+
+        function test_resources_page_lists_processes() {
+            const page = createTemporaryObject(resourcesComponent, stage, {
+                reading: reading()
+            });
+            waitForRendering(page);
+            shot(page, "resources");
+            compare(page.memoryShare.toFixed(0), "29");
+        }
+    }
+}

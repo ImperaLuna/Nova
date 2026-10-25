@@ -239,6 +239,7 @@ impl Sampler {
             gpu: self.gpu_busy.as_ref().and_then(GpuBusy::read).or_else(|| self.nvidia.as_ref()?.latest()),
             temperature: self.temperature.as_ref().and_then(Temperature::read),
             history: self.history.iter().copied().collect(),
+            history_size: Self::history_len(),
             processes: self.top_processes(total_ticks),
         }
     }

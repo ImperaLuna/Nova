@@ -558,6 +558,8 @@ pub struct Resources {
     /// CPU and memory over the last few minutes, oldest first, one sample
     /// every [`RESOURCE_HISTORY_INTERVAL_SECS`].
     pub history: Vec<ResourceSample>,
+    /// How many samples `history` holds once it's full.
+    pub history_size: usize,
     /// The busiest processes, busiest first.
     pub processes: Vec<ProcessUsage>,
 }
@@ -995,6 +997,7 @@ mod tests {
             gpu: Some(18.0),
             temperature: None,
             history: vec![ResourceSample { cpu: 21.0, memory: 29.0 }, ResourceSample { cpu: 23.5, memory: 29.4 }],
+            history_size: 36,
             processes: vec![ProcessUsage { name: "firefox".into(), pid: 4242, cpu: 6.1, memory: 2_400_000_000 }],
         }
     }

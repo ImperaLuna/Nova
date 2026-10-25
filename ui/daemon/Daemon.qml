@@ -30,6 +30,11 @@ Singleton {
     // novad's word on whether the session is locked. Read it through the
     // LockService singleton, which also hears lockRequested.
     property bool locked: false
+    // The latest host event's data ({host, user, booted_at, os}) and
+    // resources event's, null until each arrives. Read them through the
+    // QuickSettingsService singleton.
+    property var host: null
+    property var resources: null
 
     // `nova toggle <panel>`: open or close the StagePanel named `panel`.
     // `output` is the focused output's name, or null when novad doesn't
@@ -93,6 +98,10 @@ Singleton {
                 lockRequested();
         } else if (msg.event === Protocol.EVENT_VOLUME) {
             volumeRequested(msg.data.key);
+        } else if (msg.event === Protocol.EVENT_HOST) {
+            host = msg.data;
+        } else if (msg.event === Protocol.EVENT_RESOURCES) {
+            resources = msg.data;
         }
     }
 
@@ -117,7 +126,7 @@ Singleton {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
                 root.call(Protocol.CMD_SUBSCRIBE, {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES]
                 });
             } else {
                 // Replies to these won't come any more.
