@@ -184,6 +184,12 @@ Scope {
                 if (!drawn.covers(mouse.x, mouse.y))
                     all.dismiss();
             }
+            // A scroll outside closes it too, so the next one reaches the
+            // window below: the screen's input can't pass it on.
+            onWheel: wheel => {
+                if (!drawn.covers(wheel.x, wheel.y))
+                    all.dismiss();
+            }
             Keys.onEscapePressed: all.dismiss()
         }
 

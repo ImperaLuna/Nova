@@ -178,6 +178,12 @@ PanelWindow { // qmllint disable uncreatable-type
             if (!surface.drawn.covers(at.x, at.y))
                 surface.dismissRequested();
         }
+        // As on the stage: a scroll outside closes it too.
+        onWheel: wheel => {
+            const at = mapToItem(null, wheel.x, wheel.y);
+            if (!surface.drawn.covers(at.x, at.y))
+                surface.dismissRequested();
+        }
         Keys.onEscapePressed: surface.dismissRequested()
     }
 

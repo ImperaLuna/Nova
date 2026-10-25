@@ -5,8 +5,8 @@ import Quickshell
 import Quickshell.Wayland
 
 // While a panel that closes on a click outside is open (`catching`), the
-// rest of the screen: a click anywhere off Nova's surfaces closes that
-// panel. Those surfaces take clicks over their whole area meanwhile, so the
+// rest of the screen: a click or scroll anywhere off Nova's surfaces closes
+// that panel. Those surfaces take clicks over their whole area meanwhile, so the
 // two never overlap and it doesn't matter which the compositor puts on top.
 // Empty, and never blurred. It stays mapped, taking no clicks while not
 // catching: Quickshell builds a layer-shell window anew each time it shows,
@@ -82,5 +82,8 @@ PanelWindow { // qmllint disable uncreatable-type
         id: area
         anchors.fill: parent
         onClicked: catcher.clicked()
+        // A scroll closes the panel too, so the next one reaches the window
+        // below: it can't pass this one on.
+        onWheel: catcher.clicked()
     }
 }
