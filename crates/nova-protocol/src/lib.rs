@@ -738,11 +738,12 @@ mod tests {
         let js = std::fs::read_to_string(root.join("ui/daemon/protocol.js")).unwrap();
         let wire = include_str!("snapshots/nova_protocol__tests__wire_format.snap");
         let parses = |value: &str, kind: fn(serde_json::Value) -> bool| kind(json!(value));
-        let mut checked = 0;
+        let mut checked = std::collections::HashSet::new();
         for line in js.lines() {
             let Some((name, value)) = line.strip_prefix("var ").and_then(|line| line.split_once(" = \"")) else {
                 continue;
             };
+            assert!(checked.insert(name), "protocol.js: {name} is declared twice");
             let value = value.trim_end_matches("\";");
             let known = match name.split('_').next().unwrap() {
                 "CMD" => wire.contains(&format!(r#""cmd":"{value}""#)),
@@ -755,9 +756,8 @@ mod tests {
                 _ => panic!("protocol.js: no check for {name}; add its kind to this test"),
             };
             assert!(known, "protocol.js: {name} = {value:?} isn't a name novad knows");
-            checked += 1;
         }
-        assert!(checked > 0, "protocol.js declares no names");
+        assert!(!checked.is_empty(), "protocol.js declares no names");
     }
 
     fn desktop() -> Desktop {

@@ -79,11 +79,6 @@ function request(id, cmd, args) {
     return JSON.stringify(msg) + "\n";
 }
 
-// The volume keys a volume event carries (VolumeKey in nova-protocol).
-var VOLUME_UP = "up";
-var VOLUME_DOWN = "down";
-var VOLUME_MUTE = "mute";
-
 // Feature ids the UI may load: only those novad reports as ready.
 function readyFeatures(features) {
     var ready = [];
