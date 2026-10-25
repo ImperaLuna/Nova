@@ -56,6 +56,9 @@ Item {
     readonly property bool tucked: (fullscreenBelow || waitingForSpace) && !peeking && !held
     // Sliding in or out, so the stage draws.
     readonly property bool sliding: slide.running
+    // How far the pills sit above their place: they slide with their shelf,
+    // which moves them without changing their own position.
+    readonly property real slideOffset: shelf.y
     property bool spaceKept: true
     // Tucked pills wait while the space comes back.
     property bool waitingForSpace: false
