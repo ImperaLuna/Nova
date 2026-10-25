@@ -192,13 +192,13 @@ Item {
                 icon: ""
             };
             const app = (id, name) => ({
-                    id: item.id,
-                    title: "",
-                    app: {
-                        id: id,
-                        name: name
-                    }
-                });
+                        id: item.id,
+                        title: "",
+                        app: {
+                            id: id,
+                            name: name
+                        }
+                    });
             const all = Tray.entries([item, Object.assign({}, item)], {
                 items: [app("a.desktop", "A"), app("b.desktop", "B")],
                 hidden: ["a.desktop"]
