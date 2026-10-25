@@ -11,7 +11,7 @@ use crate::config::{self, Config};
 use crate::hub::Hub;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, host, launcher, resources, theme};
+use crate::{ai_usage, features, host, launcher, notifications, resources, theme};
 use nova_features::{Manifest, Selection};
 use nova_protocol::{Event, FeatureState, FeatureStatus, Host, Theme};
 use std::collections::BTreeSet;
@@ -38,6 +38,7 @@ pub struct Sources {
     pub ai_usage: ai_usage::Paths,
     pub resources: resources::Sources,
     pub launcher: launcher::Paths,
+    pub notifications: notifications::Sources,
 }
 
 /// The settings in effect, and the feature services they started.
@@ -52,6 +53,8 @@ pub struct Settings {
     pub resources: Option<Arc<resources::Resources>>,
     /// Running while the `launcher` feature is ready.
     pub launcher: Option<Arc<launcher::Launcher>>,
+    /// Serving `org.freedesktop.Notifications` while the `notifications` feature is ready.
+    pub notifications: Option<Arc<notifications::Notifications>>,
 }
 
 impl Settings {
@@ -168,6 +171,27 @@ impl Settings {
             }
         };
 
+        // Started before the UI, which settings start ahead of, so
+        // notifications sent while it starts are kept. No options either.
+        let notifications_ready = is_ready(&features, notifications::FEATURE_ID);
+        let notifications = match previous.as_deref_mut().and_then(|previous| previous.notifications.take()) {
+            Some(running) if notifications_ready => Some(running),
+            running => {
+                if let Some(running) = running {
+                    running.stop();
+                    logger.info("features", &format!("stopped {}", notifications::FEATURE_ID));
+                }
+                notifications_ready.then(|| {
+                    logger.info("features", &format!("starting {}", notifications::FEATURE_ID));
+                    notifications::Notifications::start(
+                        sources.notifications.clone(),
+                        Arc::clone(hub),
+                        Arc::clone(logger),
+                    )
+                })
+            }
+        };
+
         let before = previous.as_deref().map(|previous| previous.features.as_slice()).unwrap_or_default();
         for feature in features.iter().filter(|feature| !before.contains(feature)) {
             logger.info("features", &format!("{} is {:?}", feature.id, feature.status));
@@ -176,7 +200,7 @@ impl Settings {
             hub.publish(&Event::Features { features: features.clone() });
         }
 
-        Self { config, selection, features, theme, ai_usage, resources, launcher }
+        Self { config, selection, features, theme, ai_usage, resources, launcher, notifications }
     }
 }
 

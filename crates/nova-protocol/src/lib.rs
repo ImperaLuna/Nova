@@ -93,6 +93,16 @@ pub enum Event {
     /// (feature `launcher`). Topic [`Topic::Launcher`], sent right after
     /// subscribing and whenever any of it changes.
     Launcher(Launcher),
+    /// The notifications kept for the quick settings list, do not disturb
+    /// and the muted apps (feature `notifications`). Topic
+    /// [`Topic::Notifications`], sent right after subscribing and whenever
+    /// any of it changes.
+    Notifications(NotificationList),
+    /// A notification to pop up: a new one, or one an app replaced while
+    /// it may still show (feature `notifications`). Never for a muted app,
+    /// nor during do not disturb unless it's critical. Topic
+    /// [`Topic::Notifications`].
+    NotificationPopup(Notification),
 }
 
 /// Groups of events a client can subscribe to.
@@ -112,6 +122,7 @@ pub enum Topic {
     Host,
     Resources,
     Launcher,
+    Notifications,
 }
 
 impl Event {
@@ -133,6 +144,7 @@ impl Event {
             Event::Host(_) => Some(Topic::Host),
             Event::Resources(_) => Some(Topic::Resources),
             Event::Launcher(_) => Some(Topic::Launcher),
+            Event::Notifications(_) | Event::NotificationPopup(_) => Some(Topic::Notifications),
         }
     }
 }
@@ -480,6 +492,106 @@ pub struct TextRun {
     pub matched: bool,
 }
 
+/// What the notifications list holds (feature `notifications`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationList {
+    /// The newest first, at most [`MAX_NOTIFICATIONS`].
+    pub items: Vec<Notification>,
+    /// No pop-ups, except critical ones.
+    pub do_not_disturb: bool,
+    /// Apps, by [`Notification::app`], whose notifications never pop up and
+    /// don't count as unread. They're still listed.
+    pub muted: Vec<String>,
+    /// Every app that sent one lately or is muted, the latest first, for
+    /// the settings page's per-app switches.
+    pub apps: Vec<NotificationApp>,
+}
+
+/// How many notifications are kept; the oldest go first.
+pub const MAX_NOTIFICATIONS: usize = 100;
+
+/// An app on the notification settings page.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationApp {
+    /// As [`Notification::app`].
+    pub name: String,
+    /// As [`Notification::icon`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// As [`Notification::app_id`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_id: Option<String>,
+}
+
+/// One notification an app sent (org.freedesktop.Notifications).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Notification {
+    /// novad's id for it, the one the app knows it by.
+    pub id: u32,
+    /// The app's name as it gave it, or its desktop entry's id.
+    pub app: String,
+    /// The app's icon: an icon theme name or an absolute path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// The app's desktop file id (`discord.desktop`), when it said which.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_id: Option<String>,
+    /// One line, plain text.
+    pub summary: String,
+    /// Plain text: any markup is taken out.
+    pub body: String,
+    /// A picture that goes with it (a sender's photo), as an absolute path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    /// Its buttons, in the app's order. Clicking the notification itself
+    /// is `has_default`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<NotificationAction>,
+    /// The app does something when it's clicked (its default action).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub has_default: bool,
+    pub urgency: Urgency,
+    /// How far along something it reports is, 0 to 100.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<u8>,
+    /// How long it may show as a pop-up, as the app asked: `None` for the
+    /// UI's default, 0 for until it's closed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u32>,
+    /// When it came, or was last replaced, in seconds since the Unix epoch.
+    pub time: i64,
+    /// Not seen in the list yet (`read_notifications`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unread: bool,
+    /// The app that sent it is still there to hear about clicks: false for
+    /// those kept from before novad started.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub live: bool,
+}
+
+/// One of a notification's buttons.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationAction {
+    /// What `notification_action` sends back.
+    pub key: String,
+    pub label: String,
+}
+
+/// How much a notification matters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Urgency {
+    Low,
+    #[default]
+    Normal,
+    /// Pops up even during do not disturb, and stays until it's closed.
+    Critical,
+}
+
 /// A volume key `nova volume` stands for. The UI steps by its own
 /// `Tokens.volumeStep` and stops at 100%.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -742,6 +854,39 @@ pub enum Command {
     PinApp {
         id: String,
         pinned: bool,
+    },
+    /// The notification `id` was clicked, or its button `action` (feature
+    /// `notifications`): the app hears of it, and it leaves the list unless
+    /// the app keeps it.
+    NotificationAction {
+        id: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        action: Option<String>,
+    },
+    /// Closes the notification `id` and takes it off the list (feature
+    /// `notifications`).
+    DismissNotification {
+        id: u32,
+    },
+    /// Takes every notification off the list, or only `app`'s (feature
+    /// `notifications`).
+    ClearNotifications {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app: Option<String>,
+    },
+    /// The list was seen: no notification is unread any more (feature
+    /// `notifications`).
+    ReadNotifications,
+    /// Turns do not disturb on or off (feature `notifications`).
+    /// Remembered across restarts.
+    SetDoNotDisturb {
+        on: bool,
+    },
+    /// Mutes or unmutes `app`'s notifications (feature `notifications`).
+    /// Remembered across restarts.
+    MuteNotificationApp {
+        app: String,
+        muted: bool,
     },
 }
 
@@ -1109,6 +1254,7 @@ mod tests {
                         Topic::Host,
                         Topic::Resources,
                         Topic::Launcher,
+                        Topic::Notifications,
                     ],
                 },
             }),
@@ -1256,6 +1402,22 @@ mod tests {
             }),
             encode(Request { id: Some(26), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
+            encode(Event::Notifications(notifications())),
+            encode(Event::NotificationPopup(notifications().items[0].clone())),
+            encode(Request {
+                id: Some(40),
+                command: Command::NotificationAction { id: 7, action: Some("open".into()) },
+            }),
+            encode(Request { id: None, command: Command::NotificationAction { id: 7, action: None } }),
+            encode(Request { id: Some(41), command: Command::DismissNotification { id: 7 } }),
+            encode(Request { id: None, command: Command::ClearNotifications { app: Some("Discord".into()) } }),
+            encode(Request { id: None, command: Command::ClearNotifications { app: None } }),
+            encode(Request { id: None, command: Command::ReadNotifications }),
+            encode(Request { id: Some(42), command: Command::SetDoNotDisturb { on: true } }),
+            encode(Request {
+                id: Some(43),
+                command: Command::MuteNotificationApp { app: "Discord".into(), muted: true },
+            }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
@@ -1289,6 +1451,7 @@ mod tests {
                 "VOLUME" => parses(value, |v| serde_json::from_value::<VolumeKey>(v).is_ok()),
                 "CAPTURE" => parses(value, |v| serde_json::from_value::<CaptureMode>(v).is_ok()),
                 "SHOT" => parses(value, |v| serde_json::from_value::<ScreenshotAction>(v).is_ok()),
+                "URGENCY" => parses(value, |v| serde_json::from_value::<Urgency>(v).is_ok()),
                 "FEATURE" => root.join("features").join(value).join("feature.toml").is_file(),
                 _ => panic!("protocol.js: no check for {name}; add its kind to this test"),
             };
@@ -1411,6 +1574,57 @@ mod tests {
         }
     }
 
+    fn notifications() -> NotificationList {
+        NotificationList {
+            items: vec![
+                Notification {
+                    id: 7,
+                    app: "Firefox".into(),
+                    icon: Some("firefox".into()),
+                    app_id: Some("org.mozilla.firefox.desktop".into()),
+                    summary: "Download complete".into(),
+                    body: "niri-26.04.tar.gz".into(),
+                    image: None,
+                    actions: vec![NotificationAction { key: "open".into(), label: "Open file".into() }],
+                    has_default: true,
+                    urgency: Urgency::Normal,
+                    progress: None,
+                    timeout_ms: None,
+                    time: 1_761_400_000,
+                    unread: true,
+                    live: true,
+                },
+                Notification {
+                    id: 3,
+                    app: "Discord".into(),
+                    icon: None,
+                    app_id: None,
+                    summary: "Mara".into(),
+                    body: "sent you the map".into(),
+                    image: Some("/home/mara/.local/state/nova/notifications/3.png".into()),
+                    actions: vec![],
+                    has_default: false,
+                    urgency: Urgency::Critical,
+                    progress: Some(40),
+                    timeout_ms: Some(0),
+                    time: 1_761_399_000,
+                    unread: false,
+                    live: false,
+                },
+            ],
+            do_not_disturb: false,
+            muted: vec!["Discord".into()],
+            apps: vec![
+                NotificationApp {
+                    name: "Firefox".into(),
+                    icon: Some("firefox".into()),
+                    app_id: Some("org.mozilla.firefox.desktop".into()),
+                },
+                NotificationApp { name: "Discord".into(), icon: None, app_id: None },
+            ],
+        }
+    }
+
     fn log_entry() -> LogEntry {
         LogEntry {
             time: "2026-10-22T13:45:09.123Z".into(),
@@ -1519,6 +1733,8 @@ mod tests {
         assert_eq!(Event::Host(host()).topic(), Some(Topic::Host));
         assert_eq!(Event::Resources(resources()).topic(), Some(Topic::Resources));
         assert_eq!(Event::Launcher(launcher()).topic(), Some(Topic::Launcher));
+        assert_eq!(Event::Notifications(notifications()).topic(), Some(Topic::Notifications));
+        assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(Topic::Notifications));
     }
 
     #[test]
@@ -1587,6 +1803,17 @@ mod tests {
         assert!(serde_json::from_value::<Resources>(resources.clone()).is_ok());
         for pointer in ["", "/history/0", "/apps/0"] {
             assert!(serde_json::from_value::<Resources>(with_extra(resources.clone(), pointer)).is_err(), "{pointer}");
+        }
+    }
+
+    #[test]
+    fn notifications_reject_unknown_fields() {
+        let list = serde_json::to_value(notifications()).unwrap();
+        assert!(serde_json::from_value::<NotificationList>(list.clone()).is_ok());
+        for pointer in ["", "/items/0", "/items/0/actions/0", "/apps/0"] {
+            let mut extra = list.clone();
+            extra.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
+            assert!(serde_json::from_value::<NotificationList>(extra).is_err(), "{pointer}");
         }
     }
 

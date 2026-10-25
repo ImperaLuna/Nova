@@ -4,6 +4,7 @@
 //! compositor.
 
 use super::*;
+use crate::session_bus::Bus;
 use nova_protocol::{FeatureStatus, LogEntry, UI_LOG_SOURCE};
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Lines, Write};
@@ -101,6 +102,12 @@ impl TestDaemon {
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
             resources: resources::Sources::system(""),
             launcher: launcher_paths(&dir),
+            // No bus: the notifications' own tests give them one.
+            notifications: notifications::Sources {
+                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                state_file: dir.join("notifications.json"),
+                images: dir.join("notifications"),
+            },
         };
         let settings = Settings::load(&sources, &hub, &logger);
         let compositor = compositor(&dir)
@@ -163,6 +170,9 @@ impl Drop for TestDaemon {
         }
         if let Some(usage) = &settings.ai_usage {
             usage.stop();
+        }
+        if let Some(notifications) = &settings.notifications {
+            notifications.stop();
         }
         drop(settings);
         if let Some(watching) = &self.watching {
@@ -1499,6 +1509,23 @@ fn subscribing_to_host_sends_the_machine_and_its_user() {
 
     std::fs::write(novad.config_file(), "[quick-settings]\nname = \"Katov\"\n").unwrap();
     assert_eq!(client.next_event("host")["user"], "Katov", "the config's name applies live");
+}
+
+/// The notifications' own tests cover the bus; here there's none, so the
+/// list starts empty, and do not disturb and mutes work over the socket.
+#[test]
+fn notifications_are_listed_and_set_over_the_socket() {
+    let novad = TestDaemon::start("notifications", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["notifications"]})));
+    let empty = json!({"items": [], "do_not_disturb": false, "muted": [], "apps": []});
+    assert_eq!(client.next_event("notifications"), empty);
+    client.request(2, "set_do_not_disturb", Some(json!({"on": true})));
+    assert_eq!(client.next_event("notifications")["do_not_disturb"], true);
+    let refused = client.request(3, "mute_notification_app", Some(json!({"app": "Discord", "muted": true})));
+    assert!(refused["error"].as_str().unwrap().contains("Discord"), "{refused}");
+    let missing = client.request(4, "notification_action", Some(json!({"id": 9})));
+    assert!(missing["error"].as_str().unwrap().contains("no notification 9"), "{missing}");
 }
 
 /// Resources come only while a connection watches, and stop once the last

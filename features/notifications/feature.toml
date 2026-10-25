@@ -1,0 +1,5 @@
+id = "notifications"
+name = "Notifications"
+description = "Apps' notifications as pop-ups under the right pill, listed in quick settings, with do not disturb and muted apps."
+default = true
+daemon = "notifications"

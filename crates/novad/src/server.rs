@@ -216,6 +216,36 @@ impl<'a> Connection<'a> {
             // Answered on its own thread (`slow_work`).
             Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window)(),
             Command::PinApp { id, pinned } => return self.with_launcher(|launcher| launcher.pin(id, *pinned)),
+            Command::NotificationAction { id, action } => {
+                return self.with_notifications(|notifications| notifications.action(*id, action.as_deref()));
+            }
+            Command::DismissNotification { id } => {
+                return self.with_notifications(|notifications| {
+                    notifications.dismiss(*id);
+                    Ok(())
+                });
+            }
+            Command::ClearNotifications { app } => {
+                return self.with_notifications(|notifications| {
+                    notifications.clear(app.as_deref());
+                    Ok(())
+                });
+            }
+            Command::ReadNotifications => {
+                return self.with_notifications(|notifications| {
+                    notifications.read();
+                    Ok(())
+                });
+            }
+            Command::SetDoNotDisturb { on } => {
+                return self.with_notifications(|notifications| {
+                    notifications.set_do_not_disturb(*on);
+                    Ok(())
+                });
+            }
+            Command::MuteNotificationApp { app, muted } => {
+                return self.with_notifications(|notifications| notifications.mute(app, *muted));
+            }
         };
         match value {
             Ok(value) => Outcome::Result(value),
@@ -245,6 +275,21 @@ impl<'a> Connection<'a> {
                 Err(e) => Outcome::Error(e),
             },
             None => Outcome::Error(format!("the {} feature is off", crate::launcher::FEATURE_ID)),
+        }
+    }
+
+    fn with_notifications(
+        &self,
+        act: impl FnOnce(&crate::notifications::Notifications) -> Result<(), String>,
+    ) -> Outcome {
+        // Out of the lock, like `with_ai_usage`.
+        let notifications = lock(&self.daemon.settings).notifications.clone();
+        match notifications {
+            Some(notifications) => match act(&notifications) {
+                Ok(()) => Outcome::Result(serde_json::Value::Null),
+                Err(e) => Outcome::Error(e),
+            },
+            None => Outcome::Error(format!("the {} feature is off", crate::notifications::FEATURE_ID)),
         }
     }
 
@@ -550,6 +595,11 @@ impl<'a> Connection<'a> {
                                 launcher.send_state(self.id);
                             }
                         }
+                        Topic::Notifications => {
+                            if let Some(notifications) = &settings.notifications {
+                                notifications.send_state(self.id);
+                            }
+                        }
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -587,7 +637,13 @@ impl<'a> Connection<'a> {
             | Command::EndApp { .. }
             | Command::SearchApps { .. }
             | Command::LaunchApp { .. }
-            | Command::PinApp { .. } => {}
+            | Command::PinApp { .. }
+            | Command::NotificationAction { .. }
+            | Command::DismissNotification { .. }
+            | Command::ClearNotifications { .. }
+            | Command::ReadNotifications
+            | Command::SetDoNotDisturb { .. }
+            | Command::MuteNotificationApp { .. } => {}
         }
     }
 

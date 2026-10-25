@@ -21,7 +21,7 @@ jiff = "0.2"
 libc = "0.2"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 # logind over the system bus (power menu, lock screen). Blocking calls; async-io runs its connection.
-zbus = { version = "6", default-features = false, features = ["default-rt"] }
+zbus = { version = "6", default-features = false, features = ["default-rt", "service"] }
 # Reading zbus's signal streams without an async runtime's helpers.
 futures-core = { version = "0.3", default-features = false }
 # Cropping and writing screenshots (pure Rust, so the static musl build stays).
