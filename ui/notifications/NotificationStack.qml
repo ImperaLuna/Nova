@@ -35,6 +35,8 @@ Item {
     property var live: ({})
     property int nextKey: 1
     signal entryChanged(int key)
+    // Entry `key` shows its notification as it is now; its time runs on.
+    signal entryRefreshed(int key)
 
     implicitWidth: Tokens.notificationWidth
     implicitHeight: column.height + (chip.visible ? chip.height : 0)
@@ -137,16 +139,7 @@ Item {
     // quick settings, closed by its app).
     function sync(items: var) {
         const byId = new Map(items.map(item => [item.id, item]));
-        for (const entry of shownEntries()) {
-            const now = byId.get(entry.notification.id);
-            if (now) {
-                entry.listed = true;
-                entry.notification = now;
-                entryChanged(entry.key);
-            } else if (entry.listed) {
-                remove(entry.key, "away");
-            }
-        }
+        // Waiting ones first, so none that has gone comes up in a freed place.
         for (const entry of waiting) {
             const now = byId.get(entry.notification.id);
             if (now) {
@@ -155,6 +148,18 @@ Item {
             }
         }
         waiting = waiting.filter(entry => !entry.listed || byId.has(entry.notification.id));
+        for (const entry of shownEntries()) {
+            const now = byId.get(entry.notification.id);
+            if (now) {
+                entry.listed = true;
+                if (JSON.stringify(now) !== JSON.stringify(entry.notification)) {
+                    entry.notification = now;
+                    entryRefreshed(entry.key);
+                }
+            } else if (entry.listed) {
+                remove(entry.key, "away");
+            }
+        }
     }
 
     // Every pop-up folds away (quick settings opened, with the list).
@@ -204,6 +209,10 @@ Item {
 
                 Connections {
                     target: stack
+                    function onEntryRefreshed(changed: int) {
+                        if (changed === slot.key)
+                            slot.entry = Object.assign({}, stack.live[slot.key]);
+                    }
                     function onEntryChanged(changed: int) {
                         if (changed !== slot.key)
                             return;

@@ -157,8 +157,7 @@ Item {
                             Entry {
                                 id: newest
                                 notification: group.modelData.items[0]
-                                // A click opens the stack, not the notification.
-                                onClicked: list.toggleStack(group.modelData.app, true)
+                                stackOf: group.modelData.app
                             }
                             Rectangle {
                                 anchors.right: parent.right
@@ -276,6 +275,9 @@ Item {
 
     // A notification's row, wired to the list.
     component Entry: NotificationRow {
+        // What a click does: opens the notification, or (`stackOf`, a
+        // closed stack's top one) opens that app's stack in place.
+        property string stackOf: ""
         objectName: `row-${notification.id}`
         width: column.width
         iconSource: list.iconSource
@@ -283,7 +285,10 @@ Item {
         menuOpen: list.menuFor === notification.id
         onClicked: {
             list.menuFor = -1;
-            list.opened(notification);
+            if (stackOf)
+                list.toggleStack(stackOf, true);
+            else
+                list.opened(notification);
         }
         onMenuToggled: list.menuFor = menuOpen ? -1 : notification.id
         onMuteClicked: {

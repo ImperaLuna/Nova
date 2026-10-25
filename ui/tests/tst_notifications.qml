@@ -167,6 +167,32 @@ Item {
             tryVerify(() => findChild(stack, "card-3") === null, 2000, "its card folds away meanwhile");
         }
 
+        function test_clearing_takes_waiting_ones_too_and_unchanged_ones_keep_their_time() {
+            const stack = createTemporaryObject(stackComponent, stage);
+            const notes = [1, 2, 3, 4].map(id => note(id, `App ${id}`, {
+                    urgency: "critical"
+                }));
+            for (const notification of notes)
+                stack.add(notification);
+            stack.sync(notes);
+            compare(stack.waiting.length, 1);
+            stack.sync([]);
+            compare(stack.shownEntries().length, 0, "none comes up in a freed place");
+            compare(stack.waiting.length, 0);
+
+            const timed = note(5, "Timed", {
+                timeout_ms: 600
+            });
+            stack.add(timed);
+            settled(stack, 5);
+            // Other apps' notifications keep coming; its own doesn't change.
+            for (let i = 0; i < 5; i++) {
+                wait(200);
+                stack.sync([timed, note(10 + i, "Other")]);
+            }
+            compare(stack.shownEntries().length, 0, "it ran out on time");
+        }
+
         function test_more_than_three_wait_and_come_up_as_room_frees() {
             const stack = createTemporaryObject(stackComponent, stage);
             for (const [id, app] of [[1, "A"], [2, "B"], [3, "C"], [4, "D"], [5, "E"]])
@@ -300,8 +326,12 @@ Item {
             verify(!findChild(list, "empty").visible);
             verify(findChild(list, "row-5") !== null);
             compare(findChild(list, "row-3"), null, "the stack shows its newest only");
+            spy.target = list;
+            spy.signalName = "opened";
             mouseClick(findChild(list, "row-5"));
             tryVerify(() => findChild(list, "row-3") !== null, 1000, "a click opens the stack");
+            compare(spy.count, 0, "and not its newest notification");
+            spy.clear();
 
             spy.target = list;
             spy.signalName = "cleared";

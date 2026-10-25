@@ -62,9 +62,29 @@ pub fn is_saved(folder: &Path, id: u32, path: &Path) -> bool {
 /// The file `reference` names, for an `image-path` hint or an app icon: an
 /// absolute path, or a `file://` URI. `None` for an icon name.
 pub fn file(reference: &str) -> Option<PathBuf> {
-    let path = reference.strip_prefix("file://").unwrap_or(reference);
-    let path = Path::new(path);
-    path.is_absolute().then(|| path.to_path_buf())
+    let path = match reference.strip_prefix("file://") {
+        Some(uri) => PathBuf::from(decode_percents(uri)?),
+        None => PathBuf::from(reference),
+    };
+    path.is_absolute().then_some(path)
+}
+
+/// A URI's path with its `%XX` escapes decoded; `None` when one is broken
+/// or the result isn't UTF-8 (the UI loads it by URL).
+fn decode_percents(uri: &str) -> Option<String> {
+    let mut bytes = Vec::with_capacity(uri.len());
+    let mut rest = uri.as_bytes();
+    while let Some((&byte, after)) = rest.split_first() {
+        if byte == b'%' {
+            let hex = std::str::from_utf8(after.get(..2)?).ok()?;
+            bytes.push(u8::from_str_radix(hex, 16).ok()?);
+            rest = &after[2..];
+        } else {
+            bytes.push(byte);
+            rest = after;
+        }
+    }
+    String::from_utf8(bytes).ok()
 }
 
 #[cfg(test)]
@@ -106,5 +126,9 @@ mod tests {
         assert_eq!(file("/tmp/a.png"), Some(PathBuf::from("/tmp/a.png")));
         assert_eq!(file("discord"), None);
         assert_eq!(file("relative/a.png"), None);
+        // A URI's escapes are decoded; a path's percent signs are its own.
+        assert_eq!(file("file:///tmp/avatar%20photo.png"), Some(PathBuf::from("/tmp/avatar photo.png")));
+        assert_eq!(file("/tmp/100%25.png"), Some(PathBuf::from("/tmp/100%25.png")));
+        assert_eq!(file("file:///tmp/%zz.png"), None);
     }
 }
