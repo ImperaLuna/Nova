@@ -37,6 +37,8 @@ Item {
     // The screen's output name (Quickshell's `screen.name`), whose
     // workspaces the central pill lists.
     required property string screenName
+    // The monitor's height: the bar itself is only as tall as the stage.
+    property real screenHeight: 0
 
     // The space kept free for the bar at the top of the screen: the same gap
     // above and below the pills, none while it steps aside for a fullscreen
@@ -244,7 +246,7 @@ Item {
         TrayMenu {
             id: trayMenu
             screenWidth: bar.width
-            screenHeight: bar.height
+            screenHeight: bar.screenHeight
             iconSource: entry ? TrayService.iconSource(entry) : ""
             onDone: rightPill.open = false
             onHideRequested: (key, hidden) => TrayService.hide(key, hidden)
