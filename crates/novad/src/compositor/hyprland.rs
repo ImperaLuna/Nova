@@ -5,8 +5,8 @@
 //!
 //! Hyprland's events don't say everything (a new workspace's monitor, for
 //! one), so a workspace or monitor event makes novad ask for the monitors
-//! and workspaces again; opening, moving or focusing a window asks for the
-//! windows (a focus event also comes when a window changes its class), and
+//! and workspaces again; opening, moving, focusing or fullscreening a window
+//! asks for the windows (a focus event also comes when a window changes its class), and
 //! a layout switch asks for the keyboards (the main keyboard changes when
 //! one is unplugged). Titles, focus and urgency come from the events alone.
 //! Events that arrive together are answered with one round of questions.
@@ -29,6 +29,7 @@ const CAPABILITIES: &[Capability] = &[
     Capability::FocusedWindow,
     Capability::KeyboardLayout,
     Capability::LogOut,
+    Capability::Fullscreen,
 ];
 const EVENTS_SOCKET: &str = ".socket2.sock";
 const REQUEST_SOCKET: &str = ".socket.sock";
@@ -39,6 +40,9 @@ const EVENT_SEPARATOR: &str = ">>";
 const SPECIAL_PREFIX: &str = "special:";
 /// JSON window addresses have it; event addresses don't.
 const ADDRESS_PREFIX: &str = "0x";
+/// The bit of a window's `fullscreen` mode that means fullscreen; the
+/// other (1) is maximized, which keeps the bar's space.
+const FULLSCREEN_MODE: u8 = 2;
 /// How long Hyprland may take to answer a request.
 const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -153,6 +157,8 @@ struct Client {
     class: String,
     title: String,
     workspace: WorkspaceRef,
+    /// 0 none, 1 maximized, 2 fullscreen, 3 both.
+    fullscreen: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -177,6 +183,7 @@ struct Window {
     app_id: String,
     title: String,
     workspace: WorkspaceId,
+    fullscreen: bool,
 }
 
 /// Hyprland's state as novad knows it. Window addresses are kept without
@@ -222,7 +229,7 @@ impl State {
             | "renameworkspace" | "monitoraddedv2" | "monitorremovedv2" | "configreloaded" => {
                 self.stale_workspaces = true;
             }
-            "openwindow" | "movewindowv2" => self.stale_windows = true,
+            "openwindow" | "movewindowv2" | "fullscreen" => self.stale_windows = true,
             "closewindow" => {
                 self.windows.remove(data);
                 self.urgent.remove(data);
@@ -263,7 +270,12 @@ impl State {
             self.windows = clients
                 .into_iter()
                 .map(|client| {
-                    let window = Window { app_id: client.class, title: client.title, workspace: client.workspace.id };
+                    let window = Window {
+                        app_id: client.class,
+                        title: client.title,
+                        workspace: client.workspace.id,
+                        fullscreen: client.fullscreen & FULLSCREEN_MODE != 0,
+                    };
                     (strip_address(&client.address).to_owned(), window)
                 })
                 .collect();
@@ -282,6 +294,8 @@ impl State {
         let urgent_workspaces: HashSet<WorkspaceId> =
             self.urgent.iter().filter_map(|address| self.windows.get(address)).map(|window| window.workspace).collect();
         let occupied: HashSet<WorkspaceId> = self.windows.values().map(|window| window.workspace).collect();
+        let fullscreen: HashSet<WorkspaceId> =
+            self.windows.values().filter(|window| window.fullscreen).map(|window| window.workspace).collect();
         let outputs = self
             .monitors
             .iter()
@@ -309,6 +323,7 @@ impl State {
                                 focused: active && monitor.focused,
                                 urgent: urgent_workspaces.contains(&workspace.id),
                                 empty: !occupied.contains(&workspace.id),
+                                fullscreen: fullscreen.contains(&workspace.id),
                             }
                         })
                         .collect(),

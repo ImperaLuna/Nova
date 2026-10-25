@@ -44,7 +44,11 @@
     "events_bytes": 989
   },
   {
+    "name": "fullscreen the focused window",
+    "events_bytes": 1003
+  },
+  {
     "name": "close the focused window",
-    "events_bytes": 1015
+    "events_bytes": 1076
   }
 ]

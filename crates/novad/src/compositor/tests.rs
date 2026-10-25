@@ -44,6 +44,11 @@ impl Recording {
 /// The desktop after each step, from the backend following the events.
 type Followed = Vec<(String, Desktop)>;
 
+/// niri's answer to `Outputs` at the end of step `index`.
+fn niri_ask(recording: &Recording, index: usize) -> impl FnMut() -> Result<serde_json::Value, String> + '_ {
+    move || Ok(serde_json::from_str(&recording.answer(index, "outputs")).unwrap())
+}
+
 fn follow_niri(recording: &Recording) -> Followed {
     let mut state = niri::State::default();
     let mut followed = Vec::new();
@@ -52,6 +57,7 @@ fn follow_niri(recording: &Recording) -> Followed {
         for line in recording.lines(index).filter(|line| *line != NIRI_HANDLED) {
             state.apply(line).unwrap();
         }
+        state.catch_up(&mut niri_ask(recording, index)).unwrap();
         followed.push((step.name.clone(), state.desktop()));
     }
     followed
@@ -67,6 +73,7 @@ fn niri_answer(recording: &Recording, index: usize) -> Desktop {
     state.apply(&event("WorkspacesChanged", "workspaces", "workspaces")).unwrap();
     state.apply(&event("WindowsChanged", "windows", "windows")).unwrap();
     state.apply(&event("KeyboardLayoutsChanged", "keyboard_layouts", "keyboard-layouts")).unwrap();
+    state.catch_up(&mut niri_ask(recording, index)).unwrap();
     state.desktop()
 }
 
@@ -155,9 +162,19 @@ fn check_the_script(followed: &Followed) {
         .collect();
     assert_eq!(urgent, ["web"], "{rung:#?}");
 
+    let fullscreen = |desktop: &Desktop| -> Vec<String> {
+        let workspaces = desktop.outputs.iter().flat_map(|output| &output.workspaces);
+        workspaces.filter(|w| w.fullscreen).map(|w| w.name.clone()).collect()
+    };
+    let before = &followed[..followed.iter().position(|(name, _)| name == "fullscreen the focused window").unwrap()];
+    assert!(before.iter().all(|(_, desktop)| fullscreen(desktop).is_empty()), "fullscreen too early: {before:#?}");
+    let full = step(followed, "fullscreen the focused window");
+    assert_eq!(fullscreen(full), [focused_workspace(full).name.clone()], "{full:#?}");
+
     let closed = followed.last().unwrap();
     assert_eq!(closed.0, "close the focused window");
     assert_eq!(window(&closed.1), None);
+    assert!(fullscreen(&closed.1).is_empty(), "still fullscreen once it closed: {:#?}", closed.1);
 }
 
 #[test]
@@ -200,4 +217,33 @@ fn stepping_stops_at_either_end() {
     assert_eq!(neighbour(desktop, output, Step::Next).unwrap().unwrap().name, "web");
     assert_eq!(neighbour(desktop, output, Step::Previous).unwrap(), None);
     assert!(neighbour(desktop, "nope", Step::Next).unwrap_err().contains("no output"));
+}
+
+#[test]
+fn a_column_as_tall_as_the_output_is_not_fullscreen() {
+    // With no gaps, once the bar gives its space up an ordinary column is
+    // as tall as the output; only one as wide too is fullscreen.
+    let recording = Recording::load("niri");
+    let fullscreen_step = recording.steps.iter().position(|step| step.name == "fullscreen the focused window").unwrap();
+    let mut state = niri::State::default();
+    for index in 0..=fullscreen_step {
+        for line in recording.lines(index).filter(|line| *line != NIRI_HANDLED) {
+            state.apply(line).unwrap();
+        }
+    }
+    state.catch_up(&mut niri_ask(&recording, fullscreen_step)).unwrap();
+    let shown = |desktop: &Desktop| focused_workspace(desktop).fullscreen;
+    assert!(shown(&state.desktop()));
+
+    let (width, height) = (1280.0 / 2.0, 800.0);
+    let layout = serde_json::json!({"pos_in_scrolling_layout": [1, 1], "tile_size": [width, height]});
+    let window = focused_window_id(&recording, fullscreen_step);
+    state.apply(&serde_json::json!({"WindowLayoutsChanged": {"changes": [[window, layout]]}}).to_string()).unwrap();
+    assert!(!shown(&state.desktop()));
+}
+
+/// The id of the window niri lists as focused at the end of step `index`.
+fn focused_window_id(recording: &Recording, index: usize) -> u64 {
+    let window: serde_json::Value = serde_json::from_str(&recording.answer(index, "focused-window")).unwrap();
+    window["id"].as_u64().unwrap()
 }
