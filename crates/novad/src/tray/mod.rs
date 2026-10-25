@@ -244,6 +244,7 @@ impl Tray {
     /// its window, as a click on its icon does (`Activate`). False when no
     /// item belongs to that app. For the launcher, to reopen an app that
     /// only sits in the tray.
+    #[cfg_attr(not(test), expect(dead_code, reason = "the launcher calls it from IMP-109 on"))]
     pub fn activate_app(&self, app_id: &str) -> Result<bool, String> {
         let address = {
             let state = lock(&self.shared.state);
