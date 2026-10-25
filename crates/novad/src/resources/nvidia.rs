@@ -19,7 +19,8 @@ pub fn find(path_var: &str) -> Option<PathBuf> {
 
 /// A running `nvidia-smi` and the last share it printed.
 pub struct NvidiaSmi {
-    child: Child,
+    // Taken when it's dropped.
+    child: Option<Child>,
     latest: Arc<Mutex<Option<f32>>>,
 }
 
@@ -46,7 +47,7 @@ impl NvidiaSmi {
                 *crate::lock(&shared) = parse(&line);
             }
         });
-        Ok(Self { child, latest })
+        Ok(Self { child: Some(child), latest })
     }
 
     /// The share it last printed, if it printed one.
@@ -56,9 +57,14 @@ impl NvidiaSmi {
 }
 
 impl Drop for NvidiaSmi {
+    // Reaped on a thread of its own: a driver stuck in the kernel can keep
+    // even a killed nvidia-smi from exiting, and this runs with resources'
+    // state locked.
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            std::thread::spawn(move || child.wait());
+        }
     }
 }
 
@@ -94,14 +100,19 @@ mod tests {
         assert_eq!(find(&path_var), Some(script.clone()));
 
         let smi = NvidiaSmi::start(&script, &path_var, Duration::from_secs(2)).unwrap();
-        let pid = smi.child.id();
+        let pid = smi.child.as_ref().unwrap().id();
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while smi.latest() != Some(42.0) && std::time::Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert_eq!(smi.latest(), Some(42.0));
         drop(smi);
-        assert!(!Path::new(&format!("/proc/{pid}")).exists(), "stopped and reaped");
+        let gone = || !Path::new(&format!("/proc/{pid}")).exists();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !gone() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(gone(), "stopped and reaped");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

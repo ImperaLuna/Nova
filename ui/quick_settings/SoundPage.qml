@@ -163,75 +163,91 @@ Item {
             onPicked: key => page.tab = key
         }
 
-        Column {
+        // The tab's list, scrolling once it's longer than the page.
+        Flickable {
+            id: lists
+            objectName: "lists"
             width: parent.width
-            spacing: Tokens.labelNudge * 2
-            visible: page.tab !== "apps"
+            height: Math.max(0, page.height - y)
+            contentHeight: tabLists.height
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
 
-            // By count, so a volume change elsewhere in the lists doesn't
-            // rebuild the rows.
-            Repeater {
-                id: rows
-                readonly property var shown: page.tab === "output" ? page.outputs : page.tab === "input" ? page.inputs : []
-                model: shown.length
+            Column {
+                id: tabLists
+                width: lists.width
 
-                ListRow {
-                    required property int index
-                    // Past the end for a moment while the tab switches.
-                    readonly property var modelData: rows.shown[index] ?? {
-                        id: -1,
-                        name: "",
-                        kind: "",
-                        current: false
-                    }
+                Column {
                     width: parent.width
-                    icon: page.tab === "input" ? Icons.MIC : page.kindIcon(modelData.kind)
-                    title: modelData.name
-                    subtitle: page.tab === "input" ? "" : QuickSettings.kindLabel(modelData.kind)
-                    status: modelData.current ? qsTr("In use") : ""
-                    selected: modelData.current
-                    onClicked: page.tab === "input" ? page.inputPicked(modelData.id) : page.outputPicked(modelData.id)
-                }
-            }
-        }
+                    spacing: Tokens.labelNudge * 2
+                    visible: page.tab !== "apps"
 
-        Column {
-            width: parent.width
-            spacing: Tokens.gap
-            visible: page.tab === "apps"
+                    // By count, so a volume change elsewhere in the lists doesn't
+                    // rebuild the rows.
+                    Repeater {
+                        id: rows
+                        readonly property var shown: page.tab === "output" ? page.outputs : page.tab === "input" ? page.inputs : []
+                        model: shown.length
 
-            // By count: every volume change gives a new `apps`, and a
-            // rebuilt slider would drop the drag under the pointer.
-            Repeater {
-                model: page.tab === "apps" ? page.apps.length : 0
-
-                QsSlider {
-                    required property int index
-                    readonly property var stream: page.apps[index] ?? {
-                        ids: [],
-                        icon: "",
-                        name: "",
-                        volume: 0,
-                        muted: false
+                        ListRow {
+                            required property int index
+                            // Past the end for a moment while the tab switches.
+                            readonly property var modelData: rows.shown[index] ?? {
+                                id: -1,
+                                name: "",
+                                kind: "",
+                                current: false
+                            }
+                            width: parent.width
+                            icon: page.tab === "input" ? Icons.MIC : page.kindIcon(modelData.kind)
+                            title: modelData.name
+                            subtitle: page.tab === "input" ? "" : QuickSettings.kindLabel(modelData.kind)
+                            status: modelData.current ? qsTr("In use") : ""
+                            selected: modelData.current
+                            onClicked: page.tab === "input" ? page.inputPicked(modelData.id) : page.outputPicked(modelData.id)
+                        }
                     }
-                    width: parent.width
-                    app: true
-                    appIcon: page.iconSource(stream.icon)
-                    label: stream.name
-                    value: stream.volume
-                    muted: stream.muted
-                    onMoved: value => page.appVolumeMoved(stream.ids, value)
-                    onIconClicked: page.appMuteToggled(stream.ids, !stream.muted)
                 }
-            }
 
-            Text {
-                visible: page.apps.length === 0
-                leftPadding: Tokens.pad
-                font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeSmall
-                color: Tokens.fgDim
-                text: qsTr("No app is playing sound")
+                Column {
+                    width: parent.width
+                    spacing: Tokens.gap
+                    visible: page.tab === "apps"
+
+                    // By count: every volume change gives a new `apps`, and a
+                    // rebuilt slider would drop the drag under the pointer.
+                    Repeater {
+                        model: page.tab === "apps" ? page.apps.length : 0
+
+                        QsSlider {
+                            required property int index
+                            readonly property var stream: page.apps[index] ?? {
+                                ids: [],
+                                icon: "",
+                                name: "",
+                                volume: 0,
+                                muted: false
+                            }
+                            width: parent.width
+                            app: true
+                            appIcon: page.iconSource(stream.icon)
+                            label: stream.name
+                            value: stream.volume
+                            muted: stream.muted
+                            onMoved: value => page.appVolumeMoved(stream.ids, value)
+                            onIconClicked: page.appMuteToggled(stream.ids, !stream.muted)
+                        }
+                    }
+
+                    Text {
+                        visible: page.apps.length === 0
+                        leftPadding: Tokens.pad
+                        font.family: Tokens.fontSans
+                        font.pixelSize: Tokens.fontSizeSmall
+                        color: Tokens.fgDim
+                        text: qsTr("No app is playing sound")
+                    }
+                }
             }
         }
     }

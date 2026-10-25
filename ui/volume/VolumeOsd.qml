@@ -34,13 +34,13 @@ Scope {
         still: VolumeService.muted || !VolumeService.available
     }
 
+    // Out where it is, or on the focused screen; not where quick settings
+    // is open, even while it's still sliding away there.
     function reveal() {
-        if (!motion.shown) {
-            const focused = focusedScreen();
-            if (VolumeService.shownElsewhere.includes(focused?.name))
-                return;
-            screen = focused;
-        }
+        const target = motion.shown ? screen : focusedScreen();
+        if (VolumeService.shownElsewhere.includes(target?.name))
+            return;
+        screen = target;
         motion.openTarget = 1;
         hold.restart();
     }

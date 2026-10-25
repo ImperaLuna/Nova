@@ -529,6 +529,7 @@ pub struct PowerOption {
 
 /// The machine and its user, as the quick settings header shows them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Host {
     /// The machine's host name.
     pub host: String,
@@ -543,6 +544,7 @@ pub struct Host {
 
 /// The distribution, from os-release.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OperatingSystem {
     /// `ID`, like `nixos` or `arch`; `linux` when unset.
     pub id: String,
@@ -558,6 +560,7 @@ pub struct OperatingSystem {
 
 /// One look at what the machine is busy with.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Resources {
     /// Share of all CPU time in use since the last look, 0 to 100.
     pub cpu: f32,
@@ -585,6 +588,7 @@ pub const RESOURCE_HISTORY_INTERVAL_SECS: u64 = 5;
 
 /// CPU and memory at one point in time, each 0 to 100.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResourceSample {
     pub cpu: f32,
     pub memory: f32,
@@ -592,6 +596,7 @@ pub struct ResourceSample {
 
 /// One app's processes together.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AppUsage {
     /// The program's name, from its file (`.firefox-wrapped` is `firefox`);
     /// `Nova` for novad and its UI.
@@ -1198,6 +1203,25 @@ mod tests {
         assert!(serde_json::from_str::<PowerMenu>(r#"{"options":[],"extra":1}"#).is_err());
         let option = r#"{"options":[{"action":"lock","available":true,"extra":1}]}"#;
         assert!(serde_json::from_str::<PowerMenu>(option).is_err());
+    }
+
+    #[test]
+    fn host_and_resources_reject_unknown_fields() {
+        fn with_extra(value: serde_json::Value, pointer: &str) -> serde_json::Value {
+            let mut value = value;
+            value.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
+            value
+        }
+        let host = serde_json::to_value(host()).unwrap();
+        assert!(serde_json::from_value::<Host>(host.clone()).is_ok());
+        for pointer in ["", "/os"] {
+            assert!(serde_json::from_value::<Host>(with_extra(host.clone(), pointer)).is_err(), "{pointer}");
+        }
+        let resources = serde_json::to_value(resources()).unwrap();
+        assert!(serde_json::from_value::<Resources>(resources.clone()).is_ok());
+        for pointer in ["", "/history/0", "/apps/0"] {
+            assert!(serde_json::from_value::<Resources>(with_extra(resources.clone(), pointer)).is_err(), "{pointer}");
+        }
     }
 
     #[test]

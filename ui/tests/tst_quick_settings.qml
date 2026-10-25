@@ -257,6 +257,16 @@ Item {
                 }
             ]);
             compare(starting[0].volume, 0.6, "a stream without a volume yet doesn't pull it to 0");
+
+            const odd = QuickSettings.appGroups([
+                {
+                    id: 5,
+                    name: "constructor",
+                    volume: 0.5,
+                    muted: false
+                }
+            ]);
+            compare(odd[0].ids, [5], "any name an app gives is its own group");
         }
 
         function test_program_names_drop_nix_wrappers() {
@@ -321,6 +331,12 @@ Item {
             compare(slider.current, 0.2, "released, it shows the volume again");
             mouseClick(slider, slider.trackX + 1, slider.height / 2);
             compare(spy.signalArguments[spy.count - 1][0], 0, "the track's start is 0");
+            // The volume came back somewhere else meanwhile: clicking the
+            // same spot again still sets it.
+            slider.value = 0.7;
+            const count = spy.count;
+            mouseClick(slider, slider.trackX + 1, slider.height / 2);
+            compare(spy.count, count + 1, "every press sets it");
         }
 
         function test_at_zero_the_track_is_empty_and_the_icon_beside_it() {

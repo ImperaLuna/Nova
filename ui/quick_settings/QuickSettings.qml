@@ -84,7 +84,12 @@ StagePanel {
 
     // The header's uptime, a minute at a time while it's open.
     property date now: new Date()
-    Component.onDestruction: VolumeService.showElsewhere(output.name, false)
+    // Gone while open (its screen went away): nothing reads resources now.
+    Component.onDestruction: {
+        VolumeService.showElsewhere(output.name, false);
+        if (open)
+            QuickSettingsService.watching = false;
+    }
     Timer {
         interval: 60 * 1000
         running: panel.open

@@ -141,17 +141,18 @@ Item {
             enabled: slider.available
             preventStealing: true
             property real value: 0
-            function set(mouseX: real) {
+            // Each press sets it; moving on only sends the changes.
+            function set(mouseX: real, moving: bool) {
                 const next = Math.round(Math.max(0, Math.min(1, mouseX / width)) * 100) / 100;
-                if (pressed && next === value)
+                if (moving && next === value)
                     return;
                 value = next;
                 slider.moved(next);
             }
-            onPressed: mouse => set(mouse.x)
+            onPressed: mouse => set(mouse.x, false)
             onPositionChanged: mouse => {
                 if (pressed)
-                    set(mouse.x);
+                    set(mouse.x, true);
             }
         }
     }

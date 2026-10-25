@@ -162,7 +162,8 @@ function entryIcon(entries, names) {
 // gives, and is muted only while all of them are.
 function appGroups(apps) {
     var groups = [];
-    var byName = {};
+    // No prototype: a stream may well be called `constructor`.
+    var byName = Object.create(null);
     for (var i = 0; i < apps.length; i++) {
         var app = apps[i];
         var group = byName[app.name];
