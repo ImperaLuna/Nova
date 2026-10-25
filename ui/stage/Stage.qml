@@ -79,7 +79,7 @@ Scope {
         output: root.screen
         placement: "right"
         panels: root.placed("right")
-        clickAnywhere: all.needsKeyboard
+        clickAnywhere: all.catchesClicks
         holding: root.settling
         onDismissRequested: all.dismiss()
     }
@@ -89,7 +89,7 @@ Scope {
         output: root.screen
         placement: "center"
         panels: root.placed("center")
-        clickAnywhere: all.needsKeyboard
+        clickAnywhere: all.catchesClicks
         holding: root.settling
         onDismissRequested: all.dismiss()
     }
@@ -130,25 +130,20 @@ Scope {
         }
 
         WlrLayershell.layer: WlrLayer.Top
-        WlrLayershell.keyboardFocus: keyboard.mode
-
-        SurfaceFocus {
-            id: keyboard
-            surfacePanels: drawn
-            window: stage.contentItem.Window.window
-        }
+        WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
         // Rounded like what's drawn, so clicks at the corners reach the
-        // windows below. While a panel holds the keyboard, here or on another
-        // surface, the whole stage takes clicks (and `catcher` the rest of
-        // the screen), and one outside the panel closes it.
+        // windows below. While a panel that closes on a click outside is
+        // open, here or on another surface, the whole stage takes clicks
+        // (and ClickCatcher the rest of the screen), and one outside the
+        // panel closes it.
         mask: Region {
             regions: inputRegions.instances
         }
 
         Variants {
             id: inputRegions
-            model: all.needsKeyboard ? [outside] : drawn.shapes
+            model: all.catchesClicks ? [outside] : drawn.shapes
             ShapeRegion {}
         }
 
@@ -183,10 +178,16 @@ Scope {
             readonly property int radius: 0
             width: root.screen.width
             height: root.screen.height
-            enabled: all.needsKeyboard
+            enabled: all.catchesClicks
             focus: true
             onClicked: mouse => {
                 if (!drawn.covers(mouse.x, mouse.y))
+                    all.dismiss();
+            }
+            // A scroll outside closes it too, so the next one reaches the
+            // window below: the screen's input can't pass it on.
+            onWheel: wheel => {
+                if (!drawn.covers(wheel.x, wheel.y))
                     all.dismiss();
             }
             Keys.onEscapePressed: all.dismiss()
@@ -210,8 +211,9 @@ Scope {
 
     ClickCatcher {
         screen: root.screen
-        visible: all.needsKeyboard
-        holes: [Qt.rect(0, 0, root.screen.width, stage.implicitHeight), ...[right, center].filter(surface => surface.visible).map(surface => surface.box)]
+        catching: all.catchesClicks
+        // Only while catching, so it doesn't redraw for every morph frame.
+        holes: all.catchesClicks ? [Qt.rect(0, 0, root.screen.width, stage.implicitHeight), ...[right, center].filter(surface => surface.visible).map(surface => surface.box)] : []
         onClicked: all.dismiss()
     }
 }

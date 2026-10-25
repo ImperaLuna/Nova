@@ -110,7 +110,7 @@ Item {
             const closedWidth = pill.width;
             mouseClick(pill, 20, Tokens.barHeight / 2);
             tryCompare(pill, "width", pill.panelWidth);
-            verify(pill.closesOnFocusLoss);
+            verify(pill.closesOnClickOutside);
             // Past the closed pill: the provider name and the plan chip.
             mouseClick(pill, pill.panelWidth - 10, Tokens.barHeight / 2);
             verify(!pill.open);

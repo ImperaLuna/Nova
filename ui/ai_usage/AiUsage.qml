@@ -9,14 +9,14 @@ import "usage.js" as Usage
 
 // The AI usage pill: the shown provider's logo and its session percent.
 // Clicking it morphs the pill into the details panel in place, so the same
-// click closes it again, as does the panel's whole header, or turning to a
-// window or the desktop. Numbers come from novad's ai_usage event. A
-// StagePanel, so the stage gives it clicks and blur.
+// click closes it again, as does the panel's whole header or a click
+// outside. Numbers come from novad's ai_usage event. A StagePanel, so the
+// stage gives it clicks and blur.
 StagePanel {
     id: root
 
     name: Protocol.FEATURE_AI_USAGE
-    closesOnFocusLoss: true
+    closesOnClickOutside: true
     // AiUsageService.usage: {shown, providers}.
     required property var usage
 

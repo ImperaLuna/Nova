@@ -26,8 +26,8 @@ PanelWindow { // qmllint disable uncreatable-type
     required property string placement
     // This placement's panels on this screen.
     required property list<StagePanel> panels
-    // A panel holding the keyboard is open on this screen: the whole surface
-    // takes clicks, and one off its panels closes that panel.
+    // A panel that closes on a click outside is open on this screen: the
+    // whole surface takes clicks, and one off its panels closes that panel.
     required property bool clickAnywhere
     // The stage hasn't yet drawn the item a closing panel grew out of
     // (StagePanel `from`) back: the surface stays until it has.
@@ -125,12 +125,7 @@ PanelWindow { // qmllint disable uncreatable-type
     }
 
     WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.keyboardFocus: keyboard.mode
-
-    readonly property SurfaceFocus keyboard: SurfaceFocus {
-        surfacePanels: surface.drawn
-        window: surface.contentItem.Window.window
-    }
+    WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     mask: Region {
         regions: inputRegions.instances
@@ -180,6 +175,12 @@ PanelWindow { // qmllint disable uncreatable-type
         focus: true
         onClicked: mouse => {
             const at = mapToItem(null, mouse.x, mouse.y);
+            if (!surface.drawn.covers(at.x, at.y))
+                surface.dismissRequested();
+        }
+        // As on the stage: a scroll outside closes it too.
+        onWheel: wheel => {
+            const at = mapToItem(null, wheel.x, wheel.y);
             if (!surface.drawn.covers(at.x, at.y))
                 surface.dismissRequested();
         }

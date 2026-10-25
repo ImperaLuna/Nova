@@ -17,8 +17,7 @@ Item {
     // `nova toggle` calls it, so keep it short.
     required property string name
     // Whether its panel is open. The pill sets it on click; the stage clears
-    // it on Esc or a click outside (`wantsKeyboard`), when the focus moves
-    // elsewhere (`closesOnFocusLoss`), and when another panel rules it out.
+    // it on Esc or a click outside (`wantsKeyboard`, `closesOnClickOutside`), and when another panel rules it out.
     property bool open: false
     // Its corner radius as drawn, so clicks at the corners reach the windows
     // below and the blur doesn't show past the rounding.
@@ -29,19 +28,12 @@ Item {
     // usage), or stays open beside them (a notes window would).
     property bool exclusive: true
     // Whether its open panel takes typing (the launcher will). While it does,
-    // the stage holds the keyboard and the whole screen takes clicks, so a
-    // click outside the panel closes it.
+    // the stage holds the keyboard, and Esc closes it.
     property bool wantsKeyboard: false
-    // Whether it closes when you turn to something else: a click on a
-    // window, which still reaches it (SurfaceFocus). For a panel that takes
-    // no typing, like AI usage.
-    property bool closesOnFocusLoss: false
-    // Whether the pointer is over it.
-    readonly property bool hovered: hover.hovered
-
-    HoverHandler {
-        id: hover
-    }
+    // Whether a click outside it closes it while it's open. Meanwhile the
+    // whole screen takes clicks, so that click doesn't reach the window
+    // below. A notes window would stay open instead.
+    property bool closesOnClickOutside: wantsKeyboard
     // Its height once open. The stage is only as tall as what's drawn on it
     // can get, so it makes room for this before the panel opens.
     property real openHeight: height
