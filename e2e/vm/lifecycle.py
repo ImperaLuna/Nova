@@ -72,9 +72,11 @@ REFRESH_HZ = 60
 # twice still exceeds.
 FRAMES_PER_REFRESH = 1.5
 # How many surfaces may draw while the panel opens or closes: the stage on
-# the pill's screen alone. The bar's exclusion zone used to draw a frame
-# too, each time an animation started (IMP-49).
-MORPH_SURFACES = 1
+# the pill's screen, and the click catcher, which closes the panel on a click
+# outside it, as it shows or hides (ui/stage/ClickCatcher.qml draws only
+# then). The bar's exclusion zone used to draw a frame too, each time an
+# animation started (IMP-49).
+MORPH_SURFACES = 2
 # The placeholder panels off the stage (ui/demo/DemoPanels.qml, on with
 # NOVA_DEMO_PANELS=1), opened over Quickshell's IPC.
 DEMO_PANELS = ("demo-sidebar", "demo-tab", "demo-center")
@@ -385,6 +387,10 @@ with subtest("screenshot: the AI usage panel open, grown from its pill"):
     screenshot("panel-open")
     # The same spot closes it again.
     click_until_logged(*AI_USAGE_PILL, AI_USAGE_CLOSED)
+
+with subtest("a click outside closes the AI usage panel"):
+    click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED)
+    click_until_logged(*POINTER_REST, AI_USAGE_CLOSED)
 
 with subtest("nova toggle opens and closes the AI usage panel, as a keybind would"):
     for line in (AI_USAGE_OPENED, AI_USAGE_CLOSED):

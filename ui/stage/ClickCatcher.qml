@@ -4,8 +4,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 
-// While a panel holds the keyboard, the rest of the screen: a click anywhere
-// off Nova's surfaces closes that panel. Those surfaces take clicks over
+// While a panel that closes on a click outside is open, the rest of the
+// screen: a click anywhere off Nova's surfaces closes that panel. Those surfaces take clicks over
 // their whole area meanwhile, so the two never overlap and it doesn't matter
 // which the compositor puts on top. Empty, and never blurred.
 PanelWindow { // qmllint disable uncreatable-type

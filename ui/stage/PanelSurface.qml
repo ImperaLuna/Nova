@@ -26,8 +26,8 @@ PanelWindow { // qmllint disable uncreatable-type
     required property string placement
     // This placement's panels on this screen.
     required property list<StagePanel> panels
-    // A panel holding the keyboard is open on this screen: the whole surface
-    // takes clicks, and one off its panels closes that panel.
+    // A panel that closes on a click outside is open on this screen: the
+    // whole surface takes clicks, and one off its panels closes that panel.
     required property bool clickAnywhere
     // The stage hasn't yet drawn the item a closing panel grew out of
     // (StagePanel `from`) back: the surface stays until it has.

@@ -79,7 +79,7 @@ Scope {
         output: root.screen
         placement: "right"
         panels: root.placed("right")
-        clickAnywhere: all.needsKeyboard
+        clickAnywhere: all.catchesClicks
         holding: root.settling
         onDismissRequested: all.dismiss()
     }
@@ -89,7 +89,7 @@ Scope {
         output: root.screen
         placement: "center"
         panels: root.placed("center")
-        clickAnywhere: all.needsKeyboard
+        clickAnywhere: all.catchesClicks
         holding: root.settling
         onDismissRequested: all.dismiss()
     }
@@ -133,16 +133,17 @@ Scope {
         WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
         // Rounded like what's drawn, so clicks at the corners reach the
-        // windows below. While a panel holds the keyboard, here or on another
-        // surface, the whole stage takes clicks (and `catcher` the rest of
-        // the screen), and one outside the panel closes it.
+        // windows below. While a panel that closes on a click outside is
+        // open, here or on another surface, the whole stage takes clicks
+        // (and ClickCatcher the rest of the screen), and one outside the
+        // panel closes it.
         mask: Region {
             regions: inputRegions.instances
         }
 
         Variants {
             id: inputRegions
-            model: all.needsKeyboard ? [outside] : drawn.shapes
+            model: all.catchesClicks ? [outside] : drawn.shapes
             ShapeRegion {}
         }
 
@@ -177,7 +178,7 @@ Scope {
             readonly property int radius: 0
             width: root.screen.width
             height: root.screen.height
-            enabled: all.needsKeyboard
+            enabled: all.catchesClicks
             focus: true
             onClicked: mouse => {
                 if (!drawn.covers(mouse.x, mouse.y))
@@ -204,7 +205,7 @@ Scope {
 
     ClickCatcher {
         screen: root.screen
-        visible: all.needsKeyboard
+        visible: all.catchesClicks
         holes: [Qt.rect(0, 0, root.screen.width, stage.implicitHeight), ...[right, center].filter(surface => surface.visible).map(surface => surface.box)]
         onClicked: all.dismiss()
     }

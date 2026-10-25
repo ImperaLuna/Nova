@@ -16,6 +16,7 @@ Item {
     StagePanel {
         id: usage
         name: "ai-usage"
+        closesOnClickOutside: true
     }
 
     StagePanel {
@@ -135,6 +136,20 @@ Item {
             verify(!launcher.open);
             verify(!drawn.needsKeyboard);
             verify(notes.open, "notes stays");
+        }
+
+        function test_the_screen_takes_clicks_while_a_panel_closes_on_one_outside() {
+            verify(launcher.closesOnClickOutside, "a typing panel does by default");
+            verify(!drawn.catchesClicks);
+            notes.open = true;
+            verify(!drawn.catchesClicks, "notes stays open on a click outside");
+            usage.open = true;
+            verify(drawn.catchesClicks, "an open panel that takes no typing");
+            verify(!drawn.needsKeyboard);
+            drawn.dismiss();
+            verify(!usage.open);
+            verify(notes.open, "notes stays");
+            verify(!drawn.catchesClicks);
         }
 
         function test_opening_an_exclusive_panel_closes_the_other_exclusive_ones() {
