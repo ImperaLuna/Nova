@@ -8,7 +8,7 @@ import "../capture/capture.js" as Capture
 import "../daemon/protocol.js" as Protocol
 
 // The region picker's sums (capture.js), the picker taking a drag, a click
-// or a screen, picking what to record, the screenshot card's buttons and
+// or a screen, picking what to record, switching between the two, the screenshot card's buttons and
 // drain, and the recording pill, without novad or a window: those need
 // Quickshell, which the VM tests cover. The frame
 // is 400x300 on a 200x150 picker: a screen at scale 2. The root is an Item:
@@ -264,6 +264,41 @@ Item {
             compare(saves.count, 0);
             compare(records.count, 1);
             compare(records.signalArguments[0][0], null);
+        }
+
+        SignalSpy {
+            id: switches
+            signalName: "videoRequested"
+        }
+
+        function test_the_toolbar_switches_between_a_screenshot_and_a_recording() {
+            const picker = makePicker();
+            const button = icon => findButtons(picker).find(button => button.icon === icon);
+            verify(!button(Capture.ICON_VIDEO).visible, "no switch unless both are on");
+            picker.canSwitch = true;
+            switches.target = picker;
+            switches.clear();
+            const camera = button(Capture.ICON_CAMERA);
+            const video = button(Capture.ICON_VIDEO);
+            verify(camera.visible && camera.selected && !video.selected);
+            // Laid out, and grown in from the pill.
+            tryVerify(() => video.x > camera.x);
+            tryCompare(picker.toolbarGlass, "scale", 1);
+            mouseClick(camera);
+            compare(switches.count, 0, "already a screenshot");
+            mouseClick(video);
+            compare(switches.count, 1);
+            compare(switches.signalArguments[0][0], true);
+            picker.video = true;
+            verify(video.selected && !camera.selected);
+            // Not while it counts down or saves.
+            picker.busy = true;
+            mouseClick(camera);
+            compare(switches.count, 1);
+            picker.busy = false;
+            mouseClick(camera);
+            compare(switches.count, 2);
+            compare(switches.signalArguments[1][0], false);
         }
 
         Component {

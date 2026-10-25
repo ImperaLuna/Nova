@@ -5,9 +5,10 @@ import "../theme"
 import "../daemon/protocol.js" as Protocol
 import "capture.js" as Capture
 
-// The region picker's toolbar, where the central pill sits: what to take
-// (a region or the whole screen), for a recording the sound too (the
-// desktop's, the mic), and close. It grows in from the pill's height when
+// The region picker's toolbar, where the central pill sits: a screenshot
+// or a recording (when both are on), what to take (a region or the whole
+// screen), for a recording the sound too (the desktop's, the mic), and
+// close. It grows in from the pill's height when
 // the picker opens. `glass` is its blur area.
 Item {
     id: toolbar
@@ -17,6 +18,11 @@ Item {
     property bool video: false
     property bool desktopAudio: false
     property bool micAudio: false
+    // Screenshots and recordings are both on and nothing records: the
+    // camera and video buttons show. Not while a pick is busy.
+    property bool canSwitch: false
+    property bool busy: false
+    signal videoRequested(bool video)
     signal modeRequested(string mode)
     signal desktopAudioToggled
     signal micAudioToggled
@@ -59,6 +65,40 @@ Item {
             id: row
             anchors.centerIn: parent
             spacing: Tokens.barGap
+
+            Repeater {
+                model: [
+                    {
+                        video: false,
+                        icon: Capture.ICON_CAMERA
+                    },
+                    {
+                        video: true,
+                        icon: Capture.ICON_VIDEO
+                    }
+                ]
+                CaptureButton {
+                    required property var modelData
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: toolbar.canSwitch
+                    enabled: !toolbar.busy
+                    icon: modelData.icon
+                    radius: height / 2
+                    selected: toolbar.video === modelData.video
+                    onClicked: {
+                        if (!selected)
+                            toolbar.videoRequested(modelData.video);
+                    }
+                }
+            }
+
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: toolbar.canSwitch
+                width: Tokens.dividerWidth
+                height: Tokens.dividerHeight
+                color: Tokens.outline
+            }
 
             Repeater {
                 model: [

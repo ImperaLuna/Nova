@@ -32,6 +32,8 @@ Item {
     property bool micAudio: false
     // The count to the recording's start, 0 when not counting.
     property int countdown: 0
+    // The toolbar can switch between a screenshot and a recording.
+    property bool canSwitch: false
 
     // `rect` is in the frame's pixels, save_capture's rect.
     signal saveRequested(var rect)
@@ -39,6 +41,8 @@ Item {
     signal recordRequested(var rect)
     signal cancelRequested
     signal modeRequested(string mode)
+    // The toolbar's camera (false) or video (true).
+    signal videoRequested(bool video)
     signal desktopAudioToggled
     signal micAudioToggled
 
@@ -284,8 +288,11 @@ Item {
         y: Tokens.barGap
         mode: picker.mode
         video: picker.video
+        canSwitch: picker.canSwitch
+        busy: picker.busy || picker.recorded !== null
         desktopAudio: picker.desktopAudio
         micAudio: picker.micAudio
+        onVideoRequested: video => picker.videoRequested(video)
         onModeRequested: mode => picker.modeRequested(mode)
         onDesktopAudioToggled: picker.desktopAudioToggled()
         onMicAudioToggled: picker.micAudioToggled()

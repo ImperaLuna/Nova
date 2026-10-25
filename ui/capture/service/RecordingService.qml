@@ -75,6 +75,14 @@ Singleton {
         picking = false;
     }
 
+    // Opens the picker in `mode` (the toolbar switched from a screenshot).
+    function pick(mode: string) {
+        if (!ready || recording)
+            return;
+        picking = true;
+        root.mode = mode;
+    }
+
     function stop() {
         Daemon.call(Protocol.CMD_STOP_RECORDING);
     }
@@ -113,7 +121,7 @@ Singleton {
     Timer {
         id: begin
         property var pending: null
-        interval: Tokens.recordStartDelay
+        interval: Tokens.pickerGoneDelay
         onTriggered: {
             Daemon.call(Protocol.CMD_START_RECORDING, {
                 output: pending.output,

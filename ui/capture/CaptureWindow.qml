@@ -11,7 +11,7 @@ import "capture.js" as Capture
 // space. Its own surface, not the stage's: it needs the overlay layer and
 // covers everything, so the stage's mask and morph have nothing to add.
 // Picking what to record (`video`) it goes through RecordingService, over
-// the live screen.
+// the live screen. The toolbar switches between the two, keeping its mode.
 PanelWindow { // qmllint disable uncreatable-type
     id: window
 
@@ -51,6 +51,7 @@ PanelWindow { // qmllint disable uncreatable-type
         desktopAudio: RecordingService.desktopAudio
         micAudio: RecordingService.micAudio
         countdown: RecordingService.countdown
+        canSwitch: ScreenshotService.ready && RecordingService.ready && !RecordingService.recording
         onSaveRequested: rect => ScreenshotService.save(window.output.name, rect)
         onRecordRequested: rect => RecordingService.record(window.output.name, rect ? Capture.toLayout(rect, window.output.x, window.output.y) : null)
         onCancelRequested: window.video ? RecordingService.cancel() : ScreenshotService.cancel()
@@ -59,6 +60,17 @@ PanelWindow { // qmllint disable uncreatable-type
                 RecordingService.mode = mode;
             else
                 ScreenshotService.mode = mode;
+        }
+        onVideoRequested: video => {
+            if (video) {
+                const mode = ScreenshotService.mode;
+                ScreenshotService.cancel();
+                RecordingService.pick(mode);
+            } else {
+                const mode = RecordingService.mode;
+                RecordingService.cancel();
+                ScreenshotService.pick(mode);
+            }
         }
         onDesktopAudioToggled: RecordingService.desktopAudio = !RecordingService.desktopAudio
         onMicAudioToggled: RecordingService.micAudio = !RecordingService.micAudio
