@@ -5,6 +5,7 @@ import Quickshell
 import "../compositor"
 import "../daemon"
 import "../daemon/protocol.js" as Protocol
+import "../stage"
 import "../theme"
 import "service"
 import "volume.js" as Volume
@@ -18,6 +19,10 @@ Scope {
 
     // The screen it's out on, or last came out on.
     property ShellScreen screen: null
+    // As the capsule lays out by it, kept while that screen goes away.
+    readonly property StageScreen output: StageScreen {
+        screen: osd.screen
+    }
     // The pointer is on it or dragging.
     property bool held: false
 
@@ -62,7 +67,7 @@ Scope {
     LazyLoader {
         active: osd.screen !== null && osd.motion.shown
         component: CapsuleWindow {
-            output: osd.screen
+            output: osd.output
             motion: osd.motion
             kind: VolumeService.output
             volume: VolumeService.volume

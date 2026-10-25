@@ -518,8 +518,9 @@ pub enum Command {
     /// The UI unlocked the session after the user's password checked out
     /// (feature `lock`). Unlocking is the UI's alone: this only tells novad.
     ReportUnlocked,
-    /// Replies with what the power menu can do now, a [`PowerOption`] per
-    /// [`PowerAction`] (feature `power`). Asked each time the menu opens.
+    /// Replies with a [`PowerMenu`]: what the power menu can do now, a
+    /// [`PowerOption`] per [`PowerAction`], and when the system booted
+    /// (feature `power`). Asked each time the menu opens.
     PowerOptions,
     /// Runs a power menu action (feature `power`). The menu asks the user
     /// to confirm the ones that end the session first.
@@ -572,12 +573,24 @@ impl PowerAction {
 
 /// Whether a power action can run now, and why not when it can't.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PowerOption {
     pub action: PowerAction,
     pub available: bool,
     /// For people, shown under the dimmed action.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+/// What `power_options` returns.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PowerMenu {
+    pub options: Vec<PowerOption>,
+    /// When the system booted, in Unix seconds, for the menu's uptime; left
+    /// out when novad can't tell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub booted_at: Option<u64>,
 }
 
 /// What `status` returns.
@@ -849,14 +862,17 @@ mod tests {
             encode(Response {
                 id: 18,
                 outcome: Outcome::Result(
-                    serde_json::to_value(vec![
-                        PowerOption { action: PowerAction::Lock, available: true, reason: None },
-                        PowerOption {
-                            action: PowerAction::Suspend,
-                            available: false,
-                            reason: Some("suspend is turned off".into()),
-                        },
-                    ])
+                    serde_json::to_value(PowerMenu {
+                        options: vec![
+                            PowerOption { action: PowerAction::Lock, available: true, reason: None },
+                            PowerOption {
+                                action: PowerAction::Suspend,
+                                available: false,
+                                reason: Some("suspend is turned off".into()),
+                            },
+                        ],
+                        booted_at: Some(1_761_350_400),
+                    })
                     .unwrap(),
                 ),
             }),
@@ -1146,6 +1162,15 @@ mod tests {
         assert!(decode_request(r#"{"v":2,"id":1,"cmd":"ping"}"#).is_ok());
         assert!(decode_request(r#"{"v":2,"id":1,"cmd":"ping","extra":true}"#).is_err());
         assert!(decode_request(r#"{"v":2,"cmd":"ping","args":{"x":1}}"#).is_err());
+    }
+
+    #[test]
+    fn power_menu_rejects_unknown_fields() {
+        let menu = r#"{"options":[{"action":"lock","available":true}],"booted_at":1}"#;
+        assert!(serde_json::from_str::<PowerMenu>(menu).is_ok());
+        assert!(serde_json::from_str::<PowerMenu>(r#"{"options":[],"extra":1}"#).is_err());
+        let option = r#"{"options":[{"action":"lock","available":true,"extra":1}]}"#;
+        assert!(serde_json::from_str::<PowerMenu>(option).is_err());
     }
 
     #[test]
