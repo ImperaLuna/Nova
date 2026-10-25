@@ -86,9 +86,11 @@ sleep "$settle"
 # surfaces on it go with it, without errors (IMP-92), and a new stage
 # comes up on the one that's back.
 if ((monitors > 1)); then
+  wait_for 10 "a bar on every output" bash -c "(( \$(grep -c 'ui: qml: nova: bar shown' '$out/state/nova.log' || true) >= $monitors ))"
   swaymsg -q output "HEADLESS-$monitors" unplug || fail "couldn't unplug HEADLESS-$monitors"
   sleep 1
   swaymsg -q create_output || fail "couldn't add an output back"
+  wait_for 10 "a bar on the output added back" bash -c "(( \$(grep -c 'ui: qml: nova: bar shown' '$out/state/nova.log' || true) > $monitors ))"
   sleep "$settle"
 fi
 
