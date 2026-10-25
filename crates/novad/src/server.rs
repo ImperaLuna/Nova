@@ -3,7 +3,9 @@
 
 use crate::hub::{ClientId, ClientQueue, Outgoing};
 use crate::{Daemon, lock};
-use nova_protocol::{Capability, Command, Event, Outcome, Panel, PowerAction, Response, Topic, VolumeKey, encode};
+use nova_protocol::{
+    Capability, CaptureMode, Command, Event, Outcome, Panel, PowerAction, Response, Topic, VolumeKey, encode,
+};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -174,6 +176,19 @@ impl<'a> Connection<'a> {
             }
             Command::PowerOptions => return self.power_options()(),
             Command::Power { action } => return self.power(*action),
+            Command::Screenshot { mode } => return self.screenshot(*mode)(),
+            Command::SaveCapture { output, rect } => return self.save_capture(output.clone(), *rect)(),
+            // Even with the feature off, so a reload can't strand the picker.
+            Command::CancelCapture => {
+                self.daemon.screenshots.cancel();
+                Ok(serde_json::Value::Null)
+            }
+            Command::ScreenshotAction { id, action } => {
+                return match self.daemon.screenshots.act(*id, *action) {
+                    Ok(()) => Outcome::Result(serde_json::Value::Null),
+                    Err(e) => Outcome::Error(e),
+                };
+            }
         };
         match value {
             Ok(value) => Outcome::Result(value),
@@ -236,11 +251,13 @@ impl<'a> Connection<'a> {
         }
     }
 
-    /// The requests that wait on logind, as work to answer them with; the
-    /// quick checks before it run here, at once.
+    /// The requests that wait on logind or a screen capture, as work to
+    /// answer them with; the quick checks before it run here, at once.
     fn slow_work(&self, command: &Command) -> Option<SlowWork> {
         match command {
             Command::PowerOptions => Some(self.power_options()),
+            Command::Screenshot { mode } => Some(self.screenshot(*mode)),
+            Command::SaveCapture { output, rect } => Some(self.save_capture(output.clone(), *rect)),
             Command::Power {
                 action: action @ (PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff),
             } => Some(self.power_logind(*action)),
@@ -324,6 +341,49 @@ impl<'a> Connection<'a> {
         })
     }
 
+    /// Opens the region picker on every screen (or closes it), or saves the
+    /// focused screen.
+    fn screenshot(&self, mode: CaptureMode) -> SlowWork {
+        if let Err(e) = self.require_feature(crate::screenshot::FEATURE_ID) {
+            return Box::new(move || Outcome::Error(e));
+        }
+        let screenshots = Arc::clone(&self.daemon.screenshots);
+        let compositor = self.daemon.compositor.clone();
+        let folder = lock(&self.daemon.settings).screenshot_folder();
+        Box::new(move || {
+            let taken = match mode {
+                CaptureMode::Region => match compositor.and_then(|compositor| compositor.desktop()) {
+                    Some(desktop) => {
+                        let outputs: Vec<String> = desktop.outputs.into_iter().map(|output| output.name).collect();
+                        screenshots.pick_region(&outputs)
+                    }
+                    None => Err("novad doesn't know this compositor's screens yet".into()),
+                },
+                CaptureMode::Screen => {
+                    let output = compositor.and_then(|compositor| compositor.focused_output());
+                    folder.and_then(|folder| screenshots.take_screen(output.as_deref(), &folder))
+                }
+            };
+            match taken {
+                Ok(()) => Outcome::Result(serde_json::Value::Null),
+                Err(e) => Outcome::Error(e),
+            }
+        })
+    }
+
+    /// Saves the region the user picked.
+    fn save_capture(&self, output: String, rect: nova_protocol::PixelRect) -> SlowWork {
+        if let Err(e) = self.require_feature(crate::screenshot::FEATURE_ID) {
+            return Box::new(move || Outcome::Error(e));
+        }
+        let screenshots = Arc::clone(&self.daemon.screenshots);
+        let folder = lock(&self.daemon.settings).screenshot_folder();
+        Box::new(move || match folder.and_then(|folder| screenshots.save_region(&output, rect, &folder)) {
+            Ok(()) => Outcome::Result(serde_json::Value::Null),
+            Err(e) => Outcome::Error(e),
+        })
+    }
+
     fn toggle(&self, panel: Panel) -> Outcome {
         if !self.daemon.feature_ready(panel.name()) {
             return Outcome::Error(format!("the {panel} feature isn't ready (see `nova status`)"));
@@ -374,6 +434,8 @@ impl<'a> Connection<'a> {
                             }
                         }
                         Topic::Lock => self.daemon.session_lock.send_state(&self.daemon.hub, self.id),
+                        // A restarted UI picks up a region picker that was open.
+                        Topic::Screenshot => self.daemon.screenshots.send_state(&self.daemon.hub, self.id),
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -397,6 +459,10 @@ impl<'a> Connection<'a> {
             | Command::ReportUnlocked
             | Command::PowerOptions
             | Command::Power { .. }
+            | Command::Screenshot { .. }
+            | Command::SaveCapture { .. }
+            | Command::CancelCapture
+            | Command::ScreenshotAction { .. }
             | Command::Volume { .. } => {}
         }
     }

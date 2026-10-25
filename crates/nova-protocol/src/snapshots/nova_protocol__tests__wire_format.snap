@@ -6,7 +6,7 @@ expression: all
 {"v":2,"event":"features","data":{"features":[{"id":"core","status":"ready"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
-{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume"]}}
+{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot"]}}
 {"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","backdrop":"#000000","fg":"#F5E7C6","fgAlt":"#525252","fgDim":"#9A9A9A","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
 {"v":2,"id":10,"cmd":"status"}
 {"v":2,"id":11,"cmd":"quit"}
@@ -36,4 +36,14 @@ expression: all
 {"v":2,"id":21,"cmd":"volume","args":{"key":"up"}}
 {"v":2,"event":"volume","data":{"key":"down"}}
 {"v":2,"event":"volume","data":{"key":"mute"}}
+{"v":2,"id":22,"cmd":"screenshot","args":{"mode":"region"}}
+{"v":2,"id":23,"cmd":"screenshot","args":{"mode":"screen"}}
+{"v":2,"event":"capture","data":{"frames":[{"output":"DP-1","path":"/run/user/1000/nova/capture/DP-1.png"}]}}
+{"v":2,"id":24,"cmd":"save_capture","args":{"output":"DP-1","rect":{"x":1460,"y":150,"width":960,"height":560}}}
+{"v":2,"id":25,"cmd":"cancel_capture"}
+{"v":2,"event":"capture_ended"}
+{"v":2,"event":"screenshot_saved","data":{"id":1,"path":"/home/me/Pictures/Screenshots/Screenshot 2026-10-25 15-03-41.png","width":960,"height":560}}
+{"v":2,"id":26,"cmd":"screenshot_action","args":{"id":1,"action":"open"}}
+{"v":2,"cmd":"screenshot_action","args":{"id":1,"action":"folder"}}
+{"v":2,"cmd":"screenshot_action","args":{"id":1,"action":"delete"}}
 {"v":2,"id":8,"error":"bad request"}

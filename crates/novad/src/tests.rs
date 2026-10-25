@@ -78,6 +78,12 @@ impl TestDaemon {
         let compositor = compositor(&dir)
             .map(|backend| compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
         let session_lock = Arc::new(session_lock::SessionLock::open(&dir, &logger));
+        let screenshots = Arc::new(screenshot::Screenshots::new(
+            &dir,
+            sources.path_var.clone(),
+            Arc::clone(&hub),
+            Arc::clone(&logger),
+        ));
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
             hub,
@@ -88,6 +94,7 @@ impl TestDaemon {
             settings: Mutex::new(settings),
             compositor,
             session_lock,
+            screenshots,
         });
         daemon.watch_settings();
         let serving = Arc::clone(&daemon);
@@ -1387,4 +1394,19 @@ fn a_replaced_config_folder_is_followed() {
     // Edits in the new folder keep applying.
     std::fs::write(novad.config_file(), "[theme]\nmode = \"dark\"\n").unwrap();
     assert_eq!(client.next_event("theme")["mode"], "dark");
+}
+
+#[test]
+fn screenshots_need_their_feature_but_cancelling_doesnt() {
+    let novad = TestDaemon::open("screenshot-off", None, |dir| {
+        std::fs::write(dir.join("config/features.toml"), "disabled = [\"ai-usage\", \"screenshot\"]\n").unwrap()
+    });
+    let mut cli = novad.connect();
+    for (id, mode) in [(1, "region"), (2, "screen")] {
+        let reply = cli.request(id, "screenshot", Some(json!({"mode": mode})));
+        assert!(reply["error"].as_str().unwrap().contains("screenshot feature isn't ready"), "{reply}");
+    }
+    let rect = json!({"output": "DP-1", "rect": {"x": 0, "y": 0, "width": 1, "height": 1}});
+    assert!(cli.request(3, "save_capture", Some(rect))["error"].is_string());
+    assert_eq!(cli.request(4, "cancel_capture", None)["result"], Value::Null);
 }

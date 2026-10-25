@@ -1,0 +1,16 @@
+id = "screenshot"
+name = "Screenshots"
+description = "Super+Shift+S picks a region, Print takes the whole screen; each shot is copied and saved."
+default = true
+daemon = "screenshot"
+
+# grim captures the screens (wlr-screencopy, on niri and Hyprland), wl-copy
+# puts the shot on the clipboard.
+[variants.default]
+nix = ["grim", "wl-clipboard"]
+arch = ["grim", "wl-clipboard"]
+fedora = ["grim", "wl-clipboard"]
+debian = ["grim", "wl-clipboard"]
+
+[check]
+binaries = ["grim", "wl-copy"]

@@ -133,6 +133,11 @@ impl Settings {
 
         Self { config, selection, features, theme, ai_usage }
     }
+
+    /// Where screenshots are saved, from `config.toml`.
+    pub fn screenshot_folder(&self) -> Result<PathBuf, String> {
+        self.config.screenshot.folder()
+    }
 }
 
 fn is_ready(features: &[FeatureState], id: &str) -> bool {

@@ -33,6 +33,7 @@ mod logger;
 mod logind;
 mod power;
 mod procfs;
+mod screenshot;
 mod server;
 mod session_lock;
 mod settings;
@@ -113,6 +114,7 @@ pub struct Daemon {
     /// Following the compositor, when it's one novad knows.
     compositor: Option<Arc<compositor::Compositor>>,
     session_lock: Arc<session_lock::SessionLock>,
+    screenshots: Arc<screenshot::Screenshots>,
 }
 
 impl Daemon {
@@ -231,7 +233,14 @@ fn start(
         }
     };
 
-    let session_lock = Arc::new(session_lock::SessionLock::open(socket.parent().unwrap_or(Path::new(".")), &logger));
+    let runtime_dir = socket.parent().unwrap_or(Path::new("."));
+    let session_lock = Arc::new(session_lock::SessionLock::open(runtime_dir, &logger));
+    let screenshots = Arc::new(screenshot::Screenshots::new(
+        runtime_dir,
+        sources.path_var.clone(),
+        Arc::clone(&hub),
+        Arc::clone(&logger),
+    ));
     let daemon = Arc::new(Daemon {
         started: Instant::now(),
         hub,
@@ -242,6 +251,7 @@ fn start(
         settings: Mutex::new(settings),
         compositor,
         session_lock,
+        screenshots,
     });
     daemon.watch_settings();
     // Not for a daemon without its UI (tests, a UI run by hand): logind's
