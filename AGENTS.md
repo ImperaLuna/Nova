@@ -168,7 +168,7 @@ Scratch output (measurements, logs, screenshots, audit reports) goes in your
 session's scratchpad or the worktree's ignored `e2e/out/`, never in
 `~/Projects` or the repo root. Anything the maintainer should keep goes in the
 PR or an artifact. Worktrees on the desktop go in
-`~/Projects/Nova-worktrees/<branch>`; a daily timer removes them once their PR
+`~/Projects/Nova/.worktrees/<branch>`; a daily timer removes them once their PR
 is merged or closed.
 
 ## Review guidelines
