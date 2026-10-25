@@ -195,6 +195,29 @@ fn toggle_reaches_the_ui_and_says_why_when_it_cant() {
 }
 
 #[test]
+fn volume_reaches_the_ui_quietly() {
+    let novad = Novad::start("volume");
+    let output = novad.run(&["volume", "up"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("UI isn't connected"), "{output:?}");
+
+    // Stands in for the UI: subscribes to volume events.
+    let ui = UnixStream::connect(novad.dir.join("novad.sock")).unwrap();
+    ui.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let mut lines = BufReader::new(ui.try_clone().unwrap()).lines();
+    writeln!(&ui, r#"{{"v":2,"id":1,"cmd":"subscribe","args":{{"topics":["volume"]}}}}"#).unwrap();
+    assert!(lines.next().unwrap().unwrap().contains("hello"));
+    assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
+
+    for key in ["up", "down", "mute"] {
+        assert_eq!(stdout(&novad.run(&["volume", key])), "", "quiet for keybinds");
+        let event = lines.next().unwrap().unwrap();
+        assert_eq!(event, format!(r#"{{"v":2,"event":"volume","data":{{"key":"{key}"}}}}"#));
+    }
+    assert!(!novad.run(&["volume", "louder"]).status.success());
+}
+
+#[test]
 fn lock_reaches_the_ui_quietly() {
     let novad = Novad::start("lock");
     let output = novad.run(&["lock"]);

@@ -78,6 +78,12 @@ enum NovaCommand {
     Toggle(toggle::ToggleArgs),
     /// Lock the screen; your password unlocks it. Meant for keybinds and idle daemons.
     Lock,
+    /// Change the volume and show Nova's volume capsule. Meant for the volume keys.
+    ///
+    /// Bind your compositor's volume keys to `nova volume up`, `nova volume down`
+    /// and `nova volume mute` (instead of `wpctl`), so the capsule also shows at
+    /// 0%, at 100% and when there's no output.
+    Volume(toggle::VolumeArgs),
     /// Send a raw request to novad and print the reply as JSON, for scripts.
     Ipc(ipc::IpcArgs),
 }
@@ -110,6 +116,7 @@ fn main() -> ExitCode {
         },
         Some(NovaCommand::Toggle(args)) => toggle::run(&args, &socket),
         Some(NovaCommand::Lock) => toggle::lock(&socket),
+        Some(NovaCommand::Volume(args)) => toggle::volume(&args, &socket),
         Some(NovaCommand::Daemon(args)) => novad::run(*args, socket).map_err(|e| format!("daemon: {e}")),
     };
     match result {

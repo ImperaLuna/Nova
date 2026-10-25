@@ -37,6 +37,8 @@ Singleton {
     signal toggleRequested(string panel, var output)
     // A lock event said to lock the screen.
     signal lockRequested
+    // `nova volume <key>`: a Protocol.VOLUME_* key, for the volume capsule.
+    signal volumeRequested(string key)
 
     property int _nextId: 1
     property var _pending: ({})
@@ -89,6 +91,8 @@ Singleton {
             locked = msg.data.locked;
             if (locked)
                 lockRequested();
+        } else if (msg.event === Protocol.EVENT_VOLUME) {
+            volumeRequested(msg.data.key);
         }
     }
 
@@ -113,7 +117,7 @@ Singleton {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
                 root.call(Protocol.CMD_SUBSCRIBE, {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME]
                 });
             } else {
                 // Replies to these won't come any more.
