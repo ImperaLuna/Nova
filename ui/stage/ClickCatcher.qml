@@ -31,6 +31,9 @@ PanelWindow { // qmllint disable uncreatable-type
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
     WlrLayershell.layer: WlrLayer.Top
+    // Its own name, so a compositor rule meant for Nova's glass (blur) never
+    // matches this full-screen surface.
+    WlrLayershell.namespace: "nova-click-catcher"
 
     mask: Region {
         item: catcher.catching ? area : null

@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
 
 // The space the bar keeps free at the top of a screen, so windows sit below
 // it. An empty surface of its own: the stage reserves nothing, so panels
@@ -16,6 +17,7 @@ PanelWindow { // qmllint disable uncreatable-type
         right: true
     }
     exclusiveZone: size
+    WlrLayershell.namespace: "nova-exclusion-zone"
     // A layer surface needs some size; nothing is drawn and it takes no input.
     implicitHeight: 1
     color: "transparent"
