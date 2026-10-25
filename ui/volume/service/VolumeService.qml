@@ -23,7 +23,8 @@ Singleton {
     // 1 is 100%; another app can set more.
     readonly property real volume: ready ? sink.audio.volume : 0
     readonly property bool muted: ready && sink.audio.muted
-    // "none", "headphones" or "speakers" (volume.js outputKind).
+    // "none", "headphones", "bluetooth", "display" or "speakers" (volume.js
+    // outputKind).
     readonly property string output: Volume.outputKind(available, ready ? sink.properties : null)
 
     // The volume, mute or output changed after Nova had seen where they
