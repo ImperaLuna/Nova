@@ -305,6 +305,40 @@ impl Recordings {
         hub.send_to(client, &Event::Recording(state.active.as_ref().map(Active::event)));
     }
 
+    /// Saves what earlier novads left in `folder`: one that quit, was
+    /// stopped or crashed mid-recording took the keeper with it, and its
+    /// recorder finished the file (the parent-death SIGINT) under its hidden
+    /// name. A recorder still finishing one keeps writing to it once moved.
+    pub fn recover(&self, folder: &Path) {
+        let Ok(entries) = std::fs::read_dir(folder) else {
+            return;
+        };
+        let own = format!(".{}.{EXTENSION}", std::process::id());
+        for path in entries.flatten().map(|entry| entry.path()) {
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let Some(rest) = name.strip_prefix(&format!(".{NAME_PREFIX}")) else {
+                continue;
+            };
+            let Some((stamp, pid)) = rest.strip_suffix(&format!(".{EXTENSION}")).and_then(|rest| rest.rsplit_once('.'))
+            else {
+                continue;
+            };
+            if name.ends_with(&own) || pid.parse::<u32>().is_err() {
+                continue;
+            }
+            if std::fs::metadata(&path).is_ok_and(|meta| meta.len() == 0) {
+                let _ = std::fs::remove_file(&path);
+                continue;
+            }
+            match screenshot::place(&path, &folder.join(format!("{NAME_PREFIX}{stamp}")), EXTENSION) {
+                Ok(saved) => self.logger.info(LOG_SOURCE, &format!("saved {} from an earlier run", saved.display())),
+                Err(e) => self.logger.warn(LOG_SOURCE, &format!("{} stays hidden: {e}", path.display())),
+            }
+        }
+    }
+
     /// Opens a saved recording, its folder, or deletes it.
     pub fn act(&self, id: u64, action: ScreenshotAction) -> Result<(), String> {
         let mut state = lock(&self.state);
@@ -622,6 +656,28 @@ mod tests {
     }
 
     const REGION: LayoutRect = LayoutRect { x: 2560, y: -40, width: 960, height: 540 };
+
+    #[test]
+    fn what_an_earlier_novad_left_is_saved_under_its_name() {
+        let fixture = Fixture::new("recover", GPU_SCREEN_RECORDER, "");
+        let folder = fixture.folder();
+        std::fs::create_dir_all(&folder).unwrap();
+        let left = |stamp: &str, pid: u32, frames: &str| {
+            std::fs::write(folder.join(format!(".{NAME_PREFIX}{stamp}.{pid}.{EXTENSION}")), frames).unwrap();
+        };
+        left("2026-10-25 18.00.00", 1, "frames");
+        left("2026-10-25 18.05.00", 1, "");
+        left("2026-10-25 18.10.00", std::process::id(), "frames");
+        fixture.recordings.recover(&folder);
+        assert_eq!(
+            fixture.files(),
+            [
+                format!(".{NAME_PREFIX}2026-10-25 18.10.00.{}.{EXTENSION}", std::process::id()),
+                format!("{NAME_PREFIX}2026-10-25 18.00.00.{EXTENSION}"),
+            ],
+            "an empty one goes, and this novad's own stays"
+        );
+    }
 
     #[test]
     fn turning_the_feature_off_stops_the_recording_and_refuses_new_ones() {

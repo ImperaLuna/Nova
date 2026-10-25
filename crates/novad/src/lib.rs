@@ -265,7 +265,11 @@ fn start(
         screenshots,
         recordings,
     });
-    daemon.recordings.allow(daemon.feature_ready(recording::FEATURE_ID));
+    let recording = daemon.feature_ready(recording::FEATURE_ID);
+    daemon.recordings.allow(recording);
+    if recording && let Ok(folder) = lock(&daemon.settings).recording_folder() {
+        daemon.recordings.recover(&folder);
+    }
     // Watched for as long as novad runs.
     let _ = daemon.watch_settings();
     // Not for a daemon without its UI (tests, a UI run by hand): logind's
