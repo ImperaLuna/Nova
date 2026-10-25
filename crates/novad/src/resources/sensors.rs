@@ -1,7 +1,7 @@
 //! The CPU's temperature and how busy the GPU is, from sysfs: hwmon for
 //! temperatures, and the DRM driver's `gpu_busy_percent` (amdgpu, and Intel
 //! Xe) for the GPU. NVIDIA's driver reports neither in sysfs, so its GPU is
-//! asked through `nvidia-smi` (see `nvidia`).
+//! asked through NVML (see `nvidia`).
 
 use std::path::{Path, PathBuf};
 

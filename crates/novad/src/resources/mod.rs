@@ -5,7 +5,7 @@
 //! One thread samples. CPU and memory go into a short history every
 //! [`RESOURCE_HISTORY_INTERVAL_SECS`], always, so the page's graph has the
 //! last minutes as soon as it opens (two small reads from `/proc`). The
-//! rest (every process, sensors, `nvidia-smi`) is read only while some
+//! rest (every process, sensors, NVML) is read only while some
 //! connection watches (`watch_resources`), every [`LIVE_INTERVAL`], and
 //! each look is published then. A connection that closes stops watching.
 
@@ -47,13 +47,13 @@ const TOP_APPS: usize = 25;
 pub struct Sources {
     pub proc_root: PathBuf,
     pub sys_root: PathBuf,
-    /// Searched for `nvidia-smi`.
-    pub path_var: String,
+    /// Where NVIDIA's NVML library is looked for.
+    pub nvml: Vec<PathBuf>,
 }
 
 impl Sources {
-    pub fn system(path_var: &str) -> Self {
-        Self { proc_root: "/proc".into(), sys_root: "/sys".into(), path_var: path_var.into() }
+    pub fn system() -> Self {
+        Self { proc_root: "/proc".into(), sys_root: "/sys".into(), nvml: nvidia::library_paths() }
     }
 }
 
@@ -153,25 +153,25 @@ struct Sampler {
     sources: Sources,
     temperature: Option<Temperature>,
     gpu_busy: Option<GpuBusy>,
-    nvidia_smi: Option<PathBuf>,
+    nvml_library: Option<nvidia::Library>,
     logger: Arc<Logger>,
     history: VecDeque<ResourceSample>,
     /// CPU times at the last history sample, and at the last watched look.
     history_cpu: Option<CpuTimes>,
     look_cpu: Option<CpuTimes>,
     process_ticks: ProcessTicks,
-    /// Running while watched, when the GPU is NVIDIA's.
-    nvidia: Option<nvidia::NvidiaSmi>,
+    /// Started while watched, when the GPU is NVIDIA's.
+    nvml: Option<nvidia::Nvml>,
 }
 
 impl Sampler {
     fn new(sources: Sources, logger: &Arc<Logger>) -> Self {
         let temperature = sensors::Temperature::find(&sources.sys_root);
         let gpu_busy = sensors::GpuBusy::find(&sources.sys_root);
-        let nvidia_smi = gpu_busy.is_none().then(|| nvidia::find(&sources.path_var)).flatten();
-        let gpu = match (&gpu_busy, &nvidia_smi) {
+        let nvml_library = gpu_busy.is_none().then(|| nvidia::Library::open(&sources.nvml)).flatten();
+        let gpu = match (&gpu_busy, &nvml_library) {
             (Some(_), _) => "from the driver",
-            (None, Some(_)) => "from nvidia-smi",
+            (None, Some(_)) => "from NVML",
             (None, None) => "not reported",
         };
         let temperature_found = if temperature.is_some() { "found" } else { "not found" };
@@ -180,13 +180,13 @@ impl Sampler {
             sources,
             temperature,
             gpu_busy,
-            nvidia_smi,
+            nvml_library,
             logger: Arc::clone(logger),
             history: VecDeque::new(),
             history_cpu: None,
             look_cpu: None,
             process_ticks: ProcessTicks::default(),
-            nvidia: None,
+            nvml: None,
         }
     }
 
@@ -218,16 +218,16 @@ impl Sampler {
     fn begin_watching(&mut self) {
         self.look_cpu = CpuTimes::read(&self.sources.proc_root);
         self.process_ticks.since_last(&usage::processes(&self.sources.proc_root));
-        if let Some(binary) = &self.nvidia_smi {
-            match nvidia::NvidiaSmi::start(binary, &self.sources.path_var, LIVE_INTERVAL) {
-                Ok(smi) => self.nvidia = Some(smi),
-                Err(e) => self.logger.warn(LOG_SOURCE, &format!("couldn't run {}: {e}", binary.display())),
+        if let Some(library) = &self.nvml_library {
+            match library.start() {
+                Ok(nvml) => self.nvml = Some(nvml),
+                Err(e) => self.logger.warn(LOG_SOURCE, &format!("couldn't start NVML: {e}")),
             }
         }
     }
 
     fn end_watching(&mut self) {
-        self.nvidia = None;
+        self.nvml = None;
     }
 
     /// Everything now, compared with the last look.
@@ -247,7 +247,7 @@ impl Sampler {
             cpu,
             memory_used,
             memory_total,
-            gpu: self.gpu_busy.as_ref().and_then(GpuBusy::read).or_else(|| self.nvidia.as_ref()?.latest()),
+            gpu: self.gpu_busy.as_ref().and_then(GpuBusy::read).or_else(|| self.nvml.as_ref()?.busy()),
             temperature: self.temperature.as_ref().and_then(Temperature::read),
             history: self.history.iter().copied().collect(),
             history_size: Self::history_len(),
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn a_look_reads_this_machine() {
-        let mut sampler = Sampler::new(Sources::system(""), &logger("look"));
+        let mut sampler = Sampler::new(Sources::system(), &logger("look"));
         sampler.record_history();
         sampler.begin_watching();
         // Some CPU time to count.
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn history_keeps_the_last_few_minutes() {
-        let mut sampler = Sampler::new(Sources::system(""), &logger("history"));
+        let mut sampler = Sampler::new(Sources::system(), &logger("history"));
         for _ in 0..Sampler::history_len() + 5 {
             sampler.record_history();
         }

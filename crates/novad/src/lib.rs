@@ -205,7 +205,7 @@ fn start(
         manifests: nova_features::load_all(&args.features_dir)?,
         path_var: path_var.clone(),
         ai_usage: ai_usage::Paths::new(&args.state_dir, args.codex_home, args.claude_credentials),
-        resources: resources::Sources::system(&path_var),
+        resources: resources::Sources::system(),
         launcher: launcher::Paths::new(&args.state_dir, &path_var),
     };
     let settings = Settings::load(&sources, &hub, &logger);
