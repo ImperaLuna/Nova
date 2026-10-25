@@ -43,6 +43,9 @@ const FINISH_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_millis(10);
 /// The most of a recorder's error output kept for its error message.
 const MAX_ERROR_BYTES: usize = 4096;
+/// How long the error output is read for once the recorder has exited: a
+/// process it left behind may hold the pipe open.
+const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 /// Frames per second.
 const FPS: &str = "60";
 /// Saved recordings the card's buttons can still act on.
@@ -169,7 +172,10 @@ impl Recordings {
         std::fs::create_dir_all(folder).map_err(|e| format!("can't make {}: {e}", folder.display()))?;
         let stamp = screenshot::time_stamp();
         let stem = folder.join(format!("{NAME_PREFIX}{stamp}"));
-        let file = folder.join(format!(".{NAME_PREFIX}{stamp}.{}.{EXTENSION}", std::process::id()));
+        let run = state.runs + 1;
+        // The run keeps two recordings started within a second apart while
+        // the first is still being placed.
+        let file = folder.join(format!(".{NAME_PREFIX}{stamp}.{}-{run}.{EXTENSION}", std::process::id()));
         let args = match recorder {
             Recorder::Gpu => gsr_args(output, region, audio, &file),
             Recorder::Wf => {
@@ -186,14 +192,20 @@ impl Recordings {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
-        // SAFETY: prctl takes no pointers and is async-signal-safe.
+        let novad = std::process::id() as libc::pid_t;
+        // SAFETY: prctl and getppid take no pointers and are
+        // async-signal-safe.
         unsafe {
-            command.pre_exec(|| {
+            command.pre_exec(move || {
                 // Finishes the file and exits when novad goes away. The
                 // signal comes when the thread that spawned it ends, so that
                 // thread is its keeper, which lives as long as it does.
                 if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGINT) == -1 {
                     return Err(std::io::Error::last_os_error());
+                }
+                // novad went away before that, so the signal never comes.
+                if libc::getppid() != novad {
+                    return Err(std::io::Error::other("novad went away"));
                 }
                 Ok(())
             });
@@ -201,7 +213,6 @@ impl Recordings {
         // Its own process group: a Ctrl+C on `nova daemon` in a terminal
         // reaches novad, whose exit stops it the same way.
         command.process_group(0);
-        let run = state.runs + 1;
         let (started, start_result) = mpsc::channel();
         let keeper = Keeper {
             state: Arc::clone(&self.state),
@@ -313,7 +324,7 @@ impl Recordings {
         let Ok(entries) = std::fs::read_dir(folder) else {
             return;
         };
-        let own = format!(".{}.{EXTENSION}", std::process::id());
+        let own = std::process::id().to_string();
         for path in entries.flatten().map(|entry| entry.path()) {
             let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
                 continue;
@@ -325,7 +336,8 @@ impl Recordings {
             else {
                 continue;
             };
-            if name.ends_with(&own) || pid.parse::<u32>().is_err() {
+            let pid = pid.split_once('-').map_or(pid, |(pid, _run)| pid);
+            if pid == own || pid.parse::<u32>().is_err() {
                 continue;
             }
             if std::fs::metadata(&path).is_ok_and(|meta| meta.len() == 0) {
@@ -401,7 +413,7 @@ impl Keeper {
             match child.try_wait() {
                 Ok(None) => std::thread::sleep(POLL),
                 Ok(Some(status)) => {
-                    let message = errors.join().unwrap_or_default();
+                    let message = errors.text();
                     let _ =
                         started.send(Err(format!("{} didn't start ({status}): {}", recorder.name(), message.trim())));
                     return;
@@ -431,7 +443,7 @@ impl Keeper {
             active.map(|active| (active.elapsed(), active))
         };
         let status = child.wait();
-        let message = errors.join().unwrap_or_default();
+        let message = errors.text();
         if let Some((duration, active)) = active {
             finish(&self.state, &self.hub, &self.logger, active, duration, status, message.trim());
         }
@@ -493,23 +505,43 @@ fn finish(
 
 /// Reads the recorder's error output to the end, so it never blocks on a
 /// full pipe, keeping the last [`MAX_ERROR_BYTES`] for an error message.
-fn drain(stderr: Option<std::process::ChildStderr>) -> std::thread::JoinHandle<String> {
+fn drain(stderr: Option<std::process::ChildStderr>) -> Drained {
+    let kept = Arc::new(Mutex::new(VecDeque::new()));
+    let (closed, done) = mpsc::channel();
+    let reading = Arc::clone(&kept);
     std::thread::spawn(move || {
+        let _closed = closed;
         let Some(mut stderr) = stderr else {
-            return String::new();
+            return;
         };
-        let mut kept: VecDeque<u8> = VecDeque::new();
         let mut buffer = [0; 4096];
         while let Ok(read) = stderr.read(&mut buffer) {
             if read == 0 {
                 break;
             }
+            let mut kept = lock(&reading);
             kept.extend(&buffer[..read]);
             let extra = kept.len().saturating_sub(MAX_ERROR_BYTES);
             kept.drain(..extra);
         }
-        String::from_utf8_lossy(kept.make_contiguous()).into_owned()
-    })
+    });
+    Drained { kept, done }
+}
+
+/// The error output [`drain`] is reading.
+struct Drained {
+    kept: Arc<Mutex<VecDeque<u8>>>,
+    /// Disconnects once the pipe closes.
+    done: mpsc::Receiver<()>,
+}
+
+impl Drained {
+    /// What the recorder said, once the pipe closes or after
+    /// [`DRAIN_TIMEOUT`], whichever is first.
+    fn text(self) -> String {
+        let _ = self.done.recv_timeout(DRAIN_TIMEOUT);
+        String::from_utf8_lossy(lock(&self.kept).make_contiguous()).into_owned()
+    }
 }
 
 /// What's recorded, for the log.
@@ -663,7 +695,7 @@ mod tests {
         let folder = fixture.folder();
         std::fs::create_dir_all(&folder).unwrap();
         let left = |stamp: &str, pid: u32, frames: &str| {
-            std::fs::write(folder.join(format!(".{NAME_PREFIX}{stamp}.{pid}.{EXTENSION}")), frames).unwrap();
+            std::fs::write(folder.join(format!(".{NAME_PREFIX}{stamp}.{pid}-1.{EXTENSION}")), frames).unwrap();
         };
         left("2026-10-25 18.00.00", 1, "frames");
         left("2026-10-25 18.05.00", 1, "");
@@ -672,7 +704,7 @@ mod tests {
         assert_eq!(
             fixture.files(),
             [
-                format!(".{NAME_PREFIX}2026-10-25 18.10.00.{}.{EXTENSION}", std::process::id()),
+                format!(".{NAME_PREFIX}2026-10-25 18.10.00.{}-1.{EXTENSION}", std::process::id()),
                 format!("{NAME_PREFIX}2026-10-25 18.00.00.{EXTENSION}"),
             ],
             "an empty one goes, and this novad's own stays"
@@ -787,6 +819,16 @@ mod tests {
         assert!(error.contains("didn't start") && error.contains("no capture permission"), "{error}");
         assert!(fixture.files().is_empty());
         assert!(fixture.ui.try_recv().is_err(), "nothing was announced");
+    }
+
+    #[test]
+    fn a_failed_start_doesnt_wait_for_what_the_recorder_left_running() {
+        let fixture =
+            Fixture::new("leaves", GPU_SCREEN_RECORDER, "echo 'no capture permission' >&2; (sleep 5) & exit 1");
+        let asked = Instant::now();
+        let error = fixture.start(None, RecordAudio::default()).unwrap_err();
+        assert!(asked.elapsed() < START_GRACE + DRAIN_TIMEOUT * 2, "waited {:?}", asked.elapsed());
+        assert!(error.contains("no capture permission"), "{error}");
     }
 
     #[test]
