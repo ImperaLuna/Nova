@@ -18,6 +18,8 @@ Singleton {
     readonly property var focusedWindow: desktop?.focused_window ?? null
     readonly property string keyboardLayout: desktop?.keyboard_layout ?? ""
     readonly property var focusedWorkspace: Protocol.focusedWorkspace(desktop)
+    // The output showing the focused workspace, or null.
+    readonly property var focusedOutput: outputs.find(output => output.workspaces.some(workspace => workspace.focused)) ?? null
 
     function has(capability: string): bool {
         return desktop?.capabilities.includes(capability) ?? false;

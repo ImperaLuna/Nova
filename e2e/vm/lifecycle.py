@@ -78,6 +78,24 @@ MORPH_SURFACES = 1
 # The placeholder panels off the stage (ui/demo/DemoPanels.qml, on with
 # NOVA_DEMO_PANELS=1), opened over Quickshell's IPC.
 DEMO_PANELS = ("demo-sidebar", "demo-tab", "demo-center")
+# What the volume capsule logs as it comes out and once it's gone
+# (ui/volume/VolumeOsd.qml).
+VOLUME_SHOWN = "nova: volume capsule shown"
+VOLUME_HIDDEN = "nova: volume capsule hidden"
+# The UI has the default sink's starting volume, so a change from here shows.
+VOLUME_FOUND = "nova: volume output found"
+# What Quickshell logs first in each UI process.
+UI_LAUNCHED = "Launching config"
+# The VM's default output (a null sink, default.nix), as wpctl names it.
+WPCTL_SINK = "wpctl {} @DEFAULT_AUDIO_SINK@"
+# A point on the capsule: Tokens.capsuleWidth (48) wide, Tokens.capsuleEdgeGap
+# (12) from the right edge of the 1280x800 screen, centered vertically.
+CAPSULE = (1280 - 12 - 24, 400)
+# Longer than the capsule stays out after a change (Tokens.durationCapsuleHold).
+CAPSULE_HOLD_SECS = 3
+# Long enough for it to slide out (Tokens.springCapsule), well inside
+# Tokens.durationCapsuleHold.
+CAPSULE_SLIDE_SECS = 0.6
 # A window's place and size in the compositor's window list.
 GEOMETRY_KEYS = ("layout", "at", "size")
 # Inside the center placeholder: it's 640x400 in the middle of the 1280x800
@@ -496,6 +514,79 @@ with subtest("panels off the stage open and close without moving windows"):
     machine.systemctl("unset-environment NOVA_DEMO_PANELS WAYLAND_DEBUG NO_COLOR NOVA_LOG", user=USER)
     machine.succeed(as_user("nova restart"))
     first = wait_running(not_daemon=demo["pid"])
+
+with subtest("a volume change slides the capsule out and back, over fullscreen too; scrolling on it steps the volume"):
+    # The volume Nova found at startup is where it starts, not a change. The
+    # UI may have just restarted, so a change before it found the sink would
+    # be its starting volume.
+    def found_since_ui_start(_last_try: bool) -> bool:
+        log = machine.succeed(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY}"))
+        return VOLUME_FOUND in log.rpartition(UI_LAUNCHED)[2]
+
+    retry(found_since_ui_start, timeout=CLICK_EFFECT)
+    assert ui_log_count(VOLUME_SHOWN) == 0, "the capsule came out without a volume change"
+
+    def volume() -> str:
+        """The default sink's volume as wpctl prints it, like "0.40"."""
+        out = machine.succeed(as_user(WPCTL_SINK.format("get-volume")))
+        return out.split()[1]
+
+    def volume_change_shows(target: str) -> None:
+        assert volume() != target, f"the volume is already {target}, so setting it changes nothing"
+        before = ui_log_count(VOLUME_SHOWN)
+        machine.succeed(as_user(WPCTL_SINK.format("set-volume") + f" {target}"))
+        try:
+            retry(lambda _last_try: ui_log_count(VOLUME_SHOWN) > before, timeout=CLICK_EFFECT)
+        except Exception:
+            print("the capsule didn't come out; wpctl and the UI's log:")
+            ui_log = f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -iE 'nova:|pipewire|volume|warn|error' | tail -n 60"
+            for command in ("wpctl status", WPCTL_SINK.format("get-volume"), WPCTL_SINK.format("inspect"), ui_log):
+                print(machine.execute(as_user(command))[1])
+            raise
+
+    def hides() -> None:
+        hidden = ui_log_count(VOLUME_HIDDEN)
+        retry(lambda _last_try: ui_log_count(VOLUME_HIDDEN) > hidden, timeout=CLICK_EFFECT)
+
+    volume_change_shows("0.30" if volume() != "0.30" else "0.35")
+    hides()
+    # The pointer on it holds it out, and a wheel notch steps the volume by
+    # Tokens.volumeStep, which way depending on how ydotool's wheel maps.
+    # The pointer goes there once it has slid out (the compositor picks the
+    # surface under the pointer when the pointer moves), in the same command
+    # as the change so it's there well within the hold. Retried like clicks,
+    # as niri can drop the odd pointer input.
+    for attempt in range(CLICK_TRIES):
+        target = ("0.50", "0.40")[attempt % 2]
+        machine.succeed(pointer_to(*POINTER_REST))
+        assert volume() != target, f"the volume is already {target}"
+        shown, hidden = ui_log_count(VOLUME_SHOWN), ui_log_count(VOLUME_HIDDEN)
+        machine.succeed(
+            as_user(WPCTL_SINK.format("set-volume") + f" {target}")
+            + f" && sleep {CAPSULE_SLIDE_SECS} && {pointer_to(*CAPSULE)} && {YDOTOOL} mousemove --wheel -x 0 -y 1"
+        )
+        retry(lambda _last_try: ui_log_count(VOLUME_SHOWN) > shown, timeout=CLICK_EFFECT)
+        try:
+            retry(lambda _last_try: volume() != target, timeout=CLICK_EFFECT)
+            break
+        except Exception:
+            print(f"the volume is still {target} after a wheel notch on the capsule, scrolling again")
+    else:
+        print(machine.execute(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -F 'nova:' | tail -n 20"))[1])
+        raise AssertionError(f"{CLICK_TRIES} wheel notches on the capsule never changed the volume")
+    step = abs(float(volume()) - float(target))
+    assert abs(step - 0.05) < 0.001, f"one notch moved the volume from {target} to {volume()}"
+    machine.sleep(CAPSULE_HOLD_SECS)
+    assert ui_log_count(VOLUME_HIDDEN) == hidden, "the capsule went away under the pointer"
+    machine.succeed(pointer_to(*POINTER_REST))
+    hides()
+    # On the overlay layer, so it shows over a fullscreen window.
+    open_foot("foot-volume")
+    machine.succeed(as_user(FULLSCREEN_WINDOW))
+    volume_change_shows("0.60")
+    hides()
+    machine.succeed(as_user(CLOSE_WINDOW))
+    machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
 
 with subtest("a workspace switch reaches the UI"):
     running = wait_running()

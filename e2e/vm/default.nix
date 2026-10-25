@@ -101,10 +101,30 @@ let
           nova
           pkgs.grim
           pkgs.quickshell
+          pkgs.wireplumber
         ];
         systemd.packages = [ nova ];
         # A virtual mouse for clicking Nova's pills (lifecycle.py's click).
         programs.ydotool.enable = true;
+        # PipeWire for the volume capsule. The VM has no sound card, so a
+        # null sink is the default output; wpctl changes its volume.
+        services.pipewire = {
+          enable = true;
+          extraConfig.pipewire."10-nova-null-sink"."context.objects" = [
+            {
+              factory = "adapter";
+              args = {
+                "factory.name" = "support.null-audio-sink";
+                "node.name" = "nova-test-sink";
+                "media.class" = "Audio/Sink";
+                "audio.position" = [
+                  "FL"
+                  "FR"
+                ];
+              };
+            }
+          ];
+        };
         # NixOS ignores [Install] in packaged units; this is the unit's
         # WantedBy=.
         systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
