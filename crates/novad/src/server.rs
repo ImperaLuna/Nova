@@ -3,7 +3,9 @@
 
 use crate::hub::{ClientId, ClientQueue, Outgoing};
 use crate::{Daemon, lock};
-use nova_protocol::{Capability, Command, Event, FeatureStatus, Outcome, Panel, PowerAction, Response, Topic, encode};
+use nova_protocol::{
+    Capability, Command, Event, FeatureStatus, Outcome, Panel, PowerAction, Response, Topic, VolumeKey, encode,
+};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -155,6 +157,7 @@ impl<'a> Connection<'a> {
                 return self.with_compositor(|compositor| compositor.step_workspace(output, *step));
             }
             Command::Toggle { panel } => return self.toggle(*panel),
+            Command::Volume { key } => return self.volume(*key),
             Command::Lock => return self.lock_screen(),
             Command::ReportLocked => {
                 if let Err(e) = self.sent_by_the_ui() {
@@ -356,6 +359,15 @@ impl<'a> Connection<'a> {
         }
     }
 
+    /// Passes a volume key to the UI, which owns audio (PipeWire through
+    /// Quickshell) and the capsule. Volume is core, so it's always ready.
+    fn volume(&self, key: VolumeKey) -> Outcome {
+        match self.daemon.hub.publish(&Event::Volume { key }) {
+            0 => Outcome::Error("the UI isn't connected to novad, so nothing can change the volume".into()),
+            _ => Outcome::Result(serde_json::Value::Null),
+        }
+    }
+
     /// Work done after the reply is queued.
     fn follow_up(&self, command: Command) {
         match command {
@@ -386,8 +398,8 @@ impl<'a> Connection<'a> {
                             }
                         }
                         Topic::Lock => self.daemon.session_lock.send_state(&self.daemon.hub, self.id),
-                        // Only ever sent as `nova toggle` asks.
-                        Topic::Logs | Topic::Toggle => {}
+                        // Only ever sent as `nova toggle` or `nova volume` asks.
+                        Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
                 }
             }
@@ -408,7 +420,8 @@ impl<'a> Connection<'a> {
             | Command::ReportLocked
             | Command::ReportUnlocked
             | Command::PowerOptions
-            | Command::Power { .. } => {}
+            | Command::Power { .. }
+            | Command::Volume { .. } => {}
         }
     }
 

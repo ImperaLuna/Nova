@@ -1080,6 +1080,22 @@ fn toggle_names_the_focused_output() {
 }
 
 #[test]
+fn volume_keys_reach_the_ui_once_it_listens() {
+    let novad = TestDaemon::start("volume", None);
+    let mut cli = novad.connect();
+    let reply = cli.request(1, "volume", Some(json!({"key": "up"})));
+    assert!(reply["error"].as_str().unwrap().contains("UI isn't connected"), "{reply}");
+
+    let mut ui = novad.connect();
+    ui.request(1, "subscribe", Some(json!({"topics": ["volume"]})));
+    for (id, key) in [(2, "up"), (3, "down"), (4, "mute")] {
+        assert_eq!(cli.request(id, "volume", Some(json!({"key": key})))["result"], Value::Null);
+        assert_eq!(ui.next_event("volume"), json!({"key": key}));
+    }
+    assert!(cli.request(5, "volume", Some(json!({"key": "louder"})))["error"].is_string());
+}
+
+#[test]
 fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
     let novad = TestDaemon::start("lock", None);
     let mut cli = novad.connect();

@@ -8,8 +8,9 @@ import "../volume.js" as Volume
 
 // The default output's volume and mute, from PipeWire, and the commands that
 // change them. The capsule (../VolumeOsd.qml) reads and acts through here.
-// Media keys stay the compositor's (`wpctl set-volume`): any change shows up
-// here, whoever made it.
+// Volume keys bound to `nova volume` arrive through Daemon; keys left on
+// the compositor (`wpctl set-volume`) work too: any change shows up here,
+// whoever made it.
 Singleton {
     id: root
 
@@ -22,7 +23,8 @@ Singleton {
     // 1 is 100%; another app can set more.
     readonly property real volume: ready ? sink.audio.volume : 0
     readonly property bool muted: ready && sink.audio.muted
-    // "none", "headphones" or "speakers" (volume.js outputKind).
+    // "none", "headphones", "bluetooth", "display" or "speakers" (volume.js
+    // outputKind).
     readonly property string output: Volume.outputKind(available, ready ? sink.properties : null)
 
     // The volume, mute or output changed after Nova had seen where they

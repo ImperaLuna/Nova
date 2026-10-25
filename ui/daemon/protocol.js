@@ -5,7 +5,7 @@
 var VERSION = 2;
 
 // Commands the UI sends (Command in nova-protocol). A nova-protocol test
-// checks every CMD_, EVENT_, TOPIC_, CAPABILITY_, STEP_, POWER_ and FEATURE_ name
+// checks every CMD_, EVENT_, TOPIC_, CAPABILITY_, STEP_, POWER_, VOLUME_ and FEATURE_ name
 // here is one novad knows.
 var CMD_SUBSCRIBE = "subscribe";
 var CMD_SHOW_AI_USAGE = "show_ai_usage";
@@ -26,6 +26,7 @@ var EVENT_AI_USAGE = "ai_usage";
 var EVENT_COMPOSITOR = "compositor";
 var EVENT_TOGGLE = "toggle";
 var EVENT_LOCK = "lock";
+var EVENT_VOLUME = "volume";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
@@ -35,6 +36,7 @@ var TOPIC_AI_USAGE = "ai_usage";
 var TOPIC_COMPOSITOR = "compositor";
 var TOPIC_TOGGLE = "toggle";
 var TOPIC_LOCK = "lock";
+var TOPIC_VOLUME = "volume";
 
 // What a compositor can report or do (Capability in nova-protocol).
 var CAPABILITY_WORKSPACES = "workspaces";
@@ -46,6 +48,11 @@ var CAPABILITY_LOG_OUT = "log_out";
 // step_workspace's directions (Step in nova-protocol).
 var STEP_NEXT = "next";
 var STEP_PREVIOUS = "previous";
+
+// The volume keys a volume event carries (VolumeKey in nova-protocol).
+var VOLUME_UP = "up";
+var VOLUME_DOWN = "down";
+var VOLUME_MUTE = "mute";
 
 // Feature ids (features/<id>/feature.toml).
 var FEATURE_AI_USAGE = "ai-usage";

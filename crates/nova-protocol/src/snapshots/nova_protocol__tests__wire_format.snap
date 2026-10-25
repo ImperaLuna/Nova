@@ -6,7 +6,7 @@ expression: all
 {"v":2,"event":"features","data":{"features":[{"id":"core","status":"ready"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
-{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock"]}}
+{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume"]}}
 {"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","backdrop":"#000000","fg":"#F5E7C6","fgAlt":"#525252","fgDim":"#9A9A9A","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
 {"v":2,"id":10,"cmd":"status"}
 {"v":2,"id":11,"cmd":"quit"}
@@ -33,4 +33,7 @@ expression: all
 {"v":2,"id":18,"result":[{"action":"lock","available":true},{"action":"suspend","available":false,"reason":"suspend is turned off"}]}
 {"v":2,"id":19,"cmd":"power","args":{"action":"power_off"}}
 {"v":2,"cmd":"toggle","args":{"panel":"power"}}
+{"v":2,"id":21,"cmd":"volume","args":{"key":"up"}}
+{"v":2,"event":"volume","data":{"key":"down"}}
+{"v":2,"event":"volume","data":{"key":"mute"}}
 {"v":2,"id":8,"error":"bad request"}

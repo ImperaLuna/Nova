@@ -608,6 +608,26 @@ with subtest("a volume change slides the capsule out and back, over fullscreen t
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
 
+with subtest("`nova volume` steps and mutes, and shows the capsule even at 100%"):
+
+    def nova_volume_shows(key: str) -> None:
+        shown, hidden = ui_log_count(VOLUME_SHOWN), ui_log_count(VOLUME_HIDDEN)
+        out = machine.succeed(as_user(f"nova volume {key}"))
+        assert out == "", f"`nova volume {key}` printed {out!r}; a keybind should stay quiet"
+        retry(lambda _last_try: ui_log_count(VOLUME_SHOWN) > shown, timeout=CLICK_EFFECT)
+        hides(hidden)
+
+    hides(volume_change_shows("1.00"))
+    # Nothing changes at the top, and it still comes out.
+    nova_volume_shows("up")
+    assert volume() == "1.00", f"`nova volume up` went past 100%: {volume()}"
+    nova_volume_shows("down")
+    assert volume() == "0.95", f"`nova volume down` from 100% gave {volume()}"
+    nova_volume_shows("mute")
+    assert "MUTED" in machine.succeed(as_user(WPCTL_SINK.format("get-volume"))), "`nova volume mute` didn't mute"
+    nova_volume_shows("mute")
+    assert "MUTED" not in machine.succeed(as_user(WPCTL_SINK.format("get-volume"))), "a second mute didn't unmute"
+
 with subtest("a workspace switch reaches the UI"):
     running = wait_running()
     desktop = running.get("desktop")
