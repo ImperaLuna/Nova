@@ -14,11 +14,12 @@ QtObject {
 
     // Everything drawn, hidden or not.
     readonly property list<Item> items: [...fixed, ...panels]
-    // What takes clicks, each rounded by its `radius`: what's shown of it (a
-    // pill hides while a panel elsewhere covers it, StagePanel `from`).
-    readonly property list<Item> shapes: items.filter(item => item.visible)
+    // What takes clicks, each rounded by its `radius` and less its `cutout`:
+    // what's shown of each item and its parts (StagePanel `parts`; a pill
+    // hides while a panel elsewhere covers it, StagePanel `from`).
+    readonly property list<Item> shapes: shownWithParts(items)
     // The glass among them, which the compositor blurs behind.
-    readonly property list<Item> glassShapes: items.filter(item => item.glass === true && item.visible)
+    readonly property list<Item> glassShapes: shownWithParts(items.filter(item => item.glass === true))
     // How far down the screen anything drawn reaches, open panels included,
     // shadows not. The stage is only this tall: the compositor blurs the
     // whole surface behind glass every frame, however small the glass.
@@ -58,11 +59,27 @@ QtObject {
         }
     }
 
+    // `drawn` and their parts, those of them shown.
+    function shownWithParts(drawn: list<Item>): list<Item> {
+        // QML's JavaScript has no flatMap.
+        return drawn.reduce((all, item) => [...all, item, ...(item.parts ?? [])], []).filter(item => item.visible);
+    }
+
     // Whether (x, y) in its window is on something drawn there, so a click
     // there isn't one outside the panels, even where nothing in the panel
     // takes it.
     function covers(x: real, y: real): bool {
-        return shapes.some(item => item.contains(item.mapFromItem(null, x, y)));
+        return shapes.some(item => item.contains(item.mapFromItem(null, x, y)) && !inCutout(item.cutout ?? null, x, y));
+    }
+
+    // Whether (x, y) in its window is inside the ellipse that fills `cutout`.
+    function inCutout(cutout: Item, x: real, y: real): bool {
+        if (!cutout || cutout.width <= 0 || cutout.height <= 0)
+            return false;
+        const at = cutout.mapFromItem(null, x, y);
+        const across = 2 * at.x / cutout.width - 1;
+        const down = 2 * at.y / cutout.height - 1;
+        return across * across + down * down < 1;
     }
 
     // Whether Esc closes `panel`: one that takes typing does, and so does

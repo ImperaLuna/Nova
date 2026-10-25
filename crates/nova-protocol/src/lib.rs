@@ -451,8 +451,9 @@ pub enum Command {
     /// The UI unlocked the session after the user's password checked out
     /// (feature `lock`). Unlocking is the UI's alone: this only tells novad.
     ReportUnlocked,
-    /// Replies with what the power menu can do now, a [`PowerOption`] per
-    /// [`PowerAction`] (feature `power`). Asked each time the menu opens.
+    /// Replies with a [`PowerMenu`]: what the power menu can do now, a
+    /// [`PowerOption`] per [`PowerAction`], and when the system booted
+    /// (feature `power`). Asked each time the menu opens.
     PowerOptions,
     /// Runs a power menu action (feature `power`). The menu asks the user
     /// to confirm the ones that end the session first.
@@ -491,6 +492,16 @@ pub struct PowerOption {
     /// For people, shown under the dimmed action.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+/// What `power_options` returns.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PowerMenu {
+    pub options: Vec<PowerOption>,
+    /// When the system booted, in Unix seconds, for the menu's uptime; left
+    /// out when novad can't tell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub booted_at: Option<u64>,
 }
 
 /// What `status` returns.
@@ -761,14 +772,17 @@ mod tests {
             encode(Response {
                 id: 18,
                 outcome: Outcome::Result(
-                    serde_json::to_value(vec![
-                        PowerOption { action: PowerAction::Lock, available: true, reason: None },
-                        PowerOption {
-                            action: PowerAction::Suspend,
-                            available: false,
-                            reason: Some("suspend is turned off".into()),
-                        },
-                    ])
+                    serde_json::to_value(PowerMenu {
+                        options: vec![
+                            PowerOption { action: PowerAction::Lock, available: true, reason: None },
+                            PowerOption {
+                                action: PowerAction::Suspend,
+                                available: false,
+                                reason: Some("suspend is turned off".into()),
+                            },
+                        ],
+                        booted_at: Some(1_761_350_400),
+                    })
                     .unwrap(),
                 ),
             }),
