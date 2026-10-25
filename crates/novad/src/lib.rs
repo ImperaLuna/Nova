@@ -35,6 +35,7 @@ mod logger;
 mod logind;
 mod power;
 mod procfs;
+mod recording;
 mod resources;
 mod screenshot;
 mod server;
@@ -119,6 +120,7 @@ pub struct Daemon {
     compositor: Option<Arc<compositor::Compositor>>,
     session_lock: Arc<session_lock::SessionLock>,
     screenshots: Arc<screenshot::Screenshots>,
+    recordings: Arc<recording::Recordings>,
 }
 
 impl Daemon {
@@ -145,6 +147,7 @@ impl Daemon {
     /// Reads the settings files again and applies what changed.
     fn reload(&self) {
         lock(&self.settings).reload(&self.sources, &self.hub, &self.logger);
+        self.recordings.allow(self.feature_ready(recording::FEATURE_ID));
     }
 
     /// Starts watching the settings files, reloading when they change.
@@ -247,6 +250,8 @@ fn start(
         Arc::clone(&hub),
         Arc::clone(&logger),
     ));
+    let recordings =
+        Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
     let daemon = Arc::new(Daemon {
         started: Instant::now(),
         hub,
@@ -258,7 +263,13 @@ fn start(
         compositor,
         session_lock,
         screenshots,
+        recordings,
     });
+    let recording = daemon.feature_ready(recording::FEATURE_ID);
+    daemon.recordings.allow(recording);
+    if recording && let Ok(folder) = lock(&daemon.settings).recording_folder() {
+        daemon.recordings.recover(&folder);
+    }
     // Watched for as long as novad runs.
     let _ = daemon.watch_settings();
     // Not for a daemon without its UI (tests, a UI run by hand): logind's

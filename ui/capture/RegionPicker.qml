@@ -10,20 +10,37 @@ import "capture.js" as Capture
 // mode a drag outlines a region and letting go takes it, like Windows'
 // Super+Shift+S; in Screen mode a click takes the whole screen. Esc or a
 // right click closes it. It only asks; ScreenshotService does the rest.
+//
+// Picking what to record (`video`), the veil is over the live screen and
+// the toolbar has the sound too. A region stays after the drag, with a
+// Record button (or Enter) under it; in Screen mode a click records the
+// screen. The count before it starts shows in the middle of what's
+// recorded; RecordingService does the rest.
 Item {
     id: picker
 
-    // The frame's file (Daemon.capture's path for this screen).
+    // The frame's file (Daemon.capture's path for this screen); "" while
+    // picking what to record.
     required property string framePath
     // A Protocol.CAPTURE_* mode, shared by every screen's picker.
     required property string mode
     // A pick is being saved: it takes no more.
     property bool busy: false
+    // Picking what to record, and the sound for it.
+    property bool video: false
+    property bool desktopAudio: false
+    property bool micAudio: false
+    // The count to the recording's start, 0 when not counting.
+    property int countdown: 0
 
     // `rect` is in the frame's pixels, save_capture's rect.
     signal saveRequested(var rect)
+    // `rect` is in logical pixels, null for the whole screen.
+    signal recordRequested(var rect)
     signal cancelRequested
     signal modeRequested(string mode)
+    signal desktopAudioToggled
+    signal micAudioToggled
 
     // The frame's pixels per logical pixel (the screen's scale).
     readonly property real frameScale: frame.implicitWidth > 0 && width > 0 ? frame.implicitWidth / width : 1
@@ -34,6 +51,10 @@ Item {
     readonly property bool hovered: input.containsMouse
     // The toolbar's glass, the window's blur area.
     readonly property Item toolbarGlass: toolbar.glass
+    // What this screen's picker asked to record (logical px), counting down
+    // over it; null when it didn't.
+    property var recorded: null
+    readonly property bool counting: recorded !== null && countdown > 0
     property point _from
 
     // Handles a key; true when it was the picker's.
@@ -42,7 +63,16 @@ Item {
             cancelRequested();
             return true;
         }
+        if (video && (key === Qt.Key_Return || key === Qt.Key_Enter) && region !== null && !busy) {
+            _record(region);
+            return true;
+        }
         return false;
+    }
+
+    function _record(rect: var) {
+        recorded = rect;
+        recordRequested(mode === Protocol.CAPTURE_SCREEN ? null : rect);
     }
 
     function _take(rect: var) {
@@ -65,6 +95,8 @@ Item {
     // The veil: around the region, or over everything but a hovered screen
     // in Screen mode.
     readonly property var _clear: {
+        if (recorded)
+            return Qt.rect(recorded.x, recorded.y, recorded.width, recorded.height);
         if (mode === Protocol.CAPTURE_SCREEN)
             return hovered ? Qt.rect(0, 0, width, height) : Qt.rect(0, 0, 0, 0);
         return region ? Qt.rect(region.x, region.y, region.width, region.height) : Qt.rect(0, 0, 0, 0);
@@ -97,7 +129,14 @@ Item {
     // corner (inside it when that's off the screen).
     Rectangle {
         id: badge
-        readonly property var pixels: picker.region ? Capture.toPixels(picker.region, picker.frameScale, frame.implicitWidth, frame.implicitHeight) : null
+        // A recording's size is in logical pixels, made even.
+        readonly property var pixels: {
+            if (!picker.region)
+                return null;
+            if (picker.video)
+                return Capture.toLayout(picker.region, 0, 0);
+            return Capture.toPixels(picker.region, picker.frameScale, frame.implicitWidth, frame.implicitHeight);
+        }
         visible: picker.dragging && pixels !== null
         x: picker.region ? Math.max(0, picker.region.x + picker.region.width - width) : 0
         y: {
@@ -122,10 +161,84 @@ Item {
         }
     }
 
+    // Under the picked region (inside it when that's off the screen): starts
+    // the recording.
+    Rectangle {
+        id: recordButton
+        visible: picker.video && picker.region !== null && !picker.dragging && picker.recorded === null
+        x: picker.region ? Math.min(picker.width - width, Math.max(0, picker.region.x + picker.region.width - width)) : 0
+        y: {
+            if (!picker.region)
+                return 0;
+            const below = picker.region.y + picker.region.height + Tokens.gap;
+            return below + height <= picker.height ? below : picker.region.y + picker.region.height - height - Tokens.gap;
+        }
+        z: 1
+        width: recordRow.implicitWidth + 2 * Tokens.captureButtonPad
+        height: Tokens.captureButtonHeight
+        radius: height / 2
+        color: recordInput.containsMouse ? Tokens.surfaceRaised : Tokens.surface
+
+        Row {
+            id: recordRow
+            anchors.centerIn: parent
+            spacing: Tokens.iconGap
+
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: Tokens.recordDotSize
+                height: width
+                radius: width / 2
+                color: Tokens.error
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Record")
+                textFormat: Text.PlainText
+                color: Tokens.fg
+                font.family: Tokens.fontSans
+                font.pixelSize: Tokens.fontSize
+                font.weight: Font.Medium
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Enter")
+                textFormat: Text.PlainText
+                color: Tokens.fgDim
+                font.family: Tokens.fontMono
+                font.pixelSize: Tokens.fontSizeTiny
+            }
+        }
+
+        MouseArea {
+            id: recordInput
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: picker._record(picker.region)
+        }
+    }
+
+    // The count to the start, in the middle of what's recorded.
+    Text {
+        visible: picker.counting
+        x: picker._clear.x + (picker._clear.width - width) / 2
+        y: picker._clear.y + (picker._clear.height - height) / 2
+        z: 1
+        text: picker.countdown
+        textFormat: Text.PlainText
+        color: Tokens.fg
+        style: Text.Outline
+        styleColor: Tokens.captureVeil
+        font.family: Tokens.fontSans
+        font.pixelSize: Tokens.fontSizeCountdown
+        font.weight: Font.DemiBold
+    }
+
     MouseArea {
         id: input
         anchors.fill: parent
-        enabled: !picker.busy
+        enabled: !picker.busy && picker.recorded === null
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         cursorShape: Qt.CrossCursor
@@ -147,15 +260,21 @@ Item {
             if (mouse.button !== Qt.LeftButton)
                 return;
             if (picker.mode === Protocol.CAPTURE_SCREEN) {
-                picker._take(Qt.rect(0, 0, picker.width, picker.height));
+                if (picker.video)
+                    picker._record(Qt.rect(0, 0, picker.width, picker.height));
+                else
+                    picker._take(Qt.rect(0, 0, picker.width, picker.height));
                 return;
             }
             const region = picker.region;
-            // A click isn't a region: the picker stays for another try.
-            if (region && !Capture.isClick(region, Tokens.captureMinDrag))
-                picker._take(region);
-            else
+            // A click isn't a region: the picker stays for another try. A
+            // region to record stays for its Record button.
+            if (region && !Capture.isClick(region, Tokens.captureMinDrag)) {
+                if (!picker.video)
+                    picker._take(region);
+            } else {
                 picker.region = null;
+            }
         }
     }
 
@@ -164,7 +283,12 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         y: Tokens.barGap
         mode: picker.mode
+        video: picker.video
+        desktopAudio: picker.desktopAudio
+        micAudio: picker.micAudio
         onModeRequested: mode => picker.modeRequested(mode)
+        onDesktopAudioToggled: picker.desktopAudioToggled()
+        onMicAudioToggled: picker.micAudioToggled()
         onCloseRequested: picker.cancelRequested()
     }
 }

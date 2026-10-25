@@ -36,10 +36,11 @@ ShellRoot {
         component: VolumeOsd {}
     }
 
-    // Screenshots: the region picker while novad has it open, and the card
-    // a saved shot lands in.
+    // Screenshots and recordings: the region picker while it's open, the
+    // marks around a region being recorded, and the card a saved shot or
+    // recording lands in.
     LazyLoader {
-        active: Daemon.theme !== null && ScreenshotService.ready
+        active: Daemon.theme !== null && (ScreenshotService.ready || RecordingService.ready)
         component: Scope {
             CaptureOverlay {}
             ShotCards {}

@@ -1,12 +1,12 @@
 import QtQuick
 import Quickshell
 
-// A screen as Nova's surfaces lay themselves out on it: its name and size,
-// kept once the screen is gone. When an output goes away (a monitor
-// sleeping through a suspend, or unplugged), Quickshell deletes its
-// ShellScreen before the surfaces built for it, so in between everything
-// bound to the screen would evaluate against null (IMP-92). Surfaces read
-// these instead, and keep their last layout until they go too.
+// A screen as Nova's surfaces lay themselves out on it: its name, size and
+// place in the layout, kept once the screen is gone. When an output goes
+// away (a monitor sleeping through a suspend, or unplugged), Quickshell
+// deletes its ShellScreen before the surfaces built for it, so in between
+// everything bound to the screen would evaluate against null (IMP-92).
+// Surfaces read these instead, and keep their last layout until they go too.
 QtObject {
     id: held
 
@@ -17,6 +17,8 @@ QtObject {
     property string name: screen?.name ?? ""
     property int width: screen?.width ?? 0
     property int height: screen?.height ?? 0
+    property int x: screen?.x ?? 0
+    property int y: screen?.y ?? 0
 
     function take() {
         if (!screen)
@@ -24,6 +26,8 @@ QtObject {
         name = screen.name;
         width = screen.width;
         height = screen.height;
+        x = screen.x;
+        y = screen.y;
     }
     Component.onCompleted: take()
     onScreenChanged: take()

@@ -3,12 +3,15 @@ import Quickshell
 import Quickshell.Wayland
 import "../stage"
 import "service"
+import "capture.js" as Capture
 
 // The region picker's layer surface on one screen: the whole screen, on the
 // overlay layer so it covers fullscreen windows and the bar too (the frozen
 // frame shows them as they were). It takes the keyboard for Esc, and no
 // space. Its own surface, not the stage's: it needs the overlay layer and
 // covers everything, so the stage's mask and morph have nothing to add.
+// Picking what to record (`video`) it goes through RecordingService, over
+// the live screen.
 PanelWindow { // qmllint disable uncreatable-type
     id: window
 
@@ -16,6 +19,7 @@ PanelWindow { // qmllint disable uncreatable-type
     // Its screen (StageScreen), kept while it goes away.
     required property StageScreen output
     required property string framePath
+    property bool video: false
 
     anchors {
         top: true
@@ -41,11 +45,23 @@ PanelWindow { // qmllint disable uncreatable-type
         anchors.fill: parent
         focus: true
         framePath: window.framePath
-        mode: ScreenshotService.mode
-        busy: ScreenshotService.saving
+        video: window.video
+        mode: window.video ? RecordingService.mode : ScreenshotService.mode
+        busy: window.video ? RecordingService.countdown > 0 : ScreenshotService.saving
+        desktopAudio: RecordingService.desktopAudio
+        micAudio: RecordingService.micAudio
+        countdown: RecordingService.countdown
         onSaveRequested: rect => ScreenshotService.save(window.output.name, rect)
-        onCancelRequested: ScreenshotService.cancel()
-        onModeRequested: mode => ScreenshotService.mode = mode
+        onRecordRequested: rect => RecordingService.record(window.output.name, rect ? Capture.toLayout(rect, window.output.x, window.output.y) : null)
+        onCancelRequested: window.video ? RecordingService.cancel() : ScreenshotService.cancel()
+        onModeRequested: mode => {
+            if (window.video)
+                RecordingService.mode = mode;
+            else
+                ScreenshotService.mode = mode;
+        }
+        onDesktopAudioToggled: RecordingService.desktopAudio = !RecordingService.desktopAudio
+        onMicAudioToggled: RecordingService.micAudio = !RecordingService.micAudio
         Keys.onPressed: event => {
             event.accepted = picker.key(event.key);
         }

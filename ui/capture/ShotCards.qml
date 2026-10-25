@@ -6,12 +6,15 @@ import "../compositor"
 import "../stage"
 import "service"
 
-// Where saved screenshots land: the card, on the screen that had focus when
-// the shot was saved. A new shot while it's out replaces it in place.
+// Where saved screenshots and recordings land: the card, on the screen that
+// had focus when it was saved. A new one while it's out replaces it in
+// place.
 Scope {
     id: cards
 
     property var shot: null
+    // The shot is a recording.
+    property bool video: false
     property ShellScreen screen: null
     // As the card lays out by it, kept while that screen goes away.
     readonly property StageScreen output: StageScreen {
@@ -21,10 +24,21 @@ Scope {
     Connections {
         target: ScreenshotService
         function onSaved(shot: var) {
-            if (!cards.shot || !cards.screen)
-                cards.screen = Compositor.focusedScreen();
-            cards.shot = shot;
+            cards.show(shot, false);
         }
+    }
+    Connections {
+        target: RecordingService
+        function onSaved(saved: var) {
+            cards.show(saved, true);
+        }
+    }
+
+    function show(shot: var, video: bool) {
+        if (!cards.shot || !cards.screen)
+            cards.screen = Compositor.focusedScreen();
+        cards.video = video;
+        cards.shot = shot;
     }
 
     LazyLoader {
@@ -32,6 +46,7 @@ Scope {
         component: ShotCardWindow {
             output: cards.output
             shot: cards.shot
+            video: cards.video
             onGone: cards.shot = null
         }
     }

@@ -53,6 +53,11 @@ STAYS_OFF_SECS = 3
 IDLE_SECS = 10
 # Lines of `nova logs` history that reach back to the start of a run.
 LOG_HISTORY = 1_000_000
+# novad's log files: nova.log and the earlier ones, nova.log.1 to .5
+# (logger.rs KEPT_RUNS), and the line each novad run starts with.
+LOG_DIR = "~/.local/state/nova"
+KEPT_LOGS = 5
+RUN_START = " starting (pid "
 # A frame the UI hands the compositor, in its WAYLAND_DEBUG lines.
 SURFACE_COMMIT = r"wl_surface#[0-9]*\.commit("
 # The same line, with libwayland's timestamp and the surface, after
@@ -219,10 +224,19 @@ def click(x: int, y: int) -> None:
 
 
 def ui_log_count(line: str) -> int:
-    # The whole run: with WAYLAND_DEBUG on, a click logs far more than the
-    # last 50 lines `nova logs` shows by default.
-    out = machine.succeed(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -cF {shlex.quote(line)} || true"))
-    return int(out.strip() or 0)
+    """How often the UI logged `line` in this novad run. The whole run: with
+    WAYLAND_DEBUG on, a click logs far more than `nova logs` shows by
+    default, and the run's file can pass novad's 2 MB and move on to
+    nova.log.1 mid-subtest, where `nova logs` no longer reads it. So the
+    count reads back through the files to the one this novad started in."""
+    files = " ".join(["nova.log"] + [f"nova.log.{runs_ago}" for runs_ago in range(1, KEPT_LOGS + 1)])
+    out = machine.succeed(
+        as_user(
+            f"cd {LOG_DIR} && for f in {files}; do [ -f $f ] || break; "
+            f"grep -F ' ui: ' $f | grep -cF {shlex.quote(line)}; grep -qF {shlex.quote(RUN_START)} $f && break; done; true"
+        )
+    )
+    return sum(int(count) for count in out.split())
 
 
 def window_geometry() -> list:

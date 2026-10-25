@@ -161,23 +161,11 @@ impl Screenshots {
             .position(|shot| shot.id == id)
             .ok_or_else(|| format!("no screenshot {id} (it's from before novad started, or deleted)"))?;
         let path = PathBuf::from(&state.saved[index].path);
-        match action {
-            ScreenshotAction::Open => crate::launcher::open(&path, &self.path_var, &self.logger),
-            ScreenshotAction::Folder => {
-                crate::launcher::open(path.parent().unwrap_or(Path::new("/")), &self.path_var, &self.logger)
-            }
-            ScreenshotAction::Delete => {
-                match std::fs::remove_file(&path) {
-                    Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                        return Err(format!("can't delete {}: {e}", path.display()));
-                    }
-                    _ => {}
-                }
-                state.saved.remove(index);
-                self.logger.info(LOG_SOURCE, &format!("deleted {}", path.display()));
-                Ok(())
-            }
+        act_on(&path, action, &self.path_var, &self.logger, LOG_SOURCE)?;
+        if action == ScreenshotAction::Delete {
+            state.saved.remove(index);
         }
+        Ok(())
     }
 
     /// Captures each output into the frames folder, all at once.
@@ -293,6 +281,31 @@ impl Screenshots {
         match status.success() {
             true => Ok(()),
             false => Err(format!("{program} failed ({status}): {}", message.trim())),
+        }
+    }
+}
+
+/// Opens a saved file (`path`), its folder, or deletes it; a file that's
+/// already gone counts as deleted. Recordings use it too.
+pub fn act_on(
+    path: &Path,
+    action: ScreenshotAction,
+    path_var: &str,
+    logger: &Arc<Logger>,
+    log_source: &str,
+) -> Result<(), String> {
+    match action {
+        ScreenshotAction::Open => crate::launcher::open(path, path_var, logger),
+        ScreenshotAction::Folder => crate::launcher::open(path.parent().unwrap_or(Path::new("/")), path_var, logger),
+        ScreenshotAction::Delete => {
+            match std::fs::remove_file(path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(format!("can't delete {}: {e}", path.display()));
+                }
+                _ => {}
+            }
+            logger.info(log_source, &format!("deleted {}", path.display()));
+            Ok(())
         }
     }
 }
@@ -417,24 +430,36 @@ fn write(image: &Image, folder: &Path) -> Result<PathBuf, String> {
 /// the name only ever shows a whole shot.
 fn save(png: &[u8], folder: &Path) -> Result<PathBuf, String> {
     std::fs::create_dir_all(folder).map_err(|e| format!("can't make {}: {e}", folder.display()))?;
-    let stamp = jiff::Zoned::now().strftime(NAME_TIME_FORMAT).to_string();
+    let stamp = time_stamp();
     let temporary = folder.join(format!(".{NAME_PREFIX}{stamp}.{}.tmp", std::process::id()));
     std::fs::write(&temporary, png).map_err(|e| format!("can't write {}: {e}", temporary.display()))?;
-    let result = (1..)
-        .map(|n| match n {
-            1 => folder.join(format!("{NAME_PREFIX}{stamp}.{EXTENSION}")),
-            n => folder.join(format!("{NAME_PREFIX}{stamp} ({n}).{EXTENSION}")),
-        })
-        .find_map(|path| match rename_new(&temporary, &path) {
-            Ok(()) => Some(Ok(path)),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
-            Err(e) => Some(Err(format!("can't save {}: {e}", path.display()))),
-        })
-        .unwrap_or_else(|| Err("no free file name".into()));
+    let result = place(&temporary, &folder.join(format!("{NAME_PREFIX}{stamp}")), EXTENSION);
     if result.is_err() {
         let _ = std::fs::remove_file(&temporary);
     }
     result
+}
+
+/// The local time, for a saved file's name.
+pub fn time_stamp() -> String {
+    jiff::Zoned::now().strftime(NAME_TIME_FORMAT).to_string()
+}
+
+/// Moves the finished `temporary` file to `<stem>.<extension>`, or
+/// `<stem> (2).<extension>` and so on when that's taken: never over an
+/// existing file. Recordings use it too.
+pub fn place(temporary: &Path, stem: &Path, extension: &str) -> Result<PathBuf, String> {
+    (1..)
+        .map(|n| match n {
+            1 => PathBuf::from(format!("{}.{extension}", stem.display())),
+            n => PathBuf::from(format!("{} ({n}).{extension}", stem.display())),
+        })
+        .find_map(|path| match rename_new(temporary, &path) {
+            Ok(()) => Some(Ok(path)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
+            Err(e) => Some(Err(format!("can't save {}: {e}", path.display()))),
+        })
+        .unwrap_or_else(|| Err("no free file name".into()))
 }
 
 /// Renames `from` to `to` unless `to` exists (`RENAME_NOREPLACE`, which

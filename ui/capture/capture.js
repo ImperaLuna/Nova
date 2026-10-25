@@ -5,6 +5,12 @@
 // CaptureIcon's names besides the capture modes and card actions.
 var ICON_CLOSE = "close";
 var ICON_CHECK = "check";
+var ICON_DESKTOP_AUDIO = "desktop-audio";
+var ICON_MIC = "mic";
+var ICON_PAUSE = "pause";
+var ICON_RESUME = "resume";
+var ICON_STOP = "stop";
+var ICON_VIDEO = "video";
 
 // The rectangle between where a drag started and where it is now, in the
 // window's logical pixels: {x, y, width, height}.
@@ -67,4 +73,29 @@ function folderLabel(path) {
 // `shots#1` stays part of the path.
 function fileUrl(path) {
     return "file://" + path.split("/").map(encodeURIComponent).join("/");
+}
+
+// A region in a screen's logical pixels as a rectangle of the compositor's
+// layout (start_recording's region): moved by the screen's place in it, and
+// rounded inward to an even size, which video encoders need.
+function toLayout(rect, screenX, screenY) {
+    const left = Math.ceil(rect.x);
+    const top = Math.ceil(rect.y);
+    const width = Math.floor(rect.x + rect.width) - left;
+    const height = Math.floor(rect.y + rect.height) - top;
+    return {
+        x: screenX + left,
+        y: screenY + top,
+        width: Math.max(0, width - width % 2),
+        height: Math.max(0, height - height % 2)
+    };
+}
+
+// A recording's time, "0:42" or "1:02:03", from milliseconds.
+function clock(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor(total / 60) % 60;
+    const seconds = String(total % 60).padStart(2, "0");
+    return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
 }
