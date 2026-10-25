@@ -644,10 +644,15 @@ with subtest("`nova volume` steps and mutes, and shows the capsule even at 100%"
     nova_volume_shows("mute")
     assert "MUTED" not in machine.succeed(as_user(WPCTL_SINK.format("get-volume"))), "a second mute didn't unmute"
 
-with subtest("the capsule stays in while quick settings shows the volume"):
+with subtest("the capsule stays in while quick settings shows the volume, and slides away as it opens"):
+    shown, hidden = ui_log_count(VOLUME_SHOWN), ui_log_count(VOLUME_HIDDEN)
+    machine.succeed(as_user("nova volume up"))
+    retry(lambda _last_try: ui_log_count(VOLUME_SHOWN) > shown, timeout=CLICK_EFFECT)
     opened = ui_log_count(QUICK_SETTINGS_OPENED)
     machine.succeed(as_user("nova toggle quick-settings"))
     retry(lambda _last_try: ui_log_count(QUICK_SETTINGS_OPENED) > opened, timeout=CLICK_EFFECT)
+    # Well before the capsule's own hold runs out.
+    retry(lambda _last_try: ui_log_count(VOLUME_HIDDEN) > hidden, timeout=CAPSULE_HOLD_SECS - 1)
     shown = ui_log_count(VOLUME_SHOWN)
     before = volume()
     machine.succeed(as_user("nova volume down"))

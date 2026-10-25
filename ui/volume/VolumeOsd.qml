@@ -14,7 +14,8 @@ import "volume.js" as Volume
 // Tokens.durationCapsuleHold after the last change (not while the pointer
 // is on it). It stays on the screen it came out on until it's gone, and
 // stays in on a screen that already shows the volume (quick settings open
-// there, VolumeService.shownElsewhere).
+// there, VolumeService.shownElsewhere), sliding away if that opens while
+// it's out.
 Scope {
     id: osd
 
@@ -48,6 +49,18 @@ Scope {
         target: VolumeService
         function onChanged() {
             osd.reveal();
+        }
+    }
+
+    // Quick settings opened where it's out: it slides away, as it would
+    // never have come out there.
+    Connections {
+        target: VolumeService
+        function onShownElsewhereChanged() {
+            if (osd.motion.shown && VolumeService.shownElsewhere.includes(osd.screen?.name)) {
+                hold.stop();
+                osd.motion.openTarget = 0;
+            }
         }
     }
 
