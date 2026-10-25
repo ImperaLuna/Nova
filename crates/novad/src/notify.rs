@@ -11,6 +11,8 @@ use std::os::unix::net::{SocketAddr, UnixDatagram};
 /// The variable systemd sets for a `Type=notify` service.
 pub const SOCKET_VAR: &str = "NOTIFY_SOCKET";
 const READY: &[u8] = b"READY=1";
+/// How long the send may wait on a full socket before novad goes on without it.
+const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Sends `READY=1` to `socket`, the value `NOTIFY_SOCKET` had: a path, or
 /// an abstract socket's name after `@`. False when there's none to tell.
@@ -23,7 +25,9 @@ pub fn ready(socket: Option<&OsStr>) -> std::io::Result<bool> {
         }
         None => SocketAddr::from_pathname(socket)?,
     };
-    UnixDatagram::unbound()?.send_to_addr(READY, &address)?;
+    let socket = UnixDatagram::unbound()?;
+    socket.set_write_timeout(Some(SEND_TIMEOUT))?;
+    socket.send_to_addr(READY, &address)?;
     Ok(true)
 }
 
