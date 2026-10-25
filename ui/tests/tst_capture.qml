@@ -40,7 +40,8 @@ Item {
                         id: 7,
                         path: test.framePath,
                         width: 960,
-                        height: 560
+                        height: 560,
+                        copied: true
                     })
             }
         }
@@ -123,6 +124,7 @@ Item {
             compare(Capture.frameFor(null, "DP-1"), null);
             compare(Capture.size(960, 560), "960 × 560");
             compare(Capture.folderLabel("/home/me/Pictures/Screenshots/a.png"), "Pictures/Screenshots");
+            compare(Capture.fileUrl("/home/me/shots#1/a b?.png"), "file:///home/me/shots%231/a%20b%3F.png");
         }
 
         function test_letting_go_of_a_drag_takes_the_region_in_frame_pixels() {

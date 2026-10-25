@@ -42,7 +42,7 @@ expression: all
 {"v":2,"id":32,"cmd":"save_capture","args":{"output":"DP-1","rect":{"x":1460,"y":150,"width":960,"height":560}}}
 {"v":2,"id":33,"cmd":"cancel_capture"}
 {"v":2,"event":"capture_ended"}
-{"v":2,"event":"screenshot_saved","data":{"id":1,"path":"/home/me/Pictures/Screenshots/Screenshot 2026-10-25 15-03-41.png","width":960,"height":560}}
+{"v":2,"event":"screenshot_saved","data":{"id":1,"path":"/home/me/Pictures/Screenshots/Screenshot 2026-10-25 15-03-41.png","width":960,"height":560,"copied":true}}
 {"v":2,"id":34,"cmd":"screenshot_action","args":{"id":1,"action":"open"}}
 {"v":2,"cmd":"screenshot_action","args":{"id":1,"action":"folder"}}
 {"v":2,"cmd":"screenshot_action","args":{"id":1,"action":"delete"}}

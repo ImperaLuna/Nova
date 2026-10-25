@@ -67,8 +67,9 @@ pub enum Event {
     /// The region picker closes: the shot was taken or cancelled. Topic
     /// [`Topic::Screenshot`].
     CaptureEnded,
-    /// A screenshot was saved and copied (feature `screenshot`). `id` names
-    /// it in `screenshot_action`. Topic [`Topic::Screenshot`].
+    /// A screenshot was saved, and copied when it could be (feature
+    /// `screenshot`). `id` names it in `screenshot_action`. Topic
+    /// [`Topic::Screenshot`].
     ScreenshotSaved(SavedScreenshot),
     /// The apps the launcher can open, and the user's pinned and recent ones
     /// (feature `launcher`). Topic [`Topic::Launcher`], sent right after
@@ -502,6 +503,8 @@ pub struct SavedScreenshot {
     pub path: String,
     pub width: u32,
     pub height: u32,
+    /// It's on the clipboard too (wl-copy worked).
+    pub copied: bool,
 }
 
 /// What the screenshot card does with a saved shot.
@@ -981,6 +984,7 @@ mod tests {
                 path: "/home/me/Pictures/Screenshots/Screenshot 2026-10-25 15-03-41.png".into(),
                 width: 960,
                 height: 560,
+                copied: true,
             })),
             encode(Request {
                 id: Some(34),

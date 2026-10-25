@@ -34,8 +34,6 @@ const LOG_SOURCE: &str = "screenshot";
 const GRIM: &str = "grim";
 /// Puts a shot on the clipboard.
 const WL_COPY: &str = "wl-copy";
-/// Opens a shot, or its folder, in the user's default app.
-const OPENER: &str = "xdg-open";
 /// How long grim or wl-copy may take: under the `nova` CLI's wait for an
 /// answer, so a stuck tool's error reaches the keybind's log.
 const TOOL_TIMEOUT: Duration = Duration::from_secs(3);
@@ -124,15 +122,19 @@ impl Screenshots {
     }
 
     /// Saves `rect` of `output`'s frozen frame and closes the picker. A
-    /// rectangle that misses the frame leaves the picker open.
+    /// rectangle that misses the frame, or a failed save, leaves the picker
+    /// open.
     pub fn save_region(&self, output: &str, rect: PixelRect, folder: &Path) -> Result<(), String> {
         let mut state = lock(&self.state);
         let frames = state.frames.as_ref().ok_or("no region is being picked")?;
         let frame =
             frames.iter().find(|frame| frame.output == output).ok_or_else(|| format!("{output:?} wasn't captured"))?;
         let image = Image::from_ppm(&read(Path::new(&frame.path))?)?.crop(rect)?;
+        // Saved before the frames go, so a failed save (a full disk) leaves
+        // the picker to try again.
+        let path = write(&image, folder)?;
         self.end_capture(&mut state);
-        self.keep(&mut state, &image, folder)
+        self.announce(&mut state, &path, &image)
     }
 
     /// Closes the picker without a shot.
@@ -160,8 +162,10 @@ impl Screenshots {
             .ok_or_else(|| format!("no screenshot {id} (it's from before novad started, or deleted)"))?;
         let path = PathBuf::from(&state.saved[index].path);
         match action {
-            ScreenshotAction::Open => self.open(&path),
-            ScreenshotAction::Folder => self.open(path.parent().unwrap_or(Path::new("/"))),
+            ScreenshotAction::Open => crate::launcher::open(&path, &self.path_var, &self.logger),
+            ScreenshotAction::Folder => {
+                crate::launcher::open(path.parent().unwrap_or(Path::new("/")), &self.path_var, &self.logger)
+            }
             ScreenshotAction::Delete => {
                 match std::fs::remove_file(&path) {
                     Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
@@ -214,16 +218,29 @@ impl Screenshots {
 
     /// Writes a shot into `folder`, copies it and tells the UI.
     fn keep(&self, state: &mut State, image: &Image, folder: &Path) -> Result<(), String> {
+        let path = write(image, folder)?;
+        self.announce(state, &path, image)
+    }
+
+    /// Copies a saved shot and tells the UI, which says whether it's on the
+    /// clipboard: the file is kept even when the clipboard isn't there.
+    fn announce(&self, state: &mut State, path: &Path, image: &Image) -> Result<(), String> {
         let (width, height) = (image.width, image.height);
-        let path = save(&image.to_png()?, folder)?;
         self.logger.info(LOG_SOURCE, &format!("saved {} ({width}x{height})", path.display()));
-        // The file is saved even when the clipboard isn't there.
-        let file = std::fs::File::open(&path).map_err(|e| format!("can't read {} back: {e}", path.display()))?;
-        if let Err(e) = self.run(WL_COPY, &["--type".into(), PNG_TYPE.into()], Some(file)) {
+        let copied = std::fs::File::open(path)
+            .map_err(|e| format!("can't read {} back: {e}", path.display()))
+            .and_then(|file| self.run(WL_COPY, &["--type".into(), PNG_TYPE.into()], Some(file)));
+        if let Err(e) = &copied {
             self.logger.warn(LOG_SOURCE, &format!("saved, but couldn't copy it: {e}"));
         }
         state.next_id += 1;
-        let shot = SavedScreenshot { id: state.next_id, path: path.display().to_string(), width, height };
+        let shot = SavedScreenshot {
+            id: state.next_id,
+            path: path.display().to_string(),
+            width,
+            height,
+            copied: copied.is_ok(),
+        };
         if state.saved.len() == KEEP_SAVED {
             state.saved.pop_front();
         }
@@ -277,22 +294,6 @@ impl Screenshots {
             true => Ok(()),
             false => Err(format!("{program} failed ({status}): {}", message.trim())),
         }
-    }
-
-    /// Opens `path` in the user's default app. The app may run for as long
-    /// as the user likes (xdg-open waits for it without a desktop), so it's
-    /// waited on off this thread, just so it doesn't linger as a zombie.
-    fn open(&self, path: &Path) -> Result<(), String> {
-        let mut child = Command::new(OPENER)
-            .arg(path)
-            .env("PATH", &self.path_var)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("can't run {OPENER}: {e}"))?;
-        std::thread::spawn(move || child.wait());
-        Ok(())
     }
 }
 
@@ -404,6 +405,11 @@ impl Image {
         writer.finish().map_err(failed)?;
         Ok(out)
     }
+}
+
+/// Encodes `image` and writes it into `folder` (see [`save`]).
+fn write(image: &Image, folder: &Path) -> Result<PathBuf, String> {
+    save(&image.to_png()?, folder)
 }
 
 /// Writes `png` into `folder` under a name from the local time, never over
@@ -652,6 +658,29 @@ mod tests {
         fixture.screenshots.act(id, ScreenshotAction::Delete).unwrap();
         assert!(fixture.saved().is_empty());
         assert!(fixture.screenshots.act(id, ScreenshotAction::Open).is_err(), "deleted shots are forgotten");
+    }
+
+    #[test]
+    fn a_failed_save_keeps_the_picker_and_a_failed_copy_still_saves() {
+        let fixture = Fixture::new("failed-save");
+        fixture.screenshots.pick_region(&outputs()).unwrap();
+        // A file where the folder should be.
+        let blocked = fixture.dir.join("blocked");
+        std::fs::write(&blocked, "").unwrap();
+        let rect = PixelRect { x: 0, y: 0, width: 2, height: 2 };
+        assert!(fixture.screenshots.save_region("DP-1", rect, &blocked.join("Screenshots")).is_err());
+        fixture.events();
+        fixture.screenshots.save_region("DP-1", rect, &fixture.folder()).unwrap();
+        let events = fixture.events();
+        assert_eq!(events[0]["event"], "capture_ended", "only now: {events:?}");
+        assert_eq!(events[1]["data"]["copied"], true);
+
+        // No clipboard: saved all the same, and said so.
+        fake(&fixture.dir.join("bin"), WL_COPY, "exit 1");
+        fixture.screenshots.take_screen(Some("DP-1"), &fixture.folder()).unwrap();
+        let events = fixture.events();
+        assert_eq!(events[0]["data"]["copied"], false, "{events:?}");
+        assert_eq!(fixture.saved().len(), 2);
     }
 
     #[test]

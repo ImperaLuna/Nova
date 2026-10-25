@@ -12,7 +12,7 @@ import "capture.js" as Capture
 Item {
     id: card
 
-    // Daemon's screenshotSaved shot: {id, path, width, height}.
+    // Daemon's screenshotSaved shot: {id, path, width, height, copied}.
     required property var shot
 
     readonly property bool held: hover.hovered
@@ -70,7 +70,7 @@ Item {
 
                 Image {
                     anchors.fill: parent
-                    source: card.shot ? "file://" + encodeURI(card.shot.path) : ""
+                    source: card.shot ? Capture.fileUrl(card.shot.path) : ""
                     // Decoded at the card's size, not the shot's.
                     sourceSize.width: 2 * width
                     fillMode: Image.PreserveAspectFit
@@ -91,9 +91,10 @@ Item {
                         name: Capture.ICON_CHECK
                         color: Tokens.success
                     }
+                    // Saved either way; copied unless the clipboard failed.
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Copied to clipboard")
+                        text: card.shot?.copied ? qsTr("Copied to clipboard") : qsTr("Saved")
                         textFormat: Text.PlainText
                         color: Tokens.fg
                         font.family: Tokens.fontSans

@@ -162,6 +162,29 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
     Ok(())
 }
 
+/// The program that opens a file or folder in the user's default app.
+const OPENER: &str = "xdg-open";
+
+/// Opens `target`, a file or folder, in the user's default app (the
+/// screenshot card's Open and Folder). It's started like an app: it may run
+/// for as long as the user keeps it open, so it's never novad's child.
+pub fn open(target: &Path, path_var: &str, logger: &Arc<Logger>) -> Result<(), String> {
+    let opener = Entry {
+        id: format!("{OPENER}.desktop"),
+        name: OPENER.into(),
+        generic_name: None,
+        comment: None,
+        icon: None,
+        keywords: Vec::new(),
+        exec: vec![OPENER.into(), target.display().to_string()],
+        terminal: false,
+        path: None,
+        opens_types: false,
+        window_class: None,
+    };
+    launch(&opener, &Runner::detect(path_var), path_var, logger)
+}
+
 /// A name of letters, digits and `_`, not starting with a digit.
 fn plain_name(name: &str) -> bool {
     !name.starts_with(|c: char| c.is_ascii_digit())

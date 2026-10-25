@@ -20,7 +20,7 @@ Singleton {
     property string mode: Protocol.CAPTURE_REGION
     // A pick was sent and novad is saving it: the picker takes no more.
     property bool saving: false
-    // The last shot saved ({id, path, width, height}), for the card.
+    // The last shot saved ({id, path, width, height, copied}), for the card.
     property var shot: null
     signal saved(var shot)
 

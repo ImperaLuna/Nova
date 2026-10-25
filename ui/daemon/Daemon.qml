@@ -46,7 +46,7 @@ Singleton {
     // The region picker's frozen frames while it's open ([{output, path}],
     // one per screen), or null.
     property var capture: null
-    // A screenshot was saved: {id, path, width, height}.
+    // A screenshot was saved: {id, path, width, height, copied}.
     signal screenshotSaved(var shot)
 
     property int _nextId: 1

@@ -62,3 +62,9 @@ function folderLabel(path) {
     const parts = path.split("/").filter(part => part.length > 0);
     return parts.slice(Math.max(0, parts.length - 3), parts.length - 1).join("/");
 }
+
+// A local file's URL, each part of the path escaped: a folder named
+// `shots#1` stays part of the path.
+function fileUrl(path) {
+    return "file://" + path.split("/").map(encodeURIComponent).join("/");
+}

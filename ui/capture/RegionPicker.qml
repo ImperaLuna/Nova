@@ -56,7 +56,7 @@ Item {
     Image {
         id: frame
         anchors.fill: parent
-        source: picker.framePath ? "file://" + encodeURI(picker.framePath) : ""
+        source: picker.framePath ? Capture.fileUrl(picker.framePath) : ""
         asynchronous: true
         cache: false
         smooth: true
