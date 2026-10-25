@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Effects
 import "../theme"
 import "../daemon/protocol.js" as Protocol
 import "capture.js" as Capture
@@ -101,6 +102,9 @@ Item {
         id: hover
     }
 
+    // Cut out under the toolbar: its glass blurs the live screen there, as
+    // when picking what to record, not the frame's copy of the pill it
+    // stands in for.
     Image {
         id: frame
         anchors.fill: parent
@@ -108,6 +112,29 @@ Item {
         asynchronous: true
         cache: false
         smooth: true
+        layer.enabled: true
+        layer.effect: MultiEffect {
+            maskEnabled: true
+            maskInverted: true
+            maskSource: toolbarCutout
+        }
+    }
+
+    Item {
+        id: toolbarCutout
+        width: picker.width
+        height: picker.height
+        visible: false
+        layer.enabled: true
+
+        Rectangle {
+            x: toolbar.x
+            y: toolbar.y
+            width: toolbar.width
+            height: toolbar.height
+            radius: height / 2
+            scale: picker.toolbarGlass.scale
+        }
     }
 
     // The veil: around the region, or over everything but a hovered screen
