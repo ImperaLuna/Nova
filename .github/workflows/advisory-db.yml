@@ -69,6 +69,8 @@ jobs:
     if: needs.update.outputs.changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.push.outputs.sha }}
     permissions:
       contents: write
       pull-requests: write
@@ -117,6 +119,7 @@ jobs:
           # The branch is only ever this job's: each bump replaces the last.
           git push -q --force origin "HEAD:refs/heads/$BRANCH"
           echo "pushed=true" >>"$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
       # Also when nothing was pushed: an earlier run may have pushed the
       # branch but failed here, before the repo setting was on.
       - name: open the PR
@@ -142,3 +145,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+
+  drop:
+    needs: pr
+    if: needs.pr.outputs.sha != ''
+    permissions:
+      actions: write
+    uses: ./.github/workflows/drop-bot-pr-runs.yml
+    with:
+      shas: ${{ needs.pr.outputs.sha }}
