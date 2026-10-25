@@ -28,14 +28,9 @@ Scope {
 
     function reveal() {
         if (!motion.shown)
-            screen = focusedScreen();
+            screen = Compositor.focusedScreen();
         motion.openTarget = 1;
         hold.restart();
-    }
-
-    function focusedScreen(): ShellScreen {
-        const name = Compositor.focusedOutput?.name;
-        return Quickshell.screens.find(screen => screen.name === name) ?? Quickshell.screens[0] ?? null;
     }
 
     Connections {

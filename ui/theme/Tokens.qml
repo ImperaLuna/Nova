@@ -260,6 +260,26 @@ QtObject {
     readonly property real liquidTiltMax: 0.5
 
     // Type
+    // Screenshots: the dim over the frozen screens outside the region, the
+    // region's outline and the crosshair, the toolbar at the top (the
+    // central pill grown into it), and the card a saved shot lands in.
+    readonly property real captureVeilOpacity: 0.45
+    readonly property color captureVeil: Qt.rgba(0, 0, 0, captureVeilOpacity)
+    readonly property real captureOutline: 1.5
+    readonly property color captureGuide: Qt.rgba(fg.r, fg.g, fg.b, 0.28)
+    // Smaller than this (logical px) either way is a click, not a region.
+    readonly property int captureMinDrag: 4
+    readonly property int captureBarHeight: 44
+    readonly property int captureButtonHeight: 32
+    readonly property int captureButtonPad: 12
+    readonly property int captureBadgeHeight: 26
+    readonly property int shotCardWidth: 360
+    readonly property int shotThumbHeight: 184
+    readonly property int shotButtonHeight: 36
+    readonly property int shotCardGap: 12
+    // How long the card stays; the pointer on it holds it.
+    readonly property int durationShotCard: 6000
+
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"
     readonly property string fontDisplay: "Instrument Serif"
