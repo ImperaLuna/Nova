@@ -24,8 +24,6 @@ PanelWindow { // qmllint disable uncreatable-type
     required property StageScreen output
     // "right" (against the right edge) or "center" (centered across).
     required property string placement
-    // The stage's layer (Stage `surfaceLayer`).
-    required property int surfaceLayer
     // This placement's panels on this screen.
     required property list<StagePanel> panels
     // A panel that closes on a click outside is open on this screen: the
@@ -140,7 +138,10 @@ PanelWindow { // qmllint disable uncreatable-type
         }
     }
 
-    WlrLayershell.layer: surface.surfaceLayer
+    // It's only there while its panels are, so always over a fullscreen
+    // window (Stage `surfaceLayer`). It's made anew each time it shows, and
+    // Hyprland kept a layer changed before its first frame at Top.
+    WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "nova-panel"
     WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
