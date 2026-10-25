@@ -122,6 +122,9 @@ QtObject {
     // barGap + barHeight + barGap).
     readonly property int barMargin: 8
     readonly property int barGap: 4
+    // While the bar steps aside for a fullscreen window: the strip along the
+    // top edge that brings it back when the pointer touches it.
+    readonly property int revealStrip: 2
     // The central pill's workspace numbers: each a round cell this big, this
     // far apart, and the line between them and the day.
     readonly property int workspaceSize: 26
@@ -371,6 +374,10 @@ QtObject {
     readonly property int durationPulse: 1600
     // How long an action that ends the session waits for its second click.
     readonly property int durationConfirm: 4000
+    // How long the bar stays after the pointer leaves it while it's only
+    // brought back over a fullscreen window, so moving from the top edge
+    // down to a pill doesn't hide it again.
+    readonly property int durationPeekLinger: 400
     // The cubic-bezier every panel motion uses (fast out, gentle stop).
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
     // The curve each half of a pulse follows: a soft breath in and out.
