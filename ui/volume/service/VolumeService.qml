@@ -8,8 +8,9 @@ import "../volume.js" as Volume
 
 // The default output's volume and mute, from PipeWire, and the commands that
 // change them. The capsule (../VolumeOsd.qml) reads and acts through here.
-// Media keys stay the compositor's (`wpctl set-volume`): any change shows up
-// here, whoever made it.
+// Volume keys bound to `nova volume` arrive through Daemon; keys left on
+// the compositor (`wpctl set-volume`) work too: any change shows up here,
+// whoever made it.
 Singleton {
     id: root
 

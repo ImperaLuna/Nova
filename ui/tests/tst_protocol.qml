@@ -55,6 +55,12 @@ TestCase {
         compare(msg.data.panel, Protocol.FEATURE_AI_USAGE);
     }
 
+    function test_parses_volume_event() {
+        const msg = Protocol.parse('{"v":2,"event":"volume","data":{"key":"mute"}}');
+        compare(msg.event, Protocol.EVENT_VOLUME);
+        compare(msg.data.key, Protocol.VOLUME_MUTE);
+    }
+
     function test_only_ready_features_load() {
         const ready = Protocol.readyFeatures([
             {

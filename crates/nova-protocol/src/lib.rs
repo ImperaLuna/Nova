@@ -57,6 +57,9 @@ pub enum Event {
     /// when `locked` turns true, but only ever unlocks itself, after the
     /// user's password checks out: `locked: false` just follows that.
     Lock { locked: bool },
+    /// Change the default output's volume as `nova volume` asks, and show
+    /// the volume capsule. Topic [`Topic::Volume`].
+    Volume { key: VolumeKey },
 }
 
 /// Groups of events a client can subscribe to.
@@ -70,6 +73,7 @@ pub enum Topic {
     Compositor,
     Toggle,
     Lock,
+    Volume,
 }
 
 impl Event {
@@ -85,6 +89,7 @@ impl Event {
             Event::Compositor(_) => Some(Topic::Compositor),
             Event::Toggle { .. } => Some(Topic::Toggle),
             Event::Lock { .. } => Some(Topic::Lock),
+            Event::Volume { .. } => Some(Topic::Volume),
         }
     }
 }
@@ -372,6 +377,19 @@ impl FromStr for Panel {
     }
 }
 
+/// A volume key `nova volume` stands for. The UI steps by its own
+/// `Tokens.volumeStep` and stops at 100%.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VolumeKey {
+    /// One step louder.
+    Up,
+    /// One step quieter.
+    Down,
+    /// Mute, or unmute when muted.
+    Mute,
+}
+
 /// Sent by the UI or the `nova` CLI. Arguments with unknown fields are
 /// refused, like unknown fields on the request line itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -429,6 +447,12 @@ pub enum Command {
     /// The UI unlocked the session after the user's password checked out
     /// (feature `lock`). Unlocking is the UI's alone: this only tells novad.
     ReportUnlocked,
+    /// Changes the default output's volume and shows the capsule, even at
+    /// either end or without an output (`nova volume`). Fails when no UI is
+    /// connected to do it.
+    Volume {
+        key: VolumeKey,
+    },
 }
 
 /// What `status` returns.
@@ -663,6 +687,7 @@ mod tests {
                         Topic::Compositor,
                         Topic::Toggle,
                         Topic::Lock,
+                        Topic::Volume,
                     ],
                 },
             }),
@@ -694,6 +719,9 @@ mod tests {
             encode(Request { id: Some(20), command: Command::ReportLocked }),
             encode(Request { id: Some(17), command: Command::ReportUnlocked }),
             encode(Event::Lock { locked: false }),
+            encode(Request { id: Some(18), command: Command::Volume { key: VolumeKey::Up } }),
+            encode(Event::Volume { key: VolumeKey::Down }),
+            encode(Event::Volume { key: VolumeKey::Mute }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
@@ -722,6 +750,7 @@ mod tests {
                 "TOPIC" => parses(value, |v| serde_json::from_value::<Topic>(v).is_ok()),
                 "CAPABILITY" => parses(value, |v| serde_json::from_value::<Capability>(v).is_ok()),
                 "STEP" => parses(value, |v| serde_json::from_value::<Step>(v).is_ok()),
+                "VOLUME" => parses(value, |v| serde_json::from_value::<VolumeKey>(v).is_ok()),
                 "FEATURE" => root.join("features").join(value).join("feature.toml").is_file(),
                 _ => panic!("protocol.js: no check for {name}; add its kind to this test"),
             };
@@ -892,6 +921,7 @@ mod tests {
         assert_eq!(Event::Compositor(desktop()).topic(), Some(Topic::Compositor));
         assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(Topic::Toggle));
         assert_eq!(Event::Lock { locked: true }.topic(), Some(Topic::Lock));
+        assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(Topic::Volume));
     }
 
     #[test]
