@@ -90,21 +90,22 @@ impl Library {
         if status != SUCCESS {
             return Err(format!("nvmlInit_v2 returned {status}"));
         }
-        let nvml = Nvml { library: *self, device: None };
         let mut device: Device = std::ptr::null_mut();
         // SAFETY: NVML is started and `device` is a valid out pointer.
         let status = unsafe { (self.device_by_index)(0, &raw mut device) };
         if status != SUCCESS {
+            // SAFETY: balances the start above.
+            unsafe { (self.shutdown)() };
             return Err(format!("nvmlDeviceGetHandleByIndex_v2 returned {status}"));
         }
-        Ok(Nvml { device: Some(device), ..nvml })
+        Ok(Nvml { library: *self, device })
     }
 }
 
 /// NVML while it's started, and the first GPU. Shut down when dropped.
 pub struct Nvml {
     library: Library,
-    device: Option<Device>,
+    device: Device,
 }
 
 // SAFETY: NVML's calls are thread-safe, and the device handle is only an
@@ -116,7 +117,7 @@ impl Nvml {
     pub fn busy(&self) -> Option<f32> {
         let mut utilization = Utilization::default();
         // SAFETY: a device from this started NVML, and a valid out pointer.
-        let status = unsafe { (self.library.utilization)(self.device?, &raw mut utilization) };
+        let status = unsafe { (self.library.utilization)(self.device, &raw mut utilization) };
         (status == SUCCESS && utilization.gpu <= 100).then_some(utilization.gpu as f32)
     }
 }
