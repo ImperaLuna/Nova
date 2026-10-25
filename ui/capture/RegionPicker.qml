@@ -1,12 +1,14 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Effects
 import "../theme"
 import "../daemon/protocol.js" as Protocol
 import "capture.js" as Capture
 
 // One screen's part of the region picker: its frozen frame under a dim
-// veil, and the toolbar at the top (Region or Screen, and close). In Region
+// veil, and the toolbar at the top (a switch to recording, Region or
+// Screen, and close). In Region
 // mode a drag outlines a region and letting go takes it, like Windows'
 // Super+Shift+S; in Screen mode a click takes the whole screen. Esc or a
 // right click closes it. It only asks; ScreenshotService does the rest.
@@ -32,6 +34,10 @@ Item {
     property bool micAudio: false
     // The count to the recording's start, 0 when not counting.
     property int countdown: 0
+    // The toolbar can switch between a screenshot and a recording, and was
+    // opened by that switch.
+    property bool canSwitch: false
+    property bool switched: false
 
     // `rect` is in the frame's pixels, save_capture's rect.
     signal saveRequested(var rect)
@@ -39,6 +45,8 @@ Item {
     signal recordRequested(var rect)
     signal cancelRequested
     signal modeRequested(string mode)
+    // The toolbar's camera (false) or video (true).
+    signal videoRequested(bool video)
     signal desktopAudioToggled
     signal micAudioToggled
 
@@ -48,7 +56,8 @@ Item {
     property var region: null
     readonly property bool dragging: input.pressed && region !== null
     // The pointer is over this screen (Screen mode outlines all of it).
-    readonly property bool hovered: input.containsMouse
+    // The toolbar too, so the outline doesn't drop out over it.
+    readonly property bool hovered: hover.hovered
     // The toolbar's glass, the window's blur area.
     readonly property Item toolbarGlass: toolbar.glass
     // What this screen's picker asked to record (logical px), counting down
@@ -56,6 +65,12 @@ Item {
     property var recorded: null
     readonly property bool counting: recorded !== null && countdown > 0
     property point _from
+
+    // The switch showed this picker, already open but hidden (see
+    // CaptureToolbar.arriveFrom).
+    function arriveFrom(otherVideo: bool) {
+        toolbar.arriveFrom(otherVideo);
+    }
 
     // Handles a key; true when it was the picker's.
     function key(key: int): bool {
@@ -83,6 +98,13 @@ Item {
 
     onModeChanged: region = null
 
+    HoverHandler {
+        id: hover
+    }
+
+    // Cut out under the toolbar: its glass blurs the live screen there, as
+    // when picking what to record, not the frame's copy of the pill it
+    // stands in for.
     Image {
         id: frame
         anchors.fill: parent
@@ -90,6 +112,29 @@ Item {
         asynchronous: true
         cache: false
         smooth: true
+        layer.enabled: true
+        layer.effect: MultiEffect {
+            maskEnabled: true
+            maskInverted: true
+            maskSource: toolbarCutout
+        }
+    }
+
+    Item {
+        id: toolbarCutout
+        width: picker.width
+        height: picker.height
+        visible: false
+        layer.enabled: true
+
+        Rectangle {
+            x: toolbar.x
+            y: toolbar.y
+            width: toolbar.width
+            height: toolbar.height
+            radius: height / 2
+            scale: picker.toolbarGlass.scale
+        }
     }
 
     // The veil: around the region, or over everything but a hovered screen
@@ -280,12 +325,18 @@ Item {
 
     CaptureToolbar {
         id: toolbar
-        anchors.horizontalCenter: parent.horizontalCenter
+        // Where it's centered with the sound buttons in, so it grows and
+        // shrinks on the right.
+        x: Math.round((picker.width - fullWidth) / 2)
         y: Tokens.barGap
         mode: picker.mode
         video: picker.video
+        canSwitch: picker.canSwitch
+        switched: picker.switched
+        busy: picker.busy || picker.recorded !== null
         desktopAudio: picker.desktopAudio
         micAudio: picker.micAudio
+        onVideoRequested: video => picker.videoRequested(video)
         onModeRequested: mode => picker.modeRequested(mode)
         onDesktopAudioToggled: picker.desktopAudioToggled()
         onMicAudioToggled: picker.micAudioToggled()
