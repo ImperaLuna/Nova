@@ -145,9 +145,11 @@ impl Launcher {
         self.stopped.load(Ordering::SeqCst)
     }
 
-    /// The apps as they are, for a new subscriber.
-    pub fn event(&self) -> Event {
-        Event::Launcher(snapshot(&lock(&self.state)))
+    /// Sends a new subscriber, client `id`, the apps as they are, under the lock that publishing
+    /// takes, so a newer state published meanwhile can't arrive before it.
+    pub fn send_state(&self, id: crate::hub::ClientId) {
+        let state = lock(&self.state);
+        self.hub.send_to(id, &Event::Launcher(snapshot(&state)));
     }
 
     /// The apps matching `query`, best first.

@@ -89,7 +89,13 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
                 }
             }
             // The session's PATH, below.
-            command.arg("--setenv=PATH").arg("--").arg(&program).args(&argv[1..]);
+            // systemd expands `$NAME` in the command line again; doubled,
+            // each `$` reaches the app as it was written.
+            command
+                .arg("--setenv=PATH")
+                .arg("--")
+                .arg(&program)
+                .args(argv[1..].iter().map(|arg| arg.replace('$', "$$")));
             command
         }
         Runner::Direct => {

@@ -1509,6 +1509,19 @@ fn the_launcher_lists_apps_and_follows_installs() {
 }
 
 #[test]
+fn the_launcher_follows_apps_behind_a_linked_subfolder() {
+    let novad = TestDaemon::with_launcher("launcher-linked");
+    let vendor = novad.dir.join("vendor-apps");
+    std::fs::create_dir_all(&vendor).unwrap();
+    install_app(&novad, "foot.desktop", "Name=Foot\nExec=foot\n");
+    std::os::unix::fs::symlink(&vendor, novad.dir.join("launcher/share/applications/vendor")).unwrap();
+    let mut client = novad.connect();
+    client.subscribe_launcher(1);
+    std::fs::write(vendor.join("a.desktop"), "[Desktop Entry]\nType=Application\nName=A\nExec=a\n").unwrap();
+    client.launcher_until(|event| ids(&event["apps"]) == ["vendor-a.desktop", "foot.desktop"]);
+}
+
+#[test]
 fn launcher_searches_rank_apps_and_refuse_long_queries() {
     let novad = TestDaemon::with_launcher("launcher-search");
     install_app(&novad, "firefox.desktop", "Name=Firefox\nGenericName=Web Browser\nExec=firefox\n");

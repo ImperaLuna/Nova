@@ -154,6 +154,7 @@ pub fn watch_points(data_dirs: &[PathBuf]) -> WatchPoints {
                     points.parents.insert(parent.to_owned());
                     points.entries.insert(resolved.clone());
                 }
+                linked_folders(&resolved, 0, &mut points);
                 points.trees.insert(resolved);
             }
             // Not there (yet): the folder it would appear in is watched.
@@ -167,6 +168,27 @@ pub fn watch_points(data_dirs: &[PathBuf]) -> WatchPoints {
         }
     }
     points
+}
+
+/// Adds the folders that links below `dir` lead to as trees of their own:
+/// a tree's watches don't follow links, though reading it does.
+fn linked_folders(dir: &Path, depth: usize, points: &mut WatchPoints) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for path in entries.flatten().map(|entry| entry.path()) {
+        if depth >= MAX_DEPTH || !path.is_dir() {
+            continue;
+        }
+        match path.is_symlink() {
+            true => {
+                if let Ok(target) = std::fs::canonicalize(&path)
+                    && points.trees.insert(target.clone())
+                {
+                    linked_folders(&target, depth + 1, points);
+                }
+            }
+            false => linked_folders(&path, depth + 1, points),
+        }
+    }
 }
 
 /// Adds each link on the way to `path`, following them, with its folder.

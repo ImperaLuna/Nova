@@ -103,6 +103,8 @@ StagePanel {
 
     onOpenChanged: {
         console.info(`nova: launcher ${open ? "opened" : "closed"}`);
+        // An Enter waiting for matches is dropped with the deck.
+        enterPending = null;
         if (!open)
             return;
         field.text = "";

@@ -408,7 +408,7 @@ impl<'a> Connection<'a> {
                         Topic::Lock => self.daemon.session_lock.send_state(&self.daemon.hub, self.id),
                         Topic::Launcher => {
                             if let Some(launcher) = &settings.launcher {
-                                self.send(launcher.event());
+                                launcher.send_state(self.id);
                             }
                         }
                         // Only ever sent as `nova toggle` or `nova volume` asks.

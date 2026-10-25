@@ -184,6 +184,24 @@ Item {
             compare(Array.from(launches.signalArguments[0]), ["org.gnome.Nautilus.desktop", true]);
         }
 
+        function test_closing_drops_the_waiting_launch() {
+            const launcher = make();
+            keyClick("f");
+            keyClick(Qt.Key_Return);
+            launcher.open = false;
+            launcher.showMatches("f", [
+                {
+                    id: "foot.desktop",
+                    name: [
+                        {
+                            text: "Foot"
+                        }
+                    ]
+                }
+            ]);
+            compare(launches.count, 0);
+        }
+
         function test_typing_after_enter_drops_the_waiting_launch() {
             const launcher = make();
             keyClick("f");
