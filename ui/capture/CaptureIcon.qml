@@ -19,6 +19,7 @@ Item {
             [Protocol.SHOT_OPEN]: "M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4",
             [Protocol.SHOT_FOLDER]: "M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z",
             [Protocol.SHOT_DELETE]: "M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3",
+            [Capture.ICON_CAMERA]: "M4 8h3l2-3h6l2 3h3v11H4zM8.5 13a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0",
             [Capture.ICON_CLOSE]: "M6 6l12 12M18 6L6 18",
             [Capture.ICON_CHECK]: "M5 12.5l4.5 4.5L19 7.5",
             [Capture.ICON_DESKTOP_AUDIO]: "M4 9h3l5-4v14l-5-4H4zM16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11",

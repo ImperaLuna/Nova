@@ -377,6 +377,9 @@ QtObject {
     readonly property int captureBarHeight: 44
     readonly property int captureButtonHeight: 32
     readonly property int captureButtonPad: 12
+    // The camera/video switch: two buttons' width, the knob inset by the pad.
+    readonly property int captureSwitchWidth: 76
+    readonly property int captureSwitchPad: 2
     readonly property int captureBadgeHeight: 26
     readonly property int shotCardWidth: 360
     readonly property int shotThumbHeight: 184
@@ -385,12 +388,13 @@ QtObject {
     // How long the card stays; the pointer on it holds it.
     readonly property int durationShotCard: 6000
     // Recording: the count before it starts, shown big in the middle of
-    // what's recorded, and the pause after the picker goes so it isn't in
-    // the first frames.
+    // what's recorded. The pause after the picker goes so it isn't in what's
+    // captured next: a recording's first frames, or a screenshot's frozen
+    // frame after switching from video.
     readonly property int recordCountdown: 3
     readonly property int durationCountdownStep: 1000
     readonly property int fontSizeCountdown: 96
-    readonly property int recordStartDelay: 150
+    readonly property int pickerGoneDelay: 150
     // The red dot in the record button and the recording pill.
     readonly property int recordDotSize: 10
     // The marks just outside a recorded region's corners.
