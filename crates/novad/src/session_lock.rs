@@ -79,9 +79,10 @@ impl SessionLock {
             .covered
             .wait_timeout_while(state, COVER_TIMEOUT, |state| state.locked && !state.secured)
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match (state.locked, wait.timed_out()) {
-            (true, true) => Err(format!("the screens weren't covered within {} s", COVER_TIMEOUT.as_secs())),
-            _ => Ok(()),
+        match (state.secured, wait.timed_out()) {
+            (true, _) => Ok(()),
+            (false, true) => Err(format!("the screens weren't covered within {} s", COVER_TIMEOUT.as_secs())),
+            (false, false) => Err("the screen was unlocked before it was covered".into()),
         }
     }
 

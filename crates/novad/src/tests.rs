@@ -1111,6 +1111,30 @@ fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
 }
 
 #[test]
+fn only_the_supervised_ui_reports_the_lock_screen() {
+    let scripts = std::env::temp_dir().join(format!("novad-test-lock-ui-{}", std::process::id()));
+    std::fs::create_dir_all(&scripts).unwrap();
+    let fake_ui = scripts.join("quickshell");
+    std::fs::write(&fake_ui, "#!/bin/sh\nexec sleep 30\n").unwrap();
+    std::fs::set_permissions(&fake_ui, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let settings = UiSettings {
+        quickshell: fake_ui,
+        ui_dir: PathBuf::from("ui"),
+        socket: PathBuf::from("unused.sock"),
+        path_var: std::env::var("PATH").unwrap_or_default(),
+        wayland_socket: None,
+    };
+    let novad = TestDaemon::start("lock-reports", Some(settings));
+    let mut other = novad.connect();
+    for report in ["report_locked", "report_unlocked"] {
+        let reply = other.request(1, report, None);
+        assert!(reply["error"].as_str().unwrap().contains("only the UI"), "{report}: {reply}");
+    }
+    novad.daemon.ui.as_ref().unwrap().stop();
+    std::fs::remove_dir_all(scripts).unwrap();
+}
+
+#[test]
 fn lock_fails_when_the_screens_arent_covered_in_time() {
     let novad = TestDaemon::start("lock-stalled", None);
     let mut ui = novad.connect();
