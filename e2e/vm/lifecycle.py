@@ -469,7 +469,14 @@ with subtest("nova toggle launcher opens the launcher; typing finds foot, Enter 
     retry(lambda _last_try: ui_log_count(LAUNCHER_OPENED) > before, timeout=CLICK_EFFECT)
     machine.succeed(f"{YDOTOOL} type {FOOT}")
     screenshot("launcher")
-    press_until_logged(ENTER, LAUNCHER_CLOSED)
+    try:
+        press_until_logged(ENTER, LAUNCHER_CLOSED)
+    except Exception:
+        # Whether novad found foot and what starting it said.
+        for command in ("nova logs --no-follow -n 200 | grep -i launch", "nova logs --no-follow --ui -n 50"):
+            print(f"$ {command}")
+            print(machine.execute(as_user(command))[1])
+        raise
     machine.wait_until_succeeds(as_user(NOVA_SEES_FOOT), timeout=WAIT)
     # Not in nova.service: restarting Nova leaves the app running.
     machine.succeed(as_user(f"systemctl --user list-units --type=scope --no-legend | grep -qF {FOOT_SCOPE}"))
