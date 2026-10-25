@@ -2,7 +2,8 @@
 # Headless end-to-end run: starts sway with no real outputs and novad, which
 # runs the Quickshell UI, then checks that
 #   - novad reports the UI as running,
-#   - the UI starts without QML errors,
+#   - the UI starts without QML errors, and has none after a monitor goes
+#     away and comes back, which gets a bar again,
 #   - the UI connects to novad,
 #   - memory (Pss) is within the budget: NOVA_PSS_BUDGET_MB per monitor
 #     (default 250, so 500 MB for the default two monitors),
@@ -69,6 +70,8 @@ pids+=($!)
 wait_for 10 "sway" bash -c 'ls "$XDG_RUNTIME_DIR"/wayland-* >/dev/null 2>&1'
 WAYLAND_DISPLAY=$(basename "$(ls "$XDG_RUNTIME_DIR"/wayland-* | grep -v lock | head -n1)")
 export WAYLAND_DISPLAY
+SWAYSOCK=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock | head -n1)
+export SWAYSOCK
 
 # Its own settings and AI usage files, so the run starts like a new user's,
 # never touches the user's files and never asks Anthropic.
@@ -78,6 +81,16 @@ export WAYLAND_DISPLAY
 pids+=($!)
 wait_for 10 "novad socket" test -S "$XDG_RUNTIME_DIR/nova/novad.sock"
 sleep "$settle"
+
+# A monitor going away and coming back, as at wake from suspend: the
+# surfaces on it go with it, without errors (IMP-92), and a new stage
+# comes up on the one that's back.
+if ((monitors > 1)); then
+  swaymsg -q output "HEADLESS-$monitors" unplug || fail "couldn't unplug HEADLESS-$monitors"
+  sleep 1
+  swaymsg -q create_output || fail "couldn't add an output back"
+  sleep "$settle"
+fi
 
 "$nova" status --json >"$out/status.json" || fail "nova status failed"
 # The UI's lines, as novad logged them, for the checks below.
@@ -94,6 +107,9 @@ if grep -vF "$no_pipewire" "$out/ui.log" | grep -E 'ERROR|TypeError|ReferenceErr
 fi
 
 grep -q 'nova: connected to novad' "$out/ui.log" || fail "the UI never connected to novad"
+if ((monitors > 1)); then
+  [[ $(grep -c 'nova: bar shown' "$out/ui.log") == $((monitors + 1)) ]] || fail "no bar came up on the output added back"
+fi
 
 # ps and btop show the UI as NovaUI: argv[0] always, the process name when
 # the nova-ui launcher is installed (the dev shell has it). The daemon is Nova.
