@@ -391,10 +391,18 @@ impl Shared {
     /// Drops the items on `name`, a bus name that lost its owner, and says
     /// which went.
     fn drop_bus(&self, name: &str) -> Vec<String> {
+        self.drop_items(|item| item.bus == name || item.owner == name)
+    }
+
+    /// Drops the items `old` registered under the well-known `name`, which
+    /// went to another connection: its app registers them again.
+    fn drop_handed_over(&self, name: &str, old: &str) -> Vec<String> {
+        self.drop_items(|item| item.bus == name && item.owner == old)
+    }
+
+    fn drop_items(&self, gone: impl Fn(&Item) -> bool) -> Vec<String> {
         let mut state = lock(&self.state);
-        let (gone, kept) = std::mem::take(&mut state.items)
-            .into_iter()
-            .partition::<Vec<_>, _>(|item| item.bus == name || item.owner == name);
+        let (gone, kept) = std::mem::take(&mut state.items).into_iter().partition::<Vec<_>, _>(gone);
         state.items = kept;
         let gone: Vec<String> = gone.into_iter().map(|item| item.address).collect();
         if !gone.is_empty() {
@@ -457,11 +465,13 @@ async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mpsc::Sender<(
     let _ = ready.send(());
     let emitter = SignalEmitter::new(&connection, WATCHER_PATH)?;
     while let Some(message) = next_unless_stopped(&mut owners, &shared.stop).await {
-        let (name, _old, new): (String, String, String) = message?.body().deserialize()?;
-        if !new.is_empty() {
-            continue;
-        }
-        for address in shared.drop_bus(&name) {
+        let (name, old, new): (String, String, String) = message?.body().deserialize()?;
+        let gone = match (old.is_empty(), new.is_empty()) {
+            (_, true) => shared.drop_bus(&name),
+            (false, false) => shared.drop_handed_over(&name, &old),
+            (true, false) => continue,
+        };
+        for address in gone {
             emitter.status_notifier_item_unregistered(&address).await?;
         }
     }

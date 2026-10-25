@@ -78,7 +78,7 @@ fn program_name(program: &str) -> Option<String> {
 /// The app ids the process's systemd unit names, from its `cgroup` file.
 /// Units follow systemd's scheme for desktop apps,
 /// `app[-<launcher>]-<app id>[@<random>].service` or
-/// `app[-<launcher>]-<app id>-<random>.scope`, with `-` in names escaped
+/// `app[-<launcher>]-<app id>-<random>.scope|service`, with `-` in names escaped
 /// as `\x2d`. Whether there's a launcher part can't be told, so both
 /// readings come out, the whole one first.
 fn unit_app_ids(cgroup: &str) -> Vec<String> {
@@ -94,7 +94,14 @@ fn unit_app_ids(cgroup: &str) -> Vec<String> {
         Some(scope) => scope.rsplit_once('-').map_or(scope, |(name, _random)| name),
         None => {
             let service = name.strip_suffix(".service").unwrap_or(name);
-            service.split_once('@').map_or(service, |(name, _instance)| name)
+            match service.split_once('@') {
+                Some((name, _instance)) => name,
+                // Nova's launcher names its own `app-nova-<id>-<n>.service`.
+                None => match service.rsplit_once('-') {
+                    Some((name, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => name,
+                    _ => service,
+                },
+            }
         }
     };
     let mut ids = vec![name.replace("\\x2d", "-")];
@@ -129,6 +136,10 @@ mod tests {
         assert_eq!(ids("app-nova-steam-4534754.scope"), ["nova-steam", "steam"]);
         assert_eq!(ids("app-niri-Discord-375276.scope"), ["niri-Discord", "Discord"]);
         assert_eq!(ids("app-blueman@autostart.service"), ["blueman"]);
+        assert_eq!(
+            ids("app-nova-com.example.TrayApp-424201.service"),
+            ["nova-com.example.TrayApp", "com.example.TrayApp"]
+        );
         assert_eq!(
             ids("app-gnome-org.gnome.Calculator@1a2b.service"),
             ["gnome-org.gnome.Calculator", "org.gnome.Calculator"]
