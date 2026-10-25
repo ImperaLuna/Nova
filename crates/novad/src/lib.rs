@@ -27,6 +27,7 @@ pub mod checks;
 mod compositor;
 mod config;
 mod features;
+mod host;
 mod hub;
 mod inotify;
 mod launcher;
@@ -34,6 +35,7 @@ mod logger;
 mod logind;
 mod power;
 mod procfs;
+mod resources;
 mod server;
 mod session_lock;
 mod settings;
@@ -198,6 +200,7 @@ fn start(
         manifests: nova_features::load_all(&args.features_dir)?,
         path_var: path_var.clone(),
         ai_usage: ai_usage::Paths::new(&args.state_dir, args.codex_home, args.claude_credentials),
+        resources: resources::Sources::system(&path_var),
         launcher: launcher::Paths::new(&args.state_dir, &path_var),
     };
     let settings = Settings::load(&sources, &hub, &logger);

@@ -1,0 +1,5 @@
+id = "quick-settings"
+name = "Quick settings"
+description = "The right pill's sidebar: sound, keep awake, microphone and what the machine is busy with."
+default = true
+daemon = "quick-settings"

@@ -11,9 +11,9 @@ use crate::config::{self, Config};
 use crate::hub::Hub;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, launcher, theme};
+use crate::{ai_usage, features, host, launcher, resources, theme};
 use nova_features::{Manifest, Selection};
-use nova_protocol::{Event, FeatureState, FeatureStatus, Theme};
+use nova_protocol::{Event, FeatureState, FeatureStatus, Host, Theme};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -36,6 +36,7 @@ pub struct Sources {
     /// Where features' binaries are looked for.
     pub path_var: String,
     pub ai_usage: ai_usage::Paths,
+    pub resources: resources::Sources,
     pub launcher: launcher::Paths,
 }
 
@@ -47,6 +48,8 @@ pub struct Settings {
     pub theme: Theme,
     /// Running while the `ai-usage` feature is ready.
     pub ai_usage: Option<Arc<ai_usage::Usage>>,
+    /// Sampling while the `quick-settings` feature is ready.
+    pub resources: Option<Arc<resources::Resources>>,
     /// Running while the `launcher` feature is ready.
     pub launcher: Option<Arc<launcher::Launcher>>,
 }
@@ -101,6 +104,9 @@ impl Settings {
         if previous.as_deref().is_none_or(|previous| previous.theme != theme) {
             hub.publish(&Event::Theme(theme.clone()));
         }
+        if previous.as_deref().is_some_and(|previous| previous.config.quick_settings != config.quick_settings) {
+            hub.publish(&Event::Host(host::read(config.quick_settings.name.as_deref())));
+        }
 
         // Started before the features are published, so the UI that loads
         // the feature on that event gets its numbers.
@@ -122,6 +128,21 @@ impl Settings {
                         Arc::clone(hub),
                         Arc::clone(logger),
                     )
+                })
+            }
+        };
+
+        let resources_ready = is_ready(&features, resources::FEATURE_ID);
+        let resources = match previous.as_deref_mut().and_then(|previous| previous.resources.take()) {
+            Some(running) if resources_ready => Some(running),
+            running => {
+                if let Some(running) = running {
+                    running.stop();
+                    logger.info("features", &format!("stopped {}", resources::FEATURE_ID));
+                }
+                resources_ready.then(|| {
+                    logger.info("features", &format!("starting {}", resources::FEATURE_ID));
+                    resources::Resources::start(sources.resources.clone(), Arc::clone(hub), Arc::clone(logger))
                 })
             }
         };
@@ -155,7 +176,15 @@ impl Settings {
             hub.publish(&Event::Features { features: features.clone() });
         }
 
-        Self { config, selection, features, theme, ai_usage, launcher }
+        Self { config, selection, features, theme, ai_usage, resources, launcher }
+    }
+}
+
+impl Settings {
+    /// The quick settings header's facts, with the config's name for the
+    /// user if it has one.
+    pub fn host(&self) -> Host {
+        host::read(self.config.quick_settings.name.as_deref())
     }
 }
 

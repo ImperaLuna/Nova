@@ -16,6 +16,8 @@ var CMD_REPORT_LOCKED = "report_locked";
 var CMD_REPORT_UNLOCKED = "report_unlocked";
 var CMD_POWER_OPTIONS = "power_options";
 var CMD_POWER = "power";
+var CMD_WATCH_RESOURCES = "watch_resources";
+var CMD_END_APP = "end_app";
 var CMD_SEARCH_APPS = "search_apps";
 var CMD_LAUNCH_APP = "launch_app";
 var CMD_PIN_APP = "pin_app";
@@ -33,6 +35,8 @@ var EVENT_COMPOSITOR = "compositor";
 var EVENT_TOGGLE = "toggle";
 var EVENT_LOCK = "lock";
 var EVENT_VOLUME = "volume";
+var EVENT_HOST = "host";
+var EVENT_RESOURCES = "resources";
 var EVENT_LAUNCHER = "launcher";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
@@ -44,6 +48,8 @@ var TOPIC_COMPOSITOR = "compositor";
 var TOPIC_TOGGLE = "toggle";
 var TOPIC_LOCK = "lock";
 var TOPIC_VOLUME = "volume";
+var TOPIC_HOST = "host";
+var TOPIC_RESOURCES = "resources";
 var TOPIC_LAUNCHER = "launcher";
 
 // What a compositor can report or do (Capability in nova-protocol).
@@ -67,6 +73,7 @@ var VOLUME_MUTE = "mute";
 var FEATURE_AI_USAGE = "ai-usage";
 var FEATURE_LOCK = "lock";
 var FEATURE_POWER = "power";
+var FEATURE_QUICK_SETTINGS = "quick-settings";
 var FEATURE_LAUNCHER = "launcher";
 
 // Power menu actions (PowerAction in nova-protocol).

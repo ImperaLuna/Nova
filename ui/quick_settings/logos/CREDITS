@@ -1,0 +1,10 @@
+Distribution logos the quick settings header shows. Each stays its
+owner's; only logos whose license allows shipping them are here.
+
+nixos.svg  The NixOS "Nix Snowflake", from github.com/NixOS/nixos-artwork
+           (logo/nix-snowflake-colours.svg), CC-BY 4.0
+           (https://creativecommons.org/licenses/by/4.0/), by the NixOS
+           project.
+
+Other distributions show their icon theme's LOGO (os-release), or Nova's
+own mark.
