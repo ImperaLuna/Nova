@@ -173,6 +173,10 @@ enum Event {
         id: u64,
         urgent: bool,
     },
+    WorkspaceActiveWindowChanged {
+        workspace_id: u64,
+        active_window_id: Option<u64>,
+    },
     /// Replaces every window.
     WindowsChanged {
         windows: Vec<Window>,
@@ -211,6 +215,8 @@ struct Workspace {
     is_urgent: bool,
     is_active: bool,
     is_focused: bool,
+    /// The window its view follows, focused or not.
+    active_window_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -290,6 +296,11 @@ impl State {
                     workspace.is_urgent = urgent;
                 }
             }
+            Event::WorkspaceActiveWindowChanged { workspace_id, active_window_id } => {
+                if let Some(workspace) = self.workspaces.get_mut(&workspace_id) {
+                    workspace.active_window_id = active_window_id;
+                }
+            }
             Event::WindowsChanged { windows } => {
                 self.focused_window = windows.iter().find(|window| window.is_focused).map(|window| window.id);
                 self.windows = windows.into_iter().map(|window| (window.id, window)).collect();
@@ -350,18 +361,24 @@ impl State {
         Ok(())
     }
 
-    /// Whether a tiled window on `workspace` is as big as its output.
+    /// Whether a tiled window on `workspace` that may be on screen is as big
+    /// as its output. niri doesn't say where its view is, only which column
+    /// it follows (the active window's): a column as wide as the output
+    /// shares the screen with that one only right beside it, so one further
+    /// away is scrolled out of view (IMP-112).
     fn has_fullscreen(&self, workspace: &Workspace) -> bool {
         let Some((width, height)) = workspace.output.as_ref().and_then(|output| self.output_sizes.get(output)) else {
             return false;
         };
+        let column = |window: &Window| window.layout.as_ref()?.pos_in_scrolling_layout.map(|(column, _)| column);
+        let active_column = workspace.active_window_id.and_then(|id| self.windows.get(&id)).and_then(column);
         self.windows.values().any(|window| {
             window.workspace_id == Some(workspace.id)
-                && window.layout.as_ref().is_some_and(|layout| {
-                    layout.pos_in_scrolling_layout.is_some()
-                        && layout.tile_size.0 >= *width
-                        && layout.tile_size.1 >= *height
-                })
+                && window
+                    .layout
+                    .as_ref()
+                    .is_some_and(|layout| layout.tile_size.0 >= *width && layout.tile_size.1 >= *height)
+                && column(window).is_some_and(|at| active_column.is_none_or(|active| at.abs_diff(active) <= 1))
         })
     }
 

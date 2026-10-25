@@ -247,3 +247,42 @@ fn focused_window_id(recording: &Recording, index: usize) -> u64 {
     let window: serde_json::Value = serde_json::from_str(&recording.answer(index, "focused-window")).unwrap();
     window["id"].as_u64().unwrap()
 }
+
+#[test]
+fn a_fullscreen_column_scrolled_out_of_view_is_not_fullscreen() {
+    // RyzenShine (IMP-112): a fullscreen browser two columns right of the
+    // focused window, out of view, hid the bar.
+    let recording = Recording::load("niri");
+    let fullscreen_step = recording.steps.iter().position(|step| step.name == "fullscreen the focused window").unwrap();
+    let mut state = niri::State::default();
+    for index in 0..=fullscreen_step {
+        for line in recording.lines(index).filter(|line| *line != NIRI_HANDLED) {
+            state.apply(line).unwrap();
+        }
+    }
+    state.catch_up(&mut niri_ask(&recording, fullscreen_step)).unwrap();
+    let shown = |state: &niri::State| focused_workspace(&state.desktop()).fullscreen;
+    assert!(shown(&state));
+
+    let full = focused_window_id(&recording, fullscreen_step);
+    let workspace = focused_workspace(&state.desktop()).id;
+    let (width, height) = (1280.0, 800.0);
+    // Another window in column 1 becomes the one the view follows, then the
+    // fullscreen one moves to column 2 (beside it, maybe on screen) and 3.
+    let other = full + 100;
+    let window = |id: u64, column: usize, tile: (f64, f64)| {
+        serde_json::json!({"WindowOpenedOrChanged": {"window": {
+            "id": id, "title": "x", "workspace_id": workspace, "app_id": "x", "is_focused": id == other,
+            "layout": {"pos_in_scrolling_layout": [column, 1], "tile_size": [tile.0, tile.1]},
+        }}})
+        .to_string()
+    };
+    state.apply(&window(other, 1, (width / 2.0, height))).unwrap();
+    let active =
+        serde_json::json!({"WorkspaceActiveWindowChanged": {"workspace_id": workspace, "active_window_id": other}});
+    state.apply(&active.to_string()).unwrap();
+    state.apply(&window(full, 2, (width, height))).unwrap();
+    assert!(shown(&state), "beside the active column, it can share the screen");
+    state.apply(&window(full, 3, (width, height))).unwrap();
+    assert!(!shown(&state), "two columns away, it's out of view");
+}
