@@ -12,9 +12,12 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same PR cancels the run for the older one.
+# A newer run for the same branch cancels the older one. Keyed by branch, not
+# ref, so a PR run and a dispatched run on the same branch (Update PRs
+# dispatches CI after its merge, and GitHub also offers an "Approve and run"
+# for the bot's push) don't both take the runner.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
