@@ -32,6 +32,24 @@ Item {
         closesOnClickOutside: false
     }
 
+    // A part drawn beside a panel, like the power tab's fillets: a square
+    // with the circle centred on its top-left corner cut out.
+    Item {
+        id: fillet
+        readonly property int radius: 0
+        readonly property Item cutout: Item {
+            parent: fillet
+            x: -fillet.width
+            y: -fillet.height
+            width: 2 * fillet.width
+            height: 2 * fillet.height
+        }
+        x: 500
+        y: 100
+        width: 20
+        height: 20
+    }
+
     // The same panel on another screen.
     StagePanel {
         id: usageElsewhere
@@ -60,6 +78,8 @@ Item {
                 panel.moving = false;
             }
             usage.x = usage.y = usage.width = usage.height = 0;
+            usage.parts = [];
+            fillet.visible = true;
             drawn.panels = [usage, launcher, notes];
         }
 
@@ -104,6 +124,25 @@ Item {
             verify(drawn.covers(250, 200), "inside the panel, where nothing in it takes the click");
             verify(!drawn.covers(50, 200));
             verify(!drawn.covers(250, 500));
+        }
+
+        function test_a_panels_parts_take_clicks_and_blur_but_not_their_cutout() {
+            usage.parts = [fillet];
+            verify(drawn.shapes.includes(fillet));
+            verify(drawn.glassShapes.includes(fillet), "glass like its panel");
+            verify(drawn.covers(518, 118), "the corner the cut leaves");
+            verify(!drawn.covers(503, 103), "inside the cut circle");
+            verify(!drawn.covers(530, 110));
+            fillet.visible = false;
+            verify(!drawn.shapes.includes(fillet), "hidden, it takes nothing");
+            verify(!drawn.covers(518, 118));
+        }
+
+        function test_a_part_of_a_panel_that_isnt_glass_isnt_blurred() {
+            launcher.parts = [fillet];
+            verify(drawn.shapes.includes(fillet));
+            verify(!drawn.glassShapes.includes(fillet));
+            launcher.parts = [];
         }
 
         function test_room_covers_the_shown_panels_areas() {

@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell
 import "../stage"
 import "../theme"
 
@@ -14,7 +13,8 @@ import "../theme"
 QtObject {
     id: demo
 
-    required property ShellScreen screen
+    // The screen they're on (StageScreen).
+    required property StageScreen output
     // The deck grows out of it.
     required property Item centralPill
 
@@ -61,14 +61,14 @@ QtObject {
 
     // Slides in from the right edge, full height below the bar.
     property Placeholder sidebar: Placeholder {
-        readonly property real openX: demo.screen.width - demo.sidebarWidth - Tokens.barMargin
+        readonly property real openX: demo.output.width - demo.sidebarWidth - Tokens.barMargin
         name: "demo-sidebar"
         placement: "right"
         radius: Tokens.radiusPanel
-        x: morph.lerp(demo.screen.width, openX)
+        x: morph.lerp(demo.output.width, openX)
         y: demo.belowBar
         width: demo.sidebarWidth
-        height: demo.screen.height - demo.belowBar - Tokens.barMargin
+        height: demo.output.height - demo.belowBar - Tokens.barMargin
         area: Qt.rect(openX, y, width, height)
     }
 
@@ -79,16 +79,16 @@ QtObject {
         radius: Tokens.radiusPanel
         width: morph.lerp(0, demo.tabWidth)
         height: demo.tabHeight
-        x: demo.screen.width - width
-        y: (demo.screen.height - height) / 2
-        area: Qt.rect(demo.screen.width - demo.tabWidth, y, demo.tabWidth, height)
+        x: demo.output.width - width
+        y: (demo.output.height - height) / 2
+        area: Qt.rect(demo.output.width - demo.tabWidth, y, demo.tabWidth, height)
     }
 
     // Grows out of the central pill into the middle of the screen, and takes
     // typing like the launcher will.
     property Placeholder deck: Placeholder {
         readonly property Item pill: demo.centralPill
-        readonly property rect openRect: Qt.rect((demo.screen.width - demo.deckWidth) / 2, (demo.screen.height - demo.deckHeight) / 2, demo.deckWidth, demo.deckHeight)
+        readonly property rect openRect: Qt.rect((demo.output.width - demo.deckWidth) / 2, (demo.output.height - demo.deckHeight) / 2, demo.deckWidth, demo.deckHeight)
         name: "demo-center"
         placement: "center"
         wantsKeyboard: true

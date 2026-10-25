@@ -19,9 +19,9 @@ import "../theme"
 PanelWindow { // qmllint disable uncreatable-type
     id: surface
 
-    screen: output
-    // Its screen, typed (the window's own `screen` isn't, to qmllint).
-    required property ShellScreen output
+    screen: output.screen
+    // Its screen, as the stage lays out by it (StageScreen).
+    required property StageScreen output
     // "right" (against the right edge) or "center" (centered across).
     required property string placement
     // This placement's panels on this screen.

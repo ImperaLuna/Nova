@@ -27,7 +27,11 @@ import "../daemon/protocol.js" as Protocol
 Scope {
     id: root
 
+    // Null once the output is gone: everything here lays out by `output`.
     required property ShellScreen screen
+    readonly property StageScreen output: StageScreen {
+        screen: root.screen
+    }
     // Its panels just stopped and their final state (and regions) isn't in
     // a frame yet, or a pill just showed again: drawing stays on for it even
     // while another surface moves.
@@ -54,7 +58,7 @@ Scope {
 
     // Something on the stage animates: a panel, or the bar sliding aside.
     readonly property bool moving: drawn.moving || bar.sliding
-    readonly property string motionName: `${root.screen.name}/top`
+    readonly property string motionName: `${root.output.name}/top`
     onMovingChanged: {
         StageMotion.setMoving(motionName, moving);
         if (!moving)
@@ -67,7 +71,7 @@ Scope {
         id: power
         active: PowerService.ready
         component: PowerMenu {
-            screen: root.screen
+            output: root.output
         }
     }
 
@@ -76,15 +80,15 @@ Scope {
         id: quickSettings
         active: QuickSettingsService.ready
         component: QuickSettings {
-            screen: root.screen
+            output: root.output
             pill: bar.rightPillBox
             pillItem: bar.rightPillItem
             power: PowerService.ready
-            onQuickSettingsClicked: all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.screen.name, root.screen.name)
+            onQuickSettingsClicked: all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.output.name, root.output.name)
             // The power menu takes its place.
             onPowerClicked: {
-                all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.screen.name, root.screen.name);
-                all.toggle(Protocol.FEATURE_POWER, root.screen.name, root.screen.name);
+                all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.output.name, root.output.name);
+                all.toggle(Protocol.FEATURE_POWER, root.output.name, root.output.name);
             }
         }
     }
@@ -95,7 +99,7 @@ Scope {
         id: demo
         active: Quickshell.env("NOVA_DEMO_PANELS") === "1"
         component: DemoPanels {
-            screen: root.screen
+            output: root.output
             centralPill: bar.centralPill
         }
     }
@@ -105,13 +109,13 @@ Scope {
     Connections {
         target: Daemon
         function onToggleRequested(panel: string, output: var) {
-            all.toggle(panel, root.screen.name, output ?? Quickshell.screens[0]?.name ?? "");
+            all.toggle(panel, root.output.name, output ?? Quickshell.screens[0]?.name ?? "");
         }
     }
 
     PanelSurface {
         id: right
-        output: root.screen
+        output: root.output
         placement: "right"
         panels: root.placed("right")
         clickAnywhere: all.catchesClicks
@@ -121,7 +125,7 @@ Scope {
 
     PanelSurface {
         id: center
-        output: root.screen
+        output: root.output
         placement: "center"
         panels: root.placed("center")
         clickAnywhere: all.catchesClicks
@@ -212,8 +216,8 @@ Scope {
         MouseArea {
             id: outside
             readonly property int radius: 0
-            width: root.screen.width
-            height: root.screen.height
+            width: root.output.width
+            height: root.output.height
             enabled: all.catchesClicks
             focus: true
             onClicked: mouse => {
@@ -232,7 +236,7 @@ Scope {
         Bar {
             id: bar
             anchors.fill: parent
-            screenName: root.screen.name
+            screenName: root.output.name
             // A panel of the bar's is open: on the stage, or grown out of
             // one of its pills. Not `moving`, which a closed pill's own
             // animations (a loading spinner) set too.
@@ -245,8 +249,8 @@ Scope {
             quickSettings: QuickSettingsService.ready
             power: PowerService.ready
             quickSettingsOpen: quickSettings.item?.open ?? false
-            onQuickSettingsClicked: all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.screen.name, root.screen.name)
-            onPowerClicked: all.toggle(Protocol.FEATURE_POWER, root.screen.name, root.screen.name)
+            onQuickSettingsClicked: all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.output.name, root.output.name)
+            onPowerClicked: all.toggle(Protocol.FEATURE_POWER, root.output.name, root.output.name)
         }
 
         // Keep awake (quick settings): the compositor doesn't idle while a
@@ -257,7 +261,7 @@ Scope {
         }
 
         FrameLog {
-            surfaceName: root.screen.name
+            surfaceName: root.output.name
         }
     }
 
@@ -265,7 +269,7 @@ Scope {
         screen: root.screen
         catching: all.catchesClicks
         // Only while catching, so it doesn't redraw for every morph frame.
-        holes: all.catchesClicks ? [Qt.rect(0, 0, root.screen.width, stage.implicitHeight), ...[right, center].filter(surface => surface.visible).map(surface => surface.box)] : []
+        holes: all.catchesClicks ? [Qt.rect(0, 0, root.output.width, stage.implicitHeight), ...[right, center].filter(surface => surface.visible).map(surface => surface.box)] : []
         onClicked: all.dismiss()
     }
 }

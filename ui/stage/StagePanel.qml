@@ -6,7 +6,8 @@ import QtQuick
 // panels (see StagePanels), so a new panel never wires any of that by hand.
 //
 // The item's own bounds are its shape: they follow the pill as it grows into
-// its panel, and nothing is drawn outside them except a shadow.
+// its panel, and nothing is drawn outside them except a shadow and its
+// `parts`.
 //
 // A panel is open on one screen at a time: opening it closes it on the
 // others. Opening an `exclusive` panel also closes every other exclusive one.
@@ -37,6 +38,13 @@ Item {
     // keyboard, so Esc reaches it even when it takes no typing. A notes
     // window would stay open instead.
     property bool closesOnClickOutside: true
+    // Shapes it draws outside its bounds, like the fillets that curve the
+    // power tab into the screen edge. While shown, each takes clicks and is
+    // blurred like the panel (the panel's `glass`), as the rect of its own
+    // bounds rounded by its `radius`, less the ellipse filling its `cutout`
+    // (an Item, or null). Place them on the panel's parent, so the regions
+    // follow them as the panel moves: a region only hears its own item move.
+    property list<Item> parts
     // Its height once open. The stage is only as tall as what's drawn on it
     // can get, so it makes room for this before the panel opens.
     property real openHeight: height

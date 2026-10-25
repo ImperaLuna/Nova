@@ -30,7 +30,7 @@ expression: all
 {"v":2,"id":17,"cmd":"report_unlocked"}
 {"v":2,"event":"lock","data":{"locked":false}}
 {"v":2,"id":18,"cmd":"power_options"}
-{"v":2,"id":18,"result":[{"action":"lock","available":true},{"action":"suspend","available":false,"reason":"suspend is turned off"}]}
+{"v":2,"id":18,"result":{"booted_at":1761350400,"options":[{"action":"lock","available":true},{"action":"suspend","available":false,"reason":"suspend is turned off"}]}}
 {"v":2,"id":19,"cmd":"power","args":{"action":"power_off"}}
 {"v":2,"cmd":"toggle","args":{"panel":"power"}}
 {"v":2,"id":21,"cmd":"volume","args":{"key":"up"}}

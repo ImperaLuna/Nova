@@ -24,11 +24,11 @@ import "quick_settings.js" as QuickSettings
 StagePanel {
     id: panel
 
-    required property ShellScreen screen
+    required property StageScreen output
     // The right pill on the stage, and where it is in screen coordinates:
     // it grows out of it, and its buttons stay where the pill had them.
     required property Item pillItem
-    property rect pill: Qt.rect(screen.width - Tokens.barMargin, Tokens.barGap, 0, Tokens.barHeight)
+    property rect pill: Qt.rect(output.width - Tokens.barMargin, Tokens.barGap, 0, Tokens.barHeight)
     from: pillItem
     // The pill's buttons, as on the pill.
     property bool power: false
@@ -57,20 +57,20 @@ StagePanel {
     // Open, where it sits: against the right edge, top to bottom, its right
     // corners past the edge so only the left ones are round. Closed, the
     // pill.
-    readonly property rect full: Qt.rect(screen.width - Tokens.quickSettingsWidth, 0, Tokens.quickSettingsWidth + Tokens.radiusPanel, screen.height)
+    readonly property rect full: Qt.rect(output.width - Tokens.quickSettingsWidth, 0, Tokens.quickSettingsWidth + Tokens.radiusPanel, output.height)
     x: morph.lerp(pill.x, full.x)
     y: morph.lerp(pill.y, full.y)
     width: morph.lerp(pill.width, full.width)
     height: morph.lerp(pill.height, full.height)
     radius: morph.lerp(pill.height / 2, Tokens.radiusPanel)
     openHeight: full.height
-    area: Qt.rect(full.x, 0, screen.width - full.x, screen.height)
+    area: Qt.rect(full.x, 0, output.width - full.x, output.height)
     clip: true
 
     onOpenChanged: {
         console.info(`nova: quick settings ${open ? "opened" : "closed"}`);
         QuickSettingsService.watching = open;
-        VolumeService.showElsewhere(screen.name, open);
+        VolumeService.showElsewhere(output.name, open);
         if (open)
             now = new Date();
     }
@@ -84,7 +84,7 @@ StagePanel {
 
     // The header's uptime, a minute at a time while it's open.
     property date now: new Date()
-    Component.onDestruction: VolumeService.showElsewhere(screen.name, false)
+    Component.onDestruction: VolumeService.showElsewhere(output.name, false)
     Timer {
         interval: 60 * 1000
         running: panel.open
@@ -106,7 +106,7 @@ StagePanel {
         width: Tokens.quickSettingsWidth - 2 * Tokens.quickSettingsPad
         height: panel.full.height - panel.pill.y - Tokens.quickSettingsPad
         // What the top row leaves for the pill's buttons.
-        readonly property real headerInset: panel.screen.width - Tokens.quickSettingsPad - panel.pill.x + Tokens.gap
+        readonly property real headerInset: panel.output.width - Tokens.quickSettingsPad - panel.pill.x + Tokens.gap
 
         readonly property bool sliding: [mainSlot, soundSlot, resourcesSlot].some(slot => slot.sliding)
 
