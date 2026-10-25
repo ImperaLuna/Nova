@@ -378,6 +378,9 @@ QtObject {
     readonly property int captureBarHeight: 44
     readonly property int captureButtonHeight: 32
     readonly property int captureButtonPad: 12
+    // The camera/video switch: two buttons' width, the knob inset by the pad.
+    readonly property int captureSwitchWidth: 76
+    readonly property int captureSwitchPad: 2
     readonly property int captureBadgeHeight: 26
     readonly property int shotCardWidth: 360
     readonly property int shotThumbHeight: 184

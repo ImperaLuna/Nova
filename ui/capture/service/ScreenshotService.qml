@@ -23,12 +23,15 @@ Singleton {
     property bool saving: false
     // The mode the next picker opens in (the toolbar switched from video).
     property string _next: ""
+    // The picker was opened by the toolbar's switch.
+    property bool switched: false
     // The last shot saved ({id, path, width, height, copied}), for the card.
     property var shot: null
     signal saved(var shot)
 
     onPickingChanged: {
-        mode = picking && _next ? _next : Protocol.CAPTURE_REGION;
+        switched = picking && _next !== "";
+        mode = switched ? _next : Protocol.CAPTURE_REGION;
         _next = "";
         saving = false;
         // The VM tests wait for these.

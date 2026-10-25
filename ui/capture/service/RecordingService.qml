@@ -19,6 +19,8 @@ Singleton {
     property bool picking: false
     // The toolbar's Protocol.CAPTURE_* mode; each pick starts on a region.
     property string mode: Protocol.CAPTURE_REGION
+    // The picker was opened by the toolbar's switch.
+    property bool switched: false
     // The sound to record, kept from one recording to the next.
     property bool desktopAudio: true
     property bool micAudio: false
@@ -46,6 +48,8 @@ Singleton {
     }
     onPickingChanged: {
         mode = Protocol.CAPTURE_REGION;
+        if (!picking)
+            switched = false;
         // A count that was going is cancelled with the picker.
         step.stop();
         countdown = 0;
@@ -79,6 +83,7 @@ Singleton {
     function pick(mode: string) {
         if (!ready || recording)
             return;
+        switched = true;
         picking = true;
         root.mode = mode;
     }

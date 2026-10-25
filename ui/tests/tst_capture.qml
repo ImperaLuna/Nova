@@ -6,6 +6,7 @@ import "../bar"
 import "../capture"
 import "../capture/capture.js" as Capture
 import "../daemon/protocol.js" as Protocol
+import "../theme"
 
 // The region picker's sums (capture.js), the picker taking a drag, a click
 // or a screen, picking what to record, switching between the two, the screenshot card's buttons and
@@ -273,32 +274,70 @@ Item {
 
         function test_the_toolbar_switches_between_a_screenshot_and_a_recording() {
             const picker = makePicker();
-            const button = icon => findButtons(picker).find(button => button.icon === icon);
-            verify(!button(Capture.ICON_VIDEO).visible, "no switch unless both are on");
+            const control = findSwitch(picker);
+            verify(!control.visible, "no switch unless both are on");
             picker.canSwitch = true;
             switches.target = picker;
             switches.clear();
-            const camera = button(Capture.ICON_CAMERA);
-            const video = button(Capture.ICON_VIDEO);
-            verify(camera.visible && camera.selected && !video.selected);
-            // Laid out, and grown in from the pill.
-            tryVerify(() => video.x > camera.x);
+            verify(control.visible && !control.video);
             tryCompare(picker.toolbarGlass, "scale", 1);
-            mouseClick(camera);
-            compare(switches.count, 0, "already a screenshot");
-            mouseClick(video);
+            mouseClick(control);
             compare(switches.count, 1);
             compare(switches.signalArguments[0][0], true);
             picker.video = true;
-            verify(video.selected && !camera.selected);
+            tryVerify(() => control.video);
             // Not while it counts down or saves.
             picker.busy = true;
-            mouseClick(camera);
+            mouseClick(control);
             compare(switches.count, 1);
             picker.busy = false;
-            mouseClick(camera);
+            mouseClick(control);
             compare(switches.count, 2);
             compare(switches.signalArguments[1][0], false);
+        }
+
+        function test_the_sound_buttons_grow_the_toolbar_to_the_right() {
+            const picker = makePicker();
+            picker.canSwitch = true;
+            const region = findButtons(picker).find(button => button.icon === Protocol.CAPTURE_REGION);
+            const close = findButtons(picker).find(button => button.icon === Capture.ICON_CLOSE);
+            const regionAt = () => region.mapToItem(picker, 0, 0).x;
+            const closeAt = () => close.mapToItem(picker, 0, 0).x;
+            tryCompare(picker.toolbarGlass, "scale", 1);
+            // Laid out with the switch in.
+            wait(Tokens.durationPanel * 2);
+            const left = regionAt();
+            const shortClose = closeAt();
+            picker.video = true;
+            wait(Tokens.durationPanel * 2);
+            verify(closeAt() > shortClose, "close moved right");
+            compare(regionAt(), left, "the left side stays put");
+            picker.video = false;
+            wait(Tokens.durationPanel * 2);
+            compare(closeAt(), shortClose);
+            compare(regionAt(), left);
+        }
+
+        Component {
+            id: switchedPickerComponent
+            RegionPicker {
+                width: 200
+                height: 150
+                framePath: ""
+                mode: Protocol.CAPTURE_REGION
+                canSwitch: true
+                switched: true
+                video: true
+            }
+        }
+
+        function test_a_picker_opened_by_the_switch_starts_as_the_other_kind() {
+            const picker = createTemporaryObject(switchedPickerComponent, stage);
+            const control = findSwitch(picker);
+            // Already grown in from the pill, the knob on the camera side,
+            // then sliding to video.
+            compare(picker.toolbarGlass.scale, 1);
+            tryVerify(() => control.video);
         }
 
         Component {
@@ -364,6 +403,17 @@ Item {
             verify(!card.held);
             tryCompare(expiries, "count", 1, 10000);
             compare(card.remaining, 0);
+        }
+
+        function findSwitch(item) {
+            for (const child of item.children) {
+                if (child instanceof CaptureSwitch)
+                    return child;
+                const found = findSwitch(child);
+                if (found)
+                    return found;
+            }
+            return null;
         }
 
         function findButtons(item) {

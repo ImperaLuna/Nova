@@ -52,6 +52,7 @@ PanelWindow { // qmllint disable uncreatable-type
         micAudio: RecordingService.micAudio
         countdown: RecordingService.countdown
         canSwitch: ScreenshotService.ready && RecordingService.ready && !RecordingService.recording
+        switched: window.video ? RecordingService.switched : ScreenshotService.switched
         onSaveRequested: rect => ScreenshotService.save(window.output.name, rect)
         onRecordRequested: rect => RecordingService.record(window.output.name, rect ? Capture.toLayout(rect, window.output.x, window.output.y) : null)
         onCancelRequested: window.video ? RecordingService.cancel() : ScreenshotService.cancel()

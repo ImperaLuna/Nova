@@ -6,7 +6,8 @@ import "../daemon/protocol.js" as Protocol
 import "capture.js" as Capture
 
 // One screen's part of the region picker: its frozen frame under a dim
-// veil, and the toolbar at the top (Region or Screen, and close). In Region
+// veil, and the toolbar at the top (a switch to recording, Region or
+// Screen, and close). In Region
 // mode a drag outlines a region and letting go takes it, like Windows'
 // Super+Shift+S; in Screen mode a click takes the whole screen. Esc or a
 // right click closes it. It only asks; ScreenshotService does the rest.
@@ -32,8 +33,10 @@ Item {
     property bool micAudio: false
     // The count to the recording's start, 0 when not counting.
     property int countdown: 0
-    // The toolbar can switch between a screenshot and a recording.
+    // The toolbar can switch between a screenshot and a recording, and was
+    // opened by that switch.
     property bool canSwitch: false
+    property bool switched: false
 
     // `rect` is in the frame's pixels, save_capture's rect.
     signal saveRequested(var rect)
@@ -284,11 +287,14 @@ Item {
 
     CaptureToolbar {
         id: toolbar
-        anchors.horizontalCenter: parent.horizontalCenter
+        // Where it's centered with the sound buttons in, so it grows and
+        // shrinks on the right.
+        x: Math.round((picker.width - fullWidth) / 2)
         y: Tokens.barGap
         mode: picker.mode
         video: picker.video
         canSwitch: picker.canSwitch
+        switched: picker.switched
         busy: picker.busy || picker.recorded !== null
         desktopAudio: picker.desktopAudio
         micAudio: picker.micAudio
