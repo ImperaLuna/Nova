@@ -1,6 +1,6 @@
 id = "core"
 name = "Core shell"
-description = "Bar, launcher, notifications, volume OSD and quick settings."
+description = "Bar, notifications, volume OSD and quick settings."
 default = true
 required = true
 

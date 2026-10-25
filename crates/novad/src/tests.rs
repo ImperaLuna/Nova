@@ -60,6 +60,7 @@ impl TestDaemon {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("config")).unwrap();
         std::fs::create_dir_all(dir.join("ai-usage")).unwrap();
+        std::fs::create_dir_all(dir.join("launcher/share/applications")).unwrap();
         prepare(&dir);
         let socket = dir.join("novad.sock");
         let hub = Arc::new(Hub::default());
@@ -73,6 +74,7 @@ impl TestDaemon {
             manifests: nova_features::load_all(&repo_features()).unwrap(),
             path_var: std::env::var("PATH").unwrap_or_default(),
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
+            launcher: launcher_paths(&dir),
         };
         let settings = Settings::load(&sources, &hub, &logger);
         let compositor = compositor(&dir)
@@ -115,6 +117,17 @@ impl TestDaemon {
 
 impl Drop for TestDaemon {
     fn drop(&mut self) {
+        // Their file watchers go with them: a user gets only so many
+        // (fs.inotify.max_user_instances, 128 by default), and tests run in
+        // one process.
+        let settings = lock(&self.daemon.settings);
+        if let Some(launcher) = &settings.launcher {
+            launcher.stop();
+        }
+        if let Some(usage) = &settings.ai_usage {
+            usage.stop();
+        }
+        drop(settings);
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
@@ -407,6 +420,16 @@ fn manifest_daemon_names_match_cargo_features() {
     cargo_features.sort();
     declared.sort();
     assert_eq!(cargo_features, declared, "novad [features] and manifest `daemon` fields differ");
+}
+
+/// Apps come from `<dir>/launcher/share` only, and start as novad's
+/// children, never in a scope of the desktop's systemd.
+fn launcher_paths(dir: &Path) -> launcher::Paths {
+    launcher::Paths {
+        data_dirs: vec![dir.join("launcher/share")],
+        state_file: dir.join("launcher/launcher.json"),
+        runner: launcher::Runner::Direct,
+    }
 }
 
 fn repo_features() -> PathBuf {
@@ -1065,7 +1088,7 @@ fn toggle_reaches_the_ui_once_it_listens() {
     ui.request(1, "subscribe", Some(json!({"topics": ["toggle"]})));
     assert_eq!(cli.request(2, "toggle", Some(json!({"panel": "ai-usage"})))["result"], Value::Null);
     assert_eq!(ui.next_event("toggle"), json!({"panel": "ai-usage"}), "no output without a compositor");
-    assert!(cli.request(3, "toggle", Some(json!({"panel": "launcher"})))["error"].is_string());
+    assert!(cli.request(3, "toggle", Some(json!({"panel": "calculator"})))["error"].is_string());
 }
 
 #[test]
@@ -1379,4 +1402,166 @@ fn a_replaced_config_folder_is_followed() {
     // Edits in the new folder keep applying.
     std::fs::write(novad.config_file(), "[theme]\nmode = \"dark\"\n").unwrap();
     assert_eq!(client.next_event("theme")["mode"], "dark");
+}
+
+/// Writes an app's desktop entry where the test daemon finds apps.
+fn install_app(novad: &TestDaemon, file: &str, entry: &str) {
+    let path = novad.dir.join("launcher/share/applications").join(file);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    // Written beside it and moved in, as package managers do.
+    let partial = path.with_extension("partial");
+    std::fs::write(&partial, format!("[Desktop Entry]\nType=Application\n{entry}")).unwrap();
+    std::fs::rename(partial, path).unwrap();
+}
+
+impl Client {
+    /// Subscribes to the launcher and returns its data once it lists `apps` apps.
+    fn subscribe_launcher(&mut self, apps: usize) -> Value {
+        self.request(1, "subscribe", Some(json!({"topics": ["launcher"]})));
+        let first = self.next_event("launcher");
+        match first["apps"].as_array().unwrap().len() == apps {
+            true => first,
+            false => self.launcher_until(|event| event["apps"].as_array().unwrap().len() == apps),
+        }
+    }
+
+    /// The next launcher event that `done` accepts.
+    fn launcher_until(&mut self, done: impl Fn(&Value) -> bool) -> Value {
+        loop {
+            let event = self.next_event("launcher");
+            if done(&event) {
+                return event;
+            }
+        }
+    }
+}
+
+fn ids(list: &Value) -> Vec<&str> {
+    list.as_array().unwrap().iter().map(|item| item.as_str().unwrap_or_else(|| item["id"].as_str().unwrap())).collect()
+}
+
+#[test]
+fn the_launcher_lists_apps_and_follows_installs() {
+    let novad = TestDaemon::start("launcher-apps", None);
+    install_app(&novad, "foot.desktop", "Name=Foot\nGenericName=Terminal\nIcon=foot\nExec=foot\n");
+    install_app(&novad, "hidden.desktop", "Name=Hidden\nNoDisplay=true\nExec=x\n");
+    let mut client = novad.connect();
+    let first = client.subscribe_launcher(1);
+    assert_eq!(
+        first["apps"],
+        json!([{"id": "foot.desktop", "name": "Foot", "description": "Terminal", "icon": "foot"}])
+    );
+
+    // A new app, in a folder made after novad started, shows up.
+    install_app(&novad, "org.kde/dolphin.desktop", "Name=Dolphin\nExec=dolphin %u\n");
+    let event = client.launcher_until(|event| event["apps"].as_array().unwrap().len() == 2);
+    assert_eq!(ids(&event["apps"]), ["org.kde-dolphin.desktop", "foot.desktop"], "sorted by name");
+    // And one that's removed goes.
+    std::fs::remove_file(novad.dir.join("launcher/share/applications/foot.desktop")).unwrap();
+    client.launcher_until(|event| ids(&event["apps"]) == ["org.kde-dolphin.desktop"]);
+}
+
+#[test]
+fn launcher_searches_rank_apps_and_refuse_long_queries() {
+    let novad = TestDaemon::start("launcher-search", None);
+    install_app(&novad, "firefox.desktop", "Name=Firefox\nGenericName=Web Browser\nExec=firefox\n");
+    install_app(&novad, "files.desktop", "Name=Files\nKeywords=folder;\nExec=nautilus\n");
+    install_app(&novad, "fooview.desktop", "Name=Fooview\nExec=fooview\n");
+    let mut client = novad.connect();
+    client.subscribe_launcher(3);
+
+    let found = client.request(2, "search_apps", Some(json!({"query": " FI "})));
+    // Fooview has f and i in order, which counts least.
+    assert_eq!(ids(&found["result"]), ["files.desktop", "firefox.desktop", "fooview.desktop"]);
+    assert_eq!(found["result"][0]["name"], json!([{"text": "Fi", "matched": true}, {"text": "les"}]));
+    let by_keyword = client.request(3, "search_apps", Some(json!({"query": "folder"})));
+    assert_eq!(by_keyword["result"], json!([{"id": "files.desktop", "name": [{"text": "Files"}]}]));
+    assert_eq!(client.request(4, "search_apps", Some(json!({"query": ""})))["result"], json!([]));
+    assert_eq!(client.request(5, "search_apps", Some(json!({"query": "zzz"})))["result"], json!([]));
+    let long = client.request(6, "search_apps", Some(json!({"query": "x".repeat(201)})));
+    assert!(long["error"].as_str().unwrap().contains("at most 200"));
+}
+
+#[test]
+fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
+    let novad = TestDaemon::start("launcher-launch", None);
+    let marker = novad.dir.join("launched");
+    // %U is dropped; the semicolon would only end a command in a shell, and
+    // lands in Path= as a file.
+    let entry = format!("Name=Toucher\nExec=touch \"{}\" %U ;\nPath={}\n", marker.display(), novad.dir.display());
+    install_app(&novad, "touch.desktop", &entry);
+    install_app(&novad, "other.desktop", "Name=Other\nExec=true\n");
+    let mut client = novad.connect();
+    client.subscribe_launcher(2);
+
+    assert_eq!(client.request(2, "launch_app", Some(json!({"id": "touch.desktop"})))["result"], Value::Null);
+    let event = client.launcher_until(|event| !event["recent"].as_array().unwrap().is_empty());
+    assert_eq!(event["recent"], json!(["touch.desktop"]));
+    let ran = (0..100).any(|_| {
+        std::thread::sleep(Duration::from_millis(50));
+        marker.exists()
+    });
+    assert!(ran, "the app didn't run");
+    assert!(novad.dir.join(";").exists(), "`;` reached touch as a file name, not a shell");
+
+    client.request(3, "launch_app", Some(json!({"id": "other.desktop"})));
+    let event = client.launcher_until(|event| event["recent"].as_array().unwrap().len() == 2);
+    assert_eq!(event["recent"], json!(["other.desktop", "touch.desktop"]), "the latest first");
+    let missing = client.request(4, "launch_app", Some(json!({"id": "nothing.desktop"})));
+    assert!(missing["error"].as_str().unwrap().contains("no app"));
+}
+
+#[test]
+fn pins_keep_their_order_and_survive_a_restart() {
+    let novad = TestDaemon::start("launcher-pins", None);
+    for name in ["a", "b", "c"] {
+        install_app(&novad, &format!("{name}.desktop"), &format!("Name={name}\nExec=true\n"));
+    }
+    let mut client = novad.connect();
+    client.subscribe_launcher(3);
+    for (id, name) in [(2, "c"), (3, "a"), (4, "b")] {
+        client.request(id, "pin_app", Some(json!({"id": format!("{name}.desktop"), "pinned": true})));
+    }
+    client.request(5, "pin_app", Some(json!({"id": "a.desktop", "pinned": false})));
+    let event = client.launcher_until(|event| ids(&event["pinned"]) == ["c.desktop", "b.desktop"]);
+    assert_eq!(ids(&event["pinned"]).len(), 2);
+    let unknown = client.request(6, "pin_app", Some(json!({"id": "../../etc/passwd", "pinned": true})));
+    assert!(unknown["error"].as_str().unwrap().contains("no app"));
+
+    // A pinned app that's uninstalled isn't sent, but comes back with it.
+    std::fs::remove_file(novad.dir.join("launcher/share/applications/c.desktop")).unwrap();
+    client.launcher_until(|event| ids(&event["pinned"]) == ["b.desktop"]);
+    install_app(&novad, "c.desktop", "Name=c\nExec=true\n");
+    client.launcher_until(|event| ids(&event["pinned"]) == ["c.desktop", "b.desktop"]);
+
+    let again = launcher::Launcher::start(
+        launcher_paths(&novad.dir),
+        "",
+        Arc::new(Hub::default()),
+        Arc::clone(&novad.daemon.logger),
+    );
+    let saved: Value =
+        serde_json::from_str(&std::fs::read_to_string(launcher_paths(&novad.dir).state_file).unwrap()).unwrap();
+    assert_eq!(saved["pinned"], json!(["c.desktop", "b.desktop"]));
+    again.stop();
+}
+
+#[test]
+fn the_launcher_stops_with_its_feature() {
+    let novad = TestDaemon::start("launcher-off", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["features"]})));
+    client.next_event("features");
+    std::fs::write(novad.features_file(), "disabled = [\"ai-usage\", \"launcher\"]\n").unwrap();
+    loop {
+        let features = client.next_event("features");
+        let launcher = features["features"].as_array().unwrap().iter().find(|f| f["id"] == "launcher").cloned();
+        if launcher.is_some_and(|launcher| launcher["status"] == "off") {
+            break;
+        }
+    }
+    let off = client.request(2, "search_apps", Some(json!({"query": "a"})));
+    assert!(off["error"].as_str().unwrap().contains("feature is off"));
+    let toggle = client.request(3, "toggle", Some(json!({"panel": "launcher"})));
+    assert!(toggle["error"].as_str().unwrap().contains("isn't ready"));
 }

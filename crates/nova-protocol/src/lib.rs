@@ -60,6 +60,10 @@ pub enum Event {
     /// Change the default output's volume as `nova volume` asks, and show
     /// the volume capsule. Topic [`Topic::Volume`].
     Volume { key: VolumeKey },
+    /// The apps the launcher can open, and the user's pinned and recent ones
+    /// (feature `launcher`). Topic [`Topic::Launcher`], sent right after
+    /// subscribing and whenever any of it changes.
+    Launcher(Launcher),
 }
 
 /// Groups of events a client can subscribe to.
@@ -74,6 +78,7 @@ pub enum Topic {
     Toggle,
     Lock,
     Volume,
+    Launcher,
 }
 
 impl Event {
@@ -90,6 +95,7 @@ impl Event {
             Event::Toggle { .. } => Some(Topic::Toggle),
             Event::Lock { .. } => Some(Topic::Lock),
             Event::Volume { .. } => Some(Topic::Volume),
+            Event::Launcher(_) => Some(Topic::Launcher),
         }
     }
 }
@@ -349,10 +355,11 @@ pub enum Step {
 pub enum Panel {
     AiUsage,
     Power,
+    Launcher,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 2] = [Panel::AiUsage, Panel::Power];
+    pub const ALL: [Panel; 3] = [Panel::AiUsage, Panel::Power, Panel::Launcher];
 
     /// Its name on the wire and on the command line, which is also its
     /// feature's id.
@@ -360,6 +367,7 @@ impl Panel {
         match self {
             Panel::AiUsage => "ai-usage",
             Panel::Power => "power",
+            Panel::Launcher => "launcher",
         }
     }
 }
@@ -379,6 +387,49 @@ impl FromStr for Panel {
             format!("unknown panel {text:?} (known: {})", known.join(", "))
         })
     }
+}
+
+/// What the launcher shows (feature `launcher`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Launcher {
+    /// Every app it can open, sorted by name.
+    pub apps: Vec<App>,
+    /// The ids of the apps the user pinned, in the order they pinned them.
+    pub pinned: Vec<String>,
+    /// The ids of the apps launched lately, the latest first.
+    pub recent: Vec<String>,
+}
+
+/// An app from its desktop entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct App {
+    /// Its desktop file id, like `org.mozilla.firefox.desktop`.
+    pub id: String,
+    /// Its name in the user's language.
+    pub name: String,
+    /// What kind of app it is or what it's for (its generic name or comment).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// An icon theme name, or an absolute path to an image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+}
+
+/// An app that matches a launcher search, best first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AppMatch {
+    pub id: String,
+    /// The app's name in runs of text, `matched` on the ones the search
+    /// matched, which the launcher highlights. All of it, unmatched, when
+    /// the search matched something else, like a keyword.
+    pub name: Vec<TextRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextRun {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub matched: bool,
 }
 
 /// A volume key `nova volume` stands for. The UI steps by its own
@@ -464,6 +515,22 @@ pub enum Command {
     /// connected to do it.
     Volume {
         key: VolumeKey,
+    },
+    /// Replies with the apps matching `query`, as [`AppMatch`]es, best first
+    /// (feature `launcher`). An empty query matches nothing.
+    SearchApps {
+        query: String,
+    },
+    /// Opens an app by its id (feature `launcher`) and counts it towards
+    /// the recent ones.
+    LaunchApp {
+        id: String,
+    },
+    /// Pins an app to the launcher, at the end, or unpins it (feature
+    /// `launcher`). Remembered across restarts.
+    PinApp {
+        id: String,
+        pinned: bool,
     },
 }
 
@@ -726,6 +793,7 @@ mod tests {
                         Topic::Toggle,
                         Topic::Lock,
                         Topic::Volume,
+                        Topic::Launcher,
                     ],
                 },
             }),
@@ -777,6 +845,24 @@ mod tests {
             encode(Request { id: Some(21), command: Command::Volume { key: VolumeKey::Up } }),
             encode(Event::Volume { key: VolumeKey::Down }),
             encode(Event::Volume { key: VolumeKey::Mute }),
+            encode(Event::Launcher(launcher())),
+            encode(Request { id: Some(22), command: Command::SearchApps { query: "fi".into() } }),
+            encode(Response {
+                id: 22,
+                outcome: Outcome::Result(
+                    serde_json::to_value(vec![AppMatch {
+                        id: "org.mozilla.firefox.desktop".into(),
+                        name: vec![
+                            TextRun { text: "Fi".into(), matched: true },
+                            TextRun { text: "refox".into(), matched: false },
+                        ],
+                    }])
+                    .unwrap(),
+                ),
+            }),
+            encode(Request { id: Some(23), command: Command::LaunchApp { id: "foot.desktop".into() } }),
+            encode(Request { id: Some(24), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
+            encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
@@ -877,6 +963,22 @@ mod tests {
         }
     }
 
+    fn launcher() -> Launcher {
+        Launcher {
+            apps: vec![
+                App {
+                    id: "org.mozilla.firefox.desktop".into(),
+                    name: "Firefox".into(),
+                    description: Some("Web Browser".into()),
+                    icon: Some("firefox".into()),
+                },
+                App { id: "foot.desktop".into(), name: "Foot".into(), description: None, icon: None },
+            ],
+            pinned: vec!["foot.desktop".into()],
+            recent: vec!["org.mozilla.firefox.desktop".into(), "foot.desktop".into()],
+        }
+    }
+
     fn log_entry() -> LogEntry {
         LogEntry {
             time: "2026-10-22T13:45:09.123Z".into(),
@@ -943,7 +1045,7 @@ mod tests {
             assert_eq!(panel.name().parse::<Panel>(), Ok(panel));
             assert_eq!(serde_json::to_value(panel).unwrap(), json!(panel.name()));
         }
-        assert!("launcher".parse::<Panel>().unwrap_err().contains("known: ai-usage"));
+        assert!("calculator".parse::<Panel>().unwrap_err().contains("known: ai-usage, power, launcher"));
         let features = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         for panel in Panel::ALL {
             assert!(features.join(panel.name()).join("feature.toml").is_file(), "{panel} has no feature");
@@ -978,6 +1080,7 @@ mod tests {
         assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(Topic::Toggle));
         assert_eq!(Event::Lock { locked: true }.topic(), Some(Topic::Lock));
         assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(Topic::Volume));
+        assert_eq!(Event::Launcher(launcher()).topic(), Some(Topic::Launcher));
     }
 
     #[test]

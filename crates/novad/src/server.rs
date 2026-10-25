@@ -174,6 +174,19 @@ impl<'a> Connection<'a> {
             }
             Command::PowerOptions => return self.power_options()(),
             Command::Power { action } => return self.power(*action),
+            Command::SearchApps { query } => {
+                let launcher = lock(&self.daemon.settings).launcher.clone();
+                return match launcher.map(|launcher| launcher.search(query)) {
+                    Some(Ok(found)) => match serde_json::to_value(found) {
+                        Ok(value) => Outcome::Result(value),
+                        Err(e) => Outcome::Error(e.to_string()),
+                    },
+                    Some(Err(e)) => Outcome::Error(e),
+                    None => Outcome::Error(format!("the {} feature is off", crate::launcher::FEATURE_ID)),
+                };
+            }
+            Command::LaunchApp { id } => return self.with_launcher(|launcher| launcher.launch(id)),
+            Command::PinApp { id, pinned } => return self.with_launcher(|launcher| launcher.pin(id, *pinned)),
         };
         match value {
             Ok(value) => Outcome::Result(value),
@@ -191,6 +204,18 @@ impl<'a> Connection<'a> {
                 Err(e) => Outcome::Error(e),
             },
             None => Outcome::Error(format!("the {} feature is off", crate::ai_usage::FEATURE_ID)),
+        }
+    }
+
+    fn with_launcher(&self, act: impl FnOnce(&crate::launcher::Launcher) -> Result<(), String>) -> Outcome {
+        // Out of the lock, like `with_ai_usage`.
+        let launcher = lock(&self.daemon.settings).launcher.clone();
+        match launcher {
+            Some(launcher) => match act(&launcher) {
+                Ok(()) => Outcome::Result(serde_json::Value::Null),
+                Err(e) => Outcome::Error(e),
+            },
+            None => Outcome::Error(format!("the {} feature is off", crate::launcher::FEATURE_ID)),
         }
     }
 
@@ -374,6 +399,11 @@ impl<'a> Connection<'a> {
                             }
                         }
                         Topic::Lock => self.daemon.session_lock.send_state(&self.daemon.hub, self.id),
+                        Topic::Launcher => {
+                            if let Some(launcher) = &settings.launcher {
+                                self.send(launcher.event());
+                            }
+                        }
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -397,7 +427,10 @@ impl<'a> Connection<'a> {
             | Command::ReportUnlocked
             | Command::PowerOptions
             | Command::Power { .. }
-            | Command::Volume { .. } => {}
+            | Command::Volume { .. }
+            | Command::SearchApps { .. }
+            | Command::LaunchApp { .. }
+            | Command::PinApp { .. } => {}
         }
     }
 
