@@ -93,6 +93,9 @@ pub enum Event {
     /// (feature `launcher`). Topic [`Topic::Launcher`], sent right after
     /// subscribing and whenever any of it changes.
     Launcher(Launcher),
+    /// The apps in the system tray (feature `tray`). Topic [`Topic::Tray`],
+    /// sent right after subscribing and whenever one comes or goes.
+    Tray(Tray),
 }
 
 /// Groups of events a client can subscribe to.
@@ -112,6 +115,7 @@ pub enum Topic {
     Host,
     Resources,
     Launcher,
+    Tray,
 }
 
 impl Event {
@@ -133,6 +137,7 @@ impl Event {
             Event::Host(_) => Some(Topic::Host),
             Event::Resources(_) => Some(Topic::Resources),
             Event::Launcher(_) => Some(Topic::Launcher),
+            Event::Tray(_) => Some(Topic::Tray),
         }
     }
 }
@@ -442,6 +447,30 @@ pub struct Launcher {
     pub pinned: Vec<String>,
     /// The ids of the apps launched lately, the latest first.
     pub recent: Vec<String>,
+}
+
+/// The system tray (feature `tray`): the StatusNotifierItems apps
+/// registered with novad's watcher, in the order they did.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Tray {
+    pub items: Vec<TrayItem>,
+}
+
+/// One app's tray icon. The UI draws it through Quickshell's tray host and
+/// finds it there by `id` and `title`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrayItem {
+    /// Where it lives on the session bus: `<bus name>/<object path>`, as
+    /// the watcher lists it.
+    pub address: String,
+    /// The item's own `Id`, like `discord_status_icon_1`.
+    pub id: String,
+    /// The item's own `Title`, empty for Electron apps.
+    pub title: String,
+    /// The installed app it belongs to, found from the process that owns
+    /// it, when there is one (and the `launcher` feature is on).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<App>,
 }
 
 /// An app from its desktop entry.
@@ -1109,6 +1138,7 @@ mod tests {
                         Topic::Host,
                         Topic::Resources,
                         Topic::Launcher,
+                        Topic::Tray,
                     ],
                 },
             }),
@@ -1256,6 +1286,7 @@ mod tests {
             }),
             encode(Request { id: Some(26), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
+            encode(Event::Tray(tray())),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
@@ -1411,6 +1442,30 @@ mod tests {
         }
     }
 
+    fn tray() -> Tray {
+        Tray {
+            items: vec![
+                TrayItem {
+                    address: ":1.421/StatusNotifierItem".into(),
+                    id: "discord_status_icon_1".into(),
+                    title: String::new(),
+                    app: Some(App {
+                        id: "discord.desktop".into(),
+                        name: "Discord".into(),
+                        description: Some("All-in-one cross-platform voice and text chat for gamers".into()),
+                        icon: Some("discord".into()),
+                    }),
+                },
+                TrayItem {
+                    address: ":1.607/org/ayatana/NotificationItem/steam".into(),
+                    id: "steam".into(),
+                    title: "Steam".into(),
+                    app: None,
+                },
+            ],
+        }
+    }
+
     fn log_entry() -> LogEntry {
         LogEntry {
             time: "2026-10-22T13:45:09.123Z".into(),
@@ -1519,6 +1574,7 @@ mod tests {
         assert_eq!(Event::Host(host()).topic(), Some(Topic::Host));
         assert_eq!(Event::Resources(resources()).topic(), Some(Topic::Resources));
         assert_eq!(Event::Launcher(launcher()).topic(), Some(Topic::Launcher));
+        assert_eq!(Event::Tray(tray()).topic(), Some(Topic::Tray));
     }
 
     #[test]

@@ -51,6 +51,7 @@ var EVENT_RECORDING_SAVED = "recording_saved";
 var EVENT_HOST = "host";
 var EVENT_RESOURCES = "resources";
 var EVENT_LAUNCHER = "launcher";
+var EVENT_TRAY = "tray";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
@@ -66,6 +67,7 @@ var TOPIC_RECORDING = "recording";
 var TOPIC_HOST = "host";
 var TOPIC_RESOURCES = "resources";
 var TOPIC_LAUNCHER = "launcher";
+var TOPIC_TRAY = "tray";
 
 // What a compositor can report or do (Capability in nova-protocol).
 var CAPABILITY_WORKSPACES = "workspaces";
@@ -92,6 +94,7 @@ var FEATURE_SCREENSHOT = "screenshot";
 var FEATURE_RECORDING = "recording";
 var FEATURE_QUICK_SETTINGS = "quick-settings";
 var FEATURE_LAUNCHER = "launcher";
+var FEATURE_TRAY = "tray";
 
 // Power menu actions (PowerAction in nova-protocol).
 var POWER_LOCK = "lock";

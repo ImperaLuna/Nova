@@ -71,7 +71,11 @@ pub struct Launcher {
     stopped: AtomicBool,
     /// Ends the watching thread; `None` until it starts.
     watch: Mutex<Option<inotify::Stopper>>,
+    /// Called after each look at the apps, outside the lock (see `on_rescan`).
+    rescanned: Mutex<Option<Rescanned>>,
 }
+
+type Rescanned = Box<dyn Fn() + Send + Sync>;
 
 struct State {
     apps: BTreeMap<String, Entry>,
@@ -124,6 +128,7 @@ impl Launcher {
             desktops,
             stopped: AtomicBool::new(false),
             watch: Mutex::new(None),
+            rescanned: Mutex::new(None),
         });
         let worker = Arc::clone(&launcher);
         std::thread::spawn(move || worker.run());
@@ -140,6 +145,12 @@ impl Launcher {
         if let Some(watch) = watch.take() {
             watch.stop();
         }
+    }
+
+    /// Calls `rescanned` after each look at the apps from now on, for what
+    /// depends on them (the tray's apps). It may call back into the launcher.
+    pub fn on_rescan(&self, rescanned: impl Fn() + Send + Sync + 'static) {
+        *lock(&self.rescanned) = Some(Box::new(rescanned));
     }
 
     fn stopped(&self) -> bool {
@@ -223,6 +234,14 @@ impl Launcher {
             }
             Ok(())
         })
+    }
+
+    /// The installed app whose windows may have one of `ids` (lower case,
+    /// the likeliest first), like a tray icon's process names: the first id
+    /// that any app matches decides.
+    pub fn find_app(&self, ids: &[String]) -> Option<App> {
+        let state = lock(&self.state);
+        ids.iter().find_map(|id| state.apps.values().find(|entry| entry.window_ids().contains(id)).map(app))
     }
 
     /// Pins the app `id` at the end, or unpins it.
@@ -351,6 +370,10 @@ impl Launcher {
         }
         state.apps = apps;
         self.publish(&mut state);
+        drop(state);
+        if let Some(rescanned) = &*lock(&self.rescanned) {
+            rescanned();
+        }
     }
 }
 
@@ -371,19 +394,20 @@ fn watch_all(watcher: &mut Inotify, data_dirs: &[PathBuf], logger: &Logger) -> s
     points
 }
 
+/// How the UI sees `entry`.
+fn app(entry: &Entry) -> App {
+    App {
+        id: entry.id.clone(),
+        name: entry.name.clone(),
+        description: entry.generic_name.clone().or_else(|| entry.comment.clone()),
+        icon: entry.icon.clone(),
+    }
+}
+
 /// The event for `state`: apps by name, and the pinned and recent ones
 /// that are installed.
 fn snapshot(state: &State) -> nova_protocol::Launcher {
-    let mut apps: Vec<App> = state
-        .apps
-        .values()
-        .map(|entry| App {
-            id: entry.id.clone(),
-            name: entry.name.clone(),
-            description: entry.generic_name.clone().or_else(|| entry.comment.clone()),
-            icon: entry.icon.clone(),
-        })
-        .collect();
+    let mut apps: Vec<App> = state.apps.values().map(app).collect();
     apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
     let installed = |id: &&String| state.apps.contains_key(*id);
     let pinned = state.saved.pinned.iter().filter(installed).cloned().collect();

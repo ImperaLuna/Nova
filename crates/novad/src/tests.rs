@@ -101,6 +101,8 @@ impl TestDaemon {
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
             resources: resources::Sources::system(""),
             launcher: launcher_paths(&dir),
+            // No bus: the tray's own tests give it one.
+            tray: tray::Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
         };
         let settings = Settings::load(&sources, &hub, &logger);
         let compositor = compositor(&dir)
@@ -163,6 +165,9 @@ impl Drop for TestDaemon {
         }
         if let Some(usage) = &settings.ai_usage {
             usage.stop();
+        }
+        if let Some(tray) = &settings.tray {
+            tray.stop();
         }
         drop(settings);
         if let Some(watching) = &self.watching {
@@ -1499,6 +1504,15 @@ fn subscribing_to_host_sends_the_machine_and_its_user() {
 
     std::fs::write(novad.config_file(), "[quick-settings]\nname = \"Katov\"\n").unwrap();
     assert_eq!(client.next_event("host")["user"], "Katov", "the config's name applies live");
+}
+
+/// The tray's own tests cover its bus; here it has none, so the list is empty.
+#[test]
+fn subscribing_to_the_tray_sends_its_items() {
+    let novad = TestDaemon::start("tray", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["tray"]})));
+    assert_eq!(client.next_event("tray"), json!({"items": []}));
 }
 
 /// Resources come only while a connection watches, and stop once the last

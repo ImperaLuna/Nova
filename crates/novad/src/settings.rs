@@ -11,7 +11,7 @@ use crate::config::{self, Config};
 use crate::hub::Hub;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, host, launcher, resources, theme};
+use crate::{ai_usage, features, host, launcher, resources, theme, tray};
 use nova_features::{Manifest, Selection};
 use nova_protocol::{Event, FeatureState, FeatureStatus, Host, Theme};
 use std::collections::BTreeSet;
@@ -38,6 +38,8 @@ pub struct Sources {
     pub ai_usage: ai_usage::Paths,
     pub resources: resources::Sources,
     pub launcher: launcher::Paths,
+    /// The bus the tray's watcher is on.
+    pub tray: tray::Bus,
 }
 
 /// The settings in effect, and the feature services they started.
@@ -52,6 +54,8 @@ pub struct Settings {
     pub resources: Option<Arc<resources::Resources>>,
     /// Running while the `launcher` feature is ready.
     pub launcher: Option<Arc<launcher::Launcher>>,
+    /// Watching for tray icons while the `tray` feature is ready.
+    pub tray: Option<Arc<tray::Tray>>,
 }
 
 impl Settings {
@@ -168,6 +172,40 @@ impl Settings {
             }
         };
 
+        // Started before the UI, which settings start ahead of, so apps it
+        // autostarts find the watcher. It finds apps with the launcher.
+        let tray_ready = is_ready(&features, tray::FEATURE_ID);
+        let tray = match previous.as_deref_mut().and_then(|previous| previous.tray.take()) {
+            Some(running) if tray_ready => {
+                running.set_launcher(launcher.clone());
+                Some(running)
+            }
+            running => {
+                if let Some(running) = running {
+                    running.stop();
+                    logger.info("features", &format!("stopped {}", tray::FEATURE_ID));
+                }
+                tray_ready.then(|| {
+                    logger.info("features", &format!("starting {}", tray::FEATURE_ID));
+                    tray::Tray::start(
+                        sources.tray.clone(),
+                        sources.resources.proc_root.clone(),
+                        launcher.clone(),
+                        Arc::clone(hub),
+                        Arc::clone(logger),
+                    )
+                })
+            }
+        };
+        if let Some(launcher) = &launcher {
+            let tray = tray.as_ref().map(Arc::downgrade);
+            launcher.on_rescan(move || {
+                if let Some(tray) = tray.as_ref().and_then(std::sync::Weak::upgrade) {
+                    tray.apps_changed();
+                }
+            });
+        }
+
         let before = previous.as_deref().map(|previous| previous.features.as_slice()).unwrap_or_default();
         for feature in features.iter().filter(|feature| !before.contains(feature)) {
             logger.info("features", &format!("{} is {:?}", feature.id, feature.status));
@@ -176,7 +214,7 @@ impl Settings {
             hub.publish(&Event::Features { features: features.clone() });
         }
 
-        Self { config, selection, features, theme, ai_usage, resources, launcher }
+        Self { config, selection, features, theme, ai_usage, resources, launcher, tray }
     }
 }
 

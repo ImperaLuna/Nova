@@ -44,6 +44,7 @@ mod settings;
 mod state_file;
 mod supervisor;
 mod theme;
+mod tray;
 
 use hub::Hub;
 use logger::Logger;
@@ -207,6 +208,7 @@ fn start(
         ai_usage: ai_usage::Paths::new(&args.state_dir, args.codex_home, args.claude_credentials),
         resources: resources::Sources::system(&path_var),
         launcher: launcher::Paths::new(&args.state_dir, &path_var),
+        tray: tray::Bus::Session,
     };
     let settings = Settings::load(&sources, &hub, &logger);
 

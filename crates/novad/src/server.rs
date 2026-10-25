@@ -550,6 +550,11 @@ impl<'a> Connection<'a> {
                                 launcher.send_state(self.id);
                             }
                         }
+                        Topic::Tray => {
+                            if let Some(tray) = &settings.tray {
+                                tray.send_state(self.id);
+                            }
+                        }
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
