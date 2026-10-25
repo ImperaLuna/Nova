@@ -22,6 +22,9 @@ skip = [
     # toml 0.8 parses with winnow 0.7 and zbus 6 with winnow 1; both are
     # current releases, so this goes away when toml moves to winnow 1.
     { crate = "winnow@0.7", reason = "toml 0.8 and zbus 6 pin different winnow majors" },
+    # png 0.18 inflates with miniz_oxide 0.8 itself but encodes through
+    # flate2, whose current release is on miniz_oxide 0.9.
+    { crate = "miniz_oxide@0.8", reason = "png 0.18 and its flate2 pin different miniz_oxide versions" },
 ]
 
 [sources]

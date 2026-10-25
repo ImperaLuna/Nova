@@ -544,7 +544,7 @@ mod tests {
             let home = std::env::temp_dir().join(format!("nova-setup-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&home);
             std::fs::create_dir_all(home.join("usr/bin")).unwrap();
-            for bin in ["quickshell", "wf-recorder", "paru"] {
+            for bin in ["quickshell", "wf-recorder", "grim", "wl-copy", "xdg-open", "paru"] {
                 std::fs::write(home.join("usr/bin").join(bin), "").unwrap();
             }
             Self(home)
@@ -567,7 +567,8 @@ mod tests {
         let facts = Facts { path_var: home.path_var(), ..facts(Distro::Arch, vec![Gpu::Amd], false) };
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
         let Step::Run { why, argv } = &steps[0] else { panic!("{:?}", steps[0]) };
-        // recording's wf-recorder is there; core has no binary check.
+        // recording's wf-recorder and screenshot's grim, wl-copy and xdg-open
+        // are there; core has no binary check.
         assert_eq!(why, "install packages for core");
         assert_eq!(argv, &words(&["paru", "-S", "--needed", "quickshell"]));
     }
@@ -579,8 +580,18 @@ mod tests {
         assert_eq!(
             steps[0],
             Step::Run {
-                why: "install packages for core, recording".into(),
-                argv: words(&["sudo", "apt-get", "install", "-y", "quickshell", "wf-recorder"]),
+                why: "install packages for core, recording, screenshot".into(),
+                argv: words(&[
+                    "sudo",
+                    "apt-get",
+                    "install",
+                    "-y",
+                    "quickshell",
+                    "wf-recorder",
+                    "grim",
+                    "wl-clipboard",
+                    "xdg-utils"
+                ]),
             }
         );
     }

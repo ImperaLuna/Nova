@@ -60,6 +60,17 @@ pub enum Event {
     /// Change the default output's volume as `nova volume` asks, and show
     /// the volume capsule. Topic [`Topic::Volume`].
     Volume { key: VolumeKey },
+    /// The screens are frozen for a region screenshot (feature `screenshot`):
+    /// each frame is what one output showed, for the UI to draw under the
+    /// region picker. Topic [`Topic::Screenshot`].
+    Capture { frames: Vec<CaptureFrame> },
+    /// The region picker closes: the shot was taken or cancelled. Topic
+    /// [`Topic::Screenshot`].
+    CaptureEnded,
+    /// A screenshot was saved, and copied when it could be (feature
+    /// `screenshot`). `id` names it in `screenshot_action`. Topic
+    /// [`Topic::Screenshot`].
+    ScreenshotSaved(SavedScreenshot),
     /// The machine and its user, for the quick settings header. Topic
     /// [`Topic::Host`], sent right after subscribing.
     Host(Host),
@@ -85,6 +96,7 @@ pub enum Topic {
     Toggle,
     Lock,
     Volume,
+    Screenshot,
     Host,
     Resources,
     Launcher,
@@ -104,6 +116,7 @@ impl Event {
             Event::Toggle { .. } => Some(Topic::Toggle),
             Event::Lock { .. } => Some(Topic::Lock),
             Event::Volume { .. } => Some(Topic::Volume),
+            Event::Capture { .. } | Event::CaptureEnded | Event::ScreenshotSaved(_) => Some(Topic::Screenshot),
             Event::Host(_) => Some(Topic::Host),
             Event::Resources(_) => Some(Topic::Resources),
             Event::Launcher(_) => Some(Topic::Launcher),
@@ -467,6 +480,58 @@ pub enum VolumeKey {
     Mute,
 }
 
+/// What `nova screenshot` takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureMode {
+    /// Freezes every screen and lets the user drag out a region.
+    Region,
+    /// The whole focused screen, right away.
+    Screen,
+}
+
+/// One frozen screen, as `grim` saved it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaptureFrame {
+    /// The output's connector name (`DP-1`), as Quickshell's `screen.name`.
+    pub output: String,
+    /// A PNG in novad's private runtime folder, gone once the picker closes.
+    pub path: String,
+}
+
+/// A rectangle in an image's pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PixelRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavedScreenshot {
+    pub id: u64,
+    /// Where it was saved.
+    pub path: String,
+    pub width: u32,
+    pub height: u32,
+    /// It's on the clipboard too (wl-copy worked).
+    pub copied: bool,
+}
+
+/// What the screenshot card does with a saved shot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScreenshotAction {
+    /// Opens it in the default image viewer.
+    Open,
+    /// Opens the folder it's in.
+    Folder,
+    /// Deletes the file.
+    Delete,
+}
+
 /// Sent by the UI or the `nova` CLI. Arguments with unknown fields are
 /// refused, like unknown fields on the request line itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -538,6 +603,26 @@ pub enum Command {
     /// connected to do it.
     Volume {
         key: VolumeKey,
+    },
+    /// Takes a screenshot (`nova screenshot`, feature `screenshot`). `region`
+    /// freezes the screens and answers once the picker can show; asked again
+    /// while it shows, it closes it. `screen` saves the focused screen.
+    Screenshot {
+        mode: CaptureMode,
+    },
+    /// Saves `rect` of `output`'s frozen frame, in that frame's pixels, and
+    /// closes the picker (the UI).
+    SaveCapture {
+        output: String,
+        rect: PixelRect,
+    },
+    /// Closes the region picker without a screenshot (the UI).
+    CancelCapture,
+    /// Opens, shows the folder of or deletes a screenshot saved since novad
+    /// started (the screenshot card).
+    ScreenshotAction {
+        id: u64,
+        action: ScreenshotAction,
     },
     /// Starts or stops this connection watching the machine's resources
     /// (feature `quick-settings`): while any connection watches, novad
@@ -936,6 +1021,7 @@ mod tests {
                         Topic::Toggle,
                         Topic::Lock,
                         Topic::Volume,
+                        Topic::Screenshot,
                         Topic::Host,
                         Topic::Resources,
                         Topic::Launcher,
@@ -993,6 +1079,42 @@ mod tests {
             encode(Request { id: Some(21), command: Command::Volume { key: VolumeKey::Up } }),
             encode(Event::Volume { key: VolumeKey::Down }),
             encode(Event::Volume { key: VolumeKey::Mute }),
+            encode(Request { id: Some(30), command: Command::Screenshot { mode: CaptureMode::Region } }),
+            encode(Request { id: Some(31), command: Command::Screenshot { mode: CaptureMode::Screen } }),
+            encode(Event::Capture {
+                frames: vec![CaptureFrame {
+                    output: "DP-1".into(),
+                    path: "/run/user/1000/nova/capture/DP-1.ppm".into(),
+                }],
+            }),
+            encode(Request {
+                id: Some(32),
+                command: Command::SaveCapture {
+                    output: "DP-1".into(),
+                    rect: PixelRect { x: 1460, y: 150, width: 960, height: 560 },
+                },
+            }),
+            encode(Request { id: Some(33), command: Command::CancelCapture }),
+            encode(Event::CaptureEnded),
+            encode(Event::ScreenshotSaved(SavedScreenshot {
+                id: 1,
+                path: "/home/me/Pictures/Screenshots/Screenshot 2026-10-25 15-03-41.png".into(),
+                width: 960,
+                height: 560,
+                copied: true,
+            })),
+            encode(Request {
+                id: Some(34),
+                command: Command::ScreenshotAction { id: 1, action: ScreenshotAction::Open },
+            }),
+            encode(Request {
+                id: None,
+                command: Command::ScreenshotAction { id: 1, action: ScreenshotAction::Folder },
+            }),
+            encode(Request {
+                id: None,
+                command: Command::ScreenshotAction { id: 1, action: ScreenshotAction::Delete },
+            }),
             encode(Event::Host(host())),
             encode(Request { id: Some(22), command: Command::WatchResources { watching: true } }),
             encode(Event::Resources(resources())),
@@ -1054,6 +1176,8 @@ mod tests {
                 "STEP" => parses(value, |v| serde_json::from_value::<Step>(v).is_ok()),
                 "POWER" => parses(value, |v| serde_json::from_value::<PowerAction>(v).is_ok()),
                 "VOLUME" => parses(value, |v| serde_json::from_value::<VolumeKey>(v).is_ok()),
+                "CAPTURE" => parses(value, |v| serde_json::from_value::<CaptureMode>(v).is_ok()),
+                "SHOT" => parses(value, |v| serde_json::from_value::<ScreenshotAction>(v).is_ok()),
                 "FEATURE" => root.join("features").join(value).join("feature.toml").is_file(),
                 _ => panic!("protocol.js: no check for {name}; add its kind to this test"),
             };
@@ -1279,6 +1403,7 @@ mod tests {
         assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(Topic::Toggle));
         assert_eq!(Event::Lock { locked: true }.topic(), Some(Topic::Lock));
         assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(Topic::Volume));
+        assert_eq!(Event::CaptureEnded.topic(), Some(Topic::Screenshot));
         assert_eq!(Event::Host(host()).topic(), Some(Topic::Host));
         assert_eq!(Event::Resources(resources()).topic(), Some(Topic::Resources));
         assert_eq!(Event::Launcher(launcher()).topic(), Some(Topic::Launcher));
@@ -1292,6 +1417,11 @@ mod tests {
         let limit = r#"{"window":"weekly","percent":5,"extra":1}"#;
         assert!(
             decode_request(&format!(r#"{{"v":2,"cmd":"report_claude_usage","args":{{"limits":[{limit}]}}}}"#)).is_err()
+        );
+        let rect = r#"{"x":0,"y":0,"width":1,"height":1,"scale":2}"#;
+        assert!(
+            decode_request(&format!(r#"{{"v":2,"cmd":"save_capture","args":{{"output":"DP-1","rect":{rect}}}}}"#))
+                .is_err()
         );
     }
 

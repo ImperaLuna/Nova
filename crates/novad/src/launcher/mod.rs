@@ -13,7 +13,7 @@ use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
 use crate::{lock, state_file};
 use desktop_entry::{Context, Entry, Locale};
-pub use launch::Runner;
+pub use launch::{Runner, open};
 use nova_protocol::{App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

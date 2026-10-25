@@ -3,6 +3,8 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "capture"
+import "capture/service"
 import "compositor"
 import "daemon"
 import "lock"
@@ -32,6 +34,16 @@ ShellRoot {
     LazyLoader {
         active: Daemon.theme !== null
         component: VolumeOsd {}
+    }
+
+    // Screenshots: the region picker while novad has it open, and the card
+    // a saved shot lands in.
+    LazyLoader {
+        active: Daemon.theme !== null && ScreenshotService.ready
+        component: Scope {
+            CaptureOverlay {}
+            ShotCards {}
+        }
     }
 
     // `quickshell ipc --pid <UI pid> prop get compositor focusedWorkspace`:

@@ -186,6 +186,11 @@ impl Settings {
     pub fn host(&self) -> Host {
         host::read(self.config.quick_settings.name.as_deref())
     }
+
+    /// Where screenshots are saved, from `config.toml`.
+    pub fn screenshot_folder(&self) -> Result<PathBuf, String> {
+        self.config.screenshot.folder()
+    }
 }
 
 fn is_ready(features: &[FeatureState], id: &str) -> bool {

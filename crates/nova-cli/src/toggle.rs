@@ -1,12 +1,13 @@
-//! `nova toggle <panel>`, `nova lock` and `nova volume <key>`: ask novad to
-//! open or close a panel on the focused output, to lock the screen, or to
-//! pass a volume key to the UI, for compositor keybinds. They print nothing
+//! `nova toggle <panel>`, `nova lock`, `nova volume <key>` and
+//! `nova screenshot <mode>`: ask novad to open or close a panel on the
+//! focused output, to lock the screen, to pass a volume key to the UI, or to
+//! take a screenshot, for compositor keybinds. They print nothing
 //! when it worked, so a keybind stays quiet; novad's reason goes to stderr
 //! when it didn't.
 
 use crate::client::Client;
 use clap::builder::{PossibleValuesParser, TypedValueParser};
-use nova_protocol::{Command, Panel, VolumeKey};
+use nova_protocol::{CaptureMode, Command, Panel, VolumeKey};
 use std::path::Path;
 
 #[derive(clap::Args)]
@@ -55,5 +56,28 @@ pub fn volume(args: &VolumeArgs, socket: &Path) -> Result<(), String> {
         VolumeArg::Mute => VolumeKey::Mute,
     };
     Client::connect(socket)?.request(Command::Volume { key })?;
+    Ok(())
+}
+
+#[derive(clap::Args)]
+pub struct ScreenshotArgs {
+    #[command(subcommand)]
+    mode: ScreenshotArg,
+}
+
+#[derive(clap::Subcommand)]
+enum ScreenshotArg {
+    /// Freeze the screens and drag out a region; again closes the picker.
+    Region,
+    /// The whole focused screen, at once.
+    Screen,
+}
+
+pub fn screenshot(args: &ScreenshotArgs, socket: &Path) -> Result<(), String> {
+    let mode = match args.mode {
+        ScreenshotArg::Region => CaptureMode::Region,
+        ScreenshotArg::Screen => CaptureMode::Screen,
+    };
+    Client::connect(socket)?.request(Command::Screenshot { mode })?;
     Ok(())
 }

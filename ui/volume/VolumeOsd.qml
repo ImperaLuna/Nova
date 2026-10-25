@@ -37,17 +37,12 @@ Scope {
     // Out where it is, or on the focused screen; not where quick settings
     // is open, even while it's still sliding away there.
     function reveal() {
-        const target = motion.shown ? screen : focusedScreen();
+        const target = motion.shown ? screen : Compositor.focusedScreen();
         if (VolumeService.shownElsewhere.includes(target?.name))
             return;
         screen = target;
         motion.openTarget = 1;
         hold.restart();
-    }
-
-    function focusedScreen(): ShellScreen {
-        const name = Compositor.focusedOutput?.name;
-        return Quickshell.screens.find(screen => screen.name === name) ?? Quickshell.screens[0] ?? null;
     }
 
     Connections {

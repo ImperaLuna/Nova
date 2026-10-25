@@ -30,6 +30,14 @@ Singleton {
         return outputs.find(output => output.name === name) ?? null;
     }
 
+    // The screen with focus, for something that comes out on one screen
+    // (the volume capsule, the screenshot card): the first one when novad
+    // doesn't know which.
+    function focusedScreen(): ShellScreen {
+        const name = focusedOutput?.name;
+        return Quickshell.screens.find(screen => screen.name === name) ?? Quickshell.screens[0] ?? null;
+    }
+
     function focusWorkspace(id: int) {
         Daemon.call(Protocol.CMD_FOCUS_WORKSPACE, {
             id: id

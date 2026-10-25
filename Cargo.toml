@@ -24,6 +24,8 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 zbus = { version = "6", default-features = false, features = ["default-rt"] }
 # Reading zbus's signal streams without an async runtime's helpers.
 futures-core = { version = "0.3", default-features = false }
+# Cropping and writing screenshots (pure Rust, so the static musl build stays).
+png = "0.18"
 nova-protocol = { path = "crates/nova-protocol" }
 nova-features = { path = "crates/nova-features" }
 nova-paths = { path = "crates/nova-paths" }

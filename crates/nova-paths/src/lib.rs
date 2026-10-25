@@ -36,6 +36,32 @@ pub fn installed_or_checkout(name: &str) -> PathBuf {
     }
 }
 
+/// One of the user's folders from `user-dirs.dirs` (`xdg-user-dir`):
+/// `key` is its name there without `XDG_` and `_DIR` (`PICTURES`), and
+/// `home_fallback` the folder under `$HOME` when it isn't set.
+pub fn user_dir(key: &str, home_fallback: &str) -> PathBuf {
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let file = xdg_dir("XDG_CONFIG_HOME", ".config").join("user-dirs.dirs");
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|text| parse_user_dir(&text, key, &home))
+        .unwrap_or_else(|| home.join(home_fallback))
+}
+
+/// `key`'s folder in a `user-dirs.dirs` file's text: lines like
+/// `XDG_PICTURES_DIR="$HOME/Pictures"`, where only `$HOME/` is expanded.
+fn parse_user_dir(text: &str, key: &str, home: &Path) -> Option<PathBuf> {
+    let name = format!("XDG_{key}_DIR=");
+    let value = text.lines().find_map(|line| line.trim().strip_prefix(&name))?;
+    let value = value.trim().strip_prefix('"')?.strip_suffix('"')?;
+    let dir = match value.strip_prefix("$HOME") {
+        Some(rest) => home.join(rest.trim_start_matches('/')),
+        None => PathBuf::from(value),
+    };
+    // A relative path, or `$HOME` alone, means the folder isn't set up.
+    (dir.is_absolute() && dir != home).then_some(dir)
+}
+
 fn xdg_dir(var: &str, home_fallback: &str) -> PathBuf {
     std::env::var_os(var)
         .filter(|value| !value.is_empty())
@@ -66,3 +92,18 @@ pub fn crash_dir(log_dir: &Path) -> PathBuf {
 }
 
 const LOG_FILE_NAME: &str = "nova.log";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn user_dirs_expand_home_and_skip_unset_ones() {
+        let home = Path::new("/home/me");
+        let text = "# written by xdg-user-dirs-update\nXDG_DESKTOP_DIR=\"$HOME/Desktop\"\nXDG_PICTURES_DIR=\"$HOME/Bilder\"\nXDG_VIDEOS_DIR=\"/data/videos\"\nXDG_MUSIC_DIR=\"$HOME/\"\n";
+        assert_eq!(parse_user_dir(text, "PICTURES", home), Some(PathBuf::from("/home/me/Bilder")));
+        assert_eq!(parse_user_dir(text, "VIDEOS", home), Some(PathBuf::from("/data/videos")));
+        assert_eq!(parse_user_dir(text, "MUSIC", home), None, "$HOME itself means unset");
+        assert_eq!(parse_user_dir(text, "TEMPLATES", home), None);
+    }
+}

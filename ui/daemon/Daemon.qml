@@ -48,6 +48,11 @@ Singleton {
     signal lockRequested
     // `nova volume <key>`: a Protocol.VOLUME_* key, for the volume capsule.
     signal volumeRequested(string key)
+    // The region picker's frozen frames while it's open ([{output, path}],
+    // one per screen), or null.
+    property var capture: null
+    // A screenshot was saved: {id, path, width, height, copied}.
+    signal screenshotSaved(var shot)
 
     property int _nextId: 1
     property var _pending: ({})
@@ -102,6 +107,12 @@ Singleton {
                 lockRequested();
         } else if (msg.event === Protocol.EVENT_VOLUME) {
             volumeRequested(msg.data.key);
+        } else if (msg.event === Protocol.EVENT_CAPTURE) {
+            capture = msg.data.frames;
+        } else if (msg.event === Protocol.EVENT_CAPTURE_ENDED) {
+            capture = null;
+        } else if (msg.event === Protocol.EVENT_SCREENSHOT_SAVED) {
+            screenshotSaved(msg.data);
         } else if (msg.event === Protocol.EVENT_HOST) {
             host = msg.data;
         } else if (msg.event === Protocol.EVENT_RESOURCES) {
@@ -132,9 +143,11 @@ Singleton {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
                 root.call(Protocol.CMD_SUBSCRIBE, {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_LAUNCHER]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_LAUNCHER]
                 });
             } else {
+                // A picker novad still has open is sent again on reconnect.
+                root.capture = null;
                 // Replies to these won't come any more.
                 const pending = root._pending;
                 root._pending = {};
