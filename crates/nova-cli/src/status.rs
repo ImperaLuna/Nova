@@ -165,6 +165,7 @@ mod tests {
             focused: false,
             urgent: false,
             empty: false,
+            fullscreen: false,
         };
         let desktop = Desktop {
             compositor: "niri".into(),

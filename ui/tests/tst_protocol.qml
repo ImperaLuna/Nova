@@ -81,7 +81,7 @@ TestCase {
     }
 
     // The compositor event in nova-protocol's wire format snapshot.
-    readonly property string compositorLine: '{"v":2,"event":"compositor","data":{"compositor":"niri","capabilities":["workspaces","focused_window"],"outputs":[{"name":"DP-1","focused":true,"workspaces":[{"id":1,"name":"1","active":false,"focused":false,"urgent":false,"empty":true},{"id":2,"name":"web","active":true,"focused":true,"urgent":false,"empty":false}]},{"name":"HDMI-A-1","focused":false,"workspaces":[{"id":3,"name":"1","active":true,"focused":false,"urgent":true,"empty":false}]}],"focused_window":{"app_id":"foot","title":"~"}}}'
+    readonly property string compositorLine: '{"v":2,"event":"compositor","data":{"compositor":"niri","capabilities":["workspaces","focused_window","fullscreen"],"outputs":[{"name":"DP-1","focused":true,"workspaces":[{"id":1,"name":"1","active":false,"focused":false,"urgent":false,"empty":true,"fullscreen":false},{"id":2,"name":"web","active":true,"focused":true,"urgent":false,"empty":false,"fullscreen":false}]},{"name":"HDMI-A-1","focused":false,"workspaces":[{"id":3,"name":"1","active":true,"focused":false,"urgent":true,"empty":false,"fullscreen":true}]}],"focused_window":{"app_id":"foot","title":"~"}}}'
 
     function test_finds_the_focused_workspace() {
         const desktop = Protocol.parse(compositorLine).data;
@@ -99,6 +99,17 @@ TestCase {
         outputs[0].workspaces[0].empty = false;
         compare(Protocol.barWorkspaces(outputs[0]).map(workspace => workspace.name), ["1", "web"]);
         compare(Protocol.barWorkspaces(null), []);
+    }
+
+    function test_the_bar_steps_aside_only_for_a_shown_fullscreen_workspace() {
+        const outputs = Protocol.parse(compositorLine).data.outputs;
+        compare(Protocol.fullscreenShown(outputs[1]), true);
+        compare(Protocol.fullscreenShown(outputs[0]), false);
+        outputs[0].workspaces[0].fullscreen = true;
+        compare(Protocol.fullscreenShown(outputs[0]), false, "not while that workspace is hidden");
+        outputs[0].workspaces[1].fullscreen = true;
+        compare(Protocol.fullscreenShown(outputs[0]), true);
+        compare(Protocol.fullscreenShown(null), false);
     }
 
     function test_subscribe_can_name_the_compositor_topic() {

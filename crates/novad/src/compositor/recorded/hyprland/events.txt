@@ -1,34 +1,36 @@
 activelayout>>at-translated-set-2-keyboard,English (US)
 activelayout>>qemu-virtio-keyboard,English (US)
-windowtitle>>5e0d98376c90
-windowtitlev2>>5e0d98376c90,First window
-openwindow>>5e0d98376c90,1,nova-first,First window
+windowtitle>>58edea3cebb0
+windowtitlev2>>58edea3cebb0,First window
+openwindow>>58edea3cebb0,1,nova-first,First window
 activewindow>>nova-first,First window
-activewindowv2>>5e0d98376c90
+activewindowv2>>58edea3cebb0
 createworkspace>>2
 createworkspacev2>>2,2
 activewindow>>,
 activewindowv2>>
 workspace>>2
 workspacev2>>2,2
-windowtitle>>5e0d97d48100
-windowtitlev2>>5e0d97d48100,Second window
-openwindow>>5e0d97d48100,2,nova-second,Second window
+windowtitle>>58edebf35170
+windowtitlev2>>58edebf35170,Second window
+openwindow>>58edebf35170,2,nova-second,Second window
 activewindow>>nova-second,Second window
-activewindowv2>>5e0d97d48100
-windowtitle>>5e0d97d48100
-windowtitlev2>>5e0d97d48100,Renamed, with, commas
+activewindowv2>>58edebf35170
+windowtitle>>58edebf35170
+windowtitlev2>>58edebf35170,Renamed, with, commas
 activewindow>>nova-second,Renamed, with, commas
-activewindowv2>>5e0d97d48100
+activewindowv2>>58edebf35170
 activelayout>>at-translated-set-2-keyboard,German
 activelayout>>qemu-virtio-keyboard,German
 renameworkspace>>2,web
 activewindow>>nova-first,First window
-activewindowv2>>5e0d98376c90
+activewindowv2>>58edea3cebb0
 workspace>>1
 workspacev2>>1,1
-bell>>5e0d97d48100
-urgent>>5e0d97d48100
-closewindow>>5e0d98376c90
+bell>>58edebf35170
+urgent>>58edebf35170
+fullscreen>>1
+closewindow>>58edea3cebb0
+fullscreen>>0
 activewindow>>,
 activewindowv2>>

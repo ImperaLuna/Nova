@@ -1,5 +1,5 @@
 {
-    "address": "0x5e0d97d48100",
+    "address": "0x58edebf35170",
     "mapped": true,
     "hidden": false,
     "visible": true,
@@ -16,7 +16,7 @@
     "title": "Renamed, with, commas",
     "initialClass": "nova-second",
     "initialTitle": "Second window",
-    "pid": 1915,
+    "pid": 1929,
     "xwayland": false,
     "pinned": false,
     "pinFullscreened": false,

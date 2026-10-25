@@ -295,6 +295,8 @@ pub enum Capability {
     KeyboardLayout,
     /// The power menu's log out works: it quits the compositor.
     LogOut,
+    /// Workspaces report `fullscreen`.
+    Fullscreen,
 }
 
 /// A monitor, by its connector name (`DP-1`), as Quickshell's `screen.name`.
@@ -321,6 +323,9 @@ pub struct Workspace {
     pub urgent: bool,
     /// No windows on it.
     pub empty: bool,
+    /// A window on it fills the whole output, over the bar's space: one in
+    /// fullscreen (or niri's maximize to edges).
+    pub fullscreen: bool,
 }
 
 /// The compositor's own workspace id. Hyprland's named workspaces have
@@ -824,10 +829,11 @@ mod tests {
             focused,
             urgent: false,
             empty: false,
+            fullscreen: false,
         };
         Desktop {
             compositor: "niri".into(),
-            capabilities: vec![Capability::Workspaces, Capability::FocusedWindow],
+            capabilities: vec![Capability::Workspaces, Capability::FocusedWindow, Capability::Fullscreen],
             outputs: vec![
                 Output {
                     name: "DP-1".into(),
@@ -840,7 +846,7 @@ mod tests {
                 Output {
                     name: "HDMI-A-1".into(),
                     focused: false,
-                    workspaces: vec![Workspace { urgent: true, ..workspace(3, "1", true, false) }],
+                    workspaces: vec![Workspace { urgent: true, fullscreen: true, ..workspace(3, "1", true, false) }],
                 },
             ],
             focused_window: Some(FocusedWindow { app_id: "foot".into(), title: "~".into() }),
