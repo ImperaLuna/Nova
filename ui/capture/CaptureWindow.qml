@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import "../stage"
 import "service"
 
 // The region picker's layer surface on one screen: the whole screen, on the
@@ -11,9 +12,9 @@ import "service"
 PanelWindow { // qmllint disable uncreatable-type
     id: window
 
-    screen: output
-    // Its screen, typed (the window's own `screen` isn't, to qmllint).
-    required property ShellScreen output
+    screen: output.screen
+    // Its screen (StageScreen), kept while it goes away.
+    required property StageScreen output
     required property string framePath
 
     anchors {

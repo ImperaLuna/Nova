@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
+import "../stage"
 import "service"
 import "capture.js" as Capture
 
@@ -12,9 +13,12 @@ Scope {
         model: ScreenshotService.picking ? Quickshell.screens.filter(screen => Capture.frameFor(ScreenshotService.frames, screen.name) !== null) : []
 
         CaptureWindow {
+            id: window
             required property ShellScreen modelData
-            output: modelData
-            framePath: Capture.frameFor(ScreenshotService.frames, modelData.name)?.path ?? ""
+            output: StageScreen {
+                screen: window.modelData
+            }
+            framePath: Capture.frameFor(ScreenshotService.frames, output.name)?.path ?? ""
         }
     }
 }

@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import "../stage"
 import "../theme"
 import "service"
 
@@ -12,8 +13,9 @@ import "service"
 PanelWindow { // qmllint disable uncreatable-type
     id: window
 
-    screen: output
-    required property ShellScreen output
+    screen: output.screen
+    // Its screen (StageScreen), kept while it goes away.
+    required property StageScreen output
     required property var shot
     // False slides the card out; `gone` follows once it's out.
     property bool shown: true
