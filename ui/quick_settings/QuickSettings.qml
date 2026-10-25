@@ -28,7 +28,7 @@ StagePanel {
     // The right pill on the stage, and where it is in screen coordinates:
     // it grows out of it, and its buttons stay where the pill had them.
     required property Item pillItem
-    property rect pill: Qt.rect(screen.width - Tokens.barMargin, Tokens.barMargin, 0, Tokens.barHeight)
+    property rect pill: Qt.rect(screen.width - Tokens.barMargin, Tokens.barGap, 0, Tokens.barHeight)
     from: pillItem
     // The pill's buttons, as on the pill.
     property bool power: false

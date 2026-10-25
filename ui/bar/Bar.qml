@@ -25,8 +25,10 @@ Item {
     // workspaces the central pill lists.
     required property string screenName
 
-    // The space kept free for the bar at the top of the screen.
-    readonly property int reservedHeight: Tokens.barHeight + Tokens.barMargin
+    // The space kept free for the bar at the top of the screen: the same gap
+    // above and below the pills. The compositor's own top gap is meant to be
+    // off, so it doesn't add to the one below.
+    readonly property int reservedHeight: Tokens.barGap + Tokens.barHeight + Tokens.barGap
 
     readonly property AiUsage aiUsagePill: aiUsage.item as AiUsage
     // The pills that open panels, for the stage (StagePanel has the contract).
@@ -70,7 +72,7 @@ Item {
     Loader {
         id: aiUsage
         x: Tokens.barMargin
-        y: Tokens.barMargin
+        y: Tokens.barGap
         active: AiUsageService.ready
         onLoaded: console.info("nova: ai usage pill shown")
         sourceComponent: AiUsage {
@@ -96,7 +98,7 @@ Item {
 
         visible: !bar.covered.includes(center)
         x: bar.width / 2 + timeFromRight - width
-        y: Tokens.barMargin
+        y: Tokens.barGap
         width: implicitWidth
         height: implicitHeight
         workspaces: Compositor.has(Protocol.CAPABILITY_WORKSPACES) ? Protocol.barWorkspaces(output) : []
@@ -111,7 +113,7 @@ Item {
         id: rightPill
         visible: (bar.quickSettings || bar.power) && !bar.covered.includes(rightPill)
         x: bar.width - Tokens.barMargin - width
-        y: Tokens.barMargin
+        y: Tokens.barGap
         width: implicitWidth
         height: implicitHeight
         quickSettings: bar.quickSettings
