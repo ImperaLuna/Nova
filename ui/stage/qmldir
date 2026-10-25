@@ -8,5 +8,6 @@ MorphReveal 1.0 MorphReveal.qml
 PanelSurface 1.0 PanelSurface.qml
 ShapeRegion 1.0 ShapeRegion.qml
 Stage 1.0 Stage.qml
+StageScreen 1.0 StageScreen.qml
 StagePanel 1.0 StagePanel.qml
 StagePanels 1.0 StagePanels.qml

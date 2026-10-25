@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell
 import "../stage"
 import "../theme"
 import "service"
@@ -18,7 +17,8 @@ import "../text/duration.js" as Duration
 StagePanel {
     id: menu
 
-    required property ShellScreen screen
+    // The screen it's on (StageScreen).
+    required property StageScreen output
 
     name: Protocol.FEATURE_POWER
     placement: "right"
@@ -63,9 +63,9 @@ StagePanel {
     radius: Math.min(Tokens.edgeTabRadius, height / 2)
     width: morph.lerp(0, openWidth) + radius
     height: morph.lerp(Tokens.edgeTabNub, fullHeight)
-    x: screen.width - morph.lerp(0, openWidth)
-    y: (screen.height - height) / 2
-    area: Qt.rect(screen.width - openWidth, (screen.height - fullHeight) / 2 - Tokens.edgeTabFillet, openWidth + Tokens.edgeTabRadius, fullHeight + 2 * Tokens.edgeTabFillet)
+    x: output.width - morph.lerp(0, openWidth)
+    y: (output.height - height) / 2
+    area: Qt.rect(output.width - openWidth, (output.height - fullHeight) / 2 - Tokens.edgeTabFillet, openWidth + Tokens.edgeTabRadius, fullHeight + 2 * Tokens.edgeTabFillet)
 
     onOpenChanged: {
         console.info(`nova: power menu ${open ? "opened" : "closed"}`);
