@@ -9,11 +9,8 @@ name: Bump advisory-db
 # Two jobs, like approve-goldens: `update` runs `nix flake update` with a
 # read-only token on the self-hosted runner; `pr` holds the write token, runs
 # no repo code and only takes flake.lock, on a fresh GitHub-hosted machine.
-# Pushes made with GITHUB_TOKEN don't start other workflows, so `pr` then
-# starts CI on the bump branch itself.
-#
-# Opening the PR needs Settings > Actions > General > "Allow GitHub Actions to
-# create and approve pull requests".
+# It pushes and opens the PR with the PUSH_TOKEN secret, so CI starts on the
+# PR like any other (see update-prs.yml for why not GITHUB_TOKEN).
 on:
   schedule:
     - cron: "0 5 * * 1"
@@ -69,12 +66,8 @@ jobs:
     if: needs.update.outputs.changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    outputs:
-      sha: ${{ steps.push.outputs.sha }}
     permissions:
-      contents: write
-      pull-requests: write
-      actions: write
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -98,7 +91,7 @@ jobs:
       - name: commit and push
         id: push
         env:
-          TOKEN: ${{ github.token }}
+          TOKEN: ${{ secrets.PUSH_TOKEN }}
         run: |
           rev=$(jq -r '.nodes["advisory-db"].locked.rev' flake.lock)
           date=$(date -u -d "@$(jq -r '.nodes["advisory-db"].locked.lastModified' flake.lock)" +%F)
@@ -110,7 +103,6 @@ jobs:
           if git fetch -q origin "refs/heads/$BRANCH" 2>/dev/null &&
             git diff --quiet FETCH_HEAD -- flake.lock; then
             echo "$BRANCH already has advisory-db $rev."
-            echo "pushed=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
           git -c user.name='github-actions[bot]' \
@@ -118,14 +110,11 @@ jobs:
             commit -q -m "Bump advisory-db to $date" -m "rustsec/advisory-db@$rev (run ${{ github.run_id }})." -- flake.lock
           # The branch is only ever this job's: each bump replaces the last.
           git push -q --force origin "HEAD:refs/heads/$BRANCH"
-          echo "pushed=true" >>"$GITHUB_OUTPUT"
-          echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
       # Also when nothing was pushed: an earlier run may have pushed the
-      # branch but failed here, before the repo setting was on.
+      # branch but failed here.
       - name: open the PR
-        id: pr
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PUSH_TOKEN }}
           REV: ${{ steps.push.outputs.rev }}
           DATE: ${{ steps.push.outputs.date }}
         run: |
@@ -136,21 +125,4 @@ jobs:
             gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
           else
             gh pr create --repo "$GITHUB_REPOSITORY" --base "$DEFAULT_BRANCH" --head "$BRANCH" --title "$title" --body "$body"
-            echo "created=true" >>"$GITHUB_OUTPUT"
           fi
-      # A branch pushed by an earlier run that failed to open its PR has no
-      # CI yet either.
-      - name: start CI on the bump branch
-        if: steps.push.outputs.pushed == 'true' || steps.pr.outputs.created == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
-
-  drop:
-    needs: pr
-    if: needs.pr.outputs.sha != ''
-    permissions:
-      actions: write
-    uses: ./.github/workflows/drop-bot-pr-runs.yml
-    with:
-      shas: ${{ needs.pr.outputs.sha }}

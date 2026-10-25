@@ -2,14 +2,14 @@ name: Update PRs
 
 # Every push to main merges main into each open PR branch that is behind it,
 # drafts too, so no PR waits on main with a stale branch or a conflict nobody
-# has seen. A clean merge is pushed and CI started on it: pushes made with
-# GITHUB_TOKEN don't start other workflows. A conflicting merge isn't pushed;
-# a PR comment names the conflicting files instead, once per PR head, so the
-# PR's owner hears about it. Fork PRs are skipped: their branches aren't ours.
+# has seen. A clean merge is pushed, which starts CI like any push. A
+# conflicting merge isn't pushed; a PR comment names the conflicting files
+# instead, once per PR head, so the PR's owner hears about it. Fork PRs are
+# skipped: their branches aren't ours.
 #
-# A merge that brings in a change to .github/workflows can't be pushed with
-# GITHUB_TOKEN (it lacks the `workflows` permission); the PR gets a comment
-# asking for the merge by hand instead.
+# Pushes use the PUSH_TOKEN secret, never GITHUB_TOKEN: GitHub doesn't count a
+# CI run started by github-actions[bot] (pushed or dispatched) for the `checks`
+# rule, and holds its pull_request run for approval.
 #
 # Runs no repo code, on a GitHub-hosted machine, so it doesn't queue behind CI
 # on the self-hosted runner.
@@ -31,24 +31,24 @@ jobs:
     name: merge main into PRs
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    outputs:
-      pushed: ${{ steps.merge.outputs.pushed }}
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
-      actions: write
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: merge main into each PR branch
-        id: merge
         env:
           GH_TOKEN: ${{ github.token }}
-          TOKEN: ${{ github.token }}
+          TOKEN: ${{ secrets.PUSH_TOKEN }}
           BASE: ${{ github.event.repository.default_branch }}
         run: |
+          if [[ -z $TOKEN ]]; then
+            echo "::error::the PUSH_TOKEN secret is missing: add a fine-grained token with Contents and Workflows write on this repo, under Settings > Secrets and variables > Actions"
+            exit 1
+          fi
           auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
           git() {
             command git -c core.hooksPath=/dev/null -c http.extraheader="AUTHORIZATION: basic $auth" \
@@ -73,8 +73,6 @@ jobs:
           $marker"
           }
 
-          failed=0
-          pushed=()
           mapfile -t prs < <(gh pr list --repo "$GITHUB_REPOSITORY" --base "$BASE" --state open --limit 100 \
             --json number,headRefName,isCrossRepository \
             --jq '.[] | select(.isCrossRepository | not) | "\(.number) \(.headRefName)"')
@@ -90,14 +88,7 @@ jobs:
             git checkout -q --detach "$head"
             if git merge -q --no-edit -m "Merge $BASE into $branch" "$main"; then
               if out=$(git push -q origin "HEAD:refs/heads/$branch" 2>&1); then
-                echo "#$number ($branch): merged $BASE, starting CI."
-                pushed+=("$(git rev-parse HEAD)")
-                # A failed dispatch doesn't stop the other PRs; the run goes
-                # red so the branch without CI gets noticed.
-                if ! gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"; then
-                  echo "::error::#$number ($branch): couldn't start CI; start it by hand (Actions > CI)."
-                  failed=1
-                fi
+                echo "#$number ($branch): merged $BASE."
                 continue
               fi
               # Not a fast-forward: someone pushed meanwhile, and that push
@@ -107,7 +98,7 @@ jobs:
                 continue
               fi
               echo "::warning::#$number ($branch): push refused: $out"
-              comment "$number" "$head" "\`$BASE\` moved to $main and merges cleanly into this branch, but the Update PRs workflow couldn't push the merge (usually because $BASE changed a workflow file). Merge \`$BASE\` into the branch by hand.
+              comment "$number" "$head" "\`$BASE\` moved to $main and merges cleanly into this branch, but the Update PRs workflow couldn't push the merge. Merge \`$BASE\` into the branch by hand.
 
           \`\`\`
           $out
@@ -124,14 +115,3 @@ jobs:
           Merge \`$BASE\` into the branch and resolve them."
             fi
           done
-          echo "pushed=${pushed[*]}" >>"$GITHUB_OUTPUT"
-          exit "$failed"
-
-  drop:
-    needs: update
-    if: always() && needs.update.outputs.pushed != ''
-    permissions:
-      actions: write
-    uses: ./.github/workflows/drop-bot-pr-runs.yml
-    with:
-      shas: ${{ needs.update.outputs.pushed }}
