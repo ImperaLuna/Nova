@@ -82,6 +82,10 @@ DEMO_PANELS = ("demo-sidebar", "demo-tab", "demo-center")
 # (ui/volume/VolumeOsd.qml).
 VOLUME_SHOWN = "nova: volume capsule shown"
 VOLUME_HIDDEN = "nova: volume capsule hidden"
+# The UI has the default sink's starting volume, so a change from here shows.
+VOLUME_FOUND = "nova: volume output found"
+# What Quickshell logs first in each UI process.
+UI_LAUNCHED = "Launching config"
 # The VM's default output (a null sink, default.nix), as wpctl names it.
 WPCTL_SINK = "wpctl {} @DEFAULT_AUDIO_SINK@"
 # A point on the capsule: Tokens.capsuleWidth (48) wide, Tokens.capsuleEdgeGap
@@ -496,7 +500,14 @@ with subtest("panels off the stage open and close without moving windows"):
     first = wait_running(not_daemon=demo["pid"])
 
 with subtest("a volume change slides the capsule out and back, over fullscreen too; scrolling on it steps the volume"):
-    # The volume Nova found at startup is where it starts, not a change.
+    # The volume Nova found at startup is where it starts, not a change. The
+    # UI may have just restarted, so a change before it found the sink would
+    # be its starting volume.
+    def found_since_ui_start(_last_try: bool) -> bool:
+        log = machine.succeed(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY}"))
+        return VOLUME_FOUND in log.rpartition(UI_LAUNCHED)[2]
+
+    retry(found_since_ui_start, timeout=CLICK_EFFECT)
     assert ui_log_count(VOLUME_SHOWN) == 0, "the capsule came out without a volume change"
 
     def volume() -> str:

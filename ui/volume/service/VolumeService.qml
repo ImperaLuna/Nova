@@ -46,7 +46,10 @@ Singleton {
         };
         const before = seen;
         seen = now;
-        if (Volume.isChange(before, now))
+        if (before === null)
+            // The VM tests wait for this before changing the volume.
+            console.info("nova: volume output found");
+        else if (Volume.isChange(before, now))
             changed();
     }
     // Once the bindings above have all caught up: a change arrives as
