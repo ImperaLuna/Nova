@@ -8,8 +8,8 @@ import "../text/duration.js" as Duration
 
 // A pop-up: who it's from, the app and how many more came from it ("+2"),
 // the summary and body, progress, and the app's buttons (the first one in
-// the accent). A thin line along the bottom drains over its time; the
-// pointer on it holds it. Critical ones have a rim in the error color and
+// the accent). A thin line of pieces along the bottom goes out over its
+// time; the pointer on it holds it. Critical ones have a rim in the error color and
 // stay until they're closed. A click opens it, ✕ (on hover) dismisses it.
 Item {
     id: card
@@ -24,8 +24,6 @@ Item {
     readonly property bool held: hover.hovered
     readonly property int timeout: Notifications.timeout(notification, Tokens.durationNotification)
     readonly property bool critical: notification.urgency === "critical"
-    // The share of its time left, 1 to 0.
-    property real remaining: 1
 
     signal clicked
     signal dismissed
@@ -42,22 +40,7 @@ Item {
 
     // Its time starts over (a newer one came in its place).
     function restart() {
-        drain.stop();
-        remaining = 1;
-        if (timeout > 0)
-            drain.start();
-    }
-    onTimeoutChanged: restart()
-    Component.onCompleted: restart()
-
-    NumberAnimation on remaining {
-        id: drain
-        running: false
-        from: 1
-        to: 0
-        duration: card.timeout
-        paused: card.held && running
-        onFinished: card.expired()
+        timer.restart();
     }
 
     HoverHandler {
@@ -269,15 +252,17 @@ Item {
         }
 
         // The time left.
-        Rectangle {
+        Countdown {
+            id: timer
             objectName: "timer"
             visible: card.timeout > 0
             x: Tokens.pad + Tokens.labelNudge * 2
             anchors.bottom: parent.bottom
-            width: (parent.width - 2 * x) * card.remaining
+            width: parent.width - 2 * x
             height: Tokens.notificationTimerHeight
-            radius: height / 2
-            color: Tokens.notificationTimer
+            duration: card.timeout
+            held: card.held
+            onExpired: card.expired()
         }
     }
 }
