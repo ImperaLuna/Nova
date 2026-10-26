@@ -162,7 +162,6 @@ StagePanel {
                 onTrayMenuRequested: (entry, at) => trayMenu.show(entry, at)
                 onTraySecondaryActivated: entry => entry.item.secondaryActivate()
                 notificationsShown: NotificationsService.ready
-                notifications: NotificationsService.items
                 doNotDisturb: NotificationsService.doNotDisturb
                 iconSource: name => AppIcons.source(name)
                 // Opening one takes you to its app.
@@ -181,6 +180,17 @@ StagePanel {
                 onMicVolumeMoved: value => SoundService.setSourceVolume(value)
                 onPageRequested: page => panel.page = page
             }
+        }
+
+        // While closed, the list keeps what it last showed instead of
+        // rebuilding for every notification on every screen (IMP-147); it
+        // catches up as it opens.
+        Binding {
+            target: main
+            property: "notifications"
+            when: panel.open || panel.moving
+            value: NotificationsService.items
+            restoreMode: Binding.RestoreNone
         }
 
         PageSlot {
