@@ -410,3 +410,48 @@ fn launching_an_app_that_only_sits_in_the_tray_activates_its_item() {
     assert!(ran, "asked for a new window, the app runs");
     assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
+
+#[test]
+fn a_tray_click_focuses_the_open_window_of_its_app() {
+    let mut bus = None;
+    let mut compositor = None;
+    let novad = TestDaemon::open_following(
+        "tray-click-focus",
+        None,
+        |dir| {
+            std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
+            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+        },
+        |dir| {
+            let (fake, backend) = FakeCompositor::niri(dir);
+            compositor = Some(fake);
+            Some(backend)
+        },
+    );
+    let (bus, compositor) = (bus.unwrap(), compositor.unwrap());
+    // The recording's window on workspace `web` is this app's.
+    install_app(&novad, "second.desktop", "Name=Second\nExec=true\nStartupWMClass=Nova-Second\n");
+    let (mut client, _desktop) = follow_to_the_end(&novad);
+    client.subscribe_launcher(1);
+    let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let app = bus.connect();
+    let item =
+        tray::tests::Item { id: "nova-second".into(), title: "Second".into(), activated: Arc::clone(&activated) };
+    tray::tests::serve_item(&app, None, "/StatusNotifierItem", "/StatusNotifierItem", item);
+    client.request(2, "subscribe", Some(json!({"topics": ["tray"]})));
+    let address = loop {
+        let tray = client.next_event("tray");
+        if tray["items"][0]["app"]["id"] == "second.desktop" {
+            break tray["items"][0]["address"].as_str().unwrap().to_owned();
+        }
+    };
+
+    let click = client.request(3, "activate_tray_item", Some(json!({"address": address})));
+    assert_eq!(click["result"], Value::Null, "{click}");
+    assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "the app hears the click");
+    let focused = json!({"Action": {"FocusWindow": {"id": 3}}});
+    assert_eq!(compositor.actions(), [focused.to_string()], "its open window takes focus where it is");
+
+    let gone = client.request(4, "activate_tray_item", Some(json!({"address": ":1.999/Nowhere"})));
+    assert!(gone["error"].as_str().unwrap().contains("no tray icon"), "{gone}");
+}
