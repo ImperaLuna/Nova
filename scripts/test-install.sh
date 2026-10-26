@@ -15,7 +15,12 @@ touch "$work/release/share/nova/ui/shell.qml"
 # Read-only like the Nix store, so the upgrade below proves the installed
 # tree stays replaceable.
 chmod -R a-w "$work/release"
-tar -czf "$work/nova.tar.gz" -C "$work/release" bin share
+# The archive and its checksum, as `nix build .#dist` names them.
+pack() {
+	tar -czf "$work/nova.tar.gz" -C "$work/release" bin share
+	(cd "$work" && sha256sum nova.tar.gz >nova.tar.gz.sha256)
+}
+pack
 echo 'ID=arch' >"$work/os-release"
 
 # install.sh's own temporary files go under $work/tmp, to check it removes them.
@@ -38,9 +43,26 @@ run --dry-run >/dev/null
 chmod -R u+w "$work/release"
 touch "$work/release/share/nova/ui/new.qml"
 chmod -R a-w "$work/release"
-tar -czf "$work/nova.tar.gz" -C "$work/release" bin share
+pack
 run --dry-run >/dev/null
 [ -f "$work/prefix/share/nova/ui/new.qml" ] || { echo "the upgrade didn't replace share/nova" >&2; exit 1; }
+
+# An archive that doesn't match its checksum, or has none, is never installed.
+rm "$work/ran"
+echo junk >>"$work/nova.tar.gz"
+if out="$(run --dry-run 2>&1)"; then
+	echo "installed an archive that doesn't match its checksum" >&2
+	exit 1
+fi
+grep -q checksum <<<"$out" || { echo "no checksum error: $out" >&2; exit 1; }
+rm "$work/nova.tar.gz.sha256"
+if out="$(run --dry-run 2>&1)"; then
+	echo "installed an archive without a checksum" >&2
+	exit 1
+fi
+grep -q checksum <<<"$out" || { echo "no checksum error: $out" >&2; exit 1; }
+[ ! -e "$work/ran" ] || { echo "nova setup ran after a failed check" >&2; exit 1; }
+pack
 
 echo 'ID=nixos' >"$work/os-release"
 if out="$(run 2>&1)"; then

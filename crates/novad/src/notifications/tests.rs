@@ -329,6 +329,13 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
     app.notify(("Chat", 0, "", "Mara", "", vec![], hints, -1));
     assert_eq!(fixture.next("notification_popup")["image"], "/tmp/mara.png");
 
+    // A reference too long to be a path is dropped, as an image or an app icon.
+    let long = format!("/{}", "a".repeat(4 * 1024 * 1024));
+    let hints = HashMap::from([("image-path", Variant::from(long.as_str()))]);
+    app.notify(("Chat", 0, &long, "Mara", "", vec![], hints, -1));
+    let popup = fixture.next("notification_popup");
+    assert!(popup.get("image").is_none() && popup.get("icon").is_none(), "{}", popup.to_string().len());
+
     // A file an app names is never deleted, even one that reads as ours.
     let victim = fixture.dir.join("victim");
     std::fs::write(&victim, "keep").unwrap();
@@ -459,4 +466,37 @@ fn notifications_older_than_a_week_are_dropped_at_start() {
     server.send_state(fixture.client);
     let items = fixture.next("notifications")["items"].clone();
     assert_eq!(items.as_array().unwrap().iter().map(|item| item["id"].clone()).collect::<Vec<_>>(), [json!(2)]);
+}
+
+#[test]
+fn quick_updates_are_saved_at_most_once_a_second_ending_with_the_last() {
+    use std::os::unix::fs::MetadataExt;
+    let fixture = Fixture::new("save-rate");
+    let _server = fixture.server();
+    let app = fixture.app();
+    let file = fixture.dir.join("notifications.json");
+    let saved = |summary: &str| std::fs::read_to_string(&file).is_ok_and(|text| text.contains(summary));
+    let id = app.simple("Firefox", "step 0");
+    let deadline = Instant::now() + WAIT;
+    while !saved("step 0") {
+        assert!(Instant::now() < deadline, "the first change is saved at once");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // A download's progress, every 50 ms for 1.5 s; every write seen.
+    let mut writes = HashSet::new();
+    let updates = 30;
+    for step in 1..=updates {
+        app.notify(("Firefox", id, "", &format!("step {step}"), "", vec![], HashMap::new(), -1));
+        if let Ok(meta) = std::fs::metadata(&file) {
+            writes.insert((meta.ino(), meta.mtime_nsec()));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let last = format!("step {updates}");
+    let deadline = Instant::now() + 2 * SAVE_EVERY + WAIT;
+    while !saved(&last) {
+        assert!(Instant::now() < deadline, "the last change is saved");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(writes.len() <= 4, "{} writes for {updates} updates in 1.5 s", writes.len());
 }
