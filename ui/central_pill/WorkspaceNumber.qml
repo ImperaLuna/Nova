@@ -1,11 +1,14 @@
 import QtQuick
 import "../theme"
+import "../theme/icons.js" as Icons
 
 // One workspace in the central pill: its number (or name) in a round cell,
 // placed by its index so it glides when others come and go, and scaling in
 // when it's new. The capsule behind the shown one is the pill's, so it can
 // slide; this only picks the number's color, and draws the hover wash and
-// the "wants attention" dot.
+// the "wants attention" dot. A special workspace (Hyprland's scratchpad)
+// shows a dim tilde, or its first letter when there are several, brighter
+// while it shows on another output; clicking it shows or hides it.
 Item {
     id: number
 
@@ -15,16 +18,26 @@ Item {
     required property string name
     required property bool active
     required property bool urgent
+    required property bool special
+    required property bool elsewhere
 
     property bool outputFocused: false
+    // The only special workspace: a tilde rather than its letter.
+    property bool lone: false
+    // Extra room before it: the special workspaces' gap, for the numbers
+    // after them.
+    property real shift: 0
     property bool canFocus: false
 
     signal clicked
 
-    // Whether the dot shows: a workspace you're on needs no reminder.
-    readonly property bool calling: urgent && !active
+    readonly property bool mark: special && lone
+    // Whether the dot shows: a workspace you're on needs no reminder, and a
+    // special one's windows wait there anyway.
+    readonly property bool calling: urgent && !active && !special
+    readonly property color ink: active && outputFocused ? Tokens.onAccent : calling ? Tokens.primary : special && !active && !elsewhere ? Tokens.fgDim : Tokens.fg
 
-    x: index * (Tokens.workspaceSize + Tokens.workspaceGap)
+    x: index * (Tokens.workspaceSize + Tokens.workspaceGap) + shift
     width: Tokens.workspaceSize
     height: parent.height
 
@@ -64,17 +77,12 @@ Item {
         color: area.containsMouse && !(number.active && number.outputFocused) ? Tokens.hover : "transparent"
     }
 
-    Text {
+    LineIcon {
         anchors.centerIn: parent
-        width: Tokens.workspaceSize - 2 * Tokens.ringInset
-        horizontalAlignment: Text.AlignHCenter
-        elide: Text.ElideRight
-        font.family: Tokens.fontMono
-        font.pixelSize: Tokens.fontSizeSmall
-        font.weight: Font.Medium
-        color: number.active && number.outputFocused ? Tokens.onAccent : number.calling ? Tokens.primary : Tokens.fg
-        textFormat: Text.PlainText
-        text: number.name
+        visible: number.mark
+        size: Tokens.iconSizeSmall
+        path: Icons.TILDE
+        color: number.ink
         Behavior on color {
             ColorAnimation {
                 duration: Tokens.durationColor
@@ -82,29 +90,42 @@ Item {
         }
     }
 
+    Text {
+        objectName: "label"
+        anchors.centerIn: parent
+        visible: !number.mark
+        width: Tokens.workspaceSize - 2 * Tokens.ringInset
+        horizontalAlignment: Text.AlignHCenter
+        elide: Text.ElideRight
+        font.family: Tokens.fontMono
+        font.pixelSize: Tokens.fontSizeSmall
+        font.weight: Font.Medium
+        color: number.ink
+        textFormat: Text.PlainText
+        text: number.special ? number.name.charAt(0).toUpperCase() : number.name
+        Behavior on color {
+            ColorAnimation {
+                duration: Tokens.durationColor
+            }
+        }
+    }
+
+    // Still, so an urgent workspace costs one short fade, not a frame every
+    // vblank for as long as it waits.
     Rectangle {
         id: dot
+        objectName: "dot"
         anchors.horizontalCenter: parent.horizontalCenter
         y: (parent.height + Tokens.workspaceSize) / 2 - Tokens.ringInset - height
         width: Tokens.dotSize
         height: Tokens.dotSize
         radius: width / 2
         color: Tokens.primary
-        visible: number.calling
-
-        SequentialAnimation on opacity {
-            running: dot.visible
-            loops: Animation.Infinite
-            alwaysRunToEnd: true
+        opacity: number.calling ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity {
             NumberAnimation {
-                to: Tokens.dimOpacity
-                duration: Tokens.durationPulse / 2
-                easing.type: Tokens.easingPulse
-            }
-            NumberAnimation {
-                to: 1
-                duration: Tokens.durationPulse / 2
-                easing.type: Tokens.easingPulse
+                duration: Tokens.durationFade
             }
         }
     }

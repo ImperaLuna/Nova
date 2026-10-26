@@ -396,6 +396,10 @@ in
       "focus the first output" = "hyprctl dispatch focusmonitor -1";
       "close the focused window" = "hyprctl dispatch killactive";
       "fullscreen the focused window" = "hyprctl dispatch fullscreen 0";
+      "hide a window in the special workspace" =
+        "hyprctl dispatch movetoworkspacesilent special:magic,class:nova-second";
+      "show the special workspace" = "hyprctl dispatch togglespecialworkspace magic";
+      "hide the special workspace" = "hyprctl dispatch togglespecialworkspace magic";
       # A second screen, right of the first (niri can't add one), and the
       # first focused again, where `nova toggle` opens a panel.
       "add an output" = "hyprctl output create headless NOVA-2 && hyprctl dispatch focusmonitor l";

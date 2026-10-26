@@ -195,12 +195,84 @@ Item {
             tryCompare(digits[1], "roll", 1);
         }
 
+        function special(active, elsewhere) {
+            return Object.assign(workspace(-98, active), {
+                name: "magic",
+                special: true,
+                shown_elsewhere: elsewhere ?? false
+            });
+        }
+
+        function test_a_special_workspace_leads_a_little_apart() {
+            const pill = createPill([workspace(1, true), workspace(2)]);
+            settle(pill);
+            const width = pill.width;
+            pill.workspaces = [special(), workspace(1, true), workspace(2)];
+            settle(pill);
+            compare(pill.width, width + Tokens.workspaceSize + Tokens.workspaceGap + Tokens.workspaceGroupGap);
+            const [mark, one] = numbers(pill);
+            verify(mark.special && mark.mark, "the only one: a tilde");
+            compare(one.x - mark.x, pill.step + Tokens.workspaceGroupGap);
+            verify(Qt.colorEqual(mark.ink, Tokens.fgDim), "dim while hidden");
+            pill.workspaces = [special(false, true), workspace(1, true), workspace(2)];
+            tryVerify(() => Qt.colorEqual(mark.ink, Tokens.fg), 1000, "brighter while it shows on another output");
+        }
+
+        function test_the_capsule_moves_onto_a_shown_special_workspace() {
+            const pill = createPill([special(), workspace(1, true), workspace(2)]);
+            settle(pill);
+            const capsule = findChild(pill, "capsule");
+            compare(capsule.x, numbers(pill)[1].x);
+            pill.workspaces = [special(true), workspace(1), workspace(2)];
+            tryCompare(capsule, "x", numbers(pill)[0].x);
+            verify(Qt.colorEqual(numbers(pill)[0].ink, Tokens.onAccent));
+            verify(Qt.colorEqual(numbers(pill)[1].ink, Tokens.fg), "the workspace under it isn't lit");
+            const mark = numbers(pill)[0];
+            mouseClick(mark, mark.width / 2, mark.height / 2);
+            compare(focusSpy.count, 1);
+            compare(focusSpy.signalArguments[0][0], -98, "clicking it hides it again");
+        }
+
+        function test_several_special_workspaces_show_their_letters() {
+            const music = Object.assign(special(), {
+                id: -99,
+                name: "music"
+            });
+            const pill = createPill([special(), music, workspace(1, true)]);
+            settle(pill);
+            const [magic, second] = numbers(pill);
+            verify(!magic.mark && !second.mark);
+            compare(findChild(magic, "label").text, "M");
+            compare(findChild(numbers(pill)[2], "label").text, "1");
+        }
+
+        function test_a_special_workspace_never_calls() {
+            const pill = createPill([Object.assign(special(), {
+                    urgent: true
+                }), workspace(1, true)]);
+            settle(pill);
+            verify(!numbers(pill)[0].calling);
+        }
+
         function test_an_urgent_workspace_is_marked_until_shown() {
             const pill = createPill([workspace(1, true), workspace(2, false, true)]);
             settle(pill);
             verify(numbers(pill)[1].calling);
             pill.workspaces = [workspace(1), workspace(2, true, true)];
             verify(!numbers(pill)[1].calling);
+        }
+
+        // A still dot: it fades in once and then holds, so a workspace left
+        // urgent costs no frames while it waits.
+        function test_the_urgent_dot_holds_still() {
+            const pill = createPill([workspace(1, true), workspace(2, false, true)]);
+            settle(pill);
+            const dot = findChild(numbers(pill)[1], "dot");
+            tryCompare(dot, "opacity", 1);
+            wait(Tokens.durationFade * 8);
+            compare(dot.opacity, 1);
+            pill.workspaces = [workspace(1), workspace(2, true, true)];
+            tryCompare(dot, "visible", false);
         }
     }
 }

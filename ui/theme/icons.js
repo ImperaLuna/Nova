@@ -37,6 +37,8 @@ var GEAR = "M12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1
 // Three dots in a row, drawn solid (pass it as `fill` too).
 var DOTS = "M6 10.8a1.2 1.2 0 1 1 0 2.4a1.2 1.2 0 1 1 0-2.4zM12 10.8a1.2 1.2 0 1 1 0 2.4a1.2 1.2 0 1 1 0-2.4zM18 10.8a1.2 1.2 0 1 1 0 2.4a1.2 1.2 0 1 1 0-2.4z";
 var SEARCH = "M10.5 4a6.5 6.5 0 1 1 0 13a6.5 6.5 0 0 1 0-13zM15.3 15.3L20 20";
+// A tilde, centred on the grid: the central pill's special workspace.
+var TILDE = "M5 13.5C7 10.5 9.5 10.5 12 12S17 13.5 19 10.5";
 // A pushpin; filled with itself once pinned.
 var PIN = "M9 4h6M10 4v5.5L7 13v1.5h10V13l-3-3.5V4M12 14.5V20";
 // Nova's own mark, for a distribution without a logo: a four-point star.

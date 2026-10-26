@@ -26,7 +26,7 @@
     "focused": true,
     "dpmsStatus": true,
     "vrr": false,
-    "solitary": "58edea3cebb0",
+    "solitary": "56ba8e21cc80",
     "solitaryBlockedBy": null,
     "activelyTearing": false,
     "tearingBlockedBy": ["NOT_TORN","USER","WINDOW"],

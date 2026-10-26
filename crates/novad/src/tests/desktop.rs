@@ -43,9 +43,22 @@ fn hyprland_reaches_subscribers_and_takes_workspace_actions() {
     let (mut client, desktop) = follow_to_the_end(&novad);
     assert_eq!(desktop["compositor"], "Hyprland");
 
-    let web = workspace_id(&desktop, "web");
-    assert_eq!(client.request(2, "focus_workspace", Some(json!({"id": web})))["result"], Value::Null);
-    assert_eq!(fake.actions(), [format!("dispatch workspace {web}")]);
+    let first = workspace_id(&desktop, "1");
+    assert_eq!(client.request(2, "focus_workspace", Some(json!({"id": first})))["result"], Value::Null);
+    let magic = workspace_id(&desktop, "magic");
+    assert_eq!(client.request(3, "focus_workspace", Some(json!({"id": magic})))["result"], Value::Null);
+    assert_eq!(fake.actions(), [format!("dispatch workspace {first}"), "dispatch togglespecialworkspace magic".into()]);
+}
+
+#[test]
+fn hyprland_focuses_an_output_without_its_workspaces() {
+    // A special workspace may show there, which focusing by workspace would
+    // hide (or, by the one under it, cover the new window with).
+    let dir = nova_test_support::TempDir::new("focus-output-hyprland");
+    let (fake, backend) = FakeCompositor::hyprland(dir.path());
+    let output = nova_protocol::Output { name: "DP-2".into(), focused: false, workspaces: Vec::new() };
+    backend.focus_output(&output).unwrap();
+    assert_eq!(fake.actions(), ["dispatch focusmonitor DP-2"]);
 }
 
 #[test]

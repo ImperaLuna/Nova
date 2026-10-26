@@ -72,6 +72,9 @@ COMMON_STEPS = {
 STEP_MARKERS = {
     "fullscreen the focused window": ("WindowLayoutsChanged", "fullscreen>>1"),
     "close the focused window": ("WindowClosed", "closewindow>>"),
+    "hide a window in the special workspace": ("movewindowv2>>",),
+    "show the special workspace": ("activespecial>>special:magic",),
+    "hide the special workspace": ("activespecial>>,",),
 }
 
 
@@ -135,6 +138,9 @@ try:
         "focus the first output",
         "fullscreen the focused window",
         "close the focused window",
+        "hide a window in the special workspace",
+        "show the special workspace",
+        "hide the special workspace",
     ]:
         if step in STEPS or step in COMMON_STEPS:
             run(step)

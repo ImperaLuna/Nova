@@ -1,54 +1,66 @@
 [
   {
     "name": "start",
-    "events_bytes": 104
+    "events_bytes": 0
   },
   {
     "name": "open first window",
-    "events_bytes": 289
+    "events_bytes": 185
   },
   {
     "name": "focus the next workspace",
-    "events_bytes": 394
+    "events_bytes": 290
   },
   {
     "name": "open second window",
-    "events_bytes": 584
+    "events_bytes": 480
   },
   {
     "name": "retitle the second window",
-    "events_bytes": 737
+    "events_bytes": 633
   },
   {
     "name": "switch the keyboard layout",
-    "events_bytes": 829
+    "events_bytes": 725
   },
   {
     "name": "name the workspace",
-    "events_bytes": 852
+    "events_bytes": 748
   },
   {
     "name": "focus the previous workspace",
-    "events_bytes": 949
+    "events_bytes": 845
   },
   {
     "name": "ring the second window's bell",
-    "events_bytes": 989
+    "events_bytes": 885
   },
   {
     "name": "focus the other output",
-    "events_bytes": 989
+    "events_bytes": 885
   },
   {
     "name": "focus the first output",
-    "events_bytes": 989
+    "events_bytes": 885
   },
   {
     "name": "fullscreen the focused window",
-    "events_bytes": 1003
+    "events_bytes": 899
   },
   {
     "name": "close the focused window",
-    "events_bytes": 1076
+    "events_bytes": 972
+  },
+  {
+    "name": "hide a window in the special workspace",
+    "events_bytes": 1172
+  },
+  {
+    "name": "show the special workspace",
+    "events_bytes": 1333
+  },
+  {
+    "name": "hide the special workspace",
+    "events_bytes": 1421
   }
 ]

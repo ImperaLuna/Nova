@@ -13,8 +13,10 @@ import "../daemon/protocol.js" as Protocol
 // that slides between numbers: the accent while the output has focus, a
 // quiet fill otherwise. A workspace whose window wants attention gets an
 // accent number and a pulsing dot. Clicking a number goes there; scrolling
-// over the pill steps through them. Data comes in through its properties
-// (the bar binds them to Compositor), so the QML tests can drive it.
+// over the pill steps through them. Special workspaces (Hyprland's
+// scratchpad) lead the numbers, a little apart. Data comes in through its
+// properties (the bar binds them to Compositor), so the QML tests can drive
+// it.
 Item {
     id: pill
 
@@ -50,7 +52,10 @@ Item {
     readonly property real step: Tokens.workspaceSize + Tokens.workspaceGap
     // The numbers' padding: as far from the pill's edge as from its top.
     readonly property real numbersInset: (Tokens.barHeight - Tokens.workspaceSize) / 2
-    readonly property real numbersWidth: list.count > 0 ? list.count * step - Tokens.workspaceGap : 0
+    // The gap after the special workspaces, when there are any and numbers
+    // after them.
+    readonly property real groupGap: list.specialCount > 0 && list.specialCount < list.count ? Tokens.workspaceGroupGap : 0
+    readonly property real numbersWidth: list.count > 0 ? list.count * step - Tokens.workspaceGap + groupGap : 0
     // The search button and the divider after it, from the pill's left
     // edge: as far in as the numbers would be, and a gap either side of the
     // divider.
@@ -165,7 +170,7 @@ Item {
                 width: Tokens.workspaceSize
                 height: Tokens.workspaceSize
                 radius: height / 2
-                x: list.activeIndex * pill.step
+                x: list.activeIndex * pill.step + (list.activeIndex >= list.specialCount ? pill.groupGap : 0)
                 visible: list.activeIndex >= 0
                 color: pill.outputFocused ? Tokens.primary : Tokens.selectedQuiet
                 Behavior on x {
@@ -187,6 +192,8 @@ Item {
 
                 delegate: WorkspaceNumber {
                     outputFocused: pill.outputFocused
+                    shift: special ? 0 : pill.groupGap
+                    lone: list.specialCount === 1
                     canFocus: pill.canFocus
                     onClicked: pill.focusRequested(workspaceId)
                 }
