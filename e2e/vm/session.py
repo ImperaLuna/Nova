@@ -96,12 +96,17 @@ if COMPOSITOR == "hyprland":
     with subtest("PROBE: the launcher over a fullscreen foot takes Esc, many times"):
         misses = []
         for round_ in range(20):
+            # Both failures had foot's first, cold start: 1.2 s from Enter to
+            # its window, against a few hundredths warm. Cold again.
+            machine.succeed(as_user("rm -rf ~/.cache/fontconfig"))
             before = ui_log_count(LAUNCHER_TYPING)
             machine.succeed(as_user("nova toggle launcher"))
             retry(lambda _last_try: ui_log_count(LAUNCHER_TYPING) > before, timeout=CLICK_EFFECT)
             machine.succeed(f"{YDOTOOL} type {FOOT}")
             press_until_logged(ENTER, LAUNCHER_CLOSED)
+            started = dt.datetime.now()
             machine.wait_until_succeeds(as_user(NOVA_SEES_FOOT), timeout=WAIT)
+            print(f"PROBE round {round_}: foot focused {(dt.datetime.now() - started).total_seconds():.2f} s after the launcher closed")
             machine.succeed(as_user(FULLSCREEN_WINDOW))
             typing = ui_log_count(LAUNCHER_TYPING)
             opened = ui_log_count(LAUNCHER_OPENED)
