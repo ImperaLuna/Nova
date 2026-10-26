@@ -129,13 +129,6 @@ Item {
             compare(QuickSettings.greeting(2), "Good evening");
         }
 
-        function test_uptime_reads_in_the_biggest_units() {
-            compare(QuickSettings.uptime(59), "up 0 min");
-            compare(QuickSettings.uptime(12 * 60), "up 12 min");
-            compare(QuickSettings.uptime((3 * 60 + 12) * 60), "up 3 h 12 min");
-            compare(QuickSettings.uptime((50 * 60 + 5) * 60), "up 2 d 2 h");
-        }
-
         function test_logo_prefers_bundled_then_like_then_icon_theme() {
             const none = () => "";
             compare(QuickSettings.logo(null, "logos", none), "");

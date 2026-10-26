@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Shapes
 import "../theme"
 
 // One power menu action: its icon and label, filled with the accent while
@@ -97,37 +96,12 @@ Item {
         text: row.armed ? qsTr("%1 s").arg(Math.ceil(row.armedLeft * Tokens.durationConfirm / 1000)) : "↵"
     }
 
-    Shape {
-        id: spinner
+    Spinner {
         anchors.verticalCenter: parent.verticalCenter
         anchors.right: parent.right
         anchors.rightMargin: Tokens.pad
-        width: Tokens.iconSize
-        height: Tokens.iconSize
         visible: row.running
-        preferredRendererType: Shape.CurveRenderer
-
-        ShapePath {
-            strokeColor: row.ink
-            strokeWidth: Tokens.strokeThin
-            fillColor: "transparent"
-            capStyle: ShapePath.RoundCap
-            PathAngleArc {
-                centerX: Tokens.iconSize / 2
-                centerY: Tokens.iconSize / 2
-                radiusX: Tokens.iconSize / 2 - Tokens.ringInset
-                radiusY: Tokens.iconSize / 2 - Tokens.ringInset
-                sweepAngle: Tokens.spinnerSweep
-            }
-        }
-
-        RotationAnimator on rotation {
-            running: spinner.visible
-            from: 0
-            to: 360
-            duration: Tokens.durationSpin
-            loops: Animation.Infinite
-        }
+        color: row.ink
     }
 
     MouseArea {

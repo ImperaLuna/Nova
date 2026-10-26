@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Shapes
 import "../theme"
 
 // What the lock screen shows: the user's initial in a circle, their name,
@@ -109,37 +108,11 @@ Column {
                 text: qsTr("Password")
             }
 
-            Shape {
-                id: spinner
+            Spinner {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.right: parent.right
                 anchors.rightMargin: Tokens.pad
-                width: Tokens.iconSize
-                height: Tokens.iconSize
                 visible: root.checking
-                preferredRendererType: Shape.CurveRenderer
-
-                ShapePath {
-                    strokeColor: Tokens.fg
-                    strokeWidth: Tokens.strokeThin
-                    fillColor: "transparent"
-                    capStyle: ShapePath.RoundCap
-                    PathAngleArc {
-                        centerX: Tokens.iconSize / 2
-                        centerY: Tokens.iconSize / 2
-                        radiusX: Tokens.iconSize / 2 - Tokens.ringInset
-                        radiusY: Tokens.iconSize / 2 - Tokens.ringInset
-                        sweepAngle: Tokens.spinnerSweep
-                    }
-                }
-
-                RotationAnimator on rotation {
-                    running: spinner.visible
-                    from: 0
-                    to: 360
-                    duration: Tokens.durationSpin
-                    loops: Animation.Infinite
-                }
             }
 
             NumberAnimation {

@@ -1,7 +1,7 @@
 .pragma library
 .import "../util/numbers.js" as Numbers
 
-// Quick settings' pure logic: the greeting and uptime, which logo to show,
+// Quick settings' pure logic: the greeting, which logo to show,
 // how sizes and percents read, which apps record from the mic, and the
 // resources graph's lines. No QML types, so ui/tests can check it all.
 
@@ -16,19 +16,6 @@ function greeting(hour) {
     if (hour >= 12 && hour < 18)
         return qsTr("Good afternoon");
     return qsTr("Good evening");
-}
-
-// "up 3 h 12 min" for `seconds` of uptime: minutes under an hour, hours and
-// minutes under a day, days and hours after that.
-function uptime(seconds) {
-    var minutes = Math.max(0, Math.floor(seconds / 60));
-    var hours = Math.floor(minutes / 60);
-    var days = Math.floor(hours / 24);
-    if (days > 0)
-        return qsTr("up %1 d %2 h").arg(days).arg(hours % 24);
-    if (hours > 0)
-        return qsTr("up %1 h %2 min").arg(hours).arg(minutes % 60);
-    return qsTr("up %1 min").arg(minutes);
 }
 
 // Where the header's logo comes from, for a host event's `os`: a bundled

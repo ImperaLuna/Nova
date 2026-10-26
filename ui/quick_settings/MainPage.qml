@@ -5,6 +5,7 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "../volume/volume.js" as Volume
 import "quick_settings.js" as QuickSettings
+import "../text/duration.js" as Duration
 import "../tray"
 
 // The sidebar's first page: the header, the toggle tiles, the sliders, the
@@ -90,7 +91,7 @@ Item {
                 logo: page.logo
                 greeting: QuickSettings.greeting(page.now.getHours())
                 name: page.host?.user ?? ""
-                detail: page.host ? `${page.host.host} · ${QuickSettings.uptime(page.now.getTime() / 1000 - page.host.booted_at)}` : ""
+                detail: page.host ? page.host.host + " · " + Duration.uptime(page.now.getTime() / 1000 - page.host.booted_at) : ""
             }
         }
 

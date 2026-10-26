@@ -49,7 +49,7 @@ StagePanel {
         enabled: menu.open
         precision: SystemClock.Minutes
     }
-    readonly property string uptime: Duration.minutes(Math.max(0, Math.floor((clock.date.getTime() - PowerService.bootedAt) / Duration.MINUTE_MS)))
+    readonly property string uptime: Duration.uptime((clock.date.getTime() - PowerService.bootedAt) / Duration.SECOND_MS)
 
     // An action still running after the menu closed shows nothing, so it
     // keeps neither the surface mapped nor its spinner turning.
@@ -158,7 +158,7 @@ StagePanel {
                     font.family: Tokens.fontMono
                     font.pixelSize: Tokens.fontSizeTiny
                     color: Tokens.fgDim
-                    text: qsTr("up %1").arg(menu.uptime)
+                    text: menu.uptime
                 }
             }
 
