@@ -103,4 +103,8 @@ PanelWindow { // qmllint disable uncreatable-type
         onDismissed: id => NotificationsService.dismiss(id)
         onActionClicked: (id, key) => NotificationsService.act(id, key)
     }
+
+    FrameLog {
+        surfaceName: `${window.output.name}/notifications`
+    }
 }

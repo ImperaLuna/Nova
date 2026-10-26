@@ -9,9 +9,9 @@ import "../text/duration.js" as Duration
 
 // The card a saved screenshot lands in: the shot, that it was copied, where
 // it went and its size, and Open, Folder and Delete. A recording's card has
-// its length where the shot would be, and where it went. A line along the
-// bottom drains over Tokens.durationShotCard, and the card leaves when it's
-// empty; the pointer on the card holds it.
+// its length where the shot would be, and where it went. A line of pieces
+// along the bottom goes out over Tokens.durationShotCard, and the card
+// leaves when the last one goes; the pointer on the card holds it.
 Item {
     id: card
 
@@ -23,27 +23,18 @@ Item {
     readonly property bool held: hover.hovered
     // A Protocol.SHOT_* button was clicked.
     signal actionRequested(string action)
-    // The drain ran out.
+    // Its time ran out.
     signal expired
 
-    // The share of the time left, 1 to 0.
-    property real remaining
+    // Pieces of its time still left.
+    readonly property alias lit: timer.lit
 
     implicitWidth: Tokens.shotCardWidth
     implicitHeight: content.implicitHeight + 2 * Tokens.pad + Tokens.gap
 
-    // Starts the drain again (a new shot in the same card).
+    // Its time starts over (a new shot in the same card).
     function restart() {
-        drain.restart();
-    }
-
-    NumberAnimation on remaining {
-        id: drain
-        from: 1
-        to: 0
-        duration: Tokens.durationShotCard
-        paused: card.held && running
-        onFinished: card.expired()
+        timer.restart();
     }
 
     HoverHandler {
@@ -181,13 +172,18 @@ Item {
             }
         }
 
-        Rectangle {
+        Countdown {
+            id: timer
             anchors.left: parent.left
             anchors.bottom: parent.bottom
-            width: parent.width * card.remaining
+            width: parent.width
             height: Tokens.drainHeight
+            radius: 0
             color: Tokens.primary
             opacity: Tokens.drainOpacity
+            duration: Tokens.durationShotCard
+            held: card.held
+            onExpired: card.expired()
         }
     }
 }

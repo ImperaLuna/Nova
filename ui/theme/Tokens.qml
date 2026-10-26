@@ -471,6 +471,10 @@ QtObject {
     readonly property int notificationActionHeight: 28
     readonly property int notificationProgressHeight: 6
     readonly property int notificationTimerHeight: 2
+    // A card's time left (Countdown): this many pieces, this far apart, one
+    // going out per step, so it costs a few frames, not one each vblank.
+    readonly property int countdownSegments: 6
+    readonly property int countdownGap: 4
     readonly property color notificationTimer: alpha(fg, 0.35)
     readonly property real notificationCriticalRim: 1.5
     // "+2" beside the app, and the count in the list's heading.
