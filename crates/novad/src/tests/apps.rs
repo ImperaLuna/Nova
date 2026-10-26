@@ -391,7 +391,7 @@ fn the_launcher_stops_with_its_feature() {
 }
 
 #[test]
-fn launching_an_app_that_only_sits_in_the_tray_activates_its_item() {
+fn launching_a_tray_only_app_activates_its_item_then_starts_it_when_no_window_shows() {
     let mut bus = None;
     let mut compositor = None;
     let novad = TestDaemon::open_following(
@@ -424,19 +424,24 @@ fn launching_an_app_that_only_sits_in_the_tray_activates_its_item() {
 
     let launch = json!({"id": "third.desktop", "output": output});
     assert_eq!(client.request(5, "launch_app", Some(launch))["result"], Value::Null);
-    assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "the tray icon shows its window");
-    std::thread::sleep(Duration::from_millis(200));
-    assert!(!marker.exists(), "starting it again would just quit");
+    assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "the tray icon is asked to show its window");
     assert!(compositor.actions().is_empty(), "no window showed to focus");
+    // Like Claude Desktop, whose icon ignores Activate: started again, it shows.
+    assert!(ran(&marker), "no window showed, so the app is started");
 
+    std::fs::remove_file(&marker).unwrap();
     let fresh = json!({"id": "third.desktop", "output": output, "new_window": true});
     assert_eq!(client.request(6, "launch_app", Some(fresh))["result"], Value::Null);
-    let ran = (0..100).any(|_| {
+    assert!(ran(&marker), "asked for a new window, the app runs");
+    assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "a new window skips the tray");
+}
+
+/// Whether the app that touches `marker` ran, waiting up to 5 s for it.
+fn ran(marker: &std::path::Path) -> bool {
+    (0..100).any(|_| {
         std::thread::sleep(Duration::from_millis(50));
         marker.exists()
-    });
-    assert!(ran, "asked for a new window, the app runs");
-    assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1);
+    })
 }
 
 #[test]

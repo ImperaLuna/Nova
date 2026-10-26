@@ -503,7 +503,9 @@ fn snapshot(state: &State) -> nova_protocol::Launcher {
 /// a `new_window` is asked for; a new one opens on `output` (the
 /// launcher's screen), which the compositor puts it on once focused. An
 /// app that only sits in the tray shows its window from there, as starting
-/// it again may just quit (Discord). `true` when nothing needs starting.
+/// it again may just quit (Discord), unless no window shows: Claude Desktop
+/// ignores `Activate` (its icon only has a menu) but shows its window when
+/// started again. `true` when nothing needs starting.
 pub fn focus_open(
     id: &str,
     ids: &[String],
@@ -525,32 +527,30 @@ pub fn focus_open(
     if !tray.map_or(Ok(false), |tray| tray.activate_app(id))? {
         return Ok(false);
     }
-    if let Some(compositor) = compositor {
-        focus_shown(id, ids, compositor, output, logger);
-    }
-    Ok(true)
+    Ok(compositor.is_none_or(|compositor| focus_shown(id, ids, compositor, output, logger)))
 }
 
 /// Focuses the window of app `id` (with one of the app ids `ids`) that its
 /// tray icon was just asked to show, once it shows: niri gives it no focus,
 /// as a tray click hands the app no activation token. Gives up (logged)
-/// after [`TRAY_WINDOW_WAIT`].
-pub fn focus_shown(id: &str, ids: &[String], compositor: &Compositor, output: Option<&str>, logger: &Logger) {
+/// after [`TRAY_WINDOW_WAIT`]. `false` when no window showed; `true` also
+/// when that can't be told (an app in a terminal, the compositor failing).
+pub fn focus_shown(id: &str, ids: &[String], compositor: &Compositor, output: Option<&str>, logger: &Logger) -> bool {
     if ids.is_empty() {
-        return;
+        return true;
     }
     let deadline = std::time::Instant::now() + TRAY_WINDOW_WAIT;
     loop {
         match compositor.focus_app(ids, output) {
-            Ok(true) => return,
+            Ok(true) => return true,
             Ok(false) if std::time::Instant::now() < deadline => std::thread::sleep(TRAY_WINDOW_RETRY),
             Ok(false) => {
                 logger.info(LOG_SOURCE, &format!("{id}'s window didn't show after its tray icon was asked"));
-                return;
+                return false;
             }
             Err(e) => {
                 logger.warn(LOG_SOURCE, &format!("can't focus {id}'s window: {e}"));
-                return;
+                return true;
             }
         }
     }
