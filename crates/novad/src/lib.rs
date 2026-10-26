@@ -149,7 +149,7 @@ impl Daemon {
             daemon: env!("CARGO_PKG_VERSION").into(),
             pid: std::process::id(),
             uptime_secs: self.started.elapsed().as_secs(),
-            pss_kib: procfs::pss_kib(std::process::id()),
+            pss_kib: procfs::pss_kib(Path::new(procfs::PROC), std::process::id()),
             quickshell: self.ui.as_ref().and_then(|ui| ui.quickshell_version()),
             ui: self.ui.as_ref().map_or(disabled, |ui| ui.status()),
             features: lock(&self.settings).features.clone(),
@@ -344,7 +344,7 @@ fn install_panic_hook(logger: Arc<Logger>) {
 pub(crate) fn session_path() -> String {
     let path = std::env::var_os("PATH").unwrap_or_default();
     let mut dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
-    let home = std::env::var_os("HOME").filter(|home| !home.is_empty()).map(PathBuf::from);
+    let home = nova_paths::home();
     let extra = home
         .iter()
         .map(|home| home.join(".local/bin"))
@@ -363,12 +363,15 @@ pub(crate) fn session_path() -> String {
 /// in the order they're searched after the session's own: the user's Nix
 /// profiles, the system's (NixOS), Flatpak's exports, then the usual.
 pub(crate) fn package_prefixes() -> Vec<PathBuf> {
-    let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
-    let home = var("HOME").map(PathBuf::from);
+    let home = nova_paths::home();
     let mut prefixes = Vec::new();
     prefixes
         .extend(home.iter().flat_map(|home| [home.join(".nix-profile"), home.join(".local/share/flatpak/exports")]));
-    prefixes.extend(var("USER").map(|user| Path::new("/etc/profiles/per-user").join(user)));
+    prefixes.extend(
+        std::env::var_os("USER")
+            .filter(|user| !user.is_empty())
+            .map(|user| Path::new("/etc/profiles/per-user").join(user)),
+    );
     prefixes.extend(
         [
             "/nix/var/nix/profiles/default",

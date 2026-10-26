@@ -18,10 +18,8 @@ const BETA_HEADER: &str = "oauth-2025-04-20";
 
 /// Claude Code's credentials file: `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
 pub fn default_credentials() -> Option<PathBuf> {
-    std::env::var_os("CLAUDE_CONFIG_DIR")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude")))
+    nova_paths::dir_var("CLAUDE_CONFIG_DIR")
+        .or_else(|| nova_paths::home().map(|home| home.join(".claude")))
         .map(|dir| dir.join(".credentials.json"))
 }
 

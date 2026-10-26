@@ -28,8 +28,15 @@ const TERMINAL_EXEC: &str = "xdg-terminal-exec";
 /// The user's terminal, for systems without xdg-terminal-exec.
 const TERMINAL_VAR: &str = "TERMINAL";
 /// What systemd sets for novad itself, which an app mustn't take for its own.
-const SERVICE_VARS: [&str; 7] =
-    ["NOTIFY_SOCKET", "INVOCATION_ID", "JOURNAL_STREAM", "MANAGERPID", "SYSTEMD_EXEC_PID", "LISTEN_FDS", "LISTEN_PID"];
+const SERVICE_VARS: [&str; 7] = [
+    crate::notify::SOCKET_VAR,
+    "INVOCATION_ID",
+    "JOURNAL_STREAM",
+    "MANAGERPID",
+    "SYSTEMD_EXEC_PID",
+    "LISTEN_FDS",
+    "LISTEN_PID",
+];
 
 /// How apps are started.
 #[derive(Clone, Debug)]
@@ -61,7 +68,7 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
         argv.splice(0..0, terminal(path_var)?);
     }
     let program = find_program(&argv[0], path_var).ok_or_else(|| format!("{} isn't installed", argv[0]))?;
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = nova_paths::home();
     // A folder that isn't there would fail the start.
     let dir = entry.path.clone().into_iter().chain(home).find(|dir| dir.is_dir()).unwrap_or_else(|| "/".into());
     let mut command = match runner {

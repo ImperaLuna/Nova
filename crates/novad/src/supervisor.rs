@@ -98,7 +98,7 @@ impl Supervisor {
         UiStatus {
             state: if record.pid.is_some() { UiState::Running } else { UiState::Restarting },
             pid: record.pid,
-            pss_kib: record.pid.and_then(crate::procfs::pss_kib),
+            pss_kib: record.pid.and_then(|pid| crate::procfs::pss_kib(Path::new(crate::procfs::PROC), pid)),
             restarts: record.restarts,
             last_crash: record.last_crash.clone(),
         }

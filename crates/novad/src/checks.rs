@@ -8,6 +8,7 @@ use std::path::Path;
 
 pub use crate::child::output_within;
 pub use crate::features::{read_selection, states as feature_states};
+pub use crate::host::os_release_field;
 pub use crate::supervisor::{UI_PROCESS_NAME, default_quickshell, read_quickshell_version};
 pub use crate::theme::{DEFAULT_THEME_ID, default_dir as default_themes_dir};
 

@@ -76,20 +76,14 @@ pub struct Paths {
 
 impl Paths {
     fn of_this_user() -> Result<Self, String> {
-        let home = std::env::var_os("HOME").filter(|home| !home.is_empty()).ok_or("HOME isn't set")?;
-        let config_home = std::env::var_os("XDG_CONFIG_HOME")
-            .filter(|dir| !dir.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(&home).join(".config"));
-        let niri_config = std::env::var_os("NIRI_CONFIG")
-            .filter(|file| !file.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| config_home.join("niri/config.kdl"));
+        let home = nova_paths::home().ok_or("HOME isn't set")?;
+        let config_home = nova_paths::config_home().unwrap_or_else(|| home.join(".config"));
+        let niri_config = nova_paths::dir_var("NIRI_CONFIG").unwrap_or_else(|| config_home.join("niri/config.kdl"));
         let niri_config = niri_config.is_file().then_some(niri_config);
         Ok(Self {
             config_dir: nova_paths::config_dir(),
             units_dir: config_home.join("systemd/user"),
-            bin_dir: PathBuf::from(&home).join(".local/bin"),
+            bin_dir: home.join(".local/bin"),
             niri_config,
             nova: std::env::current_exe().map_err(|e| format!("can't find the nova binary: {e}"))?,
         })

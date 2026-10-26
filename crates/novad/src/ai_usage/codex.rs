@@ -32,10 +32,7 @@ pub struct CodexUsage {
 
 /// `$CODEX_HOME`, else `~/.codex`.
 pub fn default_home() -> Option<PathBuf> {
-    std::env::var_os("CODEX_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")))
+    nova_paths::dir_var("CODEX_HOME").or_else(|| nova_paths::home().map(|home| home.join(".codex")))
 }
 
 pub fn sessions_dir(home: &Path) -> PathBuf {

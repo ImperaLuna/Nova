@@ -44,13 +44,7 @@ impl Distro {
     /// Reads os-release: `ID`, else the first family in `ID_LIKE` Nova
     /// knows, so Manjaro is Arch and Ubuntu is Debian.
     fn from_os_release(text: &str) -> Self {
-        let field = |name: &str| {
-            text.lines()
-                .filter_map(|line| line.trim().split_once('='))
-                .find(|(key, _)| *key == name)
-                .map(|(_, value)| value.trim().trim_matches(['"', '\'']).to_owned())
-                .unwrap_or_default()
-        };
+        let field = |name: &str| novad::checks::os_release_field(text, name).unwrap_or_default();
         let id = field("ID");
         let like = field("ID_LIKE");
         std::iter::once(id.as_str()).chain(like.split_whitespace()).find_map(Self::known).unwrap_or(Self::Other(id))

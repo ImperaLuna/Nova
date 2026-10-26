@@ -17,12 +17,33 @@ pub fn socket() -> PathBuf {
 
 /// `$XDG_CONFIG_HOME/nova`, else `~/.config/nova`.
 pub fn config_dir() -> PathBuf {
-    xdg_dir("XDG_CONFIG_HOME", ".config").join("nova")
+    in_or_here(config_home()).join("nova")
 }
 
 /// `$XDG_STATE_HOME/nova`, else `~/.local/state/nova`. Logs live here.
 pub fn state_dir() -> PathBuf {
-    xdg_dir("XDG_STATE_HOME", ".local/state").join("nova")
+    in_or_here(xdg_home("XDG_STATE_HOME", ".local/state")).join("nova")
+}
+
+/// `$HOME`, unless it's unset or empty.
+pub fn home() -> Option<PathBuf> {
+    dir_var("HOME")
+}
+
+/// `$XDG_CONFIG_HOME`, else `~/.config`.
+pub fn config_home() -> Option<PathBuf> {
+    xdg_home("XDG_CONFIG_HOME", ".config")
+}
+
+/// `$XDG_DATA_HOME`, else `~/.local/share`.
+pub fn data_home() -> Option<PathBuf> {
+    xdg_home("XDG_DATA_HOME", ".local/share")
+}
+
+/// A folder from the environment variable `name`, unless it's unset or
+/// empty (an empty XDG variable counts as unset, per the spec).
+pub fn dir_var(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name).filter(|value| !value.is_empty()).map(PathBuf::from)
 }
 
 /// `<prefix>/share/nova/<name>` next to the running binary (the Nix and
@@ -41,8 +62,8 @@ pub fn installed_or_checkout(name: &str) -> PathBuf {
 /// `key` is its name there without `XDG_` and `_DIR` (`PICTURES`), and
 /// `home_fallback` the folder under `$HOME` when it isn't set.
 pub fn user_dir(key: &str, home_fallback: &str) -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    let file = xdg_dir("XDG_CONFIG_HOME", ".config").join("user-dirs.dirs");
+    let home = in_or_here(home());
+    let file = in_or_here(config_home()).join("user-dirs.dirs");
     std::fs::read_to_string(file)
         .ok()
         .and_then(|text| parse_user_dir(&text, key, &home))
@@ -63,12 +84,13 @@ fn parse_user_dir(text: &str, key: &str, home: &Path) -> Option<PathBuf> {
     (dir.is_absolute() && dir != home).then_some(dir)
 }
 
-fn xdg_dir(var: &str, home_fallback: &str) -> PathBuf {
-    std::env::var_os(var)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(home_fallback)))
-        .unwrap_or_else(|| PathBuf::from("."))
+fn xdg_home(var: &str, home_fallback: &str) -> Option<PathBuf> {
+    dir_var(var).or_else(|| home().map(|home| home.join(home_fallback)))
+}
+
+/// `dir`, or the current folder without a home to put things in.
+fn in_or_here(dir: Option<PathBuf>) -> PathBuf {
+    dir.unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn current_uid() -> String {

@@ -20,13 +20,9 @@ const MAX_ENTRY_BYTES: u64 = 1024 * 1024;
 
 /// The data folders, in the order they're searched.
 pub fn data_dirs() -> Vec<PathBuf> {
-    let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
-    let home = var("HOME").map(PathBuf::from);
     let mut dirs: Vec<PathBuf> = Vec::new();
-    dirs.extend(
-        var("XDG_DATA_HOME").map(PathBuf::from).or_else(|| home.as_ref().map(|home| home.join(".local/share"))),
-    );
-    let system = var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
+    dirs.extend(nova_paths::data_home());
+    let system = nova_paths::dir_var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
     dirs.extend(std::env::split_paths(&system));
     // Where packages install, last so the session's own order wins.
     dirs.extend(crate::package_prefixes().into_iter().map(|prefix| prefix.join("share")));

@@ -30,14 +30,10 @@ const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The autostart folders, in the order they're searched.
 pub fn dirs() -> Vec<PathBuf> {
-    let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
     let mut dirs: Vec<PathBuf> = Vec::new();
-    dirs.extend(
-        var("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| var("HOME").map(|home| PathBuf::from(home).join(".config"))),
-    );
-    dirs.extend(std::env::split_paths(&var("XDG_CONFIG_DIRS").unwrap_or_else(|| DEFAULT_CONFIG_DIRS.into())));
+    dirs.extend(nova_paths::config_home());
+    let system = nova_paths::dir_var("XDG_CONFIG_DIRS").unwrap_or_else(|| DEFAULT_CONFIG_DIRS.into());
+    dirs.extend(std::env::split_paths(&system));
     let mut seen = BTreeSet::new();
     dirs.retain(|dir| dir.is_absolute() && seen.insert(dir.clone()));
     dirs.into_iter().map(|dir| dir.join(FOLDER)).collect()
