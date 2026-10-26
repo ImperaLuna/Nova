@@ -359,6 +359,11 @@ impl Backend for Arc<Shown> {
         Ok(())
     }
 
+    fn focus_output(&self, output: &Output) -> Result<(), String> {
+        let active = output.workspaces.iter().find(|workspace| workspace.active).ok_or("none shows")?;
+        self.focus_workspace(active)
+    }
+
     fn log_out(&self) -> Result<(), String> {
         Ok(())
     }
@@ -390,23 +395,6 @@ fn focusing_an_output_shows_its_workspace_unless_it_has_focus() {
     compositor.focus_output("DP-2").unwrap();
     assert_eq!(*lock(&shown.0), [active]);
     assert!(compositor.focus_output("nope").unwrap_err().contains("no such output"));
-}
-
-#[test]
-fn focusing_an_output_never_toggles_its_special_workspace() {
-    let mut desktop = step(&follow_hyprland(&Recording::load("hyprland")), "show the special workspace").clone();
-    let output = &mut desktop.outputs[0];
-    output.focused = false;
-    for workspace in &mut output.workspaces {
-        workspace.focused = false;
-    }
-    let name = output.name.clone();
-    let shown = Arc::new(Shown::default());
-    let compositor =
-        Compositor { backend: Box::new(Arc::clone(&shown)), desktop: Mutex::new(Some(desktop)), hub: Arc::default() };
-
-    compositor.focus_output(&name).unwrap();
-    assert!(lock(&shown.0).is_empty(), "showing it again would hide it");
 }
 
 #[test]

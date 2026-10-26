@@ -138,6 +138,12 @@ impl Backend for Hyprland {
         self.dispatch(&format!("workspace {}", workspace_target(workspace)))
     }
 
+    fn focus_output(&self, output: &Output) -> Result<(), String> {
+        // Not by workspace: the one under a special workspace shown there
+        // isn't active, and showing the special one again hides it.
+        self.dispatch(&format!("focusmonitor {}", output.name))
+    }
+
     fn focus_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<bool, String> {
         let answer = self.request(CLIENTS)?;
         let clients: Vec<Client> =

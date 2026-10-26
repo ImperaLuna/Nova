@@ -14,7 +14,7 @@ use crate::backoff::Backoff;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
-use nova_protocol::{Capability, Desktop, Event, Step, Topic, Workspace, WorkspaceId};
+use nova_protocol::{Capability, Desktop, Event, Output, Step, Topic, Workspace, WorkspaceId};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -42,6 +42,10 @@ pub trait Backend: Send + Sync {
     /// Shows `workspace`, one the last report listed. A special one shows on
     /// the focused output, or hides when it shows there already.
     fn focus_workspace(&self, workspace: &Workspace) -> Result<(), String>;
+
+    /// Focuses `output`, one the last report listed, so a window that opens
+    /// next opens there. Never shows or hides a special workspace on it.
+    fn focus_output(&self, output: &Output) -> Result<(), String>;
 
     /// Quits the compositor, ending the session, without its own prompt.
     fn log_out(&self) -> Result<(), String>;
@@ -162,20 +166,15 @@ impl Compositor {
         self.backend.focus_window(app_ids, workspace)
     }
 
-    /// Focuses `output` by showing its active workspace, so a window that
-    /// opens next opens there. Nothing when it's focused already.
+    /// Focuses `output`, so a window that opens next opens there. Nothing
+    /// when it's focused already.
     pub fn focus_output(&self, output: &str) -> Result<(), String> {
         let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
         let output = desktop.outputs.iter().find(|candidate| candidate.name == output).ok_or("no such output")?;
         if output.focused || !self.can(Capability::FocusWorkspace) {
             return Ok(());
         }
-        // Not a special workspace: showing that one again hides it, and
-        // while one shows there, the workspace under it isn't active.
-        match output.workspaces.iter().find(|workspace| workspace.active && !workspace.special) {
-            Some(workspace) => self.backend.focus_workspace(workspace),
-            None => Ok(()),
-        }
+        self.backend.focus_output(output)
     }
 
     /// Whether the backend can do what `capability` names.

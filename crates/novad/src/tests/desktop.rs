@@ -51,6 +51,17 @@ fn hyprland_reaches_subscribers_and_takes_workspace_actions() {
 }
 
 #[test]
+fn hyprland_focuses_an_output_without_its_workspaces() {
+    // A special workspace may show there, which focusing by workspace would
+    // hide (or, by the one under it, cover the new window with).
+    let dir = nova_test_support::TempDir::new("focus-output-hyprland");
+    let (fake, backend) = FakeCompositor::hyprland(dir.path());
+    let output = nova_protocol::Output { name: "DP-2".into(), focused: false, workspaces: Vec::new() };
+    backend.focus_output(&output).unwrap();
+    assert_eq!(fake.actions(), ["dispatch focusmonitor DP-2"]);
+}
+
+#[test]
 fn compositor_actions_without_a_compositor_say_so() {
     let novad = TestDaemon::start("no-compositor", None);
     let mut client = novad.connect();

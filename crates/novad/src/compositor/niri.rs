@@ -114,6 +114,13 @@ impl Backend for Niri {
         self.request(&action.to_string()).map(drop)
     }
 
+    fn focus_output(&self, output: &Output) -> Result<(), String> {
+        match output.workspaces.iter().find(|workspace| workspace.active) {
+            Some(workspace) => self.focus_workspace(workspace),
+            None => Ok(()),
+        }
+    }
+
     fn focus_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<bool, String> {
         let here = u64::try_from(here.id).ok();
         let reply = self.request(WINDOWS_REQUEST)?;
