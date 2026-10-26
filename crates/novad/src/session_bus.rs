@@ -1,11 +1,13 @@
 //! What novad's services on the session bus share: which bus to connect
-//! to, and a stop flag that ends a service's loop on the bus.
+//! to, how they claim their names, and a stop flag that ends a service's
+//! loop on the bus.
 
 use crate::lock;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll, Waker};
-use zbus::connection;
+use zbus::fdo::{RequestNameFlags, RequestNameReply};
+use zbus::{Connection, connection};
 
 /// Which bus a service is on.
 #[derive(Clone)]
@@ -25,6 +27,15 @@ impl Bus {
             Bus::Address(address) => connection::Builder::address(address.as_str()),
         }
     }
+}
+
+/// Asks the bus for `name`, queued behind an owner it already has (mako,
+/// another shell's tray), which novad never replaces. Nothing replaces novad
+/// either: zbus's default flags would let any other process take the name
+/// (a second novad, a test's), and novad, not queued, would never get it
+/// back.
+pub async fn claim(connection: &Connection, name: &'static str) -> zbus::Result<RequestNameReply> {
+    connection.request_name_with_flags(name, RequestNameFlags::empty()).await
 }
 
 /// Ends a service's loop: set once, and wakes the loop if it's waiting.
