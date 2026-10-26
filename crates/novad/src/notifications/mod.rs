@@ -9,6 +9,10 @@
 //! up, never unread) and do not disturb holds back every pop-up but critical
 //! ones. Transient notifications only pop up and aren't listed.
 //!
+//! The list is saved to a file at most once every [`SAVE_EVERY`], on a
+//! thread of its own, so an app updating a notification many times a second
+//! (a download's progress) doesn't rewrite it each time.
+//!
 //! Anything on the session bus can send one, so what apps send is checked
 //! and cut down: text is made plain (`text`), pictures are checked and
 //! written out as PNGs (`image`), and lists are capped.
@@ -31,9 +35,9 @@ use std::future::poll_fn;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::task::Poll;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use zbus::fdo::RequestNameReply;
 use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
@@ -65,6 +69,9 @@ const MAX_NAME_LEN: usize = 255;
 const KEEP_SECS: i64 = 7 * 24 * 60 * 60;
 /// How long novad waits for the bus to answer.
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
+/// The state file is written at most this often. A change in the last one
+/// is lost when novad is killed before it's written.
+const SAVE_EVERY: Duration = Duration::from_secs(1);
 
 /// Why a notification closed, as `NotificationClosed` tells its app.
 #[derive(Clone, Copy)]
@@ -102,6 +109,8 @@ pub struct Notifications {
 
 struct Shared {
     state: Mutex<State>,
+    /// Wakes the saver (`save_later`) when the list changed or novad stops.
+    changed: Condvar,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     sources: Sources,
@@ -124,6 +133,10 @@ struct State {
     senders: HashMap<u32, String>,
     /// The last list published, so an unchanged one isn't sent again.
     sent: Option<NotificationList>,
+    /// What the state file holds, so an unchanged list isn't written again,
+    /// and when it was written.
+    written: Option<Saved>,
+    written_at: Option<Instant>,
 }
 
 /// What survives a restart.
@@ -160,7 +173,8 @@ impl Notifications {
     pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let saved = load(&sources, &logger);
         let shared = Arc::new(Shared {
-            state: Mutex::new(State { saved, ..State::default() }),
+            state: Mutex::new(State { written: Some(saved.clone()), saved, ..State::default() }),
+            changed: Condvar::new(),
             hub,
             logger,
             sources,
@@ -169,6 +183,8 @@ impl Notifications {
             revision: AtomicU64::new(jiff::Timestamp::now().as_millisecond().unsigned_abs()),
             stop: Stop::default(),
         });
+        let saver = Arc::clone(&shared);
+        std::thread::spawn(move || saver.save_later());
         let (ready, started) = std::sync::mpsc::channel();
         let serving = Arc::clone(&shared);
         std::thread::spawn(move || {
@@ -182,10 +198,13 @@ impl Notifications {
         Arc::new(Self { shared })
     }
 
-    /// Lets go of the server's name and publishes nothing more.
+    /// Writes what's still unsaved, lets go of the server's name and
+    /// publishes nothing more.
     pub fn stop(&self) {
-        let _state = lock(&self.shared.state);
+        let mut state = lock(&self.shared.state);
+        self.shared.save(&mut state);
         self.shared.stop.stop();
+        self.shared.changed.notify_all();
     }
 
     /// Sends a new subscriber, client `id`, the list as it is, under the
@@ -496,21 +515,49 @@ impl Shared {
         self.save_and_publish(&mut state);
     }
 
-    /// Saves and publishes, under the state lock so changes reach the file
-    /// and the UI in the order they were made.
+    /// Publishes the list and has the saver write it, under the state lock
+    /// so changes reach the UI in the order they were made.
     fn save_and_publish(&self, state: &mut State) {
         if self.stop.stopped() {
+            return;
+        }
+        self.changed.notify_all();
+        let event = list(state);
+        if state.sent.as_ref() != Some(&event) {
+            self.hub.publish(&Event::Notifications(event.clone()));
+            state.sent = Some(event);
+        }
+    }
+
+    /// The saver's thread: writes the list once it changed, at most once
+    /// every [`SAVE_EVERY`], until novad stops.
+    fn save_later(&self) {
+        let mut state = lock(&self.state);
+        while !self.stop.stopped() {
+            if state.written.as_ref() == Some(&state.saved) {
+                state = self.changed.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
+                continue;
+            }
+            let wait = state.written_at.map_or(Duration::ZERO, |at| SAVE_EVERY.saturating_sub(at.elapsed()));
+            if wait.is_zero() {
+                self.save(&mut state);
+            } else {
+                state = self.changed.wait_timeout(state, wait).unwrap_or_else(std::sync::PoisonError::into_inner).0;
+            }
+        }
+    }
+
+    /// Writes the list to the state file, unless it holds it already.
+    fn save(&self, state: &mut State) {
+        if state.written.as_ref() == Some(&state.saved) {
             return;
         }
         if let Err(e) = state_file::save(&self.sources.state_file, &state.saved) {
             let message = format!("can't save {}: {e}", self.sources.state_file.display());
             self.logger.warn(LOG_SOURCE, &message);
         }
-        let event = list(state);
-        if state.sent.as_ref() != Some(&event) {
-            self.hub.publish(&Event::Notifications(event.clone()));
-            state.sent = Some(event);
-        }
+        state.written = Some(state.saved.clone());
+        state.written_at = Some(Instant::now());
     }
 
     /// Sends the signal `name` to every app on the bus.
