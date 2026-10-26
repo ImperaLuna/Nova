@@ -82,10 +82,9 @@ StagePanel {
     readonly property real chrome: 2 * Tokens.launcherPad + Tokens.launcherSearchHeight + 4 * Tokens.launcherGap + 2 * Tokens.launcherLabelHeight + Tokens.launcherTileSize + Tokens.launcherTileName
     readonly property real listHeight: Math.max(Tokens.launcherRowHeight, Math.min(Tokens.launcherRows * Tokens.launcherRowHeight + (Tokens.launcherRows - 1) * Tokens.launcherRowGap + 2 * Tokens.launcherLabelHeight, screenHeight - openY - chrome - Tokens.launcherPad))
     readonly property real tallest: chrome + listHeight
-    property real shownHeight: (deck?.contentHeight ?? 0) + 2 * Tokens.launcherPad
-    // Only once it's fully open: its content loads as it opens.
+    property real shownHeight: content.implicitHeight + 2 * Tokens.launcherPad
     Behavior on shownHeight {
-        enabled: launcher.open && launcher.morph.t === 1
+        enabled: launcher.open && !launcher.morph.moving
         NumberAnimation {
             id: resize
             duration: Tokens.durationResize
@@ -109,19 +108,18 @@ StagePanel {
         enterPending = null;
         if (!open)
             return;
-        query = "";
+        field.text = "";
         matches = [];
         matchesFor = "";
         enterPending = null;
         selected = 0;
         launching = "";
         problem = "";
-        // Loaded by now, or once it is (body's onLoaded).
-        deck?.start();
+        field.forceActiveFocus();
     }
 
     onRowsChanged: selected = Math.min(selected, Math.max(0, rows.length - 1))
-    onSelectedChanged: deck?.show(selected)
+    onSelectedChanged: list.positionViewAtIndex(selected, ListView.Contain)
 
     // Where the pointer last was over a row. The list scrolling under a
     // still pointer moves rows under it too, which mustn't take the
@@ -206,36 +204,8 @@ StagePanel {
         radius: launcher.radius
     }
 
-    // What it shows, there only while it's open or moving: a closed deck
-    // keeps no rows, tiles or icons on any screen (IMP-157).
-    Loader {
-        id: body
-        // Not `moving`: that follows its resize, which follows what's loaded.
-        active: launcher.open || launcher.morph.moving
-        onLoaded: launcher.deck.start()
-        sourceComponent: Component {
-            Deck {}
-        }
-    }
-    readonly property Deck deck: body.item as Deck
-
     // Laid out at full size and scaled with the deck as it fades in.
-    component Deck: Item {
-        // How tall what it shows is.
-        readonly property real contentHeight: content.implicitHeight
-
-        // Empty and taking typing, as it opens.
-        function start() {
-            field.text = "";
-            list.positionViewAtBeginning();
-            field.forceActiveFocus();
-        }
-
-        // Scrolls row `index` into view.
-        function show(index: int) {
-            list.positionViewAtIndex(index, ListView.Contain);
-        }
-
+    Item {
         width: Tokens.launcherWidth
         height: launcher.shownHeight
         scale: launcher.grow

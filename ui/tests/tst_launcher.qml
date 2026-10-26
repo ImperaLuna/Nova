@@ -284,20 +284,6 @@ Item {
             compare(launcher.selected, 0);
         }
 
-        function test_closed_it_keeps_no_rows_and_reopened_takes_typing() {
-            const launcher = make();
-            verify(findChild(launcher, "list") !== null);
-            keyClick(Qt.Key_Escape);
-            tryCompare(launcher, "moving", false);
-            compare(findChild(launcher, "list"), null, "unloaded once closed");
-            launcher.open = true;
-            verify(findChild(launcher, "list") !== null);
-            keyClick("f");
-            compare(launcher.query, "f");
-            tryCompare(launcher, "shownHeight", launcher.shownHeight, 0, "full height on the frame it opens");
-            verify(launcher.shownHeight > 2 * Tokens.launcherPad);
-        }
-
         function test_the_surface_fits_the_tallest_deck() {
             const launcher = make({
                 apps: Array.from({
