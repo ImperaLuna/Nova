@@ -1,7 +1,7 @@
 //! The socket: accepts clients, answers their requests and feeds them the
 //! events they subscribed to.
 
-use crate::hub::{ClientId, ClientQueue, Outgoing};
+use crate::hub::{ClientId, ClientQueue, Outgoing, Written};
 use crate::{Daemon, lock};
 use nova_protocol::{
     Capability, CaptureMode, Command, Event, Outcome, Panel, PowerAction, PowerMenu, Response, Topic, VolumeKey, encode,
@@ -81,7 +81,8 @@ impl<'a> Connection<'a> {
         writer.set_write_timeout(Some(WRITE_TIMEOUT))?;
         let (queue, outgoing) = ClientQueue::new(&stream)?;
         let logger = Arc::clone(&daemon.logger);
-        std::thread::spawn(move || write_all_queued(writer, outgoing, &logger));
+        let written = queue.written();
+        std::thread::spawn(move || write_all_queued(writer, outgoing, &written, &logger));
         let id = daemon.hub.register(queue.clone());
         let peer_pid = peer_pid(&stream);
         let connection = Self { daemon, id, queue, reader: BufReader::new(stream), peer_pid };
@@ -555,10 +556,16 @@ impl Drop for Connection<'_> {
 /// stalls past [`WRITE_TIMEOUT`] hangs up on the client: the reader side ends
 /// too, so the connection unregisters, and dropping the queue answers any
 /// `flush` waiting on it.
-fn write_all_queued(mut writer: UnixStream, outgoing: mpsc::Receiver<Outgoing>, logger: &crate::logger::Logger) {
+fn write_all_queued(
+    mut writer: UnixStream,
+    outgoing: mpsc::Receiver<Outgoing>,
+    written: &Written,
+    logger: &crate::logger::Logger,
+) {
     for message in outgoing {
         match message {
             Outgoing::Line(line) => {
+                written.line(line.len());
                 if let Err(e) = writer.write_all(line.as_bytes()) {
                     if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) {
                         logger.warn(

@@ -3,6 +3,7 @@
 //! `<img>`, `<br>`) with entities like `&amp;`; the tags go and the entities
 //! become their characters. Anything else that looks like a tag stays as
 //! text, since an app that sends plain text may well mean `a <b` literally.
+//! Control characters other than line breaks and tabs go too.
 
 /// The tags the notification spec allows in a body. `br` isn't one, but
 /// apps send it for a line break.
@@ -12,15 +13,23 @@ const ATTRIBUTED: [&str; 2] = ["a", "img"];
 /// A tag's `>` is looked for this far (in bytes) at most, so a body of
 /// `<`s without one takes linear time.
 const MAX_TAG_BYTES: usize = 2048;
+/// `plain` reads this many bytes of markup per character kept at most;
+/// past that the rest is cut, so a huge body costs no more than a long one.
+const MARKUP_BYTES_PER_CHAR: usize = 64;
 
 /// `markup` without its tags and with its entities decoded, cut to
 /// `max_chars` characters (an ellipsis marks the cut).
 pub fn plain(markup: &str, max_chars: usize) -> String {
+    let markup = prefix(markup, MARKUP_BYTES_PER_CHAR * max_chars);
     let mut text = String::with_capacity(markup.len());
+    // How much of `text` is leading whitespace, which the trim drops; only
+    // what was added since is looked at, so this stays linear.
+    let mut lead = 0;
     let mut rest = markup;
     while let Some(at) = rest.find(['<', '&']) {
+        lead = text.len() - text[lead..].trim_start().len();
         // Past what's kept, at four bytes a character at most: the rest is cut anyway.
-        if text.trim_start().len() > 4 * max_chars {
+        if text.len() - lead > 4 * max_chars {
             rest = "";
             break;
         }
@@ -43,26 +52,33 @@ pub fn plain(markup: &str, max_chars: usize) -> String {
     cut(text.trim(), max_chars)
 }
 
-/// `text` cut to `max_chars` characters, with an ellipsis as the last one
-/// when anything was cut.
+/// `text` without control characters but line breaks and tabs, cut to
+/// `max_chars` characters, with an ellipsis as the last one when anything
+/// was cut.
 pub fn cut(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_string();
+    let mut kept = text.chars().filter(|&c| !c.is_control() || matches!(c, '\n' | '\t'));
+    let mut cut: String = kept.by_ref().take(max_chars).collect();
+    if kept.next().is_some() {
+        cut.pop();
+        cut.push('…');
     }
-    let mut cut: String = text.chars().take(max_chars.saturating_sub(1)).collect();
-    cut.push('…');
     cut
+}
+
+/// The start of `text`, at most `max_bytes` long, cut between characters.
+fn prefix(text: &str, max_bytes: usize) -> &str {
+    let mut end = max_bytes.min(text.len());
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
 }
 
 /// A known tag at the start of `text` (which starts with `<`): what it
 /// becomes (a line break for `<br>`, nothing for the others) and how long
 /// it is. `None` when it isn't one.
 fn tag(text: &str) -> (Option<Option<String>>, usize) {
-    let mut window = MAX_TAG_BYTES.min(text.len());
-    while !text.is_char_boundary(window) {
-        window -= 1;
-    }
-    let window = &text[..window];
+    let window = prefix(text, MAX_TAG_BYTES);
     let Some(end) = window.find('>') else { return (None, 0) };
     let inside = text[1..end].trim_start_matches('/').trim_end_matches('/').trim_end();
     let (name, attributes) = inside.split_once(|c: char| c.is_ascii_whitespace()).unwrap_or((inside, ""));
@@ -123,6 +139,32 @@ mod tests {
         let text = plain(&body, 2048);
         assert_eq!(text.chars().count(), 2048);
         assert!(started.elapsed() < std::time::Duration::from_secs(5), "{:?}", started.elapsed());
+    }
+
+    #[test]
+    fn leading_whitespace_between_tags_takes_linear_time() {
+        // Each tag used to rescan the whitespace before it.
+        let body = format!("{}{}", " ".repeat(80_000), "<b>".repeat(80_000));
+        let started = std::time::Instant::now();
+        assert_eq!(plain(&body, 2048), "");
+        assert!(started.elapsed() < std::time::Duration::from_secs(1), "{:?}", started.elapsed());
+    }
+
+    #[test]
+    fn a_huge_body_is_read_only_as_far_as_it_can_show() {
+        let body = format!("{}visible", "<b>".repeat(4 * 1024 * 1024));
+        let started = std::time::Instant::now();
+        // Cut where the bytes run out, maybe mid-tag; what's past is never read.
+        assert!(!plain(&body, 2048).contains("visible"));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1), "{:?}", started.elapsed());
+        assert_eq!(plain(&format!("{}visible", "<b>".repeat(16)), 2048), "visible");
+    }
+
+    #[test]
+    fn control_characters_go() {
+        assert_eq!(plain("a\u{1}b\u{7f}c\nd\te", 200), "abc\nd\te");
+        assert_eq!(cut("\u{1b}[31mred", 200), "[31mred");
+        assert_eq!(cut("ab\u{1}\u{1}", 2), "ab");
     }
 
     #[test]

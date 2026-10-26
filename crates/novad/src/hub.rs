@@ -7,12 +7,15 @@ use nova_protocol::{Event, Topic, encode};
 use std::collections::HashSet;
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 
-/// Most messages a client may have waiting. A client that stops reading
-/// fills its queue and is disconnected, so it can't grow novad's memory.
+/// Most messages a client may have waiting, and most bytes they may add up
+/// to. A client that stops reading fills its queue and is disconnected, so
+/// it can't grow novad's memory.
 pub const MAX_QUEUED_MESSAGES: usize = 4096;
+pub const MAX_QUEUED_BYTES: usize = 64 * 1024 * 1024;
 
 /// What a client's writer thread sends, in order.
 pub enum Outgoing {
@@ -26,28 +29,63 @@ pub enum Outgoing {
 pub struct ClientQueue {
     sender: SyncSender<Outgoing>,
     stream: Arc<UnixStream>,
+    /// The bytes of the lines queued and not yet written.
+    bytes: Arc<AtomicUsize>,
 }
 
 impl ClientQueue {
     /// A queue for `stream`, and the end its writer thread drains.
     pub fn new(stream: &UnixStream) -> std::io::Result<(Self, Receiver<Outgoing>)> {
         let (sender, receiver) = mpsc::sync_channel(MAX_QUEUED_MESSAGES);
-        Ok((Self { sender, stream: Arc::new(stream.try_clone()?) }, receiver))
+        let bytes = Arc::default();
+        Ok((Self { sender, stream: Arc::new(stream.try_clone()?), bytes }, receiver))
     }
 
     /// Queues `message`. False if the client is gone, or was just
     /// disconnected for letting its queue fill up.
     pub fn push(&self, message: Outgoing) -> bool {
+        let length = match &message {
+            Outgoing::Line(line) => line.len(),
+            Outgoing::Flushed(_) => 0,
+        };
+        if self.bytes.fetch_add(length, Ordering::Relaxed) + length > MAX_QUEUED_BYTES {
+            self.bytes.fetch_sub(length, Ordering::Relaxed);
+            return self.hang_up();
+        }
         match self.sender.try_send(message) {
             Ok(()) => true,
             Err(TrySendError::Full(_)) => {
-                // Ends both the writer's and the reader's side, so the
-                // connection closes and unregisters itself.
-                let _ = self.stream.shutdown(Shutdown::Both);
+                self.bytes.fetch_sub(length, Ordering::Relaxed);
+                self.hang_up()
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                self.bytes.fetch_sub(length, Ordering::Relaxed);
                 false
             }
-            Err(TrySendError::Disconnected(_)) => false,
         }
+    }
+
+    /// What the writer tells, as it takes each line off the queue. Not a
+    /// queue itself, so the writer doesn't hold the queue open.
+    pub fn written(&self) -> Written {
+        Written(Arc::clone(&self.bytes))
+    }
+
+    /// Ends both the writer's and the reader's side, so the connection
+    /// closes and unregisters itself. Always false, for `push`.
+    fn hang_up(&self) -> bool {
+        let _ = self.stream.shutdown(Shutdown::Both);
+        false
+    }
+}
+
+/// Counts the lines a client's writer takes off its queue (`ClientQueue::written`).
+pub struct Written(Arc<AtomicUsize>);
+
+impl Written {
+    /// The writer took a line of `length` bytes off the queue.
+    pub fn line(&self, length: usize) {
+        self.0.fetch_sub(length, Ordering::Relaxed);
     }
 }
 
@@ -143,5 +181,25 @@ pub fn next_named(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Durat
         if event["event"] == name {
             return event["data"].clone();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_queue_holds_at_most_its_bytes() {
+        let (_client, ours) = UnixStream::pair().unwrap();
+        let (queue, outgoing) = ClientQueue::new(&ours).unwrap();
+        let quarter = "x".repeat(MAX_QUEUED_BYTES / 4);
+        for _ in 0..4 {
+            assert!(queue.push(Outgoing::Line(quarter.clone())));
+        }
+        // What the writer takes off makes room again.
+        let Ok(Outgoing::Line(line)) = outgoing.try_recv() else { panic!("a line") };
+        queue.written().line(line.len());
+        assert!(queue.push(Outgoing::Line(quarter)));
+        assert!(!queue.push(Outgoing::Line("x".into())), "past the bytes the client is cut off");
     }
 }
