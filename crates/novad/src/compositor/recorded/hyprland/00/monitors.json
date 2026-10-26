@@ -27,7 +27,7 @@
     "dpmsStatus": true,
     "vrr": false,
     "solitary": "0",
-    "solitaryBlockedBy": ["WINDOWED","CANDIDATE"],
+    "solitaryBlockedBy": ["NOTIFICATION","WINDOWED","CANDIDATE"],
     "activelyTearing": false,
     "tearingBlockedBy": ["NOT_TORN","USER","CANDIDATE"],
     "directScanoutTo": "0",

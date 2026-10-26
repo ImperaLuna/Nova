@@ -5,7 +5,7 @@
 //! queries at that point.
 
 use super::*;
-use nova_protocol::FocusedWindow;
+use nova_protocol::{FocusedWindow, Output};
 use std::path::Path;
 
 const NIRI_HANDLED: &str = r#"{"Ok":"Handled"}"#;
@@ -124,7 +124,6 @@ fn step<'a>(followed: &'a Followed, name: &str) -> &'a Desktop {
 
 /// What the recorded script did, as the bar should see it, on any compositor.
 fn check_the_script(followed: &Followed) {
-    let window = |desktop: &Desktop| desktop.focused_window.clone();
     let first = FocusedWindow { app_id: "nova-first".into(), title: "First window".into() };
 
     assert_eq!(window(step(followed, "open first window")), Some(first.clone()));
@@ -171,10 +170,45 @@ fn check_the_script(followed: &Followed) {
     let full = step(followed, "fullscreen the focused window");
     assert_eq!(fullscreen(full), [focused_workspace(full).name.clone()], "{full:#?}");
 
-    let closed = followed.last().unwrap();
-    assert_eq!(closed.0, "close the focused window");
-    assert_eq!(window(&closed.1), None);
-    assert!(fullscreen(&closed.1).is_empty(), "still fullscreen once it closed: {:#?}", closed.1);
+    let closed = step(followed, "close the focused window");
+    assert_eq!(window(closed), None);
+    assert!(fullscreen(closed).is_empty(), "still fullscreen once it closed: {closed:#?}");
+}
+
+fn special(desktop: &Desktop) -> Vec<&Workspace> {
+    desktop.outputs.iter().flat_map(|output| &output.workspaces).filter(|w| w.special).collect()
+}
+
+/// Hyprland's special workspace, from the end of the recorded script.
+fn check_the_special_workspace(followed: &Followed) {
+    let before = step(followed, "close the focused window");
+    assert!(special(before).is_empty(), "no special workspace yet: {before:#?}");
+
+    let hidden = step(followed, "hide a window in the special workspace");
+    let output = &hidden.outputs[0];
+    let first = &output.workspaces[0];
+    assert!(first.special, "special workspaces come first: {hidden:#?}");
+    assert_eq!(first.name, "magic", "without the special: prefix");
+    assert!(!first.empty && !first.active && !first.focused, "{first:#?}");
+    assert_eq!(special(hidden).len(), 1);
+
+    let shown = step(followed, "show the special workspace");
+    assert_eq!(focused_workspace(shown).name, "magic", "the keyboard is on it");
+    let active: Vec<&str> = shown.outputs[0].workspaces.iter().filter(|w| w.active).map(|w| w.name.as_str()).collect();
+    assert_eq!(active, ["magic"], "the workspace under it isn't active: {shown:#?}");
+    assert!(!special(shown)[0].shown_elsewhere, "it shows here");
+    assert_eq!(window(shown).map(|w| w.app_id), Some("nova-second".into()));
+
+    let gone = step(followed, "hide the special workspace");
+    assert_eq!(focused_workspace(gone).name, "1", "back on the workspace under it");
+    let magic = special(gone);
+    assert_eq!(magic.len(), 1, "still there with its window: {gone:#?}");
+    assert!(!magic[0].active && !magic[0].focused);
+    assert!(!focused_workspace(gone).special);
+}
+
+fn window(desktop: &Desktop) -> Option<FocusedWindow> {
+    desktop.focused_window.clone()
 }
 
 #[test]
@@ -195,6 +229,7 @@ fn hyprland_events_add_up_to_what_hyprland_reports() {
         assert_eq!(without_urgency(desktop.clone()), hyprland_answer(&recording, index), "after {name:?}");
     }
     check_the_script(&followed);
+    check_the_special_workspace(&followed);
 }
 
 #[test]
@@ -217,6 +252,21 @@ fn stepping_stops_at_either_end() {
     assert_eq!(neighbour(desktop, output, Step::Next).unwrap().unwrap().name, "web");
     assert_eq!(neighbour(desktop, output, Step::Previous).unwrap(), None);
     assert!(neighbour(desktop, "nope", Step::Next).unwrap_err().contains("no output"));
+}
+
+#[test]
+fn stepping_skips_the_special_workspace() {
+    let followed = follow_hyprland(&Recording::load("hyprland"));
+    let desktop = step(&followed, "show the special workspace");
+    let output = &desktop.outputs[0].name;
+    // From the workspace under it, never onto it.
+    assert_eq!(neighbour(desktop, output, Step::Previous).unwrap(), None, "{desktop:#?}");
+    let next = neighbour(desktop, output, Step::Next).unwrap();
+    assert!(next.is_none_or(|workspace| !workspace.special));
+    // Hidden, it comes first in the list; stepping back from 1 stays there.
+    let hidden = step(&followed, "hide a window in the special workspace");
+    assert!(hidden.outputs[0].workspaces[0].special, "{hidden:#?}");
+    assert_eq!(neighbour(hidden, output, Step::Previous).unwrap(), None);
 }
 
 #[test]
@@ -309,6 +359,11 @@ impl Backend for Arc<Shown> {
         Ok(())
     }
 
+    fn focus_output(&self, output: &Output) -> Result<(), String> {
+        let active = output.workspaces.iter().find(|workspace| workspace.active).ok_or("none shows")?;
+        self.focus_workspace(active)
+    }
+
     fn log_out(&self) -> Result<(), String> {
         Ok(())
     }
@@ -340,4 +395,34 @@ fn focusing_an_output_shows_its_workspace_unless_it_has_focus() {
     compositor.focus_output("DP-2").unwrap();
     assert_eq!(*lock(&shown.0), [active]);
     assert!(compositor.focus_output("nope").unwrap_err().contains("no such output"));
+}
+
+#[test]
+fn a_special_workspace_shows_on_one_output_and_is_listed_on_every_one() {
+    // The recording's single output, plus a second one without focus or
+    // workspaces of its own, at the step that shows the special workspace.
+    let recording = Recording::load("hyprland");
+    let index = recording.steps.iter().position(|step| step.name == "show the special workspace").unwrap();
+    let mut ask = |request: &str| {
+        let answer = hyprland_ask(&recording, index)(request)?;
+        if request != "j/monitors" {
+            return Ok(answer);
+        }
+        let mut monitors: Vec<serde_json::Value> = serde_json::from_str(&answer).unwrap();
+        let mut other = monitors[0].clone();
+        other["name"] = "DP-2".into();
+        other["focused"] = false.into();
+        other["specialWorkspace"] = serde_json::json!({"id": 0, "name": ""});
+        monitors.push(other);
+        Ok(serde_json::to_string(&monitors).unwrap())
+    };
+    let desktop = hyprland::State::load(&mut ask).unwrap().desktop();
+    let [here, there] = &desktop.outputs[..] else { panic!("two outputs: {desktop:#?}") };
+    let magic = |output: &Output| output.workspaces[0].clone();
+    assert!(magic(here).special && magic(there).special, "listed first on both");
+    assert!(magic(here).active && magic(here).focused && !magic(here).shown_elsewhere);
+    assert!(!magic(there).active && magic(there).shown_elsewhere, "{there:#?}");
+    let active = |output: &Output| output.workspaces.iter().filter(|w| w.active).count();
+    assert_eq!(active(here), 1, "only the special workspace: {here:#?}");
+    assert_eq!(there.workspaces.len(), 1, "the recording's workspaces are all on the first output");
 }

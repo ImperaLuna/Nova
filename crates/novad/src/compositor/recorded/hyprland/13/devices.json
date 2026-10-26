@@ -1,0 +1,59 @@
+{
+"mice": [
+    {
+        "address": "0x56ba8e257ef0",
+        "name": "qemu-qemu-usb-tablet",
+        "defaultSpeed": 0.00000,
+        "scrollFactor": -1.00
+    },    {
+        "address": "0x56ba8f480880",
+        "name": "virtualps/2-vmware-vmmouse",
+        "defaultSpeed": 0.00000,
+        "scrollFactor": -1.00
+    },    {
+        "address": "0x56ba8e1e7910",
+        "name": "virtualps/2-vmware-vmmouse-1",
+        "defaultSpeed": 0.00000,
+        "scrollFactor": -1.00
+    }
+],
+"keyboards": [
+    {
+        "address": "0x56ba8b7533b0",
+        "name": "qemu-virtio-keyboard",
+        "rules": "",
+        "model": "",
+        "layout": "us,de",
+        "variant": "",
+        "options": "",
+        "active_layout_index": 1,
+        "active_keymap": "German",
+        "capsLock": false,
+        "numLock": false,
+        "main": false
+    },    {
+        "address": "0x56ba8e289770",
+        "name": "at-translated-set-2-keyboard",
+        "rules": "",
+        "model": "",
+        "layout": "us,de",
+        "variant": "",
+        "options": "",
+        "active_layout_index": 1,
+        "active_keymap": "German",
+        "capsLock": false,
+        "numLock": false,
+        "main": true
+    }
+],
+"tablets": [
+
+],
+"touch": [
+
+],
+"switches": [
+
+]
+}
+

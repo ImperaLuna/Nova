@@ -5,7 +5,7 @@
     "monitorID": 0,
     "windows": 1,
     "hasfullscreen": false,
-    "lastwindow": "0x58edea3cebb0",
+    "lastwindow": "0x56ba8e21cc80",
     "lastwindowtitle": "First window",
     "ispersistent": false,
     "tiledLayout": "dwindle"
@@ -16,7 +16,7 @@
     "monitorID": 0,
     "windows": 1,
     "hasfullscreen": false,
-    "lastwindow": "0x58edebf35170",
+    "lastwindow": "0x56ba8fd9b880",
     "lastwindowtitle": "Second window",
     "ispersistent": false,
     "tiledLayout": "dwindle"
