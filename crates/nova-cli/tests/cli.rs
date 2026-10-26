@@ -127,28 +127,38 @@ fn logs_follow_novad_live() {
     assert!(found, "the backlog should include novad's start");
 }
 
-/// With nothing on PATH, an enabled feature's binaries are missing: that
-/// fails, while the running novad passes. (Quickshell may still be found:
-/// the Nix package builds its launcher's path in.)
+/// An enabled feature whose binary is missing fails, while the running novad
+/// passes. The feature is the test's own, needing a program no host has:
+/// the doctor also looks where packages install (the Nix profiles,
+/// /run/current-system), so a real feature's binaries may be found there
+/// whatever PATH says.
 #[test]
 fn doctor_fails_on_what_is_missing() {
     let novad = Novad::start("doctor");
+    let features = novad.dir.join("features");
+    std::fs::create_dir_all(features.join("missing")).unwrap();
+    std::fs::write(
+        features.join("missing/feature.toml"),
+        "id = \"missing\"\nname = \"Missing\"\ndescription = \"Needs a program no host has.\"\n\
+         [check]\nbinaries = [\"nova-test-never-installed\"]\n",
+    )
+    .unwrap();
     let config = novad.dir.join("config");
     std::fs::create_dir_all(config.join("nova")).unwrap();
-    std::fs::write(config.join("nova/features.toml"), "enabled = [\"recording\"]\n").unwrap();
+    std::fs::write(config.join("nova/features.toml"), "enabled = [\"missing\"]\n").unwrap();
     let output = novad
         .nova(&["doctor"])
         // A checkout's layout, where the themes are found.
         .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
         .env("PATH", "")
         .env("XDG_CONFIG_HOME", &config)
-        .env("NOVA_FEATURES_DIR", Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features"))
+        .env("NOVA_FEATURES_DIR", &features)
         .output()
         .unwrap();
     let text = String::from_utf8_lossy(&output.stdout);
     assert!(!output.status.success(), "{text}");
     assert!(text.contains(&format!("ok    novad       running {}", env!("CARGO_PKG_VERSION"))), "{text}");
-    assert!(text.contains("FAIL  features    recording needs"), "{text}");
+    assert!(text.contains("FAIL  features    missing needs nova-test-never-installed"), "{text}");
     assert!(String::from_utf8_lossy(&output.stderr).starts_with("nova: "), "{output:?}");
 }
 
