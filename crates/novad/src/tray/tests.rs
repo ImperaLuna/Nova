@@ -302,3 +302,65 @@ fn an_app_with_its_own_item_loses_its_bridged_x11_one() {
     let ids: Vec<String> = without_bridged_twins(items).into_iter().map(|item| item.address).collect();
     assert_eq!(ids, [":1.steam/StatusNotifierItem", ":1.wine-app/StatusNotifierItem", ":1.xterm/StatusNotifierItem"]);
 }
+
+#[test]
+fn an_app_registers_only_items_on_its_own_connection() {
+    let fixture = Fixture::new("not-own");
+    let _tray = fixture.tray(None);
+    let other = fixture.connect();
+    let other_name = other.unique_name().unwrap().to_string();
+    let app = fixture.connect();
+    // Names the watcher (novad) and another app own, as a name or a unique name.
+    for service in [format!("{WATCHER_NAME}/Bogus0"), format!("{other_name}/StatusNotifierItem"), other_name.clone()] {
+        assert!(zbus::block_on(register(&app, &service)).is_err(), "{service} is refused");
+    }
+    assert!(watcher_property::<Vec<String>>(&app, "RegisteredStatusNotifierItems").is_empty());
+}
+
+#[test]
+fn an_item_that_cant_tell_its_id_is_dropped() {
+    let fixture = Fixture::new("no-id");
+    let _tray = fixture.tray(None);
+    let app = fixture.connect();
+    // The app serves objects, but nothing at this path.
+    let other = Item { id: "other".into(), title: String::new(), activated: Arc::default() };
+    zbus::block_on(app.object_server().at("/Other", other)).unwrap();
+    zbus::block_on(register(&app, "/Nothing")).unwrap();
+    let deadline = Instant::now() + WAIT;
+    while !watcher_property::<Vec<String>>(&app, "RegisteredStatusNotifierItems").is_empty() {
+        assert!(Instant::now() < deadline, "the item without an id was dropped");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // A real item still shows.
+    let real = put_up(&fixture, None, "/StatusNotifierItem", "/StatusNotifierItem", "steam");
+    let items = loop {
+        // Past the empty list the drop may publish.
+        let items = fixture.next_items();
+        if items != json!([]) {
+            break items;
+        }
+    };
+    assert_eq!(
+        items,
+        json!([{ "address": format!("{}/StatusNotifierItem", real.unique_name().unwrap()), "id": "steam", "title": "steam title" }])
+    );
+}
+
+#[test]
+fn one_app_cant_fill_the_tray() {
+    let fixture = Fixture::new("per-app");
+    let _tray = fixture.tray(None);
+    let app = fixture.connect();
+    for n in 0..MAX_ITEMS_PER_APP {
+        let item = Item { id: format!("item{n}"), title: String::new(), activated: Arc::default() };
+        serve_item(&app, None, &format!("/Item{n}"), &format!("/Item{n}"), item);
+    }
+    assert!(zbus::block_on(register(&app, "/OneMore")).is_err(), "past the cap is refused");
+    // Another app still gets in.
+    let _other = put_up(&fixture, None, "/StatusNotifierItem", "/StatusNotifierItem", "steam");
+    let deadline = Instant::now() + WAIT;
+    while watcher_property::<Vec<String>>(&app, "RegisteredStatusNotifierItems").len() < MAX_ITEMS_PER_APP + 1 {
+        assert!(Instant::now() < deadline, "the other app's item is registered");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}

@@ -329,6 +329,13 @@ fn pictures_are_written_out_and_deleted_with_their_notification() {
     app.notify(("Chat", 0, "", "Mara", "", vec![], hints, -1));
     assert_eq!(fixture.next("notification_popup")["image"], "/tmp/mara.png");
 
+    // A reference too long to be a path is dropped, as an image or an app icon.
+    let long = format!("/{}", "a".repeat(4 * 1024 * 1024));
+    let hints = HashMap::from([("image-path", Variant::from(long.as_str()))]);
+    app.notify(("Chat", 0, &long, "Mara", "", vec![], hints, -1));
+    let popup = fixture.next("notification_popup");
+    assert!(popup.get("image").is_none() && popup.get("icon").is_none(), "{}", popup.to_string().len());
+
     // A file an app names is never deleted, even one that reads as ours.
     let victim = fixture.dir.join("victim");
     std::fs::write(&victim, "keep").unwrap();
