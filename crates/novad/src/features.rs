@@ -30,6 +30,12 @@ pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> 
         .collect()
 }
 
+/// Whether feature `id` is on with all it needs, so the UI loads it and
+/// novad runs its service.
+pub fn is_ready(features: &[FeatureState], id: &str) -> bool {
+    features.iter().any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

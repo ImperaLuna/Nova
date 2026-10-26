@@ -11,8 +11,9 @@
 //! - `nova-protocol`: the `Topic`, the `Event` and any `Command`s, plus the
 //!   wire format snapshot.
 //! - `config.rs`: its `[<id>]` options in config.toml, if any.
-//! - `settings.rs`: start the service when the feature is ready, stop it when
-//!   it isn't, restart it when its options change.
+//! - `settings.rs`: one `reconcile` call that starts the service when the
+//!   feature is ready, stops it when it isn't and restarts it when its
+//!   options change (its type goes in the `services!` list).
 //! - `server.rs`: its commands (through a `with_<service>` helper that
 //!   answers when the feature is off) and the snapshot sent on subscribe.
 //! - `ui/daemon/protocol.js` (`CMD_`/`EVENT_`/`TOPIC_`/`FEATURE_` names, checked
@@ -54,7 +55,7 @@ mod x11_tray;
 
 use hub::Hub;
 use logger::Logger;
-use nova_protocol::{FeatureStatus, LogLevel, Status, UiState, UiStatus};
+use nova_protocol::{LogLevel, Status, UiState, UiStatus};
 use settings::{Settings, Sources};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -158,7 +159,7 @@ impl Daemon {
 
     /// Whether the feature `id` is ready.
     fn feature_ready(&self, id: &str) -> bool {
-        lock(&self.settings).features.iter().any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
+        features::is_ready(&lock(&self.settings).features, id)
     }
 
     /// Reads the settings files again and applies what changed.

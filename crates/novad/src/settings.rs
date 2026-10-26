@@ -13,7 +13,7 @@ use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
 use crate::{ai_usage, features, host, launcher, notifications, resources, theme, tray, x11_tray};
 use nova_features::{Manifest, Selection};
-use nova_protocol::{Event, FeatureState, FeatureStatus, Host, Theme};
+use nova_protocol::{Event, FeatureState, Host, Theme};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -116,112 +116,77 @@ impl Settings {
             hub.publish(&Event::Host(host::read(config.quick_settings.name.as_deref())));
         }
 
+        let ready = |id| features::is_ready(&features, id);
         // Started before the features are published, so the UI that loads
-        // the feature on that event gets its numbers.
-        let ai_usage_ready = is_ready(&features, ai_usage::FEATURE_ID);
+        // the feature on that event gets its numbers. Restarted when its
+        // options change.
         let ai_usage_settings_kept =
             previous.as_deref().is_some_and(|previous| previous.config.ai_usage == config.ai_usage);
-        let ai_usage = match previous.as_deref_mut().and_then(|previous| previous.ai_usage.take()) {
-            Some(running) if ai_usage_ready && ai_usage_settings_kept => Some(running),
-            running => {
-                if let Some(running) = running {
-                    running.stop();
-                    logger.info("features", &format!("stopped {}", ai_usage::FEATURE_ID));
-                }
-                ai_usage_ready.then(|| {
-                    logger.info("features", &format!("starting {}", ai_usage::FEATURE_ID));
-                    ai_usage::Usage::start(
-                        sources.ai_usage.clone(),
-                        &config.ai_usage,
-                        Arc::clone(hub),
-                        Arc::clone(logger),
-                    )
-                })
-            }
-        };
-
-        let resources_ready = is_ready(&features, resources::FEATURE_ID);
-        let resources = match previous.as_deref_mut().and_then(|previous| previous.resources.take()) {
-            Some(running) if resources_ready => Some(running),
-            running => {
-                if let Some(running) = running {
-                    running.stop();
-                    logger.info("features", &format!("stopped {}", resources::FEATURE_ID));
-                }
-                resources_ready.then(|| {
-                    logger.info("features", &format!("starting {}", resources::FEATURE_ID));
-                    resources::Resources::start(sources.resources.clone(), Arc::clone(hub), Arc::clone(logger))
-                })
-            }
-        };
-
+        let ai_usage = reconcile(
+            ai_usage::FEATURE_ID,
+            previous.as_deref_mut().and_then(|previous| previous.ai_usage.take()),
+            ready(ai_usage::FEATURE_ID),
+            |_| ai_usage_settings_kept,
+            || ai_usage::Usage::start(sources.ai_usage.clone(), &config.ai_usage, Arc::clone(hub), Arc::clone(logger)),
+            logger,
+        );
+        let resources = reconcile(
+            resources::FEATURE_ID,
+            previous.as_deref_mut().and_then(|previous| previous.resources.take()),
+            ready(resources::FEATURE_ID),
+            |_| true,
+            || resources::Resources::start(sources.resources.clone(), Arc::clone(hub), Arc::clone(logger)),
+            logger,
+        );
         // It has no options: it only starts and stops with its feature.
-        let launcher_ready = is_ready(&features, launcher::FEATURE_ID);
-        let launcher = match previous.as_deref_mut().and_then(|previous| previous.launcher.take()) {
-            Some(running) if launcher_ready => Some(running),
-            running => {
-                if let Some(running) = running {
-                    running.stop();
-                    logger.info("features", &format!("stopped {}", launcher::FEATURE_ID));
-                }
-                launcher_ready.then(|| {
-                    logger.info("features", &format!("starting {}", launcher::FEATURE_ID));
-                    launcher::Launcher::start(
-                        sources.launcher.clone(),
-                        &sources.path_var,
-                        Arc::clone(hub),
-                        Arc::clone(logger),
-                    )
-                })
-            }
-        };
-
+        let launcher = reconcile(
+            launcher::FEATURE_ID,
+            previous.as_deref_mut().and_then(|previous| previous.launcher.take()),
+            ready(launcher::FEATURE_ID),
+            |_| true,
+            || {
+                launcher::Launcher::start(
+                    sources.launcher.clone(),
+                    &sources.path_var,
+                    Arc::clone(hub),
+                    Arc::clone(logger),
+                )
+            },
+            logger,
+        );
         // Started before the UI, which settings start ahead of, so apps it
-        // autostarts find the watcher. It finds apps with the launcher.
-        let tray_ready = is_ready(&features, tray::FEATURE_ID);
-        let tray = match previous.as_deref_mut().and_then(|previous| previous.tray.take()) {
-            Some(running) if tray_ready => {
+        // autostarts find the watcher. It finds apps with the launcher, which
+        // a running tray is handed again (it may have just started or
+        // stopped).
+        let tray = reconcile(
+            tray::FEATURE_ID,
+            previous.as_deref_mut().and_then(|previous| previous.tray.take()),
+            ready(tray::FEATURE_ID),
+            |running| {
                 running.set_launcher(launcher.clone());
-                Some(running)
-            }
-            running => {
-                if let Some(running) = running {
-                    running.stop();
-                    logger.info("features", &format!("stopped {}", tray::FEATURE_ID));
-                }
-                tray_ready.then(|| {
-                    logger.info("features", &format!("starting {}", tray::FEATURE_ID));
-                    tray::Tray::start(
-                        sources.tray.clone(),
-                        sources.resources.proc_root.clone(),
-                        launcher.clone(),
-                        Arc::clone(hub),
-                        Arc::clone(logger),
-                    )
-                })
-            }
-        };
-
+                true
+            },
+            || {
+                tray::Tray::start(
+                    sources.tray.clone(),
+                    sources.resources.proc_root.clone(),
+                    launcher.clone(),
+                    Arc::clone(hub),
+                    Arc::clone(logger),
+                )
+            },
+            logger,
+        );
         // Started before the UI, which settings start ahead of, so
         // notifications sent while it starts are kept. No options either.
-        let notifications_ready = is_ready(&features, notifications::FEATURE_ID);
-        let notifications = match previous.as_deref_mut().and_then(|previous| previous.notifications.take()) {
-            Some(running) if notifications_ready => Some(running),
-            running => {
-                if let Some(running) = running {
-                    running.stop();
-                    logger.info("features", &format!("stopped {}", notifications::FEATURE_ID));
-                }
-                notifications_ready.then(|| {
-                    logger.info("features", &format!("starting {}", notifications::FEATURE_ID));
-                    notifications::Notifications::start(
-                        sources.notifications.clone(),
-                        Arc::clone(hub),
-                        Arc::clone(logger),
-                    )
-                })
-            }
-        };
+        let notifications = reconcile(
+            notifications::FEATURE_ID,
+            previous.as_deref_mut().and_then(|previous| previous.notifications.take()),
+            ready(notifications::FEATURE_ID),
+            |_| true,
+            || notifications::Notifications::start(sources.notifications.clone(), Arc::clone(hub), Arc::clone(logger)),
+            logger,
+        );
         if let Some(launcher) = &launcher {
             let tray = tray.as_ref().map(Arc::downgrade);
             launcher.on_rescan(move || {
@@ -230,22 +195,15 @@ impl Settings {
                 }
             });
         }
-
         // It has no options either. Its icons reach whatever tray is up.
-        let x11_tray_ready = is_ready(&features, x11_tray::FEATURE_ID);
-        let x11_tray = match previous.as_deref_mut().and_then(|previous| previous.x11_tray.take()) {
-            Some(running) if x11_tray_ready => Some(running),
-            running => {
-                if let Some(running) = running {
-                    running.stop();
-                    logger.info("features", &format!("stopped {}", x11_tray::FEATURE_ID));
-                }
-                x11_tray_ready.then(|| {
-                    logger.info("features", &format!("starting {}", x11_tray::FEATURE_ID));
-                    x11_tray::X11Tray::start(sources.tray.bus.clone(), &sources.path_var, Arc::clone(logger))
-                })
-            }
-        };
+        let x11_tray = reconcile(
+            x11_tray::FEATURE_ID,
+            previous.as_deref_mut().and_then(|previous| previous.x11_tray.take()),
+            ready(x11_tray::FEATURE_ID),
+            |_| true,
+            || x11_tray::X11Tray::start(sources.tray.bus.clone(), &sources.path_var, Arc::clone(logger)),
+            logger,
+        );
 
         let before = previous.as_deref().map(|previous| previous.features.as_slice()).unwrap_or_default();
         for feature in features.iter().filter(|feature| !before.contains(feature)) {
@@ -277,8 +235,53 @@ impl Settings {
     }
 }
 
-fn is_ready(features: &[FeatureState], id: &str) -> bool {
-    features.iter().any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
+/// A feature service that settings start and stop.
+pub trait Service {
+    fn stop(&self);
+}
+
+macro_rules! services {
+    ($($service:ty),*) => {
+        $(impl Service for $service {
+            fn stop(&self) {
+                <$service>::stop(self);
+            }
+        })*
+    };
+}
+services!(
+    ai_usage::Usage,
+    resources::Resources,
+    launcher::Launcher,
+    tray::Tray,
+    notifications::Notifications,
+    x11_tray::X11Tray
+);
+
+/// The service for feature `id` after a change: `running` (from the
+/// previous settings) is kept while the feature is `ready` and `keep` says
+/// so, else stopped; a new one is `start`ed while the feature is ready and
+/// none is kept.
+fn reconcile<S: Service>(
+    id: &str,
+    running: Option<Arc<S>>,
+    ready: bool,
+    keep: impl FnOnce(&Arc<S>) -> bool,
+    start: impl FnOnce() -> Arc<S>,
+    logger: &Logger,
+) -> Option<Arc<S>> {
+    match running {
+        Some(running) if ready && keep(&running) => return Some(running),
+        Some(running) => {
+            running.stop();
+            logger.info("features", &format!("stopped {id}"));
+        }
+        None => {}
+    }
+    ready.then(|| {
+        logger.info("features", &format!("starting {id}"));
+        start()
+    })
 }
 
 /// `read`'s settings, or `None` after logging why not and what happens
