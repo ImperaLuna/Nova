@@ -591,6 +591,9 @@ mod tests {
     struct Fixture {
         dir: TempDir,
         logger: Arc<Logger>,
+        /// The fakes and the `sleep` they run: a build sandbox has no
+        /// /usr/bin, and a fake daemon that can't sleep exits at once.
+        path: String,
     }
 
     impl Fixture {
@@ -625,12 +628,12 @@ mod tests {
             }
             let logger =
                 Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::new(Hub::default())).unwrap());
-            Self { dir, logger }
+            let path = nova_test_support::fake_path(&dir.join("bin"), &["sleep"]);
+            Self { dir, logger, path }
         }
 
         fn start(&self) -> Arc<Wallpaper> {
-            let path = format!("{}:/run/current-system/sw/bin:/usr/bin:/bin", self.dir.join("bin").display());
-            Wallpaper::start(&self.dir.join("state"), path, true, Arc::clone(&self.logger))
+            Wallpaper::start(&self.dir.join("state"), self.path.clone(), true, Arc::clone(&self.logger))
         }
 
         fn image(&self, name: &str) -> String {
