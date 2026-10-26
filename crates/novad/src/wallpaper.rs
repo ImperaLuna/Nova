@@ -164,7 +164,7 @@ struct State {
 impl State {
     /// What should show, when anything should.
     fn wanted(&self) -> Option<Choice> {
-        let choice = self.chosen.as_ref().unwrap_or(&self.from_config);
+        let choice = self.current();
         (self.ready && !choice.is_empty()).then(|| choice.clone())
     }
 
@@ -321,12 +321,11 @@ fn readable_image(path: &str) -> Result<PathBuf, String> {
     if !path.is_absolute() {
         return Err(format!("{} isn't an absolute path", path.display()));
     }
-    let file = std::fs::File::open(&path).map_err(|e| format!("can't read {}: {e}", path.display()))?;
-    match file.metadata() {
-        Ok(metadata) if metadata.is_file() => {}
-        Ok(_) => return Err(format!("{} isn't a file", path.display())),
-        Err(e) => return Err(format!("can't read {}: {e}", path.display())),
+    // Looked at before it's opened: opening a FIFO waits for a writer.
+    if !std::fs::metadata(&path).map_err(|e| format!("can't read {}: {e}", path.display()))?.is_file() {
+        return Err(format!("{} isn't a file", path.display()));
     }
+    let file = std::fs::File::open(&path).map_err(|e| format!("can't read {}: {e}", path.display()))?;
     match imagesize::reader_size(std::io::BufReader::new(file)) {
         Ok(_) => Ok(path),
         Err(imagesize::ImageError::IoError(e)) => Err(format!("can't read {}: {e}", path.display())),
@@ -362,12 +361,21 @@ impl Shared {
         let mut shown = Shown::default();
         let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
         let mut started = Instant::now();
+        // After an `awww img` failed: an output awww hasn't bound yet, say.
+        let mut resend = Backoff::new(FIRST_RETRY, MAX_RETRY);
+        let mut resend_in = None;
         loop {
             let mut state = lock(&self.state);
-            state = self
-                .wake
-                .wait_while(state, |state| !state.stopped && !state.changed && !state.exited)
-                .unwrap_or_else(|e| e.into_inner());
+            let idle = |state: &mut State| !state.stopped && !state.changed && !state.exited;
+            state = match resend_in.take() {
+                None => self.wake.wait_while(state, idle).unwrap_or_else(|e| e.into_inner()),
+                Some(wait) => {
+                    let (mut state, waited) =
+                        self.wake.wait_timeout_while(state, wait, idle).unwrap_or_else(|e| e.into_inner());
+                    state.changed |= waited.timed_out();
+                    state
+                }
+            };
             if state.stopped {
                 return;
             }
@@ -422,7 +430,11 @@ impl Shared {
                 drop(state);
             }
             let outputs = lock(&self.state).outputs.clone();
-            show(&wanted, &outputs, &mut shown, path_var, logger);
+            if show(&wanted, &outputs, &mut shown, path_var, logger) {
+                resend.reset();
+            } else {
+                resend_in = Some(resend.next());
+            }
         }
     }
 
@@ -486,9 +498,10 @@ impl Shared {
 }
 
 /// Sends `wanted`'s images that awww doesn't show yet.
-fn show(wanted: &Choice, outputs: &Outputs, shown: &mut Shown, path_var: &str, logger: &Logger) {
+/// Whether every image it sent was shown.
+fn show(wanted: &Choice, outputs: &Outputs, shown: &mut Shown, path_var: &str, logger: &Logger) -> bool {
     match outputs {
-        Outputs::Unknown => {}
+        Outputs::Unknown => true,
         Outputs::Known(names) => {
             // One fade for every output that changes to the same image.
             let mut changes: BTreeMap<PathBuf, Vec<String>> = BTreeMap::new();
@@ -497,16 +510,21 @@ fn show(wanted: &Choice, outputs: &Outputs, shown: &mut Shown, path_var: &str, l
                     changes.entry(path).or_default().push(name);
                 }
             }
+            let mut all_shown = true;
             for (path, names) in changes {
                 match send_image(&path, Some(&names), path_var) {
                     Ok(()) => shown.outputs.extend(names.into_iter().map(|name| (name, path.clone()))),
-                    Err(e) => logger.warn(LOG_SOURCE, &format!("can't show {}: {e}", path.display())),
+                    Err(e) => {
+                        logger.warn(LOG_SOURCE, &format!("can't show {}: {e}", path.display()));
+                        all_shown = false;
+                    }
                 }
             }
+            all_shown
         }
         Outputs::Unfollowed => {
             if shown.unfollowed.as_ref() == Some(wanted) {
-                return;
+                return true;
             }
             let every = wanted.path.iter().map(|path| (path, None));
             let own = wanted.outputs.iter().map(|(name, path)| (path, Some(vec![name.clone()])));
@@ -518,6 +536,7 @@ fn show(wanted: &Choice, outputs: &Outputs, shown: &mut Shown, path_var: &str, l
                 }
             }
             shown.unfollowed = all_shown.then(|| wanted.clone());
+            all_shown
         }
     }
 }
@@ -590,7 +609,13 @@ mod tests {
             nova_test_support::write_program(
                 &dir.join("bin"),
                 CLIENT,
-                &format!("echo \"$*\" >> '{}'", dir.join("awww").display()),
+                // Fails while there's a file `fail`, as for an output awww
+                // hasn't bound yet.
+                &format!(
+                    "[ \"$1\" = img ] && [ -e '{}' ] && exit 1\necho \"$*\" >> '{}'",
+                    dir.join("fail").display(),
+                    dir.join("awww").display()
+                ),
             );
             for image in ["dusk.png", "tide.png"] {
                 let file = std::fs::File::create(dir.join(image)).unwrap();
@@ -638,8 +663,8 @@ mod tests {
         }
 
         /// Waits until the last image sent to each output is `expected`'s.
-        /// An `awww img` that novad saw fail under load is sent again with
-        /// the next change, so the order of the images may vary.
+        /// An `awww img` that novad saw fail under load is sent again, so
+        /// the order of the images may vary.
         fn shows(&self, expected: &[(&str, &str)]) {
             wait_until(WAIT, &format!("outputs to show {expected:?}"), || {
                 let mut last = BTreeMap::new();
@@ -756,6 +781,22 @@ mod tests {
         again.configure(true, &WallpaperConfig::default());
         assert_eq!(again.current(), Wallpapers::default());
         again.stop();
+    }
+
+    #[test]
+    fn a_failed_image_is_sent_again() {
+        let fixture = Fixture::new("resend");
+        std::fs::write(fixture.dir.join("fail"), "").unwrap();
+        let wallpaper = fixture.start();
+        wallpaper.outputs(outputs(&["DP-1"]));
+        wallpaper.configure(true, &fixture.config("dusk.png"));
+        fixture.runs(1);
+        std::thread::sleep(Duration::from_millis(300));
+        std::fs::remove_file(fixture.dir.join("fail")).unwrap();
+        // Nothing else changes: it's sent again on its own.
+        fixture.shows(&[("DP-1", &fixture.image("dusk.png"))]);
+        assert_eq!(fixture.runs(1).len(), 1, "the daemon is fine");
+        wallpaper.stop();
     }
 
     #[test]

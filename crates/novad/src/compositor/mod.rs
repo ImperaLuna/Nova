@@ -134,7 +134,7 @@ impl Compositor {
     pub fn on_outputs(&self, listener: impl Fn(Vec<String>) + Send + 'static) {
         let desktop = lock(&self.desktop);
         if let Some(desktop) = &*desktop {
-            listener(output_names(desktop));
+            listener(output_names(desktop).cloned().collect());
         }
         lock(&self.output_listeners).push(Box::new(listener));
     }
@@ -218,8 +218,8 @@ impl Compositor {
             return;
         }
         self.hub.publish(&Event::Compositor(desktop.clone()));
-        let names = output_names(&desktop);
-        if current.as_ref().is_none_or(|current| output_names(current) != names) {
+        if current.as_ref().is_none_or(|current| !output_names(current).eq(output_names(&desktop))) {
+            let names: Vec<String> = output_names(&desktop).cloned().collect();
             for listener in lock(&self.output_listeners).iter() {
                 listener(names.clone());
             }
@@ -229,8 +229,8 @@ impl Compositor {
 }
 
 /// The names of `desktop`'s outputs, sorted.
-fn output_names(desktop: &Desktop) -> Vec<String> {
-    desktop.outputs.iter().map(|output| output.name.clone()).collect()
+fn output_names(desktop: &Desktop) -> impl Iterator<Item = &String> {
+    desktop.outputs.iter().map(|output| &output.name)
 }
 
 /// The workspace after or before the active one on `output`; `None` at

@@ -26,8 +26,11 @@ pub fn run(args: &WallpaperArgs, socket: &Path) -> Result<(), String> {
         print!("{}", describe(&wallpapers));
         return Ok(());
     };
-    // novad may run in another folder: it gets the whole path.
-    let path = std::fs::canonicalize(file).map_err(|e| format!("can't find {}: {e}", file.display()))?;
+    // novad may run in another folder: it gets the whole path. Symlinks
+    // stay, so one a script points elsewhere changes the wallpaper later.
+    let path = std::fs::metadata(file)
+        .and_then(|_| std::path::absolute(file))
+        .map_err(|e| format!("can't find {}: {e}", file.display()))?;
     let path = path.to_str().ok_or_else(|| format!("{} isn't valid UTF-8", path.display()))?.to_owned();
     client.request(Command::SetWallpaper { path, output: args.output.clone() })?;
     Ok(())
