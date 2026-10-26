@@ -41,7 +41,10 @@ Item {
     signal entryRefreshed(int key)
 
     implicitWidth: Tokens.notificationWidth
-    implicitHeight: column.height + (chip.visible ? chip.height : 0)
+    // The room every card takes once in place, counting those growing in
+    // or leaving, so no card is ever drawn past it and the window keeps one
+    // size through the motion rather than resizing a frame behind each step.
+    implicitHeight: shapes.reduce((total, shape) => total + shape.room, 0) + (chip.visible ? chip.height : 0)
 
     // The shown entries, top to bottom (not those leaving).
     function shownEntries(): var {
@@ -207,6 +210,8 @@ Item {
                     width: slot.width * slot.xScale
                     height: card.height * slot.yScale
                     readonly property real radius: card.radius * Math.min(slot.xScale, slot.yScale)
+                    // Its slot's height once in place.
+                    readonly property real room: card.implicitHeight + Tokens.gap
                 }
                 Component.onCompleted: stack.shapes = [...stack.shapes, shape]
                 Component.onDestruction: stack.shapes = [...stack.shapes].filter(item => item !== shape)
