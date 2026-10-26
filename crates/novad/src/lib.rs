@@ -43,6 +43,7 @@ mod notify;
 mod power;
 mod procfs;
 mod recording;
+mod render_loop;
 mod resources;
 mod screenshot;
 mod server;
@@ -312,6 +313,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
             path_var,
             wayland_socket,
             egl_vendor: egl::nvidia_only_vendor(Path::new("/"), |name| std::env::var_os(name)),
+            render_loop: render_loop::for_ui(Path::new("/"), |name| std::env::var_os(name)),
         };
         Supervisor::start(settings, Arc::clone(&logger))
     });

@@ -157,6 +157,7 @@ fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
         path_var: std::env::var("PATH").unwrap_or_default(),
         wayland_socket: None,
         egl_vendor: None,
+        render_loop: None,
     };
     let novad = TestDaemon::start("crash", Some(settings));
     let mut client = novad.connect();
@@ -185,6 +186,7 @@ fn a_quickshell_outside_the_tested_range_is_warned_about() {
         path_var: std::env::var("PATH").unwrap_or_default(),
         wayland_socket: None,
         egl_vendor: None,
+        render_loop: None,
     };
     let novad = TestDaemon::start("quickshell-range", Some(settings));
     let status = wait_for_status(&mut novad.connect(), |status| status.ui.pid.is_some());

@@ -18,8 +18,6 @@ use std::path::Path;
 
 /// Qt's render loop variable, and the value that keeps the UI's memory down
 /// on NVIDIA's driver.
-const RENDER_LOOP_VAR: &str = "QSG_RENDER_LOOP";
-const RENDER_LOOP_FOR_NVIDIA: &str = "basic";
 const SETUP_COMMAND: &str = "nova setup";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -78,7 +76,6 @@ pub struct Facts {
     /// Each feature's state with this session's `PATH`, or why they couldn't
     /// be worked out.
     pub features: Result<Vec<FeatureState>, String>,
-    pub render_loop: Option<String>,
     /// What the compositor starts at login.
     pub startup: Vec<StartupCommand>,
 }
@@ -95,7 +92,6 @@ impl Facts {
             daemon: reach(socket),
             config: checks::read_config(&config_dir.join("config.toml"), &checks::default_themes_dir()),
             features: features(&nova_features::default_dir(), &config_dir.join("features.toml"), &path_var),
-            render_loop: std::env::var(RENDER_LOOP_VAR).ok(),
             startup: config_dir.parent().map(login_apps::read).unwrap_or_default(),
         }
     }
@@ -139,7 +135,6 @@ pub fn lines(facts: &Facts) -> Vec<Line> {
         config(&facts.config),
     ];
     lines.extend(features_lines(&facts.features));
-    lines.extend(render_loop(&facts.host, facts.render_loop.as_deref()));
     lines.extend(login_apps_line(&facts.daemon, &facts.startup));
     lines
 }
@@ -266,21 +261,6 @@ fn features_lines(features: &Result<Vec<FeatureState>, String>) -> Vec<Line> {
     vec![Line::new(Level::Ok, "features", format!("{} on, nothing missing", on.join(", ")))]
 }
 
-/// Only on NVIDIA's driver, where Qt's threaded render loop costs the UI
-/// memory.
-fn render_loop(host: &Host, value: Option<&str>) -> Option<Line> {
-    if !host.nvidia_driver || value == Some(RENDER_LOOP_FOR_NVIDIA) {
-        return None;
-    }
-    Some(Line::new(
-        Level::Warn,
-        "nvidia",
-        format!(
-            "{RENDER_LOOP_VAR} isn't {RENDER_LOOP_FOR_NVIDIA} in this shell; on NVIDIA's driver the UI uses less memory with it"
-        ),
-    ))
-}
-
 /// Tray apps the compositor starts at login, which may come up before the
 /// tray and miss it.
 fn login_apps_line(daemon: &Daemon, startup: &[StartupCommand]) -> Option<Line> {
@@ -326,7 +306,6 @@ mod tests {
                 feature("core", FeatureStatus::Ready, &[]),
                 feature("recording", FeatureStatus::Off, &[]),
             ]),
-            render_loop: None,
             startup: vec![],
         }
     }
@@ -443,16 +422,6 @@ mod tests {
         let failed: Vec<&str> =
             lines(&facts).into_iter().filter(|line| line.level == Level::Fail).map(|line| line.check).collect();
         assert_eq!(failed, ["config", "features"]);
-    }
-
-    #[test]
-    fn the_render_loop_matters_only_on_nvidias_driver() {
-        let nvidia = host(Distro::Arch, vec![Gpu::Nvidia], true);
-        assert_eq!(render_loop(&nvidia, None).unwrap().level, Level::Warn);
-        assert_eq!(render_loop(&nvidia, Some("threaded")).unwrap().level, Level::Warn);
-        assert_eq!(render_loop(&nvidia, Some("basic")), None);
-        assert_eq!(render_loop(&host(Distro::Arch, vec![Gpu::Nvidia], false), None), None);
-        assert_eq!(render_loop(&host(Distro::Arch, vec![Gpu::Amd], false), None), None);
     }
 
     #[test]
