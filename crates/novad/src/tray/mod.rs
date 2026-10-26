@@ -232,22 +232,38 @@ impl Tray {
     /// item belongs to that app. For the launcher, to reopen an app that
     /// only sits in the tray.
     pub fn activate_app(&self, app_id: &str) -> Result<bool, String> {
-        let address = {
-            let state = lock(&self.shared.state);
-            let event = self.shared.event(&state);
-            let Some(item) = event.items.into_iter().find(|item| item.app.as_ref().is_some_and(|app| app.id == app_id))
-            else {
-                return Ok(false);
-            };
-            item.address
-        };
+        let item = self.item(|item| item.app.as_ref().is_some_and(|app| app.id == app_id));
+        let Some(item) = item else { return Ok(false) };
+        self.send_activate(&item.address).map_err(|e| format!("{app_id}'s tray icon didn't answer: {e}"))
+    }
+
+    /// Asks the item at `address` to show its window, as a click on its
+    /// icon does (`Activate`), and says which installed app it belongs to.
+    pub fn activate(&self, address: &str) -> Result<Option<String>, String> {
+        let item = self.item(|item| item.address == address).ok_or_else(|| format!("no tray icon at {address}"))?;
+        if !self.send_activate(address).map_err(|e| format!("{}'s tray icon didn't answer: {e}", item.id))? {
+            return Err("the tray isn't on the session bus".into());
+        }
+        Ok(item.app.map(|app| app.id))
+    }
+
+    /// The first item published (one whose id and title were read) that
+    /// `wanted` picks.
+    fn item(&self, wanted: impl Fn(&TrayItem) -> bool) -> Option<TrayItem> {
+        let state = lock(&self.shared.state);
+        self.shared.event(&state).items.into_iter().find(|item| wanted(item))
+    }
+
+    /// Calls `Activate` on the item at `address`; false while the tray isn't
+    /// on the bus.
+    fn send_activate(&self, address: &str) -> Result<bool, String> {
         let Some(connection) = lock(&self.shared.connection).clone() else {
             return Ok(false);
         };
         let slash = address.find('/').ok_or_else(|| format!("bad tray address {address}"))?;
         let (bus, path) = address.split_at(slash);
         zbus::block_on(connection.call_method(Some(bus), path, Some(ITEM_INTERFACE), "Activate", &(0i32, 0i32)))
-            .map_err(|e| format!("{app_id}'s tray icon didn't answer: {e}"))?;
+            .map_err(|e| e.to_string())?;
         Ok(true)
     }
 
