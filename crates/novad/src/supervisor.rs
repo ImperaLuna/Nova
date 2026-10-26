@@ -74,6 +74,9 @@ pub struct UiSettings {
     /// The only EGL vendor file the UI loads, when there's one to pick
     /// (`egl::nvidia_only_vendor`).
     pub egl_vendor: Option<PathBuf>,
+    /// The Qt render loop the UI uses, when there's one to pick
+    /// (`render_loop::for_ui`).
+    pub render_loop: Option<&'static str>,
 }
 
 pub struct Supervisor {
@@ -95,6 +98,9 @@ impl Supervisor {
         let quickshell_version = quickshell_version(&settings, &logger);
         if let Some(vendor) = &settings.egl_vendor {
             logger.info(LOG_SOURCE, &format!("the UI loads only NVIDIA's EGL ({})", vendor.display()));
+        }
+        if let Some(render_loop) = settings.render_loop {
+            logger.info(LOG_SOURCE, &format!("the UI uses Qt's {render_loop} render loop"));
         }
         let supervisor =
             Arc::new(Self { record: Mutex::default(), quitting: AtomicBool::new(false), quickshell_version });
@@ -245,6 +251,9 @@ fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
     }
     if let Some(vendor) = &settings.egl_vendor {
         command.env(crate::egl::VENDOR_FILES_VAR, vendor);
+    }
+    if let Some(render_loop) = settings.render_loop {
+        command.env(crate::render_loop::VAR, render_loop);
     }
     // A crashed novad never leaves an orphaned bar behind. This runs on the
     // supervisor thread, which lives as long as novad.

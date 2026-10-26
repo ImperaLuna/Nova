@@ -150,6 +150,7 @@ fn only_the_supervised_ui_reports_the_lock_screen() {
         path_var: std::env::var("PATH").unwrap_or_default(),
         wayland_socket: None,
         egl_vendor: None,
+        render_loop: None,
     };
     let novad = TestDaemon::start("lock-reports", Some(settings));
     let mut other = novad.connect();
