@@ -241,6 +241,17 @@ for add_output, remove_output in ADDED_OUTPUTS:
         machine.succeed(as_user(add_output))
         try:
             retry(lambda _last_try: ui_log_count(BAR_SHOWN) > bars, timeout=WAIT)
+
+            # novad knows the new output, and that the first has the focus, so
+            # `nova toggle` opens quick settings there.
+            def first_focused(last_try: bool) -> bool:
+                outputs = ((status() or {}).get("desktop") or {}).get("outputs", [])
+                if last_try:
+                    print(f"novad's outputs: {outputs}")
+                focused = [output["name"] for output in outputs if output.get("focused")]
+                return ADDED_OUTPUT in [output["name"] for output in outputs] and focused not in ([], [ADDED_OUTPUT])
+
+            retry(first_focused, timeout=CLICK_EFFECT)
             # On the first output (add_output focuses it): a panel surface
             # there takes more than its parked 1x1, and none on the added one.
             opened = ui_log_count(QUICK_SETTINGS_OPENED)
