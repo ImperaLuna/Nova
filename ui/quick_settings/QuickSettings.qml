@@ -75,11 +75,14 @@ StagePanel {
 
     onOpenChanged: {
         console.info(`nova: quick settings ${open ? "opened" : "closed"}`);
-        QuickSettingsService.watching = open;
         VolumeService.showElsewhere(output.name, open);
         if (!open)
             trayMenu.entry = null;
     }
+    // Resources show on the first page (its card) and their own page: novad
+    // reads them only while one of those is open.
+    readonly property bool resourcesShown: open && (page === "main" || page === "resources")
+    onResourcesShownChanged: QuickSettingsService.watching = resourcesShown
     // The list is on the first page: another page hides it.
     readonly property bool listShown: open && page === "main"
     onListShownChanged: NotificationsService.showList(output.name, listShown)
@@ -103,7 +106,7 @@ StagePanel {
     Component.onDestruction: {
         VolumeService.showElsewhere(output.name, false);
         NotificationsService.showList(output.name, false);
-        if (open)
+        if (resourcesShown)
             QuickSettingsService.watching = false;
     }
     Glass {

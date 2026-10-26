@@ -67,7 +67,9 @@ impl Sources {
 
 /// Where an NVIDIA GPU's use comes from, when the driver's sysfs doesn't say.
 enum NvidiaSource {
-    Nvml(nvidia::Library),
+    /// NVML loads from these paths (`nvidia::Library::open`), loaded only
+    /// while watched.
+    Nvml(Vec<PathBuf>),
     Smi(PathBuf),
 }
 
@@ -201,7 +203,7 @@ impl Sampler {
             .is_none()
             .then(|| {
                 nvidia::Library::open(&sources.nvml)
-                    .map(NvidiaSource::Nvml)
+                    .map(|_| NvidiaSource::Nvml(sources.nvml.clone()))
                     .or_else(|| nvidia_smi::find(&sources.path_var).map(NvidiaSource::Smi))
             })
             .flatten();
@@ -256,8 +258,9 @@ impl Sampler {
         self.look_cpu = CpuTimes::read(&self.sources.proc_root);
         self.process_ticks.since_last(&usage::processes(&self.sources.proc_root));
         self.nvidia = match &self.nvidia_source {
-            Some(NvidiaSource::Nvml(library)) => library
-                .start()
+            Some(NvidiaSource::Nvml(paths)) => nvidia::Library::open(paths)
+                .ok_or_else(|| "it didn't load again".to_string())
+                .and_then(nvidia::Library::start)
                 .map(NvidiaReader::Nvml)
                 .map_err(|e| self.logger.warn(LOG_SOURCE, &format!("couldn't start NVML: {e}")))
                 .ok(),

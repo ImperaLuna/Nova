@@ -6,7 +6,7 @@ import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
 
 // Quick settings' link to novad: the machine and its user for the header,
-// the resources card's numbers while the sidebar is open, and keep awake.
+// the resources card's numbers while the sidebar shows them, and keep awake.
 // The sidebar (../QuickSettings.qml) reads and acts through here.
 Singleton {
     id: root
@@ -21,7 +21,7 @@ Singleton {
     // on. Lasts until the UI restarts.
     property bool keepAwake: false
 
-    // Whether resources are wanted (the sidebar is open). Sent again after
+    // Whether resources are wanted (the sidebar shows them). Sent again after
     // novad restarts, since a new connection watches nothing.
     property bool watching: false
     onWatchingChanged: send()
