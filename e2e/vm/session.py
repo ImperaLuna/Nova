@@ -57,10 +57,11 @@ with subtest("nova toggle power opens the power menu; Esc closes it and its L ke
     machine.succeed(f"{YDOTOOL} type {shlex.quote(PASSWORD)}")
     press_until_logged(ENTER, SESSION_UNLOCKED)
 
-with subtest("nova toggle launcher opens the launcher; typing finds foot, Enter starts it in a scope of its own, Esc closes"):
+with subtest("nova toggle launcher opens the launcher, empty; typing finds foot, Enter starts it in a scope of its own, Esc closes"):
     before = ui_log_count(LAUNCHER_TYPING)
     machine.succeed(as_user("nova toggle launcher"))
     retry(lambda _last_try: ui_log_count(LAUNCHER_TYPING) > before, timeout=CLICK_EFFECT)
+    screenshot("launcher-open")
     machine.succeed(f"{YDOTOOL} type {FOOT}")
     screenshot("launcher")
     try:
