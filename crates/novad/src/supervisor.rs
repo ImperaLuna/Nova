@@ -45,6 +45,10 @@ const FRAME_CALLBACK_TIMEOUT: (&str, &str) = ("QT_WAYLAND_FRAME_CALLBACK_TIMEOUT
 /// window draw while anything animates, which the stage limits to the
 /// screens where something moves (ui/stage/StageMotion.qml).
 const SIMPLE_ANIMATION_DRIVER: (&str, &str) = ("QSG_USE_SIMPLE_ANIMATION_DRIVER", "1");
+/// With a port number in it, a debug build of novad starts the UI with a
+/// QML debugger listening there, for qmlprofiler. Never
+/// in a release build: anything local could connect and run code in the UI.
+const QML_DEBUG_PORT_VAR: &str = "NOVA_UI_QML_DEBUG_PORT";
 const LOG_SOURCE: &str = "supervisor";
 const FIRST_RETRY: Duration = Duration::from_secs(1);
 const MAX_RETRY: Duration = Duration::from_secs(30);
@@ -202,6 +206,14 @@ impl Supervisor {
     }
 }
 
+/// The QML debugger port [`QML_DEBUG_PORT_VAR`] asks for, in a debug build.
+fn qml_debug_port(env: impl Fn(&str) -> Option<String>) -> Option<u16> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    env(QML_DEBUG_PORT_VAR)?.trim().parse().ok()
+}
+
 /// The packaged `nova-ui` launcher, else `nova-ui` or a `NovaUI` link to
 /// Quickshell (`nova setup` makes one in `~/.local/bin`) if one is on
 /// `path_var`, else `quickshell`. Either way the command line says `NovaUI`;
@@ -228,6 +240,9 @@ fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(port) = qml_debug_port(|name| std::env::var(name).ok()) {
+        command.arg("--debug").arg(port.to_string());
+    }
     if let Some(vendor) = &settings.egl_vendor {
         command.env(crate::egl::VENDOR_FILES_VAR, vendor);
     }
@@ -301,6 +316,14 @@ pub(crate) fn stdout_within(command: Command, timeout: Duration) -> std::io::Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_debug_build_opens_the_qml_debug_port_asked_for() {
+        let env = |value: &'static str| move |name: &str| (name == QML_DEBUG_PORT_VAR).then(|| value.to_string());
+        assert_eq!(qml_debug_port(env("3768")), cfg!(debug_assertions).then_some(3768));
+        assert_eq!(qml_debug_port(env("not a port")), None);
+        assert_eq!(qml_debug_port(|_: &str| None), None);
+    }
 
     #[test]
     fn a_command_that_hangs_is_killed() {
