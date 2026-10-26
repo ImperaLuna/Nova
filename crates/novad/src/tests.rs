@@ -4,6 +4,7 @@
 //! compositor.
 
 use super::*;
+use crate::session_bus::Bus;
 use nova_protocol::{FeatureStatus, LogEntry, UI_LOG_SOURCE};
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Lines, Write};
@@ -101,10 +102,16 @@ impl TestDaemon {
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
             resources: resources::Sources::system(""),
             launcher: launcher_paths(&dir),
-            // No bus unless the test starts one there (`tray::tests::TestBus`).
+            // No bus unless the test starts one there (`session_bus::TestBus`).
             tray: tray::Sources {
-                bus: tray::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+                bus: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
                 state_file: dir.join("tray.json"),
+            },
+            // No bus: the notifications' own tests give them one.
+            notifications: notifications::Sources {
+                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                state_file: dir.join("notifications.json"),
+                images: dir.join("notifications"),
             },
         };
         let settings = Settings::load(&sources, &hub, &logger);
@@ -174,6 +181,9 @@ impl Drop for TestDaemon {
         }
         if let Some(x11_tray) = &settings.x11_tray {
             x11_tray.stop();
+        }
+        if let Some(notifications) = &settings.notifications {
+            notifications.stop();
         }
         drop(settings);
         if let Some(watching) = &self.watching {
@@ -1521,6 +1531,23 @@ fn subscribing_to_the_tray_sends_its_items() {
     assert_eq!(client.next_event("tray"), json!({"items": []}));
 }
 
+/// The notifications' own tests cover the bus; here there's none, so the
+/// list starts empty, and do not disturb and mutes work over the socket.
+#[test]
+fn notifications_are_listed_and_set_over_the_socket() {
+    let novad = TestDaemon::start("notifications", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["notifications"]})));
+    let empty = json!({"items": [], "do_not_disturb": false, "muted": [], "apps": []});
+    assert_eq!(client.next_event("notifications"), empty);
+    client.request(2, "set_do_not_disturb", Some(json!({"on": true})));
+    assert_eq!(client.next_event("notifications")["do_not_disturb"], true);
+    let refused = client.request(3, "mute_notification_app", Some(json!({"app": "Discord", "muted": true})));
+    assert!(refused["error"].as_str().unwrap().contains("Discord"), "{refused}");
+    let missing = client.request(4, "notification_action", Some(json!({"id": 9})));
+    assert!(missing["error"].as_str().unwrap().contains("no notification 9"), "{missing}");
+}
+
 /// Resources come only while a connection watches, and stop once the last
 /// one stops watching or hangs up.
 #[test]
@@ -1910,7 +1937,7 @@ fn launching_an_app_that_only_sits_in_the_tray_activates_its_item() {
         None,
         |dir| {
             std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
-            bus = Some(tray::tests::TestBus::start(&dir.join("bus")));
+            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
         },
         |dir| {
             let (fake, backend) = FakeCompositor::niri(dir);

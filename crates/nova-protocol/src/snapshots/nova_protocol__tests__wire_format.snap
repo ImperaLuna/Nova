@@ -6,7 +6,7 @@ expression: all
 {"v":2,"event":"features","data":{"features":[{"id":"core","status":"ready"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
-{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray"]}}
+{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray","notifications"]}}
 {"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","backdrop":"#000000","fg":"#F5E7C6","fgAlt":"#525252","fgDim":"#9A9A9A","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
 {"v":2,"id":10,"cmd":"status"}
 {"v":2,"id":11,"cmd":"quit"}
@@ -68,4 +68,14 @@ expression: all
 {"v":2,"id":27,"cmd":"hide_tray_app","args":{"id":"steam","hidden":true}}
 {"v":2,"cmd":"toggle","args":{"panel":"launcher"}}
 {"v":2,"event":"tray","data":{"items":[{"address":":1.421/StatusNotifierItem","id":"discord_status_icon_1","title":"","app":{"id":"discord.desktop","name":"Discord","description":"All-in-one cross-platform voice and text chat for gamers","icon":"discord"}},{"address":":1.607/org/ayatana/NotificationItem/steam","id":"steam","title":"Steam"}],"hidden":["steam"]}}
+{"v":2,"event":"notifications","data":{"items":[{"id":7,"app":"Firefox","icon":"firefox","app_id":"org.mozilla.firefox.desktop","summary":"Download complete","body":"niri-26.04.tar.gz","actions":[{"key":"open","label":"Open file"}],"has_default":true,"urgency":"normal","time":1761400000,"unread":true,"live":true},{"id":3,"app":"Discord","summary":"Mara","body":"sent you the map","image":"/home/mara/.local/state/nova/notifications/3.png","urgency":"critical","progress":40,"timeout_ms":0,"time":1761399000}],"do_not_disturb":false,"muted":["Discord"],"apps":[{"name":"Firefox","icon":"firefox","app_id":"org.mozilla.firefox.desktop"},{"name":"Discord"}]}}
+{"v":2,"event":"notification_popup","data":{"id":7,"app":"Firefox","icon":"firefox","app_id":"org.mozilla.firefox.desktop","summary":"Download complete","body":"niri-26.04.tar.gz","actions":[{"key":"open","label":"Open file"}],"has_default":true,"urgency":"normal","time":1761400000,"unread":true,"live":true}}
+{"v":2,"id":40,"cmd":"notification_action","args":{"id":7,"action":"open"}}
+{"v":2,"cmd":"notification_action","args":{"id":7}}
+{"v":2,"id":41,"cmd":"dismiss_notification","args":{"id":7}}
+{"v":2,"cmd":"clear_notifications","args":{"app":"Discord"}}
+{"v":2,"cmd":"clear_notifications","args":{}}
+{"v":2,"cmd":"read_notifications"}
+{"v":2,"id":42,"cmd":"set_do_not_disturb","args":{"on":true}}
+{"v":2,"id":43,"cmd":"mute_notification_app","args":{"app":"Discord","muted":true}}
 {"v":2,"id":8,"error":"bad request"}

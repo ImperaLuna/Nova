@@ -1,0 +1,282 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import "../theme"
+import "../theme/icons.js" as Icons
+import "notifications.js" as Notifications
+
+// A pop-up: who it's from, the app and how many more came from it ("+2"),
+// the summary and body, progress, and the app's buttons (the first one in
+// the accent). A thin line along the bottom drains over its time; the
+// pointer on it holds it. Critical ones have a rim in the error color and
+// stay until they're closed. A click opens it, ✕ (on hover) dismisses it.
+Item {
+    id: card
+
+    required property var notification
+    // How many notifications it stands for (the newest shows).
+    property int count: 1
+    property var iconSource: name => ""
+    // Seconds since the epoch, for how long ago it came.
+    property real now: Date.now() / 1000
+
+    readonly property bool held: hover.hovered
+    readonly property int timeout: Notifications.timeout(notification, Tokens.durationNotification)
+    readonly property bool critical: notification.urgency === "critical"
+    // The share of its time left, 1 to 0.
+    property real remaining: 1
+
+    signal clicked
+    signal dismissed
+    // One of its buttons, by key.
+    signal actionClicked(string key)
+    // Its time ran out.
+    signal expired
+
+    implicitWidth: Tokens.notificationWidth
+    implicitHeight: content.implicitHeight + Tokens.pad + Tokens.notificationPadBottom
+
+    readonly property alias radius: surface.radius
+    readonly property alias glass: surface
+
+    // Its time starts over (a newer one came in its place).
+    function restart() {
+        drain.stop();
+        remaining = 1;
+        if (timeout > 0)
+            drain.start();
+    }
+    onTimeoutChanged: restart()
+    Component.onCompleted: restart()
+
+    NumberAnimation on remaining {
+        id: drain
+        running: false
+        from: 1
+        to: 0
+        duration: card.timeout
+        paused: card.held && running
+        onFinished: card.expired()
+    }
+
+    HoverHandler {
+        id: hover
+    }
+
+    GlassShadow {
+        glass: surface
+    }
+
+    Glass {
+        id: surface
+        anchors.fill: parent
+        radius: Tokens.radiusNotification
+        clip: true
+
+        // A little lighter under the pointer.
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: Tokens.hover
+            visible: card.held
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: "transparent"
+            visible: card.critical
+            border.width: Tokens.notificationCriticalRim
+            border.color: Tokens.error
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: card.clicked()
+        }
+
+        Row {
+            id: content
+            x: Tokens.pad + Tokens.labelNudge * 2
+            y: Tokens.pad
+            width: parent.width - 2 * x
+            spacing: Tokens.pad
+
+            NotificationIcon {
+                notification: card.notification
+                iconSource: card.iconSource
+            }
+
+            Column {
+                width: parent.width - x
+                spacing: Tokens.notificationLineGap
+
+                Item {
+                    width: parent.width
+                    height: Tokens.notificationAppLine
+
+                    Row {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - when.width - Tokens.gap
+                        spacing: Tokens.iconGap
+
+                        Text {
+                            width: Math.min(implicitWidth, parent.width - more.width - parent.spacing)
+                            elide: Text.ElideRight
+                            font.family: Tokens.fontSans
+                            font.pixelSize: Tokens.fontSizeTiny
+                            color: Tokens.fgSoft
+                            textFormat: Text.PlainText
+                            text: card.notification.app
+                        }
+                        Rectangle {
+                            id: more
+                            objectName: "more"
+                            visible: card.count > 1
+                            width: visible ? moreText.implicitWidth + 2 * Tokens.notificationChipPad : 0
+                            height: Tokens.notificationChipHeight
+                            radius: height / 2
+                            color: Tokens.primary
+
+                            Text {
+                                id: moreText
+                                anchors.centerIn: parent
+                                font.family: Tokens.fontMono
+                                font.pixelSize: Tokens.fontSizeMicro
+                                font.weight: Font.DemiBold
+                                color: Tokens.onAccent
+                                text: `+${card.count - 1}`
+                            }
+                        }
+                    }
+
+                    Text {
+                        id: when
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: !card.held
+                        font.family: Tokens.fontMono
+                        font.pixelSize: Tokens.fontSizeMicro
+                        color: Tokens.fgSoft
+                        text: card.critical ? qsTr("urgent") : Notifications.ago(card.notification.time, card.now)
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    elide: Text.ElideRight
+                    font.family: Tokens.fontSans
+                    font.pixelSize: Tokens.fontSize
+                    font.weight: Font.DemiBold
+                    color: Tokens.fg
+                    textFormat: Text.PlainText
+                    text: card.notification.summary
+                }
+
+                Text {
+                    width: parent.width
+                    visible: text !== ""
+                    wrapMode: Text.Wrap
+                    maximumLineCount: Tokens.notificationBodyLines
+                    elide: Text.ElideRight
+                    font.family: Tokens.fontSans
+                    font.pixelSize: Tokens.fontSizeSmall
+                    color: Tokens.fgAlt
+                    textFormat: Text.PlainText
+                    text: card.notification.body
+                }
+
+                Rectangle {
+                    visible: card.notification.progress !== undefined
+                    width: parent.width
+                    height: Tokens.notificationProgressHeight
+                    radius: height / 2
+                    color: Tokens.track
+
+                    Rectangle {
+                        width: parent.width * (card.notification.progress ?? 0) / 100
+                        height: parent.height
+                        radius: parent.radius
+                        color: Tokens.primary
+
+                        Behavior on width {
+                            NumberAnimation {
+                                duration: Tokens.durationPanel
+                                easing.type: Easing.BezierSpline
+                                easing.bezierCurve: Tokens.easing
+                            }
+                        }
+                    }
+                }
+
+                // Buttons that don't fit on a line wrap to the next.
+                Flow {
+                    id: actions
+                    visible: (card.notification.actions ?? []).length > 0
+                    width: parent.width
+                    topPadding: Tokens.notificationActionsGap
+                    spacing: Tokens.iconGap
+
+                    Repeater {
+                        model: card.notification.actions ?? []
+
+                        Rectangle {
+                            id: action
+                            required property var modelData
+                            required property int index
+                            readonly property bool primary: index === 0
+                            width: Math.min(label.implicitWidth + 2 * Tokens.pad, actions.width)
+                            height: Tokens.notificationActionHeight
+                            radius: height / 2
+                            color: primary ? Tokens.primary : press.containsMouse ? Tokens.selectedQuiet : Tokens.selected
+
+                            Text {
+                                id: label
+                                anchors.centerIn: parent
+                                width: Math.min(implicitWidth, parent.width - 2 * Tokens.pad)
+                                elide: Text.ElideRight
+                                font.family: Tokens.fontSans
+                                font.pixelSize: Tokens.fontSizeSmall
+                                font.weight: action.primary ? Font.DemiBold : Font.Medium
+                                color: action.primary ? Tokens.onAccent : Tokens.fg
+                                textFormat: Text.PlainText
+                                text: action.modelData.label
+                            }
+
+                            MouseArea {
+                                id: press
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: card.actionClicked(action.modelData.key)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        RoundButton {
+            objectName: "dismiss"
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: Tokens.notificationCloseInset
+            visible: card.held
+            icon: Icons.CLOSE
+            size: Tokens.notificationCloseSize
+            onClicked: card.dismissed()
+        }
+
+        // The time left.
+        Rectangle {
+            objectName: "timer"
+            visible: card.timeout > 0
+            x: Tokens.pad + Tokens.labelNudge * 2
+            anchors.bottom: parent.bottom
+            width: (parent.width - 2 * x) * card.remaining
+            height: Tokens.notificationTimerHeight
+            radius: height / 2
+            color: Tokens.notificationTimer
+        }
+    }
+}

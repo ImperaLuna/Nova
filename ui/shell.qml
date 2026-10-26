@@ -9,6 +9,8 @@ import "compositor"
 import "daemon"
 import "lock"
 import "lock/service"
+import "notifications"
+import "notifications/service"
 import "stage"
 import "volume"
 
@@ -34,6 +36,12 @@ ShellRoot {
     LazyLoader {
         active: Daemon.theme !== null
         component: VolumeOsd {}
+    }
+
+    // Notifications' pop-ups, while their feature is on.
+    LazyLoader {
+        active: Daemon.theme !== null && NotificationsService.ready
+        component: NotificationPopups {}
     }
 
     // Screenshots and recordings: the region picker while it's open, the

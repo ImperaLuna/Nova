@@ -30,6 +30,7 @@ workspace = true
 [features]
 ai-usage = []
 launcher = []
+notifications = []
 power = []
 quick-settings = []
 recording = []

@@ -6,7 +6,7 @@ var VERSION = 2;
 
 // Commands the UI sends (Command in nova-protocol). A nova-protocol test
 // checks every CMD_, EVENT_, TOPIC_, CAPABILITY_, STEP_, POWER_, VOLUME_ and FEATURE_ name
-// here (and CAPTURE_, SHOT_) is one novad knows.
+// here (and CAPTURE_, SHOT_, URGENCY_) is one novad knows.
 var CMD_SUBSCRIBE = "subscribe";
 var CMD_SHOW_AI_USAGE = "show_ai_usage";
 var CMD_REFRESH_AI_USAGE = "refresh_ai_usage";
@@ -30,6 +30,12 @@ var CMD_SEARCH_APPS = "search_apps";
 var CMD_LAUNCH_APP = "launch_app";
 var CMD_PIN_APP = "pin_app";
 var CMD_HIDE_TRAY_APP = "hide_tray_app";
+var CMD_NOTIFICATION_ACTION = "notification_action";
+var CMD_DISMISS_NOTIFICATION = "dismiss_notification";
+var CMD_CLEAR_NOTIFICATIONS = "clear_notifications";
+var CMD_READ_NOTIFICATIONS = "read_notifications";
+var CMD_SET_DO_NOT_DISTURB = "set_do_not_disturb";
+var CMD_MUTE_NOTIFICATION_APP = "mute_notification_app";
 // novad refuses longer search_apps queries (SEARCH_APPS_MAX_CHARS in
 // nova-protocol, which checks this matches).
 var SEARCH_APPS_MAX_CHARS = 200;
@@ -54,6 +60,8 @@ var EVENT_HOST = "host";
 var EVENT_RESOURCES = "resources";
 var EVENT_LAUNCHER = "launcher";
 var EVENT_TRAY = "tray";
+var EVENT_NOTIFICATIONS = "notifications";
+var EVENT_NOTIFICATION_POPUP = "notification_popup";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
@@ -70,6 +78,7 @@ var TOPIC_HOST = "host";
 var TOPIC_RESOURCES = "resources";
 var TOPIC_LAUNCHER = "launcher";
 var TOPIC_TRAY = "tray";
+var TOPIC_NOTIFICATIONS = "notifications";
 
 // What a compositor can report or do (Capability in nova-protocol).
 var CAPABILITY_WORKSPACES = "workspaces";
@@ -97,6 +106,7 @@ var FEATURE_RECORDING = "recording";
 var FEATURE_QUICK_SETTINGS = "quick-settings";
 var FEATURE_LAUNCHER = "launcher";
 var FEATURE_TRAY = "tray";
+var FEATURE_NOTIFICATIONS = "notifications";
 
 // Power menu actions (PowerAction in nova-protocol).
 var POWER_LOCK = "lock";
@@ -113,6 +123,11 @@ var CAPTURE_SCREEN = "screen";
 var SHOT_OPEN = "open";
 var SHOT_FOLDER = "folder";
 var SHOT_DELETE = "delete";
+
+// How much a notification matters (Urgency in nova-protocol).
+var URGENCY_LOW = "low";
+var URGENCY_NORMAL = "normal";
+var URGENCY_CRITICAL = "critical";
 
 // Returns {kind: "event"|"response", ...} or null for lines to ignore.
 function parse(line) {

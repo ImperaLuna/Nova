@@ -32,6 +32,8 @@ StagePanel {
     property bool trayAttention: false
     // What an Image shows for an app (TrayService.iconSource).
     property var iconSource: entry => ""
+    property int unread: 0
+    property bool doNotDisturb: false
 
     signal quickSettingsClicked
     signal powerClicked
@@ -275,6 +277,8 @@ StagePanel {
             quickSettings: pill.quickSettings
             power: pill.power
             quickSettingsOpen: pill.quickSettingsOpen
+            unread: pill.unread
+            doNotDisturb: pill.doNotDisturb
             onQuickSettingsClicked: pill.quickSettingsClicked()
             onPowerClicked: pill.powerClicked()
         }

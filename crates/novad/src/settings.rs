@@ -11,7 +11,7 @@ use crate::config::{self, Config};
 use crate::hub::Hub;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, host, launcher, resources, theme, tray, x11_tray};
+use crate::{ai_usage, features, host, launcher, notifications, resources, theme, tray, x11_tray};
 use nova_features::{Manifest, Selection};
 use nova_protocol::{Event, FeatureState, FeatureStatus, Host, Theme};
 use std::collections::BTreeSet;
@@ -39,6 +39,7 @@ pub struct Sources {
     pub resources: resources::Sources,
     pub launcher: launcher::Paths,
     pub tray: tray::Sources,
+    pub notifications: notifications::Sources,
 }
 
 /// The settings in effect, and the feature services they started.
@@ -57,6 +58,8 @@ pub struct Settings {
     pub tray: Option<Arc<tray::Tray>>,
     /// Running xembedsniproxy while the `x11-tray` feature is ready.
     pub x11_tray: Option<Arc<x11_tray::X11Tray>>,
+    /// Serving `org.freedesktop.Notifications` while the `notifications` feature is ready.
+    pub notifications: Option<Arc<notifications::Notifications>>,
 }
 
 impl Settings {
@@ -198,6 +201,27 @@ impl Settings {
                 })
             }
         };
+
+        // Started before the UI, which settings start ahead of, so
+        // notifications sent while it starts are kept. No options either.
+        let notifications_ready = is_ready(&features, notifications::FEATURE_ID);
+        let notifications = match previous.as_deref_mut().and_then(|previous| previous.notifications.take()) {
+            Some(running) if notifications_ready => Some(running),
+            running => {
+                if let Some(running) = running {
+                    running.stop();
+                    logger.info("features", &format!("stopped {}", notifications::FEATURE_ID));
+                }
+                notifications_ready.then(|| {
+                    logger.info("features", &format!("starting {}", notifications::FEATURE_ID));
+                    notifications::Notifications::start(
+                        sources.notifications.clone(),
+                        Arc::clone(hub),
+                        Arc::clone(logger),
+                    )
+                })
+            }
+        };
         if let Some(launcher) = &launcher {
             let tray = tray.as_ref().map(Arc::downgrade);
             launcher.on_rescan(move || {
@@ -231,7 +255,7 @@ impl Settings {
             hub.publish(&Event::Features { features: features.clone() });
         }
 
-        Self { config, selection, features, theme, ai_usage, resources, launcher, tray, x11_tray }
+        Self { config, selection, features, theme, ai_usage, resources, launcher, tray, x11_tray, notifications }
     }
 }
 

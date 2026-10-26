@@ -43,6 +43,13 @@ Singleton {
     // QuickSettingsService singleton.
     property var host: null
     property var resources: null
+    // The latest notifications event's data ({items, do_not_disturb, muted,
+    // apps}); null until one arrives, which only happens with the
+    // notifications feature on. Read it, and hear notificationPopped,
+    // through the NotificationsService singleton.
+    property var notifications: null
+    // A notification to pop up (one of `notifications.items`' shape).
+    signal notificationPopped(var notification)
 
     // `nova toggle <panel>`: open or close the StagePanel named `panel`.
     // `output` is the focused output's name, or null when novad doesn't
@@ -138,6 +145,10 @@ Singleton {
             launcher = msg.data;
         } else if (msg.event === Protocol.EVENT_TRAY) {
             tray = msg.data;
+        } else if (msg.event === Protocol.EVENT_NOTIFICATIONS) {
+            notifications = msg.data;
+        } else if (msg.event === Protocol.EVENT_NOTIFICATION_POPUP) {
+            notificationPopped(msg.data);
         }
     }
 
@@ -162,7 +173,7 @@ Singleton {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
                 root.call(Protocol.CMD_SUBSCRIBE, {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS]
                 });
             } else {
                 // A picker novad still has open is sent again on reconnect.

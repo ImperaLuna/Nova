@@ -33,6 +33,7 @@ mod inotify;
 mod launcher;
 mod logger;
 mod logind;
+mod notifications;
 mod notify;
 mod power;
 mod procfs;
@@ -40,6 +41,7 @@ mod recording;
 mod resources;
 mod screenshot;
 mod server;
+mod session_bus;
 mod session_lock;
 mod settings;
 mod state_file;
@@ -231,6 +233,7 @@ fn start(
         resources: resources::Sources::system(&path_var),
         launcher: launcher::Paths::new(&args.state_dir, &path_var),
         tray: tray::Sources::new(&args.state_dir),
+        notifications: notifications::Sources::new(&args.state_dir),
     };
     let settings = Settings::load(&sources, &hub, &logger);
     if args.autostart {

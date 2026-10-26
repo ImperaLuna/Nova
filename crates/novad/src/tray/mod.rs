@@ -23,22 +23,22 @@ pub mod tests;
 use crate::hub::{ClientId, Hub};
 use crate::launcher::Launcher;
 use crate::logger::Logger;
+use crate::session_bus::{Bus, Stop};
 use crate::{lock, state_file};
 use futures_core::Stream;
 use nova_protocol::{App, Event, LogLevel, Tray as TrayEvent, TrayItem};
 use std::future::poll_fn;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::task::{Poll, Waker};
+use std::task::Poll;
 use std::time::Duration;
 use zbus::fdo::RequestNameReply;
 use zbus::message::Header;
 use zbus::names::{BusName, UniqueName};
 use zbus::object_server::SignalEmitter;
 use zbus::wire::{ObjectPath, OwnedVariant};
-use zbus::{Connection, MatchRule, MessageStream, connection, interface};
+use zbus::{Connection, MatchRule, MessageStream, interface};
 
 pub const FEATURE_ID: &str = "tray";
 const LOG_SOURCE: &str = "tray";
@@ -76,16 +76,6 @@ impl Sources {
     pub fn new(state_dir: &std::path::Path) -> Self {
         Self { bus: Bus::Session, state_file: state_dir.join("tray.json") }
     }
-}
-
-/// Which bus the watcher is on.
-#[derive(Clone)]
-pub enum Bus {
-    /// The session's, from `DBUS_SESSION_BUS_ADDRESS`.
-    Session,
-    /// A bus at this address, for tests.
-    #[cfg(test)]
-    Address(String),
 }
 
 pub struct Tray {
@@ -140,13 +130,6 @@ struct Read {
     bridged: bool,
 }
 
-/// Ends the bus loop: set once, and wakes the loop if it's waiting.
-#[derive(Default)]
-struct Stop {
-    stopped: AtomicBool,
-    waker: Mutex<Option<Waker>>,
-}
-
 impl Tray {
     /// Claims the watcher's name on `bus` and serves it on a thread of its
     /// own. Returns once the name is claimed, queued behind another
@@ -194,10 +177,7 @@ impl Tray {
     /// Lets go of the watcher's name and publishes nothing more.
     pub fn stop(&self) {
         let _state = lock(&self.shared.state);
-        self.shared.stop.stopped.store(true, Ordering::SeqCst);
-        if let Some(waker) = lock(&self.shared.stop.waker).take() {
-            waker.wake();
-        }
+        self.shared.stop.stop();
     }
 
     /// Looks apps up with `launcher` from now on (`None` while the launcher
@@ -276,7 +256,7 @@ impl Tray {
 
 impl Shared {
     fn stopped(&self) -> bool {
-        self.stop.stopped.load(Ordering::SeqCst)
+        self.stop.stopped()
     }
 
     fn event(&self, state: &State) -> TrayEvent {
@@ -444,11 +424,7 @@ fn key(item: &TrayItem) -> &str {
 /// items whose app leaves the bus, until `stop` or the bus goes. Sends on
 /// `ready` once apps can register.
 async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mpsc::Sender<()>) -> zbus::Result<()> {
-    let builder = match bus {
-        Bus::Session => connection::Builder::session(),
-        #[cfg(test)]
-        Bus::Address(address) => connection::Builder::address(address.as_str()),
-    };
+    let builder = bus.builder();
     let watcher = Watcher { shared: Arc::clone(shared) };
     let connection = builder.method_timeout(CALL_TIMEOUT).serve_at(WATCHER_PATH, watcher).build().await?;
     // Followed before the name is claimed, so no app leaving in between is missed.
@@ -487,9 +463,7 @@ async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mpsc::Sender<(
 /// The stream's next message; `None` once the connection closes or `stop` is set.
 async fn next_unless_stopped(stream: &mut MessageStream, stop: &Stop) -> Option<zbus::Result<zbus::Message>> {
     poll_fn(|cx| {
-        // Stored before the check, so a stop in between still wakes us.
-        *lock(&stop.waker) = Some(cx.waker().clone());
-        if stop.stopped.load(Ordering::SeqCst) {
+        if stop.poll(cx).is_ready() {
             return Poll::Ready(None);
         }
         Pin::new(&mut *stream).poll_next(cx)

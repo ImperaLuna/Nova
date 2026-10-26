@@ -11,7 +11,8 @@
 //! `packaging/compositor/niri.kdl`.
 
 use crate::logger::Logger;
-use crate::{lock, supervisor, tray};
+use crate::session_bus::Bus;
+use crate::{lock, supervisor};
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
@@ -43,7 +44,7 @@ struct Shared {
 
 impl X11Tray {
     /// Starts it with `path_var` as its PATH, unless `bus` shows another copy.
-    pub fn start(bus: tray::Bus, path_var: &str, logger: Arc<Logger>) -> Arc<Self> {
+    pub fn start(bus: Bus, path_var: &str, logger: Arc<Logger>) -> Arc<Self> {
         let shared = Arc::new(Shared { stopped: Mutex::new(false), wake: Condvar::new(), child: Mutex::new(None) });
         let running = Arc::clone(&shared);
         let path_var = path_var.to_owned();
@@ -136,14 +137,9 @@ impl Shared {
 }
 
 /// Whether some program owns xembedsniproxy's bus name.
-fn already_running(bus: tray::Bus) -> zbus::Result<bool> {
+fn already_running(bus: Bus) -> zbus::Result<bool> {
     zbus::block_on(async {
-        let builder = match bus {
-            tray::Bus::Session => zbus::connection::Builder::session(),
-            #[cfg(test)]
-            tray::Bus::Address(address) => zbus::connection::Builder::address(address.as_str()),
-        };
-        let connection = builder.build().await?;
+        let connection = bus.builder().build().await?;
         let reply = connection
             .call_method(
                 Some("org.freedesktop.DBus"),
@@ -161,7 +157,7 @@ fn already_running(bus: tray::Bus) -> zbus::Result<bool> {
 mod tests {
     use super::*;
     use crate::hub::Hub;
-    use crate::tray::tests::TestBus;
+    use crate::session_bus::TestBus;
     use nova_protocol::LogLevel;
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
@@ -191,7 +187,7 @@ mod tests {
 
         fn start(&self) -> Arc<X11Tray> {
             let path = format!("{}:/run/current-system/sw/bin:/usr/bin:/bin", self.dir.join("bin").display());
-            X11Tray::start(tray::Bus::Address(self.bus.address.clone()), &path, Arc::clone(&self.logger))
+            X11Tray::start(Bus::Address(self.bus.address.clone()), &path, Arc::clone(&self.logger))
         }
 
         /// The pids it started, once there are `count`.

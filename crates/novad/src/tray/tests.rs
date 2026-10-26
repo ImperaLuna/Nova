@@ -5,59 +5,16 @@
 use super::*;
 use crate::hub::{ClientQueue, Outgoing};
 use crate::launcher;
+use crate::session_bus::TestBus;
 use nova_protocol::Topic;
 use serde_json::{Value, json};
-use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixStream;
-use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
 /// How long a test waits for something the bus should do at once.
 const WAIT: Duration = Duration::from_secs(5);
-
-/// A private session bus, listening at the socket `path`.
-pub struct TestBus {
-    bus: Child,
-    pub address: String,
-}
-
-impl TestBus {
-    pub fn start(path: &Path) -> Self {
-        let config = path.with_extension("conf");
-        std::fs::write(
-            &config,
-            format!(
-                "<busconfig><type>session</type><listen>unix:path={}</listen><auth>EXTERNAL</auth>\
-                 <policy context=\"default\"><allow send_destination=\"*\" eavesdrop=\"true\"/>\
-                 <allow eavesdrop=\"true\"/><allow own=\"*\"/></policy></busconfig>",
-                path.display()
-            ),
-        )
-        .unwrap();
-        let mut bus = Command::new("dbus-daemon")
-            .arg(format!("--config-file={}", config.display()))
-            .args(["--nofork", "--nopidfile", "--print-address=1"])
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("dbus-daemon runs");
-        let mut address = String::new();
-        BufReader::new(bus.stdout.take().unwrap()).read_line(&mut address).unwrap();
-        Self { bus, address: address.trim().to_string() }
-    }
-
-    pub fn connect(&self) -> Connection {
-        zbus::block_on(connection::Builder::address(self.address.as_str()).build()).unwrap()
-    }
-}
-
-impl Drop for TestBus {
-    fn drop(&mut self) {
-        let _ = self.bus.kill();
-        let _ = self.bus.wait();
-    }
-}
 
 struct Fixture {
     dir: PathBuf,

@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import "../bar"
+import "../notifications/service"
 import "../stage"
 import "../theme"
 import "../volume/service"
@@ -19,9 +20,10 @@ import "quick_settings.js" as QuickSettings
 // were, and its sections fade in one after another. A click outside
 // closes it.
 //
-// Pages slide in from the right (sound, resources) and back out to the
-// first page. Reading and acting go through QuickSettingsService,
-// VolumeService and SoundService; the pages themselves only get
+// Pages slide in from the right (sound, resources, notification settings)
+// and back out to the first page. Reading and acting go through
+// QuickSettingsService, VolumeService, SoundService and
+// NotificationsService; the pages themselves only get
 // properties, so ui/tests can drive them.
 StagePanel {
     id: panel
@@ -40,7 +42,7 @@ StagePanel {
     name: Protocol.FEATURE_QUICK_SETTINGS
     placement: "right"
 
-    // "main", "sound" or "resources".
+    // "main", "sound", "resources" or "notifications".
     property string page: "main"
 
     readonly property Morph morph: Morph {
@@ -78,6 +80,9 @@ StagePanel {
         else
             trayMenu.entry = null;
     }
+    // The list is on the first page: another page hides it.
+    readonly property bool listShown: open && page === "main"
+    onListShownChanged: NotificationsService.showList(output.name, listShown)
     // Back to the first page once it has closed, so it opens there.
     onMovingChanged: {
         if (!moving && !open)
@@ -91,6 +96,7 @@ StagePanel {
     // Gone while open (its screen went away): nothing reads resources now.
     Component.onDestruction: {
         VolumeService.showElsewhere(output.name, false);
+        NotificationsService.showList(output.name, false);
         if (open)
             QuickSettingsService.watching = false;
     }
@@ -117,7 +123,7 @@ StagePanel {
         // What the top row leaves for the pill's buttons.
         readonly property real headerInset: panel.output.width - Tokens.quickSettingsPad - (panel.buttonsX - Tokens.pillButtonInset) + Tokens.gap
 
-        readonly property bool sliding: [mainSlot, soundSlot, resourcesSlot].some(slot => slot.sliding)
+        readonly property bool sliding: [mainSlot, soundSlot, resourcesSlot, notificationsSlot].some(slot => slot.sliding)
 
         PageSlot {
             id: mainSlot
@@ -156,6 +162,19 @@ StagePanel {
                 }
                 onTrayMenuRequested: (entry, at) => trayMenu.show(entry, at)
                 onTraySecondaryActivated: entry => entry.item.secondaryActivate()
+                notificationsShown: NotificationsService.ready
+                notifications: NotificationsService.items
+                doNotDisturb: NotificationsService.doNotDisturb
+                iconSource: name => NotificationsService.iconSource(name)
+                // Opening one takes you to its app.
+                onNotificationOpened: notification => {
+                    NotificationsService.open(notification, panel.output.name);
+                    panel.open = false;
+                }
+                onNotificationDismissed: id => NotificationsService.dismiss(id)
+                onNotificationsCleared: app => NotificationsService.clear(app)
+                onNotificationAppMuted: app => NotificationsService.mute(app, true)
+                onDoNotDisturbToggled: NotificationsService.setDoNotDisturb(!NotificationsService.doNotDisturb)
                 onKeepAwakeToggled: QuickSettingsService.keepAwake = !QuickSettingsService.keepAwake
                 onMicMuteToggled: SoundService.toggleSourceMute()
                 onVolumeMoved: value => VolumeService.slide(value)
@@ -216,6 +235,27 @@ StagePanel {
                     reading: QuickSettingsService.resources
                     onBack: panel.page = "main"
                     onEndRequested: key => QuickSettingsService.endApp(key)
+                }
+            }
+        }
+
+        PageSlot {
+            id: notificationsSlot
+            key: "notifications"
+
+            Loader {
+                active: notificationsSlot.live
+                sourceComponent: NotificationSettingsPage {
+                    width: pages.width
+                    height: pages.height
+                    headerInset: pages.headerInset
+                    doNotDisturb: NotificationsService.doNotDisturb
+                    apps: NotificationsService.apps
+                    muted: NotificationsService.muted
+                    iconSource: name => NotificationsService.iconSource(name)
+                    onBack: panel.page = "main"
+                    onDoNotDisturbToggled: NotificationsService.setDoNotDisturb(!NotificationsService.doNotDisturb)
+                    onMuteToggled: (app, muted) => NotificationsService.mute(app, muted)
                 }
             }
         }
@@ -292,6 +332,8 @@ StagePanel {
         quickSettings: true
         power: panel.power
         quickSettingsOpen: panel.open
+        unread: NotificationsService.ready ? NotificationsService.unread : 0
+        doNotDisturb: NotificationsService.ready && NotificationsService.doNotDisturb
         onQuickSettingsClicked: panel.quickSettingsClicked()
         onPowerClicked: panel.powerClicked()
     }
