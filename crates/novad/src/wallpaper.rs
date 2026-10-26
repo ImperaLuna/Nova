@@ -627,6 +627,21 @@ mod tests {
             })
         }
 
+        /// Waits until the last image sent to each output is `expected`'s.
+        /// An `awww img` that novad saw fail under load is sent again with
+        /// the next change, so the order of the images may vary.
+        fn shows(&self, expected: &[(&str, &str)]) {
+            wait_until(WAIT, &format!("outputs to show {expected:?}"), || {
+                let mut last = BTreeMap::new();
+                for (outputs, image) in self.sent() {
+                    for output in outputs.split(',') {
+                        last.insert(output.to_owned(), image.clone());
+                    }
+                }
+                expected.iter().all(|(output, image)| last.get(*output).map(String::as_str) == Some(*image))
+            });
+        }
+
         fn sent(&self) -> Vec<(String, String)> {
             std::fs::read_to_string(self.dir.join("awww"))
                 .unwrap_or_default()
@@ -674,18 +689,19 @@ mod tests {
         std::thread::sleep(Duration::from_millis(300));
         assert!(fixture.sent().is_empty(), "nothing before the outputs are known");
         wallpaper.outputs(outputs(&["DP-1", "DP-2"]));
-        let dusk = fixture.image("dusk.jpg");
-        assert_eq!(fixture.images(1), [("DP-1,DP-2".into(), dusk.clone())]);
-        wallpaper.set(&fixture.image("tide.jpg"), Some("DP-2")).unwrap();
-        assert_eq!(fixture.images(2)[1], ("DP-2".into(), fixture.image("tide.jpg")));
-        // Plugged in: only the new output gets one.
+        let (dusk, tide) = (fixture.image("dusk.jpg"), fixture.image("tide.jpg"));
+        assert_eq!(fixture.images(1), [("DP-1,DP-2".into(), dusk.clone())], "one fade for both");
+        wallpaper.set(&tide, Some("DP-2")).unwrap();
+        fixture.shows(&[("DP-1", &dusk), ("DP-2", &tide)]);
+        // Plugged in: the new output gets its image.
         wallpaper.outputs(outputs(&["DP-1", "DP-2", "HDMI-A-1"]));
-        assert_eq!(fixture.images(3)[2], ("HDMI-A-1".into(), dusk.clone()));
-        // Unplugged and back: it gets its image again.
+        fixture.shows(&[("DP-1", &dusk), ("DP-2", &tide), ("HDMI-A-1", &dusk)]);
+        // Unplugged and back: it gets it again.
+        let sent = fixture.sent().len();
         wallpaper.outputs(outputs(&["DP-1", "DP-2"]));
         wallpaper.outputs(outputs(&["DP-1", "DP-2", "HDMI-A-1"]));
-        assert_eq!(fixture.images(4)[3], ("HDMI-A-1".into(), dusk));
-        assert_eq!(wallpaper.current().outputs["DP-2"], fixture.image("tide.jpg"));
+        assert_eq!(fixture.images(sent + 1)[sent], ("HDMI-A-1".into(), dusk));
+        assert_eq!(wallpaper.current().outputs["DP-2"], tide);
         assert_eq!(fixture.runs(1).len(), 1);
         wallpaper.stop();
     }
