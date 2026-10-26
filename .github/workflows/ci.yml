@@ -48,6 +48,32 @@ jobs:
             shots=$(nix build --max-jobs 0 --no-link --print-out-paths "$checks.e2e-$compositor.compare") &&
               cp -r --no-preserve=mode "$shots" "e2e/out/vm-$compositor" || true
           done
+      # Each state's Pss (frames.py) against main's, in the job summary.
+      # Main's VM run is normally in the store already, from the PR that
+      # became it (same tree, so the same build); --max-jobs 0 skips the
+      # comparison rather than running main's VM test here.
+      - name: Check out main for the Pss comparison
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .pss-main
+          persist-credentials: false
+      - name: Pss against main
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          for compositor in niri hyprland; do
+            frames=checks.x86_64-linux.e2e-$compositor.frames
+            pr=$(nix build --max-jobs 0 --no-link --print-out-paths ".#$frames") || continue
+            if ! main=$(nix build --max-jobs 0 --no-link --print-out-paths "./.pss-main#$frames"); then
+              echo "Main's Pss on $compositor isn't on this runner; no comparison." >>"$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            # The table to the summary, warnings to the log as annotations.
+            # The runner has no awk of its own.
+            nix shell --inputs-from . nixpkgs#gawk -c \
+              bash e2e/vm/pss-compare.sh "$compositor" "$main/pss.txt" "$pr/pss.txt" 2>&1 >>"$GITHUB_STEP_SUMMARY"
+          done
       - if: always()
         uses: actions/upload-artifact@v7
         with:
