@@ -283,9 +283,9 @@ in
       imports = [ standardVga ];
       programs.niri = {
         enable = true;
-        # niri skips software renderers (src/backend/tty.rs, "software EGL
-        # renderers are skipped"), and a VM has nothing else, so niri would
-        # run without a monitor. This build drops that check; remove it once
+        # niri skips software renderers ("software EGL renderers are
+        # skipped", https://github.com/YaLTeR/niri/blob/v26.04/src/backend/tty.rs#L788),
+        # and a VM has nothing else, so niri would run without a monitor. This build drops that check; remove it once
         # niri has a switch for it. Its tests already ran in nixpkgs' build.
         package = pkgs.niri.overrideAttrs (old: {
           postPatch = (old.postPatch or "") + ''

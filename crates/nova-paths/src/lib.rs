@@ -7,7 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
-/// `$XDG_RUNTIME_DIR/nova/novad.sock`, or `/tmp/nova-<uid>/novad.sock` without it.
+/// `$XDG_RUNTIME_DIR/nova/novad.sock`, or `/tmp/nova-<uid>/nova/novad.sock`
+/// without it.
 pub fn socket() -> PathBuf {
     let base = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
