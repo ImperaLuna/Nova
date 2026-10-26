@@ -1,7 +1,8 @@
 //! The launcher (feature `launcher`): the apps installed, read from their
 //! desktop entries and read again when apps are installed or removed,
 //! searching them, starting them, and the user's pinned and recent ones,
-//! which survive restarts.
+//! which survive restarts. Each app's icon is looked up as a file when the
+//! apps are read (`crate::icons`), so the UI only loads images.
 
 pub mod autostart;
 mod desktop_entry;
@@ -12,6 +13,7 @@ mod scan;
 
 use crate::compositor::Compositor;
 use crate::hub::Hub;
+use crate::icons::Icons;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
 use crate::tray::Tray;
@@ -53,14 +55,17 @@ pub struct Paths {
     /// Pinned apps and launch counts.
     pub state_file: PathBuf,
     pub runner: Runner,
+    /// Where apps' icons are found.
+    pub icons: Arc<Icons>,
 }
 
 impl Paths {
-    pub fn new(state_dir: &Path, path_var: &str) -> Self {
+    pub fn new(state_dir: &Path, path_var: &str, icons: Arc<Icons>) -> Self {
         Self {
             data_dirs: crate::data_dirs(),
             state_file: state_dir.join("launcher.json"),
             runner: Runner::detect(path_var),
+            icons,
         }
     }
 }
@@ -87,6 +92,8 @@ type Rescanned = Box<dyn Fn() + Send + Sync>;
 
 struct State {
     apps: BTreeMap<String, Entry>,
+    /// The apps' icon files, by app id, for those that have one.
+    icons: BTreeMap<String, String>,
     saved: Saved,
     /// The last event published, so an unchanged list isn't sent again.
     sent: Option<nova_protocol::Launcher>,
@@ -122,7 +129,7 @@ impl Launcher {
         };
         let desktops = current_desktops();
         let launcher = Arc::new(Self {
-            state: Mutex::new(State { apps: BTreeMap::new(), saved, sent: None }),
+            state: Mutex::new(State { apps: BTreeMap::new(), icons: BTreeMap::new(), saved, sent: None }),
             hub,
             logger,
             paths,
@@ -247,18 +254,19 @@ impl Launcher {
         let state = lock(&self.state);
         ids.iter().find_map(|id| {
             let matching: Vec<&Entry> = state.apps.values().filter(|entry| entry.window_ids().contains(id)).collect();
-            matching.iter().find(|entry| entry.is_named(id)).or(matching.first()).map(|entry| app(entry))
+            matching.iter().find(|entry| entry.is_named(id)).or(matching.first()).map(|entry| app(entry, &state.icons))
         })
     }
 
-    /// The icon for an app stream (`Command::AppIcon`): the installed app's
-    /// it belongs to, by its icon name, program and name (`find_app`, else
-    /// loosely by the first word of an app's name: Zen plays as `zen`, its
-    /// entry is "Zen Browser" in `zen-beta.desktop`), else its icon name or
-    /// program, which the icon theme may have. Without the launcher (the
+    /// The icon file for an app stream (`Command::AppIcon`): the installed
+    /// app's it belongs to, by its icon name, program and name (`find_app`,
+    /// else loosely by the first word of an app's name: Zen plays as `zen`,
+    /// its entry is "Zen Browser" in `zen-beta.desktop`), else the icon
+    /// theme's for its icon name or program. Without the launcher (the
     /// feature off), only that last part.
     pub fn app_icon(
         launcher: Option<&Self>,
+        icons: &Icons,
         icon_name: &str,
         program: &str,
         name: &str,
@@ -277,10 +285,14 @@ impl Launcher {
         let found = launcher.and_then(|launcher| {
             launcher.find_app(&ids).or_else(|| {
                 let state = lock(&launcher.state);
-                ids.iter().find_map(|id| state.apps.values().find(|entry| entry.first_word_is(id)).map(app))
+                ids.iter().find_map(|id| {
+                    state.apps.values().find(|entry| entry.first_word_is(id)).map(|entry| app(entry, &state.icons))
+                })
             })
         });
-        Ok(found.and_then(|app| app.icon).or(icon_name).or(program))
+        Ok(found
+            .and_then(|app| app.icon)
+            .or_else(|| [icon_name, program].into_iter().flatten().find_map(|name| icons.find(&name))))
     }
 
     /// Pins the app `id` at the end, or unpins it.
@@ -395,6 +407,13 @@ impl Launcher {
         let context =
             Context { locale: &self.locale, desktops: &self.desktops, path_var: &self.path_var, autostart: false };
         let (apps, problems) = scan::scan(&self.paths.data_dirs, &context);
+        // Apps bring their icons, so any answer kept may be out of date.
+        let icons = &self.paths.icons;
+        icons.forget();
+        let found = apps
+            .values()
+            .filter_map(|entry| Some((entry.id.clone(), icons.entry_icon(entry.icon.as_deref()?)?)))
+            .collect();
         let mut state = lock(&self.state);
         if self.stopped() {
             return;
@@ -409,6 +428,7 @@ impl Launcher {
             }
         }
         state.apps = apps;
+        state.icons = found;
         self.publish(&mut state);
         drop(state);
         if let Some(rescanned) = &*lock(&self.rescanned) {
@@ -444,20 +464,20 @@ fn watch_all(watcher: &mut Inotify, data_dirs: &[PathBuf], logger: &Logger) -> s
     points
 }
 
-/// How the UI sees `entry`.
-fn app(entry: &Entry) -> App {
+/// How the UI sees `entry`, whose icon may be among `icons`.
+fn app(entry: &Entry, icons: &BTreeMap<String, String>) -> App {
     App {
         id: entry.id.clone(),
         name: entry.name.clone(),
         description: entry.generic_name.clone().or_else(|| entry.comment.clone()),
-        icon: entry.icon.clone(),
+        icon: icons.get(&entry.id).cloned(),
     }
 }
 
 /// The event for `state`: apps by name, and the pinned and recent ones
 /// that are installed (recent leaves the pinned ones out).
 fn snapshot(state: &State) -> nova_protocol::Launcher {
-    let mut apps: Vec<App> = state.apps.values().map(app).collect();
+    let mut apps: Vec<App> = state.apps.values().map(|entry| app(entry, &state.icons)).collect();
     apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
     let installed = |id: &&String| state.apps.contains_key(*id);
     let pinned = state.saved.pinned.iter().filter(installed).cloned().collect();

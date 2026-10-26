@@ -40,11 +40,20 @@ impl Fixture {
         Self { dir, bus, hub, logger, ui, client: id, _ui_stream: ui_stream }
     }
 
+    /// Puts icon `name` where the server finds icons, and returns its file.
+    fn install_icon(&self, name: &str) -> String {
+        let path = self.dir.join("share/pixmaps").join(format!("{name}.png"));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "").unwrap();
+        path.display().to_string()
+    }
+
     fn server(&self) -> Arc<Notifications> {
         let sources = Sources {
             bus: Bus::Address(self.bus.address.clone()),
             state_file: self.dir.join("notifications.json"),
             images: self.dir.join("images"),
+            icons: Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[self.dir.join("share")], None)),
         };
         Notifications::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
@@ -114,6 +123,7 @@ impl App {
 #[test]
 fn a_notification_is_listed_and_pops_up_with_its_text_made_plain() {
     let fixture = Fixture::new("plain");
+    let icon = fixture.install_icon("firefox");
     let _server = fixture.server();
     let app = fixture.app();
     let hints = HashMap::from([
@@ -138,14 +148,14 @@ fn a_notification_is_listed_and_pops_up_with_its_text_made_plain() {
     assert_eq!(
         popup,
         json!({
-            "id": id, "app": "Firefox", "icon": "firefox", "app_id": "org.mozilla.firefox.desktop",
+            "id": id, "app": "Firefox", "icon": icon, "app_id": "org.mozilla.firefox.desktop",
             "summary": "Download complete", "body": "niri.tar.gz & <div>",
             "actions": [{"key": "show", "label": "Show in folder"}], "has_default": true,
             "urgency": "critical", "progress": 100, "timeout_ms": 0, "time": time, "unread": true, "live": true,
         })
     );
     assert_eq!(list["items"], json!([popup]));
-    assert_eq!(list["apps"], json!([{"name": "Firefox", "icon": "firefox", "app_id": "org.mozilla.firefox.desktop"}]));
+    assert_eq!(list["apps"], json!([{"name": "Firefox", "icon": icon, "app_id": "org.mozilla.firefox.desktop"}]));
 
     let reply =
         zbus::block_on(app.connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "GetCapabilities", &()))
@@ -442,6 +452,26 @@ fn notifications_older_than_a_week_are_dropped_at_start() {
     server.send_state(fixture.client);
     let items = fixture.next("notifications")["items"].clone();
     assert_eq!(items.as_array().unwrap().iter().map(|item| item["id"].clone()).collect::<Vec<_>>(), [json!(2)]);
+}
+
+#[test]
+fn icons_kept_by_name_are_looked_up_at_start() {
+    let fixture = Fixture::new("icon-names");
+    let chat = fixture.install_icon("chat");
+    let now = jiff::Timestamp::now().as_second();
+    let kept = |id: u32, icon: &str| json!({"id": id, "app": "Chat", "icon": icon, "summary": "hi", "body": "", "urgency": "normal", "time": now});
+    let saved = json!({
+        "next_id": 2,
+        "items": [kept(2, "chat"), kept(1, "not-installed")],
+        "apps": [{"name": "Chat", "icon": "chat"}],
+    });
+    std::fs::write(fixture.dir.join("notifications.json"), saved.to_string()).unwrap();
+    let server = fixture.server();
+    server.send_state(fixture.client);
+    let list = fixture.next("notifications");
+    assert_eq!(list["items"][0]["icon"], chat);
+    assert_eq!(list["items"][1].get("icon"), None);
+    assert_eq!(list["apps"], json!([{"name": "Chat", "icon": chat}]));
 }
 
 #[test]

@@ -4,15 +4,12 @@ import QtQuick
 import Quickshell
 import "../text/files.js" as Files
 
-// What an Image shows for an app's or a notification's icon: an icon
-// theme name looked up in the theme, or an absolute path to an image as
-// a file URL. "" when there's no icon or the theme has none.
+// What an Image shows for an app's or a notification's icon: the absolute
+// path novad sends, as a file URL. novad looks icon names up in the icon
+// theme, off the GUI thread; Qt's own lookup (Quickshell.iconPath) blocks
+// it for 30-150 ms per name the first time (IMP-158). "" for no icon.
 Singleton {
     function source(icon: string): string {
-        if (!icon)
-            return "";
-        if (icon.startsWith("/"))
-            return Files.fileUrl(icon);
-        return Quickshell.iconPath(icon, true);
+        return icon.startsWith("/") ? Files.fileUrl(icon) : "";
     }
 }

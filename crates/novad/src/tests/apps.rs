@@ -12,6 +12,14 @@ fn install_app(novad: &TestDaemon, file: &str, entry: &str) {
     std::fs::rename(partial, path).unwrap();
 }
 
+/// Puts icon `name` where the test daemon finds icons, and returns its file.
+fn install_icon(novad: &TestDaemon, name: &str) -> String {
+    let path = novad.dir.join("launcher/share/pixmaps").join(format!("{name}.png"));
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "").unwrap();
+    path.display().to_string()
+}
+
 impl Client {
     /// Subscribes to the launcher and returns its data once it lists `apps` apps.
     fn subscribe_launcher(&mut self, apps: usize) -> Value {
@@ -41,13 +49,14 @@ fn ids(list: &Value) -> Vec<&str> {
 #[test]
 fn the_launcher_lists_apps_and_follows_installs() {
     let novad = TestDaemon::with_launcher("launcher-apps");
+    let foot_icon = install_icon(&novad, "foot");
     install_app(&novad, "foot.desktop", "Name=Foot\nGenericName=Terminal\nIcon=foot\nExec=foot\n");
     install_app(&novad, "hidden.desktop", "Name=Hidden\nNoDisplay=true\nExec=x\n");
     let mut client = novad.connect();
     let first = client.subscribe_launcher(1);
     assert_eq!(
         first["apps"],
-        json!([{"id": "foot.desktop", "name": "Foot", "description": "Terminal", "icon": "foot"}])
+        json!([{"id": "foot.desktop", "name": "Foot", "description": "Terminal", "icon": foot_icon}])
     );
 
     // A new app, in a folder made after novad started, shows up.
@@ -111,6 +120,8 @@ fn launcher_searches_rank_apps_and_refuse_long_queries() {
 #[test]
 fn app_streams_get_their_apps_icons_by_program_and_name() {
     let novad = TestDaemon::with_launcher("app-icon");
+    let [zen, claude, firefox, mpv, audio] =
+        ["zen-browser", "claude", "firefox-icon", "mpv", "audio-x-generic"].map(|name| install_icon(&novad, name));
     install_app(&novad, "zen-beta.desktop", "Name=Zen Browser\nExec=zen-beta\nIcon=zen-browser\n");
     install_app(&novad, "com.anthropic.Claude.desktop", "Name=Claude\nExec=claude-desktop\nIcon=claude\n");
     install_app(&novad, "firefox.desktop", "Name=Firefox\nExec=firefox\nIcon=firefox-icon\n");
@@ -121,22 +132,25 @@ fn app_streams_get_their_apps_icons_by_program_and_name() {
     };
 
     // Found loosely: Zen plays as `.zen-wrapped`, its entry is "Zen Browser".
-    assert_eq!(icon(&mut client, 2, ["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], "zen-browser");
+    assert_eq!(icon(&mut client, 2, ["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], zen);
     // By the icon name the stream gives; Electron says nothing.
     assert_eq!(
         icon(&mut client, 3, ["com.anthropic.Claude", "/usr/lib/electron/electron", "Claude"])["result"],
-        "claude"
+        claude
     );
-    assert_eq!(icon(&mut client, 4, ["", "/usr/bin/firefox", "Firefox"])["result"], "firefox-icon");
+    assert_eq!(icon(&mut client, 4, ["", "/usr/bin/firefox", "Firefox"])["result"], firefox);
     // A browser's web app (`zen-<id>.desktop`) isn't the browser.
     install_app(&novad, "zen-abc123-Default.desktop", "Name=YouTube\nExec=zen-beta --app=abc123\nIcon=youtube\n");
     client.launcher_until(|event| event["apps"].as_array().unwrap().len() == 4);
-    assert_eq!(icon(&mut client, 5, ["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], "zen-browser");
-    // No app: the icon name it gives, else its program, for the icon theme.
-    assert_eq!(icon(&mut client, 6, ["", "/usr/bin/mpv", "mpv"])["result"], "mpv");
-    assert_eq!(icon(&mut client, 7, ["audio-x-generic", "/usr/bin/mpv", "mpv"])["result"], "audio-x-generic");
-    assert_eq!(icon(&mut client, 8, ["", "", "Some Game"])["result"], json!(null));
-    let long = icon(&mut client, 9, ["", &"a".repeat(513), ""]);
+    assert_eq!(icon(&mut client, 5, ["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], zen);
+    // No app: the icon theme's for the icon name it gives, else its program.
+    assert_eq!(icon(&mut client, 6, ["", "/usr/bin/mpv", "mpv"])["result"], mpv);
+    assert_eq!(icon(&mut client, 7, ["audio-x-generic", "/usr/bin/mpv", "mpv"])["result"], audio);
+    assert_eq!(icon(&mut client, 8, ["not-installed", "/usr/bin/mpv", "mpv"])["result"], mpv);
+    assert_eq!(icon(&mut client, 9, ["", "", "Some Game"])["result"], json!(null));
+    // A path isn't an icon name.
+    assert_eq!(icon(&mut client, 10, [&mpv, "", ""])["result"], json!(null));
+    let long = icon(&mut client, 11, ["", &"a".repeat(513), ""]);
     assert!(long["error"].as_str().unwrap().contains("at most 512"));
 }
 
@@ -312,13 +326,15 @@ fn pins_keep_their_order_and_survive_a_restart() {
     client.launcher_until(|event| ids(&event["pinned"]) == ["c.desktop", "b.desktop"]);
 
     let again = launcher::Launcher::start(
-        launcher_paths(&novad.dir),
+        launcher_paths(&novad.dir, test_icons(&novad.dir)),
         "",
         Arc::new(Hub::default()),
         Arc::clone(&novad.daemon.logger),
     );
-    let saved: Value =
-        serde_json::from_str(&std::fs::read_to_string(launcher_paths(&novad.dir).state_file).unwrap()).unwrap();
+    let saved: Value = serde_json::from_str(
+        &std::fs::read_to_string(launcher_paths(&novad.dir, test_icons(&novad.dir)).state_file).unwrap(),
+    )
+    .unwrap();
     assert_eq!(saved["pinned"], json!(["c.desktop", "b.desktop"]));
     again.stop();
 }
@@ -330,7 +346,7 @@ fn an_app_is_found_by_its_own_id_before_a_shortcut_running_it() {
     install_app(&novad, "Abiotic Factor.desktop", "Name=Abiotic Factor\nExec=steam steam://rungameid/427410\n");
     install_app(&novad, "steam.desktop", "Name=Steam\nExec=steam %U\n");
     let launcher = launcher::Launcher::start(
-        launcher_paths(&novad.dir),
+        launcher_paths(&novad.dir, test_icons(&novad.dir)),
         "",
         Arc::new(Hub::default()),
         Arc::clone(&novad.daemon.logger),

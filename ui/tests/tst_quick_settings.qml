@@ -130,23 +130,22 @@ Item {
         }
 
         function test_logo_prefers_bundled_then_like_then_icon_theme() {
-            const none = () => "";
-            compare(QuickSettings.logo(null, "logos", none), "");
+            const url = path => `file://${path}`;
+            compare(QuickSettings.logo(null, "logos", url), "");
             compare(QuickSettings.logo({
                 id: "nixos"
-            }, "logos", none), "logos/nixos.svg");
+            }, "logos", url), "logos/nixos.svg");
             compare(QuickSettings.logo({
                 id: "mynix",
                 id_like: ["nixos"]
-            }, "logos", none), "logos/nixos.svg");
+            }, "logos", url), "logos/nixos.svg");
             compare(QuickSettings.logo({
                 id: "fedora",
-                logo: "fedora-logo-icon"
-            }, "logos", name => `/icons/${name}.svg`), "/icons/fedora-logo-icon.svg");
+                logo: "/icons/fedora-logo-icon.svg"
+            }, "logos", url), "file:///icons/fedora-logo-icon.svg");
             compare(QuickSettings.logo({
-                id: "fedora",
-                logo: "fedora-logo-icon"
-            }, "logos", none), "", "an icon theme without it shows Nova's mark");
+                id: "fedora"
+            }, "logos", url), "", "an icon theme without it shows Nova's mark");
         }
 
         function test_sizes_read_short() {

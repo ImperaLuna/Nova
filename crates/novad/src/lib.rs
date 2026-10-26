@@ -34,6 +34,7 @@ mod egl;
 mod features;
 mod host;
 mod hub;
+mod icons;
 mod inotify;
 mod launcher;
 mod logger;
@@ -278,6 +279,8 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     logger.info(LOG_SOURCE, &format!("novad {} starting (pid {})", env!("CARGO_PKG_VERSION"), std::process::id()));
 
     let path_var = session_path();
+    let icons = Arc::new(icons::Icons::for_session());
+    logger.info(LOG_SOURCE, &format!("icons from the {} icon theme", icons.theme()));
     let sources = Sources {
         config: args.config,
         selection: args.selection,
@@ -286,9 +289,10 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         path_var: path_var.clone(),
         ai_usage: ai_usage::Paths::new(&args.state_dir, args.codex_home, args.claude_credentials),
         resources: resources::Sources::system(&path_var),
-        launcher: launcher::Paths::new(&args.state_dir, &path_var),
+        launcher: launcher::Paths::new(&args.state_dir, &path_var, Arc::clone(&icons)),
         tray: tray::Sources::new(&args.state_dir),
-        notifications: notifications::Sources::new(&args.state_dir),
+        notifications: notifications::Sources::new(&args.state_dir, Arc::clone(&icons)),
+        icons,
     };
     let settings = Settings::load(&sources, &hub, &logger);
     if args.autostart {
@@ -314,6 +318,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
             wayland_socket,
             egl_vendor: egl::nvidia_only_vendor(Path::new("/"), |name| std::env::var_os(name)),
             render_loop: render_loop::for_ui(Path::new("/"), |name| std::env::var_os(name)),
+            icon_theme: sources.icons.theme().to_string(),
         };
         Supervisor::start(settings, Arc::clone(&logger))
     });
