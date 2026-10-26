@@ -80,11 +80,19 @@ with subtest("nova toggle launcher opens the launcher, empty; typing finds foot,
     # over the Top layer, so while it's open Nova moves to Overlay, and back
     # once it's closed, leaving the bar below fullscreen video and games.
     machine.succeed(as_user(FULLSCREEN_WINDOW))
-    before = ui_log_count(LAUNCHER_OPENED)
+    before = ui_log_count(LAUNCHER_TYPING)
     machine.succeed(as_user("nova toggle launcher"))
-    retry(lambda _last_try: ui_log_count(LAUNCHER_OPENED) > before, timeout=CLICK_EFFECT)
-    assert_layers("overlay", "nova-panel", "nova-stage", "nova-click-catcher")
-    press_until_logged(ESC, LAUNCHER_CLOSED)
+    try:
+        # Opened over it, it holds the keyboard too, so Esc reaches it. On
+        # Hyprland it twice never did (IMP-177): who had the keyboard then.
+        retry(lambda _last_try: ui_log_count(LAUNCHER_TYPING) > before, timeout=CLICK_EFFECT)
+        assert_layers("overlay", "nova-panel", "nova-stage", "nova-click-catcher")
+        press_until_logged(ESC, LAUNCHER_CLOSED)
+    except Exception:
+        for command in (LIST_LAYERS, LIST_WINDOWS, "nova logs --no-follow --ui -n 50", COMPOSITOR_LOG):
+            print(f"$ {command}")
+            print(machine.execute(as_user(command))[1])
+        raise
     assert_layers("top", "nova-stage", "nova-click-catcher")
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)

@@ -271,6 +271,11 @@ let
   hyprlandConfig = pkgs.writeText "hyprland.conf" ''
     # How Nova starts on Hyprland without uwsm (see nova.service).
     exec-once = nova
+    # Its log, with times, for COMPOSITOR_LOG: off by default.
+    debug {
+      disable_logs = false
+      disable_time = false
+    }
     # A plain background and no cursor or random splash text, so screenshots
     # are the same every run.
     misc {
