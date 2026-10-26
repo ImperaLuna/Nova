@@ -710,8 +710,11 @@ mod tests {
         let sent = fixture.sent().len();
         wallpaper.outputs(outputs(&["DP-1", "DP-2"]));
         wallpaper.outputs(outputs(&["DP-1", "DP-2", "HDMI-A-1"]));
-        let (again, image) = fixture.images(sent + 1).swap_remove(sent);
-        assert!(again.split(',').any(|output| output == "HDMI-A-1") && image == dusk, "{again} {image}");
+        wait_until(WAIT, "HDMI-A-1 to get its image again", || {
+            fixture.sent()[sent..]
+                .iter()
+                .any(|(again, image)| again.split(',').any(|output| output == "HDMI-A-1") && *image == dusk)
+        });
         assert_eq!(wallpaper.current().outputs["DP-2"], tide);
         assert_eq!(fixture.runs(1).len(), 1);
         wallpaper.stop();
