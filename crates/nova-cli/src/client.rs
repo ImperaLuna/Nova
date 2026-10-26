@@ -2,7 +2,8 @@
 //! [`REPLY_TIMEOUT`], so a stuck novad can't hang the CLI (`nova restart` is
 //! what you run then); only following events (`nova logs`) waits forever.
 
-use nova_protocol::{Command, Envelope, Event, Request, Status, Topic, encode};
+use crate::lifecycle::RESTART_COMMAND;
+use nova_protocol::{Command, Envelope, Event, Outcome, Request, Response, Status, Topic, encode};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -19,11 +20,45 @@ pub struct Client {
     pub daemon_version: String,
 }
 
+/// Why there's no client: no novad listening, or one that doesn't answer
+/// properly (stuck, another version, a socket it can't be reached on).
+#[derive(Debug)]
+pub enum Unreachable {
+    NotRunning,
+    NoAnswer(String),
+}
+
+impl Unreachable {
+    /// What a command that needs novad tells the user.
+    pub fn advice(&self) -> String {
+        match self {
+            Self::NotRunning => "Nova isn't running. Start it with `nova`.".into(),
+            Self::NoAnswer(problem) => {
+                format!("Nova's daemon doesn't answer ({problem}). Run `{RESTART_COMMAND}` to start it again.")
+            }
+        }
+    }
+}
+
 impl Client {
     pub fn connect(socket: &Path) -> Result<Self, String> {
-        let stream =
-            UnixStream::connect(socket).map_err(|e| format!("can't reach novad at {}: {e}", socket.display()))?;
-        Self::over(stream)
+        Self::reach(socket).map_err(|unreachable| match unreachable {
+            Unreachable::NotRunning => format!("can't reach novad at {}: nothing listens there", socket.display()),
+            Unreachable::NoAnswer(problem) => problem,
+        })
+    }
+
+    /// Connects once, telling "not running" from "stuck" by how that
+    /// connection fails.
+    pub fn reach(socket: &Path) -> Result<Self, Unreachable> {
+        use std::io::ErrorKind;
+        match UnixStream::connect(socket) {
+            Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) => {
+                Err(Unreachable::NotRunning)
+            }
+            Err(e) => Err(Unreachable::NoAnswer(format!("can't reach novad at {}: {e}", socket.display()))),
+            Ok(stream) => Self::over(stream).map_err(Unreachable::NoAnswer),
+        }
     }
 
     /// A client on a stream that's already connected to novad's socket.
@@ -72,14 +107,14 @@ impl Client {
         self.writer.write_all(line.as_bytes()).map_err(|e| format!("can't send to novad: {e}"))?;
         loop {
             match self.next_message()? {
-                Message::Reply { id: reply_id, body } if reply_id == id => {
-                    return match (body.get("error"), body.get("result")) {
-                        (Some(error), _) => Err(format!("novad: {}", error.as_str().unwrap_or_default())),
-                        (None, result) => Ok(result.cloned().unwrap_or_default()),
+                Message::Reply(Response { id: reply_id, outcome }) if reply_id == id => {
+                    return match outcome {
+                        Outcome::Result(result) => Ok(result),
+                        Outcome::Error(error) => Err(format!("novad: {error}")),
                     };
                 }
                 Message::Event(sent) => event(sent),
-                Message::Reply { .. } => {}
+                Message::Reply(_) => {}
             }
         }
     }
@@ -95,7 +130,7 @@ impl Client {
         loop {
             match self.next_message() {
                 Ok(Message::Event(event)) => return Ok(Some(event)),
-                Ok(Message::Reply { .. }) => {}
+                Ok(Message::Reply(_)) => {}
                 Err(e) if e == HUNG_UP => return Ok(None),
                 Err(e) => return Err(e),
             }
@@ -111,10 +146,9 @@ impl Client {
         if let Ok(event) = serde_json::from_str::<Envelope<Event>>(&line) {
             return Ok(Message::Event(event.body));
         }
-        let body: serde_json::Value =
-            serde_json::from_str(&line).map_err(|e| format!("novad sent something unreadable: {e}"))?;
-        let id = body.get("id").and_then(|id| id.as_u64()).ok_or("novad sent a message with no id")?;
-        Ok(Message::Reply { id, body })
+        let reply = serde_json::from_str::<Envelope<Response>>(&line)
+            .map_err(|e| format!("novad sent something unreadable: {e}"))?;
+        Ok(Message::Reply(reply.body))
     }
 }
 
@@ -122,23 +156,67 @@ const HUNG_UP: &str = "novad closed the connection";
 
 enum Message {
     Event(Event),
-    Reply { id: u64, body: serde_json::Value },
+    Reply(Response),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nova_test_support::TempDir;
+    use std::os::unix::net::UnixListener;
 
-    /// A novad that accepts connections but never answers.
+    /// A novad that says hello, then answers the first request with `reply`
+    /// (`{id}` is the request's id).
+    fn answering(dir: &TempDir, reply: &'static str) -> std::path::PathBuf {
+        let socket = dir.join("novad.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut writer = stream.try_clone().unwrap();
+            writer.write_all(encode(Event::Hello { daemon: "test".into() }).unwrap().as_bytes()).unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut request = String::new();
+            reader.read_line(&mut request).unwrap();
+            let id = serde_json::from_str::<serde_json::Value>(&request).unwrap()["id"].as_u64().unwrap();
+            writer.write_all(format!("{}\n", reply.replace("{id}", &id.to_string())).as_bytes()).unwrap();
+            // Held open until the client hangs up.
+            let _ = reader.read_line(&mut request);
+        });
+        socket
+    }
+
+    #[test]
+    fn replies_are_typed() {
+        let dir = TempDir::new("client-replies");
+        let socket = answering(&dir, r#"{"v":1,"id":{id},"result":"pong"}"#);
+        assert_eq!(Client::connect(&socket).unwrap().request(Command::Ping), Ok("pong".into()));
+
+        let dir = TempDir::new("client-error");
+        let socket = answering(&dir, r#"{"v":1,"id":{id},"error":"no such app"}"#);
+        assert_eq!(Client::connect(&socket).unwrap().request(Command::Ping), Err("novad: no such app".into()));
+
+        // Neither a result nor an error, or an error that isn't text, is no
+        // success.
+        for (name, odd) in [("client-empty", r#"{"v":1,"id":{id}}"#), ("client-odd", r#"{"v":1,"id":{id},"error":3}"#)]
+        {
+            let dir = TempDir::new(name);
+            let socket = answering(&dir, odd);
+            let answer = Client::connect(&socket).unwrap().request(Command::Ping);
+            assert!(answer.as_ref().is_err_and(|e| e.contains("unreadable")), "{odd}: {answer:?}");
+        }
+    }
+
+    /// Not running, and running but not answering, are told apart.
     #[test]
     fn a_silent_novad_times_out() {
-        let dir = std::env::temp_dir().join(format!("nova-client-silent-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("client-silent");
         let socket = dir.join("novad.sock");
-        let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        assert!(matches!(Client::reach(&socket), Err(Unreachable::NotRunning)));
+        let _listener = UnixListener::bind(&socket).unwrap();
         let started = std::time::Instant::now();
-        assert!(Client::connect(&socket).is_err());
+        let Err(Unreachable::NoAnswer(problem)) = Client::reach(&socket) else { panic!("it answered") };
         assert!(started.elapsed() < REPLY_TIMEOUT * 2);
-        std::fs::remove_dir_all(dir).unwrap();
+        let advice = Unreachable::NoAnswer(problem).advice();
+        assert!(advice.contains("doesn't answer") && advice.contains(RESTART_COMMAND), "{advice}");
     }
 }

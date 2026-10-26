@@ -8,7 +8,7 @@ use std::path::Path;
 const KIB_PER_MB: u64 = 1024;
 
 pub fn show(socket: &Path, json: bool) -> Result<(), String> {
-    let mut client = Client::connect(socket).map_err(|_| "Nova isn't running. Start it with `nova`.".to_owned())?;
+    let mut client = Client::reach(socket).map_err(|unreachable| unreachable.advice())?;
     if json {
         println!("{}", client.request(nova_protocol::Command::Status)?);
     } else {
