@@ -53,12 +53,14 @@ refresh_rates() {
 }
 refresh=$(refresh_rates | tr '\n' ' ')
 
-# The screen `nova toggle` opens the panel on.
+# The screen `nova toggle` opens the panel on. Bounded, so a compositor
+# that stops answering can't keep the old bar from coming back.
+FOCUS_QUERY_SECS=2
 focused_screen() {
 	if [[ -n ${NIRI_SOCKET:-} ]]; then
-		niri msg -j focused-output | jq -r .name
+		timeout "$FOCUS_QUERY_SECS" niri msg -j focused-output | jq -r .name
 	else
-		hyprctl -j monitors | jq -r '.[] | select(.focused) | .name'
+		timeout "$FOCUS_QUERY_SECS" hyprctl -j monitors | jq -r '.[] | select(.focused) | .name'
 	fi
 }
 screen=$(focused_screen)
