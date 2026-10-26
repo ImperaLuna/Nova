@@ -210,7 +210,8 @@ StagePanel {
     // keeps no rows, tiles or icons on any screen (IMP-157).
     Loader {
         id: body
-        active: launcher.open || launcher.moving
+        // Not `moving`: that follows its resize, which follows what's loaded.
+        active: launcher.open || launcher.morph.moving
         onLoaded: launcher.deck.start()
         sourceComponent: Component {
             Deck {}

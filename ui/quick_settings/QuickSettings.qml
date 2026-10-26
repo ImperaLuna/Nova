@@ -135,7 +135,8 @@ StagePanel {
             // tray or notification list on any screen (IMP-157).
             Loader {
                 id: mainPage
-                active: panel.open || panel.moving
+                // Not `moving`: that follows the page's own reveal.
+                active: panel.open || panel.morph.moving || fillReveal.running
                 sourceComponent: MainPage {
                     width: pages.width
                     height: pages.height
