@@ -36,10 +36,10 @@ Scope {
     readonly property StageScreen output: StageScreen {
         screen: root.screen
     }
-    // Its panels just stopped and their final state (and regions) isn't in
-    // a frame yet, or a pill just showed again: drawing stays on for it even
+    // Its panels just stopped and their final state (and regions) isn't on
+    // screen yet, or a pill just showed again: drawing stays on for it even
     // while another surface moves.
-    property alias settling: drawing.settling
+    readonly property bool settling: drawing.settling
 
     // Every panel on this screen, whatever surface it's drawn on.
     readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(quickSettings.item ? [quickSettings.item] : []), ...(launcher.item ? [launcher.item] : []), ...(demo.item?.panels ?? [])]
@@ -50,7 +50,7 @@ Scope {
     readonly property int surfaceLayer: all.shown.length > 0 ? WlrLayer.Overlay : WlrLayer.Top
     // A new layer goes out with a frame, and the stage may not be drawing
     // (another surface's panel opened).
-    onSurfaceLayerChanged: settling = true
+    onSurfaceLayerChanged: drawing.settle()
     // Where the PanelSurfaces with panels shown are, in screen coordinates.
     readonly property list<rect> panelBoxes: [right, center].filter(surface => !surface.parked).map(surface => surface.box)
     function placed(placement: string): list<StagePanel> {
@@ -229,7 +229,7 @@ Scope {
             // `from`), so they hide. They show again once that panel has
             // closed, and the surface it's on stays until that's drawn.
             covered: root.panels.filter(panel => panel.covering && panel.from).map(panel => panel.from)
-            onCoveredChanged: root.settling = true
+            onCoveredChanged: drawing.settle()
             quickSettings: QuickSettingsService.ready
             power: PowerService.ready
             quickSettingsOpen: quickSettings.item?.open ?? false
