@@ -80,68 +80,22 @@ with subtest("nova toggle launcher opens the launcher, empty; typing finds foot,
     # over the Top layer, so while it's open Nova moves to Overlay, and back
     # once it's closed, leaving the bar below fullscreen video and games.
     machine.succeed(as_user(FULLSCREEN_WINDOW))
-    before = ui_log_count(LAUNCHER_OPENED)
+    before = ui_log_count(LAUNCHER_TYPING)
     machine.succeed(as_user("nova toggle launcher"))
-    retry(lambda _last_try: ui_log_count(LAUNCHER_OPENED) > before, timeout=CLICK_EFFECT)
-    assert_layers("overlay", "nova-panel", "nova-stage", "nova-click-catcher")
-    press_until_logged(ESC, LAUNCHER_CLOSED)
+    try:
+        # Opened over it, it holds the keyboard too, so Esc reaches it. On
+        # Hyprland it twice never did (IMP-177): who had the keyboard then.
+        retry(lambda _last_try: ui_log_count(LAUNCHER_TYPING) > before, timeout=CLICK_EFFECT)
+        assert_layers("overlay", "nova-panel", "nova-stage", "nova-click-catcher")
+        press_until_logged(ESC, LAUNCHER_CLOSED)
+    except Exception:
+        for command in (LIST_LAYERS, LIST_WINDOWS, "nova logs --no-follow --ui -n 50", COMPOSITOR_LOG):
+            print(f"$ {command}")
+            print(machine.execute(as_user(command))[1])
+        raise
     assert_layers("top", "nova-stage", "nova-click-catcher")
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
-
-# PROBE (IMP-177, not for merge): the launcher over a fullscreen window
-# that Esc never closed on Hyprland, many times over, with what each side
-# saw when it happens.
-if COMPOSITOR == "hyprland":
-    with subtest("PROBE: the launcher over a fullscreen foot takes Esc, many times"):
-        misses = []
-        for round_ in range(20):
-            # Both failures had foot's first, cold start: 1.2 s from Enter to
-            # its window, against a few hundredths warm. Cold again.
-            machine.succeed(as_user("rm -rf ~/.cache/fontconfig"))
-            before = ui_log_count(LAUNCHER_TYPING)
-            machine.succeed(as_user("nova toggle launcher"))
-            retry(lambda _last_try: ui_log_count(LAUNCHER_TYPING) > before, timeout=CLICK_EFFECT)
-            machine.succeed(f"{YDOTOOL} type {FOOT}")
-            press_until_logged(ENTER, LAUNCHER_CLOSED)
-            started = dt.datetime.now()
-            machine.wait_until_succeeds(as_user(NOVA_SEES_FOOT), timeout=WAIT)
-            print(f"PROBE round {round_}: foot focused {(dt.datetime.now() - started).total_seconds():.2f} s after the launcher closed")
-            machine.succeed(as_user(FULLSCREEN_WINDOW))
-            typing = ui_log_count(LAUNCHER_TYPING)
-            opened = ui_log_count(LAUNCHER_OPENED)
-            closed = ui_log_count(LAUNCHER_CLOSED)
-            machine.succeed(as_user("nova toggle launcher"))
-            retry(lambda _last_try: ui_log_count(LAUNCHER_OPENED) > opened, timeout=CLICK_EFFECT)
-            assert_layers("overlay", "nova-panel", "nova-stage", "nova-click-catcher")
-            had_keyboard = ui_log_count(LAUNCHER_TYPING) > typing
-            machine.succeed(f"{YDOTOOL} key {ESC}")
-            machine.sleep(3)
-            got_keyboard = ui_log_count(LAUNCHER_TYPING) > typing
-            if ui_log_count(LAUNCHER_CLOSED) > closed:
-                print(f"PROBE round {round_}: closed by Esc (keyboard before Esc: {had_keyboard})")
-            else:
-                machine.succeed(f"{YDOTOOL} key {ESC}")
-                machine.sleep(3)
-                second = ui_log_count(LAUNCHER_CLOSED) > closed
-                print(f"PROBE round {round_}: MISSED, keyboard before Esc: {had_keyboard}, 3 s after: {got_keyboard}, a second Esc closed it: {second}")
-                misses.append(round_)
-                for command in (
-                    LIST_LAYERS,
-                    LIST_WINDOWS,
-                    "nova status --json",
-                    "nova logs --no-follow --ui -n 60",
-                    "export HYPRLAND_INSTANCE_SIGNATURE=$(ls $XDG_RUNTIME_DIR/hypr | head -n1); "
-                    "grep -naE 'focus|Refusing|exclusive|LayerSurface|layer|fullscreen|activewindow' "
-                    "$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprland.log | tail -n 150",
-                ):
-                    print(f"$ {command}")
-                    print(machine.execute(as_user(command))[1])
-                if not second:
-                    click_until_logged(*POINTER_REST, LAUNCHER_CLOSED)
-            machine.succeed(as_user(CLOSE_WINDOW))
-            machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
-        print(f"PROBE: {len(misses)} of 20 rounds missed Esc: {misses}")
 
 with subtest("logind's lock-session locks the screen, and novad holds back sleep until it can lock"):
     # Suspending the VM would stop the test, so only the inhibitor that
