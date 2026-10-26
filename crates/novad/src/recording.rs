@@ -14,12 +14,11 @@
 //! when novad goes away, so a crash doesn't leave it recording.
 
 use crate::hub::Hub;
-use crate::lock;
 use crate::logger::Logger;
 use crate::screenshot;
+use crate::{child, lock};
 use nova_protocol::{ActiveRecording, Event, LayoutRect, RecordAudio, SavedRecording, ScreenshotAction};
 use std::collections::VecDeque;
-use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -40,12 +39,6 @@ const START_GRACE: Duration = Duration::from_millis(800);
 /// How long a stopped recorder may take to finish the file before it's
 /// killed.
 const FINISH_TIMEOUT: Duration = Duration::from_secs(10);
-const POLL: Duration = Duration::from_millis(10);
-/// The most of a recorder's error output kept for its error message.
-const MAX_ERROR_BYTES: usize = 4096;
-/// How long the error output is read for once the recorder has exited: a
-/// process it left behind may hold the pipe open.
-const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 /// Frames per second.
 const FPS: &str = "60";
 /// Saved recordings the card's buttons can still act on.
@@ -195,24 +188,9 @@ impl Recordings {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
-        let novad = std::process::id() as libc::pid_t;
-        // SAFETY: prctl and getppid take no pointers and are
-        // async-signal-safe.
-        unsafe {
-            command.pre_exec(move || {
-                // Finishes the file and exits when novad goes away. The
-                // signal comes when the thread that spawned it ends, so that
-                // thread is its keeper, which lives as long as it does.
-                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGINT) == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                // novad went away before that, so the signal never comes.
-                if libc::getppid() != novad {
-                    return Err(std::io::Error::other("novad went away"));
-                }
-                Ok(())
-            });
-        }
+        // Finishes the file and exits when novad goes away. The thread that
+        // spawns it is its keeper, which lives as long as it does.
+        child::die_with_novad(&mut command, libc::SIGINT);
         // Its own process group: a Ctrl+C on `nova daemon` in a terminal
         // reaches novad, whose exit stops it the same way.
         command.process_group(0);
@@ -380,7 +358,7 @@ impl Recordings {
         [Recorder::Gpu, Recorder::Wf]
             .into_iter()
             .find_map(|recorder| {
-                crate::launcher::find_program(recorder.name(), &self.path_var).map(|program| (recorder, program))
+                nova_paths::find_program(recorder.name(), &self.path_var).map(|program| (recorder, program))
             })
             .ok_or_else(|| format!("neither {GPU_SCREEN_RECORDER} nor {WF_RECORDER} is installed"))
     }
@@ -415,23 +393,18 @@ impl Keeper {
                 return;
             }
         };
-        let errors = drain(child.stderr.take());
-        let deadline = Instant::now() + START_GRACE;
-        while Instant::now() < deadline {
-            match child.try_wait() {
-                Ok(None) => std::thread::sleep(POLL),
-                Ok(Some(status)) => {
-                    let message = errors.text();
-                    let _ =
-                        started.send(Err(format!("{} didn't start ({status}): {}", recorder.name(), message.trim())));
-                    return;
-                }
-                Err(e) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    let _ = started.send(Err(format!("lost track of the recorder: {e}")));
-                    return;
-                }
+        let errors = child::drain(child.stderr.take());
+        match child::wait_within(&mut child, START_GRACE) {
+            Ok(None) => {}
+            Ok(Some(status)) => {
+                let message = errors.text();
+                let _ = started.send(Err(format!("{} didn't start ({status}): {}", recorder.name(), message.trim())));
+                return;
+            }
+            Err(e) => {
+                child::kill_and_reap(&mut child);
+                let _ = started.send(Err(format!("lost track of the recorder: {e}")));
+                return;
             }
         }
         let pid = child.id() as libc::pid_t;
@@ -441,7 +414,8 @@ impl Keeper {
         }
         // Not reaped yet, so the pid stays the recorder's until it's no
         // longer active and nothing signals it any more.
-        exited(pid);
+        // Only fails for a pid that isn't a child, which this one is.
+        let _ = child::wait_for_exit(pid.cast_unsigned());
         let active = {
             let mut state = lock(&self.state);
             let active = state.active.take_if(|active| active.run == self.run);
@@ -462,19 +436,6 @@ impl Keeper {
 fn running(pid: libc::pid_t) -> bool {
     // SAFETY: signal 0 only checks that the process exists.
     unsafe { libc::kill(pid, 0) == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM) }
-}
-
-/// Waits for `pid`, a child, to exit, without reaping it.
-fn exited(pid: libc::pid_t) {
-    loop {
-        // SAFETY: an all-zero siginfo_t is valid; waitid only writes to it.
-        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-        // SAFETY: `info` lives across the call.
-        let result = unsafe { libc::waitid(libc::P_PID, pid as libc::id_t, &mut info, libc::WEXITED | libc::WNOWAIT) };
-        if result == 0 || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
-            return;
-        }
-    }
 }
 
 /// A recording's recorder exited: saves what it wrote.
@@ -514,47 +475,6 @@ fn finish(
             hub.publish(&Event::RecordingSaved(saved));
         }
         Err(e) => logger.error(LOG_SOURCE, &format!("the recording stays at {}: {e}", active.file.display())),
-    }
-}
-
-/// Reads the recorder's error output to the end, so it never blocks on a
-/// full pipe, keeping the last [`MAX_ERROR_BYTES`] for an error message.
-fn drain(stderr: Option<std::process::ChildStderr>) -> Drained {
-    let kept = Arc::new(Mutex::new(VecDeque::new()));
-    let (closed, done) = mpsc::channel();
-    let reading = Arc::clone(&kept);
-    std::thread::spawn(move || {
-        let _closed = closed;
-        let Some(mut stderr) = stderr else {
-            return;
-        };
-        let mut buffer = [0; 4096];
-        while let Ok(read) = stderr.read(&mut buffer) {
-            if read == 0 {
-                break;
-            }
-            let mut kept = lock(&reading);
-            kept.extend(&buffer[..read]);
-            let extra = kept.len().saturating_sub(MAX_ERROR_BYTES);
-            kept.drain(..extra);
-        }
-    });
-    Drained { kept, done }
-}
-
-/// The error output [`drain`] is reading.
-struct Drained {
-    kept: Arc<Mutex<VecDeque<u8>>>,
-    /// Disconnects once the pipe closes.
-    done: mpsc::Receiver<()>,
-}
-
-impl Drained {
-    /// What the recorder said, once the pipe closes or after
-    /// [`DRAIN_TIMEOUT`], whichever is first.
-    fn text(self) -> String {
-        let _ = self.done.recv_timeout(DRAIN_TIMEOUT);
-        String::from_utf8_lossy(lock(&self.kept).make_contiguous()).into_owned()
     }
 }
 
@@ -618,6 +538,7 @@ mod tests {
     use std::os::unix::net::UnixStream;
     use std::sync::mpsc::Receiver;
 
+    const POLL: Duration = Duration::from_millis(10);
     const WAIT: Duration = Duration::from_secs(5);
 
     /// Recordings with a fake recorder (it writes the file it's given and
@@ -854,7 +775,7 @@ mod tests {
             Fixture::new("leaves", GPU_SCREEN_RECORDER, "echo 'no capture permission' >&2; (sleep 5) & exit 1");
         let asked = Instant::now();
         let error = fixture.start(None, RecordAudio::default()).unwrap_err();
-        assert!(asked.elapsed() < START_GRACE + DRAIN_TIMEOUT * 2, "waited {:?}", asked.elapsed());
+        assert!(asked.elapsed() < START_GRACE + child::DRAIN_TIMEOUT * 2, "waited {:?}", asked.elapsed());
         assert!(error.contains("no capture permission"), "{error}");
     }
 

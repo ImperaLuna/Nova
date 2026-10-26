@@ -23,7 +23,9 @@
 //!   commands, and the component that loads when the feature is ready.
 
 mod ai_usage;
+mod backoff;
 pub mod checks;
+mod child;
 mod compositor;
 mod config;
 mod features;

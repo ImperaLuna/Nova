@@ -9,19 +9,20 @@
 //! shows it by name. Without one it's forked twice, so it ends up a child of
 //! init, in a session of its own. Either way nothing it prints reaches novad.
 
-use super::desktop_entry::{Entry, find_program};
+use super::desktop_entry::Entry;
+use crate::child;
 use crate::logger::Logger;
+use nova_paths::find_program;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const LOG_SOURCE: &str = "launcher";
-/// How long a launch waits to hear the app started, and how often it looks.
+/// How long a launch waits to hear the app started.
 const START_TIMEOUT: Duration = Duration::from_secs(2);
-const START_POLL: Duration = Duration::from_millis(10);
 /// Runs a command in a terminal, the way the freedesktop.org proposal says.
 const TERMINAL_EXEC: &str = "xdg-terminal-exec";
 /// The user's terminal, for systems without xdg-terminal-exec.
@@ -138,25 +139,20 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
     // What novad waits on: systemd-run, which returns once the app has
     // started or failed to, or the fork's first half, which returns at once.
     let mut child = command.spawn().map_err(|e| format!("can't start {}: {e}", program.display()))?;
-    let deadline = Instant::now() + START_TIMEOUT;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => break,
-            Ok(Some(status)) => return Err(format!("{} didn't start ({status})", program.display())),
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(START_POLL),
-            // Taking long: its answer is only logged.
-            Ok(None) => {
-                let logger = Arc::clone(logger);
-                let id = entry.id.clone();
-                std::thread::spawn(move || match child.wait() {
-                    Ok(status) if !status.success() => logger.warn(LOG_SOURCE, &format!("{id} didn't start: {status}")),
-                    Ok(_) => {}
-                    Err(e) => logger.warn(LOG_SOURCE, &format!("lost track of {id}: {e}")),
-                });
-                break;
-            }
-            Err(e) => return Err(format!("lost track of {}: {e}", program.display())),
+    match child::wait_within(&mut child, START_TIMEOUT) {
+        Ok(Some(status)) if status.success() => {}
+        Ok(Some(status)) => return Err(format!("{} didn't start ({status})", program.display())),
+        // Taking long: its answer is only logged.
+        Ok(None) => {
+            let logger = Arc::clone(logger);
+            let id = entry.id.clone();
+            std::thread::spawn(move || match child.wait() {
+                Ok(status) if !status.success() => logger.warn(LOG_SOURCE, &format!("{id} didn't start: {status}")),
+                Ok(_) => {}
+                Err(e) => logger.warn(LOG_SOURCE, &format!("lost track of {id}: {e}")),
+            });
         }
+        Err(e) => return Err(format!("lost track of {}: {e}", program.display())),
     }
     logger.info(LOG_SOURCE, &format!("launched {}", entry.id));
     Ok(())

@@ -7,6 +7,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use nova_paths::find_program;
+
 const GROUP: &str = "[Desktop Entry]";
 /// Field codes that stand for files or URLs to open; the launcher opens none.
 const FILE_CODES: [char; 4] = ['f', 'F', 'u', 'U'];
@@ -359,20 +361,6 @@ fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<
         argv.push(expanded);
     }
     Ok(argv)
-}
-
-/// Where `program` runs from: itself when it's a path, else the first
-/// executable file by that name in `path_var`.
-pub fn find_program(program: &str, path_var: &str) -> Option<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
-    let executable = |path: &Path| {
-        std::fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-    };
-    if program.contains('/') {
-        let path = PathBuf::from(program);
-        return executable(&path).then_some(path);
-    }
-    std::env::split_paths(path_var).map(|dir| dir.join(program)).find(|path| executable(path))
 }
 
 #[cfg(test)]

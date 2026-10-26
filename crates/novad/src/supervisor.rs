@@ -5,8 +5,9 @@
 //! and it starts again after a backoff. When the compositor is gone, the
 //! session is over and novad exits instead.
 
-use crate::lock;
+use crate::backoff::Backoff;
 use crate::logger::Logger;
+use crate::{child, lock};
 use nova_protocol::{Crash, UiState, UiStatus};
 use std::io::{BufRead, BufReader, Read};
 use std::os::unix::process::CommandExt;
@@ -53,9 +54,6 @@ const HEALTHY_AFTER: Duration = Duration::from_secs(60);
 const EARLY_EXIT: Duration = Duration::from_secs(5);
 /// How long `quickshell --version` may take; novad's start waits for it.
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
-/// How often `stdout_within` checks whether a command that's done printing
-/// has exited.
-const EXIT_POLL: Duration = Duration::from_millis(10);
 
 pub struct UiSettings {
     /// The Quickshell binary.
@@ -126,7 +124,7 @@ impl Supervisor {
     }
 
     fn run(&self, settings: &UiSettings, logger: &Arc<Logger>) {
-        let mut retry = FIRST_RETRY;
+        let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
         loop {
             let started = Instant::now();
             let exit = self.run_once(settings, logger);
@@ -140,11 +138,11 @@ impl Supervisor {
             let ran_for = started.elapsed();
             self.record_crash(&exit, ran_for, logger);
             if ran_for > HEALTHY_AFTER {
-                retry = FIRST_RETRY;
+                retry.reset();
             }
-            logger.info(LOG_SOURCE, &format!("starting the UI again in {} s", retry.as_secs()));
-            std::thread::sleep(retry);
-            retry = (retry * 2).min(MAX_RETRY);
+            let wait = retry.next();
+            logger.info(LOG_SOURCE, &format!("starting the UI again in {} s", wait.as_secs()));
+            std::thread::sleep(wait);
         }
     }
 
@@ -162,7 +160,7 @@ impl Supervisor {
         ];
         // The pid is forgotten between the exit and the reap, so `stop` and
         // `status` never act on a pid the kernel may have handed out again.
-        if let Err(e) = wait_for_exit(child.id()) {
+        if let Err(e) = child::wait_for_exit(child.id()) {
             logger.warn(LOG_SOURCE, &format!("couldn't wait for the UI without reaping it: {e}"));
         }
         lock(&self.record).pid = None;
@@ -204,11 +202,8 @@ impl Supervisor {
 /// only the launcher and the link also give the process that name (btop's
 /// Program column).
 pub fn default_quickshell(path_var: &str) -> PathBuf {
-    let on_path = || {
-        [UI_LAUNCHER, UI_PROCESS_NAME]
-            .into_iter()
-            .find_map(|name| std::env::split_paths(path_var).map(|dir| dir.join(name)).find(|file| file.is_file()))
-    };
+    let on_path =
+        || [UI_LAUNCHER, UI_PROCESS_NAME].into_iter().find_map(|name| nova_paths::find_program(name, path_var));
     PACKAGED_UI_LAUNCHER.map(PathBuf::from).or_else(on_path).unwrap_or_else(|| PathBuf::from(QUICKSHELL))
 }
 
@@ -227,20 +222,9 @@ fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    // SAFETY: the closure runs between fork and exec and only calls prctl,
-    // which is async-signal-safe.
-    unsafe {
-        command.pre_exec(|| {
-            // The UI gets SIGTERM when novad dies, however it dies, so a
-            // crashed novad never leaves an orphaned bar behind. The signal
-            // follows the thread that spawned the child; this runs on the
-            // supervisor thread, which lives as long as novad.
-            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) == -1 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
+    // A crashed novad never leaves an orphaned bar behind. This runs on the
+    // supervisor thread, which lives as long as novad.
+    child::die_with_novad(&mut command, libc::SIGTERM);
     command.spawn()
 }
 
@@ -254,24 +238,6 @@ fn forward_lines(stream: impl Read + Send + 'static, logger: Arc<Logger>) -> Joi
             line.clear();
         }
     })
-}
-
-/// Waits until child `pid` exits, leaving it unreaped (a zombie), so its pid
-/// can't be reused yet.
-pub fn wait_for_exit(pid: u32) -> std::io::Result<()> {
-    let pid = libc::id_t::from(pid);
-    loop {
-        // SAFETY: siginfo_t is plain data, and waitid only writes into it.
-        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-        // SAFETY: `info` is a valid siginfo_t for the whole call.
-        if unsafe { libc::waitid(libc::P_PID, pid, &mut info, libc::WEXITED | libc::WNOWAIT) } == 0 {
-            return Ok(());
-        }
-        let error = std::io::Error::last_os_error();
-        if error.kind() != std::io::ErrorKind::Interrupted {
-            return Err(error);
-        }
-    }
 }
 
 fn describe_exit(status: ExitStatus) -> String {
@@ -315,31 +281,12 @@ pub fn read_quickshell_version(quickshell: &Path, path_var: &str) -> Result<Stri
 
 /// What `command` prints when it succeeds within `timeout`. One that takes
 /// longer, printing or exiting, is killed and reaped.
-pub(crate) fn stdout_within(mut command: Command, timeout: Duration) -> std::io::Result<Vec<u8>> {
-    let deadline = Instant::now() + timeout;
-    let mut child = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
-    let mut stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout pipe"))?;
-    let (done, finished) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut printed = Vec::new();
-        let _ = done.send(stdout.read_to_end(&mut printed).map(|_| printed));
-    });
-    if let Ok(printed) = finished.recv_timeout(timeout) {
-        // Closing stdout isn't exiting: the exit has to come by the same deadline.
-        while Instant::now() < deadline {
-            if let Some(status) = child.try_wait()? {
-                return match status.success() {
-                    true => printed,
-                    false => Err(std::io::Error::other(describe_exit(status))),
-                };
-            }
-            std::thread::sleep(EXIT_POLL);
-        }
+pub(crate) fn stdout_within(command: Command, timeout: Duration) -> std::io::Result<Vec<u8>> {
+    let output = child::output_within(command, timeout)?;
+    match output.status.success() {
+        true => Ok(output.stdout),
+        false => Err(std::io::Error::other(describe_exit(output.status))),
     }
-    // Still unreaped, so the pid is still this child's.
-    let _ = child.kill();
-    let _ = child.wait();
-    Err(std::io::Error::new(std::io::ErrorKind::TimedOut, format!("no answer in {} s", timeout.as_secs())))
 }
 
 #[cfg(test)]
@@ -366,31 +313,19 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 
-    #[test]
-    fn waiting_for_exit_leaves_the_child_unreaped() {
-        let mut child = Command::new("sh").args(["-c", "exit 3"]).spawn().unwrap();
-        wait_for_exit(child.id()).unwrap();
-        let stat = std::fs::read_to_string(format!("/proc/{}/stat", child.id())).unwrap();
-        // The state follows the command name in parentheses: Z is a zombie.
-        assert_eq!(stat.rsplit_once(") ").unwrap().1.chars().next(), Some('Z'));
-        assert_eq!(child.wait().unwrap().code(), Some(3));
-    }
-
     /// `nova setup`'s `NovaUI` link is found, after a `nova-ui` launcher.
     #[test]
     fn a_novaui_link_on_path_is_the_ui() {
         if PACKAGED_UI_LAUNCHER.is_some() {
             return; // The packaged launcher always wins.
         }
-        let dir = std::env::temp_dir().join(format!("novad-ui-link-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path_var = dir.display().to_string();
+        let dir = nova_test_support::TempDir::new("ui-link");
+        let path_var = dir.path_var();
         assert_eq!(default_quickshell(&path_var), PathBuf::from(QUICKSHELL));
-        std::fs::write(dir.join(UI_PROCESS_NAME), "").unwrap();
+        nova_test_support::write_program(dir.path(), UI_PROCESS_NAME, "exit 0");
         assert_eq!(default_quickshell(&path_var), dir.join(UI_PROCESS_NAME));
-        std::fs::write(dir.join(UI_LAUNCHER), "").unwrap();
+        nova_test_support::write_program(dir.path(), UI_LAUNCHER, "exit 0");
         assert_eq!(default_quickshell(&path_var), dir.join(UI_LAUNCHER));
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

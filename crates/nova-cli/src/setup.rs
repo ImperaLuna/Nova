@@ -124,12 +124,8 @@ impl Facts {
     }
 
     fn on_path(&self, name: &str) -> Option<PathBuf> {
-        find_on_path(name, &self.path_var)
+        nova_paths::find_program(name, &self.path_var)
     }
-}
-
-fn find_on_path(name: &str, path_var: &str) -> Option<PathBuf> {
-    std::env::split_paths(path_var).map(|dir| dir.join(name)).find(|file| file.is_file())
 }
 
 #[derive(Debug, PartialEq)]
@@ -414,7 +410,7 @@ pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
             }
         }
         Step::LinkQuickshell { link } => {
-            let quickshell = find_on_path("quickshell", path_var)
+            let quickshell = nova_paths::find_program("quickshell", path_var)
                 .ok_or("quickshell isn't on PATH, so there's nothing to link NovaUI to")?;
             let target =
                 quickshell.canonicalize().map_err(|e| format!("can't resolve {}: {e}", quickshell.display()))?;
@@ -469,6 +465,7 @@ fn finish(path_var: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     fn manifests() -> Vec<Manifest> {
         nova_features::load_all(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features")).unwrap()
@@ -550,7 +547,9 @@ mod tests {
             let _ = std::fs::remove_dir_all(&home);
             std::fs::create_dir_all(home.join("usr/bin")).unwrap();
             for bin in ["quickshell", "wf-recorder", "grim", "wl-copy", "xdg-open", "paru"] {
-                std::fs::write(home.join("usr/bin").join(bin), "").unwrap();
+                let program = home.join("usr/bin").join(bin);
+                std::fs::write(&program, "").unwrap();
+                std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
             }
             Self(home)
         }
@@ -649,7 +648,6 @@ mod tests {
     /// shell's) runs from there too.
     #[test]
     fn commands_run_with_the_path_they_were_found_on() {
-        use std::os::unix::fs::PermissionsExt;
         let home = Home::new("run");
         let helper = home.0.join("usr/bin/nova-setup-test-helper");
         std::fs::write(&helper, "#!/bin/sh\nexit 0\n").unwrap();

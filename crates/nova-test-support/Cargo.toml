@@ -1,0 +1,11 @@
+[package]
+name = "nova-test-support"
+description = "Helpers Nova's tests share: temporary folders, fake programs, waiting for a condition"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true

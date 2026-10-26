@@ -13,7 +13,6 @@ use crate::hub::Hub;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
 use crate::{lock, state_file};
-pub use desktop_entry::find_program;
 use desktop_entry::{Context, Entry, Locale};
 pub use launch::{Runner, open};
 use nova_protocol::{App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};

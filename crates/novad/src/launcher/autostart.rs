@@ -125,7 +125,7 @@ pub fn start(marker: &Path, path_var: String, logger: Arc<Logger>) {
 /// Whether the user's systemd runs `xdg-desktop-autostart.target`.
 /// One that doesn't answer in time counts as no.
 fn systemd_starts_them(path_var: &str, logger: &Logger) -> bool {
-    let Some(systemctl) = desktop_entry::find_program("systemctl", path_var) else { return false };
+    let Some(systemctl) = nova_paths::find_program("systemctl", path_var) else { return false };
     let mut command = std::process::Command::new(systemctl);
     command.args(["--user", "show", "--property=ActiveState", "--value", SYSTEMD_TARGET]);
     match crate::supervisor::stdout_within(command, SYSTEMCTL_TIMEOUT) {

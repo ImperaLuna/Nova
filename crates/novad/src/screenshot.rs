@@ -15,16 +15,15 @@
 //! on those, so a client can't point it at other files.
 
 use crate::hub::Hub;
-use crate::lock;
 use crate::logger::Logger;
+use crate::{child, lock};
 use nova_protocol::{CaptureFrame, Event, PixelRect, SavedScreenshot, ScreenshotAction};
 use std::collections::VecDeque;
-use std::io::Read;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// The feature's id in `features/`.
 pub const FEATURE_ID: &str = "screenshot";
@@ -37,10 +36,6 @@ const WL_COPY: &str = "wl-copy";
 /// How long grim or wl-copy may take: under the `nova` CLI's wait for an
 /// answer, so a stuck tool's error reaches the keybind's log.
 const TOOL_TIMEOUT: Duration = Duration::from_secs(3);
-/// How often a running tool is checked on until it exits.
-const TOOL_POLL: Duration = Duration::from_millis(10);
-/// The most of a tool's error output kept for its error message.
-const MAX_TOOL_ERROR_BYTES: u64 = 4096;
 /// Saved shots the card's buttons can still act on.
 const KEEP_SAVED: usize = 32;
 /// The frozen frames' folder inside novad's runtime folder, readable by the
@@ -266,18 +261,19 @@ impl Screenshots {
             .stderr(if errors_readable { Stdio::piped() } else { Stdio::null() })
             .spawn()
             .map_err(|e| format!("can't run {program}: {e}"))?;
-        let errors = child.stderr.take().map(|stderr| {
-            std::thread::spawn(move || {
-                let mut text = String::new();
-                let mut limited = stderr.take(MAX_TOOL_ERROR_BYTES);
-                let _ = limited.read_to_string(&mut text);
-                // Drained to the end, so the tool never blocks on a full pipe.
-                let _ = std::io::copy(&mut limited.into_inner(), &mut std::io::sink());
-                text
-            })
-        });
-        let status = wait(&mut child, TOOL_TIMEOUT).map_err(|e| format!("{program} {e}"))?;
-        let message = errors.and_then(|reader| reader.join().ok()).unwrap_or_default();
+        let errors = child::drain(child.stderr.take());
+        let status = match child::wait_within(&mut child, TOOL_TIMEOUT) {
+            Ok(Some(status)) => status,
+            Ok(None) => {
+                child::kill_and_reap(&mut child);
+                return Err(format!("{program} didn't finish within {} s", TOOL_TIMEOUT.as_secs()));
+            }
+            Err(e) => {
+                child::kill_and_reap(&mut child);
+                return Err(format!("{program} couldn't be waited on: {e}"));
+            }
+        };
+        let message = errors.text();
         match status.success() {
             true => Ok(()),
             false => Err(format!("{program} failed ({status}): {}", message.trim())),
@@ -307,22 +303,6 @@ pub fn act_on(
             logger.info(log_source, &format!("deleted {}", path.display()));
             Ok(())
         }
-    }
-}
-
-/// Waits for `child` to exit, killing it after `timeout`.
-fn wait(child: &mut Child, timeout: Duration) -> Result<std::process::ExitStatus, String> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        if let Some(status) = child.try_wait().map_err(|e| format!("couldn't be waited on: {e}"))? {
-            return Ok(status);
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!("didn't finish within {} s", timeout.as_secs()));
-        }
-        std::thread::sleep(TOOL_POLL);
     }
 }
 
@@ -485,6 +465,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::UnixStream;
     use std::sync::mpsc::Receiver;
+    use std::time::Instant;
 
     /// The fake screens' size: grim's frames are the outputs' pixels.
     const FRAME_WIDTH: u32 = 8;

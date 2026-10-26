@@ -10,10 +10,10 @@
 //! On niri its 1x1 container window is hidden by a window rule in
 //! `packaging/compositor/niri.kdl`.
 
+use crate::backoff::Backoff;
 use crate::logger::Logger;
 use crate::session_bus::Bus;
-use crate::{lock, supervisor};
-use std::os::unix::process::CommandExt;
+use crate::{child, lock};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -77,7 +77,7 @@ impl X11Tray {
 
 impl Shared {
     fn run(&self, path_var: &str, logger: &Logger) {
-        let mut retry = FIRST_RETRY;
+        let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
         loop {
             let started = Instant::now();
             let spawned = {
@@ -89,19 +89,8 @@ impl Shared {
                 }
                 let mut command = Command::new(PROGRAM);
                 command.env("PATH", path_var).stdin(Stdio::null()).stdout(Stdio::null());
-                // SAFETY: the closure runs between fork and exec and only
-                // calls prctl, which is async-signal-safe.
-                unsafe {
-                    command.pre_exec(|| {
-                        // It gets SIGTERM when novad ends, however it ends,
-                        // as the UI does. The signal follows the spawning
-                        // thread, this one, which runs until `stop`.
-                        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) == -1 {
-                            return Err(std::io::Error::last_os_error());
-                        }
-                        Ok(())
-                    });
-                }
+                // As the UI does. This thread, the spawning one, runs until `stop`.
+                child::die_with_novad(&mut command, libc::SIGTERM);
                 command.spawn().inspect(|spawned| *child = Some(spawned.id()))
             };
             let outcome = match spawned {
@@ -109,7 +98,7 @@ impl Shared {
                     logger.info(LOG_SOURCE, &format!("started {PROGRAM} (pid {})", spawned.id()));
                     // Forgotten between the exit and the reap, so `stop`
                     // never signals a pid the kernel may have handed out again.
-                    if let Err(e) = supervisor::wait_for_exit(spawned.id()) {
+                    if let Err(e) = child::wait_for_exit(spawned.id()) {
                         logger.warn(LOG_SOURCE, &format!("couldn't wait for {PROGRAM} without reaping it: {e}"));
                     }
                     *lock(&self.child) = None;
@@ -119,19 +108,19 @@ impl Shared {
                 Err(e) => format!("can't start it: {e}"),
             };
             if started.elapsed() >= RAN_FINE {
-                retry = FIRST_RETRY;
+                retry.reset();
             }
             let stopped = lock(&self.stopped);
             if *stopped {
                 return;
             }
-            logger.warn(LOG_SOURCE, &format!("{PROGRAM} ended ({outcome}), starting it again in {}s", retry.as_secs()));
+            let wait = retry.next();
+            logger.warn(LOG_SOURCE, &format!("{PROGRAM} ended ({outcome}), starting it again in {}s", wait.as_secs()));
             let (stopped, _) =
-                self.wake.wait_timeout_while(stopped, retry, |stopped| !*stopped).unwrap_or_else(|e| e.into_inner());
+                self.wake.wait_timeout_while(stopped, wait, |stopped| !*stopped).unwrap_or_else(|e| e.into_inner());
             if *stopped {
                 return;
             }
-            retry = (retry * 2).min(MAX_RETRY);
         }
     }
 }

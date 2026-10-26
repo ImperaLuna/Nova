@@ -1,5 +1,6 @@
-//! Where Nova keeps things. novad and the `nova` CLI both resolve paths here,
-//! so the two always agree.
+//! Where Nova keeps things, and where it finds the user's folders and
+//! programs. novad and the `nova` CLI both resolve paths here, so the two
+//! always agree.
 //!
 //! `ui/daemon/Daemon.qml` derives the socket path on its own (QML can't call
 //! Rust); keep it in step with [`socket`].
@@ -93,6 +94,22 @@ pub fn crash_dir(log_dir: &Path) -> PathBuf {
 
 const LOG_FILE_NAME: &str = "nova.log";
 
+/// Where `program` runs from: itself when it's a path, else the first
+/// executable file by that name in `path_var` (a `PATH`-style list). A file
+/// without an executable bit doesn't count, as it wouldn't for `execvp`.
+pub fn find_program(program: &str, path_var: &str) -> Option<PathBuf> {
+    if program.contains('/') {
+        let path = PathBuf::from(program);
+        return is_executable(&path).then_some(path);
+    }
+    std::env::split_paths(path_var).map(|dir| dir.join(program)).find(|path| is_executable(path))
+}
+
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,5 +122,21 @@ mod tests {
         assert_eq!(parse_user_dir(text, "VIDEOS", home), Some(PathBuf::from("/data/videos")));
         assert_eq!(parse_user_dir(text, "MUSIC", home), None, "$HOME itself means unset");
         assert_eq!(parse_user_dir(text, "TEMPLATES", home), None);
+    }
+
+    #[test]
+    fn a_program_on_path_needs_its_executable_bit() {
+        use nova_test_support::{TempDir, write_program};
+        let (first, second) = (TempDir::new("plain"), TempDir::new("programs"));
+        std::fs::write(first.join("tool"), "").unwrap();
+        write_program(second.path(), "tool", "exit 0");
+        std::fs::create_dir(first.join("folder")).unwrap();
+        let path_var = std::env::join_paths([first.path(), second.path()]).unwrap().into_string().unwrap();
+
+        assert_eq!(find_program("tool", &path_var), Some(second.join("tool")), "skips the non-executable one");
+        assert_eq!(find_program("folder", &path_var), None, "a folder isn't a program");
+        let plain = first.join("tool");
+        assert_eq!(find_program(plain.to_str().unwrap(), ""), None, "a path needs the bit too");
+        assert_eq!(find_program("missing", &path_var), None);
     }
 }

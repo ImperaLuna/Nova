@@ -14,7 +14,7 @@ const BINARY: &str = "nvidia-smi";
 
 /// The `nvidia-smi` on `path_var`, if any.
 pub fn find(path_var: &str) -> Option<PathBuf> {
-    std::env::split_paths(path_var).map(|dir| dir.join(BINARY)).find(|file| file.is_file())
+    nova_paths::find_program(BINARY, path_var)
 }
 
 /// A running `nvidia-smi` and the last share it printed.

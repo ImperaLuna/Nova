@@ -1,8 +1,13 @@
 //! The novad systemd user service, through `systemctl --user`.
 
 use std::process::{Command, Output};
+use std::time::Duration;
 
 pub const UNIT: &str = "nova.service";
+/// How long one systemctl call may take. Starting or stopping novad waits
+/// for the unit to start or stop, which systemd gives up on after 90 s by
+/// default (`DefaultTimeoutStartSec`/`StopSec`), so this is a little longer.
+const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(100);
 
 /// Session variables novad and the UI need. A compositor started without
 /// systemd (Hyprland without uwsm) never hands them to systemd itself.
@@ -57,5 +62,7 @@ fn run(args: &[&str]) -> Result<(), String> {
 }
 
 fn systemctl(args: &[&str]) -> Result<Output, String> {
-    Command::new("systemctl").arg("--user").args(args).output().map_err(|e| format!("can't run systemctl: {e}"))
+    let mut command = Command::new("systemctl");
+    command.arg("--user").args(args);
+    novad::checks::output_within(command, SYSTEMCTL_TIMEOUT).map_err(|e| format!("can't run systemctl: {e}"))
 }
