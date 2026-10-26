@@ -78,8 +78,11 @@ with subtest("nova toggle launcher opens the launcher, empty; typing finds foot,
     machine.succeed(as_user(foot_running))
     # Over foot fullscreen: the compositor draws a focused fullscreen window
     # over the Top layer, so while it's open Nova moves to Overlay, and back
-    # once it's closed, leaving the bar below fullscreen video and games.
+    # once it's closed. The stage stays there while the window is
+    # fullscreen, so the pills can peek over it (IMP-182).
+    given = ui_log_count(BAR_SPACE_GIVEN)
     machine.succeed(as_user(FULLSCREEN_WINDOW))
+    retry(lambda _last_try: ui_log_count(BAR_SPACE_GIVEN) > given, timeout=WAIT)
     before = ui_log_count(LAUNCHER_TYPING)
     machine.succeed(as_user("nova toggle launcher"))
     try:
@@ -93,9 +96,16 @@ with subtest("nova toggle launcher opens the launcher, empty; typing finds foot,
             print(f"$ {command}")
             print(machine.execute(as_user(command))[1])
         raise
-    assert_layers("top", "nova-stage", "nova-click-catcher")
+    assert_layers("top", "nova-click-catcher")
+    assert_layers("overlay", "nova-stage")
+    # The top edge brings the pills back over the fullscreen window, and
+    # they take a click. On Hyprland they stayed under it once the window
+    # had gone fullscreen after the stage mapped (IMP-182).
+    click_until_logged(*AI_USAGE_PILL, AI_USAGE_OPENED, clicker=peek_and_click)
+    press_until_logged(ESC, AI_USAGE_CLOSED)
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
+    assert_layers("top", "nova-stage")
 
 with subtest("logind's lock-session locks the screen, and novad holds back sleep until it can lock"):
     # Suspending the VM would stop the test, so only the inhibitor that
