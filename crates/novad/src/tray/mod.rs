@@ -488,15 +488,21 @@ async fn next_unless_stopped(stream: &mut MessageStream, stop: &Stop) -> Option<
 }
 
 /// Whether `e` is an app's answer that it has no such item, rather than
-/// no answer in time.
+/// no answer in time or a passing failure.
 fn says_not_there(e: &zbus::Error) -> bool {
-    match e {
-        zbus::Error::MethodError(..) => true,
-        zbus::Error::FDO(e) => {
-            !matches!(**e, zbus::fdo::Error::NoReply(_) | zbus::fdo::Error::Timeout(_) | zbus::fdo::Error::TimedOut(_))
-        }
-        _ => false,
-    }
+    use zbus::DBusError;
+    let name = match e {
+        zbus::Error::MethodError(name, ..) => name.to_string(),
+        zbus::Error::FDO(e) => e.name().to_string(),
+        _ => return false,
+    };
+    matches!(
+        name.as_str(),
+        "org.freedesktop.DBus.Error.UnknownObject"
+            | "org.freedesktop.DBus.Error.UnknownInterface"
+            | "org.freedesktop.DBus.Error.UnknownMethod"
+            | "org.freedesktop.DBus.Error.UnknownProperty"
+    )
 }
 
 /// Tells hosts the items at `addresses` went.
