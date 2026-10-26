@@ -1,12 +1,14 @@
-//! Where Nova keeps things. novad and the `nova` CLI both resolve paths here,
-//! so the two always agree.
+//! Where Nova keeps things, and where it finds the user's folders and
+//! programs. novad and the `nova` CLI both resolve paths here, so the two
+//! always agree.
 //!
 //! `ui/daemon/Daemon.qml` derives the socket path on its own (QML can't call
 //! Rust); keep it in step with [`socket`].
 
 use std::path::{Path, PathBuf};
 
-/// `$XDG_RUNTIME_DIR/nova/novad.sock`, or `/tmp/nova-<uid>/novad.sock` without it.
+/// `$XDG_RUNTIME_DIR/nova/novad.sock`, or `/tmp/nova-<uid>/nova/novad.sock`
+/// without it.
 pub fn socket() -> PathBuf {
     let base = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
@@ -16,12 +18,34 @@ pub fn socket() -> PathBuf {
 
 /// `$XDG_CONFIG_HOME/nova`, else `~/.config/nova`.
 pub fn config_dir() -> PathBuf {
-    xdg_dir("XDG_CONFIG_HOME", ".config").join("nova")
+    in_or_here(config_home()).join("nova")
 }
 
 /// `$XDG_STATE_HOME/nova`, else `~/.local/state/nova`. Logs live here.
 pub fn state_dir() -> PathBuf {
-    xdg_dir("XDG_STATE_HOME", ".local/state").join("nova")
+    in_or_here(xdg_home("XDG_STATE_HOME", ".local/state")).join("nova")
+}
+
+/// `$HOME`, unless it's unset or empty.
+pub fn home() -> Option<PathBuf> {
+    path_var("HOME")
+}
+
+/// `$XDG_CONFIG_HOME`, else `~/.config`.
+pub fn config_home() -> Option<PathBuf> {
+    xdg_home("XDG_CONFIG_HOME", ".config")
+}
+
+/// `$XDG_DATA_HOME`, else `~/.local/share`.
+pub fn data_home() -> Option<PathBuf> {
+    xdg_home("XDG_DATA_HOME", ".local/share")
+}
+
+/// The path (or `:`-separated path list) in the environment variable
+/// `name`, unless it's unset or empty (an empty XDG variable counts as
+/// unset, per the spec).
+pub fn path_var(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name).filter(|value| !value.is_empty()).map(PathBuf::from)
 }
 
 /// `<prefix>/share/nova/<name>` next to the running binary (the Nix and
@@ -40,8 +64,8 @@ pub fn installed_or_checkout(name: &str) -> PathBuf {
 /// `key` is its name there without `XDG_` and `_DIR` (`PICTURES`), and
 /// `home_fallback` the folder under `$HOME` when it isn't set.
 pub fn user_dir(key: &str, home_fallback: &str) -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    let file = xdg_dir("XDG_CONFIG_HOME", ".config").join("user-dirs.dirs");
+    let home = in_or_here(home());
+    let file = in_or_here(config_home()).join("user-dirs.dirs");
     std::fs::read_to_string(file)
         .ok()
         .and_then(|text| parse_user_dir(&text, key, &home))
@@ -62,12 +86,13 @@ fn parse_user_dir(text: &str, key: &str, home: &Path) -> Option<PathBuf> {
     (dir.is_absolute() && dir != home).then_some(dir)
 }
 
-fn xdg_dir(var: &str, home_fallback: &str) -> PathBuf {
-    std::env::var_os(var)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(home_fallback)))
-        .unwrap_or_else(|| PathBuf::from("."))
+fn xdg_home(var: &str, home_fallback: &str) -> Option<PathBuf> {
+    path_var(var).or_else(|| home().map(|home| home.join(home_fallback)))
+}
+
+/// `dir`, or the current folder without a home to put things in.
+fn in_or_here(dir: Option<PathBuf>) -> PathBuf {
+    dir.unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn current_uid() -> String {
@@ -93,6 +118,22 @@ pub fn crash_dir(log_dir: &Path) -> PathBuf {
 
 const LOG_FILE_NAME: &str = "nova.log";
 
+/// Where `program` runs from: itself when it's a path, else the first
+/// executable file by that name in `path_var` (a `PATH`-style list). A file
+/// without an executable bit doesn't count, as it wouldn't for `execvp`.
+pub fn find_program(program: &str, path_var: &str) -> Option<PathBuf> {
+    if program.contains('/') {
+        let path = PathBuf::from(program);
+        return is_executable(&path).then_some(path);
+    }
+    std::env::split_paths(path_var).map(|dir| dir.join(program)).find(|path| is_executable(path))
+}
+
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,5 +146,21 @@ mod tests {
         assert_eq!(parse_user_dir(text, "VIDEOS", home), Some(PathBuf::from("/data/videos")));
         assert_eq!(parse_user_dir(text, "MUSIC", home), None, "$HOME itself means unset");
         assert_eq!(parse_user_dir(text, "TEMPLATES", home), None);
+    }
+
+    #[test]
+    fn a_program_on_path_needs_its_executable_bit() {
+        use nova_test_support::{TempDir, write_program};
+        let (first, second) = (TempDir::new("plain"), TempDir::new("programs"));
+        std::fs::write(first.join("tool"), "").unwrap();
+        write_program(second.path(), "tool", "exit 0");
+        std::fs::create_dir(first.join("folder")).unwrap();
+        let path_var = std::env::join_paths([first.path(), second.path()]).unwrap().into_string().unwrap();
+
+        assert_eq!(find_program("tool", &path_var), Some(second.join("tool")), "skips the non-executable one");
+        assert_eq!(find_program("folder", &path_var), None, "a folder isn't a program");
+        let plain = first.join("tool");
+        assert_eq!(find_program(plain.to_str().unwrap(), ""), None, "a path needs the bit too");
+        assert_eq!(find_program("missing", &path_var), None);
     }
 }

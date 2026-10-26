@@ -18,6 +18,7 @@ mod endpoint;
 
 pub use claude::limits_from_statusline;
 
+use crate::backoff::Backoff;
 use crate::config::AiUsageConfig;
 use crate::hub::Hub;
 use crate::inotify;
@@ -257,7 +258,8 @@ impl Usage {
     /// Asks `endpoint` every `ENDPOINT_POLL`, and on `refresh`.
     fn poll(&self, endpoint: &Endpoint, refreshes: mpsc::Receiver<()>) {
         let provider = endpoint.provider();
-        let mut backoff = ENDPOINT_POLL;
+        // The first failed request waits twice the poll.
+        let mut backoff = Backoff::new(ENDPOINT_POLL * 2, ENDPOINT_MAX_BACKOFF);
         let mut last_problem: Option<String> = None;
         loop {
             // Before reading the sign-in: a stopped poller asks nothing more.
@@ -270,19 +272,16 @@ impl Usage {
             // Local problems cost the provider nothing; only failed requests back off.
             let wait = match &result {
                 Ok(_) | Err(Problem::SignedOut | Problem::Expired | Problem::Unsafe(_)) => {
-                    backoff = ENDPOINT_POLL;
+                    backoff.reset();
                     ENDPOINT_POLL
                 }
                 Err(Problem::RateLimited(after)) => {
-                    backoff = (backoff * 2).max(ENDPOINT_RATE_LIMITED).min(ENDPOINT_MAX_BACKOFF);
+                    let wait = backoff.next_at_least(ENDPOINT_RATE_LIMITED);
                     // Capped: a huge Retry-After would stop asking for good,
                     // or overflow the deadline below.
-                    after.map_or(backoff, |after| after.max(backoff)).min(ENDPOINT_MAX_BACKOFF)
+                    after.map_or(wait, |after| after.max(wait)).min(ENDPOINT_MAX_BACKOFF)
                 }
-                Err(Problem::Failed(_)) => {
-                    backoff = (backoff * 2).min(ENDPOINT_MAX_BACKOFF);
-                    backoff
-                }
+                Err(Problem::Failed(_)) => backoff.next(),
             };
             let backing_off = wait > ENDPOINT_POLL;
             if self.stopped() {
@@ -343,7 +342,7 @@ impl Usage {
             // the order they were made.
             let mut state = lock(&self.state);
             if self.stopped() {
-                return Err(format!("the {FEATURE_ID} feature is off"));
+                return Err(crate::features::not_ready(FEATURE_ID));
             }
             let before = state.saved.clone();
             change(&mut state);

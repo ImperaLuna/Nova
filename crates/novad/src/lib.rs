@@ -11,10 +11,12 @@
 //! - `nova-protocol`: the `Topic`, the `Event` and any `Command`s, plus the
 //!   wire format snapshot.
 //! - `config.rs`: its `[<id>]` options in config.toml, if any.
-//! - `settings.rs`: start the service when the feature is ready, stop it when
-//!   it isn't, restart it when its options change.
-//! - `server.rs`: its commands (through a `with_<service>` helper that
-//!   answers when the feature is off) and the snapshot sent on subscribe.
+//! - `settings.rs`: one `reconcile` call that starts the service when the
+//!   feature is ready, stops it when it isn't and restarts it when its
+//!   options change (its type goes in the `services!` list).
+//! - `server.rs`: its commands (through a getter like `Connection::launcher`
+//!   that answers when the feature isn't ready) and the snapshot sent on
+//!   subscribe.
 //! - `ui/daemon/protocol.js` (`CMD_`/`EVENT_`/`TOPIC_`/`FEATURE_` names, checked
 //!   against nova-protocol) and `Daemon.qml` (subscribe, keep the event's data).
 //! - A QML service singleton beside the feature's components
@@ -23,7 +25,9 @@
 //!   commands, and the component that loads when the feature is ready.
 
 mod ai_usage;
+mod backoff;
 pub mod checks;
+mod child;
 mod compositor;
 mod config;
 mod egl;
@@ -53,10 +57,11 @@ mod x11_tray;
 
 use hub::Hub;
 use logger::Logger;
-use nova_protocol::{FeatureStatus, LogLevel, Status, UiState, UiStatus};
+use nova_protocol::{LogLevel, Status, UiState, UiStatus};
 use settings::{Settings, Sources};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 use supervisor::{Supervisor, UiSettings};
@@ -146,7 +151,7 @@ impl Daemon {
             daemon: env!("CARGO_PKG_VERSION").into(),
             pid: std::process::id(),
             uptime_secs: self.started.elapsed().as_secs(),
-            pss_kib: procfs::pss_kib(std::process::id()),
+            pss_kib: procfs::pss_kib(Path::new(procfs::PROC), std::process::id()),
             quickshell: self.ui.as_ref().and_then(|ui| ui.quickshell_version()),
             ui: self.ui.as_ref().map_or(disabled, |ui| ui.status()),
             features: lock(&self.settings).features.clone(),
@@ -157,7 +162,7 @@ impl Daemon {
 
     /// Whether the feature `id` is ready.
     fn feature_ready(&self, id: &str) -> bool {
-        lock(&self.settings).features.iter().any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
+        features::is_ready(&lock(&self.settings).features, id)
     }
 
     /// Reads the settings files again and applies what changed.
@@ -193,29 +198,77 @@ pub fn run(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>
     let notify_socket = std::env::var_os(notify::SOCKET_VAR);
     // SAFETY: no other thread runs yet to read the environment meanwhile.
     unsafe { std::env::remove_var(notify::SOCKET_VAR) };
-    let (listener, daemon) = start(args, socket)?;
+    let (listener, daemon, _watching) = start(args, socket)?;
     install_panic_hook(Arc::clone(&daemon.logger));
     // Up: the socket listens and the tray's name is claimed, so login apps
     // may start (nova.service is Type=notify).
     if let Err(e) = notify::ready(notify_socket.as_deref()) {
         daemon.logger.warn(LOG_SOURCE, &format!("can't tell systemd novad is ready: {e}"));
     }
-    server::serve(listener, daemon);
+    server::serve(listener, daemon, &AtomicBool::new(false));
     Ok(())
 }
 
 /// Starts novad on background threads in this process and returns once its
-/// socket accepts connections. For tests of novad's clients.
-pub fn spawn(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let (listener, daemon) = start(args, socket)?;
-    std::thread::spawn(move || server::serve(listener, daemon));
-    Ok(())
+/// socket accepts connections. For tests of novad's clients; it stops when
+/// the returned handle is dropped.
+pub fn spawn(args: Args, socket: PathBuf) -> Result<InProcess, Box<dyn std::error::Error>> {
+    let (listener, daemon, watching) = start(args, socket)?;
+    Ok(InProcess::serve(listener, daemon, watching))
 }
 
-fn start(
-    args: Args,
-    socket: PathBuf,
-) -> Result<(std::os::unix::net::UnixListener, Arc<Daemon>), Box<dyn std::error::Error>> {
+/// A novad serving on a thread of this process ([`spawn`], novad's own
+/// tests). Dropping it stops the accept loop and waits for it to end, and
+/// stops the UI, the feature services and the settings watcher, so tests
+/// sharing one process don't pile up threads, children and inotify
+/// instances. Connections still open end when their clients hang up.
+pub struct InProcess {
+    daemon: Arc<Daemon>,
+    stopped: Arc<AtomicBool>,
+    serving: Option<std::thread::JoinHandle<()>>,
+    watching: Option<inotify::Stopper>,
+}
+
+impl InProcess {
+    fn serve(
+        listener: std::os::unix::net::UnixListener,
+        daemon: Arc<Daemon>,
+        watching: Option<inotify::Stopper>,
+    ) -> Self {
+        let stopped = Arc::new(AtomicBool::new(false));
+        let serving = {
+            let (daemon, stopped) = (Arc::clone(&daemon), Arc::clone(&stopped));
+            std::thread::spawn(move || server::serve(listener, daemon, &stopped))
+        };
+        Self { daemon, stopped, serving: Some(serving), watching }
+    }
+}
+
+impl Drop for InProcess {
+    fn drop(&mut self) {
+        self.stopped.store(true, Ordering::SeqCst);
+        // Wakes the accept loop, which then sees the stop.
+        let _ = std::os::unix::net::UnixStream::connect(&self.daemon.socket);
+        if let Some(serving) = self.serving.take() {
+            let _ = serving.join();
+        }
+        // The watcher first: a reload after the services stop would start
+        // them again.
+        if let Some(watching) = &self.watching {
+            watching.stop();
+        }
+        if let Some(ui) = &self.daemon.ui {
+            ui.stop();
+        }
+        lock(&self.daemon.settings).stop_services();
+    }
+}
+
+/// A started novad before it serves: its bound socket, itself, and its
+/// settings watcher.
+type Started = (std::os::unix::net::UnixListener, Arc<Daemon>, Option<inotify::Stopper>);
+
+fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Error>> {
     // The socket first: a second daemon is refused before it can rotate the
     // running one's log.
     let listener = server::bind(&socket)?;
@@ -303,13 +356,13 @@ fn start(
         daemon.recordings.recover(&folder);
     }
     // Watched for as long as novad runs.
-    let _ = daemon.watch_settings();
+    let watching = daemon.watch_settings();
     // Not for a daemon without its UI (tests, a UI run by hand): logind's
     // locks and the sleep inhibitor are the whole machine's.
     if daemon.ui.is_some() {
         logind::follow(&daemon);
     }
-    Ok((listener, daemon))
+    Ok((listener, daemon, watching))
 }
 
 fn log_level() -> LogLevel {
@@ -342,7 +395,7 @@ fn install_panic_hook(logger: Arc<Logger>) {
 pub(crate) fn session_path() -> String {
     let path = std::env::var_os("PATH").unwrap_or_default();
     let mut dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
-    let home = std::env::var_os("HOME").filter(|home| !home.is_empty()).map(PathBuf::from);
+    let home = nova_paths::home();
     let extra = home
         .iter()
         .map(|home| home.join(".local/bin"))
@@ -361,12 +414,15 @@ pub(crate) fn session_path() -> String {
 /// in the order they're searched after the session's own: the user's Nix
 /// profiles, the system's (NixOS), Flatpak's exports, then the usual.
 pub(crate) fn package_prefixes() -> Vec<PathBuf> {
-    let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
-    let home = var("HOME").map(PathBuf::from);
+    let home = nova_paths::home();
     let mut prefixes = Vec::new();
     prefixes
         .extend(home.iter().flat_map(|home| [home.join(".nix-profile"), home.join(".local/share/flatpak/exports")]));
-    prefixes.extend(var("USER").map(|user| Path::new("/etc/profiles/per-user").join(user)));
+    prefixes.extend(
+        std::env::var_os("USER")
+            .filter(|user| !user.is_empty())
+            .map(|user| Path::new("/etc/profiles/per-user").join(user)),
+    );
     prefixes.extend(
         [
             "/nix/var/nix/profiles/default",

@@ -30,6 +30,18 @@ pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> 
         .collect()
 }
 
+/// Whether feature `id` is on with all it needs, so the UI loads it and
+/// novad runs its service.
+pub fn is_ready(features: &[FeatureState], id: &str) -> bool {
+    features.iter().any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
+}
+
+/// The error for a request that needs feature `id` while it's not ready
+/// (off, missing what it needs, or stopped by a reload).
+pub fn not_ready(id: &str) -> String {
+    format!("the {id} feature isn't ready (see `nova status`)")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

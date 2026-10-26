@@ -57,7 +57,7 @@ pub struct Sources {
 impl Sources {
     pub fn system(path_var: &str) -> Self {
         Self {
-            proc_root: "/proc".into(),
+            proc_root: crate::procfs::PROC.into(),
             sys_root: "/sys".into(),
             nvml: nvidia::library_paths(),
             path_var: path_var.into(),
@@ -307,7 +307,7 @@ impl Sampler {
         let used = self.process_ticks.since_last(&processes);
         let proc_root = &self.sources.proc_root;
         apps::top(&processes, &used, total_ticks, page_size(), Me::current(), TOP_APPS, |pid| {
-            usage::read_pss(proc_root, pid)
+            crate::procfs::pss_kib(proc_root, pid).map(|kib| kib * 1024)
         })
     }
 }
@@ -324,7 +324,7 @@ mod tests {
     use nova_protocol::LogLevel;
 
     fn logger(name: &str) -> Arc<Logger> {
-        let dir = std::env::temp_dir().join(format!("novad-resources-{name}-{}", std::process::id()));
+        let dir = nova_test_support::TempDir::new(&format!("resources-{name}"));
         Arc::new(Logger::open(&dir, LogLevel::Debug, false, Arc::new(Hub::default())).unwrap())
     }
 

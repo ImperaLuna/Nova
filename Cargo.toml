@@ -30,6 +30,7 @@ nova-protocol = { path = "crates/nova-protocol" }
 nova-features = { path = "crates/nova-features" }
 nova-paths = { path = "crates/nova-paths" }
 nova-quickshell = { path = "crates/nova-quickshell" }
+nova-test-support = { path = "crates/nova-test-support" }
 novad = { path = "crates/novad" }
 
 [workspace.lints.clippy]

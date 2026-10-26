@@ -564,6 +564,7 @@ dependencies = [
  "nova-paths",
  "nova-protocol",
  "nova-quickshell",
+ "nova-test-support",
  "novad",
  "serde_json",
  "shlex",
@@ -574,6 +575,7 @@ name = "nova-features"
 version = "0.1.0"
 dependencies = [
  "nova-paths",
+ "nova-test-support",
  "serde",
  "toml",
 ]
@@ -581,6 +583,9 @@ dependencies = [
 [[package]]
 name = "nova-paths"
 version = "0.1.0"
+dependencies = [
+ "nova-test-support",
+]
 
 [[package]]
 name = "nova-protocol"
@@ -601,6 +606,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-test-support"
+version = "0.1.0"
+
+[[package]]
 name = "novad"
 version = "0.1.0"
 dependencies = [
@@ -612,6 +621,7 @@ dependencies = [
  "nova-paths",
  "nova-protocol",
  "nova-quickshell",
+ "nova-test-support",
  "png",
  "serde",
  "serde_json",

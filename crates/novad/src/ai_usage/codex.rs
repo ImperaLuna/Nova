@@ -32,10 +32,7 @@ pub struct CodexUsage {
 
 /// `$CODEX_HOME`, else `~/.codex`.
 pub fn default_home() -> Option<PathBuf> {
-    std::env::var_os("CODEX_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")))
+    nova_paths::path_var("CODEX_HOME").or_else(|| nova_paths::home().map(|home| home.join(".codex")))
 }
 
 pub fn sessions_dir(home: &Path) -> PathBuf {
@@ -239,7 +236,7 @@ mod tests {
     /// timestamp, decides. Several pairs, since the directory order varies.
     #[test]
     fn logs_with_the_same_time_go_by_name() {
-        let root = std::env::temp_dir().join(format!("novad-codex-same-time-{}", std::process::id()));
+        let root = nova_test_support::TempDir::new("codex-same-time");
         let time = SystemTime::now() - std::time::Duration::from_secs(60);
         for pair in 0..10 {
             let dir = root.join(pair.to_string());
@@ -252,15 +249,13 @@ mod tests {
             }
             assert_eq!(newest(&dir).unwrap().limits[0].percent, 12, "pair {pair}");
         }
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// Session A logged limits, then session B newer ones, then A wrote
     /// another line: A is the newest file, B has the newest limits.
     #[test]
     fn the_newest_limits_win_over_the_newest_file() {
-        let dir = std::env::temp_dir().join(format!("novad-codex-two-sessions-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = nova_test_support::TempDir::new("codex-two-sessions");
         let now = SystemTime::now();
         let older = PLUS.replace("06:40:12", "06:30:00").replace("\"used_percent\":12.0", "\"used_percent\":5.0");
         let a = dir.join("rollout-2026-10-23T06-00-00-a.jsonl");
@@ -279,7 +274,6 @@ mod tests {
             .unwrap();
         std::fs::File::options().write(true).open(&a).unwrap().set_modified(now).unwrap();
         assert_eq!(newest(&dir).unwrap().limits[0].percent, 12);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

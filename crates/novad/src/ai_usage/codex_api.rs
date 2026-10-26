@@ -74,18 +74,18 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn write(dir: &str, text: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("nova-codex-api-{dir}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+    /// The file written and the folder it's in, which goes when dropped.
+    fn write(dir: &str, text: &str) -> (nova_test_support::TempDir, PathBuf) {
+        let dir = nova_test_support::TempDir::new(&format!("codex-api-{dir}"));
         let path = auth_file(&dir);
         std::fs::write(&path, text).unwrap();
         std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
-        path
+        (dir, path)
     }
 
     #[test]
     fn reads_the_chatgpt_token_and_workspace() {
-        let path = write(
+        let (_dir, path) = write(
             "ok",
             r#"{"OPENAI_API_KEY":null,"tokens":{"id_token":"i","access_token":"a","refresh_token":"r","account_id":"w"},"last_refresh":"2026-10-20T10:00:00Z"}"#,
         );
@@ -95,9 +95,9 @@ mod tests {
 
     #[test]
     fn an_api_key_sign_in_has_no_limits_to_ask_for() {
-        let path = write("api-key", r#"{"OPENAI_API_KEY":"sk-test"}"#);
+        let (_dir, path) = write("api-key", r#"{"OPENAI_API_KEY":"sk-test"}"#);
         assert_eq!(read_token(&path).err(), Some(Problem::SignedOut));
-        let path = write("empty-token", r#"{"tokens":{"access_token":""}}"#);
+        let (_dir, path) = write("empty-token", r#"{"tokens":{"access_token":""}}"#);
         assert_eq!(read_token(&path).err(), Some(Problem::SignedOut));
     }
 

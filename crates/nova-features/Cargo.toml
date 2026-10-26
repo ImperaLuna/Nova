@@ -11,5 +11,8 @@ nova-paths.workspace = true
 serde.workspace = true
 toml.workspace = true
 
+[dev-dependencies]
+nova-test-support.workspace = true
+
 [lints]
 workspace = true

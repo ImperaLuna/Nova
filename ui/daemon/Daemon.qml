@@ -23,8 +23,8 @@ Singleton {
     property var aiUsage: null
     // The latest compositor event's data ({compositor, capabilities,
     // outputs, focused_window, keyboard_layout}); null until one arrives,
-    // and always on compositors novad doesn't know. Read it through the
-    // Compositor singleton.
+    // and so for good on compositors novad doesn't know, which send none.
+    // Read it through the Compositor singleton.
     property var desktop: null
     // The latest launcher event's data ({apps, pinned, recent}); null until
     // one arrives, which only happens with the launcher feature on. Read it

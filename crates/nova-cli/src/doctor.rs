@@ -5,7 +5,7 @@
 //! Facts are gathered first (`Facts::gather`), then each check turns its
 //! facts into a line, so the checks are tested on made-up facts.
 
-use crate::client::Client;
+use crate::client::{Client, Unreachable};
 use crate::host::{Distro, Host};
 use crate::lifecycle::RESTART_COMMAND;
 use crate::login_apps::{self, AUTOSTART_DIR, StartupCommand};
@@ -101,28 +101,25 @@ impl Facts {
     }
 }
 
-/// Tells "not running" from "stuck" by how the one connection fails, so the
-/// doctor never makes a second connection that could wait on a stuck novad.
+/// Tells "not running" from "stuck" by how the one connection fails
+/// ([`Client::reach`]), so the doctor never makes a second connection that
+/// could wait on a stuck novad.
 fn reach(socket: &Path) -> Daemon {
-    use std::io::ErrorKind;
-    match std::os::unix::net::UnixStream::connect(socket) {
-        Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) => Daemon::NotRunning,
-        Err(e) => Daemon::NoAnswer(format!("can't reach novad at {}: {e}", socket.display())),
-        Ok(stream) => match Client::over(stream) {
-            Ok(mut client) => {
-                // Only for a warning: a novad too old to answer is still running.
-                let events = client.current(vec![Topic::Tray]).unwrap_or_default();
-                let tray = events
-                    .into_iter()
-                    .find_map(|event| match event {
-                        Event::Tray(tray) => Some(tray.items),
-                        _ => None,
-                    })
-                    .unwrap_or_default();
-                Daemon::Running { version: client.daemon_version, tray }
-            }
-            Err(problem) => Daemon::NoAnswer(problem),
-        },
+    match Client::reach(socket) {
+        Err(Unreachable::NotRunning) => Daemon::NotRunning,
+        Err(Unreachable::NoAnswer(problem)) => Daemon::NoAnswer(problem),
+        Ok(mut client) => {
+            // Only for a warning: a novad too old to answer is still running.
+            let events = client.current(vec![Topic::Tray]).unwrap_or_default();
+            let tray = events
+                .into_iter()
+                .find_map(|event| match event {
+                    Event::Tray(tray) => Some(tray.items),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            Daemon::Running { version: client.daemon_version, tray }
+        }
     }
 }
 
@@ -406,6 +403,10 @@ mod tests {
         assert!(matches!(reach(&socket), Daemon::NotRunning));
         // A socket file left by a novad that died.
         drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
+        // A child another test forks meanwhile holds the listener until it
+        // runs its program.
+        let refused = || std::os::unix::net::UnixStream::connect(&socket).is_err();
+        nova_test_support::wait_until(std::time::Duration::from_secs(5), "the listener to close", refused);
         assert!(matches!(reach(&socket), Daemon::NotRunning));
         // Listening but never answering: times out on hello.
         std::fs::remove_file(&socket).unwrap();

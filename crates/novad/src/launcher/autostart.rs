@@ -30,14 +30,10 @@ const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The autostart folders, in the order they're searched.
 pub fn dirs() -> Vec<PathBuf> {
-    let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
     let mut dirs: Vec<PathBuf> = Vec::new();
-    dirs.extend(
-        var("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| var("HOME").map(|home| PathBuf::from(home).join(".config"))),
-    );
-    dirs.extend(std::env::split_paths(&var("XDG_CONFIG_DIRS").unwrap_or_else(|| DEFAULT_CONFIG_DIRS.into())));
+    dirs.extend(nova_paths::config_home());
+    let system = nova_paths::path_var("XDG_CONFIG_DIRS").unwrap_or_else(|| DEFAULT_CONFIG_DIRS.into());
+    dirs.extend(std::env::split_paths(&system));
     let mut seen = BTreeSet::new();
     dirs.retain(|dir| dir.is_absolute() && seen.insert(dir.clone()));
     dirs.into_iter().map(|dir| dir.join(FOLDER)).collect()
@@ -125,7 +121,7 @@ pub fn start(marker: &Path, path_var: String, logger: Arc<Logger>) {
 /// Whether the user's systemd runs `xdg-desktop-autostart.target`.
 /// One that doesn't answer in time counts as no.
 fn systemd_starts_them(path_var: &str, logger: &Logger) -> bool {
-    let Some(systemctl) = desktop_entry::find_program("systemctl", path_var) else { return false };
+    let Some(systemctl) = nova_paths::find_program("systemctl", path_var) else { return false };
     let mut command = std::process::Command::new(systemctl);
     command.args(["--user", "show", "--property=ActiveState", "--value", SYSTEMD_TARGET]);
     match crate::supervisor::stdout_within(command, SYSTEMCTL_TIMEOUT) {
@@ -151,11 +147,8 @@ fn first_this_session(marker: &Path) -> std::io::Result<bool> {
 mod tests {
     use super::*;
 
-    fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("novad-autostart-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp(name: &str) -> nova_test_support::TempDir {
+        nova_test_support::TempDir::new(&format!("autostart-{name}"))
     }
 
     fn write(dir: &Path, file: &str, extra: &str) {
@@ -186,7 +179,6 @@ mod tests {
         write(&user, "missing.desktop", "TryExec=surely-not-installed-anywhere\n");
         write(&user, "notes.txt", "");
         assert_eq!(ids(&[user, system]), ["discord.desktop", "steam.desktop"]);
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -196,6 +188,5 @@ mod tests {
         assert!(first_this_session(&marker).unwrap());
         assert!(!first_this_session(&marker).unwrap());
         assert!(first_this_session(&root.join("gone/autostarted")).is_err());
-        std::fs::remove_dir_all(&root).unwrap();
     }
 }

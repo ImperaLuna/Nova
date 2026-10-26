@@ -47,12 +47,12 @@ pub fn nvidia_only_vendor(root: &Path, env: impl Fn(&str) -> Option<OsString>) -
 mod tests {
     use super::*;
     use nova_features::gpus::{DRM_DIR, NVIDIA_MODULE};
+    use nova_test_support::TempDir;
 
     /// A fake root with GPUs of `vendors` and glvnd's NixOS folder holding
     /// NVIDIA's and Mesa's vendor files.
-    fn root(name: &str, vendors: &[&str], nvidia_driver: bool) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("novad-egl-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+    fn root(name: &str, vendors: &[&str], nvidia_driver: bool) -> TempDir {
+        let root = TempDir::new(&format!("egl-{name}"));
         for (number, vendor) in vendors.iter().enumerate() {
             let device = root.join(DRM_DIR).join(format!("card{number}/device"));
             std::fs::create_dir_all(&device).unwrap();
@@ -86,8 +86,5 @@ mod tests {
         // A VM drawing on virtio, with an NVIDIA GPU passed through.
         let virtio = root("virtio", &["0x1af4", "0x10de"], true);
         assert_eq!(nvidia_only_vendor(&virtio, no_env), None);
-        for dir in [nvidia, hybrid, nouveau, amd, virtio] {
-            std::fs::remove_dir_all(dir).unwrap();
-        }
     }
 }

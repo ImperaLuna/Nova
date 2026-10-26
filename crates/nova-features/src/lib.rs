@@ -171,7 +171,7 @@ impl Manifest {
 }
 
 fn on_path(bin: &str, path_var: &str) -> bool {
-    std::env::split_paths(path_var).any(|dir| dir.join(bin).is_file())
+    nova_paths::find_program(bin, path_var).is_some()
 }
 
 /// `$NOVA_FEATURES_DIR`, else the installed set, else `./features` for a checkout.
@@ -289,13 +289,11 @@ mod tests {
 
     #[test]
     fn alternatives_count_as_present() {
-        let dir = std::env::temp_dir().join(format!("nova-features-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("wf-recorder"), "").unwrap();
+        let dir = nova_test_support::TempDir::new("features");
+        nova_test_support::write_program(dir.path(), "wf-recorder", "exit 0");
         let m = manifest(RECORDING);
-        assert!(m.missing_binaries(dir.to_str().unwrap()).is_empty());
+        assert!(m.missing_binaries(&dir.path_var()).is_empty());
         assert_eq!(m.missing_binaries("/nonexistent"), ["gpu-screen-recorder|wf-recorder"]);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
