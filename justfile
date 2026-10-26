@@ -9,10 +9,9 @@ default:
 # Everything CI runs, except e2e
 check: fmt-check lint lint-nix deny test lint-qml test-qml test-install shaders-check
 
-# Rust unit tests. Off the session bus: a test's novad there would ask for
-# the running shell's names (notifications, tray watcher).
+# Rust unit tests
 test:
-    DBUS_SESSION_BUS_ADDRESS=disabled: cargo test --workspace
+    cargo test --workspace
 
 # Clippy with warnings as errors
 lint:
