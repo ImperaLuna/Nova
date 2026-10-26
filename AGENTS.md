@@ -64,7 +64,7 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   and how. Read it before changing that code and keep it true in the same
   change.
 - No magic numbers or strings. Give values a named constant or property that
-  says what they mean (`Tokens.radiusPill`, not `14`). Every design value
+  says what they mean (`Tokens.radiusRow`, not `14`). Every design value
   (gradient stops, opacities and easing too) lives in `Tokens.qml`, even when
   one component uses it; a component's own properties only alias tokens or
   derive ratios from them.

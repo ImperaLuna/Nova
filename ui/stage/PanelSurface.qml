@@ -39,17 +39,13 @@ PanelWindow { // qmllint disable uncreatable-type
     readonly property StagePanels drawn: StagePanels {
         panels: surface.panels
     }
-    // Whether anything on it is animating.
-    readonly property bool moving: drawn.moving
-    // Its panels just stopped and their final state isn't in a frame yet.
-    property bool settling: false
-    onMovingChanged: {
-        StageMotion.setMoving(motionName, moving);
-        if (!moving)
-            settling = true;
+    // When it draws, like the stage: while its panels move, or nothing
+    // moves anywhere, and until their last frame is out.
+    readonly property SurfaceDrawing drawing: SurfaceDrawing {
+        window: surface
+        name: `${surface.output.name}/${surface.placement}`
+        moving: surface.drawn.moving
     }
-    Component.onDestruction: StageMotion.setMoving(motionName, false)
-    readonly property string motionName: `${output.name}/${placement}`
 
     // Where it sits on the screen: the shown panels' room plus shadow,
     // within the screen. A centered surface spreads evenly either side of
@@ -123,17 +119,12 @@ PanelWindow { // qmllint disable uncreatable-type
     implicitHeight: Math.max(1, box.height)
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
-    // Like the stage (StageMotion): draws while it moves, or while nothing
-    // moves anywhere, and until its last frame is out.
-    updatesEnabled: drawn.moving || settling || StageMotion.surfaces.length === 0
+    updatesEnabled: drawing.draws
 
+    // Once a frame with a panel drawn over its `from` is out, `from` can
+    // hide.
     Connections {
         target: surface.contentItem.Window.window
-        function onAfterAnimating() {
-            surface.settling = false;
-        }
-        // Once a frame with a panel drawn over its `from` is out, `from` can
-        // hide.
         function onFrameSwapped() {
             for (const panel of surface.drawn.shown) {
                 if (panel.from && !panel.covering)
@@ -149,64 +140,25 @@ PanelWindow { // qmllint disable uncreatable-type
     WlrLayershell.namespace: "nova-panel"
     WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-    mask: Region {
-        regions: inputRegions.instances
+    mask: regions.mask
+    StageRegions {
+        id: regions
+        window: surface
+        inputShapes: surface.clickAnywhere ? [outside] : surface.drawn.shapes
+        glassShapes: surface.drawn.glassShapes
     }
+    Component.onCompleted: adopt()
 
-    Variants {
-        id: inputRegions
-        model: surface.clickAnywhere ? [outside] : surface.drawn.shapes
-        ShapeRegion {}
-    }
-
-    Region {
-        id: blur
-        regions: blurRegions.instances
-    }
-
-    Variants {
-        id: blurRegions
-        model: surface.drawn.glassShapes
-        ShapeRegion {}
-    }
-
-    // As on the stage: asked for only once there's glass.
-    readonly property bool hasGlass: drawn.glassShapes.length > 0
-    function askForBlur() {
-        if (hasGlass)
-            BackgroundEffect.blurRegion = blur;
-    }
-    onHasGlassChanged: askForBlur()
-    Component.onCompleted: {
-        askForBlur();
-        adopt();
-    }
-
-    // The whole screen, not just the surface: Hyprland gives a surface that
-    // holds the keyboard every click on the screen, at coordinates outside
-    // it. Other compositors clip the mask to the surface and send the rest
-    // to ClickCatcher.
-    MouseArea {
+    // Placed over the whole screen, like the content.
+    DismissArea {
         id: outside
-        readonly property int radius: 0
         x: -surface.box.x
         y: -surface.box.y
         width: surface.output.width
         height: surface.output.height
         enabled: surface.clickAnywhere
-        focus: true
-        onClicked: mouse => {
-            const at = mapToItem(null, mouse.x, mouse.y);
-            if (!surface.drawn.covers(at.x, at.y))
-                surface.dismissRequested();
-        }
-        // As on the stage: a scroll outside closes it too.
-        onWheel: wheel => {
-            const at = mapToItem(null, wheel.x, wheel.y);
-            if (!surface.drawn.covers(at.x, at.y))
-                surface.dismissRequested();
-        }
-        Keys.onEscapePressed: surface.dismissRequested()
+        stagePanels: surface.drawn
+        onDismissRequested: surface.dismissRequested()
     }
 
     // The screen, placed so that what's on it lines up with the surface.
@@ -225,6 +177,6 @@ PanelWindow { // qmllint disable uncreatable-type
     onPanelsChanged: adopt()
 
     FrameLog {
-        surfaceName: surface.motionName
+        surfaceName: surface.drawing.name
     }
 }

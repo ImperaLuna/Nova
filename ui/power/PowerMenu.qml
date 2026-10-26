@@ -130,7 +130,7 @@ StagePanel {
             opacity: menu.open ? 1 : 0
             MorphReveal on opacity {
                 id: reveal
-                delay: 0.5
+                delay: Tokens.revealContent
             }
 
             // "Session", and how long the system has been up.

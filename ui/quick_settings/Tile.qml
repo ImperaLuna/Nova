@@ -72,7 +72,7 @@ Item {
             elide: Text.ElideRight
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSizeTiny
-            color: tile.on ? Qt.rgba(tile.ink.r, tile.ink.g, tile.ink.b, Tokens.tileSubOpacity) : Tokens.fgDim
+            color: tile.on ? Tokens.alpha(tile.ink, Tokens.tileSubOpacity) : Tokens.fgDim
             textFormat: Text.PlainText
             text: tile.subtitle
         }

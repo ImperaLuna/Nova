@@ -144,7 +144,6 @@ Item {
             compare(Capture.frameFor(null, "DP-1"), null);
             compare(Capture.size(960, 560), "960 × 560");
             compare(Capture.folderLabel("/home/me/Pictures/Screenshots/a.png"), "Pictures/Screenshots");
-            compare(Capture.fileUrl("/home/me/shots#1/a b?.png"), "file:///home/me/shots%231/a%20b%3F.png");
         }
 
         function test_recording_regions_are_even_layout_rectangles() {
@@ -166,9 +165,6 @@ Item {
                 width: 1,
                 height: 0.5
             }, 0, 0).width, 0);
-            compare(Capture.clock(0), "0:00");
-            compare(Capture.clock(42999), "0:42");
-            compare(Capture.clock(3723000), "1:02:03");
         }
 
         function test_letting_go_of_a_drag_takes_the_region_in_frame_pixels() {

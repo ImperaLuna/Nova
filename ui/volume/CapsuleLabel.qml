@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import "../theme"
+import "../util/numbers.js" as Numbers
 
 // The icon and number at the bottom of the capsule, readable on glass and on
 // liquid alike: drawn twice, in the glass's ink above the liquid's surface
@@ -55,13 +56,13 @@ Item {
     Copy {
         id: above
         width: label.width
-        height: Math.max(0, Math.min(label.height, label.surfaceY))
+        height: Numbers.clamp(label.surfaceY, 0, label.height)
         ink: label.inkAbove
         labelTop: 0
     }
     Copy {
         id: below
-        y: Math.max(0, Math.min(label.height, label.surfaceY))
+        y: Numbers.clamp(label.surfaceY, 0, label.height)
         width: label.width
         height: label.height - y
         ink: label.inkBelow

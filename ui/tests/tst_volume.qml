@@ -147,6 +147,7 @@ TestCase {
             height: Tokens.capsuleHeight,
             gap: Tokens.capsuleEdgeGap,
             stretch: Tokens.capsuleStretch,
+            stretchSpeed: Tokens.capsuleStretchSpeed,
             overshoot: Tokens.capsuleOvershoot
         })
 

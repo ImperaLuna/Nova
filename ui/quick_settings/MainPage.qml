@@ -154,7 +154,7 @@ Item {
                     visible: page.recorders.length > 0
                     icon: page.micMuted ? Icons.MIC_OFF : Icons.MIC
                     iconColor: Tokens.secondary
-                    fill: Qt.rgba(Tokens.secondary.r, Tokens.secondary.g, Tokens.secondary.b, Tokens.micFillOpacity)
+                    fill: Tokens.alpha(Tokens.secondary, Tokens.micFillOpacity)
                     label: QuickSettings.recordingText(page.recorders)
                     value: page.micVolume
                     muted: page.micMuted
