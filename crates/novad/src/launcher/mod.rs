@@ -210,23 +210,17 @@ impl Launcher {
     /// app ids its windows may have, none for a terminal app; `false` when
     /// none is open), or else starts the app; either counts it as launched.
     pub fn launch(&self, id: &str, focus: impl FnOnce(&[String]) -> Result<bool, String>) -> Result<(), String> {
-        let off = || crate::features::not_ready(FEATURE_ID);
-        let entry = lock(&self.state).apps.get(id).cloned().ok_or_else(|| format!("no app {id:?}"))?;
-        let ids = entry.window_ids();
+        let ids = self.window_ids(id).ok_or_else(|| format!("no app {id:?}"))?;
         if self.stopped() {
-            return Err(off());
+            return Err(crate::features::not_ready(FEATURE_ID));
         }
         let focused = focus(&ids).unwrap_or_else(|e| {
             self.logger.warn(LOG_SOURCE, &format!("the compositor can't help with {id}, so starting it: {e}"));
             false
         });
         if !focused {
-            // Focusing may have taken a while.
-            if self.stopped() {
-                return Err(off());
-            }
-            launch::launch(&entry, &self.paths.runner, &self.path_var, &self.logger)
-                .inspect_err(|e| self.logger.warn(LOG_SOURCE, &format!("can't launch {id}: {e}")))?;
+            // Focusing may have taken a while; `start_app` checks for a stop.
+            self.start_app(id)?;
         }
         let now = jiff::Timestamp::now().as_millisecond();
         self.update(|saved| {
@@ -243,6 +237,17 @@ impl Launcher {
             }
             Ok(())
         })
+    }
+
+    /// Starts the app `id` without counting it as launched: for a tray
+    /// click whose app showed no window (see `focus_shown`).
+    pub fn start_app(&self, id: &str) -> Result<(), String> {
+        let entry = lock(&self.state).apps.get(id).cloned().ok_or_else(|| format!("no app {id:?}"))?;
+        if self.stopped() {
+            return Err(crate::features::not_ready(FEATURE_ID));
+        }
+        launch::launch(&entry, &self.paths.runner, &self.path_var, &self.logger)
+            .inspect_err(|e| self.logger.warn(LOG_SOURCE, &format!("can't launch {id}: {e}")))
     }
 
     /// The installed app whose windows may have one of `ids` (lower case,

@@ -365,6 +365,8 @@ impl<'a> Connection<'a> {
     /// Asks the tray item at `address` to show its window, then focuses the
     /// window of the item's app: apps get no activation token from a tray
     /// click, so niri wouldn't move focus to a window that's already open.
+    /// When no window shows, starts the app, as the launcher does: Claude
+    /// Desktop ignores `Activate` but shows its window when started again.
     fn activate_tray_item(&self, address: &str) -> Answer {
         let tray = match self.tray() {
             Ok(tray) => tray,
@@ -375,11 +377,15 @@ impl<'a> Connection<'a> {
         let logger = Arc::clone(&self.daemon.logger);
         let address = address.to_owned();
         Answer::later(move || {
-            done(tray.activate(&address).map(|app| {
-                let ids = app.and_then(|app| Some((launcher?.window_ids(&app)?, app)));
-                if let (Some((ids, app)), Some(compositor)) = (ids, compositor.as_deref()) {
-                    crate::launcher::focus_shown(&app, &ids, compositor, None, &logger);
+            done(tray.activate(&address).and_then(|app| {
+                let (Some(app), Some(launcher), Some(compositor)) = (app, launcher, compositor.as_deref()) else {
+                    return Ok(());
+                };
+                let Some(ids) = launcher.window_ids(&app) else { return Ok(()) };
+                if crate::launcher::focus_shown(&app, &ids, compositor, None, &logger) {
+                    return Ok(());
                 }
+                launcher.start_app(&app)
             }))
         })
     }
