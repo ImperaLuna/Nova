@@ -144,6 +144,14 @@ let
         systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
       };
 
+      # Steps only some compositors have, as shell commands: none elsewhere.
+      stepsIfAny =
+        names:
+        if builtins.all (name: builtins.hasAttr name steps) names then
+          [ (map (name: "export ${ipcEnv}; ${steps.${name}}") names) ]
+        else
+          [ ];
+
       # The test in two halves, each in a VM of its own, so they run side by
       # side: lifecycle.py and then session.py or frames.py.
       runPart =
@@ -162,6 +170,13 @@ let
             CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
             LIST_WINDOWS = ${builtins.toJSON "${ipcEnv} ${listWindows}"}
             LIST_LAYERS = ${builtins.toJSON "${ipcEnv} ${listLayers}"}
+            ADDED_OUTPUTS = ${
+              builtins.toJSON (stepsIfAny [
+                "add an output"
+                "focus the VM's output"
+                "remove the added output"
+              ])
+            }
             COMPOSITOR_LOG = ${builtins.toJSON "export ${ipcEnv}; ${compositorLog}"}
             FRAMES_REPORT = ${builtins.toJSON "${pkgs.gawk}/bin/awk -f ${../../scripts/frames-report.awk}"}
           ''
@@ -400,6 +415,12 @@ in
         "hyprctl dispatch movetoworkspacesilent special:magic,class:nova-second";
       "show the special workspace" = "hyprctl dispatch togglespecialworkspace magic";
       "hide the special workspace" = "hyprctl dispatch togglespecialworkspace magic";
+      # A second screen, right of the first (niri can't add one), placed and
+      # sized so the test knows where to click. Hyprland focuses it.
+      "add an output" =
+        "hyprctl keyword monitor NOVA-2,1280x800,1280x0,1 && hyprctl output create headless NOVA-2";
+      "focus the VM's output" = "hyprctl dispatch focusmonitor Virtual-1";
+      "remove the added output" = "hyprctl output remove NOVA-2";
     };
   };
 }
