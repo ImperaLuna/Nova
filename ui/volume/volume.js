@@ -6,9 +6,6 @@
 // showing, the springs that move it and where the capsule is drawn on each
 // frame. No QML types, so ui/tests can check it all.
 
-// Wheel delta of one notch (Qt's angleDelta, in eighths of a degree).
-var NOTCH = 120;
-
 // The volume `direction` (1 or -1) steps of `step` from `volume`, on the
 // step grid. Nova's own controls stop at 100%: up leaves a volume another
 // app set above it alone, down steps from 100%.

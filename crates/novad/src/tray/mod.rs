@@ -26,7 +26,7 @@ pub mod tests;
 use crate::hub::{ClientId, Hub};
 use crate::launcher::Launcher;
 use crate::logger::Logger;
-use crate::session_bus::{Bus, Stop};
+use crate::session_bus::{self, Bus, Stop};
 use crate::{lock, state_file};
 use futures_core::Stream;
 use nova_protocol::{App, Event, LogLevel, Tray as TrayEvent, TrayItem};
@@ -469,7 +469,7 @@ async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mpsc::Sender<(
         .build()?;
     let mut owners = MessageStream::for_match_rule(rule, &connection, None).await?;
     // Queued behind another watcher (another shell's, say), novad takes over when it leaves.
-    match connection.request_name_with_flags(WATCHER_NAME, Default::default()).await? {
+    match session_bus::claim(&connection, WATCHER_NAME).await? {
         RequestNameReply::InQueue => shared.logger.warn(
             LOG_SOURCE,
             &format!("another program owns {WATCHER_NAME}; tray icons show through it until it quits"),
@@ -478,8 +478,17 @@ async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mpsc::Sender<(
     }
     *lock(&shared.connection) = Some(connection.clone());
     let _ = ready.send(());
-    let emitter = SignalEmitter::new(&connection, WATCHER_PATH)?;
-    while let Some(message) = next_unless_stopped(&mut owners, &shared.stop).await {
+    let result = follow_owners(shared, &connection, &mut owners).await;
+    // The watcher it serves holds `shared`: kept, the connection would never
+    // close, and a stopped tray would keep the name from the next one.
+    *lock(&shared.connection) = None;
+    result
+}
+
+/// Drops the items of apps that leave the bus, until `stop` or the bus goes.
+async fn follow_owners(shared: &Shared, connection: &Connection, owners: &mut MessageStream) -> zbus::Result<()> {
+    let emitter = SignalEmitter::new(connection, WATCHER_PATH)?;
+    while let Some(message) = next_unless_stopped(owners, &shared.stop).await {
         let (name, old, new): (String, String, String) = message?.body().deserialize()?;
         let gone = match (old.is_empty(), new.is_empty()) {
             (_, true) => shared.drop_bus(&name),

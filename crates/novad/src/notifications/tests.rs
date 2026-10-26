@@ -83,6 +83,19 @@ impl Fixture {
         crate::hub::next_named(&self.ui, name, WAIT)
     }
 
+    /// Who owns the server's name on the bus, if anyone.
+    fn name_owner(&self) -> String {
+        let connection = self.bus.connect();
+        let reply = zbus::block_on(connection.call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "GetNameOwner",
+            &BUS_NAME,
+        ));
+        reply.and_then(|reply| reply.body().deserialize::<String>()).unwrap_or_default()
+    }
+
     /// No event called `name` is waiting.
     fn none_waiting(&self, name: &str) {
         while let Ok(Outgoing::Line(line)) = self.ui.try_recv() {
@@ -497,4 +510,25 @@ fn quick_updates_are_saved_at_most_once_a_second_ending_with_the_last() {
     let last = format!("step {updates}");
     wait_until(2 * SAVE_EVERY + WAIT, "the last change to be saved", || saved(&last));
     assert!(writes.len() <= 4, "{} writes for {updates} updates in 1.5 s", writes.len());
+}
+
+#[test]
+fn nothing_takes_the_name_and_a_queued_server_takes_over() {
+    let fixture = Fixture::new("queued");
+    let first = fixture.server();
+    let other = fixture.bus.connect();
+    let replacing =
+        zbus::block_on(other.request_name_with_flags(BUS_NAME, zbus::fdo::RequestNameFlags::REPLACE_EXISTING));
+    assert_eq!(replacing.unwrap(), RequestNameReply::InQueue, "the running server keeps the name");
+    drop(other);
+    let owner = |server: &Notifications| {
+        let connection = lock(&server.shared.connection).clone().expect("serving");
+        connection.unique_name().expect("on a bus").to_string()
+    };
+    assert_eq!(fixture.name_owner(), owner(&first));
+
+    let second = fixture.server();
+    assert_eq!(fixture.name_owner(), owner(&first), "the second one waits");
+    first.stop();
+    wait_until(WAIT, "the second server to take over", || fixture.name_owner() == owner(&second));
 }

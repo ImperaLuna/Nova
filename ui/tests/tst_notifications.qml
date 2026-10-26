@@ -248,6 +248,49 @@ Item {
             tryCompare(stack.shapes, "length", 1);
         }
 
+        // The stack's height (the window's) holds every card as drawn on
+        // every frame of growing in, folding back and sliding away, and
+        // stays put meanwhile: a window resized each frame lags its cards
+        // and clips them (IMP-163).
+        function test_the_stack_holds_every_card_through_the_motion() {
+            const stack = createTemporaryObject(stackComponent, stage);
+            let worst = -Infinity;
+            let heights = new Set();
+            const check = () => {
+                heights.add(stack.implicitHeight);
+                for (const shape of stack.shapes)
+                    worst = Math.max(worst, shape.y + shape.height - stack.implicitHeight);
+            };
+            const watched = [];
+            const watch = () => {
+                for (const shape of stack.shapes) {
+                    if (watched.includes(shape))
+                        continue;
+                    watched.push(shape);
+                    shape.yChanged.connect(check);
+                    shape.heightChanged.connect(check);
+                }
+            };
+            stack.add(note(1, "A"));
+            watch();
+            check();
+            settled(stack, 1);
+            const one = stack.implicitHeight;
+            compare(one, findChild(stack, "card-1").implicitHeight + Tokens.gap, "settled, it is just the card and its gap");
+            compare(Array.from(heights), [one], "one size while it grows in");
+
+            heights = new Set();
+            stack.add(note(2, "B"));
+            watch();
+            settled(stack, 2);
+            stack.remove(1, "away");
+            tryCompare(stack.shapes, "length", 1);
+            stack.remove(2, "fold");
+            tryCompare(stack.shapes, "length", 0);
+            verify(worst <= 0, `a card was drawn ${worst} px past the stack`);
+            compare(stack.implicitHeight, 0);
+        }
+
         function test_a_pop_up_closed_elsewhere_goes_and_clear_takes_them_all() {
             const stack = createTemporaryObject(stackComponent, stage);
             stack.add(note(1, "A"));

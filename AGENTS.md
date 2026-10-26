@@ -154,6 +154,11 @@ Tests start from what a new user has (folders missing, no saved state)
 unless they're about something else. A bug fix comes with a test that fails
 without it.
 
+Tests never touch the desktop's session bus, where a test's novad would
+queue for the running shell's names: `.cargo/config.toml` sets
+`DBUS_SESSION_BUS_ADDRESS=disabled:` for everything cargo runs, and a test
+that needs a bus starts its own (`session_bus::TestBus`).
+
 ## Commands
 
 Run `just` inside `nix develop` to list the recipes. CI runs `nix flake
