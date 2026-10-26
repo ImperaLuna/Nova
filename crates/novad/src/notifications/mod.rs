@@ -26,7 +26,7 @@ mod text;
 use crate::hub::{ClientId, Hub};
 use crate::icons::Icons;
 use crate::logger::Logger;
-use crate::session_bus::{Bus, Stop};
+use crate::session_bus::{self, Bus, Stop};
 use crate::{lock, state_file};
 use futures_core::Stream;
 use nova_protocol::{
@@ -694,7 +694,7 @@ async fn serve(shared: &Arc<Shared>, ready: &std::sync::mpsc::Sender<()>) -> zbu
     let connection = shared.sources.bus.builder().method_timeout(CALL_TIMEOUT).serve_at(PATH, server).build().await?;
     // Queued behind another server (mako, dunst, another shell's), novad
     // takes over when it quits.
-    match connection.request_name_with_flags(BUS_NAME, Default::default()).await? {
+    match session_bus::claim(&connection, BUS_NAME).await? {
         RequestNameReply::InQueue => shared.logger.warn(
             LOG_SOURCE,
             &format!("another program owns {BUS_NAME}; its notifications show instead until it quits"),
