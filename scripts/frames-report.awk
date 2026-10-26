@@ -23,8 +23,11 @@
 # redraws and shows in the "idle" column, and a screen that never animated
 # is listed apart as idle or hidden.
 
-# A surface is a screen's stage ("DP-1") or one of its PanelSurfaces
-# ("DP-1/right"), each reported on its own row; "screen" below means either.
+# A surface is a screen's stage ("DP-1"), one of its PanelSurfaces
+# ("DP-1/right") or an overlay ("DP-1/notifications"), each reported on its
+# own row; "screen" below means any of them. An overlay that stays up still
+# between its slide in and out (a pop-up's countdown steps) reads as a stall
+# here: count its lines for its frame cost instead.
 #
 # -v refresh="DP-1=144 DP-2=120": each screen's refresh rate in Hz; `*=60`
 #    stands for every screen not named. Required.
@@ -133,7 +136,7 @@ END {
 		print "frames: nothing animated, only lone redraws or hidden screens"
 		exit 2
 	}
-	printf "%-14s %8s %7s %5s %7s %8s %8s %14s %8s %8s\n", "surface", "hz", "bursts", "idle", "frames", "dropped", "dropped%", "missed vblanks", "worst ms", "start ms"
+	printf "%-20s %8s %7s %5s %7s %8s %8s %14s %8s %8s\n", "surface", "hz", "bursts", "idle", "frames", "dropped", "dropped%", "missed vblanks", "worst ms", "start ms"
 	for (i = 1; i <= screens; i++) {
 		s = order[i]
 		if (!frames[s]) {
@@ -142,7 +145,7 @@ END {
 			continue
 		}
 		pct = 100 * dropped[s] / frames[s]
-		printf "%-14s %8.3f %7d %5d %7d %8d %7.1f%% %14d %8d %8d\n", s, hz[s], bursts[s], idle[s], frames[s], dropped[s], pct, missed_vblanks[s], worst[s], start[s]
+		printf "%-20s %8.3f %7d %5d %7d %8d %7.1f%% %14d %8d %8d\n", s, hz[s], bursts[s], idle[s], frames[s], dropped[s], pct, missed_vblanks[s], worst[s], start[s]
 		if (budget != "" && pct > budget + 0)
 			warnings = warnings sprintf("warning: %s dropped %.1f%% of its frames, more than the %s%% budget\n", s, pct, budget)
 	}

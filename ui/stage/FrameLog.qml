@@ -14,15 +14,22 @@ Item {
 
     readonly property bool logging: Quickshell.env("NOVA_FRAME_LOG") === "1"
     property real lastSwap: 0
+    // A window built again, or hidden and shown again: the time between
+    // isn't a frame's.
+    readonly property var frameWindow: Window.window
+    onFrameWindowChanged: lastSwap = 0
 
     Connections {
-        target: log.Window.window
+        target: log.frameWindow
         enabled: log.logging
         function onFrameSwapped() {
             const now = Date.now();
             if (log.lastSwap > 0)
                 console.info(`nova-frame: screen=${log.surfaceName} dt=${now - log.lastSwap}`);
             log.lastSwap = now;
+        }
+        function onVisibleChanged() {
+            log.lastSwap = 0;
         }
     }
 }

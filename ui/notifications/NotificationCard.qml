@@ -8,8 +8,8 @@ import "../text/duration.js" as Duration
 
 // A pop-up: who it's from, the app and how many more came from it ("+2"),
 // the summary and body, progress, and the app's buttons (the first one in
-// the accent). A thin line along the bottom drains over its time; the
-// pointer on it holds it. Critical ones have a rim in the error color and
+// the accent). A thin line of pieces along the bottom goes out over its
+// time; the pointer on it holds it. Critical ones have a rim in the error color and
 // stay until they're closed. A click opens it, ✕ (on hover) dismisses it.
 Item {
     id: card

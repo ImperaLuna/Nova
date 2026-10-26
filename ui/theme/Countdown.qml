@@ -12,7 +12,7 @@ Item {
 
     property int duration
     property bool held: false
-    property int segments: Tokens.countdownSegments
+    readonly property int segments: Tokens.countdownSegments
     property color color: Tokens.notificationTimer
     property real radius: height / 2
     // Pieces still lit, `segments` to 0.
@@ -46,13 +46,16 @@ Item {
     onHeldChanged: {
         if (!held)
             return resume();
+        // Kept inside the current piece, should the clock jump meanwhile.
         if (since > 0)
-            spent += Date.now() - since;
+            spent = Math.min(Math.max(spent + Date.now() - since, (segments - lit) * step), (segments - lit + 1) * step);
         since = 0;
         tick.stop();
     }
-    onDurationChanged: restart()
-    Component.onCompleted: restart()
+    Component.onCompleted: {
+        restart();
+        durationChanged.connect(restart);
+    }
 
     Timer {
         id: tick
