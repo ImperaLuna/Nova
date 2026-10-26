@@ -62,6 +62,23 @@ pub fn write_program(dir: &Path, name: &str, body: &str) -> PathBuf {
     path
 }
 
+/// Links each of the host's `tools` (found on this process's `PATH`) into
+/// `bin`, beside the test's fake programs, and returns `bin` as the `PATH`
+/// to run them with. Only what the test puts there is found, so a program
+/// installed on the host can never stand in for one the test means to be
+/// missing.
+pub fn fake_path(bin: &Path, tools: &[&str]) -> String {
+    let host = std::env::var_os("PATH").unwrap_or_default();
+    for tool in tools {
+        let found = std::env::split_paths(&host)
+            .map(|dir| dir.join(tool))
+            .find(|path| path.is_file())
+            .unwrap_or_else(|| panic!("{tool} isn't on PATH"));
+        std::os::unix::fs::symlink(&found, bin.join(tool)).unwrap_or_else(|e| panic!("can't link {tool}: {e}"));
+    }
+    bin.display().to_string()
+}
+
 /// Checks `check` until it gives a value or `timeout` passes, then panics
 /// with `what` (what the test was waiting for).
 pub fn eventually<T>(timeout: Duration, what: &str, mut check: impl FnMut() -> Option<T>) -> T {
@@ -92,6 +109,19 @@ mod tests {
         write_program(first.path(), "tool", "exit 0");
         drop(first);
         assert!(!kept.exists());
+    }
+
+    #[test]
+    fn a_fake_path_holds_only_the_fakes_and_the_tools_asked_for() {
+        let dir = TempDir::new("fake-path");
+        write_program(&dir, "fake", "sleep 0");
+        let path_var = fake_path(&dir, &["sleep"]);
+        let mut names: Vec<_> =
+            std::fs::read_dir(dir.path()).unwrap().map(|entry| entry.unwrap().file_name()).collect();
+        names.sort();
+        assert_eq!(names, ["fake", "sleep"]);
+        let status = std::process::Command::new(dir.join("fake")).env("PATH", path_var).status().unwrap();
+        assert!(status.success());
     }
 
     #[test]
