@@ -41,8 +41,8 @@ Item {
     signal appVolumeMoved(var ids, real value)
     // An `apps` entry's stream ids, to mute all or unmute all.
     signal appMuteToggled(var ids, bool muted)
-    // An icon name to its file, or "" (Quickshell.iconPath, given by the
-    // drawer so tests can do without).
+    // An icon file (novad's) to an image source, or "" (AppIcons.source,
+    // given by the drawer so tests can do without).
     property var iconSource: name => ""
 
     // The card on top shows the input in use on the Input tab, else the

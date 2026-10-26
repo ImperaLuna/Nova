@@ -10,7 +10,7 @@ Item {
 
     required property string appId
     required property string name
-    // From LauncherService.iconSource; "" when the theme has no icon.
+    // From LauncherService.iconSource; "" when the app has no icon.
     property string source: ""
     property int size: Tokens.launcherRowIcon
 

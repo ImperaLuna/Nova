@@ -195,7 +195,13 @@ impl<'a> Connection<'a> {
             Command::SearchApps { query } => value(self.launcher().and_then(|launcher| launcher.search(query))),
             Command::AppIcon { icon_name, program, name } => {
                 let launcher = lock(&self.daemon.settings).launcher.clone();
-                value(crate::launcher::Launcher::app_icon(launcher.as_deref(), icon_name, program, name))
+                value(crate::launcher::Launcher::app_icon(
+                    launcher.as_deref(),
+                    &self.daemon.sources.icons,
+                    icon_name,
+                    program,
+                    name,
+                ))
             }
             Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window),
             Command::PinApp { id, pinned } => done(self.launcher().and_then(|launcher| launcher.pin(id, *pinned))),

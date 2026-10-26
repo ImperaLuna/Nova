@@ -20,9 +20,9 @@ function greeting(hour) {
 
 // Where the header's logo comes from, for a host event's `os`: a bundled
 // logo for it or the distribution it derives from (ID_LIKE), else the icon
-// theme's LOGO (`iconPath(name)` gives its path, or "" when the theme has
-// none), else "" for Nova's own mark.
-function logo(os, logosDir, iconPath) {
+// theme's file for its LOGO, which novad found (`fileUrl(path)` makes it a
+// URL), else "" for Nova's own mark.
+function logo(os, logosDir, fileUrl) {
     if (!os)
         return "";
     var ids = [os.id].concat(os.id_like || []);
@@ -30,7 +30,7 @@ function logo(os, logosDir, iconPath) {
         if (BUNDLED_LOGOS.indexOf(ids[i]) >= 0)
             return logosDir + "/" + ids[i] + ".svg";
     }
-    return os.logo ? iconPath(os.logo) : "";
+    return os.logo ? fileUrl(os.logo) : "";
 }
 
 // A size in bytes, short: "9.4G", "780M", "42K". One decimal under 10.

@@ -149,6 +149,7 @@ fn an_electron_item_shows_with_its_app_and_goes_with_it() {
         data_dirs: vec![fixture.dir.join("share")],
         state_file: fixture.dir.join("launcher.json"),
         runner: launcher::Runner::Direct,
+        icons: Arc::new(crate::icons::Icons::new(crate::icons::HICOLOR.into(), &[fixture.dir.join("share")], None)),
     };
     let launcher = Launcher::start(paths, "", Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
     wait_until(WAIT, "the launcher to find discord.desktop", || launcher.find_app(&["discord".into()]).is_some());

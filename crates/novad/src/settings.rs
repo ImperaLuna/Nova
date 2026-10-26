@@ -9,6 +9,7 @@
 
 use crate::config::{self, Config};
 use crate::hub::Hub;
+use crate::icons::Icons;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
 use crate::{ai_usage, features, host, launcher, notifications, resources, theme, tray, x11_tray};
@@ -40,6 +41,8 @@ pub struct Sources {
     pub launcher: launcher::Paths,
     pub tray: tray::Sources,
     pub notifications: notifications::Sources,
+    /// Where app icons are found, for every feature that shows them.
+    pub icons: Arc<Icons>,
 }
 
 /// The settings in effect, and the feature services they started.
@@ -60,6 +63,8 @@ pub struct Settings {
     pub x11_tray: Option<Arc<x11_tray::X11Tray>>,
     /// Serving `org.freedesktop.Notifications` while the `notifications` feature is ready.
     pub notifications: Option<Arc<notifications::Notifications>>,
+    /// For the quick settings header's logo.
+    icons: Arc<Icons>,
 }
 
 impl Settings {
@@ -113,7 +118,7 @@ impl Settings {
             hub.publish(&Event::Theme(theme.clone()));
         }
         if previous.as_deref().is_some_and(|previous| previous.config.quick_settings != config.quick_settings) {
-            hub.publish(&Event::Host(host::read(config.quick_settings.name.as_deref())));
+            hub.publish(&Event::Host(host::read(config.quick_settings.name.as_deref(), &sources.icons)));
         }
 
         let ready = |id| features::is_ready(&features, id);
@@ -213,7 +218,8 @@ impl Settings {
             hub.publish(&Event::Features { features: features.clone() });
         }
 
-        Self { config, selection, features, theme, ai_usage, resources, launcher, tray, x11_tray, notifications }
+        let icons = Arc::clone(&sources.icons);
+        Self { config, selection, features, theme, ai_usage, resources, launcher, tray, x11_tray, notifications, icons }
     }
 }
 
@@ -237,7 +243,7 @@ impl Settings {
     /// The quick settings header's facts, with the config's name for the
     /// user if it has one.
     pub fn host(&self) -> Host {
-        host::read(self.config.quick_settings.name.as_deref())
+        host::read(self.config.quick_settings.name.as_deref(), &self.icons)
     }
 
     /// Where screenshots are saved, from `config.toml`.
