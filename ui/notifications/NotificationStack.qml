@@ -25,9 +25,11 @@ Item {
     signal actionClicked(int id, string key)
 
     // Pop-ups shown, still leaving or waiting: anything left to draw.
-    readonly property bool busy: cards.length > 0 || waiting.length > 0
-    // The cards shown, for the window's input and blur regions.
-    property list<Item> cards: []
+    readonly property bool busy: shapes.length > 0 || waiting.length > 0
+    // Where the cards are drawn, for the window's input and blur regions:
+    // one plain item each, with no transforms, since a Quickshell Region
+    // follows only its item's own position and size.
+    property list<Item> shapes: []
     // Waiting entries, newest first.
     property var waiting: []
 
@@ -190,6 +192,24 @@ Item {
                 // it, so the others move along.
                 property real presence: 0
                 readonly property bool away: entry.leaving === "away"
+                // Its card's transform: folded toward the button over its
+                // top right corner and raised, or slid aside.
+                readonly property real xScale: away ? 1 : Tokens.notificationFold + (1 - Tokens.notificationFold) * presence
+                readonly property real yScale: away ? 1 : Tokens.notificationFoldHeight + (1 - Tokens.notificationFoldHeight) * presence
+                readonly property real shiftX: away ? (1 - presence) * Tokens.notificationAway : 0
+                readonly property real shiftY: away ? 0 : -(1 - presence) * Tokens.notificationRise
+
+                // The card as drawn, in the stack.
+                readonly property Item shape: Item {
+                    parent: stack
+                    x: slot.x + slot.width * (1 - slot.xScale) + slot.shiftX
+                    y: slot.y + slot.shiftY
+                    width: slot.width * slot.xScale
+                    height: card.height * slot.yScale
+                    readonly property real radius: card.radius * Math.min(slot.xScale, slot.yScale)
+                }
+                Component.onCompleted: stack.shapes = [...stack.shapes, shape]
+                Component.onDestruction: stack.shapes = [...stack.shapes].filter(item => item !== shape)
 
                 width: Tokens.notificationWidth
                 height: (card.implicitHeight + Tokens.gap) * presence
@@ -252,20 +272,17 @@ Item {
                         stack.actionClicked(notification.id, key);
                         stack.remove(slot.key, "away");
                     }
-                    Component.onCompleted: stack.cards = [...stack.cards, card]
-                    Component.onDestruction: stack.cards = [...stack.cards].filter(item => item !== card)
 
                     transform: [
-                        // Folds toward the button over its top right corner.
                         Scale {
                             origin.x: card.width
                             origin.y: 0
-                            xScale: slot.away ? 1 : Tokens.notificationFold + (1 - Tokens.notificationFold) * slot.presence
-                            yScale: slot.away ? 1 : Tokens.notificationFoldHeight + (1 - Tokens.notificationFoldHeight) * slot.presence
+                            xScale: slot.xScale
+                            yScale: slot.yScale
                         },
                         Translate {
-                            x: slot.away ? (1 - slot.presence) * Tokens.notificationAway : 0
-                            y: slot.away ? 0 : -(1 - slot.presence) * Tokens.notificationRise
+                            x: slot.shiftX
+                            y: slot.shiftY
                         }
                     ]
                 }
