@@ -13,8 +13,10 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
-/// How long a test waits for something the bus should do at once.
-const WAIT: Duration = Duration::from_secs(5);
+/// How long a test waits for something the bus should do at once. Longer
+/// than reading an item may take (three calls, each up to its timeout), so
+/// a busy test machine doesn't fail it.
+const WAIT: Duration = Duration::from_secs(4 * CALL_TIMEOUT.as_secs());
 
 struct Fixture {
     dir: PathBuf,
