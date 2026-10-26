@@ -7,6 +7,7 @@
 use super::*;
 use crate::session_bus::Bus;
 use nova_protocol::{FeatureStatus, LogEntry, UI_LOG_SOURCE};
+use nova_test_support::TempDir;
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Lines, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -14,11 +15,15 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
 
+/// A novad in this process for one test, in a folder of its own. Dropping
+/// it stops everything it started (see [`InProcess`]), then removes the
+/// folder.
 struct TestDaemon {
-    dir: PathBuf,
+    // Before `dir`: fields drop in order.
+    _running: InProcess,
+    dir: TempDir,
     socket: PathBuf,
     daemon: Arc<Daemon>,
-    watching: Option<inotify::Stopper>,
 }
 
 /// `features.toml` with features off. The features with a watcher of their own, off unless a test is about
@@ -83,8 +88,8 @@ impl TestDaemon {
         prepare: impl FnOnce(&Path),
         compositor: impl FnOnce(&Path) -> Option<Box<dyn compositor::Backend>>,
     ) -> Self {
-        let dir = std::env::temp_dir().join(format!("novad-test-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let temp = TempDir::new(name);
+        let dir = temp.path().to_owned();
         std::fs::create_dir_all(dir.join("config")).unwrap();
         std::fs::create_dir_all(dir.join("ai-usage")).unwrap();
         std::fs::create_dir_all(dir.join("launcher/share/applications")).unwrap();
@@ -141,10 +146,8 @@ impl TestDaemon {
             recordings,
         });
         daemon.recordings.allow(daemon.feature_ready(recording::FEATURE_ID));
-        let watching = daemon.watch_settings();
-        let serving = Arc::clone(&daemon);
-        std::thread::spawn(move || server::serve(listener, serving));
-        Self { dir, socket, daemon, watching }
+        let running = InProcess::serve(listener, Arc::clone(&daemon), daemon.watch_settings());
+        Self { _running: running, dir: temp, socket, daemon }
     }
 
     fn config_file(&self) -> PathBuf {
@@ -162,35 +165,6 @@ impl TestDaemon {
         let mut client = Client { writer, lines: BufReader::new(stream).lines(), early: Default::default() };
         assert_eq!(client.next()["event"], "hello");
         client
-    }
-}
-
-impl Drop for TestDaemon {
-    fn drop(&mut self) {
-        // Their file watchers go with them: a user gets only so many
-        // (fs.inotify.max_user_instances, 128 by default), and tests run in
-        // one process.
-        let settings = lock(&self.daemon.settings);
-        if let Some(launcher) = &settings.launcher {
-            launcher.stop();
-        }
-        if let Some(usage) = &settings.ai_usage {
-            usage.stop();
-        }
-        if let Some(tray) = &settings.tray {
-            tray.stop();
-        }
-        if let Some(x11_tray) = &settings.x11_tray {
-            x11_tray.stop();
-        }
-        if let Some(notifications) = &settings.notifications {
-            notifications.stop();
-        }
-        drop(settings);
-        if let Some(watching) = &self.watching {
-            watching.stop();
-        }
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 

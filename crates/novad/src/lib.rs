@@ -60,6 +60,7 @@ use nova_protocol::{LogLevel, Status, UiState, UiStatus};
 use settings::{Settings, Sources};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 use supervisor::{Supervisor, UiSettings};
@@ -196,29 +197,75 @@ pub fn run(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>
     let notify_socket = std::env::var_os(notify::SOCKET_VAR);
     // SAFETY: no other thread runs yet to read the environment meanwhile.
     unsafe { std::env::remove_var(notify::SOCKET_VAR) };
-    let (listener, daemon) = start(args, socket)?;
+    let (listener, daemon, _watching) = start(args, socket)?;
     install_panic_hook(Arc::clone(&daemon.logger));
     // Up: the socket listens and the tray's name is claimed, so login apps
     // may start (nova.service is Type=notify).
     if let Err(e) = notify::ready(notify_socket.as_deref()) {
         daemon.logger.warn(LOG_SOURCE, &format!("can't tell systemd novad is ready: {e}"));
     }
-    server::serve(listener, daemon);
+    server::serve(listener, daemon, &AtomicBool::new(false));
     Ok(())
 }
 
 /// Starts novad on background threads in this process and returns once its
-/// socket accepts connections. For tests of novad's clients.
-pub fn spawn(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let (listener, daemon) = start(args, socket)?;
-    std::thread::spawn(move || server::serve(listener, daemon));
-    Ok(())
+/// socket accepts connections. For tests of novad's clients; it stops when
+/// the returned handle is dropped.
+pub fn spawn(args: Args, socket: PathBuf) -> Result<InProcess, Box<dyn std::error::Error>> {
+    let (listener, daemon, watching) = start(args, socket)?;
+    Ok(InProcess::serve(listener, daemon, watching))
 }
 
-fn start(
-    args: Args,
-    socket: PathBuf,
-) -> Result<(std::os::unix::net::UnixListener, Arc<Daemon>), Box<dyn std::error::Error>> {
+/// A novad serving on a thread of this process ([`spawn`], novad's own
+/// tests). Dropping it stops the accept loop and waits for it to end, and
+/// stops the UI, the feature services and the settings watcher, so tests
+/// sharing one process don't pile up threads, children and inotify
+/// instances. Connections still open end when their clients hang up.
+pub struct InProcess {
+    daemon: Arc<Daemon>,
+    stopped: Arc<AtomicBool>,
+    serving: Option<std::thread::JoinHandle<()>>,
+    watching: Option<inotify::Stopper>,
+}
+
+impl InProcess {
+    fn serve(
+        listener: std::os::unix::net::UnixListener,
+        daemon: Arc<Daemon>,
+        watching: Option<inotify::Stopper>,
+    ) -> Self {
+        let stopped = Arc::new(AtomicBool::new(false));
+        let serving = {
+            let (daemon, stopped) = (Arc::clone(&daemon), Arc::clone(&stopped));
+            std::thread::spawn(move || server::serve(listener, daemon, &stopped))
+        };
+        Self { daemon, stopped, serving: Some(serving), watching }
+    }
+}
+
+impl Drop for InProcess {
+    fn drop(&mut self) {
+        self.stopped.store(true, Ordering::SeqCst);
+        // Wakes the accept loop, which then sees the stop.
+        let _ = std::os::unix::net::UnixStream::connect(&self.daemon.socket);
+        if let Some(serving) = self.serving.take() {
+            let _ = serving.join();
+        }
+        if let Some(ui) = &self.daemon.ui {
+            ui.stop();
+        }
+        lock(&self.daemon.settings).stop_services();
+        if let Some(watching) = &self.watching {
+            watching.stop();
+        }
+    }
+}
+
+/// A started novad before it serves: its bound socket, itself, and its
+/// settings watcher.
+type Started = (std::os::unix::net::UnixListener, Arc<Daemon>, Option<inotify::Stopper>);
+
+fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Error>> {
     // The socket first: a second daemon is refused before it can rotate the
     // running one's log.
     let listener = server::bind(&socket)?;
@@ -305,13 +352,13 @@ fn start(
         daemon.recordings.recover(&folder);
     }
     // Watched for as long as novad runs.
-    let _ = daemon.watch_settings();
+    let watching = daemon.watch_settings();
     // Not for a daemon without its UI (tests, a UI run by hand): logind's
     // locks and the sleep inhibitor are the whole machine's.
     if daemon.ui.is_some() {
         logind::follow(&daemon);
     }
-    Ok((listener, daemon))
+    Ok((listener, daemon, watching))
 }
 
 fn log_level() -> LogLevel {

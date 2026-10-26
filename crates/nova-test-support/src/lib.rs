@@ -32,14 +32,18 @@ impl TempDir {
         &self.0
     }
 
-    /// `relative` inside the folder.
-    pub fn join(&self, relative: impl AsRef<Path>) -> PathBuf {
-        self.0.join(relative)
-    }
-
     /// The folder as a `PATH`-style string, for a folder of fake programs.
     pub fn path_var(&self) -> String {
         self.0.display().to_string()
+    }
+}
+
+/// The folder's path: `dir.join(..)`, `&dir` where a `&Path` goes.
+impl std::ops::Deref for TempDir {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.0
     }
 }
 

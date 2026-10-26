@@ -218,6 +218,22 @@ impl Settings {
 }
 
 impl Settings {
+    /// Stops every feature service running, for a novad that ends without
+    /// exiting the process ([`crate::InProcess`]).
+    pub fn stop_services(&self) {
+        let services: [Option<&dyn Service>; 6] = [
+            self.ai_usage.as_deref().map(|service| service as &dyn Service),
+            self.resources.as_deref().map(|service| service as &dyn Service),
+            self.launcher.as_deref().map(|service| service as &dyn Service),
+            self.tray.as_deref().map(|service| service as &dyn Service),
+            self.x11_tray.as_deref().map(|service| service as &dyn Service),
+            self.notifications.as_deref().map(|service| service as &dyn Service),
+        ];
+        for service in services.into_iter().flatten() {
+            service.stop();
+        }
+    }
+
     /// The quick settings header's facts, with the config's name for the
     /// user if it has one.
     pub fn host(&self) -> Host {

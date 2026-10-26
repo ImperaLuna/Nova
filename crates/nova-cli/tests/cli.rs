@@ -2,6 +2,7 @@
 //! process, without the UI) over a real socket.
 
 use nova_protocol::{Status, UiState};
+use nova_test_support::TempDir;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -15,8 +16,11 @@ struct DaemonArgs {
     args: novad::Args,
 }
 
+/// novad in this process, stopped when dropped, then its folder removed.
 struct Novad {
-    dir: PathBuf,
+    // Before `dir`: fields drop in order.
+    _running: novad::InProcess,
+    dir: TempDir,
 }
 
 impl Novad {
@@ -26,9 +30,7 @@ impl Novad {
 
     /// With `selection` as the user's features.toml.
     fn start_with(name: &str, selection: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("nova-cli-test-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new(name);
         std::fs::write(dir.join("features.toml"), selection).unwrap();
         let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         let args: Vec<std::ffi::OsString> = vec![
@@ -49,8 +51,9 @@ impl Novad {
             "--claude-credentials".into(),
             dir.join("claude/.credentials.json").into(),
         ];
-        novad::spawn(<DaemonArgs as clap::Parser>::parse_from(args).args, dir.join("novad.sock")).unwrap();
-        Self { dir }
+        let running =
+            novad::spawn(<DaemonArgs as clap::Parser>::parse_from(args).args, dir.join("novad.sock")).unwrap();
+        Self { _running: running, dir }
     }
 
     fn nova(&self, args: &[&str]) -> Command {
@@ -66,12 +69,6 @@ impl Novad {
 
     fn log_dir(&self) -> String {
         self.dir.join("logs").display().to_string()
-    }
-}
-
-impl Drop for Novad {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 

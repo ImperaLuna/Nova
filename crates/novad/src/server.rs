@@ -10,8 +10,8 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
-use std::sync::Arc;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 /// Any local process can connect: longer request lines close the connection.
@@ -45,8 +45,13 @@ pub fn bind(socket: &Path) -> std::io::Result<UnixListener> {
     UnixListener::bind(socket)
 }
 
-pub fn serve(listener: UnixListener, daemon: Arc<Daemon>) {
+/// Accepts clients until `stopped` is set; the connection after that (one
+/// made to wake it) ends the loop.
+pub fn serve(listener: UnixListener, daemon: Arc<Daemon>, stopped: &AtomicBool) {
     for stream in listener.incoming() {
+        if stopped.load(Ordering::SeqCst) {
+            return;
+        }
         match stream {
             Ok(stream) => {
                 let daemon = Arc::clone(&daemon);
