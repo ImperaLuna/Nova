@@ -149,9 +149,9 @@ Item {
 
             onWheel: event => {
                 wheel += event.angleDelta.y;
-                while (Math.abs(wheel) >= Volume.NOTCH) {
+                while (Math.abs(wheel) >= Tokens.wheelNotch) {
                     const direction = Math.sign(wheel);
-                    wheel -= direction * Volume.NOTCH;
+                    wheel -= direction * Tokens.wheelNotch;
                     capsule.stepRequested(direction);
                 }
             }

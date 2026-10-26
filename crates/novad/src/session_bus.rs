@@ -105,10 +105,26 @@ mod test_bus {
             Self { bus, address: address.trim().to_string() }
         }
 
+        /// A new connection, an app's, that answers calls to objects it serves
+        /// from the moment it serves them.
         pub fn connect(&self) -> Connection {
-            zbus::block_on(connection::Builder::address(self.address.as_str()).build()).unwrap()
+            // `Connection::object_server` alone starts serving on a task that
+            // listens only once it first runs, and a call that comes before
+            // is never answered: an app that serves an item and registers it
+            // at once would miss the tray reading it (IMP-161). The builder
+            // returns once its object server listens.
+            let builder = connection::Builder::address(self.address.as_str()).serve_at(SERVING_PATH, Serving);
+            zbus::block_on(builder.build()).unwrap()
         }
     }
+
+    /// Where a test connection serves its first object, so its object server starts with it.
+    const SERVING_PATH: &str = "/org/nova/Test";
+
+    struct Serving;
+
+    #[zbus::interface(name = "org.nova.Test")]
+    impl Serving {}
 
     impl Drop for TestBus {
         fn drop(&mut self) {
