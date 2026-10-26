@@ -350,7 +350,15 @@ pub fn watch(files: Vec<PathBuf>, logger: Arc<Logger>, reload: impl Fn() + Send 
     });
     std::thread::spawn(move || {
         while changes.recv().is_ok() {
-            while changes.recv_timeout(SETTLE).is_ok() {}
+            // Settled, unless the watcher stopped meanwhile: then nothing
+            // more applies (an in-process novad stops its services next).
+            loop {
+                match changes.recv_timeout(SETTLE) {
+                    Ok(()) => {}
+                    Err(mpsc::RecvTimeoutError::Timeout) => break,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                }
+            }
             reload();
         }
     });
