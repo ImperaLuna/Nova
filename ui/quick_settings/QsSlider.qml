@@ -2,6 +2,7 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 import "../volume"
+import "../util/numbers.js" as Numbers
 
 // A thick slider: a round icon button beside the track (clicking it sends
 // `iconClicked`, mute), the track filled only up to the value with a label
@@ -41,7 +42,7 @@ Item {
     // While dragged, where the pointer put it: the value set comes back a
     // moment later, and showing that would jump behind the pointer.
     readonly property real current: drag.pressed ? drag.value : value
-    readonly property real shown: Math.max(0, Math.min(1, current))
+    readonly property real shown: Numbers.clamp(current, 0, 1)
 
     Rectangle {
         id: iconButton
@@ -143,7 +144,7 @@ Item {
             property real value: 0
             // Each press sets it; moving on only sends the changes.
             function set(mouseX: real, moving: bool) {
-                const next = Math.round(Math.max(0, Math.min(1, mouseX / width)) * 100) / 100;
+                const next = Math.round(Numbers.clamp(mouseX / width, 0, 1) * 100) / 100;
                 if (moving && next === value)
                     return;
                 value = next;

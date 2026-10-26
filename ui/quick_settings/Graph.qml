@@ -39,7 +39,7 @@ Item {
 
         ShapePath {
             strokeColor: "transparent"
-            fillColor: Qt.rgba(Tokens.primary.r, Tokens.primary.g, Tokens.primary.b, Tokens.graphAreaOpacity)
+            fillColor: Tokens.alpha(Tokens.primary, Tokens.graphAreaOpacity)
             PathSvg {
                 path: QuickSettings.graphPath(graph.cpu, graph.width, graph.height, graph.span, true)
             }

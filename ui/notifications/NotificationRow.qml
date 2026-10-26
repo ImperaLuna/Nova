@@ -3,7 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
-import "notifications.js" as Notifications
+import "../text/duration.js" as Duration
 
 // A notification in quick settings' list: its icon, "App · summary", how
 // long ago, and the body in two lines; a dot while it's unread. A click
@@ -88,7 +88,7 @@ Item {
                 font.family: Tokens.fontMono
                 font.pixelSize: Tokens.fontSizeTiny
                 color: Tokens.fgSoft
-                text: Notifications.ago(row.notification.time, row.now)
+                text: Duration.ago(row.notification.time, row.now)
             }
         }
         Text {

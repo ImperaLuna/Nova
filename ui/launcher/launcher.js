@@ -102,7 +102,3 @@ function swatch(id) {
     return (Math.abs(hash) % SWATCHES) + 1;
 }
 
-// A file:// URL for an absolute path, each part escaped (spaces, #, ?).
-function fileUrl(path) {
-    return "file://" + path.split("/").map(encodeURIComponent).join("/");
-}

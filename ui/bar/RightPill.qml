@@ -7,6 +7,7 @@ import "../stage"
 import "../tray"
 import "../tray/tray.js" as Tray
 import "../daemon/protocol.js" as Protocol
+import "../util/numbers.js" as Numbers
 
 // The right pill: the tray's chevron while some app sits in the tray, then
 // the quick settings button and the orange power button (PillButtons),
@@ -116,7 +117,7 @@ StagePanel {
                 onWheel: event => {
                     const delta = event.angleDelta.y !== 0 ? event.angleDelta.y : event.angleDelta.x;
                     const target = strip.contentX + (delta < 0 ? strip.step : -strip.step);
-                    strip.contentX = Math.max(0, Math.min(strip.contentWidth - strip.width, Math.round(target / strip.step) * strip.step));
+                    strip.contentX = Numbers.clamp(Math.round(target / strip.step) * strip.step, 0, strip.contentWidth - strip.width);
                 }
             }
 

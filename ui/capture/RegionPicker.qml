@@ -5,6 +5,7 @@ import QtQuick.Effects
 import "../theme"
 import "../daemon/protocol.js" as Protocol
 import "capture.js" as Capture
+import "../text/files.js" as Files
 
 // One screen's part of the region picker: its frozen frame under a dim
 // veil, and the toolbar at the top (a switch to recording, Region or
@@ -108,7 +109,7 @@ Item {
     Image {
         id: frame
         anchors.fill: parent
-        source: picker.framePath ? Capture.fileUrl(picker.framePath) : ""
+        source: picker.framePath ? Files.fileUrl(picker.framePath) : ""
         asynchronous: true
         cache: false
         smooth: true

@@ -1,4 +1,5 @@
 .pragma library
+.import "../util/numbers.js" as Numbers
 
 // Quick settings' pure logic: the greeting and uptime, which logo to show,
 // how sizes and percents read, which apps record from the mic, and the
@@ -72,7 +73,7 @@ function percent(value) {
 
 // `used` as a share of `total`, 0 to 1.
 function share(used, total) {
-    return total > 0 ? Math.min(1, Math.max(0, used / total)) : 0;
+    return total > 0 ? Numbers.clamp(used / total, 0, 1) : 0;
 }
 
 // The apps recording from the default source right now, by name: the
@@ -167,8 +168,4 @@ function kindLabel(kind) {
         display: qsTr("HDMI or DisplayPort"),
         speakers: qsTr("Speakers")
     }[kind] || "";
-}
-
-function clamp(x, lo, hi) {
-    return Math.max(lo, Math.min(hi, x));
 }

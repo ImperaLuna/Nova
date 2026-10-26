@@ -1,4 +1,5 @@
 .pragma library
+.import "../util/numbers.js" as Numbers
 
 // The volume capsule's pure logic: what a scroll or click sets the volume
 // to, which icon and number it shows, when a change from PipeWire is worth
@@ -22,13 +23,13 @@ function stepped(volume, direction, step) {
 // The volume for a point `fraction` of the way up the capsule, to the
 // percent.
 function atFraction(fraction) {
-    return Math.round(clamp(fraction, 0, 1) * 100) / 100;
+    return Math.round(Numbers.clamp(fraction, 0, 1) * 100) / 100;
 }
 
 // How full the capsule is for this volume: full above 100%, empty without
 // an output.
 function level(volume, available) {
-    return available ? clamp(volume, 0, 1) : 0;
+    return available ? Numbers.clamp(volume, 0, 1) : 0;
 }
 
 function percent(volume) {
@@ -132,8 +133,4 @@ function surfaceY(level, height, wall) {
     if (level <= 0)
         return height;
     return wall + (1 - level) * (height - 2 * wall);
-}
-
-function clamp(x, lo, hi) {
-    return Math.max(lo, Math.min(hi, x));
 }

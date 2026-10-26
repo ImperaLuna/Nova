@@ -70,12 +70,6 @@ function folderLabel(path) {
     return parts.slice(Math.max(0, parts.length - 3), parts.length - 1).join("/");
 }
 
-// A local file's URL, each part of the path escaped: a folder named
-// `shots#1` stays part of the path.
-function fileUrl(path) {
-    return "file://" + path.split("/").map(encodeURIComponent).join("/");
-}
-
 // A region in a screen's logical pixels as a rectangle of the compositor's
 // layout (start_recording's region): moved by the screen's place in it, and
 // rounded inward to an even size, which video encoders need.
@@ -90,13 +84,4 @@ function toLayout(rect, screenX, screenY) {
         width: Math.max(0, width - width % 2),
         height: Math.max(0, height - height % 2)
     };
-}
-
-// A recording's time, "0:42" or "1:02:03", from milliseconds.
-function clock(ms) {
-    const total = Math.max(0, Math.floor(ms / 1000));
-    const hours = Math.floor(total / 3600);
-    const minutes = Math.floor(total / 60) % 60;
-    const seconds = String(total % 60).padStart(2, "0");
-    return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
 }

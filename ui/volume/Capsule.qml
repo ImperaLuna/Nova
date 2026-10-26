@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Shapes
 import "../theme"
 import "volume.js" as Volume
+import "../util/numbers.js" as Numbers
 
 // The capsule as drawn, in a window as big as it can get: the glass, liquid
 // and shadow in one shader (liquid.frag), the icon and number over it, and
@@ -123,7 +124,7 @@ Item {
             id: label
             anchors.fill: parent
             // Fades in over the last stretch of coming out.
-            opacity: Volume.clamp(1 - (1 - capsule.motion.open) / Tokens.capsuleLabelFadeIn, 0, 1)
+            opacity: Numbers.clamp(1 - (1 - capsule.motion.open) / Tokens.capsuleLabelFadeIn, 0, 1)
             glyph: Volume.icon(capsule.output, capsule.muted, capsule.volume)
             text: capsule.unavailable ? "–" : String(Volume.percent(capsule.volume))
             dimmed: capsule.muted

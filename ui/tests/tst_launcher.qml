@@ -338,9 +338,5 @@ Item {
             verify(swatch >= 1 && swatch <= LauncherLogic.SWATCHES);
             compare(LauncherLogic.swatch("org.mozilla.firefox.desktop"), swatch);
         }
-
-        function test_icon_paths_become_escaped_file_urls() {
-            compare(LauncherLogic.fileUrl("/opt/My App/icon#1.png"), "file:///opt/My%20App/icon%231.png");
-        }
     }
 }

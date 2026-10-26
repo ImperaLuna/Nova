@@ -15,6 +15,7 @@ import "../quick_settings/service"
 import "../daemon"
 import "../theme"
 import "../daemon/protocol.js" as Protocol
+import "../icons"
 
 // One per screen: a transparent layer across the top of the screen that the
 // bar, its panels and popups are all drawn on, so a pill can grow into its
@@ -114,7 +115,7 @@ Scope {
             apps: LauncherService.current.apps
             pinned: LauncherService.current.pinned
             recent: LauncherService.current.recent
-            iconSource: icon => LauncherService.iconSource(icon)
+            iconSource: icon => AppIcons.source(icon)
             onSearchRequested: query => LauncherService.search(query, found => deck.showMatches(query, found))
             onLaunchRequested: (id, newWindow) => LauncherService.launch(id, root.output.name, newWindow, error => deck.launched(error))
             onPinRequested: (id, pinned) => LauncherService.pin(id, pinned)

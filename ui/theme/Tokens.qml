@@ -50,9 +50,9 @@ QtObject {
     readonly property real surfaceOpacity: 0.75
     readonly property real raisedOpacity: 0.06
     readonly property real outlineOpacity: 0.08
-    readonly property color surface: Qt.rgba(bg.r, bg.g, bg.b, surfaceOpacity)
-    readonly property color surfaceRaised: Qt.rgba(fg.r, fg.g, fg.b, raisedOpacity)
-    readonly property color outline: Qt.rgba(fg.r, fg.g, fg.b, outlineOpacity)
+    readonly property color surface: alpha(bg, surfaceOpacity)
+    readonly property color surfaceRaised: alpha(fg, raisedOpacity)
+    readonly property color outline: alpha(fg, outlineOpacity)
 
     // Liquid glass behind pills and the panels that morph out of them
     // (Glass.qml), over the compositor's blur of what's behind: a light tint
@@ -61,12 +61,12 @@ QtObject {
     readonly property real glassAccent: 0.05
     readonly property color glass: {
         const tinted = tint(primary, glassAccent);
-        return Qt.rgba(tinted.r, tinted.g, tinted.b, glassOpacity);
+        return alpha(tinted, glassOpacity);
     }
     // A sheen across the top fading into a faint veil, and a shade along the
     // bottom edge.
-    readonly property color glassSheen: Qt.rgba(fg.r, fg.g, fg.b, 0.12)
-    readonly property color glassVeil: Qt.rgba(fg.r, fg.g, fg.b, 0.03)
+    readonly property color glassSheen: alpha(fg, 0.12)
+    readonly property color glassVeil: alpha(fg, 0.03)
     readonly property color glassShade: Qt.rgba(0, 0, 0, 0.22)
     // Where, top to bottom, the sheen has faded to the veil, and where the
     // veil has cleared before the shade starts.
@@ -81,31 +81,31 @@ QtObject {
     // A rim drawn in one pass (the volume capsule's shader): its brightness
     // on the unlit side, relative to the lit corner.
     readonly property real glassRimShade: 0.35
-    readonly property color glassRimLit: Qt.rgba(fg.r, fg.g, fg.b, 0.60)
-    readonly property color glassRimGlow: Qt.rgba(fg.r, fg.g, fg.b, 0.36)
-    readonly property color glassRim: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
-    readonly property color glassRimDim: Qt.rgba(fg.r, fg.g, fg.b, 0.03)
+    readonly property color glassRimLit: alpha(fg, 0.60)
+    readonly property color glassRimGlow: alpha(fg, 0.36)
+    readonly property color glassRim: alpha(fg, 0.10)
+    readonly property color glassRimDim: alpha(fg, 0.03)
     // The soft shadow under glass, and the room it needs around the glass.
     readonly property color shadow: Qt.rgba(0, 0, 0, 0.35)
     readonly property real shadowBlur: 30
     readonly property real shadowOffset: 10
     readonly property real shadowRoom: shadowBlur + shadowOffset
     // Hover wash on things inside glass.
-    readonly property color hover: Qt.rgba(fg.r, fg.g, fg.b, 0.06)
+    readonly property color hover: alpha(fg, 0.06)
     // The selected row of a list, like the launcher's.
-    readonly property color selected: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
+    readonly property color selected: alpha(fg, 0.10)
     // What's selected where the focus isn't, like the workspace shown on a
     // monitor you're not using: a quiet fill instead of the accent.
-    readonly property color selectedQuiet: Qt.rgba(fg.r, fg.g, fg.b, 0.14)
+    readonly property color selectedQuiet: alpha(fg, 0.14)
     // Meters: the empty track and a neutral fill.
-    readonly property color track: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
-    readonly property color meter: Qt.rgba(fg.r, fg.g, fg.b, 0.85)
+    readonly property color track: alpha(fg, 0.10)
+    readonly property color meter: alpha(fg, 0.85)
 
     // `target` mixed into bg: 0 is bg, 1 is the color itself. One function for
     // every ramp and tint, so they follow the theme: heatmaps step through
     // tint(primary, level), status rows sit on tint(error, 0.15) and so on.
     function tint(target: color, amount: real): color {
-        return Qt.tint(bg, Qt.rgba(target.r, target.g, target.b, amount));
+        return Qt.tint(bg, alpha(target, amount));
     }
 
     // Radii
@@ -226,9 +226,9 @@ QtObject {
     readonly property real volumeStep: 0.05
     // The liquid, and the grey still liquid of a muted output.
     readonly property real liquidOpacity: 0.95
-    readonly property color liquid: Qt.rgba(secondary.r, secondary.g, secondary.b, liquidOpacity)
+    readonly property color liquid: alpha(secondary, liquidOpacity)
     readonly property real liquidMutedOpacity: 0.7
-    readonly property color liquidMuted: Qt.rgba(fgDim.r, fgDim.g, fgDim.b, liquidMutedOpacity)
+    readonly property color liquidMuted: alpha(fgDim, liquidMutedOpacity)
     // Its surface (px): a slow swell, the waves a change stirs up (at most),
     // the swell kept while it sits still, and how far the surface creeps
     // up the glass.
@@ -345,7 +345,7 @@ QtObject {
     // app's slider shows the app's icon, its corners less round.
     readonly property int sliderHeight: 34
     readonly property int sliderGap: 6
-    readonly property color sliderFill: Qt.rgba(fg.r, fg.g, fg.b, 0.22)
+    readonly property color sliderFill: alpha(fg, 0.22)
     readonly property real sliderMutedOpacity: 0.3
     readonly property int sliderButtonWidth: 30
     readonly property int appIconRadius: 11
@@ -358,7 +358,7 @@ QtObject {
     readonly property int fontSizeMicro: 10
     // Small uppercase labels spread out by this share of their size.
     readonly property real trackingLabel: 0.06
-    readonly property color fgSoft: Qt.rgba(fg.r, fg.g, fg.b, 0.72)
+    readonly property color fgSoft: alpha(fg, 0.72)
     // A segmented control or tab row: its padding, its segments' height and
     // corners.
     readonly property int segmentPad: 4
@@ -471,7 +471,7 @@ QtObject {
     readonly property int notificationActionHeight: 28
     readonly property int notificationProgressHeight: 6
     readonly property int notificationTimerHeight: 2
-    readonly property color notificationTimer: Qt.rgba(fg.r, fg.g, fg.b, 0.35)
+    readonly property color notificationTimer: alpha(fg, 0.35)
     readonly property real notificationCriticalRim: 1.5
     // "+2" beside the app, and the count in the list's heading.
     readonly property int notificationChipHeight: 16
@@ -513,7 +513,7 @@ QtObject {
     readonly property int badgeIcon: 9
     readonly property int badgeMax: 9
     readonly property int fontSizeBadge: 9
-    readonly property color badgeQuiet: Qt.rgba(fg.r, fg.g, fg.b, 0.55)
+    readonly property color badgeQuiet: alpha(fg, 0.55)
 
     // Type
     readonly property string fontSans: "Inter"
@@ -578,6 +578,11 @@ QtObject {
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
     // The curve each half of a pulse follows: a soft breath in and out.
     readonly property int easingPulse: Easing.InOutSine
+
+    // `color` at `opacity` (0..1), whatever its own alpha.
+    function alpha(color: color, opacity: real): color {
+        return Qt.rgba(color.r, color.g, color.b, opacity);
+    }
 
     // Sets the theme colors from a theme event's `colors` ({token: "#RRGGBB"}).
     function apply(colors) {
