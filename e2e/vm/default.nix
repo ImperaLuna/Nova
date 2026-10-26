@@ -221,6 +221,8 @@ let
       ''
         # Passed too: ${frames}
         cat ${compare}/report.txt
+        echo "Pss of each state (frames.py):"
+        cat ${frames}/pss.txt
         if [[ -e ${compare}/failed ]]; then
           echo "Screenshots differ from e2e/golden/${compositor}. Diffs: nix build .#checks.${pkgs.stdenv.hostPlatform.system}.e2e-${compositor}.compare"
           exit 1

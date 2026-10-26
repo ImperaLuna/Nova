@@ -148,6 +148,20 @@ KEY_L = "38:1 38:0"
 # novad's sleep inhibitor (crates/novad/src/logind.rs) as `systemd-inhibit
 # --list` shows it: who, what, why and mode.
 NOVA_INHIBITOR = "Nova.*sleep.*Locking the screen before sleep.*delay"
+# The panels `nova toggle` opens, with what each logs once open and once
+# closed, for the windows-don't-move check and the Pss of each state. The
+# tray's icons log nothing and draw only inside the right pill.
+REAL_PANELS = {
+    "launcher": (LAUNCHER_OPENED, LAUNCHER_CLOSED),
+    "ai-usage": (AI_USAGE_OPENED, AI_USAGE_CLOSED),
+    "power": (POWER_OPENED, POWER_CLOSED),
+    "quick-settings": (QUICK_SETTINGS_OPENED, QUICK_SETTINGS_CLOSED),
+}
+# Where the Pss of each state is saved, next to the frames test's result.
+PSS_REPORT = "/tmp/pss.txt"
+# How long a panel is given to finish opening before its Pss is read:
+# longer than its animations (MORPH_DRAWS_FOR).
+PSS_SETTLE_SECS = 2
 # The window the tests open, and how it shows in novad's focused window.
 FOOT = "foot"
 NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
@@ -281,6 +295,12 @@ def window_geometry() -> list:
     that takes typing moves the focus, but must move no window."""
     windows = json.loads(machine.succeed(as_user(LIST_WINDOWS)))
     return [{key: window[key] for key in GEOMETRY_KEYS if key in window} for window in windows]
+
+
+def pss_mb(pid: int) -> int:
+    """A process's proportional memory (Pss) in MB, as e2e/run.sh reads it."""
+    kb = machine.succeed(f"awk '/^Pss:/ {{ print $2 }}' /proc/{pid}/smaps_rollup").strip()
+    return int(kb) // 1024
 
 
 def demo_logged(panel: str, state: str) -> str:
