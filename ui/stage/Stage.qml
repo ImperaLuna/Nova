@@ -46,6 +46,8 @@ Scope {
     // screen too, closes it. The shell sets it from every screen's
     // `catchesClicks`.
     property bool catchesAnywhere: catchesClicks
+    // The stage's mask changes with it, and goes out with a frame.
+    onCatchesAnywhereChanged: drawing.settle()
 
     // Every panel on this screen, whatever surface it's drawn on.
     readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(quickSettings.item ? [quickSettings.item] : []), ...(launcher.item ? [launcher.item] : []), ...(demo.item?.panels ?? [])]
@@ -272,7 +274,9 @@ Scope {
     ClickCatcher {
         screen: root.screen
         catching: root.catchesAnywhere
-        surfaceLayer: root.surfaceLayer
+        // Over a fullscreen window while catching, also for a panel open on
+        // another screen.
+        surfaceLayer: root.catchesAnywhere ? WlrLayer.Overlay : root.surfaceLayer
         // Only while catching, so it doesn't redraw for every morph frame.
         holes: root.catchesAnywhere ? [Qt.rect(0, 0, root.output.width, stage.implicitHeight), ...root.panelBoxes] : []
         onClicked: OpenPanels.dismissed()

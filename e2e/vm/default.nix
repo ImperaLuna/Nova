@@ -411,7 +411,9 @@ in
       "hide the special workspace" = "hyprctl dispatch togglespecialworkspace magic";
       # A second screen, right of the first (niri can't add one), and the
       # first focused again, where `nova toggle` opens a panel.
-      "add an output" = "hyprctl output create headless NOVA-2 && hyprctl dispatch focusmonitor l";
+      # Placed and sized, so the test knows where to click.
+      "add an output" =
+        "hyprctl keyword monitor NOVA-2,1280x800,1280x0,1 && hyprctl output create headless NOVA-2 && hyprctl dispatch focusmonitor l";
       "remove the added output" = "hyprctl output remove NOVA-2";
     };
   };

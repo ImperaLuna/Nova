@@ -108,7 +108,9 @@ VOLUME_FOUND = "nova: volume output found"
 # What quick settings logs (ui/quick_settings/QuickSettings.qml).
 QUICK_SETTINGS_OPENED = "nova: quick settings opened"
 QUICK_SETTINGS_CLOSED = "nova: quick settings closed"
-# On the output ADDED_OUTPUTS adds, right of the VM's 1280x800 one.
+# The output ADDED_OUTPUTS adds, right of the VM's 1280x800 one, and a
+# point on it.
+ADDED_OUTPUT = "NOVA-2"
 ON_ADDED_OUTPUT = (1280 + 300, 300)
 # What Quickshell logs first in each UI process.
 UI_LAUNCHED = "Launching config"

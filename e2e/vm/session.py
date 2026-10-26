@@ -239,13 +239,27 @@ for add_output, remove_output in ADDED_OUTPUTS:
         # clicks on every screen, which it used to drop (IMP-178).
         bars = ui_log_count(BAR_SHOWN)
         machine.succeed(as_user(add_output))
-        retry(lambda _last_try: ui_log_count(BAR_SHOWN) > bars, timeout=WAIT)
-        # On the first output (add_output focuses it).
-        opened = ui_log_count(QUICK_SETTINGS_OPENED)
-        machine.succeed(as_user("nova toggle quick-settings"))
-        retry(lambda _last_try: ui_log_count(QUICK_SETTINGS_OPENED) > opened, timeout=CLICK_EFFECT)
-        click_until_logged(*ON_ADDED_OUTPUT, QUICK_SETTINGS_CLOSED)
-        machine.succeed(as_user(remove_output))
+        try:
+            retry(lambda _last_try: ui_log_count(BAR_SHOWN) > bars, timeout=WAIT)
+            # On the first output (add_output focuses it): a panel surface
+            # there takes more than its parked 1x1, and none on the added one.
+            opened = ui_log_count(QUICK_SETTINGS_OPENED)
+            machine.succeed(as_user("nova toggle quick-settings"))
+            retry(lambda _last_try: ui_log_count(QUICK_SETTINGS_OPENED) > opened, timeout=CLICK_EFFECT)
+
+            def opened_on_the_first(last_try: bool) -> bool:
+                shown = {
+                    name: any(s["namespace"] == "nova-panel" and s["w"] > 1 for level in monitor["levels"].values() for s in level)
+                    for name, monitor in json.loads(machine.succeed(as_user(LIST_LAYERS))).items()
+                }
+                if last_try:
+                    print(f"panel surfaces shown, by output: {shown}")
+                return not shown.pop(ADDED_OUTPUT) and any(shown.values())
+
+            retry(opened_on_the_first, timeout=CLICK_EFFECT)
+            click_until_logged(*ON_ADDED_OUTPUT, QUICK_SETTINGS_CLOSED)
+        finally:
+            machine.succeed(as_user(remove_output))
 
 with subtest("novad restarts a killed UI and saves the lines before it"):
     machine.succeed(f"kill -9 {first['ui']['pid']}")
