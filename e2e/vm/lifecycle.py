@@ -159,9 +159,10 @@ REAL_PANELS = {
 }
 # Where the Pss of each state is saved, next to the frames test's result.
 PSS_REPORT = "/tmp/pss.txt"
-# How long a panel is given to finish opening before its Pss is read:
-# longer than its animations (MORPH_DRAWS_FOR).
-PSS_SETTLE_SECS = 2
+# How long a panel is given to finish opening or closing before windows are
+# compared and Pss is read: longer than its animations (MORPH_DRAWS_FOR),
+# so a window the compositor moves late is caught too.
+PANEL_SETTLE_SECS = 2
 # The window the tests open, and how it shows in novad's focused window.
 FOOT = "foot"
 NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
@@ -297,10 +298,22 @@ def window_geometry() -> list:
     return [{key: window[key] for key in GEOMETRY_KEYS if key in window} for window in windows]
 
 
-def pss_mb(pid: int) -> int:
-    """A process's proportional memory (Pss) in MB, as e2e/run.sh reads it."""
+def pss_mb(pid: int) -> str:
+    """A process's proportional memory (Pss) in MB to one decimal, as
+    e2e/run.sh reads it."""
     kb = machine.succeed(f"awk '/^Pss:/ {{ print $2 }}' /proc/{pid}/smaps_rollup").strip()
-    return int(kb) // 1024
+    return f"{int(kb) / 1024:.1f}"
+
+
+def toggle_moves_no_window(command: str, line: str, windows: list, what: str) -> None:
+    """Runs `command`, which opens or closes a panel, waits until the UI
+    logs `line` and then for the panel to settle, and fails if any window
+    moved or resized from `windows` (window_geometry())."""
+    before = ui_log_count(line)
+    machine.succeed(as_user(command))
+    retry(lambda _last_try: ui_log_count(line) > before, timeout=CLICK_EFFECT)
+    machine.sleep(PANEL_SETTLE_SECS)
+    assert window_geometry() == windows, f"windows moved with {what}"
 
 
 def demo_logged(panel: str, state: str) -> str:

@@ -9,7 +9,7 @@
 # so run them as Nix builds). Per compositor:
 #   checks.<system>.e2e-<compositor>          the check: both halves + screenshots
 #   checks.<system>.e2e-<compositor>.vm       the first half and its screenshots
-#   checks.<system>.e2e-<compositor>.frames   the second half (frames.py)
+#   checks.<system>.e2e-<compositor>.frames   the second half (frames.py), pss.txt
 #   checks.<system>.e2e-<compositor>.compare  report.txt, screenshots/, diff/
 #   checks.<system>.e2e-<compositor>.record   recorded IPC data (record.py)
 { pkgs, nova }:
