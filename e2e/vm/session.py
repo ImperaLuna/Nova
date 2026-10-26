@@ -233,6 +233,47 @@ with subtest("a workspace switch reaches the UI"):
     machine.succeed(as_user(FOCUS_NEXT_WORKSPACE))
     ui_focused_workspace("2")
 
+for add_output, focus_first, remove_output in ADDED_OUTPUTS:
+    with subtest("a click on another screen closes quick settings"):
+        # While quick settings holds the keyboard, Hyprland gives it the
+        # clicks on every screen, which it used to drop (IMP-178).
+        bars = ui_log_count(BAR_SHOWN)
+        machine.succeed(as_user(add_output))
+        try:
+            retry(lambda _last_try: ui_log_count(BAR_SHOWN) > bars, timeout=WAIT)
+
+            # novad knows the new output, and that the first has the focus, so
+            # `nova toggle` opens quick settings there. Hyprland focuses an
+            # output it adds, which could come after a focus asked for early.
+            def first_focused(last_try: bool) -> bool:
+                machine.succeed(as_user(focus_first))
+                outputs = ((status() or {}).get("desktop") or {}).get("outputs", [])
+                if last_try:
+                    print(f"novad's outputs: {outputs}")
+                focused = [output["name"] for output in outputs if output.get("focused")]
+                return ADDED_OUTPUT in [output["name"] for output in outputs] and focused not in ([], [ADDED_OUTPUT])
+
+            retry(first_focused, timeout=CLICK_EFFECT)
+            # On the first output: a panel surface
+            # there takes more than its parked 1x1, and none on the added one.
+            opened = ui_log_count(QUICK_SETTINGS_OPENED)
+            machine.succeed(as_user("nova toggle quick-settings"))
+            retry(lambda _last_try: ui_log_count(QUICK_SETTINGS_OPENED) > opened, timeout=CLICK_EFFECT)
+
+            def opened_on_the_first(last_try: bool) -> bool:
+                shown = {
+                    name: any(s["namespace"] == "nova-panel" and s["w"] > 1 for level in monitor["levels"].values() for s in level)
+                    for name, monitor in json.loads(machine.succeed(as_user(LIST_LAYERS))).items()
+                }
+                if last_try:
+                    print(f"panel surfaces shown, by output: {shown}")
+                return not shown.pop(ADDED_OUTPUT) and any(shown.values())
+
+            retry(opened_on_the_first, timeout=CLICK_EFFECT)
+            click_until_logged(*ON_ADDED_OUTPUT, QUICK_SETTINGS_CLOSED)
+        finally:
+            machine.succeed(as_user(remove_output))
+
 with subtest("novad restarts a killed UI and saves the lines before it"):
     machine.succeed(f"kill -9 {first['ui']['pid']}")
     crashed = wait_running(not_ui=first["ui"]["pid"])

@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 //@ pragma UseQApplication
 
 import QtQuick
@@ -16,12 +18,14 @@ import "volume"
 
 ShellRoot {
     Variants {
+        id: stages
         // Nothing is drawn until novad has sent the theme's colors.
         model: Daemon.theme ? Quickshell.screens : []
 
         Stage {
             required property var modelData
             screen: modelData
+            catchesAnywhere: stages.instances.some(stage => (stage as Stage)?.catchesClicks)
         }
     }
 
