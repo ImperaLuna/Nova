@@ -178,6 +178,13 @@ PR or an artifact. Worktrees on the desktop go in
 `~/Projects/Nova/.worktrees/<branch>`; a daily timer removes them once their PR
 is merged or closed.
 
+Test runs on the desktop stay off the maintainer's screen. Frame captures and
+screenshots run headless (`just e2e`, or `e2e/run.sh`'s sway with grim on its
+output), and niri- or Hyprland-only behaviour goes to the VM tests; never open
+a nested compositor window, which lands on the maintainer's workspace (on
+Hyprland it takes the screen). `just run` and `just frames` swap the real bar,
+so run them only when asked.
+
 ## Review guidelines
 
 For Codex reviews of pull requests.
