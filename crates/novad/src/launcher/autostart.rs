@@ -147,11 +147,8 @@ fn first_this_session(marker: &Path) -> std::io::Result<bool> {
 mod tests {
     use super::*;
 
-    fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("novad-autostart-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp(name: &str) -> nova_test_support::TempDir {
+        nova_test_support::TempDir::new(&format!("autostart-{name}"))
     }
 
     fn write(dir: &Path, file: &str, extra: &str) {
@@ -182,7 +179,6 @@ mod tests {
         write(&user, "missing.desktop", "TryExec=surely-not-installed-anywhere\n");
         write(&user, "notes.txt", "");
         assert_eq!(ids(&[user, system]), ["discord.desktop", "steam.desktop"]);
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -192,6 +188,5 @@ mod tests {
         assert!(first_this_session(&marker).unwrap());
         assert!(!first_this_session(&marker).unwrap());
         assert!(first_this_session(&root.join("gone/autostarted")).is_err());
-        std::fs::remove_dir_all(&root).unwrap();
     }
 }

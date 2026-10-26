@@ -85,13 +85,11 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../themes")
     }
 
-    struct Scratch(PathBuf);
+    struct Scratch(nova_test_support::TempDir);
 
     impl Scratch {
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("novad-theme-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir).unwrap();
+            let dir = nova_test_support::TempDir::new(&format!("theme-{name}"));
             Self(dir)
         }
 
@@ -99,12 +97,6 @@ mod tests {
             let path = self.0.join(name);
             std::fs::write(&path, text).unwrap();
             path
-        }
-    }
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 

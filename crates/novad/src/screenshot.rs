@@ -475,7 +475,7 @@ mod tests {
     /// output, column and row) and wl-copy (keeps what it was given), and a
     /// UI subscribed to the screenshot topic.
     struct Fixture {
-        dir: PathBuf,
+        dir: nova_test_support::TempDir,
         screenshots: Screenshots,
         hub: Arc<Hub>,
         ui: Receiver<Outgoing>,
@@ -484,8 +484,7 @@ mod tests {
 
     impl Fixture {
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("novad-screenshot-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
+            let dir = nova_test_support::TempDir::new(&format!("screenshot-{name}"));
             let bin = dir.join("bin");
             std::fs::create_dir_all(&bin).unwrap();
             for output in ["DP-1", "HDMI-A-1"] {
@@ -536,12 +535,6 @@ mod tests {
                 std::fs::read_dir(self.folder()).unwrap().map(|entry| entry.unwrap().path()).collect();
             saved.sort();
             saved
-        }
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.dir);
         }
     }
 

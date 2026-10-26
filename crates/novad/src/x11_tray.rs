@@ -149,10 +149,10 @@ mod tests {
     use crate::session_bus::TestBus;
     use nova_protocol::LogLevel;
     use std::os::unix::fs::PermissionsExt;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     struct Fixture {
-        dir: PathBuf,
+        dir: nova_test_support::TempDir,
         bus: TestBus,
         logger: Arc<Logger>,
     }
@@ -161,8 +161,7 @@ mod tests {
         /// A stand-in xembedsniproxy in `<dir>/bin` that writes its pid to
         /// `<dir>/runs` each time it starts, then sleeps.
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("novad-x11-tray-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
+            let dir = nova_test_support::TempDir::new(&format!("x11-tray-{name}"));
             std::fs::create_dir_all(dir.join("bin")).unwrap();
             let program = dir.join("bin").join(PROGRAM);
             let script = format!("#!/bin/sh\necho $$ >> '{}'\nexec sleep 30\n", dir.join("runs").display());
@@ -194,12 +193,6 @@ mod tests {
                 assert!(Instant::now() < deadline, "it started {count} times");
                 std::thread::sleep(Duration::from_millis(20));
             }
-        }
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.dir);
         }
     }
 

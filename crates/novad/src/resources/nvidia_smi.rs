@@ -90,9 +90,7 @@ mod tests {
     /// these flags, then keeps running like it.
     #[test]
     fn follows_what_it_prints_and_stops_with_it() {
-        let dir = std::env::temp_dir().join(format!("novad-nvidia-smi-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = nova_test_support::TempDir::new("nvidia-smi");
         let script = dir.join(BINARY);
         std::fs::write(&script, "#!/bin/sh\necho 7\necho 42\nexec sleep 60\n").unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -113,6 +111,5 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(gone(), "stopped and reaped");
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }

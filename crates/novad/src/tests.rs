@@ -373,8 +373,7 @@ fn status_reports_the_daemon_ui_and_features() {
 
 #[test]
 fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
-    let scripts = std::env::temp_dir().join(format!("novad-test-ui-{}", std::process::id()));
-    std::fs::create_dir_all(&scripts).unwrap();
+    let scripts = nova_test_support::TempDir::new("ui");
     let fake_ui = scripts.join("quickshell");
     std::fs::write(&fake_ui, "#!/bin/sh\necho '  WARN qml: about to fail'\nexit 3\n").unwrap();
     std::fs::set_permissions(&fake_ui, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -397,13 +396,11 @@ fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
     assert!(crash_entries.iter().any(|entry| entry.message.contains("exit code 3")));
     let full_log = read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
     assert!(full_log.iter().any(|entry| entry.message.contains("failed to load")));
-    std::fs::remove_dir_all(scripts).unwrap();
 }
 
 #[test]
 fn a_quickshell_outside_the_tested_range_is_warned_about() {
-    let scripts = std::env::temp_dir().join(format!("novad-test-old-quickshell-{}", std::process::id()));
-    std::fs::create_dir_all(&scripts).unwrap();
+    let scripts = nova_test_support::TempDir::new("old-quickshell");
     let fake_ui = scripts.join("quickshell");
     let script =
         "#!/bin/sh\ncase \"$1\" in --version) echo 'Quickshell 0.1.0 (revision test)' ;; *) exec sleep 60 ;; esac\n";
@@ -424,7 +421,6 @@ fn a_quickshell_outside_the_tested_range_is_warned_about() {
     let warning = log.iter().find(|entry| entry.level == LogLevel::Warn && entry.message.contains("0.1.0"));
     assert!(warning.is_some_and(|entry| entry.message.contains("older than Nova is tested with")), "{log:?}");
     novad.daemon.ui.as_ref().unwrap().stop();
-    std::fs::remove_dir_all(scripts).unwrap();
 }
 
 fn wait_for_status(client: &mut Client, done: impl Fn(&Status) -> bool) -> Status {
@@ -1197,8 +1193,7 @@ fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
 
 #[test]
 fn only_the_supervised_ui_reports_the_lock_screen() {
-    let scripts = std::env::temp_dir().join(format!("novad-test-lock-ui-{}", std::process::id()));
-    std::fs::create_dir_all(&scripts).unwrap();
+    let scripts = nova_test_support::TempDir::new("lock-ui");
     let fake_ui = scripts.join("quickshell");
     std::fs::write(&fake_ui, "#!/bin/sh\nexec sleep 30\n").unwrap();
     std::fs::set_permissions(&fake_ui, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -1216,7 +1211,6 @@ fn only_the_supervised_ui_reports_the_lock_screen() {
         assert!(reply["error"].as_str().unwrap().contains("only the UI"), "{report}: {reply}");
     }
     novad.daemon.ui.as_ref().unwrap().stop();
-    std::fs::remove_dir_all(scripts).unwrap();
 }
 
 #[test]

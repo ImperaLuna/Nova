@@ -124,15 +124,13 @@ fn gpus(drm: &Path) -> Vec<Gpu> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     /// A fake root folder with an os-release and GPUs, removed on drop.
-    pub struct FakeRoot(pub PathBuf);
+    pub struct FakeRoot(pub nova_test_support::TempDir);
 
     impl FakeRoot {
         pub fn new(name: &str, os_release: &str, cards: &[&str], nvidia_driver: bool) -> Self {
-            let root = std::env::temp_dir().join(format!("nova-host-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&root);
+            let root = nova_test_support::TempDir::new(&format!("host-{name}"));
             std::fs::create_dir_all(root.join("etc")).unwrap();
             std::fs::write(root.join("etc/os-release"), os_release).unwrap();
             for (number, vendor) in cards.iter().enumerate() {
@@ -146,12 +144,6 @@ pub mod tests {
                 std::fs::create_dir_all(root.join(NVIDIA_MODULE)).unwrap();
             }
             Self(root)
-        }
-    }
-
-    impl Drop for FakeRoot {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 

@@ -43,14 +43,12 @@ mod tests {
 
     #[test]
     fn ready_reaches_a_path_socket() {
-        let dir = std::env::temp_dir().join(format!("novad-notify-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = nova_test_support::TempDir::new("notify");
         let path = dir.join("notify");
         let _ = std::fs::remove_file(&path);
         let listener = UnixDatagram::bind(&path).unwrap();
         assert!(ready(Some(path.as_os_str())).unwrap());
         assert_eq!(received(&listener), READY);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

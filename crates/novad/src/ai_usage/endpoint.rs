@@ -129,13 +129,13 @@ pub fn get_json(url: &str, headers: &[(&str, &str)], company: &str) -> Result<Va
 mod tests {
     use super::*;
 
-    fn write(dir: &str, text: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("nova-endpoint-{dir}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+    /// The file written and the folder it's in, which goes when dropped.
+    fn write(dir: &str, text: &str) -> (nova_test_support::TempDir, PathBuf) {
+        let dir = nova_test_support::TempDir::new(&format!("endpoint-{dir}"));
         let path = dir.join("sign-in.json");
         std::fs::write(&path, text).unwrap();
         set_mode(&path, 0o600);
-        path
+        (dir, path)
     }
 
     fn set_mode(path: &Path, mode: u32) {
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn a_file_others_can_read_is_not_used() {
-        let path = write("open", r#"{"token":"t"}"#);
+        let (_dir, path) = write("open", r#"{"token":"t"}"#);
         set_mode(&path, 0o644);
         assert_eq!(read_sign_in(&path).err(), Some(Problem::Unsafe(path.clone())));
         assert!(Problem::Unsafe(path).hint(AiProvider::Codex).contains("chmod 600"));
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn the_checks_look_at_the_file_that_is_read() {
-        let path = write("swapped", r#"{"token":"open"}"#);
+        let (_dir, path) = write("swapped", r#"{"token":"open"}"#);
         set_mode(&path, 0o644);
         let opened = File::open(&path).unwrap();
         // A private file takes its place between the open and the checks.
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn only_a_regular_file_is_read() {
-        let dir = std::env::temp_dir().join(format!("nova-endpoint-dir-{}", std::process::id()));
+        let dir = nova_test_support::TempDir::new("endpoint-dir");
         let path = dir.join("sign-in.json");
         std::fs::create_dir_all(&path).unwrap();
         set_mode(&path, 0o700);
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn a_broken_file_never_shows_its_contents() {
-        let path = write("broken", r#"{"token":"secret""#);
+        let (_dir, path) = write("broken", r#"{"token":"secret""#);
         let Err(Problem::Failed(e)) = read_sign_in(&path) else { panic!() };
         assert!(!e.contains("secret"), "{e}");
     }

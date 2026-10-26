@@ -229,8 +229,7 @@ mod tests {
 
     #[test]
     fn a_service_that_fails_to_start_says_so() {
-        let dir = std::env::temp_dir().join(format!("novad-launch-fail-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = nova_test_support::TempDir::new("launch-fail");
         let logger = Arc::new(Logger::open(&dir, nova_protocol::LogLevel::Info, false, Arc::default()).unwrap());
         let entry = Entry {
             id: "true.desktop".into(),
@@ -252,7 +251,6 @@ mod tests {
         assert!(error.contains("didn't start"), "{error}");
         let started = find_program("true", &path_var).unwrap();
         assert_eq!(launch(&entry, &Runner::Service(started), &path_var, &logger), Ok(()));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

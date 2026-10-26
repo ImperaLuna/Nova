@@ -7,6 +7,7 @@ use crate::hub::{ClientQueue, Outgoing};
 use crate::launcher;
 use crate::session_bus::TestBus;
 use nova_protocol::Topic;
+use nova_test_support::TempDir;
 use serde_json::{Value, json};
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::Ordering;
@@ -17,7 +18,7 @@ use std::time::Instant;
 const WAIT: Duration = Duration::from_secs(5);
 
 struct Fixture {
-    dir: PathBuf,
+    dir: TempDir,
     bus: TestBus,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
@@ -27,8 +28,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("novad-tray-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = nova_test_support::TempDir::new(&format!("tray-{name}"));
         std::fs::create_dir_all(dir.join("proc")).unwrap();
         let bus = TestBus::start(&dir.join("bus"));
         let hub = Arc::new(Hub::default());
@@ -71,12 +71,6 @@ impl Fixture {
         let process = self.dir.join("proc").join(std::process::id().to_string());
         std::fs::create_dir_all(&process).unwrap();
         std::fs::write(process.join("cgroup"), format!("0::/user.slice/app.slice/{unit}\n")).unwrap();
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 

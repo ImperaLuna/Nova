@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn the_editor_gets_the_file_as_one_argument() {
-        let dir = std::env::temp_dir().join(format!("nova-config-edit-{}", std::process::id()));
+        let dir = nova_test_support::TempDir::new("config-edit");
         let file = dir.join("with space/config.toml");
         // An "editor" with its own arguments, writing down what it was given.
         edit(&format!("sh -c 'printf \"%s\" \"$0\" > \"{}\"'", dir.join("seen").display()), &file).unwrap();
@@ -62,6 +62,5 @@ mod tests {
         let _ = edit(&format!("true; touch {}", marker.display()), &file);
         assert!(!marker.exists());
         assert!(edit("'unclosed", &file).is_err());
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }

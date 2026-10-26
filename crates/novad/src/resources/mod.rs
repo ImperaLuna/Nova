@@ -324,7 +324,7 @@ mod tests {
     use nova_protocol::LogLevel;
 
     fn logger(name: &str) -> Arc<Logger> {
-        let dir = std::env::temp_dir().join(format!("novad-resources-{name}-{}", std::process::id()));
+        let dir = nova_test_support::TempDir::new(&format!("resources-{name}"));
         Arc::new(Logger::open(&dir, LogLevel::Debug, false, Arc::new(Hub::default())).unwrap())
     }
 

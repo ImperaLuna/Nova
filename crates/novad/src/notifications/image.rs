@@ -93,8 +93,7 @@ mod tests {
 
     #[test]
     fn padded_rows_become_a_png_of_the_right_size() {
-        let dir = std::env::temp_dir().join(format!("novad-notification-image-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = nova_test_support::TempDir::new("notification-image");
         // 2×2 RGB, each row padded to 8 bytes; the last row isn't.
         let bytes = vec![255, 0, 0, 0, 255, 0, 9, 9, 0, 0, 255, 255, 255, 255];
         let path = save((2, 2, 8, false, 8, 3, bytes), &dir, 5, 9).unwrap();
@@ -108,7 +107,6 @@ mod tests {
         let info = reader.next_frame(&mut pixels).unwrap();
         assert_eq!((info.width, info.height), (2, 2));
         assert_eq!(&pixels[..12], &[255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255]);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

@@ -544,7 +544,7 @@ mod tests {
     /// Recordings with a fake recorder (it writes the file it's given and
     /// finishes it on SIGINT), and a UI subscribed to the recording topic.
     struct Fixture {
-        dir: PathBuf,
+        dir: nova_test_support::TempDir,
         recordings: Recordings,
         ui: Receiver<Outgoing>,
         _ui_stream: UnixStream,
@@ -554,8 +554,7 @@ mod tests {
         /// `recorder` is the fake's name; `body` runs first, before it
         /// starts writing.
         fn new(name: &str, recorder: &str, body: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("novad-recording-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
+            let dir = nova_test_support::TempDir::new(&format!("recording-{name}"));
             let bin = dir.join("bin");
             std::fs::create_dir_all(&bin).unwrap();
             let file_flag = if recorder == WF_RECORDER { "-f" } else { "-o" };
@@ -621,7 +620,6 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = self.recordings.stop();
-            let _ = std::fs::remove_dir_all(&self.dir);
         }
     }
 

@@ -533,12 +533,11 @@ mod tests {
     }
 
     /// A temporary home with `quickshell` and `wf-recorder` on its PATH.
-    struct Home(PathBuf);
+    struct Home(nova_test_support::TempDir);
 
     impl Home {
         fn new(name: &str) -> Self {
-            let home = std::env::temp_dir().join(format!("nova-setup-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&home);
+            let home = nova_test_support::TempDir::new(&format!("setup-{name}"));
             std::fs::create_dir_all(home.join("usr/bin")).unwrap();
             for bin in ["quickshell", "wf-recorder", "grim", "wl-copy", "xdg-open", "paru"] {
                 let program = home.join("usr/bin").join(bin);
@@ -550,12 +549,6 @@ mod tests {
 
         fn path_var(&self) -> String {
             self.0.join("usr/bin").display().to_string()
-        }
-    }
-
-    impl Drop for Home {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 

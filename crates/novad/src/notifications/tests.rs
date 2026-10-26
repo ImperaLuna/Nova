@@ -6,6 +6,7 @@ use crate::hub::{ClientQueue, Outgoing};
 use crate::session_bus::TestBus;
 use futures_core::Stream;
 use nova_protocol::Topic;
+use nova_test_support::TempDir;
 use serde_json::{Value, json};
 use std::future::poll_fn;
 use std::os::unix::net::UnixStream;
@@ -18,7 +19,7 @@ use zbus::{MatchRule, MessageStream};
 const WAIT: Duration = Duration::from_secs(5);
 
 struct Fixture {
-    dir: PathBuf,
+    dir: TempDir,
     bus: TestBus,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
@@ -29,9 +30,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("novad-notifications-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = nova_test_support::TempDir::new(&format!("notifications-{name}"));
         let bus = TestBus::start(&dir.join("bus"));
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
@@ -94,12 +93,6 @@ impl Fixture {
             let event: Value = serde_json::from_str(&line).unwrap();
             assert_ne!(event["event"], name, "{event}");
         }
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 

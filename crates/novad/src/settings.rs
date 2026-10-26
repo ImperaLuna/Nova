@@ -391,9 +391,7 @@ mod tests {
     /// only seen if the watcher reads once more after they're in.
     #[test]
     fn reads_once_more_once_watching() {
-        let dir = std::env::temp_dir().join(format!("novad-settings-watch-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = nova_test_support::TempDir::new("settings-watch");
         let logger =
             Arc::new(Logger::open(&dir.join("logs"), LogLevel::Info, false, Arc::new(Hub::default())).unwrap());
         let (reloaded, reloads) = mpsc::channel();
@@ -403,6 +401,5 @@ mod tests {
         .unwrap();
         assert!(reloads.recv_timeout(SETTLE * 10).is_ok(), "no reload after the watches went in");
         watching.stop();
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }
