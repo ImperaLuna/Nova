@@ -1,117 +1,70 @@
 name: Update PRs
 
-# Every push to main merges main into each open PR branch that is behind it,
-# drafts too, so no PR waits on main with a stale branch or a conflict nobody
-# has seen. A clean merge is pushed, which starts CI like any push. A
-# conflicting merge isn't pushed; a PR comment names the conflicting files
-# instead, once per PR head, so the PR's owner hears about it. Fork PRs are
-# skipped: their branches aren't ours.
+# Keeps open PRs mergeable without re-running every PR's CI each time main
+# moves (scripts/update-prs.sh):
+#   - on a push to main, the conflict probe tries main's merge into every
+#     open PR in memory and comments on the ones that conflict. It pushes
+#     nothing, so no CI starts.
+#   - the merge lane merges main into one armed PR at a time (auto-merge on,
+#     no `hold` label), oldest first. GitHub merges it once `checks` passes
+#     on top of the current main, which moves main and runs the lane again.
+#     It also runs when a PR is armed or loses a label, and after each CI run,
+#     so it moves on as soon as the PR in the lane passes or fails.
 #
-# Pushes use the PUSH_TOKEN secret, never GITHUB_TOKEN: GitHub doesn't count a
-# CI run started by github-actions[bot] (pushed or dispatched) for the `checks`
-# rule, and holds its pull_request run for approval.
+# The lane pushes with the PUSH_TOKEN secret, never GITHUB_TOKEN: GitHub
+# doesn't count a CI run started by github-actions[bot] for the `checks` rule,
+# and holds its pull_request run for approval.
 #
-# Runs no repo code, on a GitHub-hosted machine, so it doesn't queue behind CI
-# on the self-hosted runner.
+# Runs no PR code (pull_request_target and workflow_run run main's workflow
+# and script), on a GitHub-hosted machine, so it doesn't queue behind CI on
+# the self-hosted runner.
 on:
   push:
     branches: [main]
+  pull_request_target:
+    types: [auto_merge_enabled, unlabeled]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A newer main supersedes the run for the older one.
+# One at a time, so two runs never pick the lane's next PR together. A
+# queued run is replaced by a newer one; the running one finishes.
 concurrency:
   group: update-prs
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   update:
-    name: merge main into PRs
+    name: conflict probe and merge lane
+    # Only CI runs on PRs can move the lane.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TOKEN: ${{ secrets.PUSH_TOKEN }}
+      BASE: ${{ github.event.repository.default_branch }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           persist-credentials: false
-      - name: merge main into each PR branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TOKEN: ${{ secrets.PUSH_TOKEN }}
-          BASE: ${{ github.event.repository.default_branch }}
+      - name: check the push token
         run: |
           if [[ -z $TOKEN ]]; then
             echo "::error::the PUSH_TOKEN secret is missing: add a fine-grained token with Contents and Workflows write on this repo, under Settings > Secrets and variables > Actions"
             exit 1
           fi
-          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
-          git() {
-            command git -c core.hooksPath=/dev/null -c http.extraheader="AUTHORIZATION: basic $auth" \
-              -c user.name='github-actions[bot]' \
-              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' "$@"
-          }
-          # Also when started by hand from another branch.
-          main=$(git rev-parse "refs/remotes/origin/$BASE")
-
-          # Comments once per PR head: a branch nobody has pushed to since
-          # isn't told again on every push to main.
-          comment() {
-            local number=$1 head=$2 text=$3
-            local marker="<!-- update-prs head=$head -->"
-            if gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$number/comments" --jq '.[].body' |
-              grep -qF -- "$marker"; then
-              echo "#$number was already told about $head."
-              return
-            fi
-            gh pr comment "$number" --repo "$GITHUB_REPOSITORY" --body "$text
-
-          $marker"
-          }
-
-          mapfile -t prs < <(gh pr list --repo "$GITHUB_REPOSITORY" --base "$BASE" --state open --limit 100 \
-            --json number,headRefName,isCrossRepository \
-            --jq '.[] | select(.isCrossRepository | not) | "\(.number) \(.headRefName)"')
-
-          for pr in "${prs[@]}"; do
-            read -r number branch <<<"$pr"
-            git fetch -q origin "refs/heads/$branch"
-            head=$(git rev-parse FETCH_HEAD)
-            if git merge-base --is-ancestor "$main" "$head"; then
-              echo "#$number ($branch) already has $BASE."
-              continue
-            fi
-            git checkout -q --detach "$head"
-            if git merge -q --no-edit -m "Merge $BASE into $branch" "$main"; then
-              if out=$(git push -q origin "HEAD:refs/heads/$branch" 2>&1); then
-                echo "#$number ($branch): merged $BASE."
-                continue
-              fi
-              # Not a fast-forward: someone pushed meanwhile, and that push
-              # starts its own CI.
-              if [[ $(git ls-remote origin "refs/heads/$branch" | cut -f1) != "$head" ]]; then
-                echo "::warning::#$number ($branch) moved during the update; skipped."
-                continue
-              fi
-              echo "::warning::#$number ($branch): push refused: $out"
-              comment "$number" "$head" "\`$BASE\` moved to $main and merges cleanly into this branch, but the Update PRs workflow couldn't push the merge. Merge \`$BASE\` into the branch by hand.
-
-          \`\`\`
-          $out
-          \`\`\`"
-            else
-              # shellcheck disable=SC2016 # literal backticks, for Markdown
-              files=$(git diff --name-only --diff-filter=U | sed 's/.*/- `&`/')
-              git merge --abort
-              echo "::warning::#$number ($branch) conflicts with $BASE."
-              comment "$number" "$head" "\`$BASE\` moved to $main and no longer merges cleanly into this branch. Conflicting files:
-
-          $files
-
-          Merge \`$BASE\` into the branch and resolve them."
-            fi
-          done
+      - name: conflict probe
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: scripts/update-prs.sh probe
+      - name: merge lane
+        run: scripts/update-prs.sh lane
