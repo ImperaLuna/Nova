@@ -69,6 +69,9 @@ pub struct UiSettings {
     /// The compositor's Wayland socket. When it's gone after the UI exits,
     /// the session is over and novad exits.
     pub wayland_socket: Option<PathBuf>,
+    /// The only EGL vendor file the UI loads, when there's one to pick
+    /// (`egl::nvidia_only_vendor`).
+    pub egl_vendor: Option<PathBuf>,
 }
 
 pub struct Supervisor {
@@ -88,6 +91,9 @@ impl Supervisor {
     /// Starts the UI on a thread of its own that lives as long as novad.
     pub fn start(settings: UiSettings, logger: Arc<Logger>) -> Arc<Self> {
         let quickshell_version = quickshell_version(&settings, &logger);
+        if let Some(vendor) = &settings.egl_vendor {
+            logger.info(LOG_SOURCE, &format!("the UI loads only NVIDIA's EGL ({})", vendor.display()));
+        }
         let supervisor =
             Arc::new(Self { record: Mutex::default(), quitting: AtomicBool::new(false), quickshell_version });
         let worker = Arc::clone(&supervisor);
@@ -227,6 +233,9 @@ fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(vendor) = &settings.egl_vendor {
+        command.env(crate::egl::VENDOR_FILES_VAR, vendor);
+    }
     // SAFETY: the closure runs between fork and exec and only calls prctl,
     // which is async-signal-safe.
     unsafe {

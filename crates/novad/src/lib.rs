@@ -26,6 +26,7 @@ mod ai_usage;
 pub mod checks;
 mod compositor;
 mod config;
+mod egl;
 mod features;
 mod host;
 mod hub;
@@ -257,6 +258,7 @@ fn start(
             socket: socket.clone(),
             path_var,
             wayland_socket,
+            egl_vendor: egl::nvidia_only_vendor(Path::new("/"), |name| std::env::var_os(name)),
         };
         Supervisor::start(settings, Arc::clone(&logger))
     });
