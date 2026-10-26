@@ -44,17 +44,32 @@ download_limits="--connect-timeout 15 --max-time 300 --max-filesize 100M --retry
 
 # Unpacks the release archive (`nix build .#dist`, published by release.yml)
 # into $work/release: bin/nova and share/nova, laid out like the prefix.
-# Fails when there's no archive for this machine.
+# Returns 1 when there's no archive for this machine; fails when there is one
+# but it doesn't match the .sha256 published next to it.
 fetch_release() {
 	command -v curl >/dev/null || return 1
 	echo "Fetching Nova from $release_url"
 	# shellcheck disable=SC2086 # the limits are separate words
 	curl -fsSL $download_limits "$release_url" -o "$work/nova.tar.gz" 2>/dev/null || return 1
+	verify_release
 	mkdir -p "$work/release"
 	tar -xzf "$work/nova.tar.gz" -C "$work/release" || fail "the release archive is damaged."
 	# Owner-writable, so a later install can replace share/nova.
 	chmod -R u+w "$work/release"
 	[ -x "$work/release/bin/nova" ] || fail "the release archive has no bin/nova."
+}
+
+# Checks the downloaded archive against its .sha256 ("<hash>  <file name>"),
+# so a cut or swapped download never gets installed.
+verify_release() {
+	command -v sha256sum >/dev/null || fail "checking the release needs sha256sum (coreutils)."
+	# shellcheck disable=SC2086 # the limits are separate words
+	curl -fsSL $download_limits "$release_url.sha256" -o "$work/nova.tar.gz.sha256" 2>/dev/null ||
+		fail "couldn't download the release's checksum, $release_url.sha256."
+	expected="$(cut -d' ' -f1 "$work/nova.tar.gz.sha256")"
+	actual="$(sha256sum "$work/nova.tar.gz" | cut -d' ' -f1)"
+	[ -n "$expected" ] && [ "$expected" = "$actual" ] ||
+		fail "the release archive doesn't match its checksum; nothing was installed."
 }
 
 # Builds the same tree from source into $work/tree.
