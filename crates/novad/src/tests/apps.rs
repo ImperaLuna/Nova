@@ -248,8 +248,9 @@ fn a_launched_app_outlives_the_request_that_started_it() {
     assert_ne!(field("PPid:"), std::process::id().to_string(), "the app is novad's child");
 }
 
-/// Launches the app the recording's window belongs to (`nova-second`, on
-/// workspace `web`) from the focused output, and returns the actions taken
+/// Launches the app the recording's window belongs to (`nova-second`, on a
+/// workspace the focused output doesn't show: niri's `web`, Hyprland's
+/// hidden special workspace) from the focused output, and returns the actions taken
 /// and whether the app ran anyway, then the same asking for a new window.
 fn focus_the_recorded_window(
     name: &str,

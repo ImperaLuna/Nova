@@ -168,6 +168,19 @@ TestCase {
         compare(Protocol.fullscreenShown(outputs[0]), false, "not while that workspace is hidden");
         outputs[0].workspaces[1].fullscreen = true;
         compare(Protocol.fullscreenShown(outputs[0]), true);
+        outputs[0].workspaces.unshift({
+            id: -98,
+            name: "magic",
+            active: true,
+            focused: true,
+            urgent: false,
+            empty: false,
+            fullscreen: false,
+            special: true
+        });
+        compare(Protocol.fullscreenShown(outputs[0]), false, "a special workspace over it hides it");
+        outputs[0].workspaces[0].fullscreen = true;
+        compare(Protocol.fullscreenShown(outputs[0]), true, "and can be fullscreen itself");
         compare(Protocol.fullscreenShown(null), false);
     }
 

@@ -262,6 +262,10 @@ fn stepping_skips_the_special_workspace() {
     assert_eq!(neighbour(desktop, output, Step::Previous).unwrap(), None, "{desktop:#?}");
     let next = neighbour(desktop, output, Step::Next).unwrap();
     assert!(next.is_none_or(|workspace| !workspace.special));
+    // Hidden, it comes first in the list; stepping back from 1 stays there.
+    let hidden = step(&followed, "hide a window in the special workspace");
+    assert!(hidden.outputs[0].workspaces[0].special, "{hidden:#?}");
+    assert_eq!(neighbour(hidden, output, Step::Previous).unwrap(), None);
 }
 
 #[test]

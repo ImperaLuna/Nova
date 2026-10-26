@@ -226,11 +226,18 @@ function barWorkspaces(output, desktop) {
 
 // Whether the workspace shown on an output (one of a compositor event's
 // `outputs`, or null) has a window filling the whole output, so the bar
-// steps aside there.
+// steps aside there. A special workspace showing over another is the one
+// seen.
 function fullscreenShown(output) {
     if (!output)
         return false;
-    return output.workspaces.some(function (workspace) {
-        return workspace.active && workspace.fullscreen;
+    var shown = output.workspaces.filter(function (workspace) {
+        return workspace.active;
+    });
+    var special = shown.filter(function (workspace) {
+        return workspace.special;
+    });
+    return (special.length ? special : shown).some(function (workspace) {
+        return workspace.fullscreen;
     });
 }

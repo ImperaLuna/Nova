@@ -334,19 +334,19 @@ impl State {
         let occupied: HashSet<WorkspaceId> = self.windows.values().map(|window| window.workspace).collect();
         let fullscreen: HashSet<WorkspaceId> =
             self.windows.values().filter(|window| window.fullscreen).map(|window| window.workspace).collect();
+        // Special workspaces on every output, by name, as they show on
+        // whichever has focus; then each output's own: numbered ones in
+        // order, then named ones (negative ids).
+        let mut special: Vec<(&Workspace, &str)> = self
+            .workspaces
+            .iter()
+            .filter_map(|workspace| Some((workspace, workspace.name.strip_prefix(SPECIAL_PREFIX)?)))
+            .collect();
+        special.sort_by_key(|(_, name)| *name);
         let outputs = self
             .monitors
             .iter()
             .map(|monitor| {
-                // Special workspaces on every output, by name, as they show
-                // on whichever has focus; then this output's own: numbered
-                // ones in order, then named ones (negative ids).
-                let mut special: Vec<(&Workspace, &str)> = self
-                    .workspaces
-                    .iter()
-                    .filter_map(|workspace| Some((workspace, workspace.name.strip_prefix(SPECIAL_PREFIX)?)))
-                    .collect();
-                special.sort_by_key(|(_, name)| *name);
                 let mut own: Vec<&Workspace> = self
                     .workspaces
                     .iter()
@@ -357,8 +357,8 @@ impl State {
                 own.sort_by_key(|workspace| (workspace.id < 0, workspace.id.unsigned_abs()));
                 let covered = special.iter().any(|(workspace, _)| workspace.id == monitor.special_workspace.id);
                 let listed = special
-                    .into_iter()
-                    .map(|(workspace, name)| (workspace, name, true))
+                    .iter()
+                    .map(|&(workspace, name)| (workspace, name, true))
                     .chain(own.into_iter().map(|workspace| (workspace, workspace.name.as_str(), false)));
                 Output {
                     name: monitor.name.clone(),
