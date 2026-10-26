@@ -58,7 +58,7 @@ StagePanel {
         duration: Tokens.durationFill
         eased: true
     }
-    moving: morph.moving || fillReveal.running || main.revealing || pages.sliding
+    moving: morph.moving || fillReveal.running || ((mainPage.item as MainPage)?.revealing ?? false) || pages.sliding
 
     // Open, where it sits: against the right edge, top to bottom, its right
     // corners past the edge so only the left ones are round. Closed, the
@@ -131,69 +131,67 @@ StagePanel {
             id: mainSlot
             key: "main"
 
-            MainPage {
-                id: main
-                width: pages.width
-                height: pages.height
-                headerInset: pages.headerInset
-                shown: panel.open
-                fill: panel.fill
-                logo: QuickSettings.logo(QuickSettingsService.host?.os, Qt.resolvedUrl("logos"), path => AppIcons.source(path))
-                host: QuickSettingsService.host
-                now: panel.now
-                keepAwake: QuickSettingsService.keepAwake
-                micAvailable: SoundService.sourceReady
-                micMuted: SoundService.sourceMuted
-                outputAvailable: VolumeService.ready
-                outputName: panel.outputName
-                outputKind: VolumeService.output
-                volume: VolumeService.volume
-                muted: VolumeService.muted
-                recorders: SoundService.recorders
-                micVolume: SoundService.sourceVolume
-                reading: QuickSettingsService.resources
-                trayApps: TrayService.all
-                trayIconSource: entry => TrayService.iconSource(entry)
-                onTrayActivated: entry => {
-                    if (TrayService.opensMenu(entry)) {
-                        trayMenu.show(entry, null);
-                    } else {
-                        TrayService.activate(entry);
+            // Only while it's open or moving: closed, it keeps no tiles,
+            // tray or notification list on any screen (IMP-157).
+            Loader {
+                id: mainPage
+                // Not `moving`: that follows the page's own reveal.
+                active: panel.open || panel.morph.moving || fillReveal.running
+                sourceComponent: MainPage {
+                    width: pages.width
+                    height: pages.height
+                    headerInset: pages.headerInset
+                    // From false once loaded, so its sections fade in one after
+                    // another as it opens.
+                    shown: panel.open && mainPage.status === Loader.Ready
+                    fill: panel.fill
+                    logo: QuickSettings.logo(QuickSettingsService.host?.os, Qt.resolvedUrl("logos"), path => AppIcons.source(path))
+                    host: QuickSettingsService.host
+                    now: panel.now
+                    keepAwake: QuickSettingsService.keepAwake
+                    micAvailable: SoundService.sourceReady
+                    micMuted: SoundService.sourceMuted
+                    outputAvailable: VolumeService.ready
+                    outputName: panel.outputName
+                    outputKind: VolumeService.output
+                    volume: VolumeService.volume
+                    muted: VolumeService.muted
+                    recorders: SoundService.recorders
+                    micVolume: SoundService.sourceVolume
+                    reading: QuickSettingsService.resources
+                    trayApps: TrayService.all
+                    trayIconSource: entry => TrayService.iconSource(entry)
+                    onTrayActivated: entry => {
+                        if (TrayService.opensMenu(entry)) {
+                            trayMenu.show(entry, null);
+                        } else {
+                            TrayService.activate(entry);
+                            panel.open = false;
+                        }
+                    }
+                    onTrayMenuRequested: (entry, at) => trayMenu.show(entry, at)
+                    onTraySecondaryActivated: entry => entry.item.secondaryActivate()
+                    notificationsShown: NotificationsService.ready
+                    doNotDisturb: NotificationsService.doNotDisturb
+                    iconSource: name => AppIcons.source(name)
+                    // Opening one takes you to its app.
+                    onNotificationOpened: notification => {
+                        NotificationsService.open(notification, panel.output.name);
                         panel.open = false;
                     }
+                    onNotificationDismissed: id => NotificationsService.dismiss(id)
+                    onNotificationsCleared: app => NotificationsService.clear(app)
+                    onNotificationAppMuted: app => NotificationsService.mute(app, true)
+                    onDoNotDisturbToggled: NotificationsService.setDoNotDisturb(!NotificationsService.doNotDisturb)
+                    onKeepAwakeToggled: QuickSettingsService.keepAwake = !QuickSettingsService.keepAwake
+                    onMicMuteToggled: SoundService.toggleSourceMute()
+                    onVolumeMoved: value => VolumeService.slide(value)
+                    onMuteToggled: VolumeService.toggleMute()
+                    onMicVolumeMoved: value => SoundService.setSourceVolume(value)
+                    onPageRequested: page => panel.page = page
+                    notifications: NotificationsService.items
                 }
-                onTrayMenuRequested: (entry, at) => trayMenu.show(entry, at)
-                onTraySecondaryActivated: entry => entry.item.secondaryActivate()
-                notificationsShown: NotificationsService.ready
-                doNotDisturb: NotificationsService.doNotDisturb
-                iconSource: name => AppIcons.source(name)
-                // Opening one takes you to its app.
-                onNotificationOpened: notification => {
-                    NotificationsService.open(notification, panel.output.name);
-                    panel.open = false;
-                }
-                onNotificationDismissed: id => NotificationsService.dismiss(id)
-                onNotificationsCleared: app => NotificationsService.clear(app)
-                onNotificationAppMuted: app => NotificationsService.mute(app, true)
-                onDoNotDisturbToggled: NotificationsService.setDoNotDisturb(!NotificationsService.doNotDisturb)
-                onKeepAwakeToggled: QuickSettingsService.keepAwake = !QuickSettingsService.keepAwake
-                onMicMuteToggled: SoundService.toggleSourceMute()
-                onVolumeMoved: value => VolumeService.slide(value)
-                onMuteToggled: VolumeService.toggleMute()
-                onMicVolumeMoved: value => SoundService.setSourceVolume(value)
-                onPageRequested: page => panel.page = page
             }
-        }
-
-        // While closed, the list keeps what it last showed instead of
-        // rebuilding for every notification on every screen (IMP-147); it
-        // catches up as it opens.
-        Binding {
-            target: main
-            property: "notifications"
-            when: panel.open || panel.moving
-            value: NotificationsService.items
-            restoreMode: Binding.RestoreNone
         }
 
         PageSlot {
