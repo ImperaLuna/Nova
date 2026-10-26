@@ -51,6 +51,8 @@ Scope {
     // A new layer goes out with a frame, and the stage may not be drawing
     // (another surface's panel opened).
     onSurfaceLayerChanged: settling = true
+    // Where the PanelSurfaces with panels shown are, in screen coordinates.
+    readonly property list<rect> panelBoxes: [right, center].filter(surface => !surface.parked).map(surface => surface.box)
     function placed(placement: string): list<StagePanel> {
         return panels.filter(panel => panel.placement === placement);
     }
@@ -199,6 +201,10 @@ Scope {
             inputShapes: all.catchesClicks ? [outside] : drawn.shapes
             glassShapes: drawn.glassShapes
             offset: bar.slideOffset
+            // The PanelSurfaces stay mapped (parked) and can sit under the
+            // stage, which moves to Overlay when a panel opens: they take
+            // the clicks over themselves, as with ClickCatcher (IMP-148).
+            holes: all.catchesClicks ? root.panelBoxes : []
         }
 
         DismissArea {
@@ -255,7 +261,7 @@ Scope {
         catching: all.catchesClicks
         surfaceLayer: root.surfaceLayer
         // Only while catching, so it doesn't redraw for every morph frame.
-        holes: all.catchesClicks ? [Qt.rect(0, 0, root.output.width, stage.implicitHeight), ...[right, center].filter(surface => surface.visible).map(surface => surface.box)] : []
+        holes: all.catchesClicks ? [Qt.rect(0, 0, root.output.width, stage.implicitHeight), ...root.panelBoxes] : []
         onClicked: all.dismiss()
     }
 }
