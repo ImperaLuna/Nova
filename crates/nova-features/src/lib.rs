@@ -23,6 +23,8 @@
 //! binaries = ["gpu-screen-recorder|wf-recorder"]
 //! ```
 
+pub mod gpus;
+
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
