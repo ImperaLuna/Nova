@@ -64,43 +64,44 @@ Singleton {
     // matches the stream to an installed app like the tray does, by the
     // icon name the stream gives (often the app's id, like Claude's
     // `com.anthropic.Claude`), its program or its name (browsers give no
-    // icon). Asked once per app while the lists are wanted, and again when
-    // the installed apps change.
+    // icon). Asked once per app while the lists are wanted (a node's
+    // properties come once it's bound), and again when the installed apps
+    // change. A failed ask isn't kept, so the next change asks again.
     property var appIcons: ({})
-    function iconNames(props: var): list<string> {
-        return [props["application.icon-name"] ?? "", props["application.process.binary"] ?? "", props["application.name"] ?? ""];
+    function iconQuery(props: var): var {
+        return {
+            icon_name: props["application.icon-name"] ?? "",
+            program: props["application.process.binary"] ?? "",
+            name: props["application.name"] ?? ""
+        };
     }
     function iconKey(props: var): string {
-        return iconNames(props).join("\n");
+        const query = iconQuery(props);
+        return [query.icon_name, query.program, query.name].join("\n");
     }
-    function askForIcons() {
-        if (!listing)
-            return;
-        for (const node of appNodes) {
-            const props = node.properties ?? {};
+    readonly property var iconQueries: listing ? appNodes.map(node => node.properties ?? {}) : []
+    onIconQueriesChanged: askForIcons(false)
+    // The installed apps, by id: what changes their icons.
+    readonly property string installed: (Daemon.launcher?.apps ?? []).map(app => app.id).join("\n")
+    onInstalledChanged: askForIcons(true)
+    function askForIcons(again: bool) {
+        for (const props of iconQueries) {
             const key = iconKey(props);
-            if (key in appIcons)
+            if (key === "\n\n" || (!again && key in appIcons))
                 continue;
-            // Asked once: the answer replaces this.
-            appIcons[key] = "";
-            Daemon.call(Protocol.CMD_APP_ICON, {
-                names: iconNames(props)
-            }, (error, icon) => {
-                if (error)
+            // Marked as asked; the answer replaces it.
+            if (!(key in appIcons))
+                appIcons[key] = "";
+            Daemon.call(Protocol.CMD_APP_ICON, iconQuery(props), (error, icon) => {
+                if (error) {
                     console.warn(`nova: app icon: ${error}`);
+                    delete appIcons[key];
+                    return;
+                }
                 appIcons = Object.assign({}, appIcons, {
                     [key]: icon ?? ""
                 });
             });
-        }
-    }
-    onAppNodesChanged: askForIcons()
-    onListingChanged: askForIcons()
-    Connections {
-        target: Daemon
-        function onLauncherChanged() {
-            root.appIcons = ({});
-            root.askForIcons();
         }
     }
 

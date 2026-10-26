@@ -58,18 +58,11 @@ impl Entry {
         ids
     }
 
-    /// Whether `id` (lower case) only loosely names it: as the first word of
-    /// its name (`zen` for "Zen Browser"), or as what one of its window ids
-    /// starts with before a "-" (`zen` for `zen-beta.desktop`). Never for an
-    /// app in a terminal, like `window_ids`.
-    pub fn loosely_matches(&self, id: &str) -> bool {
-        let first_word = self.name.split_whitespace().next().map(str::to_lowercase);
-        !self.terminal
-            && (first_word.as_deref() == Some(id)
-                || self
-                    .window_ids()
-                    .iter()
-                    .any(|window_id| window_id.strip_prefix(id).is_some_and(|rest| rest.starts_with('-'))))
+    /// Whether `id` (lower case) is the first word of its name, a loose
+    /// match (`zen` for "Zen Browser", `brave` for "Brave Web Browser").
+    /// Never for an app in a terminal, like `window_ids`.
+    pub fn first_word_is(&self, id: &str) -> bool {
+        !self.terminal && self.name.split_whitespace().next().is_some_and(|word| word.to_lowercase() == id)
     }
 
     /// Whether `id` (lower case) is the app id it names for its windows or

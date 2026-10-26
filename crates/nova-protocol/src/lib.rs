@@ -512,10 +512,9 @@ pub struct App {
 /// capped, and nobody types more.
 pub const SEARCH_APPS_MAX_CHARS: usize = 200;
 
-/// The most names an `app_icon` request may give, and the longest each may
-/// be, in characters.
-pub const APP_ICON_MAX_NAMES: usize = 8;
-pub const APP_ICON_MAX_NAME_CHARS: usize = 512;
+/// The longest each of an `app_icon` request's names may be, in
+/// characters.
+pub const APP_ICON_MAX_CHARS: usize = 512;
 
 /// An app that matches a launcher search, best first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -884,14 +883,18 @@ pub enum Command {
     SearchApps {
         query: String,
     },
-    /// Replies with an icon (a theme name or an absolute path) for the app
-    /// known by `names`, the likeliest first: like an app stream's icon
-    /// name, program file and name. It's the installed app's icon when one
-    /// matches (feature `launcher`, matched like a tray icon's app, Nix's
-    /// `.<name>-wrapped` programs by their name), else the first name, or
-    /// null when none is left.
+    /// Replies with an icon (a theme name or an absolute path) for an app
+    /// stream, as PipeWire names it (each may be ""): its installed app's
+    /// when one matches (feature `launcher`, matched like a tray icon's app,
+    /// Nix's `.<name>-wrapped` programs by their name), else the icon name
+    /// it gives or its program, or null.
     AppIcon {
-        names: Vec<String>,
+        /// `application.icon-name`, often its app's id.
+        icon_name: String,
+        /// `application.process.binary`, its program file.
+        program: String,
+        /// `application.name`.
+        name: String,
     },
     /// Opens an app by its id (feature `launcher`) on `output` (the focused
     /// output when unset) and counts it towards the recent ones. When it
@@ -1458,7 +1461,9 @@ mod tests {
             encode(Request {
                 id: Some(44),
                 command: Command::AppIcon {
-                    names: vec!["".into(), "/nix/store/x-zen/lib/zen/.zen-wrapped".into(), "Zen".into()],
+                    icon_name: "".into(),
+                    program: "/nix/store/x-zen/lib/zen/.zen-wrapped".into(),
+                    name: "Zen".into(),
                 },
             }),
             encode(Response { id: 44, outcome: Outcome::Result(json!("zen-browser")) }),

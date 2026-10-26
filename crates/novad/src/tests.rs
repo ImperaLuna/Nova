@@ -1710,21 +1710,28 @@ fn app_streams_get_their_apps_icons_by_program_and_name() {
     install_app(&novad, "firefox.desktop", "Name=Firefox\nExec=firefox\nIcon=firefox-icon\n");
     let mut client = novad.connect();
     client.subscribe_launcher(3);
-    let icon = |client: &mut Client, id, names: &[&str]| client.request(id, "app_icon", Some(json!({"names": names})));
+    let icon = |client: &mut Client, id, [icon_name, program, name]: [&str; 3]| {
+        client.request(id, "app_icon", Some(json!({"icon_name": icon_name, "program": program, "name": name})))
+    };
 
-    // Found loosely: Zen plays as `.zen-wrapped`, its entry is zen-beta.
-    assert_eq!(icon(&mut client, 2, &["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], "zen-browser");
+    // Found loosely: Zen plays as `.zen-wrapped`, its entry is "Zen Browser".
+    assert_eq!(icon(&mut client, 2, ["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], "zen-browser");
     // By the icon name the stream gives; Electron says nothing.
     assert_eq!(
-        icon(&mut client, 3, &["com.anthropic.Claude", "/usr/lib/electron/electron", "Claude"])["result"],
+        icon(&mut client, 3, ["com.anthropic.Claude", "/usr/lib/electron/electron", "Claude"])["result"],
         "claude"
     );
-    assert_eq!(icon(&mut client, 4, &["", "/usr/bin/firefox", "Firefox"])["result"], "firefox-icon");
-    // No app: the first name, for the icon theme.
-    assert_eq!(icon(&mut client, 5, &["", "/usr/bin/mpv", "mpv"])["result"], "mpv");
-    assert_eq!(icon(&mut client, 6, &[])["result"], json!(null));
-    let many = icon(&mut client, 7, &["a"; 9]);
-    assert!(many["error"].as_str().unwrap().contains("at most 8"));
+    assert_eq!(icon(&mut client, 4, ["", "/usr/bin/firefox", "Firefox"])["result"], "firefox-icon");
+    // A browser's web app (`zen-<id>.desktop`) isn't the browser.
+    install_app(&novad, "zen-abc123-Default.desktop", "Name=YouTube\nExec=zen-beta --app=abc123\nIcon=youtube\n");
+    client.launcher_until(|event| event["apps"].as_array().unwrap().len() == 4);
+    assert_eq!(icon(&mut client, 5, ["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], "zen-browser");
+    // No app: the icon name it gives, else its program, for the icon theme.
+    assert_eq!(icon(&mut client, 6, ["", "/usr/bin/mpv", "mpv"])["result"], "mpv");
+    assert_eq!(icon(&mut client, 7, ["audio-x-generic", "/usr/bin/mpv", "mpv"])["result"], "audio-x-generic");
+    assert_eq!(icon(&mut client, 8, ["", "", "Some Game"])["result"], json!(null));
+    let long = icon(&mut client, 9, ["", &"a".repeat(513), ""]);
+    assert!(long["error"].as_str().unwrap().contains("at most 512"));
 }
 
 #[test]
