@@ -237,14 +237,20 @@ impl Tray {
         self.send_activate(&item.address).map_err(|e| format!("{app_id}'s tray icon didn't answer: {e}"))
     }
 
+    /// The installed app the item at `address` belongs to, if novad found it.
+    pub fn app_at(&self, address: &str) -> Result<Option<String>, String> {
+        let item = self.item(|item| item.address == address).ok_or_else(|| format!("no tray icon at {address}"))?;
+        Ok(item.app.map(|app| app.id))
+    }
+
     /// Asks the item at `address` to show its window, as a click on its
-    /// icon does (`Activate`), and says which installed app it belongs to.
-    pub fn activate(&self, address: &str) -> Result<Option<String>, String> {
+    /// icon does (`Activate`).
+    pub fn activate(&self, address: &str) -> Result<(), String> {
         let item = self.item(|item| item.address == address).ok_or_else(|| format!("no tray icon at {address}"))?;
         if !self.send_activate(address).map_err(|e| format!("{}'s tray icon didn't answer: {e}", item.id))? {
             return Err("the tray isn't on the session bus".into());
         }
-        Ok(item.app.map(|app| app.id))
+        Ok(())
     }
 
     /// The first item published (one whose id and title were read) that

@@ -464,7 +464,9 @@ fn a_tray_click_focuses_the_open_window_of_its_app() {
     );
     let (bus, compositor) = (bus.unwrap(), compositor.unwrap());
     // The recording's window on workspace `web` is this app's.
-    install_app(&novad, "second.desktop", "Name=Second\nExec=true\nStartupWMClass=Nova-Second\n");
+    let marker = novad.dir.join("ran");
+    let entry = format!("Name=Second\nExec=touch \"{}\"\nStartupWMClass=Nova-Second\n", marker.display());
+    install_app(&novad, "second.desktop", &entry);
     let (mut client, _desktop) = follow_to_the_end(&novad);
     client.subscribe_launcher(1);
     let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -485,6 +487,7 @@ fn a_tray_click_focuses_the_open_window_of_its_app() {
     assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "the app hears the click");
     let focused = json!({"Action": {"FocusWindow": {"id": 3}}});
     assert_eq!(compositor.actions(), [focused.to_string()], "its open window takes focus where it is");
+    assert!(!ran(&marker), "an app with a window open isn't started, even if the click hid it");
 
     let gone = client.request(4, "activate_tray_item", Some(json!({"address": ":1.999/Nowhere"})));
     assert!(gone["error"].as_str().unwrap().contains("no tray icon"), "{gone}");

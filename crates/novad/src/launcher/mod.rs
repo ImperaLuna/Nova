@@ -239,8 +239,8 @@ impl Launcher {
         })
     }
 
-    /// Starts the app `id` without counting it as launched: for a tray
-    /// click whose app showed no window (see `focus_shown`).
+    /// Starts the app `id`, without counting it as launched (`launch`
+    /// does that).
     pub fn start_app(&self, id: &str) -> Result<(), String> {
         let entry = lock(&self.state).apps.get(id).cloned().ok_or_else(|| format!("no app {id:?}"))?;
         if self.stopped() {
