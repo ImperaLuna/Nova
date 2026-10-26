@@ -7,9 +7,11 @@
 # than BUDGET_PCT of its frames.
 #
 # `nova toggle` opens the panel on the focused screen only: focus another
-# screen and run it again to measure that one. Windows behind the panel
-# change what the compositor's blur costs, so compare runs on the same
-# workspace. A fullscreen window draws over the stage on niri, which then
+# screen and run it again to measure that one. With focus-follows-mouse the
+# focus goes where the cursor is, so leave the cursor on that screen; a run
+# whose focus moves to another screen fails, since its numbers mix screens.
+# Windows behind the panel change what the compositor's blur costs, so
+# compare runs on the same workspace. A fullscreen window draws over the stage on niri, which then
 # gets a frame only now and then: the report lists such a screen as idle or
 # hidden, not as dropping frames. Measure on a workspace without one.
 #
@@ -50,6 +52,17 @@ refresh_rates() {
 	fi
 }
 refresh=$(refresh_rates | tr '\n' ' ')
+
+# The screen `nova toggle` opens the panel on.
+focused_screen() {
+	if [[ -n ${NIRI_SOCKET:-} ]]; then
+		niri msg -j focused-output | jq -r .name
+	else
+		hyprctl -j monitors | jq -r '.[] | select(.focused) | .name'
+	fi
+}
+screen=$(focused_screen)
+moved=""
 
 work=$(mktemp -d)
 runner="" capture=""
@@ -101,6 +114,9 @@ sleep "$SETTLE_SECS"
 # this line as the end of idle time, not as a frame. Appended to the same
 # file, so it lands before the frames the toggle brings.
 toggle() {
+	local now
+	now=$(focused_screen)
+	[[ $now == "$screen" ]] || moved=$now
 	echo "nova-frames: toggle" >>"$work/frames.log"
 	if ((demo)); then
 		quickshell ipc --pid "$("$nova" status --json | jq -r .ui.pid)" call demo toggle "$panel" 2>"$work/toggle.err"
@@ -118,7 +134,7 @@ until toggle; do
 	fi
 	sleep 1
 done
-echo "frames: opening and closing $panel $times times on the focused screen"
+echo "frames: opening and closing $panel $times times on $screen"
 sleep "$TOGGLE_SECS"
 toggle
 for ((i = 1; i < times; i++)); do
@@ -137,6 +153,10 @@ if ! kill -0 "$capture" 2>/dev/null; then
 fi
 # The old bar back before the report, which may exit 1.
 stop
+if [[ -n $moved ]]; then
+	echo "frames: the focus moved from $screen to $moved during the run, so these numbers mix screens; leave the cursor on $screen and run it again" >&2
+	exit 1
+fi
 # From the first toggle on: what came before is the bar settling.
 sed -n '/^nova-frames: toggle$/,$p' "$work/frames.log" |
 	awk -v refresh="$refresh" -v budget="$BUDGET_PCT" -f scripts/frames-report.awk
