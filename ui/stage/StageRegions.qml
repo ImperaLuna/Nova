@@ -22,10 +22,13 @@ QtObject {
     // region's y) rebuilds both when items move with an ancestor, like the
     // bar's pills sliding with their shelf (IMP-118).
     property real offset: 0
+    // Rects in window coordinates cut out of the mask: other surfaces that
+    // take the clicks there (Stage, IMP-148).
+    property list<rect> holes: []
 
     readonly property Region mask: Region {
         y: stageRegions.offset
-        regions: inputRegions.instances
+        regions: [...inputRegions.instances, ...holeRegions.instances]
     }
     readonly property Region blur: Region {
         y: stageRegions.offset
@@ -36,6 +39,18 @@ QtObject {
         id: inputRegions
         model: stageRegions.inputShapes
         ShapeRegion {}
+    }
+    readonly property Variants holeRegions: Variants {
+        id: holeRegions
+        model: stageRegions.holes
+        Region {
+            required property rect modelData
+            x: modelData.x
+            y: modelData.y
+            width: modelData.width
+            height: modelData.height
+            intersection: Intersection.Subtract
+        }
     }
     readonly property Variants blurRegions: Variants {
         id: blurRegions

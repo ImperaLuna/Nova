@@ -6,11 +6,15 @@ import Quickshell.Wayland
 import "../theme"
 
 // One per screen and placement off the stage ("right", "center"): the layer
-// surface its panels are drawn on. It's there only while one of them is open
-// or still closing, and only as big as what they draw (their `area`, plus
-// shadow): niri blurs the whole surface behind glass on every frame it
-// draws (IMP-54). It keeps that size while they move, since a new size
-// waits a round trip to the compositor. It reserves no space, so windows
+// surface its panels are drawn on. While one of them is open or still
+// closing it's as big as what they draw (their `area`, plus shadow): niri
+// blurs the whole surface behind glass on every frame it draws (IMP-54). It
+// keeps that size while they move, since a new size waits a round trip to
+// the compositor. Otherwise it's parked: 1x1, taking no clicks, no blur. It
+// stays mapped because Quickshell builds a layer-shell window anew each
+// time it shows, with a render thread and graphics context of its own,
+// which held back a panel's first frame by ~50 ms (IMP-148, as ClickCatcher
+// found in IMP-72). It reserves no space, so windows
 // never move, and takes input only where something is drawn.
 //
 // The panels' parent becomes its content, which covers the whole screen
@@ -74,14 +78,22 @@ PanelWindow { // qmllint disable uncreatable-type
         return Qt.rect(left, top, output.width - left, bottom - top);
     }
 
-    // Shown while panels are, and on until the item a closing panel grew out
-    // of shows on the stage again. Set by hand rather than bound, so it
-    // never flickers off and on while those change together.
-    visible: false
+    // Parked unless panels are shown, and until the item a closing panel grew
+    // out of shows on the stage again. Set by hand rather than bound, so it
+    // never flickers while those change together.
+    property bool parked: true
+    // Parks it, and draws once so the 1x1 size and empty regions go out:
+    // Quickshell sends them only with a frame.
+    function park() {
+        if (parked)
+            return;
+        parked = true;
+        drawing.settling = true;
+    }
     readonly property bool hasShown: drawn.shown.length > 0
     onHasShownChanged: {
         if (hasShown) {
-            visible = true;
+            parked = false;
             return;
         }
         const handingBack = panels.some(panel => panel.covering);
@@ -89,7 +101,7 @@ PanelWindow { // qmllint disable uncreatable-type
             panel.covering = false;
         // Clearing `covering` makes the stage redraw its item, and hold.
         if (!handingBack || !holding)
-            visible = false;
+            park();
     }
     // A panel that closed while another stays open here (quick settings
     // giving way to the power menu) hands its item back now: the surface
@@ -107,19 +119,22 @@ PanelWindow { // qmllint disable uncreatable-type
     }
     onHoldingChanged: {
         if (!holding && !hasShown)
-            visible = false;
+            park();
     }
 
     anchors {
         top: true
         right: placement === "right"
     }
-    margins.top: box.y
-    implicitWidth: Math.max(1, box.width)
-    implicitHeight: Math.max(1, box.height)
+    margins.top: parked ? 0 : box.y
+    implicitWidth: parked ? 1 : Math.max(1, box.width)
+    implicitHeight: parked ? 1 : Math.max(1, box.height)
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
-    updatesEnabled: drawing.draws
+    // Parked, only its parking frame (and the first, which maps it): it has
+    // nothing to draw, and would otherwise hand the compositor an empty
+    // frame each time animations elsewhere stop.
+    updatesEnabled: drawing.settling || (!parked && drawing.draws)
 
     // Once a frame with a panel drawn over its `from` is out, `from` can
     // hide.
@@ -133,9 +148,8 @@ PanelWindow { // qmllint disable uncreatable-type
         }
     }
 
-    // It's only there while its panels are, so always over a fullscreen
-    // window (Stage `surfaceLayer`). It's made anew each time it shows, and
-    // Hyprland kept a layer changed before its first frame at Top.
+    // Always over a fullscreen window (Stage `surfaceLayer`), even parked:
+    // it never changes layer, which Hyprland ignored before a first frame.
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "nova-panel"
     WlrLayershell.keyboardFocus: drawn.needsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
@@ -144,10 +158,13 @@ PanelWindow { // qmllint disable uncreatable-type
     StageRegions {
         id: regions
         window: surface
-        inputShapes: surface.clickAnywhere ? [outside] : surface.drawn.shapes
-        glassShapes: surface.drawn.glassShapes
+        inputShapes: surface.parked ? [] : surface.clickAnywhere ? [outside] : surface.drawn.shapes
+        glassShapes: surface.parked ? [] : surface.drawn.glassShapes
     }
-    Component.onCompleted: adopt()
+    Component.onCompleted: {
+        adopt();
+        drawing.settling = true;
+    }
 
     // Placed over the whole screen, like the content.
     DismissArea {
