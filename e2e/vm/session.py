@@ -233,7 +233,7 @@ with subtest("a workspace switch reaches the UI"):
     machine.succeed(as_user(FOCUS_NEXT_WORKSPACE))
     ui_focused_workspace("2")
 
-for add_output, remove_output in ADDED_OUTPUTS:
+for add_output, focus_first, remove_output in ADDED_OUTPUTS:
     with subtest("a click on another screen closes quick settings"):
         # While quick settings holds the keyboard, Hyprland gives it the
         # clicks on every screen, which it used to drop (IMP-178).
@@ -243,8 +243,10 @@ for add_output, remove_output in ADDED_OUTPUTS:
             retry(lambda _last_try: ui_log_count(BAR_SHOWN) > bars, timeout=WAIT)
 
             # novad knows the new output, and that the first has the focus, so
-            # `nova toggle` opens quick settings there.
+            # `nova toggle` opens quick settings there. Hyprland focuses an
+            # output it adds, which could come after a focus asked for early.
             def first_focused(last_try: bool) -> bool:
+                machine.succeed(as_user(focus_first))
                 outputs = ((status() or {}).get("desktop") or {}).get("outputs", [])
                 if last_try:
                     print(f"novad's outputs: {outputs}")
@@ -252,7 +254,7 @@ for add_output, remove_output in ADDED_OUTPUTS:
                 return ADDED_OUTPUT in [output["name"] for output in outputs] and focused not in ([], [ADDED_OUTPUT])
 
             retry(first_focused, timeout=CLICK_EFFECT)
-            # On the first output (add_output focuses it): a panel surface
+            # On the first output: a panel surface
             # there takes more than its parked 1x1, and none on the added one.
             opened = ui_log_count(QUICK_SETTINGS_OPENED)
             machine.succeed(as_user("nova toggle quick-settings"))

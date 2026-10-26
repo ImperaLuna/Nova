@@ -4,8 +4,8 @@
 # the two halves run side by side. default.nix defines USER, UID, PASSWORD,
 # COMPOSITOR, QUIT_COMPOSITOR, FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW,
 # CLOSE_WINDOW, LIST_WINDOWS, LIST_LAYERS, ADDED_OUTPUTS (the commands that
-# add an output and remove it again, as one pair, or none where the
-# compositor can't), COMPOSITOR_LOG and FRAMES_REPORT above this script.
+# add an output, focus the VM's own one, and remove the added one, as one
+# triple, or none where the compositor can't), COMPOSITOR_LOG and FRAMES_REPORT above this script.
 import collections
 import datetime as dt
 import itertools

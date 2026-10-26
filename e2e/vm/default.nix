@@ -173,6 +173,7 @@ let
             ADDED_OUTPUTS = ${
               builtins.toJSON (stepsIfAny [
                 "add an output"
+                "focus the VM's output"
                 "remove the added output"
               ])
             }
@@ -409,11 +410,11 @@ in
         "hyprctl dispatch movetoworkspacesilent special:magic,class:nova-second";
       "show the special workspace" = "hyprctl dispatch togglespecialworkspace magic";
       "hide the special workspace" = "hyprctl dispatch togglespecialworkspace magic";
-      # A second screen, right of the first (niri can't add one), and the
-      # first focused again, where `nova toggle` opens a panel.
-      # Placed and sized, so the test knows where to click.
+      # A second screen, right of the first (niri can't add one), placed and
+      # sized so the test knows where to click. Hyprland focuses it.
       "add an output" =
-        "hyprctl keyword monitor NOVA-2,1280x800,1280x0,1 && hyprctl output create headless NOVA-2 && hyprctl dispatch focusmonitor l";
+        "hyprctl keyword monitor NOVA-2,1280x800,1280x0,1 && hyprctl output create headless NOVA-2";
+      "focus the VM's output" = "hyprctl dispatch focusmonitor Virtual-1";
       "remove the added output" = "hyprctl output remove NOVA-2";
     };
   };
