@@ -572,8 +572,7 @@ mod tests {
             let (queue, ui) = ClientQueue::new(&other_end).unwrap();
             let id = hub.register(queue);
             hub.subscribe(id, Topic::Recording);
-            // The fake first; the system's for the tools it uses.
-            let path_var = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+            let path_var = nova_test_support::fake_path(&bin, &["sleep"]);
             let recordings = Recordings::new(path_var, hub, logger);
             recordings.allow(true);
             Self { dir, recordings, ui, _ui_stream: ui_stream }
