@@ -10,6 +10,8 @@ import "../central_pill"
 import "../launcher/service"
 import "../capture/service"
 import "../stage"
+import "../tray"
+import "../tray/service"
 
 // The bar on one screen: the AI usage pill on the left when that feature is
 // on, the central pill (the launcher's search button, that screen's
@@ -35,6 +37,8 @@ Item {
     // The screen's output name (Quickshell's `screen.name`), whose
     // workspaces the central pill lists.
     required property string screenName
+    // The monitor's height: the bar itself is only as tall as the stage.
+    property real screenHeight: 0
 
     // The space kept free for the bar at the top of the screen: the same gap
     // above and below the pills, none while it steps aside for a fullscreen
@@ -102,9 +106,9 @@ Item {
 
     readonly property AiUsage aiUsagePill: aiUsage.item as AiUsage
     // The pills that open panels, for the stage (StagePanel has the contract).
-    readonly property list<StagePanel> panels: aiUsagePill ? [aiUsagePill] : []
+    readonly property list<StagePanel> panels: aiUsagePill ? [aiUsagePill, rightPill, trayMenu] : [rightPill, trayMenu]
     // What else is drawn and takes clicks, each rounded by its `radius`.
-    readonly property list<Item> fixedShapes: [center, rightPill, recordingPill, revealStrip]
+    readonly property list<Item> fixedShapes: [center, recordingPill, revealStrip]
     // The pill in the middle, which a panel in the middle of the screen can
     // grow out of.
     readonly property Item centralPill: center
@@ -127,6 +131,14 @@ Item {
     // is the screen's): quick settings grows out of it.
     readonly property rect rightPillBox: Qt.rect(rightPill.x, shelf.y + rightPill.y, rightPill.width, rightPill.height)
     readonly property Item rightPillItem: rightPill
+    // Opens the menu of the tray app `entry`, whose icon's middle is `at`
+    // in the right pill.
+    function showTrayMenu(entry: var, at: point) {
+        trayMenu.entry = entry;
+        trayMenu.anchorX = rightPill.x + at.x;
+        trayMenu.open = true;
+    }
+
     // The central pill's search button was clicked: open or close the
     // launcher on this screen.
     signal launcherRequested
@@ -206,7 +218,8 @@ Item {
 
         RightPill {
             id: rightPill
-            visible: (bar.quickSettings || bar.power) && !bar.covered.includes(rightPill)
+            // Also for the tray alone, with quick settings and power off.
+            visible: (bar.quickSettings || bar.power || rightPill.hasTray) && !bar.covered.includes(rightPill)
             x: bar.width - Tokens.barMargin - width
             y: Tokens.barGap
             width: implicitWidth
@@ -218,6 +231,34 @@ Item {
             doNotDisturb: bar.doNotDisturb
             onQuickSettingsClicked: bar.quickSettingsClicked()
             onPowerClicked: bar.powerClicked()
+            trayApps: TrayService.shown
+            trayAttention: TrayService.attention
+            iconSource: entry => TrayService.iconSource(entry)
+            // A click acts and closes the tray; an app that only has a menu
+            // shows it instead.
+            onTrayActivated: (entry, at) => {
+                if (TrayService.opensMenu(entry)) {
+                    bar.showTrayMenu(entry, at);
+                } else {
+                    entry.item.activate();
+                    rightPill.open = false;
+                }
+            }
+            onTrayMenuRequested: (entry, at) => bar.showTrayMenu(entry, at)
+            onTraySecondaryActivated: entry => entry.item.secondaryActivate()
+            onOpenChanged: {
+                if (!open)
+                    trayMenu.open = false;
+            }
+        }
+
+        TrayMenu {
+            id: trayMenu
+            screenWidth: bar.width
+            screenHeight: bar.screenHeight
+            iconSource: entry ? TrayService.iconSource(entry) : ""
+            onDone: rightPill.open = false
+            onHideRequested: (key, hidden) => TrayService.hide(key, hidden)
         }
 
         RecordingPill {

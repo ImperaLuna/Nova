@@ -114,8 +114,8 @@ impl Backend for Niri {
         self.request(&action.to_string()).map(drop)
     }
 
-    fn bring_window(&self, app_ids: &[String], workspace: &NovaWorkspace) -> Result<bool, String> {
-        let target = u64::try_from(workspace.id).map_err(|_| format!("niri has no workspace {}", workspace.id))?;
+    fn focus_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<bool, String> {
+        let here = u64::try_from(here.id).ok();
         let reply = self.request(WINDOWS_REQUEST)?;
         let windows: Vec<Window> =
             serde_json::from_value(reply["Windows"].clone()).map_err(|e| format!("niri sent odd windows ({e})"))?;
@@ -123,15 +123,9 @@ impl Backend for Niri {
             .iter()
             .filter(|window| window.app_id.as_ref().is_some_and(|id| app_ids.contains(&id.to_lowercase())))
             .collect();
-        // One already there needs no move.
-        matching.sort_by_key(|window| window.workspace_id != Some(target));
+        matching.sort_by_key(|window| window.workspace_id != here);
         let Some(window) = matching.first() else { return Ok(false) };
-        if window.workspace_id != Some(target) {
-            let action = json!({"Action": {"MoveWindowToWorkspace": {
-                "window_id": window.id, "reference": {"Id": target}, "focus": true
-            }}});
-            self.request(&action.to_string())?;
-        }
+        // niri shows the window's workspace and output for it.
         let action = json!({"Action": {"FocusWindow": {"id": window.id}}});
         self.request(&action.to_string()).map(|_| true)
     }

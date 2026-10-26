@@ -1,0 +1,5 @@
+id = "tray"
+name = "System tray"
+description = "Apps' tray icons (Discord, Steam and so on) and their menus, folded into the right pill."
+default = true
+daemon = "tray"

@@ -7,6 +7,7 @@ install packages for core, recording, screenshot:
 create /home/me/.config/nova/config.toml
 create /home/me/.config/nova/features.toml
 write /home/me/.config/systemd/user/nova.service
+write /home/me/.config/systemd/user/app-.service.d/nova.conf
 reload systemd's units:
     systemctl --user daemon-reload
 start novad with the graphical session:

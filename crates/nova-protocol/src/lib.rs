@@ -93,6 +93,9 @@ pub enum Event {
     /// (feature `launcher`). Topic [`Topic::Launcher`], sent right after
     /// subscribing and whenever any of it changes.
     Launcher(Launcher),
+    /// The apps in the system tray (feature `tray`). Topic [`Topic::Tray`],
+    /// sent right after subscribing and whenever one comes or goes.
+    Tray(Tray),
     /// The notifications kept for the quick settings list, do not disturb
     /// and the muted apps (feature `notifications`). Topic
     /// [`Topic::Notifications`], sent right after subscribing and whenever
@@ -122,6 +125,7 @@ pub enum Topic {
     Host,
     Resources,
     Launcher,
+    Tray,
     Notifications,
 }
 
@@ -144,6 +148,7 @@ impl Event {
             Event::Host(_) => Some(Topic::Host),
             Event::Resources(_) => Some(Topic::Resources),
             Event::Launcher(_) => Some(Topic::Launcher),
+            Event::Tray(_) => Some(Topic::Tray),
             Event::Notifications(_) | Event::NotificationPopup(_) => Some(Topic::Notifications),
         }
     }
@@ -411,10 +416,12 @@ pub enum Panel {
     Power,
     QuickSettings,
     Launcher,
+    /// The tray's icons in the right pill.
+    Tray,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 4] = [Panel::AiUsage, Panel::Power, Panel::QuickSettings, Panel::Launcher];
+    pub const ALL: [Panel; 5] = [Panel::AiUsage, Panel::Power, Panel::QuickSettings, Panel::Launcher, Panel::Tray];
 
     /// Its name on the wire and on the command line, which is also its
     /// feature's id.
@@ -424,6 +431,7 @@ impl Panel {
             Panel::Power => "power",
             Panel::QuickSettings => "quick-settings",
             Panel::Launcher => "launcher",
+            Panel::Tray => "tray",
         }
     }
 }
@@ -454,6 +462,35 @@ pub struct Launcher {
     pub pinned: Vec<String>,
     /// The ids of the apps launched lately, the latest first.
     pub recent: Vec<String>,
+}
+
+/// The system tray (feature `tray`): the StatusNotifierItems apps
+/// registered with novad's watcher, in the order they did.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Tray {
+    pub items: Vec<TrayItem>,
+    /// The apps the user hid from the bar's tray (`hide_tray_app`), by an
+    /// item's app id, or its own `id` when it has no app. Quick settings
+    /// still lists them, to bring them back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden: Vec<String>,
+}
+
+/// One app's tray icon. The UI draws it through Quickshell's tray host and
+/// finds it there by `id` and `title`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrayItem {
+    /// Where it lives on the session bus: `<bus name>/<object path>`, as
+    /// the watcher lists it.
+    pub address: String,
+    /// The item's own `Id`, like `discord_status_icon_1`.
+    pub id: String,
+    /// The item's own `Title`, empty for Electron apps.
+    pub title: String,
+    /// The installed app it belongs to, found from the process that owns
+    /// it, when there is one (and the `launcher` feature is on).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<App>,
 }
 
 /// An app from its desktop entry.
@@ -842,10 +879,10 @@ pub enum Command {
     SearchApps {
         query: String,
     },
-    /// Opens an app by its id (feature `launcher`) and counts it towards
-    /// the recent ones. When it already has a window, that window moves to
-    /// the workspace showing on `output` (the focused output's when unset)
-    /// and takes focus, unless `new_window` asks for another one.
+    /// Opens an app by its id (feature `launcher`) on `output` (the focused
+    /// output when unset) and counts it towards the recent ones. When it
+    /// already has a window, that window takes focus where it is, unless
+    /// `new_window` asks for another one.
     LaunchApp {
         id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -858,6 +895,13 @@ pub enum Command {
     PinApp {
         id: String,
         pinned: bool,
+    },
+    /// Hides a tray app from the bar, or shows it again (feature `tray`):
+    /// `id` is the item's app id, or its own id when it has none (see
+    /// [`Tray::hidden`]). Remembered across restarts.
+    HideTrayApp {
+        id: String,
+        hidden: bool,
     },
     /// The notification `id` was clicked, or its button `action` (feature
     /// `notifications`): the app hears of it, and it leaves the list unless
@@ -1258,6 +1302,7 @@ mod tests {
                         Topic::Host,
                         Topic::Resources,
                         Topic::Launcher,
+                        Topic::Tray,
                         Topic::Notifications,
                     ],
                 },
@@ -1405,7 +1450,9 @@ mod tests {
                 },
             }),
             encode(Request { id: Some(26), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
+            encode(Request { id: Some(27), command: Command::HideTrayApp { id: "steam".into(), hidden: true } }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
+            encode(Event::Tray(tray())),
             encode(Event::Notifications(notifications())),
             encode(Event::NotificationPopup(notifications().items[0].clone())),
             encode(Request {
@@ -1578,6 +1625,31 @@ mod tests {
         }
     }
 
+    fn tray() -> Tray {
+        Tray {
+            items: vec![
+                TrayItem {
+                    address: ":1.421/StatusNotifierItem".into(),
+                    id: "discord_status_icon_1".into(),
+                    title: String::new(),
+                    app: Some(App {
+                        id: "discord.desktop".into(),
+                        name: "Discord".into(),
+                        description: Some("All-in-one cross-platform voice and text chat for gamers".into()),
+                        icon: Some("discord".into()),
+                    }),
+                },
+                TrayItem {
+                    address: ":1.607/org/ayatana/NotificationItem/steam".into(),
+                    id: "steam".into(),
+                    title: "Steam".into(),
+                    app: None,
+                },
+            ],
+            hidden: vec!["steam".into()],
+        }
+    }
+
     fn notifications() -> NotificationList {
         NotificationList {
             items: vec![
@@ -1697,7 +1769,10 @@ mod tests {
             assert_eq!(serde_json::to_value(panel).unwrap(), json!(panel.name()));
         }
         assert!(
-            "calculator".parse::<Panel>().unwrap_err().contains("known: ai-usage, power, quick-settings, launcher")
+            "calculator"
+                .parse::<Panel>()
+                .unwrap_err()
+                .contains("known: ai-usage, power, quick-settings, launcher, tray")
         );
         let features = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         for panel in Panel::ALL {
@@ -1738,6 +1813,7 @@ mod tests {
         assert_eq!(Event::Host(host()).topic(), Some(Topic::Host));
         assert_eq!(Event::Resources(resources()).topic(), Some(Topic::Resources));
         assert_eq!(Event::Launcher(launcher()).topic(), Some(Topic::Launcher));
+        assert_eq!(Event::Tray(tray()).topic(), Some(Topic::Tray));
         assert_eq!(Event::Notifications(notifications()).topic(), Some(Topic::Notifications));
         assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(Topic::Notifications));
     }

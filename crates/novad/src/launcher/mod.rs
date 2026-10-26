@@ -3,6 +3,7 @@
 //! searching them, starting them, and the user's pinned and recent ones,
 //! which survive restarts.
 
+pub mod autostart;
 mod desktop_entry;
 mod launch;
 mod rank;
@@ -71,7 +72,11 @@ pub struct Launcher {
     stopped: AtomicBool,
     /// Ends the watching thread; `None` until it starts.
     watch: Mutex<Option<inotify::Stopper>>,
+    /// Called after each look at the apps, outside the lock (see `on_rescan`).
+    rescanned: Mutex<Option<Rescanned>>,
 }
+
+type Rescanned = Box<dyn Fn() + Send + Sync>;
 
 struct State {
     apps: BTreeMap<String, Entry>,
@@ -108,12 +113,7 @@ impl Launcher {
             }),
             Err(_) => Saved::default(),
         };
-        let desktops = std::env::var("XDG_CURRENT_DESKTOP")
-            .unwrap_or_default()
-            .split(':')
-            .filter(|name| !name.is_empty())
-            .map(str::to_string)
-            .collect();
+        let desktops = current_desktops();
         let launcher = Arc::new(Self {
             state: Mutex::new(State { apps: BTreeMap::new(), saved, sent: None }),
             hub,
@@ -124,6 +124,7 @@ impl Launcher {
             desktops,
             stopped: AtomicBool::new(false),
             watch: Mutex::new(None),
+            rescanned: Mutex::new(None),
         });
         let worker = Arc::clone(&launcher);
         std::thread::spawn(move || worker.run());
@@ -140,6 +141,12 @@ impl Launcher {
         if let Some(watch) = watch.take() {
             watch.stop();
         }
+    }
+
+    /// Calls `rescanned` after each look at the apps from now on, for what
+    /// depends on them (the tray's apps). It may call back into the launcher.
+    pub fn on_rescan(&self, rescanned: impl Fn() + Send + Sync + 'static) {
+        *lock(&self.rescanned) = Some(Box::new(rescanned));
     }
 
     fn stopped(&self) -> bool {
@@ -185,23 +192,22 @@ impl Launcher {
             .collect())
     }
 
-    /// Brings a window the app `id` already has, through `bring` (given the
-    /// app ids its windows may have, `false` when none is open), or else
-    /// starts the app; either counts it as launched.
-    pub fn launch(&self, id: &str, bring: impl FnOnce(&[String]) -> Result<bool, String>) -> Result<(), String> {
+    /// Focuses a window the app `id` already has, through `focus` (given the
+    /// app ids its windows may have, none for a terminal app; `false` when
+    /// none is open), or else starts the app; either counts it as launched.
+    pub fn launch(&self, id: &str, focus: impl FnOnce(&[String]) -> Result<bool, String>) -> Result<(), String> {
         let off = || format!("the {FEATURE_ID} feature is off");
         let entry = lock(&self.state).apps.get(id).cloned().ok_or_else(|| format!("no app {id:?}"))?;
         let ids = entry.window_ids();
         if self.stopped() {
             return Err(off());
         }
-        let brought = !ids.is_empty()
-            && bring(&ids).unwrap_or_else(|e| {
-                self.logger.warn(LOG_SOURCE, &format!("can't bring {id}'s window, so starting it: {e}"));
-                false
-            });
-        if !brought {
-            // Bringing may have taken a while.
+        let focused = focus(&ids).unwrap_or_else(|e| {
+            self.logger.warn(LOG_SOURCE, &format!("the compositor can't help with {id}, so starting it: {e}"));
+            false
+        });
+        if !focused {
+            // Focusing may have taken a while.
             if self.stopped() {
                 return Err(off());
             }
@@ -222,6 +228,19 @@ impl Launcher {
                 }
             }
             Ok(())
+        })
+    }
+
+    /// The installed app whose windows may have one of `ids` (lower case,
+    /// the likeliest first), like a tray icon's process names: the first id
+    /// that any app matches decides. Of the apps it matches, one it names
+    /// (window class or desktop id) beats one that only runs that program:
+    /// `steam` is Steam, not a game shortcut whose Exec is `steam`.
+    pub fn find_app(&self, ids: &[String]) -> Option<App> {
+        let state = lock(&self.state);
+        ids.iter().find_map(|id| {
+            let matching: Vec<&Entry> = state.apps.values().filter(|entry| entry.window_ids().contains(id)).collect();
+            matching.iter().find(|entry| entry.is_named(id)).or(matching.first()).map(|entry| app(entry))
         })
     }
 
@@ -334,7 +353,8 @@ impl Launcher {
     }
 
     fn rescan(&self) {
-        let context = Context { locale: &self.locale, desktops: &self.desktops, path_var: &self.path_var };
+        let context =
+            Context { locale: &self.locale, desktops: &self.desktops, path_var: &self.path_var, autostart: false };
         let (apps, problems) = scan::scan(&self.paths.data_dirs, &context);
         let mut state = lock(&self.state);
         if self.stopped() {
@@ -351,10 +371,24 @@ impl Launcher {
         }
         state.apps = apps;
         self.publish(&mut state);
+        drop(state);
+        if let Some(rescanned) = &*lock(&self.rescanned) {
+            rescanned();
+        }
     }
 }
 
 /// Watches what `scan::watch_points` says for `data_dirs`.
+/// `XDG_CURRENT_DESKTOP`'s names, like `niri`, which entries show in or not.
+fn current_desktops() -> Vec<String> {
+    std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .split(':')
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 fn watch_all(watcher: &mut Inotify, data_dirs: &[PathBuf], logger: &Logger) -> scan::WatchPoints {
     let points = scan::watch_points(data_dirs);
     // The parents first: a folder that's both gets the trees' wider mask.
@@ -371,19 +405,20 @@ fn watch_all(watcher: &mut Inotify, data_dirs: &[PathBuf], logger: &Logger) -> s
     points
 }
 
+/// How the UI sees `entry`.
+fn app(entry: &Entry) -> App {
+    App {
+        id: entry.id.clone(),
+        name: entry.name.clone(),
+        description: entry.generic_name.clone().or_else(|| entry.comment.clone()),
+        icon: entry.icon.clone(),
+    }
+}
+
 /// The event for `state`: apps by name, and the pinned and recent ones
 /// that are installed (recent leaves the pinned ones out).
 fn snapshot(state: &State) -> nova_protocol::Launcher {
-    let mut apps: Vec<App> = state
-        .apps
-        .values()
-        .map(|entry| App {
-            id: entry.id.clone(),
-            name: entry.name.clone(),
-            description: entry.generic_name.clone().or_else(|| entry.comment.clone()),
-            icon: entry.icon.clone(),
-        })
-        .collect();
+    let mut apps: Vec<App> = state.apps.values().map(app).collect();
     apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
     let installed = |id: &&String| state.apps.contains_key(*id);
     let pinned = state.saved.pinned.iter().filter(installed).cloned().collect();

@@ -11,7 +11,7 @@ use crate::config::{self, Config};
 use crate::hub::Hub;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, host, launcher, notifications, resources, theme};
+use crate::{ai_usage, features, host, launcher, notifications, resources, theme, tray, x11_tray};
 use nova_features::{Manifest, Selection};
 use nova_protocol::{Event, FeatureState, FeatureStatus, Host, Theme};
 use std::collections::BTreeSet;
@@ -38,6 +38,7 @@ pub struct Sources {
     pub ai_usage: ai_usage::Paths,
     pub resources: resources::Sources,
     pub launcher: launcher::Paths,
+    pub tray: tray::Sources,
     pub notifications: notifications::Sources,
 }
 
@@ -53,6 +54,10 @@ pub struct Settings {
     pub resources: Option<Arc<resources::Resources>>,
     /// Running while the `launcher` feature is ready.
     pub launcher: Option<Arc<launcher::Launcher>>,
+    /// Watching for tray icons while the `tray` feature is ready.
+    pub tray: Option<Arc<tray::Tray>>,
+    /// Running xembedsniproxy while the `x11-tray` feature is ready.
+    pub x11_tray: Option<Arc<x11_tray::X11Tray>>,
     /// Serving `org.freedesktop.Notifications` while the `notifications` feature is ready.
     pub notifications: Option<Arc<notifications::Notifications>>,
 }
@@ -171,6 +176,32 @@ impl Settings {
             }
         };
 
+        // Started before the UI, which settings start ahead of, so apps it
+        // autostarts find the watcher. It finds apps with the launcher.
+        let tray_ready = is_ready(&features, tray::FEATURE_ID);
+        let tray = match previous.as_deref_mut().and_then(|previous| previous.tray.take()) {
+            Some(running) if tray_ready => {
+                running.set_launcher(launcher.clone());
+                Some(running)
+            }
+            running => {
+                if let Some(running) = running {
+                    running.stop();
+                    logger.info("features", &format!("stopped {}", tray::FEATURE_ID));
+                }
+                tray_ready.then(|| {
+                    logger.info("features", &format!("starting {}", tray::FEATURE_ID));
+                    tray::Tray::start(
+                        sources.tray.clone(),
+                        sources.resources.proc_root.clone(),
+                        launcher.clone(),
+                        Arc::clone(hub),
+                        Arc::clone(logger),
+                    )
+                })
+            }
+        };
+
         // Started before the UI, which settings start ahead of, so
         // notifications sent while it starts are kept. No options either.
         let notifications_ready = is_ready(&features, notifications::FEATURE_ID);
@@ -191,6 +222,30 @@ impl Settings {
                 })
             }
         };
+        if let Some(launcher) = &launcher {
+            let tray = tray.as_ref().map(Arc::downgrade);
+            launcher.on_rescan(move || {
+                if let Some(tray) = tray.as_ref().and_then(std::sync::Weak::upgrade) {
+                    tray.apps_changed();
+                }
+            });
+        }
+
+        // It has no options either. Its icons reach whatever tray is up.
+        let x11_tray_ready = is_ready(&features, x11_tray::FEATURE_ID);
+        let x11_tray = match previous.as_deref_mut().and_then(|previous| previous.x11_tray.take()) {
+            Some(running) if x11_tray_ready => Some(running),
+            running => {
+                if let Some(running) = running {
+                    running.stop();
+                    logger.info("features", &format!("stopped {}", x11_tray::FEATURE_ID));
+                }
+                x11_tray_ready.then(|| {
+                    logger.info("features", &format!("starting {}", x11_tray::FEATURE_ID));
+                    x11_tray::X11Tray::start(sources.tray.bus.clone(), &sources.path_var, Arc::clone(logger))
+                })
+            }
+        };
 
         let before = previous.as_deref().map(|previous| previous.features.as_slice()).unwrap_or_default();
         for feature in features.iter().filter(|feature| !before.contains(feature)) {
@@ -200,7 +255,7 @@ impl Settings {
             hub.publish(&Event::Features { features: features.clone() });
         }
 
-        Self { config, selection, features, theme, ai_usage, resources, launcher, notifications }
+        Self { config, selection, features, theme, ai_usage, resources, launcher, tray, x11_tray, notifications }
     }
 }
 

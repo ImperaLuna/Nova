@@ -9,12 +9,20 @@
 # this unit. Plain Hyprland doesn't: `exec-once = nova` hands the session's
 # environment to systemd and starts it. No Requisite= on the target for
 # that reason.
+#
+# Login apps (XDG autostart) start after novad is ready, when the tray's
+# name is claimed, so apps that look for a tray once at startup (Electron)
+# find one: novad says READY=1 (Type=notify), and app-.service.d/nova.conf
+# orders systemd's autostart units after this one. Wants= pulls the target
+# in where the compositor doesn't (plain Hyprland).
 [Unit]
 Description=Nova desktop shell (its daemon and UI)
 PartOf=graphical-session.target
 After=graphical-session.target
+Wants=xdg-desktop-autostart.target
 
 [Service]
+Type=notify
 # `@` passes the next word as argv[0], so ps and btop show `Nova daemon`
 # (novad::PROCESS_NAME).
 ExecStart=@@nova@ Nova daemon

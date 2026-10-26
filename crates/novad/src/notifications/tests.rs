@@ -3,25 +3,23 @@
 
 use super::*;
 use crate::hub::{ClientQueue, Outgoing};
+use crate::session_bus::TestBus;
 use futures_core::Stream;
 use nova_protocol::Topic;
 use serde_json::{Value, json};
 use std::future::poll_fn;
-use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixStream;
 use std::pin::Pin;
-use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
-use zbus::{MatchRule, MessageStream, connection};
+use zbus::{MatchRule, MessageStream};
 
 /// How long a test waits for something the bus should do at once.
 const WAIT: Duration = Duration::from_secs(5);
 
 struct Fixture {
     dir: PathBuf,
-    bus: Child,
-    address: String,
+    bus: TestBus,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     ui: Receiver<Outgoing>,
@@ -34,37 +32,19 @@ impl Fixture {
         let dir = std::env::temp_dir().join(format!("novad-notifications-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let config = dir.join("bus.conf");
-        std::fs::write(
-            &config,
-            format!(
-                "<busconfig><type>session</type><listen>unix:path={}</listen><auth>EXTERNAL</auth>\
-                 <policy context=\"default\"><allow send_destination=\"*\" eavesdrop=\"true\"/>\
-                 <allow eavesdrop=\"true\"/><allow own=\"*\"/></policy></busconfig>",
-                dir.join("bus").display()
-            ),
-        )
-        .unwrap();
-        let mut bus = Command::new("dbus-daemon")
-            .arg(format!("--config-file={}", config.display()))
-            .args(["--nofork", "--nopidfile", "--print-address=1"])
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("dbus-daemon runs");
-        let mut address = String::new();
-        BufReader::new(bus.stdout.take().unwrap()).read_line(&mut address).unwrap();
+        let bus = TestBus::start(&dir.join("bus"));
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let id = hub.register(queue);
         hub.subscribe(id, Topic::Notifications);
-        Self { dir, bus, address: address.trim().to_string(), hub, logger, ui, client: id, _ui_stream: ui_stream }
+        Self { dir, bus, hub, logger, ui, client: id, _ui_stream: ui_stream }
     }
 
     fn server(&self) -> Arc<Notifications> {
         let sources = Sources {
-            bus: Bus::Address(self.address.clone()),
+            bus: Bus::Address(self.bus.address.clone()),
             state_file: self.dir.join("notifications.json"),
             images: self.dir.join("images"),
         };
@@ -72,7 +52,7 @@ impl Fixture {
     }
 
     fn app(&self) -> App {
-        let connection = zbus::block_on(connection::Builder::address(self.address.as_str()).build()).unwrap();
+        let connection = self.bus.connect();
         let rule = MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(BUS_NAME).build().unwrap();
         let mut stream = zbus::block_on(MessageStream::for_match_rule(rule, &connection, None)).unwrap();
         let (sender, signals) = std::sync::mpsc::channel();
@@ -119,8 +99,6 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = self.bus.kill();
-        let _ = self.bus.wait();
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
@@ -412,7 +390,7 @@ fn an_app_that_quits_leaves_its_notifications_unclickable() {
     let fixture = Fixture::new("quit");
     let server = fixture.server();
     // Like notify-send: connects, sends one and leaves.
-    let connection = zbus::block_on(connection::Builder::address(fixture.address.as_str()).build()).unwrap();
+    let connection = fixture.bus.connect();
     let sent: Notify<'_> = ("Chat", 0, "", "Mara", "", vec!["default", "Open"], HashMap::new(), -1);
     let reply = zbus::block_on(connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "Notify", &sent)).unwrap();
     let id: u32 = reply.body().deserialize().unwrap();

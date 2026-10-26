@@ -258,7 +258,7 @@ fn forward_lines(stream: impl Read + Send + 'static, logger: Arc<Logger>) -> Joi
 
 /// Waits until child `pid` exits, leaving it unreaped (a zombie), so its pid
 /// can't be reused yet.
-fn wait_for_exit(pid: u32) -> std::io::Result<()> {
+pub fn wait_for_exit(pid: u32) -> std::io::Result<()> {
     let pid = libc::id_t::from(pid);
     loop {
         // SAFETY: siginfo_t is plain data, and waitid only writes into it.
@@ -315,7 +315,7 @@ pub fn read_quickshell_version(quickshell: &Path, path_var: &str) -> Result<Stri
 
 /// What `command` prints when it succeeds within `timeout`. One that takes
 /// longer, printing or exiting, is killed and reaped.
-fn stdout_within(mut command: Command, timeout: Duration) -> std::io::Result<Vec<u8>> {
+pub(crate) fn stdout_within(mut command: Command, timeout: Duration) -> std::io::Result<Vec<u8>> {
     let deadline = Instant::now() + timeout;
     let mut child = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
     let mut stdout = child.stdout.take().ok_or_else(|| std::io::Error::other("no stdout pipe"))?;

@@ -8,6 +8,8 @@ import "../stage"
 import "../theme"
 import "../volume/service"
 import "service"
+import "../tray"
+import "../tray/service"
 import "../daemon/protocol.js" as Protocol
 import "quick_settings.js" as QuickSettings
 
@@ -75,6 +77,8 @@ StagePanel {
         VolumeService.showElsewhere(output.name, open);
         if (open)
             now = new Date();
+        else
+            trayMenu.entry = null;
     }
     // The list is on the first page: another page hides it.
     readonly property bool listShown: open && page === "main"
@@ -117,7 +121,7 @@ StagePanel {
         width: Tokens.quickSettingsWidth - 2 * Tokens.quickSettingsPad
         height: panel.full.height - panel.pill.y - Tokens.quickSettingsPad
         // What the top row leaves for the pill's buttons.
-        readonly property real headerInset: panel.output.width - Tokens.quickSettingsPad - panel.pill.x + Tokens.gap
+        readonly property real headerInset: panel.output.width - Tokens.quickSettingsPad - (panel.buttonsX - Tokens.pillButtonInset) + Tokens.gap
 
         readonly property bool sliding: [mainSlot, soundSlot, resourcesSlot, notificationsSlot].some(slot => slot.sliding)
 
@@ -146,6 +150,18 @@ StagePanel {
                 recorders: SoundService.recorders
                 micVolume: SoundService.sourceVolume
                 reading: QuickSettingsService.resources
+                trayApps: TrayService.all
+                trayIconSource: entry => TrayService.iconSource(entry)
+                onTrayActivated: entry => {
+                    if (TrayService.opensMenu(entry)) {
+                        trayMenu.show(entry, null);
+                    } else {
+                        entry.item.activate();
+                        panel.open = false;
+                    }
+                }
+                onTrayMenuRequested: (entry, at) => trayMenu.show(entry, at)
+                onTraySecondaryActivated: entry => entry.item.secondaryActivate()
                 notificationsShown: NotificationsService.ready
                 notifications: NotificationsService.items
                 doNotDisturb: NotificationsService.doNotDisturb
@@ -245,10 +261,73 @@ StagePanel {
         }
     }
 
+    // A tray app's menu over the Tray row: a click beside it closes it, an
+    // entry that ran closes quick settings too (hiding or showing an app
+    // leaves it open, to see the change).
+    MouseArea {
+        anchors.fill: pages
+        visible: trayMenu.entry !== null
+        onClicked: trayMenu.entry = null
+    }
+    Rectangle {
+        id: trayMenu
+
+        property var entry: null
+        property point at: Qt.point(0, 0)
+        property bool keepOpen: false
+
+        // Under the icon at `at` (in the main page), or the row's middle.
+        function show(entry: var, at: var) {
+            this.at = at ?? Qt.point(pages.width / 2, pages.height / 2);
+            keepOpen = false;
+            this.entry = entry;
+        }
+
+        visible: entry !== null && panel.open
+        x: pages.x + Math.max(0, Math.min(pages.width - width, at.x - width / 2))
+        y: pages.y + Math.min(pages.height - height, at.y + Tokens.trayGridCell / 2 + Tokens.menuGap)
+        width: list.width
+        height: list.implicitHeight
+        radius: Tokens.radiusCard
+        color: Tokens.surface
+        border.width: Tokens.dividerWidth
+        border.color: Tokens.outline
+
+        TrayMenuOpener {
+            id: opener
+            entry: trayMenu.entry
+        }
+
+        TrayMenuList {
+            id: list
+            entry: trayMenu.entry
+            entries: opener.entries
+            inSubmenu: opener.inSubmenu
+            onSubmenuRequested: submenu => opener.open(submenu)
+            onBackRequested: opener.back()
+            // Within the panel; longer menus scroll.
+            maxHeight: pages.height
+            iconSource: trayMenu.entry ? TrayService.iconSource(trayMenu.entry) : ""
+            onHideRequested: (key, hidden) => {
+                trayMenu.keepOpen = true;
+                TrayService.hide(key, hidden);
+            }
+            onDone: {
+                trayMenu.entry = null;
+                if (!trayMenu.keepOpen)
+                    panel.open = false;
+            }
+        }
+    }
+    // Where the pill has its buttons, in screen coordinates: at its right
+    // end, after the tray's chevron.
+    readonly property real buttonsX: pill.x + pill.width - Tokens.pillButtonInset - buttons.width
+
     // The pill's buttons where the pill has them: it opened over the pill,
     // and the button that opened it closes it.
     PillButtons {
-        x: panel.pill.x - panel.x + (panel.pill.width - width) / 2
+        id: buttons
+        x: panel.buttonsX - panel.x
         y: panel.pill.y - panel.y + (panel.pill.height - height) / 2
         quickSettings: true
         power: panel.power

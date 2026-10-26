@@ -29,6 +29,7 @@ var CMD_END_APP = "end_app";
 var CMD_SEARCH_APPS = "search_apps";
 var CMD_LAUNCH_APP = "launch_app";
 var CMD_PIN_APP = "pin_app";
+var CMD_HIDE_TRAY_APP = "hide_tray_app";
 var CMD_NOTIFICATION_ACTION = "notification_action";
 var CMD_DISMISS_NOTIFICATION = "dismiss_notification";
 var CMD_CLEAR_NOTIFICATIONS = "clear_notifications";
@@ -58,6 +59,7 @@ var EVENT_RECORDING_SAVED = "recording_saved";
 var EVENT_HOST = "host";
 var EVENT_RESOURCES = "resources";
 var EVENT_LAUNCHER = "launcher";
+var EVENT_TRAY = "tray";
 var EVENT_NOTIFICATIONS = "notifications";
 var EVENT_NOTIFICATION_POPUP = "notification_popup";
 
@@ -75,6 +77,7 @@ var TOPIC_RECORDING = "recording";
 var TOPIC_HOST = "host";
 var TOPIC_RESOURCES = "resources";
 var TOPIC_LAUNCHER = "launcher";
+var TOPIC_TRAY = "tray";
 var TOPIC_NOTIFICATIONS = "notifications";
 
 // What a compositor can report or do (Capability in nova-protocol).
@@ -102,6 +105,7 @@ var FEATURE_SCREENSHOT = "screenshot";
 var FEATURE_RECORDING = "recording";
 var FEATURE_QUICK_SETTINGS = "quick-settings";
 var FEATURE_LAUNCHER = "launcher";
+var FEATURE_TRAY = "tray";
 var FEATURE_NOTIFICATIONS = "notifications";
 
 // Power menu actions (PowerAction in nova-protocol).

@@ -102,6 +102,11 @@ impl TestDaemon {
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
             resources: resources::Sources::system(""),
             launcher: launcher_paths(&dir),
+            // No bus unless the test starts one there (`session_bus::TestBus`).
+            tray: tray::Sources {
+                bus: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+                state_file: dir.join("tray.json"),
+            },
             // No bus: the notifications' own tests give them one.
             notifications: notifications::Sources {
                 bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
@@ -170,6 +175,12 @@ impl Drop for TestDaemon {
         }
         if let Some(usage) = &settings.ai_usage {
             usage.stop();
+        }
+        if let Some(tray) = &settings.tray {
+            tray.stop();
+        }
+        if let Some(x11_tray) = &settings.x11_tray {
+            x11_tray.stop();
         }
         if let Some(notifications) = &settings.notifications {
             notifications.stop();
@@ -1511,6 +1522,15 @@ fn subscribing_to_host_sends_the_machine_and_its_user() {
     assert_eq!(client.next_event("host")["user"], "Katov", "the config's name applies live");
 }
 
+/// The tray's own tests cover its bus; here it has none, so the list is empty.
+#[test]
+fn subscribing_to_the_tray_sends_its_items() {
+    let novad = TestDaemon::start("tray", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["tray"]})));
+    assert_eq!(client.next_event("tray"), json!({"items": []}));
+}
+
 /// The notifications' own tests cover the bus; here there's none, so the
 /// list starts empty, and do not disturb and mutes work over the socket.
 #[test]
@@ -1769,7 +1789,7 @@ fn a_launched_app_outlives_the_request_that_started_it() {
 /// Launches the app the recording's window belongs to (`nova-second`, on
 /// workspace `web`) from the focused output, and returns the actions taken
 /// and whether the app ran anyway, then the same asking for a new window.
-fn bring_the_recorded_window(
+fn focus_the_recorded_window(
     name: &str,
     fake: fn(&Path) -> (FakeCompositor, Box<dyn compositor::Backend>),
 ) -> (Vec<String>, Value, bool) {
@@ -1789,7 +1809,7 @@ fn bring_the_recorded_window(
     let launch = json!({"id": "second.desktop", "output": output});
     assert_eq!(client.request(2, "launch_app", Some(launch))["result"], Value::Null);
     let event = client.launcher_until(|event| !event["recent"].as_array().unwrap().is_empty());
-    assert_eq!(event["recent"], json!(["second.desktop"]), "bringing it counts as a launch");
+    assert_eq!(event["recent"], json!(["second.desktop"]), "focusing it counts as a launch");
     let actions = compositor.actions();
 
     let fresh = json!({"id": "second.desktop", "output": output, "new_window": true});
@@ -1811,33 +1831,24 @@ fn bring_the_recorded_window(
 }
 
 #[test]
-fn launching_an_open_app_on_niri_brings_its_window_to_the_screen() {
-    let (actions, shown, ran) = bring_the_recorded_window("launcher-bring-niri", FakeCompositor::niri);
-    let id = shown["id"].as_i64().unwrap();
-    let moved = json!({"Action": {"MoveWindowToWorkspace": {"window_id": 3, "reference": {"Id": id}, "focus": true}}});
+fn launching_an_open_app_on_niri_focuses_its_window_where_it_is() {
+    let (actions, shown, ran) = focus_the_recorded_window("launcher-focus-niri", FakeCompositor::niri);
     let focused = json!({"Action": {"FocusWindow": {"id": 3}}});
     assert_ne!(shown["name"], "web", "the recording shows another workspace there");
-    assert_eq!(actions, [moved.to_string(), focused.to_string()]);
+    assert_eq!(actions, [focused.to_string()], "the window stays on its workspace");
     assert!(ran, "asked for a new window, the app runs");
 }
 
 #[test]
-fn launching_an_open_app_on_hyprland_brings_its_window_to_the_screen() {
-    let (actions, shown, ran) = bring_the_recorded_window("launcher-bring-hyprland", FakeCompositor::hyprland);
-    let id = shown["id"].as_i64().unwrap();
+fn launching_an_open_app_on_hyprland_focuses_its_window_where_it_is() {
+    let (actions, shown, ran) = focus_the_recorded_window("launcher-focus-hyprland", FakeCompositor::hyprland);
     assert_ne!(shown["name"], "web", "the recording shows another workspace there");
     let steps: Vec<Value> = serde_json::from_str(&FakeCompositor::recorded("hyprland", "steps.json")).unwrap();
     let clients = FakeCompositor::recorded("hyprland", &format!("{:02}/clients.json", steps.len() - 1));
     let clients: Value = serde_json::from_str(&clients).unwrap();
     let second = clients.as_array().unwrap().iter().find(|client| client["class"] == "nova-second").unwrap();
     let address = second["address"].as_str().unwrap();
-    assert_eq!(
-        actions,
-        [
-            format!("dispatch movetoworkspacesilent {id},address:{address}"),
-            format!("dispatch focuswindow address:{address}")
-        ]
-    );
+    assert_eq!(actions, [format!("dispatch focuswindow address:{address}")], "the window stays on its workspace");
     assert!(ran, "asked for a new window, the app runs");
 }
 
@@ -1877,6 +1888,27 @@ fn pins_keep_their_order_and_survive_a_restart() {
 }
 
 #[test]
+fn an_app_is_found_by_its_own_id_before_a_shortcut_running_it() {
+    let novad = TestDaemon::with_launcher("find-app");
+    // Steam's game shortcuts run `steam`, and sort before it.
+    install_app(&novad, "Abiotic Factor.desktop", "Name=Abiotic Factor\nExec=steam steam://rungameid/427410\n");
+    install_app(&novad, "steam.desktop", "Name=Steam\nExec=steam %U\n");
+    let launcher = launcher::Launcher::start(
+        launcher_paths(&novad.dir),
+        "",
+        Arc::new(Hub::default()),
+        Arc::clone(&novad.daemon.logger),
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while launcher.find_app(&["abiotic factor".into()]).is_none() || launcher.find_app(&["steam".into()]).is_none() {
+        assert!(Instant::now() < deadline, "the launcher found both apps");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(launcher.find_app(&["steam".into()]).unwrap().id, "steam.desktop");
+    launcher.stop();
+}
+
+#[test]
 fn the_launcher_stops_with_its_feature() {
     let novad = TestDaemon::with_launcher("launcher-off");
     let mut client = novad.connect();
@@ -1894,4 +1926,53 @@ fn the_launcher_stops_with_its_feature() {
     assert!(off["error"].as_str().unwrap().contains("feature is off"));
     let toggle = client.request(3, "toggle", Some(json!({"panel": "launcher"})));
     assert!(toggle["error"].as_str().unwrap().contains("isn't ready"));
+}
+
+#[test]
+fn launching_an_app_that_only_sits_in_the_tray_activates_its_item() {
+    let mut bus = None;
+    let mut compositor = None;
+    let novad = TestDaemon::open_following(
+        "launcher-tray",
+        None,
+        |dir| {
+            std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
+            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+        },
+        |dir| {
+            let (fake, backend) = FakeCompositor::niri(dir);
+            compositor = Some(fake);
+            Some(backend)
+        },
+    );
+    let (bus, compositor) = (bus.unwrap(), compositor.unwrap());
+    let marker = novad.dir.join("ran");
+    let entry = format!("Name=Third\nExec=touch \"{}\"\nStartupWMClass=Nova-Third\n", marker.display());
+    install_app(&novad, "third.desktop", &entry);
+    let (mut client, desktop) = follow_to_the_end(&novad);
+    client.subscribe_launcher(1);
+    // Its icon's id names it; the recording has no window of it.
+    let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let app = bus.connect();
+    let item = tray::tests::Item { id: "nova-third".into(), title: "Third".into(), activated: Arc::clone(&activated) };
+    tray::tests::serve_item(&app, None, "/StatusNotifierItem", "/StatusNotifierItem", item);
+    client.request(4, "subscribe", Some(json!({"topics": ["tray"]})));
+    while client.next_event("tray")["items"][0]["app"]["id"] != "third.desktop" {}
+    let output = focused_output(&desktop);
+
+    let launch = json!({"id": "third.desktop", "output": output});
+    assert_eq!(client.request(5, "launch_app", Some(launch))["result"], Value::Null);
+    assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "the tray icon shows its window");
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(!marker.exists(), "starting it again would just quit");
+    assert!(compositor.actions().is_empty(), "no window showed to focus");
+
+    let fresh = json!({"id": "third.desktop", "output": output, "new_window": true});
+    assert_eq!(client.request(6, "launch_app", Some(fresh))["result"], Value::Null);
+    let ran = (0..100).any(|_| {
+        std::thread::sleep(Duration::from_millis(50));
+        marker.exists()
+    });
+    assert!(ran, "asked for a new window, the app runs");
+    assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1);
 }

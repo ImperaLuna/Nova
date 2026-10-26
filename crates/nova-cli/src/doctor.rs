@@ -8,8 +8,9 @@
 use crate::client::Client;
 use crate::host::{Distro, Host};
 use crate::lifecycle::RESTART_COMMAND;
+use crate::login_apps::{self, AUTOSTART_DIR, StartupCommand};
 use nova_features::Gpu;
-use nova_protocol::{FeatureState, FeatureStatus};
+use nova_protocol::{Event, FeatureState, FeatureStatus, Topic, TrayItem};
 use nova_quickshell::Range;
 use novad::checks;
 use std::fmt;
@@ -57,6 +58,8 @@ impl fmt::Display for Line {
 pub enum Daemon {
     Running {
         version: String,
+        /// The apps in the tray, when its feature is on.
+        tray: Vec<TrayItem>,
     },
     /// No socket, or nothing listening on it.
     NotRunning,
@@ -76,6 +79,8 @@ pub struct Facts {
     /// be worked out.
     pub features: Result<Vec<FeatureState>, String>,
     pub render_loop: Option<String>,
+    /// What the compositor starts at login.
+    pub startup: Vec<StartupCommand>,
 }
 
 impl Facts {
@@ -91,6 +96,7 @@ impl Facts {
             config: checks::read_config(&config_dir.join("config.toml"), &checks::default_themes_dir()),
             features: features(&nova_features::default_dir(), &config_dir.join("features.toml"), &path_var),
             render_loop: std::env::var(RENDER_LOOP_VAR).ok(),
+            startup: config_dir.parent().map(login_apps::read).unwrap_or_default(),
         }
     }
 }
@@ -103,7 +109,18 @@ fn reach(socket: &Path) -> Daemon {
         Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) => Daemon::NotRunning,
         Err(e) => Daemon::NoAnswer(format!("can't reach novad at {}: {e}", socket.display())),
         Ok(stream) => match Client::over(stream) {
-            Ok(client) => Daemon::Running { version: client.daemon_version },
+            Ok(mut client) => {
+                // Only for a warning: a novad too old to answer is still running.
+                let events = client.current(vec![Topic::Tray]).unwrap_or_default();
+                let tray = events
+                    .into_iter()
+                    .find_map(|event| match event {
+                        Event::Tray(tray) => Some(tray.items),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                Daemon::Running { version: client.daemon_version, tray }
+            }
             Err(problem) => Daemon::NoAnswer(problem),
         },
     }
@@ -126,6 +143,7 @@ pub fn lines(facts: &Facts) -> Vec<Line> {
     ];
     lines.extend(features_lines(&facts.features));
     lines.extend(render_loop(&facts.host, facts.render_loop.as_deref()));
+    lines.extend(login_apps_line(&facts.daemon, &facts.startup));
     lines
 }
 
@@ -197,8 +215,10 @@ fn quickshell(version: &Result<String, String>, range: &Range) -> Line {
 fn daemon(daemon: &Daemon) -> Line {
     let own = env!("CARGO_PKG_VERSION");
     match daemon {
-        Daemon::Running { version } if version == own => Line::new(Level::Ok, "novad", format!("running {version}")),
-        Daemon::Running { version } => Line::new(
+        Daemon::Running { version, .. } if version == own => {
+            Line::new(Level::Ok, "novad", format!("running {version}"))
+        }
+        Daemon::Running { version, .. } => Line::new(
             Level::Warn,
             "novad",
             format!("running {version}, but this nova is {own}; `{RESTART_COMMAND}` switches"),
@@ -264,6 +284,26 @@ fn render_loop(host: &Host, value: Option<&str>) -> Option<Line> {
     ))
 }
 
+/// Tray apps the compositor starts at login, which may come up before the
+/// tray and miss it.
+fn login_apps_line(daemon: &Daemon, startup: &[StartupCommand]) -> Option<Line> {
+    let Daemon::Running { tray, .. } = daemon else { return None };
+    let found = login_apps::tray_apps(startup, tray);
+    if found.is_empty() {
+        return None;
+    }
+    let apps: Vec<String> = found.iter().map(|(name, source)| format!("{name} ({source})")).collect();
+    Some(Line::new(
+        Level::Warn,
+        "login apps",
+        format!(
+            "{} may start before Nova's tray and miss it; start them from {AUTOSTART_DIR} instead (the app's own \
+             \"open at login\" setting writes there)",
+            apps.join(", ")
+        ),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,7 +322,7 @@ mod tests {
             host: host(Distro::Arch, vec![Gpu::Amd], false),
             compositor: Some("niri"),
             quickshell: Ok("0.3.2".into()),
-            daemon: Daemon::Running { version: env!("CARGO_PKG_VERSION").into() },
+            daemon: Daemon::Running { version: env!("CARGO_PKG_VERSION").into(), tray: vec![] },
             config: Ok(vec![]),
             features: Ok(vec![
                 feature("ai-usage", FeatureStatus::Ready, &[]),
@@ -290,7 +330,33 @@ mod tests {
                 feature("recording", FeatureStatus::Off, &[]),
             ]),
             render_loop: None,
+            startup: vec![],
         }
+    }
+
+    #[test]
+    fn tray_apps_the_compositor_starts_warn() {
+        let mut facts = healthy();
+        facts.startup = ["Discord", "nova"]
+            .map(|program| StartupCommand { source: "niri's spawn-at-startup", program: program.into() })
+            .into();
+        assert!(!rendered(&facts).contains("login apps"), "no tray: no warning");
+        facts.daemon = Daemon::Running {
+            version: env!("CARGO_PKG_VERSION").into(),
+            tray: vec![TrayItem {
+                address: ":1.5/StatusNotifierItem".into(),
+                id: "discord_status_icon_1".into(),
+                title: String::new(),
+                app: None,
+            }],
+        };
+        let text = rendered(&facts);
+        assert!(
+            text.contains(
+                "warn  login apps  discord_status_icon_1 (niri's spawn-at-startup) may start before Nova's tray"
+            ),
+            "{text}"
+        );
     }
 
     fn rendered(facts: &Facts) -> String {
@@ -328,7 +394,7 @@ mod tests {
     fn novad_down_warns_and_stuck_fails() {
         assert_eq!(daemon(&Daemon::NotRunning).level, Level::Warn);
         assert_eq!(daemon(&Daemon::NoAnswer("novad didn't say hello".into())).level, Level::Fail);
-        let old = daemon(&Daemon::Running { version: "0.0.1".into() });
+        let old = daemon(&Daemon::Running { version: "0.0.1".into(), tray: vec![] });
         assert_eq!(old.level, Level::Warn);
         assert!(old.detail.contains("nova restart"), "{old}");
     }

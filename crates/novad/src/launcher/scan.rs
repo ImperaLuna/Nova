@@ -87,7 +87,7 @@ fn without_copies(apps: BTreeMap<String, Entry>) -> BTreeMap<String, Entry> {
     kept.into_values().map(|entry| (entry.id.clone(), entry)).collect()
 }
 
-fn read_entry(file: &Path) -> std::io::Result<String> {
+pub(super) fn read_entry(file: &Path) -> std::io::Result<String> {
     use std::io::Read;
     let mut text = String::new();
     std::fs::File::open(file)?.take(MAX_ENTRY_BYTES).read_to_string(&mut text)?;
@@ -231,7 +231,7 @@ mod tests {
 
     fn names(dirs: &[PathBuf]) -> BTreeMap<String, String> {
         let locale = Locale::default();
-        let context = Context { locale: &locale, desktops: &[], path_var: "" };
+        let context = Context { locale: &locale, desktops: &[], path_var: "", autostart: false };
         scan(dirs, &context).0.into_iter().map(|(id, entry)| (id, entry.name)).collect()
     }
 

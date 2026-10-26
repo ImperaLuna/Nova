@@ -267,6 +267,38 @@ QtObject {
     readonly property int pillButtonInset: 4
     readonly property int pillButtonGap: 2
 
+    // The tray (ui/tray), folded into the right pill behind a chevron: at
+    // most this many icons show, the rest scroll, the strip's ends fade
+    // over this width, and each icon is this big. An app asking for
+    // attention gets a dot this big, ringed in the bar's color.
+    readonly property int trayVisible: 5
+    readonly property int trayFade: 22
+    readonly property int trayIconSize: 18
+    readonly property int trayIconRadius: 5
+    readonly property int trayDotSize: 7
+    readonly property int trayDotRing: 2
+    // How much later each icon pops in after the one before it.
+    readonly property int trayStagger: 28
+    // An app's menu: at least this wide, its rows and corners.
+    readonly property int menuWidth: 230
+    readonly property int menuPad: 6
+    readonly property int menuRowHeight: 32
+    readonly property int menuRowRadius: 10
+    readonly property int menuCheckSize: 14
+    readonly property int menuCheckRadius: 4
+    readonly property int menuCheckIconSize: 11
+    readonly property int menuSeparatorInset: 6
+    readonly property int menuSeparatorGap: 4
+    readonly property int menuGap: 8
+    // Quick settings' Tray row: icons in a grid this many across, each
+    // cell this tall.
+    readonly property int trayGridColumns: 8
+    readonly property int trayGridCell: 36
+    readonly property int trayGridIconSize: 20
+    readonly property int trayGridGap: 4
+    // Rows the quick settings tray shows before it scrolls.
+    readonly property int trayGridMaxRows: 3
+
     // Quick settings (ui/quick_settings): a glass drawer this wide against
     // the screen's right edge, top to bottom. Its pages have this padding
     // and gap between sections, and slide this far as they swap.

@@ -120,9 +120,11 @@ fn logs_print_history_from_the_file() {
 #[test]
 fn logs_follow_novad_live() {
     let novad = Novad::start("logs-follow");
-    let mut child = novad.nova(&["logs", "-n", "100"]).stdout(Stdio::piped()).spawn().unwrap();
+    const BACKLOG: usize = 100;
+    let mut child = novad.nova(&["logs", "-n", &BACKLOG.to_string()]).stdout(Stdio::piped()).spawn().unwrap();
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    let found = lines.by_ref().take(20).map_while(Result::ok).any(|line| line.contains("listening on"));
+    // Within the whole backlog: novad logs a line per feature before it listens.
+    let found = lines.by_ref().take(BACKLOG).map_while(Result::ok).any(|line| line.contains("listening on"));
     child.kill().unwrap();
     child.wait().unwrap();
     assert!(found, "the backlog should include novad's start");

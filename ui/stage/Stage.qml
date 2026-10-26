@@ -274,6 +274,7 @@ Scope {
             id: bar
             anchors.fill: parent
             screenName: root.output.name
+            screenHeight: root.output.height
             // A panel of the bar's is open: on the stage, or grown out of
             // one of its pills. Not `moving`, which a closed pill's own
             // animations (a loading spinner) set too.

@@ -10,8 +10,8 @@ import "launcher.js" as LauncherLogic
 // fades in where it stands (the central pill stays). A search field, the
 // pinned apps as tiles, and a list: the recent apps (every app before the
 // first launch), or what a search matches. Up and Down move through the
-// list, Enter launches (bringing an open app's window here; Shift+Enter
-// opens another), Esc or a click outside closes. Opened by
+// list, Enter launches (focusing an open app's window where it is;
+// Shift+Enter opens another), Esc or a click outside closes. Opened by
 // `nova toggle launcher` (Super+Space) or the central pill's search button.
 // It gets its data and acts through its properties and signals (the stage
 // wires LauncherService to them), so the QML tests can drive it.
@@ -30,7 +30,7 @@ StagePanel {
 
     // Typed: novad's matches go to showMatches().
     signal searchRequested(string query)
-    // An app to start, or to bring here when it's open already unless
+    // An app to start, or to focus where it is when it's open already unless
     // `newWindow` (Shift+Enter): the answer goes to launched().
     signal launchRequested(string id, bool newWindow)
     signal pinRequested(string id, bool pinned)

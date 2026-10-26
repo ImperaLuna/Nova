@@ -146,6 +146,7 @@
                 install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
                 substituteInPlace $out/lib/systemd/user/nova.service \
                   --replace-fail @nova@ $out/bin/nova
+                install -Dm644 packaging/systemd/app-.service.d/nova.conf $out/lib/systemd/user/app-.service.d/nova.conf
               '';
               meta = {
                 description = "Nova desktop shell";
@@ -269,7 +270,7 @@
                 inherit cargoArtifacts;
                 env = (novaFor pkgs).novaEnv;
                 # setpriv, for the launcher test's app that dies with its parent;
-                # dbus-daemon, for the notifications' private test bus.
+                # dbus-daemon, for the tray's and notifications' private test buses.
                 nativeBuildInputs = [
                   pkgs.util-linux
                   pkgs.dbus
@@ -418,7 +419,7 @@
             pkgs.qt6.qtshadertools # qsb, for scripts/shaders.sh
             pkgs.sway # headless compositor for e2e
             pkgs.grim
-            pkgs.dbus # dbus-daemon, for the notifications' tests
+            pkgs.dbus # dbus-daemon, for the tray's and notifications' tests
             pkgs.cargo-insta # `cargo insta review` for snapshot tests
             pkgs.cargo-deny
             pkgs.nixfmt

@@ -1,0 +1,16 @@
+id = "x11-tray"
+name = "Old X11 tray icons"
+description = "Tray icons of apps that only know X11's old tray (Wine, Java and Tk apps), through Plasma's xembedsniproxy. Leave it off if your desktop already runs xembedsniproxy."
+default = false
+daemon = "x11-tray"
+
+# xembedsniproxy is part of Plasma's workspace (a large closure on Nix).
+# Debian packages it on its own.
+[variants.default]
+nix = ["kdePackages.plasma-workspace"]
+arch = ["plasma-workspace"]
+fedora = ["plasma-workspace"]
+debian = ["xembedsniproxy"]
+
+[check]
+binaries = ["xembedsniproxy"]

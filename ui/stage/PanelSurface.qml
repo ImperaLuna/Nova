@@ -61,8 +61,12 @@ PanelWindow { // qmllint disable uncreatable-type
         if (room.width > 0 && room.height > 0)
             box = boxAround(room);
     }
+    // A panel below the bar's row (a tray menu) keeps its surface off the
+    // row: there the surface would take the clicks meant for the pills
+    // under it, and its shadow room covered them on niri.
     function boxAround(area: rect): rect {
-        const top = Math.max(0, Math.floor(area.y - Tokens.shadowRoom));
+        const barRow = Tokens.barGap + Tokens.barHeight;
+        const top = Math.max(area.y >= barRow ? barRow : 0, Math.floor(area.y - Tokens.shadowRoom));
         const bottom = Math.min(output.height, Math.ceil(area.y + area.height + Tokens.shadowRoom));
         let left = Math.max(0, Math.floor(area.x - Tokens.shadowRoom));
         if (placement === "center") {

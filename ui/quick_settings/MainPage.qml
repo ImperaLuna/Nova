@@ -5,6 +5,7 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "../volume/volume.js" as Volume
 import "quick_settings.js" as QuickSettings
+import "../tray"
 
 // The sidebar's first page: the header, the toggle tiles, the sliders, the
 // notifications in the space below them (with the notifications feature
@@ -41,6 +42,10 @@ Item {
     property real micVolume: 0
 
     property var reading: null
+    // Every tray app, hidden ones too (TrayService.all), and what an Image
+    // shows for one.
+    property var trayApps: []
+    property var trayIconSource: entry => ""
 
     // Notifications (NotificationList), while their feature is on.
     property bool notificationsShown: false
@@ -56,13 +61,18 @@ Item {
     signal muteToggled
     signal micVolumeMoved(real value)
     signal pageRequested(string page)
+    // A tray app's icon was clicked; `at` is its middle, in this page.
+    signal trayActivated(var entry)
+    signal trayMenuRequested(var entry, point at)
+    signal traySecondaryActivated(var entry)
+
     signal notificationOpened(var notification)
     signal notificationDismissed(int id)
     signal notificationsCleared(var app)
     signal notificationAppMuted(string app)
     signal doNotDisturbToggled
 
-    readonly property bool revealing: [header, tiles, sliders, notes, foot].some(section => section.running)
+    readonly property bool revealing: [header, tiles, sliders, tray, notes, foot].some(section => section.running)
 
     Column {
         id: sections
@@ -153,6 +163,83 @@ Item {
                 }
             }
         }
+
+        // The tray's apps, all of them: the bar shows at most a few, and
+        // none of those hidden from it.
+        Reveal {
+            id: tray
+            width: parent.width
+            shown: page.shown
+            order: 3
+            visible: page.trayApps.length > 0
+
+            Column {
+                width: parent.width
+                spacing: Tokens.gap
+
+                Item {
+                    width: parent.width
+                    height: trayTitle.implicitHeight
+
+                    CardTitle {
+                        id: trayTitle
+                        text: qsTr("Tray")
+                    }
+                    CardTitle {
+                        anchors.right: parent.right
+                        text: qsTr("%n apps", "", page.trayApps.length)
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: trayScroll.height + 2 * Tokens.menuPad
+                    radius: Tokens.radiusCard
+                    color: Tokens.surfaceRaised
+
+                    // A few rows, then it scrolls, so a long tray never runs
+                    // under the cards below.
+                    Flickable {
+                        id: trayScroll
+                        objectName: "trayScroll"
+                        x: Tokens.menuPad
+                        y: Tokens.menuPad
+                        width: parent.width - 2 * Tokens.menuPad
+                        height: Math.min(trayGrid.implicitHeight, Tokens.trayGridMaxRows * (Tokens.trayGridCell + Tokens.trayGridGap) - Tokens.trayGridGap)
+                        contentHeight: trayGrid.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+
+                        Grid {
+                            id: trayGrid
+                            width: parent.width
+                            columns: Tokens.trayGridColumns
+                            spacing: Tokens.trayGridGap
+                            readonly property real cell: (width - (columns - 1) * spacing) / columns
+
+                            Repeater {
+                                model: page.trayApps
+
+                                TrayIcon {
+                                    id: icon
+                                    required property var modelData
+                                    width: trayGrid.cell
+                                    height: Tokens.trayGridCell
+                                    radius: Tokens.radiusControl
+                                    iconSize: Tokens.trayGridIconSize
+                                    source: page.trayIconSource(modelData)
+                                    attention: modelData.attention
+                                    dimmed: modelData.hidden
+                                    onActivated: page.trayActivated(modelData)
+                                    onMenuRequested: page.trayMenuRequested(modelData, icon.mapToItem(page, width / 2, height / 2))
+                                    onSecondaryActivated: page.traySecondaryActivated(modelData)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     Reveal {
@@ -162,7 +249,7 @@ Item {
         height: foot.y - y - Tokens.quickSettingsGap
         visible: page.notificationsShown
         shown: page.shown
-        order: 3
+        order: 4
 
         NotificationList {
             anchors.fill: parent
@@ -184,7 +271,7 @@ Item {
         anchors.bottom: parent.bottom
         width: parent.width
         shown: page.shown
-        order: 4
+        order: 5
 
         ResourcesCard {
             width: parent.width

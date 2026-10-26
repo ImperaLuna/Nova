@@ -134,7 +134,7 @@ impl Backend for Hyprland {
         self.dispatch(&format!("workspace {}", workspace_target(workspace)))
     }
 
-    fn bring_window(&self, app_ids: &[String], workspace: &NovaWorkspace) -> Result<bool, String> {
+    fn focus_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<bool, String> {
         let answer = self.request(CLIENTS)?;
         let clients: Vec<Client> =
             serde_json::from_str(&answer).map_err(|e| format!("Hyprland sent odd windows ({e})"))?;
@@ -144,16 +144,9 @@ impl Backend for Hyprland {
                 [&client.class, &client.initial_class].iter().any(|class| app_ids.contains(&class.to_lowercase()))
             })
             .collect();
-        // One already there needs no move.
-        matching.sort_by_key(|client| client.workspace.id != workspace.id);
+        matching.sort_by_key(|client| client.workspace.id != here.id);
         let Some(client) = matching.first() else { return Ok(false) };
-        if client.workspace.id != workspace.id {
-            self.dispatch(&format!(
-                "movetoworkspacesilent {},address:{}",
-                workspace_target(workspace),
-                client.address
-            ))?;
-        }
+        // Hyprland shows the window's workspace and monitor for it.
         self.dispatch(&format!("focuswindow address:{}", client.address))?;
         Ok(true)
     }

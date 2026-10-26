@@ -15,6 +15,8 @@ const WAIT_LIMIT: Duration = Duration::from_secs(10);
 const WAIT_STEP: Duration = Duration::from_millis(100);
 /// The hidden subcommand that runs the daemon.
 const DAEMON_COMMAND: &str = "daemon";
+/// novad's option to start the login apps, which systemd starts otherwise.
+const AUTOSTART_OPTION: &str = "--autostart";
 /// What to run to restart Nova, for hints.
 pub const RESTART_COMMAND: &str = "nova restart";
 
@@ -72,12 +74,15 @@ fn stop_direct(socket: &Path) -> Result<bool, String> {
 }
 
 /// Starts the daemon (`nova daemon`) on `socket`, detached from this
-/// terminal. It writes its own log, so its output is dropped.
+/// terminal. It writes its own log, so its output is dropped. The session's
+/// Nova (on the default socket) starts the login apps too, as systemd would
+/// have; a Nova on another socket is a test run and starts none.
 fn spawn_novad(socket: &Path) -> Result<(), String> {
     let nova = std::env::current_exe().map_err(|e| format!("can't find the nova binary: {e}"))?;
     std::process::Command::new(&nova)
         .arg0(novad::PROCESS_NAME)
         .arg(DAEMON_COMMAND)
+        .args(is_the_units(socket).then_some(AUTOSTART_OPTION))
         .arg("--socket")
         .arg(socket)
         .process_group(0)

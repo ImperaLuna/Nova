@@ -25,6 +25,10 @@ const SOCKET_DIR_MODE: u32 = 0o700;
 type SlowWork = Box<dyn FnOnce() -> Outcome + Send>;
 
 const LOG_SOURCE: &str = "server";
+/// How long the launcher waits for the window of an app it reopened from
+/// the tray, to focus it, and how often it looks.
+const TRAY_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(3) };
+const TRAY_WINDOW_RETRY: Duration = Duration::from_millis(100);
 
 pub fn bind(socket: &Path) -> std::io::Result<UnixListener> {
     if let Some(dir) = socket.parent() {
@@ -216,6 +220,14 @@ impl<'a> Connection<'a> {
             // Answered on its own thread (`slow_work`).
             Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window)(),
             Command::PinApp { id, pinned } => return self.with_launcher(|launcher| launcher.pin(id, *pinned)),
+            Command::HideTrayApp { id, hidden } => {
+                let tray = lock(&self.daemon.settings).tray.clone();
+                return match tray.map(|tray| tray.hide(id, *hidden)) {
+                    Some(Ok(())) => Outcome::Result(serde_json::Value::Null),
+                    Some(Err(e)) => Outcome::Error(e),
+                    None => Outcome::Error(format!("the {} feature is off", crate::tray::FEATURE_ID)),
+                };
+            }
             Command::NotificationAction { id, action } => {
                 return self.with_notifications(|notifications| notifications.action(*id, action.as_deref()));
             }
@@ -446,14 +458,42 @@ impl<'a> Connection<'a> {
             let off = format!("the {} feature is off", crate::launcher::FEATURE_ID);
             return Box::new(move || Outcome::Error(off));
         };
-        let compositor = self.daemon.compositor.clone().filter(|_| !new_window);
+        let compositor = self.daemon.compositor.clone();
+        let tray = lock(&self.daemon.settings).tray.clone().filter(|_| !new_window);
+        let logger = Arc::clone(&self.daemon.logger);
         let id = id.to_owned();
         Box::new(move || {
-            let brought = |ids: &[String]| match &compositor {
-                Some(compositor) => compositor.bring_app(ids, output.as_deref()),
-                None => Ok(false),
+            // An open window takes focus where it is; a new one opens on the
+            // launcher's screen, which the compositor puts it on once focused.
+            // An app that only sits in the tray shows its window from there,
+            // as starting it again may just quit (Discord).
+            let focused = |ids: &[String]| {
+                if let Some(compositor) = &compositor {
+                    if !new_window && !ids.is_empty() && compositor.focus_app(ids, output.as_deref())? {
+                        return Ok(true);
+                    }
+                    if let Some(output) = &output {
+                        compositor.focus_output(output)?;
+                    }
+                }
+                if !tray.as_ref().map_or(Ok(false), |tray| tray.activate_app(&id))? {
+                    return Ok(false);
+                }
+                // The window comes back without focus on niri.
+                if let Some(compositor) = compositor.as_ref().filter(|_| !ids.is_empty()) {
+                    let deadline = std::time::Instant::now() + TRAY_WINDOW_WAIT;
+                    while !compositor.focus_app(ids, output.as_deref())? {
+                        if std::time::Instant::now() >= deadline {
+                            logger
+                                .info(LOG_SOURCE, &format!("{id}'s window didn't show after its tray icon was asked"));
+                            break;
+                        }
+                        std::thread::sleep(TRAY_WINDOW_RETRY);
+                    }
+                }
+                Ok(true)
             };
-            match launcher.launch(&id, brought) {
+            match launcher.launch(&id, focused) {
                 Ok(()) => Outcome::Result(serde_json::Value::Null),
                 Err(e) => Outcome::Error(e),
             }
@@ -595,6 +635,11 @@ impl<'a> Connection<'a> {
                                 launcher.send_state(self.id);
                             }
                         }
+                        Topic::Tray => {
+                            if let Some(tray) = &settings.tray {
+                                tray.send_state(self.id);
+                            }
+                        }
                         Topic::Notifications => {
                             if let Some(notifications) = &settings.notifications {
                                 notifications.send_state(self.id);
@@ -638,6 +683,7 @@ impl<'a> Connection<'a> {
             | Command::SearchApps { .. }
             | Command::LaunchApp { .. }
             | Command::PinApp { .. }
+            | Command::HideTrayApp { .. }
             | Command::NotificationAction { .. }
             | Command::DismissNotification { .. }
             | Command::ClearNotifications { .. }

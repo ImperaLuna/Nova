@@ -14,12 +14,13 @@
 //!   `features/<id>/feature.toml`, by GPU where that matters. A feature whose
 //!   `check.binaries` are all there already is skipped.
 //! - config.toml and features.toml, commented, when missing.
-//! - The systemd user unit, from `packaging/systemd/nova.service.in`.
+//! - The systemd user unit, from `packaging/systemd/nova.service.in`, and
+//!   its drop-in that starts login apps after it (`app-.service.d`).
 //! - A `NovaUI` link to Quickshell in `~/.local/bin`, which novad runs so
 //!   the UI shows as NovaUI in ps and btop (the Nix package has a launcher).
-//! - niri's blur behind Nova's glass (`packaging/compositor/niri.kdl`),
-//!   included from the user's niri config. Hyprland blurs what Quickshell
-//!   asks for without a rule.
+//! - niri's blur behind Nova's glass and a rule hiding xembedsniproxy's
+//!   window (`packaging/compositor/niri.kdl`), included from the user's
+//!   niri config. Hyprland blurs what Quickshell asks for without a rule.
 
 use crate::host::{Distro, Host};
 use nova_features::{Gpu, Manifest, Selection};
@@ -32,6 +33,9 @@ use std::process::Command;
 
 const UNIT_TEMPLATE: &str = include_str!("../../../packaging/systemd/nova.service.in");
 const UNIT_NOVA_PLACEHOLDER: &str = "@nova@";
+/// Orders login apps after novad (IMP-107), as `<units>/app-.service.d/nova.conf`.
+const APP_DROP_IN: &str = include_str!("../../../packaging/systemd/app-.service.d/nova.conf");
+const APP_DROP_IN_PATH: &str = "app-.service.d/nova.conf";
 const NIRI_RULES: &str = include_str!("../../../packaging/compositor/niri.kdl");
 /// Where the niri rules go, in Nova's config folder.
 const NIRI_RULES_FILE: &str = "niri.kdl";
@@ -185,6 +189,7 @@ pub fn plan(facts: &Facts) -> Result<Plan, String> {
         path: paths.units_dir.join(crate::systemd::UNIT),
         contents: UNIT_TEMPLATE.replace(UNIT_NOVA_PLACEHOLDER, &unit_quoted(&paths.nova)),
     });
+    steps.push(Step::Replace { path: paths.units_dir.join(APP_DROP_IN_PATH), contents: APP_DROP_IN.into() });
     steps.push(Step::Run {
         why: "reload systemd's units".into(),
         argv: words(&["systemctl", "--user", "daemon-reload"]),

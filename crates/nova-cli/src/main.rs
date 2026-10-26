@@ -8,6 +8,7 @@ mod doctor;
 mod host;
 mod ipc;
 mod lifecycle;
+mod login_apps;
 mod logs;
 mod setup;
 mod status;

@@ -420,6 +420,26 @@ Item {
             compare(spy.signalArguments[0][0], "resources");
         }
 
+        function test_a_long_tray_scrolls_above_the_resources_card() {
+            const apps = [];
+            for (let i = 0; i < 64; i++)
+                apps.push({
+                    key: `app${i}.desktop`,
+                    name: `App ${i}`,
+                    icon: "",
+                    appIcon: "",
+                    attention: false,
+                    hidden: false
+                });
+            const page = createTemporaryObject(mainComponent, stage, {
+                trayApps: apps,
+                reading: reading()
+            });
+            const scroll = findChild(page, "trayScroll");
+            compare(scroll.height, Tokens.trayGridMaxRows * (Tokens.trayGridCell + Tokens.trayGridGap) - Tokens.trayGridGap);
+            verify(scroll.contentHeight > scroll.height, "the rest scrolls");
+        }
+
         function test_sound_page_switches_outputs() {
             const page = createTemporaryObject(soundComponent, stage, {
                 outputAvailable: true,

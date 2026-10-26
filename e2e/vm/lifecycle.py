@@ -518,6 +518,13 @@ with subtest("the session starts Nova, shown as Nova and NovaUI"):
         as_user("nova logs --no-follow --ui | grep -q 'nova: connected to novad'"), timeout=WAIT
     )
 
+with subtest("login apps start once Nova's tray is up"):
+    # systemd's autostart unit for it waits for nova.service to be ready
+    # (Type=notify, app-.service.d/nova.conf), when the tray's name is owned.
+    machine.wait_until_succeeds(as_user(f"test -s {RUNTIME_DIR}/nova-login-probe"), timeout=WAIT)
+    probe = machine.succeed(as_user(f"cat {RUNTIME_DIR}/nova-login-probe")).strip()
+    assert probe == "b true", f"the login app started before the tray: {probe}"
+
 with subtest("screenshot: the bar"):
     screenshot("bar")
     # The log next to the screenshot, for when the bar isn't on it.

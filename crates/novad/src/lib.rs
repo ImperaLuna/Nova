@@ -34,6 +34,7 @@ mod launcher;
 mod logger;
 mod logind;
 mod notifications;
+mod notify;
 mod power;
 mod procfs;
 mod recording;
@@ -46,6 +47,8 @@ mod settings;
 mod state_file;
 mod supervisor;
 mod theme;
+mod tray;
+mod x11_tray;
 
 use hub::Hub;
 use logger::Logger;
@@ -63,6 +66,11 @@ pub const PROCESS_NAME: &str = "Nova";
 /// Sets the lowest level written to the log: debug, info (default), warn, error.
 const LOG_LEVEL_VAR: &str = "NOVA_LOG";
 const LOG_SOURCE: &str = "novad";
+/// Beside the socket, in `XDG_RUNTIME_DIR`: the login apps were started this
+/// session (`--autostart`), named after the login session (`XDG_SESSION_ID`)
+/// when there is one, since the folder outlives a graphical session while
+/// another login of the user's (SSH) stays.
+const AUTOSTART_MARKER: &str = "autostarted";
 
 /// `nova daemon`'s options. The socket comes from `nova`'s own `--socket`.
 #[derive(clap::Args)]
@@ -105,6 +113,11 @@ pub struct Args {
     /// `~/.claude/.credentials.json`.
     #[arg(long)]
     claude_credentials: Option<PathBuf>,
+    /// Start the login apps (XDG autostart) once the tray is up, once a
+    /// session. `nova` asks for it when it starts novad without systemd,
+    /// whose own autostart does it otherwise.
+    #[arg(long)]
+    autostart: bool,
 }
 
 /// Everything a connection needs to answer requests.
@@ -174,8 +187,18 @@ impl Daemon {
 pub fn run(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     // Before any thread starts, so they all inherit the name.
     set_process_name(PROCESS_NAME)?;
+    // systemd's, for novad alone: neither the UI nor the apps novad starts
+    // may answer it.
+    let notify_socket = std::env::var_os(notify::SOCKET_VAR);
+    // SAFETY: no other thread runs yet to read the environment meanwhile.
+    unsafe { std::env::remove_var(notify::SOCKET_VAR) };
     let (listener, daemon) = start(args, socket)?;
     install_panic_hook(Arc::clone(&daemon.logger));
+    // Up: the socket listens and the tray's name is claimed, so login apps
+    // may start (nova.service is Type=notify).
+    if let Err(e) = notify::ready(notify_socket.as_deref()) {
+        daemon.logger.warn(LOG_SOURCE, &format!("can't tell systemd novad is ready: {e}"));
+    }
     server::serve(listener, daemon);
     Ok(())
 }
@@ -209,9 +232,13 @@ fn start(
         ai_usage: ai_usage::Paths::new(&args.state_dir, args.codex_home, args.claude_credentials),
         resources: resources::Sources::system(&path_var),
         launcher: launcher::Paths::new(&args.state_dir, &path_var),
+        tray: tray::Sources::new(&args.state_dir),
         notifications: notifications::Sources::new(&args.state_dir),
     };
     let settings = Settings::load(&sources, &hub, &logger);
+    if args.autostart {
+        launcher::autostart::start(&socket.with_file_name(autostart_marker()), path_var.clone(), Arc::clone(&logger));
+    }
 
     logger.info(LOG_SOURCE, &format!("listening on {}", socket.display()));
 
@@ -350,6 +377,15 @@ pub(crate) fn package_prefixes() -> Vec<PathBuf> {
         .map(PathBuf::from),
     );
     prefixes
+}
+
+fn autostart_marker() -> String {
+    match std::env::var("XDG_SESSION_ID") {
+        Ok(session) if !session.is_empty() && session.chars().all(|c| c.is_ascii_alphanumeric()) => {
+            format!("{AUTOSTART_MARKER}-{session}")
+        }
+        _ => AUTOSTART_MARKER.to_string(),
+    }
 }
 
 /// Sets this thread's name, which is the process name ps and btop show for
