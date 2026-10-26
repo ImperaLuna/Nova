@@ -362,9 +362,14 @@ impl<'a> Connection<'a> {
         })
     }
 
-    /// Asks the tray item at `address` to show its window, then focuses the
-    /// window of the item's app: apps get no activation token from a tray
-    /// click, so niri wouldn't move focus to a window that's already open.
+    /// A click on the tray item at `address`: focuses the window its app
+    /// has open, then asks the item to show (or hide) its window
+    /// (`Activate`). Apps get no activation token from a tray click, so niri
+    /// wouldn't move focus to it themselves. An app with no window open is
+    /// focused once its window shows, or else started, as the launcher does:
+    /// Claude Desktop ignores `Activate` but shows its window when started
+    /// again. An open window means nothing starts, so an icon that hides
+    /// its app on a click still can.
     fn activate_tray_item(&self, address: &str) -> Answer {
         let tray = match self.tray() {
             Ok(tray) => tray,
@@ -375,11 +380,21 @@ impl<'a> Connection<'a> {
         let logger = Arc::clone(&self.daemon.logger);
         let address = address.to_owned();
         Answer::later(move || {
-            done(tray.activate(&address).map(|app| {
-                let ids = app.and_then(|app| Some((launcher?.window_ids(&app)?, app)));
-                if let (Some((ids, app)), Some(compositor)) = (ids, compositor.as_deref()) {
-                    crate::launcher::focus_shown(&app, &ids, compositor, None, &logger);
+            done(tray.app_at(&address).and_then(|app| {
+                let found = app
+                    .zip(launcher.as_ref())
+                    .and_then(|(app, launcher)| Some((launcher, launcher.window_ids(&app)?, app)));
+                let (Some((launcher, ids, app)), Some(compositor)) = (found, compositor.as_deref()) else {
+                    return tray.activate(&address);
+                };
+                // A terminal app's window can't be told apart; an error can't
+                // tell whether one is open, so nothing starts either way.
+                let open = ids.is_empty() || compositor.focus_app(&ids, None).unwrap_or(true);
+                tray.activate(&address)?;
+                if open || crate::launcher::focus_shown(&app, &ids, compositor, None, &logger) {
+                    return Ok(());
                 }
+                launcher.start_app(&app)
             }))
         })
     }
