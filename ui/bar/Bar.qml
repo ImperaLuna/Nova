@@ -240,7 +240,7 @@ Item {
                 if (TrayService.opensMenu(entry)) {
                     bar.showTrayMenu(entry, at);
                 } else {
-                    entry.item.activate();
+                    TrayService.activate(entry);
                     rightPill.open = false;
                 }
             }

@@ -1,7 +1,8 @@
 # The second half of the VM test, after lifecycle.py, in a VM of its own
 # beside session.py: what the UI draws while idle and while a panel opens or
-# closes, the layers it moves between over a fullscreen window, and the
-# panels off the stage. Takes no screenshots.
+# closes, the layers it moves between over a fullscreen window, the panels
+# off the stage, and that no panel moves a window, with the Pss of each
+# state (saved as pss.txt next to the result). Takes no screenshots.
 
 with subtest("an idle bar draws nothing, shown or beside a fullscreen window; the panel draws briefly; the launcher over a fullscreen window moves Nova to Overlay and back, each time; the bar gives a fullscreen window its space, and its pills take clicks once back"):
     # novad hands its environment to the UI.
@@ -56,10 +57,7 @@ with subtest("panels off the stage open and close without moving windows"):
     assert windows and all(windows), f"no window geometry in {LIST_WINDOWS}"
     for panel in DEMO_PANELS:
         for state in ("opened", "closed"):
-            before = ui_log_count(demo_logged(panel, state))
-            machine.succeed(as_user(f"{toggle_demo} {panel}"))
-            retry(lambda _last_try: ui_log_count(demo_logged(panel, state)) > before, timeout=CLICK_EFFECT)
-            assert window_geometry() == windows, f"windows moved with {panel} {state}"
+            toggle_moves_no_window(f"{toggle_demo} {panel}", demo_logged(panel, state), windows, f"{panel} {state}")
     # The center one takes typing, like the launcher will: a click on it
     # keeps it open, one anywhere else (the click catcher) or Esc closes it.
     center = "demo-center"
@@ -89,3 +87,29 @@ with subtest("panels off the stage open and close without moving windows"):
     machine.systemctl("unset-environment NOVA_DEMO_PANELS WAYLAND_DEBUG NO_COLOR NOVA_LOG", user=USER)
     machine.succeed(as_user("nova restart"))
     first = wait_running(not_daemon=demo["pid"])
+
+with subtest("the launcher and each panel open and close without moving windows; Pss of each state"):
+    # A fresh UI (the subtest before restarted Nova), so idle is a new
+    # session's; each panel's closed line shows what it leaves loaded.
+    # Once the AI usage pill is up, its feature is ready for `nova toggle`.
+    machine.wait_until_succeeds(as_user(f"nova logs --no-follow --ui -n {LOG_HISTORY} | grep -qF {shlex.quote(AI_USAGE_SHOWN)}"), timeout=WAIT)
+    open_foot("foot-panels")
+    windows = window_geometry()
+    assert windows and all(windows), f"no window geometry in {LIST_WINDOWS}"
+    pss: list[str] = []
+
+    def record_pss(state: str) -> None:
+        pss.append(f"{state}: UI {pss_mb(first['ui']['pid'])} MB, daemon {pss_mb(first['pid'])} MB")
+
+    machine.sleep(PANEL_SETTLE_SECS)
+    record_pss("idle")
+    for panel, logged in REAL_PANELS.items():
+        for state, line in zip(("opened", "closed"), logged):
+            toggle_moves_no_window(f"nova toggle {panel}", line, windows, f"{panel} {state}")
+            record_pss(f"{panel} {state}")
+    report = "\n".join(pss)
+    print(f"Pss on {COMPOSITOR}:\n{report}")
+    machine.succeed(f"echo {shlex.quote(report)} > {PSS_REPORT}")
+    machine.copy_from_machine(PSS_REPORT)
+    machine.succeed(as_user(CLOSE_WINDOW))
+    machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)

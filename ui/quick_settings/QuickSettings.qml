@@ -165,7 +165,7 @@ StagePanel {
                         if (TrayService.opensMenu(entry)) {
                             trayMenu.show(entry, null);
                         } else {
-                            entry.item.activate();
+                            TrayService.activate(entry);
                             panel.open = false;
                         }
                     }

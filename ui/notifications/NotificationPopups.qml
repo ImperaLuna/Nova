@@ -71,7 +71,7 @@ PanelWindow { // qmllint disable uncreatable-type
     }
     Variants {
         id: inputRegions
-        model: stack.cards
+        model: stack.shapes
         ShapeRegion {}
     }
     Region {
@@ -80,7 +80,7 @@ PanelWindow { // qmllint disable uncreatable-type
     }
     Variants {
         id: blurRegions
-        model: stack.cards
+        model: stack.shapes
         ShapeRegion {}
     }
     Component.onCompleted: BackgroundEffect.blurRegion = blur
