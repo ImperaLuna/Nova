@@ -1,0 +1,5 @@
+# For everything cargo runs, tests above all: a test's novad on the desktop's
+# session bus would queue for the running shell's names (notifications, the
+# tray watcher). Tests that need a bus start their own (session_bus::TestBus).
+[env]
+DBUS_SESSION_BUS_ADDRESS = { value = "disabled:", force = true }

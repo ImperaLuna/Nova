@@ -207,9 +207,14 @@ fn a_host_is_always_there_and_bad_registrations_are_refused() {
 }
 
 #[test]
-fn a_queued_tray_takes_over_when_the_first_stops() {
+fn nothing_takes_the_name_and_a_queued_tray_takes_over_when_the_first_stops() {
     let fixture = Fixture::new("queued");
     let first = fixture.tray(None);
+    let other = fixture.connect();
+    let replacing =
+        zbus::block_on(other.request_name_with_flags(WATCHER_NAME, zbus::fdo::RequestNameFlags::REPLACE_EXISTING));
+    assert_eq!(replacing.unwrap(), RequestNameReply::InQueue, "the running tray keeps the name");
+    drop(other);
     let second = fixture.tray(None);
     first.stop();
     // Until the bus has given the name to the second tray.
