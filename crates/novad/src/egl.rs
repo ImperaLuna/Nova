@@ -3,7 +3,6 @@
 //! mapped Mesa's (libEGL_mesa, libgallium, libLLVM): 11 MB Pss it never
 //! draws with (IMP-153). There the UI gets NVIDIA's vendor file alone.
 
-use nova_features::Gpu;
 use nova_features::gpus;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -19,12 +18,13 @@ const VENDOR_DIRS: &[&str] =
 
 /// NVIDIA's EGL vendor file when the machine below `root` has only NVIDIA
 /// GPUs with NVIDIA's driver, and the session (`env`) doesn't pick vendors
-/// itself. None otherwise: a laptop with another GPU may draw on that one.
+/// itself. None otherwise: a laptop or VM with another GPU, even one Nova
+/// doesn't know, may draw on that one.
 pub fn nvidia_only_vendor(root: &Path, env: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     if env(VENDOR_FILES_VAR).is_some() || env(VENDOR_DIRS_VAR).is_some() {
         return None;
     }
-    if gpus::detect(root) != [Gpu::Nvidia] || !gpus::nvidia_driver(root) {
+    if !gpus::only_nvidia(root) || !gpus::nvidia_driver(root) {
         return None;
     }
     VENDOR_DIRS.iter().find_map(|dir| {
@@ -83,7 +83,10 @@ mod tests {
         assert_eq!(nvidia_only_vendor(&nouveau, no_env), None);
         let amd = root("amd", &["0x1002"], false);
         assert_eq!(nvidia_only_vendor(&amd, no_env), None);
-        for dir in [nvidia, hybrid, nouveau, amd] {
+        // A VM drawing on virtio, with an NVIDIA GPU passed through.
+        let virtio = root("virtio", &["0x1af4", "0x10de"], true);
+        assert_eq!(nvidia_only_vendor(&virtio, no_env), None);
+        for dir in [nvidia, hybrid, nouveau, amd, virtio] {
             std::fs::remove_dir_all(dir).unwrap();
         }
     }

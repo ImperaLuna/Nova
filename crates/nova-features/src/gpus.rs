@@ -12,10 +12,28 @@ pub const NVIDIA_MODULE: &str = "sys/module/nvidia";
 /// PCI vendor ids in `/sys/class/drm/cardN/device/vendor`.
 const VENDORS: &[(&str, Gpu)] = &[("0x10de", Gpu::Nvidia), ("0x1002", Gpu::Amd), ("0x8086", Gpu::Intel)];
 
-/// Each GPU's vendor, once per vendor, in card order: the `cardN` entries
-/// of the DRM folder. Connectors (`card1-DP-1`) and render nodes have no
-/// vendor of their own and are skipped.
+/// Each GPU's vendor, once per vendor, in card order. Vendors Nova doesn't
+/// know (a VM's virtio GPU) are left out.
 pub fn detect(root: &Path) -> Vec<Gpu> {
+    let mut found = Vec::new();
+    for gpu in card_vendors(root).into_iter().flatten() {
+        if !found.contains(&gpu) {
+            found.push(gpu);
+        }
+    }
+    found
+}
+
+/// There's a GPU, and every one is NVIDIA's: none Nova doesn't know.
+pub fn only_nvidia(root: &Path) -> bool {
+    let cards = card_vendors(root);
+    !cards.is_empty() && cards.iter().all(|gpu| *gpu == Some(Gpu::Nvidia))
+}
+
+/// Each `cardN` entry's vendor in the DRM folder, in card order (None for
+/// one Nova doesn't know). Connectors (`card1-DP-1`) and render nodes have
+/// no vendor of their own and are skipped.
+fn card_vendors(root: &Path) -> Vec<Option<Gpu>> {
     let mut cards: Vec<_> = std::fs::read_dir(root.join(DRM_DIR))
         .into_iter()
         .flatten()
@@ -27,16 +45,13 @@ pub fn detect(root: &Path) -> Vec<Gpu> {
         })
         .collect();
     cards.sort();
-    let mut found = Vec::new();
-    for (_, card) in cards {
-        let vendor = std::fs::read_to_string(card.join("device/vendor")).unwrap_or_default();
-        if let Some(&(_, gpu)) = VENDORS.iter().find(|(id, _)| *id == vendor.trim())
-            && !found.contains(&gpu)
-        {
-            found.push(gpu);
-        }
-    }
-    found
+    cards
+        .into_iter()
+        .map(|(_, card)| {
+            let vendor = std::fs::read_to_string(card.join("device/vendor")).unwrap_or_default();
+            VENDORS.iter().find(|(id, _)| *id == vendor.trim()).map(|&(_, gpu)| gpu)
+        })
+        .collect()
 }
 
 /// NVIDIA's kernel driver is loaded (not nouveau).
