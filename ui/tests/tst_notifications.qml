@@ -204,6 +204,50 @@ Item {
             compare(stack.waiting.map(entry => entry.notification.id), [1]);
         }
 
+        // Each pop-up's shape (the window's input and blur regions) is where
+        // its card is drawn, on every frame: a Region follows only its
+        // item's own geometry, so a stale one blocked the right pill (IMP-160).
+        function test_the_shapes_follow_the_cards_as_drawn() {
+            const stack = createTemporaryObject(stackComponent, stage);
+            const drawn = card => {
+                const topLeft = card.mapToItem(stack, 0, 0);
+                const bottomRight = card.mapToItem(stack, card.width, card.height);
+                return Qt.rect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+            };
+            const check = (card, shape, what) => {
+                const rect = drawn(card);
+                fuzzyCompare(shape.x, rect.x, 0.5, `${what}: x`);
+                fuzzyCompare(shape.y, rect.y, 0.5, `${what}: y`);
+                fuzzyCompare(shape.width, rect.width, 0.5, `${what}: width`);
+                fuzzyCompare(shape.height, rect.height, 0.5, `${what}: height`);
+            };
+            stack.add(note(1, "A"));
+            tryVerify(() => findChild(stack, "card-1") !== null);
+            const first = findChild(stack, "card-1");
+            compare(stack.shapes.length, 1);
+            const shape = stack.shapes[0];
+            tryVerify(() => first.parent.presence > 0.2 && first.parent.presence < 0.8);
+            check(first, shape, "growing");
+            verify(shape.y < 0, "it grows out of the button above the stack");
+            settled(stack, 1);
+            check(first, shape, "in place");
+            fuzzyCompare(shape.y, 0, 0.01, "in place, it stays under the bar");
+
+            // A newer one pushes it down; its shape goes along.
+            stack.add(note(2, "B"));
+            settled(stack, 2);
+            tryCompare(first.parent, "y", findChild(stack, "card-2").height + Tokens.gap);
+            check(first, shape, "pushed down");
+
+            // Dismissed, it slides aside and its shape goes with it.
+            stack.remove(2, "away");
+            const second = findChild(stack, "card-2");
+            const secondShape = stack.shapes.find(item => item !== shape);
+            tryVerify(() => second.parent.presence < 0.8);
+            check(second, secondShape, "sliding away");
+            tryCompare(stack.shapes, "length", 1);
+        }
+
         function test_a_pop_up_closed_elsewhere_goes_and_clear_takes_them_all() {
             const stack = createTemporaryObject(stackComponent, stage);
             stack.add(note(1, "A"));
