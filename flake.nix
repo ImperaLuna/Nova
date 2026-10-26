@@ -113,6 +113,19 @@
           cargoArtifacts = craneLib.buildDepsOnly common;
         };
 
+      # What the headless e2e reads from the checkout: its script, the UI it
+      # runs and the feature manifests.
+      e2eSrc =
+        lib:
+        lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [
+            ./e2e/run.sh
+            ./features
+            ./ui
+          ];
+        };
+
       # share/nova under `prefix`: what nova finds next to its binary
       # (nova-paths). Copied in after the Rust build, so UI edits don't
       # recompile nova.
@@ -386,12 +399,53 @@
                 ];
               }
               ''
-                cd ${./.}
+                cd ${
+                  pkgs.lib.fileset.toSource {
+                    root = ./.;
+                    fileset = pkgs.lib.fileset.fileFilter (file: file.hasExt "nix") ./.;
+                  }
+                }
                 nixfmt --check $(find . -name '*.nix')
                 statix check .
                 deadnix --fail .
                 touch $out
               '';
+
+          # The headless e2e (e2e/run.sh: sway, two monitors, QML errors,
+          # Pss) against this build. The run itself never fails, so its logs
+          # and screenshot are there to look at when the check does:
+          # .#checks.<system>.e2e-headless.run
+          e2e-headless =
+            let
+              run =
+                pkgs.runCommand "nova-e2e-headless-run"
+                  {
+                    nativeBuildInputs = [
+                      pkgs.sway
+                      pkgs.grim
+                      pkgs.jq
+                      pkgs.dbus
+                      self.packages.${pkgs.stdenv.hostPlatform.system}.nova-ui
+                    ];
+                    FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
+                  }
+                  ''
+                    cp -r ${e2eSrc pkgs.lib}/. . && chmod -R u+w .
+                    patchShebangs e2e
+                    export HOME=$TMPDIR
+                    e2e/run.sh ${
+                      self.packages.${pkgs.stdenv.hostPlatform.system}.nova
+                    }/bin/nova >e2e.log 2>&1 || touch failed
+                    mkdir -p $out
+                    cp -r e2e/out/. e2e.log $out/
+                    if [[ -e failed ]]; then touch $out/failed; fi
+                  '';
+            in
+            pkgs.runCommand "nova-e2e-headless" { passthru = { inherit run; }; } ''
+              cat ${run}/e2e.log
+              [[ ! -e ${run}/failed ]]
+              touch $out
+            '';
 
           quickshell-version =
             let

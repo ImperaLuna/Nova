@@ -16,6 +16,8 @@ on:
     paths:
       - packaging/quickshell.toml
       - packaging/nix/**
+      - flake.nix
+      - e2e/vm/**
       - scripts/newest-quickshell.sh
       - .github/workflows/newest-quickshell.yml
 
