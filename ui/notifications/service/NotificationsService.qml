@@ -105,13 +105,4 @@ Singleton {
             muted: muted
         });
     }
-
-    // What an Image shows for an app icon (a theme name or a path).
-    function iconSource(icon: string): string {
-        if (!icon)
-            return "";
-        if (icon.startsWith("/"))
-            return Notifications.fileUrl(icon);
-        return Quickshell.iconPath(icon, true);
-    }
 }

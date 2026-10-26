@@ -172,8 +172,7 @@ mod tests {
     /// More events than the kernel queues are written while nobody reads.
     #[test]
     fn a_full_queue_is_reported_as_an_overflow() {
-        let dir = std::env::temp_dir().join(format!("nova-inotify-overflow-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = nova_test_support::TempDir::new("inotify-overflow");
         let mut watcher = Inotify::new(WRITES).unwrap();
         watcher.watch(&dir).unwrap();
         let limit: usize =
@@ -190,7 +189,6 @@ mod tests {
             stopper.stop();
         });
         let overflowed = std::iter::from_fn(|| watcher.read().unwrap()).any(|changes| changes.overflowed);
-        std::fs::remove_dir_all(&dir).unwrap();
         assert!(overflowed, "the dropped events went unnoticed");
     }
 }

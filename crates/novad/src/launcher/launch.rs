@@ -9,26 +9,34 @@
 //! shows it by name. Without one it's forked twice, so it ends up a child of
 //! init, in a session of its own. Either way nothing it prints reaches novad.
 
-use super::desktop_entry::{Entry, find_program};
+use super::desktop_entry::Entry;
+use crate::child;
 use crate::logger::Logger;
+use nova_paths::find_program;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const LOG_SOURCE: &str = "launcher";
-/// How long a launch waits to hear the app started, and how often it looks.
+/// How long a launch waits to hear the app started.
 const START_TIMEOUT: Duration = Duration::from_secs(2);
-const START_POLL: Duration = Duration::from_millis(10);
 /// Runs a command in a terminal, the way the freedesktop.org proposal says.
 const TERMINAL_EXEC: &str = "xdg-terminal-exec";
 /// The user's terminal, for systems without xdg-terminal-exec.
 const TERMINAL_VAR: &str = "TERMINAL";
 /// What systemd sets for novad itself, which an app mustn't take for its own.
-const SERVICE_VARS: [&str; 7] =
-    ["NOTIFY_SOCKET", "INVOCATION_ID", "JOURNAL_STREAM", "MANAGERPID", "SYSTEMD_EXEC_PID", "LISTEN_FDS", "LISTEN_PID"];
+const SERVICE_VARS: [&str; 7] = [
+    crate::notify::SOCKET_VAR,
+    "INVOCATION_ID",
+    "JOURNAL_STREAM",
+    "MANAGERPID",
+    "SYSTEMD_EXEC_PID",
+    "LISTEN_FDS",
+    "LISTEN_PID",
+];
 
 /// How apps are started.
 #[derive(Clone, Debug)]
@@ -60,7 +68,7 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
         argv.splice(0..0, terminal(path_var)?);
     }
     let program = find_program(&argv[0], path_var).ok_or_else(|| format!("{} isn't installed", argv[0]))?;
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = nova_paths::home();
     // A folder that isn't there would fail the start.
     let dir = entry.path.clone().into_iter().chain(home).find(|dir| dir.is_dir()).unwrap_or_else(|| "/".into());
     let mut command = match runner {
@@ -138,25 +146,20 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
     // What novad waits on: systemd-run, which returns once the app has
     // started or failed to, or the fork's first half, which returns at once.
     let mut child = command.spawn().map_err(|e| format!("can't start {}: {e}", program.display()))?;
-    let deadline = Instant::now() + START_TIMEOUT;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => break,
-            Ok(Some(status)) => return Err(format!("{} didn't start ({status})", program.display())),
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(START_POLL),
-            // Taking long: its answer is only logged.
-            Ok(None) => {
-                let logger = Arc::clone(logger);
-                let id = entry.id.clone();
-                std::thread::spawn(move || match child.wait() {
-                    Ok(status) if !status.success() => logger.warn(LOG_SOURCE, &format!("{id} didn't start: {status}")),
-                    Ok(_) => {}
-                    Err(e) => logger.warn(LOG_SOURCE, &format!("lost track of {id}: {e}")),
-                });
-                break;
-            }
-            Err(e) => return Err(format!("lost track of {}: {e}", program.display())),
+    match child::wait_within(&mut child, START_TIMEOUT) {
+        Ok(Some(status)) if status.success() => {}
+        Ok(Some(status)) => return Err(format!("{} didn't start ({status})", program.display())),
+        // Taking long: its answer is only logged.
+        Ok(None) => {
+            let logger = Arc::clone(logger);
+            let id = entry.id.clone();
+            std::thread::spawn(move || match child.wait() {
+                Ok(status) if !status.success() => logger.warn(LOG_SOURCE, &format!("{id} didn't start: {status}")),
+                Ok(_) => {}
+                Err(e) => logger.warn(LOG_SOURCE, &format!("lost track of {id}: {e}")),
+            });
         }
+        Err(e) => return Err(format!("lost track of {}: {e}", program.display())),
     }
     logger.info(LOG_SOURCE, &format!("launched {}", entry.id));
     Ok(())
@@ -226,8 +229,7 @@ mod tests {
 
     #[test]
     fn a_service_that_fails_to_start_says_so() {
-        let dir = std::env::temp_dir().join(format!("novad-launch-fail-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = nova_test_support::TempDir::new("launch-fail");
         let logger = Arc::new(Logger::open(&dir, nova_protocol::LogLevel::Info, false, Arc::default()).unwrap());
         let entry = Entry {
             id: "true.desktop".into(),
@@ -249,7 +251,6 @@ mod tests {
         assert!(error.contains("didn't start"), "{error}");
         let started = find_program("true", &path_var).unwrap();
         assert_eq!(launch(&entry, &Runner::Service(started), &path_var, &logger), Ok(()));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

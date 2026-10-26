@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn logind_answers_dim_what_cant_run() {
-        let dir = std::env::temp_dir().join(format!("novad-power-{}", std::process::id()));
+        let dir = nova_test_support::TempDir::new("power");
         let logger = Logger::open(&dir, LogLevel::Info, false, Arc::new(Hub::default())).unwrap();
         let option = |answer: Result<&str, &str>| {
             from_can(PowerAction::Suspend, answer.map(str::to_string).map_err(str::to_string), &logger)
@@ -134,7 +134,6 @@ mod tests {
             assert!(!dimmed.available, "{answer:?}");
             assert!(dimmed.reason.is_some_and(|reason| !reason.is_empty()), "{answer:?} says why");
         }
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

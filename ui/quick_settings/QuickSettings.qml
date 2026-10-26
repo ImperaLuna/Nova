@@ -12,6 +12,8 @@ import "../tray"
 import "../tray/service"
 import "../daemon/protocol.js" as Protocol
 import "quick_settings.js" as QuickSettings
+import "../util/numbers.js" as Numbers
+import "../icons"
 
 // The quick settings drawer: glass against the right edge of the screen,
 // top to bottom, opened by the right pill's button or `nova toggle
@@ -52,7 +54,7 @@ StagePanel {
     property real fill: open ? 1 : 0
     MorphReveal on fill {
         id: fillReveal
-        delay: 0.6
+        delay: Tokens.revealFill
         duration: Tokens.durationFill
         eased: true
     }
@@ -74,9 +76,7 @@ StagePanel {
     onOpenChanged: {
         console.info(`nova: quick settings ${open ? "opened" : "closed"}`);
         VolumeService.showElsewhere(output.name, open);
-        if (open)
-            now = new Date();
-        else
+        if (!open)
             trayMenu.entry = null;
     }
     // Resources show on the first page (its card) and their own page: novad
@@ -94,8 +94,14 @@ StagePanel {
 
     readonly property string outputName: VolumeService.sink ? (VolumeService.sink.nickname || VolumeService.sink.description || VolumeService.sink.name) : ""
 
-    // The header's uptime, a minute at a time while it's open.
-    property date now: new Date()
+    // The header's uptime, a minute at a time while it's open, on the
+    // minute.
+    SystemClock {
+        id: clock
+        enabled: panel.open
+        precision: SystemClock.Minutes
+    }
+    readonly property date now: clock.date
     // Gone while open (its screen went away): nothing reads resources now.
     Component.onDestruction: {
         VolumeService.showElsewhere(output.name, false);
@@ -103,13 +109,6 @@ StagePanel {
         if (resourcesShown)
             QuickSettingsService.watching = false;
     }
-    Timer {
-        interval: 60 * 1000
-        running: panel.open
-        repeat: true
-        onTriggered: panel.now = new Date()
-    }
-
     Glass {
         anchors.fill: parent
         radius: panel.radius
@@ -166,9 +165,8 @@ StagePanel {
                 onTrayMenuRequested: (entry, at) => trayMenu.show(entry, at)
                 onTraySecondaryActivated: entry => entry.item.secondaryActivate()
                 notificationsShown: NotificationsService.ready
-                notifications: NotificationsService.items
                 doNotDisturb: NotificationsService.doNotDisturb
-                iconSource: name => NotificationsService.iconSource(name)
+                iconSource: name => AppIcons.source(name)
                 // Opening one takes you to its app.
                 onNotificationOpened: notification => {
                     NotificationsService.open(notification, panel.output.name);
@@ -185,6 +183,17 @@ StagePanel {
                 onMicVolumeMoved: value => SoundService.setSourceVolume(value)
                 onPageRequested: page => panel.page = page
             }
+        }
+
+        // While closed, the list keeps what it last showed instead of
+        // rebuilding for every notification on every screen (IMP-147); it
+        // catches up as it opens.
+        Binding {
+            target: main
+            property: "notifications"
+            when: panel.open || panel.moving
+            value: NotificationsService.items
+            restoreMode: Binding.RestoreNone
         }
 
         PageSlot {
@@ -219,8 +228,7 @@ StagePanel {
                     onInputPicked: id => SoundService.useInput(id)
                     onAppVolumeMoved: (ids, value) => SoundService.setVolumes(ids, value)
                     onAppMuteToggled: (ids, muted) => SoundService.setMuted(ids, muted)
-                    // A desktop entry's icon may be a file instead of a name.
-                    iconSource: name => name === "" ? "" : name.startsWith("/") ? `file://${name}` : Quickshell.iconPath(name, true)
+                    iconSource: name => AppIcons.source(name)
                 }
             }
         }
@@ -255,7 +263,7 @@ StagePanel {
                     doNotDisturb: NotificationsService.doNotDisturb
                     apps: NotificationsService.apps
                     muted: NotificationsService.muted
-                    iconSource: name => NotificationsService.iconSource(name)
+                    iconSource: name => AppIcons.source(name)
                     onBack: panel.page = "main"
                     onDoNotDisturbToggled: NotificationsService.setDoNotDisturb(!NotificationsService.doNotDisturb)
                     onMuteToggled: (app, muted) => NotificationsService.mute(app, muted)
@@ -287,7 +295,7 @@ StagePanel {
         }
 
         visible: entry !== null && panel.open
-        x: pages.x + Math.max(0, Math.min(pages.width - width, at.x - width / 2))
+        x: pages.x + Numbers.clamp(at.x - width / 2, 0, pages.width - width)
         y: pages.y + Math.min(pages.height - height, at.y + Tokens.trayGridCell / 2 + Tokens.menuGap)
         width: list.width
         height: list.implicitHeight

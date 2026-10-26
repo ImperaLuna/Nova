@@ -269,51 +269,6 @@ Item {
             compare(odd[0].ids, [5], "any name an app gives is its own group");
         }
 
-        function test_program_names_drop_nix_wrappers() {
-            compare(QuickSettings.programName(".zen-wrapped"), "zen");
-            compare(QuickSettings.programName("/usr/bin/firefox"), "firefox");
-            compare(QuickSettings.programName(""), "");
-        }
-
-        function test_an_app_finds_its_desktop_entrys_icon() {
-            const entries = [
-                {
-                    id: "org.gnome.Nautilus",
-                    name: "Files",
-                    startupClass: "",
-                    command: ["nautilus", "--new-window"],
-                    icon: "org.gnome.Nautilus"
-                },
-                {
-                    id: "zen-beta",
-                    name: "Zen Browser (Beta)",
-                    startupClass: "zen-beta",
-                    command: ["/nix/store/x-zen/bin/zen-beta"],
-                    icon: "zen-browser"
-                },
-                {
-                    id: "discord",
-                    name: "Discord",
-                    startupClass: "discord",
-                    command: ["Discord"],
-                    icon: ""
-                }
-            ];
-            compare(QuickSettings.entryIcon(entries, ["zen", "Zen"]), "zen-browser", "a program that begins an entry's");
-            compare(QuickSettings.entryIcon(entries, ["", "Zen"]), "zen-browser", "or the app's name");
-            compare(QuickSettings.entryIcon(entries, ["nautilus"]), "org.gnome.Nautilus", "by its command");
-            entries.push({
-                id: "com.anthropic.Claude",
-                name: "Claude",
-                startupClass: "com.anthropic.Claude",
-                command: ["claude-desktop"],
-                icon: "claude-desktop"
-            });
-            compare(QuickSettings.entryIcon(entries, ["com.anthropic.Claude", "claude-desktop"]), "claude-desktop", "a stream's icon name that is the entry's id");
-            compare(QuickSettings.entryIcon(entries, ["discord"]), "", "an entry without an icon gives none");
-            compare(QuickSettings.entryIcon(entries, ["ze"]), "", "only whole words before a dash");
-        }
-
         function test_a_dragged_slider_follows_the_pointer_until_released() {
             const slider = createTemporaryObject(sliderComponent, stage, {
                 value: 0.2

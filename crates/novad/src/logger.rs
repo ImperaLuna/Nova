@@ -266,10 +266,8 @@ fn next_secret(lower: &str, from: usize) -> Option<(usize, usize, usize)> {
 mod tests {
     use super::*;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("novad-logger-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
+    fn temp_dir(name: &str) -> nova_test_support::TempDir {
+        nova_test_support::TempDir::new(&format!("logger-{name}"))
     }
 
     fn logger(dir: &Path) -> Logger {
@@ -290,7 +288,6 @@ mod tests {
         assert_eq!(read_entries(&nova_paths::previous_log_file(&dir, 1))[0].message, "run 6");
         assert_eq!(read_entries(&nova_paths::previous_log_file(&dir, KEPT_RUNS))[0].message, "run 2");
         assert!(!nova_paths::previous_log_file(&dir, KEPT_RUNS + 1).exists());
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -311,7 +308,6 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         assert_eq!(std::fs::read_dir(nova_paths::crash_dir(&dir)).unwrap().count(), KEPT_CRASHES);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -323,7 +319,6 @@ mod tests {
         let messages: Vec<String> =
             read_entries(&nova_paths::log_file(&dir)).into_iter().map(|entry| entry.message).collect();
         assert_eq!(messages, ["first", "second"]);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

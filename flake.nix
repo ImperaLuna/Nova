@@ -472,7 +472,11 @@
               }
               ''
                 export HOME=$TMPDIR
-                qmltestrunner -input ${./ui}/tests
+                # Failures again at the end: Nix shows only the last lines.
+                if ! qmltestrunner -input ${./ui}/tests 2>&1 | tee $TMPDIR/qml-tests.log; then
+                  grep -A3 '^FAIL!' $TMPDIR/qml-tests.log
+                  exit 1
+                fi
                 touch $out
               '';
         }

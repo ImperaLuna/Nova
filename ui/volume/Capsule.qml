@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Shapes
 import "../theme"
 import "volume.js" as Volume
+import "../util/numbers.js" as Numbers
 
 // The capsule as drawn, in a window as big as it can get: the glass, liquid
 // and shadow in one shader (liquid.frag), the icon and number over it, and
@@ -24,6 +25,7 @@ Item {
         height: Tokens.capsuleHeight,
         gap: Tokens.capsuleEdgeGap,
         stretch: Tokens.capsuleStretch,
+        stretchSpeed: Tokens.capsuleStretchSpeed,
         overshoot: Tokens.capsuleOvershoot
     })
     readonly property Item hit: hit
@@ -54,10 +56,19 @@ Item {
         readonly property real amp: capsule.motion.amp
         readonly property real tilt: capsule.motion.tilt
         readonly property real meniscus: Tokens.liquidMeniscus
+        readonly property real meniscusReach: Tokens.liquidMeniscusReach
         readonly property real fizz: capsule.motion.fizz
         readonly property real specks: Tokens.liquidSpecks
+        readonly property real speckRadius: Tokens.liquidSpeckRadius
+        readonly property real speckRadiusRange: Tokens.liquidSpeckRadiusRange
+        readonly property real speckGlow: Tokens.liquidSpeckGlow
+        readonly property real speckGlowMax: Tokens.liquidSpeckGlowMax
         readonly property real glow: Tokens.liquidGlow
+        readonly property real glowDepth: Tokens.liquidGlowDepth
         readonly property real streak: Tokens.liquidStreak
+        readonly property real streakFade: Tokens.liquidStreakFade
+        readonly property real streakAt: Tokens.liquidStreakAt
+        readonly property real streakWidth: Tokens.liquidStreakWidth
         readonly property real rimOn: capsule.unavailable ? 0 : 1
         readonly property real rimWidth: Tokens.glassRimWidth
         readonly property real rimShade: Tokens.glassRimShade
@@ -74,6 +85,7 @@ Item {
             }
         }
         readonly property color shadow: Tokens.shadow
+        readonly property color light: Tokens.liquidLight
 
         fragmentShader: Qt.resolvedUrl("liquid.frag.qsb")
     }
@@ -112,7 +124,7 @@ Item {
             id: label
             anchors.fill: parent
             // Fades in over the last stretch of coming out.
-            opacity: Volume.clamp(1 - (1 - capsule.motion.open) / Tokens.capsuleLabelFadeIn, 0, 1)
+            opacity: Numbers.clamp(1 - (1 - capsule.motion.open) / Tokens.capsuleLabelFadeIn, 0, 1)
             glyph: Volume.icon(capsule.output, capsule.muted, capsule.volume)
             text: capsule.unavailable ? "–" : String(Volume.percent(capsule.volume))
             dimmed: capsule.muted

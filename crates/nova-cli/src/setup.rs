@@ -76,20 +76,14 @@ pub struct Paths {
 
 impl Paths {
     fn of_this_user() -> Result<Self, String> {
-        let home = std::env::var_os("HOME").filter(|home| !home.is_empty()).ok_or("HOME isn't set")?;
-        let config_home = std::env::var_os("XDG_CONFIG_HOME")
-            .filter(|dir| !dir.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(&home).join(".config"));
-        let niri_config = std::env::var_os("NIRI_CONFIG")
-            .filter(|file| !file.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| config_home.join("niri/config.kdl"));
+        let home = nova_paths::home().ok_or("HOME isn't set")?;
+        let config_home = nova_paths::config_home().ok_or("HOME isn't set")?;
+        let niri_config = nova_paths::path_var("NIRI_CONFIG").unwrap_or_else(|| config_home.join("niri/config.kdl"));
         let niri_config = niri_config.is_file().then_some(niri_config);
         Ok(Self {
             config_dir: nova_paths::config_dir(),
             units_dir: config_home.join("systemd/user"),
-            bin_dir: PathBuf::from(&home).join(".local/bin"),
+            bin_dir: home.join(".local/bin"),
             niri_config,
             nova: std::env::current_exe().map_err(|e| format!("can't find the nova binary: {e}"))?,
         })
@@ -124,12 +118,8 @@ impl Facts {
     }
 
     fn on_path(&self, name: &str) -> Option<PathBuf> {
-        find_on_path(name, &self.path_var)
+        nova_paths::find_program(name, &self.path_var)
     }
-}
-
-fn find_on_path(name: &str, path_var: &str) -> Option<PathBuf> {
-    std::env::split_paths(path_var).map(|dir| dir.join(name)).find(|file| file.is_file())
 }
 
 #[derive(Debug, PartialEq)]
@@ -414,7 +404,7 @@ pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
             }
         }
         Step::LinkQuickshell { link } => {
-            let quickshell = find_on_path("quickshell", path_var)
+            let quickshell = nova_paths::find_program("quickshell", path_var)
                 .ok_or("quickshell isn't on PATH, so there's nothing to link NovaUI to")?;
             let target =
                 quickshell.canonicalize().map_err(|e| format!("can't resolve {}: {e}", quickshell.display()))?;
@@ -542,27 +532,20 @@ mod tests {
     }
 
     /// A temporary home with `quickshell` and `wf-recorder` on its PATH.
-    struct Home(PathBuf);
+    struct Home(nova_test_support::TempDir);
 
     impl Home {
         fn new(name: &str) -> Self {
-            let home = std::env::temp_dir().join(format!("nova-setup-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&home);
+            let home = nova_test_support::TempDir::new(&format!("setup-{name}"));
             std::fs::create_dir_all(home.join("usr/bin")).unwrap();
             for bin in ["quickshell", "wf-recorder", "grim", "wl-copy", "xdg-open", "paru"] {
-                std::fs::write(home.join("usr/bin").join(bin), "").unwrap();
+                nova_test_support::write_program(&home.join("usr/bin"), bin, "exit 0");
             }
             Self(home)
         }
 
         fn path_var(&self) -> String {
             self.0.join("usr/bin").display().to_string()
-        }
-    }
-
-    impl Drop for Home {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 
@@ -649,11 +632,8 @@ mod tests {
     /// shell's) runs from there too.
     #[test]
     fn commands_run_with_the_path_they_were_found_on() {
-        use std::os::unix::fs::PermissionsExt;
         let home = Home::new("run");
-        let helper = home.0.join("usr/bin/nova-setup-test-helper");
-        std::fs::write(&helper, "#!/bin/sh\nexit 0\n").unwrap();
-        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        nova_test_support::write_program(&home.0.join("usr/bin"), "nova-setup-test-helper", "exit 0");
         let step = Step::Run { why: "test".into(), argv: words(&["nova-setup-test-helper"]) };
         let path_var = format!("{}:/bin:/usr/bin", home.path_var());
         assert_eq!(execute(&step, &path_var), Ok(()));

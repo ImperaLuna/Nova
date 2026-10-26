@@ -17,7 +17,7 @@ pub struct IpcArgs {
 
 pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
     let command = parse(&args.command, args.args.as_deref())?;
-    let mut client = Client::connect(socket).map_err(|_| "Nova isn't running. Start it with `nova`.".to_owned())?;
+    let mut client = Client::reach(socket).map_err(|unreachable| unreachable.advice())?;
     println!("{}", client.request(command)?);
     Ok(())
 }

@@ -10,6 +10,7 @@
 mod hyprland;
 mod niri;
 
+use crate::backoff::Backoff;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
@@ -83,21 +84,24 @@ impl Compositor {
             // A failure (the compositor not up yet, a request that timed out)
             // starts over from a fresh connection, waiting longer each time.
             // The compositor closing the connection means it's gone.
-            let mut retry = FIRST_RETRY;
+            let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
             loop {
                 let mut reported = false;
                 let result = watcher.backend.watch(&mut |desktop| {
                     reported = true;
                     watcher.update(desktop);
                 });
+                if reported {
+                    retry.reset();
+                }
+                let wait = retry.next();
                 match result {
                     Ok(()) => return logger.info(LOG_SOURCE, &format!("{name} closed its IPC connection")),
                     Err(e) => {
-                        logger.warn(LOG_SOURCE, &format!("lost {name}, trying again in {}s: {e}", retry.as_secs()))
+                        logger.warn(LOG_SOURCE, &format!("lost {name}, trying again in {}s: {e}", wait.as_secs()))
                     }
                 }
-                std::thread::sleep(retry);
-                retry = if reported { FIRST_RETRY } else { (retry * 2).min(MAX_RETRY) };
+                std::thread::sleep(wait);
             }
         });
         compositor

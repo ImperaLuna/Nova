@@ -1,7 +1,7 @@
 //! The socket: accepts clients, answers their requests and feeds them the
 //! events they subscribed to.
 
-use crate::hub::{ClientId, ClientQueue, Outgoing};
+use crate::hub::{ClientId, ClientQueue, Outgoing, Written};
 use crate::{Daemon, lock};
 use nova_protocol::{
     Capability, CaptureMode, Command, Event, Outcome, Panel, PowerAction, PowerMenu, Response, Topic, VolumeKey, encode,
@@ -10,8 +10,8 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
-use std::sync::Arc;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 /// Any local process can connect: longer request lines close the connection.
@@ -25,10 +25,6 @@ const SOCKET_DIR_MODE: u32 = 0o700;
 type SlowWork = Box<dyn FnOnce() -> Outcome + Send>;
 
 const LOG_SOURCE: &str = "server";
-/// How long the launcher waits for the window of an app it reopened from
-/// the tray, to focus it, and how often it looks.
-const TRAY_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(3) };
-const TRAY_WINDOW_RETRY: Duration = Duration::from_millis(100);
 
 pub fn bind(socket: &Path) -> std::io::Result<UnixListener> {
     if let Some(dir) = socket.parent() {
@@ -49,8 +45,13 @@ pub fn bind(socket: &Path) -> std::io::Result<UnixListener> {
     UnixListener::bind(socket)
 }
 
-pub fn serve(listener: UnixListener, daemon: Arc<Daemon>) {
+/// Accepts clients until `stopped` is set; the connection after that (one
+/// made to wake it) ends the loop.
+pub fn serve(listener: UnixListener, daemon: Arc<Daemon>, stopped: &AtomicBool) {
     for stream in listener.incoming() {
+        if stopped.load(Ordering::SeqCst) {
+            return;
+        }
         match stream {
             Ok(stream) => {
                 let daemon = Arc::clone(&daemon);
@@ -80,7 +81,8 @@ impl<'a> Connection<'a> {
         writer.set_write_timeout(Some(WRITE_TIMEOUT))?;
         let (queue, outgoing) = ClientQueue::new(&stream)?;
         let logger = Arc::clone(&daemon.logger);
-        std::thread::spawn(move || write_all_queued(writer, outgoing, &logger));
+        let written = queue.written();
+        std::thread::spawn(move || write_all_queued(writer, outgoing, &written, &logger));
         let id = daemon.hub.register(queue.clone());
         let peer_pid = peer_pid(&stream);
         let connection = Self { daemon, id, queue, reader: BufReader::new(stream), peer_pid };
@@ -120,223 +122,132 @@ impl<'a> Connection<'a> {
                 return;
             }
         };
-        // Asking logind can take seconds; answering on its own thread keeps
-        // this connection reading, so the UI's lock reports and other
-        // requests aren't stuck behind it.
-        if let Some(work) = self.slow_work(&request.command) {
-            self.answer_later(request.id, work);
-            self.follow_up(request.command);
-            return;
-        }
         // Answered even without an id: some commands act as they answer.
-        let outcome = self.answer(&request.command);
-        if let Some(id) = request.id {
-            self.send(Response { id, outcome });
+        match self.answer(&request.command) {
+            Answer::Now(outcome) => {
+                if let Some(id) = request.id {
+                    self.send(Response { id, outcome });
+                }
+            }
+            // Asking logind can take seconds; answering on its own thread
+            // keeps this connection reading, so the UI's lock reports and
+            // other requests aren't stuck behind it.
+            Answer::Later(work) => self.answer_later(request.id, work),
         }
         self.follow_up(request.command);
     }
 
-    fn answer(&self, command: &Command) -> Outcome {
-        let value = match command {
-            Command::Ping => Ok("pong".into()),
-            Command::ListFeatures => serde_json::to_value(&lock(&self.daemon.settings).features),
-            Command::Status => serde_json::to_value(self.daemon.status()),
-            Command::Subscribe { .. } | Command::Quit => Ok(serde_json::Value::Null),
-            Command::RefreshAiUsage => {
-                return self.with_ai_usage(|usage| {
-                    usage.refresh();
-                    Ok(())
-                });
-            }
-            Command::ShowAiUsage { provider } => {
-                return self.with_ai_usage(|usage| usage.show(*provider));
-            }
+    /// The answer to `command`, at once or as work for another thread: the
+    /// requests that wait on logind, the compositor, an app starting or a
+    /// screen capture. Their quick checks run here, at once.
+    fn answer(&self, command: &Command) -> Answer {
+        let outcome = match command {
+            Command::Ping => Outcome::Result("pong".into()),
+            Command::ListFeatures => value(Ok(&lock(&self.daemon.settings).features)),
+            Command::Status => value(Ok(self.daemon.status())),
+            Command::Subscribe { .. } | Command::Quit => done(Ok(())),
+            Command::RefreshAiUsage => done(self.ai_usage().map(|usage| usage.refresh())),
+            Command::ShowAiUsage { provider } => done(self.ai_usage().and_then(|usage| usage.show(*provider))),
             Command::ReportClaudeUsage { limits } => {
-                return self.with_ai_usage(|usage| usage.report_claude(limits.clone()));
+                done(self.ai_usage().and_then(|usage| usage.report_claude(limits.clone())))
             }
             Command::FocusWorkspace { id } => {
-                return self.with_compositor(|compositor| compositor.focus_workspace(*id));
+                done(self.compositor().and_then(|compositor| compositor.focus_workspace(*id)))
             }
             Command::StepWorkspace { output, step } => {
-                return self.with_compositor(|compositor| compositor.step_workspace(output, *step));
+                done(self.compositor().and_then(|compositor| compositor.step_workspace(output, *step)))
             }
-            Command::Toggle { panel } => return self.toggle(*panel),
-            Command::Volume { key } => return self.volume(*key),
-            Command::Lock => return self.lock_screen(),
-            Command::ReportLocked => {
-                if let Err(e) = self.sent_by_the_ui() {
-                    return Outcome::Error(e);
-                }
-                self.daemon.session_lock.secured();
-                Ok(serde_json::Value::Null)
-            }
+            Command::Toggle { panel } => self.toggle(*panel),
+            Command::Volume { key } => self.volume(*key),
+            Command::Lock => done(
+                self.require_feature(crate::session_lock::FEATURE_ID)
+                    .and_then(|()| self.daemon.session_lock.lock(&self.daemon.hub)),
+            ),
+            Command::ReportLocked => done(self.sent_by_the_ui().map(|()| self.daemon.session_lock.secured())),
             // Even with the feature off: the screen was locked while it was on.
             Command::ReportUnlocked => {
-                if let Err(e) = self.sent_by_the_ui() {
-                    return Outcome::Error(e);
-                }
-                self.daemon.session_lock.unlocked(&self.daemon.hub);
-                Ok(serde_json::Value::Null)
+                done(self.sent_by_the_ui().map(|()| self.daemon.session_lock.unlocked(&self.daemon.hub)))
             }
-            Command::WatchResources { watching } => return self.watch_resources(*watching),
-            Command::EndApp { key } => return self.end_app(key),
-            Command::PowerOptions => return self.power_options()(),
+            Command::WatchResources { watching } => {
+                done(self.resources().map(|resources| resources.watch(self.id, *watching)))
+            }
+            Command::EndApp { key } => done(self.resources().and_then(|resources| resources.end_app(key))),
+            Command::PowerOptions => return self.power_options(),
             Command::Power { action } => return self.power(*action),
-            Command::Screenshot { mode } => return self.screenshot(*mode)(),
-            Command::SaveCapture { output, rect } => return self.save_capture(output.clone(), *rect)(),
+            Command::Screenshot { mode } => return self.screenshot(*mode),
+            Command::SaveCapture { output, rect } => return self.save_capture(output.clone(), *rect),
             // Even with the feature off, so a reload can't strand the picker.
             Command::CancelCapture => {
                 self.daemon.screenshots.cancel();
-                Ok(serde_json::Value::Null)
+                done(Ok(()))
             }
-            Command::ScreenshotAction { id, action } => {
-                return match self.daemon.screenshots.act(*id, *action) {
-                    Ok(()) => Outcome::Result(serde_json::Value::Null),
-                    Err(e) => Outcome::Error(e),
-                };
-            }
+            Command::ScreenshotAction { id, action } => done(self.daemon.screenshots.act(*id, *action)),
             Command::Record => {
-                let recordings = &self.daemon.recordings;
-                return outcome(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| recordings.record()));
+                done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.daemon.recordings.record()))
             }
             Command::StartRecording { output, region, audio } => {
-                return self.start_recording(output.clone(), *region, *audio)();
+                return self.start_recording(output.clone(), *region, *audio);
             }
             // Even with the feature off, so a reload can't leave one running.
-            Command::StopRecording => return outcome(self.daemon.recordings.stop()),
-            Command::PauseRecording { paused } => return outcome(self.daemon.recordings.pause(*paused)),
-            Command::RecordingAction { id, action } => return outcome(self.daemon.recordings.act(*id, *action)),
-            Command::SearchApps { query } => {
+            Command::StopRecording => done(self.daemon.recordings.stop()),
+            Command::PauseRecording { paused } => done(self.daemon.recordings.pause(*paused)),
+            Command::RecordingAction { id, action } => done(self.daemon.recordings.act(*id, *action)),
+            Command::SearchApps { query } => value(self.launcher().and_then(|launcher| launcher.search(query))),
+            Command::AppIcon { icon_name, program, name } => {
                 let launcher = lock(&self.daemon.settings).launcher.clone();
-                return match launcher.map(|launcher| launcher.search(query)) {
-                    Some(Ok(found)) => match serde_json::to_value(found) {
-                        Ok(value) => Outcome::Result(value),
-                        Err(e) => Outcome::Error(e.to_string()),
-                    },
-                    Some(Err(e)) => Outcome::Error(e),
-                    None => Outcome::Error(format!("the {} feature is off", crate::launcher::FEATURE_ID)),
-                };
+                value(crate::launcher::Launcher::app_icon(launcher.as_deref(), icon_name, program, name))
             }
-            // Answered on its own thread (`slow_work`).
-            Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window)(),
-            Command::PinApp { id, pinned } => return self.with_launcher(|launcher| launcher.pin(id, *pinned)),
-            Command::HideTrayApp { id, hidden } => {
-                let tray = lock(&self.daemon.settings).tray.clone();
-                return match tray.map(|tray| tray.hide(id, *hidden)) {
-                    Some(Ok(())) => Outcome::Result(serde_json::Value::Null),
-                    Some(Err(e)) => Outcome::Error(e),
-                    None => Outcome::Error(format!("the {} feature is off", crate::tray::FEATURE_ID)),
-                };
-            }
+            Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window),
+            Command::PinApp { id, pinned } => done(self.launcher().and_then(|launcher| launcher.pin(id, *pinned))),
+            Command::HideTrayApp { id, hidden } => done(self.tray().and_then(|tray| tray.hide(id, *hidden))),
             Command::NotificationAction { id, action } => {
-                return self.with_notifications(|notifications| notifications.action(*id, action.as_deref()));
+                done(self.notifications().and_then(|notifications| notifications.action(*id, action.as_deref())))
             }
             Command::DismissNotification { id } => {
-                return self.with_notifications(|notifications| {
-                    notifications.dismiss(*id);
-                    Ok(())
-                });
+                done(self.notifications().map(|notifications| notifications.dismiss(*id)))
             }
             Command::ClearNotifications { app } => {
-                return self.with_notifications(|notifications| {
-                    notifications.clear(app.as_deref());
-                    Ok(())
-                });
+                done(self.notifications().map(|notifications| notifications.clear(app.as_deref())))
             }
-            Command::ReadNotifications => {
-                return self.with_notifications(|notifications| {
-                    notifications.read();
-                    Ok(())
-                });
-            }
+            Command::ReadNotifications => done(self.notifications().map(|notifications| notifications.read())),
             Command::SetDoNotDisturb { on } => {
-                return self.with_notifications(|notifications| {
-                    notifications.set_do_not_disturb(*on);
-                    Ok(())
-                });
+                done(self.notifications().map(|notifications| notifications.set_do_not_disturb(*on)))
             }
             Command::MuteNotificationApp { app, muted } => {
-                return self.with_notifications(|notifications| notifications.mute(app, *muted));
+                done(self.notifications().and_then(|notifications| notifications.mute(app, *muted)))
             }
         };
-        match value {
-            Ok(value) => Outcome::Result(value),
-            Err(e) => Outcome::Error(e.to_string()),
-        }
+        Answer::Now(outcome)
     }
 
-    fn with_ai_usage(&self, act: impl FnOnce(&crate::ai_usage::Usage) -> Result<(), String>) -> Outcome {
-        // Out of the lock: acting may take a while, and a reload may stop it
-        // meanwhile (it then says the feature is off).
-        let usage = lock(&self.daemon.settings).ai_usage.clone();
-        match usage {
-            Some(usage) => match act(&usage) {
-                Ok(()) => Outcome::Result(serde_json::Value::Null),
-                Err(e) => Outcome::Error(e),
-            },
-            None => Outcome::Error(format!("the {} feature is off", crate::ai_usage::FEATURE_ID)),
-        }
+    // The feature services, or why there's none. Taken out of the settings
+    // lock: acting may take a while, and a reload may stop one meanwhile
+    // (it then says the feature isn't ready).
+
+    fn ai_usage(&self) -> Result<Arc<crate::ai_usage::Usage>, String> {
+        running(lock(&self.daemon.settings).ai_usage.clone(), crate::ai_usage::FEATURE_ID)
     }
 
-    fn with_launcher(&self, act: impl FnOnce(&crate::launcher::Launcher) -> Result<(), String>) -> Outcome {
-        // Out of the lock, like `with_ai_usage`.
-        let launcher = lock(&self.daemon.settings).launcher.clone();
-        match launcher {
-            Some(launcher) => match act(&launcher) {
-                Ok(()) => Outcome::Result(serde_json::Value::Null),
-                Err(e) => Outcome::Error(e),
-            },
-            None => Outcome::Error(format!("the {} feature is off", crate::launcher::FEATURE_ID)),
-        }
+    fn resources(&self) -> Result<Arc<crate::resources::Resources>, String> {
+        running(lock(&self.daemon.settings).resources.clone(), crate::resources::FEATURE_ID)
     }
 
-    fn with_notifications(
-        &self,
-        act: impl FnOnce(&crate::notifications::Notifications) -> Result<(), String>,
-    ) -> Outcome {
-        // Out of the lock, like `with_ai_usage`.
-        let notifications = lock(&self.daemon.settings).notifications.clone();
-        match notifications {
-            Some(notifications) => match act(&notifications) {
-                Ok(()) => Outcome::Result(serde_json::Value::Null),
-                Err(e) => Outcome::Error(e),
-            },
-            None => Outcome::Error(format!("the {} feature is off", crate::notifications::FEATURE_ID)),
-        }
+    fn launcher(&self) -> Result<Arc<crate::launcher::Launcher>, String> {
+        running(lock(&self.daemon.settings).launcher.clone(), crate::launcher::FEATURE_ID)
     }
 
-    fn with_compositor(&self, act: impl FnOnce(&crate::compositor::Compositor) -> Result<(), String>) -> Outcome {
-        match &self.daemon.compositor {
-            Some(compositor) => match act(compositor) {
-                Ok(()) => Outcome::Result(serde_json::Value::Null),
-                Err(e) => Outcome::Error(e),
-            },
-            None => Outcome::Error("novad doesn't know this compositor".into()),
-        }
+    fn tray(&self) -> Result<Arc<crate::tray::Tray>, String> {
+        running(lock(&self.daemon.settings).tray.clone(), crate::tray::FEATURE_ID)
     }
 
-    fn watch_resources(&self, watching: bool) -> Outcome {
-        let resources = lock(&self.daemon.settings).resources.clone();
-        match resources {
-            Some(resources) => {
-                resources.watch(self.id, watching);
-                Outcome::Result(serde_json::Value::Null)
-            }
-            None => Outcome::Error(format!("the {} feature is off", crate::resources::FEATURE_ID)),
-        }
+    fn notifications(&self) -> Result<Arc<crate::notifications::Notifications>, String> {
+        running(lock(&self.daemon.settings).notifications.clone(), crate::notifications::FEATURE_ID)
     }
 
-    fn end_app(&self, key: &str) -> Outcome {
-        let resources = lock(&self.daemon.settings).resources.clone();
-        match resources.map(|resources| resources.end_app(key)) {
-            Some(Ok(())) => Outcome::Result(serde_json::Value::Null),
-            Some(Err(e)) => Outcome::Error(e),
-            None => Outcome::Error(format!("the {} feature is off", crate::resources::FEATURE_ID)),
-        }
+    fn compositor(&self) -> Result<&crate::compositor::Compositor, String> {
+        self.daemon.compositor.as_deref().ok_or_else(|| "novad doesn't know this compositor".into())
     }
 
-    /// Tells the UI to open or close `panel` on the focused output. The UI
-    /// knows which screen has it open, so it decides which.
     /// Lock reports are the UI's alone: from anyone else, `report_unlocked`
     /// would leave a UI that restarts with no lock screen to unlock. When
     /// novad runs no UI (`--no-ui`: tests, or a UI run by hand), it can't
@@ -353,36 +264,7 @@ impl<'a> Connection<'a> {
     fn require_feature(&self, id: &str) -> Result<(), String> {
         match self.daemon.feature_ready(id) {
             true => Ok(()),
-            false => Err(format!("the {id} feature isn't ready (see `nova status`)")),
-        }
-    }
-
-    fn lock_screen(&self) -> Outcome {
-        let locked = self
-            .require_feature(crate::session_lock::FEATURE_ID)
-            .and_then(|()| self.daemon.session_lock.lock(&self.daemon.hub));
-        match locked {
-            Ok(()) => Outcome::Result(serde_json::Value::Null),
-            Err(e) => Outcome::Error(e),
-        }
-    }
-
-    /// The requests that wait on logind, the compositor, an app starting
-    /// or a screen capture, as work to answer them with; the quick checks
-    /// before it run here, at once.
-    fn slow_work(&self, command: &Command) -> Option<SlowWork> {
-        match command {
-            Command::LaunchApp { id, output, new_window } => Some(self.launch_app(id, output.clone(), *new_window)),
-            Command::PowerOptions => Some(self.power_options()),
-            Command::Screenshot { mode } => Some(self.screenshot(*mode)),
-            Command::SaveCapture { output, rect } => Some(self.save_capture(output.clone(), *rect)),
-            Command::StartRecording { output, region, audio } => {
-                Some(self.start_recording(output.clone(), *region, *audio))
-            }
-            Command::Power {
-                action: action @ (PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff),
-            } => Some(self.power_logind(*action)),
-            _ => None,
+            false => Err(crate::features::not_ready(id)),
         }
     }
 
@@ -402,9 +284,9 @@ impl<'a> Connection<'a> {
         });
     }
 
-    fn power_options(&self) -> SlowWork {
+    fn power_options(&self) -> Answer {
         if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
-            return Box::new(move || Outcome::Error(e));
+            return Answer::Now(Outcome::Error(e));
         }
         let lock = self.require_feature(crate::session_lock::FEATURE_ID);
         let log_out = match &self.daemon.compositor {
@@ -412,120 +294,78 @@ impl<'a> Connection<'a> {
             _ => Err("Not on this compositor".into()),
         };
         let logger = Arc::clone(&self.daemon.logger);
-        Box::new(move || {
+        Answer::later(move || {
             let menu = PowerMenu {
                 options: crate::power::options(lock, log_out, &logger),
                 booted_at: crate::procfs::boot_time(),
             };
-            match serde_json::to_value(menu) {
-                Ok(value) => Outcome::Result(value),
-                Err(e) => Outcome::Error(e.to_string()),
-            }
+            value(Ok(menu))
         })
     }
 
     /// Runs a power menu action. The menu asks over the UI's own
     /// connection, which can't report the lock screen covering the screens
     /// while this waits, so locking here doesn't wait for it.
-    fn power(&self, action: PowerAction) -> Outcome {
+    fn power(&self, action: PowerAction) -> Answer {
         if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
-            return Outcome::Error(e);
+            return Answer::Now(Outcome::Error(e));
         }
+        self.daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
         match action {
-            PowerAction::Lock => {
-                self.daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
-                let locked = self
-                    .require_feature(crate::session_lock::FEATURE_ID)
-                    .and_then(|()| self.daemon.session_lock.request(&self.daemon.hub));
-                match locked {
-                    Ok(()) => Outcome::Result(serde_json::Value::Null),
-                    Err(e) => Outcome::Error(e),
-                }
-            }
+            PowerAction::Lock => Answer::Now(done(
+                self.require_feature(crate::session_lock::FEATURE_ID)
+                    .and_then(|()| self.daemon.session_lock.request(&self.daemon.hub)),
+            )),
             PowerAction::LogOut => {
-                self.daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
-                self.with_compositor(crate::compositor::Compositor::log_out)
+                Answer::Now(done(self.compositor().and_then(crate::compositor::Compositor::log_out)))
             }
-            PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff => self.power_logind(action)(),
+            PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff => self.power_logind(action),
         }
     }
 
     /// Suspend, restart or shut down through logind; answers with logind's
     /// own result. A suspend locks the screen first through novad's sleep
     /// inhibitor ([`crate::logind`]), as one from anywhere else does.
-    fn launch_app(&self, id: &str, output: Option<String>, new_window: bool) -> SlowWork {
-        let Some(launcher) = lock(&self.daemon.settings).launcher.clone() else {
-            let off = format!("the {} feature is off", crate::launcher::FEATURE_ID);
-            return Box::new(move || Outcome::Error(off));
-        };
-        let compositor = self.daemon.compositor.clone();
-        let tray = lock(&self.daemon.settings).tray.clone().filter(|_| !new_window);
+    fn power_logind(&self, action: PowerAction) -> Answer {
         let logger = Arc::clone(&self.daemon.logger);
-        let id = id.to_owned();
-        Box::new(move || {
-            // An open window takes focus where it is; a new one opens on the
-            // launcher's screen, which the compositor puts it on once focused.
-            // An app that only sits in the tray shows its window from there,
-            // as starting it again may just quit (Discord).
-            let focused = |ids: &[String]| {
-                if let Some(compositor) = &compositor {
-                    if !new_window && !ids.is_empty() && compositor.focus_app(ids, output.as_deref())? {
-                        return Ok(true);
-                    }
-                    if let Some(output) = &output {
-                        compositor.focus_output(output)?;
-                    }
-                }
-                if !tray.as_ref().map_or(Ok(false), |tray| tray.activate_app(&id))? {
-                    return Ok(false);
-                }
-                // The window comes back without focus on niri.
-                if let Some(compositor) = compositor.as_ref().filter(|_| !ids.is_empty()) {
-                    let deadline = std::time::Instant::now() + TRAY_WINDOW_WAIT;
-                    while !compositor.focus_app(ids, output.as_deref())? {
-                        if std::time::Instant::now() >= deadline {
-                            logger
-                                .info(LOG_SOURCE, &format!("{id}'s window didn't show after its tray icon was asked"));
-                            break;
-                        }
-                        std::thread::sleep(TRAY_WINDOW_RETRY);
-                    }
-                }
-                Ok(true)
-            };
-            match launcher.launch(&id, focused) {
-                Ok(()) => Outcome::Result(serde_json::Value::Null),
-                Err(e) => Outcome::Error(e),
-            }
+        Answer::later(move || {
+            done(
+                crate::power::run_logind(action)
+                    .inspect_err(|e| logger.warn(LOG_SOURCE, &format!("{action:?} failed: {e}"))),
+            )
         })
     }
 
-    fn power_logind(&self, action: PowerAction) -> SlowWork {
-        if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
-            return Box::new(move || Outcome::Error(e));
-        }
-        self.daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
+    /// Focuses the app `id` or starts it (see `launcher::Launcher::launch`).
+    fn launch_app(&self, id: &str, output: Option<String>, new_window: bool) -> Answer {
+        let launcher = match self.launcher() {
+            Ok(launcher) => launcher,
+            Err(e) => return Answer::Now(Outcome::Error(e)),
+        };
+        let compositor = self.daemon.compositor.clone();
+        let tray = lock(&self.daemon.settings).tray.clone();
         let logger = Arc::clone(&self.daemon.logger);
-        Box::new(move || match crate::power::run_logind(action) {
-            Ok(()) => Outcome::Result(serde_json::Value::Null),
-            Err(e) => {
-                logger.warn(LOG_SOURCE, &format!("{action:?} failed: {e}"));
-                Outcome::Error(e)
-            }
+        let id = id.to_owned();
+        Answer::later(move || {
+            let focus = |ids: &[String]| {
+                let (compositor, tray) = (compositor.as_deref(), tray.as_deref());
+                crate::launcher::focus_open(&id, ids, new_window, compositor, tray, output.as_deref(), &logger)
+            };
+            done(launcher.launch(&id, focus))
         })
     }
 
     /// Opens the region picker on every screen (or closes it), or saves the
     /// focused screen.
-    fn screenshot(&self, mode: CaptureMode) -> SlowWork {
+    fn screenshot(&self, mode: CaptureMode) -> Answer {
         if let Err(e) = self.require_feature(crate::screenshot::FEATURE_ID) {
-            return Box::new(move || Outcome::Error(e));
+            return Answer::Now(Outcome::Error(e));
         }
         let screenshots = Arc::clone(&self.daemon.screenshots);
         let compositor = self.daemon.compositor.clone();
         let folder = lock(&self.daemon.settings).screenshot_folder();
-        Box::new(move || {
-            let taken = match mode {
+        Answer::later(move || {
+            done(match mode {
                 CaptureMode::Region => match compositor.and_then(|compositor| compositor.desktop()) {
                     Some(desktop) => {
                         let outputs: Vec<String> = desktop.outputs.into_iter().map(|output| output.name).collect();
@@ -537,25 +377,18 @@ impl<'a> Connection<'a> {
                     let output = compositor.and_then(|compositor| compositor.focused_output());
                     folder.and_then(|folder| screenshots.take_screen(output.as_deref(), &folder))
                 }
-            };
-            match taken {
-                Ok(()) => Outcome::Result(serde_json::Value::Null),
-                Err(e) => Outcome::Error(e),
-            }
+            })
         })
     }
 
     /// Saves the region the user picked.
-    fn save_capture(&self, output: String, rect: nova_protocol::PixelRect) -> SlowWork {
+    fn save_capture(&self, output: String, rect: nova_protocol::PixelRect) -> Answer {
         if let Err(e) = self.require_feature(crate::screenshot::FEATURE_ID) {
-            return Box::new(move || Outcome::Error(e));
+            return Answer::Now(Outcome::Error(e));
         }
         let screenshots = Arc::clone(&self.daemon.screenshots);
         let folder = lock(&self.daemon.settings).screenshot_folder();
-        Box::new(move || match folder.and_then(|folder| screenshots.save_region(&output, rect, &folder)) {
-            Ok(()) => Outcome::Result(serde_json::Value::Null),
-            Err(e) => Outcome::Error(e),
-        })
+        Answer::later(move || done(folder.and_then(|folder| screenshots.save_region(&output, rect, &folder))))
     }
 
     /// Starts the recording the UI's picker asked for.
@@ -564,18 +397,20 @@ impl<'a> Connection<'a> {
         output: String,
         region: Option<nova_protocol::LayoutRect>,
         audio: nova_protocol::RecordAudio,
-    ) -> SlowWork {
+    ) -> Answer {
         if let Err(e) = self.require_feature(crate::recording::FEATURE_ID) {
-            return Box::new(move || Outcome::Error(e));
+            return Answer::Now(Outcome::Error(e));
         }
         let recordings = Arc::clone(&self.daemon.recordings);
         let folder = lock(&self.daemon.settings).recording_folder();
-        Box::new(move || outcome(folder.and_then(|folder| recordings.start(&output, region, audio, &folder))))
+        Answer::later(move || done(folder.and_then(|folder| recordings.start(&output, region, audio, &folder))))
     }
 
+    /// Tells the UI to open or close `panel` on the focused output. The UI
+    /// knows which screen has it open, so it decides which.
     fn toggle(&self, panel: Panel) -> Outcome {
-        if !self.daemon.feature_ready(panel.name()) {
-            return Outcome::Error(format!("the {panel} feature isn't ready (see `nova status`)"));
+        if let Err(e) = self.require_feature(panel.name()) {
+            return Outcome::Error(e);
         }
         let output = self.daemon.compositor.as_ref().and_then(|compositor| compositor.focused_output());
         match self.daemon.hub.publish(&Event::Toggle { panel, output }) {
@@ -681,6 +516,7 @@ impl<'a> Connection<'a> {
             | Command::WatchResources { .. }
             | Command::EndApp { .. }
             | Command::SearchApps { .. }
+            | Command::AppIcon { .. }
             | Command::LaunchApp { .. }
             | Command::PinApp { .. }
             | Command::HideTrayApp { .. }
@@ -725,10 +561,16 @@ impl Drop for Connection<'_> {
 /// stalls past [`WRITE_TIMEOUT`] hangs up on the client: the reader side ends
 /// too, so the connection unregisters, and dropping the queue answers any
 /// `flush` waiting on it.
-fn write_all_queued(mut writer: UnixStream, outgoing: mpsc::Receiver<Outgoing>, logger: &crate::logger::Logger) {
+fn write_all_queued(
+    mut writer: UnixStream,
+    outgoing: mpsc::Receiver<Outgoing>,
+    written: &Written,
+    logger: &crate::logger::Logger,
+) {
     for message in outgoing {
         match message {
             Outgoing::Line(line) => {
+                written.line(line.len());
                 if let Err(e) = writer.write_all(line.as_bytes()) {
                     if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) {
                         logger.warn(
@@ -764,10 +606,32 @@ fn peer_pid(stream: &UnixStream) -> Option<u32> {
     (got == 0).then(|| u32::try_from(cred.pid).ok()).flatten()
 }
 
-/// A request's answer: `null`, or its error.
-fn outcome(result: Result<(), String>) -> Outcome {
-    match result {
-        Ok(()) => Outcome::Result(serde_json::Value::Null),
+/// A request's answer, now or from work on another thread.
+enum Answer {
+    Now(Outcome),
+    Later(SlowWork),
+}
+
+impl Answer {
+    fn later(work: impl FnOnce() -> Outcome + Send + 'static) -> Self {
+        Self::Later(Box::new(work))
+    }
+}
+
+/// An answer that's `null`, or its error.
+fn done(result: Result<(), String>) -> Outcome {
+    value(result)
+}
+
+/// An answer with `result`'s value, or its error.
+fn value(result: Result<impl serde::Serialize, String>) -> Outcome {
+    match result.and_then(|value| serde_json::to_value(value).map_err(|e| e.to_string())) {
+        Ok(value) => Outcome::Result(value),
         Err(e) => Outcome::Error(e),
     }
+}
+
+/// A feature's service while it runs, else the error that it's not ready.
+fn running<S>(service: Option<Arc<S>>, feature: &str) -> Result<Arc<S>, String> {
+    service.ok_or_else(|| crate::features::not_ready(feature))
 }

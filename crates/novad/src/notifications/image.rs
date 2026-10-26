@@ -12,6 +12,11 @@ pub type Raw = (i32, i32, i32, bool, i32, i32, Vec<u8>);
 /// Pictures bigger than this on either side are refused: senders scale
 /// avatars down, and anything on the bus can send one.
 const MAX_SIDE: u32 = 1024;
+/// Paths longer than this (PATH_MAX, in bytes) are refused, so what novad
+/// keeps and sends for a picture stays small.
+const MAX_PATH_BYTES: usize = 4096;
+/// A `file://` URI escapes a byte in three at most.
+const MAX_REFERENCE_BYTES: usize = "file://".len() + 3 * MAX_PATH_BYTES;
 
 /// Writes `raw` to `<folder>/<id>-<revision>.png` and returns that path. A
 /// new revision for each picture gives it a path of its own, so the UI
@@ -60,13 +65,18 @@ pub fn is_saved(folder: &Path, id: u32, path: &Path) -> bool {
 }
 
 /// The file `reference` names, for an `image-path` hint or an app icon: an
-/// absolute path, or a `file://` URI. `None` for an icon name.
+/// absolute path, or a `file://` URI. `None` for an icon name, or a
+/// reference too long to be a path. Not looked up: that may block, and the
+/// UI shows nothing for a file that isn't there.
 pub fn file(reference: &str) -> Option<PathBuf> {
+    if reference.len() > MAX_REFERENCE_BYTES {
+        return None;
+    }
     let path = match reference.strip_prefix("file://") {
         Some(uri) => PathBuf::from(decode_percents(uri)?),
         None => PathBuf::from(reference),
     };
-    path.is_absolute().then_some(path)
+    (path.is_absolute() && path.as_os_str().len() <= MAX_PATH_BYTES).then_some(path)
 }
 
 /// A URI's path with its `%XX` escapes decoded; `None` when one is broken
@@ -93,8 +103,7 @@ mod tests {
 
     #[test]
     fn padded_rows_become_a_png_of_the_right_size() {
-        let dir = std::env::temp_dir().join(format!("novad-notification-image-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = nova_test_support::TempDir::new("notification-image");
         // 2×2 RGB, each row padded to 8 bytes; the last row isn't.
         let bytes = vec![255, 0, 0, 0, 255, 0, 9, 9, 0, 0, 255, 255, 255, 255];
         let path = save((2, 2, 8, false, 8, 3, bytes), &dir, 5, 9).unwrap();
@@ -108,7 +117,6 @@ mod tests {
         let info = reader.next_frame(&mut pixels).unwrap();
         assert_eq!((info.width, info.height), (2, 2));
         assert_eq!(&pixels[..12], &[255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255]);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -130,5 +138,17 @@ mod tests {
         assert_eq!(file("file:///tmp/avatar%20photo.png"), Some(PathBuf::from("/tmp/avatar photo.png")));
         assert_eq!(file("/tmp/100%25.png"), Some(PathBuf::from("/tmp/100%25.png")));
         assert_eq!(file("file:///tmp/%zz.png"), None);
+    }
+
+    #[test]
+    fn paths_too_long_to_be_paths_are_refused() {
+        let longest = format!("/{}", "a".repeat(MAX_PATH_BYTES - 1));
+        assert_eq!(file(&longest), Some(PathBuf::from(&longest)));
+        assert_eq!(file(&format!("{longest}a")), None);
+        assert_eq!(file(&format!("/{}", "a".repeat(4 * 1024 * 1024))), None);
+        // Escaped, a path takes more bytes than it is long.
+        let escaped = format!("file:///{}", "%20".repeat(MAX_PATH_BYTES - 1));
+        assert_eq!(file(&escaped), Some(PathBuf::from(format!("/{}", " ".repeat(MAX_PATH_BYTES - 1)))));
+        assert_eq!(file(&format!("{escaped}%20")), None);
     }
 }

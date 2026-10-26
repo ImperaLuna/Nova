@@ -4,7 +4,6 @@ import QtQuick
 import Quickshell
 import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
-import "../launcher.js" as LauncherLogic
 
 // The launcher's link to novad: the apps and the user's pinned and recent
 // ones, searching, launching and pinning. The launcher (../Launcher.qml)
@@ -45,15 +44,5 @@ Singleton {
             id: id,
             pinned: pinned
         });
-    }
-
-    // What an Image shows for an app's icon (a theme name or an absolute
-    // path), or "" when the theme has no such icon.
-    function iconSource(icon: string): string {
-        if (!icon)
-            return "";
-        if (icon.startsWith("/"))
-            return LauncherLogic.fileUrl(icon);
-        return Quickshell.iconPath(icon, true);
     }
 }

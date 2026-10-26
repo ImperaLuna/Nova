@@ -14,9 +14,12 @@
 //! read, with the desktop app it belongs to (see `app`), for the launcher
 //! to reopen an app that only sits in the tray. Items go when the bus name
 //! they're on goes. The tray takes at most [`MAX_ITEMS`] items, and checks
-//! what apps send it, since anything on the session bus can register.
+//! what apps send it, since anything on the session bus can register:
+//! an app registers only items on its own connection, a few at most, and
+//! an item its app says isn't there is dropped.
 
 mod app;
+pub use app::BRIDGE;
 #[cfg(test)]
 pub mod tests;
 
@@ -54,6 +57,8 @@ const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
 
 /// More than any desktop has; past it, registrations are refused.
 pub const MAX_ITEMS: usize = 64;
+/// More than any one app puts up; past it, that app's registrations are refused.
+const MAX_ITEMS_PER_APP: usize = 8;
 /// How many apps can be hidden at once.
 const MAX_HIDDEN: usize = MAX_ITEMS;
 /// The longest service string a registration may send. Bus names are at
@@ -310,6 +315,10 @@ impl Shared {
             Ok(_) => bus.to_string(),
             Err(_) => name_owner(connection, bus).await.map_err(|e| format!("{bus} has no owner: {e}"))?,
         };
+        // Else anything could fill the tray with names others own (novad's, say).
+        if owner != sender {
+            return Err(format!("{bus} isn't the sender's"));
+        }
         let address = format!("{bus}{path}");
         let mut state = lock(&self.state);
         if self.stopped() {
@@ -321,13 +330,17 @@ impl Shared {
         if state.items.len() >= MAX_ITEMS {
             return Err(format!("the tray already has {MAX_ITEMS} items"));
         }
+        if state.items.iter().filter(|item| item.owner == owner).count() >= MAX_ITEMS_PER_APP {
+            return Err(format!("the sender already has {MAX_ITEMS_PER_APP} items"));
+        }
         state.items.push(Item { address: address.clone(), bus: bus.to_string(), owner, read: None });
         Ok((address, true))
     }
 
     /// Reads the id and title of the item at `address`, and which process
-    /// it's in, then publishes it. An item whose app has gone meanwhile is
-    /// dropped; one that answers wrongly shows with what could be read. It
+    /// it's in, then publishes it. An item whose app has gone meanwhile, or
+    /// that its app says isn't there, is dropped; one that answers wrongly
+    /// shows with what could be read. It
     /// asks the connection that registered it, and keeps the answers only
     /// while that registration stands (a name handed over meanwhile is
     /// another app's).
@@ -341,7 +354,16 @@ impl Shared {
             return;
         };
         let path = &address[bus.len()..];
-        let id = item_text(connection, &owner, path, "Id").await;
+        let id = match item_text(connection, &owner, path, "Id").await {
+            Ok(id) => id,
+            // The app says there's no such item; a slow one stays, without an id.
+            Err(e) if says_not_there(&e) => {
+                self.logger.info(LOG_SOURCE, &format!("dropped {address}: can't read its id: {e}"));
+                unregister(connection, self.drop_items(|item| item.address == address && item.owner == owner)).await;
+                return;
+            }
+            Err(_) => String::new(),
+        };
         let title = item_text(connection, &owner, path, "Title").await;
         let pid = connection
             .call_method(Some(DBUS_NAME), DBUS_PATH, Some(DBUS_NAME), "GetConnectionUnixProcessID", &(owner.as_str(),))
@@ -351,17 +373,12 @@ impl Shared {
             // A name with no owner has nothing left to show.
             if matches!(e, zbus::Error::MethodError(name, ..) if name.as_str() == "org.freedesktop.DBus.Error.NameHasNoOwner")
             {
-                for address in self.drop_bus(&owner) {
-                    if let Ok(emitter) = SignalEmitter::new(connection, WATCHER_PATH) {
-                        let _ = emitter.status_notifier_item_unregistered(&address).await;
-                    }
-                }
+                unregister(connection, self.drop_bus(&owner)).await;
                 return;
             }
             let message = format!("can't tell which process {address} is in: {e}");
             self.logger.log(LogLevel::Debug, LOG_SOURCE, &message);
         }
-        let id = id.unwrap_or_default();
         let title = title.unwrap_or_default();
         let app_ids = app::candidates(&self.proc_root, pid.as_ref().ok().copied(), &id);
         let bridged = pid.as_ref().is_ok_and(|&pid| app::is_bridge(&self.proc_root, pid));
@@ -469,6 +486,32 @@ async fn next_unless_stopped(stream: &mut MessageStream, stop: &Stop) -> Option<
         Pin::new(&mut *stream).poll_next(cx)
     })
     .await
+}
+
+/// Whether `e` is an app's answer that it has no such item, rather than
+/// no answer in time or a passing failure.
+fn says_not_there(e: &zbus::Error) -> bool {
+    use zbus::DBusError;
+    let name = match e {
+        zbus::Error::MethodError(name, ..) => name.to_string(),
+        zbus::Error::FDO(e) => e.name().to_string(),
+        _ => return false,
+    };
+    matches!(
+        name.as_str(),
+        "org.freedesktop.DBus.Error.UnknownObject"
+            | "org.freedesktop.DBus.Error.UnknownInterface"
+            | "org.freedesktop.DBus.Error.UnknownMethod"
+            | "org.freedesktop.DBus.Error.UnknownProperty"
+    )
+}
+
+/// Tells hosts the items at `addresses` went.
+async fn unregister(connection: &Connection, addresses: Vec<String>) {
+    let Ok(emitter) = SignalEmitter::new(connection, WATCHER_PATH) else { return };
+    for address in addresses {
+        let _ = emitter.status_notifier_item_unregistered(&address).await;
+    }
 }
 
 async fn name_owner(connection: &Connection, name: &str) -> zbus::Result<String> {

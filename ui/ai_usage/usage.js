@@ -31,10 +31,6 @@ function duration(ms) {
     return Duration.minutes(Math.max(1, Math.ceil(ms / Duration.MINUTE_MS)));
 }
 
-function pad(number) {
-    return number < 10 ? "0" + number : String(number);
-}
-
 // "2h 14m left", or "" once the window has reset.
 function leftText(resetsAt, now) {
     if (!resetsAt)
@@ -53,7 +49,7 @@ function resetText(resetsAt, now) {
         return "";
     if (ms < DAY_MS)
         return "Resets in " + duration(ms);
-    return "Resets " + WEEKDAYS[at.getDay()] + " " + pad(at.getHours()) + ":" + pad(at.getMinutes());
+    return "Resets " + WEEKDAYS[at.getDay()] + " " + Duration.twoDigits(at.getHours()) + ":" + Duration.twoDigits(at.getMinutes());
 }
 
 // Everything the pill and panel need for `provider` (one entry of the

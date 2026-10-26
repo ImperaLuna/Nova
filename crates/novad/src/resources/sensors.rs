@@ -102,9 +102,8 @@ mod tests {
     use super::*;
 
     /// A sysfs tree with the files these drivers really expose.
-    fn sysfs(name: &str, files: &[(&str, &str)]) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("novad-sensors-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+    fn sysfs(name: &str, files: &[(&str, &str)]) -> nova_test_support::TempDir {
+        let root = nova_test_support::TempDir::new(&format!("sensors-{name}"));
         for (path, text) in files {
             let path = root.join(path);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -133,7 +132,6 @@ mod tests {
         );
         let sensor = Temperature::find(&root).unwrap();
         assert_eq!(sensor.read(), Some(52.125));
-        std::fs::remove_dir_all(root).unwrap();
 
         // An Intel laptop: coretemp's package sensor isn't its first input.
         let root = sysfs(
@@ -149,14 +147,12 @@ mod tests {
             ],
         );
         assert_eq!(Temperature::find(&root).and_then(|sensor| sensor.read()), Some(64.0));
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn no_cpu_sensor_is_none() {
         let root = sysfs("none", &[("class/hwmon/hwmon0/name", "nvme\n"), ("class/hwmon/hwmon0/temp1_input", "1\n")]);
         assert_eq!(Temperature::find(&root), None);
-        std::fs::remove_dir_all(root).unwrap();
         assert_eq!(Temperature::find(Path::new("/nonexistent")), None);
     }
 
@@ -171,7 +167,6 @@ mod tests {
             ],
         );
         assert_eq!(GpuBusy::find(&root).and_then(|gpu| gpu.read()), Some(18.0));
-        std::fs::remove_dir_all(root).unwrap();
         assert_eq!(GpuBusy::find(Path::new("/nonexistent")), None);
     }
 }

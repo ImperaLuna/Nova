@@ -281,7 +281,7 @@ Item {
         width: chipText.implicitWidth + 2 * Tokens.pad
         height: Tokens.notificationActionHeight
         radius: height / 2
-        color: Qt.rgba(Tokens.bg.r, Tokens.bg.g, Tokens.bg.b, Tokens.surfaceOpacity)
+        color: Tokens.surface
         border.width: Tokens.dividerWidth
         border.color: Tokens.glassRim
 

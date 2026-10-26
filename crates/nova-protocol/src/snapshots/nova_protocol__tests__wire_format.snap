@@ -63,6 +63,8 @@ expression: all
 {"v":2,"event":"launcher","data":{"apps":[{"id":"org.mozilla.firefox.desktop","name":"Firefox","description":"Web Browser","icon":"firefox"},{"id":"foot.desktop","name":"Foot"}],"pinned":["foot.desktop"],"recent":["org.mozilla.firefox.desktop","foot.desktop"]}}
 {"v":2,"id":24,"cmd":"search_apps","args":{"query":"fi"}}
 {"v":2,"id":24,"result":[{"id":"org.mozilla.firefox.desktop","name":[{"matched":true,"text":"Fi"},{"text":"refox"}]}]}
+{"v":2,"id":44,"cmd":"app_icon","args":{"icon_name":"","program":"/nix/store/x-zen/lib/zen/.zen-wrapped","name":"Zen"}}
+{"v":2,"id":44,"result":"zen-browser"}
 {"v":2,"id":25,"cmd":"launch_app","args":{"id":"foot.desktop","output":"DP-1","new_window":true}}
 {"v":2,"id":26,"cmd":"pin_app","args":{"id":"foot.desktop","pinned":true}}
 {"v":2,"id":27,"cmd":"hide_tray_app","args":{"id":"steam","hidden":true}}

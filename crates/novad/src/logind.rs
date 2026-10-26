@@ -19,6 +19,7 @@
 //! service usually doesn't have it, so otherwise it's the session logind
 //! counts as our user's display (the graphical one).
 
+use crate::backoff::Backoff;
 use crate::session_lock::FEATURE_ID;
 use crate::{Daemon, lock};
 use futures_core::Stream;
@@ -71,7 +72,7 @@ pub fn follow(daemon: &Arc<Daemon>) {
 
 /// Follows logind for `follower`, starting over after a failure.
 fn keep_following(daemon: &Daemon, follower: Follower) {
-    let mut retry = FIRST_RETRY;
+    let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
     let mut last_error = String::new();
     loop {
         let mut followed = false;
@@ -81,6 +82,10 @@ fn keep_following(daemon: &Daemon, follower: Follower) {
                 Follower::Lock => follow_locks(daemon, &mut followed).await,
             }
         });
+        if followed {
+            retry.reset();
+        }
+        let wait = retry.next();
         let error = match result {
             Ok(()) => "logind's bus connection closed".to_string(),
             Err(e) => e.to_string(),
@@ -92,12 +97,11 @@ fn keep_following(daemon: &Daemon, follower: Follower) {
                 Follower::Sleep => "lock before sleep",
                 Follower::Lock => "lock on `loginctl lock-session`",
             };
-            let message = format!("can't {what}, trying again in {}s: {error}", retry.as_secs());
+            let message = format!("can't {what}, trying again in {}s: {error}", wait.as_secs());
             daemon.logger.warn(LOG_SOURCE, &message);
             last_error = error;
         }
-        std::thread::sleep(retry);
-        retry = if followed { FIRST_RETRY } else { (retry * 2).min(MAX_RETRY) };
+        std::thread::sleep(wait);
     }
 }
 

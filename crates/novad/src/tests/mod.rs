@@ -1,0 +1,268 @@
+//! Component tests: novad driven through its real socket, with a real logger,
+//! supervisor, settings files and feature manifests. The stand-ins are the
+//! UI process in the crash tests, a shell script, since Quickshell needs a
+//! compositor, and compositor IPC servers replaying recorded niri and
+//! Hyprland sessions.
+
+use super::*;
+use crate::session_bus::Bus;
+use nova_protocol::{FeatureStatus, LogEntry, UI_LOG_SOURCE};
+use nova_test_support::{TempDir, wait_until, write_program};
+use serde_json::{Value, json};
+use std::io::{BufRead, BufReader, Lines, Write};
+use std::os::unix::net::UnixStream;
+use std::path::Path;
+use std::time::Duration;
+
+/// A novad in this process for one test, in a folder of its own. Dropping
+/// it stops everything it started (see [`InProcess`]), then removes the
+/// folder.
+struct TestDaemon {
+    // Before `dir`: fields drop in order.
+    _running: InProcess,
+    dir: TempDir,
+    socket: PathBuf,
+    daemon: Arc<Daemon>,
+}
+
+/// `features.toml` with features off. The features with a watcher of their own, off unless a test is about
+/// them: each watcher is an inotify instance, and the tests running at once
+/// would pass the usual limit of 128.
+const WATCHERS_OFF: &str = "disabled = [\"ai-usage\", \"launcher\"]\n";
+const LAUNCHER_OFF: &str = "disabled = [\"launcher\"]\n";
+const AI_USAGE_OFF: &str = "disabled = [\"ai-usage\"]\n";
+
+impl TestDaemon {
+    /// With the `ai-usage` and `launcher` features off.
+    fn start(name: &str, ui: Option<UiSettings>) -> Self {
+        Self::open(name, ui, |dir| std::fs::write(dir.join("config/features.toml"), WATCHERS_OFF).unwrap())
+    }
+
+    /// With the `ai-usage` feature on, its files under `<dir>/ai-usage`, and
+    /// the `launcher` off.
+    fn with_ai_usage(name: &str, prepare: impl FnOnce(&Path)) -> Self {
+        Self::open(name, None, |dir| {
+            std::fs::write(dir.join("config/features.toml"), LAUNCHER_OFF).unwrap();
+            prepare(&dir.join("ai-usage"));
+        })
+    }
+
+    /// With the `launcher` feature on, its apps under
+    /// `<dir>/launcher/share`, and `ai-usage` off.
+    fn with_launcher(name: &str) -> Self {
+        Self::open(name, None, |dir| std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap())
+    }
+
+    /// Like [`TestDaemon::with_launcher`], following the compositor `connect`
+    /// sets up in the test's folder.
+    fn with_launcher_following(name: &str, connect: impl FnOnce(&Path) -> Box<dyn compositor::Backend>) -> Self {
+        Self::open_following(
+            name,
+            None,
+            |dir| std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap(),
+            |dir| Some(connect(dir)),
+        )
+    }
+
+    /// Following the compositor `connect` sets up in the test's folder, with
+    /// the `ai-usage` and `launcher` features off.
+    pub fn with_compositor(name: &str, connect: impl FnOnce(&Path) -> Box<dyn compositor::Backend>) -> Self {
+        Self::open_following(
+            name,
+            None,
+            |dir| std::fs::write(dir.join("config/features.toml"), WATCHERS_OFF).unwrap(),
+            |dir| Some(connect(dir)),
+        )
+    }
+
+    /// Settings files go in `<dir>/config`, which `prepare` may fill or remove.
+    fn open(name: &str, ui: Option<UiSettings>, prepare: impl FnOnce(&Path)) -> Self {
+        Self::open_following(name, ui, prepare, |_| None)
+    }
+
+    /// Like [`TestDaemon::open`], following the compositor `compositor` sets up.
+    fn open_following(
+        name: &str,
+        ui: Option<UiSettings>,
+        prepare: impl FnOnce(&Path),
+        compositor: impl FnOnce(&Path) -> Option<Box<dyn compositor::Backend>>,
+    ) -> Self {
+        let temp = TempDir::new(name);
+        let dir = temp.path().to_owned();
+        std::fs::create_dir_all(dir.join("config")).unwrap();
+        std::fs::create_dir_all(dir.join("ai-usage")).unwrap();
+        std::fs::create_dir_all(dir.join("launcher/share/applications")).unwrap();
+        prepare(&dir);
+        let socket = dir.join("novad.sock");
+        let hub = Arc::new(Hub::default());
+        let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
+        let listener = server::bind(&socket).unwrap();
+        let ui = ui.map(|settings| Supervisor::start(settings, Arc::clone(&logger)));
+        let sources = Sources {
+            config: dir.join("config/config.toml"),
+            selection: dir.join("config/features.toml"),
+            themes_dir: theme::default_dir(),
+            manifests: nova_features::load_all(&repo_features()).unwrap(),
+            path_var: std::env::var("PATH").unwrap_or_default(),
+            ai_usage: ai_usage_paths(&dir.join("ai-usage")),
+            resources: resources::Sources::system(""),
+            launcher: launcher_paths(&dir),
+            // No bus unless the test starts one there (`session_bus::TestBus`).
+            tray: tray::Sources {
+                bus: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+                state_file: dir.join("tray.json"),
+            },
+            // No bus: the notifications' own tests give them one.
+            notifications: notifications::Sources {
+                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                state_file: dir.join("notifications.json"),
+                images: dir.join("notifications"),
+            },
+        };
+        let settings = Settings::load(&sources, &hub, &logger);
+        let compositor = compositor(&dir)
+            .map(|backend| compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
+        let session_lock = Arc::new(session_lock::SessionLock::open(&dir, &logger));
+        let screenshots = Arc::new(screenshot::Screenshots::new(
+            &dir,
+            sources.path_var.clone(),
+            Arc::clone(&hub),
+            Arc::clone(&logger),
+        ));
+        let recordings =
+            Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
+        let daemon = Arc::new(Daemon {
+            started: Instant::now(),
+            hub,
+            logger,
+            ui,
+            socket: socket.clone(),
+            sources,
+            settings: Mutex::new(settings),
+            compositor,
+            session_lock,
+            screenshots,
+            recordings,
+        });
+        daemon.recordings.allow(daemon.feature_ready(recording::FEATURE_ID));
+        let running = InProcess::serve(listener, Arc::clone(&daemon), daemon.watch_settings());
+        Self { _running: running, dir: temp, socket, daemon }
+    }
+
+    fn config_file(&self) -> PathBuf {
+        self.daemon.sources.config.clone()
+    }
+
+    fn features_file(&self) -> PathBuf {
+        self.daemon.sources.selection.clone()
+    }
+
+    /// Connects and reads the hello.
+    fn connect(&self) -> Client {
+        let stream = UnixStream::connect(&self.socket).unwrap();
+        let writer = stream.try_clone().unwrap();
+        let mut client = Client { writer, lines: BufReader::new(stream).lines(), early: Default::default() };
+        assert_eq!(client.next()["event"], "hello");
+        client
+    }
+}
+
+struct Client {
+    writer: UnixStream,
+    lines: Lines<BufReader<UnixStream>>,
+    /// Events that arrived while `request` waited for its reply.
+    early: std::collections::VecDeque<Value>,
+}
+
+impl Client {
+    /// The data of the next `name` event, skipping anything else; fails
+    /// after a while.
+    fn next_event(&mut self, name: &str) -> Value {
+        self.writer.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        loop {
+            let message = match self.early.pop_front() {
+                Some(event) => event,
+                None => {
+                    let line = self.lines.next().expect("connection closed").expect("no event in time");
+                    serde_json::from_str(&line).unwrap()
+                }
+            };
+            if message["event"] == name {
+                return message["data"].clone();
+            }
+        }
+    }
+
+    fn send(&mut self, message: &Value) {
+        writeln!(self.writer, "{message}").unwrap();
+    }
+
+    fn send_raw(&mut self, line: &str) {
+        writeln!(self.writer, "{line}").unwrap();
+    }
+
+    fn next(&mut self) -> Value {
+        if let Some(event) = self.early.pop_front() {
+            return event;
+        }
+        serde_json::from_str(&self.lines.next().unwrap().unwrap()).unwrap()
+    }
+
+    fn request(&mut self, id: u64, cmd: &str, args: Option<Value>) -> Value {
+        let mut message = json!({"v": 2, "id": id, "cmd": cmd});
+        if let Some(args) = args {
+            message["args"] = args;
+        }
+        self.send(&message);
+        // Events published meanwhile (ai_usage's worker) may come first;
+        // they're kept for `next`.
+        loop {
+            let message: Value = serde_json::from_str(&self.lines.next().unwrap().unwrap()).unwrap();
+            if message.get("event").is_none() {
+                assert_eq!(message["id"], id, "expected the reply to {id}, got {message}");
+                return message;
+            }
+            self.early.push_back(message);
+        }
+    }
+}
+
+fn read_entries(path: &Path) -> Vec<LogEntry> {
+    std::fs::read_to_string(path).unwrap().lines().filter_map(LogEntry::parse_line).collect()
+}
+
+/// Apps come from `<dir>/launcher/share` only, and start forked twice,
+/// never as services of the desktop's systemd.
+fn launcher_paths(dir: &Path) -> launcher::Paths {
+    launcher::Paths {
+        data_dirs: vec![dir.join("launcher/share")],
+        state_file: dir.join("launcher/launcher.json"),
+        runner: launcher::Runner::Direct,
+    }
+}
+
+fn repo_features() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features")
+}
+
+/// The usage endpoints are `claude_usage_url` and `codex_usage_url`; nothing
+/// listens there unless a test starts a fake one.
+fn ai_usage_paths(root: &Path) -> ai_usage::Paths {
+    ai_usage::Paths {
+        codex_home: Some(root.join("codex")),
+        state_file: root.join("state/ai-usage.json"),
+        claude_credentials: Some(root.join("claude/.credentials.json")),
+        claude_usage_url: std::fs::read_to_string(root.join("claude/url")).unwrap_or("http://127.0.0.1:9/".into()),
+        codex_usage_url: std::fs::read_to_string(root.join("codex-url")).unwrap_or("http://127.0.0.1:9/".into()),
+    }
+}
+
+mod apps;
+mod basics;
+mod desktop;
+mod fake_compositor;
+mod live_config;
+mod services;
+mod usage;
+
+use fake_compositor::{FakeCompositor, focused_output, follow_to_the_end, workspace_id};

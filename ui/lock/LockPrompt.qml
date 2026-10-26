@@ -71,7 +71,7 @@ Column {
             radius: Tokens.radiusControl
             color: Tokens.surfaceRaised
             border.width: Tokens.strokeThin
-            border.color: root.failed ? Tokens.error : Qt.rgba(Tokens.primary.r, Tokens.primary.g, Tokens.primary.b, Tokens.lockFocusOpacity)
+            border.color: root.failed ? Tokens.error : Tokens.alpha(Tokens.primary, Tokens.lockFocusOpacity)
 
             Behavior on border.color {
                 ColorAnimation {
