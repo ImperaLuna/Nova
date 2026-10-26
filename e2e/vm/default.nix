@@ -148,7 +148,7 @@ let
       stepsIfAny =
         names:
         if builtins.all (name: builtins.hasAttr name steps) names then
-          [ (map (name: "${ipcEnv} ${steps.${name}}") names) ]
+          [ (map (name: "export ${ipcEnv}; ${steps.${name}}") names) ]
         else
           [ ];
 
