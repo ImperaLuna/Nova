@@ -412,6 +412,24 @@ pub(crate) fn session_path() -> String {
         .unwrap_or_else(|_| path.to_string_lossy().into_owned())
 }
 
+/// The spec's default for an unset `XDG_DATA_DIRS`.
+const DEFAULT_DATA_DIRS: &str = "/usr/local/share:/usr/share";
+
+/// The XDG data folders (the user's first), in the order they're searched
+/// for apps and icons, plus the folders packages install into, which a
+/// systemd user service's `XDG_DATA_DIRS` often lacks.
+pub(crate) fn data_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    dirs.extend(nova_paths::data_home());
+    let system = nova_paths::path_var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
+    dirs.extend(std::env::split_paths(&system));
+    // Where packages install, last so the session's own order wins.
+    dirs.extend(package_prefixes().into_iter().map(|prefix| prefix.join("share")));
+    let mut seen = std::collections::BTreeSet::new();
+    dirs.retain(|dir| dir.is_absolute() && seen.insert(dir.clone()));
+    dirs
+}
+
 /// Where package managers install, each with `bin/` and `share/` below it,
 /// in the order they're searched after the session's own: the user's Nix
 /// profiles, the system's (NixOS), Flatpak's exports, then the usual.

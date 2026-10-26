@@ -58,7 +58,7 @@ pub struct Paths {
 impl Paths {
     pub fn new(state_dir: &Path, path_var: &str) -> Self {
         Self {
-            data_dirs: scan::data_dirs(),
+            data_dirs: crate::data_dirs(),
             state_file: state_dir.join("launcher.json"),
             runner: Runner::detect(path_var),
         }

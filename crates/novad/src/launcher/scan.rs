@@ -1,6 +1,5 @@
 //! Where desktop entries live and reading them all: `applications/` in each
-//! XDG data folder (the user's first), plus the folders packages install
-//! into, which a systemd user service's `XDG_DATA_DIRS` often lacks.
+//! data folder (`crate::data_dirs`).
 //! The first folder with an id wins, as the spec says, so the user's own
 //! copy of an entry replaces the system's.
 
@@ -8,8 +7,6 @@ use super::desktop_entry::{self, Context, Entry, Skipped};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-/// The spec's default for an unset `XDG_DATA_DIRS`.
-const DEFAULT_DATA_DIRS: &str = "/usr/local/share:/usr/share";
 const ENTRY_EXTENSION: &str = "desktop";
 /// Links followed when looking for what to watch, like the kernel's limit.
 const MAX_LINKS: usize = 40;
@@ -17,19 +14,6 @@ const MAX_LINKS: usize = 40;
 const MAX_DEPTH: usize = 8;
 /// A desktop entry is a few kilobytes; anything far bigger isn't one.
 const MAX_ENTRY_BYTES: u64 = 1024 * 1024;
-
-/// The data folders, in the order they're searched.
-pub fn data_dirs() -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    dirs.extend(nova_paths::data_home());
-    let system = nova_paths::path_var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
-    dirs.extend(std::env::split_paths(&system));
-    // Where packages install, last so the session's own order wins.
-    dirs.extend(crate::package_prefixes().into_iter().map(|prefix| prefix.join("share")));
-    let mut seen = BTreeSet::new();
-    dirs.retain(|dir| dir.is_absolute() && seen.insert(dir.clone()));
-    dirs
-}
 
 /// Every app in `data_dirs`, by id, and the problems with entries that
 /// aren't valid, for the log.
