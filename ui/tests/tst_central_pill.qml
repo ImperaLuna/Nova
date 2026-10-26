@@ -202,5 +202,18 @@ Item {
             pill.workspaces = [workspace(1), workspace(2, true, true)];
             verify(!numbers(pill)[1].calling);
         }
+
+        // A still dot: it fades in once and then holds, so a workspace left
+        // urgent costs no frames while it waits.
+        function test_the_urgent_dot_holds_still() {
+            const pill = createPill([workspace(1, true), workspace(2, false, true)]);
+            settle(pill);
+            const dot = findChild(numbers(pill)[1], "dot");
+            tryCompare(dot, "opacity", 1);
+            wait(Tokens.durationFade * 8);
+            compare(dot.opacity, 1);
+            pill.workspaces = [workspace(1), workspace(2, true, true)];
+            tryCompare(dot, "visible", false);
+        }
     }
 }
