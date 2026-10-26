@@ -30,9 +30,23 @@ QtObject {
         y: stageRegions.offset
         regions: [...inputRegions.instances, ...holeRegions.instances]
     }
+    // Only the glass on the window: Hyprland 0.56 blurs the whole surface
+    // when the region lies wholly outside it (it clips the region to the
+    // surface, and an empty clip means no clip:
+    // renderTextureWithBlurInternal in src/render/OpenGL.cpp). The pills
+    // sliding out of sight above the stage showed a blurred band as tall as
+    // the stage (IMP-180). The protocol clips to the surface anyway, so this
+    // costs nothing elsewhere.
     readonly property Region blur: Region {
-        y: stageRegions.offset
-        regions: blurRegions.instances
+        Region {
+            y: stageRegions.offset
+            regions: blurRegions.instances
+        }
+        Region {
+            width: stageRegions.window.width
+            height: stageRegions.window.height
+            intersection: Intersection.Intersect
+        }
     }
 
     readonly property Variants inputRegions: Variants {

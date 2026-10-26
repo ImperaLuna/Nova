@@ -168,8 +168,7 @@ tests need KVM. Without KVM (cloud sessions), approve goldens with the "Approve
 goldens" workflow from main on the PR branch instead of `just e2e-approve`.
 `just run` logs to `~/.local/state/nova-dev`.
 
-Every change goes through a pull request; `main` is protected. Sessions on the
-maintainer's desktop are for testing only: don't commit or push from there.
+Every change goes through a pull request; `main` is protected.
 
 Scratch output (measurements, logs, screenshots, audit reports) goes in your
 session's scratchpad or the worktree's ignored `e2e/out/`, never in
