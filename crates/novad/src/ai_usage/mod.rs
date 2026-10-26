@@ -342,7 +342,7 @@ impl Usage {
             // the order they were made.
             let mut state = lock(&self.state);
             if self.stopped() {
-                return Err(format!("the {FEATURE_ID} feature is off"));
+                return Err(crate::features::not_ready(FEATURE_ID));
             }
             let before = state.saved.clone();
             change(&mut state);

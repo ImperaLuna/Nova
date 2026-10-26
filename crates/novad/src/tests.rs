@@ -940,7 +940,7 @@ fn ai_usage_commands_say_when_the_feature_is_off() {
     let novad = TestDaemon::start("ai-usage-off", None);
     let mut client = novad.connect();
     let reply = client.request(1, "show_ai_usage", Some(json!({"provider": "codex"})));
-    assert_eq!(reply["error"], "the ai-usage feature is off");
+    assert_eq!(reply["error"], "the ai-usage feature isn't ready (see `nova status`)");
     client.request(2, "subscribe", Some(json!({"topics": ["ai_usage"]})));
     assert_eq!(client.request(3, "ping", None)["result"], "pong", "no ai_usage event without the feature");
 }
@@ -1412,7 +1412,7 @@ fn turning_a_feature_off_and_on_stops_and_starts_it() {
     save_by_rename(&novad.features_file(), WATCHERS_OFF);
     assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "off");
     let reply = client.request(2, "show_ai_usage", Some(json!({"provider": "codex"})));
-    assert_eq!(reply["error"], "the ai-usage feature is off");
+    assert_eq!(reply["error"], "the ai-usage feature isn't ready (see `nova status`)");
 
     // No features.toml means each feature's default, which is on.
     std::fs::remove_file(novad.features_file()).unwrap();
@@ -1923,7 +1923,7 @@ fn the_launcher_stops_with_its_feature() {
         }
     }
     let off = client.request(2, "search_apps", Some(json!({"query": "a"})));
-    assert!(off["error"].as_str().unwrap().contains("feature is off"));
+    assert!(off["error"].as_str().unwrap().contains("feature isn't ready"));
     let toggle = client.request(3, "toggle", Some(json!({"panel": "launcher"})));
     assert!(toggle["error"].as_str().unwrap().contains("isn't ready"));
 }

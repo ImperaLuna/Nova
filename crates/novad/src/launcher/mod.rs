@@ -9,9 +9,11 @@ mod launch;
 mod rank;
 mod scan;
 
+use crate::compositor::Compositor;
 use crate::hub::Hub;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
+use crate::tray::Tray;
 use crate::{lock, state_file};
 use desktop_entry::{Context, Entry, Locale};
 pub use launch::{Runner, open};
@@ -36,6 +38,10 @@ const MAX_RECENT: usize = 8;
 /// Apps whose launches are remembered (for recent and for ranking); the
 /// least recently launched are forgotten first.
 const MAX_REMEMBERED: usize = 200;
+/// How long a launch waits for the window of an app it reopened from the
+/// tray, to focus it, and how often it looks.
+const TRAY_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(3) };
+const TRAY_WINDOW_RETRY: Duration = Duration::from_millis(100);
 
 /// Where the module reads and keeps things, and how it starts apps.
 #[derive(Clone)]
@@ -195,7 +201,7 @@ impl Launcher {
     /// app ids its windows may have, none for a terminal app; `false` when
     /// none is open), or else starts the app; either counts it as launched.
     pub fn launch(&self, id: &str, focus: impl FnOnce(&[String]) -> Result<bool, String>) -> Result<(), String> {
-        let off = || format!("the {FEATURE_ID} feature is off");
+        let off = || crate::features::not_ready(FEATURE_ID);
         let entry = lock(&self.state).apps.get(id).cloned().ok_or_else(|| format!("no app {id:?}"))?;
         let ids = entry.window_ids();
         if self.stopped() {
@@ -271,7 +277,7 @@ impl Launcher {
     fn update(&self, change: impl FnOnce(&mut Saved) -> Result<(), String>) -> Result<(), String> {
         let mut state = lock(&self.state);
         if self.stopped() {
-            return Err(format!("the {FEATURE_ID} feature is off"));
+            return Err(crate::features::not_ready(FEATURE_ID));
         }
         let before = state.saved.clone();
         change(&mut state.saved)?;
@@ -431,4 +437,44 @@ fn snapshot(state: &State) -> nova_protocol::Launcher {
     launched.sort_by(|a, b| b.1.last.cmp(&a.1.last).then_with(|| a.0.cmp(b.0)));
     let recent = launched.into_iter().take(MAX_RECENT).map(|(id, _)| id.clone()).collect();
     nova_protocol::Launcher { apps, pinned, recent }
+}
+/// The focus step of [`Launcher::launch`] for app `id`, whose windows may
+/// have the app ids `ids`: an open window takes focus where it is, unless
+/// a `new_window` is asked for; a new one opens on `output` (the
+/// launcher's screen), which the compositor puts it on once focused. An
+/// app that only sits in the tray shows its window from there, as starting
+/// it again may just quit (Discord). `true` when nothing needs starting.
+pub fn focus_open(
+    id: &str,
+    ids: &[String],
+    new_window: bool,
+    compositor: Option<&Compositor>,
+    tray: Option<&Tray>,
+    output: Option<&str>,
+    logger: &Logger,
+) -> Result<bool, String> {
+    if let Some(compositor) = compositor {
+        if !new_window && !ids.is_empty() && compositor.focus_app(ids, output)? {
+            return Ok(true);
+        }
+        if let Some(output) = output {
+            compositor.focus_output(output)?;
+        }
+    }
+    let tray = tray.filter(|_| !new_window);
+    if !tray.map_or(Ok(false), |tray| tray.activate_app(id))? {
+        return Ok(false);
+    }
+    // The window comes back without focus on niri.
+    if let Some(compositor) = compositor.filter(|_| !ids.is_empty()) {
+        let deadline = std::time::Instant::now() + TRAY_WINDOW_WAIT;
+        while !compositor.focus_app(ids, output)? {
+            if std::time::Instant::now() >= deadline {
+                logger.info(LOG_SOURCE, &format!("{id}'s window didn't show after its tray icon was asked"));
+                break;
+            }
+            std::thread::sleep(TRAY_WINDOW_RETRY);
+        }
+    }
+    Ok(true)
 }

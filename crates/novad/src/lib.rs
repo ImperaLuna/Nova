@@ -14,8 +14,9 @@
 //! - `settings.rs`: one `reconcile` call that starts the service when the
 //!   feature is ready, stops it when it isn't and restarts it when its
 //!   options change (its type goes in the `services!` list).
-//! - `server.rs`: its commands (through a `with_<service>` helper that
-//!   answers when the feature is off) and the snapshot sent on subscribe.
+//! - `server.rs`: its commands (through a getter like `Connection::launcher`
+//!   that answers when the feature isn't ready) and the snapshot sent on
+//!   subscribe.
 //! - `ui/daemon/protocol.js` (`CMD_`/`EVENT_`/`TOPIC_`/`FEATURE_` names, checked
 //!   against nova-protocol) and `Daemon.qml` (subscribe, keep the event's data).
 //! - A QML service singleton beside the feature's components

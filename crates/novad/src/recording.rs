@@ -156,7 +156,7 @@ impl Recordings {
     ) -> Result<(), String> {
         let mut state = lock(&self.state);
         if !state.allowed {
-            return Err(format!("the {FEATURE_ID} feature isn't ready (see `nova status`)"));
+            return Err(crate::features::not_ready(FEATURE_ID));
         }
         if state.active.is_some() {
             return Err("already recording".into());
