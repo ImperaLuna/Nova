@@ -156,12 +156,14 @@ Item {
             compare(all[1].icon, "image://icon/steam_tray_mono");
             compare(all.map(entry => entry.hidden), [false, true, false]);
             compare(all.map(entry => entry.attention), [false, false, true]);
+            compare(all[1].address, ":1.607/org/ayatana/NotificationItem/steam", "a click goes through novad");
         }
 
         function test_without_novad_items_still_show_under_their_own_names() {
             const all = Tray.entries(stage.quickshellItems(), null);
             compare(all.map(entry => entry.key), ["discord_status_icon_1", "steam", "chrome_status_icon_1"]);
             compare(all.map(entry => entry.name), ["discord_status_icon_1", "Steam", "Claude"]);
+            compare(all.map(entry => entry.address), ["", "", ""], "clicks go straight to the app");
         }
 
         function test_a_changed_title_still_finds_the_app() {

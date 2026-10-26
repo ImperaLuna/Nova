@@ -9,7 +9,7 @@
 # so run them as Nix builds). Per compositor:
 #   checks.<system>.e2e-<compositor>          the check: both halves + screenshots
 #   checks.<system>.e2e-<compositor>.vm       the first half and its screenshots
-#   checks.<system>.e2e-<compositor>.frames   the second half (frames.py)
+#   checks.<system>.e2e-<compositor>.frames   the second half (frames.py), pss.txt
 #   checks.<system>.e2e-<compositor>.compare  report.txt, screenshots/, diff/
 #   checks.<system>.e2e-<compositor>.record   recorded IPC data (record.py)
 { pkgs, nova }:
@@ -221,6 +221,8 @@ let
       ''
         # Passed too: ${frames}
         cat ${compare}/report.txt
+        echo "Pss of each state (frames.py):"
+        cat ${frames}/pss.txt
         if [[ -e ${compare}/failed ]]; then
           echo "Screenshots differ from e2e/golden/${compositor}. Diffs: nix build .#checks.${pkgs.stdenv.hostPlatform.system}.e2e-${compositor}.compare"
           exit 1
