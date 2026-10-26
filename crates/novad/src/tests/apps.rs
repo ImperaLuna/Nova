@@ -84,6 +84,18 @@ fn the_launcher_lists_apps_and_follows_installs() {
 }
 
 #[test]
+fn an_icon_installed_after_its_app_shows() {
+    let novad = TestDaemon::with_launcher("launcher-late-icon");
+    install_app(&novad, "game.desktop", "Name=Game\nExec=game\nIcon=steam_icon_42\n");
+    let mut client = novad.connect();
+    let first = client.subscribe_launcher(1);
+    assert_eq!(first["apps"][0].get("icon"), None);
+    // Like Steam, which writes a game's icon after its shortcut.
+    let icon = install_icon(&novad, "steam_icon_42");
+    client.launcher_until(|event| event["apps"][0]["icon"] == icon);
+}
+
+#[test]
 fn the_launcher_follows_apps_behind_a_linked_subfolder() {
     let novad = TestDaemon::with_launcher("launcher-linked");
     let vendor = novad.dir.join("vendor-apps");

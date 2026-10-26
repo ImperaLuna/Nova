@@ -67,11 +67,24 @@ pub fn is_name(name: &str) -> bool {
     !name.is_empty() && !name.starts_with('.') && !name.contains(['/', '\0'])
 }
 
+/// A folder icons may be in.
+#[derive(Debug, PartialEq)]
+pub struct IconDir {
+    pub path: PathBuf,
+    /// Whether a shortened name may match here (`dialog-information` for
+    /// `dialog-information-symbolic`): not for app or file type icons, as
+    /// in Qt, so `google-chrome` never shows some `google` icon.
+    pub generic: bool,
+}
+
+/// `Context`s whose icons only match their exact name.
+const EXACT_CONTEXTS: [&str; 2] = ["Applications", "MimeTypes"];
+
 /// The folders `theme`'s icons may be in, best first for icons `size`
 /// pixels square: its own, then each theme it inherits (depth first), then
 /// hicolor's; within a theme, the folders whose size matches, then the
 /// closest, each in every base folder that has it.
-pub fn icon_dirs(theme: &str, base_dirs: &[PathBuf], size: u32) -> Vec<PathBuf> {
+pub fn icon_dirs(theme: &str, base_dirs: &[PathBuf], size: u32) -> Vec<IconDir> {
     let mut dirs = Vec::new();
     for name in chain(theme, base_dirs) {
         let Some(index) = index(&name, base_dirs) else { continue };
@@ -90,7 +103,14 @@ pub fn icon_dirs(theme: &str, base_dirs: &[PathBuf], size: u32) -> Vec<PathBuf> 
             if !seen.insert(subdir) {
                 continue;
             }
-            dirs.extend(base_dirs.iter().map(|base| base.join(&name).join(subdir)).filter(|dir| dir.is_dir()));
+            let generic = !index.get(subdir, "Context").is_some_and(|context| EXACT_CONTEXTS.contains(&context));
+            dirs.extend(
+                base_dirs
+                    .iter()
+                    .map(|base| base.join(&name).join(subdir))
+                    .filter(|dir| dir.is_dir())
+                    .map(|path| IconDir { path, generic }),
+            );
         }
     }
     dirs
@@ -224,7 +244,7 @@ mod tests {
 
         let dirs = icon_dirs("Papirus-Dark", &[user.clone(), system.clone()], 128);
         assert_eq!(
-            dirs,
+            dirs.into_iter().map(|dir| dir.path).collect::<Vec<_>>(),
             [
                 system.join("Papirus-Dark/16x16/apps"),
                 system.join("Papirus/128x128/apps"),

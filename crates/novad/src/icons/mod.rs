@@ -49,7 +49,7 @@ pub struct Icons {
 #[derive(Default)]
 struct Kept {
     /// The theme folders to look in, best first; read again after `forget`.
-    dirs: Option<Arc<Vec<PathBuf>>>,
+    dirs: Option<Arc<Vec<theme::IconDir>>>,
     /// Each name looked up, and its file if it has one.
     found: HashMap<String, Option<String>>,
     /// Counts `forget`s, so an answer from before one isn't kept after it.
@@ -100,8 +100,14 @@ impl Icons {
                 kept.dirs.get_or_insert_with(|| Arc::new(theme::icon_dirs(&self.theme, &self.base_dirs, LOOKUP_SIZE)));
             (Arc::clone(dirs), kept.generation)
         };
-        // Outside the lock: a miss looks in every folder.
-        let found = dirs.iter().chain(&self.loose_dirs).find_map(|dir| file_in(dir, name));
+        // Outside the lock: a miss looks in every folder. Then, as Qt does,
+        // shorter names in the folders that allow it.
+        let found =
+            dirs.iter().map(|dir| &dir.path).chain(&self.loose_dirs).find_map(|dir| file_in(dir, name)).or_else(|| {
+                shorter_names(name).find_map(|shorter| {
+                    dirs.iter().filter(|dir| dir.generic).find_map(|dir| file_in(&dir.path, shorter))
+                })
+            });
         let mut kept = lock(&self.kept);
         if kept.generation == generation {
             if kept.found.len() >= MAX_KEPT {
@@ -137,6 +143,15 @@ fn base_dirs(home: Option<&Path>, data_dirs: &[PathBuf]) -> Vec<PathBuf> {
     home.map(|home| home.join(".icons")).into_iter().chain(data_dirs.iter().map(|dir| dir.join("icons"))).collect()
 }
 
+/// `name` without its last dash-separated parts, the longest first:
+/// `dialog-information`, then `dialog`, for `dialog-information-symbolic`.
+fn shorter_names(name: &str) -> impl Iterator<Item = &str> {
+    std::iter::successors(name.rsplit_once('-').map(|(shorter, _)| shorter), |name| {
+        name.rsplit_once('-').map(|(shorter, _)| shorter)
+    })
+    .filter(|shorter| !shorter.is_empty())
+}
+
 /// `name`'s image in `dir`, of the first type there is.
 fn file_in(dir: &Path, name: &str) -> Option<String> {
     EXTENSIONS
@@ -164,7 +179,7 @@ mod tests {
             let share = dir.path().join("share");
             write(
                 &share.join("icons/Papirus/index.theme"),
-                "[Icon Theme]\nInherits=hicolor\nDirectories=64x64/apps\n[64x64/apps]\nSize=64\nType=Fixed\n",
+                "[Icon Theme]\nInherits=hicolor\nDirectories=64x64/apps,64x64/status\n[64x64/apps]\nSize=64\nType=Fixed\nContext=Applications\n[64x64/status]\nSize=64\nType=Fixed\nContext=Status\n",
             );
             write(
                 &share.join("icons/hicolor/index.theme"),
@@ -207,6 +222,21 @@ mod tests {
         assert_eq!(icons.find("xterm"), path(fixture.share("pixmaps/xterm.xpm")));
         assert_eq!(icons.find("xterm.xpm"), path(fixture.share("pixmaps/xterm.xpm")));
         assert_eq!(icons.find("nothing"), None);
+    }
+
+    #[test]
+    fn shorter_names_match_only_generic_icons() {
+        let fixture = Fixture::new();
+        write(&fixture.share("icons/Papirus/64x64/status/dialog-information.svg"), "");
+        write(&fixture.share("icons/Papirus/64x64/apps/google.svg"), "");
+        let icons = &fixture.icons;
+        assert_eq!(
+            icons.find("dialog-information-symbolic"),
+            path(fixture.share("icons/Papirus/64x64/status/dialog-information.svg"))
+        );
+        assert_eq!(icons.find("google-chrome"), None, "an app's icon only by its own name");
+        assert_eq!(shorter_names("a-b-c").collect::<Vec<_>>(), ["a-b", "a"]);
+        assert_eq!(shorter_names("-a").count(), 0);
     }
 
     #[test]
