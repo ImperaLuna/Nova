@@ -66,7 +66,8 @@ Singleton {
     // `com.anthropic.Claude`), its program or its name (browsers give no
     // icon). Asked once per app while the lists are wanted (a node's
     // properties come once it's bound), and again when the installed apps
-    // change. A failed ask isn't kept, so the next change asks again.
+    // change (then every kept answer is dropped, so a closed list asks
+    // afresh when it opens). A failed ask isn't kept either.
     property var appIcons: ({})
     function iconQuery(props: var): var {
         return {
@@ -80,18 +81,20 @@ Singleton {
         return [query.icon_name, query.program, query.name].join("\n");
     }
     readonly property var iconQueries: listing ? appNodes.map(node => node.properties ?? {}) : []
-    onIconQueriesChanged: askForIcons(false)
-    // The installed apps, by id: what changes their icons.
-    readonly property string installed: (Daemon.launcher?.apps ?? []).map(app => app.id).join("\n")
-    onInstalledChanged: askForIcons(true)
-    function askForIcons(again: bool) {
+    onIconQueriesChanged: askForIcons()
+    // The installed apps and their icons: what changes the answers.
+    readonly property string installed: (Daemon.launcher?.apps ?? []).map(app => `${app.id}\t${app.icon ?? ""}`).join("\n")
+    onInstalledChanged: {
+        appIcons = {};
+        askForIcons();
+    }
+    function askForIcons() {
         for (const props of iconQueries) {
             const key = iconKey(props);
-            if (key === "\n\n" || (!again && key in appIcons))
+            if (key === "\n\n" || key in appIcons)
                 continue;
             // Marked as asked; the answer replaces it.
-            if (!(key in appIcons))
-                appIcons[key] = "";
+            appIcons[key] = "";
             Daemon.call(Protocol.CMD_APP_ICON, iconQuery(props), (error, icon) => {
                 if (error) {
                     console.warn(`nova: app icon: ${error}`);
