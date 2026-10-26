@@ -313,7 +313,9 @@ impl Wallpaper {
     }
 }
 
-/// `path` if it's an absolute path to a file novad can read.
+/// `path` if it's an absolute path to an image novad can read. Only the
+/// header is checked: `awww img` runs after the answer, so a file that isn't
+/// an image would otherwise be saved with only a warning in the log.
 fn readable_image(path: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(path);
     if !path.is_absolute() {
@@ -321,9 +323,14 @@ fn readable_image(path: &str) -> Result<PathBuf, String> {
     }
     let file = std::fs::File::open(&path).map_err(|e| format!("can't read {}: {e}", path.display()))?;
     match file.metadata() {
-        Ok(metadata) if metadata.is_file() => Ok(path),
-        Ok(_) => Err(format!("{} isn't a file", path.display())),
-        Err(e) => Err(format!("can't read {}: {e}", path.display())),
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => return Err(format!("{} isn't a file", path.display())),
+        Err(e) => return Err(format!("can't read {}: {e}", path.display())),
+    }
+    match imagesize::reader_size(std::io::BufReader::new(file)) {
+        Ok(_) => Ok(path),
+        Err(imagesize::ImageError::IoError(e)) => Err(format!("can't read {}: {e}", path.display())),
+        Err(_) => Err(format!("{} isn't an image", path.display())),
     }
 }
 
@@ -585,8 +592,11 @@ mod tests {
                 CLIENT,
                 &format!("echo \"$*\" >> '{}'", dir.join("awww").display()),
             );
-            for image in ["dusk.jpg", "tide.jpg"] {
-                std::fs::write(dir.join(image), "an image").unwrap();
+            for image in ["dusk.png", "tide.png"] {
+                let file = std::fs::File::create(dir.join(image)).unwrap();
+                let mut encoder = png::Encoder::new(file, 1, 1);
+                encoder.set_color(png::ColorType::Rgb);
+                encoder.write_header().unwrap().write_image_data(&[0, 0, 0]).unwrap();
             }
             let logger =
                 Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::new(Hub::default())).unwrap());
@@ -673,9 +683,9 @@ mod tests {
         wallpaper.configure(true, &WallpaperConfig::default());
         std::thread::sleep(Duration::from_millis(300));
         assert!(!fixture.dir.join("runs").exists(), "a wallpaper tool of the user's keeps the screen");
-        wallpaper.set(&fixture.image("dusk.jpg"), None).unwrap();
+        wallpaper.set(&fixture.image("dusk.png"), None).unwrap();
         fixture.runs(1);
-        assert_eq!(fixture.images(1), [("DP-1,DP-2".into(), fixture.image("dusk.jpg"))]);
+        assert_eq!(fixture.images(1), [("DP-1,DP-2".into(), fixture.image("dusk.png"))]);
         let line = std::fs::read_to_string(fixture.dir.join("awww")).unwrap();
         assert!(line.contains("--namespace nova") && line.contains("--transition-type fade"), "{line}");
         wallpaper.stop();
@@ -685,11 +695,11 @@ mod tests {
     fn only_outputs_that_change_get_an_image() {
         let fixture = Fixture::new("changes");
         let wallpaper = fixture.start();
-        wallpaper.configure(true, &fixture.config("dusk.jpg"));
+        wallpaper.configure(true, &fixture.config("dusk.png"));
         std::thread::sleep(Duration::from_millis(300));
         assert!(fixture.sent().is_empty(), "nothing before the outputs are known");
         wallpaper.outputs(outputs(&["DP-1", "DP-2"]));
-        let (dusk, tide) = (fixture.image("dusk.jpg"), fixture.image("tide.jpg"));
+        let (dusk, tide) = (fixture.image("dusk.png"), fixture.image("tide.png"));
         assert_eq!(fixture.images(1), [("DP-1,DP-2".into(), dusk.clone())], "one fade for both");
         wallpaper.set(&tide, Some("DP-2")).unwrap();
         fixture.shows(&[("DP-1", &dusk), ("DP-2", &tide)]);
@@ -710,25 +720,25 @@ mod tests {
     #[test]
     fn the_choice_lasts_until_the_config_changes() {
         let fixture = Fixture::new("saved");
-        let config = fixture.config("dusk.jpg");
+        let config = fixture.config("dusk.png");
         let first = fixture.start();
         first.configure(true, &config);
-        first.set(&fixture.image("tide.jpg"), None).unwrap();
+        first.set(&fixture.image("tide.png"), None).unwrap();
         first.stop();
         // Started again with the same config: the choice stays.
         let again = fixture.start();
         again.configure(true, &config);
-        assert_eq!(again.current().path, Some(fixture.image("tide.jpg")));
+        assert_eq!(again.current().path, Some(fixture.image("tide.png")));
         // The config changes: it wins, and the choice is gone.
-        let edited = WallpaperConfig { outputs: [("DP-2".into(), fixture.image("tide.jpg"))].into(), ..config };
+        let edited = WallpaperConfig { outputs: [("DP-2".into(), fixture.image("tide.png"))].into(), ..config };
         again.configure(true, &edited);
-        assert_eq!(again.current().path, Some(fixture.image("dusk.jpg")));
+        assert_eq!(again.current().path, Some(fixture.image("dusk.png")));
         assert!(!fixture.dir.join("state").join(STATE_FILE).exists());
         again.stop();
         // So it's gone after a restart too.
         let last = fixture.start();
         last.configure(true, &edited);
-        assert_eq!(last.current().path, Some(fixture.image("dusk.jpg")));
+        assert_eq!(last.current().path, Some(fixture.image("dusk.png")));
         last.stop();
     }
 
@@ -736,8 +746,8 @@ mod tests {
     fn the_config_changing_while_novad_is_off_wins() {
         let fixture = Fixture::new("offline-edit");
         let first = fixture.start();
-        first.configure(true, &fixture.config("dusk.jpg"));
-        first.set(&fixture.image("tide.jpg"), None).unwrap();
+        first.configure(true, &fixture.config("dusk.png"));
+        first.set(&fixture.image("tide.png"), None).unwrap();
         first.stop();
         let again = fixture.start();
         again.configure(true, &WallpaperConfig::default());
@@ -750,14 +760,14 @@ mod tests {
         let fixture = Fixture::new("crash");
         let wallpaper = fixture.start();
         wallpaper.outputs(outputs(&["DP-1"]));
-        wallpaper.configure(true, &fixture.config("dusk.jpg"));
+        wallpaper.configure(true, &fixture.config("dusk.png"));
         let first = fixture.runs(1)[0];
         fixture.images(1);
         // SAFETY: kill only sends a signal.
         unsafe { libc::kill(first, libc::SIGKILL) };
         let second = fixture.runs(2)[1];
         assert_ne!(first, second);
-        assert_eq!(fixture.images(2)[1], ("DP-1".into(), fixture.image("dusk.jpg")));
+        assert_eq!(fixture.images(2)[1], ("DP-1".into(), fixture.image("dusk.png")));
         wallpaper.stop();
         wait_until(WAIT, "stopping to end it", || !alive(second));
     }
@@ -766,11 +776,11 @@ mod tests {
     fn the_daemon_stops_with_the_feature() {
         let fixture = Fixture::new("off");
         let wallpaper = fixture.start();
-        wallpaper.configure(true, &fixture.config("dusk.jpg"));
+        wallpaper.configure(true, &fixture.config("dusk.png"));
         let pid = fixture.runs(1)[0];
-        wallpaper.configure(false, &fixture.config("dusk.jpg"));
+        wallpaper.configure(false, &fixture.config("dusk.png"));
         wait_until(WAIT, "the daemon to stop", || !alive(pid));
-        assert!(wallpaper.set(&fixture.image("tide.jpg"), None).unwrap_err().contains("isn't ready"));
+        assert!(wallpaper.set(&fixture.image("tide.png"), None).unwrap_err().contains("isn't ready"));
         std::thread::sleep(FIRST_RETRY + Duration::from_millis(200));
         assert_eq!(fixture.runs(1).len(), 1, "not started again while off");
         wallpaper.stop();
@@ -781,14 +791,16 @@ mod tests {
         let fixture = Fixture::new("refused");
         let wallpaper = fixture.start();
         wallpaper.outputs(outputs(&["DP-1", "DP-2"]));
-        wallpaper.configure(true, &fixture.config("dusk.jpg"));
-        assert!(wallpaper.set("dusk.jpg", None).unwrap_err().contains("absolute"));
+        wallpaper.configure(true, &fixture.config("dusk.png"));
+        assert!(wallpaper.set("dusk.png", None).unwrap_err().contains("absolute"));
         assert!(wallpaper.set(&fixture.image("missing.jpg"), None).unwrap_err().contains("can't read"));
         assert!(wallpaper.set(&fixture.dir.display().to_string(), None).unwrap_err().contains("isn't a file"));
-        let unknown = wallpaper.set(&fixture.image("tide.jpg"), Some("HDMI-A-1")).unwrap_err();
+        std::fs::write(fixture.dir.join("notes.toml"), "path = \"dusk.png\"").unwrap();
+        assert!(wallpaper.set(&fixture.image("notes.toml"), None).unwrap_err().contains("isn't an image"));
+        let unknown = wallpaper.set(&fixture.image("tide.png"), Some("HDMI-A-1")).unwrap_err();
         assert!(unknown.contains("DP-1, DP-2"), "{unknown}");
-        assert!(wallpaper.set(&fixture.image("tide.jpg"), Some("DP-1,DP-2")).is_err());
-        assert_eq!(wallpaper.current().path, Some(fixture.image("dusk.jpg")));
+        assert!(wallpaper.set(&fixture.image("tide.png"), Some("DP-1,DP-2")).is_err());
+        assert_eq!(wallpaper.current().path, Some(fixture.image("dusk.png")));
         assert!(!fixture.dir.join("state").join(STATE_FILE).exists());
         wallpaper.stop();
     }
