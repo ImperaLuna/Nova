@@ -113,12 +113,27 @@
           cargoArtifacts = craneLib.buildDepsOnly common;
         };
 
-      # share/nova: what nova finds next to its binary (nova-paths).
-      installShare = ''
-        mkdir -p $out/share/nova
-        cp -r features $out/share/nova/features
-        cp -r themes $out/share/nova/themes
-        cp -r --no-preserve=mode ${./ui} $out/share/nova/ui
+      # What the headless e2e reads from the checkout: its script, the UI it
+      # runs and the feature manifests.
+      e2eSrc =
+        lib:
+        lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [
+            ./e2e/run.sh
+            ./features
+            ./ui
+          ];
+        };
+
+      # share/nova under `prefix`: what nova finds next to its binary
+      # (nova-paths). Copied in after the Rust build, so UI edits don't
+      # recompile nova.
+      installShare = prefix: ''
+        mkdir -p ${prefix}/share/nova
+        cp -r --no-preserve=mode ${./features} ${prefix}/share/nova/features
+        cp -r --no-preserve=mode ${./themes} ${prefix}/share/nova/themes
+        cp -r --no-preserve=mode ${./ui} ${prefix}/share/nova/ui
       '';
 
       # The nova binary (CLI and daemon), feature manifests, the QML UI and
@@ -134,27 +149,41 @@
           # Compiled in, so `nova` finds its UI with or without systemd. The
           # tests check builds with it too, so it reuses this build's crates.
           novaEnv.NOVA_UI_LAUNCHER = pkgs.lib.getExe nova-ui;
-          # The `tests` check runs `cargo test`, so the VM tests, which need
-          # this package, don't wait for it.
-          nova = craneLib.buildPackage (
+          # From the Rust sources alone, so a UI edit doesn't recompile it. The
+          # `tests` check runs `cargo test`, so the VM tests, which need this
+          # build, don't wait for it.
+          bin = craneLib.buildPackage (
             common
             // {
+              pname = "nova-bin";
               inherit cargoArtifacts;
               env = novaEnv;
               doCheck = false;
-              postInstall = installShare + ''
-                install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
-                substituteInPlace $out/lib/systemd/user/nova.service \
-                  --replace-fail @nova@ $out/bin/nova
-                install -Dm644 packaging/systemd/app-.service.d/nova.conf $out/lib/systemd/user/app-.service.d/nova.conf
-              '';
-              meta = {
-                description = "Nova desktop shell";
-                license = pkgs.lib.licenses.mit;
-                mainProgram = "nova";
-              };
             }
           );
+          # The binary is copied, not linked: nova finds share/nova next to
+          # the file it runs from.
+          nova =
+            pkgs.runCommand "nova-${version}"
+              {
+                meta = {
+                  description = "Nova desktop shell";
+                  license = pkgs.lib.licenses.mit;
+                  mainProgram = "nova";
+                };
+              }
+              (
+                ''
+                  install -Dm755 -t $out/bin ${bin}/bin/*
+                ''
+                + installShare "$out"
+                + ''
+                  install -Dm644 ${./packaging/systemd/nova.service.in} $out/lib/systemd/user/nova.service
+                  substituteInPlace $out/lib/systemd/user/nova.service \
+                    --replace-fail @nova@ $out/bin/nova
+                  install -Dm644 ${./packaging/systemd/app-.service.d/nova.conf} $out/lib/systemd/user/app-.service.d/nova.conf
+                ''
+              );
         };
 
       # The release archive install.sh fetches on other distros:
@@ -166,25 +195,29 @@
         pkgs:
         let
           inherit (rustFor pkgs.pkgsStatic) craneLib common;
-          nova = craneLib.buildPackage (
+          bin = craneLib.buildPackage (
             common
             // {
               cargoArtifacts = craneLib.buildDepsOnly (common // { doCheck = false; });
               doCheck = false;
-              postInstall = installShare;
             }
           );
           name = "nova-${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux";
         in
-        pkgs.runCommand "${name}-${version}" { } ''
-          mkdir -p tree $out
-          cp -r ${nova}/bin ${nova}/share tree/
-          # Store files are read-only; an upgrade has to replace share/nova.
-          chmod -R u+w tree
-          tar -C tree --sort=name --owner=0 --group=0 --numeric-owner --mtime=@1 -c bin share \
-            | gzip -n > $out/${name}.tar.gz
-          (cd $out && sha256sum ${name}.tar.gz > ${name}.tar.gz.sha256)
-        '';
+        pkgs.runCommand "${name}-${version}" { } (
+          ''
+            mkdir -p tree $out
+            cp -r ${bin}/bin tree/
+            # Store files are read-only; an upgrade has to replace share/nova.
+            chmod -R u+w tree
+          ''
+          + installShare "tree"
+          + ''
+            tar -C tree --sort=name --owner=0 --group=0 --numeric-owner --mtime=@1 -c bin share \
+              | gzip -n > $out/${name}.tar.gz
+            (cd $out && sha256sum ${name}.tar.gz > ${name}.tar.gz.sha256)
+          ''
+        );
 
       # qmllint over ui/ against pkgs' Quickshell types.
       qmllintFor =
@@ -366,12 +399,53 @@
                 ];
               }
               ''
-                cd ${./.}
+                cd ${
+                  pkgs.lib.fileset.toSource {
+                    root = ./.;
+                    fileset = pkgs.lib.fileset.fileFilter (file: file.hasExt "nix") ./.;
+                  }
+                }
                 nixfmt --check $(find . -name '*.nix')
                 statix check .
                 deadnix --fail .
                 touch $out
               '';
+
+          # The headless e2e (e2e/run.sh: sway, two monitors, QML errors,
+          # Pss) against this build. The run itself never fails, so its logs
+          # and screenshot are there to look at when the check does:
+          # .#checks.<system>.e2e-headless.run
+          e2e-headless =
+            let
+              run =
+                pkgs.runCommand "nova-e2e-headless-run"
+                  {
+                    nativeBuildInputs = [
+                      pkgs.sway
+                      pkgs.grim
+                      pkgs.jq
+                      pkgs.dbus
+                      self.packages.${pkgs.stdenv.hostPlatform.system}.nova-ui
+                    ];
+                    FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
+                  }
+                  ''
+                    cp -r ${e2eSrc pkgs.lib}/. . && chmod -R u+w .
+                    patchShebangs e2e
+                    export HOME=$TMPDIR
+                    e2e/run.sh ${
+                      self.packages.${pkgs.stdenv.hostPlatform.system}.nova
+                    }/bin/nova >e2e.log 2>&1 || touch failed
+                    mkdir -p $out
+                    cp -r e2e/out/. e2e.log $out/
+                    if [[ -e failed ]]; then touch $out/failed; fi
+                  '';
+            in
+            pkgs.runCommand "nova-e2e-headless" { passthru = { inherit run; }; } ''
+              cat ${run}/e2e.log
+              [[ ! -e ${run}/failed ]]
+              touch $out
+            '';
 
           quickshell-version =
             let

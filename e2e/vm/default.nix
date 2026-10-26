@@ -1,13 +1,15 @@
 # NixOS VM tests on real niri and Hyprland. Each VM logs a user in on tty1,
 # whose login shell starts the compositor, and installs Nova the way a NixOS
-# user would (the package and its user unit). lifecycle.py then drives Nova
-# with the `nova` command and screenshots each UI state, and compare.sh
-# checks the screenshots against e2e/golden/<compositor>.
+# user would (the package and its user unit). The test runs in two VMs side
+# by side, lifecycle.py and then session.py in one, frames.py in the other.
+# They drive Nova with the `nova` command, session.py screenshots each UI
+# state, and compare.sh checks those against e2e/golden/<compositor>.
 #
 # They need KVM, which the self-hosted runner has (through the Nix daemon,
 # so run them as Nix builds). Per compositor:
-#   checks.<system>.e2e-<compositor>          the check: lifecycle + screenshots
-#   checks.<system>.e2e-<compositor>.vm       the VM test and its screenshots
+#   checks.<system>.e2e-<compositor>          the check: both halves + screenshots
+#   checks.<system>.e2e-<compositor>.vm       the first half and its screenshots
+#   checks.<system>.e2e-<compositor>.frames   the second half (frames.py)
 #   checks.<system>.e2e-<compositor>.compare  report.txt, screenshots/, diff/
 #   checks.<system>.e2e-<compositor>.record   recorded IPC data (record.py)
 { pkgs, nova }:
@@ -142,25 +144,33 @@ let
         systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
       };
 
-      vm = pkgs.testers.runNixOSTest {
-        name = "nova-${compositor}";
-        nodes = { inherit machine; };
-        testScript = ''
-          USER = ${builtins.toJSON user}
-          UID = ${toString uid}
-          PASSWORD = ${builtins.toJSON password}
-          QUIT_COMPOSITOR = ${builtins.toJSON "${ipc} ${quitCompositor}"}
-          COMPOSITOR = ${builtins.toJSON compositor}
-          FOCUS_NEXT_WORKSPACE = ${builtins.toJSON "${ipcEnv} ${steps."focus the next workspace"}"}
-          FULLSCREEN_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."fullscreen the focused window"}"}
-          CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
-          LIST_WINDOWS = ${builtins.toJSON "${ipcEnv} ${listWindows}"}
-          LIST_LAYERS = ${builtins.toJSON "${ipcEnv} ${listLayers}"}
-          COMPOSITOR_LOG = ${builtins.toJSON "export ${ipcEnv}; ${compositorLog}"}
-          FRAMES_REPORT = ${builtins.toJSON "${pkgs.gawk}/bin/awk -f ${../../scripts/frames-report.awk}"}
-        ''
-        + builtins.readFile ./lifecycle.py;
-      };
+      # The test in two halves, each in a VM of its own, so they run side by
+      # side: lifecycle.py and then session.py or frames.py.
+      runPart =
+        part:
+        pkgs.testers.runNixOSTest {
+          name = "nova-${compositor}-${part}";
+          nodes = { inherit machine; };
+          testScript = ''
+            USER = ${builtins.toJSON user}
+            UID = ${toString uid}
+            PASSWORD = ${builtins.toJSON password}
+            QUIT_COMPOSITOR = ${builtins.toJSON "${ipc} ${quitCompositor}"}
+            COMPOSITOR = ${builtins.toJSON compositor}
+            FOCUS_NEXT_WORKSPACE = ${builtins.toJSON "${ipcEnv} ${steps."focus the next workspace"}"}
+            FULLSCREEN_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."fullscreen the focused window"}"}
+            CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
+            LIST_WINDOWS = ${builtins.toJSON "${ipcEnv} ${listWindows}"}
+            LIST_LAYERS = ${builtins.toJSON "${ipcEnv} ${listLayers}"}
+            COMPOSITOR_LOG = ${builtins.toJSON "export ${ipcEnv}; ${compositorLog}"}
+            FRAMES_REPORT = ${builtins.toJSON "${pkgs.gawk}/bin/awk -f ${../../scripts/frames-report.awk}"}
+          ''
+          + builtins.readFile ./lifecycle.py
+          + builtins.readFile (./. + "/${part}.py");
+        };
+      # The half that takes the screenshots.
+      vm = runPart "session";
+      frames = runPart "frames";
 
       # Not a check: run by hand (`just record`) to refresh the recorded
       # compositor data novad's tests replay. Without Nova, so it records
@@ -199,9 +209,17 @@ let
     in
     pkgs.runCommand "nova-${compositor}-e2e"
       {
-        passthru = { inherit vm compare record; };
+        passthru = {
+          inherit
+            vm
+            frames
+            compare
+            record
+            ;
+        };
       }
       ''
+        # Passed too: ${frames}
         cat ${compare}/report.txt
         if [[ -e ${compare}/failed ]]; then
           echo "Screenshots differ from e2e/golden/${compositor}. Diffs: nix build .#checks.${pkgs.stdenv.hostPlatform.system}.e2e-${compositor}.compare"

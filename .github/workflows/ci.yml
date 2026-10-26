@@ -13,9 +13,8 @@ permissions:
   contents: read
 
 # A newer run for the same branch cancels the older one. Keyed by branch, not
-# ref, so a PR run and a dispatched run on the same branch (Update PRs
-# dispatches CI after its merge, and GitHub also offers an "Approve and run"
-# for the bot's push) don't both take the runner.
+# ref, so a PR run and a run started by hand on the same branch don't both
+# take the runner.
 concurrency:
   group: ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
@@ -27,20 +26,26 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: nix flake check
         run: nix flake check -L --keep-going
-      - name: headless e2e
-        run: nix develop -c just e2e
-      # The VM tests' screenshots, report and odiff diffs. The flake check
-      # already built them, also when it failed on a diff; --max-jobs 0
-      # skips building them again when the VM test itself failed.
-      - name: VM screenshots
+      # The headless e2e's logs and screenshot, and the VM tests' screenshots,
+      # report and odiff diffs. The flake check already built them, also when
+      # it failed on them; --max-jobs 0 skips building them again when a
+      # test itself failed.
+      - name: e2e results
         if: always()
         run: |
-          # The headless e2e makes e2e/out, but it's skipped when the flake check fails.
           mkdir -p e2e/out
+          checks=.#checks.x86_64-linux
+          if out=$(nix build --max-jobs 0 --no-link --print-out-paths "$checks.e2e-headless.run"); then
+            cp -r --no-preserve=mode "$out/." e2e/out/
+            # Its memory warning, as an annotation.
+            grep '^::warning' e2e/out/e2e.log || true
+          fi
           for compositor in niri hyprland; do
-            shots=$(nix build --max-jobs 0 --no-link --print-out-paths ".#checks.x86_64-linux.e2e-$compositor.compare") &&
+            shots=$(nix build --max-jobs 0 --no-link --print-out-paths "$checks.e2e-$compositor.compare") &&
               cp -r --no-preserve=mode "$shots" "e2e/out/vm-$compositor" || true
           done
       - if: always()
