@@ -335,6 +335,39 @@ Item {
             compare(right.hidden, 3);
         }
 
+        function test_small_wheel_turns_add_up_to_one_icon() {
+            const apps = [];
+            for (let i = 0; i < 8; i++)
+                apps.push(stage.entry(`app${i}.desktop`, false));
+            const pill = createTemporaryObject(pillComponent, stage, {
+                trayApps: apps
+            });
+            pill.open = true;
+            tryCompare(pill, "moving", false);
+            const strip = findChild(pill, "strip");
+            // A touchpad swipe: many small turns, a notch in all.
+            for (let i = 0; i < 8; i++)
+                mouseWheel(strip, strip.width / 2, strip.height / 2, 0, -Tokens.wheelNotch / 8);
+            tryCompare(pill, "moving", false);
+            compare(findChild(pill, "countLeft").hidden, 1);
+            // A turn of nothing moves nothing.
+            mouseWheel(strip, strip.width / 2, strip.height / 2, 0, 0);
+            tryCompare(pill, "moving", false);
+            compare(findChild(pill, "countLeft").hidden, 1);
+        }
+
+        function test_a_closed_tray_does_not_animate_its_counts() {
+            const apps = [];
+            for (let i = 0; i < 5; i++)
+                apps.push(stage.entry(`app${i}.desktop`, false));
+            const pill = createTemporaryObject(pillComponent, stage, {
+                trayApps: apps
+            });
+            tryCompare(pill, "moving", false);
+            pill.trayApps = apps.concat([stage.entry("app5.desktop", false)]);
+            verify(!pill.moving, "nothing to draw while shut");
+        }
+
         function test_a_tray_that_fits_has_no_counts() {
             const pill = createTemporaryObject(pillComponent, stage, {
                 trayApps: [stage.entry("discord.desktop", false), stage.entry("steam.desktop", false)]

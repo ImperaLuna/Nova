@@ -57,7 +57,7 @@ StagePanel {
         id: morph
         open: pill.open
     }
-    moving: morph.moving || strip.moving || scrolling.running || countLeft.fading || countRight.fading
+    moving: morph.moving || strip.moving || scrolling.running || countReveal.running || countLeft.fading || countRight.fading
 
     // The strip's width open: up to trayVisible icons.
     readonly property int stripIcons: Math.min(trayApps.length, Tokens.trayVisible)
@@ -115,15 +115,20 @@ StagePanel {
             readonly property bool fadesLeft: contentX > 0
             readonly property bool fadesRight: contentX < contentWidth - width - 1
 
-            // The wheel scrolls the strip a whole icon at a time, counting
-            // from where a scroll still running is going, so quick turns
-            // add up.
+            // The wheel scrolls the strip a whole icon per notch (a
+            // touchpad's small turns add up to one), counting from where a
+            // scroll still running is going, so quick turns add up.
+            property real wheelTurn: 0
             WheelHandler {
                 acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                 onWheel: event => {
-                    const delta = event.angleDelta.y !== 0 ? event.angleDelta.y : event.angleDelta.x;
+                    strip.wheelTurn += event.angleDelta.y !== 0 ? event.angleDelta.y : event.angleDelta.x;
+                    const notches = Math.trunc(strip.wheelTurn / Tokens.wheelNotch);
+                    if (notches === 0)
+                        return;
+                    strip.wheelTurn -= notches * Tokens.wheelNotch;
                     const from = scrolling.running ? scroll.targetValue : strip.contentX;
-                    const target = from + (delta < 0 ? strip.step : -strip.step);
+                    const target = from - notches * strip.step;
                     strip.contentX = Numbers.clamp(Math.round(target / strip.step) * strip.step, 0, strip.contentWidth - strip.width);
                 }
             }
@@ -202,6 +207,7 @@ StagePanel {
             anchors.verticalCenter: parent.verticalCenter
             opacity: pill.open ? 1 : 0
             MorphReveal on opacity {
+                id: countReveal
                 delay: Tokens.revealPillCount
             }
         }

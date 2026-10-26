@@ -14,6 +14,13 @@ Item {
     property int most: 0
     // Whether it's fading in or out right now.
     readonly property bool fading: fade.running
+    // The last count above zero, which it shows while fading out.
+    property int last: 1
+
+    onHiddenChanged: {
+        if (hidden > 0)
+            last = hidden;
+    }
 
     width: widest.width
     height: label.implicitHeight
@@ -23,13 +30,15 @@ Item {
         anchors.fill: parent
         horizontalAlignment: Text.AlignHCenter
         // Fading out, it still shows the last one it had.
-        text: `+${Math.max(1, count.hidden)}`
+        text: `+${count.hidden > 0 ? count.hidden : count.last}`
         color: Tokens.fgDim
         font.family: Tokens.fontMono
         font.pixelSize: Tokens.fontSizeMicro
         opacity: count.hidden > 0 ? 1 : 0
 
+        // Only while it shows: a closed pill has nothing to animate.
         Behavior on opacity {
+            enabled: count.visible
             NumberAnimation {
                 id: fade
                 duration: Tokens.durationFast
