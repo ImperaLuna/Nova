@@ -110,29 +110,22 @@ Item {
         }
     }
 
+    // Still, so an urgent workspace costs one short fade, not a frame every
+    // vblank for as long as it waits.
     Rectangle {
         id: dot
+        objectName: "dot"
         anchors.horizontalCenter: parent.horizontalCenter
         y: (parent.height + Tokens.workspaceSize) / 2 - Tokens.ringInset - height
         width: Tokens.dotSize
         height: Tokens.dotSize
         radius: width / 2
         color: Tokens.primary
-        visible: number.calling
-
-        SequentialAnimation on opacity {
-            running: dot.visible
-            loops: Animation.Infinite
-            alwaysRunToEnd: true
+        opacity: number.calling ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity {
             NumberAnimation {
-                to: Tokens.dimOpacity
-                duration: Tokens.durationPulse / 2
-                easing.type: Tokens.easingPulse
-            }
-            NumberAnimation {
-                to: 1
-                duration: Tokens.durationPulse / 2
-                easing.type: Tokens.easingPulse
+                duration: Tokens.durationFade
             }
         }
     }
