@@ -34,6 +34,7 @@ mod egl;
 mod features;
 mod host;
 mod hub;
+mod icons;
 mod inotify;
 mod launcher;
 mod logger;
@@ -278,6 +279,8 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     logger.info(LOG_SOURCE, &format!("novad {} starting (pid {})", env!("CARGO_PKG_VERSION"), std::process::id()));
 
     let path_var = session_path();
+    let icons = Arc::new(icons::Icons::for_session());
+    logger.info(LOG_SOURCE, &format!("icons from the {} icon theme", icons.theme()));
     let sources = Sources {
         config: args.config,
         selection: args.selection,
@@ -286,9 +289,10 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         path_var: path_var.clone(),
         ai_usage: ai_usage::Paths::new(&args.state_dir, args.codex_home, args.claude_credentials),
         resources: resources::Sources::system(&path_var),
-        launcher: launcher::Paths::new(&args.state_dir, &path_var),
+        launcher: launcher::Paths::new(&args.state_dir, &path_var, Arc::clone(&icons)),
         tray: tray::Sources::new(&args.state_dir),
-        notifications: notifications::Sources::new(&args.state_dir),
+        notifications: notifications::Sources::new(&args.state_dir, Arc::clone(&icons)),
+        icons,
     };
     let settings = Settings::load(&sources, &hub, &logger);
     if args.autostart {
@@ -314,6 +318,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
             wayland_socket,
             egl_vendor: egl::nvidia_only_vendor(Path::new("/"), |name| std::env::var_os(name)),
             render_loop: render_loop::for_ui(Path::new("/"), |name| std::env::var_os(name)),
+            icon_theme: sources.icons.theme().to_string(),
         };
         Supervisor::start(settings, Arc::clone(&logger))
     });
@@ -410,6 +415,24 @@ pub(crate) fn session_path() -> String {
     std::env::join_paths(dirs)
         .map(|joined| joined.to_string_lossy().into_owned())
         .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+}
+
+/// The spec's default for an unset `XDG_DATA_DIRS`.
+const DEFAULT_DATA_DIRS: &str = "/usr/local/share:/usr/share";
+
+/// The XDG data folders (the user's first), in the order they're searched
+/// for apps and icons, plus the folders packages install into, which a
+/// systemd user service's `XDG_DATA_DIRS` often lacks.
+pub(crate) fn data_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    dirs.extend(nova_paths::data_home());
+    let system = nova_paths::path_var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
+    dirs.extend(std::env::split_paths(&system));
+    // Where packages install, last so the session's own order wins.
+    dirs.extend(package_prefixes().into_iter().map(|prefix| prefix.join("share")));
+    let mut seen = std::collections::BTreeSet::new();
+    dirs.retain(|dir| dir.is_absolute() && seen.insert(dir.clone()));
+    dirs
 }
 
 /// Where package managers install, each with `bin/` and `share/` below it,

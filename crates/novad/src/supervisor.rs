@@ -77,6 +77,9 @@ pub struct UiSettings {
     /// The Qt render loop the UI uses, when there's one to pick
     /// (`render_loop::for_ui`).
     pub render_loop: Option<&'static str>,
+    /// The icon theme novad finds icons in, passed as `QS_ICON_THEME` so
+    /// what Qt still looks up itself (tray menus) matches.
+    pub icon_theme: String,
 }
 
 pub struct Supervisor {
@@ -243,6 +246,7 @@ fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
         .env("PATH", &settings.path_var)
         .env(FRAME_CALLBACK_TIMEOUT.0, FRAME_CALLBACK_TIMEOUT.1)
         .env(SIMPLE_ANIMATION_DRIVER.0, SIMPLE_ANIMATION_DRIVER.1)
+        .env(crate::icons::QUICKSHELL_VAR, &settings.icon_theme)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

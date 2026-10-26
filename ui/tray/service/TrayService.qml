@@ -59,7 +59,7 @@ Singleton {
         });
     }
 
-    // What an Image shows for an entry: the app's themed icon when novad
+    // What an Image shows for an entry: the app's icon file when novad
     // found its desktop entry, else the item's own image.
     function iconSource(entry: var): string {
         return AppIcons.source(entry.appIcon ?? "") || entry.icon;

@@ -5,6 +5,7 @@
 //! Hyprland sessions.
 
 use super::*;
+use crate::icons::Icons;
 use crate::session_bus::Bus;
 use nova_protocol::{FeatureStatus, LogEntry, UI_LOG_SOURCE};
 use nova_test_support::{TempDir, wait_until, write_program};
@@ -98,6 +99,7 @@ impl TestDaemon {
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
         let listener = server::bind(&socket).unwrap();
         let ui = ui.map(|settings| Supervisor::start(settings, Arc::clone(&logger)));
+        let icons = test_icons(&dir);
         let sources = Sources {
             config: dir.join("config/config.toml"),
             selection: dir.join("config/features.toml"),
@@ -106,7 +108,7 @@ impl TestDaemon {
             path_var: std::env::var("PATH").unwrap_or_default(),
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
             resources: resources::Sources::system(""),
-            launcher: launcher_paths(&dir),
+            launcher: launcher_paths(&dir, Arc::clone(&icons)),
             // No bus unless the test starts one there (`session_bus::TestBus`).
             tray: tray::Sources {
                 bus: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
@@ -117,7 +119,9 @@ impl TestDaemon {
                 bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
                 state_file: dir.join("notifications.json"),
                 images: dir.join("notifications"),
+                icons: Arc::clone(&icons),
             },
+            icons,
         };
         let settings = Settings::load(&sources, &hub, &logger);
         let compositor = compositor(&dir)
@@ -233,12 +237,18 @@ fn read_entries(path: &Path) -> Vec<LogEntry> {
 
 /// Apps come from `<dir>/launcher/share` only, and start forked twice,
 /// never as services of the desktop's systemd.
-fn launcher_paths(dir: &Path) -> launcher::Paths {
+fn launcher_paths(dir: &Path, icons: Arc<Icons>) -> launcher::Paths {
     launcher::Paths {
         data_dirs: vec![dir.join("launcher/share")],
         state_file: dir.join("launcher/launcher.json"),
         runner: launcher::Runner::Direct,
+        icons,
     }
+}
+
+/// Icons come from `<dir>/launcher/share` only, in hicolor.
+fn test_icons(dir: &Path) -> Arc<Icons> {
+    Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[dir.join("launcher/share")], None))
 }
 
 fn repo_features() -> PathBuf {

@@ -151,6 +151,7 @@ fn only_the_supervised_ui_reports_the_lock_screen() {
         wayland_socket: None,
         egl_vendor: None,
         render_loop: None,
+        icon_theme: "hicolor".into(),
     };
     let novad = TestDaemon::start("lock-reports", Some(settings));
     let mut other = novad.connect();

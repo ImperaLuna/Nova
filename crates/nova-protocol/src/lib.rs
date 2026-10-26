@@ -503,7 +503,8 @@ pub struct App {
     /// What kind of app it is or what it's for (its generic name or comment).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// An icon theme name, or an absolute path to an image.
+    /// Its icon: an absolute path to an image, found in the icon theme
+    /// when its entry names one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
 }
@@ -578,7 +579,8 @@ pub struct Notification {
     pub id: u32,
     /// The app's name as it gave it, or its desktop entry's id.
     pub app: String,
-    /// The app's icon: an icon theme name or an absolute path.
+    /// The app's icon: an absolute path to an image, the file it gave or
+    /// the icon theme's for the name it gave.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     /// The app's desktop file id (`discord.desktop`), when it said which.
@@ -883,11 +885,11 @@ pub enum Command {
     SearchApps {
         query: String,
     },
-    /// Replies with an icon (a theme name or an absolute path) for an app
+    /// Replies with an icon (an absolute path to an image) for an app
     /// stream, as PipeWire names it (each may be ""): its installed app's
     /// when one matches (feature `launcher`, matched like a tray icon's app,
-    /// Nix's `.<name>-wrapped` programs by their name), else the icon name
-    /// it gives or its program, or null.
+    /// Nix's `.<name>-wrapped` programs by their name), else the icon
+    /// theme's for the icon name it gives or its program, or null.
     AppIcon {
         /// `application.icon-name`, often its app's id.
         icon_name: String,
@@ -1014,7 +1016,8 @@ pub struct OperatingSystem {
     pub id_like: Vec<String>,
     /// `NAME`, like `NixOS`.
     pub name: String,
-    /// `LOGO`: the icon theme's name for its logo, when set.
+    /// `LOGO`: the icon theme's file for the logo it names, when set and
+    /// the theme has it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logo: Option<String>,
 }

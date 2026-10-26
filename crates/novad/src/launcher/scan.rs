@@ -1,6 +1,5 @@
 //! Where desktop entries live and reading them all: `applications/` in each
-//! XDG data folder (the user's first), plus the folders packages install
-//! into, which a systemd user service's `XDG_DATA_DIRS` often lacks.
+//! data folder (`crate::data_dirs`).
 //! The first folder with an id wins, as the spec says, so the user's own
 //! copy of an entry replaces the system's.
 
@@ -8,8 +7,6 @@ use super::desktop_entry::{self, Context, Entry, Skipped};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-/// The spec's default for an unset `XDG_DATA_DIRS`.
-const DEFAULT_DATA_DIRS: &str = "/usr/local/share:/usr/share";
 const ENTRY_EXTENSION: &str = "desktop";
 /// Links followed when looking for what to watch, like the kernel's limit.
 const MAX_LINKS: usize = 40;
@@ -17,19 +14,6 @@ const MAX_LINKS: usize = 40;
 const MAX_DEPTH: usize = 8;
 /// A desktop entry is a few kilobytes; anything far bigger isn't one.
 const MAX_ENTRY_BYTES: u64 = 1024 * 1024;
-
-/// The data folders, in the order they're searched.
-pub fn data_dirs() -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    dirs.extend(nova_paths::data_home());
-    let system = nova_paths::path_var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
-    dirs.extend(std::env::split_paths(&system));
-    // Where packages install, last so the session's own order wins.
-    dirs.extend(crate::package_prefixes().into_iter().map(|prefix| prefix.join("share")));
-    let mut seen = BTreeSet::new();
-    dirs.retain(|dir| dir.is_absolute() && seen.insert(dir.clone()));
-    dirs
-}
 
 /// Every app in `data_dirs`, by id, and the problems with entries that
 /// aren't valid, for the log.
@@ -133,37 +117,52 @@ impl WatchPoints {
     }
 }
 
-/// Where to watch for `data_dirs`' apps. A NixOS rebuild or a Nix profile
-/// switch swaps a link far above `applications/` (`/run/current-system`,
+/// Where apps install icons in the user's data folder (the first), which
+/// may come after their entry (Steam's game shortcuts): a change there
+/// counts too, so the icons are looked up again. The system's folders
+/// change with their entries (a package or profile switch).
+const USER_ICON_FOLDERS: [&str; 2] = ["icons/hicolor", "pixmaps"];
+
+/// Where to watch for `data_dirs`' apps and the user's own app icons. A
+/// NixOS rebuild or a Nix profile switch swaps a link far above
+/// `applications/` (`/run/current-system`,
 /// `~/.local/state/nix/profiles/profile`) and leaves the old folders as
 /// they were, so each link on the way there is watched in its folder.
 pub fn watch_points(data_dirs: &[PathBuf]) -> WatchPoints {
     let mut points = WatchPoints::default();
     for dir in data_dirs {
-        let applications = dir.join("applications");
-        links_on_the_way(&applications, &mut points);
-        match std::fs::canonicalize(&applications) {
-            // Watched through its folder too, so a replacement (one renamed
-            // over it, or one made after it was deleted) is seen.
-            Ok(resolved) => {
-                if let Some(parent) = resolved.parent() {
-                    points.parents.insert(parent.to_owned());
-                    points.entries.insert(resolved.clone());
-                }
-                linked_folders(&resolved, 0, &mut points);
-                points.trees.insert(resolved);
+        watch_folder(&dir.join("applications"), &mut points);
+    }
+    for folder in data_dirs.first().into_iter().flat_map(|dir| USER_ICON_FOLDERS.map(|folder| dir.join(folder))) {
+        watch_folder(&folder, &mut points);
+    }
+    points
+}
+
+/// Adds `folder`, the links on the way to it and those below it, or where
+/// it would appear.
+fn watch_folder(folder: &Path, points: &mut WatchPoints) {
+    links_on_the_way(folder, points);
+    match std::fs::canonicalize(folder) {
+        // Watched through its folder too, so a replacement (one renamed
+        // over it, or one made after it was deleted) is seen.
+        Ok(resolved) => {
+            if let Some(parent) = resolved.parent() {
+                points.parents.insert(parent.to_owned());
+                points.entries.insert(resolved.clone());
             }
-            // Not there (yet): the folder it would appear in is watched.
-            Err(_) => {
-                if let Some(existing) = applications.ancestors().skip(1).find(|dir| dir.is_dir()) {
-                    points.parents.insert(existing.to_owned());
-                    let child = applications.strip_prefix(existing).ok().and_then(|rest| rest.components().next());
-                    points.entries.extend(child.map(|child| existing.join(child)));
-                }
+            linked_folders(&resolved, 0, points);
+            points.trees.insert(resolved);
+        }
+        // Not there (yet): the folder it would appear in is watched.
+        Err(_) => {
+            if let Some(existing) = folder.ancestors().skip(1).find(|dir| dir.is_dir()) {
+                points.parents.insert(existing.to_owned());
+                let child = folder.strip_prefix(existing).ok().and_then(|rest| rest.components().next());
+                points.entries.extend(child.map(|child| existing.join(child)));
             }
         }
     }
-    points
 }
 
 /// Adds the folders that links below `dir` lead to as trees of their own:

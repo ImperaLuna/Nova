@@ -145,7 +145,7 @@ StagePanel {
                     // another as it opens.
                     shown: panel.open && mainPage.status === Loader.Ready
                     fill: panel.fill
-                    logo: QuickSettings.logo(QuickSettingsService.host?.os, Qt.resolvedUrl("logos"), name => Quickshell.iconPath(name, true))
+                    logo: QuickSettings.logo(QuickSettingsService.host?.os, Qt.resolvedUrl("logos"), path => AppIcons.source(path))
                     host: QuickSettingsService.host
                     now: panel.now
                     keepAwake: QuickSettingsService.keepAwake

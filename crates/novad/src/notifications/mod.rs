@@ -15,7 +15,8 @@
 //!
 //! Anything on the session bus can send one, so what apps send is checked
 //! and cut down: text is made plain (`text`), pictures are checked and
-//! written out as PNGs (`image`), and lists are capped.
+//! written out as PNGs (`image`), and lists are capped. App icons given by
+//! name are looked up as files (`crate::icons`), so the UI only loads images.
 
 mod image;
 #[cfg(test)]
@@ -23,6 +24,7 @@ mod tests;
 mod text;
 
 use crate::hub::{ClientId, Hub};
+use crate::icons::Icons;
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
 use crate::{lock, state_file};
@@ -91,14 +93,17 @@ pub struct Sources {
     pub state_file: PathBuf,
     /// Pictures apps sent as pixels, as PNGs.
     pub images: PathBuf,
+    /// Where apps' icons are found.
+    pub icons: Arc<Icons>,
 }
 
 impl Sources {
-    pub fn new(state_dir: &Path) -> Self {
+    pub fn new(state_dir: &Path, icons: Arc<Icons>) -> Self {
         Self {
             bus: Bus::Session,
             state_file: state_dir.join("notifications.json"),
             images: state_dir.join("notifications"),
+            icons,
         }
     }
 }
@@ -389,7 +394,8 @@ impl Shared {
             app if !app.is_empty() => app,
             _ => desktop_entry.clone().unwrap_or_else(|| "Unknown app".into()),
         };
-        let icon = icon(&sent.app_icon).or_else(|| desktop_entry.clone());
+        let icons = &self.sources.icons;
+        let icon = icon(&sent.app_icon, icons).or_else(|| desktop_entry.as_deref().and_then(|entry| icons.find(entry)));
         let urgency = match take(&mut sent.hints, "urgency").as_deref() {
             Some(Variant::U8(0)) => Urgency::Low,
             Some(Variant::U8(2)) => Urgency::Critical,
@@ -585,7 +591,13 @@ fn load(sources: &Sources, logger: &Logger) -> Saved {
     saved.items.truncate(MAX_NOTIFICATIONS);
     saved.apps.truncate(MAX_APPS);
     saved.muted.truncate(MAX_MUTED);
+    // Kept before icons were files, by name.
+    let file = |icon: &mut Option<String>| *icon = icon.take().and_then(|icon| self::icon(&icon, &sources.icons));
+    for app in &mut saved.apps {
+        file(&mut app.icon);
+    }
     for item in &mut saved.items {
+        file(&mut item.icon);
         item.live = false;
         if item.image.as_ref().is_some_and(|image| !Path::new(image).exists()) {
             item.image = None;
@@ -642,13 +654,14 @@ fn remember_app(saved: &mut Saved, notification: &Notification) {
     }
 }
 
-/// An app icon as `Notify` gives it: a theme icon name, or a file.
-fn icon(reference: &str) -> Option<String> {
+/// The file for an app icon as `Notify` gives it: a file, or a theme icon
+/// name looked up in `icons`.
+fn icon(reference: &str, icons: &Icons) -> Option<String> {
     let reference = reference.trim();
     if let Some(path) = image::file(reference) {
         return Some(path.display().to_string());
     }
-    is_name(reference).then(|| reference.to_string())
+    is_name(reference).then(|| icons.find(reference)).flatten()
 }
 
 /// A desktop entry id or icon name: short, and nothing that reads as a path.

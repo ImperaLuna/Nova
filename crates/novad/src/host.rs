@@ -1,9 +1,10 @@
 //! The machine and its user, for the quick settings header (feature
 //! `quick-settings`): the host name, when it booted, the distribution from
-//! os-release, and what to call the user. All of it comes from files, the
-//! user database and the config, read when a client subscribes and again
-//! when the config's name changes.
+//! os-release (its logo found in the icon theme), and what to call the
+//! user. All of it comes from files, the user database and the config, read
+//! when a client subscribes and again when the config's name changes.
 
+use crate::icons::Icons;
 use nova_protocol::{Host, OperatingSystem};
 
 /// os-release's two homes: the first is the admin's, the second the
@@ -16,13 +17,15 @@ const DEFAULT_OS_NAME: &str = "Linux";
 
 /// What the header shows now. `name` is what to call the user when the
 /// config says (`[quick-settings] name`), else their account's first name.
-pub fn read(name: Option<&str>) -> Host {
+pub fn read(name: Option<&str>, icons: &Icons) -> Host {
     let os_release = OS_RELEASE.iter().find_map(|path| std::fs::read_to_string(path).ok()).unwrap_or_default();
+    let mut os = operating_system(&os_release);
+    os.logo = os.logo.and_then(|logo| icons.find(&logo));
     Host {
         host: std::fs::read_to_string(HOSTNAME).map(|name| name.trim().to_string()).unwrap_or_default(),
         user: name.map_or_else(user_name, |name| name.trim().to_string()),
         booted_at: crate::procfs::boot_time().and_then(|booted| i64::try_from(booted).ok()).unwrap_or(0),
-        os: operating_system(&os_release),
+        os,
     }
 }
 
@@ -35,7 +38,7 @@ pub fn os_release_field(os_release: &str, key: &str) -> Option<String> {
     })
 }
 
-/// The distribution an os-release file describes.
+/// The distribution an os-release file describes, its logo by name.
 fn operating_system(os_release: &str) -> OperatingSystem {
     let field = |key: &str| os_release_field(os_release, key);
     OperatingSystem {
@@ -140,10 +143,12 @@ mod tests {
 
     #[test]
     fn reads_this_machine() {
-        let host = read(None);
+        let icons = Icons::new(crate::icons::HICOLOR.into(), &[], None);
+        let host = read(None, &icons);
         assert!(host.booted_at > 0, "/proc/stat has btime");
         assert!(!host.user.is_empty(), "every user has a name or a login");
-        assert_eq!(read(Some(" Katov ")).user, "Katov", "the config's name wins");
+        assert_eq!(read(Some(" Katov "), &icons).user, "Katov", "the config's name wins");
+        assert_eq!(host.os.logo, None, "no icon theme to find a logo in");
         assert!(!host.os.id.is_empty());
         if std::path::Path::new(HOSTNAME).exists() {
             assert!(!host.host.is_empty());
