@@ -49,13 +49,19 @@ pub fn output_within(mut command: Command, timeout: Duration) -> std::io::Result
         let _ = done.send(text);
     });
     let errors = drain(child.stderr.take());
-    let Some(status) = wait_within(&mut child, timeout)? else {
-        kill_and_reap(&mut child);
-        let message = format!("no answer in {} s", timeout.as_secs_f32());
-        return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, message));
+    let status = match wait_within(&mut child, timeout) {
+        Ok(Some(status)) => status,
+        waited => {
+            kill_and_reap(&mut child);
+            let message = format!("no answer in {} s", timeout.as_secs_f32());
+            return Err(waited.err().unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::TimedOut, message)));
+        }
     };
-    // Something it left running may hold the pipe open.
-    let stdout = printed.recv_timeout(DRAIN_TIMEOUT).unwrap_or_default();
+    // Something it left running may hold the pipe open: then its answer
+    // may be cut short, so there's none.
+    let stdout = printed
+        .recv_timeout(DRAIN_TIMEOUT)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "its output stayed open after it exited"))?;
     Ok(Output { status, stdout, stderr: errors.text().into_bytes() })
 }
 

@@ -41,11 +41,9 @@ impl Unreachable {
 }
 
 impl Client {
+    /// Connects, or says what to do about it.
     pub fn connect(socket: &Path) -> Result<Self, String> {
-        Self::reach(socket).map_err(|unreachable| match unreachable {
-            Unreachable::NotRunning => format!("can't reach novad at {}: nothing listens there", socket.display()),
-            Unreachable::NoAnswer(problem) => problem,
-        })
+        Self::reach(socket).map_err(|unreachable| unreachable.advice())
     }
 
     /// Connects once, telling "not running" from "stuck" by how that

@@ -32,7 +32,7 @@ const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(2);
 pub fn dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     dirs.extend(nova_paths::config_home());
-    let system = nova_paths::dir_var("XDG_CONFIG_DIRS").unwrap_or_else(|| DEFAULT_CONFIG_DIRS.into());
+    let system = nova_paths::path_var("XDG_CONFIG_DIRS").unwrap_or_else(|| DEFAULT_CONFIG_DIRS.into());
     dirs.extend(std::env::split_paths(&system));
     let mut seen = BTreeSet::new();
     dirs.retain(|dir| dir.is_absolute() && seen.insert(dir.clone()));

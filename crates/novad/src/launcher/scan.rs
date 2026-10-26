@@ -22,7 +22,7 @@ const MAX_ENTRY_BYTES: u64 = 1024 * 1024;
 pub fn data_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     dirs.extend(nova_paths::data_home());
-    let system = nova_paths::dir_var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
+    let system = nova_paths::path_var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
     dirs.extend(std::env::split_paths(&system));
     // Where packages install, last so the session's own order wins.
     dirs.extend(crate::package_prefixes().into_iter().map(|prefix| prefix.join("share")));

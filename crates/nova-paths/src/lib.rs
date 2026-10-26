@@ -28,7 +28,7 @@ pub fn state_dir() -> PathBuf {
 
 /// `$HOME`, unless it's unset or empty.
 pub fn home() -> Option<PathBuf> {
-    dir_var("HOME")
+    path_var("HOME")
 }
 
 /// `$XDG_CONFIG_HOME`, else `~/.config`.
@@ -41,9 +41,10 @@ pub fn data_home() -> Option<PathBuf> {
     xdg_home("XDG_DATA_HOME", ".local/share")
 }
 
-/// A folder from the environment variable `name`, unless it's unset or
-/// empty (an empty XDG variable counts as unset, per the spec).
-pub fn dir_var(name: &str) -> Option<PathBuf> {
+/// The path (or `:`-separated path list) in the environment variable
+/// `name`, unless it's unset or empty (an empty XDG variable counts as
+/// unset, per the spec).
+pub fn path_var(name: &str) -> Option<PathBuf> {
     std::env::var_os(name).filter(|value| !value.is_empty()).map(PathBuf::from)
 }
 
@@ -86,7 +87,7 @@ fn parse_user_dir(text: &str, key: &str, home: &Path) -> Option<PathBuf> {
 }
 
 fn xdg_home(var: &str, home_fallback: &str) -> Option<PathBuf> {
-    dir_var(var).or_else(|| home().map(|home| home.join(home_fallback)))
+    path_var(var).or_else(|| home().map(|home| home.join(home_fallback)))
 }
 
 /// `dir`, or the current folder without a home to put things in.

@@ -251,13 +251,15 @@ impl Drop for InProcess {
         if let Some(serving) = self.serving.take() {
             let _ = serving.join();
         }
+        // The watcher first: a reload after the services stop would start
+        // them again.
+        if let Some(watching) = &self.watching {
+            watching.stop();
+        }
         if let Some(ui) = &self.daemon.ui {
             ui.stop();
         }
         lock(&self.daemon.settings).stop_services();
-        if let Some(watching) = &self.watching {
-            watching.stop();
-        }
     }
 }
 

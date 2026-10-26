@@ -97,8 +97,19 @@ fn turning_a_feature_off_and_on_stops_and_starts_it() {
 
     // No features.toml means each feature's default, which is on.
     std::fs::remove_file(novad.features_file()).unwrap();
-    assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "ready");
-    assert_eq!(client.next_usage()["shown"], "claude", "the restarted feature publishes again");
+    // The restarted feature's worker publishes on its own thread, so either
+    // event can come first.
+    let (mut features, mut usage) = (None, None);
+    while features.is_none() || usage.is_none() {
+        let message = client.next();
+        match message["event"].as_str() {
+            Some("features") => features = Some(message["data"].clone()),
+            Some("ai_usage") => usage = Some(message["data"].clone()),
+            _ => {}
+        }
+    }
+    assert_eq!(feature_status(&features.unwrap(), ai_usage::FEATURE_ID), "ready");
+    assert_eq!(usage.unwrap()["shown"], "claude", "the restarted feature publishes again");
     let reply = client.request(3, "show_ai_usage", Some(json!({"provider": "codex"})));
     assert_eq!(reply["result"], Value::Null);
 }

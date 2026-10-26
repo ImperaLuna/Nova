@@ -403,6 +403,10 @@ mod tests {
         assert!(matches!(reach(&socket), Daemon::NotRunning));
         // A socket file left by a novad that died.
         drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
+        // A child another test forks meanwhile holds the listener until it
+        // runs its program.
+        let refused = || std::os::unix::net::UnixStream::connect(&socket).is_err();
+        nova_test_support::wait_until(std::time::Duration::from_secs(5), "the listener to close", refused);
         assert!(matches!(reach(&socket), Daemon::NotRunning));
         // Listening but never answering: times out on hello.
         std::fs::remove_file(&socket).unwrap();
