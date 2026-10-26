@@ -54,8 +54,16 @@ Scope {
     // While a panel is open or closing on this screen, everything Nova draws
     // here sits on the Overlay layer (PanelSurface always does): niri and Hyprland draw a focused
     // fullscreen window over the Top layer, which hid the launcher under it.
-    // Otherwise it's Top, so the bar stays below fullscreen video and games.
-    readonly property int surfaceLayer: all.shown.length > 0 ? WlrLayer.Overlay : WlrLayer.Top
+    // Otherwise it's Top.
+    readonly property int panelLayer: all.shown.length > 0 ? WlrLayer.Overlay : WlrLayer.Top
+    // The stage's layer: also Overlay while the bar steps aside for a
+    // fullscreen window, so touching the top edge brings the pills back over
+    // it. Hyprland gives a Top layer under a focused fullscreen window no
+    // pixels and no pointer, unless it mapped while that window was already
+    // fullscreen, so peeking worked only now and then (IMP-182). The pills
+    // are out of sight until the pointer gets there, so video and games
+    // still show nothing of the bar.
+    readonly property int surfaceLayer: panelLayer === WlrLayer.Overlay || bar.fullscreenBelow ? WlrLayer.Overlay : WlrLayer.Top
     // A new layer goes out with a frame, and the stage may not be drawing
     // (another surface's panel opened).
     onSurfaceLayerChanged: drawing.settle()
@@ -276,7 +284,7 @@ Scope {
         catching: root.catchesAnywhere
         // Over a fullscreen window while catching, also for a panel open on
         // another screen.
-        surfaceLayer: root.catchesAnywhere ? WlrLayer.Overlay : root.surfaceLayer
+        surfaceLayer: root.catchesAnywhere ? WlrLayer.Overlay : root.panelLayer
         // Only while catching, so it doesn't redraw for every morph frame.
         holes: root.catchesAnywhere ? [Qt.rect(0, 0, root.output.width, stage.implicitHeight), ...root.panelBoxes] : []
         onClicked: OpenPanels.dismissed()

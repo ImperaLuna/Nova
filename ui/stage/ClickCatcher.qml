@@ -19,7 +19,7 @@ PanelWindow { // qmllint disable uncreatable-type
     required property bool catching
     // The surfaces' areas on the screen, each a rect, cut out of it.
     required property list<rect> holes
-    // The stage's layer (Stage `surfaceLayer`): over a fullscreen window while
+    // The panels' layer (Stage `panelLayer`): over a fullscreen window while
     // catching, and never left over one once it's done.
     required property int surfaceLayer
 

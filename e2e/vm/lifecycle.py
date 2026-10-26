@@ -48,6 +48,9 @@ POINTER_REST = (640, 700)
 # so a test's first click would be lost (IMP-48).
 POINTER_WAKE_SECS = 1
 YDOTOOL = "YDOTOOL_SOCKET=/run/ydotoold/socket ydotool"
+# How long the pointer rests on the top edge, and then the pills take to
+# slide in, when peeking over a fullscreen window (peek_and_click).
+PEEK_SECS = 0.5
 # How long the screen must stay the same before a screenshot.
 SETTLED_SECS = 3
 # How long to watch that a stopped unit stays stopped: past its RestartSec.
@@ -328,7 +331,9 @@ def demo_logged(panel: str, state: str) -> str:
 
 def layers_follow_the_launcher(rounds: int) -> None:
     """Opens and closes the launcher over the fullscreen window `rounds`
-    times, checking each time that Nova moves to Overlay and back to Top.
+    times, checking each time that Nova moves to Overlay and back: the click
+    catcher to Top, the stage staying on Overlay while the fullscreen window
+    is shown (IMP-182).
     Once on Hyprland the stage stayed on Overlay after the launcher closed
     (IMP-116), rarely, so this repeats it with WAYLAND_DEBUG on and, if it
     happens again, prints what the UI sent after Esc: whether a set_layer
@@ -345,7 +350,8 @@ def layers_follow_the_launcher(rounds: int) -> None:
             assert_layers("overlay", "nova-panel", "nova-stage", "nova-click-catcher")
             press_until_logged(ESC, LAUNCHER_CLOSED)
             try:
-                assert_layers("top", "nova-stage", "nova-click-catcher")
+                assert_layers("top", "nova-click-catcher")
+                assert_layers("overlay", "nova-stage")
             except Exception:
                 lines = machine.succeed(f"cat {capture}").splitlines()
                 closed = max(i for i, line in enumerate(lines) if LAUNCHER_CLOSED in line)
@@ -375,12 +381,23 @@ def press_until_logged(keys: str, line: str) -> None:
     raise AssertionError(f"pressing {keys} {CLICK_TRIES} times never logged {line!r}")
 
 
-def click_until_logged(x: int, y: int, line: str, count=ui_log_count) -> None:
-    """Clicks at (x, y) until the UI logs `line` once more than before, as
-    `count` counts the UI's lines."""
+def peek_and_click(x: int, y: int) -> None:
+    """Clicks a pill at (x, y) while the bar steps aside for a fullscreen
+    window: the pointer stops on the top edge first, so the pills slide back
+    in, then moves down onto the pill. ydotool's absolute move passes the
+    top edge too, but only the point it ends on counts as a hover."""
+    machine.succeed(
+        f"{pointer_to(x, 0)} && sleep {PEEK_SECS} && {YDOTOOL} mousemove -x 0 -y 1 && sleep {PEEK_SECS} "
+        f"&& {YDOTOOL} mousemove -x 0 -y {y - 1} && {YDOTOOL} click 0xC0 && {pointer_to(*POINTER_REST)}"
+    )
+
+
+def click_until_logged(x: int, y: int, line: str, count=ui_log_count, clicker=click) -> None:
+    """Clicks at (x, y) with `clicker` until the UI logs `line` once more
+    than before, as `count` counts the UI's lines."""
     before = count(line)
     for _ in range(CLICK_TRIES):
-        click(x, y)
+        clicker(x, y)
         try:
             retry(lambda _last_try: count(line) > before, timeout=CLICK_EFFECT)
             return
