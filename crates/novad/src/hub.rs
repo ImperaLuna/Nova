@@ -117,3 +117,31 @@ fn encode_event(event: &Event) -> Option<String> {
     // Not logged through the logger: it publishes through this hub.
     encode(event).map_err(|e| eprintln!("novad: can't encode an event: {e}")).ok()
 }
+
+/// The next event in a client's queue, as JSON, waiting up to `wait`; flush
+/// markers are skipped. For tests that read a service's events the way a
+/// connection would.
+#[cfg(test)]
+pub fn next_event(queue: &Receiver<Outgoing>, wait: std::time::Duration) -> serde_json::Value {
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        match queue.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+            Ok(Outgoing::Line(line)) => return serde_json::from_str(&line).unwrap(),
+            Ok(Outgoing::Flushed(_)) => {}
+            Err(e) => panic!("no event in time: {e}"),
+        }
+    }
+}
+
+/// The data of the next event called `name` in a client's queue, skipping
+/// others, like [`next_event`].
+#[cfg(test)]
+pub fn next_named(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Duration) -> serde_json::Value {
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        let event = next_event(queue, deadline.saturating_duration_since(std::time::Instant::now()));
+        if event["event"] == name {
+            return event["data"].clone();
+        }
+    }
+}

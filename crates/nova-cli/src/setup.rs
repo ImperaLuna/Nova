@@ -459,7 +459,6 @@ fn finish(path_var: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
 
     fn manifests() -> Vec<Manifest> {
         nova_features::load_all(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features")).unwrap()
@@ -540,9 +539,7 @@ mod tests {
             let home = nova_test_support::TempDir::new(&format!("setup-{name}"));
             std::fs::create_dir_all(home.join("usr/bin")).unwrap();
             for bin in ["quickshell", "wf-recorder", "grim", "wl-copy", "xdg-open", "paru"] {
-                let program = home.join("usr/bin").join(bin);
-                std::fs::write(&program, "").unwrap();
-                std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+                nova_test_support::write_program(&home.join("usr/bin"), bin, "exit 0");
             }
             Self(home)
         }
@@ -636,9 +633,7 @@ mod tests {
     #[test]
     fn commands_run_with_the_path_they_were_found_on() {
         let home = Home::new("run");
-        let helper = home.0.join("usr/bin/nova-setup-test-helper");
-        std::fs::write(&helper, "#!/bin/sh\nexit 0\n").unwrap();
-        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        nova_test_support::write_program(&home.0.join("usr/bin"), "nova-setup-test-helper", "exit 0");
         let step = Step::Run { why: "test".into(), argv: words(&["nova-setup-test-helper"]) };
         let path_var = format!("{}:/bin:/usr/bin", home.path_var());
         assert_eq!(execute(&step, &path_var), Ok(()));

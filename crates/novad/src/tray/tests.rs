@@ -7,12 +7,11 @@ use crate::hub::{ClientQueue, Outgoing};
 use crate::launcher;
 use crate::session_bus::TestBus;
 use nova_protocol::Topic;
-use nova_test_support::TempDir;
+use nova_test_support::{TempDir, eventually, wait_until};
 use serde_json::{Value, json};
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
-use std::time::Instant;
 
 /// How long a test waits for something the bus should do at once.
 const WAIT: Duration = Duration::from_secs(5);
@@ -51,19 +50,7 @@ impl Fixture {
 
     /// The next tray event's items.
     fn next_items(&self) -> Value {
-        let deadline = Instant::now() + WAIT;
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            match self.ui.recv_timeout(left).expect("a tray event") {
-                Outgoing::Line(line) => {
-                    let event: Value = serde_json::from_str(&line).unwrap();
-                    if event["event"] == "tray" {
-                        return event["data"]["items"].clone();
-                    }
-                }
-                Outgoing::Flushed(_) => {}
-            }
-        }
+        crate::hub::next_named(&self.ui, "tray", WAIT)["items"].clone()
     }
 
     /// Makes our process look, to the tray, like it runs in `unit`.
@@ -162,11 +149,7 @@ fn an_electron_item_shows_with_its_app_and_goes_with_it() {
         runner: launcher::Runner::Direct,
     };
     let launcher = Launcher::start(paths, "", Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
-    let deadline = Instant::now() + WAIT;
-    while launcher.find_app(&["discord".into()]).is_none() {
-        assert!(Instant::now() < deadline, "the launcher found discord.desktop");
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    wait_until(WAIT, "the launcher to find discord.desktop", || launcher.find_app(&["discord".into()]).is_some());
     // Electron's own id doesn't name the app; the unit it runs in does.
     fixture.run_in_unit("app-discord-375306.scope");
     let tray = fixture.tray(Some(Arc::clone(&launcher)));
@@ -226,16 +209,8 @@ fn a_queued_tray_takes_over_when_the_first_stops() {
     let first = fixture.tray(None);
     let second = fixture.tray(None);
     first.stop();
-    let deadline = Instant::now() + WAIT;
-    let app = loop {
-        // Until the bus has given the name to the second tray.
-        let app = put_up_retrying(&fixture);
-        if let Some(app) = app {
-            break app;
-        }
-        assert!(Instant::now() < deadline, "the second tray took over");
-        std::thread::sleep(Duration::from_millis(20));
-    };
+    // Until the bus has given the name to the second tray.
+    let app = eventually(WAIT, "the second tray to take over", || put_up_retrying(&fixture));
     assert_eq!(fixture.next_items()[0]["id"], "late");
     drop(app);
     second.stop();

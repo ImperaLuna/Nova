@@ -76,7 +76,7 @@ fn parse(line: &str) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
+    use nova_test_support::wait_until;
 
     #[test]
     fn parses_its_lines() {
@@ -91,25 +91,16 @@ mod tests {
     #[test]
     fn follows_what_it_prints_and_stops_with_it() {
         let dir = nova_test_support::TempDir::new("nvidia-smi");
-        let script = dir.join(BINARY);
-        std::fs::write(&script, "#!/bin/sh\necho 7\necho 42\nexec sleep 60\n").unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let script = nova_test_support::write_program(&dir, BINARY, "echo 7\necho 42\nexec sleep 60");
         let path_var = format!("{}:{}", dir.display(), std::env::var("PATH").unwrap_or_default());
         assert_eq!(find(&path_var), Some(script.clone()));
 
         let smi = NvidiaSmi::start(&script, &path_var, Duration::from_secs(2)).unwrap();
         let pid = smi.child.as_ref().unwrap().id();
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while smi.latest() != Some(42.0) && std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert_eq!(smi.latest(), Some(42.0));
+        wait_until(Duration::from_secs(5), "the second line", || smi.latest() == Some(42.0));
         drop(smi);
-        let gone = || !Path::new(&format!("/proc/{pid}")).exists();
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !gone() && std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(gone(), "stopped and reaped");
+        wait_until(Duration::from_secs(5), "it to be stopped and reaped", || {
+            !Path::new(&format!("/proc/{pid}")).exists()
+        });
     }
 }

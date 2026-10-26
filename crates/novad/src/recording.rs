@@ -534,11 +534,9 @@ mod tests {
     use super::*;
     use crate::hub::{ClientQueue, Outgoing};
     use nova_protocol::{LogLevel, Topic};
-    use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::UnixStream;
     use std::sync::mpsc::Receiver;
 
-    const POLL: Duration = Duration::from_millis(10);
     const WAIT: Duration = Duration::from_secs(5);
 
     /// Recordings with a fake recorder (it writes the file it's given and
@@ -567,9 +565,7 @@ mod tests {
                  while :; do sleep 0.02; done",
                 dir = dir.display()
             );
-            let path = bin.join(recorder);
-            std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            nova_test_support::write_program(&bin, recorder, &script);
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
             let (ui_stream, other_end) = UnixStream::pair().unwrap();
@@ -597,14 +593,7 @@ mod tests {
 
         /// The next event, waiting for it.
         fn next_event(&self) -> serde_json::Value {
-            let deadline = Instant::now() + WAIT;
-            loop {
-                match self.ui.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-                    Ok(Outgoing::Line(line)) => return serde_json::from_str(&line).unwrap(),
-                    Ok(Outgoing::Flushed(_)) => {}
-                    Err(e) => panic!("no event in time: {e}"),
-                }
-            }
+            crate::hub::next_event(&self.ui, WAIT)
         }
 
         fn files(&self) -> Vec<String> {
@@ -751,11 +740,9 @@ mod tests {
             resumed["data"]["elapsed_ms"].as_u64().unwrap() < paused["data"]["elapsed_ms"].as_u64().unwrap() + 200,
             "the pause isn't counted: {paused} then {resumed}"
         );
-        let deadline = Instant::now() + WAIT;
-        while std::fs::read_to_string(fixture.dir.join("signals")).unwrap_or_default().lines().count() < 2 {
-            assert!(Instant::now() < deadline, "the recorder got no SIGUSR2");
-            std::thread::sleep(POLL);
-        }
+        nova_test_support::wait_until(WAIT, "the recorder to get SIGUSR2", || {
+            std::fs::read_to_string(fixture.dir.join("signals")).unwrap_or_default().lines().count() >= 2
+        });
     }
 
     #[test]

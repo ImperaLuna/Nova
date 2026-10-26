@@ -7,10 +7,9 @@
 use super::*;
 use crate::session_bus::Bus;
 use nova_protocol::{FeatureStatus, LogEntry, UI_LOG_SOURCE};
-use nova_test_support::TempDir;
+use nova_test_support::{TempDir, wait_until, write_program};
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Lines, Write};
-use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
@@ -374,9 +373,7 @@ fn status_reports_the_daemon_ui_and_features() {
 #[test]
 fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
     let scripts = nova_test_support::TempDir::new("ui");
-    let fake_ui = scripts.join("quickshell");
-    std::fs::write(&fake_ui, "#!/bin/sh\necho '  WARN qml: about to fail'\nexit 3\n").unwrap();
-    std::fs::set_permissions(&fake_ui, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let fake_ui = write_program(&scripts, "quickshell", "echo '  WARN qml: about to fail'\nexit 3");
 
     let settings = UiSettings {
         quickshell: fake_ui,
@@ -402,10 +399,8 @@ fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
 fn a_quickshell_outside_the_tested_range_is_warned_about() {
     let scripts = nova_test_support::TempDir::new("old-quickshell");
     let fake_ui = scripts.join("quickshell");
-    let script =
-        "#!/bin/sh\ncase \"$1\" in --version) echo 'Quickshell 0.1.0 (revision test)' ;; *) exec sleep 60 ;; esac\n";
-    std::fs::write(&fake_ui, script).unwrap();
-    std::fs::set_permissions(&fake_ui, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let script = "case \"$1\" in --version) echo 'Quickshell 0.1.0 (revision test)' ;; *) exec sleep 60 ;; esac";
+    write_program(&scripts, "quickshell", script);
 
     let settings = UiSettings {
         quickshell: fake_ui,
@@ -1194,9 +1189,7 @@ fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
 #[test]
 fn only_the_supervised_ui_reports_the_lock_screen() {
     let scripts = nova_test_support::TempDir::new("lock-ui");
-    let fake_ui = scripts.join("quickshell");
-    std::fs::write(&fake_ui, "#!/bin/sh\nexec sleep 30\n").unwrap();
-    std::fs::set_permissions(&fake_ui, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let fake_ui = write_program(&scripts, "quickshell", "exec sleep 30");
     let settings = UiSettings {
         quickshell: fake_ui,
         ui_dir: PathBuf::from("ui"),
@@ -1726,9 +1719,7 @@ fn a_launched_app_outlives_the_request_that_started_it() {
     // Like bubblewrap's --die-with-parent (Claude Desktop): killed when its
     // parent thread ends, here the one that answered the request.
     let pid_file = novad.dir.join("pid");
-    let script = novad.dir.join("app.sh");
-    std::fs::write(&script, format!("#!/bin/sh\necho $$ > \"{}\"\nexec sleep 30\n", pid_file.display())).unwrap();
-    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let script = write_program(&novad.dir, "app.sh", &format!("echo $$ > \"{}\"\nexec sleep 30", pid_file.display()));
     install_app(
         &novad,
         "doomed.desktop",
@@ -1868,11 +1859,9 @@ fn an_app_is_found_by_its_own_id_before_a_shortcut_running_it() {
         Arc::new(Hub::default()),
         Arc::clone(&novad.daemon.logger),
     );
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while launcher.find_app(&["abiotic factor".into()]).is_none() || launcher.find_app(&["steam".into()]).is_none() {
-        assert!(Instant::now() < deadline, "the launcher found both apps");
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    wait_until(Duration::from_secs(5), "the launcher to find both apps", || {
+        launcher.find_app(&["abiotic factor".into()]).is_some() && launcher.find_app(&["steam".into()]).is_some()
+    });
     assert_eq!(launcher.find_app(&["steam".into()]).unwrap().id, "steam.desktop");
     launcher.stop();
 }

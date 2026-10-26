@@ -539,9 +539,7 @@ mod tests {
     }
 
     fn fake(bin: &Path, name: &str, body: &str) {
-        let path = bin.join(name);
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        nova_test_support::write_program(bin, name, body);
     }
 
     /// A frame as grim writes it, whose pixel (x, y) is (output's first

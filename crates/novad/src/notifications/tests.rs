@@ -6,13 +6,12 @@ use crate::hub::{ClientQueue, Outgoing};
 use crate::session_bus::TestBus;
 use futures_core::Stream;
 use nova_protocol::Topic;
-use nova_test_support::TempDir;
+use nova_test_support::{TempDir, wait_until};
 use serde_json::{Value, json};
 use std::future::poll_fn;
 use std::os::unix::net::UnixStream;
 use std::pin::Pin;
 use std::sync::mpsc::Receiver;
-use std::time::Instant;
 use zbus::{MatchRule, MessageStream};
 
 /// How long a test waits for something the bus should do at once.
@@ -72,19 +71,7 @@ impl Fixture {
 
     /// The next event called `name`, skipping others.
     fn next(&self, name: &str) -> Value {
-        let deadline = Instant::now() + WAIT;
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            match self.ui.recv_timeout(left).unwrap_or_else(|_| panic!("a {name} event")) {
-                Outgoing::Line(line) => {
-                    let event: Value = serde_json::from_str(&line).unwrap();
-                    if event["event"] == name {
-                        return event["data"].clone();
-                    }
-                }
-                Outgoing::Flushed(_) => {}
-            }
-        }
+        crate::hub::next_named(&self.ui, name, WAIT)
     }
 
     /// No event called `name` is waiting.
@@ -408,11 +395,7 @@ fn the_list_and_settings_survive_a_restart() {
     server.set_do_not_disturb(true);
     server.stop();
     // Let go of the name before the next one claims it.
-    let deadline = Instant::now() + WAIT;
-    while lock(&server.shared.connection).is_some() {
-        assert!(Instant::now() < deadline, "the server stops");
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    wait_until(WAIT, "the server to stop", || lock(&server.shared.connection).is_none());
     drop(server);
     while fixture.ui.try_recv().is_ok() {}
 
