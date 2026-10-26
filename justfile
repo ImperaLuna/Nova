@@ -102,6 +102,8 @@ docs:
     test -d docs/quickshell || git clone --depth 1 --branch "v$(quickshell --version | cut -d' ' -f2)" https://github.com/quickshell-mirror/quickshell docs/quickshell
 
 # Needs the Codex CLI and `codex login`; not part of the dev shell or CI.
-# Codex reviews this branch against `base` (sends the diff to OpenAI)
-review base="main":
+# Codex reviews this branch against `base` (sends the diff to OpenAI). Fetches
+# main first, so the diff isn't taken against a stale local main.
+review base="origin/main":
+    git fetch -q origin main
     codex review --base {{base}} -c model="{{review_model}}"
