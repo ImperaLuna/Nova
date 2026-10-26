@@ -9,8 +9,11 @@
 # frame in a burst ends idle time, so its gap isn't frame time.
 #
 # A screen's animation in a burst starts with its first frame on time.
-# From there every late gap counts, however long, so a stall inside an
-# animation still shows. Late frames before it are lone redraws: the strip
+# From there a late gap counts, however long, once a frame on time follows
+# it: the animation went on, so the gap was a stall inside it. Late frames
+# after its last frame on time are lone redraws after it ended, like a stage
+# redrawing once more when a panel on its PanelSurface closes, and don't
+# count. Late frames before it are lone redraws too: the strip
 # redrawing once at the toggle and again when a panel elsewhere closes back
 # into its pill, a screen redrawing while another one animates, or a stage a
 # fullscreen window hides, which the compositor then gives a frame only now
@@ -67,15 +70,26 @@ match($0, /nova-frame: screen=[^ ]+ dt=[0-9]+/) {
 	}
 	if (dt <= LATE * 1000 / hz[screen]) {
 		burst_on_time[screen]++
+		# The late frames before it were inside the animation.
+		burst_frames[screen] += late_frames[screen]
+		burst_dropped[screen] += late_frames[screen]
+		burst_missed[screen] += late_missed[screen]
+		if (late_worst[screen] > burst_worst[screen])
+			burst_worst[screen] = late_worst[screen]
+		late_frames[screen] = late_missed[screen] = late_worst[screen] = 0
 	} else if (!burst_on_time[screen]) {
 		# Not animating yet: a lone redraw.
 		if (dt > burst_start[screen])
 			burst_start[screen] = dt
 		next
 	} else {
-		burst_dropped[screen]++
+		# Dropped if the animation goes on after it (a frame on time).
+		late_frames[screen]++
 		missed = int(dt * hz[screen] / 1000 + 0.5) - 1
-		burst_missed[screen] += missed > 1 ? missed : 1
+		late_missed[screen] += missed > 1 ? missed : 1
+		if (dt > late_worst[screen])
+			late_worst[screen] = dt
+		next
 	}
 	burst_frames[screen]++
 	if (dt > burst_worst[screen])
@@ -99,7 +113,9 @@ function close_burst(s) {
 	} else {
 		idle[s]++
 	}
+	# Late frames still waiting for one on time came after the animation.
 	burst_frames[s] = burst_on_time[s] = burst_dropped[s] = burst_missed[s] = burst_worst[s] = burst_start[s] = 0
+	late_frames[s] = late_missed[s] = late_worst[s] = 0
 }
 
 END {
