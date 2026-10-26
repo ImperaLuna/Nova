@@ -58,16 +58,13 @@ PanelWindow { // qmllint disable uncreatable-type
 
     // It draws nothing, so it would only hand the compositor a new empty
     // frame for every animation frame anywhere. It draws its own changes
-    // (its mask and layer-shell size go out with a frame) and stops once a
-    // frame with them is out: Hyprland cuts the mask down to the size of the
-    // last frame, so one from before a resize would leave it taking no
-    // clicks. Qt emits afterAnimating once it has polished a frame, which
-    // holds every change made before it, and that frame goes out even if
-    // updates go off now; a frameSwapped could still be an older frame's.
-    property bool drawing: false
-    updatesEnabled: drawing
+    // (its mask, layer and layer-shell size go out with a frame) until a
+    // frame with them is out (FrameOut): Hyprland cuts the mask down to the
+    // size of the last frame, so one from before a resize would leave it
+    // taking no clicks.
+    updatesEnabled: out.pending
     function redraw() {
-        drawing = true;
+        out.request();
     }
     onVisibleChanged: redraw()
     onCatchingChanged: redraw()
@@ -77,12 +74,9 @@ PanelWindow { // qmllint disable uncreatable-type
     onHeightChanged: redraw()
     onDevicePixelRatioChanged: redraw()
 
-    Connections {
-        target: catcher.contentItem.Window.window
-        enabled: catcher.drawing
-        function onAfterAnimating() {
-            catcher.drawing = false;
-        }
+    FrameOut {
+        id: out
+        window: catcher.contentItem.Window.window
     }
 
     MouseArea {

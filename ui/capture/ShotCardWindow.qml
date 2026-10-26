@@ -91,4 +91,8 @@ PanelWindow { // qmllint disable uncreatable-type
             }
         }
     }
+
+    FrameLog {
+        surfaceName: `${window.output.name}/screenshot`
+    }
 }
