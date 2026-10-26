@@ -109,6 +109,38 @@ fn launcher_searches_rank_apps_and_refuse_long_queries() {
 }
 
 #[test]
+fn app_streams_get_their_apps_icons_by_program_and_name() {
+    let novad = TestDaemon::with_launcher("app-icon");
+    install_app(&novad, "zen-beta.desktop", "Name=Zen Browser\nExec=zen-beta\nIcon=zen-browser\n");
+    install_app(&novad, "com.anthropic.Claude.desktop", "Name=Claude\nExec=claude-desktop\nIcon=claude\n");
+    install_app(&novad, "firefox.desktop", "Name=Firefox\nExec=firefox\nIcon=firefox-icon\n");
+    let mut client = novad.connect();
+    client.subscribe_launcher(3);
+    let icon = |client: &mut Client, id, [icon_name, program, name]: [&str; 3]| {
+        client.request(id, "app_icon", Some(json!({"icon_name": icon_name, "program": program, "name": name})))
+    };
+
+    // Found loosely: Zen plays as `.zen-wrapped`, its entry is "Zen Browser".
+    assert_eq!(icon(&mut client, 2, ["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], "zen-browser");
+    // By the icon name the stream gives; Electron says nothing.
+    assert_eq!(
+        icon(&mut client, 3, ["com.anthropic.Claude", "/usr/lib/electron/electron", "Claude"])["result"],
+        "claude"
+    );
+    assert_eq!(icon(&mut client, 4, ["", "/usr/bin/firefox", "Firefox"])["result"], "firefox-icon");
+    // A browser's web app (`zen-<id>.desktop`) isn't the browser.
+    install_app(&novad, "zen-abc123-Default.desktop", "Name=YouTube\nExec=zen-beta --app=abc123\nIcon=youtube\n");
+    client.launcher_until(|event| event["apps"].as_array().unwrap().len() == 4);
+    assert_eq!(icon(&mut client, 5, ["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], "zen-browser");
+    // No app: the icon name it gives, else its program, for the icon theme.
+    assert_eq!(icon(&mut client, 6, ["", "/usr/bin/mpv", "mpv"])["result"], "mpv");
+    assert_eq!(icon(&mut client, 7, ["audio-x-generic", "/usr/bin/mpv", "mpv"])["result"], "audio-x-generic");
+    assert_eq!(icon(&mut client, 8, ["", "", "Some Game"])["result"], json!(null));
+    let long = icon(&mut client, 9, ["", &"a".repeat(513), ""]);
+    assert!(long["error"].as_str().unwrap().contains("at most 512"));
+}
+
+#[test]
 fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     let novad = TestDaemon::with_launcher("launcher-launch");
     let marker = novad.dir.join("launched");

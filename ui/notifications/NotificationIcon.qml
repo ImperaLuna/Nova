@@ -1,7 +1,7 @@
 import QtQuick
 import "../launcher"
 import "../theme"
-import "notifications.js" as Notifications
+import "../text/files.js" as Files
 
 // Who a notification is from, `size` square: the picture it came with (a
 // sender's photo), round, with the app's icon on its corner; or the app's
@@ -30,7 +30,7 @@ Item {
         Image {
             id: picture
             anchors.fill: parent
-            source: icon.notification.image ? Notifications.fileUrl(icon.notification.image) : ""
+            source: icon.notification.image ? Files.fileUrl(icon.notification.image) : ""
             sourceSize: Qt.size(icon.size * Screen.devicePixelRatio, icon.size * Screen.devicePixelRatio)
             fillMode: Image.PreserveAspectCrop
             asynchronous: true

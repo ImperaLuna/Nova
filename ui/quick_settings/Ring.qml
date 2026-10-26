@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Shapes
 import "../theme"
+import "../util/numbers.js" as Numbers
 
 // One resource ring: a track, an arc filled to `value` (0 to 1), the
 // reading inside it and its name under it.
@@ -46,7 +47,7 @@ Item {
                 radiusX: ring.arcRadius
                 radiusY: ring.arcRadius
                 startAngle: -90
-                sweepAngle: 360 * Math.max(0, Math.min(1, ring.value))
+                sweepAngle: 360 * Numbers.clamp(ring.value, 0, 1)
             }
         }
     }

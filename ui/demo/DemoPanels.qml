@@ -54,7 +54,7 @@ QtObject {
             text: panel.name
             opacity: panel.open ? 1 : 0
             MorphReveal on opacity {
-                delay: 0.5
+                delay: Tokens.revealContent
             }
         }
     }

@@ -30,19 +30,6 @@ function unread(items) {
     }).length;
 }
 
-// How long ago `time` was at `now` (both seconds since the epoch), short:
-// "now", "5m", "2h", "3d".
-function ago(time, now) {
-    var seconds = Math.max(0, now - time);
-    if (seconds < 60)
-        return qsTr("now");
-    if (seconds < 3600)
-        return qsTr("%1m").arg(Math.floor(seconds / 60));
-    if (seconds < 86400)
-        return qsTr("%1h").arg(Math.floor(seconds / 3600));
-    return qsTr("%1d").arg(Math.floor(seconds / 86400));
-}
-
 // Whether a pop-up of `notification` takes in a newer one from the same
 // app, as "+N": plain ones do; critical ones and progress stay their own.
 function merges(notification) {
@@ -88,7 +75,3 @@ function clickDoes(notification) {
     return "none";
 }
 
-// What an Image shows for a picture at the absolute `path`.
-function fileUrl(path) {
-    return "file://" + path.split("/").map(encodeURIComponent).join("/");
-}

@@ -7,6 +7,7 @@ import "../compositor"
 import "../stage"
 import "../theme"
 import "service"
+import "../icons"
 
 // The pop-ups' own layer surface, under the right pill of the screen that
 // had focus when the first of them came; they stay there until they've all
@@ -84,20 +85,19 @@ PanelWindow { // qmllint disable uncreatable-type
     }
     Component.onCompleted: BackgroundEffect.blurRegion = blur
 
-    // The minute shown as "5m", while pop-ups are up.
-    property real now: Date.now() / 1000
-    Timer {
-        interval: 60 * 1000
-        running: stack.busy
-        repeat: true
-        onTriggered: window.now = Date.now() / 1000
+    // The minute shown as "5m", while pop-ups are up, on the minute.
+    SystemClock {
+        id: clock
+        enabled: stack.busy
+        precision: SystemClock.Minutes
     }
+    readonly property real now: clock.date.getTime() / 1000
 
     NotificationStack {
         id: stack
         x: Tokens.shadowRoom
         y: window.top
-        iconSource: name => NotificationsService.iconSource(name)
+        iconSource: name => AppIcons.source(name)
         now: window.now
         onOpened: notification => NotificationsService.open(notification, window.output.name)
         onDismissed: id => NotificationsService.dismiss(id)

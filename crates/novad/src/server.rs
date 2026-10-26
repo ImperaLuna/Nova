@@ -193,6 +193,10 @@ impl<'a> Connection<'a> {
             Command::PauseRecording { paused } => done(self.daemon.recordings.pause(*paused)),
             Command::RecordingAction { id, action } => done(self.daemon.recordings.act(*id, *action)),
             Command::SearchApps { query } => value(self.launcher().and_then(|launcher| launcher.search(query))),
+            Command::AppIcon { icon_name, program, name } => {
+                let launcher = lock(&self.daemon.settings).launcher.clone();
+                value(crate::launcher::Launcher::app_icon(launcher.as_deref(), icon_name, program, name))
+            }
             Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window),
             Command::PinApp { id, pinned } => done(self.launcher().and_then(|launcher| launcher.pin(id, *pinned))),
             Command::HideTrayApp { id, hidden } => done(self.tray().and_then(|tray| tray.hide(id, *hidden))),
@@ -512,6 +516,7 @@ impl<'a> Connection<'a> {
             | Command::WatchResources { .. }
             | Command::EndApp { .. }
             | Command::SearchApps { .. }
+            | Command::AppIcon { .. }
             | Command::LaunchApp { .. }
             | Command::PinApp { .. }
             | Command::HideTrayApp { .. }

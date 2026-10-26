@@ -27,6 +27,7 @@ var CMD_RECORDING_ACTION = "recording_action";
 var CMD_WATCH_RESOURCES = "watch_resources";
 var CMD_END_APP = "end_app";
 var CMD_SEARCH_APPS = "search_apps";
+var CMD_APP_ICON = "app_icon";
 var CMD_LAUNCH_APP = "launch_app";
 var CMD_PIN_APP = "pin_app";
 var CMD_HIDE_TRAY_APP = "hide_tray_app";

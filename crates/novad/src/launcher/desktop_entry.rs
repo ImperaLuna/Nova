@@ -60,6 +60,13 @@ impl Entry {
         ids
     }
 
+    /// Whether `id` (lower case) is the first word of its name, a loose
+    /// match (`zen` for "Zen Browser", `brave` for "Brave Web Browser").
+    /// Never for an app in a terminal, like `window_ids`.
+    pub fn first_word_is(&self, id: &str) -> bool {
+        !self.terminal && self.name.split_whitespace().next().is_some_and(|word| word.to_lowercase() == id)
+    }
+
     /// Whether `id` (lower case) is the app id it names for its windows or
     /// its desktop file id, rather than just its program or name.
     pub fn is_named(&self, id: &str) -> bool {

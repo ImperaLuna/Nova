@@ -6,6 +6,7 @@
 pub mod autostart;
 mod desktop_entry;
 mod launch;
+mod program;
 mod rank;
 mod scan;
 
@@ -17,7 +18,8 @@ use crate::tray::Tray;
 use crate::{lock, state_file};
 use desktop_entry::{Context, Entry, Locale};
 pub use launch::{Runner, open};
-use nova_protocol::{App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};
+use nova_protocol::{APP_ICON_MAX_CHARS, App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};
+pub use program::program_name;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -247,6 +249,38 @@ impl Launcher {
             let matching: Vec<&Entry> = state.apps.values().filter(|entry| entry.window_ids().contains(id)).collect();
             matching.iter().find(|entry| entry.is_named(id)).or(matching.first()).map(|entry| app(entry))
         })
+    }
+
+    /// The icon for an app stream (`Command::AppIcon`): the installed app's
+    /// it belongs to, by its icon name, program and name (`find_app`, else
+    /// loosely by the first word of an app's name: Zen plays as `zen`, its
+    /// entry is "Zen Browser" in `zen-beta.desktop`), else its icon name or
+    /// program, which the icon theme may have. Without the launcher (the
+    /// feature off), only that last part.
+    pub fn app_icon(
+        launcher: Option<&Self>,
+        icon_name: &str,
+        program: &str,
+        name: &str,
+    ) -> Result<Option<String>, String> {
+        if [icon_name, program, name].iter().any(|value| value.chars().count() > APP_ICON_MAX_CHARS) {
+            return Err(format!("names are at most {APP_ICON_MAX_CHARS} characters"));
+        }
+        let icon_name = Some(icon_name.to_string()).filter(|icon_name| !icon_name.is_empty());
+        let program = program_name(program);
+        let ids: Vec<String> = [icon_name.as_deref(), program.as_deref(), Some(name)]
+            .into_iter()
+            .flatten()
+            .map(str::to_lowercase)
+            .filter(|id| !id.is_empty())
+            .collect();
+        let found = launcher.and_then(|launcher| {
+            launcher.find_app(&ids).or_else(|| {
+                let state = lock(&launcher.state);
+                ids.iter().find_map(|id| state.apps.values().find(|entry| entry.first_word_is(id)).map(app))
+            })
+        });
+        Ok(found.and_then(|app| app.icon).or(icon_name).or(program))
     }
 
     /// Pins the app `id` at the end, or unpins it.

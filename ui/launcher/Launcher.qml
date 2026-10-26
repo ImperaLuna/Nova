@@ -356,7 +356,7 @@ StagePanel {
                             easing.bezierCurve: Tokens.easing
                         }
                     }
-                    color: launcher.launching !== "" ? Qt.rgba(Tokens.primary.r, Tokens.primary.g, Tokens.primary.b, Tokens.accentFillOpacity) : Tokens.selected
+                    color: launcher.launching !== "" ? Tokens.alpha(Tokens.primary, Tokens.accentFillOpacity) : Tokens.selected
                     Behavior on color {
                         ColorAnimation {
                             duration: Tokens.durationFast
