@@ -3,8 +3,9 @@
 # came up; session.py or frames.py follows it, each in a VM of its own, so
 # the two halves run side by side. default.nix defines USER, UID, PASSWORD,
 # COMPOSITOR, QUIT_COMPOSITOR, FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW,
-# CLOSE_WINDOW, LIST_WINDOWS, LIST_LAYERS, COMPOSITOR_LOG and FRAMES_REPORT
-# above this script.
+# CLOSE_WINDOW, LIST_WINDOWS, LIST_LAYERS, ADDED_OUTPUTS (the commands that
+# add an output, focus the VM's own one, and remove the added one, as one
+# triple, or none where the compositor can't), COMPOSITOR_LOG and FRAMES_REPORT above this script.
 import collections
 import datetime as dt
 import itertools
@@ -107,6 +108,10 @@ VOLUME_FOUND = "nova: volume output found"
 # What quick settings logs (ui/quick_settings/QuickSettings.qml).
 QUICK_SETTINGS_OPENED = "nova: quick settings opened"
 QUICK_SETTINGS_CLOSED = "nova: quick settings closed"
+# The output ADDED_OUTPUTS adds, right of the VM's 1280x800 one, and a
+# point on it.
+ADDED_OUTPUT = "NOVA-2"
+ON_ADDED_OUTPUT = (1280 + 300, 300)
 # What Quickshell logs first in each UI process.
 UI_LAUNCHED = "Launching config"
 # The VM's default output (a null sink, default.nix), as wpctl names it.

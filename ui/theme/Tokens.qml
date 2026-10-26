@@ -130,6 +130,8 @@ QtObject {
     // far apart, and the line between them and the day.
     readonly property int workspaceSize: 26
     readonly property int workspaceGap: 2
+    // Extra room between the special workspaces and the numbers after them.
+    readonly property int workspaceGroupGap: 4
     readonly property int dividerHeight: 16
     readonly property int dividerWidth: 1
     // Small marks, like a workspace's "wants attention" dot.
@@ -574,8 +576,6 @@ QtObject {
     readonly property int durationUnlock: 400
     // The scale something new grows in from.
     readonly property real enterScale: 0.6
-    // One breath of something that pulses for attention.
-    readonly property int durationPulse: 1600
     // How long an action that ends the session waits for its second click.
     readonly property int durationConfirm: 4000
     // How long the bar stays after the pointer leaves it while it's only
@@ -584,8 +584,6 @@ QtObject {
     readonly property int durationPeekLinger: 400
     // The cubic-bezier every panel motion uses (fast out, gentle stop).
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
-    // The curve each half of a pulse follows: a soft breath in and out.
-    readonly property int easingPulse: Easing.InOutSine
 
     // `color` at `opacity` (0..1), whatever its own alpha.
     function alpha(color: color, opacity: real): color {

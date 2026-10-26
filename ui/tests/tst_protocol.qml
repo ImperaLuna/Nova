@@ -101,6 +101,26 @@ TestCase {
         compare(Protocol.barWorkspaces(null), []);
     }
 
+    function test_the_bar_keeps_a_special_workspace_while_it_shows_anywhere() {
+        const output = Protocol.parse(compositorLine).data.outputs[0];
+        output.workspaces.unshift({
+            id: -98,
+            name: "magic",
+            active: false,
+            focused: false,
+            urgent: false,
+            empty: false,
+            fullscreen: false,
+            special: true
+        });
+        const names = () => Protocol.barWorkspaces(output).map(workspace => workspace.name);
+        compare(names(), ["magic", "web"], "with windows");
+        output.workspaces[0].empty = true;
+        compare(names(), ["web"], "empty and hidden");
+        output.workspaces[0].shown_elsewhere = true;
+        compare(names(), ["magic", "web"], "empty, showing on another output");
+    }
+
     function test_the_bar_steps_aside_only_for_a_shown_fullscreen_workspace() {
         const outputs = Protocol.parse(compositorLine).data.outputs;
         compare(Protocol.fullscreenShown(outputs[1]), true);

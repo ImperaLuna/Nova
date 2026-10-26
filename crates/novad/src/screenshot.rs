@@ -509,8 +509,7 @@ mod tests {
             let (queue, ui) = ClientQueue::new(&other_end).unwrap();
             let id = hub.register(queue);
             hub.subscribe(id, Topic::Screenshot);
-            // The fakes first; the system's for the tools they use.
-            let path_var = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+            let path_var = nova_test_support::fake_path(&bin, &["cp", "cat", "sleep"]);
             let screenshots = Screenshots::new(&dir.join("runtime"), path_var, Arc::clone(&hub), logger);
             Self { dir, screenshots, hub, ui, _ui_stream: ui_stream }
         }

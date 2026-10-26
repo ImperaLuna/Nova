@@ -1,36 +1,48 @@
-activelayout>>at-translated-set-2-keyboard,English (US)
-activelayout>>qemu-virtio-keyboard,English (US)
-windowtitle>>58edea3cebb0
-windowtitlev2>>58edea3cebb0,First window
-openwindow>>58edea3cebb0,1,nova-first,First window
+windowtitle>>56ba8e21cc80
+windowtitlev2>>56ba8e21cc80,First window
+openwindow>>56ba8e21cc80,1,nova-first,First window
 activewindow>>nova-first,First window
-activewindowv2>>58edea3cebb0
+activewindowv2>>56ba8e21cc80
 createworkspace>>2
 createworkspacev2>>2,2
 activewindow>>,
 activewindowv2>>
 workspace>>2
 workspacev2>>2,2
-windowtitle>>58edebf35170
-windowtitlev2>>58edebf35170,Second window
-openwindow>>58edebf35170,2,nova-second,Second window
+windowtitle>>56ba8fd9b880
+windowtitlev2>>56ba8fd9b880,Second window
+openwindow>>56ba8fd9b880,2,nova-second,Second window
 activewindow>>nova-second,Second window
-activewindowv2>>58edebf35170
-windowtitle>>58edebf35170
-windowtitlev2>>58edebf35170,Renamed, with, commas
+activewindowv2>>56ba8fd9b880
+windowtitle>>56ba8fd9b880
+windowtitlev2>>56ba8fd9b880,Renamed, with, commas
 activewindow>>nova-second,Renamed, with, commas
-activewindowv2>>58edebf35170
-activelayout>>at-translated-set-2-keyboard,German
+activewindowv2>>56ba8fd9b880
 activelayout>>qemu-virtio-keyboard,German
+activelayout>>at-translated-set-2-keyboard,German
 renameworkspace>>2,web
 activewindow>>nova-first,First window
-activewindowv2>>58edea3cebb0
+activewindowv2>>56ba8e21cc80
 workspace>>1
 workspacev2>>1,1
-bell>>58edebf35170
-urgent>>58edebf35170
+bell>>56ba8fd9b880
+urgent>>56ba8fd9b880
 fullscreen>>1
-closewindow>>58edea3cebb0
+closewindow>>56ba8e21cc80
 fullscreen>>0
+activewindow>>,
+activewindowv2>>
+createworkspace>>special:magic
+createworkspacev2>>-98,special:magic
+movewindow>>56ba8fd9b880,special:magic
+movewindowv2>>56ba8fd9b880,-98,special:magic
+destroyworkspace>>web
+destroyworkspacev2>>2,web
+activewindow>>nova-second,Renamed, with, commas
+activewindowv2>>56ba8fd9b880
+activespecial>>special:magic,Virtual-1
+activespecialv2>>-98,special:magic,Virtual-1
+activespecial>>,Virtual-1
+activespecialv2>>,,Virtual-1
 activewindow>>,
 activewindowv2>>

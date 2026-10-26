@@ -14,7 +14,7 @@ use crate::backoff::Backoff;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
-use nova_protocol::{Capability, Desktop, Event, Step, Topic, Workspace, WorkspaceId};
+use nova_protocol::{Capability, Desktop, Event, Output, Step, Topic, Workspace, WorkspaceId};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -39,8 +39,13 @@ pub trait Backend: Send + Sync {
     /// fails.
     fn watch(&self, report: &mut dyn FnMut(Desktop)) -> Result<(), String>;
 
-    /// Shows `workspace`, one the last report listed.
+    /// Shows `workspace`, one the last report listed. A special one shows on
+    /// the focused output, or hides when it shows there already.
     fn focus_workspace(&self, workspace: &Workspace) -> Result<(), String>;
+
+    /// Focuses `output`, one the last report listed, so a window that opens
+    /// next opens there. Never shows or hides a special workspace on it.
+    fn focus_output(&self, output: &Output) -> Result<(), String>;
 
     /// Quits the compositor, ending the session, without its own prompt.
     fn log_out(&self) -> Result<(), String>;
@@ -161,18 +166,15 @@ impl Compositor {
         self.backend.focus_window(app_ids, workspace)
     }
 
-    /// Focuses `output` by showing its active workspace, so a window that
-    /// opens next opens there. Nothing when it's focused already.
+    /// Focuses `output`, so a window that opens next opens there. Nothing
+    /// when it's focused already.
     pub fn focus_output(&self, output: &str) -> Result<(), String> {
         let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
         let output = desktop.outputs.iter().find(|candidate| candidate.name == output).ok_or("no such output")?;
         if output.focused || !self.can(Capability::FocusWorkspace) {
             return Ok(());
         }
-        match output.workspaces.iter().find(|workspace| workspace.active) {
-            Some(workspace) => self.backend.focus_workspace(workspace),
-            None => Ok(()),
-        }
+        self.backend.focus_output(output)
     }
 
     /// Whether the backend can do what `capability` names.
@@ -205,20 +207,23 @@ impl Compositor {
 }
 
 /// The workspace after or before the active one on `output`; `None` at
-/// either end.
+/// either end. Special workspaces aren't steps.
 fn neighbour(desktop: &Desktop, output: &str, step: Step) -> Result<Option<Workspace>, String> {
-    let workspaces = &desktop
+    let workspaces: Vec<&Workspace> = desktop
         .outputs
         .iter()
         .find(|candidate| candidate.name == output)
         .ok_or_else(|| format!("{} has no output {output:?}", desktop.compositor))?
-        .workspaces;
+        .workspaces
+        .iter()
+        .filter(|workspace| !workspace.special)
+        .collect();
     let Some(active) = workspaces.iter().position(|workspace| workspace.active) else { return Ok(None) };
     let target = match step {
         Step::Next => active.checked_add(1),
         Step::Previous => active.checked_sub(1),
     };
-    Ok(target.and_then(|index| workspaces.get(index)).cloned())
+    Ok(target.and_then(|index| workspaces.get(index)).map(|workspace| (*workspace).clone()))
 }
 
 #[cfg(test)]
