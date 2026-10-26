@@ -135,6 +135,7 @@ impl TestDaemon {
         ));
         let recordings =
             Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
+        let wallpaper = start_wallpaper(&dir, &sources.path_var, compositor.as_ref(), &logger);
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
             hub,
@@ -147,8 +148,9 @@ impl TestDaemon {
             session_lock,
             screenshots,
             recordings,
+            wallpaper,
         });
-        daemon.recordings.allow(daemon.feature_ready(recording::FEATURE_ID));
+        daemon.apply_services();
         let running = InProcess::serve(listener, Arc::clone(&daemon), daemon.watch_settings());
         Self { _running: running, dir: temp, socket, daemon }
     }

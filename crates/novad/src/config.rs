@@ -17,10 +17,16 @@
 //! folder = "~/Videos/Recordings"
 //! [quick-settings]
 //! name = "Luna"
+//!
+//! [wallpaper]
+//! path = "~/Pictures/Wallpapers/dusk.jpg"
+//! [wallpaper.outputs]
+//! DP-2 = "~/Pictures/Wallpapers/tide.jpg"
 //! ```
 
 use crate::theme::ThemeChoice;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -36,6 +42,20 @@ pub struct Config {
     pub recording: RecordingConfig,
     #[serde(default, rename = "quick-settings")]
     pub quick_settings: QuickSettingsConfig,
+    #[serde(default)]
+    pub wallpaper: WallpaperConfig,
+}
+
+/// `[wallpaper]`: the image on every output, and images for single outputs
+/// by name. Absolute paths, or ones starting with `~/`. Nothing set means
+/// Nova leaves the wallpaper alone.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WallpaperConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub outputs: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -106,16 +126,22 @@ const DEFAULT_RECORDING_FOLDER: &str = "Recordings";
 /// absolute (or under `~/`) is an error, so a typo doesn't scatter files in
 /// novad's folder.
 fn folder(section: &str, configured: Option<&str>, default: impl FnOnce() -> PathBuf) -> Result<PathBuf, String> {
-    let Some(folder) = configured else {
-        return Ok(default());
-    };
-    let path = match folder.strip_prefix("~/") {
+    match configured {
+        Some(folder) => user_path(&format!("[{section}] folder"), folder),
+        None => Ok(default()),
+    }
+}
+
+/// `path` from config.toml as an absolute path, `~/` meaning the home
+/// folder. `setting` names it in the error for one that isn't absolute.
+pub fn user_path(setting: &str, path: &str) -> Result<PathBuf, String> {
+    let resolved = match path.strip_prefix("~/") {
         Some(rest) => nova_paths::home().ok_or("HOME isn't set, so ~ means nothing")?.join(rest),
-        None => PathBuf::from(folder),
+        None => PathBuf::from(path),
     };
-    match path.is_absolute() {
-        true => Ok(path),
-        false => Err(format!("[{section}] folder {folder:?} isn't an absolute path or one under ~/")),
+    match resolved.is_absolute() {
+        true => Ok(resolved),
+        false => Err(format!("{setting} {path:?} isn't an absolute path or one under ~/")),
     }
 }
 
@@ -153,6 +179,16 @@ mod tests {
         let recordings = |text: &str| toml::from_str::<Config>(text).unwrap().recording.folder();
         assert!(recordings("").unwrap().ends_with("Recordings"));
         assert!(recordings("[recording]\nfolder = \"Videos\"").unwrap_err().contains("[recording]"));
+    }
+
+    #[test]
+    fn wallpapers_are_unset_unless_configured() {
+        assert_eq!(toml::from_str::<Config>("").unwrap().wallpaper, WallpaperConfig::default());
+        let text = "[wallpaper]\npath = \"~/a.jpg\"\n[wallpaper.outputs]\nDP-2 = \"/b.png\"";
+        let wallpaper = toml::from_str::<Config>(text).unwrap().wallpaper;
+        assert_eq!(wallpaper.path.as_deref(), Some("~/a.jpg"));
+        assert_eq!(wallpaper.outputs["DP-2"], "/b.png");
+        assert!(toml::from_str::<Config>("[wallpaper]\nimage = \"/a.jpg\"").is_err());
     }
 
     #[test]

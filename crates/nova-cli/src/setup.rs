@@ -288,7 +288,12 @@ fn default_config() -> String {
          \n\
          # [theme]\n\
          # name = \"{}\"  # a file in Nova's themes folder, without .toml\n\
-         # mode = \"dark\"  # or \"light\"\n",
+         # mode = \"dark\"  # or \"light\"\n\
+         \n\
+         # [wallpaper]  # or `nova wallpaper <file>`\n\
+         # path = \"~/Pictures/Wallpapers/dusk.jpg\"  # on every screen\n\
+         # [wallpaper.outputs]\n\
+         # DP-2 = \"~/Pictures/Wallpapers/tide.jpg\"  # one screen's own\n",
         checks::DEFAULT_THEME_ID
     )
 }
@@ -538,7 +543,7 @@ mod tests {
         fn new(name: &str) -> Self {
             let home = nova_test_support::TempDir::new(&format!("setup-{name}"));
             std::fs::create_dir_all(home.join("usr/bin")).unwrap();
-            for bin in ["quickshell", "wf-recorder", "grim", "wl-copy", "xdg-open", "paru"] {
+            for bin in ["quickshell", "wf-recorder", "grim", "wl-copy", "xdg-open", "awww", "awww-daemon", "paru"] {
                 nova_test_support::write_program(&home.join("usr/bin"), bin, "exit 0");
             }
             Self(home)
@@ -555,8 +560,8 @@ mod tests {
         let facts = Facts { path_var: home.path_var(), ..facts(Distro::Arch, vec![Gpu::Amd], false) };
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
         let Step::Run { why, argv } = &steps[0] else { panic!("{:?}", steps[0]) };
-        // recording's wf-recorder and screenshot's grim, wl-copy and xdg-open
-        // are there; core has no binary check.
+        // recording's wf-recorder, screenshot's grim, wl-copy and xdg-open
+        // and wallpaper's awww are there; core has no binary check.
         assert_eq!(why, "install packages for core");
         assert_eq!(argv, &words(&["paru", "-S", "--needed", "quickshell"]));
     }

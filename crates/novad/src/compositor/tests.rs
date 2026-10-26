@@ -387,8 +387,12 @@ fn focusing_an_output_shows_its_workspace_unless_it_has_focus() {
     let focused = desktop.outputs[0].name.clone();
     desktop.outputs.push(other);
     let shown = Arc::new(Shown::default());
-    let compositor =
-        Compositor { backend: Box::new(Arc::clone(&shown)), desktop: Mutex::new(Some(desktop)), hub: Arc::default() };
+    let compositor = Compositor {
+        backend: Box::new(Arc::clone(&shown)),
+        desktop: Mutex::new(Some(desktop)),
+        hub: Arc::default(),
+        output_listeners: Mutex::default(),
+    };
 
     compositor.focus_output(&focused).unwrap();
     assert!(lock(&shown.0).is_empty(), "the focused output stays as it is");
@@ -425,4 +429,40 @@ fn a_special_workspace_shows_on_one_output_and_is_listed_on_every_one() {
     let active = |output: &Output| output.workspaces.iter().filter(|w| w.active).count();
     assert_eq!(active(here), 1, "only the special workspace: {here:#?}");
     assert_eq!(there.workspaces.len(), 1, "the recording's workspaces are all on the first output");
+}
+
+#[test]
+fn output_listeners_hear_only_of_output_changes() {
+    let desktop = follow_niri(&Recording::load("niri")).pop().unwrap().1;
+    let compositor = Compositor {
+        backend: Box::new(Arc::new(Shown::default())),
+        desktop: Mutex::new(None),
+        hub: Arc::default(),
+        output_listeners: Mutex::default(),
+    };
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let hearing = Arc::clone(&heard);
+    compositor.on_outputs(move |names| lock(&hearing).push(names));
+    assert!(lock(&heard).is_empty(), "nothing before the first report");
+
+    compositor.update(desktop.clone());
+    let first: Vec<String> = desktop.outputs.iter().map(|output| output.name.clone()).collect();
+    assert_eq!(*lock(&heard), [first]);
+    // A workspace change alone isn't an output change.
+    let mut moved = desktop.clone();
+    moved.keyboard_layout = Some("Romanian".into());
+    compositor.update(moved);
+    assert_eq!(lock(&heard).len(), 1);
+    // A second output is.
+    let mut plugged = desktop.clone();
+    let mut other = plugged.outputs[0].clone();
+    other.name = "ZZ-1".into();
+    plugged.outputs.push(other);
+    compositor.update(plugged);
+    assert_eq!(lock(&heard).last().unwrap().last().unwrap(), "ZZ-1");
+    // One that listens later hears of the outputs at once.
+    let late = Arc::new(Mutex::new(Vec::new()));
+    let hearing = Arc::clone(&late);
+    compositor.on_outputs(move |names| lock(&hearing).push(names));
+    assert_eq!(lock(&late).len(), 1);
 }

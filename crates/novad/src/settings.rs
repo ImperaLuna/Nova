@@ -255,6 +255,11 @@ impl Settings {
     pub fn recording_folder(&self) -> Result<PathBuf, String> {
         self.config.recording.folder()
     }
+
+    /// The wallpapers set in `config.toml`.
+    pub fn wallpaper_config(&self) -> &config::WallpaperConfig {
+        &self.config.wallpaper
+    }
 }
 
 /// A feature service that settings start and stop.

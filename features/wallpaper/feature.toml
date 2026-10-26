@@ -1,0 +1,15 @@
+id = "wallpaper"
+name = "Wallpapers"
+description = "Shows the image in config.toml's [wallpaper] or from `nova wallpaper`, on every screen or one per screen, fading in when it changes. Nothing changes until you set one."
+default = true
+daemon = "wallpaper"
+
+# awww (formerly swww) draws the images and fades between them; novad runs
+# its daemon. Fedora and Debian don't package it yet: install it from its
+# releases and the feature turns on.
+[variants.default]
+nix = ["awww"]
+arch = ["awww"]
+
+[check]
+binaries = ["awww", "awww-daemon"]

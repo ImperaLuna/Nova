@@ -81,4 +81,8 @@ expression: all
 {"v":2,"cmd":"read_notifications"}
 {"v":2,"id":42,"cmd":"set_do_not_disturb","args":{"on":true}}
 {"v":2,"id":43,"cmd":"mute_notification_app","args":{"app":"Discord","muted":true}}
+{"v":2,"id":44,"cmd":"set_wallpaper","args":{"path":"/home/luna/Pictures/dusk.jpg"}}
+{"v":2,"id":45,"cmd":"set_wallpaper","args":{"path":"/home/luna/Pictures/tide.jpg","output":"DP-2"}}
+{"v":2,"id":46,"cmd":"wallpapers"}
+{"v":2,"id":46,"result":{"outputs":{"DP-2":"/home/luna/Pictures/tide.jpg"},"path":"/home/luna/Pictures/dusk.jpg"}}
 {"v":2,"id":8,"error":"bad request"}

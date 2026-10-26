@@ -77,12 +77,17 @@ pub struct Compositor {
     /// older desktop after a newer one.
     desktop: Mutex<Option<Desktop>>,
     hub: Arc<Hub>,
+    /// Told the outputs' names whenever they change ([`Compositor::on_outputs`]).
+    output_listeners: Mutex<Vec<OutputListener>>,
 }
+
+type OutputListener = Box<dyn Fn(Vec<String>) + Send>;
 
 impl Compositor {
     pub fn start(backend: Box<dyn Backend>, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         logger.info(LOG_SOURCE, &format!("following {}", backend.name()));
-        let compositor = Arc::new(Self { backend, desktop: Mutex::new(None), hub });
+        let compositor =
+            Arc::new(Self { backend, desktop: Mutex::new(None), hub, output_listeners: Mutex::new(Vec::new()) });
         let watcher = Arc::clone(&compositor);
         std::thread::spawn(move || {
             let name = watcher.backend.name();
@@ -121,6 +126,17 @@ impl Compositor {
     pub fn focused_output(&self) -> Option<String> {
         let desktop = lock(&self.desktop);
         desktop.as_ref()?.outputs.iter().find(|output| output.focused).map(|output| output.name.clone())
+    }
+
+    /// Calls `listener` with the outputs' names (sorted), now when they're
+    /// known and again whenever they change. It runs with the desktop locked,
+    /// so it must not call back into the compositor.
+    pub fn on_outputs(&self, listener: impl Fn(Vec<String>) + Send + 'static) {
+        let desktop = lock(&self.desktop);
+        if let Some(desktop) = &*desktop {
+            listener(output_names(desktop));
+        }
+        lock(&self.output_listeners).push(Box::new(listener));
     }
 
     /// Subscribes `client` and sends it the current desktop, if known.
@@ -202,8 +218,19 @@ impl Compositor {
             return;
         }
         self.hub.publish(&Event::Compositor(desktop.clone()));
+        let names = output_names(&desktop);
+        if current.as_ref().is_none_or(|current| output_names(current) != names) {
+            for listener in lock(&self.output_listeners).iter() {
+                listener(names.clone());
+            }
+        }
         *current = Some(desktop);
     }
+}
+
+/// The names of `desktop`'s outputs, sorted.
+fn output_names(desktop: &Desktop) -> Vec<String> {
+    desktop.outputs.iter().map(|output| output.name.clone()).collect()
 }
 
 /// The workspace after or before the active one on `output`; `None` at

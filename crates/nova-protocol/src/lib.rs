@@ -973,6 +973,28 @@ pub enum Command {
         app: String,
         muted: bool,
     },
+    /// Shows the image at `path` (an absolute path) as the wallpaper on
+    /// every output, or only on `output` (`nova wallpaper`, feature
+    /// `wallpaper`). Remembered across restarts until config.toml's
+    /// `[wallpaper]` changes. Fails when the file can't be read.
+    SetWallpaper {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output: Option<String>,
+    },
+    /// Replies with the [`Wallpapers`] shown now (feature `wallpaper`).
+    Wallpapers,
+}
+
+/// What `wallpapers` returns: the image every output shows, and the outputs
+/// that show one of their own. Absolute paths; empty when none is set.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Wallpapers {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub outputs: std::collections::BTreeMap<String, String>,
 }
 
 /// What the power menu does, in the order it lists them.
@@ -1519,6 +1541,28 @@ mod tests {
             encode(Request {
                 id: Some(43),
                 command: Command::MuteNotificationApp { app: "Discord".into(), muted: true },
+            }),
+            encode(Request {
+                id: Some(44),
+                command: Command::SetWallpaper { path: "/home/luna/Pictures/dusk.jpg".into(), output: None },
+            }),
+            encode(Request {
+                id: Some(45),
+                command: Command::SetWallpaper {
+                    path: "/home/luna/Pictures/tide.jpg".into(),
+                    output: Some("DP-2".into()),
+                },
+            }),
+            encode(Request { id: Some(46), command: Command::Wallpapers }),
+            encode(Response {
+                id: 46,
+                outcome: Outcome::Result(
+                    serde_json::to_value(Wallpapers {
+                        path: Some("/home/luna/Pictures/dusk.jpg".into()),
+                        outputs: [("DP-2".into(), "/home/luna/Pictures/tide.jpg".into())].into(),
+                    })
+                    .unwrap(),
+                ),
             }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];

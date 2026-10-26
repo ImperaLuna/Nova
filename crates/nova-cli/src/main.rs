@@ -15,6 +15,7 @@ mod status;
 mod statusline;
 mod systemd;
 mod toggle;
+mod wallpaper;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use std::path::PathBuf;
@@ -96,6 +97,11 @@ enum NovaCommand {
     /// it again stops and saves the recording. Bind it to Super+Shift+R. The
     /// folder is `[recording] folder` in config.toml.
     Record,
+    /// Set the wallpaper on every screen, or one; without a file, show what's set.
+    ///
+    /// It fades in and is remembered until you change `[wallpaper]` in
+    /// config.toml, which sets the wallpapers Nova starts with.
+    Wallpaper(wallpaper::WallpaperArgs),
     /// Send a raw request to novad and print the reply as JSON, for scripts.
     Ipc(ipc::IpcArgs),
 }
@@ -131,6 +137,7 @@ fn main() -> ExitCode {
         Some(NovaCommand::Volume(args)) => toggle::volume(&args, &socket),
         Some(NovaCommand::Screenshot(args)) => toggle::screenshot(&args, &socket),
         Some(NovaCommand::Record) => toggle::record(&socket),
+        Some(NovaCommand::Wallpaper(args)) => wallpaper::run(&args, &socket),
         Some(NovaCommand::Daemon(args)) => novad::run(*args, socket).map_err(|e| format!("daemon: {e}")),
     };
     match result {
