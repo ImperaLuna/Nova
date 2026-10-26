@@ -357,6 +357,9 @@ pub enum Capability {
     LogOut,
     /// Workspaces report `fullscreen`.
     Fullscreen,
+    /// Outputs list the compositor's special workspaces (`special`), and
+    /// `focus_workspace` shows or hides one.
+    SpecialWorkspaces,
 }
 
 /// A monitor, by its connector name (`DP-1`), as Quickshell's `screen.name`.
@@ -386,6 +389,15 @@ pub struct Workspace {
     /// A window on it fills the whole output, over the bar's space: one in
     /// fullscreen (or niri's maximize to edges).
     pub fullscreen: bool,
+    /// A special workspace (Hyprland's scratchpad): one that shows over an
+    /// output's workspace and hides again. Every output lists them, first;
+    /// it's `active` on the output showing it, and the workspace under it
+    /// isn't.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub special: bool,
+    /// A special workspace showing on another output.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub shown_elsewhere: bool,
 }
 
 /// The compositor's own workspace id. Hyprland's named workspaces have
@@ -1561,6 +1573,8 @@ mod tests {
             urgent: false,
             empty: false,
             fullscreen: false,
+            special: false,
+            shown_elsewhere: false,
         };
         Desktop {
             compositor: "niri".into(),

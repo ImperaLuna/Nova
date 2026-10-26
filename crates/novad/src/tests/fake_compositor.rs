@@ -105,7 +105,9 @@ impl FakeCompositor {
 }
 
 /// novad follows `fake` until its desktop has what the recording ends with:
-/// the second layout, a workspace named `web` and no focused window.
+/// the second layout, no focused window, and a workspace named `web`
+/// (niri) or Hyprland's special workspace `magic`, which the window on `web`
+/// moved to.
 pub(super) fn follow_to_the_end(novad: &TestDaemon) -> (Client, Value) {
     let mut client = novad.connect();
     client.request(1, "subscribe", Some(json!({"topics": ["compositor"]})));
@@ -118,7 +120,10 @@ pub(super) fn follow_to_the_end(novad: &TestDaemon) -> (Client, Value) {
             .flat_map(|output| output["workspaces"].as_array().unwrap())
             .map(|workspace| workspace["name"].as_str().unwrap())
             .collect();
-        if desktop["keyboard_layout"] == "German" && names.contains(&"web") && desktop.get("focused_window").is_none() {
+        if desktop["keyboard_layout"] == "German"
+            && (names.contains(&"web") || names.contains(&"magic"))
+            && desktop.get("focused_window").is_none()
+        {
             return (client, desktop);
         }
     }

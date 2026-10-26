@@ -1,0 +1,23 @@
+[{
+    "id": 1,
+    "name": "1",
+    "monitor": "Virtual-1",
+    "monitorID": 0,
+    "windows": 0,
+    "hasfullscreen": false,
+    "lastwindow": "0x0",
+    "lastwindowtitle": "",
+    "ispersistent": false,
+    "tiledLayout": "dwindle"
+},{
+    "id": -98,
+    "name": "special:magic",
+    "monitor": "Virtual-1",
+    "monitorID": 0,
+    "windows": 1,
+    "hasfullscreen": false,
+    "lastwindow": "0x56ba8fd9b880",
+    "lastwindowtitle": "Renamed, with, commas",
+    "ispersistent": false,
+    "tiledLayout": "dwindle"
+}]
