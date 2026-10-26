@@ -343,6 +343,7 @@ impl State {
             .filter_map(|workspace| Some((workspace, workspace.name.strip_prefix(SPECIAL_PREFIX)?)))
             .collect();
         special.sort_by_key(|(_, name)| *name);
+        let shown: HashSet<WorkspaceId> = self.monitors.iter().map(|monitor| monitor.special_workspace.id).collect();
         let outputs = self
             .monitors
             .iter()
@@ -365,22 +366,23 @@ impl State {
                     focused: monitor.focused,
                     workspaces: listed
                         .map(|(workspace, name, special)| {
+                            // A special workspace showing covers the one
+                            // under it, which Hyprland still calls active.
                             let active = if special {
                                 workspace.id == monitor.special_workspace.id
                             } else {
-                                workspace.id == monitor.active_workspace.id
+                                workspace.id == monitor.active_workspace.id && !covered
                             };
                             NovaWorkspace {
                                 id: workspace.id,
                                 name: name.to_owned(),
                                 active,
-                                // The keyboard is on the special workspace
-                                // while it shows.
-                                focused: active && monitor.focused && (special || !covered),
+                                focused: active && monitor.focused,
                                 urgent: urgent_workspaces.contains(&workspace.id),
                                 empty: !occupied.contains(&workspace.id),
                                 fullscreen: fullscreen.contains(&workspace.id),
                                 special,
+                                shown_elsewhere: special && !active && shown.contains(&workspace.id),
                             }
                         })
                         .collect(),

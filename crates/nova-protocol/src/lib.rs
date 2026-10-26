@@ -390,11 +390,14 @@ pub struct Workspace {
     /// fullscreen (or niri's maximize to edges).
     pub fullscreen: bool,
     /// A special workspace (Hyprland's scratchpad): one that shows over an
-    /// output's active workspace and hides again. Every output lists them,
-    /// first; it's `active` on the output showing it, where the workspace
-    /// under it stays `active` but not `focused`.
+    /// output's workspace and hides again. Every output lists them, first;
+    /// it's `active` on the output showing it, and the workspace under it
+    /// isn't.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub special: bool,
+    /// A special workspace showing on another output.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub shown_elsewhere: bool,
 }
 
 /// The compositor's own workspace id. Hyprland's named workspaces have
@@ -1571,6 +1574,7 @@ mod tests {
             empty: false,
             fullscreen: false,
             special: false,
+            shown_elsewhere: false,
         };
         Desktop {
             compositor: "niri".into(),

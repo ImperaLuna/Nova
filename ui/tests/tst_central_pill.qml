@@ -197,9 +197,9 @@ Item {
 
         function special(active, elsewhere) {
             return Object.assign(workspace(-98, active), {
-                name: "",
+                name: "magic",
                 special: true,
-                elsewhere: elsewhere ?? false
+                shown_elsewhere: elsewhere ?? false
             });
         }
 
@@ -211,7 +211,7 @@ Item {
             settle(pill);
             compare(pill.width, width + Tokens.workspaceSize + Tokens.workspaceGap + Tokens.workspaceGroupGap);
             const [mark, one] = numbers(pill);
-            verify(mark.special);
+            verify(mark.special && mark.mark, "the only one: a tilde");
             compare(one.x - mark.x, pill.step + Tokens.workspaceGroupGap);
             verify(Qt.colorEqual(mark.ink, Tokens.fgDim), "dim while hidden");
             pill.workspaces = [special(false, true), workspace(1, true), workspace(2)];
@@ -231,6 +231,19 @@ Item {
             mouseClick(mark, mark.width / 2, mark.height / 2);
             compare(focusSpy.count, 1);
             compare(focusSpy.signalArguments[0][0], -98, "clicking it hides it again");
+        }
+
+        function test_several_special_workspaces_show_their_letters() {
+            const music = Object.assign(special(), {
+                id: -99,
+                name: "music"
+            });
+            const pill = createPill([special(), music, workspace(1, true)]);
+            settle(pill);
+            const [magic, second] = numbers(pill);
+            verify(!magic.mark && !second.mark);
+            compare(findChild(magic, "label").text, "M");
+            compare(findChild(numbers(pill)[2], "label").text, "1");
         }
 
         function test_a_special_workspace_never_calls() {

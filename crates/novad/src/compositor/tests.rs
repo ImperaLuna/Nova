@@ -5,7 +5,7 @@
 //! queries at that point.
 
 use super::*;
-use nova_protocol::FocusedWindow;
+use nova_protocol::{FocusedWindow, Output};
 use std::path::Path;
 
 const NIRI_HANDLED: &str = r#"{"Ok":"Handled"}"#;
@@ -194,12 +194,13 @@ fn check_the_special_workspace(followed: &Followed) {
 
     let shown = step(followed, "show the special workspace");
     assert_eq!(focused_workspace(shown).name, "magic", "the keyboard is on it");
-    let behind: Vec<&Workspace> = shown.outputs[0].workspaces.iter().filter(|w| w.active && !w.special).collect();
-    assert_eq!(behind.len(), 1, "the workspace under it stays active: {shown:#?}");
-    assert!(!behind[0].focused);
+    let active: Vec<&str> = shown.outputs[0].workspaces.iter().filter(|w| w.active).map(|w| w.name.as_str()).collect();
+    assert_eq!(active, ["magic"], "the workspace under it isn't active: {shown:#?}");
+    assert!(!special(shown)[0].shown_elsewhere, "it shows here");
     assert_eq!(window(shown).map(|w| w.app_id), Some("nova-second".into()));
 
     let gone = step(followed, "hide the special workspace");
+    assert_eq!(focused_workspace(gone).name, "1", "back on the workspace under it");
     let magic = special(gone);
     assert_eq!(magic.len(), 1, "still there with its window: {gone:#?}");
     assert!(!magic[0].active && !magic[0].focused);
@@ -393,20 +394,47 @@ fn focusing_an_output_shows_its_workspace_unless_it_has_focus() {
 
 #[test]
 fn focusing_an_output_never_toggles_its_special_workspace() {
-    let mut desktop =
-        step(&follow_hyprland(&Recording::load("hyprland")), "hide a window in the special workspace").clone();
+    let mut desktop = step(&follow_hyprland(&Recording::load("hyprland")), "show the special workspace").clone();
     let output = &mut desktop.outputs[0];
     output.focused = false;
     for workspace in &mut output.workspaces {
         workspace.focused = false;
-        workspace.active |= workspace.special;
     }
-    let under = output.workspaces.iter().find(|w| w.active && !w.special).unwrap().id;
     let name = output.name.clone();
     let shown = Arc::new(Shown::default());
     let compositor =
         Compositor { backend: Box::new(Arc::clone(&shown)), desktop: Mutex::new(Some(desktop)), hub: Arc::default() };
 
     compositor.focus_output(&name).unwrap();
-    assert_eq!(*lock(&shown.0), [under], "the workspace under it, not the special one");
+    assert!(lock(&shown.0).is_empty(), "showing it again would hide it");
+}
+
+#[test]
+fn a_special_workspace_shows_on_one_output_and_is_listed_on_every_one() {
+    // The recording's single output, plus a second one without focus or
+    // workspaces of its own, at the step that shows the special workspace.
+    let recording = Recording::load("hyprland");
+    let index = recording.steps.iter().position(|step| step.name == "show the special workspace").unwrap();
+    let mut ask = |request: &str| {
+        let answer = hyprland_ask(&recording, index)(request)?;
+        if request != "j/monitors" {
+            return Ok(answer);
+        }
+        let mut monitors: Vec<serde_json::Value> = serde_json::from_str(&answer).unwrap();
+        let mut other = monitors[0].clone();
+        other["name"] = "DP-2".into();
+        other["focused"] = false.into();
+        other["specialWorkspace"] = serde_json::json!({"id": 0, "name": ""});
+        monitors.push(other);
+        Ok(serde_json::to_string(&monitors).unwrap())
+    };
+    let desktop = hyprland::State::load(&mut ask).unwrap().desktop();
+    let [here, there] = &desktop.outputs[..] else { panic!("two outputs: {desktop:#?}") };
+    let magic = |output: &Output| output.workspaces[0].clone();
+    assert!(magic(here).special && magic(there).special, "listed first on both");
+    assert!(magic(here).active && magic(here).focused && !magic(here).shown_elsewhere);
+    assert!(!magic(there).active && magic(there).shown_elsewhere, "{there:#?}");
+    let active = |output: &Output| output.workspaces.iter().filter(|w| w.active).count();
+    assert_eq!(active(here), 1, "only the special workspace: {here:#?}");
+    assert_eq!(there.workspaces.len(), 1, "the recording's workspaces are all on the first output");
 }

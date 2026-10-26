@@ -7,8 +7,8 @@ import "../theme/icons.js" as Icons
 // when it's new. The capsule behind the shown one is the pill's, so it can
 // slide; this only picks the number's color, and draws the hover wash and
 // the "wants attention" dot. A special workspace (Hyprland's scratchpad)
-// shows a dim tilde, or its letter, brighter while it shows on another
-// output; clicking it shows or hides it.
+// shows a dim tilde, or its first letter when there are several, brighter
+// while it shows on another output; clicking it shows or hides it.
 Item {
     id: number
 
@@ -22,6 +22,8 @@ Item {
     required property bool elsewhere
 
     property bool outputFocused: false
+    // The only special workspace: a tilde rather than its letter.
+    property bool lone: false
     // Extra room before it: the special workspaces' gap, for the numbers
     // after them.
     property real shift: 0
@@ -29,8 +31,7 @@ Item {
 
     signal clicked
 
-    // A lone special workspace, unnamed, shows a tilde.
-    readonly property bool mark: special && name === ""
+    readonly property bool mark: special && lone
     // Whether the dot shows: a workspace you're on needs no reminder, and a
     // special one's windows wait there anyway.
     readonly property bool calling: urgent && !active && !special
@@ -90,6 +91,7 @@ Item {
     }
 
     Text {
+        objectName: "label"
         anchors.centerIn: parent
         visible: !number.mark
         width: Tokens.workspaceSize - 2 * Tokens.ringInset
@@ -100,7 +102,7 @@ Item {
         font.weight: Font.Medium
         color: number.ink
         textFormat: Text.PlainText
-        text: number.name
+        text: number.special ? number.name.charAt(0).toUpperCase() : number.name
         Behavior on color {
             ColorAnimation {
                 duration: Tokens.durationColor

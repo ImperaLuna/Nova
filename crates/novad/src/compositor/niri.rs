@@ -406,6 +406,7 @@ impl State {
                             empty: !occupied.contains(&workspace.id),
                             fullscreen: self.has_fullscreen(workspace),
                             special: false,
+                            shown_elsewhere: false,
                         })
                         .collect(),
                 }

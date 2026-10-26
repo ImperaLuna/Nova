@@ -193,6 +193,7 @@ Item {
                 delegate: WorkspaceNumber {
                     outputFocused: pill.outputFocused
                     shift: special ? 0 : pill.groupGap
+                    lone: list.specialCount === 1
                     canFocus: pill.canFocus
                     onClicked: pill.focusRequested(workspaceId)
                 }

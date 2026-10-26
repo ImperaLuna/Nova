@@ -181,63 +181,24 @@ function focusedWorkspace(desktop) {
     return null;
 }
 
-// The workspaces the bar lists for an output (one of the `outputs` of
-// `desktop`, a compositor event's data): those with windows, and the one
-// shown there even when it's empty. Special workspaces come first, while
-// they have windows or show anywhere, `elsewhere` while they show on
-// another output, and named by their first letter when there are several
-// (unnamed when there's one, for the bar's own mark); one showing here is
-// the only `active` entry, not the workspace under it.
-function barWorkspaces(output, desktop) {
+// The workspaces the bar lists for an output (one of a compositor event's
+// `outputs`, or null): those with windows, and the one shown there even
+// when it's empty; a special workspace also while it shows on another one.
+function barWorkspaces(output) {
     if (!output)
         return [];
-    var specials = !!desktop && desktop.capabilities.indexOf(CAPABILITY_SPECIAL_WORKSPACES) >= 0;
-    var shownSomewhere = {};
-    if (specials) {
-        desktop.outputs.forEach(function (other) {
-            other.workspaces.forEach(function (workspace) {
-                if (workspace.special && workspace.active)
-                    shownSomewhere[workspace.id] = true;
-            });
-        });
-    }
-    var listed = output.workspaces.filter(function (workspace) {
-        if (workspace.special)
-            return specials && (!workspace.empty || shownSomewhere[workspace.id] === true);
-        return !workspace.empty || workspace.active;
-    });
-    var count = listed.filter(function (workspace) {
-        return workspace.special;
-    }).length;
-    var covered = listed.some(function (workspace) {
-        return workspace.special && workspace.active;
-    });
-    return listed.map(function (workspace) {
-        var entry = Object.assign({}, workspace);
-        entry.special = workspace.special === true;
-        entry.elsewhere = entry.special && !workspace.active && shownSomewhere[workspace.id] === true;
-        if (entry.special)
-            entry.name = count === 1 ? "" : workspace.name.charAt(0).toUpperCase();
-        else if (covered)
-            entry.active = entry.focused = false;
-        return entry;
+    return output.workspaces.filter(function (workspace) {
+        return !workspace.empty || workspace.active || workspace.shown_elsewhere === true;
     });
 }
 
 // Whether the workspace shown on an output (one of a compositor event's
 // `outputs`, or null) has a window filling the whole output, so the bar
-// steps aside there. A special workspace showing over another is the one
-// seen.
+// steps aside there.
 function fullscreenShown(output) {
     if (!output)
         return false;
-    var shown = output.workspaces.filter(function (workspace) {
-        return workspace.active;
-    });
-    var special = shown.filter(function (workspace) {
-        return workspace.special;
-    });
-    return (special.length ? special : shown).some(function (workspace) {
-        return workspace.fullscreen;
+    return output.workspaces.some(function (workspace) {
+        return workspace.active && workspace.fullscreen;
     });
 }

@@ -170,7 +170,8 @@ impl Compositor {
         if output.focused || !self.can(Capability::FocusWorkspace) {
             return Ok(());
         }
-        // Not a special workspace over it: showing that one again hides it.
+        // Not a special workspace: showing that one again hides it, and
+        // while one shows there, the workspace under it isn't active.
         match output.workspaces.iter().find(|workspace| workspace.active && !workspace.special) {
             Some(workspace) => self.backend.focus_workspace(workspace),
             None => Ok(()),

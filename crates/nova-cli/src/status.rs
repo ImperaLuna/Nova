@@ -171,6 +171,7 @@ mod tests {
             empty: false,
             fullscreen: false,
             special: false,
+            shown_elsewhere: false,
         };
         let desktop = Desktop {
             compositor: "niri".into(),

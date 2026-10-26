@@ -29,7 +29,7 @@ ListModel {
                 active: workspace.active,
                 urgent: workspace.urgent,
                 special: workspace.special === true,
-                elsewhere: workspace.elsewhere === true
+                elsewhere: workspace.shown_elsewhere === true
             };
             let at = -1;
             for (let other = index; other < count; other++) {
