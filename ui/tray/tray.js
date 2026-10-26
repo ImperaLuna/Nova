@@ -28,8 +28,8 @@ var QUIT_WORDS = ["quit", "exit"];
 // item shows: another program may own the watcher (novad waits behind
 // it), and the apps register there. Each entry is
 // {item, key, name, icon, appIcon, attention, hidden}: `key` is what
-// hide_tray_app knows it by, `appIcon` the desktop entry's icon name ("" when
-// novad found no app), `icon` the item's own image.
+// hide_tray_app knows it by, `appIcon` the file of its desktop entry's
+// icon ("" when novad found no app or icon), `icon` the item's own image.
 function entries(items, tray) {
     var known = tray ? tray.items : [];
     var hidden = tray && tray.hidden ? tray.hidden : [];

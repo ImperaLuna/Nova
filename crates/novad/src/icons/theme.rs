@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 
 /// The theme every other one falls back to, which apps install into.
 pub const HICOLOR: &str = "hicolor";
+/// GTK's theme when none is set, which GTK apps then show: the user's
+/// theme when they picked none, if it's installed.
+const GTK_DEFAULT: &str = "Adwaita";
 /// Quickshell's own choice of theme, which wins like it does there.
 pub const QUICKSHELL_VAR: &str = "QS_ICON_THEME";
 const PLATFORM_THEME_VAR: &str = "QT_QPA_PLATFORMTHEME";
@@ -35,7 +38,8 @@ const GTK3: Setting = Setting { file: "gtk-3.0/settings.ini", group: "Settings",
 
 /// The icon theme the user picked: `QS_ICON_THEME`, else the settings of
 /// the Qt platform theme in use (qt6ct, KDE, else GTK's), else the other
-/// desktops' settings, else hicolor. Only an installed theme counts.
+/// desktops' settings, else GTK's default (Adwaita), else hicolor. Only an
+/// installed theme counts.
 pub fn current_name(var: impl Fn(&str) -> Option<String>, config_home: Option<&Path>, base_dirs: &[PathBuf]) -> String {
     let installed = |name: &str| base_dirs.iter().any(|base| base.join(name).join(INDEX_FILE).is_file());
     if let Some(name) = var(QUICKSHELL_VAR).filter(|name| is_name(name) && installed(name)) {
@@ -54,6 +58,7 @@ pub fn current_name(var: impl Fn(&str) -> Option<String>, config_home: Option<&P
                 Some(ini.get(setting.group, setting.key)?.to_string()).filter(|name| is_name(name) && installed(name))
             })
         })
+        .or_else(|| installed(GTK_DEFAULT).then(|| GTK_DEFAULT.to_string()))
         .unwrap_or_else(|| HICOLOR.to_string())
 }
 
@@ -74,7 +79,8 @@ pub fn icon_dirs(theme: &str, base_dirs: &[PathBuf], size: u32) -> Vec<PathBuf> 
             .list(THEME_GROUP, "Directories")
             .into_iter()
             .chain(index.list(THEME_GROUP, "ScaledDirectories"))
-            .filter(|subdir| !subdir.split('/').any(|part| part == ".."))
+            // Inside the theme's folder only.
+            .filter(|subdir| Path::new(subdir).is_relative() && !subdir.split('/').any(|part| part == ".."))
             .map(|subdir| (SubDir::read(&index, subdir).distance(size), subdir))
             .collect();
         // Stable, so equally close folders keep the theme's order.
@@ -204,7 +210,7 @@ mod tests {
         theme(
             &system,
             "Papirus",
-            "[Icon Theme]\nInherits=Papirus-Dark\nDirectories=16x16/apps,128x128/apps,../escape\n[16x16/apps]\nSize=16\nType=Fixed\n[128x128/apps]\nSize=128\nType=Fixed\n",
+            "[Icon Theme]\nInherits=Papirus-Dark\nDirectories=16x16/apps,128x128/apps,../escape,/tmp\n[16x16/apps]\nSize=16\nType=Fixed\n[128x128/apps]\nSize=128\nType=Fixed\n",
             &["16x16/apps", "128x128/apps"],
         );
         theme(
@@ -257,5 +263,7 @@ mod tests {
         std::fs::write(config.join("gtk-3.0/settings.ini"), "[Settings]\ngtk-icon-theme-name=Gone\n").unwrap();
         assert_eq!(name(&[]), "breeze");
         assert_eq!(current_name(|_| None, None, &bases), HICOLOR);
+        theme(&icons, GTK_DEFAULT, "[Icon Theme]\n", &[]);
+        assert_eq!(current_name(|_| None, None, &bases), GTK_DEFAULT, "GTK's own default");
     }
 }
