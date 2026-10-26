@@ -233,19 +233,19 @@ with subtest("a workspace switch reaches the UI"):
     machine.succeed(as_user(FOCUS_NEXT_WORKSPACE))
     ui_focused_workspace("2")
 
-if ADD_OUTPUT:
+for add_output, remove_output in ADDED_OUTPUTS:
     with subtest("a click on another screen closes quick settings"):
         # While quick settings holds the keyboard, Hyprland gives it the
         # clicks on every screen, which it used to drop (IMP-178).
         bars = ui_log_count(BAR_SHOWN)
-        machine.succeed(as_user(ADD_OUTPUT))
+        machine.succeed(as_user(add_output))
         retry(lambda _last_try: ui_log_count(BAR_SHOWN) > bars, timeout=WAIT)
-        # On the first output (ADD_OUTPUT focuses it).
+        # On the first output (add_output focuses it).
         opened = ui_log_count(QUICK_SETTINGS_OPENED)
         machine.succeed(as_user("nova toggle quick-settings"))
         retry(lambda _last_try: ui_log_count(QUICK_SETTINGS_OPENED) > opened, timeout=CLICK_EFFECT)
         click_until_logged(*ON_ADDED_OUTPUT, QUICK_SETTINGS_CLOSED)
-        machine.succeed(as_user(REMOVE_OUTPUT))
+        machine.succeed(as_user(remove_output))
 
 with subtest("novad restarts a killed UI and saves the lines before it"):
     machine.succeed(f"kill -9 {first['ui']['pid']}")

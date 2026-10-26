@@ -144,8 +144,13 @@ let
         systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
       };
 
-      # A step only some compositors have, as a shell command, or null.
-      stepIfAny = name: if builtins.hasAttr name steps then "${ipcEnv} ${steps.${name}}" else null;
+      # Steps only some compositors have, as shell commands: none elsewhere.
+      stepsIfAny =
+        names:
+        if builtins.all (name: builtins.hasAttr name steps) names then
+          [ (map (name: "${ipcEnv} ${steps.${name}}") names) ]
+        else
+          [ ];
 
       # The test in two halves, each in a VM of its own, so they run side by
       # side: lifecycle.py and then session.py or frames.py.
@@ -165,8 +170,12 @@ let
             CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
             LIST_WINDOWS = ${builtins.toJSON "${ipcEnv} ${listWindows}"}
             LIST_LAYERS = ${builtins.toJSON "${ipcEnv} ${listLayers}"}
-            ADD_OUTPUT = ${builtins.toJSON (stepIfAny "add an output")}
-            REMOVE_OUTPUT = ${builtins.toJSON (stepIfAny "remove the added output")}
+            ADDED_OUTPUTS = ${
+              builtins.toJSON (stepsIfAny [
+                "add an output"
+                "remove the added output"
+              ])
+            }
             COMPOSITOR_LOG = ${builtins.toJSON "export ${ipcEnv}; ${compositorLog}"}
             FRAMES_REPORT = ${builtins.toJSON "${pkgs.gawk}/bin/awk -f ${../../scripts/frames-report.awk}"}
           ''
