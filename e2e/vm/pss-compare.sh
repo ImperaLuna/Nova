@@ -25,11 +25,13 @@ awk -F '\t' -v compositor="$compositor" -v warn="$GROWTH_WARN_MB" '
     if (before == "" || after == "") return (before == "" ? "–" : before) " → " (after == "" ? "–" : after)
     return sprintf("%s → %s (%+.1f)", before, after, after - before)
   }
-  FNR == NR { ui[$1] = $2; daemon[$1] = $3; next }
+  FILENAME == ARGV[1] { ui[$1] = $2; daemon[$1] = $3; next }
   {
     seen[$1] = 1
+    # Before reading ui[$1], which would add an empty entry for a new state.
+    if (!($1 in ui)) { printf "| %s | %s | %s |\n", $1, cell("", $2), cell("", $3); next }
     printf "| %s | %s | %s |\n", $1, cell(ui[$1], $2), cell(daemon[$1], $3)
-    if ($1 in ui && $2 - ui[$1] > warn)
+    if ($2 - ui[$1] > warn)
       printf "::warning title=Pss grew on %s::UI Pss with %s grew %.1f MB against main (%s -> %s MB)\n", \
         compositor, $1, $2 - ui[$1], ui[$1], $2 > "/dev/stderr"
   }
