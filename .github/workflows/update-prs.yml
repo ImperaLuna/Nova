@@ -47,6 +47,9 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      # The PR list reads each PR's statusCheckRollup, which needs both.
+      checks: read
+      statuses: read
     env:
       GH_TOKEN: ${{ github.token }}
       TOKEN: ${{ secrets.PUSH_TOKEN }}
