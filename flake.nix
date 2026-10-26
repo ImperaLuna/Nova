@@ -113,12 +113,14 @@
           cargoArtifacts = craneLib.buildDepsOnly common;
         };
 
-      # share/nova: what nova finds next to its binary (nova-paths).
-      installShare = ''
-        mkdir -p $out/share/nova
-        cp -r features $out/share/nova/features
-        cp -r themes $out/share/nova/themes
-        cp -r --no-preserve=mode ${./ui} $out/share/nova/ui
+      # share/nova under `prefix`: what nova finds next to its binary
+      # (nova-paths). Copied in after the Rust build, so UI edits don't
+      # recompile nova.
+      installShare = prefix: ''
+        mkdir -p ${prefix}/share/nova
+        cp -r --no-preserve=mode ${./features} ${prefix}/share/nova/features
+        cp -r --no-preserve=mode ${./themes} ${prefix}/share/nova/themes
+        cp -r --no-preserve=mode ${./ui} ${prefix}/share/nova/ui
       '';
 
       # The nova binary (CLI and daemon), feature manifests, the QML UI and
@@ -134,27 +136,41 @@
           # Compiled in, so `nova` finds its UI with or without systemd. The
           # tests check builds with it too, so it reuses this build's crates.
           novaEnv.NOVA_UI_LAUNCHER = pkgs.lib.getExe nova-ui;
-          # The `tests` check runs `cargo test`, so the VM tests, which need
-          # this package, don't wait for it.
-          nova = craneLib.buildPackage (
+          # From the Rust sources alone, so a UI edit doesn't recompile it. The
+          # `tests` check runs `cargo test`, so the VM tests, which need this
+          # build, don't wait for it.
+          bin = craneLib.buildPackage (
             common
             // {
+              pname = "nova-bin";
               inherit cargoArtifacts;
               env = novaEnv;
               doCheck = false;
-              postInstall = installShare + ''
-                install -Dm644 packaging/systemd/nova.service.in $out/lib/systemd/user/nova.service
-                substituteInPlace $out/lib/systemd/user/nova.service \
-                  --replace-fail @nova@ $out/bin/nova
-                install -Dm644 packaging/systemd/app-.service.d/nova.conf $out/lib/systemd/user/app-.service.d/nova.conf
-              '';
-              meta = {
-                description = "Nova desktop shell";
-                license = pkgs.lib.licenses.mit;
-                mainProgram = "nova";
-              };
             }
           );
+          # The binary is copied, not linked: nova finds share/nova next to
+          # the file it runs from.
+          nova =
+            pkgs.runCommand "nova-${version}"
+              {
+                meta = {
+                  description = "Nova desktop shell";
+                  license = pkgs.lib.licenses.mit;
+                  mainProgram = "nova";
+                };
+              }
+              (
+                ''
+                  install -Dm755 -t $out/bin ${bin}/bin/*
+                ''
+                + installShare "$out"
+                + ''
+                  install -Dm644 ${./packaging/systemd/nova.service.in} $out/lib/systemd/user/nova.service
+                  substituteInPlace $out/lib/systemd/user/nova.service \
+                    --replace-fail @nova@ $out/bin/nova
+                  install -Dm644 ${./packaging/systemd/app-.service.d/nova.conf} $out/lib/systemd/user/app-.service.d/nova.conf
+                ''
+              );
         };
 
       # The release archive install.sh fetches on other distros:
@@ -166,25 +182,29 @@
         pkgs:
         let
           inherit (rustFor pkgs.pkgsStatic) craneLib common;
-          nova = craneLib.buildPackage (
+          bin = craneLib.buildPackage (
             common
             // {
               cargoArtifacts = craneLib.buildDepsOnly (common // { doCheck = false; });
               doCheck = false;
-              postInstall = installShare;
             }
           );
           name = "nova-${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux";
         in
-        pkgs.runCommand "${name}-${version}" { } ''
-          mkdir -p tree $out
-          cp -r ${nova}/bin ${nova}/share tree/
-          # Store files are read-only; an upgrade has to replace share/nova.
-          chmod -R u+w tree
-          tar -C tree --sort=name --owner=0 --group=0 --numeric-owner --mtime=@1 -c bin share \
-            | gzip -n > $out/${name}.tar.gz
-          (cd $out && sha256sum ${name}.tar.gz > ${name}.tar.gz.sha256)
-        '';
+        pkgs.runCommand "${name}-${version}" { } (
+          ''
+            mkdir -p tree $out
+            cp -r ${bin}/bin tree/
+            # Store files are read-only; an upgrade has to replace share/nova.
+            chmod -R u+w tree
+          ''
+          + installShare "tree"
+          + ''
+            tar -C tree --sort=name --owner=0 --group=0 --numeric-owner --mtime=@1 -c bin share \
+              | gzip -n > $out/${name}.tar.gz
+            (cd $out && sha256sum ${name}.tar.gz > ${name}.tar.gz.sha256)
+          ''
+        );
 
       # qmllint over ui/ against pkgs' Quickshell types.
       qmllintFor =
