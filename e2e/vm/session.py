@@ -86,10 +86,10 @@ if COMPOSITOR == "hyprland":
                 print(f"PROBE round {round_}: MISSED, keyboard logged: {had_keyboard}")
                 misses.append(round_)
                 for command in (
-                    f"{LIST_LAYERS}",
+                    LIST_LAYERS,
                     LIST_WINDOWS,
                     "nova status --json",
-                    f"nova logs --no-follow --ui -n 60",
+                    "nova logs --no-follow --ui -n 60",
                     "export HYPRLAND_INSTANCE_SIGNATURE=$(ls $XDG_RUNTIME_DIR/hypr | head -n1); "
                     "grep -naE 'focus|Refusing|exclusive|LayerSurface|layer|fullscreen|activewindow' "
                     "$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprland.log | tail -n 150",
