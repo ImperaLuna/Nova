@@ -10,10 +10,10 @@
 //! On niri its 1x1 container window is hidden by a window rule in
 //! `packaging/compositor/niri.kdl`.
 
+use crate::backoff::Backoff;
 use crate::logger::Logger;
 use crate::session_bus::Bus;
-use crate::{lock, supervisor};
-use std::os::unix::process::CommandExt;
+use crate::{child, lock};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -77,7 +77,7 @@ impl X11Tray {
 
 impl Shared {
     fn run(&self, path_var: &str, logger: &Logger) {
-        let mut retry = FIRST_RETRY;
+        let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
         loop {
             let started = Instant::now();
             let spawned = {
@@ -89,19 +89,8 @@ impl Shared {
                 }
                 let mut command = Command::new(PROGRAM);
                 command.env("PATH", path_var).stdin(Stdio::null()).stdout(Stdio::null());
-                // SAFETY: the closure runs between fork and exec and only
-                // calls prctl, which is async-signal-safe.
-                unsafe {
-                    command.pre_exec(|| {
-                        // It gets SIGTERM when novad ends, however it ends,
-                        // as the UI does. The signal follows the spawning
-                        // thread, this one, which runs until `stop`.
-                        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) == -1 {
-                            return Err(std::io::Error::last_os_error());
-                        }
-                        Ok(())
-                    });
-                }
+                // As the UI does. This thread, the spawning one, runs until `stop`.
+                child::die_with_novad(&mut command, libc::SIGTERM);
                 command.spawn().inspect(|spawned| *child = Some(spawned.id()))
             };
             let outcome = match spawned {
@@ -109,7 +98,7 @@ impl Shared {
                     logger.info(LOG_SOURCE, &format!("started {PROGRAM} (pid {})", spawned.id()));
                     // Forgotten between the exit and the reap, so `stop`
                     // never signals a pid the kernel may have handed out again.
-                    if let Err(e) = supervisor::wait_for_exit(spawned.id()) {
+                    if let Err(e) = child::wait_for_exit(spawned.id()) {
                         logger.warn(LOG_SOURCE, &format!("couldn't wait for {PROGRAM} without reaping it: {e}"));
                     }
                     *lock(&self.child) = None;
@@ -119,19 +108,19 @@ impl Shared {
                 Err(e) => format!("can't start it: {e}"),
             };
             if started.elapsed() >= RAN_FINE {
-                retry = FIRST_RETRY;
+                retry.reset();
             }
             let stopped = lock(&self.stopped);
             if *stopped {
                 return;
             }
-            logger.warn(LOG_SOURCE, &format!("{PROGRAM} ended ({outcome}), starting it again in {}s", retry.as_secs()));
+            let wait = retry.next();
+            logger.warn(LOG_SOURCE, &format!("{PROGRAM} ended ({outcome}), starting it again in {}s", wait.as_secs()));
             let (stopped, _) =
-                self.wake.wait_timeout_while(stopped, retry, |stopped| !*stopped).unwrap_or_else(|e| e.into_inner());
+                self.wake.wait_timeout_while(stopped, wait, |stopped| !*stopped).unwrap_or_else(|e| e.into_inner());
             if *stopped {
                 return;
             }
-            retry = (retry * 2).min(MAX_RETRY);
         }
     }
 }
@@ -159,11 +148,11 @@ mod tests {
     use crate::hub::Hub;
     use crate::session_bus::TestBus;
     use nova_protocol::LogLevel;
-    use std::os::unix::fs::PermissionsExt;
-    use std::path::{Path, PathBuf};
+    use nova_test_support::{eventually, wait_until};
+    use std::path::Path;
 
     struct Fixture {
-        dir: PathBuf,
+        dir: nova_test_support::TempDir,
         bus: TestBus,
         logger: Arc<Logger>,
     }
@@ -172,13 +161,10 @@ mod tests {
         /// A stand-in xembedsniproxy in `<dir>/bin` that writes its pid to
         /// `<dir>/runs` each time it starts, then sleeps.
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("novad-x11-tray-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
+            let dir = nova_test_support::TempDir::new(&format!("x11-tray-{name}"));
             std::fs::create_dir_all(dir.join("bin")).unwrap();
-            let program = dir.join("bin").join(PROGRAM);
-            let script = format!("#!/bin/sh\necho $$ >> '{}'\nexec sleep 30\n", dir.join("runs").display());
-            std::fs::write(&program, script).unwrap();
-            std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let script = format!("echo $$ >> '{}'\nexec sleep 30", dir.join("runs").display());
+            nova_test_support::write_program(&dir.join("bin"), PROGRAM, &script);
             let bus = TestBus::start(&dir.join("bus"));
             let logger =
                 Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::new(Hub::default())).unwrap());
@@ -192,25 +178,14 @@ mod tests {
 
         /// The pids it started, once there are `count`.
         fn runs(&self, count: usize) -> Vec<i32> {
-            let deadline = Instant::now() + Duration::from_secs(5);
-            loop {
+            eventually(Duration::from_secs(5), &format!("it to start {count} times"), || {
                 let runs: Vec<i32> = std::fs::read_to_string(self.dir.join("runs"))
                     .unwrap_or_default()
                     .lines()
                     .map(|line| line.parse().unwrap())
                     .collect();
-                if runs.len() >= count {
-                    return runs;
-                }
-                assert!(Instant::now() < deadline, "it started {count} times");
-                std::thread::sleep(Duration::from_millis(20));
-            }
-        }
-    }
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.dir);
+                (runs.len() >= count).then_some(runs)
+            })
         }
     }
 
@@ -229,11 +204,7 @@ mod tests {
         let second = fixture.runs(2)[1];
         assert_ne!(first, second);
         x11.stop();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while alive(second) {
-            assert!(Instant::now() < deadline, "stopping ends it");
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        wait_until(Duration::from_secs(5), "stopping to end it", || !alive(second));
         std::thread::sleep(FIRST_RETRY + Duration::from_millis(200));
         assert_eq!(fixture.runs(2).len(), 2, "nothing starts after stop");
     }

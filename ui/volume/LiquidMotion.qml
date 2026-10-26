@@ -1,6 +1,7 @@
 import QtQuick
 import "../theme"
 import "volume.js" as Volume
+import "../util/numbers.js" as Numbers
 
 // The motion behind the capsule: springs for how far it's out and for the
 // liquid's level, and the liquid's reaction to both. Sliding sideways tilts
@@ -49,13 +50,13 @@ QtObject {
         open = out.x;
         openSpeed = out.v;
         const fill = Volume.spring(level, levelSpeed, levelTarget, Tokens.springLevel, Tokens.springLevelDamping, dt);
-        level = Volume.clamp(fill.x, 0, 1);
+        level = Numbers.clamp(fill.x, 0, 1);
         levelSpeed = fill.v;
         // The glass's sideways acceleration tilts the surface, which swings
         // back like a pendulum.
         const swing = Volume.spring(tilt, tiltSpeed, 0, Tokens.springTilt, Tokens.springTiltDamping, dt);
         tiltSpeed = swing.v - out.a * Tokens.liquidTiltGain * dt;
-        tilt = Volume.clamp(swing.x, -Tokens.liquidTiltMax, Tokens.liquidTiltMax);
+        tilt = Numbers.clamp(swing.x, -Tokens.liquidTiltMax, Tokens.liquidTiltMax);
         // Level changes stir up waves, which settle.
         slosh = Math.min(Tokens.liquidSloshMax, slosh * Math.exp(-dt / Tokens.liquidSloshDecay) + Math.abs(fill.v) * Tokens.liquidSloshGain * dt);
         amp = (still ? 0 : Tokens.liquidIdleWave) + slosh;

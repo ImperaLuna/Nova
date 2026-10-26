@@ -4,6 +4,7 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 import "notifications.js" as Notifications
+import "../text/duration.js" as Duration
 
 // A pop-up: who it's from, the app and how many more came from it ("+2"),
 // the summary and body, progress, and the app's buttons (the first one in
@@ -159,7 +160,7 @@ Item {
                         font.family: Tokens.fontMono
                         font.pixelSize: Tokens.fontSizeMicro
                         color: Tokens.fgSoft
-                        text: card.critical ? qsTr("urgent") : Notifications.ago(card.notification.time, card.now)
+                        text: card.critical ? qsTr("urgent") : Duration.ago(card.notification.time, card.now)
                     }
                 }
 

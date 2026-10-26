@@ -2,6 +2,7 @@ import QtQuick
 import "../theme"
 import "../capture"
 import "../capture/capture.js" as Capture
+import "../text/duration.js" as Duration
 
 // The recording pill, left of the right pill while a recording runs: a red
 // dot and how long it has recorded. The pointer on it shows pause (when the
@@ -61,7 +62,7 @@ Item {
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: Capture.clock(pill.elapsed)
+            text: Duration.clock(pill.elapsed)
             textFormat: Text.PlainText
             color: pill.paused ? Tokens.fgDim : Tokens.fg
             font.family: Tokens.fontMono

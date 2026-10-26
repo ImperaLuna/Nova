@@ -302,7 +302,7 @@ Item {
                                             anchors.fill: parent
                                             radius: Tokens.radiusSegment
                                             visible: !entry.app.protected && (hover.containsMouse || end.containsMouse || entry.asked)
-                                            color: end.containsMouse || entry.asked ? Qt.rgba(Tokens.secondary.r, Tokens.secondary.g, Tokens.secondary.b, Tokens.endHoverOpacity) : "transparent"
+                                            color: end.containsMouse || entry.asked ? Tokens.alpha(Tokens.secondary, Tokens.endHoverOpacity) : "transparent"
 
                                             LineIcon {
                                                 anchors.centerIn: parent
@@ -328,7 +328,7 @@ Item {
                                 width: parent.width
                                 height: visible ? Math.max(question.implicitHeight, Tokens.confirmButtonHeight) + 2 * Tokens.pad : 0
                                 radius: Tokens.radiusSegment
-                                color: Qt.rgba(Tokens.secondary.r, Tokens.secondary.g, Tokens.secondary.b, Tokens.confirmOpacity)
+                                color: Tokens.alpha(Tokens.secondary, Tokens.confirmOpacity)
 
                                 Text {
                                     id: question

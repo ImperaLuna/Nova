@@ -36,9 +36,11 @@ struct Utilization {
     memory: c_uint,
 }
 
-/// The NVML functions used, from a library that stays loaded.
-#[derive(Clone, Copy)]
+/// The NVML functions used, from the library while it's loaded. Dropping
+/// it unloads the library, with what NVML's start loaded and allocated
+/// (libcuda, about 19 MB), so it's loaded only while resources are watched.
 pub struct Library {
+    handle: *mut c_void,
     init: unsafe extern "C" fn() -> c_int,
     shutdown: unsafe extern "C" fn() -> c_int,
     device_by_index: unsafe extern "C" fn(c_uint, *mut Device) -> c_int,
@@ -53,8 +55,8 @@ impl Library {
 
     fn open_one(path: &Path) -> Option<Self> {
         let name = CString::new(path.as_os_str().as_bytes()).ok()?;
-        // SAFETY: a valid C string. The handle is never closed, so the
-        // functions below stay valid for the process's life.
+        // SAFETY: a valid C string. The handle is closed only when the
+        // `Library` holding the functions below is dropped.
         let handle = unsafe { libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
         if handle.is_null() {
             return None;
@@ -64,15 +66,21 @@ impl Library {
             let found = unsafe { libc::dlsym(handle, name.as_ptr().cast::<c_char>()) };
             (!found.is_null()).then_some(found)
         };
-        let (init, shutdown, device_by_index, utilization) = (
-            symbol(b"nvmlInit_v2\0")?,
-            symbol(b"nvmlShutdown\0")?,
-            symbol(b"nvmlDeviceGetHandleByIndex_v2\0")?,
-            symbol(b"nvmlDeviceGetUtilizationRates\0")?,
+        let found = (
+            symbol(b"nvmlInit_v2\0"),
+            symbol(b"nvmlShutdown\0"),
+            symbol(b"nvmlDeviceGetHandleByIndex_v2\0"),
+            symbol(b"nvmlDeviceGetUtilizationRates\0"),
         );
+        let (Some(init), Some(shutdown), Some(device_by_index), Some(utilization)) = found else {
+            // SAFETY: opened above, and nothing from it is kept.
+            unsafe { libc::dlclose(handle) };
+            return None;
+        };
         // SAFETY: NVML's documented signatures for these names (nvml.h).
         unsafe {
             Some(Self {
+                handle,
                 init: std::mem::transmute::<*mut c_void, unsafe extern "C" fn() -> c_int>(init),
                 shutdown: std::mem::transmute::<*mut c_void, unsafe extern "C" fn() -> c_int>(shutdown),
                 device_by_index: std::mem::transmute::<*mut c_void, unsafe extern "C" fn(c_uint, *mut Device) -> c_int>(
@@ -86,7 +94,7 @@ impl Library {
     }
 
     /// Starts NVML and finds the first GPU.
-    pub fn start(&self) -> Result<Nvml, String> {
+    pub fn start(self) -> Result<Nvml, String> {
         // SAFETY: no arguments; NVML counts starts and shutdowns.
         let status = unsafe { (self.init)() };
         if status != SUCCESS {
@@ -100,7 +108,14 @@ impl Library {
             unsafe { (self.shutdown)() };
             return Err(format!("nvmlDeviceGetHandleByIndex_v2 returned {status}"));
         }
-        Ok(Nvml { library: *self, device })
+        Ok(Nvml { library: self, device })
+    }
+}
+
+impl Drop for Library {
+    fn drop(&mut self) {
+        // SAFETY: opened in `open_one`; nothing outlives the `Library`.
+        unsafe { libc::dlclose(self.handle) };
     }
 }
 
@@ -110,9 +125,11 @@ pub struct Nvml {
     device: Device,
 }
 
-// SAFETY: NVML's calls are thread-safe, and the device handle is only an
-// id NVML hands back to itself.
+// SAFETY: NVML's calls are thread-safe, the device handle is only an id
+// NVML hands back to itself, and dlclose may run on any thread.
 unsafe impl Send for Nvml {}
+// SAFETY: as for `Nvml`: the handle is only passed back to dlsym and dlclose.
+unsafe impl Send for Library {}
 
 impl Nvml {
     /// How busy the GPU is now, in percent.
@@ -126,7 +143,7 @@ impl Nvml {
 
 impl Drop for Nvml {
     fn drop(&mut self) {
-        // SAFETY: balances the start that made it.
+        // SAFETY: balances the start that made it, before `library` unloads.
         unsafe { (self.library.shutdown)() };
     }
 }
@@ -150,7 +167,8 @@ mod tests {
         let busy = nvml.busy().unwrap();
         assert!((0.0..=100.0).contains(&busy));
         drop(nvml);
-        // Started again after a shutdown, as each watch does.
+        // Loaded and started again after it was unloaded, as each watch does.
+        let library = Library::open(&library_paths()).unwrap();
         assert!(library.start().unwrap().busy().is_some());
     }
 }

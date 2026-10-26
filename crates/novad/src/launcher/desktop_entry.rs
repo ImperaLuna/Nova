@@ -7,6 +7,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use nova_paths::find_program;
+
 const GROUP: &str = "[Desktop Entry]";
 /// Field codes that stand for files or URLs to open; the launcher opens none.
 const FILE_CODES: [char; 4] = ['f', 'F', 'u', 'U'];
@@ -56,6 +58,13 @@ impl Entry {
         ids.sort_unstable();
         ids.dedup();
         ids
+    }
+
+    /// Whether `id` (lower case) is the first word of its name, a loose
+    /// match (`zen` for "Zen Browser", `brave` for "Brave Web Browser").
+    /// Never for an app in a terminal, like `window_ids`.
+    pub fn first_word_is(&self, id: &str) -> bool {
+        !self.terminal && self.name.split_whitespace().next().is_some_and(|word| word.to_lowercase() == id)
     }
 
     /// Whether `id` (lower case) is the app id it names for its windows or
@@ -359,20 +368,6 @@ fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<
         argv.push(expanded);
     }
     Ok(argv)
-}
-
-/// Where `program` runs from: itself when it's a path, else the first
-/// executable file by that name in `path_var`.
-pub fn find_program(program: &str, path_var: &str) -> Option<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
-    let executable = |path: &Path| {
-        std::fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-    };
-    if program.contains('/') {
-        let path = PathBuf::from(program);
-        return executable(&path).then_some(path);
-    }
-    std::env::split_paths(path_var).map(|dir| dir.join(program)).find(|path| executable(path))
 }
 
 #[cfg(test)]

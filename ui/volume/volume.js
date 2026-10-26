@@ -1,4 +1,5 @@
 .pragma library
+.import "../util/numbers.js" as Numbers
 
 // The volume capsule's pure logic: what a scroll or click sets the volume
 // to, which icon and number it shows, when a change from PipeWire is worth
@@ -22,13 +23,13 @@ function stepped(volume, direction, step) {
 // The volume for a point `fraction` of the way up the capsule, to the
 // percent.
 function atFraction(fraction) {
-    return Math.round(clamp(fraction, 0, 1) * 100) / 100;
+    return Math.round(Numbers.clamp(fraction, 0, 1) * 100) / 100;
 }
 
 // How full the capsule is for this volume: full above 100%, empty without
 // an output.
 function level(volume, available) {
-    return available ? clamp(volume, 0, 1) : 0;
+    return available ? Numbers.clamp(volume, 0, 1) : 0;
 }
 
 function percent(volume) {
@@ -105,10 +106,11 @@ function spring(x, v, target, stiffness, damping, dt) {
 // right edge, `open` (0 in, 1 out, overshooting) and moving at `speed`
 // (open per second): {x, y, w, h, radius}. It grows from half its height
 // as it comes out, and stretches thinner and taller while it moves fast.
-// `size` holds the tokens: width, height, gap, stretch, overshoot.
+// `size` holds the tokens: width, height, gap, stretch, stretchSpeed,
+// overshoot.
 function box(open, speed, width, height, size) {
     var out = Math.max(0, open);
-    var stretch = 1 + size.stretch * Math.min(1, Math.abs(speed) / 6);
+    var stretch = 1 + size.stretch * Math.min(1, Math.abs(speed) / size.stretchSpeed);
     var h = size.height * (0.5 + 0.5 * Math.min(out, 1 + size.overshoot)) * stretch;
     var w = size.width / stretch;
     return {
@@ -131,8 +133,4 @@ function surfaceY(level, height, wall) {
     if (level <= 0)
         return height;
     return wall + (1 - level) * (height - 2 * wall);
-}
-
-function clamp(x, lo, hi) {
-    return Math.max(lo, Math.min(hi, x));
 }

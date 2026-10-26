@@ -18,10 +18,8 @@ const BETA_HEADER: &str = "oauth-2025-04-20";
 
 /// Claude Code's credentials file: `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
 pub fn default_credentials() -> Option<PathBuf> {
-    std::env::var_os("CLAUDE_CONFIG_DIR")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude")))
+    nova_paths::path_var("CLAUDE_CONFIG_DIR")
+        .or_else(|| nova_paths::home().map(|home| home.join(".claude")))
         .map(|dir| dir.join(".credentials.json"))
 }
 
@@ -77,13 +75,13 @@ mod tests {
         "2026-10-23T10:00:00Z".parse().unwrap()
     }
 
-    fn write(dir: &str, text: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("nova-claude-api-{dir}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+    /// The file written and the folder it's in, which goes when dropped.
+    fn write(dir: &str, text: &str) -> (nova_test_support::TempDir, PathBuf) {
+        let dir = nova_test_support::TempDir::new(&format!("claude-api-{dir}"));
         let path = dir.join(".credentials.json");
         std::fs::write(&path, text).unwrap();
         set_mode(&path, 0o600);
-        path
+        (dir, path)
     }
 
     fn set_mode(path: &Path, mode: u32) {
@@ -93,7 +91,7 @@ mod tests {
 
     #[test]
     fn reads_the_token_and_plan() {
-        let path =
+        let (_dir, path) =
             write("ok", r#"{"claudeAiOauth":{"accessToken":"t","expiresAt":1792800000000,"subscriptionType":"max"}}"#);
         let token = read_token(&path, now()).unwrap();
         assert_eq!((token.access.as_str(), token.plan.as_deref()), ("t", Some("Max")));
@@ -101,14 +99,14 @@ mod tests {
 
     #[test]
     fn an_expired_token_is_not_used() {
-        let path = write("expired", r#"{"claudeAiOauth":{"accessToken":"t","expiresAt":1792700000000}}"#);
+        let (_dir, path) = write("expired", r#"{"claudeAiOauth":{"accessToken":"t","expiresAt":1792700000000}}"#);
         assert_eq!(read_token(&path, now()).err(), Some(Problem::Expired));
     }
 
     #[test]
     fn no_file_or_no_claude_sign_in_means_signed_out() {
         assert_eq!(read_token(Path::new("/nonexistent/.credentials.json"), now()).err(), Some(Problem::SignedOut));
-        let path = write("api-key", r#"{"other":{}}"#);
+        let (_dir, path) = write("api-key", r#"{"other":{}}"#);
         assert_eq!(read_token(&path, now()).err(), Some(Problem::SignedOut));
     }
 

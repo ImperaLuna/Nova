@@ -147,9 +147,7 @@ mod tests {
 
     #[test]
     fn a_restarted_novad_locks_again_until_unlocked() {
-        let dir = std::env::temp_dir().join(format!("novad-session-lock-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = nova_test_support::TempDir::new("session-lock");
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Info, false, Arc::clone(&hub)).unwrap());
         assert!(!lock(&SessionLock::open(&dir, &logger).state).locked);
@@ -159,6 +157,5 @@ mod tests {
         assert!(lock(&restarted.state).locked);
         restarted.unlocked(&hub);
         assert!(!SessionLock::open(&dir, &logger).state.lock().unwrap().locked);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

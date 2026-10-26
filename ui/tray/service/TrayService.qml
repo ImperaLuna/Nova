@@ -6,7 +6,7 @@ import Quickshell.Services.SystemTray
 import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
 import "../tray.js" as Tray
-import "../../launcher/launcher.js" as LauncherLogic
+import "../../icons"
 
 // The tray's link to its apps: Quickshell's SystemTray is the host that
 // reads each item's icon and menu from the bus, and novad (the watcher)
@@ -46,11 +46,6 @@ Singleton {
     // What an Image shows for an entry: the app's themed icon when novad
     // found its desktop entry, else the item's own image.
     function iconSource(entry: var): string {
-        if (entry.appIcon) {
-            const themed = entry.appIcon.startsWith("/") ? LauncherLogic.fileUrl(entry.appIcon) : Quickshell.iconPath(entry.appIcon, true);
-            if (themed)
-                return themed;
-        }
-        return entry.icon;
+        return AppIcons.source(entry.appIcon ?? "") || entry.icon;
     }
 }

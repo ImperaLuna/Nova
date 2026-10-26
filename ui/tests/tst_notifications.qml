@@ -96,14 +96,6 @@ Item {
             compare(groups[0].items.map(item => item.id), [5, 3]);
         }
 
-        function test_times_read_short() {
-            compare(Notifications.ago(1000, 1030), "now");
-            compare(Notifications.ago(1000, 1000 + 5 * 60), "5m");
-            compare(Notifications.ago(1000, 1000 + 2 * 3600 + 10), "2h");
-            compare(Notifications.ago(1000, 1000 + 3 * 86400), "3d");
-            compare(Notifications.ago(1000, 900), "now", "a clock that went back");
-        }
-
         function test_timeouts_follow_the_app_except_critical_and_running_progress() {
             compare(Notifications.timeout(note(1, "A"), 6000), 6000);
             compare(Notifications.timeout(note(1, "A", {

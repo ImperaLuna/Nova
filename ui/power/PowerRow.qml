@@ -35,7 +35,7 @@ Item {
         anchors.fill: parent
         radius: Tokens.radiusRow
         clip: true
-        color: row.selected ? Qt.rgba(Tokens.primary.r, Tokens.primary.g, Tokens.primary.b, Tokens.accentFillOpacity) : "transparent"
+        color: row.selected ? Tokens.alpha(Tokens.primary, Tokens.accentFillOpacity) : "transparent"
 
         Behavior on color {
             ColorAnimation {
@@ -48,7 +48,7 @@ Item {
             visible: row.armed
             width: parent.width * row.armedLeft
             height: Tokens.drainHeight
-            color: Qt.rgba(Tokens.onAccent.r, Tokens.onAccent.g, Tokens.onAccent.b, Tokens.drainOpacity)
+            color: Tokens.alpha(Tokens.onAccent, Tokens.drainOpacity)
         }
     }
 
@@ -80,7 +80,7 @@ Item {
             elide: Text.ElideRight
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSizeTiny
-            color: row.selected ? Qt.rgba(Tokens.onAccent.r, Tokens.onAccent.g, Tokens.onAccent.b, Tokens.drainOpacity) : Tokens.fgDim
+            color: row.selected ? Tokens.alpha(Tokens.onAccent, Tokens.drainOpacity) : Tokens.fgDim
             textFormat: Text.PlainText
             text: row.armed ? qsTr("Click again") : row.available ? "" : row.reason
         }

@@ -1,6 +1,7 @@
 import QtQuick
 import "../theme"
 import "../stage"
+import "../util/numbers.js" as Numbers
 
 // A tray app's menu under its icon in the right pill: glass, opened by a right click on the icon. It opens beside the tray (not
 // exclusive), and closes with it: on Esc, a click outside, or once an
@@ -35,7 +36,7 @@ StagePanel {
     moving: morph.moving
 
     // Right-aligned a little past its icon, kept on the screen.
-    x: Math.max(Tokens.barMargin, Math.min(screenWidth - Tokens.barMargin - width, anchorX + Tokens.pillButtonSize / 2 + Tokens.menuGap - width))
+    x: Numbers.clamp(anchorX + Tokens.pillButtonSize / 2 + Tokens.menuGap - width, Tokens.barMargin, screenWidth - Tokens.barMargin - width)
     y: Tokens.barGap + Tokens.barHeight + Tokens.menuGap
     width: content.width
     height: content.implicitHeight

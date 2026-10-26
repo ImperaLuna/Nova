@@ -43,8 +43,7 @@ mod tests {
 
     #[test]
     fn saves_privately_over_a_stale_partial_file() {
-        let dir = std::env::temp_dir().join(format!("novad-state-file-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = nova_test_support::TempDir::new("state-file");
         let path = dir.join("feature.json");
         save(&path, &serde_json::json!({"a": 1})).unwrap();
         std::fs::write(path.with_extension("json.partial"), "left by a crash").unwrap();
@@ -53,6 +52,5 @@ mod tests {
         assert_eq!(saved["a"], 2);
         assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, MODE);
         assert!(!path.with_extension("json.partial").exists());
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }

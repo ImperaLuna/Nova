@@ -79,7 +79,7 @@ StagePanel {
     property real fill: root.open ? 1 : 0
     MorphReveal on fill {
         id: fillReveal
-        delay: 0.6
+        delay: Tokens.revealFill
         duration: root.fillDuration
         eased: true
     }
@@ -238,7 +238,7 @@ StagePanel {
             y: (Tokens.barHeight - height) / 2
             opacity: root.open ? 1 : 0
             MorphReveal on opacity {
-                delay: 0.4
+                delay: Tokens.usageRevealFirst
             }
             visible: opacity > 0
             font.family: Tokens.fontSans
@@ -260,7 +260,7 @@ StagePanel {
             color: Tokens.surfaceRaised
             opacity: root.open ? 1 : 0
             MorphReveal on opacity {
-                delay: 0.55
+                delay: Tokens.usageRevealFirst + Tokens.usageRevealStagger
             }
             visible: opacity > 0 && root.summary.plan !== ""
 
@@ -333,7 +333,7 @@ StagePanel {
                 spacing: Tokens.gap
                 opacity: root.open ? 1 : 0
                 MorphReveal on opacity {
-                    delay: 0.55
+                    delay: Tokens.usageRevealFirst + Tokens.usageRevealStagger
                 }
 
                 Item {
@@ -379,7 +379,7 @@ StagePanel {
                 spacing: Tokens.gap
                 opacity: root.open ? 1 : 0
                 MorphReveal on opacity {
-                    delay: 0.7
+                    delay: Tokens.usageRevealFirst + 2 * Tokens.usageRevealStagger
                 }
                 visible: root.summary.second !== null
 
@@ -428,7 +428,7 @@ StagePanel {
             spacing: Tokens.gap
             opacity: root.open ? 1 : 0
             MorphReveal on opacity {
-                delay: 0.85
+                delay: Tokens.usageRevealFirst + 3 * Tokens.usageRevealStagger
             }
 
             Rectangle {

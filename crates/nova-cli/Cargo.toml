@@ -24,6 +24,7 @@ novad.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+nova-test-support.workspace = true
 
 [lints]
 workspace = true

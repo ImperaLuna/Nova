@@ -4,18 +4,12 @@
 //! Everything is read below a root folder (`/` for real), so tests run on a
 //! fake `/etc` and `/sys`.
 
-use nova_features::Gpu;
+use nova_features::{Gpu, gpus};
 use std::fmt;
 use std::path::Path;
 
 /// os-release, in the order systemd reads it.
 const OS_RELEASE: &[&str] = &["etc/os-release", "usr/lib/os-release"];
-const DRM_DIR: &str = "sys/class/drm";
-/// Present while NVIDIA's own (proprietary or open) kernel driver is loaded;
-/// nouveau doesn't create it.
-const NVIDIA_MODULE: &str = "sys/module/nvidia";
-/// PCI vendor ids in `/sys/class/drm/cardN/device/vendor`.
-const VENDORS: &[(&str, Gpu)] = &[("0x10de", Gpu::Nvidia), ("0x1002", Gpu::Amd), ("0x8086", Gpu::Intel)];
 
 /// The distro families Nova has package names for, plus the rest.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,13 +38,7 @@ impl Distro {
     /// Reads os-release: `ID`, else the first family in `ID_LIKE` Nova
     /// knows, so Manjaro is Arch and Ubuntu is Debian.
     fn from_os_release(text: &str) -> Self {
-        let field = |name: &str| {
-            text.lines()
-                .filter_map(|line| line.trim().split_once('='))
-                .find(|(key, _)| *key == name)
-                .map(|(_, value)| value.trim().trim_matches(['"', '\'']).to_owned())
-                .unwrap_or_default()
-        };
+        let field = |name: &str| novad::checks::os_release_field(text, name).unwrap_or_default();
         let id = field("ID");
         let like = field("ID_LIKE");
         std::iter::once(id.as_str()).chain(like.split_whitespace()).find_map(Self::known).unwrap_or(Self::Other(id))
@@ -95,50 +83,23 @@ impl Host {
         let os_release = OS_RELEASE.iter().find_map(|path| std::fs::read_to_string(root.join(path)).ok());
         Self {
             distro: Distro::from_os_release(&os_release.unwrap_or_default()),
-            gpus: gpus(&root.join(DRM_DIR)),
-            nvidia_driver: root.join(NVIDIA_MODULE).is_dir(),
+            gpus: gpus::detect(root),
+            nvidia_driver: gpus::nvidia_driver(root),
         }
     }
-}
-
-/// The vendors of `drm`'s `cardN` entries. Connectors (`card1-DP-1`) and
-/// render nodes have no vendor of their own and are skipped.
-fn gpus(drm: &Path) -> Vec<Gpu> {
-    let mut cards: Vec<_> = std::fs::read_dir(drm)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name().into_string().ok()?;
-            let number: u32 = name.strip_prefix("card")?.parse().ok()?;
-            Some((number, entry.path()))
-        })
-        .collect();
-    cards.sort();
-    let mut found = Vec::new();
-    for (_, card) in cards {
-        let vendor = std::fs::read_to_string(card.join("device/vendor")).unwrap_or_default();
-        if let Some(&(_, gpu)) = VENDORS.iter().find(|(id, _)| *id == vendor.trim())
-            && !found.contains(&gpu)
-        {
-            found.push(gpu);
-        }
-    }
-    found
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use nova_features::gpus::{DRM_DIR, NVIDIA_MODULE};
 
     /// A fake root folder with an os-release and GPUs, removed on drop.
-    pub struct FakeRoot(pub PathBuf);
+    pub struct FakeRoot(pub nova_test_support::TempDir);
 
     impl FakeRoot {
         pub fn new(name: &str, os_release: &str, cards: &[&str], nvidia_driver: bool) -> Self {
-            let root = std::env::temp_dir().join(format!("nova-host-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&root);
+            let root = nova_test_support::TempDir::new(&format!("host-{name}"));
             std::fs::create_dir_all(root.join("etc")).unwrap();
             std::fs::write(root.join("etc/os-release"), os_release).unwrap();
             for (number, vendor) in cards.iter().enumerate() {
@@ -152,12 +113,6 @@ pub mod tests {
                 std::fs::create_dir_all(root.join(NVIDIA_MODULE)).unwrap();
             }
             Self(root)
-        }
-    }
-
-    impl Drop for FakeRoot {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 

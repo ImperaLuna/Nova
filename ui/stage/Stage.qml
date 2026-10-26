@@ -15,6 +15,7 @@ import "../quick_settings/service"
 import "../daemon"
 import "../theme"
 import "../daemon/protocol.js" as Protocol
+import "../icons"
 
 // One per screen: a transparent layer across the top of the screen that the
 // bar, its panels and popups are all drawn on, so a pill can grow into its
@@ -38,7 +39,7 @@ Scope {
     // Its panels just stopped and their final state (and regions) isn't in
     // a frame yet, or a pill just showed again: drawing stays on for it even
     // while another surface moves.
-    property bool settling: false
+    property alias settling: drawing.settling
 
     // Every panel on this screen, whatever surface it's drawn on.
     readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(quickSettings.item ? [quickSettings.item] : []), ...(launcher.item ? [launcher.item] : []), ...(demo.item?.panels ?? [])]
@@ -50,6 +51,8 @@ Scope {
     // A new layer goes out with a frame, and the stage may not be drawing
     // (another surface's panel opened).
     onSurfaceLayerChanged: settling = true
+    // Where the PanelSurfaces with panels shown are, in screen coordinates.
+    readonly property list<rect> panelBoxes: [right, center].filter(surface => !surface.parked).map(surface => surface.box)
     function placed(placement: string): list<StagePanel> {
         return panels.filter(panel => panel.placement === placement);
     }
@@ -67,15 +70,14 @@ Scope {
         fixed: bar.fixedShapes
     }
 
-    // Something on the stage animates: a panel, or the bar sliding aside.
-    readonly property bool moving: drawn.moving || bar.sliding
-    readonly property string motionName: `${root.output.name}/top`
-    onMovingChanged: {
-        StageMotion.setMoving(motionName, moving);
-        if (!moving)
-            settling = true;
+    // When the stage draws: while something on it animates (a panel, or
+    // the bar sliding aside), or nothing moves anywhere.
+    SurfaceDrawing {
+        id: drawing
+        window: stage
+        name: `${root.output.name}/top`
+        moving: drawn.moving || bar.sliding
     }
-    Component.onDestruction: StageMotion.setMoving(motionName, false)
 
     // The power menu on the right edge, while its feature is on.
     LazyLoader {
@@ -115,7 +117,7 @@ Scope {
             apps: LauncherService.current.apps
             pinned: LauncherService.current.pinned
             recent: LauncherService.current.recent
-            iconSource: icon => LauncherService.iconSource(icon)
+            iconSource: icon => AppIcons.source(icon)
             onSearchRequested: query => LauncherService.search(query, found => deck.showMatches(query, found))
             onLaunchRequested: (id, newWindow) => LauncherService.launch(id, root.output.name, newWindow, error => deck.launched(error))
             onPinRequested: (id, pinned) => LauncherService.pin(id, pinned)
@@ -179,23 +181,7 @@ Scope {
         implicitHeight: Math.ceil(drawn.reach + Tokens.shadowRoom)
         exclusionMode: ExclusionMode.Ignore
         color: "transparent"
-        // Draws while something moves here, or while nothing moves anywhere
-        // (StageMotion). Its regions only change when its own panels move,
-        // and it draws until their last frame is out, so they're always
-        // sent: Quickshell sends them only with a frame.
-        updatesEnabled: root.moving || root.settling || StageMotion.surfaces.length === 0
-
-        // Qt emits afterAnimating once it has polished a frame (Quickshell
-        // sends the regions then) and right before syncing it, and that frame
-        // goes out even if updates go off now. A later frameSwapped could
-        // still be an older frame's.
-        Connections {
-            target: stage.contentItem.Window.window
-            enabled: root.settling
-            function onAfterAnimating() {
-                root.settling = false;
-            }
-        }
+        updatesEnabled: drawing.draws
 
         WlrLayershell.layer: root.surfaceLayer
         WlrLayershell.namespace: "nova-stage"
@@ -205,69 +191,29 @@ Scope {
         // windows below. While a panel that closes on a click outside is
         // open, here or on another surface, the whole stage takes clicks
         // (and ClickCatcher the rest of the screen), and one outside the
-        // panel closes it.
-        // Quickshell rebuilds a region when its item's own position or size
-        // changes, not an ancestor's, and the bar's pills slide with their
-        // shelf: following the slide (an otherwise empty region) rebuilds
-        // them where the pills are. Without it they kept taking clicks where
-        // they had slid out of sight (IMP-118).
-        mask: Region {
-            y: bar.slideOffset
-            regions: inputRegions.instances
+        // panel closes it. Both regions follow the bar's pills as they
+        // slide with their shelf; without that they kept taking clicks
+        // where they had slid out of sight (IMP-118).
+        mask: regions.mask
+        StageRegions {
+            id: regions
+            window: stage
+            inputShapes: all.catchesClicks ? [outside] : drawn.shapes
+            glassShapes: drawn.glassShapes
+            offset: bar.slideOffset
+            // The PanelSurfaces stay mapped (parked) and can sit under the
+            // stage, which moves to Overlay when a panel opens: they take
+            // the clicks over themselves, as with ClickCatcher (IMP-148).
+            holes: all.catchesClicks ? root.panelBoxes : []
         }
 
-        Variants {
-            id: inputRegions
-            model: all.catchesClicks ? [outside] : drawn.shapes
-            ShapeRegion {}
-        }
-
-        // Real blur behind the glass where the compositor offers it
-        // (ext-background-effect-v1: niri 26.04+, Hyprland 0.56+); elsewhere
-        // the tint stands alone.
-        Region {
-            id: blur
-            // Rebuilt as the pills slide, like the mask.
-            y: bar.slideOffset
-            regions: blurRegions.instances
-        }
-
-        Variants {
-            id: blurRegions
-            model: drawn.glassShapes
-            ShapeRegion {}
-        }
-
-        // Asked for only once there's glass: asking at all logs a warning on
-        // compositors without blur, which a screen with no glass shouldn't do.
-        readonly property bool hasGlass: drawn.glassShapes.length > 0
-        function askForBlur() {
-            if (hasGlass)
-                BackgroundEffect.blurRegion = blur;
-        }
-        onHasGlassChanged: askForBlur()
-        Component.onCompleted: askForBlur()
-
-        // The whole screen: Hyprland gives a surface that holds the keyboard
-        // every click on the screen (see PanelSurface's `outside`).
-        MouseArea {
+        DismissArea {
             id: outside
-            readonly property int radius: 0
             width: root.output.width
             height: root.output.height
             enabled: all.catchesClicks
-            focus: true
-            onClicked: mouse => {
-                if (!drawn.covers(mouse.x, mouse.y))
-                    all.dismiss();
-            }
-            // A scroll outside closes it too, so the next one reaches the
-            // window below: the screen's input can't pass it on.
-            onWheel: wheel => {
-                if (!drawn.covers(wheel.x, wheel.y))
-                    all.dismiss();
-            }
-            Keys.onEscapePressed: all.dismiss()
+            stagePanels: drawn
+            onDismissRequested: all.dismiss()
         }
 
         Bar {
@@ -315,7 +261,7 @@ Scope {
         catching: all.catchesClicks
         surfaceLayer: root.surfaceLayer
         // Only while catching, so it doesn't redraw for every morph frame.
-        holes: all.catchesClicks ? [Qt.rect(0, 0, root.output.width, stage.implicitHeight), ...[right, center].filter(surface => surface.visible).map(surface => surface.box)] : []
+        holes: all.catchesClicks ? [Qt.rect(0, 0, root.output.width, stage.implicitHeight), ...root.panelBoxes] : []
         onClicked: all.dismiss()
     }
 }

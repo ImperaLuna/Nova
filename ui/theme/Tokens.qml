@@ -50,9 +50,9 @@ QtObject {
     readonly property real surfaceOpacity: 0.75
     readonly property real raisedOpacity: 0.06
     readonly property real outlineOpacity: 0.08
-    readonly property color surface: Qt.rgba(bg.r, bg.g, bg.b, surfaceOpacity)
-    readonly property color surfaceRaised: Qt.rgba(fg.r, fg.g, fg.b, raisedOpacity)
-    readonly property color outline: Qt.rgba(fg.r, fg.g, fg.b, outlineOpacity)
+    readonly property color surface: alpha(bg, surfaceOpacity)
+    readonly property color surfaceRaised: alpha(fg, raisedOpacity)
+    readonly property color outline: alpha(fg, outlineOpacity)
 
     // Liquid glass behind pills and the panels that morph out of them
     // (Glass.qml), over the compositor's blur of what's behind: a light tint
@@ -61,12 +61,12 @@ QtObject {
     readonly property real glassAccent: 0.05
     readonly property color glass: {
         const tinted = tint(primary, glassAccent);
-        return Qt.rgba(tinted.r, tinted.g, tinted.b, glassOpacity);
+        return alpha(tinted, glassOpacity);
     }
     // A sheen across the top fading into a faint veil, and a shade along the
     // bottom edge.
-    readonly property color glassSheen: Qt.rgba(fg.r, fg.g, fg.b, 0.12)
-    readonly property color glassVeil: Qt.rgba(fg.r, fg.g, fg.b, 0.03)
+    readonly property color glassSheen: alpha(fg, 0.12)
+    readonly property color glassVeil: alpha(fg, 0.03)
     readonly property color glassShade: Qt.rgba(0, 0, 0, 0.22)
     // Where, top to bottom, the sheen has faded to the veil, and where the
     // veil has cleared before the shade starts.
@@ -81,31 +81,31 @@ QtObject {
     // A rim drawn in one pass (the volume capsule's shader): its brightness
     // on the unlit side, relative to the lit corner.
     readonly property real glassRimShade: 0.35
-    readonly property color glassRimLit: Qt.rgba(fg.r, fg.g, fg.b, 0.60)
-    readonly property color glassRimGlow: Qt.rgba(fg.r, fg.g, fg.b, 0.36)
-    readonly property color glassRim: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
-    readonly property color glassRimDim: Qt.rgba(fg.r, fg.g, fg.b, 0.03)
+    readonly property color glassRimLit: alpha(fg, 0.60)
+    readonly property color glassRimGlow: alpha(fg, 0.36)
+    readonly property color glassRim: alpha(fg, 0.10)
+    readonly property color glassRimDim: alpha(fg, 0.03)
     // The soft shadow under glass, and the room it needs around the glass.
     readonly property color shadow: Qt.rgba(0, 0, 0, 0.35)
     readonly property real shadowBlur: 30
     readonly property real shadowOffset: 10
     readonly property real shadowRoom: shadowBlur + shadowOffset
     // Hover wash on things inside glass.
-    readonly property color hover: Qt.rgba(fg.r, fg.g, fg.b, 0.06)
+    readonly property color hover: alpha(fg, 0.06)
     // The selected row of a list, like the launcher's.
-    readonly property color selected: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
+    readonly property color selected: alpha(fg, 0.10)
     // What's selected where the focus isn't, like the workspace shown on a
     // monitor you're not using: a quiet fill instead of the accent.
-    readonly property color selectedQuiet: Qt.rgba(fg.r, fg.g, fg.b, 0.14)
+    readonly property color selectedQuiet: alpha(fg, 0.14)
     // Meters: the empty track and a neutral fill.
-    readonly property color track: Qt.rgba(fg.r, fg.g, fg.b, 0.10)
-    readonly property color meter: Qt.rgba(fg.r, fg.g, fg.b, 0.85)
+    readonly property color track: alpha(fg, 0.10)
+    readonly property color meter: alpha(fg, 0.85)
 
     // `target` mixed into bg: 0 is bg, 1 is the color itself. One function for
     // every ramp and tint, so they follow the theme: heatmaps step through
     // tint(primary, level), status rows sit on tint(error, 0.15) and so on.
     function tint(target: color, amount: real): color {
-        return Qt.tint(bg, Qt.rgba(target.r, target.g, target.b, amount));
+        return Qt.tint(bg, alpha(target, amount));
     }
 
     // Radii
@@ -113,7 +113,6 @@ QtObject {
     readonly property int radiusCard: 16
     readonly property int radiusControl: 12
     readonly property int radiusRow: 14
-    readonly property int radiusPill: 999
 
     // Spacing
     readonly property int gap: 8
@@ -216,8 +215,10 @@ QtObject {
     // They fade in over this last share of its way out.
     readonly property real capsuleLabelFadeIn: 0.4
     // While it slides it stretches (thinner and taller) by up to this share,
-    // and it overshoots its full height by up to this share as it lands.
+    // all of it from this speed on (its way out per second), and it
+    // overshoots its full height by up to this share as it lands.
     readonly property real capsuleStretch: 0.10
+    readonly property real capsuleStretchSpeed: 6
     readonly property real capsuleOvershoot: 0.08
     // How long it stays out after the last change, and how much one scroll
     // notch or volume key changes the volume (1 = 100%).
@@ -225,9 +226,9 @@ QtObject {
     readonly property real volumeStep: 0.05
     // The liquid, and the grey still liquid of a muted output.
     readonly property real liquidOpacity: 0.95
-    readonly property color liquid: Qt.rgba(secondary.r, secondary.g, secondary.b, liquidOpacity)
+    readonly property color liquid: alpha(secondary, liquidOpacity)
     readonly property real liquidMutedOpacity: 0.7
-    readonly property color liquidMuted: Qt.rgba(fgDim.r, fgDim.g, fgDim.b, liquidMutedOpacity)
+    readonly property color liquidMuted: alpha(fgDim, liquidMutedOpacity)
     // Its surface (px): a slow swell, the waves a change stirs up (at most),
     // the swell kept while it sits still, and how far the surface creeps
     // up the glass.
@@ -235,6 +236,8 @@ QtObject {
     readonly property real liquidSloshMax: 6
     readonly property real liquidIdleWave: 1.2
     readonly property real liquidMeniscus: 1.6
+    // How far from the glass the meniscus fades out (px).
+    readonly property real liquidMeniscusReach: 5
     // How fast stirred waves settle (s), and how strongly the level's speed
     // stirs them.
     readonly property real liquidSloshDecay: 0.45
@@ -243,11 +246,25 @@ QtObject {
     // rising while it's calm.
     readonly property int liquidSpecks: 14
     readonly property real liquidFizz: 0.3
+    // A speck's radius (px): the smallest, and how much bigger one can be;
+    // how bright they glow, and the brightest a cluster gets (0..1).
+    readonly property real liquidSpeckRadius: 0.8
+    readonly property real liquidSpeckRadiusRange: 1.5
+    readonly property real liquidSpeckGlow: 0.7
+    readonly property real liquidSpeckGlowMax: 0.85
     // How much quicker they rise at full fizz (2: three times as fast).
     readonly property real liquidFizzPace: 2
     // Light inside it: just under the surface, and down the left side.
     readonly property real liquidGlow: 0.28
     readonly property real liquidStreak: 0.16
+    // How deep the light under the surface reaches, and how far down the
+    // streak takes to grow in (px); where the streak runs across the
+    // liquid and how wide it is (shares of its width); the light's color.
+    readonly property real liquidGlowDepth: 6
+    readonly property real liquidStreakFade: 18
+    readonly property real liquidStreakAt: 0.18
+    readonly property real liquidStreakWidth: 0.07
+    readonly property color liquidLight: "white"
     // Springs (stiffness, damping ratio): the capsule sliding, the level
     // following the volume, and the surface swinging back after a tilt.
     readonly property real springCapsule: 170
@@ -328,11 +345,10 @@ QtObject {
     // app's slider shows the app's icon, its corners less round.
     readonly property int sliderHeight: 34
     readonly property int sliderGap: 6
-    readonly property color sliderFill: Qt.rgba(fg.r, fg.g, fg.b, 0.22)
+    readonly property color sliderFill: alpha(fg, 0.22)
     readonly property real sliderMutedOpacity: 0.3
     readonly property int sliderButtonWidth: 30
     readonly property int appIconRadius: 11
-    readonly property int appIconSize: 22
     readonly property real appMutedOpacity: 0.45
     // The mic slider while an app records: the second accent.
     readonly property real micFillOpacity: 0.34
@@ -342,7 +358,7 @@ QtObject {
     readonly property int fontSizeMicro: 10
     // Small uppercase labels spread out by this share of their size.
     readonly property real trackingLabel: 0.06
-    readonly property color fgSoft: Qt.rgba(fg.r, fg.g, fg.b, 0.72)
+    readonly property color fgSoft: alpha(fg, 0.72)
     // A segmented control or tab row: its padding, its segments' height and
     // corners.
     readonly property int segmentPad: 4
@@ -455,7 +471,7 @@ QtObject {
     readonly property int notificationActionHeight: 28
     readonly property int notificationProgressHeight: 6
     readonly property int notificationTimerHeight: 2
-    readonly property color notificationTimer: Qt.rgba(fg.r, fg.g, fg.b, 0.35)
+    readonly property color notificationTimer: alpha(fg, 0.35)
     readonly property real notificationCriticalRim: 1.5
     // "+2" beside the app, and the count in the list's heading.
     readonly property int notificationChipHeight: 16
@@ -497,7 +513,7 @@ QtObject {
     readonly property int badgeIcon: 9
     readonly property int badgeMax: 9
     readonly property int fontSizeBadge: 9
-    readonly property color badgeQuiet: Qt.rgba(fg.r, fg.g, fg.b, 0.55)
+    readonly property color badgeQuiet: alpha(fg, 0.55)
 
     // Type
     readonly property string fontSans: "Inter"
@@ -529,6 +545,17 @@ QtObject {
     readonly property int durationFade: 140
     readonly property int durationFill: 600
     readonly property int durationColor: 200
+    // When MorphReveal starts something, as a share of the panel's morph:
+    // a panel's content, meters and rings filling, and the right pill's
+    // overflow count, which waits for the pill to settle.
+    readonly property real revealContent: 0.5
+    readonly property real revealFill: 0.6
+    readonly property real revealPillCount: 0.8
+    // The AI usage panel's parts fade in one after another: its title at
+    // this share of the morph, then the plan and first meter, the second
+    // meter and the footer, each this much later.
+    readonly property real usageRevealFirst: 0.4
+    readonly property real usageRevealStagger: 0.15
     // Something changing size as its content changes, like the launcher
     // as results come and go.
     readonly property int durationResize: 180
@@ -551,6 +578,11 @@ QtObject {
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
     // The curve each half of a pulse follows: a soft breath in and out.
     readonly property int easingPulse: Easing.InOutSine
+
+    // `color` at `opacity` (0..1), whatever its own alpha.
+    function alpha(color: color, opacity: real): color {
+        return Qt.rgba(color.r, color.g, color.b, opacity);
+    }
 
     // Sets the theme colors from a theme event's `colors` ({token: "#RRGGBB"}).
     function apply(colors) {

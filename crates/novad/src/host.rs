@@ -10,7 +10,6 @@ use nova_protocol::{Host, OperatingSystem};
 /// distribution's fallback (os-release(5)).
 const OS_RELEASE: [&str; 2] = ["/etc/os-release", "/usr/lib/os-release"];
 const HOSTNAME: &str = "/proc/sys/kernel/hostname";
-const STAT: &str = "/proc/stat";
 /// os-release's `ID` when it has none (os-release(5)).
 const DEFAULT_OS_ID: &str = "linux";
 const DEFAULT_OS_NAME: &str = "Linux";
@@ -22,24 +21,23 @@ pub fn read(name: Option<&str>) -> Host {
     Host {
         host: std::fs::read_to_string(HOSTNAME).map(|name| name.trim().to_string()).unwrap_or_default(),
         user: name.map_or_else(user_name, |name| name.trim().to_string()),
-        booted_at: std::fs::read_to_string(STAT).ok().and_then(|stat| boot_time(&stat)).unwrap_or(0),
+        booted_at: crate::procfs::boot_time().and_then(|booted| i64::try_from(booted).ok()).unwrap_or(0),
         os: operating_system(&os_release),
     }
 }
 
-/// `btime` from `/proc/stat`: when the machine booted, in Unix seconds.
-fn boot_time(stat: &str) -> Option<i64> {
-    stat.lines().find_map(|line| line.strip_prefix("btime ")?.trim().parse().ok())
+/// `key`'s value in an os-release file's text, unquoted; an empty one is
+/// none. `nova doctor` and `nova setup` read the distro with it too.
+pub fn os_release_field(os_release: &str, key: &str) -> Option<String> {
+    os_release.lines().find_map(|line| {
+        let value = line.trim_start().strip_prefix(key)?.strip_prefix('=')?;
+        Some(unquote(value.trim())).filter(|value| !value.is_empty())
+    })
 }
 
 /// The distribution an os-release file describes.
 fn operating_system(os_release: &str) -> OperatingSystem {
-    let field = |key: &str| {
-        os_release.lines().find_map(|line| {
-            let value = line.strip_prefix(key)?.strip_prefix('=')?;
-            Some(unquote(value.trim())).filter(|value| !value.is_empty())
-        })
-    };
+    let field = |key: &str| os_release_field(os_release, key);
     OperatingSystem {
         id: field("ID").unwrap_or_else(|| DEFAULT_OS_ID.to_string()),
         id_like: field("ID_LIKE").map(|like| like.split_whitespace().map(str::to_string).collect()).unwrap_or_default(),
@@ -138,13 +136,6 @@ mod tests {
         assert_eq!(first_name("Luna Impera,,,"), Some("Luna".into()));
         assert_eq!(first_name(",room 4"), None);
         assert_eq!(first_name(""), None);
-    }
-
-    #[test]
-    fn boot_time_from_proc_stat() {
-        let stat = "cpu  1 2 3 4 5 6 7 0 0 0\nintr 0\nctxt 9\nbtime 1793000000\nprocesses 1\n";
-        assert_eq!(boot_time(stat), Some(1_793_000_000));
-        assert_eq!(boot_time("cpu 1 2 3\n"), None);
     }
 
     #[test]

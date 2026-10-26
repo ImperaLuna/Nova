@@ -7,11 +7,11 @@ use crate::hub::{ClientQueue, Outgoing};
 use crate::launcher;
 use crate::session_bus::TestBus;
 use nova_protocol::Topic;
+use nova_test_support::{TempDir, eventually, wait_until};
 use serde_json::{Value, json};
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
-use std::time::Instant;
 
 /// How long a test waits for something the bus should do at once. Longer
 /// than reading an item may take (three calls, each up to its timeout), so
@@ -19,7 +19,7 @@ use std::time::Instant;
 const WAIT: Duration = Duration::from_secs(4 * CALL_TIMEOUT.as_secs());
 
 struct Fixture {
-    dir: PathBuf,
+    dir: TempDir,
     bus: TestBus,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
@@ -29,8 +29,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("novad-tray-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = nova_test_support::TempDir::new(&format!("tray-{name}"));
         std::fs::create_dir_all(dir.join("proc")).unwrap();
         let bus = TestBus::start(&dir.join("bus"));
         let hub = Arc::new(Hub::default());
@@ -53,19 +52,7 @@ impl Fixture {
 
     /// The next tray event's items.
     fn next_items(&self) -> Value {
-        let deadline = Instant::now() + WAIT;
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            match self.ui.recv_timeout(left).expect("a tray event") {
-                Outgoing::Line(line) => {
-                    let event: Value = serde_json::from_str(&line).unwrap();
-                    if event["event"] == "tray" {
-                        return event["data"]["items"].clone();
-                    }
-                }
-                Outgoing::Flushed(_) => {}
-            }
-        }
+        crate::hub::next_named(&self.ui, "tray", WAIT)["items"].clone()
     }
 
     /// Makes our process look, to the tray, like it runs in `unit`.
@@ -73,12 +60,6 @@ impl Fixture {
         let process = self.dir.join("proc").join(std::process::id().to_string());
         std::fs::create_dir_all(&process).unwrap();
         std::fs::write(process.join("cgroup"), format!("0::/user.slice/app.slice/{unit}\n")).unwrap();
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 
@@ -170,11 +151,7 @@ fn an_electron_item_shows_with_its_app_and_goes_with_it() {
         runner: launcher::Runner::Direct,
     };
     let launcher = Launcher::start(paths, "", Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
-    let deadline = Instant::now() + WAIT;
-    while launcher.find_app(&["discord".into()]).is_none() {
-        assert!(Instant::now() < deadline, "the launcher found discord.desktop");
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    wait_until(WAIT, "the launcher to find discord.desktop", || launcher.find_app(&["discord".into()]).is_some());
     // Electron's own id doesn't name the app; the unit it runs in does.
     fixture.run_in_unit("app-discord-375306.scope");
     let tray = fixture.tray(Some(Arc::clone(&launcher)));
@@ -234,16 +211,8 @@ fn a_queued_tray_takes_over_when_the_first_stops() {
     let first = fixture.tray(None);
     let second = fixture.tray(None);
     first.stop();
-    let deadline = Instant::now() + WAIT;
-    let app = loop {
-        // Until the bus has given the name to the second tray.
-        let app = put_up_retrying(&fixture);
-        if let Some(app) = app {
-            break app;
-        }
-        assert!(Instant::now() < deadline, "the second tray took over");
-        std::thread::sleep(Duration::from_millis(20));
-    };
+    // Until the bus has given the name to the second tray.
+    let app = eventually(WAIT, "the second tray to take over", || put_up_retrying(&fixture));
     assert_eq!(fixture.next_items()[0]["id"], "late");
     drop(app);
     second.stop();
@@ -328,11 +297,9 @@ fn an_item_that_cant_tell_its_id_is_dropped() {
     let other = Item { id: "other".into(), title: String::new(), activated: Arc::default() };
     zbus::block_on(app.object_server().at("/Other", other)).unwrap();
     zbus::block_on(register(&app, "/Nothing")).unwrap();
-    let deadline = Instant::now() + WAIT;
-    while !watcher_property::<Vec<String>>(&app, "RegisteredStatusNotifierItems").is_empty() {
-        assert!(Instant::now() < deadline, "the item without an id was dropped");
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    wait_until(WAIT, "the item without an id to be dropped", || {
+        watcher_property::<Vec<String>>(&app, "RegisteredStatusNotifierItems").is_empty()
+    });
     // A real item still shows.
     let real = put_up(&fixture, None, "/StatusNotifierItem", "/StatusNotifierItem", "steam");
     let items = loop {
@@ -360,9 +327,7 @@ fn one_app_cant_fill_the_tray() {
     assert!(zbus::block_on(register(&app, "/OneMore")).is_err(), "past the cap is refused");
     // Another app still gets in.
     let _other = put_up(&fixture, None, "/StatusNotifierItem", "/StatusNotifierItem", "steam");
-    let deadline = Instant::now() + WAIT;
-    while watcher_property::<Vec<String>>(&app, "RegisteredStatusNotifierItems").len() < MAX_ITEMS_PER_APP + 1 {
-        assert!(Instant::now() < deadline, "the other app's item is registered");
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    wait_until(WAIT, "the other app's item to be registered", || {
+        watcher_property::<Vec<String>>(&app, "RegisteredStatusNotifierItems").len() > MAX_ITEMS_PER_APP
+    });
 }

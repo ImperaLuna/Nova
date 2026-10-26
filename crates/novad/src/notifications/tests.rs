@@ -6,19 +6,19 @@ use crate::hub::{ClientQueue, Outgoing};
 use crate::session_bus::TestBus;
 use futures_core::Stream;
 use nova_protocol::Topic;
+use nova_test_support::{TempDir, wait_until};
 use serde_json::{Value, json};
 use std::future::poll_fn;
 use std::os::unix::net::UnixStream;
 use std::pin::Pin;
 use std::sync::mpsc::Receiver;
-use std::time::Instant;
 use zbus::{MatchRule, MessageStream};
 
 /// How long a test waits for something the bus should do at once.
 const WAIT: Duration = Duration::from_secs(5);
 
 struct Fixture {
-    dir: PathBuf,
+    dir: TempDir,
     bus: TestBus,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
@@ -29,9 +29,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("novad-notifications-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = nova_test_support::TempDir::new(&format!("notifications-{name}"));
         let bus = TestBus::start(&dir.join("bus"));
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
@@ -73,19 +71,7 @@ impl Fixture {
 
     /// The next event called `name`, skipping others.
     fn next(&self, name: &str) -> Value {
-        let deadline = Instant::now() + WAIT;
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            match self.ui.recv_timeout(left).unwrap_or_else(|_| panic!("a {name} event")) {
-                Outgoing::Line(line) => {
-                    let event: Value = serde_json::from_str(&line).unwrap();
-                    if event["event"] == name {
-                        return event["data"].clone();
-                    }
-                }
-                Outgoing::Flushed(_) => {}
-            }
-        }
+        crate::hub::next_named(&self.ui, name, WAIT)
     }
 
     /// No event called `name` is waiting.
@@ -94,12 +80,6 @@ impl Fixture {
             let event: Value = serde_json::from_str(&line).unwrap();
             assert_ne!(event["event"], name, "{event}");
         }
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 
@@ -422,11 +402,7 @@ fn the_list_and_settings_survive_a_restart() {
     server.set_do_not_disturb(true);
     server.stop();
     // Let go of the name before the next one claims it.
-    let deadline = Instant::now() + WAIT;
-    while lock(&server.shared.connection).is_some() {
-        assert!(Instant::now() < deadline, "the server stops");
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    wait_until(WAIT, "the server to stop", || lock(&server.shared.connection).is_none());
     drop(server);
     while fixture.ui.try_recv().is_ok() {}
 
@@ -477,11 +453,7 @@ fn quick_updates_are_saved_at_most_once_a_second_ending_with_the_last() {
     let file = fixture.dir.join("notifications.json");
     let saved = |summary: &str| std::fs::read_to_string(&file).is_ok_and(|text| text.contains(summary));
     let id = app.simple("Firefox", "step 0");
-    let deadline = Instant::now() + WAIT;
-    while !saved("step 0") {
-        assert!(Instant::now() < deadline, "the first change is saved at once");
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    wait_until(WAIT, "the first change to be saved at once", || saved("step 0"));
     // A download's progress, every 50 ms for 1.5 s; every write seen.
     let mut writes = HashSet::new();
     let updates = 30;
@@ -493,10 +465,6 @@ fn quick_updates_are_saved_at_most_once_a_second_ending_with_the_last() {
         std::thread::sleep(Duration::from_millis(50));
     }
     let last = format!("step {updates}");
-    let deadline = Instant::now() + 2 * SAVE_EVERY + WAIT;
-    while !saved(&last) {
-        assert!(Instant::now() < deadline, "the last change is saved");
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    wait_until(2 * SAVE_EVERY + WAIT, "the last change to be saved", || saved(&last));
     assert!(writes.len() <= 4, "{} writes for {updates} updates in 1.5 s", writes.len());
 }

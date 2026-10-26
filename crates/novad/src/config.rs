@@ -110,7 +110,7 @@ fn folder(section: &str, configured: Option<&str>, default: impl FnOnce() -> Pat
         return Ok(default());
     };
     let path = match folder.strip_prefix("~/") {
-        Some(rest) => PathBuf::from(std::env::var_os("HOME").ok_or("HOME isn't set, so ~ means nothing")?).join(rest),
+        Some(rest) => nova_paths::home().ok_or("HOME isn't set, so ~ means nothing")?.join(rest),
         None => PathBuf::from(folder),
     };
     match path.is_absolute() {

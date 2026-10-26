@@ -107,26 +107,6 @@ impl Process {
     }
 }
 
-/// A process's proportional memory (`Pss` in `smaps_rollup`), in bytes:
-/// its share of what it maps with others counted once, unlike resident
-/// memory, which counts shared libraries and GPU driver mappings in every
-/// process. Only readable for the user's own processes.
-pub fn read_pss(proc_root: &Path, pid: u32) -> Option<u64> {
-    pss(&std::fs::read_to_string(proc_root.join(pid.to_string()).join("smaps_rollup")).ok()?)
-}
-
-fn pss(smaps_rollup: &str) -> Option<u64> {
-    let kib: u64 = smaps_rollup
-        .lines()
-        .find_map(|line| line.strip_prefix("Pss:"))?
-        .trim()
-        .strip_suffix("kB")?
-        .trim()
-        .parse()
-        .ok()?;
-    Some(kib * 1024)
-}
-
 /// Every process readable now. Ones that exit while being read are left out.
 pub fn processes(proc_root: &Path) -> Vec<Process> {
     let Ok(entries) = std::fs::read_dir(proc_root) else { return Vec::new() };
@@ -203,7 +183,7 @@ mod tests {
 
     #[test]
     fn reads_this_machine() {
-        let proc_root = Path::new("/proc");
+        let proc_root = Path::new(crate::procfs::PROC);
         assert!(CpuTimes::read(proc_root).is_some_and(|times| times.total > 0));
         assert!(read_memory(proc_root).is_some_and(|(used, total)| used <= total && total > 0));
         let me = std::process::id();
@@ -212,13 +192,5 @@ mod tests {
         assert_eq!(mine.program, std::env::current_exe().ok());
         // SAFETY: getuid only reads the calling process's uid.
         assert_eq!(mine.uid, Some(unsafe { libc::getuid() }));
-    }
-
-    #[test]
-    fn pss_comes_from_smaps_rollup() {
-        let rollup = "55d0-7ffd ---p 00000000 00:00 0 [rollup]\nRss:              149788 kB\nPss:              113551 kB\nPss_Dirty:         60000 kB\n";
-        assert_eq!(pss(rollup), Some(113_551 * 1024));
-        assert_eq!(pss("Rss: 1 kB\n"), None);
-        assert!(read_pss(Path::new("/proc"), std::process::id()).is_some_and(|bytes| bytes > 0));
     }
 }

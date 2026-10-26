@@ -20,13 +20,9 @@ const MAX_ENTRY_BYTES: u64 = 1024 * 1024;
 
 /// The data folders, in the order they're searched.
 pub fn data_dirs() -> Vec<PathBuf> {
-    let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
-    let home = var("HOME").map(PathBuf::from);
     let mut dirs: Vec<PathBuf> = Vec::new();
-    dirs.extend(
-        var("XDG_DATA_HOME").map(PathBuf::from).or_else(|| home.as_ref().map(|home| home.join(".local/share"))),
-    );
-    let system = var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
+    dirs.extend(nova_paths::data_home());
+    let system = nova_paths::path_var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
     dirs.extend(std::env::split_paths(&system));
     // Where packages install, last so the session's own order wins.
     dirs.extend(crate::package_prefixes().into_iter().map(|prefix| prefix.join("share")));
@@ -216,11 +212,8 @@ mod tests {
     use crate::launcher::desktop_entry::Locale;
     use std::os::unix::fs::symlink;
 
-    fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("novad-scan-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp(name: &str) -> nova_test_support::TempDir {
+        nova_test_support::TempDir::new(&format!("scan-{name}"))
     }
 
     fn write_app(dir: &Path, relative: &str, name: &str, extra: &str) {
@@ -250,7 +243,6 @@ mod tests {
         assert_eq!(found.get("kde-dolphin.desktop").map(String::as_str), Some("Dolphin"));
         assert!(!found.contains_key("firefox.desktop"), "the user deleted it");
         assert_eq!(found.len(), 2);
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -265,7 +257,6 @@ mod tests {
         write_app(&share, "other.desktop", "Other", "");
         let found = names(std::slice::from_ref(&share));
         assert_eq!(found.keys().collect::<Vec<_>>(), ["md.obsidian.Obsidian.desktop", "other.desktop"]);
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -285,15 +276,13 @@ mod tests {
         assert!(points.counts(&run.join("current-system")), "a rebuild swaps this link");
         assert!(points.trees.contains(&std::fs::canonicalize(generation.join("sw/share/applications")).unwrap()));
         assert!(!points.counts(&run.join("unrelated.pid")));
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn a_missing_applications_folder_is_watched_for() {
         let root = temp("missing");
         let points = watch_points(&[root.join("share")]);
-        assert!(points.parents.contains(&root));
+        assert!(points.parents.contains(root.path()));
         assert!(points.counts(&root.join("share")));
-        std::fs::remove_dir_all(root).unwrap();
     }
 }

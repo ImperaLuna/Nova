@@ -4,6 +4,8 @@ import QtQuick
 import "../theme"
 import "../daemon/protocol.js" as Protocol
 import "capture.js" as Capture
+import "../text/files.js" as Files
+import "../text/duration.js" as Duration
 
 // The card a saved screenshot lands in: the shot, that it was copied, where
 // it went and its size, and Open, Folder and Delete. A recording's card has
@@ -74,7 +76,7 @@ Item {
                 Image {
                     visible: !card.video
                     anchors.fill: parent
-                    source: card.shot && !card.video ? Capture.fileUrl(card.shot.path) : ""
+                    source: card.shot && !card.video ? Files.fileUrl(card.shot.path) : ""
                     // Decoded at the card's size, not the shot's.
                     sourceSize.width: 2 * width
                     fillMode: Image.PreserveAspectFit
@@ -95,7 +97,7 @@ Item {
                     }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: card.video && card.shot ? Capture.clock(card.shot.duration_ms) : ""
+                        text: card.video && card.shot ? Duration.clock(card.shot.duration_ms) : ""
                         textFormat: Text.PlainText
                         color: Tokens.fg
                         font.family: Tokens.fontMono
@@ -134,7 +136,7 @@ Item {
                         if (!card.shot)
                             return "";
                         if (card.video)
-                            return `${Capture.folderLabel(card.shot.path)} · ${Capture.clock(card.shot.duration_ms)} · MP4`;
+                            return `${Capture.folderLabel(card.shot.path)} · ${Duration.clock(card.shot.duration_ms)} · MP4`;
                         return `${Capture.folderLabel(card.shot.path)} · ${Capture.size(card.shot.width, card.shot.height)} · PNG`;
                     }
                     textFormat: Text.PlainText

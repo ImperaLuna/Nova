@@ -57,7 +57,7 @@ pub struct Sources {
 impl Sources {
     pub fn system(path_var: &str) -> Self {
         Self {
-            proc_root: "/proc".into(),
+            proc_root: crate::procfs::PROC.into(),
             sys_root: "/sys".into(),
             nvml: nvidia::library_paths(),
             path_var: path_var.into(),
@@ -67,7 +67,9 @@ impl Sources {
 
 /// Where an NVIDIA GPU's use comes from, when the driver's sysfs doesn't say.
 enum NvidiaSource {
-    Nvml(nvidia::Library),
+    /// NVML loads from these paths (`nvidia::Library::open`), loaded only
+    /// while watched.
+    Nvml(Vec<PathBuf>),
     Smi(PathBuf),
 }
 
@@ -201,7 +203,7 @@ impl Sampler {
             .is_none()
             .then(|| {
                 nvidia::Library::open(&sources.nvml)
-                    .map(NvidiaSource::Nvml)
+                    .map(|_| NvidiaSource::Nvml(sources.nvml.clone()))
                     .or_else(|| nvidia_smi::find(&sources.path_var).map(NvidiaSource::Smi))
             })
             .flatten();
@@ -256,8 +258,9 @@ impl Sampler {
         self.look_cpu = CpuTimes::read(&self.sources.proc_root);
         self.process_ticks.since_last(&usage::processes(&self.sources.proc_root));
         self.nvidia = match &self.nvidia_source {
-            Some(NvidiaSource::Nvml(library)) => library
-                .start()
+            Some(NvidiaSource::Nvml(paths)) => nvidia::Library::open(paths)
+                .ok_or_else(|| "it didn't load again".to_string())
+                .and_then(nvidia::Library::start)
                 .map(NvidiaReader::Nvml)
                 .map_err(|e| self.logger.warn(LOG_SOURCE, &format!("couldn't start NVML: {e}")))
                 .ok(),
@@ -307,7 +310,7 @@ impl Sampler {
         let used = self.process_ticks.since_last(&processes);
         let proc_root = &self.sources.proc_root;
         apps::top(&processes, &used, total_ticks, page_size(), Me::current(), TOP_APPS, |pid| {
-            usage::read_pss(proc_root, pid)
+            crate::procfs::pss_kib(proc_root, pid).map(|kib| kib * 1024)
         })
     }
 }
@@ -324,7 +327,7 @@ mod tests {
     use nova_protocol::LogLevel;
 
     fn logger(name: &str) -> Arc<Logger> {
-        let dir = std::env::temp_dir().join(format!("novad-resources-{name}-{}", std::process::id()));
+        let dir = nova_test_support::TempDir::new(&format!("resources-{name}"));
         Arc::new(Logger::open(&dir, LogLevel::Debug, false, Arc::new(Hub::default())).unwrap())
     }
 
