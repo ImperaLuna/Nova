@@ -920,6 +920,12 @@ pub enum Command {
         id: String,
         hidden: bool,
     },
+    /// The tray item at `address` (as [`TrayItem::address`]) was clicked
+    /// (feature `tray`): it's asked to show its window, which then takes
+    /// focus.
+    ActivateTrayItem {
+        address: String,
+    },
     /// The notification `id` was clicked, or its button `action` (feature
     /// `notifications`): the app hears of it, and it leaves the list unless
     /// the app keeps it.
@@ -1477,6 +1483,10 @@ mod tests {
             }),
             encode(Request { id: Some(26), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
             encode(Request { id: Some(27), command: Command::HideTrayApp { id: "steam".into(), hidden: true } }),
+            encode(Request {
+                id: Some(28),
+                command: Command::ActivateTrayItem { address: ":1.42/StatusNotifierItem".into() },
+            }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
             encode(Event::Tray(tray())),
             encode(Event::Notifications(notifications())),

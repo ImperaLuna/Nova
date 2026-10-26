@@ -53,6 +53,8 @@ function entries(items, tray) {
         var key = app ? app.id : item.id;
         result.push({
             item: item,
+            // novad's address for it, "" when novad doesn't list it.
+            address: match ? match.address : "",
             key: key,
             name: (app && app.name) || item.title || item.tooltipTitle || item.id,
             icon: item.icon || "",
