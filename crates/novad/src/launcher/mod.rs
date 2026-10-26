@@ -6,6 +6,7 @@
 pub mod autostart;
 mod desktop_entry;
 mod launch;
+mod program;
 mod rank;
 mod scan;
 
@@ -16,7 +17,8 @@ use crate::{lock, state_file};
 pub use desktop_entry::find_program;
 use desktop_entry::{Context, Entry, Locale};
 pub use launch::{Runner, open};
-use nova_protocol::{App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};
+use nova_protocol::{APP_ICON_MAX_NAME_CHARS, APP_ICON_MAX_NAMES, App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};
+pub use program::program_name;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -235,13 +237,35 @@ impl Launcher {
     /// the likeliest first), like a tray icon's process names: the first id
     /// that any app matches decides. Of the apps it matches, one it names
     /// (window class or desktop id) beats one that only runs that program:
-    /// `steam` is Steam, not a game shortcut whose Exec is `steam`.
+    /// `steam` is Steam, not a game shortcut whose Exec is `steam`. Only
+    /// when no id matches any app exactly do loose matches count
+    /// (`Entry::loosely_matches`: `zen` for `zen-beta.desktop`).
     pub fn find_app(&self, ids: &[String]) -> Option<App> {
         let state = lock(&self.state);
-        ids.iter().find_map(|id| {
+        let exact = ids.iter().find_map(|id| {
             let matching: Vec<&Entry> = state.apps.values().filter(|entry| entry.window_ids().contains(id)).collect();
             matching.iter().find(|entry| entry.is_named(id)).or(matching.first()).map(|entry| app(entry))
-        })
+        });
+        exact.or_else(|| ids.iter().find_map(|id| state.apps.values().find(|entry| entry.loosely_matches(id)).map(app)))
+    }
+
+    /// The icon for an app known by `names` (the likeliest first), like an
+    /// app stream's icon name, program file and name: the installed app's
+    /// (`find_app`, each name as `program_name` reads it), else the first
+    /// name, which the icon theme may have. None when no name is left.
+    /// Without the launcher (`launcher` None, the feature off), always the
+    /// first name.
+    pub fn app_icon(launcher: Option<&Self>, names: &[String]) -> Result<Option<String>, String> {
+        if names.len() > APP_ICON_MAX_NAMES {
+            return Err(format!("at most {APP_ICON_MAX_NAMES} names"));
+        }
+        if names.iter().any(|name| name.chars().count() > APP_ICON_MAX_NAME_CHARS) {
+            return Err(format!("names are at most {APP_ICON_MAX_NAME_CHARS} characters"));
+        }
+        let names: Vec<String> = names.iter().filter_map(|name| program_name(name)).collect();
+        let ids: Vec<String> = names.iter().map(|name| name.to_lowercase()).collect();
+        let found = launcher.and_then(|launcher| launcher.find_app(&ids)).and_then(|app| app.icon);
+        Ok(found.or_else(|| names.into_iter().next()))
     }
 
     /// Pins the app `id` at the end, or unpins it.

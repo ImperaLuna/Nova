@@ -512,6 +512,11 @@ pub struct App {
 /// capped, and nobody types more.
 pub const SEARCH_APPS_MAX_CHARS: usize = 200;
 
+/// The most names an `app_icon` request may give, and the longest each may
+/// be, in characters.
+pub const APP_ICON_MAX_NAMES: usize = 8;
+pub const APP_ICON_MAX_NAME_CHARS: usize = 512;
+
 /// An app that matches a launcher search, best first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppMatch {
@@ -878,6 +883,15 @@ pub enum Command {
     /// (feature `launcher`). An empty query matches nothing.
     SearchApps {
         query: String,
+    },
+    /// Replies with an icon (a theme name or an absolute path) for the app
+    /// known by `names`, the likeliest first: like an app stream's icon
+    /// name, program file and name. It's the installed app's icon when one
+    /// matches (feature `launcher`, matched like a tray icon's app, Nix's
+    /// `.<name>-wrapped` programs by their name), else the first name, or
+    /// null when none is left.
+    AppIcon {
+        names: Vec<String>,
     },
     /// Opens an app by its id (feature `launcher`) on `output` (the focused
     /// output when unset) and counts it towards the recent ones. When it
@@ -1441,6 +1455,13 @@ mod tests {
                     .unwrap(),
                 ),
             }),
+            encode(Request {
+                id: Some(44),
+                command: Command::AppIcon {
+                    names: vec!["".into(), "/nix/store/x-zen/lib/zen/.zen-wrapped".into(), "Zen".into()],
+                },
+            }),
+            encode(Response { id: 44, outcome: Outcome::Result(json!("zen-browser")) }),
             encode(Request {
                 id: Some(25),
                 command: Command::LaunchApp {

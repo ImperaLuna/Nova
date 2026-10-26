@@ -17,6 +17,7 @@
 //! what apps send it, since anything on the session bus can register.
 
 mod app;
+pub use app::BRIDGE;
 #[cfg(test)]
 pub mod tests;
 

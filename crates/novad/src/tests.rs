@@ -1703,6 +1703,31 @@ fn launcher_searches_rank_apps_and_refuse_long_queries() {
 }
 
 #[test]
+fn app_streams_get_their_apps_icons_by_program_and_name() {
+    let novad = TestDaemon::with_launcher("app-icon");
+    install_app(&novad, "zen-beta.desktop", "Name=Zen Browser\nExec=zen-beta\nIcon=zen-browser\n");
+    install_app(&novad, "com.anthropic.Claude.desktop", "Name=Claude\nExec=claude-desktop\nIcon=claude\n");
+    install_app(&novad, "firefox.desktop", "Name=Firefox\nExec=firefox\nIcon=firefox-icon\n");
+    let mut client = novad.connect();
+    client.subscribe_launcher(3);
+    let icon = |client: &mut Client, id, names: &[&str]| client.request(id, "app_icon", Some(json!({"names": names})));
+
+    // Found loosely: Zen plays as `.zen-wrapped`, its entry is zen-beta.
+    assert_eq!(icon(&mut client, 2, &["", "/nix/store/x-zen/lib/zen/.zen-wrapped", "Zen"])["result"], "zen-browser");
+    // By the icon name the stream gives; Electron says nothing.
+    assert_eq!(
+        icon(&mut client, 3, &["com.anthropic.Claude", "/usr/lib/electron/electron", "Claude"])["result"],
+        "claude"
+    );
+    assert_eq!(icon(&mut client, 4, &["", "/usr/bin/firefox", "Firefox"])["result"], "firefox-icon");
+    // No app: the first name, for the icon theme.
+    assert_eq!(icon(&mut client, 5, &["", "/usr/bin/mpv", "mpv"])["result"], "mpv");
+    assert_eq!(icon(&mut client, 6, &[])["result"], json!(null));
+    let many = icon(&mut client, 7, &["a"; 9]);
+    assert!(many["error"].as_str().unwrap().contains("at most 8"));
+}
+
+#[test]
 fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     let novad = TestDaemon::with_launcher("launcher-launch");
     let marker = novad.dir.join("launched");

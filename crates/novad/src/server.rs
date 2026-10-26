@@ -217,6 +217,13 @@ impl<'a> Connection<'a> {
                     None => Outcome::Error(format!("the {} feature is off", crate::launcher::FEATURE_ID)),
                 };
             }
+            Command::AppIcon { names } => {
+                let launcher = lock(&self.daemon.settings).launcher.clone();
+                return match crate::launcher::Launcher::app_icon(launcher.as_deref(), names) {
+                    Ok(icon) => Outcome::Result(icon.map_or(serde_json::Value::Null, serde_json::Value::String)),
+                    Err(e) => Outcome::Error(e),
+                };
+            }
             // Answered on its own thread (`slow_work`).
             Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window)(),
             Command::PinApp { id, pinned } => return self.with_launcher(|launcher| launcher.pin(id, *pinned)),
@@ -681,6 +688,7 @@ impl<'a> Connection<'a> {
             | Command::WatchResources { .. }
             | Command::EndApp { .. }
             | Command::SearchApps { .. }
+            | Command::AppIcon { .. }
             | Command::LaunchApp { .. }
             | Command::PinApp { .. }
             | Command::HideTrayApp { .. }

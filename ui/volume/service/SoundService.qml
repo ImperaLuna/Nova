@@ -3,7 +3,9 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Services.Pipewire
+import "../../daemon"
 import "../volume.js" as Volume
+import "../../daemon/protocol.js" as Protocol
 import "../../quick_settings/quick_settings.js" as QuickSettings
 
 // Everything quick settings shows about sound beyond the default output
@@ -53,33 +55,53 @@ Singleton {
             volume: node.ready && node.audio.volumes.length > 0 ? node.audio.volume : 0,
             muted: node.ready && node.audio.muted,
             ready: node.ready && node.audio.volumes.length > 0,
-            icon: appIcon(props),
+            icon: appIcons[iconKey(props)] ?? "",
             current: current !== null && node.id === current.id
         };
     }
 
-    // The installed apps' desktop entries, as plain objects for
-    // quick_settings.js entryIcon. They load a moment after start, and the
-    // lists above follow.
-    // qmllint disable missing-property
-    readonly property var entries: DesktopEntries.applications.values.map(entry => ({
-                id: entry.id,
-                name: entry.name,
-                startupClass: entry.startupClass,
-                command: entry.command,
-                icon: entry.icon
-            }))
-    // qmllint enable missing-property
-
-    // An app stream's icon name: its desktop entry's, found by the icon name
-    // the stream gives (often the entry's id, like Claude's
+    // App streams' icons, by iconKey: novad's answer to app_icon, which
+    // matches the stream to an installed app like the tray does, by the
+    // icon name the stream gives (often the app's id, like Claude's
     // `com.anthropic.Claude`), its program or its name (browsers give no
-    // icon), else the stream's icon name or program, in case the icon theme
-    // has it.
-    function appIcon(props: var): string {
-        const given = props["application.icon-name"] ?? "";
-        const program = QuickSettings.programName(props["application.process.binary"] ?? "");
-        return QuickSettings.entryIcon(entries, [given, program, props["application.name"] ?? ""]) || given || program;
+    // icon). Asked once per app while the lists are wanted, and again when
+    // the installed apps change.
+    property var appIcons: ({})
+    function iconNames(props: var): list<string> {
+        return [props["application.icon-name"] ?? "", props["application.process.binary"] ?? "", props["application.name"] ?? ""];
+    }
+    function iconKey(props: var): string {
+        return iconNames(props).join("\n");
+    }
+    function askForIcons() {
+        if (!listing)
+            return;
+        for (const node of appNodes) {
+            const props = node.properties ?? {};
+            const key = iconKey(props);
+            if (key in appIcons)
+                continue;
+            // Asked once: the answer replaces this.
+            appIcons[key] = "";
+            Daemon.call(Protocol.CMD_APP_ICON, {
+                names: iconNames(props)
+            }, (error, icon) => {
+                if (error)
+                    console.warn(`nova: app icon: ${error}`);
+                appIcons = Object.assign({}, appIcons, {
+                    [key]: icon ?? ""
+                });
+            });
+        }
+    }
+    onAppNodesChanged: askForIcons()
+    onListingChanged: askForIcons()
+    Connections {
+        target: Daemon
+        function onLauncherChanged() {
+            root.appIcons = ({});
+            root.askForIcons();
+        }
     }
 
     function node(id: int): PwNode {
