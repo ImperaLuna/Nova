@@ -70,7 +70,9 @@ jobs:
               continue
             fi
             # The table to the summary, warnings to the log as annotations.
-            bash e2e/vm/pss-compare.sh "$compositor" "$main/pss.txt" "$pr/pss.txt" 2>&1 >>"$GITHUB_STEP_SUMMARY"
+            # The runner has no awk of its own.
+            nix shell --inputs-from . nixpkgs#gawk -c \
+              bash e2e/vm/pss-compare.sh "$compositor" "$main/pss.txt" "$pr/pss.txt" 2>&1 >>"$GITHUB_STEP_SUMMARY"
           done
       - if: always()
         uses: actions/upload-artifact@v7
