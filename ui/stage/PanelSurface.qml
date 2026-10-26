@@ -88,7 +88,7 @@ PanelWindow { // qmllint disable uncreatable-type
         if (parked)
             return;
         parked = true;
-        drawing.settling = true;
+        drawing.settle();
     }
     readonly property bool hasShown: drawn.shown.length > 0
     onHasShownChanged: {
@@ -163,7 +163,7 @@ PanelWindow { // qmllint disable uncreatable-type
     }
     Component.onCompleted: {
         adopt();
-        drawing.settling = true;
+        drawing.settle();
     }
 
     // Placed over the whole screen, like the content.

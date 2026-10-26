@@ -4,6 +4,7 @@ ClickCatcher 1.0 ClickCatcher.qml
 DismissArea 1.0 DismissArea.qml
 ExclusionZone 1.0 ExclusionZone.qml
 FrameLog 1.0 FrameLog.qml
+FrameOut 1.0 FrameOut.qml
 Morph 1.0 Morph.qml
 MorphReveal 1.0 MorphReveal.qml
 PanelSurface 1.0 PanelSurface.qml
