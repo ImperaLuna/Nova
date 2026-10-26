@@ -2,7 +2,7 @@ import QtQuick
 import "../theme"
 
 // Animates a 0..1 value of something inside a morphing panel, usually its
-// opacity: `MorphReveal on opacity { delay: 0.4 }` with
+// opacity: `MorphReveal on opacity { delay: Tokens.revealContent }` with
 // `opacity: morph.open ? 1 : 0`. Going to 1, it waits `delay` (a share of
 // the panel's morph) and then runs for `duration`, so content appears once
 // there's room for it. Going to 0, it follows the morph back, all at once.

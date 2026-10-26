@@ -4,7 +4,8 @@
 // slow swell longer than the capsule is wide, plus the capsule's first
 // sloshing mode when stirred, so it stays a smooth curve and never ripples.
 // Every color and size comes in as a uniform from Tokens.qml; the numbers
-// below are only the shape of the waves and the light inside the liquid.
+// below are only math: the waves' shape, the shading across the liquid's
+// depth and width, and the specks' random paths.
 layout(location = 0) in vec2 qt_TexCoord0;
 layout(location = 0) out vec4 fragColor;
 
@@ -22,10 +23,19 @@ layout(std140, binding = 0) uniform buf {
     float amp;        // sloshing wave amplitude, px
     float tilt;       // surface tilt, px per px
     float meniscus;   // how far the surface creeps up the walls, px
+    float meniscusReach; // how far from the walls it fades out, px
     float fizz;       // 0..1: how many specks rise
     float specks;     // most specks at once
+    float speckRadius; // smallest speck, px
+    float speckRadiusRange; // how much bigger one can be, px
+    float speckGlow;  // a speck's brightness, 0..1
+    float speckGlowMax; // the brightest specks get together, 0..1
     float glow;       // light just under the surface, 0..1
+    float glowDepth;  // how deep the glow reaches, px
     float streak;     // light down the left side, 0..1
+    float streakFade; // how far down the streak grows in, px
+    float streakAt;   // where it runs across the liquid, 0..1
+    float streakWidth; // how wide it is, share of the liquid's width
     float rimOn;      // 1: lit rim, 0: none (the dashed outline replaces it)
     float rimWidth;   // px
     float rimShade;   // the rim's brightness on its unlit side, 0..1
@@ -37,6 +47,7 @@ layout(std140, binding = 0) uniform buf {
     vec4 rimLit;
     vec4 liquidColor;
     vec4 shadow;
+    vec4 light;       // the glow, the streak and the specks
 };
 
 float sdBox(vec2 p, vec2 c, vec2 he, float r) {
@@ -88,7 +99,7 @@ void main() {
         + swell * (sin(6.2832 * 0.55 * u + time * 1.3) + 0.45 * sin(6.2832 * 0.3 * u - time * 0.9 + 1.7))
         + amp * cos(3.1416 * u) * sin(time * 6.5)
         + tilt * (p.x - c.x);
-    surf -= meniscus * exp(-max(-dIn, 0.0) / 5.0);
+    surf -= meniscus * exp(-max(-dIn, 0.0) / meniscusReach);
     float aas = max(fwidth(p.y - surf), 1e-3) * 1.5;
     float inCapsule = clamp(0.5 - dIn / aa, 0.0, 1.0);
     // An empty capsule shows no sliver of liquid at the bottom.
@@ -101,9 +112,9 @@ void main() {
     float depth = clamp(below / max(span, 1.0), 0.0, 1.0);
     vec3 lq = liquidColor.rgb * mix(1.08, 0.78, smoothstep(0.0, 1.0, depth));
     lq *= mix(1.0, 0.86, smoothstep(0.0, 0.5, abs(u - 0.5)));
-    lq = mix(lq, vec3(1.0), glow * exp(-below / 6.0));
-    float side = (u - 0.18) / 0.07;
-    lq = mix(lq, vec3(1.0), streak * exp(-side * side) * smoothstep(0.0, 18.0, below));
+    lq = mix(lq, light.rgb, glow * exp(-below / glowDepth));
+    float side = (u - streakAt) / streakWidth;
+    lq = mix(lq, light.rgb, streak * exp(-side * side) * smoothstep(0.0, streakFade, below));
     col = over(pm(vec4(min(lq, vec3(1.0)), liquidColor.a), wet), col);
 
     // Specks: soft glowing motes rising from the bottom to the surface,
@@ -130,13 +141,13 @@ void main() {
             + (1.0 + 2.5 * wobble) * sin(ph * (6.0 + 10.0 * wobble) + 6.2832 * size)
             + tilt * (bottom - y) * 0.5;
         vec2 at = vec2(clamp(x, left + 2.0, left + inner - 2.0), y);
-        float r = 0.8 + 1.5 * size;
+        float r = speckRadius + speckRadiusRange * size;
         float dm = length(p - at);
         float twinkle = 0.55 + 0.45 * sin(time * (1.5 + 2.0 * lane) + fi * 2.3);
         motes += exp(-dm * dm / (r * r)) * twinkle * smoothstep(0.0, 0.08, ph) * on;
     }
     motes *= clamp(below / 4.0, 0.0, 1.0);
-    col = over(vec4(1.0) * clamp(motes * 0.7, 0.0, 0.85) * wet, col);
+    col = over(pm(light, clamp(motes * speckGlow, 0.0, speckGlowMax) * wet), col);
 
     fragColor = over(col * inside, under) * qt_Opacity;
 }

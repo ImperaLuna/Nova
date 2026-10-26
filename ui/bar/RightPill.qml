@@ -196,7 +196,7 @@ StagePanel {
             font.pixelSize: Tokens.fontSizeMicro
             opacity: pill.open ? 1 : 0
             MorphReveal on opacity {
-                delay: 0.8
+                delay: Tokens.revealPillCount
             }
 
             TextMetrics {

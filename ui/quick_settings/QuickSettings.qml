@@ -52,7 +52,7 @@ StagePanel {
     property real fill: open ? 1 : 0
     MorphReveal on fill {
         id: fillReveal
-        delay: 0.6
+        delay: Tokens.revealFill
         duration: Tokens.durationFill
         eased: true
     }

@@ -105,10 +105,11 @@ function spring(x, v, target, stiffness, damping, dt) {
 // right edge, `open` (0 in, 1 out, overshooting) and moving at `speed`
 // (open per second): {x, y, w, h, radius}. It grows from half its height
 // as it comes out, and stretches thinner and taller while it moves fast.
-// `size` holds the tokens: width, height, gap, stretch, overshoot.
+// `size` holds the tokens: width, height, gap, stretch, stretchSpeed,
+// overshoot.
 function box(open, speed, width, height, size) {
     var out = Math.max(0, open);
-    var stretch = 1 + size.stretch * Math.min(1, Math.abs(speed) / 6);
+    var stretch = 1 + size.stretch * Math.min(1, Math.abs(speed) / size.stretchSpeed);
     var h = size.height * (0.5 + 0.5 * Math.min(out, 1 + size.overshoot)) * stretch;
     var w = size.width / stretch;
     return {

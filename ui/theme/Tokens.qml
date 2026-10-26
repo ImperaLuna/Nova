@@ -113,7 +113,6 @@ QtObject {
     readonly property int radiusCard: 16
     readonly property int radiusControl: 12
     readonly property int radiusRow: 14
-    readonly property int radiusPill: 999
 
     // Spacing
     readonly property int gap: 8
@@ -216,8 +215,10 @@ QtObject {
     // They fade in over this last share of its way out.
     readonly property real capsuleLabelFadeIn: 0.4
     // While it slides it stretches (thinner and taller) by up to this share,
-    // and it overshoots its full height by up to this share as it lands.
+    // all of it from this speed on (its way out per second), and it
+    // overshoots its full height by up to this share as it lands.
     readonly property real capsuleStretch: 0.10
+    readonly property real capsuleStretchSpeed: 6
     readonly property real capsuleOvershoot: 0.08
     // How long it stays out after the last change, and how much one scroll
     // notch or volume key changes the volume (1 = 100%).
@@ -235,6 +236,8 @@ QtObject {
     readonly property real liquidSloshMax: 6
     readonly property real liquidIdleWave: 1.2
     readonly property real liquidMeniscus: 1.6
+    // How far from the glass the meniscus fades out (px).
+    readonly property real liquidMeniscusReach: 5
     // How fast stirred waves settle (s), and how strongly the level's speed
     // stirs them.
     readonly property real liquidSloshDecay: 0.45
@@ -243,11 +246,25 @@ QtObject {
     // rising while it's calm.
     readonly property int liquidSpecks: 14
     readonly property real liquidFizz: 0.3
+    // A speck's radius (px): the smallest, and how much bigger one can be;
+    // how bright they glow, and the brightest a cluster gets (0..1).
+    readonly property real liquidSpeckRadius: 0.8
+    readonly property real liquidSpeckRadiusRange: 1.5
+    readonly property real liquidSpeckGlow: 0.7
+    readonly property real liquidSpeckGlowMax: 0.85
     // How much quicker they rise at full fizz (2: three times as fast).
     readonly property real liquidFizzPace: 2
     // Light inside it: just under the surface, and down the left side.
     readonly property real liquidGlow: 0.28
     readonly property real liquidStreak: 0.16
+    // How deep the light under the surface reaches, and how far down the
+    // streak takes to grow in (px); where the streak runs across the
+    // liquid and how wide it is (shares of its width); the light's color.
+    readonly property real liquidGlowDepth: 6
+    readonly property real liquidStreakFade: 18
+    readonly property real liquidStreakAt: 0.18
+    readonly property real liquidStreakWidth: 0.07
+    readonly property color liquidLight: "white"
     // Springs (stiffness, damping ratio): the capsule sliding, the level
     // following the volume, and the surface swinging back after a tilt.
     readonly property real springCapsule: 170
@@ -332,7 +349,6 @@ QtObject {
     readonly property real sliderMutedOpacity: 0.3
     readonly property int sliderButtonWidth: 30
     readonly property int appIconRadius: 11
-    readonly property int appIconSize: 22
     readonly property real appMutedOpacity: 0.45
     // The mic slider while an app records: the second accent.
     readonly property real micFillOpacity: 0.34
@@ -529,6 +545,17 @@ QtObject {
     readonly property int durationFade: 140
     readonly property int durationFill: 600
     readonly property int durationColor: 200
+    // When MorphReveal starts something, as a share of the panel's morph:
+    // a panel's content, meters and rings filling, and the right pill's
+    // overflow count, which waits for the pill to settle.
+    readonly property real revealContent: 0.5
+    readonly property real revealFill: 0.6
+    readonly property real revealPillCount: 0.8
+    // The AI usage panel's parts fade in one after another: its title at
+    // this share of the morph, then the plan and first meter, the second
+    // meter and the footer, each this much later.
+    readonly property real usageRevealFirst: 0.4
+    readonly property real usageRevealStagger: 0.15
     // Something changing size as its content changes, like the launcher
     // as results come and go.
     readonly property int durationResize: 180
