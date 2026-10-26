@@ -57,6 +57,50 @@ with subtest("nova toggle power opens the power menu; Esc closes it and its L ke
     machine.succeed(f"{YDOTOOL} type {shlex.quote(PASSWORD)}")
     press_until_logged(ENTER, SESSION_UNLOCKED)
 
+# PROBE (IMP-177, not for merge): the launcher over a fullscreen window
+# that Esc never closed on Hyprland, many times over, with what each side
+# saw when it happens.
+if COMPOSITOR == "hyprland":
+    with subtest("PROBE: the launcher over a fullscreen foot takes Esc, many times"):
+        misses = []
+        for round_ in range(12):
+            before = ui_log_count(LAUNCHER_TYPING)
+            machine.succeed(as_user("nova toggle launcher"))
+            retry(lambda _last_try: ui_log_count(LAUNCHER_TYPING) > before, timeout=CLICK_EFFECT)
+            machine.succeed(f"{YDOTOOL} type {FOOT}")
+            press_until_logged(ENTER, LAUNCHER_CLOSED)
+            machine.wait_until_succeeds(as_user(NOVA_SEES_FOOT), timeout=WAIT)
+            machine.succeed(as_user(FULLSCREEN_WINDOW))
+            typing = ui_log_count(LAUNCHER_TYPING)
+            opened = ui_log_count(LAUNCHER_OPENED)
+            closed = ui_log_count(LAUNCHER_CLOSED)
+            machine.succeed(as_user("nova toggle launcher"))
+            retry(lambda _last_try: ui_log_count(LAUNCHER_OPENED) > opened, timeout=CLICK_EFFECT)
+            machine.sleep(1)
+            had_keyboard = ui_log_count(LAUNCHER_TYPING) > typing
+            machine.succeed(f"{YDOTOOL} key {ESC}")
+            machine.sleep(3)
+            if ui_log_count(LAUNCHER_CLOSED) > closed:
+                print(f"PROBE round {round_}: closed by Esc (keyboard logged: {had_keyboard})")
+            else:
+                print(f"PROBE round {round_}: MISSED, keyboard logged: {had_keyboard}")
+                misses.append(round_)
+                for command in (
+                    f"{LIST_LAYERS}",
+                    LIST_WINDOWS,
+                    "nova status --json",
+                    f"nova logs --no-follow --ui -n 60",
+                    "export HYPRLAND_INSTANCE_SIGNATURE=$(ls $XDG_RUNTIME_DIR/hypr | head -n1); "
+                    "grep -naE 'focus|Refusing|exclusive|LayerSurface|layer|fullscreen|activewindow' "
+                    "$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprland.log | tail -n 150",
+                ):
+                    print(f"$ {command}")
+                    print(machine.execute(as_user(command))[1])
+                click_until_logged(*POINTER_REST, LAUNCHER_CLOSED)
+            machine.succeed(as_user(CLOSE_WINDOW))
+            machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
+        print(f"PROBE: {len(misses)} of 12 rounds missed Esc: {misses}")
+
 with subtest("nova toggle launcher opens the launcher, empty; typing finds foot, Enter starts it in a scope of its own, Esc closes"):
     before = ui_log_count(LAUNCHER_TYPING)
     machine.succeed(as_user("nova toggle launcher"))

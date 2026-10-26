@@ -258,6 +258,11 @@ let
     exec-once = nova
     # A plain background and no cursor or random splash text, so screenshots
     # are the same every run.
+    # Its log, with times, for COMPOSITOR_LOG: off by default.
+    debug {
+      disable_logs = false
+      disable_time = false
+    }
     misc {
       disable_hyprland_logo = true
       disable_splash_rendering = true
