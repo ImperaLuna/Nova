@@ -40,6 +40,12 @@ Scope {
     // screen yet, or a pill just showed again: drawing stays on for it even
     // while another surface moves.
     readonly property bool settling: drawing.settling
+    // A panel that closes on a click outside is open on this screen.
+    readonly property bool catchesClicks: all.catchesClicks
+    // One is open on any screen: a click anywhere off the panels, on this
+    // screen too, closes it. The shell sets it from every screen's
+    // `catchesClicks`.
+    property bool catchesAnywhere: catchesClicks
 
     // Every panel on this screen, whatever surface it's drawn on.
     readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(quickSettings.item ? [quickSettings.item] : []), ...(launcher.item ? [launcher.item] : []), ...(demo.item?.panels ?? [])]
@@ -135,6 +141,14 @@ Scope {
         }
     }
 
+    // Esc, or a click off the panels, here or on another screen.
+    Connections {
+        target: OpenPanels
+        function onDismissed() {
+            all.dismiss();
+        }
+    }
+
     // `nova toggle <panel>`, which novad sends every screen. When novad
     // doesn't know which output is focused, the first screen takes it.
     Connections {
@@ -151,7 +165,7 @@ Scope {
         panels: root.placed("right")
         clickAnywhere: all.catchesClicks
         holding: root.settling
-        onDismissRequested: all.dismiss()
+        onDismissRequested: OpenPanels.dismissed()
     }
 
     PanelSurface {
@@ -161,7 +175,7 @@ Scope {
         panels: root.placed("center")
         clickAnywhere: all.catchesClicks
         holding: root.settling
-        onDismissRequested: all.dismiss()
+        onDismissRequested: OpenPanels.dismissed()
     }
 
     ExclusionZone {
@@ -189,7 +203,7 @@ Scope {
 
         // Rounded like what's drawn, so clicks at the corners reach the
         // windows below. While a panel that closes on a click outside is
-        // open, here or on another surface, the whole stage takes clicks
+        // open, on any surface or screen, the whole stage takes clicks
         // (and ClickCatcher the rest of the screen), and one outside the
         // panel closes it. Both regions follow the bar's pills as they
         // slide with their shelf; without that they kept taking clicks
@@ -198,22 +212,21 @@ Scope {
         StageRegions {
             id: regions
             window: stage
-            inputShapes: all.catchesClicks ? [outside] : drawn.shapes
+            inputShapes: root.catchesAnywhere ? [outside] : drawn.shapes
             glassShapes: drawn.glassShapes
             offset: bar.slideOffset
             // The PanelSurfaces stay mapped (parked) and can sit under the
             // stage, which moves to Overlay when a panel opens: they take
             // the clicks over themselves, as with ClickCatcher (IMP-148).
-            holes: all.catchesClicks ? root.panelBoxes : []
+            holes: root.catchesAnywhere ? root.panelBoxes : []
         }
 
         DismissArea {
             id: outside
-            width: root.output.width
-            height: root.output.height
-            enabled: all.catchesClicks
+            output: root.output
+            enabled: root.catchesAnywhere
             stagePanels: drawn
-            onDismissRequested: all.dismiss()
+            onDismissRequested: OpenPanels.dismissed()
         }
 
         Bar {
@@ -258,10 +271,10 @@ Scope {
 
     ClickCatcher {
         screen: root.screen
-        catching: all.catchesClicks
+        catching: root.catchesAnywhere
         surfaceLayer: root.surfaceLayer
         // Only while catching, so it doesn't redraw for every morph frame.
-        holes: all.catchesClicks ? [Qt.rect(0, 0, root.output.width, stage.implicitHeight), ...root.panelBoxes] : []
-        onClicked: all.dismiss()
+        holes: root.catchesAnywhere ? [Qt.rect(0, 0, root.output.width, stage.implicitHeight), ...root.panelBoxes] : []
+        onClicked: OpenPanels.dismissed()
     }
 }

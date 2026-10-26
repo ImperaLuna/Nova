@@ -144,6 +144,9 @@ let
         systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
       };
 
+      # A step only some compositors have, as a shell command, or null.
+      stepIfAny = name: if builtins.hasAttr name steps then "${ipcEnv} ${steps.${name}}" else null;
+
       # The test in two halves, each in a VM of its own, so they run side by
       # side: lifecycle.py and then session.py or frames.py.
       runPart =
@@ -162,6 +165,8 @@ let
             CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
             LIST_WINDOWS = ${builtins.toJSON "${ipcEnv} ${listWindows}"}
             LIST_LAYERS = ${builtins.toJSON "${ipcEnv} ${listLayers}"}
+            ADD_OUTPUT = ${builtins.toJSON (stepIfAny "add an output")}
+            REMOVE_OUTPUT = ${builtins.toJSON (stepIfAny "remove the added output")}
             COMPOSITOR_LOG = ${builtins.toJSON "export ${ipcEnv}; ${compositorLog}"}
             FRAMES_REPORT = ${builtins.toJSON "${pkgs.gawk}/bin/awk -f ${../../scripts/frames-report.awk}"}
           ''
@@ -391,6 +396,10 @@ in
       "focus the first output" = "hyprctl dispatch focusmonitor -1";
       "close the focused window" = "hyprctl dispatch killactive";
       "fullscreen the focused window" = "hyprctl dispatch fullscreen 0";
+      # A second screen, right of the first (niri can't add one), and the
+      # first focused again, where `nova toggle` opens a panel.
+      "add an output" = "hyprctl output create headless NOVA-2 && hyprctl dispatch focusmonitor l";
+      "remove the added output" = "hyprctl output remove NOVA-2";
     };
   };
 }

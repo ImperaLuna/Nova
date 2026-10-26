@@ -5,6 +5,7 @@
 #   - the UI starts without QML errors, and has none after a monitor goes
 #     away and comes back, which gets a bar again,
 #   - the UI connects to novad,
+#   - a click on another screen closes an open panel,
 #   - memory (Pss) is within the budget: NOVA_PSS_BUDGET_MB per monitor
 #     (default 250, so 500 MB for the default two monitors),
 # and saves a screenshot to e2e/out/screenshot.png.
@@ -95,6 +96,22 @@ export SWAYSOCK
 pids+=($!)
 wait_for 10 "novad socket" test -S "$XDG_RUNTIME_DIR/nova/novad.sock"
 sleep "$settle"
+
+# A click on another screen closes a panel open on one, wherever the
+# compositor sends it (IMP-178). `nova toggle` opens it on the first screen
+# here (novad doesn't follow sway's focus), so the click goes to the last.
+if ((monitors > 1)); then
+  opened() { (($(grep -c 'ui: qml: nova: quick settings opened' "$out/state/nova.log" || true) >= 1)); }
+  closed() { (($(grep -c 'ui: qml: nova: quick settings closed' "$out/state/nova.log" || true) >= 1)); }
+  "$nova" toggle quick-settings || fail "nova toggle quick-settings failed"
+  wait_for 10 "quick settings to open" opened
+  sleep 1
+  read -r x y < <(swaymsg -t get_outputs | jq -r --arg name "HEADLESS-$monitors" \
+    '.[] | select(.name == $name) | .rect | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"')
+  swaymsg -q "seat seat0 cursor set $x $y" && swaymsg -q "seat seat0 cursor press button1" &&
+    swaymsg -q "seat seat0 cursor release button1" || fail "couldn't click HEADLESS-$monitors"
+  wait_for 10 "a click on another screen to close quick settings" closed
+fi
 
 # A monitor going away and coming back, as at wake from suspend: the
 # surfaces on it go with it, without errors (IMP-92), and a new stage

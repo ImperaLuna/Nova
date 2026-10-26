@@ -166,13 +166,11 @@ PanelWindow { // qmllint disable uncreatable-type
         drawing.settle();
     }
 
-    // Placed over the whole screen, like the content.
+    // Over every screen (DismissArea).
     DismissArea {
         id: outside
-        x: -surface.box.x
-        y: -surface.box.y
-        width: surface.output.width
-        height: surface.output.height
+        output: surface.output
+        origin: Qt.point(surface.box.x, surface.box.y)
         enabled: surface.clickAnywhere
         stagePanels: surface.drawn
         onDismissRequested: surface.dismissRequested()
