@@ -119,8 +119,8 @@ TestCase {
         const listed = index => Protocol.barWorkspaces(desktop.outputs[index], desktop);
         const names = index => listed(index).map(workspace => workspace.name);
 
-        compare(names(0), [Protocol.SPECIAL_MARK, "web"], "hidden with windows: first, on every output");
-        compare(names(1), [Protocol.SPECIAL_MARK, "1"]);
+        compare(names(0), ["", "web"], "hidden with windows: first, on every output");
+        compare(names(1), ["", "1"]);
         verify(!listed(0)[0].active && !listed(0)[0].elsewhere);
         verify(listed(0)[1].active && listed(0)[1].focused);
 
@@ -139,7 +139,7 @@ TestCase {
         // Empty: kept while it shows somewhere, gone once hidden.
         for (const output of desktop.outputs)
             output.workspaces[0].empty = true;
-        compare(names(1), [Protocol.SPECIAL_MARK, "1"]);
+        compare(names(1), ["", "1"]);
         desktop.outputs[0].workspaces[0].active = false;
         compare(names(0), ["web"]);
         compare(names(1), ["1"]);

@@ -43,9 +43,11 @@ fn hyprland_reaches_subscribers_and_takes_workspace_actions() {
     let (mut client, desktop) = follow_to_the_end(&novad);
     assert_eq!(desktop["compositor"], "Hyprland");
 
-    let web = workspace_id(&desktop, "web");
-    assert_eq!(client.request(2, "focus_workspace", Some(json!({"id": web})))["result"], Value::Null);
-    assert_eq!(fake.actions(), [format!("dispatch workspace {web}")]);
+    let first = workspace_id(&desktop, "1");
+    assert_eq!(client.request(2, "focus_workspace", Some(json!({"id": first})))["result"], Value::Null);
+    let magic = workspace_id(&desktop, "magic");
+    assert_eq!(client.request(3, "focus_workspace", Some(json!({"id": magic})))["result"], Value::Null);
+    assert_eq!(fake.actions(), [format!("dispatch workspace {first}"), "dispatch togglespecialworkspace magic".into()]);
 }
 
 #[test]

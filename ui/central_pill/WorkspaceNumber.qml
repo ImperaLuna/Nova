@@ -1,7 +1,6 @@
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
-import "../daemon/protocol.js" as Protocol
 
 // One workspace in the central pill: its number (or name) in a round cell,
 // placed by its index so it glides when others come and go, and scaling in
@@ -30,6 +29,8 @@ Item {
 
     signal clicked
 
+    // A lone special workspace, unnamed, shows a tilde.
+    readonly property bool mark: special && name === ""
     // Whether the dot shows: a workspace you're on needs no reminder, and a
     // special one's windows wait there anyway.
     readonly property bool calling: urgent && !active && !special
@@ -77,7 +78,7 @@ Item {
 
     LineIcon {
         anchors.centerIn: parent
-        visible: number.special && number.name === Protocol.SPECIAL_MARK
+        visible: number.mark
         size: Tokens.iconSizeSmall
         path: Icons.TILDE
         color: number.ink
@@ -90,7 +91,7 @@ Item {
 
     Text {
         anchors.centerIn: parent
-        visible: !(number.special && number.name === Protocol.SPECIAL_MARK)
+        visible: !number.mark
         width: Tokens.workspaceSize - 2 * Tokens.ringInset
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight

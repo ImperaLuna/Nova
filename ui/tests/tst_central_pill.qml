@@ -197,7 +197,7 @@ Item {
 
         function special(active, elsewhere) {
             return Object.assign(workspace(-98, active), {
-                name: "~",
+                name: "",
                 special: true,
                 elsewhere: elsewhere ?? false
             });

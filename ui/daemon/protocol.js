@@ -181,15 +181,12 @@ function focusedWorkspace(desktop) {
     return null;
 }
 
-// What the bar shows for a special workspace when it's the only one; with
-// more, each shows its name's first letter.
-var SPECIAL_MARK = "~";
-
 // The workspaces the bar lists for an output (one of the `outputs` of
 // `desktop`, a compositor event's data): those with windows, and the one
 // shown there even when it's empty. Special workspaces come first, while
-// they have windows or show anywhere, named by SPECIAL_MARK or a letter
-// and `elsewhere` while they show on another output; one showing here is
+// they have windows or show anywhere, `elsewhere` while they show on
+// another output, and named by their first letter when there are several
+// (unnamed when there's one, for the bar's own mark); one showing here is
 // the only `active` entry, not the workspace under it.
 function barWorkspaces(output, desktop) {
     if (!output)
@@ -220,7 +217,7 @@ function barWorkspaces(output, desktop) {
         entry.special = workspace.special === true;
         entry.elsewhere = entry.special && !workspace.active && shownSomewhere[workspace.id] === true;
         if (entry.special)
-            entry.name = count === 1 ? SPECIAL_MARK : workspace.name.charAt(0).toUpperCase();
+            entry.name = count === 1 ? "" : workspace.name.charAt(0).toUpperCase();
         else if (covered)
             entry.active = entry.focused = false;
         return entry;
