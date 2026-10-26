@@ -17,6 +17,14 @@ TestCase {
         compare(Duration.minutes((3 * 24 + 2) * 60 + 5), "3d 2h");
     }
 
+    function test_uptime_reads_like_other_spans() {
+        compare(Duration.uptime(59), "up 0m");
+        compare(Duration.uptime(12 * 60), "up 12m");
+        compare(Duration.uptime((3 * 60 + 12) * 60), "up 3h 12m");
+        compare(Duration.uptime((50 * 60 + 5) * 60), "up 2d 2h");
+        compare(Duration.uptime(-5), "up 0m", "a clock that went back");
+    }
+
     function test_how_long_ago_reads_in_its_biggest_unit() {
         compare(Duration.ago(1000, 1030), "now");
         compare(Duration.ago(1000, 1000 + 5 * 60), "5m");

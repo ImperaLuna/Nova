@@ -25,6 +25,11 @@ function minutes(minutes) {
     return rest + "m";
 }
 
+// "up 3h 12m" for `seconds` since boot, whole minutes rounded down.
+function uptime(seconds) {
+    return qsTr("up %1").arg(minutes(Math.max(0, Math.floor(seconds / MINUTE_SECONDS))));
+}
+
 // How long ago `time` was at `now` (both seconds since the epoch), in its
 // biggest whole unit: "now", "5m", "2h", "3d".
 function ago(time, now) {

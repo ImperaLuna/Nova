@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Shapes
 import "../theme"
 import "../stage"
 import "../daemon/protocol.js" as Protocol
@@ -38,7 +37,6 @@ StagePanel {
     readonly property int logoSize: Tokens.iconSizeSmall
     readonly property int logoGap: Tokens.iconGap
     readonly property int indicatorSize: Tokens.iconSize
-    readonly property real indicatorRadius: indicatorSize / 2 - Tokens.ringInset
     readonly property int indicatorSpace: hasIndicator ? indicatorSize + logoGap : 0
     readonly property real pillWidth: Tokens.pad + logoSize + logoGap + indicatorSpace + heroClosedWidth + Tokens.pad
     // Panel layout, from the panel tokens.
@@ -74,7 +72,7 @@ StagePanel {
     readonly property real t: morph.t
     // The meters fill last as it opens and empty with the morph as it
     // closes, so their fill spans every content fade.
-    moving: morph.moving || fillReveal.running || heroColor.running || spinner.running
+    moving: morph.moving || fillReveal.running || heroColor.running || spinner.turning
     // The meters fill once the panel has grown, and empty as it closes.
     property real fill: root.open ? 1 : 0
     MorphReveal on fill {
@@ -182,54 +180,17 @@ StagePanel {
         }
 
         // Unavailable: a dashed ring. Loading: a spinning arc.
-        Shape {
-            id: indicator
+        Spinner {
+            id: spinner
             x: Tokens.pad + root.logoSize + root.logoGap
             y: (Tokens.barHeight - height) / 2
-            width: root.indicatorSize
-            height: root.indicatorSize
+            size: root.indicatorSize
             visible: root.hasIndicator
             opacity: 1 - root.t
-            preferredRendererType: Shape.CurveRenderer
-
-            ShapePath {
-                strokeColor: Tokens.track
-                strokeWidth: Tokens.strokeThin
-                fillColor: "transparent"
-                strokeStyle: root.summary.state === "unavailable" ? ShapePath.DashLine : ShapePath.SolidLine
-                dashPattern: Tokens.ringDashes
-                PathAngleArc {
-                    centerX: root.indicatorSize / 2
-                    centerY: root.indicatorSize / 2
-                    radiusX: root.indicatorRadius
-                    radiusY: root.indicatorRadius
-                    sweepAngle: 360
-                }
-            }
-
-            ShapePath {
-                strokeColor: Tokens.fgDim
-                strokeWidth: root.summary.state === "loading" ? Tokens.strokeThin : 0
-                fillColor: "transparent"
-                capStyle: ShapePath.RoundCap
-                PathAngleArc {
-                    centerX: root.indicatorSize / 2
-                    centerY: root.indicatorSize / 2
-                    radiusX: root.indicatorRadius
-                    radiusY: root.indicatorRadius
-                    sweepAngle: Tokens.spinnerSweep
-                }
-            }
-
-            RotationAnimator on rotation {
-                id: spinner
-                // Only while it can be seen: opening the panel fades it out.
-                running: root.summary.state === "loading" && indicator.visible && indicator.opacity > 0
-                from: 0
-                to: 360
-                duration: Tokens.durationSpin
-                loops: Animation.Infinite
-            }
+            color: Tokens.fgDim
+            track: Tokens.track
+            dashed: root.summary.state === "unavailable"
+            spinning: root.summary.state === "loading"
         }
 
         Text {

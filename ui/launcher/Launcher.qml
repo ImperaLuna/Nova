@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../stage"
 import "../theme"
+import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 import "launcher.js" as LauncherLogic
 
@@ -224,13 +225,12 @@ StagePanel {
                 radius: Tokens.radiusRow
                 color: Tokens.surfaceRaised
 
-                LauncherIcon {
+                LineIcon {
                     id: searchIcon
                     anchors.verticalCenter: parent.verticalCenter
                     x: Tokens.launcherPad
-                    width: Tokens.iconSizeMenu
-                    height: Tokens.iconSizeMenu
-                    name: "search"
+                    size: Tokens.iconSizeMenu
+                    path: Icons.SEARCH
                     color: Tokens.fgDim
                 }
 

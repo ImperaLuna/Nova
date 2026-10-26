@@ -2,7 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import "../theme"
-import "../launcher"
+import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 
 // The central pill: a search button that opens the launcher (while that
@@ -125,11 +125,10 @@ Item {
                 }
             }
 
-            LauncherIcon {
+            LineIcon {
                 anchors.centerIn: parent
-                width: Tokens.iconSizeSmall
-                height: Tokens.iconSizeSmall
-                name: "search"
+                size: Tokens.iconSizeSmall
+                path: Icons.SEARCH
                 color: searchMouse.containsMouse ? Tokens.fg : Tokens.fgDim
             }
 

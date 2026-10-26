@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import "../theme"
+import "../theme/icons.js" as Icons
 
 // One app in the launcher's list: its icon, its name (the letters a search
 // matched in the accent) and what it is, dimmer. Hovering shows a pin
@@ -105,12 +106,11 @@ Item {
                 }
             }
 
-            LauncherIcon {
+            LineIcon {
                 anchors.centerIn: parent
-                width: Tokens.iconSizeSmall
-                height: Tokens.iconSizeSmall
-                name: "pin"
-                filled: row.pinned
+                size: Tokens.iconSizeSmall
+                path: Icons.PIN
+                fill: row.pinned ? Icons.PIN : ""
                 color: row.pinned ? Tokens.primary : pinMouse.containsMouse ? Tokens.fg : Tokens.fgDim
             }
 
