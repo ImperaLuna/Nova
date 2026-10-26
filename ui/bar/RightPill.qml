@@ -57,13 +57,17 @@ StagePanel {
         id: morph
         open: pill.open
     }
-    moving: morph.moving || strip.moving || scrolling.running
+    moving: morph.moving || strip.moving || scrolling.running || countLeft.fading || countRight.fading
 
     // The strip's width open: up to trayVisible icons.
     readonly property int stripIcons: Math.min(trayApps.length, Tokens.trayVisible)
     readonly property real stripWidth: stripIcons > 0 ? stripIcons * Tokens.pillButtonSize + (stripIcons - 1) * Tokens.pillButtonGap : 0
-    readonly property real moreWidth: trayApps.length > Tokens.trayVisible ? more.width + Tokens.pillButtonGap : 0
-    readonly property real trayOpenWidth: stripWidth + moreWidth + Tokens.pillButtonGap
+    // With more than that, a "+N" on each side of the strip keeps its room.
+    readonly property bool hasMore: trayApps.length > Tokens.trayVisible
+    readonly property real moreWidth: hasMore ? countRight.width + Tokens.pillButtonGap : 0
+    readonly property real trayOpenWidth: stripWidth + 2 * moreWidth + Tokens.pillButtonGap
+    // Icons out of sight on each side ({left, right}), as the strip scrolls.
+    readonly property var outOfSight: Tray.outOfSight(trayApps.length, Tokens.trayVisible, strip.contentX / strip.step)
     // With a divider before the buttons, when there are any.
     readonly property real chevronWidth: hasTray ? Tokens.pillButtonSize + (hasButtons ? 2 * Tokens.pillButtonGap + Tokens.dividerWidth : 0) : 0
 
@@ -106,22 +110,26 @@ StagePanel {
             clip: true
             opacity: morph.t
 
-            // Icons scrolled out of sight on each side, for the fades and "+N".
+            // Icons scrolled out of sight on each side, for the fades.
             readonly property real step: Tokens.pillButtonSize + Tokens.pillButtonGap
             readonly property bool fadesLeft: contentX > 0
             readonly property bool fadesRight: contentX < contentWidth - width - 1
 
-            // The wheel scrolls the strip a whole icon at a time.
+            // The wheel scrolls the strip a whole icon at a time, counting
+            // from where a scroll still running is going, so quick turns
+            // add up.
             WheelHandler {
                 acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                 onWheel: event => {
                     const delta = event.angleDelta.y !== 0 ? event.angleDelta.y : event.angleDelta.x;
-                    const target = strip.contentX + (delta < 0 ? strip.step : -strip.step);
+                    const from = scrolling.running ? scroll.targetValue : strip.contentX;
+                    const target = from + (delta < 0 ? strip.step : -strip.step);
                     strip.contentX = Numbers.clamp(Math.round(target / strip.step) * strip.step, 0, strip.contentWidth - strip.width);
                 }
             }
 
             Behavior on contentX {
+                id: scroll
                 NumberAnimation {
                     id: scrolling
                     duration: Tokens.durationFast
@@ -181,30 +189,32 @@ StagePanel {
             }
         }
 
-        // How many icons are out of sight to the right.
-        Text {
-            id: more
-            objectName: "more"
-            readonly property int count: Tray.moreCount(pill.trayApps.length, Tokens.trayVisible, strip.contentX / strip.step)
-            visible: pill.trayApps.length > Tokens.trayVisible && morph.t > 0
-            x: chevron.x - Tokens.pillButtonGap - width
+        // How many icons are out of sight on each side of the strip: on the
+        // right at the start, on both sides in the middle, on the left at
+        // the end.
+        TrayCount {
+            id: countLeft
+            objectName: "countLeft"
+            hidden: pill.outOfSight.left
+            most: pill.trayApps.length - Tokens.trayVisible
+            visible: pill.hasMore && morph.t > 0
+            x: strip.x - Tokens.pillButtonGap - width
             anchors.verticalCenter: parent.verticalCenter
-            // Keeps its room when all are in sight, so the pill doesn't jump.
-            text: count > 0 ? `+${count}` : ""
-            width: widest.width
-            color: Tokens.fgDim
-            font.family: Tokens.fontMono
-            font.pixelSize: Tokens.fontSizeMicro
             opacity: pill.open ? 1 : 0
             MorphReveal on opacity {
                 delay: Tokens.revealPillCount
             }
+        }
 
-            TextMetrics {
-                id: widest
-                font: more.font
-                text: `+${pill.trayApps.length}`
-            }
+        TrayCount {
+            id: countRight
+            objectName: "countRight"
+            hidden: pill.outOfSight.right
+            most: countLeft.most
+            visible: countLeft.visible
+            x: chevron.x - Tokens.pillButtonGap - width
+            anchors.verticalCenter: parent.verticalCenter
+            opacity: countLeft.opacity
         }
 
         // The tray's chevron, pointing at where it opens; it turns as it does.

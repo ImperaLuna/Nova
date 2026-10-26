@@ -233,10 +233,31 @@ Item {
         }
 
         function test_more_counts_what_is_out_of_sight() {
-            compare(Tray.moreCount(8, 5, 0), 3);
-            compare(Tray.moreCount(8, 5, 2), 1);
-            compare(Tray.moreCount(8, 5, 3), 0);
-            compare(Tray.moreCount(3, 5, 0), 0);
+            compare(Tray.outOfSight(8, 5, 0), {
+                left: 0,
+                right: 3
+            });
+            compare(Tray.outOfSight(8, 5, 2), {
+                left: 2,
+                right: 1
+            });
+            compare(Tray.outOfSight(8, 5, 3), {
+                left: 3,
+                right: 0
+            });
+            // Mid-scroll it counts the nearest icon, and never past the ends.
+            compare(Tray.outOfSight(8, 5, 1.4), {
+                left: 1,
+                right: 2
+            });
+            compare(Tray.outOfSight(8, 5, 3.2), {
+                left: 3,
+                right: 0
+            });
+            compare(Tray.outOfSight(3, 5, 0), {
+                left: 0,
+                right: 0
+            });
         }
 
         function test_without_tray_apps_the_pill_is_as_before() {
@@ -263,12 +284,66 @@ Item {
             tryCompare(pill, "moving", false);
             const strip = findChild(pill, "strip");
             compare(strip.width, 5 * Tokens.pillButtonSize + 4 * Tokens.pillButtonGap, "five icons show");
-            compare(findChild(pill, "more").text, "+3");
             verify(pill.implicitWidth > closed + strip.width);
 
             mouseClick(chevron);
             verify(!pill.open);
             tryCompare(pill, "implicitWidth", closed);
+        }
+
+        function test_counts_show_on_the_side_icons_are_hidden() {
+            const apps = [];
+            for (let i = 0; i < 8; i++)
+                apps.push(stage.entry(`app${i}.desktop`, false));
+            const pill = createTemporaryObject(pillComponent, stage, {
+                trayApps: apps
+            });
+            pill.open = true;
+            tryCompare(pill, "moving", false);
+            const strip = findChild(pill, "strip");
+            const left = findChild(pill, "countLeft");
+            const right = findChild(pill, "countRight");
+            const width = pill.implicitWidth;
+            verify(left.x + left.width <= strip.x, "the left count sits before the strip");
+            verify(right.x >= strip.x + strip.width, "the right count sits after it");
+
+            // At the start: only the right count.
+            compare(left.hidden, 0);
+            compare(right.hidden, 3);
+            verify(left.visible && right.visible, "both keep their room");
+
+            // In the middle: both, and the pill keeps its width.
+            mouseWheel(strip, strip.width / 2, strip.height / 2, 0, -120);
+            tryCompare(pill, "moving", false);
+            compare(left.hidden, 1);
+            compare(right.hidden, 2);
+            compare(pill.implicitWidth, width);
+
+            // At the end: only the left count; the wheel stops there.
+            for (let i = 0; i < 4; i++)
+                mouseWheel(strip, strip.width / 2, strip.height / 2, 0, -120);
+            tryCompare(pill, "moving", false);
+            compare(left.hidden, 3);
+            compare(right.hidden, 0);
+            compare(pill.implicitWidth, width);
+
+            // And back to the start.
+            for (let i = 0; i < 3; i++)
+                mouseWheel(strip, strip.width / 2, strip.height / 2, 0, 120);
+            tryCompare(pill, "moving", false);
+            compare(left.hidden, 0);
+            compare(right.hidden, 3);
+        }
+
+        function test_a_tray_that_fits_has_no_counts() {
+            const pill = createTemporaryObject(pillComponent, stage, {
+                trayApps: [stage.entry("discord.desktop", false), stage.entry("steam.desktop", false)]
+            });
+            pill.open = true;
+            tryCompare(pill, "moving", false);
+            verify(!findChild(pill, "countLeft").visible);
+            verify(!findChild(pill, "countRight").visible);
+            compare(findChild(pill, "strip").width, 2 * Tokens.pillButtonSize + Tokens.pillButtonGap);
         }
 
         function test_clicks_on_icons_say_which_app_and_where() {

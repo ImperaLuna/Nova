@@ -86,10 +86,15 @@ function anyAttention(all) {
     });
 }
 
-// How many icons are out of sight to the right of a strip showing
-// `visible` of `total` icons, scrolled `scrolled` icon widths in.
-function moreCount(total, visible, scrolled) {
-    return Math.max(0, Math.round(total - visible - scrolled));
+// How many icons are out of sight on each side ({left, right}) of a strip
+// showing `visible` of `total` icons, scrolled `scrolled` icon widths in.
+function outOfSight(total, visible, scrolled) {
+    var most = Math.max(0, total - visible);
+    var left = Math.max(0, Math.min(most, Math.round(scrolled)));
+    return {
+        left: left,
+        right: most - left
+    };
 }
 
 // Whether a menu entry with `text` ends the app.
