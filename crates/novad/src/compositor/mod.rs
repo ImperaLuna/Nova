@@ -39,7 +39,8 @@ pub trait Backend: Send + Sync {
     /// fails.
     fn watch(&self, report: &mut dyn FnMut(Desktop)) -> Result<(), String>;
 
-    /// Shows `workspace`, one the last report listed.
+    /// Shows `workspace`, one the last report listed. A special one shows on
+    /// the focused output, or hides when it shows there already.
     fn focus_workspace(&self, workspace: &Workspace) -> Result<(), String>;
 
     /// Quits the compositor, ending the session, without its own prompt.
@@ -169,7 +170,8 @@ impl Compositor {
         if output.focused || !self.can(Capability::FocusWorkspace) {
             return Ok(());
         }
-        match output.workspaces.iter().find(|workspace| workspace.active) {
+        // Not a special workspace over it: showing that one again hides it.
+        match output.workspaces.iter().find(|workspace| workspace.active && !workspace.special) {
             Some(workspace) => self.backend.focus_workspace(workspace),
             None => Ok(()),
         }
@@ -205,20 +207,23 @@ impl Compositor {
 }
 
 /// The workspace after or before the active one on `output`; `None` at
-/// either end.
+/// either end. Special workspaces aren't steps.
 fn neighbour(desktop: &Desktop, output: &str, step: Step) -> Result<Option<Workspace>, String> {
-    let workspaces = &desktop
+    let workspaces: Vec<&Workspace> = desktop
         .outputs
         .iter()
         .find(|candidate| candidate.name == output)
         .ok_or_else(|| format!("{} has no output {output:?}", desktop.compositor))?
-        .workspaces;
+        .workspaces
+        .iter()
+        .filter(|workspace| !workspace.special)
+        .collect();
     let Some(active) = workspaces.iter().position(|workspace| workspace.active) else { return Ok(None) };
     let target = match step {
         Step::Next => active.checked_add(1),
         Step::Previous => active.checked_sub(1),
     };
-    Ok(target.and_then(|index| workspaces.get(index)).cloned())
+    Ok(target.and_then(|index| workspaces.get(index)).map(|workspace| (*workspace).clone()))
 }
 
 #[cfg(test)]

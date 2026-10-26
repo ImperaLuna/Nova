@@ -3,12 +3,15 @@ import QtQuick
 // The central pill's workspaces as a ListModel kept in step with novad's
 // list, so a Repeater over it adds, moves and drops one number at a time
 // instead of rebuilding them all on every compositor event (which would
-// restart their animations). Roles: workspaceId, name, active, urgent.
+// restart their animations). Roles: workspaceId, name, active, urgent,
+// special, elsewhere.
 ListModel {
     id: list
 
     // The index of the workspace shown on the output, or -1.
     property int activeIndex: -1
+    // How many special workspaces lead the list.
+    property int specialCount: 0
 
     // Brings the model in line with `workspaces` (Protocol.barWorkspaces),
     // keeping the entries whose workspace stays.
@@ -24,7 +27,9 @@ ListModel {
                 workspaceId: workspace.id,
                 name: workspace.name,
                 active: workspace.active,
-                urgent: workspace.urgent
+                urgent: workspace.urgent,
+                special: workspace.special === true,
+                elsewhere: workspace.elsewhere === true
             };
             let at = -1;
             for (let other = index; other < count; other++) {
@@ -42,5 +47,6 @@ ListModel {
                 active = index;
         });
         activeIndex = active;
+        specialCount = workspaces.filter(workspace => workspace.special).length;
     }
 }

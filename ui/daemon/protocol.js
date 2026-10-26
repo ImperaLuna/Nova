@@ -89,6 +89,7 @@ var CAPABILITY_FOCUSED_WINDOW = "focused_window";
 var CAPABILITY_KEYBOARD_LAYOUT = "keyboard_layout";
 var CAPABILITY_LOG_OUT = "log_out";
 var CAPABILITY_FULLSCREEN = "fullscreen";
+var CAPABILITY_SPECIAL_WORKSPACES = "special_workspaces";
 
 // step_workspace's directions (Step in nova-protocol).
 var STEP_NEXT = "next";
@@ -180,14 +181,49 @@ function focusedWorkspace(desktop) {
     return null;
 }
 
-// The workspaces the bar lists for an output (one of a compositor event's
-// `outputs`, or null): those with windows, and the one shown there even
-// when it's empty.
-function barWorkspaces(output) {
+// What the bar shows for a special workspace when it's the only one; with
+// more, each shows its name's first letter.
+var SPECIAL_MARK = "~";
+
+// The workspaces the bar lists for an output (one of the `outputs` of
+// `desktop`, a compositor event's data): those with windows, and the one
+// shown there even when it's empty. Special workspaces come first, while
+// they have windows or show anywhere, named by SPECIAL_MARK or a letter
+// and `elsewhere` while they show on another output; one showing here is
+// the only `active` entry, not the workspace under it.
+function barWorkspaces(output, desktop) {
     if (!output)
         return [];
-    return output.workspaces.filter(function (workspace) {
+    var specials = !!desktop && desktop.capabilities.indexOf(CAPABILITY_SPECIAL_WORKSPACES) >= 0;
+    var shownSomewhere = {};
+    if (specials) {
+        desktop.outputs.forEach(function (other) {
+            other.workspaces.forEach(function (workspace) {
+                if (workspace.special && workspace.active)
+                    shownSomewhere[workspace.id] = true;
+            });
+        });
+    }
+    var listed = output.workspaces.filter(function (workspace) {
+        if (workspace.special)
+            return specials && (!workspace.empty || shownSomewhere[workspace.id] === true);
         return !workspace.empty || workspace.active;
+    });
+    var count = listed.filter(function (workspace) {
+        return workspace.special;
+    }).length;
+    var covered = listed.some(function (workspace) {
+        return workspace.special && workspace.active;
+    });
+    return listed.map(function (workspace) {
+        var entry = Object.assign({}, workspace);
+        entry.special = workspace.special === true;
+        entry.elsewhere = entry.special && !workspace.active && shownSomewhere[workspace.id] === true;
+        if (entry.special)
+            entry.name = count === 1 ? SPECIAL_MARK : workspace.name.charAt(0).toUpperCase();
+        else if (covered)
+            entry.active = entry.focused = false;
+        return entry;
     });
 }
 

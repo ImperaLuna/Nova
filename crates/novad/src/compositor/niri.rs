@@ -405,6 +405,7 @@ impl State {
                             urgent: workspace.is_urgent,
                             empty: !occupied.contains(&workspace.id),
                             fullscreen: self.has_fullscreen(workspace),
+                            special: false,
                         })
                         .collect(),
                 }

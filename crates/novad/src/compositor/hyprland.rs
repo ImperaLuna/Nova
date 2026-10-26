@@ -30,13 +30,14 @@ const CAPABILITIES: &[Capability] = &[
     Capability::KeyboardLayout,
     Capability::LogOut,
     Capability::Fullscreen,
+    Capability::SpecialWorkspaces,
 ];
 const EVENTS_SOCKET: &str = ".socket2.sock";
 const REQUEST_SOCKET: &str = ".socket.sock";
 /// Between an event's name and its data.
 const EVENT_SEPARATOR: &str = ">>";
-/// Special (scratchpad) workspaces' names start with this. They aren't
-/// shown on the bar.
+/// Special (scratchpad) workspaces' names start with this; dispatchers
+/// take the rest.
 const SPECIAL_PREFIX: &str = "special:";
 /// JSON window addresses have it; event addresses don't.
 const ADDRESS_PREFIX: &str = "0x";
@@ -131,6 +132,9 @@ impl Backend for Hyprland {
     }
 
     fn focus_workspace(&self, workspace: &NovaWorkspace) -> Result<(), String> {
+        if workspace.special {
+            return self.dispatch(&format!("togglespecialworkspace {}", workspace.name));
+        }
         self.dispatch(&format!("workspace {}", workspace_target(workspace)))
     }
 
@@ -165,9 +169,12 @@ struct Monitor {
     focused: bool,
     #[serde(rename = "activeWorkspace")]
     active_workspace: WorkspaceRef,
+    /// The special workspace showing over it; id 0 when none.
+    #[serde(rename = "specialWorkspace", default)]
+    special_workspace: WorkspaceRef,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct WorkspaceRef {
     id: WorkspaceId,
 }
@@ -257,7 +264,7 @@ impl State {
         let Some((event, data)) = line.split_once(EVENT_SEPARATOR) else { return };
         match event {
             "workspacev2" | "focusedmonv2" | "createworkspacev2" | "destroyworkspacev2" | "moveworkspacev2"
-            | "renameworkspace" | "monitoraddedv2" | "monitorremovedv2" | "configreloaded" => {
+            | "renameworkspace" | "monitoraddedv2" | "monitorremovedv2" | "configreloaded" | "activespecialv2" => {
                 self.stale_workspaces = true;
             }
             "openwindow" | "movewindowv2" | "fullscreen" => self.stale_windows = true,
@@ -331,30 +338,49 @@ impl State {
             .monitors
             .iter()
             .map(|monitor| {
-                let mut workspaces: Vec<&Workspace> = self
+                // Special workspaces on every output, by name, as they show
+                // on whichever has focus; then this output's own: numbered
+                // ones in order, then named ones (negative ids).
+                let mut special: Vec<(&Workspace, &str)> = self
+                    .workspaces
+                    .iter()
+                    .filter_map(|workspace| Some((workspace, workspace.name.strip_prefix(SPECIAL_PREFIX)?)))
+                    .collect();
+                special.sort_by_key(|(_, name)| *name);
+                let mut own: Vec<&Workspace> = self
                     .workspaces
                     .iter()
                     .filter(|workspace| {
                         workspace.monitor == monitor.name && !workspace.name.starts_with(SPECIAL_PREFIX)
                     })
                     .collect();
-                // Numbered workspaces in order, then named ones (negative ids).
-                workspaces.sort_by_key(|workspace| (workspace.id < 0, workspace.id.unsigned_abs()));
+                own.sort_by_key(|workspace| (workspace.id < 0, workspace.id.unsigned_abs()));
+                let covered = special.iter().any(|(workspace, _)| workspace.id == monitor.special_workspace.id);
+                let listed = special
+                    .into_iter()
+                    .map(|(workspace, name)| (workspace, name, true))
+                    .chain(own.into_iter().map(|workspace| (workspace, workspace.name.as_str(), false)));
                 Output {
                     name: monitor.name.clone(),
                     focused: monitor.focused,
-                    workspaces: workspaces
-                        .into_iter()
-                        .map(|workspace| {
-                            let active = workspace.id == monitor.active_workspace.id;
+                    workspaces: listed
+                        .map(|(workspace, name, special)| {
+                            let active = if special {
+                                workspace.id == monitor.special_workspace.id
+                            } else {
+                                workspace.id == monitor.active_workspace.id
+                            };
                             NovaWorkspace {
                                 id: workspace.id,
-                                name: workspace.name.clone(),
+                                name: name.to_owned(),
                                 active,
-                                focused: active && monitor.focused,
+                                // The keyboard is on the special workspace
+                                // while it shows.
+                                focused: active && monitor.focused && (special || !covered),
                                 urgent: urgent_workspaces.contains(&workspace.id),
                                 empty: !occupied.contains(&workspace.id),
                                 fullscreen: fullscreen.contains(&workspace.id),
+                                special,
                             }
                         })
                         .collect(),

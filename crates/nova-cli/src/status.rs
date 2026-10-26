@@ -92,11 +92,15 @@ fn describe_desktop(desktop: Option<&Desktop>) -> String {
             .workspaces
             .iter()
             .map(|workspace| {
-                let marks: Vec<&str> =
-                    [(workspace.active, "shown"), (workspace.urgent, "urgent"), (workspace.empty, "empty")]
-                        .into_iter()
-                        .filter_map(|(set, mark)| set.then_some(mark))
-                        .collect();
+                let marks: Vec<&str> = [
+                    (workspace.special, "special"),
+                    (workspace.active, "shown"),
+                    (workspace.urgent, "urgent"),
+                    (workspace.empty, "empty"),
+                ]
+                .into_iter()
+                .filter_map(|(set, mark)| set.then_some(mark))
+                .collect();
                 if marks.is_empty() {
                     printable(&workspace.name)
                 } else {
@@ -166,6 +170,7 @@ mod tests {
             urgent: false,
             empty: false,
             fullscreen: false,
+            special: false,
         };
         let desktop = Desktop {
             compositor: "niri".into(),

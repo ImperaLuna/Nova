@@ -206,7 +206,7 @@ Item {
             y: Tokens.barGap
             width: implicitWidth
             height: implicitHeight
-            workspaces: Compositor.has(Protocol.CAPABILITY_WORKSPACES) ? Protocol.barWorkspaces(output) : []
+            workspaces: Compositor.has(Protocol.CAPABILITY_WORKSPACES) ? Protocol.barWorkspaces(output, Compositor.desktop) : []
             outputFocused: output?.focused ?? false
             canFocus: Compositor.has(Protocol.CAPABILITY_FOCUS_WORKSPACE)
             canSearch: LauncherService.ready

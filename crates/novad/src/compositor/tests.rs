@@ -124,7 +124,6 @@ fn step<'a>(followed: &'a Followed, name: &str) -> &'a Desktop {
 
 /// What the recorded script did, as the bar should see it, on any compositor.
 fn check_the_script(followed: &Followed) {
-    let window = |desktop: &Desktop| desktop.focused_window.clone();
     let first = FocusedWindow { app_id: "nova-first".into(), title: "First window".into() };
 
     assert_eq!(window(step(followed, "open first window")), Some(first.clone()));
@@ -171,10 +170,44 @@ fn check_the_script(followed: &Followed) {
     let full = step(followed, "fullscreen the focused window");
     assert_eq!(fullscreen(full), [focused_workspace(full).name.clone()], "{full:#?}");
 
-    let closed = followed.last().unwrap();
-    assert_eq!(closed.0, "close the focused window");
-    assert_eq!(window(&closed.1), None);
-    assert!(fullscreen(&closed.1).is_empty(), "still fullscreen once it closed: {:#?}", closed.1);
+    let closed = step(followed, "close the focused window");
+    assert_eq!(window(closed), None);
+    assert!(fullscreen(closed).is_empty(), "still fullscreen once it closed: {closed:#?}");
+}
+
+fn special(desktop: &Desktop) -> Vec<&Workspace> {
+    desktop.outputs.iter().flat_map(|output| &output.workspaces).filter(|w| w.special).collect()
+}
+
+/// Hyprland's special workspace, from the end of the recorded script.
+fn check_the_special_workspace(followed: &Followed) {
+    let before = step(followed, "close the focused window");
+    assert!(special(before).is_empty(), "no special workspace yet: {before:#?}");
+
+    let hidden = step(followed, "hide a window in the special workspace");
+    let output = &hidden.outputs[0];
+    let first = &output.workspaces[0];
+    assert!(first.special, "special workspaces come first: {hidden:#?}");
+    assert_eq!(first.name, "magic", "without the special: prefix");
+    assert!(!first.empty && !first.active && !first.focused, "{first:#?}");
+    assert_eq!(special(hidden).len(), 1);
+
+    let shown = step(followed, "show the special workspace");
+    assert_eq!(focused_workspace(shown).name, "magic", "the keyboard is on it");
+    let behind: Vec<&Workspace> = shown.outputs[0].workspaces.iter().filter(|w| w.active && !w.special).collect();
+    assert_eq!(behind.len(), 1, "the workspace under it stays active: {shown:#?}");
+    assert!(!behind[0].focused);
+    assert_eq!(window(shown).map(|w| w.app_id), Some("nova-second".into()));
+
+    let gone = step(followed, "hide the special workspace");
+    let magic = special(gone);
+    assert_eq!(magic.len(), 1, "still there with its window: {gone:#?}");
+    assert!(!magic[0].active && !magic[0].focused);
+    assert!(!focused_workspace(gone).special);
+}
+
+fn window(desktop: &Desktop) -> Option<FocusedWindow> {
+    desktop.focused_window.clone()
 }
 
 #[test]
@@ -195,6 +228,7 @@ fn hyprland_events_add_up_to_what_hyprland_reports() {
         assert_eq!(without_urgency(desktop.clone()), hyprland_answer(&recording, index), "after {name:?}");
     }
     check_the_script(&followed);
+    check_the_special_workspace(&followed);
 }
 
 #[test]
@@ -217,6 +251,17 @@ fn stepping_stops_at_either_end() {
     assert_eq!(neighbour(desktop, output, Step::Next).unwrap().unwrap().name, "web");
     assert_eq!(neighbour(desktop, output, Step::Previous).unwrap(), None);
     assert!(neighbour(desktop, "nope", Step::Next).unwrap_err().contains("no output"));
+}
+
+#[test]
+fn stepping_skips_the_special_workspace() {
+    let followed = follow_hyprland(&Recording::load("hyprland"));
+    let desktop = step(&followed, "show the special workspace");
+    let output = &desktop.outputs[0].name;
+    // From the workspace under it, never onto it.
+    assert_eq!(neighbour(desktop, output, Step::Previous).unwrap(), None, "{desktop:#?}");
+    let next = neighbour(desktop, output, Step::Next).unwrap();
+    assert!(next.is_none_or(|workspace| !workspace.special));
 }
 
 #[test]
@@ -340,4 +385,24 @@ fn focusing_an_output_shows_its_workspace_unless_it_has_focus() {
     compositor.focus_output("DP-2").unwrap();
     assert_eq!(*lock(&shown.0), [active]);
     assert!(compositor.focus_output("nope").unwrap_err().contains("no such output"));
+}
+
+#[test]
+fn focusing_an_output_never_toggles_its_special_workspace() {
+    let mut desktop =
+        step(&follow_hyprland(&Recording::load("hyprland")), "hide a window in the special workspace").clone();
+    let output = &mut desktop.outputs[0];
+    output.focused = false;
+    for workspace in &mut output.workspaces {
+        workspace.focused = false;
+        workspace.active |= workspace.special;
+    }
+    let under = output.workspaces.iter().find(|w| w.active && !w.special).unwrap().id;
+    let name = output.name.clone();
+    let shown = Arc::new(Shown::default());
+    let compositor =
+        Compositor { backend: Box::new(Arc::clone(&shown)), desktop: Mutex::new(Some(desktop)), hub: Arc::default() };
+
+    compositor.focus_output(&name).unwrap();
+    assert_eq!(*lock(&shown.0), [under], "the workspace under it, not the special one");
 }

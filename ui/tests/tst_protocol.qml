@@ -101,6 +101,65 @@ TestCase {
         compare(Protocol.barWorkspaces(null), []);
     }
 
+    function test_the_bar_leads_with_special_workspaces_where_the_compositor_has_them() {
+        const desktop = Protocol.parse(compositorLine).data;
+        desktop.capabilities.push(Protocol.CAPABILITY_SPECIAL_WORKSPACES);
+        const magic = {
+            id: -98,
+            name: "magic",
+            active: false,
+            focused: false,
+            urgent: false,
+            empty: false,
+            fullscreen: false,
+            special: true
+        };
+        for (const output of desktop.outputs)
+            output.workspaces.unshift(Object.assign({}, magic));
+        const listed = index => Protocol.barWorkspaces(desktop.outputs[index], desktop);
+        const names = index => listed(index).map(workspace => workspace.name);
+
+        compare(names(0), [Protocol.SPECIAL_MARK, "web"], "hidden with windows: first, on every output");
+        compare(names(1), [Protocol.SPECIAL_MARK, "1"]);
+        verify(!listed(0)[0].active && !listed(0)[0].elsewhere);
+        verify(listed(0)[1].active && listed(0)[1].focused);
+
+        // Shown on DP-1: the only active entry there; brighter on the other.
+        Object.assign(desktop.outputs[0].workspaces[0], {
+            active: true,
+            focused: true
+        });
+        desktop.outputs[0].workspaces[2].focused = false;
+        verify(listed(0)[0].active && listed(0)[0].focused);
+        verify(!listed(0)[1].active && !listed(0)[1].focused, "the workspace under it isn't lit");
+        verify(listed(1)[0].elsewhere && !listed(1)[0].active);
+        verify(listed(1)[1].active, "the other output keeps its own");
+        compare(desktop.outputs[0].workspaces[2].active, true, "the event's data stays as it was");
+
+        // Empty: kept while it shows somewhere, gone once hidden.
+        for (const output of desktop.outputs)
+            output.workspaces[0].empty = true;
+        compare(names(1), [Protocol.SPECIAL_MARK, "1"]);
+        desktop.outputs[0].workspaces[0].active = false;
+        compare(names(0), ["web"]);
+        compare(names(1), ["1"]);
+
+        // Several: their letters.
+        for (const output of desktop.outputs) {
+            output.workspaces[0].empty = false;
+            output.workspaces.unshift(Object.assign({}, magic, {
+                id: -99,
+                name: "music"
+            }));
+        }
+        compare(names(0), ["M", "M", "web"]);
+
+        // A compositor without them never lists them.
+        desktop.capabilities.pop();
+        compare(names(0), ["web"]);
+        compare(Protocol.barWorkspaces(desktop.outputs[0]).map(workspace => workspace.name), ["web"]);
+    }
+
     function test_the_bar_steps_aside_only_for_a_shown_fullscreen_workspace() {
         const outputs = Protocol.parse(compositorLine).data.outputs;
         compare(Protocol.fullscreenShown(outputs[1]), true);

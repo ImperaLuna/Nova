@@ -130,6 +130,8 @@ QtObject {
     // far apart, and the line between them and the day.
     readonly property int workspaceSize: 26
     readonly property int workspaceGap: 2
+    // Extra room between the special workspaces and the numbers after them.
+    readonly property int workspaceGroupGap: 4
     readonly property int dividerHeight: 16
     readonly property int dividerWidth: 1
     // Small marks, like a workspace's "wants attention" dot.
