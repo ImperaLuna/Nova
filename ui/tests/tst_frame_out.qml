@@ -3,8 +3,8 @@ import QtTest
 import "../stage"
 
 // When a change to a surface counts as on screen (FrameOut): once a frame
-// polished after it has been swapped, not before, even when an older
-// frame's swap comes late or the frame is dropped (IMP-116).
+// polished after it has been presented, not before, even when an older
+// frame ends late or a frame is dropped (IMP-116).
 Item {
     id: root
 
@@ -37,10 +37,17 @@ Item {
         window: shown
     }
 
-    // One frame of `still`: polished, then swapped.
+    // One frame of `still`: polished, then presented, then ended.
     function frame() {
         still.afterAnimating();
-        still.frameSwapped();
+        root.end(true);
+    }
+
+    // The end of `still`'s oldest frame still being drawn.
+    function end(presented: bool) {
+        if (presented)
+            still.frameSwapped();
+        still.afterFrameEnd();
     }
 
     TestCase {
@@ -52,25 +59,25 @@ Item {
             verify(!out.pending);
         }
 
-        function test_a_request_is_pending_until_a_frame_after_it_is_swapped() {
+        function test_a_request_is_pending_until_a_frame_after_it_is_presented() {
             out.request();
             verify(out.pending);
             still.afterAnimating();
             verify(out.pending);
-            still.frameSwapped();
+            root.end(true);
             verify(!out.pending);
         }
 
-        function test_an_older_frames_late_swap_is_not_the_one() {
-            // Polished before the request, swapped after it.
+        function test_an_older_frame_ending_late_is_not_the_one() {
+            // Polished before the request, ended after it.
             still.afterAnimating();
             out.request();
-            still.frameSwapped();
+            root.end(true);
             verify(out.pending);
             // The next frame, with the change, is still being drawn.
             still.afterAnimating();
             verify(out.pending);
-            still.frameSwapped();
+            root.end(true);
             verify(!out.pending);
         }
 
@@ -79,30 +86,43 @@ Item {
             still.afterAnimating();
             // Another change, while the first's frame is drawn.
             out.request();
-            still.frameSwapped();
+            root.end(true);
             verify(out.pending);
             root.frame();
             verify(!out.pending);
         }
 
-        function test_a_dropped_frame_is_asked_for_again() {
+        function test_a_frame_that_is_not_presented_is_asked_for_again() {
             out.request();
-            // Polished, but never drawn.
             still.afterAnimating();
-            wait(out.retryMs * 2);
+            root.end(false);
             verify(out.pending);
-            // Counting started over: the next frame is the one.
             compare(out.target, out.waiting);
             root.frame();
             verify(!out.pending);
         }
 
-        function test_a_drawing_window_gets_its_change_out() {
+        function test_with_no_frame_at_all_it_asks_again() {
+            out.request();
+            // Polished, but it never ends.
+            still.afterAnimating();
+            wait(out.retryMs * 1.5);
+            verify(out.pending);
+            // Counting started over: the next frame is the one.
+            compare(out.target, out.waiting);
+            compare(out.retry.interval, out.retryMs * 2);
+            root.frame();
+            verify(!out.pending);
+        }
+
+        function test_a_shown_window_gets_a_change_out_that_draws_nothing_new() {
             tryVerify(() => !real.pending);
-            shown.color = "blue";
+            // Like a new layer or mask: nothing in the scene changes.
             real.request();
             verify(real.pending);
+            const presented = real.polished;
             tryVerify(() => !real.pending, 2000);
+            verify(real.polished > presented);
         }
     }
 }
