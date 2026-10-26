@@ -46,8 +46,6 @@ Item {
     // Formats: the short day name and the date, and the 24-hour time.
     readonly property string dayFormat: "ddd d"
     readonly property string timeFormat: "hh:mm"
-    // One scroll step of a mouse wheel, in angleDelta units (Qt's convention).
-    readonly property int wheelStep: 120
 
     readonly property real step: Tokens.workspaceSize + Tokens.workspaceGap
     // The numbers' padding: as far from the pill's edge as from its top.
@@ -101,10 +99,10 @@ Item {
             property real scrolled: 0
             onWheel: wheel => {
                 scrolled += wheel.angleDelta.y || wheel.angleDelta.x;
-                while (Math.abs(scrolled) >= pill.wheelStep) {
+                while (Math.abs(scrolled) >= Tokens.wheelNotch) {
                     const down = scrolled < 0;
                     pill.stepRequested(down ? Protocol.STEP_NEXT : Protocol.STEP_PREVIOUS);
-                    scrolled += down ? pill.wheelStep : -pill.wheelStep;
+                    scrolled += down ? Tokens.wheelNotch : -Tokens.wheelNotch;
                 }
             }
         }

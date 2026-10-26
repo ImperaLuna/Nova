@@ -542,6 +542,10 @@ QtObject {
     // Line height for text that wraps, like a hint under a meter.
     readonly property real lineHeightWrapped: 1.5
 
+    // One notch of a mouse wheel, in Qt's angleDelta units (eighths of a
+    // degree); a touchpad's small deltas add up to it.
+    readonly property int wheelNotch: 120
+
     // Motion (ms)
     readonly property int durationFast: 120
     readonly property int durationPanel: 250
