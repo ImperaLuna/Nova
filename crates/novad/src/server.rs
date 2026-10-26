@@ -206,6 +206,7 @@ impl<'a> Connection<'a> {
             Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window),
             Command::PinApp { id, pinned } => done(self.launcher().and_then(|launcher| launcher.pin(id, *pinned))),
             Command::HideTrayApp { id, hidden } => done(self.tray().and_then(|tray| tray.hide(id, *hidden))),
+            Command::ActivateTrayItem { address } => return self.activate_tray_item(address),
             Command::NotificationAction { id, action } => {
                 done(self.notifications().and_then(|notifications| notifications.action(*id, action.as_deref())))
             }
@@ -358,6 +359,28 @@ impl<'a> Connection<'a> {
                 crate::launcher::focus_open(&id, ids, new_window, compositor, tray, output.as_deref(), &logger)
             };
             done(launcher.launch(&id, focus))
+        })
+    }
+
+    /// Asks the tray item at `address` to show its window, then focuses the
+    /// window of the item's app: apps get no activation token from a tray
+    /// click, so niri wouldn't move focus to a window that's already open.
+    fn activate_tray_item(&self, address: &str) -> Answer {
+        let tray = match self.tray() {
+            Ok(tray) => tray,
+            Err(e) => return Answer::Now(Outcome::Error(e)),
+        };
+        let launcher = self.launcher().ok();
+        let compositor = self.daemon.compositor.clone();
+        let logger = Arc::clone(&self.daemon.logger);
+        let address = address.to_owned();
+        Answer::later(move || {
+            done(tray.activate(&address).map(|app| {
+                let ids = app.and_then(|app| Some((launcher?.window_ids(&app)?, app)));
+                if let (Some((ids, app)), Some(compositor)) = (ids, compositor.as_deref()) {
+                    crate::launcher::focus_shown(&app, &ids, compositor, None, &logger);
+                }
+            }))
         })
     }
 
@@ -526,6 +549,7 @@ impl<'a> Connection<'a> {
             | Command::LaunchApp { .. }
             | Command::PinApp { .. }
             | Command::HideTrayApp { .. }
+            | Command::ActivateTrayItem { .. }
             | Command::NotificationAction { .. }
             | Command::DismissNotification { .. }
             | Command::ClearNotifications { .. }

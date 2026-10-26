@@ -27,10 +27,26 @@ Singleton {
     readonly property bool attention: Tray.anyAttention(all)
 
     // Whether a click on the app's icon shows its menu: it has nothing
-    // else to show. Otherwise the click activates it (`entry.item.activate()`),
-    // showing or hiding its window.
+    // else to show. Otherwise the click activates it (`activate`), showing
+    // or hiding its window.
     function opensMenu(entry: var): bool {
         return entry.item.onlyMenu && entry.item.hasMenu;
+    }
+
+    // A click on the app's icon: novad asks it to show its window, then
+    // focuses that window, which the app can't do itself from a tray click
+    // on niri. An item novad doesn't list is asked directly.
+    function activate(entry: var) {
+        if (!entry.address) {
+            entry.item.activate();
+            return;
+        }
+        Daemon.call(Protocol.CMD_ACTIVATE_TRAY_ITEM, {
+            address: entry.address
+        }, error => {
+            if (error)
+                console.warn(`nova: tray: ${error}`);
+        });
     }
 
     function hide(key: string, hidden: bool) {

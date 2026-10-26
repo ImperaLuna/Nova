@@ -258,6 +258,12 @@ impl Launcher {
         })
     }
 
+    /// The app ids the windows of the installed app `id` may have; `None`
+    /// when no such app is installed.
+    pub fn window_ids(&self, id: &str) -> Option<Vec<String>> {
+        lock(&self.state).apps.get(id).map(Entry::window_ids)
+    }
+
     /// The icon file for an app stream (`Command::AppIcon`): the installed
     /// app's it belongs to, by its icon name, program and name (`find_app`,
     /// else loosely by the first word of an app's name: Zen plays as `zen`,
@@ -519,16 +525,33 @@ pub fn focus_open(
     if !tray.map_or(Ok(false), |tray| tray.activate_app(id))? {
         return Ok(false);
     }
-    // The window comes back without focus on niri.
-    if let Some(compositor) = compositor.filter(|_| !ids.is_empty()) {
-        let deadline = std::time::Instant::now() + TRAY_WINDOW_WAIT;
-        while !compositor.focus_app(ids, output)? {
-            if std::time::Instant::now() >= deadline {
-                logger.info(LOG_SOURCE, &format!("{id}'s window didn't show after its tray icon was asked"));
-                break;
-            }
-            std::thread::sleep(TRAY_WINDOW_RETRY);
-        }
+    if let Some(compositor) = compositor {
+        focus_shown(id, ids, compositor, output, logger);
     }
     Ok(true)
+}
+
+/// Focuses the window of app `id` (with one of the app ids `ids`) that its
+/// tray icon was just asked to show, once it shows: niri gives it no focus,
+/// as a tray click hands the app no activation token. Gives up (logged)
+/// after [`TRAY_WINDOW_WAIT`].
+pub fn focus_shown(id: &str, ids: &[String], compositor: &Compositor, output: Option<&str>, logger: &Logger) {
+    if ids.is_empty() {
+        return;
+    }
+    let deadline = std::time::Instant::now() + TRAY_WINDOW_WAIT;
+    loop {
+        match compositor.focus_app(ids, output) {
+            Ok(true) => return,
+            Ok(false) if std::time::Instant::now() < deadline => std::thread::sleep(TRAY_WINDOW_RETRY),
+            Ok(false) => {
+                logger.info(LOG_SOURCE, &format!("{id}'s window didn't show after its tray icon was asked"));
+                return;
+            }
+            Err(e) => {
+                logger.warn(LOG_SOURCE, &format!("can't focus {id}'s window: {e}"));
+                return;
+            }
+        }
+    }
 }
