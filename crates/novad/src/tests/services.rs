@@ -73,6 +73,26 @@ fn notifications_are_listed_and_set_over_the_socket() {
     assert!(missing["error"].as_str().unwrap().contains("no notification 9"), "{missing}");
 }
 
+/// The media's own tests cover the bus; here there's none, so there are no
+/// players, and commands for one are refused.
+#[test]
+fn media_players_are_listed_and_checked_over_the_socket() {
+    let novad = TestDaemon::start("media", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["media"]})));
+    assert_eq!(client.next_event("media"), json!({"players": []}));
+    let player = "org.mpris.MediaPlayer2.mpv";
+    let missing = client.request(2, "media_show", Some(json!({"player": player})));
+    assert!(missing["error"].as_str().unwrap().contains("no player"), "{missing}");
+    let missing = client.request(3, "media_control", Some(json!({"player": player, "action": "next"})));
+    assert!(missing["error"].as_str().unwrap().contains("no player"), "{missing}");
+    let long = "x".repeat(nova_protocol::MEDIA_PLAYER_MAX_BYTES + 1);
+    let refused = client.request(4, "media_window", Some(json!({"player": long})));
+    assert!(refused["error"].as_str().unwrap().contains("at most"), "{refused}");
+    let extra = client.request(5, "media_seek", Some(json!({"player": player, "position_us": 1, "extra": 1})));
+    assert!(extra["error"].as_str().unwrap().contains("unknown field"), "{extra}");
+}
+
 /// Resources come only while a connection watches, and stop once the last
 /// one stops watching or hangs up.
 #[test]

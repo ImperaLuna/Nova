@@ -6,7 +6,7 @@ expression: all
 {"v":2,"event":"features","data":{"features":[{"id":"core","status":"ready"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
-{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray","notifications"]}}
+{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray","notifications","media"]}}
 {"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","backdrop":"#000000","fg":"#F5E7C6","fgAlt":"#525252","fgDim":"#9A9A9A","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
 {"v":2,"id":10,"cmd":"status"}
 {"v":2,"id":11,"cmd":"quit"}
@@ -81,4 +81,14 @@ expression: all
 {"v":2,"cmd":"read_notifications"}
 {"v":2,"id":42,"cmd":"set_do_not_disturb","args":{"on":true}}
 {"v":2,"id":43,"cmd":"mute_notification_app","args":{"app":"Discord","muted":true}}
+{"v":2,"event":"media","data":{"players":[{"id":"org.mpris.MediaPlayer2.spotify","app":{"id":"spotify.desktop","name":"Spotify","description":"Music Player","icon":"/usr/share/icons/hicolor/256x256/apps/spotify-client.png"},"identity":"Spotify","status":"playing","title":"Aruarian Dance","artist":"Nujabes","album":"Samurai Champloo: Departure","cover":"/run/user/1000/nova/media/5f2c0e8a.jpg","length_us":238000000,"position_us":84000000,"position_at_ms":1793000000000,"rate":1.0,"can_next":true,"can_previous":true,"can_play":true,"can_pause":true,"can_seek":true,"can_raise":true},{"id":"org.mpris.MediaPlayer2.firefox.instance_1_42","browser":true,"identity":"Mozilla Firefox","status":"paused","title":"How the scrolling layout in niri works","artist":"Linux Desktop Weekly","album":"","length_us":0,"position_us":0,"position_at_ms":1793000000000,"rate":1.0,"can_next":false,"can_previous":false,"can_play":true,"can_pause":true,"can_seek":false,"can_raise":false}],"shown":"org.mpris.MediaPlayer2.spotify"}}
+{"v":2,"id":45,"cmd":"media_control","args":{"player":"org.mpris.MediaPlayer2.spotify","action":"play_pause"}}
+{"v":2,"cmd":"media_control","args":{"player":"org.mpris.MediaPlayer2.spotify","action":"next"}}
+{"v":2,"cmd":"media_control","args":{"player":"org.mpris.MediaPlayer2.spotify","action":"previous"}}
+{"v":2,"id":46,"cmd":"media_seek","args":{"player":"org.mpris.MediaPlayer2.spotify","position_us":84000000}}
+{"v":2,"id":47,"cmd":"media_show","args":{"player":"org.mpris.MediaPlayer2.firefox.instance_1_42"}}
+{"v":2,"id":48,"cmd":"media_focus","args":{"player":"org.mpris.MediaPlayer2.spotify"}}
+{"v":2,"id":48,"result":true}
+{"v":2,"id":49,"cmd":"media_window","args":{"player":"org.mpris.MediaPlayer2.spotify"}}
+{"v":2,"id":49,"result":"3"}
 {"v":2,"id":8,"error":"bad request"}

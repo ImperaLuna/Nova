@@ -33,6 +33,7 @@ workspace = true
 [features]
 ai-usage = []
 launcher = []
+media = []
 notifications = []
 power = []
 quick-settings = []

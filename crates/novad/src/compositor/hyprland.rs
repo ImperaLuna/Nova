@@ -84,6 +84,22 @@ impl Hyprland {
 }
 
 impl Hyprland {
+    /// A window whose class (or first class) is one of `app_ids` (lower
+    /// case), one on `here` first.
+    fn app_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<Option<Client>, String> {
+        let answer = self.request(CLIENTS)?;
+        let clients: Vec<Client> =
+            serde_json::from_str(&answer).map_err(|e| format!("Hyprland sent odd windows ({e})"))?;
+        let mut matching: Vec<Client> = clients
+            .into_iter()
+            .filter(|client| {
+                [&client.class, &client.initial_class].iter().any(|class| app_ids.contains(&class.to_lowercase()))
+            })
+            .collect();
+        matching.sort_by_key(|client| client.workspace.id != here.id);
+        Ok(matching.into_iter().next())
+    }
+
     /// Runs one of Hyprland's dispatchers.
     fn dispatch(&self, dispatcher: &str) -> Result<(), String> {
         match self.request(&format!("dispatch {dispatcher}"))?.trim() {
@@ -145,20 +161,14 @@ impl Backend for Hyprland {
     }
 
     fn focus_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<bool, String> {
-        let answer = self.request(CLIENTS)?;
-        let clients: Vec<Client> =
-            serde_json::from_str(&answer).map_err(|e| format!("Hyprland sent odd windows ({e})"))?;
-        let mut matching: Vec<&Client> = clients
-            .iter()
-            .filter(|client| {
-                [&client.class, &client.initial_class].iter().any(|class| app_ids.contains(&class.to_lowercase()))
-            })
-            .collect();
-        matching.sort_by_key(|client| client.workspace.id != here.id);
-        let Some(client) = matching.first() else { return Ok(false) };
+        let Some(client) = self.app_window(app_ids, here)? else { return Ok(false) };
         // Hyprland shows the window's workspace and monitor for it.
         self.dispatch(&format!("focuswindow address:{}", client.address))?;
         Ok(true)
+    }
+
+    fn window_workspace(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<Option<WorkspaceId>, String> {
+        Ok(self.app_window(app_ids, here)?.map(|client| client.workspace.id))
     }
 
     fn log_out(&self) -> Result<(), String> {

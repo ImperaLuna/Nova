@@ -371,6 +371,10 @@ impl Backend for Arc<Shown> {
     fn focus_window(&self, _: &[String], _: &Workspace) -> Result<bool, String> {
         Ok(false)
     }
+
+    fn window_workspace(&self, _: &[String], _: &Workspace) -> Result<Option<WorkspaceId>, String> {
+        Ok(None)
+    }
 }
 
 #[test]
