@@ -78,15 +78,25 @@ StagePanel {
     readonly property int count: images.length
     readonly property int picked: count > 0 ? Carousel.wrap(target, count) : -1
     readonly property string pickedPath: picked >= 0 ? images[picked] : ""
+    // What Enter would keep: the picks, and the middle card on a screen it
+    // picks for that shows nothing from the folder yet.
+    readonly property var kept: {
+        const kept = Object.assign({}, picks);
+        for (const name of covered) {
+            if (pickedPath !== "" && !images.includes(kept[name]))
+                kept[name] = pickedPath;
+        }
+        return kept;
+    }
     // What this screen previews: its pick, or its own image until the
     // folder's listed. The other screens preview theirs (`previews`, by
     // name) where they'd change.
-    readonly property string previewPath: picks[outputName] || current
+    readonly property string previewPath: kept[outputName] || current
     readonly property var previews: {
         const changed = {};
         for (const name of screenNames) {
-            if (name !== outputName && picks[name] && picks[name] !== showing[name])
-                changed[name] = picks[name];
+            if (name !== outputName && kept[name] && kept[name] !== showing[name])
+                changed[name] = kept[name];
         }
         return changed;
     }
@@ -170,7 +180,7 @@ StagePanel {
         target = Carousel.startIndex(listing.images, current);
         stepping.enabled = true;
         images = listing.images;
-        picks = Carousel.startPicks(showing, images, images[target] ?? "");
+        picks = Object.assign({}, showing);
     }
 
     // Moves the deck `by` cards, round past either end.
@@ -201,7 +211,7 @@ StagePanel {
     function choose() {
         if (count === 0 || handingOver)
             return;
-        const requests = Carousel.requests(picks, showing);
+        const requests = Carousel.requests(kept, showing);
         if (requests.length === 0) {
             open = false;
             return;

@@ -348,19 +348,19 @@ Item {
             compare(picks.count, 0);
         }
 
-        function test_a_screen_without_a_folder_image_picks_the_middle_card() {
-            const carousel = make({});
-            compare(carousel.picks, {
-                "DP-1": "/w/aurora.png",
-                "DP-2": "/w/aurora.png"
-            }, "the deck starts on the first image");
+        function test_enter_keeps_the_middle_card_where_nothing_from_the_folder_shows() {
+            const carousel = make({
+                path: "/elsewhere/kept.png"
+            });
+            compare(carousel.pickedPath, "/w/aurora.png", "the deck starts on the first image");
+            keyClick(Qt.Key_Tab);
             keyClick(Qt.Key_Return);
             compare(picks.signalArguments[0][0], [
                 {
                     path: "/w/aurora.png",
-                    output: null
+                    output: "DP-1"
                 }
-            ], "Enter keeps it");
+            ], "only on the screen it picks for: DP-2 keeps its own");
         }
 
         function test_one_screen_has_no_screens_to_pick_from() {
