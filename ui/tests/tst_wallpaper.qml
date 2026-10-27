@@ -86,7 +86,7 @@ Item {
             picks.target = carousel;
             carousel.open = true;
             compare(loads.count, 1, "opening lists the folder");
-            carousel.loaded(null, stage.folder, shown ?? {
+            carousel.loaded(carousel.openings, null, stage.folder, shown ?? {
                 path: "/w/dusk.png",
                 outputs: {
                     "DP-2": "/w/tide.png"
@@ -108,7 +108,7 @@ Item {
                 outputName: "DP-2"
             });
             carousel.open = true;
-            carousel.loaded(null, stage.folder, {
+            carousel.loaded(carousel.openings, null, stage.folder, {
                 path: "/w/dusk.png",
                 outputs: {
                     "DP-2": "/w/tide.png"
@@ -161,8 +161,35 @@ Item {
             verify(!carousel.open);
             compare(picks.count, 0, "nothing was set");
             tryCompare(carousel, "count", 0, 2000, "once it's gone, it holds no images");
-            carousel.loaded(null, stage.folder, {});
+            carousel.loaded(carousel.openings, null, stage.folder, {});
             compare(carousel.count, 0, "a listing that comes after it closed is dropped");
+        }
+
+        function test_a_listing_for_an_earlier_opening_is_dropped() {
+            const carousel = make();
+            const first = carousel.openings;
+            carousel.open = false;
+            carousel.open = true;
+            carousel.loaded(carousel.openings, null, stage.folder, {});
+            keyClick(Qt.Key_Right);
+            carousel.loaded(first, null, stage.folder, {
+                path: "/w/tide.png"
+            });
+            compare(carousel.pickedPath, "/w/dusk.png", "the late answer doesn't move it back");
+        }
+
+        function test_closed_it_takes_no_clicks() {
+            const carousel = make();
+            verify(carousel.visible);
+            carousel.open = false;
+            tryCompare(carousel, "visible", false, 2000, "gone once it's faded out");
+            carousel.open = true;
+            verify(carousel.visible);
+            carousel.loaded(carousel.openings, null, stage.folder, {
+                path: "/w/dusk.png"
+            });
+            keyClick(Qt.Key_Right);
+            compare(carousel.pickedPath, stage.image, "back, it takes the keys");
         }
 
         function test_a_pick_answered_after_esc_doesnt_close_it_again() {
@@ -179,7 +206,7 @@ Item {
             const carousel = make();
             carousel.open = false;
             carousel.open = true;
-            carousel.loaded(null, {
+            carousel.loaded(carousel.openings, null, {
                 folder: "/home/luna/Pictures/Wallpapers",
                 images: []
             }, {});

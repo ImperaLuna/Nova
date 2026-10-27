@@ -40,8 +40,9 @@ StagePanel {
     // the image in under it.
     property bool handingOver: false
 
-    // Opened: novad's listing goes to loaded().
-    signal loadRequested
+    // Opened, for the `opening`th time: novad's listing goes to loaded().
+    signal loadRequested(int opening)
+    property int openings: 0
     // Enter: novad's answer goes to applied().
     signal chosen(string path, bool everywhere)
 
@@ -86,6 +87,8 @@ StagePanel {
     }
     moving: morph.moving || stepMotion.running || preview.moving || deckFade.running || handOver.running
     opacity: morph.t
+    // Closed, it takes no clicks and covers nothing (StagePanels `shapes`).
+    visible: shown
     // Opening, the deck rises into place as its cards spread out.
     readonly property real spread: morph.lerp(Tokens.carouselEnterSpread, 1)
     readonly property real rise: morph.lerp(Tokens.carouselEnterRise, 0)
@@ -102,7 +105,7 @@ StagePanel {
         everywhere = true;
         loading = true;
         keys.forceActiveFocus();
-        loadRequested();
+        loadRequested(++openings);
     }
 
     // Once it's closed, its images go, and the preview's picture with them.
@@ -114,11 +117,12 @@ StagePanel {
         current = "";
     }
 
-    // novad's answer to loadRequested: the folder's {folder, images} and
-    // the wallpapers shown now ({path, outputs}), or why it couldn't say.
-    function loaded(error: var, listing: var, shown: var) {
-        // An answer for a carousel that's closed since.
-        if (!open)
+    // novad's answer to loadRequested(opening): the folder's {folder,
+    // images} and the wallpapers shown now ({path, outputs}), or why it
+    // couldn't say.
+    function loaded(opening: int, error: var, listing: var, shown: var) {
+        // An answer for an opening that's closed since.
+        if (!open || opening !== openings)
             return;
         loading = false;
         if (error) {

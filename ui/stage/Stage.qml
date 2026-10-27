@@ -151,7 +151,7 @@ Scope {
             screenWidth: root.output.width
             screenHeight: root.output.height
             outputName: root.output.name
-            onLoadRequested: WallpaperService.load((error, listing, shown) => carousel.loaded(error, listing, shown))
+            onLoadRequested: opening => WallpaperService.load((error, listing, shown) => carousel.loaded(opening, error, listing, shown))
             onChosen: (path, everywhere) => WallpaperService.set(path, everywhere ? null : root.output.name, error => carousel.applied(error))
         }
     }
