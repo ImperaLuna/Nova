@@ -425,6 +425,7 @@ impl State {
                             fullscreen: self.has_fullscreen(workspace),
                             special: false,
                             shown_elsewhere: false,
+                            active_window: workspace.active_window_id.map(|id| id.to_string()),
                         })
                         .collect(),
                 }

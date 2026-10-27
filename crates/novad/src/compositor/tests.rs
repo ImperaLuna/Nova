@@ -220,6 +220,10 @@ fn niri_events_add_up_to_what_niri_reports() {
         assert_eq!(desktop, &niri_answer(&recording, index), "after {name:?}");
     }
     check_the_script(&followed);
+    // A Nova panel holding the keyboard leaves no window focused; the
+    // workspace still says which one focus goes back to.
+    let opened = step(&followed, "open first window");
+    assert_eq!(focused_workspace(opened).active_window, window(opened).map(|window| window.id));
 }
 
 #[test]

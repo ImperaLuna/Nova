@@ -399,6 +399,7 @@ impl State {
                                 fullscreen: fullscreen.contains(&workspace.id),
                                 special,
                                 shown_elsewhere: special && !active && shown.contains(&workspace.id),
+                                active_window: None,
                             }
                         })
                         .collect(),
