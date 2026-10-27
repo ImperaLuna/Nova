@@ -18,13 +18,15 @@ pub fn list(folder: &Path) -> Result<WallpaperFolder, String> {
         }
         Err(e) => return Err(format!("can't list {}: {e}", folder.display())),
     };
-    let mut images: Vec<PathBuf> = entries
+    let mut files: Vec<PathBuf> = entries
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
         .filter(|path| path.file_name().and_then(|name| name.to_str()).is_some_and(|name| !name.starts_with('.')))
-        .filter(|path| is_image(path))
         .collect();
-    images.sort_by_key(|path| sort_key(path));
-    images.truncate(WALLPAPER_FOLDER_MAX_IMAGES);
+    files.sort_by_key(|path| sort_key(path));
+    // Sorted first, so only as many files are opened as it takes to find
+    // the most it lists.
+    let images: Vec<PathBuf> =
+        files.into_iter().filter(|path| is_image(path)).take(WALLPAPER_FOLDER_MAX_IMAGES).collect();
     Ok(WallpaperFolder {
         folder: folder.display().to_string(),
         images: images.iter().map(|path| path.display().to_string()).collect(),

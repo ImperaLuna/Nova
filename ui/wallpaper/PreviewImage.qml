@@ -57,6 +57,8 @@ Item {
     function swap() {
         const old = front;
         front = back;
+        // In full even when a fade was cut short.
+        front.opacity = 1;
         old.source = "";
     }
 

@@ -93,9 +93,10 @@ StagePanel {
     onOpenChanged: {
         console.info(`nova: wallpaper carousel ${open ? "opened" : "closed"}`);
         handOver.stop();
-        handingOver = false;
+        // Kept as it closes, so a picked deck doesn't come back as it fades.
         if (!open)
             return;
+        handingOver = false;
         images = [];
         problem = "";
         everywhere = true;
@@ -116,6 +117,9 @@ StagePanel {
     // novad's answer to loadRequested: the folder's {folder, images} and
     // the wallpapers shown now ({path, outputs}), or why it couldn't say.
     function loaded(error: var, listing: var, shown: var) {
+        // An answer for a carousel that's closed since.
+        if (!open)
+            return;
         loading = false;
         if (error) {
             problem = error;
@@ -132,7 +136,7 @@ StagePanel {
 
     // Moves the deck `by` cards, round past either end.
     function step(by: int) {
-        if (count === 0 || handingOver)
+        if (by === 0 || count === 0 || handingOver)
             return;
         problem = "";
         target += by;
@@ -147,14 +151,17 @@ StagePanel {
     }
 
     // novad's answer to chosen: closes once awww has faded the image in, or
-    // right away when the screen shows it already.
+    // right away when it was only for this screen, which shows it already.
     function applied(error: var) {
+        // An answer for a pick that was put back with Esc since.
+        if (!handingOver)
+            return;
         if (error) {
             handingOver = false;
             problem = error;
             return;
         }
-        handOver.interval = pickedPath === current ? 0 : Tokens.durationWallpaperHandOver;
+        handOver.interval = pickedPath === current && !everywhere ? 0 : Tokens.durationWallpaperHandOver;
         handOver.restart();
     }
 

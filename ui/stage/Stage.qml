@@ -156,31 +156,40 @@ Scope {
         }
     }
 
-    // What the carousel previews while it's open here, for the other
-    // screens. Only one is open at a time.
-    Binding {
-        readonly property WallpaperCarousel carousel: wallpaper.item as WallpaperCarousel
-        when: carousel !== null && (carousel.open || carousel.moving)
-        target: WallpaperService
-        property: "preview"
-        value: carousel ? {
+    // What the carousel previews while it's open or closing here, for the
+    // other screens. Opening it here closes it elsewhere, which may still be
+    // fading: an open one's preview wins, and a closing one only changes or
+    // clears its own.
+    readonly property var wallpaperPreview: {
+        const carousel = wallpaper.item as WallpaperCarousel;
+        if (!carousel || !carousel.shown)
+            return null;
+        return {
             path: carousel.previewPath,
             output: root.output.name,
             everywhere: carousel.everywhere,
             shown: carousel.open
-        } : null
-        restoreMode: Binding.RestoreValue
+        };
+    }
+    onWallpaperPreviewChanged: {
+        const ours = WallpaperService.preview?.output === root.output.name;
+        if (wallpaperPreview && (wallpaperPreview.shown || ours || !WallpaperService.preview))
+            WallpaperService.preview = wallpaperPreview;
+        else if (!wallpaperPreview && ours)
+            WallpaperService.preview = null;
     }
 
     // Another screen's carousel previews here too while a pick would change
     // every screen.
     LazyLoader {
         readonly property var preview: WallpaperService.preview
-        active: preview !== null && preview.output !== root.output.name
+        // Only while a pick changes every screen: it decodes each image at
+        // this screen's size.
+        active: preview !== null && preview.everywhere && preview.output !== root.output.name
         component: WallpaperPreview {
             screen: root.screen
             path: WallpaperService.preview?.path ?? ""
-            shown: (WallpaperService.preview?.shown ?? false) && (WallpaperService.preview?.everywhere ?? false)
+            shown: WallpaperService.preview?.shown ?? false
         }
     }
 

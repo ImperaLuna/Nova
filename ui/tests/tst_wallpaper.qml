@@ -161,6 +161,18 @@ Item {
             verify(!carousel.open);
             compare(picks.count, 0, "nothing was set");
             tryCompare(carousel, "count", 0, 2000, "once it's gone, it holds no images");
+            carousel.loaded(null, stage.folder, {});
+            compare(carousel.count, 0, "a listing that comes after it closed is dropped");
+        }
+
+        function test_a_pick_answered_after_esc_doesnt_close_it_again() {
+            const carousel = make();
+            keyClick(Qt.Key_Return);
+            keyClick(Qt.Key_Escape);
+            carousel.open = true;
+            carousel.applied(null);
+            wait(1500);
+            verify(carousel.open, "the answer was for the pick put back");
         }
 
         function test_an_empty_folder_picks_nothing() {
