@@ -438,14 +438,15 @@ struct Plan {
 
 impl Plan {
     /// Looks up what each wallpaper in `choice` is (logging why one can't be
-    /// shown), and makes the projects for videos.
+    /// shown), and makes the projects for videos. Checks `stopped` before
+    /// each change to the state folder.
     fn new(
         choice: &Choice,
         outputs: &Outputs,
-        images_ready: bool,
-        engine_ready: bool,
+        (images_ready, engine_ready): (bool, bool),
         places: &Places,
         logger: &Logger,
+        stopped: &dyn Fn() -> bool,
     ) -> Self {
         let steam_roots = places.steam_roots();
         let mut kinds: BTreeMap<&Source, Option<Kind>> = BTreeMap::new();
@@ -467,7 +468,7 @@ impl Plan {
             for (source, kind) in &kinds {
                 let project = match kind {
                     Some(Kind::Project { folder, .. }) => Some(folder.clone()),
-                    Some(Kind::Video(video)) => engine::video_project(video, &places.engine)
+                    Some(Kind::Video(video)) if !stopped() => engine::video_project(video, &places.engine)
                         .map_err(|e| logger.warn(LOG_SOURCE, &format!("can't show {source}: {e}")))
                         .ok(),
                     _ => None,
@@ -481,7 +482,9 @@ impl Plan {
                 .filter(|(_, kind)| matches!(kind, Some(Kind::Video(_))))
                 .filter_map(|(source, _)| projects.get(source).cloned())
                 .collect();
-            if let Err(e) = engine::forget_videos(&places.engine, &videos) {
+            if !stopped()
+                && let Err(e) = engine::forget_videos(&places.engine, &videos)
+            {
                 logger.warn(LOG_SOURCE, &e);
             }
         }
@@ -612,7 +615,8 @@ impl Shared {
             let choice = if images_ready || engine_ready { state.current().clone() } else { Choice::default() };
             let outputs = state.outputs.clone();
             drop(state);
-            let plan = Plan::new(&choice, &outputs, images_ready, engine_ready, places, logger);
+            let stopped = || lock(&self.state).stopped;
+            let plan = Plan::new(&choice, &outputs, (images_ready, engine_ready), places, logger, &stopped);
             self.drive_awww(&plan.images, &outputs, &mut awww, places, logger);
             self.drive_engine(&plan.screens, &mut engine, awww.starts, places, logger);
         }

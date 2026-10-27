@@ -159,14 +159,16 @@ fn is_video(path: &Path) -> bool {
     VIDEO_EXTENSIONS.iter().any(|video| video.eq_ignore_ascii_case(extension))
 }
 
-/// Which kind of image `path` is, if it's one awww can show. Only the
-/// header is read.
+/// Which kind of image `path` is, if it's one awww can show: one whose
+/// header gives its size (a file cut off before it isn't). Only the header
+/// is read.
 fn image(path: &Path) -> Result<Option<imagesize::ImageType>, String> {
     let mut header = Vec::new();
     std::fs::File::open(path)
         .and_then(|file| file.take(HEADER_BYTES).read_to_end(&mut header))
         .map_err(|e| format!("can't read {}: {e}", path.display()))?;
-    Ok(imagesize::image_type(&header).ok())
+    let kind = imagesize::image_type(&header).ok();
+    Ok(kind.filter(|_| imagesize::size(path).is_ok()))
 }
 
 /// `project.json`'s fields Nova uses. Written by Wallpaper Engine and
@@ -188,11 +190,21 @@ fn project(folder: PathBuf) -> Result<Kind, String> {
         .map_err(|e| format!("can't read {}: {e}", file.display()))?;
     let parsed: ProjectFile =
         serde_json::from_str(&text).map_err(|e| format!("{} doesn't make sense: {e}", file.display()))?;
-    let preview =
-        parsed.preview.filter(|name| inside(Path::new(name))).map(|name| folder.join(name)).filter(|preview| {
-            preview.is_file() && matches!(image(preview), Ok(Some(kind)) if kind != imagesize::ImageType::Gif)
-        });
+    let preview = parsed.preview.and_then(|name| preview(&folder, Path::new(&name)));
     Ok(Kind::Project { folder, preview })
+}
+
+/// The preview `name` in `folder`, if it's really inside it (also once
+/// symlinks are followed) and an image awww can show that isn't a GIF.
+fn preview(folder: &Path, name: &Path) -> Option<PathBuf> {
+    if !inside(name) {
+        return None;
+    }
+    let real = std::fs::canonicalize(folder.join(name)).ok()?;
+    let shown = real.starts_with(std::fs::canonicalize(folder).ok()?)
+        && real.is_file()
+        && matches!(image(&real), Ok(Some(kind)) if kind != imagesize::ImageType::Gif);
+    shown.then_some(real)
 }
 
 /// Whether a relative path stays inside the folder it's relative to.
@@ -237,6 +249,9 @@ mod tests {
         assert_eq!(kind("loop.MP4"), Ok(Kind::Video(dir.join("loop.MP4"))));
         assert_eq!(kind("logo.gif"), Ok(Kind::Image(dir.join("logo.gif"))));
         assert!(kind("notes.toml").unwrap_err().contains("isn't an image, a video"));
+        // A PNG cut off before its size.
+        std::fs::write(dir.join("cut.png"), b"\x89PNG\r\n\x1a\n\x00\x00").unwrap();
+        assert!(kind("cut.png").unwrap_err().contains("isn't an image, a video"));
         assert!(kind("missing.png").unwrap_err().contains("can't read"));
         assert!(kind("").unwrap_err().contains("no project.json"), "a plain folder");
     }
@@ -278,6 +293,14 @@ mod tests {
                 "{preview}"
             );
         }
+        // Nor one that's a symlink out of it.
+        std::os::unix::fs::symlink(dir.join("outside.png"), item.join("linked.png")).unwrap();
+        write_png(&dir.join("outside.png"));
+        std::fs::write(item.join(PROJECT_FILE), r#"{"preview": "linked.png"}"#).unwrap();
+        assert_eq!(
+            workshop.kind(std::slice::from_ref(&steam)),
+            Ok(Kind::Project { folder: item.clone(), preview: None })
+        );
         std::fs::write(item.join(PROJECT_FILE), "not json").unwrap();
         assert!(workshop.kind(&[steam]).unwrap_err().contains("doesn't make sense"));
     }

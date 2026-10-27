@@ -91,7 +91,7 @@ pub fn video_project(video: &Path, folder: &Path) -> Result<PathBuf, String> {
         .modified()
         .ok()
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |since| since.as_secs());
+        .map_or(0, |since| since.as_nanos());
     let stem = video.file_stem().unwrap_or_default().to_string_lossy();
     let extension = video.extension().unwrap_or_default().to_string_lossy();
     let videos = folder.join(VIDEO_PROJECTS);
