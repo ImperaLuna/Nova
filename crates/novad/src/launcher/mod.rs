@@ -519,9 +519,8 @@ fn snapshot(state: &State) -> nova_protocol::Launcher {
 /// have the app ids `ids` (none, and no `tray`, when a new window is asked
 /// for): an open window takes focus where it is; a new one opens on
 /// `output` (the launcher's screen), which the compositor puts it on once
-/// focused. An
-/// app that only sits in the tray shows its window from there, as starting
-/// it again may just quit (Discord). One whose icon can't show it (Claude
+/// focused. An app that only sits in the tray shows its window from there,
+/// as starting it again may just quit (Discord). One whose icon can't show it (Claude
 /// Desktop ignores `Activate`, libayatana's icons have only a menu) is
 /// started again with `start`: a running app then shows its window, which
 /// gets no focus from the compositor either (the activation token went to
