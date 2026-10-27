@@ -641,8 +641,10 @@ pub struct NotificationList {
     pub items: Vec<Notification>,
     /// No pop-ups, except critical ones.
     pub do_not_disturb: bool,
-    /// Apps, by [`Notification::app`], whose notifications never pop up and
-    /// don't count as unread. They're still listed.
+    /// Apps, by [`Notification::app`], whose notifications are hidden: not
+    /// in `items`, never popping up, never unread. Those from before the
+    /// app was muted come back once it's unmuted; those it sends meanwhile
+    /// aren't kept.
     pub muted: Vec<String>,
     /// Every app that sent one lately or is muted, the latest first, for
     /// the settings page's per-app switches.
@@ -1028,8 +1030,8 @@ pub enum Command {
         address: String,
     },
     /// The notification `id` was clicked, or its button `action` (feature
-    /// `notifications`): the app hears of it, and it leaves the list unless
-    /// the app keeps it.
+    /// `notifications`): the app hears of it, and it stays on the list,
+    /// read.
     NotificationAction {
         id: u32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1049,6 +1051,11 @@ pub enum Command {
     /// The list was seen: no notification is unread any more (feature
     /// `notifications`).
     ReadNotifications,
+    /// The notification `id` was seen (its app opened from it): it's no
+    /// longer unread (feature `notifications`).
+    ReadNotification {
+        id: u32,
+    },
     /// Turns do not disturb on or off (feature `notifications`).
     /// Remembered across restarts.
     SetDoNotDisturb {
@@ -1661,6 +1668,7 @@ mod tests {
             encode(Request { id: None, command: Command::ClearNotifications { app: Some("Discord".into()) } }),
             encode(Request { id: None, command: Command::ClearNotifications { app: None } }),
             encode(Request { id: None, command: Command::ReadNotifications }),
+            encode(Request { id: None, command: Command::ReadNotification { id: 7 } }),
             encode(Request { id: Some(42), command: Command::SetDoNotDisturb { on: true } }),
             encode(Request {
                 id: Some(43),

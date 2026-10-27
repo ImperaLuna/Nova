@@ -9,9 +9,9 @@ import "../text/duration.js" as Duration
 
 // The card a saved screenshot lands in: the shot, that it was copied, where
 // it went and its size, and Open, Folder and Delete. A recording's card has
-// its length where the shot would be, and where it went. A line of pieces
-// along the bottom goes out over Tokens.durationShotCard, and the card
-// leaves when the last one goes; the pointer on the card holds it.
+// its length where the shot would be, and where it went. A line along the
+// bottom drains over Tokens.durationShotCard, and the card leaves when it
+// runs out; the pointer on the card holds it.
 Item {
     id: card
 
@@ -26,8 +26,8 @@ Item {
     // Its time ran out.
     signal expired
 
-    // Pieces of its time still left.
-    readonly property alias lit: timer.lit
+    // The share of its time still left, 1 to 0.
+    readonly property alias remaining: timer.remaining
 
     implicitWidth: Tokens.shotCardWidth
     implicitHeight: content.implicitHeight + 2 * Tokens.pad + Tokens.gap

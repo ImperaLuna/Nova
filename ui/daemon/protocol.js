@@ -36,6 +36,7 @@ var CMD_NOTIFICATION_ACTION = "notification_action";
 var CMD_DISMISS_NOTIFICATION = "dismiss_notification";
 var CMD_CLEAR_NOTIFICATIONS = "clear_notifications";
 var CMD_READ_NOTIFICATIONS = "read_notifications";
+var CMD_READ_NOTIFICATION = "read_notification";
 var CMD_SET_DO_NOT_DISTURB = "set_do_not_disturb";
 var CMD_MUTE_NOTIFICATION_APP = "mute_notification_app";
 var CMD_MEDIA_CONTROL = "media_control";
