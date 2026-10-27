@@ -313,6 +313,33 @@ fn the_latest_to_play_shows_unless_the_user_picks_another() {
 }
 
 #[test]
+fn a_pick_ends_with_its_player() {
+    let fixture = Fixture::new("pick-ends");
+    let media = fixture.media();
+    let _spotify = fixture.play(SPOTIFY, Track::playing("Feather"));
+    fixture.until(|event| event["shown"] == SPOTIFY);
+    let paused = || Track { status: "Paused", desktop_entry: "firefox", ..Track::playing("A video") };
+    let firefox = fixture.play(FIREFOX, paused());
+    fixture.until(|event| player(event, FIREFOX)["status"] == "paused");
+    media.show(FIREFOX).unwrap();
+    fixture.until(|event| event["shown"] == FIREFOX);
+    drop(firefox);
+    fixture.until(|event| event["shown"] == SPOTIFY);
+    // Back under the same name, it's a new player: the playing one stays.
+    let _firefox = fixture.play(FIREFOX, paused());
+    let event = fixture.until(|event| player(event, FIREFOX)["status"] == "paused");
+    assert_eq!(event["shown"], SPOTIFY);
+}
+
+#[test]
+fn playerctld_is_not_a_player_of_its_own() {
+    // It stands in for the player that played last.
+    assert!(super::is_player(SPOTIFY) && super::is_player(FIREFOX));
+    assert!(!super::is_player("org.mpris.MediaPlayer2.playerctld"));
+    assert!(!super::is_player("org.freedesktop.Notifications"));
+}
+
+#[test]
 fn controls_reach_the_player_and_seeking_stays_in_the_track() {
     let fixture = Fixture::new("controls");
     let media = fixture.media();

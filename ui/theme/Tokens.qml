@@ -577,8 +577,10 @@ QtObject {
     readonly property int mediaRowGap: 14
     // A button the player can't act on now (no next track).
     readonly property real mediaDisabledOpacity: 0.35
-    // How often the open panel's time counts up.
+    // How often the open panel's time counts up, and how long the progress
+    // line stays where a seek put it if the player doesn't say it moved.
     readonly property int durationProgressStep: 1000
+    readonly property int durationSeekHold: 2000
 
     // Type
     readonly property string fontSans: "Inter"

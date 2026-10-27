@@ -45,6 +45,9 @@ pub const FEATURE_ID: &str = "media";
 const LOG_SOURCE: &str = "media";
 /// Every MPRIS player's bus name starts with this.
 const PREFIX: &str = "org.mpris.MediaPlayer2.";
+/// playerctld's name: it stands in for whichever player played last, so
+/// following it too would list that player twice.
+const PLAYERCTLD: &str = "org.mpris.MediaPlayer2.playerctld";
 const DBUS_NAME: &str = "org.freedesktop.DBus";
 const DBUS_PATH: &str = "/org/freedesktop/DBus";
 const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
@@ -344,6 +347,11 @@ impl Shared {
         let mut state = lock(&self.state);
         let before = state.players.len();
         state.players.retain(|player| player.id != id);
+        // The user's pick ends with the player: one back under its name
+        // later is a new one.
+        if state.picked.as_deref() == Some(id) {
+            state.picked = None;
+        }
         if state.players.len() != before {
             self.logger.info(LOG_SOURCE, &format!("{id} went"));
             self.publish(&mut state);
@@ -411,6 +419,8 @@ impl Shared {
                 return;
             }
         };
+        // Its position is as of now, not of after the cover's download.
+        let read_at_ms = now_ms();
         let cover = read.art_url.as_deref().and_then(|url| match self.covers.file(url) {
             Ok(file) => file.map(|file| file.display().to_string()),
             Err(e) => {
@@ -438,7 +448,7 @@ impl Shared {
         }
         player.read = Some(read);
         player.cover = cover;
-        player.position_at_ms = now_ms();
+        player.position_at_ms = read_at_ms;
         self.publish(&mut state);
     }
 }
@@ -485,7 +495,7 @@ async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mpsc::Sender<(
         .await?
         .body()
         .deserialize()?;
-    for name in names.into_iter().filter(|name| name.starts_with(PREFIX)) {
+    for name in names.into_iter().filter(|name| is_player(name)) {
         match name_owner(&connection, &name).await {
             Ok(owner) => shared.add(&connection, &name, &owner),
             Err(e) => shared.logger.log(LogLevel::Debug, LOG_SOURCE, &format!("{name} has no owner: {e}")),
@@ -515,7 +525,7 @@ async fn serve(shared: &Arc<Shared>, bus: Bus, ready: &std::sync::mpsc::Sender<(
         match kind {
             Signal::Owner => {
                 let (name, _old, new): (String, String, String) = message.body().deserialize()?;
-                if !name.starts_with(PREFIX) {
+                if !is_player(&name) {
                     continue;
                 }
                 if new.is_empty() {
@@ -555,6 +565,11 @@ enum Signal {
 async fn name_owner(connection: &Connection, name: &str) -> zbus::Result<String> {
     let reply = connection.call_method(Some(DBUS_NAME), DBUS_PATH, Some(DBUS_NAME), "GetNameOwner", &(name,)).await?;
     reply.body().deserialize()
+}
+
+/// Whether bus name `name` is a media player of its own.
+fn is_player(name: &str) -> bool {
+    name.starts_with(PREFIX) && name != PLAYERCTLD
 }
 
 fn now_ms() -> i64 {

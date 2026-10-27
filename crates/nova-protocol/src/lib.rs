@@ -436,10 +436,13 @@ pub enum Panel {
     Launcher,
     /// The tray's icons in the right pill.
     Tray,
+    /// The now-playing pill's panel, while a player shows.
+    Media,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 5] = [Panel::AiUsage, Panel::Power, Panel::QuickSettings, Panel::Launcher, Panel::Tray];
+    pub const ALL: [Panel; 6] =
+        [Panel::AiUsage, Panel::Power, Panel::QuickSettings, Panel::Launcher, Panel::Tray, Panel::Media];
 
     /// Its name on the wire and on the command line, which is also its
     /// feature's id.
@@ -450,6 +453,7 @@ impl Panel {
             Panel::QuickSettings => "quick-settings",
             Panel::Launcher => "launcher",
             Panel::Tray => "tray",
+            Panel::Media => "media",
         }
     }
 }
@@ -2036,7 +2040,7 @@ mod tests {
             "calculator"
                 .parse::<Panel>()
                 .unwrap_err()
-                .contains("known: ai-usage, power, quick-settings, launcher, tray")
+                .contains("known: ai-usage, power, quick-settings, launcher, tray, media")
         );
         let features = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         for panel in Panel::ALL {

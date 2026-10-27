@@ -133,13 +133,17 @@ fn integer(value: &OwnedVariant) -> Option<i64> {
         .or_else(|| u32::try_from(value).ok().map(i64::from))
 }
 
+/// The track id MPRIS reserves for "no track", which `SetPosition` ignores.
+const NO_TRACK: &str = "/org/mpris/MediaPlayer2/TrackList/NoTrack";
+
 /// `mpris:trackid`: an object path, though some players send a string.
+/// None for no track.
 fn track_id(value: &OwnedVariant) -> Option<OwnedObjectPath> {
-    if let Ok(path) = <&zbus::wire::ObjectPath>::try_from(value) {
-        return Some(path.clone().into());
-    }
-    let text = <&str>::try_from(value).ok()?;
-    OwnedObjectPath::try_from(text).ok()
+    let path = match <&zbus::wire::ObjectPath>::try_from(value) {
+        Ok(path) => path.clone().into(),
+        Err(_) => OwnedObjectPath::try_from(<&str>::try_from(value).ok()?).ok()?,
+    };
+    (path.as_str() != NO_TRACK).then_some(path)
 }
 
 #[cfg(test)]
@@ -179,6 +183,13 @@ mod tests {
         assert_eq!(read.status, PlaybackStatus::Playing);
         assert!(read.can_seek && !read.can_next);
         assert_eq!(read.desktop_entry.as_deref(), Some("spotify"));
+    }
+
+    #[test]
+    fn no_track_is_no_track_id() {
+        let metadata = properties(vec![("mpris:trackid", variant(ObjectPath::try_from(NO_TRACK).unwrap()))]);
+        let read = from_properties(&Properties::new(), &properties(vec![("Metadata", OwnedVariant::from(metadata))]));
+        assert_eq!(read.track_id, None);
     }
 
     #[test]

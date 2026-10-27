@@ -17,7 +17,8 @@ use std::time::Duration;
 
 /// Covers bigger than this aren't shown or downloaded.
 pub const MAX_COVER_BYTES: u64 = 2 * 1024 * 1024;
-/// Covers kept, downloaded or not; the oldest goes first.
+/// Covers kept, downloaded or not; the one asked for least lately goes
+/// first.
 const MAX_KEPT: usize = 8;
 const TIMEOUT: Duration = Duration::from_secs(10);
 const USER_AGENT: &str = concat!("nova/", env!("CARGO_PKG_VERSION"));
@@ -27,7 +28,8 @@ const HTTPS_SCHEME: &str = "https://";
 
 pub struct Covers {
     folder: PathBuf,
-    /// URLs seen lately and their file (`None`: no cover), the latest last.
+    /// URLs asked for lately and their file (`None`: no cover), the latest
+    /// last.
     kept: Mutex<VecDeque<(String, Option<PathBuf>)>>,
 }
 
@@ -53,8 +55,14 @@ impl Covers {
         if !url.starts_with(HTTPS_SCHEME) {
             return Ok(None);
         }
-        if let Some((_, file)) = lock(&self.kept).iter().find(|(kept, _)| kept == url) {
-            return Ok(file.clone());
+        {
+            // Asked for again: kept longest of all now.
+            let mut kept = lock(&self.kept);
+            if let Some(entry) = kept.iter().position(|(kept, _)| kept == url).and_then(|at| kept.remove(at)) {
+                let file = entry.1.clone();
+                kept.push_back(entry);
+                return Ok(file);
+            }
         }
         let downloaded = self.download(url);
         self.keep(url, downloaded.as_ref().ok().cloned());
@@ -188,8 +196,12 @@ mod tests {
         }
         assert!(!files[0].exists() && !files[1].exists());
         assert!(files[2..].iter().all(|file| file.exists()));
-        // A URL seen again isn't downloaded again.
-        assert_eq!(covers.file("https://example.com/5.jpg"), Ok(Some(files[5].clone())));
+        // A URL seen again isn't downloaded again, and is kept longest now.
+        assert_eq!(covers.file("https://example.com/2.jpg"), Ok(Some(files[2].clone())));
+        let newer = folder.join("newer.jpg");
+        std::fs::write(&newer, b"jpg").unwrap();
+        covers.keep("https://example.com/newer.jpg", Some(newer));
+        assert!(files[2].exists() && !files[3].exists());
     }
 
     #[test]

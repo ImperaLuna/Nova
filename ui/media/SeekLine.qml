@@ -21,10 +21,16 @@ Column {
     readonly property real fraction: held >= 0 ? held : Media.progress(player, now)
     readonly property bool lifted: area.containsMouse || area.pressed
 
-    // The player's next word on where it is ends any held position.
+    // The player's next word on where it is ends any held position, or a
+    // while without one: a seek that failed.
     onPlayerChanged: {
         if (!area.pressed)
             held = -1;
+    }
+    Timer {
+        id: letGo
+        interval: Tokens.durationSeekHold
+        onTriggered: seek.held = -1
     }
 
     spacing: Tokens.mediaTimesGap
@@ -48,13 +54,17 @@ Column {
                 return Math.min(1, Math.max(0, x / width));
             }
 
-            onPressed: mouse => seek.held = at(mouse.x)
+            onPressed: mouse => {
+                letGo.stop();
+                seek.held = at(mouse.x);
+            }
             onPositionChanged: mouse => {
                 if (pressed)
                     seek.held = at(mouse.x);
             }
             onReleased: mouse => {
                 seek.held = at(mouse.x);
+                letGo.restart();
                 seek.seekRequested(Media.seekTarget(seek.player, seek.held));
             }
             onCanceled: seek.held = -1
