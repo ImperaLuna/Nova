@@ -125,6 +125,7 @@ impl TestDaemon {
             media: media::Sources {
                 bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
                 covers: dir.join("media"),
+                proc: dir.join("proc"),
             },
             icons,
         };
