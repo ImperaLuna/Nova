@@ -406,10 +406,10 @@ impl Shared {
         });
     }
 
-    /// Reads the player `id` and publishes it, then its cover when that's
-    /// new. A player that went, or was handed to another connection,
+    /// Reads the player `id` and publishes it; a new cover follows once
+    /// downloaded. A player that went, or was handed to another connection,
     /// meanwhile is left as it is.
-    fn read(&self, connection: &Connection, id: &str) {
+    fn read(self: &Arc<Self>, connection: &Connection, id: &str) {
         let Some(owner) = lock(&self.state).players.iter().find(|player| player.id == id).map(|p| p.owner.clone())
         else {
             return;
@@ -448,26 +448,18 @@ impl Shared {
             player.cover = None;
             player.cover_url = None;
         }
-        // A cover to download waits until the rest is out, so a slow one
-        // holds back neither the track nor which player shows; a local one
-        // only needs a look, so it comes with the rest.
         match url {
+            // Downloaded on a thread of its own, so a slow cover holds back
+            // neither this read nor the player's next ones. Its URL counts
+            // as handled meanwhile, so it's downloaded once.
             Some(url) if new_cover && Covers::downloads(&url) => {
+                player.cover_url = Some(url.clone());
                 self.publish(&mut state);
                 drop(state);
-                let cover = self.cover(id, &url);
-                let mut state = lock(&self.state);
-                let Some(player) = state.players.iter_mut().find(|player| {
-                    player.id == id
-                        && player.owner == owner
-                        && player.read.as_ref().is_some_and(|read| read.art_url.as_ref() == Some(&url))
-                }) else {
-                    return;
-                };
-                player.cover = cover;
-                player.cover_url = Some(url);
-                self.publish(&mut state);
+                let (shared, id, owner) = (Arc::clone(self), id.to_string(), owner);
+                std::thread::spawn(move || shared.download_cover(&id, &owner, &url));
             }
+            // A local one only needs a look, so it comes with the rest.
             Some(url) if new_cover => {
                 player.cover = self.cover(id, &url);
                 player.cover_url = Some(url);
@@ -475,6 +467,25 @@ impl Shared {
             }
             _ => self.publish(&mut state),
         }
+    }
+
+    /// Downloads player `id`'s cover at `url`, and publishes it unless the
+    /// player has moved on meanwhile.
+    fn download_cover(&self, id: &str, owner: &str, url: &str) {
+        let cover = self.cover(id, url);
+        if self.stop.stopped() {
+            return;
+        }
+        let mut state = lock(&self.state);
+        let Some(player) = state
+            .players
+            .iter_mut()
+            .find(|player| player.id == id && player.owner == owner && player.cover_url.as_deref() == Some(url))
+        else {
+            return;
+        };
+        player.cover = cover;
+        self.publish(&mut state);
     }
 
     /// The file for player `id`'s cover at `url`, if it has one.
