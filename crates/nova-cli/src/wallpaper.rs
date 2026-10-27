@@ -1,6 +1,7 @@
-//! `nova wallpaper [<file>] [--output <name>]`: shows an image as the
-//! wallpaper on every output, or one, and remembers it until config.toml's
-//! `[wallpaper]` changes. Without a file it prints what each output shows.
+//! `nova wallpaper [<file>] [--output <name>]`: shows an image (or a video,
+//! a Wallpaper Engine project folder or a Workshop ID) as the wallpaper on
+//! every output, or one, and remembers it until config.toml's `[wallpaper]`
+//! changes. Without a file it prints what each output shows.
 //! Setting one prints nothing when it worked, so a keybind or script stays
 //! quiet; novad's reason goes to stderr when it didn't.
 
@@ -10,7 +11,8 @@ use std::path::{Path, PathBuf};
 
 #[derive(clap::Args)]
 pub struct WallpaperArgs {
-    /// The image to show. Without one, prints the wallpapers set now.
+    /// The image, video or Wallpaper Engine project folder to show, or a
+    /// Workshop ID. Without one, prints the wallpapers set now.
     file: Option<PathBuf>,
     /// Only on this output (as `nova status` names them), keeping the others.
     #[arg(long, requires = "file")]
@@ -26,14 +28,28 @@ pub fn run(args: &WallpaperArgs, socket: &Path) -> Result<(), String> {
         print!("{}", describe(&wallpapers));
         return Ok(());
     };
-    // novad may run in another folder: it gets the whole path. Symlinks
-    // stay, so one a script points elsewhere changes the wallpaper later.
+    let path = match workshop_id(file) {
+        Some(id) => id.to_owned(),
+        None => absolute(file)?,
+    };
+    client.request(Command::SetWallpaper { path, output: args.output.clone() })?;
+    Ok(())
+}
+
+/// `file` as a Workshop ID: only digits, and no file of that name here.
+fn workshop_id(file: &Path) -> Option<&str> {
+    let text = file.to_str()?;
+    let digits = !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
+    (digits && !file.exists()).then_some(text)
+}
+
+/// The whole path to `file`: novad may run in another folder. Symlinks
+/// stay, so one a script points elsewhere changes the wallpaper later.
+fn absolute(file: &Path) -> Result<String, String> {
     let path = std::fs::metadata(file)
         .and_then(|_| std::path::absolute(file))
         .map_err(|e| format!("can't find {}: {e}", file.display()))?;
-    let path = path.to_str().ok_or_else(|| format!("{} isn't valid UTF-8", path.display()))?.to_owned();
-    client.request(Command::SetWallpaper { path, output: args.output.clone() })?;
-    Ok(())
+    path.to_str().map(str::to_owned).ok_or_else(|| format!("{} isn't valid UTF-8", path.display()))
 }
 
 /// One line for the image on every output and one per output with its own.
