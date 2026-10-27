@@ -25,6 +25,8 @@ const STEAM_ROOTS: &[&str] = &[
     ".var/app/com.valvesoftware.Steam/.local/share/Steam",
     "snap/steam/common/.local/share/Steam",
 ];
+/// Where a Steam install lists its other libraries.
+const LIBRARY_FOLDERS: &str = "steamapps/libraryfolders.vdf";
 /// Wallpaper Engine's Workshop downloads in a Steam library (app 431960).
 const WORKSHOP: &str = "steamapps/workshop/content/431960";
 /// The file that makes a folder a Wallpaper Engine project.
@@ -36,10 +38,35 @@ const HEADER_BYTES: u64 = 64;
 /// Files shown as videos, by extension.
 const VIDEO_EXTENSIONS: &[&str] = &["mp4", "webm", "mkv", "mov", "m4v", "avi"];
 
-/// The Steam libraries under `home` that exist.
+/// The Steam libraries: Steam's installs under `home` that exist, and the
+/// other libraries each lists in its `libraryfolders.vdf` (games on a
+/// second disk).
 pub fn steam_roots(home: Option<&Path>) -> Vec<PathBuf> {
     let Some(home) = home else { return Vec::new() };
-    STEAM_ROOTS.iter().map(|root| home.join(root)).filter(|root| root.is_dir()).collect()
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for install in STEAM_ROOTS.iter().map(|root| home.join(root)).filter(|root| root.is_dir()) {
+        let listed = std::fs::read_to_string(install.join(LIBRARY_FOLDERS)).unwrap_or_default();
+        for root in std::iter::once(install).chain(library_paths(&listed)) {
+            if root.is_dir() && !roots.contains(&root) {
+                roots.push(root);
+            }
+        }
+    }
+    roots
+}
+
+/// The `"path"` values in a `libraryfolders.vdf` (Valve's KeyValues text:
+/// one `"key"  "value"` pair per line).
+fn library_paths(vdf: &str) -> Vec<PathBuf> {
+    vdf.lines()
+        .filter_map(|line| {
+            let mut quoted = line.split('"').skip(1).step_by(2);
+            (quoted.next()? == "path").then(|| quoted.next()).flatten()
+        })
+        // Backslashes are escaped there.
+        .map(|path| PathBuf::from(path.replace("\\\\", "\\")))
+        .filter(|path| path.is_absolute())
+        .collect()
 }
 
 /// A wallpaper setting: an absolute path, or a Workshop ID.
@@ -97,9 +124,12 @@ impl Source {
         if !metadata.is_file() {
             return Err(format!("{} isn't a file", path.display()));
         }
+        // The extension first: an MP4's header also passes for a HEIF image.
+        if is_video(&path) {
+            return Ok(Kind::Video(path));
+        }
         match image(&path)?.is_some() {
             true => Ok(Kind::Image(path)),
-            false if is_video(&path) => Ok(Kind::Video(path)),
             false => Err(format!("{} isn't an image, a video or a Wallpaper Engine project", path.display())),
         }
     }
@@ -198,7 +228,8 @@ mod tests {
     fn each_kind_is_told_apart() {
         let dir = TempDir::new("wallpaper-kinds");
         write_png(&dir.join("dusk.png"));
-        std::fs::write(dir.join("loop.MP4"), "not really a video").unwrap();
+        // An MP4's header, which also passes for a HEIF image.
+        std::fs::write(dir.join("loop.MP4"), b"\x00\x00\x00\x20ftypisom\x00\x00\x02\x00isomiso2avc1mp41").unwrap();
         std::fs::write(dir.join("logo.gif"), GIF).unwrap();
         std::fs::write(dir.join("notes.toml"), "x = 1").unwrap();
         let kind = |name: &str| Source::from_request(&dir.join(name).display().to_string()).unwrap().kind(&[]);
@@ -225,6 +256,17 @@ mod tests {
             Ok(Kind::Project { folder: item.clone(), preview: Some(item.join("preview.png")) })
         );
         let missing = Source::from_request("1").unwrap().kind(std::slice::from_ref(&steam)).unwrap_err();
+        // Steam's other libraries are found through the install's list.
+        let home = dir.join("home");
+        let install = home.join(STEAM_ROOTS[0]);
+        std::fs::create_dir_all(install.join("steamapps")).unwrap();
+        let listed = format!(
+            "\"libraryfolders\"\n{{\n\t\"0\"\n\t{{\n\t\t\"path\"\t\t\"{}\"\n\t}}\n\t\"1\"\n\t{{\n\t\t\"path\"\t\t\"{}\"\n\t}}\n}}\n",
+            install.display(),
+            steam.display()
+        );
+        std::fs::write(install.join(LIBRARY_FOLDERS), listed).unwrap();
+        assert_eq!(steam_roots(Some(&home)), [install, steam.clone()]);
         assert!(missing.contains("isn't downloaded"), "{missing}");
         // A preview outside the folder, or an animated one, isn't used.
         for preview in ["../preview.png", "/etc/passwd", "preview.gif"] {
