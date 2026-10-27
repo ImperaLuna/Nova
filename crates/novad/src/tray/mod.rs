@@ -19,7 +19,7 @@
 //! an item its app says isn't there is dropped.
 
 mod app;
-pub use app::BRIDGE;
+pub use app::{BRIDGE, candidates};
 #[cfg(test)]
 pub mod tests;
 

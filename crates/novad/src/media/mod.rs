@@ -10,12 +10,16 @@
 //! on at the player's rate; `Seeked` says when it jumps. Covers become image
 //! files (`cover`). Every player is published as one [`Event::Media`], with
 //! the one the bar shows: the user's pick (`media_show`) until another
-//! player starts playing, else the one that started playing last, else the
+//! player starts playing or the pick moves on to another track while it
+//! isn't playing, else the one that started playing last, else the
 //! one paused last.
 //!
-//! The app a player belongs to comes from its `DesktopEntry` through the
-//! launcher, not from its bus name: browsers name theirs
-//! `org.mpris.MediaPlayer2.firefox.instance_NNN`.
+//! The app a player belongs to is looked up in the launcher by its
+//! `DesktopEntry`, then by the process that owns it on the bus, as the
+//! tray does (`tray::candidates`): never by its bus name, since browsers
+//! name theirs `org.mpris.MediaPlayer2.firefox.instance_NNN`. A player's own
+//! desktop entry can be wrong: Zen's says `zen`, its app is
+//! `zen-beta.desktop`, and its process is `zen-beta`.
 
 mod cover;
 mod player;
@@ -61,12 +65,14 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct Sources {
     pub bus: Bus,
     pub covers: PathBuf,
+    /// Where a player's process is looked up (`/proc`, or a copy in tests).
+    pub proc: PathBuf,
 }
 
 impl Sources {
     /// Covers go in `runtime_dir/media`, beside novad's socket.
     pub fn new(runtime_dir: &Path) -> Self {
-        Self { bus: Bus::Session, covers: runtime_dir.join("media") }
+        Self { bus: Bus::Session, covers: runtime_dir.join("media"), proc: PathBuf::from("/proc") }
     }
 }
 
@@ -83,13 +89,15 @@ struct Shared {
     /// The connection to the bus, once it's up, for the commands.
     connection: Mutex<Option<Connection>>,
     covers: Covers,
+    proc: PathBuf,
     stop: Stop,
 }
 
 #[derive(Default)]
 struct State {
     players: Vec<Player>,
-    /// The player the user picked (`media_show`), until another starts playing.
+    /// The player the user picked (`media_show`), until another starts
+    /// playing or it moves on to another track while it isn't playing.
     picked: Option<String>,
     /// Counts status changes, so the latest to start playing or pause is known.
     clock: u64,
@@ -104,6 +112,9 @@ struct Player {
     owner: String,
     /// `None` until it's first read.
     read: Option<Read>,
+    /// The names its owner's process goes by, to find its app with;
+    /// `None` until read with it.
+    process: Option<Vec<String>>,
     /// Its cover as a file, and the art URL that file is for.
     cover: Option<String>,
     cover_url: Option<String>,
@@ -129,6 +140,7 @@ impl Media {
             launcher: Mutex::new(launcher),
             connection: Mutex::new(None),
             covers: Covers::new(sources.covers),
+            proc: sources.proc,
             stop: Stop::default(),
         });
         let (ready, started) = std::sync::mpsc::channel();
@@ -219,16 +231,28 @@ impl Media {
         Ok(true)
     }
 
-    /// The app ids (lower case) `player`'s windows may have: its app's, or
-    /// its desktop entry's name without one. Empty when it names neither.
+    /// The app ids (lower case) `player`'s windows may have: its app's,
+    /// after its desktop entry's name; without an app, all its own names
+    /// (`names`). Its process's other names can be another app's: one
+    /// started from a terminal sits in the terminal's unit.
     pub fn window_ids(&self, player: &str) -> Result<Vec<String>, String> {
-        let (_, read) = self.known(player)?;
-        let Some(entry) = read.desktop_entry else { return Ok(vec![]) };
-        let entry = entry.to_lowercase();
+        let (names, entry) = {
+            let state = lock(&self.shared.state);
+            let found = find(&state, player)?;
+            let read = found.read.as_ref().ok_or_else(|| format!("{player} hasn't been read yet"))?;
+            (names(found), read.desktop_entry.as_deref().map(str::to_lowercase))
+        };
         let launcher = lock(&self.shared.launcher).clone();
-        let app = launcher.as_ref().and_then(|launcher| launcher.find_app(std::slice::from_ref(&entry)));
-        let ids = app.zip(launcher).and_then(|(app, launcher)| launcher.window_ids(&app.id));
-        Ok(ids.unwrap_or_else(|| vec![entry]))
+        let Some(app_ids) = launcher.and_then(|launcher| launcher.window_ids(&launcher.find_app(&names)?.id)) else {
+            return Ok(names);
+        };
+        let mut ids: Vec<String> = entry.into_iter().collect();
+        for id in app_ids {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        Ok(ids)
     }
 
     /// The owner of the read player `player`, and its read.
@@ -261,6 +285,19 @@ impl Media {
     }
 }
 
+/// The names (lower case) to find `player`'s app and windows by: its
+/// desktop entry, then its process's names.
+fn names(player: &Player) -> Vec<String> {
+    let entry = player.read.as_ref().and_then(|read| read.desktop_entry.as_deref()).map(str::to_lowercase);
+    let mut names: Vec<String> = entry.into_iter().collect();
+    for name in player.process.iter().flatten() {
+        if !names.contains(name) {
+            names.push(name.clone());
+        }
+    }
+    names
+}
+
 /// The player `id`, if novad follows it.
 fn find<'a>(state: &'a State, id: &str) -> Result<&'a Player, String> {
     if id.len() > MEDIA_PLAYER_MAX_BYTES {
@@ -277,8 +314,8 @@ impl Shared {
             .iter()
             .filter_map(|player| {
                 let read = player.read.as_ref()?;
-                let app = read.desktop_entry.as_ref().zip(launcher.as_ref()).and_then(|(entry, launcher)| {
-                    launcher.find_app(&[entry.to_lowercase()]).map(|app| (launcher.is_browser(&app.id), app))
+                let app = launcher.as_ref().and_then(|launcher| {
+                    launcher.find_app(&names(player)).map(|app| (launcher.is_browser(&app.id), app))
                 });
                 let identity = if read.identity.is_empty() { &player.id[PREFIX.len()..] } else { &read.identity };
                 Some(MediaPlayer {
@@ -324,6 +361,7 @@ impl Shared {
         if let Some(player) = state.players.iter_mut().find(|player| player.id == id) {
             // Handed to another connection: that one's the player now.
             player.owner = owner.to_string();
+            player.process = None;
         } else if state.players.len() >= MAX_PLAYERS {
             self.logger.warn(LOG_SOURCE, &format!("left {id} out: already following {MAX_PLAYERS} players"));
             return;
@@ -333,6 +371,7 @@ impl Shared {
                 id: id.to_string(),
                 owner: owner.to_string(),
                 read: None,
+                process: None,
                 cover: None,
                 cover_url: None,
                 position_at_ms: 0,
@@ -410,7 +449,11 @@ impl Shared {
     /// downloaded. A player that went, or was handed to another connection,
     /// meanwhile is left as it is.
     fn read(self: &Arc<Self>, connection: &Connection, id: &str) {
-        let Some(owner) = lock(&self.state).players.iter().find(|player| player.id == id).map(|p| p.owner.clone())
+        let Some((owner, known)) = lock(&self.state)
+            .players
+            .iter()
+            .find(|player| player.id == id)
+            .map(|player| (player.owner.clone(), player.process.is_some()))
         else {
             return;
         };
@@ -421,12 +464,21 @@ impl Shared {
                 return;
             }
         };
+        let process = (!known).then(|| self.process_names(connection, id, &owner));
         let read_at_ms = now_ms();
         let url = read.art_url.clone();
         let mut state = lock(&self.state);
         let State { players, picked, clock, .. } = &mut *state;
         let Some(player) = players.iter_mut().find(|player| player.id == id && player.owner == owner) else { return };
         let was = player.read.as_ref().map(|read| read.status);
+        // A picked player that isn't playing moving to another track ends
+        // the pick too: a browser keeps one player for all its tabs, so
+        // closing the picked tab leaves it there with another tab's media,
+        // or none.
+        let moved_on = player.read.as_ref().is_some_and(|old| old.track_id != read.track_id || old.title != read.title);
+        if moved_on && read.status != PlaybackStatus::Playing && picked.as_deref() == Some(id) {
+            *picked = None;
+        }
         if was != Some(read.status) {
             *clock += 1;
             match read.status {
@@ -442,6 +494,9 @@ impl Shared {
             }
         }
         player.read = Some(read);
+        if let Some(process) = process {
+            player.process = Some(process);
+        }
         player.position_at_ms = read_at_ms;
         let new_cover = player.cover_url != url;
         if new_cover {
@@ -467,6 +522,23 @@ impl Shared {
             }
             _ => self.publish(&mut state),
         }
+    }
+
+    /// The names the process that owns `owner`, player `id`'s bus name,
+    /// goes by; none when the bus can't tell which process it is.
+    fn process_names(&self, connection: &Connection, id: &str, owner: &str) -> Vec<String> {
+        let pid = zbus::block_on(connection.call_method(
+            Some(DBUS_NAME),
+            DBUS_PATH,
+            Some(DBUS_NAME),
+            "GetConnectionUnixProcessID",
+            &(owner,),
+        ))
+        .and_then(|reply| reply.body().deserialize::<u32>());
+        if let Err(e) = &pid {
+            self.logger.log(LogLevel::Debug, LOG_SOURCE, &format!("can't tell which process {id} is in: {e}"));
+        }
+        crate::tray::candidates(&self.proc, pid.ok(), "")
     }
 
     /// Downloads player `id`'s cover at `url`, and publishes it unless the
