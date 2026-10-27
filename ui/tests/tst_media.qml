@@ -228,6 +228,29 @@ Item {
             verify(pill.faceWidth < Tokens.mediaTitleMax + Tokens.mediaArtistMax + 100, `face ${pill.faceWidth}`);
         }
 
+        Component {
+            id: titleComponent
+            MarqueeTitle {
+                text: "Everything In Its Right Place (Live in Paris, 2001, Remastered)"
+            }
+        }
+
+        function test_a_long_title_scrolls_only_while_shown() {
+            const title = createTemporaryObject(titleComponent, stage, {
+                visible: false
+            });
+            verify(title.over > 0);
+            // Its bar hidden beside a fullscreen window: nothing moves.
+            title.scroll();
+            verify(!title.moving);
+            title.visible = true;
+            title.scroll();
+            verify(title.moving);
+            // Hidden mid-scroll, it stops and rests at its start.
+            title.visible = false;
+            verify(!title.moving);
+        }
+
         function test_paused_it_lingers_and_then_slides_away() {
             const pill = createPill(stage.media([playing("a")], "a"));
             tryCompare(pill, "shownT", 1);

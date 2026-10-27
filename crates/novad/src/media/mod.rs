@@ -104,8 +104,9 @@ struct Player {
     owner: String,
     /// `None` until it's first read.
     read: Option<Read>,
-    /// Its cover as a file, for `read`'s art URL.
+    /// Its cover as a file, and the art URL that file is for.
     cover: Option<String>,
+    cover_url: Option<String>,
     /// When `read.position_us` was read or last jumped, in milliseconds since 1970.
     position_at_ms: i64,
     /// `State::clock` when it last started playing, and when it last paused.
@@ -333,6 +334,7 @@ impl Shared {
                 owner: owner.to_string(),
                 read: None,
                 cover: None,
+                cover_url: None,
                 position_at_ms: 0,
                 played: 0,
                 paused: 0,
@@ -404,9 +406,9 @@ impl Shared {
         });
     }
 
-    /// Reads the player `id` and its cover, then publishes it. A player
-    /// that went, or was handed to another connection, meanwhile is left as
-    /// it is.
+    /// Reads the player `id` and publishes it, then its cover when that's
+    /// new. A player that went, or was handed to another connection,
+    /// meanwhile is left as it is.
     fn read(&self, connection: &Connection, id: &str) {
         let Some(owner) = lock(&self.state).players.iter().find(|player| player.id == id).map(|p| p.owner.clone())
         else {
@@ -419,15 +421,8 @@ impl Shared {
                 return;
             }
         };
-        // Its position is as of now, not of after the cover's download.
         let read_at_ms = now_ms();
-        let cover = read.art_url.as_deref().and_then(|url| match self.covers.file(url) {
-            Ok(file) => file.map(|file| file.display().to_string()),
-            Err(e) => {
-                self.logger.info(LOG_SOURCE, &format!("{id}'s cover won't show: {e}"));
-                None
-            }
-        });
+        let url = read.art_url.clone();
         let mut state = lock(&self.state);
         let State { players, picked, clock, .. } = &mut *state;
         let Some(player) = players.iter_mut().find(|player| player.id == id && player.owner == owner) else { return };
@@ -447,9 +442,50 @@ impl Shared {
             }
         }
         player.read = Some(read);
-        player.cover = cover;
         player.position_at_ms = read_at_ms;
-        self.publish(&mut state);
+        let new_cover = player.cover_url != url;
+        if new_cover {
+            player.cover = None;
+            player.cover_url = None;
+        }
+        // A cover to download waits until the rest is out, so a slow one
+        // holds back neither the track nor which player shows; a local one
+        // only needs a look, so it comes with the rest.
+        match url {
+            Some(url) if new_cover && Covers::downloads(&url) => {
+                self.publish(&mut state);
+                drop(state);
+                let cover = self.cover(id, &url);
+                let mut state = lock(&self.state);
+                let Some(player) = state.players.iter_mut().find(|player| {
+                    player.id == id
+                        && player.owner == owner
+                        && player.read.as_ref().is_some_and(|read| read.art_url.as_ref() == Some(&url))
+                }) else {
+                    return;
+                };
+                player.cover = cover;
+                player.cover_url = Some(url);
+                self.publish(&mut state);
+            }
+            Some(url) if new_cover => {
+                player.cover = self.cover(id, &url);
+                player.cover_url = Some(url);
+                self.publish(&mut state);
+            }
+            _ => self.publish(&mut state),
+        }
+    }
+
+    /// The file for player `id`'s cover at `url`, if it has one.
+    fn cover(&self, id: &str, url: &str) -> Option<String> {
+        match self.covers.file(url) {
+            Ok(file) => file.map(|file| file.display().to_string()),
+            Err(e) => {
+                self.logger.info(LOG_SOURCE, &format!("{id}'s cover won't show: {e}"));
+                None
+            }
+        }
     }
 }
 

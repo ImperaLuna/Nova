@@ -8,7 +8,8 @@ import "media.js" as Media
 // end; `scroll()` moves it through once (a pause at each end) and back to
 // its start, where it rests. It never loops on its own: the pill scrolls it
 // when the track changes, and it scrolls again and again while `hovered`.
-// Only `running` scrolls it, so a hidden or open pill never animates.
+// Only `running` and shown (its bar can be hidden beside a fullscreen
+// window) scrolls it, so a hidden or open pill never animates.
 Item {
     id: title
 
@@ -27,7 +28,7 @@ Item {
 
     // Scrolls through once, unless it fits or it's scrolling already.
     function scroll() {
-        if (running && over > 0 && !marquee.running)
+        if (running && visible && over > 0 && !marquee.running)
             marquee.start();
     }
 
@@ -41,6 +42,10 @@ Item {
             rest();
     }
     onTextChanged: rest()
+    onVisibleChanged: {
+        if (!visible)
+            rest();
+    }
     onHoveredChanged: {
         if (hovered)
             scroll();

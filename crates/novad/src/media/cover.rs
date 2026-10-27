@@ -46,6 +46,12 @@ impl Covers {
         Self { folder, kept: Mutex::new(VecDeque::new()) }
     }
 
+    /// Whether the art URL `url` is downloaded (slow), rather than looked at
+    /// on disk or ignored.
+    pub fn downloads(url: &str) -> bool {
+        url.starts_with(HTTPS_SCHEME)
+    }
+
     /// The image file for the art URL `url`, downloading it the first time.
     /// Blocks while it downloads; call it off the bus's thread.
     pub fn file(&self, url: &str) -> Result<Option<PathBuf>, String> {
