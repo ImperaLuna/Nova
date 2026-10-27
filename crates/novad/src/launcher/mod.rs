@@ -44,8 +44,12 @@ const MAX_RECENT: usize = 8;
 const MAX_REMEMBERED: usize = 200;
 /// How long a launch waits for the window of an app it reopened from the
 /// tray, to focus it, and how often it looks.
-const TRAY_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(3) };
+pub const TRAY_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(3) };
 const TRAY_WINDOW_RETRY: Duration = Duration::from_millis(100);
+/// How long it waits for the window of an app in the tray that it started
+/// again: the new process first starts up, then hands over to the running
+/// one.
+pub const STARTED_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_secs(2) } else { Duration::from_secs(10) };
 /// The desktop entry category of web browsers.
 const BROWSER: &str = "WebBrowser";
 
@@ -512,53 +516,71 @@ fn snapshot(state: &State) -> nova_protocol::Launcher {
     nova_protocol::Launcher { apps, pinned, recent }
 }
 /// The focus step of [`Launcher::launch`] for app `id`, whose windows may
-/// have the app ids `ids`: an open window takes focus where it is, unless
-/// a `new_window` is asked for; a new one opens on `output` (the
-/// launcher's screen), which the compositor puts it on once focused. An
-/// app that only sits in the tray shows its window from there, as starting
-/// it again may just quit (Discord), unless no window shows: Claude Desktop
-/// ignores `Activate` (its icon only has a menu) but shows its window when
-/// started again. `true` when nothing needs starting.
+/// have the app ids `ids` (none, and no `tray`, when a new window is asked
+/// for): an open window takes focus where it is; a new one opens on
+/// `output` (the launcher's screen), which the compositor puts it on once
+/// focused. An app that only sits in the tray shows its window from there,
+/// as starting it again may just quit (Discord). One whose icon can't show it (Claude
+/// Desktop ignores `Activate`, libayatana's icons have only a menu) is
+/// started again with `start`: a running app then shows its window, which
+/// gets no focus from the compositor either (the activation token went to
+/// the process that handed over), so it takes focus here once it shows.
+/// `true` when nothing (more) needs starting.
 pub fn focus_open(
     id: &str,
     ids: &[String],
-    new_window: bool,
     compositor: Option<&Compositor>,
     tray: Option<&Tray>,
     output: Option<&str>,
+    start: impl FnOnce() -> Result<(), String>,
     logger: &Logger,
 ) -> Result<bool, String> {
     if let Some(compositor) = compositor {
-        if !new_window && !ids.is_empty() && compositor.focus_app(ids, output)? {
+        if !ids.is_empty() && compositor.focus_app(ids, output)? {
             return Ok(true);
         }
         if let Some(output) = output {
             compositor.focus_output(output)?;
         }
     }
-    let tray = tray.filter(|_| !new_window);
-    if !tray.map_or(Ok(false), |tray| tray.activate_app(id))? {
-        return Ok(false);
+    let Some(tray) = tray.filter(|tray| tray.has_app(id)) else { return Ok(false) };
+    let activated = tray.activate_app(id).unwrap_or_else(|e| {
+        logger.warn(LOG_SOURCE, &e);
+        false
+    });
+    let shown = |wait| compositor.is_none_or(|compositor| focus_shown(id, ids, compositor, output, wait, logger));
+    if activated && shown(TRAY_WINDOW_WAIT) {
+        return Ok(true);
     }
-    Ok(compositor.is_none_or(|compositor| focus_shown(id, ids, compositor, output, logger)))
+    start()?;
+    shown(STARTED_WINDOW_WAIT);
+    Ok(true)
 }
 
-/// Focuses the window of app `id` (with one of the app ids `ids`) that its
-/// tray icon was just asked to show, once it shows: niri gives it no focus,
-/// as a tray click hands the app no activation token. Gives up (logged)
-/// after [`TRAY_WINDOW_WAIT`]. `false` when no window showed; `true` also
-/// when that can't be told (an app in a terminal, the compositor failing).
-pub fn focus_shown(id: &str, ids: &[String], compositor: &Compositor, output: Option<&str>, logger: &Logger) -> bool {
+/// Focuses the window of app `id` (with one of the app ids `ids`) that it
+/// was just asked to show (by its tray icon, its menu, or starting it again
+/// while it runs), once it shows: niri gives it no focus, as none of those
+/// hands the app an activation token. Gives up (logged) after `wait`.
+/// `false` when no window showed; `true` also when that can't be told (an
+/// app in a terminal, the compositor failing).
+pub fn focus_shown(
+    id: &str,
+    ids: &[String],
+    compositor: &Compositor,
+    output: Option<&str>,
+    wait: Duration,
+    logger: &Logger,
+) -> bool {
     if ids.is_empty() {
         return true;
     }
-    let deadline = std::time::Instant::now() + TRAY_WINDOW_WAIT;
+    let deadline = std::time::Instant::now() + wait;
     loop {
         match compositor.focus_app(ids, output) {
             Ok(true) => return true,
             Ok(false) if std::time::Instant::now() < deadline => std::thread::sleep(TRAY_WINDOW_RETRY),
             Ok(false) => {
-                logger.info(LOG_SOURCE, &format!("{id}'s window didn't show after its tray icon was asked"));
+                logger.info(LOG_SOURCE, &format!("{id}'s window didn't show"));
                 return false;
             }
             Err(e) => {

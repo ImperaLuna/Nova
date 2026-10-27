@@ -327,6 +327,7 @@ mod tests {
                 id: "discord_status_icon_1".into(),
                 title: String::new(),
                 app: None,
+                menu_only: false,
             }],
         };
         let text = rendered(&facts);
