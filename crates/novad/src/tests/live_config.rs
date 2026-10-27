@@ -152,6 +152,35 @@ fn edits_through_a_symlinked_config_are_seen() {
     assert_eq!(client.next_event("theme")["mode"], "light");
 }
 
+/// NixOS's /etc layout: the config links to a path through a link (like
+/// `/etc/static`) that a rebuild swaps for one to the next generation.
+#[test]
+fn a_swapped_link_on_the_way_is_followed() {
+    let novad = TestDaemon::open("reload-swapped-link", None, |dir| {
+        for (generation, mode) in [("gen1", "dark"), ("gen2", "light")] {
+            std::fs::create_dir_all(dir.join("store").join(generation)).unwrap();
+            std::fs::write(
+                dir.join("store").join(generation).join("config.toml"),
+                format!("[theme]\nmode = \"{mode}\"\n"),
+            )
+            .unwrap();
+        }
+        std::fs::create_dir(dir.join("etc")).unwrap();
+        std::os::unix::fs::symlink(dir.join("store/gen1"), dir.join("etc/static")).unwrap();
+        std::os::unix::fs::symlink(dir.join("etc/static/config.toml"), dir.join("config/config.toml")).unwrap();
+    });
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["theme"]})));
+    assert_eq!(client.next_event("theme")["mode"], "dark");
+    // After the read novad makes once its watches are in has settled, so
+    // only a watch on the swapped link can see the change.
+    std::thread::sleep(crate::settings::SETTLE * 3);
+    // Swapped in one step, the way NixOS's activation does it.
+    std::os::unix::fs::symlink(novad.dir.join("store/gen2"), novad.dir.join("etc/static.new")).unwrap();
+    std::fs::rename(novad.dir.join("etc/static.new"), novad.dir.join("etc/static")).unwrap();
+    assert_eq!(client.next_event("theme")["mode"], "light");
+}
+
 #[test]
 fn a_replaced_config_folder_is_followed() {
     let novad = TestDaemon::start("reload-replaced-folder", None);

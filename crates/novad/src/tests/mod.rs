@@ -102,7 +102,7 @@ impl TestDaemon {
         let icons = test_icons(&dir);
         let sources = Sources {
             config: dir.join("config/config.toml"),
-            selection: dir.join("config/features.toml"),
+            selection: vec![dir.join("config/features.toml")],
             themes_dir: theme::default_dir(),
             manifests: nova_features::load_all(&repo_features()).unwrap(),
             path_var: std::env::var("PATH").unwrap_or_default(),
@@ -166,7 +166,7 @@ impl TestDaemon {
     }
 
     fn features_file(&self) -> PathBuf {
-        self.daemon.sources.selection.clone()
+        self.daemon.sources.selection[0].clone()
     }
 
     /// Connects and reads the hello.

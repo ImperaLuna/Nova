@@ -100,20 +100,27 @@ let
         };
       };
 
-      # Nova installed the way a NixOS user would: the package and its user unit.
+      # Nova installed the way a NixOS user would: its NixOS module, which
+      # brings the package, its user unit and the default features' packages.
       machine = {
-        imports = [ desktop ];
+        imports = [
+          desktop
+          # The flake's packages aren't at hand here; `package` sets Nova.
+          (import ../../packaging/nix/nixos.nix { packages = null; })
+        ];
+        programs.nova = {
+          enable = true;
+          package = nova;
+        };
         # grim takes the screenshots, and `quickshell ipc` asks the UI what
         # it got from novad.
         environment.systemPackages = [
-          nova
           pkgs.grim
           pkgs.quickshell
           pkgs.wireplumber
           # nova-test-player, for the now-playing pill.
           (import ../player.nix { inherit pkgs; })
         ];
-        systemd.packages = [ nova ];
         environment.etc."xdg/autostart/nova-login-probe.desktop".text = ''
           [Desktop Entry]
           Type=Application
@@ -141,9 +148,6 @@ let
             }
           ];
         };
-        # NixOS ignores [Install] in packaged units; this is the unit's
-        # WantedBy=.
-        systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
       };
 
       # Steps only some compositors have, as shell commands: none elsewhere.

@@ -24,14 +24,14 @@ use std::time::Duration;
 const LOG_SOURCE: &str = "settings";
 /// Editors save in steps (write a copy, move the old file away, rename the
 /// copy into place); a reload waits until changes pause this long.
-const SETTLE: Duration = Duration::from_millis(200);
+pub(crate) const SETTLE: Duration = Duration::from_millis(200);
 
 /// Where the settings come from, fixed for novad's life.
 pub struct Sources {
     /// `config.toml` (see `config`).
     pub config: PathBuf,
-    /// `features.toml`.
-    pub selection: PathBuf,
+    /// `features.toml`: the first of these that exists.
+    pub selection: Vec<PathBuf>,
     pub themes_dir: PathBuf,
     pub manifests: Vec<Manifest>,
     /// Where features' binaries are looked for.
@@ -411,13 +411,16 @@ pub fn watch(files: Vec<PathBuf>, logger: Arc<Logger>, reload: impl Fn() + Send 
 }
 
 /// Watches every folder holding an entry that decides what `files` read,
-/// and returns those entries: each file and the file it links to (a dotfiles
-/// checkout, say), and their folders, which may appear later, be replaced or
-/// be links themselves. Watching a folder that's already watched is harmless.
+/// and returns those entries: each file, every link on the way to what it
+/// reads (a dotfiles checkout, say, or NixOS's `/etc/static`, which a
+/// rebuild replaces while `/etc/xdg/nova/features.toml` stays the same
+/// link), each path those links lead to, and their folders, which may
+/// appear later, be replaced or be links themselves. Watching a folder
+/// that's already watched is harmless.
 fn watch_entries(watcher: &mut Inotify, files: &[PathBuf], logger: &Logger) -> BTreeSet<PathBuf> {
     let mut entries = BTreeSet::new();
     for file in files {
-        for entry in [Some(file.clone()), std::fs::canonicalize(file).ok()].into_iter().flatten() {
+        for entry in link_hops(file) {
             entries.extend(entry.parent().map(Path::to_owned));
             entries.insert(entry);
         }
@@ -435,10 +438,54 @@ fn watch_entries(watcher: &mut Inotify, files: &[PathBuf], logger: &Logger) -> B
     entries
 }
 
+/// Links followed before giving up, as the kernel's own limit.
+const MAX_LINK_HOPS: usize = 40;
+
+/// `file`, and each link met while resolving it, from the root down, with
+/// the path it leads to: for `/etc/xdg/nova/features.toml` on NixOS, also
+/// `/etc/static` and the store path behind it.
+fn link_hops(file: &Path) -> Vec<PathBuf> {
+    let mut hops = vec![file.to_owned()];
+    let mut path = file.to_owned();
+    for _ in 0..MAX_LINK_HOPS {
+        let ancestors: Vec<&Path> = path.ancestors().collect();
+        let Some((link, target)) = ancestors
+            .into_iter()
+            .rev()
+            .find_map(|ancestor| std::fs::read_link(ancestor).ok().map(|target| (ancestor.to_owned(), target)))
+        else {
+            break;
+        };
+        let rest = path.strip_prefix(&link).map(Path::to_owned).unwrap_or_default();
+        let base = link.parent().unwrap_or(Path::new("/"));
+        path = base.join(target).join(rest);
+        hops.push(link);
+        hops.push(path.clone());
+    }
+    hops
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use nova_protocol::LogLevel;
+
+    /// NixOS's layout: a link to `/etc/static/...`, where `static` is the
+    /// link a rebuild replaces.
+    #[test]
+    fn every_link_on_the_way_is_a_hop() {
+        let dir = nova_test_support::TempDir::new("settings-hops");
+        std::fs::create_dir_all(dir.join("store/xdg/nova")).unwrap();
+        std::fs::write(dir.join("store/xdg/nova/features.toml"), "").unwrap();
+        std::os::unix::fs::symlink(dir.join("store"), dir.join("static")).unwrap();
+        std::fs::create_dir_all(dir.join("etc/xdg/nova")).unwrap();
+        std::os::unix::fs::symlink(dir.join("static/xdg/nova/features.toml"), dir.join("etc/xdg/nova/features.toml"))
+            .unwrap();
+        let file = dir.join("etc/xdg/nova/features.toml");
+        let hops = link_hops(&file);
+        assert!(hops.contains(&dir.join("static")), "{hops:?}");
+        assert_eq!(hops.last(), Some(&dir.join("store/xdg/nova/features.toml")));
+    }
 
     /// A file changed between the first read and the watches going in is
     /// only seen if the watcher reads once more after they're in.
