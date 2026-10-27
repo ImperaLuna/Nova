@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Effects
 import "../theme"
 import "../theme/icons.js" as Icons
 import "../stage"
@@ -41,7 +40,7 @@ StagePanel {
     // The pill's pieces, and the panel's sizes, from the tokens.
     readonly property int artSize: Tokens.mediaArt
     readonly property int faceGap: Tokens.mediaFaceGap
-    readonly property real titleWidth: Math.min(titleMetrics.advanceWidth, Tokens.mediaTitleWidth)
+    readonly property real titleWidth: titleSlot.width
     readonly property real artistWidth: artist !== "" ? Math.min(artistMetrics.advanceWidth, Tokens.mediaArtistWidth) : 0
     readonly property real equalizerWidth: 4 * Tokens.mediaEqBar + 3 * Tokens.mediaEqGap
     readonly property real pillWidth: Tokens.mediaFacePadLeft + artSize + faceGap + titleWidth + (artist !== "" ? faceGap + artistWidth : 0) + faceGap + equalizerWidth + Tokens.mediaFacePadRight
@@ -107,7 +106,7 @@ StagePanel {
     Timer {
         id: levelsTimer
         interval: Tokens.durationEqStep
-        running: root.playing && root.pillShown && !root.open
+        running: root.onScreen && root.playing && root.pillShown && !root.open
         repeat: true
         onTriggered: {
             const span = Tokens.mediaEqHeight - Tokens.mediaEqMin;
@@ -115,18 +114,25 @@ StagePanel {
         }
     }
 
+    // Whether the pill or panel is drawn at all. Its animations stop otherwise.
+    readonly property bool onScreen: root.visible && root.opacity > 0
+
     // The title scrolls through once when a new track starts or when the pill
-    // is hovered, then rests at its start. Never loops on its own.
+    // is hovered, then rests at its start. Never loops on its own. It moves
+    // the title inside its slot, which clips it.
+    property real titleScroll: 0
     SequentialAnimation {
         id: marquee
-        running: root.pillShown && !root.open && root.titleOverflow > 0 && root.scrollRequested
+        running: root.onScreen && root.pillShown && !root.open && root.titleOverflow > 0 && root.scrollRequested
         onFinished: root.scrollRequested = false
+        onRunningChanged: if (!running)
+            root.titleScroll = 0
         PauseAnimation {
             duration: Tokens.durationMarqueePause
         }
         NumberAnimation {
-            target: titleText
-            property: "x"
+            target: root
+            property: "titleScroll"
             from: 0
             to: -root.titleOverflow
             duration: root.titleOverflow / Tokens.mediaMarqueeSpeed * Media.MILLISECONDS_PER_SECOND
@@ -134,54 +140,16 @@ StagePanel {
         PauseAnimation {
             duration: Tokens.durationMarqueePause
         }
-        ScriptAction {
-            script: titleText.x = 0
-        }
     }
     property bool scrollRequested: false
-    readonly property real titleOverflow: Math.max(0, titleMetrics.advanceWidth - Tokens.mediaTitleWidth)
+    readonly property real titleOverflow: titleSlot.overflow
     onTitleChanged: scrollRequested = true
-
-    TextMetrics {
-        id: titleMetrics
-        font.family: Tokens.fontSans
-        font.pixelSize: Tokens.fontSize
-        font.weight: Font.DemiBold
-        text: root.title
-    }
 
     TextMetrics {
         id: artistMetrics
         font.family: Tokens.fontSans
         font.pixelSize: Tokens.fontSizeSmall
         text: root.artist
-    }
-
-    // The fade at the title's end, when it doesn't fit: a mask over the title.
-    Item {
-        id: fadeMask
-        layer.enabled: true
-        visible: false
-        width: Tokens.mediaTitleWidth
-        height: Tokens.barHeight
-        Rectangle {
-            anchors.fill: parent
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop {
-                    position: 0
-                    color: "white"
-                }
-                GradientStop {
-                    position: 1 - Tokens.mediaFadeWidth / Tokens.mediaTitleWidth
-                    color: "white"
-                }
-                GradientStop {
-                    position: 1
-                    color: "transparent"
-                }
-            }
-        }
     }
 
     GlassShadow {
@@ -249,29 +217,20 @@ StagePanel {
             }
         }
 
-        Text {
-            id: titleText
+        // The title's slot: a long title is clipped at its end and faded out.
+        TitleSlot {
+            id: titleSlot
             x: Tokens.mediaFacePadLeft + root.artSize + root.faceGap
-            y: (Tokens.barHeight - height) / 2
-            width: root.titleWidth
+            text: root.title
+            color: root.paused ? Tokens.fgDim : Tokens.fg
+            scroll: root.titleScroll
             opacity: 1 - root.t
             visible: opacity > 0
-            font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSize
-            font.weight: Font.DemiBold
-            color: root.paused ? Tokens.fgDim : Tokens.fg
-            textFormat: Text.PlainText
-            text: root.title
-            layer.enabled: root.titleOverflow > 0
-            layer.effect: MultiEffect {
-                maskEnabled: true
-                maskSource: fadeMask
-            }
         }
 
         Text {
             id: artistText
-            x: titleText.x + root.titleWidth + root.faceGap
+            x: titleSlot.x + titleSlot.width + root.faceGap
             y: (Tokens.barHeight - height) / 2
             width: root.artistWidth
             opacity: (1 - root.t) * (root.artist !== "" ? 1 : 0)
