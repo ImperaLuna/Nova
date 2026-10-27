@@ -6,6 +6,8 @@ import "../daemon/protocol.js" as Protocol
 import "../compositor"
 import "../ai_usage"
 import "../ai_usage/service"
+import "../media"
+import "../media/service"
 import "../central_pill"
 import "../launcher/service"
 import "../capture/service"
@@ -105,8 +107,9 @@ Item {
     }
 
     readonly property AiUsage aiUsagePill: aiUsage.item as AiUsage
+    readonly property NowPlaying nowPlayingPill: nowPlaying.item as NowPlaying
     // The pills that open panels, for the stage (StagePanel has the contract).
-    readonly property list<StagePanel> panels: aiUsagePill ? [aiUsagePill, rightPill, trayMenu] : [rightPill, trayMenu]
+    readonly property list<StagePanel> panels: [aiUsagePill, nowPlayingPill, rightPill, trayMenu].filter(panel => panel !== null)
     // What else is drawn and takes clicks, each rounded by its `radius`.
     readonly property list<Item> fixedShapes: [center, recordingPill, revealStrip]
     // The pill in the middle, which a panel in the middle of the screen can
@@ -194,6 +197,18 @@ Item {
                 usage: AiUsageService.usage
                 onShowRequested: provider => AiUsageService.show(provider)
                 onRefreshRequested: AiUsageService.refresh()
+            }
+        }
+
+        // Beside the AI usage pill, or where it'd be when that feature is off.
+        Loader {
+            id: nowPlaying
+            x: (aiUsage.item ? aiUsage.x + aiUsage.item.width : Tokens.barMargin) + Tokens.mediaGap
+            y: Tokens.barGap
+            active: MediaService.ready
+            sourceComponent: NowPlaying {
+                player: MediaService.shown
+                players: MediaService.players
             }
         }
 

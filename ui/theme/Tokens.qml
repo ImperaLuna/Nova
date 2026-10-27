@@ -123,6 +123,58 @@ QtObject {
     // barGap + barHeight + barGap).
     readonly property int barMargin: 8
     readonly property int barGap: 4
+
+    // The now-playing pill and panel (ui/media).
+    // The gap between the AI usage pill and the now-playing pill.
+    readonly property int mediaGap: 8
+    // The pill's face: left and right padding, gap between its items.
+    readonly property int mediaFacePadLeft: 5
+    readonly property int mediaFacePadRight: 12
+    readonly property int mediaFaceGap: 8
+    // The app icon's circle, and its title and artist widths.
+    readonly property int mediaArt: 26
+    readonly property int mediaTitleWidth: 150
+    readonly property int mediaArtistWidth: 96
+    // The title's fade at its end, when it doesn't fit.
+    readonly property int mediaFadeWidth: 18
+    // The equalizer: four bars.
+    readonly property int mediaEqBar: 3
+    readonly property int mediaEqGap: 2
+    readonly property int mediaEqHeight: 12
+    readonly property int mediaEqMin: 3
+    // How often the bars change while playing (8 frames a second).
+    readonly property int durationEqStep: 125
+    // The title scrolls through once at this speed, pausing at each end.
+    readonly property real mediaMarqueeSpeed: 30
+    readonly property int durationMarqueePause: 600
+    // A paused player's pill stays this long, unless the panel is open.
+    readonly property int durationMediaLinger: 60000
+    // The panel: its width, sides, bottom, and the sizes of its parts.
+    readonly property int mediaPanelWidth: 300
+    readonly property int mediaPanelPad: 20
+    readonly property int mediaPanelBottom: 18
+    readonly property int mediaCover: 76
+    readonly property int mediaPlay: 48
+    readonly property int mediaControl: 40
+    readonly property int mediaProgress: 3
+    readonly property int mediaProgressHover: 6
+    readonly property int mediaKnob: 12
+    readonly property int mediaChipHeight: 28
+    readonly property int mediaChipPad: 12
+    readonly property int mediaChipGap: 6
+    readonly property int mediaChipDot: 5
+    readonly property int mediaGoHeight: 40
+    readonly property int mediaGoMargin: 14
+    readonly property int mediaTitleLines: 2
+    // A paused player's app icon and cover are drawn at this opacity.
+    readonly property real mediaPausedArt: 0.6
+    readonly property color mediaChip: Qt.rgba(1, 1, 1, 0.07)
+    readonly property color mediaGoHover: alpha(fg, 0.10)
+    // The pill and panel draw their glyphs at these shares of their box.
+    readonly property real mediaNoteScale: 0.5
+    readonly property real mediaGlyphScale: 0.45
+    // How often the progress line counts up, in milliseconds.
+    readonly property int durationProgressTick: 1000
     // While the bar steps aside for a fullscreen window: the strip along the
     // top edge that brings it back when the pointer touches it.
     readonly property int revealStrip: 2
