@@ -15,11 +15,11 @@ Singleton {
 
     readonly property bool ready: Daemon.readyFeatures.includes(Protocol.FEATURE_WALLPAPER)
 
-    // While a carousel is open or closing: {path, output, everywhere, shown},
-    // the image it previews, the screen it's on, whether a pick changes
-    // every screen, and whether it's open (the preview fades as it closes).
-    // The other screens preview it too while `everywhere`. The stage sets
-    // it; null otherwise.
+    // While a carousel is open or closing: {paths, choosingFor, output,
+    // shown}, the other screens' picks where they'd change (by name), the
+    // screen it picks for ("" for every one), the screen it's on, and
+    // whether it's open (the previews fade as it closes). The other screens
+    // preview their picks from it. The stage sets it; null otherwise.
     property var preview: null
 
     // `done(error, folder, shown)`: the folder's {folder, images} and the
@@ -47,5 +47,21 @@ Singleton {
         if (output)
             args.output = output;
         Daemon.call(Protocol.CMD_SET_WALLPAPER, args, error => done(error ?? null));
+    }
+
+    // Makes each of `requests` ({path, output}) in turn, stopping at the
+    // first that fails; `done(error)` gets the outcome.
+    function setAll(requests: var, done: var) {
+        if (requests.length === 0) {
+            done(null);
+            return;
+        }
+        const [first, ...rest] = requests;
+        set(first.path, first.output, error => {
+            if (error)
+                done(error);
+            else
+                setAll(rest, done);
+        });
     }
 }

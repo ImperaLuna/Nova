@@ -51,6 +51,91 @@ Item {
             compare(Carousel.shown(0, 1, 3), 1);
         }
 
+        function test_screens_go_left_to_right() {
+            const order = Carousel.screenOrder([
+                {
+                    name: "DP-2",
+                    x: 2560,
+                    y: 0,
+                    width: 1920,
+                    height: 1080
+                },
+                {
+                    name: "DP-1",
+                    x: 0,
+                    y: 0,
+                    width: 2560,
+                    height: 1440
+                }
+            ]);
+            compare(order.map(screen => screen.name), ["DP-1", "DP-2"]);
+            compare(order[1].width, 1920);
+        }
+
+        function test_each_screen_shows_its_own_or_the_shared_image() {
+            compare(Carousel.showing(["DP-1", "DP-2"], {
+                path: "/w/dusk.png",
+                outputs: {
+                    "DP-2": "/w/tide.png"
+                }
+            }), {
+                "DP-1": "/w/dusk.png",
+                "DP-2": "/w/tide.png"
+            });
+            compare(Carousel.showing(["DP-1"], {}), {
+                "DP-1": ""
+            });
+        }
+
+        function test_tab_goes_round_every_screen_then_each() {
+            compare(Carousel.nextScreen("", ["DP-1", "DP-2"], 1), "DP-1");
+            compare(Carousel.nextScreen("DP-2", ["DP-1", "DP-2"], 1), "", "back to every screen");
+            compare(Carousel.nextScreen("", ["DP-1", "DP-2"], -1), "DP-2");
+            compare(Carousel.nextScreen("HDMI-A-1", ["DP-1", "DP-2"], 1), "DP-1", "a screen that's gone");
+        }
+
+        function test_picks_become_as_few_calls_as_keep_them() {
+            const showing = {
+                "DP-1": "/w/dusk.png",
+                "DP-2": "/w/tide.png"
+            };
+            compare(Carousel.requests(Object.assign({}, showing), showing), [], "nothing changed");
+            compare(Carousel.requests({
+                "DP-1": "/w/a.png",
+                "DP-2": "/w/a.png"
+            }, showing), [
+                {
+                    path: "/w/a.png",
+                    output: null
+                }
+            ], "the same image everywhere: one call");
+            compare(Carousel.requests({
+                "DP-1": "/w/a.png",
+                "DP-2": "/w/tide.png"
+            }, showing), [
+                {
+                    path: "/w/a.png",
+                    output: "DP-1"
+                }
+            ], "only what changed");
+            compare(Carousel.requests({
+                "DP-1": "/w/a.png",
+                "DP-2": "/w/b.png"
+            }, showing).map(call => call.output), ["DP-1", "DP-2"]);
+            compare(Carousel.requests({
+                "DP-1": "/w/a.png",
+                "DP-2": ""
+            }, {
+                "DP-1": "/w/dusk.png",
+                "DP-2": ""
+            }), [
+                {
+                    path: "/w/a.png",
+                    output: "DP-1"
+                }
+            ], "a screen showing nothing keeps nothing");
+        }
+
         function test_it_starts_on_the_screens_image() {
             compare(Carousel.startIndex(["/a.png", "/b.png"], "/b.png"), 1);
             compare(Carousel.startIndex(["/a.png", "/b.png"], "/elsewhere.png"), 0);
@@ -68,6 +153,18 @@ Item {
                 screenWidth: stage.width
                 screenHeight: stage.height
                 outputName: "DP-1"
+                screens: [
+                    {
+                        name: "DP-1",
+                        width: 1280,
+                        height: 800
+                    },
+                    {
+                        name: "DP-2",
+                        width: 1920,
+                        height: 1080
+                    }
+                ]
             }
         }
 
@@ -132,6 +229,17 @@ Item {
             return found.sort((a, b) => a.away - b.away);
         }
 
+        // The screen names marked on the cards in sight.
+        function marks(item: Item): var {
+            let found = [];
+            for (const child of item.children) {
+                if (child.marks !== undefined && child.visible)
+                    found = found.concat(child.marks);
+                found = found.concat(marks(child));
+            }
+            return found;
+        }
+
         function test_two_images_show_both_once() {
             const carousel = make();
             carousel.loaded(carousel.openings, null, {
@@ -180,28 +288,102 @@ Item {
             tryCompare(carousel, "position", 0, 1000, "the deck moves on round, not back");
         }
 
-        function test_enter_keeps_it_on_every_screen_or_this_one() {
+        function test_enter_keeps_the_pick_on_every_screen() {
             const carousel = make();
             keyClick(Qt.Key_Right);
-            keyClick(Qt.Key_Tab);
-            verify(!carousel.everywhere);
+            compare(carousel.previews, {
+                "DP-2": stage.image
+            }, "the other screen previews it too");
             keyClick(Qt.Key_Return);
             compare(picks.count, 1);
-            compare(picks.signalArguments[0][0], stage.image);
-            compare(picks.signalArguments[0][1], false);
+            compare(picks.signalArguments[0][0], [
+                {
+                    path: stage.image,
+                    output: null
+                }
+            ]);
             keyClick(Qt.Key_Right);
             compare(carousel.pickedPath, stage.image, "nothing moves while it's handed over");
             carousel.applied(null);
             tryCompare(carousel, "open", false, 3000, "it closes once awww has faded it in");
         }
 
-        function test_a_failed_pick_says_why_and_stays_open() {
+        function test_tab_picks_for_one_screen_at_a_time() {
+            const carousel = make();
+            keyClick(Qt.Key_Tab);
+            compare(carousel.choosingFor, "DP-1");
+            keyClick(Qt.Key_Right);
+            compare(carousel.previewPath, stage.image);
+            compare(carousel.previews, {}, "DP-2 keeps its own");
+            keyClick(Qt.Key_Tab);
+            compare(carousel.choosingFor, "DP-2");
+            compare(carousel.pickedPath, "/w/tide.png", "the deck goes to what DP-2 shows");
+            keyClick(Qt.Key_Right);
+            compare(carousel.pickedPath, "/w/aurora.png", "round past the end");
+            compare(carousel.previews, {
+                "DP-2": "/w/aurora.png"
+            });
+            compare(carousel.previewPath, stage.image, "this screen keeps its pick");
+            compare(marks(carousel), ["DP-1"], "DP-1's pick says so in the deck");
+            keyClick(Qt.Key_Tab);
+            compare(carousel.choosingFor, "", "then every screen again");
+            compare(carousel.pickedPath, stage.image, "starting from this one's pick");
+            keyClick(Qt.Key_Return);
+            compare(picks.signalArguments[0][0], [
+                {
+                    path: stage.image,
+                    output: "DP-1"
+                },
+                {
+                    path: "/w/aurora.png",
+                    output: "DP-2"
+                }
+            ], "each screen's own pick, until the deck moves");
+        }
+
+        function test_enter_with_nothing_changed_just_closes() {
             const carousel = make();
             keyClick(Qt.Key_Return);
-            carousel.applied("can't read /w/dusk.png");
+            verify(!carousel.open);
+            compare(picks.count, 0);
+        }
+
+        function test_enter_keeps_the_middle_card_where_nothing_from_the_folder_shows() {
+            const carousel = make({
+                path: "/elsewhere/kept.png"
+            });
+            compare(carousel.pickedPath, "/w/aurora.png", "the deck starts on the first image");
+            keyClick(Qt.Key_Tab);
+            keyClick(Qt.Key_Return);
+            compare(picks.signalArguments[0][0], [
+                {
+                    path: "/w/aurora.png",
+                    output: "DP-1"
+                }
+            ], "only on the screen it picks for: DP-2 keeps its own");
+        }
+
+        function test_one_screen_has_no_screens_to_pick_from() {
+            const carousel = createTemporaryObject(carouselComponent, stage, {
+                screens: []
+            });
+            carousel.open = true;
+            carousel.loaded(carousel.openings, null, stage.folder, {
+                path: "/w/dusk.png"
+            });
+            keyClick(Qt.Key_Tab);
+            compare(carousel.choosingFor, "");
+            compare(carousel.screenNames, ["DP-1"]);
+        }
+
+        function test_a_failed_pick_says_why_and_stays_open() {
+            const carousel = make();
+            keyClick(Qt.Key_Right);
+            keyClick(Qt.Key_Return);
+            carousel.applied("can't read the image");
             verify(carousel.open);
             verify(!carousel.handingOver);
-            compare(carousel.problem, "can't read /w/dusk.png");
+            compare(carousel.problem, "can't read the image");
             keyClick(Qt.Key_Right);
             compare(carousel.problem, "", "moving on clears it");
         }
@@ -246,6 +428,7 @@ Item {
 
         function test_a_pick_answered_after_esc_doesnt_close_it_again() {
             const carousel = make();
+            keyClick(Qt.Key_Right);
             keyClick(Qt.Key_Return);
             keyClick(Qt.Key_Escape);
             carousel.open = true;

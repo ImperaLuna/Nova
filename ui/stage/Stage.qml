@@ -18,6 +18,7 @@ import "../wallpaper/service"
 import "../daemon"
 import "../theme"
 import "../daemon/protocol.js" as Protocol
+import "../wallpaper/carousel.js" as Carousel
 import "../icons"
 
 // One per screen: a transparent layer across the top of the screen that the
@@ -152,9 +153,10 @@ Scope {
             screenWidth: root.output.width
             screenHeight: root.output.height
             outputName: root.output.name
+            screens: Carousel.screenOrder(Quickshell.screens)
             compositorFocus: Protocol.focusKey(Compositor.focusedWorkspace)
             onLoadRequested: opening => WallpaperService.load((error, listing, shown) => carousel.loaded(opening, error, listing, shown))
-            onChosen: (path, everywhere) => WallpaperService.set(path, everywhere ? null : root.output.name, error => carousel.applied(error))
+            onChosen: requests => WallpaperService.setAll(requests, error => carousel.applied(error))
         }
     }
 
@@ -167,9 +169,9 @@ Scope {
         if (!carousel || !carousel.shown)
             return null;
         return {
-            path: carousel.previewPath,
+            paths: carousel.previews,
+            choosingFor: carousel.choosingFor,
             output: root.output.name,
-            everywhere: carousel.everywhere,
             shown: carousel.open
         };
     }
@@ -181,17 +183,16 @@ Scope {
             WallpaperService.preview = null;
     }
 
-    // Another screen's carousel previews here too while a pick would change
-    // every screen.
+    // Another screen's carousel previews this screen's pick here, and
+    // marks it while it picks for it.
     LazyLoader {
         readonly property var preview: WallpaperService.preview
-        // Only while a pick changes every screen: it decodes each image at
-        // this screen's size.
-        active: preview !== null && preview.everywhere && preview.output !== root.output.name
+        active: preview !== null && preview.output !== root.output.name
         component: WallpaperPreview {
             screen: root.screen
-            path: WallpaperService.preview?.path ?? ""
+            path: WallpaperService.preview?.paths[root.output.name] ?? ""
             shown: WallpaperService.preview?.shown ?? false
+            picking: WallpaperService.preview?.choosingFor === root.output.name
         }
     }
 

@@ -46,3 +46,53 @@ function startIndex(images, current) {
 function fileName(path) {
     return path.slice(path.lastIndexOf("/") + 1);
 }
+
+// The screens a carousel picks for, left to right as they're laid out:
+// {name, width, height} each, from screens with {name, x, y, width,
+// height}.
+function screenOrder(screens) {
+    return screens.slice().sort((a, b) => a.x - b.x || a.y - b.y).map(screen => ({
+                name: screen.name,
+                width: screen.width,
+                height: screen.height
+            }));
+}
+
+// What each screen shows now, by name ("" when Nova shows none there), from
+// novad's {path, outputs}.
+function showing(names, shown) {
+    const paths = {};
+    for (const name of names)
+        paths[name] = shown?.outputs?.[name] ?? shown?.path ?? "";
+    return paths;
+}
+
+// The screen picked for after `choosingFor` ("" for every screen), `by`
+// one forward or back through "" and then `names`, round past either end.
+function nextScreen(choosingFor, names, by) {
+    const all = [""].concat(names);
+    return all[wrap(Math.max(0, all.indexOf(choosingFor)) + by, all.length)];
+}
+
+// The set_wallpaper calls ({path, output}) that keep `picks` (by screen
+// name) over what `showing` shows: one for every screen when they all get
+// the same image, which also drops screens' own images; otherwise one for
+// each screen that changes. None when nothing does.
+function requests(picks, showing) {
+    const names = Object.keys(picks).filter(name => picks[name] !== "");
+    const changed = names.filter(name => picks[name] !== showing[name]);
+    if (changed.length === 0)
+        return [];
+    const all = Object.keys(picks);
+    if (all.every(name => picks[name] === picks[all[0]]))
+        return [
+            {
+                path: picks[all[0]],
+                output: null
+            }
+        ];
+    return changed.map(name => ({
+                path: picks[name],
+                output: name
+            }));
+}

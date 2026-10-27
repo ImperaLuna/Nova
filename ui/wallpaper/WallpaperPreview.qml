@@ -3,15 +3,17 @@ import Quickshell
 import Quickshell.Wayland
 import "../theme"
 
-// The wallpaper carousel's preview on a screen it isn't open on, while a
-// pick would change every screen: the picked image over the whole screen,
-// taking no clicks or keyboard, fading in and out with `shown`. On the
+// The wallpaper carousel's preview on a screen it isn't open on: the
+// screen's pick over the whole screen ("" while it keeps its own), and
+// PickingFor while the carousel picks for it; taking no clicks or keyboard,
+// fading in and out with `shown`. On the
 // overlay layer, like the carousel, so it covers fullscreen windows too.
 PanelWindow { // qmllint disable uncreatable-type
     id: window
 
     required property string path
     property bool shown: false
+    property bool picking: false
 
     anchors {
         top: true
@@ -39,5 +41,10 @@ PanelWindow { // qmllint disable uncreatable-type
                 easing.bezierCurve: Tokens.easing
             }
         }
+    }
+
+    PickingFor {
+        anchors.fill: parent
+        shown: window.shown && window.picking
     }
 }
