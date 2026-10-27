@@ -205,6 +205,23 @@ fn toggle_reaches_the_ui_and_says_why_when_it_cant() {
 }
 
 #[test]
+fn wallpaper_says_why_it_cant() {
+    let novad = Novad::start_with("wallpaper", "disabled = [\"wallpaper\"]\n");
+    let stderr = |args: &[&str]| {
+        let output = novad.run(args);
+        assert!(!output.status.success(), "{output:?}");
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+    let missing = novad.dir.join("missing.jpg");
+    assert!(stderr(&["wallpaper", missing.to_str().unwrap()]).contains("can't find"));
+    let image = novad.dir.join("dusk.jpg");
+    std::fs::write(&image, "an image").unwrap();
+    assert!(stderr(&["wallpaper", image.to_str().unwrap()]).contains("isn't ready"));
+    assert!(stderr(&["wallpaper"]).contains("isn't ready"));
+    assert!(stderr(&["wallpaper", "--output", "DP-1"]).contains("<FILE>"), "an output needs a file");
+}
+
+#[test]
 fn volume_reaches_the_ui_quietly() {
     let novad = Novad::start("volume");
     let output = novad.run(&["volume", "up"]);

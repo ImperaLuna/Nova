@@ -56,6 +56,7 @@ mod state_file;
 mod supervisor;
 mod theme;
 mod tray;
+mod wallpaper;
 mod x11_tray;
 
 use hub::Hub;
@@ -145,6 +146,7 @@ pub struct Daemon {
     session_lock: Arc<session_lock::SessionLock>,
     screenshots: Arc<screenshot::Screenshots>,
     recordings: Arc<recording::Recordings>,
+    wallpaper: Arc<wallpaper::Wallpaper>,
 }
 
 impl Daemon {
@@ -171,7 +173,16 @@ impl Daemon {
     /// Reads the settings files again and applies what changed.
     fn reload(&self) {
         lock(&self.settings).reload(&self.sources, &self.hub, &self.logger);
+        self.apply_services();
+    }
+
+    /// Tells the services novad keeps whatever the settings (they hold state
+    /// across a feature turning off and on) what the settings are now.
+    fn apply_services(&self) {
         self.recordings.allow(self.feature_ready(recording::FEATURE_ID));
+        let settings = lock(&self.settings);
+        let wallpaper_ready = features::is_ready(&settings.features, wallpaper::FEATURE_ID);
+        self.wallpaper.configure(wallpaper_ready, settings.wallpaper_config());
     }
 
     /// Starts watching the settings files, reloading when they change.
@@ -264,6 +275,7 @@ impl Drop for InProcess {
             ui.stop();
         }
         lock(&self.daemon.settings).stop_services();
+        self.daemon.wallpaper.stop();
     }
 }
 
@@ -346,6 +358,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     ));
     let recordings =
         Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
+    let wallpaper = start_wallpaper(&args.state_dir, &sources.path_var, compositor.as_ref(), &logger);
     let daemon = Arc::new(Daemon {
         started: Instant::now(),
         hub,
@@ -358,10 +371,12 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         session_lock,
         screenshots,
         recordings,
+        wallpaper,
     });
-    let recording = daemon.feature_ready(recording::FEATURE_ID);
-    daemon.recordings.allow(recording);
-    if recording && let Ok(folder) = lock(&daemon.settings).recording_folder() {
+    daemon.apply_services();
+    if daemon.feature_ready(recording::FEATURE_ID)
+        && let Ok(folder) = lock(&daemon.settings).recording_folder()
+    {
         daemon.recordings.recover(&folder);
     }
     // Watched for as long as novad runs.
@@ -372,6 +387,26 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         logind::follow(&daemon);
     }
     Ok((listener, daemon, watching))
+}
+
+/// The wallpaper service, told about the outputs whenever they change.
+fn start_wallpaper(
+    state_dir: &Path,
+    path_var: &str,
+    compositor: Option<&Arc<compositor::Compositor>>,
+    logger: &Arc<Logger>,
+) -> Arc<wallpaper::Wallpaper> {
+    let wallpaper =
+        wallpaper::Wallpaper::start(state_dir, path_var.to_owned(), compositor.is_some(), Arc::clone(logger));
+    if let Some(compositor) = compositor {
+        let told = Arc::downgrade(&wallpaper);
+        compositor.on_outputs(move |names| {
+            if let Some(wallpaper) = told.upgrade() {
+                wallpaper.outputs(names);
+            }
+        });
+    }
+    wallpaper
 }
 
 fn log_level() -> LogLevel {

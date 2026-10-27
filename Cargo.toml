@@ -26,6 +26,8 @@ zbus = { version = "6", default-features = false, features = ["default-rt", "ser
 futures-core = { version = "0.3", default-features = false }
 # Cropping and writing screenshots (pure Rust, so the static musl build stays).
 png = "0.18"
+# Telling an image from another file before awww gets it (headers only, no dependencies).
+imagesize = "0.15"
 nova-protocol = { path = "crates/nova-protocol" }
 nova-features = { path = "crates/nova-features" }
 nova-paths = { path = "crates/nova-paths" }
