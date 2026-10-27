@@ -435,6 +435,7 @@ impl State {
             capabilities: CAPABILITIES.to_vec(),
             outputs,
             focused_window: self.focused_window.and_then(|id| self.windows.get(&id)).map(|window| FocusedWindow {
+                id: window.id.to_string(),
                 app_id: window.app_id.clone().unwrap_or_default(),
                 title: window.title.clone().unwrap_or_default(),
             }),

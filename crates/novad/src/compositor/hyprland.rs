@@ -412,8 +412,12 @@ impl State {
             focused_window: self
                 .active_window
                 .as_ref()
-                .and_then(|address| self.windows.get(address))
-                .map(|window| FocusedWindow { app_id: window.app_id.clone(), title: window.title.clone() }),
+                .and_then(|address| self.windows.get(address).map(|window| (address, window)))
+                .map(|(address, window)| FocusedWindow {
+                    id: address.clone(),
+                    app_id: window.app_id.clone(),
+                    title: window.title.clone(),
+                }),
             keyboard_layout: self.layout.clone(),
         }
     }
