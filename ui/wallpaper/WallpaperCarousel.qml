@@ -62,6 +62,8 @@ StagePanel {
             easing.bezierCurve: Tokens.easing
         }
     }
+    // Cards fading in where they came round to (see the deck).
+    property int arrivals: 0
     readonly property int count: images.length
     readonly property int picked: count > 0 ? Carousel.wrap(target, count) : -1
     readonly property string pickedPath: picked >= 0 ? images[picked] : ""
@@ -88,7 +90,7 @@ StagePanel {
     readonly property Morph morph: Morph {
         open: carousel.open
     }
-    moving: morph.moving || stepMotion.running || preview.moving || deckFade.running || handOver.running
+    moving: morph.moving || stepMotion.running || arrivals > 0 || preview.moving || deckFade.running || handOver.running
     opacity: morph.t
     // Closed, it takes no clicks and covers nothing (StagePanels `shapes`).
     visible: shown
@@ -287,8 +289,32 @@ StagePanel {
                 y: carousel.deckY
                 z: -Math.abs(away)
                 scale: 1 - near * (1 - Tokens.carouselSideScale) - far * Tokens.carouselDepthScale
-                opacity: seen
-                visible: seen > 0
+                // Follows `seen`, except that a card coming round to rest
+                // halfway (the other image of two) fades in there rather
+                // than popping up: from frame to frame `seen` only jumps then.
+                opacity: 0
+                visible: opacity > 0
+                Component.onCompleted: opacity = seen
+                Component.onDestruction: {
+                    if (arrive.running)
+                        carousel.arrivals -= 1;
+                }
+                onSeenChanged: {
+                    if (seen - opacity > 0.5) {
+                        arrive.to = seen;
+                        arrive.restart();
+                    } else if (!arrive.running || seen < opacity) {
+                        arrive.stop();
+                        opacity = seen;
+                    }
+                }
+                NumberAnimation {
+                    id: arrive
+                    target: slot
+                    property: "opacity"
+                    duration: Tokens.durationFade
+                    onRunningChanged: carousel.arrivals += running ? 1 : -1
+                }
                 transform: Rotation {
                     origin.x: slot.width / 2
                     origin.y: slot.height / 2

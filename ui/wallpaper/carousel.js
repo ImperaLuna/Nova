@@ -27,7 +27,8 @@ function offset(index, position, count) {
 // show either side, and each image once. One fades out before it'd pass
 // halfway round, where it jumps to the other side, so none flies across;
 // in an even loop the one at rest exactly halfway shows on the right
-// (where offset puts it), so two images show both.
+// (where offset puts it), so two images show both. It jumps there as the
+// deck comes to rest, so the deck fades it in.
 function shown(away, count, sides) {
     const near = (sides + 0.5 - Math.abs(away)) * 2;
     const resting = Number.isInteger(away) && away === count / 2;
