@@ -419,15 +419,16 @@ Item {
             shot(menu, "tray-menu.png");
             spy.target = menu;
             spy.signalName = "done";
-            const picks = createTemporaryObject(spyComponent, stage, {
-                target: menu,
-                signalName: "picked"
-            });
+            let picks = 0;
+            menu.runEntry = run => {
+                picks++;
+                run();
+            };
 
             mouseClick(menu, menu.width / 2, menu.padding + Tokens.menuRowHeight * 1.5);
             compare(ran, ["_Open Discord"]);
             compare(spy.count, 1, "an entry that ran is done");
-            compare(picks.count, 1, "novad hears of it, to focus a window it shows");
+            compare(picks, 1, "novad hears of it first, to focus a window it shows");
 
             const separator = 2 * Tokens.menuSeparatorGap + Tokens.dividerWidth;
             mouseClick(menu, menu.width / 2, menu.padding + Tokens.menuRowHeight * 2.5 + separator);
@@ -436,7 +437,7 @@ Item {
 
             mouseClick(menu, menu.width / 2, menu.padding + Tokens.menuRowHeight * 4.5 + separator);
             compare(ran.length, 2, "a disabled entry does nothing");
-            compare(picks.count, 2, "a disabled entry isn't picked");
+            compare(picks, 2, "a disabled entry isn't picked");
 
             const hides = createTemporaryObject(spyComponent, stage, {
                 target: menu,

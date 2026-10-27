@@ -25,9 +25,12 @@ Column {
     property real maxHeight: Infinity
 
     // An entry ran (or Nova's own item): whatever holds the menu closes.
+    // Runs a picked entry: given the function that runs it, calls it when
+    // ready (TrayService.menuPicked, so novad first notes the app's
+    // windows). Without it, the entry runs at once.
+    property var runEntry: null
+
     signal done
-    // An entry of the app's menu ran (TrayService.menuPicked).
-    signal picked
     signal hideRequested(string key, bool hidden)
     signal submenuRequested(var submenu)
     signal backRequested
@@ -122,8 +125,11 @@ Column {
                                 list.submenuRequested(slot.modelData);
                                 return;
                             }
-                            list.picked();
-                            slot.modelData.triggered();
+                            const entry = slot.modelData;
+                            if (list.runEntry)
+                                list.runEntry(() => entry.triggered());
+                            else
+                                entry.triggered();
                             // A checkbox flips in place; anything else is done.
                             if (!checkable)
                                 list.done();

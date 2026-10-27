@@ -50,16 +50,21 @@ Singleton {
         });
     }
 
-    // An entry of the app's menu was picked: novad focuses a window it
-    // shows next ("Show Spotify"), which gets no focus from a menu on niri.
-    function menuPicked(entry: var) {
-        if (!entry?.address)
+    // An entry of the app's menu was picked: novad notes whether the app
+    // has a window open, then `run` runs the entry; a window it shows next
+    // ("Show Spotify") takes focus, which it gets none of from a menu on
+    // niri. The entry runs either way.
+    function menuPicked(entry: var, run: var) {
+        if (!entry?.address) {
+            run();
             return;
+        }
         Daemon.call(Protocol.CMD_TRAY_MENU_PICKED, {
             address: entry.address
         }, error => {
             if (error)
                 console.warn(`nova: tray: ${error}`);
+            run();
         });
     }
 

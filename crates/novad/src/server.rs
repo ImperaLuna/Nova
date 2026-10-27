@@ -428,36 +428,34 @@ impl<'a> Connection<'a> {
         })
     }
 
-    /// An entry of the menu of the tray item at `address` was picked: when
-    /// its app has no window open, one that shows next takes focus (the
-    /// menu's "Show" entry), as the app gets no activation token from a
-    /// menu either. An open window is left be: the entry may have been
-    /// anything, like pausing a song.
+    /// An entry of the menu of the tray item at `address` is about to run:
+    /// when its app has no window open now, one that shows within a while
+    /// takes focus (the menu's "Show" entry), as the app gets no activation
+    /// token from a menu either. An open window is left be: the entry may
+    /// be anything, like pausing a song. Answers once it has looked, so the
+    /// UI runs the entry after, and a window it shows can't be taken for
+    /// one that was open.
     fn tray_menu_picked(&self, address: &str) -> Answer {
-        let tray = match self.tray() {
-            Ok(tray) => tray,
+        let found = self.tray().and_then(|tray| tray.app_at(address)).map(|app| {
+            let launcher = self.launcher().ok()?;
+            let app = app?;
+            Some((launcher.window_ids(&app)?, app))
+        });
+        let (ids, app) = match found {
+            Ok(Some(found)) => found,
+            Ok(None) => return Answer::Now(Outcome::Result(serde_json::Value::Null)),
             Err(e) => return Answer::Now(Outcome::Error(e)),
         };
-        let launcher = self.launcher().ok();
-        let compositor = self.daemon.compositor.clone();
-        let logger = Arc::clone(&self.daemon.logger);
-        let address = address.to_owned();
-        Answer::later(move || {
-            done(tray.app_at(&address).map(|app| {
-                let found = app.zip(launcher).and_then(|(app, launcher)| Some((launcher.window_ids(&app)?, app)));
-                let (Some((ids, app)), Some(compositor)) = (found, compositor.as_deref()) else { return };
-                if compositor.app_workspace(&ids).is_ok_and(|workspace| workspace.is_none()) {
-                    crate::launcher::focus_shown(
-                        &app,
-                        &ids,
-                        compositor,
-                        None,
-                        crate::launcher::TRAY_WINDOW_WAIT,
-                        &logger,
-                    );
-                }
-            }))
-        })
+        let Some(compositor) = self.daemon.compositor.clone() else {
+            return Answer::Now(Outcome::Result(serde_json::Value::Null));
+        };
+        if compositor.app_workspace(&ids).is_ok_and(|workspace| workspace.is_none()) {
+            let logger = Arc::clone(&self.daemon.logger);
+            std::thread::spawn(move || {
+                crate::launcher::focus_shown(&app, &ids, &compositor, None, crate::launcher::TRAY_WINDOW_WAIT, &logger)
+            });
+        }
+        Answer::Now(Outcome::Result(serde_json::Value::Null))
     }
 
     /// Runs `work` with the media service on its own thread: it waits on a

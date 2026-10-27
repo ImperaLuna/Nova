@@ -632,22 +632,20 @@ fn a_window_shown_from_a_tray_menu_takes_focus() {
         }
     };
 
-    // "Show Third": the window it shows takes focus.
-    let shows = {
-        let compositor = Arc::clone(&compositor);
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(150));
-            compositor.open_window(9, "nova-third");
-        })
-    };
+    // "Show Third": novad answers once it has looked, the UI runs the entry,
+    // and the window that shows takes focus.
     let picked = client.request(3, "tray_menu_picked", Some(json!({"address": third})));
     assert_eq!(picked["result"], Value::Null, "{picked}");
-    shows.join().unwrap();
+    compositor.open_window(9, "nova-third");
     let focused = json!({"Action": {"FocusWindow": {"id": 9}}});
+    nova_test_support::wait_until(Duration::from_secs(5), "the shown window to take focus", || {
+        !compositor.actions().is_empty()
+    });
     assert_eq!(compositor.actions(), [focused.to_string()]);
 
     // Any entry of an app with a window open, like pausing a song, leaves it be.
     let picked = client.request(4, "tray_menu_picked", Some(json!({"address": second})));
     assert_eq!(picked["result"], Value::Null, "{picked}");
+    std::thread::sleep(Duration::from_millis(500));
     assert_eq!(compositor.actions(), [focused.to_string()], "no other window took focus");
 }
