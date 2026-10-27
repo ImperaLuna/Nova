@@ -348,6 +348,21 @@ Item {
             compare(picks.count, 0);
         }
 
+        function test_a_screen_without_a_folder_image_picks_the_middle_card() {
+            const carousel = make({});
+            compare(carousel.picks, {
+                "DP-1": "/w/aurora.png",
+                "DP-2": "/w/aurora.png"
+            }, "the deck starts on the first image");
+            keyClick(Qt.Key_Return);
+            compare(picks.signalArguments[0][0], [
+                {
+                    path: "/w/aurora.png",
+                    output: null
+                }
+            ], "Enter keeps it");
+        }
+
         function test_one_screen_has_no_screens_to_pick_from() {
             const carousel = createTemporaryObject(carouselComponent, stage, {
                 screens: []

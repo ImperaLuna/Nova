@@ -67,6 +67,16 @@ function showing(names, shown) {
     return paths;
 }
 
+// What each screen starts out picking: what it shows, or `first` (the
+// image the deck starts on) when that isn't in the folder (`images`), so
+// Enter keeps the card in the middle.
+function startPicks(showing, images, first) {
+    const picks = {};
+    for (const name in showing)
+        picks[name] = images.includes(showing[name]) ? showing[name] : first;
+    return picks;
+}
+
 // The screen picked for after `choosingFor` ("" for every screen), `by`
 // one forward or back through "" and then `names`, round past either end.
 function nextScreen(choosingFor, names, by) {

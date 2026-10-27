@@ -165,12 +165,12 @@ StagePanel {
         }
         folder = listing.folder;
         showing = Carousel.showing(screenNames, shown);
-        picks = Object.assign({}, showing);
         // Straight to the screen's own image, without moving there.
         stepping.enabled = false;
         target = Carousel.startIndex(listing.images, current);
         stepping.enabled = true;
         images = listing.images;
+        picks = Carousel.startPicks(showing, images, images[target] ?? "");
     }
 
     // Moves the deck `by` cards, round past either end.
