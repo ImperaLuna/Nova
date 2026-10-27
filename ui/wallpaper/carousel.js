@@ -23,14 +23,22 @@ function offset(index, position, count) {
     return away;
 }
 
-// How much of a card `away` from the middle shows (0 to 1): `sides` cards
-// show either side, and one fades out before it'd pass halfway round, where
-// it jumps to the other side, so a short loop never shows a card twice or
-// one flying across.
+// How much of a card `away` from the middle shows (0 to 1), in a deck of
+// `count` cards: `sides` cards show either side, and one fades out before
+// it'd pass halfway round, where it jumps to the other side, so a short
+// deck never shows a card twice or one flying across.
 function shown(away, count, sides) {
     const near = (sides + 0.5 - Math.abs(away)) * 2;
     const beforeHalfway = (count / 2 - Math.abs(away)) * 2;
     return Math.max(0, Math.min(1, near, beforeHalfway));
+}
+
+// How many times a folder of `count` images goes round the deck so that,
+// however few there are, a card shows in each of the `sides` places either
+// side: the deck loops, so the same images come round again. A single
+// image stays one card.
+function repeats(count, sides) {
+    return count < 2 ? 1 : Math.ceil((2 * sides + 2) / count);
 }
 
 // Where to start: on the image shown now when it's in the folder, else the

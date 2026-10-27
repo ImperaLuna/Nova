@@ -47,6 +47,14 @@ Item {
             compare(Carousel.shown(0, 1, 3), 1);
         }
 
+        function test_a_small_folder_goes_round_more_than_once() {
+            compare(Carousel.repeats(2, 3), 4, "two images: eight cards, three either side");
+            compare(Carousel.repeats(3, 3), 3);
+            compare(Carousel.repeats(8, 3), 1, "enough to fill the sides already");
+            compare(Carousel.repeats(1, 3), 1, "one image stays one card");
+            compare(Carousel.repeats(0, 3), 1);
+        }
+
         function test_it_starts_on_the_screens_image() {
             compare(Carousel.startIndex(["/a.png", "/b.png"], "/b.png"), 1);
             compare(Carousel.startIndex(["/a.png", "/b.png"], "/elsewhere.png"), 0);
@@ -115,6 +123,35 @@ Item {
                 }
             });
             compare(carousel.pickedPath, "/w/tide.png");
+        }
+
+        // The cards showing, by where they sit from the middle.
+        function cards(item: Item): var {
+            let found = [];
+            for (const child of item.children) {
+                if (child.seen !== undefined && child.visible)
+                    found.push(child);
+                found = found.concat(cards(child));
+            }
+            return found.sort((a, b) => a.away - b.away);
+        }
+
+        function test_two_images_still_show_either_side() {
+            const carousel = make();
+            carousel.loaded(carousel.openings, null, {
+                folder: "/home/luna/Pictures/Wallpapers",
+                images: ["/w/aurora.png", "/w/dusk.png"]
+            }, {
+                path: "/w/dusk.png"
+            });
+            const shown = cards(carousel);
+            compare(shown.length, 7, "three cards either side");
+            compare(shown.map(card => card.modelData), ["/w/aurora.png", "/w/dusk.png", "/w/aurora.png", "/w/dusk.png", "/w/aurora.png", "/w/dusk.png", "/w/aurora.png"]);
+            compare(shown.filter(card => card.away === 0)[0].index, carousel.middle, "the middle card is the picked one");
+            keyClick(Qt.Key_Right);
+            compare(carousel.pickedPath, "/w/aurora.png");
+            keyClick(Qt.Key_Right);
+            compare(carousel.pickedPath, "/w/dusk.png", "and round again");
         }
 
         function test_the_keys_loop_round_past_either_end() {
