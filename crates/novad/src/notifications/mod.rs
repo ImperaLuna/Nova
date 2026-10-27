@@ -5,8 +5,8 @@
 //! Each notification is kept for the quick settings list (at most
 //! [`MAX_NOTIFICATIONS`], for a week, saved across restarts) and published as an
 //! [`Event::Notifications`]; one that should pop up is also published as an
-//! [`Event::NotificationPopup`]. Clicking one keeps it, read; only
-//! dismissing or clearing takes it off. Apps can be muted (their
+//! [`Event::NotificationPopup`]. Clicking one keeps it, read, and so does
+//! its app closing it; only dismissing or clearing takes it off. Apps can be muted (their
 //! notifications hidden until they're unmuted, new ones not kept) and do
 //! not disturb holds back every pop-up but critical ones. Transient
 //! notifications only pop up and aren't listed.
@@ -242,7 +242,7 @@ impl Notifications {
             // A click on the notification itself always closes it.
             let closes = action.is_none() || !state.resident.contains(&id);
             if closes {
-                self.shared.retire(&mut state, id);
+                self.shared.retire(&mut state, id, true);
             } else if let Some(item) = state.saved.items.iter_mut().find(|item| item.id == id && item.unread) {
                 item.unread = false;
                 self.shared.save_and_publish(&mut state);
@@ -513,15 +513,15 @@ impl Shared {
         gone
     }
 
-    /// Notification `id` closed but stays listed: read, and no longer its
-    /// app's to hear about. A transient one, not listed, goes.
-    fn retire(&self, state: &mut State, id: u32) {
+    /// Notification `id` closed but stays listed, no longer its app's to
+    /// hear about, and `read` if so. A transient one, not listed, goes.
+    fn retire(&self, state: &mut State, id: u32, read: bool) {
         if state.transient.iter().any(|kept| kept.id == id) {
             self.remove(state, |kept| kept.id == id);
             return;
         }
         if let Some(item) = state.saved.items.iter_mut().find(|item| item.id == id) {
-            item.unread = false;
+            item.unread &= !read;
             item.live = false;
         }
         state.resident.remove(&id);
@@ -808,9 +808,18 @@ impl Server {
         id: u32,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
-        // One clicked already was closed for its app, and stays listed.
-        let gone = self.shared.remove(&mut lock(&self.shared.state), |kept| kept.id == id && kept.live);
-        for id in gone {
+        // It stays listed, and its pop-up runs its time: chat apps close
+        // the last message's notification as they send the next one (a
+        // web notification's tag), which would otherwise take it away.
+        let closed = {
+            let mut state = lock(&self.shared.state);
+            let live = find(&state, id).is_some_and(|kept| kept.live);
+            if live {
+                self.shared.retire(&mut state, id, false);
+            }
+            live
+        };
+        if closed {
             Self::notification_closed(&emitter, id, Closed::ByApp as u32).await?;
         }
         Ok(())
