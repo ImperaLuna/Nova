@@ -10,13 +10,14 @@ import "carousel.js" as Carousel
 // The wallpaper carousel: over the whole screen, which previews the picked
 // image, a deck of the wallpaper folder's images in the middle, the picked
 // one facing you and the others tilted away either side. It loops: past
-// the last image comes the first again. Left and Right (or the wheel) move
-// through them, Enter (or a click on the middle card) keeps the picked
-// one, Tab switches between every screen and only this one, Esc (or a
-// click beside the deck) puts the old one back. Opened by `nova toggle
-// wallpaper`. It gets its data and acts through its properties, signals and
-// functions (the stage wires WallpaperService to them), so the QML tests
-// can drive it.
+// the last image comes the first again. It picks for every screen at once,
+// or (Tab, or a click in the screen picker under the deck) for one screen,
+// each screen previewing its own pick. Left and Right (or the wheel) move
+// through the images, Enter (or a click on the middle card) keeps every
+// screen's pick, Esc (or a click beside the deck) puts them all back.
+// Opened by `nova toggle wallpaper`. It gets its data and acts through its
+// properties, signals and functions (the stage wires WallpaperService to
+// them), so the QML tests can drive it.
 StagePanel {
     id: carousel
 
@@ -24,21 +25,30 @@ StagePanel {
     required property real screenWidth
     required property real screenHeight
     required property string outputName
+    // Every screen, {name, width, height} left to right (Carousel.screenOrder);
+    // none counts as only this one.
+    property var screens: []
     // Where the compositor's focus is: the focused workspace and the
     // window on it (Protocol.focusKey), "" while it isn't known.
     property string compositorFocus: ""
 
-    // The images to pick from (absolute paths), the folder they're in, and
-    // the one this screen shows now ("" when Nova shows none).
+    // The images to pick from (absolute paths), the folder they're in, what
+    // each screen shows now and what it would show (by name, "" for none).
     property var images: []
     property string folder: ""
-    property string current: ""
+    property var showing: ({})
+    property var picks: ({})
+    readonly property var screenNames: screens.length > 0 ? screens.map(screen => screen.name) : [outputName]
+    // The screen picked for, "" for every one; and so the screens moving
+    // the deck picks for.
+    property string choosingFor: ""
+    readonly property var covered: choosingFor === "" ? screenNames : [choosingFor]
+    // What this screen shows now.
+    readonly property string current: showing[outputName] ?? ""
     // Waiting for novad to list the folder, and why it couldn't, or why the
     // pick didn't work.
     property bool loading: false
     property string problem: ""
-    // Whether a pick changes every screen, or only this one.
-    property bool everywhere: true
     // Picked, and handed over to awww: the preview stays while awww fades
     // the image in under it.
     property bool handingOver: false
@@ -46,8 +56,9 @@ StagePanel {
     // Opened, for the `opening`th time: novad's listing goes to loaded().
     signal loadRequested(int opening)
     property int openings: 0
-    // Enter: novad's answer goes to applied().
-    signal chosen(string path, bool everywhere)
+    // Enter: the set_wallpaper calls ({path, output}, Carousel.requests)
+    // that keep the picks; novad's answer goes to applied().
+    signal chosen(var requests)
 
     // Where the picked card is, counted without wrapping (each step adds or
     // takes one), and where the deck is on its way there.
@@ -67,9 +78,28 @@ StagePanel {
     readonly property int count: images.length
     readonly property int picked: count > 0 ? Carousel.wrap(target, count) : -1
     readonly property string pickedPath: picked >= 0 ? images[picked] : ""
-    // What the screen previews: the picked image, or the screen's own until
-    // the folder's listed.
-    readonly property string previewPath: pickedPath !== "" ? pickedPath : current
+    // What Enter would keep: the picks, and the middle card on a screen it
+    // picks for that shows nothing from the folder yet.
+    readonly property var kept: {
+        const kept = Object.assign({}, picks);
+        for (const name of covered) {
+            if (pickedPath !== "" && !images.includes(kept[name]))
+                kept[name] = pickedPath;
+        }
+        return kept;
+    }
+    // What this screen previews: its pick, or its own image until the
+    // folder's listed. The other screens preview theirs (`previews`, by
+    // name) where they'd change.
+    readonly property string previewPath: kept[outputName] || current
+    readonly property var previews: {
+        const changed = {};
+        for (const name of screenNames) {
+            if (name !== outputName && kept[name] && kept[name] !== showing[name])
+                changed[name] = kept[name];
+        }
+        return changed;
+    }
 
     readonly property real cardWidth: Math.round(screenWidth * Tokens.carouselCardShare)
     readonly property real cardHeight: Math.round(cardWidth * screenHeight / Math.max(1, screenWidth))
@@ -115,7 +145,7 @@ StagePanel {
         handingOver = false;
         images = [];
         problem = "";
-        everywhere = true;
+        choosingFor = "";
         loading = true;
         keys.forceActiveFocus();
         loadRequested(++openings);
@@ -127,7 +157,8 @@ StagePanel {
         if (shown)
             return;
         images = [];
-        current = "";
+        showing = {};
+        picks = {};
     }
 
     // novad's answer to loadRequested(opening): the folder's {folder,
@@ -143,12 +174,13 @@ StagePanel {
             return;
         }
         folder = listing.folder;
-        current = shown.outputs?.[outputName] ?? shown.path ?? "";
+        showing = Carousel.showing(screenNames, shown);
         // Straight to the screen's own image, without moving there.
         stepping.enabled = false;
         target = Carousel.startIndex(listing.images, current);
         stepping.enabled = true;
         images = listing.images;
+        picks = Object.assign({}, showing);
     }
 
     // Moves the deck `by` cards, round past either end.
@@ -157,18 +189,38 @@ StagePanel {
             return;
         problem = "";
         target += by;
+        const picked = Object.assign({}, picks);
+        for (const name of covered)
+            picked[name] = images[Carousel.wrap(target, count)];
+        picks = picked;
     }
 
-    // Keeps the picked image (see chosen).
-    function choose() {
-        if (pickedPath === "" || handingOver)
+    // Picks for screen `name` from now on, "" for every one: the deck moves
+    // round to what it would show.
+    function chooseFor(name: string) {
+        if (screenNames.length < 2 || handingOver)
             return;
-        handingOver = true;
-        chosen(pickedPath, everywhere);
+        choosingFor = name;
+        problem = "";
+        const at = images.indexOf(picks[covered[0]]);
+        if (at >= 0)
+            target += Math.round(Carousel.offset(at, target, count));
     }
 
-    // novad's answer to chosen: closes once awww has faded the image in, or
-    // right away when it was only for this screen, which shows it already.
+    // Keeps every screen's pick (see chosen); with none changed, it closes.
+    function choose() {
+        if (count === 0 || handingOver)
+            return;
+        const requests = Carousel.requests(kept, showing);
+        if (requests.length === 0) {
+            open = false;
+            return;
+        }
+        handingOver = true;
+        chosen(requests);
+    }
+
+    // novad's answer to chosen: closes once awww has faded the images in.
     function applied(error: var) {
         // An answer for a pick that was put back with Esc since.
         if (!handingOver)
@@ -178,12 +230,12 @@ StagePanel {
             problem = error;
             return;
         }
-        handOver.interval = pickedPath === current && !everywhere ? 0 : Tokens.durationWallpaperHandOver;
         handOver.restart();
     }
 
     Timer {
         id: handOver
+        interval: Tokens.durationWallpaperHandOver
         onTriggered: carousel.open = false
     }
 
@@ -207,6 +259,11 @@ StagePanel {
                 color: Tokens.carouselShade
             }
         }
+    }
+
+    PickingFor {
+        anchors.fill: parent
+        shown: carousel.choosingFor === carousel.outputName
     }
 
     // A click beside the deck puts the old image back; the wheel moves it.
@@ -243,7 +300,7 @@ StagePanel {
                 break;
             case Qt.Key_Tab:
             case Qt.Key_Backtab:
-                carousel.everywhere = !carousel.everywhere;
+                carousel.chooseFor(Carousel.nextScreen(carousel.choosingFor, carousel.screenNames, event.key === Qt.Key_Tab ? 1 : -1));
                 break;
             case Qt.Key_Escape:
                 carousel.open = false;
@@ -333,7 +390,9 @@ StagePanel {
                     sourceComponent: WallpaperCard {
                         path: slot.modelData
                         picked: slot.index === carousel.picked
-                        now: slot.modelData === carousel.current
+                        now: slot.modelData === carousel.showing[carousel.covered[0]]
+                        // The other screens picking it.
+                        marks: carousel.screenNames.filter(name => !carousel.covered.includes(name) && carousel.picks[name] === slot.modelData)
                         dim: slot.near * Tokens.carouselSideDim
                     }
                 }
@@ -359,7 +418,7 @@ StagePanel {
             x: Math.round((carousel.width - width) / 2)
             y: carousel.deckY + carousel.cardHeight + Tokens.carouselLabelGap
             width: label.implicitWidth + 2 * Tokens.carouselLabelPad
-            height: Tokens.carouselLabelHeight
+            height: carousel.screenNames.length > 1 ? Tokens.carouselPickerHeight : Tokens.carouselLabelHeight
             radius: height / 2
             color: Tokens.surface
 
@@ -393,45 +452,72 @@ StagePanel {
                     text: `${carousel.picked + 1} / ${carousel.count}`
                 }
 
-                Rectangle {
+                // Which screen the deck picks for: every one, or one of
+                // them drawn to scale with its pick. Not with one screen.
+                Row {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: scope.implicitWidth + 2 * Tokens.chipPad
-                    height: Tokens.carouselChipHeight
-                    radius: height / 2
-                    color: Tokens.selectedQuiet
+                    visible: carousel.screenNames.length > 1
+                    spacing: Tokens.carouselMiniGap
 
-                    Row {
-                        id: scope
-                        anchors.centerIn: parent
-                        spacing: Tokens.iconGap
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: all.implicitWidth + 2 * Tokens.chipPad
+                        height: Tokens.carouselChipHeight
+                        radius: height / 2
+                        color: carousel.choosingFor === "" ? Tokens.selectedQuiet : "transparent"
+                        border.width: carousel.choosingFor === "" ? 0 : 1
+                        border.color: Tokens.glassRim
 
-                        LineIcon {
-                            anchors.verticalCenter: parent.verticalCenter
-                            path: carousel.everywhere ? Icons.MONITORS : Icons.MONITOR
-                            size: Tokens.iconSize
+                        Row {
+                            id: all
+                            anchors.centerIn: parent
+                            spacing: Tokens.iconGap
+
+                            LineIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                path: Icons.MONITORS
+                                size: Tokens.iconSize
+                                color: carousel.choosingFor === "" ? Tokens.fg : Tokens.fgDim
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                font.family: Tokens.fontSans
+                                font.pixelSize: Tokens.fontSizeSmall
+                                color: carousel.choosingFor === "" ? Tokens.fg : Tokens.fgDim
+                                text: qsTr("All")
+                            }
                         }
 
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            font.family: Tokens.fontSans
-                            font.pixelSize: Tokens.fontSizeSmall
-                            color: Tokens.fg
-                            text: carousel.everywhere ? qsTr("All screens") : qsTr("This screen")
-                        }
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            font.family: Tokens.fontMono
-                            font.pixelSize: Tokens.fontSizeTiny
-                            color: Tokens.fgDim
-                            text: qsTr("Tab")
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: carousel.chooseFor("")
                         }
                     }
 
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: carousel.everywhere = !carousel.everywhere
+                    Repeater {
+                        model: carousel.screens
+
+                        ScreenMini {
+                            required property var modelData
+                            anchors.verticalCenter: parent.verticalCenter
+                            name: modelData.name
+                            path: carousel.picks[modelData.name] ?? ""
+                            chosen: carousel.choosingFor === modelData.name
+                            width: Math.round(Tokens.carouselMiniWidth * modelData.width / Math.max(...carousel.screens.map(screen => screen.width)))
+                            height: Math.round(width * modelData.height / Math.max(1, modelData.width))
+                            onClicked: carousel.chooseFor(modelData.name)
+                        }
                     }
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: carousel.screenNames.length > 1
+                    font.family: Tokens.fontMono
+                    font.pixelSize: Tokens.fontSizeTiny
+                    color: Tokens.fgDim
+                    text: qsTr("Tab")
                 }
             }
         }

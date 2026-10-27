@@ -605,6 +605,18 @@ QtObject {
     readonly property int carouselLabelHeight: 40
     readonly property int carouselLabelPad: 16
     readonly property int carouselChipHeight: 28
+    // With more than one screen, the label also holds the screen picker:
+    // every screen drawn to scale, the widest this wide, apart by this gap,
+    // the ones not picked for faded to this; and the label grows to fit
+    // their names. The screen picked for gets a ring this wide round its
+    // edge, and its mini one this wide.
+    readonly property int carouselPickerHeight: 64
+    readonly property int carouselMiniWidth: 52
+    readonly property int carouselMiniGap: 10
+    readonly property int carouselMiniRadius: 4
+    readonly property int carouselMiniRing: 2
+    readonly property real carouselMiniIdle: 0.7
+    readonly property int carouselScreenRing: 4
     // The note an empty folder shows instead.
     readonly property int carouselNoteWidth: 420
     // A shade from this far down the preview to its bottom, so the label
