@@ -20,6 +20,7 @@
 //!
 //! [wallpaper]
 //! path = "~/Pictures/Wallpapers/dusk.jpg"
+//! folder = "~/Pictures/Wallpapers"
 //! [wallpaper.outputs]
 //! DP-2 = "2861349227"  # a Wallpaper Engine Workshop item
 //! ```
@@ -50,7 +51,8 @@ pub struct Config {
 /// outputs by name. Absolute paths (or ones starting with `~/`) to an
 /// image, or to a video or Wallpaper Engine project folder, or Workshop IDs
 /// (those three need the `wallpaper-engine` feature). Nothing set means
-/// Nova leaves the wallpaper alone.
+/// Nova leaves the wallpaper alone. `folder` is where the carousel finds
+/// images to pick from.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WallpaperConfig {
@@ -58,6 +60,24 @@ pub struct WallpaperConfig {
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub outputs: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
+}
+
+impl WallpaperConfig {
+    /// The folder the carousel lists (see [`folder`]): by default
+    /// `Wallpapers` in the user's pictures folder.
+    pub fn folder(&self) -> Result<PathBuf, String> {
+        folder("wallpaper", self.folder.as_deref(), || {
+            nova_paths::user_dir("PICTURES", "Pictures").join(DEFAULT_WALLPAPER_FOLDER)
+        })
+    }
+
+    /// The images it sets, without the folder, which only lists images to
+    /// pick from: changing that doesn't undo a pick.
+    pub fn images(&self) -> Self {
+        Self { folder: None, ..self.clone() }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -123,6 +143,8 @@ impl RecordingConfig {
 const DEFAULT_SCREENSHOT_FOLDER: &str = "Screenshots";
 /// The recording folder's name inside the videos folder.
 const DEFAULT_RECORDING_FOLDER: &str = "Recordings";
+/// The wallpaper folder's name inside the pictures folder.
+const DEFAULT_WALLPAPER_FOLDER: &str = "Wallpapers";
 
 /// `[section] folder`, or `default` when it isn't set. One that isn't
 /// absolute (or under `~/`) is an error, so a typo doesn't scatter files in
@@ -181,6 +203,10 @@ mod tests {
         let recordings = |text: &str| toml::from_str::<Config>(text).unwrap().recording.folder();
         assert!(recordings("").unwrap().ends_with("Recordings"));
         assert!(recordings("[recording]\nfolder = \"Videos\"").unwrap_err().contains("[recording]"));
+        let wallpapers = |text: &str| toml::from_str::<Config>(text).unwrap().wallpaper.folder();
+        assert!(wallpapers("").unwrap().ends_with("Wallpapers"));
+        assert_eq!(wallpapers("[wallpaper]\nfolder = \"/art\""), Ok(PathBuf::from("/art")));
+        assert!(wallpapers("[wallpaper]\nfolder = \"art\"").unwrap_err().contains("[wallpaper]"));
     }
 
     #[test]

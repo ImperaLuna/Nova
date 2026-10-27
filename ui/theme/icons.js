@@ -29,6 +29,8 @@ var HEADPHONES = HEADPHONES_BAND + "M5 14h2.5v6H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1
 // The cups solid, under HEADPHONES_BAND.
 var HEADPHONES_CUPS = "M4 15h3.5v6H5.5A1.5 1.5 0 0 1 4 19.5zM20 15h-3.5v6h2a1.5 1.5 0 0 0 1.5-1.5z";
 var MONITOR = "M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 20h8M12 16v4";
+// Two screens, one over the other's corner: every screen.
+var MONITORS = "M3.5 4h9A1.5 1.5 0 0 1 14 5.5V9h-3.5A1.5 1.5 0 0 0 9 10.5V13H3.5A1.5 1.5 0 0 1 2 11.5v-6A1.5 1.5 0 0 1 3.5 4zM10.5 9h10a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 9 16.5v-6A1.5 1.5 0 0 1 10.5 9zM13 21h5";
 var BLUETOOTH = "M7 7l10 10-5 4V3l5 4L7 17";
 var CLOSE = "M6 6l12 12M18 6L6 18";
 var BELL = "M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0";

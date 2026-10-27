@@ -86,6 +86,9 @@ expression: all
 {"v":2,"id":51,"cmd":"set_wallpaper","args":{"path":"/home/luna/Pictures/tide.jpg","output":"DP-2"}}
 {"v":2,"id":52,"cmd":"wallpapers"}
 {"v":2,"id":52,"result":{"outputs":{"DP-2":"/home/luna/Pictures/tide.jpg"},"path":"/home/luna/Pictures/dusk.jpg"}}
+{"v":2,"id":53,"cmd":"wallpaper_folder"}
+{"v":2,"id":53,"result":{"folder":"/home/luna/Pictures/Wallpapers","images":["/home/luna/Pictures/Wallpapers/dusk.jpg","/home/luna/Pictures/Wallpapers/tide.jpg"]}}
+{"v":2,"cmd":"toggle","args":{"panel":"wallpaper"}}
 {"v":2,"event":"media","data":{"players":[{"id":"org.mpris.MediaPlayer2.spotify","app":{"id":"spotify.desktop","name":"Spotify","description":"Music Player","icon":"/usr/share/icons/hicolor/256x256/apps/spotify-client.png"},"identity":"Spotify","status":"playing","title":"Aruarian Dance","artist":"Nujabes","album":"Samurai Champloo: Departure","cover":"/run/user/1000/nova/media/5f2c0e8a.jpg","length_us":238000000,"position_us":84000000,"position_at_ms":1793000000000,"rate":1.0,"can_next":true,"can_previous":true,"can_play":true,"can_pause":true,"can_seek":true,"can_raise":true},{"id":"org.mpris.MediaPlayer2.firefox.instance_1_42","browser":true,"identity":"Mozilla Firefox","status":"paused","title":"How the scrolling layout in niri works","artist":"Linux Desktop Weekly","album":"","length_us":0,"position_us":0,"position_at_ms":1793000000000,"rate":1.0,"can_next":false,"can_previous":false,"can_play":true,"can_pause":true,"can_seek":false,"can_raise":false}],"shown":"org.mpris.MediaPlayer2.spotify"}}
 {"v":2,"id":45,"cmd":"media_control","args":{"player":"org.mpris.MediaPlayer2.spotify","action":"play_pause"}}
 {"v":2,"cmd":"media_control","args":{"player":"org.mpris.MediaPlayer2.spotify","action":"next"}}
