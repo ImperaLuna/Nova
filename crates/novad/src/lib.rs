@@ -181,8 +181,9 @@ impl Daemon {
     fn apply_services(&self) {
         self.recordings.allow(self.feature_ready(recording::FEATURE_ID));
         let settings = lock(&self.settings);
-        let wallpaper_ready = features::is_ready(&settings.features, wallpaper::FEATURE_ID);
-        self.wallpaper.configure(wallpaper_ready, settings.wallpaper_config());
+        let ready = |id| features::is_ready(&settings.features, id);
+        let (images, engine) = (ready(wallpaper::FEATURE_ID), ready(wallpaper::ENGINE_FEATURE_ID));
+        self.wallpaper.configure(images, engine, settings.wallpaper_config());
     }
 
     /// Starts watching the settings files, reloading when they change.
@@ -358,7 +359,8 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     ));
     let recordings =
         Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
-    let wallpaper = start_wallpaper(&args.state_dir, &sources.path_var, compositor.as_ref(), &logger);
+    let wallpaper =
+        start_wallpaper(&args.state_dir, nova_paths::home(), &sources.path_var, compositor.as_ref(), &logger);
     let daemon = Arc::new(Daemon {
         started: Instant::now(),
         hub,
@@ -392,12 +394,13 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
 /// The wallpaper service, told about the outputs whenever they change.
 fn start_wallpaper(
     state_dir: &Path,
+    home: Option<PathBuf>,
     path_var: &str,
     compositor: Option<&Arc<compositor::Compositor>>,
     logger: &Arc<Logger>,
 ) -> Arc<wallpaper::Wallpaper> {
     let wallpaper =
-        wallpaper::Wallpaper::start(state_dir, path_var.to_owned(), compositor.is_some(), Arc::clone(logger));
+        wallpaper::Wallpaper::start(state_dir, home, path_var.to_owned(), compositor.is_some(), Arc::clone(logger));
     if let Some(compositor) = compositor {
         let told = Arc::downgrade(&wallpaper);
         compositor.on_outputs(move |names| {

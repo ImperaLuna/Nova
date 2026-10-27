@@ -292,6 +292,8 @@ fn default_config() -> String {
          \n\
          # [wallpaper]  # or `nova wallpaper <file>`\n\
          # path = \"~/Pictures/Wallpapers/dusk.jpg\"  # on every screen\n\
+         # (a video, a Wallpaper Engine folder or a Workshop ID moves, with the\n\
+         #  wallpaper-engine feature on)\n\
          # [wallpaper.outputs]\n\
          # DP-2 = \"~/Pictures/Wallpapers/tide.jpg\"  # one screen's own\n",
         checks::DEFAULT_THEME_ID

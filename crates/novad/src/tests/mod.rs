@@ -140,7 +140,7 @@ impl TestDaemon {
         ));
         let recordings =
             Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
-        let wallpaper = start_wallpaper(&dir, &sources.path_var, compositor.as_ref(), &logger);
+        let wallpaper = start_wallpaper(&dir, None, &sources.path_var, compositor.as_ref(), &logger);
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
             hub,

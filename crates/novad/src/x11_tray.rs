@@ -10,24 +10,18 @@
 //! On niri its 1x1 container window is hidden by a window rule in
 //! `packaging/compositor/niri.kdl`.
 
-use crate::backoff::Backoff;
+use crate::backoff::Restarts;
 use crate::logger::Logger;
 use crate::session_bus::Bus;
 use crate::{child, lock};
-use std::process::{Command, Stdio};
-use std::sync::{Arc, Condvar, Mutex};
-use std::time::{Duration, Instant};
+use std::process::Command;
+use std::sync::{Arc, Condvar, Mutex, mpsc};
 
 pub const FEATURE_ID: &str = "x11-tray";
 const LOG_SOURCE: &str = "x11-tray";
 const PROGRAM: &str = "xembedsniproxy";
 /// The name it owns on the session bus while it runs.
 const BUS_NAME: &str = "org.kde.xembedsniproxy";
-/// Waits before starting it again: doubling from the first while it keeps
-/// failing, back to the first once it ran this long.
-const FIRST_RETRY: Duration = Duration::from_secs(1);
-const MAX_RETRY: Duration = Duration::from_secs(60);
-const RAN_FINE: Duration = Duration::from_secs(30);
 
 /// Runs xembedsniproxy until stopped.
 pub struct X11Tray {
@@ -67,19 +61,18 @@ impl X11Tray {
         self.shared.wake.notify_all();
         // Signalled under the lock: `run` forgets the pid under it before
         // reaping, so it's still xembedsniproxy's (at worst a zombie).
-        let child = lock(&self.shared.child);
-        if let Some(pid) = *child {
-            // SAFETY: kill only sends a signal.
-            unsafe { libc::kill(pid.cast_signed(), libc::SIGTERM) };
+        if let Some(pid) = *lock(&self.shared.child) {
+            child::terminate(pid);
         }
     }
 }
 
 impl Shared {
     fn run(&self, path_var: &str, logger: &Logger) {
-        let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
+        let mut restarts = Restarts::default();
         loop {
-            let started = Instant::now();
+            restarts.started();
+            let (exited, exit) = mpsc::channel();
             let spawned = {
                 // Locked while spawning, so `stop` either sees the pid or
                 // stops the loop before the spawn.
@@ -88,33 +81,24 @@ impl Shared {
                     return;
                 }
                 let mut command = Command::new(PROGRAM);
-                command.env("PATH", path_var).stdin(Stdio::null()).stdout(Stdio::null());
-                // As the UI does. This thread, the spawning one, runs until `stop`.
-                child::die_with_novad(&mut command, libc::SIGTERM);
-                command.spawn().inspect(|spawned| *child = Some(spawned.id()))
+                command.env("PATH", path_var);
+                // This thread, the spawning one, runs until `stop`.
+                child::watch(&mut command, move |gone| _ = exited.send(gone)).inspect(|pid| *child = Some(*pid))
             };
             let outcome = match spawned {
-                Ok(mut spawned) => {
-                    logger.info(LOG_SOURCE, &format!("started {PROGRAM} (pid {})", spawned.id()));
-                    // Forgotten between the exit and the reap, so `stop`
-                    // never signals a pid the kernel may have handed out again.
-                    if let Err(e) = child::wait_for_exit(spawned.id()) {
-                        logger.warn(LOG_SOURCE, &format!("couldn't wait for {PROGRAM} without reaping it: {e}"));
-                    }
+                Ok(pid) => {
+                    logger.info(LOG_SOURCE, &format!("started {PROGRAM} (pid {pid})"));
+                    let gone = exit.recv();
                     *lock(&self.child) = None;
-                    let status = spawned.wait();
-                    status.map_or_else(|e| e.to_string(), |status| status.to_string())
+                    gone.map_or_else(|_| "its watcher went away".into(), child::Exited::reap)
                 }
                 Err(e) => format!("can't start it: {e}"),
             };
-            if started.elapsed() >= RAN_FINE {
-                retry.reset();
-            }
             let stopped = lock(&self.stopped);
             if *stopped {
                 return;
             }
-            let wait = retry.next();
+            let wait = restarts.after_exit();
             logger.warn(LOG_SOURCE, &format!("{PROGRAM} ended ({outcome}), starting it again in {}s", wait.as_secs()));
             let (stopped, _) =
                 self.wake.wait_timeout_while(stopped, wait, |stopped| !*stopped).unwrap_or_else(|e| e.into_inner());
@@ -150,11 +134,15 @@ mod tests {
     use nova_protocol::LogLevel;
     use nova_test_support::{eventually, wait_until};
     use std::path::Path;
+    use std::time::Duration;
 
     struct Fixture {
         dir: nova_test_support::TempDir,
         bus: TestBus,
         logger: Arc<Logger>,
+        /// The fake and the `sleep` it runs: a build sandbox has no
+        /// /usr/bin, and a fake that can't sleep exits at once.
+        path: String,
     }
 
     impl Fixture {
@@ -168,12 +156,12 @@ mod tests {
             let bus = TestBus::start(&dir.join("bus"));
             let logger =
                 Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::new(Hub::default())).unwrap());
-            Self { dir, bus, logger }
+            let path = nova_test_support::fake_path(&dir.join("bin"), &["sleep"]);
+            Self { dir, bus, logger, path }
         }
 
         fn start(&self) -> Arc<X11Tray> {
-            let path = format!("{}:/run/current-system/sw/bin:/usr/bin:/bin", self.dir.join("bin").display());
-            X11Tray::start(Bus::Address(self.bus.address.clone()), &path, Arc::clone(&self.logger))
+            X11Tray::start(Bus::Address(self.bus.address.clone()), &self.path, Arc::clone(&self.logger))
         }
 
         /// The pids it started, once there are `count`.
@@ -205,7 +193,7 @@ mod tests {
         assert_ne!(first, second);
         x11.stop();
         wait_until(Duration::from_secs(5), "stopping to end it", || !alive(second));
-        std::thread::sleep(FIRST_RETRY + Duration::from_millis(200));
+        std::thread::sleep(Restarts::FIRST + Duration::from_millis(200));
         assert_eq!(fixture.runs(2).len(), 2, "nothing starts after stop");
     }
 
