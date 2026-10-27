@@ -58,7 +58,8 @@ Item {
                 {
                     address: ":1.607/org/ayatana/NotificationItem/steam",
                     id: "steam",
-                    title: "Steam"
+                    title: "Steam",
+                    menu_only: true
                 },
                 {
                     address: ":1.433/StatusNotifierItem",
@@ -157,6 +158,7 @@ Item {
             compare(all.map(entry => entry.hidden), [false, true, false]);
             compare(all.map(entry => entry.attention), [false, false, true]);
             compare(all[1].address, ":1.607/org/ayatana/NotificationItem/steam", "a click goes through novad");
+            compare(all.map(entry => entry.menuOnly), [false, true, false], "a click on an icon with no Activate shows its menu");
         }
 
         function test_without_novad_items_still_show_under_their_own_names() {
@@ -417,10 +419,16 @@ Item {
             shot(menu, "tray-menu.png");
             spy.target = menu;
             spy.signalName = "done";
+            let picks = 0;
+            menu.runEntry = run => {
+                picks++;
+                run();
+            };
 
             mouseClick(menu, menu.width / 2, menu.padding + Tokens.menuRowHeight * 1.5);
             compare(ran, ["_Open Discord"]);
             compare(spy.count, 1, "an entry that ran is done");
+            compare(picks, 1, "novad hears of it first, to focus a window it shows");
 
             const separator = 2 * Tokens.menuSeparatorGap + Tokens.dividerWidth;
             mouseClick(menu, menu.width / 2, menu.padding + Tokens.menuRowHeight * 2.5 + separator);
@@ -429,6 +437,7 @@ Item {
 
             mouseClick(menu, menu.width / 2, menu.padding + Tokens.menuRowHeight * 4.5 + separator);
             compare(ran.length, 2, "a disabled entry does nothing");
+            compare(picks, 2, "a disabled entry isn't picked");
 
             const hides = createTemporaryObject(spyComponent, stage, {
                 target: menu,

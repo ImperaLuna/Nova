@@ -110,7 +110,13 @@ fn put_up_counting(
 
 /// Serves `item` at `path` on `connection`, owning `name` first if given,
 /// and registers `service` with the watcher.
-pub fn serve_item(connection: &Connection, name: Option<&str>, path: &str, service: &str, item: Item) {
+pub fn serve_item(
+    connection: &Connection,
+    name: Option<&str>,
+    path: &str,
+    service: &str,
+    item: impl zbus::object_server::Interface,
+) {
     zbus::block_on(async {
         connection.object_server().at(path, item).await.unwrap();
         if let Some(name) = name {
@@ -262,6 +268,79 @@ fn hidden_apps_are_remembered_across_restarts() {
     tray.stop();
 }
 
+/// A libayatana item, like Spotify's: no `Activate`, only a menu.
+pub struct MenuOnlyItem {
+    pub id: String,
+    pub title: String,
+}
+
+#[interface(name = "org.kde.StatusNotifierItem")]
+impl MenuOnlyItem {
+    #[zbus(property)]
+    fn id(&self) -> String {
+        self.id.clone()
+    }
+
+    #[zbus(property)]
+    fn title(&self) -> String {
+        self.title.clone()
+    }
+
+    fn secondary_activate(&self, _x: i32, _y: i32) {}
+}
+
+#[test]
+fn an_item_with_only_a_menu_is_never_activated() {
+    let fixture = Fixture::new("menu-only");
+    let apps = fixture.dir.join("share/applications");
+    std::fs::create_dir_all(&apps).unwrap();
+    std::fs::write(apps.join("spotify.desktop"), "[Desktop Entry]\nType=Application\nName=Spotify\nExec=true\n")
+        .unwrap();
+    let paths = launcher::Paths {
+        data_dirs: vec![fixture.dir.join("share")],
+        state_file: fixture.dir.join("launcher.json"),
+        runner: launcher::Runner::Direct,
+        icons: Arc::new(crate::icons::Icons::new(crate::icons::HICOLOR.into(), &[fixture.dir.join("share")], None)),
+    };
+    let launcher = Launcher::start(paths, "", Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
+    wait_until(WAIT, "the launcher to find spotify.desktop", || launcher.find_app(&["spotify".into()]).is_some());
+    fixture.run_in_unit("app-spotify-277486.scope");
+    let tray = fixture.tray(Some(launcher));
+
+    let path = "/org/ayatana/NotificationItem/spotify_client";
+    let app = fixture.connect();
+    serve_item(&app, None, path, path, MenuOnlyItem { id: "spotify-client".into(), title: "spotify".into() });
+    let items = fixture.next_items();
+    assert_eq!(items[0]["app"]["id"], "spotify.desktop", "{items}");
+    assert_eq!(items[0]["menu_only"], true, "introspected, it has no Activate");
+
+    assert!(tray.has_app("spotify.desktop"), "it runs, in the tray");
+    assert_eq!(tray.activate_app("spotify.desktop"), Ok(false), "its icon can't show its window");
+    let address = items[0]["address"].as_str().unwrap();
+    let click = tray.activate(address).unwrap_err();
+    assert!(click.contains("only a menu"), "{click}");
+    tray.stop();
+}
+
+#[test]
+fn introspection_says_which_methods_an_interface_has() {
+    // As libayatana's item answers (GDBus).
+    let ayatana = r#"<node>
+  <interface name="org.freedesktop.DBus.Properties"><method name="Get"></method></interface>
+  <interface name="org.kde.StatusNotifierItem">
+    <method name="Scroll"><arg type="i" name="delta" direction="in"/></method>
+    <method name="SecondaryActivate"><arg type="i" name="x" direction="in"/></method>
+    <method name="XAyatanaSecondaryActivate"><arg type="u" name="timestamp" direction="in"/></method>
+  </interface>
+</node>"#;
+    assert_eq!(has_method(ayatana, ITEM_INTERFACE, "Activate"), Some(false));
+    assert_eq!(has_method(ayatana, ITEM_INTERFACE, "Scroll"), Some(true));
+    let kde = "<node><interface name='org.kde.StatusNotifierItem'><method name='Activate'/></interface></node>";
+    assert_eq!(has_method(kde, ITEM_INTERFACE, "Activate"), Some(true));
+    let other = r#"<node><interface name="org.freedesktop.DBus.Peer"><method name="Activate"/></interface></node>"#;
+    assert_eq!(has_method(other, ITEM_INTERFACE, "Activate"), None, "another interface's method isn't the item's");
+}
+
 #[test]
 fn an_app_with_its_own_item_loses_its_bridged_x11_one() {
     let item = |id: &str, app: Option<&str>| TrayItem {
@@ -269,6 +348,7 @@ fn an_app_with_its_own_item_loses_its_bridged_x11_one() {
         id: id.into(),
         title: id.into(),
         app: app.map(|app| App { id: app.into(), name: app.into(), description: None, icon: None }),
+        menu_only: false,
     };
     let items = vec![
         (false, item("steam", Some("steam.desktop"))),

@@ -24,6 +24,9 @@ StagePanel {
     property real screenWidth: 0
     property real screenHeight: 0
 
+    // TrayMenuList.runEntry.
+    property var runEntry: null
+
     signal done
     signal hideRequested(string key, bool hidden)
 
@@ -73,6 +76,7 @@ StagePanel {
         iconSource: menu.iconSource
         // Kept on the screen; longer menus scroll.
         maxHeight: menu.screenHeight - menu.y - Tokens.barMargin
+        runEntry: menu.runEntry
         onDone: menu.done()
         onHideRequested: (key, hidden) => menu.hideRequested(key, hidden)
     }

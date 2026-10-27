@@ -536,3 +536,116 @@ fn a_tray_click_starts_its_app_when_no_window_shows() {
     // Like Claude Desktop, whose icon ignores Activate: started again, it shows.
     assert!(ran(&marker), "no window showed, so the app is started");
 }
+
+#[test]
+fn launching_an_app_whose_tray_icon_has_only_a_menu_starts_it_again_and_focuses_its_window() {
+    let mut bus = None;
+    let mut compositor = None;
+    let novad = TestDaemon::open_following(
+        "launcher-tray-menu",
+        None,
+        |dir| {
+            std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
+            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+        },
+        |dir| {
+            let (fake, backend) = FakeCompositor::niri(dir);
+            compositor = Some(fake);
+            Some(backend)
+        },
+    );
+    let (bus, compositor) = (bus.unwrap(), Arc::new(compositor.unwrap()));
+    let marker = novad.dir.join("ran");
+    let entry = format!("Name=Third\nExec=touch \"{}\"\nStartupWMClass=Nova-Third\n", marker.display());
+    install_app(&novad, "third.desktop", &entry);
+    let (mut client, desktop) = follow_to_the_end(&novad);
+    client.subscribe_launcher(1);
+    // Like Spotify's: libayatana's icons have only a menu, no Activate.
+    let app = bus.connect();
+    let item = tray::tests::MenuOnlyItem { id: "nova-third".into(), title: "Third".into() };
+    tray::tests::serve_item(
+        &app,
+        None,
+        "/org/ayatana/NotificationItem/third",
+        "/org/ayatana/NotificationItem/third",
+        item,
+    );
+    client.request(4, "subscribe", Some(json!({"topics": ["tray"]})));
+    while client.next_event("tray")["items"][0]["app"]["id"] != "third.desktop" {}
+    // Started again, the running app shows its window, which the compositor
+    // doesn't focus.
+    let shows = {
+        let (marker, compositor) = (marker.clone(), Arc::clone(&compositor));
+        std::thread::spawn(move || {
+            if ran(&marker) {
+                compositor.open_window(9, "nova-third");
+            }
+        })
+    };
+
+    let launch = json!({"id": "third.desktop", "output": focused_output(&desktop)});
+    assert_eq!(client.request(5, "launch_app", Some(launch))["result"], Value::Null);
+    shows.join().unwrap();
+    assert!(marker.exists(), "its icon can't show its window, so the app is started again");
+    let focused = json!({"Action": {"FocusWindow": {"id": 9}}});
+    assert_eq!(compositor.actions(), [focused.to_string()], "the window it shows takes focus");
+}
+
+#[test]
+fn a_window_shown_from_a_tray_menu_takes_focus() {
+    let mut bus = None;
+    let mut compositor = None;
+    let novad = TestDaemon::open_following(
+        "tray-menu-focus",
+        None,
+        |dir| {
+            std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
+            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+        },
+        |dir| {
+            let (fake, backend) = FakeCompositor::niri(dir);
+            compositor = Some(fake);
+            Some(backend)
+        },
+    );
+    let (bus, compositor) = (bus.unwrap(), Arc::new(compositor.unwrap()));
+    // The recording's window on workspace `web` is Second's; Third has none.
+    install_app(&novad, "second.desktop", "Name=Second\nExec=true\nStartupWMClass=Nova-Second\n");
+    install_app(&novad, "third.desktop", "Name=Third\nExec=true\nStartupWMClass=Nova-Third\n");
+    let (mut client, _desktop) = follow_to_the_end(&novad);
+    client.subscribe_launcher(2);
+    let app = bus.connect();
+    for name in ["second", "third"] {
+        let path = format!("/org/ayatana/NotificationItem/{name}");
+        let item = tray::tests::MenuOnlyItem { id: format!("nova-{name}"), title: name.into() };
+        tray::tests::serve_item(&app, None, &path, &path, item);
+    }
+    client.request(2, "subscribe", Some(json!({"topics": ["tray"]})));
+    let address = |items: &Value, app: &str| {
+        let items = items.as_array().unwrap();
+        items.iter().find(|item| item["app"]["id"] == app).map(|item| item["address"].as_str().unwrap().to_owned())
+    };
+    let (second, third) = loop {
+        let items = client.next_event("tray")["items"].clone();
+        if let (Some(second), Some(third)) = (address(&items, "second.desktop"), address(&items, "third.desktop")) {
+            break (second, third);
+        }
+    };
+
+    // "Show Third": novad answers once it has looked, the UI runs the entry,
+    // and the window that shows takes focus.
+    let picked = client.request(3, "tray_menu_picked", Some(json!({"address": third})));
+    assert_eq!(picked["result"], Value::Null, "{picked}");
+    compositor.open_window(9, "nova-third");
+    let focused = json!({"Action": {"FocusWindow": {"id": 9}}});
+    nova_test_support::wait_until(Duration::from_secs(5), "the shown window to take focus", || {
+        !compositor.actions().is_empty()
+    });
+    assert_eq!(compositor.actions(), [focused.to_string()]);
+
+    // Any entry of an app with a window open, like pausing a song, leaves it be.
+    let picked = client.request(4, "tray_menu_picked", Some(json!({"address": second})));
+    assert_eq!(picked["result"], Value::Null, "{picked}");
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(compositor.actions(), [focused.to_string()], "no other window took focus");
+}
