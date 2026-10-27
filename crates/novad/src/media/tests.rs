@@ -332,6 +332,60 @@ fn a_pick_ends_with_its_player() {
 }
 
 #[test]
+fn a_paused_pick_that_moves_on_ends() {
+    // A browser keeps one player for all its tabs: closing the picked tab
+    // leaves it paused on another tab's media, or on none.
+    let fixture = Fixture::new("pick-moves-on");
+    let media = fixture.media();
+    let _spotify = fixture.play(SPOTIFY, Track::playing("Feather"));
+    fixture.until(|event| event["shown"] == SPOTIFY);
+    let firefox =
+        fixture.play(FIREFOX, Track { status: "Paused", desktop_entry: "firefox", ..Track::playing("A video") });
+    fixture.until(|event| player(event, FIREFOX)["status"] == "paused");
+    media.show(FIREFOX).unwrap();
+    fixture.until(|event| event["shown"] == FIREFOX);
+    // Its position moving isn't moving on.
+    firefox.change(|track| track.position_us = 9_000_000);
+    let event = fixture.until(|event| player(event, FIREFOX)["position_us"] == 9_000_000);
+    assert_eq!(event["shown"], FIREFOX);
+    firefox.change(|track| track.title = String::new());
+    fixture.until(|event| event["shown"] == SPOTIFY);
+}
+
+#[test]
+fn a_browser_is_found_by_the_first_word_of_its_name() {
+    // Zen's player says it's `zen`; its app is "Zen Browser (Beta)" in
+    // zen-beta.desktop, and its windows are `zen-beta`.
+    let fixture = Fixture::new("browser");
+    let share = fixture.dir.join("share");
+    std::fs::create_dir_all(share.join("applications")).unwrap();
+    std::fs::write(
+        share.join("applications/zen-beta.desktop"),
+        "[Desktop Entry]\nType=Application\nName=Zen Browser (Beta)\nExec=true\nStartupWMClass=zen-beta\n\
+         Categories=Network;WebBrowser;\n",
+    )
+    .unwrap();
+    let paths = crate::launcher::Paths {
+        data_dirs: vec![share.clone()],
+        state_file: fixture.dir.join("launcher.json"),
+        runner: crate::launcher::Runner::Direct,
+        icons: Arc::new(crate::icons::Icons::new(crate::icons::HICOLOR.into(), &[share], None)),
+    };
+    let launcher = Launcher::start(paths, "", Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
+    wait_until(WAIT, "the launcher to find zen-beta.desktop", || launcher.find_app(&["zen-beta".into()]).is_some());
+    let sources = Sources { bus: Bus::Address(fixture.bus.address.clone()), covers: fixture.dir.join("media") };
+    let media = Media::start(sources, Some(launcher), Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
+
+    let _zen = fixture.play(FIREFOX, Track { desktop_entry: "zen", ..Track::playing("A video") });
+    let event = fixture.until(|event| event["shown"] == FIREFOX);
+    let zen = player(&event, FIREFOX);
+    assert_eq!(zen["app"]["id"], "zen-beta.desktop");
+    assert_eq!(zen["browser"], true, "so the pill leaves out the channel");
+    let ids = media.window_ids(FIREFOX).unwrap();
+    assert!(ids.contains(&"zen".into()) && ids.contains(&"zen-beta".into()), "{ids:?}");
+}
+
+#[test]
 fn playerctld_is_not_a_player_of_its_own() {
     // It stands in for the player that played last.
     assert!(super::is_player(SPOTIFY) && super::is_player(FIREFOX));

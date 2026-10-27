@@ -265,6 +265,18 @@ impl Launcher {
         })
     }
 
+    /// Like `find_app`, else loosely by the first word of an app's name:
+    /// Zen plays as `zen` (its program, and its media player's desktop
+    /// entry), its entry is "Zen Browser" in `zen-beta.desktop`.
+    pub fn find_app_loosely(&self, ids: &[String]) -> Option<App> {
+        self.find_app(ids).or_else(|| {
+            let state = lock(&self.state);
+            ids.iter().find_map(|id| {
+                state.apps.values().find(|entry| entry.first_word_is(id)).map(|entry| app(entry, &state.icons))
+            })
+        })
+    }
+
     /// Whether the installed app `id` is a web browser (`WebBrowser` among
     /// its categories).
     pub fn is_browser(&self, id: &str) -> bool {
@@ -278,11 +290,9 @@ impl Launcher {
     }
 
     /// The icon file for an app stream (`Command::AppIcon`): the installed
-    /// app's it belongs to, by its icon name, program and name (`find_app`,
-    /// else loosely by the first word of an app's name: Zen plays as `zen`,
-    /// its entry is "Zen Browser" in `zen-beta.desktop`), else the icon
-    /// theme's for its icon name or program. Without the launcher (the
-    /// feature off), only that last part.
+    /// app's it belongs to, by its icon name, program and name
+    /// (`find_app_loosely`), else the icon theme's for its icon name or
+    /// program. Without the launcher (the feature off), only that last part.
     pub fn app_icon(
         launcher: Option<&Self>,
         icons: &Icons,
@@ -301,14 +311,7 @@ impl Launcher {
             .map(str::to_lowercase)
             .filter(|id| !id.is_empty())
             .collect();
-        let found = launcher.and_then(|launcher| {
-            launcher.find_app(&ids).or_else(|| {
-                let state = lock(&launcher.state);
-                ids.iter().find_map(|id| {
-                    state.apps.values().find(|entry| entry.first_word_is(id)).map(|entry| app(entry, &state.icons))
-                })
-            })
-        });
+        let found = launcher.and_then(|launcher| launcher.find_app_loosely(&ids));
         Ok(found
             .and_then(|app| app.icon)
             .or_else(|| [icon_name, program].into_iter().flatten().find_map(|name| icons.find(&name))))

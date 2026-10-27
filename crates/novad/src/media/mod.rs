@@ -10,7 +10,8 @@
 //! on at the player's rate; `Seeked` says when it jumps. Covers become image
 //! files (`cover`). Every player is published as one [`Event::Media`], with
 //! the one the bar shows: the user's pick (`media_show`) until another
-//! player starts playing, else the one that started playing last, else the
+//! player starts playing or the pick moves on to another track while it
+//! isn't playing, else the one that started playing last, else the
 //! one paused last.
 //!
 //! The app a player belongs to comes from its `DesktopEntry` through the
@@ -89,7 +90,8 @@ struct Shared {
 #[derive(Default)]
 struct State {
     players: Vec<Player>,
-    /// The player the user picked (`media_show`), until another starts playing.
+    /// The player the user picked (`media_show`), until another starts
+    /// playing or it moves on to another track while it isn't playing.
     picked: Option<String>,
     /// Counts status changes, so the latest to start playing or pause is known.
     clock: u64,
@@ -219,16 +221,25 @@ impl Media {
         Ok(true)
     }
 
-    /// The app ids (lower case) `player`'s windows may have: its app's, or
-    /// its desktop entry's name without one. Empty when it names neither.
+    /// The app ids (lower case) `player`'s windows may have: its desktop
+    /// entry's name, which browsers also give their windows (Zen's `zen`,
+    /// from `zen-beta.desktop`), and its app's. Empty when it names neither.
     pub fn window_ids(&self, player: &str) -> Result<Vec<String>, String> {
         let (_, read) = self.known(player)?;
         let Some(entry) = read.desktop_entry else { return Ok(vec![]) };
         let entry = entry.to_lowercase();
         let launcher = lock(&self.shared.launcher).clone();
-        let app = launcher.as_ref().and_then(|launcher| launcher.find_app(std::slice::from_ref(&entry)));
-        let ids = app.zip(launcher).and_then(|(app, launcher)| launcher.window_ids(&app.id));
-        Ok(ids.unwrap_or_else(|| vec![entry]))
+        let app_ids = launcher.and_then(|launcher| {
+            let app = launcher.find_app_loosely(std::slice::from_ref(&entry))?;
+            launcher.window_ids(&app.id)
+        });
+        let mut ids = vec![entry];
+        for id in app_ids.into_iter().flatten() {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        Ok(ids)
     }
 
     /// The owner of the read player `player`, and its read.
@@ -278,7 +289,7 @@ impl Shared {
             .filter_map(|player| {
                 let read = player.read.as_ref()?;
                 let app = read.desktop_entry.as_ref().zip(launcher.as_ref()).and_then(|(entry, launcher)| {
-                    launcher.find_app(&[entry.to_lowercase()]).map(|app| (launcher.is_browser(&app.id), app))
+                    launcher.find_app_loosely(&[entry.to_lowercase()]).map(|app| (launcher.is_browser(&app.id), app))
                 });
                 let identity = if read.identity.is_empty() { &player.id[PREFIX.len()..] } else { &read.identity };
                 Some(MediaPlayer {
@@ -427,6 +438,14 @@ impl Shared {
         let State { players, picked, clock, .. } = &mut *state;
         let Some(player) = players.iter_mut().find(|player| player.id == id && player.owner == owner) else { return };
         let was = player.read.as_ref().map(|read| read.status);
+        // A picked player that isn't playing moving to another track ends
+        // the pick too: a browser keeps one player for all its tabs, so
+        // closing the picked tab leaves it there with another tab's media,
+        // or none.
+        let moved_on = player.read.as_ref().is_some_and(|old| old.track_id != read.track_id || old.title != read.title);
+        if moved_on && read.status != PlaybackStatus::Playing && picked.as_deref() == Some(id) {
+            *picked = None;
+        }
         if was != Some(read.status) {
             *clock += 1;
             match read.status {
