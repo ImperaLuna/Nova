@@ -89,9 +89,10 @@ pub struct Args {
     /// Folder of feature manifests.
     #[arg(long, default_value_os_t = nova_features::default_dir())]
     features_dir: PathBuf,
-    /// The user's feature choices. Reloaded when it changes.
-    #[arg(long, default_value_os_t = nova_paths::config_dir().join("features.toml"))]
-    selection: PathBuf,
+    /// The user's feature choices. Reloaded when it changes. By default
+    /// the user's features.toml, else the system's (`/etc/xdg/nova`).
+    #[arg(long)]
+    selection: Option<PathBuf>,
     /// Folder of theme files (`<id>.toml`).
     #[arg(long, default_value_os_t = theme::default_dir())]
     themes_dir: PathBuf,
@@ -190,7 +191,7 @@ impl Daemon {
     /// Starts watching the settings files, reloading when they change.
     fn watch_settings(self: &Arc<Self>) -> Option<inotify::Stopper> {
         let daemon = Arc::clone(self);
-        let files = vec![self.sources.config.clone(), self.sources.selection.clone()];
+        let files = [vec![self.sources.config.clone()], self.sources.selection.clone()].concat();
         settings::watch(files, Arc::clone(&self.logger), move || daemon.reload())
     }
 
@@ -299,7 +300,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     logger.info(LOG_SOURCE, &format!("icons from the {} icon theme", icons.theme()));
     let sources = Sources {
         config: args.config,
-        selection: args.selection,
+        selection: args.selection.map_or_else(|| nova_paths::config_files("features.toml"), |path| vec![path]),
         themes_dir: args.themes_dir,
         manifests: nova_features::load_all(&args.features_dir)?,
         path_var: path_var.clone(),

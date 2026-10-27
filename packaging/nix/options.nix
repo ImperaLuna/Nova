@@ -1,0 +1,76 @@
+# `programs.nova`, shared by the NixOS and home-manager modules: Nova, and a
+# switch per feature that also installs what the feature needs.
+#
+# Turn features on or off either with programs.nova.features.<id>.enable,
+# or with programs.nova.featuresFile, Nova's own features.toml (the same
+# file `nova setup` reads on other distros). The switches start from that
+# file, so setting one still wins over it.
+{ packages }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+let
+  features = import ./features.nix { inherit lib; };
+  cfg = config.programs.nova;
+  fileSelection =
+    if cfg.featuresFile == null then { } else builtins.fromTOML (builtins.readFile cfg.featuresFile);
+in
+{
+  options.programs.nova = {
+    enable = lib.mkEnableOption "Nova, a desktop shell for Wayland compositors";
+
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = packages.${pkgs.stdenv.hostPlatform.system}.nova;
+      defaultText = lib.literalExpression "nova.packages.\${system}.nova";
+      description = "The Nova package.";
+    };
+
+    featuresFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      example = lib.literalExpression "./nova/features.toml";
+      description = ''
+        Nova's features.toml (`enabled = [...]`, `disabled = [...]`), as on
+        other distros. When set, each feature's switch starts from it.
+      '';
+    };
+
+    gpu = lib.mkOption {
+      type = lib.types.nullOr (
+        lib.types.enum [
+          "nvidia"
+          "amd"
+          "intel"
+        ]
+      );
+      default = null;
+      description = ''
+        The GPU, for features that install something else per GPU (screen
+        recording uses gpu-screen-recorder on NVIDIA). The NixOS module sets
+        it from services.xserver.videoDrivers.
+      '';
+    };
+
+    features = lib.mapAttrs (
+      _: manifest:
+      lib.mkOption {
+        type = lib.types.submodule {
+          options.enable = lib.mkOption {
+            type = lib.types.bool;
+            default = features.isOn fileSelection manifest;
+            defaultText = lib.literalMD "`${
+              lib.boolToString (manifest.default or false)
+            }`, or what `programs.nova.featuresFile` says";
+            description = "Whether Nova's ${manifest.name} feature is on: ${manifest.description}";
+          };
+        };
+        default = { };
+        description = "${manifest.name}.";
+      }
+    ) features.optional;
+  };
+}

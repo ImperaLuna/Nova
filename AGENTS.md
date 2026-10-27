@@ -26,7 +26,9 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   running (no `isNiri`).
 - A feature is `features/<id>/feature.toml`, the single source of truth for
   its packages; `daemon = "x"` needs a cargo feature `x` in novad. A feature
-  that is off or missing dependencies is never loaded by the UI.
+  that is off or missing dependencies is never loaded by the UI. Its `nix`
+  list is what the flake's modules (`programs.nova`, packaging/nix) install
+  when it's on, so never ask users to add a feature's packages by hand.
 - Window model is "stage": one masked layer surface per monitor, across the
   top and only as tall as the tallest panel open (niri blurs the whole
   surface behind glass each frame, so its size is the blur cost). The bar,

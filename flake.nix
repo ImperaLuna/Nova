@@ -235,6 +235,11 @@
       ];
     in
     {
+      # `programs.nova`: Nova, and a switch per feature that also installs
+      # what it needs (packaging/nix/options.nix).
+      homeManagerModules.default = import ./packaging/nix/home-manager.nix { inherit (self) packages; };
+      nixosModules.default = import ./packaging/nix/nixos.nix { inherit (self) packages; };
+
       packages = forAllSystems (pkgs: {
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 
@@ -350,6 +355,42 @@
           '';
 
           qmllint = qmllintFor pkgs;
+
+          # The NixOS module with every feature on, with and without NVIDIA:
+          # each manifest's `nix` packages exist in nixpkgs, and the
+          # features.toml it writes reads back as the same choice. The VM
+          # tests run the module for real.
+          nix-modules =
+            let
+              features = import ./packaging/nix/features.nix { inherit (pkgs) lib; };
+              evalWith =
+                videoDrivers:
+                (nixpkgs.lib.nixosSystem {
+                  inherit (pkgs.stdenv.hostPlatform) system;
+                  modules = [
+                    self.nixosModules.default
+                    {
+                      boot.isContainer = true;
+                      system.stateVersion = pkgs.lib.trivial.release;
+                      services.xserver = { inherit videoDrivers; };
+                      programs.nova = {
+                        enable = true;
+                        features = pkgs.lib.mapAttrs (_: _: { enable = true; }) features.optional;
+                      };
+                    }
+                  ];
+                }).config;
+              report =
+                config:
+                let
+                  selection = builtins.fromTOML config.environment.etc."xdg/nova/features.toml".text;
+                in
+                assert pkgs.lib.all (features.isOn selection) (builtins.attrValues features.manifests);
+                pkgs.lib.concatLines (map (package: package.name) config.environment.systemPackages);
+            in
+            pkgs.writeText "nova-nix-modules" (
+              report (evalWith [ "nvidia" ]) + report (evalWith [ "modesetting" ])
+            );
 
           # The committed .qsb shaders match their .frag sources.
           shaders = pkgs.runCommand "nova-shaders" { nativeBuildInputs = [ pkgs.qt6.qtshadertools ]; } ''

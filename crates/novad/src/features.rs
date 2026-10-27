@@ -3,17 +3,20 @@
 
 use nova_features::{Manifest, Selection};
 use nova_protocol::{FeatureState, FeatureStatus};
-use std::path::Path;
+use std::path::PathBuf;
 
-/// The user's choices in `path` (`features.toml`); a missing file means
-/// each feature's default.
-pub fn read_selection(path: &Path) -> Result<Selection, String> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Selection::default()),
-        Err(e) => return Err(format!("can't read {}: {e}", path.display())),
-    };
-    Selection::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
+/// The user's choices in the first of `paths` that exists (`features.toml`,
+/// see [`nova_paths::config_files`]); none means each feature's default.
+pub fn read_selection(paths: &[PathBuf]) -> Result<Selection, String> {
+    for path in paths {
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(format!("can't read {}: {e}", path.display())),
+        };
+        return Selection::parse(&text).map_err(|e| format!("{}: {e}", path.display()));
+    }
+    Ok(Selection::default())
 }
 
 pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> Vec<FeatureState> {
@@ -47,8 +50,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_first_selection_file_there_wins() {
+        let dir = nova_test_support::TempDir::new("selection-order");
+        let (user, system) = (dir.join("user.toml"), dir.join("system.toml"));
+        let paths = [user.clone(), system.clone()];
+        assert_eq!(read_selection(&paths), Ok(Selection::default()));
+        std::fs::write(&system, "enabled = [\"recording\"]\n").unwrap();
+        assert_eq!(read_selection(&paths).unwrap().enabled, ["recording"]);
+        std::fs::write(&user, "disabled = [\"recording\"]\n").unwrap();
+        let selection = read_selection(&paths).unwrap();
+        assert!(selection.enabled.is_empty());
+        assert_eq!(selection.disabled, ["recording"]);
+    }
+
+    #[test]
     fn states_follow_selection_and_path() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         let manifests = nova_features::load_all(&root).unwrap();
         let on = Selection::parse("enabled = [\"recording\"]").unwrap();
         let states = states(&manifests, &on, "/nonexistent");

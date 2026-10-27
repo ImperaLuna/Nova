@@ -30,8 +30,8 @@ const SETTLE: Duration = Duration::from_millis(200);
 pub struct Sources {
     /// `config.toml` (see `config`).
     pub config: PathBuf,
-    /// `features.toml`.
-    pub selection: PathBuf,
+    /// `features.toml`: the first of these that exists.
+    pub selection: Vec<PathBuf>,
     pub themes_dir: PathBuf,
     pub manifests: Vec<Manifest>,
     /// Where features' binaries are looked for.
