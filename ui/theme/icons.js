@@ -53,6 +53,18 @@ var TRASH = "M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12
 var CAMERA = "M4 8h3l2-3h6l2 3h3v11H4zM8.5 13a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0";
 var VIDEO = "M4 7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 10l4-2.5v9L16 14";
 var PAUSE = "M9 6v12M15 6v12";
+// The now-playing controls: solid, so pass each as `fill` too.
+var PAUSE_SOLID = "M7.7 5h1.6a1.2 1.2 0 0 1 1.2 1.2v11.6a1.2 1.2 0 0 1-1.2 1.2H7.7a1.2 1.2 0 0 1-1.2-1.2V6.2A1.2 1.2 0 0 1 7.7 5zM14.7 5h1.6a1.2 1.2 0 0 1 1.2 1.2v11.6a1.2 1.2 0 0 1-1.2 1.2h-1.6a1.2 1.2 0 0 1-1.2-1.2V6.2a1.2 1.2 0 0 1 1.2-1.2z";
+var PLAY_SOLID = "M8 5l11 7-11 7z";
+// Skipping: a solid triangle and a bar (pass SKIP_*_FILL as `fill`).
+var SKIP_NEXT = "M6 5l9 7-9 7zM18 5v14";
+var SKIP_NEXT_FILL = "M6 5l9 7-9 7z";
+var SKIP_PREVIOUS = "M18 5l-9 7 9 7zM6 5v14";
+var SKIP_PREVIOUS_FILL = "M18 5l-9 7 9 7z";
+// A music note, for a track with no cover or a player with no icon.
+var MUSIC = "M9 18V5l11-2v13M6.5 15.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5zM17.5 13.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5z";
+// Up and out to the right: going to another window.
+var GO_TO = "M7 17L17 7M9 7h8v8";
 var PLAY = "M8 5.5v13l10-6.5z";
 var STOP = "M7 7h10v10H7z";
 
