@@ -322,6 +322,30 @@ fn closing_dismissing_and_clearing_tell_the_app_why() {
     }
 }
 
+// Chat apps (a web notification's tag in Electron) close the last
+// message's notification as they send the next one: both stay listed.
+#[test]
+fn an_app_closing_its_notification_leaves_it_listed() {
+    let fixture = Fixture::new("closed-by-app");
+    let _server = fixture.server();
+    let app = fixture.app();
+    let first = app.simple("Ferdium", "one");
+    zbus::block_on(app.connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "CloseNotification", &(first,)))
+        .unwrap();
+    assert_eq!(app.signal(), ("NotificationClosed".into(), json!([first, 3])));
+    let second = app.simple("Ferdium", "two");
+    let list = loop {
+        let list = fixture.next("notifications");
+        if list["items"][0]["id"] == second {
+            break list;
+        }
+    };
+    assert_eq!(list["items"].as_array().unwrap().len(), 2, "{list}");
+    assert_eq!(list["items"][1]["id"], first);
+    assert_eq!(list["items"][1]["unread"], true, "not seen yet");
+    assert_eq!(list["items"][1].get("live"), None, "its app is done with it");
+}
+
 #[test]
 fn transient_notifications_only_pop_up() {
     let fixture = Fixture::new("transient");
