@@ -255,8 +255,11 @@ Item {
         function test_clicking_opens_the_panel_and_asks_where_the_window_is() {
             const pill = createPill(stage.media([playing("a")], "a"));
             tryCompare(pill, "shownT", 1);
+            compare(pill.shownPanel, null);
             mouseClick(pill, 20, Tokens.barHeight / 2);
             verify(pill.open);
+            // Loaded as it opens, and fading in once the panel has grown.
+            verify(pill.shownPanel.opacity < 1, `content opacity ${pill.shownPanel.opacity}`);
             compare(workspaceSpy.count, 1);
             compare(workspaceSpy.signalArguments[0][0], "a");
             tryCompare(pill, "width", pill.panelWidth);
@@ -265,6 +268,8 @@ Item {
             // The whole header row closes it, past where the pill was too.
             mouseClick(pill, pill.panelWidth - 10, Tokens.barHeight / 2);
             verify(!pill.open);
+            // Unloaded once closed.
+            tryCompare(pill, "shownPanel", null);
         }
 
         function test_the_player_going_closes_the_panel() {

@@ -131,14 +131,15 @@ StagePanel {
     readonly property int panelWidth: Tokens.panelWidth
     readonly property int panelPad: Tokens.panelPad
     readonly property int contentWidth: panelWidth - 2 * panelPad
-    openHeight: content.y + content.implicitHeight + Tokens.mediaPadBottom
+    readonly property PanelContent shownPanel: panel.item as PanelContent
+    openHeight: shownPanel ? shownPanel.contentBottom + Tokens.mediaPadBottom : Tokens.barHeight
 
     Morph {
         id: morph
         open: root.open
     }
     readonly property real t: morph.t
-    moving: morph.moving || reveal.running || resize.running || title.moving || dim.running || contentReveal.running
+    moving: morph.moving || reveal.running || resize.running || title.moving || dim.running || (shownPanel?.revealing ?? false)
 
     visible: shownT > 0
     opacity: shownT
@@ -284,272 +285,287 @@ StagePanel {
             }
         }
 
-        // The panel's content, which fades in once it has grown.
-        Item {
-            id: panelContent
-            width: root.panelWidth
-            height: root.openHeight
-            opacity: root.open ? 1 : 0
-            MorphReveal on opacity {
-                id: contentReveal
-                delay: Tokens.revealContent
+        // The panel's content, which fades in once it has grown. Loaded
+        // only while the panel shows, so a closed pill keeps none of it and
+        // a player's every change doesn't redraw it unseen.
+        Loader {
+            id: panel
+            active: root.open || root.t > 0
+            sourceComponent: Component {
+                PanelContent {}
             }
-            visible: opacity > 0
+        }
+    }
 
-            // The header: the app, plain, since the whole row closes the
-            // panel (the pill's MouseArea, under this).
-            Row {
-                x: root.panelPad
-                height: Tokens.barHeight
-                spacing: Tokens.iconGap
+    component PanelContent: Item {
+        // Where its content ends, for the panel's height.
+        readonly property real contentBottom: content.y + content.implicitHeight
+        readonly property bool revealing: contentReveal.running
+
+        width: root.panelWidth
+        height: root.openHeight
+        // Comes in hidden, then fades in.
+        opacity: 0
+        Component.onCompleted: opacity = Qt.binding(() => root.open ? 1 : 0)
+        MorphReveal on opacity {
+            id: contentReveal
+            delay: Tokens.revealContent
+        }
+        visible: opacity > 0
+
+        // The header: the app, plain, since the whole row closes the
+        // panel (the pill's MouseArea, under this).
+        Row {
+            x: root.panelPad
+            height: Tokens.barHeight
+            spacing: Tokens.iconGap
+
+            MediaArt {
+                anchors.verticalCenter: parent.verticalCenter
+                size: Tokens.iconSizeSmall
+                backed: false
+                path: root.appIcon
+            }
+
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(implicitWidth, root.contentWidth - Tokens.iconSizeSmall - Tokens.iconGap)
+                font.weight: Font.Medium
+                color: Tokens.fgDim
+                text: root.appName
+            }
+        }
+
+        Column {
+            id: content
+            x: root.panelPad
+            y: Tokens.barHeight + Tokens.mediaGap
+            width: root.contentWidth
+
+            // The cover beside the title, artist and album.
+            Item {
+                width: parent.width
+                height: Math.max(cover.height, meta.implicitHeight)
 
                 MediaArt {
+                    id: cover
                     anchors.verticalCenter: parent.verticalCenter
-                    size: Tokens.iconSizeSmall
+                    size: Tokens.mediaCover
+                    radius: Tokens.radiusCard
+                    path: root.current?.cover ?? ""
+                }
+
+                Column {
+                    id: meta
+                    x: cover.width + Tokens.mediaBodyGap
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - x
+                    spacing: Tokens.mediaMetaGap
+
+                    Label {
+                        width: parent.width
+                        font.pixelSize: Tokens.fontSizeTitle
+                        font.weight: Font.DemiBold
+                        lineHeight: Tokens.mediaTitleLine
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 2
+                        text: root.current?.title ?? ""
+                    }
+
+                    Label {
+                        width: parent.width
+                        color: Tokens.fgDim
+                        visible: text !== ""
+                        text: root.current?.artist ?? ""
+                    }
+
+                    Label {
+                        width: parent.width
+                        font.pixelSize: Tokens.fontSizeSmall
+                        color: Tokens.fgAlt
+                        visible: text !== ""
+                        text: root.current?.album ?? ""
+                    }
+                }
+            }
+
+            Item {
+                width: 1
+                height: Tokens.sectionGap
+            }
+
+            SeekLine {
+                width: parent.width
+                player: root.current
+                now: root.now
+                onSeekRequested: positionUs => root.seekRequested(root.current.id, positionUs)
+            }
+
+            Item {
+                width: 1
+                height: Tokens.mediaGap
+            }
+
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Tokens.mediaControlGap
+
+                RoundButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    icon: Icons.SKIP_PREVIOUS
+                    iconFill: Icons.SKIP_PREVIOUS_FILL
+                    label: "Previous track"
+                    enabled: root.current?.can_previous ?? false
+                    onClicked: root.controlRequested(root.current.id, Protocol.MEDIA_PREVIOUS)
+                }
+
+                RoundButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    implicitWidth: Tokens.mediaPlay
+                    filled: true
+                    icon: root.playing ? Icons.PAUSE_SOLID : Icons.PLAY_SOLID
+                    iconFill: icon
+                    iconSize: Tokens.mediaPlayIcon
+                    label: root.playing ? "Pause" : "Play"
+                    enabled: root.playing ? (root.current?.can_pause ?? false) : (root.current?.can_play ?? false)
+                    onClicked: root.controlRequested(root.current.id, Protocol.MEDIA_PLAY_PAUSE)
+                }
+
+                RoundButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    icon: Icons.SKIP_NEXT
+                    iconFill: Icons.SKIP_NEXT_FILL
+                    label: "Next track"
+                    enabled: root.current?.can_next ?? false
+                    onClicked: root.controlRequested(root.current.id, Protocol.MEDIA_NEXT)
+                }
+            }
+
+            // With two or more players, one chip each to show it instead.
+            Item {
+                width: 1
+                height: Tokens.mediaRowGap
+                visible: chips.count > 0
+            }
+
+            Flow {
+                width: parent.width
+                spacing: Tokens.mediaChipGap
+                visible: chips.count > 0
+
+                Repeater {
+                    id: chips
+                    model: Media.chips(root.media)
+
+                    MouseArea {
+                        id: chip
+                        required property var modelData
+                        readonly property bool chosen: modelData.id === root.current?.id
+
+                        width: chipRow.implicitWidth + 2 * Tokens.mediaChipPad
+                        height: Tokens.mediaChipHeight
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.showRequested(modelData.id)
+
+                        Accessible.role: Accessible.Button
+                        Accessible.name: `Show ${Media.appName(modelData)}${Media.playing(modelData) ? ", playing" : ""}`
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: height / 2
+                            color: chip.chosen ? Tokens.fg : chip.containsMouse ? Tokens.selected : Tokens.surfaceRaised
+                        }
+
+                        Row {
+                            id: chipRow
+                            anchors.centerIn: parent
+                            spacing: Tokens.iconGap
+
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Tokens.mediaChipDot
+                                height: width
+                                radius: width / 2
+                                visible: Media.playing(chip.modelData)
+                                color: chip.chosen ? Tokens.onAccent : Tokens.primary
+                            }
+
+                            Label {
+                                anchors.verticalCenter: parent.verticalCenter
+                                font.pixelSize: Tokens.fontSizeSmall
+                                font.weight: Font.Medium
+                                color: chip.chosen ? Tokens.onAccent : Tokens.fgDim
+                                text: Media.appName(chip.modelData)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Item {
+                width: 1
+                height: Tokens.mediaRowGap
+            }
+
+            // Brings the player's window forward, then closes.
+            MouseArea {
+                id: goTo
+                x: -Tokens.rowInset
+                width: parent.width + 2 * Tokens.rowInset
+                height: Tokens.rowHeight
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    root.focusRequested(root.current.id);
+                    root.open = false;
+                }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: `Go to ${root.appName}${root.workspace !== "" ? ` on workspace ${root.workspace}` : ""}`
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Tokens.radiusRow
+                    color: goTo.containsMouse ? Tokens.selected : Tokens.surfaceRaised
+                }
+
+                MediaArt {
+                    id: goToIcon
+                    x: Tokens.rowInset
+                    anchors.verticalCenter: parent.verticalCenter
+                    size: Tokens.mediaGoToIcon
                     backed: false
                     path: root.appIcon
                 }
 
                 Label {
+                    x: goToIcon.x + goToIcon.width + Tokens.rowInset
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, root.contentWidth - Tokens.iconSizeSmall - Tokens.iconGap)
+                    width: where.x - x - Tokens.rowInset
                     font.weight: Font.Medium
+                    text: `Go to ${root.appName}`
+                }
+
+                Label {
+                    id: where
+                    anchors.right: arrow.left
+                    anchors.rightMargin: Tokens.rowInset
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.min(implicitWidth, goTo.width / 2)
+                    font.pixelSize: Tokens.fontSizeTiny
                     color: Tokens.fgDim
-                    text: root.appName
-                }
-            }
-
-            Column {
-                id: content
-                x: root.panelPad
-                y: Tokens.barHeight + Tokens.mediaGap
-                width: root.contentWidth
-
-                // The cover beside the title, artist and album.
-                Item {
-                    width: parent.width
-                    height: Math.max(cover.height, meta.implicitHeight)
-
-                    MediaArt {
-                        id: cover
-                        anchors.verticalCenter: parent.verticalCenter
-                        size: Tokens.mediaCover
-                        radius: Tokens.radiusCard
-                        path: root.current?.cover ?? ""
-                    }
-
-                    Column {
-                        id: meta
-                        x: cover.width + Tokens.mediaBodyGap
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - x
-                        spacing: Tokens.mediaMetaGap
-
-                        Label {
-                            width: parent.width
-                            font.pixelSize: Tokens.fontSizeTitle
-                            font.weight: Font.DemiBold
-                            lineHeight: Tokens.mediaTitleLine
-                            wrapMode: Text.Wrap
-                            maximumLineCount: 2
-                            text: root.current?.title ?? ""
-                        }
-
-                        Label {
-                            width: parent.width
-                            color: Tokens.fgDim
-                            visible: text !== ""
-                            text: root.current?.artist ?? ""
-                        }
-
-                        Label {
-                            width: parent.width
-                            font.pixelSize: Tokens.fontSizeSmall
-                            color: Tokens.fgAlt
-                            visible: text !== ""
-                            text: root.current?.album ?? ""
-                        }
-                    }
+                    text: root.workspace !== "" ? `workspace ${root.workspace}` : ""
                 }
 
-                Item {
-                    width: 1
-                    height: Tokens.sectionGap
-                }
-
-                SeekLine {
-                    width: parent.width
-                    player: root.current
-                    now: root.now
-                    onSeekRequested: positionUs => root.seekRequested(root.current.id, positionUs)
-                }
-
-                Item {
-                    width: 1
-                    height: Tokens.mediaGap
-                }
-
-                Row {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: Tokens.mediaControlGap
-
-                    RoundButton {
-                        anchors.verticalCenter: parent.verticalCenter
-                        icon: Icons.SKIP_PREVIOUS
-                        iconFill: Icons.SKIP_PREVIOUS_FILL
-                        label: "Previous track"
-                        enabled: root.current?.can_previous ?? false
-                        onClicked: root.controlRequested(root.current.id, Protocol.MEDIA_PREVIOUS)
-                    }
-
-                    RoundButton {
-                        anchors.verticalCenter: parent.verticalCenter
-                        implicitWidth: Tokens.mediaPlay
-                        filled: true
-                        icon: root.playing ? Icons.PAUSE_SOLID : Icons.PLAY_SOLID
-                        iconFill: icon
-                        iconSize: Tokens.mediaPlayIcon
-                        label: root.playing ? "Pause" : "Play"
-                        enabled: root.playing ? (root.current?.can_pause ?? false) : (root.current?.can_play ?? false)
-                        onClicked: root.controlRequested(root.current.id, Protocol.MEDIA_PLAY_PAUSE)
-                    }
-
-                    RoundButton {
-                        anchors.verticalCenter: parent.verticalCenter
-                        icon: Icons.SKIP_NEXT
-                        iconFill: Icons.SKIP_NEXT_FILL
-                        label: "Next track"
-                        enabled: root.current?.can_next ?? false
-                        onClicked: root.controlRequested(root.current.id, Protocol.MEDIA_NEXT)
-                    }
-                }
-
-                // With two or more players, one chip each to show it instead.
-                Item {
-                    width: 1
-                    height: Tokens.mediaRowGap
-                    visible: chips.count > 0
-                }
-
-                Flow {
-                    width: parent.width
-                    spacing: Tokens.mediaChipGap
-                    visible: chips.count > 0
-
-                    Repeater {
-                        id: chips
-                        model: Media.chips(root.media)
-
-                        MouseArea {
-                            id: chip
-                            required property var modelData
-                            readonly property bool chosen: modelData.id === root.current?.id
-
-                            width: chipRow.implicitWidth + 2 * Tokens.mediaChipPad
-                            height: Tokens.mediaChipHeight
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.showRequested(modelData.id)
-
-                            Accessible.role: Accessible.Button
-                            Accessible.name: `Show ${Media.appName(modelData)}${Media.playing(modelData) ? ", playing" : ""}`
-
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: height / 2
-                                color: chip.chosen ? Tokens.fg : chip.containsMouse ? Tokens.selected : Tokens.surfaceRaised
-                            }
-
-                            Row {
-                                id: chipRow
-                                anchors.centerIn: parent
-                                spacing: Tokens.iconGap
-
-                                Rectangle {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: Tokens.mediaChipDot
-                                    height: width
-                                    radius: width / 2
-                                    visible: Media.playing(chip.modelData)
-                                    color: chip.chosen ? Tokens.onAccent : Tokens.primary
-                                }
-
-                                Label {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    font.pixelSize: Tokens.fontSizeSmall
-                                    font.weight: Font.Medium
-                                    color: chip.chosen ? Tokens.onAccent : Tokens.fgDim
-                                    text: Media.appName(chip.modelData)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Item {
-                    width: 1
-                    height: Tokens.mediaRowGap
-                }
-
-                // Brings the player's window forward, then closes.
-                MouseArea {
-                    id: goTo
-                    x: -Tokens.rowInset
-                    width: parent.width + 2 * Tokens.rowInset
-                    height: Tokens.rowHeight
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        root.focusRequested(root.current.id);
-                        root.open = false;
-                    }
-
-                    Accessible.role: Accessible.Button
-                    Accessible.name: `Go to ${root.appName}${root.workspace !== "" ? ` on workspace ${root.workspace}` : ""}`
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: Tokens.radiusRow
-                        color: goTo.containsMouse ? Tokens.selected : Tokens.surfaceRaised
-                    }
-
-                    MediaArt {
-                        id: goToIcon
-                        x: Tokens.rowInset
-                        anchors.verticalCenter: parent.verticalCenter
-                        size: Tokens.mediaGoToIcon
-                        backed: false
-                        path: root.appIcon
-                    }
-
-                    Label {
-                        x: goToIcon.x + goToIcon.width + Tokens.rowInset
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: where.x - x - Tokens.rowInset
-                        font.weight: Font.Medium
-                        text: `Go to ${root.appName}`
-                    }
-
-                    Label {
-                        id: where
-                        anchors.right: arrow.left
-                        anchors.rightMargin: Tokens.rowInset
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Math.min(implicitWidth, goTo.width / 2)
-                        font.pixelSize: Tokens.fontSizeTiny
-                        color: Tokens.fgDim
-                        text: root.workspace !== "" ? `workspace ${root.workspace}` : ""
-                    }
-
-                    LineIcon {
-                        id: arrow
-                        anchors.right: parent.right
-                        anchors.rightMargin: Tokens.rowInset
-                        anchors.verticalCenter: parent.verticalCenter
-                        path: Icons.GO_TO
-                        size: Tokens.iconSizeSmall
-                        color: goTo.containsMouse ? Tokens.fg : Tokens.fgDim
-                    }
+                LineIcon {
+                    id: arrow
+                    anchors.right: parent.right
+                    anchors.rightMargin: Tokens.rowInset
+                    anchors.verticalCenter: parent.verticalCenter
+                    path: Icons.GO_TO
+                    size: Tokens.iconSizeSmall
+                    color: goTo.containsMouse ? Tokens.fg : Tokens.fgDim
                 }
             }
         }

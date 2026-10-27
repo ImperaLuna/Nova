@@ -34,13 +34,14 @@ Row {
     }
 
     Repeater {
-        model: equalizer.heights
+        // One bar each, kept: only their heights change.
+        model: Tokens.mediaEqBars
 
         Rectangle {
-            required property int modelData
+            required property int index
             y: equalizer.height - height
             width: Tokens.mediaEqBarWidth
-            height: modelData
+            height: equalizer.heights[index]
             radius: width / 2
             color: equalizer.playing ? Tokens.primary : Tokens.fgDim
         }
