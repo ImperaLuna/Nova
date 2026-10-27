@@ -55,6 +55,21 @@ impl Niri {
         Self { socket }
     }
 
+    /// A window whose app id is one of `app_ids` (lower case), one on
+    /// `here` first.
+    fn app_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<Option<Window>, String> {
+        let here = u64::try_from(here.id).ok();
+        let reply = self.request(WINDOWS_REQUEST)?;
+        let windows: Vec<Window> =
+            serde_json::from_value(reply["Windows"].clone()).map_err(|e| format!("niri sent odd windows ({e})"))?;
+        let mut matching: Vec<Window> = windows
+            .into_iter()
+            .filter(|window| window.app_id.as_ref().is_some_and(|id| app_ids.contains(&id.to_lowercase())))
+            .collect();
+        matching.sort_by_key(|window| window.workspace_id != here);
+        Ok(matching.into_iter().next())
+    }
+
     fn connect(&self) -> Result<UnixStream, String> {
         UnixStream::connect(&self.socket).map_err(|e| format!("can't reach niri at {}: {e}", self.socket.display()))
     }
@@ -122,19 +137,15 @@ impl Backend for Niri {
     }
 
     fn focus_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<bool, String> {
-        let here = u64::try_from(here.id).ok();
-        let reply = self.request(WINDOWS_REQUEST)?;
-        let windows: Vec<Window> =
-            serde_json::from_value(reply["Windows"].clone()).map_err(|e| format!("niri sent odd windows ({e})"))?;
-        let mut matching: Vec<&Window> = windows
-            .iter()
-            .filter(|window| window.app_id.as_ref().is_some_and(|id| app_ids.contains(&id.to_lowercase())))
-            .collect();
-        matching.sort_by_key(|window| window.workspace_id != here);
-        let Some(window) = matching.first() else { return Ok(false) };
+        let Some(window) = self.app_window(app_ids, here)? else { return Ok(false) };
         // niri shows the window's workspace and output for it.
         let action = json!({"Action": {"FocusWindow": {"id": window.id}}});
         self.request(&action.to_string()).map(|_| true)
+    }
+
+    fn window_workspace(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<Option<WorkspaceId>, String> {
+        let window = self.app_window(app_ids, here)?;
+        Ok(window.and_then(|window| WorkspaceId::try_from(window.workspace_id?).ok()))
     }
 
     fn log_out(&self) -> Result<(), String> {

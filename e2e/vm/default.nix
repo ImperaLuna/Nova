@@ -110,6 +110,8 @@ let
           pkgs.grim
           pkgs.quickshell
           pkgs.wireplumber
+          # nova-test-player, for the now-playing pill.
+          (import ../player.nix { inherit pkgs; })
         ];
         systemd.packages = [ nova ];
         environment.etc."xdg/autostart/nova-login-probe.desktop".text = ''

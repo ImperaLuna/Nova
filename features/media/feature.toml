@@ -1,0 +1,5 @@
+id = "media"
+name = "Now playing"
+description = "What's playing (Spotify, a browser tab, mpv: any MPRIS player) in a pill beside the AI usage one, with its controls."
+default = true
+daemon = "media"

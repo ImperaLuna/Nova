@@ -184,6 +184,7 @@ pub fn open(target: &Path, path_var: &str, logger: &Arc<Logger>) -> Result<(), S
         path: None,
         opens_types: false,
         window_class: None,
+        categories: vec![],
     };
     launch(&opener, &Runner::detect(path_var), path_var, logger)
 }
@@ -243,6 +244,7 @@ mod tests {
             path: None,
             opens_types: false,
             window_class: None,
+            categories: vec![],
         };
         let path_var = std::env::var("PATH").unwrap_or_default();
         // A systemd-run that fails, as one does when the app can't start.

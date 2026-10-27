@@ -38,6 +38,8 @@ pub struct Entry {
     pub opens_types: bool,
     /// The app id its windows get (`StartupWMClass=`), when it says.
     pub window_class: Option<String>,
+    /// What kind of app it is (`Categories=`), like `AudioVideo` or `WebBrowser`.
+    pub categories: Vec<String>,
 }
 
 impl Entry {
@@ -237,6 +239,7 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
         path: raw("Path").map(unescape).filter(|path| !path.is_empty()).map(PathBuf::from),
         opens_types: raw("MimeType").is_some_and(|types| !types.trim().is_empty()),
         window_class: raw("StartupWMClass").map(unescape).filter(|class| !class.is_empty()),
+        categories: raw("Categories").map(list).unwrap_or_default(),
     })
 }
 
@@ -392,7 +395,7 @@ mod tests {
         let found = entry(
             "# a comment\n[Desktop Entry]\nType=Application\nName=Files\nGenericName=File Manager\n\
              Comment=Access and organize files\nIcon=org.gnome.Nautilus\nKeywords=folder;manager;explore;\n\
-             Exec=nautilus --new-window %U\nPath=/tmp\n\n[Desktop Action new-window]\nName=New Window\nExec=other\n",
+             Exec=nautilus --new-window %U\nPath=/tmp\nCategories=GNOME;GTK;Utility;Core;FileManager;\n\n[Desktop Action new-window]\nName=New Window\nExec=other\n",
         )
         .unwrap();
         assert_eq!(found.name, "Files");
@@ -402,6 +405,7 @@ mod tests {
         assert_eq!(found.keywords, ["folder", "manager", "explore"]);
         assert_eq!(found.exec, ["nautilus", "--new-window"]);
         assert_eq!(found.path, Some(PathBuf::from("/tmp")));
+        assert_eq!(found.categories, ["GNOME", "GTK", "Utility", "Core", "FileManager"]);
         assert!(!found.terminal);
     }
 

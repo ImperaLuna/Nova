@@ -521,6 +521,67 @@ QtObject {
     readonly property int fontSizeBadge: 9
     readonly property color badgeQuiet: alpha(fg, 0.55)
 
+    // Now playing (ui/media): a pill right of the AI usage pill while
+    // something plays, which grows into a panel (panelWidth wide). The pill:
+    // the app's icon in a circle (a workspace number's size), the title and
+    // artist cut to these widths (a long title fades out over mediaFade and
+    // scrolls through at mediaMarqueeSpeed px/s, resting this long at each
+    // end), and an equalizer of mediaEqBars bars stepping every
+    // durationEqStep, each between mediaEqLow and mediaEqHigh tall.
+    readonly property int mediaArt: 26
+    readonly property int mediaAppIcon: 22
+    readonly property int mediaPillStart: 5
+    readonly property int mediaTitleMax: 150
+    readonly property int mediaArtistMax: 96
+    readonly property int mediaFade: 18
+    readonly property int mediaMarqueeSpeed: 30
+    readonly property int durationMarqueeRest: 800
+    readonly property int mediaEqBars: 4
+    readonly property int mediaEqBarWidth: 3
+    readonly property int mediaEqGap: 2
+    readonly property int mediaEqLow: 3
+    readonly property int mediaEqHigh: 12
+    readonly property int mediaEqLead: 2
+    readonly property int durationEqStep: 125
+    // Paused: the app's icon dims to this; after durationMediaLinger the
+    // pill slides away, unless its panel is open.
+    readonly property real mediaPausedOpacity: 0.6
+    readonly property int durationMediaLinger: 60000
+    // The panel: the cover and the gap beside it, the title's line height,
+    // the progress line (taller on hover, with a knob) and the room it
+    // takes clicks in, the buttons and the player chips.
+    readonly property int mediaCover: 76
+    readonly property int mediaBodyGap: 14
+    readonly property real mediaTitleLine: 1.2
+    readonly property int mediaSeekRoom: 16
+    readonly property int mediaTrack: 4
+    readonly property int mediaTrackHover: 6
+    readonly property int mediaKnob: 12
+    readonly property int mediaPlay: 48
+    readonly property int mediaControl: 40
+    readonly property int mediaControlGap: 18
+    readonly property int mediaControlIcon: 18
+    readonly property int mediaPlayIcon: 20
+    readonly property int mediaChipHeight: 28
+    readonly property int mediaChipPad: 12
+    readonly property int mediaChipGap: 6
+    readonly property int mediaChipDot: 5
+    readonly property int mediaGoToIcon: 18
+    readonly property int mediaPadBottom: 18
+    // The panel's smaller spacing: under the header, above the buttons;
+    // between the title, artist and album; above the times; and above the
+    // chips and the go-to row.
+    readonly property int mediaGap: 10
+    readonly property int mediaMetaGap: 2
+    readonly property int mediaTimesGap: 6
+    readonly property int mediaRowGap: 14
+    // A button the player can't act on now (no next track).
+    readonly property real mediaDisabledOpacity: 0.35
+    // How often the open panel's time counts up, and how long the progress
+    // line stays where a seek put it if the player doesn't say it moved.
+    readonly property int durationProgressStep: 1000
+    readonly property int durationSeekHold: 2000
+
     // Type
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"

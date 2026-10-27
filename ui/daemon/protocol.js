@@ -6,7 +6,7 @@ var VERSION = 2;
 
 // Commands the UI sends (Command in nova-protocol). A nova-protocol test
 // checks every CMD_, EVENT_, TOPIC_, CAPABILITY_, STEP_, POWER_, VOLUME_ and FEATURE_ name
-// here (and CAPTURE_, SHOT_, URGENCY_) is one novad knows.
+// here (and CAPTURE_, SHOT_, URGENCY_, MEDIA_, PLAYBACK_) is one novad knows.
 var CMD_SUBSCRIBE = "subscribe";
 var CMD_SHOW_AI_USAGE = "show_ai_usage";
 var CMD_REFRESH_AI_USAGE = "refresh_ai_usage";
@@ -38,9 +38,16 @@ var CMD_CLEAR_NOTIFICATIONS = "clear_notifications";
 var CMD_READ_NOTIFICATIONS = "read_notifications";
 var CMD_SET_DO_NOT_DISTURB = "set_do_not_disturb";
 var CMD_MUTE_NOTIFICATION_APP = "mute_notification_app";
-// novad refuses longer search_apps queries (SEARCH_APPS_MAX_CHARS in
-// nova-protocol, which checks this matches).
+var CMD_MEDIA_CONTROL = "media_control";
+var CMD_MEDIA_SEEK = "media_seek";
+var CMD_MEDIA_SHOW = "media_show";
+var CMD_MEDIA_FOCUS = "media_focus";
+var CMD_MEDIA_WINDOW = "media_window";
+// novad refuses longer search_apps queries and media player ids
+// (SEARCH_APPS_MAX_CHARS and MEDIA_PLAYER_MAX_BYTES in nova-protocol, which
+// checks these match).
 var SEARCH_APPS_MAX_CHARS = 200;
+var MEDIA_PLAYER_MAX_BYTES = 255;
 
 // Events novad sends (Event in nova-protocol). Each topic's events carry the
 // topic's name.
@@ -64,6 +71,7 @@ var EVENT_LAUNCHER = "launcher";
 var EVENT_TRAY = "tray";
 var EVENT_NOTIFICATIONS = "notifications";
 var EVENT_NOTIFICATION_POPUP = "notification_popup";
+var EVENT_MEDIA = "media";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
@@ -81,6 +89,7 @@ var TOPIC_RESOURCES = "resources";
 var TOPIC_LAUNCHER = "launcher";
 var TOPIC_TRAY = "tray";
 var TOPIC_NOTIFICATIONS = "notifications";
+var TOPIC_MEDIA = "media";
 
 // What a compositor can report or do (Capability in nova-protocol).
 var CAPABILITY_WORKSPACES = "workspaces";
@@ -110,6 +119,7 @@ var FEATURE_QUICK_SETTINGS = "quick-settings";
 var FEATURE_LAUNCHER = "launcher";
 var FEATURE_TRAY = "tray";
 var FEATURE_NOTIFICATIONS = "notifications";
+var FEATURE_MEDIA = "media";
 
 // Power menu actions (PowerAction in nova-protocol).
 var POWER_LOCK = "lock";
@@ -131,6 +141,16 @@ var SHOT_DELETE = "delete";
 var URGENCY_LOW = "low";
 var URGENCY_NORMAL = "normal";
 var URGENCY_CRITICAL = "critical";
+
+// The now-playing panel's buttons (MediaAction in nova-protocol).
+var MEDIA_PLAY_PAUSE = "play_pause";
+var MEDIA_NEXT = "next";
+var MEDIA_PREVIOUS = "previous";
+
+// What a media player is doing (PlaybackStatus in nova-protocol).
+var PLAYBACK_PLAYING = "playing";
+var PLAYBACK_PAUSED = "paused";
+var PLAYBACK_STOPPED = "stopped";
 
 // Returns {kind: "event"|"response", ...} or null for lines to ignore.
 function parse(line) {

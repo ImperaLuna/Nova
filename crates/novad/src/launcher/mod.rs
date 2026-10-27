@@ -46,6 +46,8 @@ const MAX_REMEMBERED: usize = 200;
 /// tray, to focus it, and how often it looks.
 const TRAY_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(3) };
 const TRAY_WINDOW_RETRY: Duration = Duration::from_millis(100);
+/// The desktop entry category of web browsers.
+const BROWSER: &str = "WebBrowser";
 
 /// Where the module reads and keeps things, and how it starts apps.
 #[derive(Clone)]
@@ -261,6 +263,12 @@ impl Launcher {
             let matching: Vec<&Entry> = state.apps.values().filter(|entry| entry.window_ids().contains(id)).collect();
             matching.iter().find(|entry| entry.is_named(id)).or(matching.first()).map(|entry| app(entry, &state.icons))
         })
+    }
+
+    /// Whether the installed app `id` is a web browser (`WebBrowser` among
+    /// its categories).
+    pub fn is_browser(&self, id: &str) -> bool {
+        lock(&self.state).apps.get(id).is_some_and(|entry| entry.categories.iter().any(|category| category == BROWSER))
     }
 
     /// The app ids the windows of the installed app `id` may have; `None`

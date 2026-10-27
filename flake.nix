@@ -425,6 +425,7 @@
                       pkgs.grim
                       pkgs.jq
                       pkgs.dbus
+                      (import ./e2e/player.nix { inherit pkgs; })
                       self.packages.${pkgs.stdenv.hostPlatform.system}.nova-ui
                     ];
                     FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
@@ -498,6 +499,7 @@
             pkgs.sway # headless compositor for e2e
             pkgs.grim
             pkgs.dbus # dbus-daemon, for the tray's and notifications' tests
+            (import ./e2e/player.nix { inherit pkgs; }) # nova-test-player, for e2e
             pkgs.cargo-insta # `cargo insta review` for snapshot tests
             pkgs.cargo-deny
             pkgs.nixfmt

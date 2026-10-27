@@ -38,6 +38,21 @@ with subtest("nova toggle opens and closes the AI usage panel, as a keybind woul
         machine.succeed(as_user("nova toggle ai-usage"))
         retry(lambda _last_try: ui_log_count(line) > before, timeout=CLICK_EFFECT)
 
+with subtest("a media player playing slides out the now-playing pill; its panel opens and closes; the pill goes with the player"):
+    shown = ui_log_count(MEDIA_SHOWN)
+    machine.succeed(as_user(START_PLAYER))
+    retry(lambda _last_try: ui_log_count(MEDIA_SHOWN) > shown, timeout=WAIT)
+    # Its equalizer stands still here (NOVA_FROZEN_TIME), so the picture
+    # settles.
+    screenshot("now-playing")
+    for line in (MEDIA_OPENED, MEDIA_CLOSED):
+        before = ui_log_count(line)
+        machine.succeed(as_user("nova toggle media"))
+        retry(lambda _last_try: ui_log_count(line) > before, timeout=CLICK_EFFECT)
+    hidden = ui_log_count(MEDIA_HIDDEN)
+    machine.succeed(as_user(STOP_PLAYER))
+    retry(lambda _last_try: ui_log_count(MEDIA_HIDDEN) > hidden, timeout=WAIT)
+
 with subtest("nova lock covers the screens until the user's password checks out"):
     before = ui_log_count(SESSION_LOCKED)
     machine.succeed(as_user("nova lock"))
