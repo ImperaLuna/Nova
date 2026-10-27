@@ -39,6 +39,7 @@ mod inotify;
 mod launcher;
 mod logger;
 mod logind;
+mod media;
 mod notifications;
 mod notify;
 mod power;
@@ -291,6 +292,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         resources: resources::Sources::system(&path_var),
         launcher: launcher::Paths::new(&args.state_dir, &path_var, Arc::clone(&icons)),
         tray: tray::Sources::new(&args.state_dir),
+        media: media::Sources::new(socket.parent().unwrap_or(Path::new("."))),
         notifications: notifications::Sources::new(&args.state_dir, Arc::clone(&icons)),
         icons,
     };

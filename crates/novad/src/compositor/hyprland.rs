@@ -161,6 +161,16 @@ impl Backend for Hyprland {
         Ok(true)
     }
 
+    fn window_workspace(&self, app_ids: &[String]) -> Result<Option<WorkspaceId>, String> {
+        let answer = self.request(CLIENTS)?;
+        let clients: Vec<Client> =
+            serde_json::from_str(&answer).map_err(|e| format!("Hyprland sent odd windows ({e})"))?;
+        let client = clients.iter().find(|client| {
+            [&client.class, &client.initial_class].iter().any(|class| app_ids.contains(&class.to_lowercase()))
+        });
+        Ok(client.map(|client| client.workspace.id))
+    }
+
     fn log_out(&self) -> Result<(), String> {
         match self.request("dispatch exit")?.trim() {
             "ok" => Ok(()),

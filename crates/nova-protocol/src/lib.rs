@@ -1449,9 +1449,15 @@ mod tests {
             encode(Request { id: Some(11), command: Command::Quit }),
             encode(Request {
                 id: Some(40),
-                command: Command::MediaControl { player: "org.mpris.MediaPlayer2.spotify".into(), action: MediaAction::Next },
+                command: Command::MediaControl {
+                    player: "org.mpris.MediaPlayer2.spotify".into(),
+                    action: MediaAction::Next,
+                },
             }),
-            encode(Request { id: Some(41), command: Command::MediaSeek { player: "p".into(), position_us: 5_000_000 } }),
+            encode(Request {
+                id: Some(41),
+                command: Command::MediaSeek { player: "p".into(), position_us: 5_000_000 },
+            }),
             encode(Request { id: Some(42), command: Command::MediaShow { player: "p".into() } }),
             encode(Request { id: Some(43), command: Command::MediaFocus { player: "p".into() } }),
             encode(Request { id: Some(44), command: Command::MediaWindow { player: "p".into() } }),

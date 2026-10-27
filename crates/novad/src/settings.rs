@@ -12,7 +12,7 @@ use crate::hub::Hub;
 use crate::icons::Icons;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, host, launcher, notifications, resources, theme, tray, x11_tray};
+use crate::{ai_usage, features, host, launcher, media, notifications, resources, theme, tray, x11_tray};
 use nova_features::{Manifest, Selection};
 use nova_protocol::{Event, FeatureState, Host, Theme};
 use std::collections::BTreeSet;
@@ -40,6 +40,7 @@ pub struct Sources {
     pub resources: resources::Sources,
     pub launcher: launcher::Paths,
     pub tray: tray::Sources,
+    pub media: media::Sources,
     pub notifications: notifications::Sources,
     /// Where app icons are found, for every feature that shows them.
     pub icons: Arc<Icons>,
@@ -59,6 +60,8 @@ pub struct Settings {
     pub launcher: Option<Arc<launcher::Launcher>>,
     /// Watching for tray icons while the `tray` feature is ready.
     pub tray: Option<Arc<tray::Tray>>,
+    /// Following the media players while the `media` feature is ready.
+    pub media: Option<Arc<media::NowPlaying>>,
     /// Running xembedsniproxy while the `x11-tray` feature is ready.
     pub x11_tray: Option<Arc<x11_tray::X11Tray>>,
     /// Serving `org.freedesktop.Notifications` while the `notifications` feature is ready.
@@ -201,6 +204,18 @@ impl Settings {
             });
         }
         // It has no options either. Its icons reach whatever tray is up.
+        // The launcher is handed on as the tray's is, which finds apps with it.
+        let media = reconcile(
+            media::FEATURE_ID,
+            previous.as_deref_mut().and_then(|previous| previous.media.take()),
+            ready(media::FEATURE_ID),
+            |running| {
+                running.set_launcher(launcher.clone());
+                true
+            },
+            || media::NowPlaying::start(sources.media.clone(), launcher.clone(), Arc::clone(hub), Arc::clone(logger)),
+            logger,
+        );
         let x11_tray = reconcile(
             x11_tray::FEATURE_ID,
             previous.as_deref_mut().and_then(|previous| previous.x11_tray.take()),
@@ -219,7 +234,20 @@ impl Settings {
         }
 
         let icons = Arc::clone(&sources.icons);
-        Self { config, selection, features, theme, ai_usage, resources, launcher, tray, x11_tray, notifications, icons }
+        Self {
+            config,
+            selection,
+            features,
+            theme,
+            ai_usage,
+            resources,
+            launcher,
+            tray,
+            media,
+            x11_tray,
+            notifications,
+            icons,
+        }
     }
 }
 
@@ -227,11 +255,12 @@ impl Settings {
     /// Stops every feature service running, for a novad that ends without
     /// exiting the process ([`crate::InProcess`]).
     pub fn stop_services(&self) {
-        let services: [Option<&dyn Service>; 6] = [
+        let services: [Option<&dyn Service>; 7] = [
             self.ai_usage.as_deref().map(|service| service as &dyn Service),
             self.resources.as_deref().map(|service| service as &dyn Service),
             self.launcher.as_deref().map(|service| service as &dyn Service),
             self.tray.as_deref().map(|service| service as &dyn Service),
+            self.media.as_deref().map(|service| service as &dyn Service),
             self.x11_tray.as_deref().map(|service| service as &dyn Service),
             self.notifications.as_deref().map(|service| service as &dyn Service),
         ];
@@ -276,6 +305,7 @@ services!(
     resources::Resources,
     launcher::Launcher,
     tray::Tray,
+    media::NowPlaying,
     notifications::Notifications,
     x11_tray::X11Tray
 );

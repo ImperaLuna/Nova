@@ -137,6 +137,15 @@ impl Backend for Niri {
         self.request(&action.to_string()).map(|_| true)
     }
 
+    fn window_workspace(&self, app_ids: &[String]) -> Result<Option<WorkspaceId>, String> {
+        let reply = self.request(WINDOWS_REQUEST)?;
+        let windows: Vec<Window> =
+            serde_json::from_value(reply["Windows"].clone()).map_err(|e| format!("niri sent odd windows ({e})"))?;
+        let window =
+            windows.iter().find(|window| window.app_id.as_ref().is_some_and(|id| app_ids.contains(&id.to_lowercase())));
+        Ok(window.and_then(|window| window.workspace_id).and_then(|id| WorkspaceId::try_from(id).ok()))
+    }
+
     fn log_out(&self) -> Result<(), String> {
         // The power menu already asked.
         let action = json!({"Action": {"Quit": {"skip_confirmation": true}}});

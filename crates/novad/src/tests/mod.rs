@@ -6,6 +6,7 @@
 
 use super::*;
 use crate::icons::Icons;
+use crate::media;
 use crate::session_bus::Bus;
 use nova_protocol::{FeatureStatus, LogEntry, UI_LOG_SOURCE};
 use nova_test_support::{TempDir, wait_until, write_program};
@@ -113,6 +114,10 @@ impl TestDaemon {
             tray: tray::Sources {
                 bus: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
                 state_file: dir.join("tray.json"),
+            },
+            media: media::Sources {
+                bus: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+                cache_dir: dir.join("media"),
             },
             // No bus: the notifications' own tests give them one.
             notifications: notifications::Sources {

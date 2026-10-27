@@ -207,6 +207,19 @@ impl<'a> Connection<'a> {
             Command::PinApp { id, pinned } => done(self.launcher().and_then(|launcher| launcher.pin(id, *pinned))),
             Command::HideTrayApp { id, hidden } => done(self.tray().and_then(|tray| tray.hide(id, *hidden))),
             Command::ActivateTrayItem { address } => return self.activate_tray_item(address),
+            Command::MediaControl { player, action } => {
+                done(self.media().and_then(|media| media.control(player, *action)))
+            }
+            Command::MediaSeek { player, position_us } => {
+                done(self.media().and_then(|media| media.seek(player, *position_us)))
+            }
+            Command::MediaShow { player } => done(self.media().and_then(|media| media.show(player))),
+            Command::MediaFocus { player } => {
+                value(self.media().and_then(|media| media.focus(player, self.daemon.compositor.as_deref())))
+            }
+            Command::MediaWindow { player } => {
+                value(self.media().and_then(|media| media.window(player, self.daemon.compositor.as_deref())))
+            }
             Command::NotificationAction { id, action } => {
                 done(self.notifications().and_then(|notifications| notifications.action(*id, action.as_deref())))
             }
@@ -241,6 +254,10 @@ impl<'a> Connection<'a> {
 
     fn launcher(&self) -> Result<Arc<crate::launcher::Launcher>, String> {
         running(lock(&self.daemon.settings).launcher.clone(), crate::launcher::FEATURE_ID)
+    }
+
+    fn media(&self) -> Result<Arc<crate::media::NowPlaying>, String> {
+        running(lock(&self.daemon.settings).media.clone(), crate::media::FEATURE_ID)
     }
 
     fn tray(&self) -> Result<Arc<crate::tray::Tray>, String> {
@@ -519,6 +536,11 @@ impl<'a> Connection<'a> {
                                 tray.send_state(self.id);
                             }
                         }
+                        Topic::Media => {
+                            if let Some(media) = &settings.media {
+                                media.send_state(self.id);
+                            }
+                        }
                         Topic::Notifications => {
                             if let Some(notifications) = &settings.notifications {
                                 notifications.send_state(self.id);
@@ -565,6 +587,11 @@ impl<'a> Connection<'a> {
             | Command::PinApp { .. }
             | Command::HideTrayApp { .. }
             | Command::ActivateTrayItem { .. }
+            | Command::MediaControl { .. }
+            | Command::MediaSeek { .. }
+            | Command::MediaShow { .. }
+            | Command::MediaFocus { .. }
+            | Command::MediaWindow { .. }
             | Command::NotificationAction { .. }
             | Command::DismissNotification { .. }
             | Command::ClearNotifications { .. }

@@ -257,10 +257,12 @@ impl Launcher {
     /// `steam` is Steam, not a game shortcut whose Exec is `steam`.
     pub fn find_app(&self, ids: &[String]) -> Option<App> {
         let state = lock(&self.state);
-        ids.iter().find_map(|id| {
-            let matching: Vec<&Entry> = state.apps.values().filter(|entry| entry.window_ids().contains(id)).collect();
-            matching.iter().find(|entry| entry.is_named(id)).or(matching.first()).map(|entry| app(entry, &state.icons))
-        })
+        matching_entry(&state, ids).map(|entry| app(entry, &state.icons))
+    }
+
+    /// Whether the app `find_app` finds for `ids` is a web browser.
+    pub fn is_browser(&self, ids: &[String]) -> bool {
+        matching_entry(&lock(&self.state), ids).is_some_and(|entry| entry.browser)
     }
 
     /// The app ids the windows of the installed app `id` may have; `None`
@@ -559,4 +561,13 @@ pub fn focus_shown(id: &str, ids: &[String], compositor: &Compositor, output: Op
             }
         }
     }
+}
+
+/// The installed app `find_app` answers for: the first of `ids` that some
+/// app's windows may have, preferring the app it names.
+fn matching_entry<'a>(state: &'a State, ids: &[String]) -> Option<&'a Entry> {
+    ids.iter().find_map(|id| {
+        let matching: Vec<&Entry> = state.apps.values().filter(|entry| entry.window_ids().contains(id)).collect();
+        matching.iter().find(|entry| entry.is_named(id)).or(matching.first()).copied()
+    })
 }

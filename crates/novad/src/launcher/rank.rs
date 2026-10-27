@@ -126,6 +126,7 @@ mod tests {
             comment: None,
             icon: None,
             keywords: vec![],
+            browser: false,
             exec: vec![name.to_lowercase()],
             terminal: false,
             path: None,

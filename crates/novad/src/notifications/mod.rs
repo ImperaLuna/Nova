@@ -18,7 +18,7 @@
 //! written out as PNGs (`image`), and lists are capped. App icons given by
 //! name are looked up as files (`crate::icons`), so the UI only loads images.
 
-mod image;
+pub(crate) mod image;
 #[cfg(test)]
 mod tests;
 mod text;

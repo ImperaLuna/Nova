@@ -38,6 +38,9 @@ pub struct Entry {
     pub opens_types: bool,
     /// The app id its windows get (`StartupWMClass=`), when it says.
     pub window_class: Option<String>,
+    /// A web browser (`Categories=` lists `WebBrowser`), whose media players
+    /// name a site or channel where an artist would be.
+    pub browser: bool,
 }
 
 impl Entry {
@@ -237,6 +240,7 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
         path: raw("Path").map(unescape).filter(|path| !path.is_empty()).map(PathBuf::from),
         opens_types: raw("MimeType").is_some_and(|types| !types.trim().is_empty()),
         window_class: raw("StartupWMClass").map(unescape).filter(|class| !class.is_empty()),
+        browser: raw("Categories").map(list).is_some_and(|categories| categories.iter().any(|c| c == "WebBrowser")),
     })
 }
 

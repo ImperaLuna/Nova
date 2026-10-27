@@ -55,6 +55,10 @@ pub trait Backend: Send + Sync {
     /// the last report listed, wins over one elsewhere. `false` when no
     /// window has one of them.
     fn focus_window(&self, app_ids: &[String], here: &Workspace) -> Result<bool, String>;
+
+    /// The workspace `focus_window` would focus a window on, by the same
+    /// rules, or `None` when no window has one of `app_ids`.
+    fn window_workspace(&self, app_ids: &[String]) -> Result<Option<WorkspaceId>, String>;
 }
 
 /// The backend for the compositor this session runs, from its variables in
@@ -154,6 +158,20 @@ impl Compositor {
     /// Focuses a window of an app with one of `app_ids` (lower case) where it
     /// is, preferring one on the workspace showing on `output` (the focused
     /// one when `None`). `false` when none is open.
+    /// The name of the workspace a window of an app with one of `app_ids`
+    /// (lower case) is on, the one `focus_app` would focus it on. `None` when
+    /// no such window is open.
+    pub fn window_workspace(&self, app_ids: &[String]) -> Result<Option<String>, String> {
+        let Some(id) = self.backend.window_workspace(app_ids)? else { return Ok(None) };
+        let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
+        Ok(desktop
+            .outputs
+            .iter()
+            .flat_map(|output| &output.workspaces)
+            .find(|workspace| workspace.id == id)
+            .map(|workspace| workspace.name.clone()))
+    }
+
     pub fn focus_app(&self, app_ids: &[String], output: Option<&str>) -> Result<bool, String> {
         let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
         let output = match output {
