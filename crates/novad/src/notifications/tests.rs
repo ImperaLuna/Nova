@@ -202,23 +202,28 @@ fn replacing_keeps_the_id_and_moves_it_to_the_top() {
 }
 
 #[test]
-fn muted_apps_and_do_not_disturb_hold_back_pop_ups() {
+fn muted_apps_are_hidden_and_do_not_disturb_holds_back_pop_ups() {
     let fixture = Fixture::new("quiet");
     let server = fixture.server();
     let app = fixture.app();
-    app.simple("Discord", "first");
+    let first = app.simple("Discord", "first");
     fixture.next("notification_popup");
     // Only an app that sent one can be muted.
     assert!(server.mute("Slack", true).is_err());
     server.mute("Discord", true).unwrap();
     let list = fixture.next("notifications");
     assert_eq!(list["muted"], json!(["Discord"]));
-    assert_eq!(list["items"][0].get("unread"), None, "muting reads its notifications");
+    assert_eq!(list["items"], json!([]), "muting hides its notifications");
 
+    // New ones aren't kept, and clearing leaves the hidden ones.
     app.simple("Discord", "muted");
+    server.clear(None);
+    server.mute("Discord", false).unwrap();
     let list = fixture.next("notifications");
-    assert_eq!(list["items"][0]["summary"], "muted");
-    assert_eq!(list["items"][0].get("unread"), None);
+    assert_eq!(list["muted"], json!([]));
+    assert_eq!(list["items"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list["items"][0]["id"], first, "unmuting shows them again");
+    assert_eq!(list["items"][0].get("unread"), None, "muting read them");
     fixture.none_waiting("notification_popup");
 
     server.set_do_not_disturb(true);
@@ -231,13 +236,30 @@ fn muted_apps_and_do_not_disturb_hold_back_pop_ups() {
     app.notify(("Firefox", 0, "", "battery low", "", vec![], critical, -1));
     assert_eq!(fixture.next("notification_popup")["summary"], "battery low");
 
-    server.read();
+    server.read(None);
     let list = fixture.next("notifications");
     assert!(list["items"].as_array().unwrap().iter().all(|item| item.get("unread").is_none()));
 }
 
 #[test]
-fn clicks_reach_the_app_and_close_the_notification() {
+fn one_notification_can_be_read() {
+    let fixture = Fixture::new("read-one");
+    let server = fixture.server();
+    let app = fixture.app();
+    let first = app.simple("Discord", "first");
+    app.simple("Discord", "second");
+    let list = fixture.next("notifications");
+    assert_eq!(list["items"].as_array().unwrap().len(), 1);
+    fixture.next("notifications");
+    server.read(Some(first));
+    let list = fixture.next("notifications");
+    assert_eq!(list["items"][0]["unread"], true);
+    assert_eq!(list["items"][1]["id"], first);
+    assert_eq!(list["items"][1].get("unread"), None);
+}
+
+#[test]
+fn clicks_reach_the_app_and_keep_the_notification_read() {
     let fixture = Fixture::new("click");
     let server = fixture.server();
     let app = fixture.app();
@@ -247,7 +269,26 @@ fn clicks_reach_the_app_and_close_the_notification() {
     server.action(id, Some("reply")).unwrap();
     assert_eq!(app.signal(), ("ActionInvoked".into(), json!([id, "reply"])));
     assert_eq!(app.signal(), ("NotificationClosed".into(), json!([id, 2])));
-    assert!(server.action(id, None).is_err(), "it's gone");
+    let list = loop {
+        let list = fixture.next("notifications");
+        if list["items"][0].get("unread").is_none() {
+            break list;
+        }
+    };
+    assert_eq!(list["items"][0]["id"], id, "still listed");
+    assert_eq!(list["items"][0].get("live"), None, "its app is done with it");
+    assert!(server.action(id, None).is_err(), "a click on it again opens the app instead");
+    // Many apps close it on a click too: it stays.
+    zbus::block_on(app.connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "CloseNotification", &(id,)))
+        .unwrap();
+    app.simple("Mail", "later");
+    let list = loop {
+        let list = fixture.next("notifications");
+        if list["items"][0]["summary"] == "later" {
+            break list;
+        }
+    };
+    assert_eq!(list["items"][1]["id"], id, "closing it again leaves it listed");
 
     // A resident one stays when a button is clicked, and goes on a click.
     let resident = HashMap::from([("resident", Variant::Bool(true))]);

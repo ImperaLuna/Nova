@@ -72,7 +72,7 @@ Item {
                     readonly property bool isMuted: page.muted.includes(modelData.name)
                     width: appList.width
                     title: modelData.name
-                    subtitle: isMuted ? qsTr("Muted: list only, no pop-ups") : qsTr("Pop-ups and list")
+                    subtitle: isMuted ? qsTr("Muted: hidden, no pop-ups") : qsTr("Pop-ups and list")
                     on: !isMuted
                     onClicked: page.muteToggled(modelData.name, !isMuted)
 

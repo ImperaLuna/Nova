@@ -55,7 +55,7 @@ Singleton {
     }
 
     // `notification` was clicked: its app takes the click, or opens on
-    // `output`. Either way it leaves the list.
+    // `output`. Either way it stays on the list, read.
     function open(notification: var, output: string) {
         const does = Notifications.clickDoes(notification);
         if (does === "action") {
@@ -67,7 +67,9 @@ Singleton {
                 if (error)
                     console.warn(`nova: can't open ${notification.app_id}: ${error}`);
             });
-        dismiss(notification.id);
+        Daemon.call(Protocol.CMD_READ_NOTIFICATION, {
+            id: notification.id
+        });
     }
 
     // One of its buttons (`action` its key), or the click itself (null).
