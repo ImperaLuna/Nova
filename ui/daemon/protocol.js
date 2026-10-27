@@ -30,6 +30,11 @@ var CMD_SEARCH_APPS = "search_apps";
 var CMD_APP_ICON = "app_icon";
 var CMD_LAUNCH_APP = "launch_app";
 var CMD_PIN_APP = "pin_app";
+var CMD_MEDIA_CONTROL = "media_control";
+var CMD_MEDIA_SEEK = "media_seek";
+var CMD_MEDIA_SHOW = "media_show";
+var CMD_MEDIA_FOCUS = "media_focus";
+var CMD_MEDIA_WINDOW = "media_window";
 var CMD_HIDE_TRAY_APP = "hide_tray_app";
 var CMD_ACTIVATE_TRAY_ITEM = "activate_tray_item";
 var CMD_NOTIFICATION_ACTION = "notification_action";
@@ -63,6 +68,7 @@ var EVENT_RESOURCES = "resources";
 var EVENT_LAUNCHER = "launcher";
 var EVENT_TRAY = "tray";
 var EVENT_NOTIFICATIONS = "notifications";
+var EVENT_MEDIA = "media";
 var EVENT_NOTIFICATION_POPUP = "notification_popup";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
@@ -81,6 +87,7 @@ var TOPIC_RESOURCES = "resources";
 var TOPIC_LAUNCHER = "launcher";
 var TOPIC_TRAY = "tray";
 var TOPIC_NOTIFICATIONS = "notifications";
+var TOPIC_MEDIA = "media";
 
 // What a compositor can report or do (Capability in nova-protocol).
 var CAPABILITY_WORKSPACES = "workspaces";
@@ -110,6 +117,7 @@ var FEATURE_QUICK_SETTINGS = "quick-settings";
 var FEATURE_LAUNCHER = "launcher";
 var FEATURE_TRAY = "tray";
 var FEATURE_NOTIFICATIONS = "notifications";
+var FEATURE_MEDIA = "media";
 
 // Power menu actions (PowerAction in nova-protocol).
 var POWER_LOCK = "lock";
@@ -131,6 +139,16 @@ var SHOT_DELETE = "delete";
 var URGENCY_LOW = "low";
 var URGENCY_NORMAL = "normal";
 var URGENCY_CRITICAL = "critical";
+
+// Transport controls a media_control request sends (MediaAction in nova-protocol).
+var MEDIA_ACTION_PLAY_PAUSE = "play_pause";
+var MEDIA_ACTION_NEXT = "next";
+var MEDIA_ACTION_PREVIOUS = "previous";
+
+// A media player's state (MediaStatus in nova-protocol).
+var MEDIA_STATUS_PLAYING = "playing";
+var MEDIA_STATUS_PAUSED = "paused";
+var MEDIA_STATUS_STOPPED = "stopped";
 
 // Returns {kind: "event"|"response", ...} or null for lines to ignore.
 function parse(line) {

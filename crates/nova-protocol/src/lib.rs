@@ -106,6 +106,11 @@ pub enum Event {
     /// nor during do not disturb unless it's critical. Topic
     /// [`Topic::Notifications`].
     NotificationPopup(Notification),
+    /// The media players on the session bus (MPRIS, feature `media`): each
+    /// one's app, track and playback, and which one the pill shows. Topic
+    /// [`Topic::Media`], sent right after subscribing and whenever any of it
+    /// changes.
+    Media(Media),
 }
 
 /// Groups of events a client can subscribe to.
@@ -127,6 +132,7 @@ pub enum Topic {
     Launcher,
     Tray,
     Notifications,
+    Media,
 }
 
 impl Event {
@@ -150,6 +156,7 @@ impl Event {
             Event::Launcher(_) => Some(Topic::Launcher),
             Event::Tray(_) => Some(Topic::Tray),
             Event::Notifications(_) | Event::NotificationPopup(_) => Some(Topic::Notifications),
+            Event::Media(_) => Some(Topic::Media),
         }
     }
 }
@@ -503,6 +510,70 @@ pub struct TrayItem {
     /// it, when there is one (and the `launcher` feature is on).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<App>,
+}
+
+/// The media players (feature `media`): every MPRIS player on the session
+/// bus, in the order they appeared, and the one the pill shows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Media {
+    pub players: Vec<MediaPlayer>,
+    /// The player the pill and panel show: the one that most recently
+    /// started playing, or the one `media_show` picked. `None` when there is
+    /// no player.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shown: Option<String>,
+}
+
+/// One MPRIS player. Its position is read when `position_at_ms` was the
+/// time, so the UI extrapolates it from `rate` while it's shown.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MediaPlayer {
+    /// Its bus name, `org.mpris.MediaPlayer2.<name>`, the key the commands use.
+    pub id: String,
+    /// The installed app it belongs to, when its desktop entry matches one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<App>,
+    /// Its own name, used when no app matches.
+    pub identity: String,
+    pub status: MediaStatus,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    /// A cover image on disk (novad's cache), when the track has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<String>,
+    /// True for a web browser, whose artist is the channel or site, not a
+    /// performer: the pill then shows the title only.
+    pub browser: bool,
+    pub length_us: u64,
+    pub position_us: u64,
+    /// When `position_us` was read, in milliseconds since the Unix epoch.
+    pub position_at_ms: u64,
+    pub rate: f64,
+    pub can_next: bool,
+    pub can_previous: bool,
+    pub can_play: bool,
+    pub can_pause: bool,
+    pub can_seek: bool,
+    pub can_raise: bool,
+}
+
+/// What a player is doing (its `PlaybackStatus`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaStatus {
+    Playing,
+    Paused,
+    Stopped,
+}
+
+/// A transport control (`media_control`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaAction {
+    PlayPause,
+    Next,
+    Previous,
 }
 
 /// An app from its desktop entry.
@@ -940,6 +1011,33 @@ pub enum Command {
     ActivateTrayItem {
         address: String,
     },
+    /// Plays or pauses, or skips to the next or previous track, on the media
+    /// `player` (feature `media`), if it can.
+    MediaControl {
+        player: String,
+        action: MediaAction,
+    },
+    /// Moves the media `player` to `position_us` microseconds into the track
+    /// (feature `media`), clamped to its length, if it can seek.
+    MediaSeek {
+        player: String,
+        position_us: u64,
+    },
+    /// Makes `player` the one the pill shows, until another starts playing
+    /// (feature `media`).
+    MediaShow {
+        player: String,
+    },
+    /// Focuses the window of the media `player`'s app, or raises it through
+    /// MPRIS (feature `media`). Replies with whether a window was found.
+    MediaFocus {
+        player: String,
+    },
+    /// Replies with the workspace name where the media `player`'s app has a
+    /// window, or null when it has none (feature `media`).
+    MediaWindow {
+        player: String,
+    },
     /// The notification `id` was clicked, or its button `action` (feature
     /// `notifications`): the app hears of it, and it leaves the list unless
     /// the app keeps it.
@@ -1342,12 +1440,22 @@ mod tests {
                         Topic::Launcher,
                         Topic::Tray,
                         Topic::Notifications,
+                        Topic::Media,
                     ],
                 },
             }),
             encode(Event::Theme(theme())),
             encode(Request { id: Some(10), command: Command::Status }),
             encode(Request { id: Some(11), command: Command::Quit }),
+            encode(Request {
+                id: Some(40),
+                command: Command::MediaControl { player: "org.mpris.MediaPlayer2.spotify".into(), action: MediaAction::Next },
+            }),
+            encode(Request { id: Some(41), command: Command::MediaSeek { player: "p".into(), position_us: 5_000_000 } }),
+            encode(Request { id: Some(42), command: Command::MediaShow { player: "p".into() } }),
+            encode(Request { id: Some(43), command: Command::MediaFocus { player: "p".into() } }),
+            encode(Request { id: Some(44), command: Command::MediaWindow { player: "p".into() } }),
+            encode(Event::Media(media())),
             encode(Event::Logs { backlog: true, entries: vec![log_entry()] }),
             encode(Event::Logs { backlog: false, entries: vec![log_entry()] }),
             encode(Response { id: 10, outcome: Outcome::Result(serde_json::to_value(status()).unwrap()) }),
@@ -1544,6 +1652,10 @@ mod tests {
             assert!(checked.insert(name), "protocol.js: {name} is declared twice");
             let value = value.trim_end_matches("\";");
             let known = match name.split('_').next().unwrap() {
+                "MEDIA" if name.starts_with("MEDIA_ACTION") => {
+                    parses(value, |v| serde_json::from_value::<MediaAction>(v).is_ok())
+                }
+                "MEDIA" => parses(value, |v| serde_json::from_value::<MediaStatus>(v).is_ok()),
                 "CMD" => wire.contains(&format!(r#""cmd":"{value}""#)),
                 "EVENT" => wire.contains(&format!(r#""event":"{value}""#)),
                 "TOPIC" => parses(value, |v| serde_json::from_value::<Topic>(v).is_ok()),
@@ -1949,6 +2061,61 @@ mod tests {
             extra.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
             assert!(serde_json::from_value::<NotificationList>(extra).is_err(), "{pointer}");
         }
+    }
+
+    fn media() -> Media {
+        Media {
+            players: vec![MediaPlayer {
+                id: "org.mpris.MediaPlayer2.spotify".into(),
+                app: None,
+                identity: "Spotify".into(),
+                status: MediaStatus::Playing,
+                title: "Song".into(),
+                artist: "Artist".into(),
+                album: String::new(),
+                cover: None,
+                browser: false,
+                length_us: 200_000_000,
+                position_us: 1_000_000,
+                position_at_ms: 1_700_000_000_000,
+                rate: 1.0,
+                can_next: true,
+                can_previous: true,
+                can_play: true,
+                can_pause: true,
+                can_seek: true,
+                can_raise: false,
+            }],
+            shown: Some("org.mpris.MediaPlayer2.spotify".into()),
+        }
+    }
+
+    #[test]
+    fn media_commands_decode_and_refuse_unknown_fields() {
+        let control = decode_request(
+            r#"{"v":2,"id":1,"cmd":"media_control","args":{"player":"org.mpris.MediaPlayer2.spotify","action":"play_pause"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            control.command,
+            Command::MediaControl { player: "org.mpris.MediaPlayer2.spotify".into(), action: MediaAction::PlayPause }
+        );
+        let seek = r#"{"v":2,"cmd":"media_seek","args":{"player":"p","position_us":5000000}}"#;
+        assert!(decode_request(seek).is_ok());
+        for line in [
+            r#"{"v":2,"cmd":"media_control","args":{"player":"p","action":"stop"}}"#,
+            r#"{"v":2,"cmd":"media_control","args":{"player":"p","action":"next","extra":1}}"#,
+            r#"{"v":2,"cmd":"media_seek","args":{"player":"p","position_us":-1}}"#,
+            r#"{"v":2,"cmd":"media_show","args":{"player":"p","extra":1}}"#,
+            r#"{"v":2,"cmd":"media_window","args":{"player":"p","extra":1}}"#,
+        ] {
+            assert!(decode_request(line).is_err(), "{line}");
+        }
+    }
+
+    #[test]
+    fn media_event_is_on_its_topic() {
+        assert_eq!(Event::Media(media()).topic(), Some(Topic::Media));
     }
 
     #[test]

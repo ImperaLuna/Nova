@@ -138,4 +138,27 @@ TestCase {
         });
         compare(line, '{"v":2,"id":5,"cmd":"subscribe","args":{"topics":["compositor"]}}\n');
     }
+
+    function test_parses_media_event() {
+        const msg = Protocol.parse('{"v":2,"event":"media","data":{"players":[{"id":"org.mpris.MediaPlayer2.spotify","identity":"Spotify","status":"playing","title":"Song","artist":"Artist","album":"","browser":false,"length_us":200000000,"position_us":1000000,"position_at_ms":1700000000000,"rate":1.0,"can_next":true,"can_previous":true,"can_play":true,"can_pause":true,"can_seek":true,"can_raise":false}],"shown":"org.mpris.MediaPlayer2.spotify"}}');
+        compare(msg.event, Protocol.EVENT_MEDIA);
+        compare(msg.data.players[0].status, Protocol.MEDIA_STATUS_PLAYING);
+        compare(msg.data.shown, "org.mpris.MediaPlayer2.spotify");
+    }
+
+    function test_media_control_names_the_action() {
+        const line = Protocol.request(6, Protocol.CMD_MEDIA_CONTROL, {
+            player: "org.mpris.MediaPlayer2.spotify",
+            action: Protocol.MEDIA_ACTION_PLAY_PAUSE
+        });
+        compare(line, '{"v":2,"id":6,"cmd":"media_control","args":{"player":"org.mpris.MediaPlayer2.spotify","action":"play_pause"}}\n');
+    }
+
+    function test_media_seek_sends_microseconds() {
+        const line = Protocol.request(7, Protocol.CMD_MEDIA_SEEK, {
+            player: "p",
+            position_us: 5000000
+        });
+        compare(line, '{"v":2,"id":7,"cmd":"media_seek","args":{"player":"p","position_us":5000000}}\n');
+    }
 }

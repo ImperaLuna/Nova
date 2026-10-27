@@ -1,0 +1,5 @@
+id = "media"
+name = "Now playing"
+description = "The player that's playing music or video, in a pill beside the AI usage pill, with its controls and cover."
+default = true
+daemon = "media"
