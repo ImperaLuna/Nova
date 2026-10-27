@@ -148,9 +148,12 @@ struct State {
     /// `nova wallpaper`'s choice, over the config's.
     chosen: Option<Choice>,
     outputs: Outputs,
-    /// Outputs unplugged since the thread last looked: awww forgot their
-    /// image, even when they're back by then.
-    gone: BTreeSet<String>,
+    /// Outputs whose image is sent again even when it's the same path:
+    /// unplugged since the thread last looked (awww forgot their image,
+    /// even when they're back by then) or chosen again with `nova
+    /// wallpaper` (the file may have changed). `all_stale`: every output.
+    stale: BTreeSet<String>,
+    all_stale: bool,
     /// The running daemon's pid, for `stop` and to end it when nothing is
     /// wanted. Forgotten before it's reaped.
     daemon: Option<u32>,
@@ -184,7 +187,8 @@ impl Wallpaper {
             from_config: Choice::default(),
             chosen: None,
             outputs: if follows_compositor { Outputs::Unknown } else { Outputs::Unfollowed },
-            gone: BTreeSet::new(),
+            stale: BTreeSet::new(),
+            all_stale: false,
             daemon: None,
             changed: false,
             exited: false,
@@ -224,7 +228,7 @@ impl Wallpaper {
         let mut state = lock(&self.shared.state);
         if let Outputs::Known(before) = &state.outputs {
             let gone: Vec<String> = before.iter().filter(|name| !names.contains(name)).cloned().collect();
-            state.gone.extend(gone);
+            state.stale.extend(gone);
         }
         let outputs = Outputs::Known(names);
         if state.outputs != outputs {
@@ -249,10 +253,16 @@ impl Wallpaper {
             }
             None => choice = Choice { path: Some(path), outputs: BTreeMap::new() },
         }
+        // Sent again even when the path is the same: the file may have changed.
+        let stale = output.map(str::to_owned);
         let saved = Saved { config: state.config.clone().unwrap_or_default(), choice };
         state_file::save(&self.state_file, &saved)
             .map_err(|e| format!("can't save the choice to {}: {e}", self.state_file.display()))?;
         state.chosen = Some(saved.choice);
+        match stale {
+            Some(name) => _ = state.stale.insert(name),
+            None => state.all_stale = true,
+        }
         self.changed(state);
         Ok(())
     }
@@ -383,8 +393,12 @@ impl Shared {
             if crashed {
                 shown = Shown::default();
             }
-            for name in std::mem::take(&mut state.gone) {
+            if std::mem::take(&mut state.all_stale) {
+                shown = Shown::default();
+            }
+            for name in std::mem::take(&mut state.stale) {
                 shown.outputs.remove(&name);
+                shown.unfollowed = None;
             }
             state.changed = false;
             let Some(wanted) = state.wanted() else {
@@ -430,7 +444,8 @@ impl Shared {
                 drop(state);
             }
             let outputs = lock(&self.state).outputs.clone();
-            if show(&wanted, &outputs, &mut shown, path_var, logger) {
+            let stopped = || lock(&self.state).stopped;
+            if show(&wanted, &outputs, &mut shown, path_var, logger, &stopped) {
                 resend.reset();
             } else {
                 resend_in = Some(resend.next());
@@ -477,6 +492,9 @@ impl Shared {
     fn wait_ready(&self, path_var: &str) -> Result<(), String> {
         let deadline = Instant::now() + READY_TIMEOUT;
         loop {
+            if lock(&self.state).stopped {
+                return Err("novad is stopping".into());
+            }
             let mut query = awww(path_var);
             query.args(["query", "--namespace", NAMESPACE]);
             let answer = child::output_within(query, QUERY_TIMEOUT);
@@ -499,7 +517,15 @@ impl Shared {
 
 /// Sends `wanted`'s images that awww doesn't show yet.
 /// Whether every image it sent was shown.
-fn show(wanted: &Choice, outputs: &Outputs, shown: &mut Shown, path_var: &str, logger: &Logger) -> bool {
+/// Checks `stopped` before each `awww img`.
+fn show(
+    wanted: &Choice,
+    outputs: &Outputs,
+    shown: &mut Shown,
+    path_var: &str,
+    logger: &Logger,
+    stopped: &dyn Fn() -> bool,
+) -> bool {
     match outputs {
         Outputs::Unknown => true,
         Outputs::Known(names) => {
@@ -512,6 +538,9 @@ fn show(wanted: &Choice, outputs: &Outputs, shown: &mut Shown, path_var: &str, l
             }
             let mut all_shown = true;
             for (path, names) in changes {
+                if stopped() {
+                    return true;
+                }
                 match send_image(&path, Some(&names), path_var) {
                     Ok(()) => shown.outputs.extend(names.into_iter().map(|name| (name, path.clone()))),
                     Err(e) => {
@@ -530,6 +559,9 @@ fn show(wanted: &Choice, outputs: &Outputs, shown: &mut Shown, path_var: &str, l
             let own = wanted.outputs.iter().map(|(name, path)| (path, Some(vec![name.clone()])));
             let mut all_shown = true;
             for (path, names) in every.chain(own) {
+                if stopped() {
+                    return true;
+                }
                 if let Err(e) = send_image(path, names.as_deref(), path_var) {
                     logger.warn(LOG_SOURCE, &format!("can't show {}: {e}", path.display()));
                     all_shown = false;
@@ -784,6 +816,23 @@ mod tests {
         again.configure(true, &WallpaperConfig::default());
         assert_eq!(again.current(), Wallpapers::default());
         again.stop();
+    }
+
+    #[test]
+    fn choosing_the_same_file_again_sends_it_again() {
+        let fixture = Fixture::new("again");
+        let wallpaper = fixture.start();
+        wallpaper.outputs(outputs(&["DP-1", "DP-2"]));
+        wallpaper.configure(true, &WallpaperConfig::default());
+        let tide = fixture.image("tide.png");
+        wallpaper.set(&tide, Some("DP-2")).unwrap();
+        fixture.images(1);
+        // A script rewrote the file and chose it again.
+        wallpaper.set(&tide, Some("DP-2")).unwrap();
+        assert_eq!(fixture.images(2)[1], ("DP-2".into(), tide.clone()));
+        wallpaper.set(&tide, None).unwrap();
+        assert_eq!(fixture.images(3)[2], ("DP-1,DP-2".into(), tide));
+        wallpaper.stop();
     }
 
     #[test]

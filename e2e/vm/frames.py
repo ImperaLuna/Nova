@@ -1,8 +1,9 @@
 # The second half of the VM test, after lifecycle.py, in a VM of its own
 # beside session.py: what the UI draws while idle and while a panel opens or
 # closes, the layers it moves between over a fullscreen window, the panels
-# off the stage, and that no panel moves a window, with the Pss of each
-# state (saved as pss.txt next to the result). Takes no screenshots.
+# off the stage, that no panel moves a window, with the Pss of each state
+# (saved as pss.txt next to the result), and what the now-playing pill
+# draws. Takes no screenshots.
 
 with subtest("an idle bar draws nothing, shown or beside a fullscreen window; the panel draws briefly; the launcher over a fullscreen window moves Nova to Overlay and back, each time; the bar gives a fullscreen window its space, and its pills take clicks once back"):
     # novad hands its environment to the UI.
@@ -113,3 +114,20 @@ with subtest("the launcher and each panel open and close without moving windows;
     machine.copy_from_machine(PSS_REPORT)
     machine.succeed(as_user(CLOSE_WINDOW))
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
+
+with subtest("a playing pill draws only its equalizer's steps; a paused one draws nothing"):
+    # A moving equalizer: the bar's still one is only for screenshots.
+    machine.systemctl("set-environment NOVA_FROZEN_TIME= WAYLAND_DEBUG=client NO_COLOR=1 NOVA_LOG=debug NOVA_FRAME_LOG=1", user=USER)
+    machine.succeed(as_user("nova restart"))
+    playing = wait_running(not_daemon=first["pid"])
+    machine.succeed(as_user(START_PLAYER))
+    retry(lambda _last_try: ui_log_count(MEDIA_SHOWN) > 0, timeout=WAIT)
+    machine.sleep(PANEL_SETTLE_SECS)
+    commits = surface_commits(IDLE_SECS)
+    frames = int(machine.succeed("grep -c 'nova-frame:' /tmp/ui-wayland.log || true").strip() or 0)
+    print(f"now playing on {COMPOSITOR}: {frames} frames, {commits} commits in {IDLE_SECS} s; UI Pss {pss_mb(playing['ui']['pid'])} MB")
+    assert 0 < commits <= IDLE_SECS * EQUALIZER_STEPS_MAX, f"a playing pill made {commits} commits in {IDLE_SECS} s"
+    machine.succeed(as_user(PAUSE_PLAYER))
+    assert_idle("with a paused player's pill")
+    machine.succeed(as_user(STOP_PLAYER))
+    machine.systemctl("unset-environment NOVA_FROZEN_TIME WAYLAND_DEBUG NO_COLOR NOVA_LOG NOVA_FRAME_LOG", user=USER)

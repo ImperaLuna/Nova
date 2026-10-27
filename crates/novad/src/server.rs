@@ -223,6 +223,7 @@ impl<'a> Connection<'a> {
             Command::MuteNotificationApp { app, muted } => {
                 done(self.notifications().and_then(|notifications| notifications.mute(app, *muted)))
             }
+<<<<<<< HEAD
             Command::SetWallpaper { path, output } => done(
                 self.require_feature(crate::wallpaper::FEATURE_ID)
                     .and_then(|()| self.daemon.wallpaper.set(path, output.as_deref())),
@@ -230,6 +231,19 @@ impl<'a> Connection<'a> {
             Command::Wallpapers => {
                 value(self.require_feature(crate::wallpaper::FEATURE_ID).map(|()| self.daemon.wallpaper.current()))
             }
+=======
+            Command::MediaShow { player } => done(self.media().and_then(|media| media.show(player))),
+            Command::MediaControl { player, action } => {
+                let (player, action) = (player.clone(), *action);
+                return self.media_later(move |media| done(media.control(&player, action)));
+            }
+            Command::MediaSeek { player, position_us } => {
+                let (player, position_us) = (player.clone(), *position_us);
+                return self.media_later(move |media| done(media.seek(&player, position_us)));
+            }
+            Command::MediaFocus { player } => return self.media_focus(player),
+            Command::MediaWindow { player } => return self.media_window(player),
+>>>>>>> origin/main
         };
         Answer::Now(outcome)
     }
@@ -256,6 +270,10 @@ impl<'a> Connection<'a> {
 
     fn notifications(&self) -> Result<Arc<crate::notifications::Notifications>, String> {
         running(lock(&self.daemon.settings).notifications.clone(), crate::notifications::FEATURE_ID)
+    }
+
+    fn media(&self) -> Result<Arc<crate::media::Media>, String> {
+        running(lock(&self.daemon.settings).media.clone(), crate::media::FEATURE_ID)
     }
 
     fn compositor(&self) -> Result<&crate::compositor::Compositor, String> {
@@ -406,6 +424,48 @@ impl<'a> Connection<'a> {
         })
     }
 
+    /// Runs `work` with the media service on its own thread: it waits on a
+    /// player, or the compositor, to answer.
+    fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
+        match self.media() {
+            Ok(media) => Answer::later(move || work(&media)),
+            Err(e) => Answer::Now(Outcome::Error(e)),
+        }
+    }
+
+    /// Brings `player`'s window forward: where it is, as the launcher does
+    /// (IMP-114), else by asking the player to raise itself. Answers whether
+    /// either worked.
+    fn media_focus(&self, player: &str) -> Answer {
+        let compositor = self.daemon.compositor.clone();
+        let logger = Arc::clone(&self.daemon.logger);
+        let player = player.to_owned();
+        self.media_later(move |media| {
+            value(media.window_ids(&player).and_then(|ids| {
+                let focused = match compositor.as_deref() {
+                    Some(compositor) if !ids.is_empty() => compositor.focus_app(&ids, None).unwrap_or_else(|e| {
+                        logger.warn(LOG_SOURCE, &format!("can't focus {player}'s window: {e}"));
+                        false
+                    }),
+                    _ => false,
+                };
+                if focused { Ok(true) } else { media.raise(&player) }
+            }))
+        })
+    }
+
+    /// The name of the workspace `player`'s window is on, or `null`.
+    fn media_window(&self, player: &str) -> Answer {
+        let compositor = self.daemon.compositor.clone();
+        let player = player.to_owned();
+        self.media_later(move |media| {
+            value(media.window_ids(&player).and_then(|ids| match compositor.as_deref() {
+                Some(compositor) if !ids.is_empty() => compositor.app_workspace(&ids),
+                _ => Ok(None),
+            }))
+        })
+    }
+
     /// Opens the region picker on every screen (or closes it), or saves the
     /// focused screen.
     fn screenshot(&self, mode: CaptureMode) -> Answer {
@@ -531,6 +591,11 @@ impl<'a> Connection<'a> {
                                 notifications.send_state(self.id);
                             }
                         }
+                        Topic::Media => {
+                            if let Some(media) = &settings.media {
+                                media.send_state(self.id);
+                            }
+                        }
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -579,7 +644,12 @@ impl<'a> Connection<'a> {
             | Command::ClearNotifications { .. }
             | Command::ReadNotifications
             | Command::SetDoNotDisturb { .. }
-            | Command::MuteNotificationApp { .. } => {}
+            | Command::MuteNotificationApp { .. }
+            | Command::MediaControl { .. }
+            | Command::MediaSeek { .. }
+            | Command::MediaShow { .. }
+            | Command::MediaFocus { .. }
+            | Command::MediaWindow { .. } => {}
         }
     }
 

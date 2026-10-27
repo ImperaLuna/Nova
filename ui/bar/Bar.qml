@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import Quickshell
 import "../theme"
@@ -8,13 +10,16 @@ import "../ai_usage"
 import "../ai_usage/service"
 import "../central_pill"
 import "../launcher/service"
+import "../media"
+import "../media/service"
 import "../capture/service"
 import "../stage"
 import "../tray"
 import "../tray/service"
 
 // The bar on one screen: the AI usage pill on the left when that feature is
-// on, the central pill (the launcher's search button, that screen's
+// on, and right of it the now-playing pill while something plays; the
+// central pill (the launcher's search button, that screen's
 // workspaces, the day and the time) with its time in the middle of the
 // screen, and the right pill with the quick settings and power buttons;
 // while a screen recording runs, its pill left of the right one.
@@ -105,8 +110,9 @@ Item {
     }
 
     readonly property AiUsage aiUsagePill: aiUsage.item as AiUsage
+    readonly property NowPlaying mediaPill: media.item as NowPlaying
     // The pills that open panels, for the stage (StagePanel has the contract).
-    readonly property list<StagePanel> panels: aiUsagePill ? [aiUsagePill, rightPill, trayMenu] : [rightPill, trayMenu]
+    readonly property list<StagePanel> panels: [aiUsagePill, mediaPill, rightPill, trayMenu].filter(panel => panel !== null)
     // What else is drawn and takes clicks, each rounded by its `radius`.
     readonly property list<Item> fixedShapes: [center, recordingPill, revealStrip]
     // The pill in the middle, which a panel in the middle of the screen can
@@ -188,12 +194,37 @@ Item {
             id: aiUsage
             x: Tokens.barMargin
             y: Tokens.barGap
+            // Open, it grows over the now-playing pill beside it.
+            z: bar.aiUsagePill?.open ? 1 : 0
             active: AiUsageService.ready
             onLoaded: console.info("nova: ai usage pill shown")
             sourceComponent: AiUsage {
                 usage: AiUsageService.usage
                 onShowRequested: provider => AiUsageService.show(provider)
                 onRefreshRequested: AiUsageService.refresh()
+            }
+        }
+
+        Loader {
+            id: media
+            y: Tokens.barGap
+            active: MediaService.ready
+            sourceComponent: NowPlaying {
+                id: nowPlaying
+                // Beside the AI usage pill as it is closed, so that one
+                // opening doesn't push it along. Placed itself, not by the
+                // Loader: its blur and clicks only follow its own moves.
+                x: bar.aiUsagePill ? aiUsage.x + bar.aiUsagePill.pillWidth + Tokens.gap : Tokens.barMargin
+                media: MediaService.media
+                still: bar.frozenTime !== ""
+                onControlRequested: (player, action) => MediaService.control(player, action)
+                onSeekRequested: (player, positionUs) => MediaService.seek(player, positionUs)
+                onShowRequested: player => MediaService.show(player)
+                onFocusRequested: player => MediaService.focus(player)
+                onWorkspaceAsked: player => MediaService.window(player, name => {
+                        if (nowPlaying.playerId === player)
+                            nowPlaying.workspace = name;
+                    })
             }
         }
 

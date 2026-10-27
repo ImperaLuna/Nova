@@ -5,6 +5,8 @@
 #   - the UI starts without QML errors, and has none after a monitor goes
 #     away and comes back, which gets a bar again,
 #   - the UI connects to novad,
+#   - a media player playing slides the now-playing pill out (with
+#     nova-test-player, e2e/player.nix, and dbus-daemon),
 #   - memory (Pss) is within the budget: NOVA_PSS_BUDGET_MB per monitor
 #     (default 250, so 500 MB for the default two monitors),
 # and saves a screenshot to e2e/out/screenshot.png.
@@ -13,7 +15,7 @@
 # (a GitHub annotation in CI). Set NOVA_PSS_STRICT=1 to fail instead.
 #
 # Needs: sway, grim, jq, quickshell (or the nova-ui launcher), and a built
-# nova binary
+# nova binary; dbus-daemon and nova-test-player for the media check
 # (cargo build). Logs land in e2e/out; the UI's lines are in e2e/out/ui.log.
 # Usage: e2e/run.sh [path/to/nova]
 set -euo pipefail
@@ -75,6 +77,15 @@ EOF
   export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 fi
 
+# Playing before Nova starts, so novad finds it among the names already
+# on the bus.
+playing=0
+if [[ $DBUS_SESSION_BUS_ADDRESS != disabled: ]] && command -v nova-test-player >/dev/null; then
+  nova-test-player >"$out/player.log" 2>&1 &
+  pids+=($!)
+  playing=1
+fi
+
 export WLR_HEADLESS_OUTPUTS=$monitors
 for i in $(seq "$monitors"); do
   printf 'output HEADLESS-%d resolution 1920x1080\n' "$i"
@@ -106,6 +117,10 @@ if ((monitors > 1)); then
   swaymsg -q create_output || fail "couldn't add an output back"
   wait_for 10 "a bar on the output added back" bash -c "(( \$(grep -c 'ui: qml: nova: bar shown' '$out/state/nova.log' || true) > $monitors ))"
   sleep "$settle"
+fi
+
+if ((playing)); then
+  wait_for 10 "the now-playing pill" grep -qF 'ui: qml: nova: now playing pill shown' "$out/state/nova.log"
 fi
 
 "$nova" status --json >"$out/status.json" || fail "nova status failed"

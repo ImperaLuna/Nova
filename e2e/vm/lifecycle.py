@@ -35,6 +35,21 @@ AI_USAGE_CLOSED = "nova: ai usage panel closed"
 # when it takes it back (ui/bar/Bar.qml).
 BAR_SPACE_GIVEN = "nova: bar space given to a fullscreen window"
 BAR_SPACE_KEPT = "nova: bar space kept"
+# What the now-playing pill logs once it has slid out or away, and when its
+# panel opens or closes (ui/media/NowPlaying.qml).
+MEDIA_SHOWN = "nova: now playing pill shown"
+MEDIA_HIDDEN = "nova: now playing pill hidden"
+MEDIA_OPENED = "nova: now playing panel opened"
+MEDIA_CLOSED = "nova: now playing panel closed"
+# A media player playing a tone under a fixed title (e2e/player.nix), run
+# as a user unit, and the MPRIS call that pauses it.
+PLAYER_UNIT = "nova-test-player"
+START_PLAYER = f"systemd-run --user --collect --unit={PLAYER_UNIT} nova-test-player"
+STOP_PLAYER = f"systemctl --user stop {PLAYER_UNIT}"
+PAUSE_PLAYER = (
+    "busctl --user call $(busctl --user list --no-legend | awk '/^org[.]mpris[.]MediaPlayer2[.]mpv/ { print $1; exit }') "
+    "/org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player Pause"
+)
 # Clicks a test gives one target before failing. A lost click would
 # otherwise show only as a screenshot diff; the known cause is handled by
 # the pointer wake-up below, but niri's side of it isn't understood.
@@ -58,6 +73,10 @@ STAYS_OFF_SECS = 3
 # How long an idle UI must commit nothing to its surfaces. Long enough for
 # niri's once-a-second callbacks to a covered surface (IMP-38).
 IDLE_SECS = 5
+# Most frames a second a playing now-playing pill may draw: its equalizer
+# steps 8 times a second (Tokens.durationEqStep), with room for the odd
+# extra frame.
+EQUALIZER_STEPS_MAX = 10
 # Lines of `nova logs` history that reach back to the start of a run.
 LOG_HISTORY = 1_000_000
 # novad's log files: nova.log and the earlier ones, nova.log.1 to .5

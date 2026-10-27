@@ -39,6 +39,7 @@ mod inotify;
 mod launcher;
 mod logger;
 mod logind;
+mod media;
 mod notifications;
 mod notify;
 mod power;
@@ -291,6 +292,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     logger.info(LOG_SOURCE, &format!("novad {} starting (pid {})", env!("CARGO_PKG_VERSION"), std::process::id()));
 
     let path_var = session_path();
+    let runtime_dir = socket.parent().unwrap_or(Path::new(".")).to_path_buf();
     let icons = Arc::new(icons::Icons::for_session());
     logger.info(LOG_SOURCE, &format!("icons from the {} icon theme", icons.theme()));
     let sources = Sources {
@@ -304,6 +306,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         launcher: launcher::Paths::new(&args.state_dir, &path_var, Arc::clone(&icons)),
         tray: tray::Sources::new(&args.state_dir),
         notifications: notifications::Sources::new(&args.state_dir, Arc::clone(&icons)),
+        media: media::Sources::new(&runtime_dir),
         icons,
     };
     let settings = Settings::load(&sources, &hub, &logger);
@@ -346,10 +349,9 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         }
     };
 
-    let runtime_dir = socket.parent().unwrap_or(Path::new("."));
-    let session_lock = Arc::new(session_lock::SessionLock::open(runtime_dir, &logger));
+    let session_lock = Arc::new(session_lock::SessionLock::open(&runtime_dir, &logger));
     let screenshots = Arc::new(screenshot::Screenshots::new(
-        runtime_dir,
+        &runtime_dir,
         sources.path_var.clone(),
         Arc::clone(&hub),
         Arc::clone(&logger),

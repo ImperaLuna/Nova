@@ -55,6 +55,10 @@ pub trait Backend: Send + Sync {
     /// the last report listed, wins over one elsewhere. `false` when no
     /// window has one of them.
     fn focus_window(&self, app_ids: &[String], here: &Workspace) -> Result<bool, String>;
+
+    /// The workspace of the window [`Backend::focus_window`] would focus
+    /// for `app_ids` and `here`, `None` when no window has one of them.
+    fn window_workspace(&self, app_ids: &[String], here: &Workspace) -> Result<Option<WorkspaceId>, String>;
 }
 
 /// The backend for the compositor this session runs, from its variables in
@@ -172,14 +176,18 @@ impl Compositor {
     /// one when `None`). `false` when none is open.
     pub fn focus_app(&self, app_ids: &[String], output: Option<&str>) -> Result<bool, String> {
         let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
-        let output = match output {
-            Some(name) => desktop.outputs.iter().find(|candidate| candidate.name == name),
-            None => desktop.outputs.iter().find(|candidate| candidate.focused),
-        }
-        .ok_or("no such output")?;
+        self.backend.focus_window(app_ids, shown_on(&desktop, output)?)
+    }
+
+    /// The name of the workspace that holds the window [`Compositor::focus_app`]
+    /// would focus (with `output` `None`), `None` when no window of the app
+    /// is open.
+    pub fn app_workspace(&self, app_ids: &[String]) -> Result<Option<String>, String> {
+        let desktop = self.desktop().ok_or("the compositor hasn't said what it shows yet")?;
+        let Some(id) = self.backend.window_workspace(app_ids, shown_on(&desktop, None)?)? else { return Ok(None) };
         let workspace =
-            output.workspaces.iter().find(|workspace| workspace.active).ok_or("no workspace shows there")?;
-        self.backend.focus_window(app_ids, workspace)
+            desktop.outputs.iter().flat_map(|output| &output.workspaces).find(|workspace| workspace.id == id);
+        Ok(workspace.map(|workspace| workspace.name.clone()))
     }
 
     /// Focuses `output`, so a window that opens next opens there. Nothing
@@ -228,9 +236,20 @@ impl Compositor {
     }
 }
 
+<<<<<<< HEAD
 /// The names of `desktop`'s outputs, sorted.
 fn output_names(desktop: &Desktop) -> impl Iterator<Item = &String> {
     desktop.outputs.iter().map(|output| &output.name)
+=======
+/// The workspace showing on `output` (the focused one when `None`).
+fn shown_on<'a>(desktop: &'a Desktop, output: Option<&str>) -> Result<&'a Workspace, String> {
+    let output = match output {
+        Some(name) => desktop.outputs.iter().find(|candidate| candidate.name == name),
+        None => desktop.outputs.iter().find(|candidate| candidate.focused),
+    }
+    .ok_or("no such output")?;
+    Ok(output.workspaces.iter().find(|workspace| workspace.active).ok_or("no workspace shows there")?)
+>>>>>>> origin/main
 }
 
 /// The workspace after or before the active one on `output`; `None` at

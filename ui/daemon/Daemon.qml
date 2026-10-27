@@ -34,6 +34,10 @@ Singleton {
     // arrives, which only happens with the tray feature on. Read it through
     // the TrayService singleton.
     property var tray: null
+    // The latest media event's data ({players, shown}); null until one
+    // arrives, which only happens with the media feature on. Read it through
+    // the MediaService singleton.
+    property var media: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
     // novad's word on whether the session is locked. Read it through the
     // LockService singleton, which also hears lockRequested.
@@ -149,6 +153,8 @@ Singleton {
             notifications = msg.data;
         } else if (msg.event === Protocol.EVENT_NOTIFICATION_POPUP) {
             notificationPopped(msg.data);
+        } else if (msg.event === Protocol.EVENT_MEDIA) {
+            media = msg.data;
         }
     }
 
@@ -173,7 +179,7 @@ Singleton {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
                 root.call(Protocol.CMD_SUBSCRIBE, {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS, Protocol.TOPIC_MEDIA]
                 });
             } else {
                 // A picker novad still has open is sent again on reconnect.

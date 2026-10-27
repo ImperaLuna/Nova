@@ -12,7 +12,7 @@ use crate::hub::Hub;
 use crate::icons::Icons;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, host, launcher, notifications, resources, theme, tray, x11_tray};
+use crate::{ai_usage, features, host, launcher, media, notifications, resources, theme, tray, x11_tray};
 use nova_features::{Manifest, Selection};
 use nova_protocol::{Event, FeatureState, Host, Theme};
 use std::collections::BTreeSet;
@@ -41,6 +41,7 @@ pub struct Sources {
     pub launcher: launcher::Paths,
     pub tray: tray::Sources,
     pub notifications: notifications::Sources,
+    pub media: media::Sources,
     /// Where app icons are found, for every feature that shows them.
     pub icons: Arc<Icons>,
 }
@@ -63,6 +64,8 @@ pub struct Settings {
     pub x11_tray: Option<Arc<x11_tray::X11Tray>>,
     /// Serving `org.freedesktop.Notifications` while the `notifications` feature is ready.
     pub notifications: Option<Arc<notifications::Notifications>>,
+    /// Following media players while the `media` feature is ready.
+    pub media: Option<Arc<media::Media>>,
     /// For the quick settings header's logo.
     icons: Arc<Icons>,
 }
@@ -192,11 +195,27 @@ impl Settings {
             || notifications::Notifications::start(sources.notifications.clone(), Arc::clone(hub), Arc::clone(logger)),
             logger,
         );
+        // It finds players' apps with the launcher, like the tray.
+        let media = reconcile(
+            media::FEATURE_ID,
+            previous.as_deref_mut().and_then(|previous| previous.media.take()),
+            ready(media::FEATURE_ID),
+            |running| {
+                running.set_launcher(launcher.clone());
+                true
+            },
+            || media::Media::start(sources.media.clone(), launcher.clone(), Arc::clone(hub), Arc::clone(logger)),
+            logger,
+        );
         if let Some(launcher) = &launcher {
             let tray = tray.as_ref().map(Arc::downgrade);
+            let media = media.as_ref().map(Arc::downgrade);
             launcher.on_rescan(move || {
                 if let Some(tray) = tray.as_ref().and_then(std::sync::Weak::upgrade) {
                     tray.apps_changed();
+                }
+                if let Some(media) = media.as_ref().and_then(std::sync::Weak::upgrade) {
+                    media.apps_changed();
                 }
             });
         }
@@ -219,7 +238,20 @@ impl Settings {
         }
 
         let icons = Arc::clone(&sources.icons);
-        Self { config, selection, features, theme, ai_usage, resources, launcher, tray, x11_tray, notifications, icons }
+        Self {
+            config,
+            selection,
+            features,
+            theme,
+            ai_usage,
+            resources,
+            launcher,
+            tray,
+            x11_tray,
+            notifications,
+            media,
+            icons,
+        }
     }
 }
 
@@ -227,13 +259,14 @@ impl Settings {
     /// Stops every feature service running, for a novad that ends without
     /// exiting the process ([`crate::InProcess`]).
     pub fn stop_services(&self) {
-        let services: [Option<&dyn Service>; 6] = [
+        let services: [Option<&dyn Service>; 7] = [
             self.ai_usage.as_deref().map(|service| service as &dyn Service),
             self.resources.as_deref().map(|service| service as &dyn Service),
             self.launcher.as_deref().map(|service| service as &dyn Service),
             self.tray.as_deref().map(|service| service as &dyn Service),
             self.x11_tray.as_deref().map(|service| service as &dyn Service),
             self.notifications.as_deref().map(|service| service as &dyn Service),
+            self.media.as_deref().map(|service| service as &dyn Service),
         ];
         for service in services.into_iter().flatten() {
             service.stop();
@@ -282,7 +315,8 @@ services!(
     launcher::Launcher,
     tray::Tray,
     notifications::Notifications,
-    x11_tray::X11Tray
+    x11_tray::X11Tray,
+    media::Media
 );
 
 /// The service for feature `id` after a change: `running` (from the

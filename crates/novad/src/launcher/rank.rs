@@ -131,6 +131,7 @@ mod tests {
             path: None,
             opens_types: false,
             window_class: None,
+            categories: vec![],
         }
     }
 

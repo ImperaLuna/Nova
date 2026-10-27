@@ -121,6 +121,11 @@ impl TestDaemon {
                 images: dir.join("notifications"),
                 icons: Arc::clone(&icons),
             },
+            // No bus either: the media's own tests give it one.
+            media: media::Sources {
+                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                covers: dir.join("media"),
+            },
             icons,
         };
         let settings = Settings::load(&sources, &hub, &logger);
