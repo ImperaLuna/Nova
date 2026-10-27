@@ -278,6 +278,17 @@ fn clicks_reach_the_app_and_keep_the_notification_read() {
     assert_eq!(list["items"][0]["id"], id, "still listed");
     assert_eq!(list["items"][0].get("live"), None, "its app is done with it");
     assert!(server.action(id, None).is_err(), "a click on it again opens the app instead");
+    // Many apps close it on a click too: it stays.
+    zbus::block_on(app.connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "CloseNotification", &(id,)))
+        .unwrap();
+    app.simple("Mail", "later");
+    let list = loop {
+        let list = fixture.next("notifications");
+        if list["items"][0]["summary"] == "later" {
+            break list;
+        }
+    };
+    assert_eq!(list["items"][1]["id"], id, "closing it again leaves it listed");
 
     // A resident one stays when a button is clicked, and goes on a click.
     let resident = HashMap::from([("resident", Variant::Bool(true))]);

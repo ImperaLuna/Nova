@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import "../theme"
-import "notifications.js" as Notifications
 
 // The pop-ups, newest on top, each in a slot of its own, at most
 // Tokens.notificationsShown at once; the rest wait, held, under a "+N more
@@ -62,22 +61,16 @@ Item {
         return entries;
     }
 
-    function ids(entries: var): var {
-        return entries.map(entry => ({
-                    id: entry.notification.id
-                }));
-    }
-
     // Takes in a notification to pop up.
     function add(notification: var) {
         const shown = shownEntries();
-        const there = Notifications.placeIn(ids(shown), notification);
+        const there = shown.findIndex(entry => entry.notification.id === notification.id);
         if (there >= 0) {
             shown[there].notification = notification;
             entryChanged(shown[there].key);
             return;
         }
-        const held = Notifications.placeIn(ids(waiting), notification);
+        const held = waiting.findIndex(entry => entry.notification.id === notification.id);
         if (held >= 0) {
             waiting[held].notification = notification;
             waiting = [...waiting];
@@ -302,7 +295,8 @@ Item {
                     iconSource: stack.iconSource
                     now: stack.now
                     opacity: slot.presence
-                    enabled: !slot.entry.leaving
+                    // Not before it opens, nor once it's leaving.
+                    enabled: !slot.entry.leaving && slot.presence > 0
                     onExpired: stack.remove(slot.key, "fold")
                     onClicked: {
                         stack.opened(notification);

@@ -1,8 +1,8 @@
 .pragma library
 
 // Notifications' logic without QML, so ui/tests can check it: the quick
-// settings list's groups, how long ago something came, and the pop-ups'
-// queue. Notifications are a notifications event's items (nova-protocol's
+// settings list's groups, the unread count, how long a pop-up stays and
+// what a click does. Notifications are a notifications event's items (nova-protocol's
 // Notification).
 
 // `items` (newest first) grouped by app, the group with the newest first:
@@ -28,17 +28,6 @@ function unread(items) {
     return items.filter(function (item) {
         return item.unread === true;
     }).length;
-}
-
-// Where `notification` goes among the pop-ups `shown` (each {id}, newest
-// first): the index of the one showing it already (it came again, as an
-// update), or -1 for a pop-up of its own.
-function placeIn(shown, notification) {
-    for (var i = 0; i < shown.length; i++) {
-        if (shown[i].id === notification.id)
-            return i;
-    }
-    return -1;
 }
 
 // How long a pop-up of `notification` stays, in ms: what the app asked,

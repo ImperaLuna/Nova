@@ -264,8 +264,14 @@ impl Notifications {
     /// Takes every notification off the list, or only `app`'s; a muted
     /// app's hidden ones stay for when it's unmuted.
     pub fn clear(&self, app: Option<&str>) {
-        let muted = lock(&self.shared.state).saved.muted.clone();
-        self.close(|kept| app.is_none_or(|app| kept.app == app) && !muted.contains(&kept.app), Closed::Dismissed);
+        let gone = {
+            let mut state = lock(&self.shared.state);
+            let muted = state.saved.muted.clone();
+            self.shared.remove(&mut state, |kept| app.is_none_or(|app| kept.app == app) && !muted.contains(&kept.app))
+        };
+        for id in gone {
+            self.shared.signal("NotificationClosed", &(id, Closed::Dismissed as u32));
+        }
     }
 
     /// Marks every notification read, or only `id`.
@@ -658,7 +664,7 @@ fn list(state: &State) -> NotificationList {
         do_not_disturb: state.saved.do_not_disturb,
         muted: state.saved.muted.clone(),
         apps: state.saved.apps.clone(),
-        transient: state.transient.iter().cloned().collect(),
+        transient: state.transient.iter().filter(|item| !state.saved.muted.contains(&item.app)).cloned().collect(),
     }
 }
 
@@ -802,7 +808,8 @@ impl Server {
         id: u32,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<()> {
-        let gone = self.shared.remove(&mut lock(&self.shared.state), |kept| kept.id == id);
+        // One clicked already was closed for its app, and stays listed.
+        let gone = self.shared.remove(&mut lock(&self.shared.state), |kept| kept.id == id && kept.live);
         for id in gone {
             Self::notification_closed(&emitter, id, Closed::ByApp as u32).await?;
         }
