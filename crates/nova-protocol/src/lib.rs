@@ -413,7 +413,9 @@ pub type WorkspaceId = i64;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FocusedWindow {
     /// The compositor's own name for the window, to tell one from another
-    /// (a title can change, and two windows can share an app id).
+    /// (a title can change, and two windows can share an app id). Empty
+    /// from a novad from before it was sent.
+    #[serde(default)]
     pub id: String,
     /// The Wayland app id (Hyprland calls it the class), empty when unset.
     pub app_id: String,

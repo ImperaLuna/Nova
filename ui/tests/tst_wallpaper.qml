@@ -143,6 +143,11 @@ Item {
             keyClick(Qt.Key_Right);
             tryCompare(carousel, "position", 2, 1000);
             compare(cards(carousel).map(card => card.modelData), ["/w/aurora.png", "/w/dusk.png"], "round again, still each once");
+            const arrived = cards(carousel)[1];
+            verify(arrived.opacity < 1, "the card that came round fades in");
+            verify(carousel.moving, "and the stage draws it doing so");
+            tryCompare(arrived, "opacity", 1, 1000);
+            tryCompare(carousel, "arrivals", 0, 1000);
         }
 
         function test_another_window_taking_focus_closes_it() {
