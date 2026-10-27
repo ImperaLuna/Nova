@@ -204,8 +204,10 @@ impl Wallpaper {
     /// Whether the feature is ready, and config.toml's `[wallpaper]`. Called
     /// at start and on every reload. A changed section drops what
     /// `nova wallpaper` chose; at start, so does one changed while novad
-    /// wasn't running.
+    /// wasn't running. The section's `folder` doesn't count: it only lists
+    /// images to pick from.
     pub fn configure(&self, ready: bool, config: &WallpaperConfig) {
+        let config = &config.images();
         let mut state = lock(&self.shared.state);
         if state.config.as_ref() != Some(config) {
             let first = state.config.is_none();
@@ -674,7 +676,7 @@ mod tests {
 
         /// `[wallpaper] path` set to the image `name`.
         fn config(&self, name: &str) -> WallpaperConfig {
-            WallpaperConfig { path: Some(self.image(name)), outputs: BTreeMap::new() }
+            WallpaperConfig { path: Some(self.image(name)), ..WallpaperConfig::default() }
         }
 
         /// The daemon's pids, once it started `count` times.
@@ -803,6 +805,23 @@ mod tests {
         last.configure(true, &edited);
         assert_eq!(last.current().path, Some(fixture.image("dusk.png")));
         last.stop();
+    }
+
+    #[test]
+    fn a_new_folder_keeps_the_choice() {
+        let fixture = Fixture::new("folder");
+        let config = fixture.config("dusk.png");
+        let first = fixture.start();
+        first.configure(true, &config);
+        first.set(&fixture.image("tide.png"), None).unwrap();
+        let moved = WallpaperConfig { folder: Some("/art".into()), ..config };
+        first.configure(true, &moved);
+        assert_eq!(first.current().path, Some(fixture.image("tide.png")));
+        first.stop();
+        let again = fixture.start();
+        again.configure(true, &moved);
+        assert_eq!(again.current().path, Some(fixture.image("tide.png")));
+        again.stop();
     }
 
     #[test]

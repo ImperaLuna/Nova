@@ -57,6 +57,7 @@ mod supervisor;
 mod theme;
 mod tray;
 mod wallpaper;
+mod wallpaper_folder;
 mod x11_tray;
 
 use hub::Hub;

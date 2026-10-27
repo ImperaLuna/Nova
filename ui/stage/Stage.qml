@@ -12,6 +12,8 @@ import "../power"
 import "../power/service"
 import "../quick_settings"
 import "../quick_settings/service"
+import "../wallpaper"
+import "../wallpaper/service"
 import "../daemon"
 import "../theme"
 import "../daemon/protocol.js" as Protocol
@@ -50,7 +52,7 @@ Scope {
     onCatchesAnywhereChanged: drawing.settle()
 
     // Every panel on this screen, whatever surface it's drawn on.
-    readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(quickSettings.item ? [quickSettings.item] : []), ...(launcher.item ? [launcher.item] : []), ...(demo.item?.panels ?? [])]
+    readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(quickSettings.item ? [quickSettings.item] : []), ...(launcher.item ? [launcher.item] : []), ...(wallpaper.item ? [wallpaper.item] : []), ...(demo.item?.panels ?? [])]
     // While a panel is open or closing on this screen, everything Nova draws
     // here sits on the Overlay layer (PanelSurface always does): niri and Hyprland draw a focused
     // fullscreen window over the Top layer, which hid the launcher under it.
@@ -137,6 +139,48 @@ Scope {
             onSearchRequested: query => LauncherService.search(query, found => deck.showMatches(query, found))
             onLaunchRequested: (id, newWindow) => LauncherService.launch(id, root.output.name, newWindow, error => deck.launched(error))
             onPinRequested: (id, pinned) => LauncherService.pin(id, pinned)
+        }
+    }
+
+    // The wallpaper carousel over the whole screen, while its feature is on.
+    LazyLoader {
+        id: wallpaper
+        active: WallpaperService.ready
+        component: WallpaperCarousel {
+            id: carousel
+            screenWidth: root.output.width
+            screenHeight: root.output.height
+            outputName: root.output.name
+            onLoadRequested: WallpaperService.load((error, listing, shown) => carousel.loaded(error, listing, shown))
+            onChosen: (path, everywhere) => WallpaperService.set(path, everywhere ? null : root.output.name, error => carousel.applied(error))
+        }
+    }
+
+    // What the carousel previews while it's open here, for the other
+    // screens. Only one is open at a time.
+    Binding {
+        readonly property WallpaperCarousel carousel: wallpaper.item as WallpaperCarousel
+        when: carousel !== null && (carousel.open || carousel.moving)
+        target: WallpaperService
+        property: "preview"
+        value: carousel ? {
+            path: carousel.previewPath,
+            output: root.output.name,
+            everywhere: carousel.everywhere,
+            shown: carousel.open
+        } : null
+        restoreMode: Binding.RestoreValue
+    }
+
+    // Another screen's carousel previews here too while a pick would change
+    // every screen.
+    LazyLoader {
+        readonly property var preview: WallpaperService.preview
+        active: preview !== null && preview.output !== root.output.name
+        component: WallpaperPreview {
+            screen: root.screen
+            path: WallpaperService.preview?.path ?? ""
+            shown: (WallpaperService.preview?.shown ?? false) && (WallpaperService.preview?.everywhere ?? false)
         }
     }
 

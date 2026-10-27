@@ -582,6 +582,40 @@ QtObject {
     readonly property int durationProgressStep: 1000
     readonly property int durationSeekHold: 2000
 
+    // The wallpaper carousel (ui/wallpaper): over the whole screen, which
+    // previews the picked image, a deck of the wallpaper folder's images in
+    // the middle that loops both ways. The middle card is this share of the
+    // screen's width, shaped like the screen; its neighbours sit this many
+    // card widths out, tilted away (degrees), smaller and dimmer, and the
+    // ones past them each this much further and smaller. This many show
+    // either side; the picked one has a ring.
+    readonly property real carouselCardShare: 0.26
+    readonly property real carouselNeighbour: 0.74
+    readonly property real carouselStep: 0.27
+    readonly property real carouselTilt: 50
+    readonly property real carouselSideScale: 0.86
+    readonly property real carouselDepthScale: 0.06
+    readonly property real carouselSideDim: 0.28
+    readonly property int carouselSides: 3
+    readonly property int carouselRing: 3
+    // Opening, the deck rises this far into place and its cards spread out
+    // from this share of their distance.
+    readonly property int carouselEnterRise: 24
+    readonly property real carouselEnterSpread: 0.6
+    // Under the deck, the picked image's name and where the pick goes.
+    readonly property int carouselLabelGap: 28
+    readonly property int carouselLabelHeight: 40
+    readonly property int carouselLabelPad: 16
+    readonly property int carouselChipHeight: 28
+    // The note an empty folder shows instead.
+    readonly property int carouselNoteWidth: 420
+    // A shade from this far down the preview to its bottom, so the label
+    // reads on a bright picture.
+    readonly property real carouselShadeFrom: 0.3
+    readonly property color carouselShade: Qt.rgba(0, 0, 0, 0.55)
+    // A card whose image is still loading.
+    readonly property color carouselLoading: alpha(fg, 0.07)
+
     // Type
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"
@@ -643,6 +677,13 @@ QtObject {
     // brought back over a fullscreen window, so moving from the top edge
     // down to a pill doesn't hide it again.
     readonly property int durationPeekLinger: 400
+    // The wallpaper carousel moving one card, and the preview fading to
+    // the next image.
+    readonly property int durationCarouselStep: 280
+    readonly property int durationPreview: 250
+    // After a pick, how long the preview stays while awww fades the new
+    // image in under it: its fade (novad's TRANSITION_SECONDS) and a little.
+    readonly property int durationWallpaperHandOver: 1100
     // The cubic-bezier every panel motion uses (fast out, gentle stop).
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
 

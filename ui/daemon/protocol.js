@@ -43,6 +43,9 @@ var CMD_MEDIA_SEEK = "media_seek";
 var CMD_MEDIA_SHOW = "media_show";
 var CMD_MEDIA_FOCUS = "media_focus";
 var CMD_MEDIA_WINDOW = "media_window";
+var CMD_SET_WALLPAPER = "set_wallpaper";
+var CMD_WALLPAPERS = "wallpapers";
+var CMD_WALLPAPER_FOLDER = "wallpaper_folder";
 // novad refuses longer search_apps queries and media player ids
 // (SEARCH_APPS_MAX_CHARS and MEDIA_PLAYER_MAX_BYTES in nova-protocol, which
 // checks these match).
@@ -120,6 +123,7 @@ var FEATURE_LAUNCHER = "launcher";
 var FEATURE_TRAY = "tray";
 var FEATURE_NOTIFICATIONS = "notifications";
 var FEATURE_MEDIA = "media";
+var FEATURE_WALLPAPER = "wallpaper";
 
 // Power menu actions (PowerAction in nova-protocol).
 var POWER_LOCK = "lock";

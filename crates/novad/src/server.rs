@@ -230,6 +230,11 @@ impl<'a> Connection<'a> {
             Command::Wallpapers => {
                 value(self.require_feature(crate::wallpaper::FEATURE_ID).map(|()| self.daemon.wallpaper.current()))
             }
+            Command::WallpaperFolder => value(self.require_feature(crate::wallpaper::FEATURE_ID).and_then(|()| {
+                // Listed out of the settings lock: a big folder takes a moment.
+                let folder = lock(&self.daemon.settings).wallpaper_config().folder()?;
+                crate::wallpaper_folder::list(&folder)
+            })),
             Command::MediaShow { player } => done(self.media().and_then(|media| media.show(player))),
             Command::MediaControl { player, action } => {
                 let (player, action) = (player.clone(), *action);
@@ -605,6 +610,7 @@ impl<'a> Connection<'a> {
             Command::Ping
             | Command::SetWallpaper { .. }
             | Command::Wallpapers
+            | Command::WallpaperFolder
             | Command::ListFeatures
             | Command::Status
             | Command::ShowAiUsage { .. }
