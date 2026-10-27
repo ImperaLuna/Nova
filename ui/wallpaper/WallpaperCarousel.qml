@@ -62,6 +62,15 @@ StagePanel {
     readonly property int count: images.length
     readonly property int picked: count > 0 ? Carousel.wrap(target, count) : -1
     readonly property string pickedPath: picked >= 0 ? images[picked] : ""
+    // The cards round the loop: the images, repeated in a small folder so
+    // every side still shows one.
+    readonly property var loop: {
+        const times = Carousel.repeats(count, Tokens.carouselSides);
+        return Array.from({
+            length: count * times
+        }, (_, i) => images[i % count]);
+    }
+    readonly property int middle: loop.length > 0 ? Carousel.wrap(target, loop.length) : -1
     // What the screen previews: the picked image, or the screen's own until
     // the folder's listed.
     readonly property string previewPath: pickedPath !== "" ? pickedPath : current
@@ -257,19 +266,19 @@ StagePanel {
         }
 
         Repeater {
-            model: carousel.images
+            model: carousel.loop
 
-            // Every image has a place round the loop; only the cards near
-            // the middle are made.
+            // Every card has a place round the loop; only those near the
+            // middle are made.
             Item {
                 id: slot
 
                 required property string modelData
                 required property int index
-                readonly property real away: Carousel.offset(index, carousel.position, carousel.count)
+                readonly property real away: Carousel.offset(index, carousel.position, carousel.loop.length)
                 readonly property real near: Math.min(Math.abs(away), 1)
                 readonly property real far: Math.max(Math.abs(away) - 1, 0)
-                readonly property real seen: Carousel.shown(away, carousel.count, Tokens.carouselSides)
+                readonly property real seen: Carousel.shown(away, carousel.loop.length, Tokens.carouselSides)
 
                 width: carousel.cardWidth
                 height: carousel.cardHeight
@@ -295,7 +304,7 @@ StagePanel {
                     active: slot.visible
                     sourceComponent: WallpaperCard {
                         path: slot.modelData
-                        picked: slot.index === carousel.picked
+                        picked: slot.index === carousel.middle
                         now: slot.modelData === carousel.current
                         dim: slot.near * Tokens.carouselSideDim
                     }
