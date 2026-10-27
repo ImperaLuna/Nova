@@ -230,6 +230,7 @@ impl<'a> Connection<'a> {
             // The service knows which wallpapers need which feature.
             Command::SetWallpaper { path, output } => done(self.daemon.wallpaper.set(path, output.as_deref())),
             Command::Wallpapers => value(self.daemon.wallpaper.current()),
+            Command::WallpaperFolder => return self.wallpaper_folder(),
             Command::MediaShow { player } => done(self.media().and_then(|media| media.show(player))),
             Command::MediaControl { player, action } => {
                 let (player, action) = (player.clone(), *action);
@@ -461,6 +462,19 @@ impl<'a> Connection<'a> {
 
     /// Runs `work` with the media service on its own thread: it waits on a
     /// player, or the compositor, to answer.
+    /// Lists the wallpaper folder on its own thread: reading each file's
+    /// header takes a moment in a big folder, or one on a slow disk.
+    fn wallpaper_folder(&self) -> Answer {
+        let folder = self.require_feature(crate::wallpaper::FEATURE_ID).and_then(|()| {
+            let settings = lock(&self.daemon.settings);
+            settings.wallpaper_config().folder()
+        });
+        match folder {
+            Ok(folder) => Answer::later(move || value(crate::wallpaper_folder::list(&folder))),
+            Err(e) => Answer::Now(Outcome::Error(e)),
+        }
+    }
+
     fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
         match self.media() {
             Ok(media) => Answer::later(move || work(&media)),
@@ -643,6 +657,7 @@ impl<'a> Connection<'a> {
             Command::Ping
             | Command::SetWallpaper { .. }
             | Command::Wallpapers
+            | Command::WallpaperFolder
             | Command::ListFeatures
             | Command::Status
             | Command::ShowAiUsage { .. }
