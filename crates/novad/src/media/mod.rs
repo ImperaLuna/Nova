@@ -231,18 +231,23 @@ impl Media {
         Ok(true)
     }
 
-    /// The app ids (lower case) `player`'s windows may have: its own
-    /// names (`names`), then its app's. Empty when it has none.
+    /// The app ids (lower case) `player`'s windows may have: its app's,
+    /// after its desktop entry's name; without an app, all its own names
+    /// (`names`). Its process's other names can be another app's: one
+    /// started from a terminal sits in the terminal's unit.
     pub fn window_ids(&self, player: &str) -> Result<Vec<String>, String> {
-        let mut ids = {
+        let (names, entry) = {
             let state = lock(&self.shared.state);
             let found = find(&state, player)?;
-            found.read.as_ref().ok_or_else(|| format!("{player} hasn't been read yet"))?;
-            names(found)
+            let read = found.read.as_ref().ok_or_else(|| format!("{player} hasn't been read yet"))?;
+            (names(found), read.desktop_entry.as_deref().map(str::to_lowercase))
         };
         let launcher = lock(&self.shared.launcher).clone();
-        let app_ids = launcher.and_then(|launcher| launcher.window_ids(&launcher.find_app(&ids)?.id));
-        for id in app_ids.into_iter().flatten() {
+        let Some(app_ids) = launcher.and_then(|launcher| launcher.window_ids(&launcher.find_app(&names)?.id)) else {
+            return Ok(names);
+        };
+        let mut ids: Vec<String> = entry.into_iter().collect();
+        for id in app_ids {
             if !ids.contains(&id) {
                 ids.push(id);
             }

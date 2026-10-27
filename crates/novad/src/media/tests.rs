@@ -373,6 +373,8 @@ fn a_player_is_found_by_its_process_when_its_desktop_entry_is_wrong() {
     let process = fixture.dir.join("proc").join(std::process::id().to_string());
     std::fs::create_dir_all(&process).unwrap();
     std::fs::write(process.join("comm"), ".zen-beta-wrappe\n").unwrap();
+    // Started from a terminal: its unit is the terminal's.
+    std::fs::write(process.join("cgroup"), "0::/user.slice/app.slice/app-kitty-4242.scope\n").unwrap();
     let paths = crate::launcher::Paths {
         data_dirs: vec![share.clone()],
         state_file: fixture.dir.join("launcher.json"),
@@ -388,7 +390,9 @@ fn a_player_is_found_by_its_process_when_its_desktop_entry_is_wrong() {
     let zen = player(&event, FIREFOX);
     assert_eq!(zen["app"]["id"], "zen-beta.desktop");
     assert_eq!(zen["browser"], true, "so the pill leaves out the channel");
-    assert_eq!(media.window_ids(FIREFOX).unwrap()[..2], ["zen".to_string(), "zen-beta".to_string()]);
+    let ids = media.window_ids(FIREFOX).unwrap();
+    assert!(ids.contains(&"zen".into()) && ids.contains(&"zen-beta".into()), "{ids:?}");
+    assert!(!ids.contains(&"kitty".into()), "the terminal's windows aren't Zen's: {ids:?}");
 }
 
 #[test]
