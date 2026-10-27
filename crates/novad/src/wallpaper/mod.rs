@@ -322,6 +322,11 @@ impl Wallpaper {
             false if !state.images_ready => return Err(crate::features::not_ready(FEATURE_ID)),
             _ => {}
         }
+        if kind.is_dynamic() && output.is_none() && state.outputs == Outputs::Unfollowed {
+            return Err(
+                "novad doesn't follow this compositor's outputs, so set a dynamic wallpaper with --output".into()
+            );
+        }
         let mut choice = state.current().clone();
         match output {
             Some(name) => {
@@ -598,7 +603,9 @@ impl Shared {
             for name in std::mem::take(&mut state.stale) {
                 awww.shown.outputs.remove(&name);
                 awww.shown.unfollowed = None;
-                engine.shown = None;
+                if engine.shown.as_ref().is_some_and(|screens| screens.contains_key(&name)) {
+                    engine.shown = None;
+                }
             }
             state.changed = false;
             let (images_ready, engine_ready) = (state.images_ready, state.engine_ready);
@@ -635,9 +642,13 @@ impl Shared {
         }
         if state.daemon.pid.is_none() {
             if awww.start_at.is_some_and(|at| at > Instant::now()) {
+                // Nothing to resend to until it runs again.
+                awww.resend_at = None;
                 return;
             }
             awww.start_at = None;
+            // A new daemon shows nothing yet: it runs without its cache.
+            awww.shown = Shown::default();
             awww.restarts.started();
             let mut command = Command::new(DAEMON);
             command.args(["--namespace", NAMESPACE, "--no-cache", "--quiet"]).env("PATH", &places.path_var);
@@ -1298,6 +1309,24 @@ mod tests {
         assert!(wallpaper.set(&fixture.image("dusk.png"), None).unwrap_err().contains("isn't ready"));
         wallpaper.set(WORKSHOP_ID, None).unwrap();
         fixture.engine_shows(1, &[("DP-1", &fixture.item())]);
+        wallpaper.stop();
+    }
+
+    #[test]
+    fn images_come_back_after_awww_was_ended() {
+        let fixture = Fixture::new("ended");
+        let wallpaper = fixture.start();
+        wallpaper.outputs(outputs(&["DP-1"]));
+        let dusk = fixture.config("dusk.png");
+        wallpaper.configure(true, false, &dusk);
+        let first = fixture.runs(1)[0];
+        fixture.images(1);
+        // Turned off and on: the new daemon has no image until it's sent.
+        wallpaper.configure(false, false, &dusk);
+        wait_until(WAIT, "the daemon to end", || !alive(first));
+        wallpaper.configure(true, false, &dusk);
+        fixture.runs(2);
+        assert_eq!(fixture.images(2)[1], ("DP-1".into(), fixture.image("dusk.png")));
         wallpaper.stop();
     }
 }

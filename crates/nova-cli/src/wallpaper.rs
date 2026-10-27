@@ -39,8 +39,7 @@ pub fn run(args: &WallpaperArgs, socket: &Path) -> Result<(), String> {
 /// `file` as a Workshop ID: only digits, and no file of that name here.
 fn workshop_id(file: &Path) -> Option<&str> {
     let text = file.to_str()?;
-    let digits = !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
-    (digits && !file.exists()).then_some(text)
+    (nova_protocol::is_workshop_id(text) && !file.exists()).then_some(text)
 }
 
 /// The whole path to `file`: novad may run in another folder. Symlinks

@@ -1103,6 +1103,11 @@ pub enum Command {
     },
 }
 
+/// Whether a `set_wallpaper` path is a Steam Workshop ID: only digits.
+pub fn is_workshop_id(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 /// What `wallpapers` returns: the wallpaper every output shows, and the
 /// outputs that show one of their own. Absolute paths or Workshop IDs;
 /// empty when none is set.

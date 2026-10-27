@@ -18,6 +18,7 @@
 use super::source::PROJECT_FILE;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -80,9 +81,11 @@ pub fn assets(steam_roots: &[PathBuf], folder: &Path) -> Result<PathBuf, String>
 }
 
 /// The project that plays `video`, made in `folder` if it isn't there yet.
-/// Named after the video's name, size and time, so a changed video gets a
-/// new one.
+/// Named after the video's name, file (device and inode), size and time,
+/// so another file or a changed one gets its own.
 pub fn video_project(video: &Path, folder: &Path) -> Result<PathBuf, String> {
+    // A hard link to a symlink would be a symlink, which it won't follow.
+    let video = &std::fs::canonicalize(video).map_err(|e| format!("can't read {}: {e}", video.display()))?;
     let metadata = std::fs::metadata(video).map_err(|e| format!("can't read {}: {e}", video.display()))?;
     let modified = metadata
         .modified()
@@ -92,7 +95,8 @@ pub fn video_project(video: &Path, folder: &Path) -> Result<PathBuf, String> {
     let stem = video.file_stem().unwrap_or_default().to_string_lossy();
     let extension = video.extension().unwrap_or_default().to_string_lossy();
     let videos = folder.join(VIDEO_PROJECTS);
-    let project = videos.join(format!("{stem}-{}-{modified}", metadata.len()));
+    let file = format!("{}-{}", metadata.dev(), metadata.ino());
+    let project = videos.join(format!("{stem}-{file}-{}-{modified}", metadata.len()));
     if project.join(PROJECT_FILE).is_file() {
         return Ok(project);
     }
@@ -182,5 +186,10 @@ mod tests {
         forget_videos(&folder, &[changed.clone()].into()).unwrap();
         assert!(!project.exists() && changed.is_dir());
         assert!(video_project(&dir.join("missing.mp4"), &folder).unwrap_err().contains("can't read"));
+        // Through a symlink: the project gets the file itself.
+        std::os::unix::fs::symlink(&video, dir.join("link.webm")).unwrap();
+        let linked = video_project(&dir.join("link.webm"), &folder).unwrap();
+        assert!(!linked.join("video.webm").is_symlink());
+        assert_eq!(linked, changed, "the same file, the same project");
     }
 }

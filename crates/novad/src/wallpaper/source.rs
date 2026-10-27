@@ -10,6 +10,7 @@
 //! change.
 
 use crate::config;
+use nova_protocol::is_workshop_id;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io::Read;
@@ -96,7 +97,7 @@ impl Source {
         if !metadata.is_file() {
             return Err(format!("{} isn't a file", path.display()));
         }
-        match still_image(&path)? {
+        match image(&path)?.is_some() {
             true => Ok(Kind::Image(path)),
             false if is_video(&path) => Ok(Kind::Video(path)),
             false => Err(format!("{} isn't an image, a video or a Wallpaper Engine project", path.display())),
@@ -108,7 +109,7 @@ impl Source {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
     Image(PathBuf),
-    /// A Wallpaper Engine project, with its preview when it's a still image.
+    /// A Wallpaper Engine project, with its preview when awww can show it.
     Project {
         folder: PathBuf,
         preview: Option<PathBuf>,
@@ -123,23 +124,19 @@ impl Kind {
     }
 }
 
-fn is_workshop_id(text: &str) -> bool {
-    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
-}
-
 fn is_video(path: &Path) -> bool {
     let extension = path.extension().and_then(|extension| extension.to_str()).unwrap_or_default();
     VIDEO_EXTENSIONS.iter().any(|video| video.eq_ignore_ascii_case(extension))
 }
 
-/// Whether `path` is a still image awww can show (an animated GIF isn't:
-/// awww would keep drawing it). Only the header is read.
-fn still_image(path: &Path) -> Result<bool, String> {
+/// Which kind of image `path` is, if it's one awww can show. Only the
+/// header is read.
+fn image(path: &Path) -> Result<Option<imagesize::ImageType>, String> {
     let mut header = Vec::new();
     std::fs::File::open(path)
         .and_then(|file| file.take(HEADER_BYTES).read_to_end(&mut header))
         .map_err(|e| format!("can't read {}: {e}", path.display()))?;
-    Ok(imagesize::image_type(&header).is_ok_and(|kind| kind != imagesize::ImageType::Gif))
+    Ok(imagesize::image_type(&header).ok())
 }
 
 /// `project.json`'s fields Nova uses. Written by Wallpaper Engine and
@@ -150,8 +147,9 @@ struct ProjectFile {
     preview: Option<String>,
 }
 
-/// The project in `folder`. A preview it names is used only when it's a
-/// still image inside the folder.
+/// The project in `folder`. A preview it names is used only when it's an
+/// image inside the folder, and not a GIF: those are usually animated, and
+/// awww would keep drawing one under the engine.
 fn project(folder: PathBuf) -> Result<Kind, String> {
     let file = folder.join(PROJECT_FILE);
     let mut text = String::new();
@@ -160,11 +158,10 @@ fn project(folder: PathBuf) -> Result<Kind, String> {
         .map_err(|e| format!("can't read {}: {e}", file.display()))?;
     let parsed: ProjectFile =
         serde_json::from_str(&text).map_err(|e| format!("{} doesn't make sense: {e}", file.display()))?;
-    let preview = parsed
-        .preview
-        .filter(|name| inside(Path::new(name)))
-        .map(|name| folder.join(name))
-        .filter(|preview| preview.is_file() && still_image(preview).unwrap_or(false));
+    let preview =
+        parsed.preview.filter(|name| inside(Path::new(name))).map(|name| folder.join(name)).filter(|preview| {
+            preview.is_file() && matches!(image(preview), Ok(Some(kind)) if kind != imagesize::ImageType::Gif)
+        });
     Ok(Kind::Project { folder, preview })
 }
 
@@ -177,6 +174,9 @@ fn inside(path: &Path) -> bool {
 mod tests {
     use super::*;
     use nova_test_support::TempDir;
+
+    /// The smallest whole GIF: one transparent pixel.
+    const GIF: &[u8] = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;";
 
     fn write_png(path: &Path) {
         let file = std::fs::File::create(path).unwrap();
@@ -199,12 +199,12 @@ mod tests {
         let dir = TempDir::new("wallpaper-kinds");
         write_png(&dir.join("dusk.png"));
         std::fs::write(dir.join("loop.MP4"), "not really a video").unwrap();
-        std::fs::write(dir.join("loop.gif"), b"GIF89a\x01\x00\x01\x00").unwrap();
+        std::fs::write(dir.join("logo.gif"), GIF).unwrap();
         std::fs::write(dir.join("notes.toml"), "x = 1").unwrap();
         let kind = |name: &str| Source::from_request(&dir.join(name).display().to_string()).unwrap().kind(&[]);
         assert_eq!(kind("dusk.png"), Ok(Kind::Image(dir.join("dusk.png"))));
         assert_eq!(kind("loop.MP4"), Ok(Kind::Video(dir.join("loop.MP4"))));
-        assert!(kind("loop.gif").unwrap_err().contains("isn't an image, a video"), "an animated GIF isn't still");
+        assert_eq!(kind("logo.gif"), Ok(Kind::Image(dir.join("logo.gif"))));
         assert!(kind("notes.toml").unwrap_err().contains("isn't an image, a video"));
         assert!(kind("missing.png").unwrap_err().contains("can't read"));
         assert!(kind("").unwrap_err().contains("no project.json"), "a plain folder");
@@ -228,7 +228,7 @@ mod tests {
         assert!(missing.contains("isn't downloaded"), "{missing}");
         // A preview outside the folder, or an animated one, isn't used.
         for preview in ["../preview.png", "/etc/passwd", "preview.gif"] {
-            std::fs::write(item.join("preview.gif"), b"GIF89a\x01\x00\x01\x00").unwrap();
+            std::fs::write(item.join("preview.gif"), GIF).unwrap();
             std::fs::write(item.join(PROJECT_FILE), format!(r#"{{"preview": "{preview}"}}"#)).unwrap();
             assert_eq!(
                 workshop.kind(std::slice::from_ref(&steam)),
