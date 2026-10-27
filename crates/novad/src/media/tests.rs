@@ -43,8 +43,12 @@ impl Fixture {
     }
 
     fn media(&self) -> Arc<Media> {
-        let sources = Sources { bus: Bus::Address(self.bus.address.clone()), covers: self.dir.join("media") };
-        Media::start(sources, None, Arc::clone(&self.hub), Arc::clone(&self.logger))
+        Media::start(self.sources(), None, Arc::clone(&self.hub), Arc::clone(&self.logger))
+    }
+
+    fn sources(&self) -> Sources {
+        let bus = Bus::Address(self.bus.address.clone());
+        Sources { bus, covers: self.dir.join("media"), proc: self.dir.join("proc") }
     }
 
     /// The next media event.
@@ -329,6 +333,66 @@ fn a_pick_ends_with_its_player() {
     let _firefox = fixture.play(FIREFOX, paused());
     let event = fixture.until(|event| player(event, FIREFOX)["status"] == "paused");
     assert_eq!(event["shown"], SPOTIFY);
+}
+
+#[test]
+fn a_paused_pick_that_moves_on_ends() {
+    // A browser keeps one player for all its tabs: closing the picked tab
+    // leaves it paused on another tab's media, or on none.
+    let fixture = Fixture::new("pick-moves-on");
+    let media = fixture.media();
+    let _spotify = fixture.play(SPOTIFY, Track::playing("Feather"));
+    fixture.until(|event| event["shown"] == SPOTIFY);
+    let firefox =
+        fixture.play(FIREFOX, Track { status: "Paused", desktop_entry: "firefox", ..Track::playing("A video") });
+    fixture.until(|event| player(event, FIREFOX)["status"] == "paused");
+    media.show(FIREFOX).unwrap();
+    fixture.until(|event| event["shown"] == FIREFOX);
+    // Its position moving isn't moving on.
+    firefox.change(|track| track.position_us = 9_000_000);
+    let event = fixture.until(|event| player(event, FIREFOX)["position_us"] == 9_000_000);
+    assert_eq!(event["shown"], FIREFOX);
+    firefox.change(|track| track.title = String::new());
+    fixture.until(|event| event["shown"] == SPOTIFY);
+}
+
+#[test]
+fn a_player_is_found_by_its_process_when_its_desktop_entry_is_wrong() {
+    // Zen's player says it's `zen`; its app is zen-beta.desktop, and its
+    // process (`.zen-beta-wrapped`) and windows are `zen-beta`.
+    let fixture = Fixture::new("process");
+    let share = fixture.dir.join("share");
+    std::fs::create_dir_all(share.join("applications")).unwrap();
+    std::fs::write(
+        share.join("applications/zen-beta.desktop"),
+        "[Desktop Entry]\nType=Application\nName=Zen Browser (Beta)\nExec=true\nStartupWMClass=zen-beta\n\
+         Categories=Network;WebBrowser;\n",
+    )
+    .unwrap();
+    // The fake players run in this process: it looks like Zen's.
+    let process = fixture.dir.join("proc").join(std::process::id().to_string());
+    std::fs::create_dir_all(&process).unwrap();
+    std::fs::write(process.join("comm"), ".zen-beta-wrappe\n").unwrap();
+    // Started from a terminal: its unit is the terminal's.
+    std::fs::write(process.join("cgroup"), "0::/user.slice/app.slice/app-kitty-4242.scope\n").unwrap();
+    let paths = crate::launcher::Paths {
+        data_dirs: vec![share.clone()],
+        state_file: fixture.dir.join("launcher.json"),
+        runner: crate::launcher::Runner::Direct,
+        icons: Arc::new(crate::icons::Icons::new(crate::icons::HICOLOR.into(), &[share], None)),
+    };
+    let launcher = Launcher::start(paths, "", Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
+    wait_until(WAIT, "the launcher to find zen-beta.desktop", || launcher.find_app(&["zen-beta".into()]).is_some());
+    let media = Media::start(fixture.sources(), Some(launcher), Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
+
+    let _zen = fixture.play(FIREFOX, Track { desktop_entry: "zen", ..Track::playing("A video") });
+    let event = fixture.until(|event| event["shown"] == FIREFOX);
+    let zen = player(&event, FIREFOX);
+    assert_eq!(zen["app"]["id"], "zen-beta.desktop");
+    assert_eq!(zen["browser"], true, "so the pill leaves out the channel");
+    let ids = media.window_ids(FIREFOX).unwrap();
+    assert!(ids.contains(&"zen".into()) && ids.contains(&"zen-beta".into()), "{ids:?}");
+    assert!(!ids.contains(&"kitty".into()), "the terminal's windows aren't Zen's: {ids:?}");
 }
 
 #[test]
