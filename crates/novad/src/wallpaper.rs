@@ -14,7 +14,7 @@
 //! One thread owns the daemon and sends the images; everything else changes
 //! what it wants under the lock and wakes it.
 
-use crate::backoff::Backoff;
+use crate::backoff::{Backoff, Restarts};
 use crate::config::{self, WallpaperConfig};
 use crate::logger::Logger;
 use crate::{child, lock, state_file};
@@ -22,7 +22,7 @@ use nova_protocol::Wallpapers;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -50,11 +50,10 @@ const READY_POLL: Duration = Duration::from_millis(50);
 const QUERY_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long `awww img` may take: it decodes and scales the image itself.
 const IMAGE_TIMEOUT: Duration = Duration::from_secs(30);
-/// Waits before starting the daemon again: doubling from the first while it
-/// keeps failing, back to the first once it ran this long.
-const FIRST_RETRY: Duration = Duration::from_secs(1);
-const MAX_RETRY: Duration = Duration::from_secs(60);
-const RAN_FINE: Duration = Duration::from_secs(30);
+/// Waits before sending an image again after `awww img` failed: doubling
+/// from the first while it keeps failing.
+const FIRST_RESEND: Duration = Duration::from_secs(1);
+const MAX_RESEND: Duration = Duration::from_secs(60);
 
 /// The image for every output and the outputs with one of their own.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -280,7 +279,7 @@ impl Wallpaper {
         // Under the lock: the thread forgets the pid under it before
         // reaping, so it's still the daemon's (at worst a zombie).
         if let Some(pid) = state.daemon {
-            terminate(pid);
+            child::terminate(pid);
         }
         self.changed(state);
     }
@@ -369,10 +368,9 @@ struct Shown {
 impl Shared {
     fn run(self: &Arc<Self>, path_var: &str, logger: &Arc<Logger>) {
         let mut shown = Shown::default();
-        let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
-        let mut started = Instant::now();
+        let mut restarts = Restarts::default();
         // After an `awww img` failed: an output awww hasn't bound yet, say.
-        let mut resend = Backoff::new(FIRST_RETRY, MAX_RETRY);
+        let mut resend = Backoff::new(FIRST_RESEND, MAX_RESEND);
         let mut resend_in = None;
         loop {
             let mut state = lock(&self.state);
@@ -404,16 +402,13 @@ impl Shared {
             let Some(wanted) = state.wanted() else {
                 if let Some(pid) = state.daemon {
                     logger.info(LOG_SOURCE, &format!("no wallpaper to show, stopping {DAEMON}"));
-                    terminate(pid);
+                    child::terminate(pid);
                 }
                 continue;
             };
             if state.daemon.is_none() {
                 if crashed {
-                    if started.elapsed() >= RAN_FINE {
-                        retry.reset();
-                    }
-                    let wait = retry.next();
+                    let wait = restarts.after_exit();
                     logger.warn(LOG_SOURCE, &format!("{DAEMON} ended, starting it again in {}s", wait.as_secs()));
                     let (mut waited, _) = self
                         .wake
@@ -423,7 +418,7 @@ impl Shared {
                     waited.changed = true;
                     continue;
                 }
-                started = Instant::now();
+                restarts.started();
                 // Spawned under the lock, so `stop` sees the pid or stops
                 // the thread before the spawn.
                 if let Err(e) = self.spawn_daemon(&mut state, path_var, logger) {
@@ -436,7 +431,7 @@ impl Shared {
                     logger.warn(LOG_SOURCE, &format!("{DAEMON} didn't start answering: {e}"));
                     // Started again, after a wait, once it's gone.
                     if let Some(pid) = lock(&self.state).daemon {
-                        terminate(pid);
+                        child::terminate(pid);
                     }
                     continue;
                 }
@@ -453,38 +448,22 @@ impl Shared {
         }
     }
 
-    /// Starts the daemon and a thread that waits for it to exit.
+    /// Starts the daemon, and notes when it exits.
     fn spawn_daemon(self: &Arc<Self>, state: &mut State, path_var: &str, logger: &Arc<Logger>) -> std::io::Result<()> {
         let mut command = Command::new(DAEMON);
-        command
-            .args(["--namespace", NAMESPACE, "--no-cache", "--quiet"])
-            .env("PATH", path_var)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-        // As the UI does. This thread, the spawning one, runs until `stop`.
-        child::die_with_novad(&mut command, libc::SIGTERM);
-        let mut daemon = command.spawn()?;
-        let pid = daemon.id();
-        state.daemon = Some(pid);
-        logger.info(LOG_SOURCE, &format!("started {DAEMON} (pid {pid})"));
-        let errors = child::drain(daemon.stderr.take());
+        command.args(["--namespace", NAMESPACE, "--no-cache", "--quiet"]).env("PATH", path_var);
         let shared = Arc::clone(self);
-        let logger = Arc::clone(logger);
-        std::thread::spawn(move || {
-            if let Err(e) = child::wait_for_exit(pid) {
-                logger.warn(LOG_SOURCE, &format!("couldn't wait for {DAEMON} without reaping it: {e}"));
-            }
+        let exit_logger = Arc::clone(logger);
+        // This thread, the spawning one, runs until `stop`.
+        let pid = child::watch(&mut command, move |gone| {
             let mut state = lock(&shared.state);
-            // Forgotten before the reap, so nothing signals a pid the
-            // kernel may have handed out again.
             state.daemon = None;
-            let status = daemon.wait().map_or_else(|e| e.to_string(), |status| status.to_string());
-            let said = errors.text();
-            logger.info(LOG_SOURCE, &format!("{DAEMON} exited ({status}) {}", said.trim()));
+            exit_logger.info(LOG_SOURCE, &format!("{DAEMON} exited ({})", gone.reap()));
             state.exited = true;
             shared.wake.notify_all();
-        });
+        })?;
+        state.daemon = Some(pid);
+        logger.info(LOG_SOURCE, &format!("started {DAEMON} (pid {pid})"));
         Ok(())
     }
 
@@ -604,11 +583,6 @@ fn awww(path_var: &str) -> Command {
     let mut command = Command::new(CLIENT);
     command.env("PATH", path_var);
     command
-}
-
-fn terminate(pid: u32) {
-    // SAFETY: kill only sends a signal.
-    unsafe { libc::kill(pid.cast_signed(), libc::SIGTERM) };
 }
 
 #[cfg(test)]
@@ -877,7 +851,7 @@ mod tests {
         wallpaper.configure(false, &fixture.config("dusk.png"));
         wait_until(WAIT, "the daemon to stop", || !alive(pid));
         assert!(wallpaper.set(&fixture.image("tide.png"), None).unwrap_err().contains("isn't ready"));
-        std::thread::sleep(FIRST_RETRY + Duration::from_millis(200));
+        std::thread::sleep(Restarts::FIRST + Duration::from_millis(200));
         assert_eq!(fixture.runs(1).len(), 1, "not started again while off");
         wallpaper.stop();
     }
