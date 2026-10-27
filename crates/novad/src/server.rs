@@ -223,7 +223,6 @@ impl<'a> Connection<'a> {
             Command::MuteNotificationApp { app, muted } => {
                 done(self.notifications().and_then(|notifications| notifications.mute(app, *muted)))
             }
-<<<<<<< HEAD
             Command::SetWallpaper { path, output } => done(
                 self.require_feature(crate::wallpaper::FEATURE_ID)
                     .and_then(|()| self.daemon.wallpaper.set(path, output.as_deref())),
@@ -231,7 +230,6 @@ impl<'a> Connection<'a> {
             Command::Wallpapers => {
                 value(self.require_feature(crate::wallpaper::FEATURE_ID).map(|()| self.daemon.wallpaper.current()))
             }
-=======
             Command::MediaShow { player } => done(self.media().and_then(|media| media.show(player))),
             Command::MediaControl { player, action } => {
                 let (player, action) = (player.clone(), *action);
@@ -243,7 +241,6 @@ impl<'a> Connection<'a> {
             }
             Command::MediaFocus { player } => return self.media_focus(player),
             Command::MediaWindow { player } => return self.media_window(player),
->>>>>>> origin/main
         };
         Answer::Now(outcome)
     }

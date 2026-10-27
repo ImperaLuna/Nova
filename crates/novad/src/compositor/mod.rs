@@ -236,11 +236,11 @@ impl Compositor {
     }
 }
 
-<<<<<<< HEAD
 /// The names of `desktop`'s outputs, sorted.
 fn output_names(desktop: &Desktop) -> impl Iterator<Item = &String> {
     desktop.outputs.iter().map(|output| &output.name)
-=======
+}
+
 /// The workspace showing on `output` (the focused one when `None`).
 fn shown_on<'a>(desktop: &'a Desktop, output: Option<&str>) -> Result<&'a Workspace, String> {
     let output = match output {
@@ -249,7 +249,6 @@ fn shown_on<'a>(desktop: &'a Desktop, output: Option<&str>) -> Result<&'a Worksp
     }
     .ok_or("no such output")?;
     Ok(output.workspaces.iter().find(|workspace| workspace.active).ok_or("no workspace shows there")?)
->>>>>>> origin/main
 }
 
 /// The workspace after or before the active one on `output`; `None` at
