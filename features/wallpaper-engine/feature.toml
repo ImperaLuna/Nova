@@ -1,0 +1,17 @@
+id = "wallpaper-engine"
+name = "Dynamic wallpapers"
+description = "Lets [wallpaper] and `nova wallpaper` take a video, a Wallpaper Engine project folder or a Steam Workshop ID, drawn by linux-wallpaperengine. Off unless you turn it on: a moving wallpaper costs a few hundred MB and some GPU."
+default = false
+daemon = "wallpaper-engine"
+
+# linux-wallpaperengine plays Wallpaper Engine's scenes and videos (web
+# wallpapers too, where it was built with them). Workshop items need
+# Wallpaper Engine bought on Steam; videos and simple scenes don't. Fedora
+# and Debian don't package it: build it from its repository and the feature
+# turns on.
+[variants.default]
+nix = ["linux-wallpaperengine"]
+arch = ["linux-wallpaperengine-git"]
+
+[check]
+binaries = ["linux-wallpaperengine"]
