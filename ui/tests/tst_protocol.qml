@@ -81,7 +81,7 @@ TestCase {
     }
 
     // The compositor event in nova-protocol's wire format snapshot.
-    readonly property string compositorLine: '{"v":2,"event":"compositor","data":{"compositor":"niri","capabilities":["workspaces","focused_window","fullscreen"],"outputs":[{"name":"DP-1","focused":true,"workspaces":[{"id":1,"name":"1","active":false,"focused":false,"urgent":false,"empty":true,"fullscreen":false},{"id":2,"name":"web","active":true,"focused":true,"urgent":false,"empty":false,"fullscreen":false}]},{"name":"HDMI-A-1","focused":false,"workspaces":[{"id":3,"name":"1","active":true,"focused":false,"urgent":true,"empty":false,"fullscreen":true}]}],"focused_window":{"app_id":"foot","title":"~"}}}'
+    readonly property string compositorLine: '{"v":2,"event":"compositor","data":{"compositor":"niri","capabilities":["workspaces","focused_window","fullscreen"],"outputs":[{"name":"DP-1","focused":true,"workspaces":[{"id":1,"name":"1","active":false,"focused":false,"urgent":false,"empty":true,"fullscreen":false},{"id":2,"name":"web","active":true,"focused":true,"urgent":false,"empty":false,"fullscreen":false,"active_window":"7"}]},{"name":"HDMI-A-1","focused":false,"workspaces":[{"id":3,"name":"1","active":true,"focused":false,"urgent":true,"empty":false,"fullscreen":true}]}],"focused_window":{"id":"7","app_id":"foot","title":"~"}}}'
 
     function test_finds_the_focused_workspace() {
         const desktop = Protocol.parse(compositorLine).data;
@@ -89,6 +89,17 @@ TestCase {
         compare(Protocol.focusedWorkspace(null), null);
         desktop.outputs[0].workspaces[1].focused = false;
         compare(Protocol.focusedWorkspace(desktop), null);
+    }
+
+    function test_the_focus_key_follows_the_workspace_and_its_window() {
+        const desktop = Protocol.parse(compositorLine).data;
+        const web = Protocol.focusedWorkspace(desktop);
+        compare(Protocol.focusKey(web), "2/7");
+        desktop.focused_window = null;
+        compare(Protocol.focusKey(web), "2/7", "a panel holding the keyboard doesn't move it");
+        delete web.active_window;
+        compare(Protocol.focusKey(web), "2/", "an empty workspace");
+        compare(Protocol.focusKey(null), "", "nothing known");
     }
 
     function test_the_bar_skips_empty_workspaces_but_the_shown_one() {

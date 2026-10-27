@@ -207,6 +207,17 @@ function focusedWorkspace(desktop) {
     return null;
 }
 
+// Where the compositor's focus is (a focusedWorkspace, or null), as one
+// string that changes when focus moves to another workspace or another
+// window on it: "" while it isn't known. It goes by the workspace's
+// `active_window`, not `focused_window`, which is empty while a Nova panel
+// holds the keyboard.
+function focusKey(workspace) {
+    if (!workspace)
+        return "";
+    return workspace.id + "/" + (workspace.active_window ?? "");
+}
+
 // The workspaces the bar lists for an output (one of a compositor event's
 // `outputs`, or null): those with windows, and the one shown there even
 // when it's empty; a special workspace also while it shows on another one.

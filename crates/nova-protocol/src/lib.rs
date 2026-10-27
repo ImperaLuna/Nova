@@ -404,6 +404,11 @@ pub struct Workspace {
     /// A special workspace showing on another output.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub shown_elsewhere: bool,
+    /// The window focus goes to on it (`FocusedWindow::id`), known even
+    /// while a Nova panel holds the keyboard and no window is focused. Only
+    /// niri sends it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_window: Option<String>,
 }
 
 /// The compositor's own workspace id. Hyprland's named workspaces have
@@ -1862,6 +1867,7 @@ mod tests {
             fullscreen: false,
             special: false,
             shown_elsewhere: false,
+            active_window: None,
         };
         Desktop {
             compositor: "niri".into(),
@@ -1872,7 +1878,7 @@ mod tests {
                     focused: true,
                     workspaces: vec![
                         Workspace { empty: true, ..workspace(1, "1", false, false) },
-                        workspace(2, "web", true, true),
+                        Workspace { active_window: Some("7".into()), ..workspace(2, "web", true, true) },
                     ],
                 },
                 Output {

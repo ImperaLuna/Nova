@@ -4,6 +4,7 @@ import QtQuick
 import QtTest
 import "../wallpaper"
 import "../wallpaper/carousel.js" as Carousel
+import "../daemon/protocol.js" as Protocol
 
 // The wallpaper carousel with a folder in the shape novad lists it: where
 // it starts, looping past either end, the keys, picking and putting the
@@ -150,14 +151,22 @@ Item {
             tryCompare(carousel, "arrivals", 0, 1000);
         }
 
-        function test_another_window_taking_focus_closes_it() {
+        function test_focus_moving_behind_it_closes_it() {
             const carousel = make();
-            carousel.focusedWindow = "";
-            verify(carousel.open, "no window known: nothing to go by");
+            carousel.compositorFocus = "";
+            verify(carousel.open, "focus not known: nothing to go by");
             keyClick(Qt.Key_Right);
-            carousel.focusedWindow = "42";
+            carousel.compositorFocus = Protocol.focusKey({
+                id: 2,
+                active_window: "42"
+            });
             verify(!carousel.open, "Alt+Tab closes it, as Esc does");
             compare(picks.count, 0, "nothing was set");
+            carousel.open = true;
+            carousel.compositorFocus = Protocol.focusKey({
+                id: 3
+            });
+            verify(!carousel.open, "and so does Super+Tab to an empty workspace");
         }
 
         function test_the_keys_loop_round_past_either_end() {

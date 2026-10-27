@@ -24,9 +24,9 @@ StagePanel {
     required property real screenWidth
     required property real screenHeight
     required property string outputName
-    // The compositor's focused window (its id), "" when there's none or
-    // it isn't known.
-    property string focusedWindow: ""
+    // Where the compositor's focus is: the focused workspace and the
+    // window on it (Protocol.focusKey), "" while it isn't known.
+    property string compositorFocus: ""
 
     // The images to pick from (absolute paths), the folder they're in, and
     // the one this screen shows now ("" when Nova shows none).
@@ -98,10 +98,11 @@ StagePanel {
     readonly property real spread: morph.lerp(Tokens.carouselEnterSpread, 1)
     readonly property real rise: morph.lerp(Tokens.carouselEnterRise, 0)
 
-    // Another window taking focus (Alt+Tab, a window opening) closes it as
-    // Esc does, rather than leaving it over windows switching behind it.
-    onFocusedWindowChanged: {
-        if (focusedWindow !== "")
+    // Focus moving behind it (Alt+Tab, Super+Tab to another workspace, a
+    // window opening) closes it as Esc does, rather than leaving it over
+    // windows switching behind it.
+    onCompositorFocusChanged: {
+        if (compositorFocus !== "")
             open = false;
     }
 
