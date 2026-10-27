@@ -203,7 +203,7 @@ Item {
         // Beside the AI usage pill, or where it'd be when that feature is off.
         Loader {
             id: nowPlaying
-            x: (aiUsage.item ? aiUsage.x + aiUsage.item.width : Tokens.barMargin) + Tokens.mediaGap
+            x: (bar.aiUsagePill ? aiUsage.x + bar.aiUsagePill.width : Tokens.barMargin) + Tokens.mediaGap
             y: Tokens.barGap
             active: MediaService.ready
             sourceComponent: NowPlaying {

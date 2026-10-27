@@ -44,8 +44,7 @@ StagePanel {
     readonly property real titleWidth: Math.min(titleMetrics.advanceWidth, Tokens.mediaTitleWidth)
     readonly property real artistWidth: artist !== "" ? Math.min(artistMetrics.advanceWidth, Tokens.mediaArtistWidth) : 0
     readonly property real equalizerWidth: 4 * Tokens.mediaEqBar + 3 * Tokens.mediaEqGap
-    readonly property real pillWidth: Tokens.mediaFacePadLeft + artSize + faceGap + titleWidth
-        + (artist !== "" ? faceGap + artistWidth : 0) + faceGap + equalizerWidth + Tokens.mediaFacePadRight
+    readonly property real pillWidth: Tokens.mediaFacePadLeft + artSize + faceGap + titleWidth + (artist !== "" ? faceGap + artistWidth : 0) + faceGap + equalizerWidth + Tokens.mediaFacePadRight
     readonly property real progressFraction: Media.fraction(positionUs, player ? player.length_us : 0)
     readonly property real positionUs: player ? Media.positionAt(player, nowMs) : 0
 
@@ -86,7 +85,7 @@ StagePanel {
         open: root.open
     }
     readonly property real t: morph.t
-    moving: morph.moving || equalizer.running || marquee.running
+    moving: morph.moving || levelsTimer.running || marquee.running
 
     // A paused player's pill stays for a minute, then goes, unless the panel is open.
     Timer {
@@ -106,6 +105,7 @@ StagePanel {
     // The equalizer's bars step to new heights while the pill shows and plays.
     property var levels: [Tokens.mediaEqMin, Tokens.mediaEqMin, Tokens.mediaEqMin, Tokens.mediaEqMin]
     Timer {
+        id: levelsTimer
         interval: Tokens.durationEqStep
         running: root.playing && root.pillShown && !root.open
         repeat: true
@@ -206,7 +206,8 @@ StagePanel {
             enabled: !root.open
             cursorShape: Qt.PointingHandCursor
             onClicked: root.open = true
-            onContainsMouseChanged: if (containsMouse) root.scrollRequested = true
+            onContainsMouseChanged: if (containsMouse)
+                root.scrollRequested = true
 
             Accessible.role: Accessible.Button
             Accessible.name: `Open now playing, ${root.appName}: ${root.title}`
