@@ -22,7 +22,7 @@
 //! path = "~/Pictures/Wallpapers/dusk.jpg"
 //! folder = "~/Pictures/Wallpapers"
 //! [wallpaper.outputs]
-//! DP-2 = "~/Pictures/Wallpapers/tide.jpg"
+//! DP-2 = "2861349227"  # a Wallpaper Engine Workshop item
 //! ```
 
 use crate::theme::ThemeChoice;
@@ -47,8 +47,10 @@ pub struct Config {
     pub wallpaper: WallpaperConfig,
 }
 
-/// `[wallpaper]`: the image on every output, and images for single outputs
-/// by name. Absolute paths, or ones starting with `~/`. Nothing set means
+/// `[wallpaper]`: the wallpaper on every output, and ones for single
+/// outputs by name. Absolute paths (or ones starting with `~/`) to an
+/// image, or to a video or Wallpaper Engine project folder, or Workshop IDs
+/// (those three need the `wallpaper-engine` feature). Nothing set means
 /// Nova leaves the wallpaper alone. `folder` is where the carousel finds
 /// images to pick from.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

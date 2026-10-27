@@ -1,8 +1,48 @@
 //! A doubling retry wait, for the loops that start something again after it
-//! failed (the UI, compositor IPC, logind, xembedsniproxy, AI usage
-//! endpoints).
+//! failed (the UI, compositor IPC, logind, AI usage endpoints), and
+//! [`Restarts`], the same wait for the programs novad keeps running
+//! (xembedsniproxy, awww, linux-wallpaperengine).
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// Waits before starting a program again: doubling from the first while it
+/// keeps failing, back to the first once it ran this long.
+const FIRST_RESTART: Duration = Duration::from_secs(1);
+const MAX_RESTART: Duration = Duration::from_secs(60);
+const RAN_FINE: Duration = Duration::from_secs(30);
+
+/// When to start a long-running program again after it exits: soon after
+/// a run that went fine for a while, longer each time it keeps failing.
+#[derive(Debug, Clone)]
+pub struct Restarts {
+    backoff: Backoff,
+    started: Instant,
+}
+
+impl Default for Restarts {
+    fn default() -> Self {
+        Self { backoff: Backoff::new(FIRST_RESTART, MAX_RESTART), started: Instant::now() }
+    }
+}
+
+impl Restarts {
+    /// The shortest wait, for tests that wait past one.
+    #[cfg(test)]
+    pub const FIRST: Duration = FIRST_RESTART;
+
+    /// The program was (re)started now.
+    pub fn started(&mut self) {
+        self.started = Instant::now();
+    }
+
+    /// How long to wait before starting it again, now that it exited.
+    pub fn after_exit(&mut self) -> Duration {
+        if self.started.elapsed() >= RAN_FINE {
+            self.backoff.reset();
+        }
+        self.backoff.next()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Backoff {

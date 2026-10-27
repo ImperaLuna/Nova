@@ -1070,16 +1070,19 @@ pub enum Command {
         app: String,
         muted: bool,
     },
-    /// Shows the image at `path` (an absolute path) as the wallpaper on
-    /// every output, or only on `output` (`nova wallpaper`, feature
-    /// `wallpaper`). Remembered across restarts until config.toml's
-    /// `[wallpaper]` changes. Fails when the file can't be read.
+    /// Shows `path` as the wallpaper on every output, or only on `output`
+    /// (`nova wallpaper`): an absolute path to an image (feature
+    /// `wallpaper`), or to a video or a Wallpaper Engine project folder, or
+    /// a Steam Workshop ID (feature `wallpaper-engine`). Remembered across
+    /// restarts until config.toml's `[wallpaper]` changes. Fails when it
+    /// can't be shown.
     SetWallpaper {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
     },
-    /// Replies with the [`Wallpapers`] shown now (feature `wallpaper`).
+    /// Replies with the [`Wallpapers`] shown now (feature `wallpaper` or
+    /// `wallpaper-engine`).
     Wallpapers,
     /// Replies with the [`WallpaperFolder`]: the images in the wallpaper
     /// folder, for the carousel (feature `wallpaper`).
@@ -1113,8 +1116,14 @@ pub enum Command {
     },
 }
 
-/// What `wallpapers` returns: the image every output shows, and the outputs
-/// that show one of their own. Absolute paths; empty when none is set.
+/// Whether a `set_wallpaper` path is a Steam Workshop ID: only digits.
+pub fn is_workshop_id(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// What `wallpapers` returns: the wallpaper every output shows, and the
+/// outputs that show one of their own. Absolute paths or Workshop IDs;
+/// empty when none is set.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Wallpapers {

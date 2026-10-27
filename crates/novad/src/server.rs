@@ -223,13 +223,9 @@ impl<'a> Connection<'a> {
             Command::MuteNotificationApp { app, muted } => {
                 done(self.notifications().and_then(|notifications| notifications.mute(app, *muted)))
             }
-            Command::SetWallpaper { path, output } => done(
-                self.require_feature(crate::wallpaper::FEATURE_ID)
-                    .and_then(|()| self.daemon.wallpaper.set(path, output.as_deref())),
-            ),
-            Command::Wallpapers => {
-                value(self.require_feature(crate::wallpaper::FEATURE_ID).map(|()| self.daemon.wallpaper.current()))
-            }
+            // The service knows which wallpapers need which feature.
+            Command::SetWallpaper { path, output } => done(self.daemon.wallpaper.set(path, output.as_deref())),
+            Command::Wallpapers => value(self.daemon.wallpaper.current()),
             Command::WallpaperFolder => return self.wallpaper_folder(),
             Command::MediaShow { player } => done(self.media().and_then(|media| media.show(player))),
             Command::MediaControl { player, action } => {

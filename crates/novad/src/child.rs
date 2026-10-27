@@ -1,9 +1,10 @@
 //! Small helpers for the short-lived programs novad runs and the ones that
 //! live as long as it does: waiting with a deadline, reading error output
 //! without blocking on it, waiting for an exit without reaping, and tying a
-//! child's life to novad's. Each caller still decides what a slow child
-//! means for it (killed, left to finish, or logged); long-running
-//! supervision stays in `supervisor`, `recording` and `x11_tray`.
+//! child's life to novad's, and watching a long-running one until it exits
+//! ([`watch`]; restart waits are `backoff::Restarts`). Each caller still
+//! decides what a slow child means for it (killed, left to finish, or
+//! logged); the UI's supervision stays in `supervisor` and `recording`.
 
 use crate::lock;
 use std::collections::VecDeque;
@@ -108,6 +109,64 @@ pub fn die_with_novad(command: &mut Command, signal: libc::c_int) {
             Ok(())
         });
     }
+}
+
+/// Starts `command` as a long-running child (no input, output dropped,
+/// error output kept for [`Exited::reap`]) that gets SIGTERM when novad goes
+/// away ([`die_with_novad`], so call it from a thread that lives as long as
+/// the child should), and hands it to `exited` on a thread of its own once
+/// it exits, still unreaped. Returns its pid.
+///
+/// The owner keeps the pid under a lock, signals it ([`terminate`]) only
+/// under that lock, and forgets it under the lock in `exited` before
+/// reaping, so nothing ever signals a pid the kernel may have handed out
+/// again.
+pub fn watch(command: &mut Command, exited: impl FnOnce(Exited) + Send + 'static) -> std::io::Result<u32> {
+    command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
+    die_with_novad(command, libc::SIGTERM);
+    let mut child = command.spawn()?;
+    let pid = child.id();
+    let errors = drain(child.stderr.take());
+    std::thread::spawn(move || {
+        // Only fails for a pid that isn't this process's child, which
+        // can't happen: it's unreaped until `reap`.
+        let waited = wait_for_exit(pid);
+        exited(Exited { child, errors, waited });
+    });
+    Ok(pid)
+}
+
+/// A [`watch`]ed child that exited (or couldn't be waited for), not yet
+/// reaped.
+pub struct Exited {
+    child: Child,
+    errors: ErrorOutput,
+    waited: std::io::Result<()>,
+}
+
+impl Exited {
+    /// Reaps it, saying how it ended: its exit status and the end of its
+    /// error output. Call it once its pid is forgotten.
+    pub fn reap(mut self) -> String {
+        if let Err(e) = self.waited {
+            // It may still run: end it rather than wait forever.
+            kill_and_reap(&mut self.child);
+            return format!("couldn't wait for it without reaping it: {e}");
+        }
+        let status = self.child.wait().map_or_else(|e| e.to_string(), |status| status.to_string());
+        let said = self.errors.text();
+        match said.trim() {
+            "" => status,
+            said => format!("{status}: {said}"),
+        }
+    }
+}
+
+/// Asks child `pid` to end. Only for a pid that's still unreaped (see
+/// [`watch`]).
+pub fn terminate(pid: u32) {
+    // SAFETY: kill only sends a signal.
+    unsafe { libc::kill(pid.cast_signed(), libc::SIGTERM) };
 }
 
 /// Reads a child's error output to the end on a thread of its own, so the
