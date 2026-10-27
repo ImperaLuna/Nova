@@ -19,6 +19,8 @@ Item {
     property real now: Date.now() / 1000
 
     readonly property bool held: hover.hovered
+    // Not open yet: its time doesn't run.
+    property bool waiting: false
     readonly property int timeout: Notifications.timeout(notification, Tokens.durationNotification)
     readonly property bool critical: notification.urgency === "critical"
 
@@ -234,7 +236,7 @@ Item {
             width: parent.width - 2 * x
             height: Tokens.notificationTimerHeight
             duration: card.timeout
-            held: card.held
+            held: card.held || card.waiting
             onExpired: card.expired()
         }
     }

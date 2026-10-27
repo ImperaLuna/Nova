@@ -205,13 +205,13 @@ Item {
                 readonly property real shiftX: away ? (1 - presence) * Tokens.notificationAway : 0
                 readonly property real shiftY: away ? 0 : -(1 - presence) * Tokens.notificationRise
 
-                // The card as drawn, in the stack.
+                // The card as drawn, in the stack; nothing before it opens.
                 readonly property Item shape: Item {
                     parent: stack
                     x: slot.x + slot.width * (1 - slot.xScale) + slot.shiftX
                     y: slot.y + slot.shiftY
-                    width: slot.width * slot.xScale
-                    height: card.height * slot.yScale
+                    width: slot.presence > 0 ? slot.width * slot.xScale : 0
+                    height: slot.presence > 0 ? card.height * slot.yScale : 0
                     readonly property real radius: card.radius * Math.min(slot.xScale, slot.yScale)
                     // Its slot's height once in place.
                     readonly property real room: card.implicitHeight + Tokens.gap
@@ -258,7 +258,6 @@ Item {
                     function onEntryOpens(opening: int, delay: int) {
                         if (opening !== slot.key || slot.entry.leaving)
                             return;
-                        card.restart();
                         motion.delay = delay;
                         motion.to = 1;
                         motion.start();
@@ -295,8 +294,10 @@ Item {
                     iconSource: stack.iconSource
                     now: stack.now
                     opacity: slot.presence
-                    // Not before it opens, nor once it's leaving.
+                    // Not before it opens, nor once it's leaving; its time
+                    // starts once it opens.
                     enabled: !slot.entry.leaving && slot.presence > 0
+                    waiting: slot.presence === 0 && !slot.entry.leaving
                     onExpired: stack.remove(slot.key, "fold")
                     onClicked: {
                         stack.opened(notification);

@@ -165,6 +165,7 @@ Item {
             tryVerify(() => slot(3).presence > 0, 1000, "the newest opens first");
             compare(slot(1).presence, 0, "the oldest waits its turn");
             verify(slot(1).room > 0, "but its slot is taken already");
+            compare(slot(1).shape.width, 0, "no clicks or blur where nothing shows yet");
             settled(stack, 1);
             const top = findChild(stack, "card-3");
             compare(slot(1).y, 2 * (top.height + Tokens.gap));
@@ -213,6 +214,26 @@ Item {
             compare(spy.signalArguments[0][0], 7);
             compare(stack.shownEntries().map(entry => entry.notification.id), [6, 5, 4, 3, 2], "the newest waiting one comes up");
             compare(stack.waiting.map(entry => entry.notification.id), [1]);
+        }
+
+        // Waiting to open doesn't use up a short timeout.
+        function test_a_burst_with_short_timeouts_shows_every_pop_up() {
+            const stack = createTemporaryObject(stackComponent, stage);
+            const opened = new Set();
+            for (const id of [1, 2, 3, 4, 5])
+                stack.add(note(id, "Discord", {
+                    timeout_ms: 100
+                }));
+            tryVerify(() => findChild(stack, "card-1") !== null);
+            for (const id of [1, 2, 3, 4, 5]) {
+                const slot = findChild(stack, `card-${id}`).parent;
+                slot.presenceChanged.connect(() => {
+                    if (slot.presence > 0)
+                        opened.add(id);
+                });
+            }
+            tryVerify(() => stack.shownEntries().length === 0, 3000);
+            compare(Array.from(opened).sort(), [1, 2, 3, 4, 5]);
         }
 
         // Each pop-up's shape (the window's input and blur regions) is where
