@@ -131,37 +131,48 @@ Item {
             compare(Notifications.clickDoes(note(1, "A")), "none");
         }
 
-        function test_a_newer_one_from_the_same_app_takes_a_plain_pop_ups_place() {
+        function test_each_notification_takes_its_own_slot_and_the_same_one_updates_in_place() {
             const stack = createTemporaryObject(stackComponent, stage);
             stack.add(note(1, "Discord"));
             stack.add(note(2, "Ghostty"));
             stack.add(note(3, "Discord"));
-            const shown = stack.shownEntries();
-            compare(shown.map(entry => entry.notification.id), [2, 3], "Discord's pop-up shows the newest, in place");
-            compare(shown[1].count, 2);
-            tryVerify(() => findChild(stack, "card-3") !== null);
-            verify(findChild(findChild(stack, "card-3"), "more").visible, "+1");
+            compare(stack.shownEntries().map(entry => entry.notification.id), [3, 2, 1], "the same app twice is two pop-ups");
 
-            // Progress updates its own pop-up; critical ones stay their own.
+            // Progress updates its own pop-up.
             stack.add(note(4, "Files", {
                 progress: 10
             }));
             stack.add(note(4, "Files", {
                 progress: 60
             }));
-            stack.add(note(5, "Discord", {
-                urgency: "critical"
-            }));
-            compare(stack.shownEntries().map(entry => entry.notification.id), [5, 4, 2]);
-            compare(stack.shownEntries()[1].notification.progress, 60);
-            compare(stack.shownEntries()[1].count, 1);
-            compare(stack.waiting.map(entry => entry.notification.id), [3], "the oldest waits for room");
-            tryVerify(() => findChild(stack, "card-3") === null, 2000, "its card folds away meanwhile");
+            compare(stack.shownEntries().map(entry => entry.notification.id), [4, 3, 2, 1]);
+            compare(stack.shownEntries()[0].notification.progress, 60);
+            stack.add(note(5, "Discord"));
+            stack.add(note(6, "Discord"));
+            compare(stack.shownEntries().map(entry => entry.notification.id), [6, 5, 4, 3, 2]);
+            compare(stack.waiting.map(entry => entry.notification.id), [1], "the oldest waits for room");
+            tryVerify(() => findChild(stack, "card-1") === null, 2000, "its card folds away meanwhile");
+        }
+
+        // Several at once take their slots together, then open into them
+        // from the top, one after another.
+        function test_a_burst_takes_its_slots_at_once_and_opens_from_the_top() {
+            const stack = createTemporaryObject(stackComponent, stage);
+            for (const id of [1, 2, 3])
+                stack.add(note(id, "Discord"));
+            tryVerify(() => findChild(stack, "card-1") !== null);
+            const slot = id => findChild(stack, `card-${id}`).parent;
+            tryVerify(() => slot(3).presence > 0, 1000, "the newest opens first");
+            compare(slot(1).presence, 0, "the oldest waits its turn");
+            verify(slot(1).room > 0, "but its slot is taken already");
+            settled(stack, 1);
+            const top = findChild(stack, "card-3");
+            compare(slot(1).y, 2 * (top.height + Tokens.gap));
         }
 
         function test_clearing_takes_waiting_ones_too_and_unchanged_ones_keep_their_time() {
             const stack = createTemporaryObject(stackComponent, stage);
-            const notes = [1, 2, 3, 4].map(id => note(id, `App ${id}`, {
+            const notes = [1, 2, 3, 4, 5, 6].map(id => note(id, `App ${id}`, {
                     urgency: "critical"
                 }));
             for (const notification of notes)
@@ -185,13 +196,13 @@ Item {
             compare(stack.shownEntries().length, 0, "it ran out on time");
         }
 
-        function test_more_than_three_wait_and_come_up_as_room_frees() {
+        function test_more_than_five_wait_and_come_up_as_room_frees() {
             const stack = createTemporaryObject(stackComponent, stage);
-            for (const [id, app] of [[1, "A"], [2, "B"], [3, "C"], [4, "D"], [5, "E"]])
-                stack.add(note(id, app));
-            compare(stack.shownEntries().map(entry => entry.notification.id), [5, 4, 3]);
+            for (const id of [1, 2, 3, 4, 5, 6, 7])
+                stack.add(note(id, `App ${id}`));
+            compare(stack.shownEntries().map(entry => entry.notification.id), [7, 6, 5, 4, 3]);
             compare(stack.waiting.map(entry => entry.notification.id), [2, 1]);
-            const card = settled(stack, 5);
+            const card = settled(stack, 7);
             spy.target = stack;
             spy.signalName = "dismissed";
             mouseMove(card, card.width / 2, card.height / 2);
@@ -199,8 +210,8 @@ Item {
             tryVerify(() => dismiss.visible);
             mouseClick(dismiss);
             compare(spy.count, 1);
-            compare(spy.signalArguments[0][0], 5);
-            compare(stack.shownEntries().map(entry => entry.notification.id), [4, 3, 2], "the newest waiting one comes up");
+            compare(spy.signalArguments[0][0], 7);
+            compare(stack.shownEntries().map(entry => entry.notification.id), [6, 5, 4, 3, 2], "the newest waiting one comes up");
             compare(stack.waiting.map(entry => entry.notification.id), [1]);
         }
 
@@ -490,7 +501,7 @@ Item {
                 }
             };
             walk(page);
-            compare(rows.map(row => row.subtitle), ["Muted: list only, no pop-ups", "Pop-ups and list"]);
+            compare(rows.map(row => row.subtitle), ["Muted: hidden, no pop-ups", "Pop-ups and list"]);
             mouseClick(rows[0]);
             compare([...spy.signalArguments[0]], ["Discord", false]);
             mouseClick(rows[1]);

@@ -412,7 +412,7 @@ Item {
             expiries.target = card;
             actions.clear();
             expiries.clear();
-            compare(card.lit, Tokens.countdownSegments);
+            compare(card.remaining, 1);
             const buttons = findButtons(card);
             compare(buttons.length, 3);
             mouseClick(buttons[2]);
@@ -423,7 +423,7 @@ Item {
             mouseMove(stage, stage.width - 1, stage.height - 1);
             verify(!card.held);
             tryCompare(expiries, "count", 1, 10000);
-            compare(card.lit, 0);
+            compare(card.remaining, 0);
         }
 
         function findSwitch(item) {

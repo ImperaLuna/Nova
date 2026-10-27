@@ -216,7 +216,10 @@ impl<'a> Connection<'a> {
             Command::ClearNotifications { app } => {
                 done(self.notifications().map(|notifications| notifications.clear(app.as_deref())))
             }
-            Command::ReadNotifications => done(self.notifications().map(|notifications| notifications.read())),
+            Command::ReadNotifications => done(self.notifications().map(|notifications| notifications.read(None))),
+            Command::ReadNotification { id } => {
+                done(self.notifications().map(|notifications| notifications.read(Some(*id))))
+            }
             Command::SetDoNotDisturb { on } => {
                 done(self.notifications().map(|notifications| notifications.set_do_not_disturb(*on)))
             }
@@ -640,6 +643,7 @@ impl<'a> Connection<'a> {
             | Command::DismissNotification { .. }
             | Command::ClearNotifications { .. }
             | Command::ReadNotifications
+            | Command::ReadNotification { .. }
             | Command::SetDoNotDisturb { .. }
             | Command::MuteNotificationApp { .. }
             | Command::MediaControl { .. }

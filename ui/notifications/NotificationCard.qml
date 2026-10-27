@@ -6,17 +6,14 @@ import "../theme/icons.js" as Icons
 import "notifications.js" as Notifications
 import "../text/duration.js" as Duration
 
-// A pop-up: who it's from, the app and how many more came from it ("+2"),
-// the summary and body, progress, and the app's buttons (the first one in
-// the accent). A thin line of pieces along the bottom goes out over its
-// time; the pointer on it holds it. Critical ones have a rim in the error color and
+// A pop-up: who it's from, the app, the summary and body, progress, and
+// the app's buttons (the first one in the accent). A thin line along the
+// bottom drains over its time; the pointer on it holds it. Critical ones have a rim in the error color and
 // stay until they're closed. A click opens it, ✕ (on hover) dismisses it.
 Item {
     id: card
 
     required property var notification
-    // How many notifications it stands for (the newest shows).
-    property int count: 1
     property var iconSource: name => ""
     // Seconds since the epoch, for how long ago it came.
     property real now: Date.now() / 1000
@@ -38,7 +35,7 @@ Item {
     readonly property alias radius: surface.radius
     readonly property alias glass: surface
 
-    // Its time starts over (a newer one came in its place).
+    // Its time starts over (it opened, or its notification came again).
     function restart() {
         timer.restart();
     }
@@ -100,39 +97,15 @@ Item {
                     width: parent.width
                     height: Tokens.notificationAppLine
 
-                    Row {
+                    Text {
                         anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - when.width - Tokens.gap
-                        spacing: Tokens.iconGap
-
-                        Text {
-                            width: Math.min(implicitWidth, parent.width - more.width - parent.spacing)
-                            elide: Text.ElideRight
-                            font.family: Tokens.fontSans
-                            font.pixelSize: Tokens.fontSizeTiny
-                            color: Tokens.fgSoft
-                            textFormat: Text.PlainText
-                            text: card.notification.app
-                        }
-                        Rectangle {
-                            id: more
-                            objectName: "more"
-                            visible: card.count > 1
-                            width: visible ? moreText.implicitWidth + 2 * Tokens.notificationChipPad : 0
-                            height: Tokens.notificationChipHeight
-                            radius: height / 2
-                            color: Tokens.primary
-
-                            Text {
-                                id: moreText
-                                anchors.centerIn: parent
-                                font.family: Tokens.fontMono
-                                font.pixelSize: Tokens.fontSizeMicro
-                                font.weight: Font.DemiBold
-                                color: Tokens.onAccent
-                                text: `+${card.count - 1}`
-                            }
-                        }
+                        elide: Text.ElideRight
+                        font.family: Tokens.fontSans
+                        font.pixelSize: Tokens.fontSizeTiny
+                        color: Tokens.fgSoft
+                        textFormat: Text.PlainText
+                        text: card.notification.app
                     }
 
                     Text {

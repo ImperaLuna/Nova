@@ -30,28 +30,15 @@ function unread(items) {
     }).length;
 }
 
-// Whether a pop-up of `notification` takes in a newer one from the same
-// app, as "+N": plain ones do; critical ones and progress stay their own.
-function merges(notification) {
-    return notification.urgency !== "critical" && notification.progress === undefined;
-}
-
-// Where `notification` goes among the pop-ups `shown` (each {key, id, app,
-// mergeable}, newest first): {at, merged} for the one it replaces (the same
-// notification, or a mergeable one from its app, which counts one more),
-// or null for a new pop-up.
+// Where `notification` goes among the pop-ups `shown` (each {id}, newest
+// first): the index of the one showing it already (it came again, as an
+// update), or -1 for a pop-up of its own.
 function placeIn(shown, notification) {
     for (var i = 0; i < shown.length; i++) {
         if (shown[i].id === notification.id)
-            return { at: i, merged: false };
+            return i;
     }
-    if (!merges(notification))
-        return null;
-    for (var j = 0; j < shown.length; j++) {
-        if (shown[j].app === notification.app && shown[j].mergeable)
-            return { at: j, merged: true };
-    }
-    return null;
+    return -1;
 }
 
 // How long a pop-up of `notification` stays, in ms: what the app asked,
