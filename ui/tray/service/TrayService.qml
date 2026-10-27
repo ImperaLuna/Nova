@@ -26,11 +26,12 @@ Singleton {
     readonly property var shown: Tray.shown(all)
     readonly property bool attention: Tray.anyAttention(all)
 
-    // Whether a click on the app's icon shows its menu: it has nothing
-    // else to show. Otherwise the click activates it (`activate`), showing
-    // or hiding its window.
+    // Whether a click on the app's icon shows its menu: it says it has
+    // nothing else, or novad found it can't be activated (libayatana's
+    // icons, like Spotify's). Otherwise the click activates it (`activate`),
+    // showing or hiding its window.
     function opensMenu(entry: var): bool {
-        return entry.item.onlyMenu && entry.item.hasMenu;
+        return (entry.item.onlyMenu || entry.menuOnly) && entry.item.hasMenu;
     }
 
     // A click on the app's icon: novad asks it to show its window, then
@@ -42,6 +43,19 @@ Singleton {
             return;
         }
         Daemon.call(Protocol.CMD_ACTIVATE_TRAY_ITEM, {
+            address: entry.address
+        }, error => {
+            if (error)
+                console.warn(`nova: tray: ${error}`);
+        });
+    }
+
+    // An entry of the app's menu was picked: novad focuses a window it
+    // shows next ("Show Spotify"), which gets no focus from a menu on niri.
+    function menuPicked(entry: var) {
+        if (!entry?.address)
+            return;
+        Daemon.call(Protocol.CMD_TRAY_MENU_PICKED, {
             address: entry.address
         }, error => {
             if (error)

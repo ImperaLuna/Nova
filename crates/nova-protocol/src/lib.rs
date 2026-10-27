@@ -513,6 +513,10 @@ pub struct TrayItem {
     /// it, when there is one (and the `launcher` feature is on).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<App>,
+    /// It has no `Activate` (libayatana's items, like Spotify's): a click
+    /// on it shows its menu, as one on an item that says `ItemIsMenu` does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub menu_only: bool,
 }
 
 /// The media players (feature `media`): every MPRIS player on the session
@@ -1027,6 +1031,12 @@ pub enum Command {
     /// (feature `tray`): it's asked to show its window, which then takes
     /// focus.
     ActivateTrayItem {
+        address: String,
+    },
+    /// An entry of the menu of the tray item at `address` was picked
+    /// (feature `tray`): a window its app shows next takes focus, as it
+    /// gets none from a menu either.
+    TrayMenuPicked {
         address: String,
     },
     /// The notification `id` was clicked, or its button `action` (feature
@@ -1655,6 +1665,10 @@ mod tests {
                 id: Some(28),
                 command: Command::ActivateTrayItem { address: ":1.42/StatusNotifierItem".into() },
             }),
+            encode(Request {
+                id: Some(29),
+                command: Command::TrayMenuPicked { address: ":1.42/StatusNotifierItem".into() },
+            }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
             encode(Event::Tray(tray())),
             encode(Event::Notifications(notifications())),
@@ -1967,12 +1981,14 @@ mod tests {
                         description: Some("All-in-one cross-platform voice and text chat for gamers".into()),
                         icon: Some("discord".into()),
                     }),
+                    menu_only: false,
                 },
                 TrayItem {
                     address: ":1.607/org/ayatana/NotificationItem/steam".into(),
                     id: "steam".into(),
                     title: "Steam".into(),
                     app: None,
+                    menu_only: true,
                 },
             ],
             hidden: vec!["steam".into()],

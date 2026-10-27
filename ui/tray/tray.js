@@ -27,9 +27,10 @@ var QUIT_WORDS = ["quit", "exit"];
 // lists a new item as soon as it has read it. With none listed, every
 // item shows: another program may own the watcher (novad waits behind
 // it), and the apps register there. Each entry is
-// {item, key, name, icon, appIcon, attention, hidden}: `key` is what
-// hide_tray_app knows it by, `appIcon` the file of its desktop entry's
-// icon ("" when novad found no app or icon), `icon` the item's own image.
+// {item, key, name, icon, appIcon, attention, hidden, menuOnly}: `key` is
+// what hide_tray_app knows it by, `appIcon` the file of its desktop entry's
+// icon ("" when novad found no app or icon), `icon` the item's own image,
+// `menuOnly` whether novad found it has no Activate (libayatana's items).
 function entries(items, tray) {
     var known = tray ? tray.items : [];
     var hidden = tray && tray.hidden ? tray.hidden : [];
@@ -60,7 +61,8 @@ function entries(items, tray) {
             icon: item.icon || "",
             appIcon: app && app.icon ? app.icon : "",
             attention: item.status === STATUS_NEEDS_ATTENTION,
-            hidden: hidden.indexOf(key) !== -1
+            hidden: hidden.indexOf(key) !== -1,
+            menuOnly: !!(match && match.menu_only)
         });
     }
     return result;

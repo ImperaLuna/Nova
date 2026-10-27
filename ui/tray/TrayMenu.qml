@@ -25,6 +25,7 @@ StagePanel {
     property real screenHeight: 0
 
     signal done
+    signal picked
     signal hideRequested(string key, bool hidden)
 
     radius: Tokens.radiusCard
@@ -73,6 +74,7 @@ StagePanel {
         iconSource: menu.iconSource
         // Kept on the screen; longer menus scroll.
         maxHeight: menu.screenHeight - menu.y - Tokens.barMargin
+        onPicked: menu.picked()
         onDone: menu.done()
         onHideRequested: (key, hidden) => menu.hideRequested(key, hidden)
     }

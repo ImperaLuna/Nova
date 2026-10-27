@@ -207,6 +207,7 @@ impl<'a> Connection<'a> {
             Command::PinApp { id, pinned } => done(self.launcher().and_then(|launcher| launcher.pin(id, *pinned))),
             Command::HideTrayApp { id, hidden } => done(self.tray().and_then(|tray| tray.hide(id, *hidden))),
             Command::ActivateTrayItem { address } => return self.activate_tray_item(address),
+            Command::TrayMenuPicked { address } => return self.tray_menu_picked(address),
             Command::NotificationAction { id, action } => {
                 done(self.notifications().and_then(|notifications| notifications.action(*id, action.as_deref())))
             }
@@ -376,8 +377,10 @@ impl<'a> Connection<'a> {
         let id = id.to_owned();
         Answer::later(move || {
             let focus = |ids: &[String]| {
-                let (compositor, tray) = (compositor.as_deref(), tray.as_deref());
-                crate::launcher::focus_open(&id, ids, new_window, compositor, tray, output.as_deref(), &logger)
+                // A new window is asked for: no open one, nor the tray's.
+                let (ids, tray) = if new_window { (&[][..], None) } else { (ids, tray.as_deref()) };
+                let start = || launcher.start_app(&id);
+                crate::launcher::focus_open(&id, ids, compositor.as_deref(), tray, output.as_deref(), start, &logger)
             };
             done(launcher.launch(&id, focus))
         })
@@ -387,10 +390,11 @@ impl<'a> Connection<'a> {
     /// has open, then asks the item to show (or hide) its window
     /// (`Activate`). Apps get no activation token from a tray click, so niri
     /// wouldn't move focus to it themselves. An app with no window open is
-    /// focused once its window shows, or else started, as the launcher does:
-    /// Claude Desktop ignores `Activate` but shows its window when started
-    /// again. An open window means nothing starts, so an icon that hides
-    /// its app on a click still can.
+    /// focused once its window shows, or else started again and focused once
+    /// its window shows, as the launcher does: Claude Desktop ignores
+    /// `Activate` but shows its window when started again. An open window
+    /// means nothing starts, so an icon that hides its app on a click still
+    /// can.
     fn activate_tray_item(&self, address: &str) -> Answer {
         let tray = match self.tray() {
             Ok(tray) => tray,
@@ -412,10 +416,45 @@ impl<'a> Connection<'a> {
                 // tell whether one is open, so nothing starts either way.
                 let open = ids.is_empty() || compositor.focus_app(&ids, None).unwrap_or(true);
                 tray.activate(&address)?;
-                if open || crate::launcher::focus_shown(&app, &ids, compositor, None, &logger) {
+                let shown = |wait| crate::launcher::focus_shown(&app, &ids, compositor, None, wait, &logger);
+                if open || shown(crate::launcher::TRAY_WINDOW_WAIT) {
                     return Ok(());
                 }
-                launcher.start_app(&app)
+                launcher.start_app(&app)?;
+                shown(crate::launcher::STARTED_WINDOW_WAIT);
+                Ok(())
+            }))
+        })
+    }
+
+    /// An entry of the menu of the tray item at `address` was picked: when
+    /// its app has no window open, one that shows next takes focus (the
+    /// menu's "Show" entry), as the app gets no activation token from a
+    /// menu either. An open window is left be: the entry may have been
+    /// anything, like pausing a song.
+    fn tray_menu_picked(&self, address: &str) -> Answer {
+        let tray = match self.tray() {
+            Ok(tray) => tray,
+            Err(e) => return Answer::Now(Outcome::Error(e)),
+        };
+        let launcher = self.launcher().ok();
+        let compositor = self.daemon.compositor.clone();
+        let logger = Arc::clone(&self.daemon.logger);
+        let address = address.to_owned();
+        Answer::later(move || {
+            done(tray.app_at(&address).map(|app| {
+                let found = app.zip(launcher).and_then(|(app, launcher)| Some((launcher.window_ids(&app)?, app)));
+                let (Some((ids, app)), Some(compositor)) = (found, compositor.as_deref()) else { return };
+                if compositor.app_workspace(&ids).is_ok_and(|workspace| workspace.is_none()) {
+                    crate::launcher::focus_shown(
+                        &app,
+                        &ids,
+                        compositor,
+                        None,
+                        crate::launcher::TRAY_WINDOW_WAIT,
+                        &logger,
+                    );
+                }
             }))
         })
     }
@@ -635,6 +674,7 @@ impl<'a> Connection<'a> {
             | Command::PinApp { .. }
             | Command::HideTrayApp { .. }
             | Command::ActivateTrayItem { .. }
+            | Command::TrayMenuPicked { .. }
             | Command::NotificationAction { .. }
             | Command::DismissNotification { .. }
             | Command::ClearNotifications { .. }

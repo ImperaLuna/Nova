@@ -26,6 +26,8 @@ Column {
 
     // An entry ran (or Nova's own item): whatever holds the menu closes.
     signal done
+    // An entry of the app's menu ran (TrayService.menuPicked).
+    signal picked
     signal hideRequested(string key, bool hidden)
     signal submenuRequested(var submenu)
     signal backRequested
@@ -120,6 +122,7 @@ Column {
                                 list.submenuRequested(slot.modelData);
                                 return;
                             }
+                            list.picked();
                             slot.modelData.triggered();
                             // A checkbox flips in place; anything else is done.
                             if (!checkable)

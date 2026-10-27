@@ -288,6 +288,7 @@ Item {
             screenWidth: bar.width
             screenHeight: bar.screenHeight
             iconSource: entry ? TrayService.iconSource(entry) : ""
+            onPicked: TrayService.menuPicked(trayMenu.entry)
             onDone: rightPill.open = false
             onHideRequested: (key, hidden) => TrayService.hide(key, hidden)
         }
