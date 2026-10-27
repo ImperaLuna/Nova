@@ -124,9 +124,9 @@ fn step<'a>(followed: &'a Followed, name: &str) -> &'a Desktop {
 
 /// What the recorded script did, as the bar should see it, on any compositor.
 fn check_the_script(followed: &Followed) {
-    let first = FocusedWindow { app_id: "nova-first".into(), title: "First window".into() };
-
-    assert_eq!(window(step(followed, "open first window")), Some(first.clone()));
+    let first = window(step(followed, "open first window")).expect("the first window is focused");
+    assert_eq!((first.app_id.as_str(), first.title.as_str()), ("nova-first", "First window"));
+    assert!(!first.id.is_empty());
     assert_eq!(focused_workspace(step(followed, "open first window")).name, "1");
     let on_two = step(followed, "focus the next workspace");
     assert_eq!(focused_workspace(on_two).name, "2");
@@ -138,6 +138,7 @@ fn check_the_script(followed: &Followed) {
     let renamed = step(followed, "retitle the second window");
     assert_eq!(window(renamed).unwrap().title, "Renamed, with, commas");
     assert_eq!(window(renamed).unwrap().app_id, "nova-second");
+    assert_ne!(window(renamed).unwrap().id, first.id, "another window, told apart by its id");
 
     let before = step(followed, "retitle the second window").keyboard_layout.clone();
     let after = step(followed, "switch the keyboard layout").keyboard_layout.clone();

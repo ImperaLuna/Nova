@@ -24,6 +24,9 @@ StagePanel {
     required property real screenWidth
     required property real screenHeight
     required property string outputName
+    // The compositor's focused window (its id), "" when there's none or
+    // it isn't known.
+    property string focusedWindow: ""
 
     // The images to pick from (absolute paths), the folder they're in, and
     // the one this screen shows now ("" when Nova shows none).
@@ -62,15 +65,6 @@ StagePanel {
     readonly property int count: images.length
     readonly property int picked: count > 0 ? Carousel.wrap(target, count) : -1
     readonly property string pickedPath: picked >= 0 ? images[picked] : ""
-    // The cards round the loop: the images, repeated in a small folder so
-    // every side still shows one.
-    readonly property var loop: {
-        const times = Carousel.repeats(count, Tokens.carouselSides);
-        return Array.from({
-            length: count * times
-        }, (_, i) => images[i % count]);
-    }
-    readonly property int middle: loop.length > 0 ? Carousel.wrap(target, loop.length) : -1
     // What the screen previews: the picked image, or the screen's own until
     // the folder's listed.
     readonly property string previewPath: pickedPath !== "" ? pickedPath : current
@@ -101,6 +95,13 @@ StagePanel {
     // Opening, the deck rises into place as its cards spread out.
     readonly property real spread: morph.lerp(Tokens.carouselEnterSpread, 1)
     readonly property real rise: morph.lerp(Tokens.carouselEnterRise, 0)
+
+    // Another window taking focus (Alt+Tab, a window opening) closes it as
+    // Esc does, rather than leaving it over windows switching behind it.
+    onFocusedWindowChanged: {
+        if (focusedWindow !== "")
+            open = false;
+    }
 
     onOpenChanged: {
         console.info(`nova: wallpaper carousel ${open ? "opened" : "closed"}`);
@@ -266,19 +267,19 @@ StagePanel {
         }
 
         Repeater {
-            model: carousel.loop
+            model: carousel.images
 
-            // Every card has a place round the loop; only those near the
-            // middle are made.
+            // Every image has a place round the loop; only the cards near
+            // the middle are made.
             Item {
                 id: slot
 
                 required property string modelData
                 required property int index
-                readonly property real away: Carousel.offset(index, carousel.position, carousel.loop.length)
+                readonly property real away: Carousel.offset(index, carousel.position, carousel.count)
                 readonly property real near: Math.min(Math.abs(away), 1)
                 readonly property real far: Math.max(Math.abs(away) - 1, 0)
-                readonly property real seen: Carousel.shown(away, carousel.loop.length, Tokens.carouselSides)
+                readonly property real seen: Carousel.shown(away, carousel.count, Tokens.carouselSides)
 
                 width: carousel.cardWidth
                 height: carousel.cardHeight
@@ -304,7 +305,7 @@ StagePanel {
                     active: slot.visible
                     sourceComponent: WallpaperCard {
                         path: slot.modelData
-                        picked: slot.index === carousel.middle
+                        picked: slot.index === carousel.picked
                         now: slot.modelData === carousel.current
                         dim: slot.near * Tokens.carouselSideDim
                     }

@@ -43,16 +43,11 @@ Item {
             compare(Carousel.shown(4, 10, 3), 0, "only three either side");
             compare(Carousel.shown(1, 3, 3), 1, "three images: one either side");
             compare(Carousel.shown(1.5, 3, 3), 0, "gone before it jumps to the other side");
-            compare(Carousel.shown(1, 2, 3), 0, "two images: one at a time");
+            compare(Carousel.shown(1, 2, 3), 1, "two images: the other rests on the right");
+            compare(Carousel.shown(-0.75, 2, 3), 0.5, "and fades out leaving on the left");
+            compare(Carousel.shown(2, 4, 3), 1, "four: one rests halfway, on the right");
+            compare(Carousel.shown(-2, 4, 3), 0, "never on both sides");
             compare(Carousel.shown(0, 1, 3), 1);
-        }
-
-        function test_a_small_folder_goes_round_more_than_once() {
-            compare(Carousel.repeats(2, 3), 4, "two images: eight cards, three either side");
-            compare(Carousel.repeats(3, 3), 3);
-            compare(Carousel.repeats(8, 3), 1, "enough to fill the sides already");
-            compare(Carousel.repeats(1, 3), 1, "one image stays one card");
-            compare(Carousel.repeats(0, 3), 1);
         }
 
         function test_it_starts_on_the_screens_image() {
@@ -136,7 +131,7 @@ Item {
             return found.sort((a, b) => a.away - b.away);
         }
 
-        function test_two_images_still_show_either_side() {
+        function test_two_images_show_both_once() {
             const carousel = make();
             carousel.loaded(carousel.openings, null, {
                 folder: "/home/luna/Pictures/Wallpapers",
@@ -144,14 +139,20 @@ Item {
             }, {
                 path: "/w/dusk.png"
             });
-            const shown = cards(carousel);
-            compare(shown.length, 7, "three cards either side");
-            compare(shown.map(card => card.modelData), ["/w/aurora.png", "/w/dusk.png", "/w/aurora.png", "/w/dusk.png", "/w/aurora.png", "/w/dusk.png", "/w/aurora.png"]);
-            compare(shown.filter(card => card.away === 0)[0].index, carousel.middle, "the middle card is the picked one");
+            compare(cards(carousel).map(card => card.modelData), ["/w/dusk.png", "/w/aurora.png"]);
             keyClick(Qt.Key_Right);
-            compare(carousel.pickedPath, "/w/aurora.png");
+            tryCompare(carousel, "position", 2, 1000);
+            compare(cards(carousel).map(card => card.modelData), ["/w/aurora.png", "/w/dusk.png"], "round again, still each once");
+        }
+
+        function test_another_window_taking_focus_closes_it() {
+            const carousel = make();
+            carousel.focusedWindow = "";
+            verify(carousel.open, "no window known: nothing to go by");
             keyClick(Qt.Key_Right);
-            compare(carousel.pickedPath, "/w/dusk.png", "and round again");
+            carousel.focusedWindow = "42";
+            verify(!carousel.open, "Alt+Tab closes it, as Esc does");
+            compare(picks.count, 0, "nothing was set");
         }
 
         function test_the_keys_loop_round_past_either_end() {

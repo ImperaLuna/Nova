@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import "../bar"
+import "../compositor"
 import "../demo"
 import "../launcher"
 import "../launcher/service"
@@ -151,6 +152,7 @@ Scope {
             screenWidth: root.output.width
             screenHeight: root.output.height
             outputName: root.output.name
+            focusedWindow: Compositor.focusedWindow?.id ?? ""
             onLoadRequested: opening => WallpaperService.load((error, listing, shown) => carousel.loaded(opening, error, listing, shown))
             onChosen: (path, everywhere) => WallpaperService.set(path, everywhere ? null : root.output.name, error => carousel.applied(error))
         }

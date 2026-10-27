@@ -412,6 +412,9 @@ pub type WorkspaceId = i64;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FocusedWindow {
+    /// The compositor's own name for the window, to tell one from another
+    /// (a title can change, and two windows can share an app id).
+    pub id: String,
     /// The Wayland app id (Hyprland calls it the class), empty when unset.
     pub app_id: String,
     pub title: String,
@@ -1876,7 +1879,7 @@ mod tests {
                     workspaces: vec![Workspace { urgent: true, fullscreen: true, ..workspace(3, "1", true, false) }],
                 },
             ],
-            focused_window: Some(FocusedWindow { app_id: "foot".into(), title: "~".into() }),
+            focused_window: Some(FocusedWindow { id: "7".into(), app_id: "foot".into(), title: "~".into() }),
             keyboard_layout: None,
         }
     }
