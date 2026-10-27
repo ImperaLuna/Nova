@@ -438,11 +438,20 @@ pub enum Panel {
     Tray,
     /// The now-playing pill's panel, while a player shows.
     Media,
+    /// The wallpaper carousel.
+    Wallpaper,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 6] =
-        [Panel::AiUsage, Panel::Power, Panel::QuickSettings, Panel::Launcher, Panel::Tray, Panel::Media];
+    pub const ALL: [Panel; 7] = [
+        Panel::AiUsage,
+        Panel::Power,
+        Panel::QuickSettings,
+        Panel::Launcher,
+        Panel::Tray,
+        Panel::Media,
+        Panel::Wallpaper,
+    ];
 
     /// Its name on the wire and on the command line, which is also its
     /// feature's id.
@@ -454,6 +463,7 @@ impl Panel {
             Panel::Launcher => "launcher",
             Panel::Tray => "tray",
             Panel::Media => "media",
+            Panel::Wallpaper => "wallpaper",
         }
     }
 }
@@ -1081,6 +1091,9 @@ pub enum Command {
     /// Replies with the [`Wallpapers`] shown now (feature `wallpaper` or
     /// `wallpaper-engine`).
     Wallpapers,
+    /// Replies with the [`WallpaperFolder`]: the images in the wallpaper
+    /// folder, for the carousel (feature `wallpaper`).
+    WallpaperFolder,
     /// Plays or pauses the media player `player` (a [`MediaPlayer::id`]),
     /// or skips a track (feature `media`).
     MediaControl {
@@ -1126,6 +1139,21 @@ pub struct Wallpapers {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub outputs: std::collections::BTreeMap<String, String>,
 }
+
+/// What `wallpaper_folder` returns: the wallpaper folder (config.toml's
+/// `[wallpaper] folder`) and the images in it, sorted by name, at most
+/// [`WALLPAPER_FOLDER_MAX_IMAGES`]. Absolute paths; no images when the folder
+/// doesn't exist.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WallpaperFolder {
+    pub folder: String,
+    pub images: Vec<String>,
+}
+
+/// The most images `wallpaper_folder` lists: a carousel with more is no use,
+/// and a reply's size is capped.
+pub const WALLPAPER_FOLDER_MAX_IMAGES: usize = 1000;
 
 /// What the power menu does, in the order it lists them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1696,6 +1724,21 @@ mod tests {
                     .unwrap(),
                 ),
             }),
+            encode(Request { id: Some(53), command: Command::WallpaperFolder }),
+            encode(Response {
+                id: 53,
+                outcome: Outcome::Result(
+                    serde_json::to_value(WallpaperFolder {
+                        folder: "/home/luna/Pictures/Wallpapers".into(),
+                        images: vec![
+                            "/home/luna/Pictures/Wallpapers/dusk.jpg".into(),
+                            "/home/luna/Pictures/Wallpapers/tide.jpg".into(),
+                        ],
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Request { id: None, command: Command::Toggle { panel: Panel::Wallpaper } }),
             encode(Event::Media(media())),
             encode(Request {
                 id: Some(45),
@@ -2101,7 +2144,7 @@ mod tests {
             "calculator"
                 .parse::<Panel>()
                 .unwrap_err()
-                .contains("known: ai-usage, power, quick-settings, launcher, tray, media")
+                .contains("known: ai-usage, power, quick-settings, launcher, tray, media, wallpaper")
         );
         let features = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         for panel in Panel::ALL {

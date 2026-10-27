@@ -1,0 +1,445 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import "../stage"
+import "../theme"
+import "../theme/icons.js" as Icons
+import "../daemon/protocol.js" as Protocol
+import "carousel.js" as Carousel
+
+// The wallpaper carousel: over the whole screen, which previews the picked
+// image, a deck of the wallpaper folder's images in the middle, the picked
+// one facing you and the others tilted away either side. It loops: past
+// the last image comes the first again. Left and Right (or the wheel) move
+// through them, Enter (or a click on the middle card) keeps the picked
+// one, Tab switches between every screen and only this one, Esc (or a
+// click beside the deck) puts the old one back. Opened by `nova toggle
+// wallpaper`. It gets its data and acts through its properties, signals and
+// functions (the stage wires WallpaperService to them), so the QML tests
+// can drive it.
+StagePanel {
+    id: carousel
+
+    // The screen it covers.
+    required property real screenWidth
+    required property real screenHeight
+    required property string outputName
+
+    // The images to pick from (absolute paths), the folder they're in, and
+    // the one this screen shows now ("" when Nova shows none).
+    property var images: []
+    property string folder: ""
+    property string current: ""
+    // Waiting for novad to list the folder, and why it couldn't, or why the
+    // pick didn't work.
+    property bool loading: false
+    property string problem: ""
+    // Whether a pick changes every screen, or only this one.
+    property bool everywhere: true
+    // Picked, and handed over to awww: the preview stays while awww fades
+    // the image in under it.
+    property bool handingOver: false
+
+    // Opened, for the `opening`th time: novad's listing goes to loaded().
+    signal loadRequested(int opening)
+    property int openings: 0
+    // Enter: novad's answer goes to applied().
+    signal chosen(string path, bool everywhere)
+
+    // Where the picked card is, counted without wrapping (each step adds or
+    // takes one), and where the deck is on its way there.
+    property int target: 0
+    property real position: target
+    Behavior on position {
+        id: stepping
+        NumberAnimation {
+            id: stepMotion
+            duration: Tokens.durationCarouselStep
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Tokens.easing
+        }
+    }
+    readonly property int count: images.length
+    readonly property int picked: count > 0 ? Carousel.wrap(target, count) : -1
+    readonly property string pickedPath: picked >= 0 ? images[picked] : ""
+    // What the screen previews: the picked image, or the screen's own until
+    // the folder's listed.
+    readonly property string previewPath: pickedPath !== "" ? pickedPath : current
+
+    readonly property real cardWidth: Math.round(screenWidth * Tokens.carouselCardShare)
+    readonly property real cardHeight: Math.round(cardWidth * screenHeight / Math.max(1, screenWidth))
+    readonly property real deckY: Math.round((screenHeight - cardHeight) / 2)
+
+    name: Protocol.FEATURE_WALLPAPER
+    placement: "center"
+    wantsKeyboard: true
+    // It covers the screen with the preview, so there's nothing behind it
+    // for the compositor to blur.
+    glass: false
+    x: 0
+    y: 0
+    width: screenWidth
+    height: screenHeight
+    area: Qt.rect(0, 0, screenWidth, screenHeight)
+
+    readonly property Morph morph: Morph {
+        open: carousel.open
+    }
+    moving: morph.moving || stepMotion.running || preview.moving || deckFade.running || handOver.running
+    opacity: morph.t
+    // Closed, it takes no clicks and covers nothing (StagePanels `shapes`).
+    visible: shown
+    // Opening, the deck rises into place as its cards spread out.
+    readonly property real spread: morph.lerp(Tokens.carouselEnterSpread, 1)
+    readonly property real rise: morph.lerp(Tokens.carouselEnterRise, 0)
+
+    onOpenChanged: {
+        console.info(`nova: wallpaper carousel ${open ? "opened" : "closed"}`);
+        handOver.stop();
+        // Kept as it closes, so a picked deck doesn't come back as it fades.
+        if (!open)
+            return;
+        handingOver = false;
+        images = [];
+        problem = "";
+        everywhere = true;
+        loading = true;
+        keys.forceActiveFocus();
+        loadRequested(++openings);
+    }
+
+    // Once it's closed, its images go, and the preview's picture with them.
+    readonly property bool shown: open || moving
+    onShownChanged: {
+        if (shown)
+            return;
+        images = [];
+        current = "";
+    }
+
+    // novad's answer to loadRequested(opening): the folder's {folder,
+    // images} and the wallpapers shown now ({path, outputs}), or why it
+    // couldn't say.
+    function loaded(opening: int, error: var, listing: var, shown: var) {
+        // An answer for an opening that's closed since.
+        if (!open || opening !== openings)
+            return;
+        loading = false;
+        if (error) {
+            problem = error;
+            return;
+        }
+        folder = listing.folder;
+        current = shown.outputs?.[outputName] ?? shown.path ?? "";
+        // Straight to the screen's own image, without moving there.
+        stepping.enabled = false;
+        target = Carousel.startIndex(listing.images, current);
+        stepping.enabled = true;
+        images = listing.images;
+    }
+
+    // Moves the deck `by` cards, round past either end.
+    function step(by: int) {
+        if (by === 0 || count === 0 || handingOver)
+            return;
+        problem = "";
+        target += by;
+    }
+
+    // Keeps the picked image (see chosen).
+    function choose() {
+        if (pickedPath === "" || handingOver)
+            return;
+        handingOver = true;
+        chosen(pickedPath, everywhere);
+    }
+
+    // novad's answer to chosen: closes once awww has faded the image in, or
+    // right away when it was only for this screen, which shows it already.
+    function applied(error: var) {
+        // An answer for a pick that was put back with Esc since.
+        if (!handingOver)
+            return;
+        if (error) {
+            handingOver = false;
+            problem = error;
+            return;
+        }
+        handOver.interval = pickedPath === current && !everywhere ? 0 : Tokens.durationWallpaperHandOver;
+        handOver.restart();
+    }
+
+    Timer {
+        id: handOver
+        onTriggered: carousel.open = false
+    }
+
+    // The preview, and a shade under the deck so its label reads.
+    PreviewImage {
+        id: preview
+        anchors.fill: parent
+        path: carousel.previewPath
+        pixels: Qt.size(carousel.screenWidth * Screen.devicePixelRatio, carousel.screenHeight * Screen.devicePixelRatio)
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop {
+                position: Tokens.carouselShadeFrom
+                color: "transparent"
+            }
+            GradientStop {
+                position: 1
+                color: Tokens.carouselShade
+            }
+        }
+    }
+
+    // A click beside the deck puts the old image back; the wheel moves it.
+    MouseArea {
+        anchors.fill: parent
+        onClicked: carousel.open = false
+        property real wheelRest: 0
+        onWheel: wheel => {
+            const delta = Math.abs(wheel.angleDelta.x) > Math.abs(wheel.angleDelta.y) ? -wheel.angleDelta.x : wheel.angleDelta.y;
+            wheelRest -= delta;
+            const notches = Math.trunc(wheelRest / Tokens.wheelNotch);
+            wheelRest -= notches * Tokens.wheelNotch;
+            carousel.step(notches);
+        }
+    }
+
+    // The keys, while it's open.
+    Item {
+        id: keys
+        focus: true
+        Keys.onPressed: event => {
+            switch (event.key) {
+            case Qt.Key_Left:
+            case Qt.Key_Up:
+                carousel.step(-1);
+                break;
+            case Qt.Key_Right:
+            case Qt.Key_Down:
+                carousel.step(1);
+                break;
+            case Qt.Key_Return:
+            case Qt.Key_Enter:
+                carousel.choose();
+                break;
+            case Qt.Key_Tab:
+            case Qt.Key_Backtab:
+                carousel.everywhere = !carousel.everywhere;
+                break;
+            case Qt.Key_Escape:
+                carousel.open = false;
+                break;
+            default:
+                return;
+            }
+            event.accepted = true;
+        }
+    }
+
+    // The deck and its label, which fade out once an image is picked.
+    Item {
+        id: deck
+        width: carousel.width
+        height: carousel.height
+        y: carousel.rise
+        opacity: carousel.handingOver ? 0 : 1
+        Behavior on opacity {
+            NumberAnimation {
+                id: deckFade
+                duration: Tokens.durationFast
+            }
+        }
+
+        Repeater {
+            model: carousel.images
+
+            // Every image has a place round the loop; only the cards near
+            // the middle are made.
+            Item {
+                id: slot
+
+                required property string modelData
+                required property int index
+                readonly property real away: Carousel.offset(index, carousel.position, carousel.count)
+                readonly property real near: Math.min(Math.abs(away), 1)
+                readonly property real far: Math.max(Math.abs(away) - 1, 0)
+                readonly property real seen: Carousel.shown(away, carousel.count, Tokens.carouselSides)
+
+                width: carousel.cardWidth
+                height: carousel.cardHeight
+                x: (carousel.width - width) / 2 + Math.sign(away) * (near * Tokens.carouselNeighbour + far * Tokens.carouselStep) * width * carousel.spread
+                y: carousel.deckY
+                z: -Math.abs(away)
+                scale: 1 - near * (1 - Tokens.carouselSideScale) - far * Tokens.carouselDepthScale
+                opacity: seen
+                visible: seen > 0
+                transform: Rotation {
+                    origin.x: slot.width / 2
+                    origin.y: slot.height / 2
+                    axis {
+                        x: 0
+                        y: 1
+                        z: 0
+                    }
+                    angle: Math.max(-1, Math.min(1, slot.away)) * Tokens.carouselTilt
+                }
+
+                Loader {
+                    anchors.fill: parent
+                    active: slot.visible
+                    sourceComponent: WallpaperCard {
+                        path: slot.modelData
+                        picked: slot.index === carousel.picked
+                        now: slot.modelData === carousel.current
+                        dim: slot.near * Tokens.carouselSideDim
+                    }
+                }
+
+                // The middle card keeps its image; another moves there.
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        const by = Math.round(slot.away);
+                        if (by === 0)
+                            carousel.choose();
+                        else
+                            carousel.step(by);
+                    }
+                }
+            }
+        }
+
+        // The picked image's name, where it is in the folder, and where
+        // it'd go; or why it couldn't.
+        Rectangle {
+            visible: carousel.count > 0
+            x: Math.round((carousel.width - width) / 2)
+            y: carousel.deckY + carousel.cardHeight + Tokens.carouselLabelGap
+            width: label.implicitWidth + 2 * Tokens.carouselLabelPad
+            height: Tokens.carouselLabelHeight
+            radius: height / 2
+            color: Tokens.surface
+
+            // Clicks here don't reach the background, which closes.
+            MouseArea {
+                anchors.fill: parent
+            }
+
+            Row {
+                id: label
+                anchors.centerIn: parent
+                spacing: Tokens.carouselLabelPad
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    font.family: Tokens.fontSans
+                    font.pixelSize: Tokens.fontSizePageTitle
+                    font.weight: Font.Medium
+                    color: carousel.problem !== "" ? Tokens.error : Tokens.fg
+                    textFormat: Text.PlainText
+                    elide: Text.ElideMiddle
+                    width: Math.min(implicitWidth, carousel.cardWidth)
+                    text: carousel.problem !== "" ? qsTr("Couldn't set it: %1").arg(carousel.problem) : Carousel.fileName(carousel.pickedPath)
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    font.family: Tokens.fontMono
+                    font.pixelSize: Tokens.fontSizeSmall
+                    color: Tokens.fgDim
+                    text: `${carousel.picked + 1} / ${carousel.count}`
+                }
+
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: scope.implicitWidth + 2 * Tokens.chipPad
+                    height: Tokens.carouselChipHeight
+                    radius: height / 2
+                    color: Tokens.selectedQuiet
+
+                    Row {
+                        id: scope
+                        anchors.centerIn: parent
+                        spacing: Tokens.iconGap
+
+                        LineIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            path: carousel.everywhere ? Icons.MONITORS : Icons.MONITOR
+                            size: Tokens.iconSize
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            font.family: Tokens.fontSans
+                            font.pixelSize: Tokens.fontSizeSmall
+                            color: Tokens.fg
+                            text: carousel.everywhere ? qsTr("All screens") : qsTr("This screen")
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            font.family: Tokens.fontMono
+                            font.pixelSize: Tokens.fontSizeTiny
+                            color: Tokens.fgDim
+                            text: qsTr("Tab")
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: carousel.everywhere = !carousel.everywhere
+                    }
+                }
+            }
+        }
+
+        // No images: where to put some, or why the folder couldn't be read.
+        Rectangle {
+            visible: carousel.count === 0 && !carousel.loading
+            anchors.centerIn: parent
+            width: Tokens.carouselNoteWidth
+            height: note.implicitHeight + 2 * Tokens.panelPad
+            radius: Tokens.radiusPanel
+            color: Tokens.surface
+
+            MouseArea {
+                anchors.fill: parent
+            }
+
+            Column {
+                id: note
+                anchors.centerIn: parent
+                width: parent.width - 2 * Tokens.panelPad
+                spacing: Tokens.gap
+
+                Text {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    font.family: Tokens.fontSans
+                    font.pixelSize: Tokens.fontSizeTitle
+                    font.weight: Font.DemiBold
+                    color: Tokens.fg
+                    text: carousel.problem !== "" ? qsTr("Can't show your wallpapers") : qsTr("No wallpapers yet")
+                }
+
+                Text {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                    lineHeight: Tokens.lineHeightWrapped
+                    font.family: Tokens.fontSans
+                    font.pixelSize: Tokens.fontSize
+                    color: Tokens.fgDim
+                    textFormat: Text.PlainText
+                    text: carousel.problem !== "" ? carousel.problem : qsTr("Put pictures in %1, or point [wallpaper] folder in config.toml at another folder.").arg(carousel.folder)
+                }
+            }
+        }
+    }
+}
