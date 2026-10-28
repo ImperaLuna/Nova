@@ -424,8 +424,10 @@ fn the_list_and_settings_survive_a_restart() {
     let id = app.simple("Chat", "kept");
     server.set_do_not_disturb(true);
     server.stop();
-    // Let go of the name before the next one claims it.
-    wait_until(WAIT, "the server to stop", || lock(&server.shared.connection).is_none());
+    // Let go of the name before the next one claims it: the bus frees it
+    // only once the old connection has closed, after `serve` returns, and
+    // an app calling before then reaches the closing server and gets no reply.
+    wait_until(WAIT, "the server to let go of its name", || fixture.name_owner().is_empty());
     drop(server);
     while fixture.ui.try_recv().is_ok() {}
 
