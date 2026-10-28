@@ -77,6 +77,7 @@ var EVENT_TRAY = "tray";
 var EVENT_NOTIFICATIONS = "notifications";
 var EVENT_NOTIFICATION_POPUP = "notification_popup";
 var EVENT_MEDIA = "media";
+var EVENT_PERIPHERALS = "peripherals";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
@@ -95,6 +96,7 @@ var TOPIC_LAUNCHER = "launcher";
 var TOPIC_TRAY = "tray";
 var TOPIC_NOTIFICATIONS = "notifications";
 var TOPIC_MEDIA = "media";
+var TOPIC_PERIPHERALS = "peripherals";
 
 // What a compositor can report or do (Capability in nova-protocol).
 var CAPABILITY_WORKSPACES = "workspaces";
@@ -125,6 +127,7 @@ var FEATURE_LAUNCHER = "launcher";
 var FEATURE_TRAY = "tray";
 var FEATURE_NOTIFICATIONS = "notifications";
 var FEATURE_MEDIA = "media";
+var FEATURE_PERIPHERALS = "peripherals";
 var FEATURE_WALLPAPER = "wallpaper";
 
 // Power menu actions (PowerAction in nova-protocol).

@@ -12,7 +12,7 @@ use crate::hub::Hub;
 use crate::icons::Icons;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, host, launcher, media, notifications, resources, theme, tray, x11_tray};
+use crate::{ai_usage, features, host, launcher, media, notifications, peripherals, resources, theme, tray, x11_tray};
 use nova_features::{Manifest, Selection};
 use nova_protocol::{Event, FeatureState, Host, Theme};
 use std::collections::BTreeSet;
@@ -42,6 +42,7 @@ pub struct Sources {
     pub tray: tray::Sources,
     pub notifications: notifications::Sources,
     pub media: media::Sources,
+    pub peripherals: peripherals::Sources,
     /// Where app icons are found, for every feature that shows them.
     pub icons: Arc<Icons>,
 }
@@ -66,6 +67,8 @@ pub struct Settings {
     pub notifications: Option<Arc<notifications::Notifications>>,
     /// Following media players while the `media` feature is ready.
     pub media: Option<Arc<media::Media>>,
+    /// Following devices' batteries while the `peripherals` feature is ready.
+    pub peripherals: Option<Arc<peripherals::Peripherals>>,
     /// For the quick settings header's logo.
     icons: Arc<Icons>,
 }
@@ -219,6 +222,15 @@ impl Settings {
                 }
             });
         }
+        // No options either.
+        let peripherals = reconcile(
+            peripherals::FEATURE_ID,
+            previous.as_deref_mut().and_then(|previous| previous.peripherals.take()),
+            ready(peripherals::FEATURE_ID),
+            |_| true,
+            || peripherals::Peripherals::start(sources.peripherals.clone(), Arc::clone(hub), Arc::clone(logger)),
+            logger,
+        );
         // It has no options either. Its icons reach whatever tray is up.
         let x11_tray = reconcile(
             x11_tray::FEATURE_ID,
@@ -250,6 +262,7 @@ impl Settings {
             x11_tray,
             notifications,
             media,
+            peripherals,
             icons,
         }
     }
@@ -259,7 +272,7 @@ impl Settings {
     /// Stops every feature service running, for a novad that ends without
     /// exiting the process ([`crate::InProcess`]).
     pub fn stop_services(&self) {
-        let services: [Option<&dyn Service>; 7] = [
+        let services: [Option<&dyn Service>; 8] = [
             self.ai_usage.as_deref().map(|service| service as &dyn Service),
             self.resources.as_deref().map(|service| service as &dyn Service),
             self.launcher.as_deref().map(|service| service as &dyn Service),
@@ -267,6 +280,7 @@ impl Settings {
             self.x11_tray.as_deref().map(|service| service as &dyn Service),
             self.notifications.as_deref().map(|service| service as &dyn Service),
             self.media.as_deref().map(|service| service as &dyn Service),
+            self.peripherals.as_deref().map(|service| service as &dyn Service),
         ];
         for service in services.into_iter().flatten() {
             service.stop();
@@ -316,7 +330,8 @@ services!(
     tray::Tray,
     notifications::Notifications,
     x11_tray::X11Tray,
-    media::Media
+    media::Media,
+    peripherals::Peripherals
 );
 
 /// The service for feature `id` after a change: `running` (from the

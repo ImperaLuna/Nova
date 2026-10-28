@@ -541,14 +541,16 @@ mod tests {
         assert_eq!(gpu_for_packages(&hybrid), Some(Gpu::Intel));
     }
 
-    /// A temporary home with `quickshell` and `wf-recorder` on its PATH.
+    /// A temporary home with what the default features check for on its PATH.
     struct Home(nova_test_support::TempDir);
 
     impl Home {
         fn new(name: &str) -> Self {
             let home = nova_test_support::TempDir::new(&format!("setup-{name}"));
             std::fs::create_dir_all(home.join("usr/bin")).unwrap();
-            for bin in ["quickshell", "wf-recorder", "grim", "wl-copy", "xdg-open", "awww", "awww-daemon", "paru"] {
+            for bin in
+                ["quickshell", "wf-recorder", "grim", "wl-copy", "xdg-open", "awww", "awww-daemon", "upower", "paru"]
+            {
                 nova_test_support::write_program(&home.join("usr/bin"), bin, "exit 0");
             }
             Self(home)
@@ -566,7 +568,8 @@ mod tests {
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
         let Step::Run { why, argv } = &steps[0] else { panic!("{:?}", steps[0]) };
         // recording's wf-recorder, screenshot's grim, wl-copy and xdg-open
-        // and wallpaper's awww are there; core has no binary check.
+        // wallpaper's awww and peripherals' upower are there; core has no
+        // binary check.
         assert_eq!(why, "install packages for core");
         assert_eq!(argv, &words(&["paru", "-S", "--needed", "quickshell"]));
     }
@@ -578,13 +581,14 @@ mod tests {
         assert_eq!(
             steps[0],
             Step::Run {
-                why: "install packages for core, recording, screenshot".into(),
+                why: "install packages for core, peripherals, recording, screenshot".into(),
                 argv: words(&[
                     "sudo",
                     "apt-get",
                     "install",
                     "-y",
                     "quickshell",
+                    "upower",
                     "wf-recorder",
                     "grim",
                     "wl-clipboard",

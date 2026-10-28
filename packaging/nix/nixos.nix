@@ -36,5 +36,10 @@ in
     programs.gpu-screen-recorder.enable = lib.mkIf (features.usesGpuScreenRecorder cfg.gpu on) (
       lib.mkDefault true
     );
+
+    # Device batteries: novad reads upowerd on the system bus, and
+    # HeadsetControl needs its udev rules to open headsets without root.
+    services.upower.enable = lib.mkIf (lib.elem "peripherals" on) (lib.mkDefault true);
+    services.udev.packages = lib.mkIf (lib.elem "peripherals" on) [ pkgs.headsetcontrol ];
   };
 }

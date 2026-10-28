@@ -42,6 +42,7 @@ mod logind;
 mod media;
 mod notifications;
 mod notify;
+mod peripherals;
 mod power;
 mod procfs;
 mod recording;
@@ -310,6 +311,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         tray: tray::Sources::new(&args.state_dir),
         notifications: notifications::Sources::new(&args.state_dir, Arc::clone(&icons)),
         media: media::Sources::new(&runtime_dir),
+        peripherals: peripherals::Sources::system(&path_var),
         icons,
     };
     let settings = Settings::load(&sources, &hub, &logger);

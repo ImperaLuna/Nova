@@ -94,6 +94,11 @@ impl TestDaemon {
         std::fs::create_dir_all(dir.join("ai-usage")).unwrap();
         std::fs::create_dir_all(dir.join("launcher/share/applications")).unwrap();
         prepare(&dir);
+        // The `upower` command `peripherals` checks for, which a test
+        // machine may lack; novad never runs it.
+        std::fs::create_dir_all(dir.join("fake-bin")).unwrap();
+        write_program(&dir.join("fake-bin"), "upower", "exit 0");
+        let host_path = std::env::var("PATH").unwrap_or_default();
         let socket = dir.join("novad.sock");
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
@@ -105,7 +110,7 @@ impl TestDaemon {
             selection: vec![dir.join("config/features.toml")],
             themes_dir: theme::default_dir(),
             manifests: nova_features::load_all(&repo_features()).unwrap(),
-            path_var: std::env::var("PATH").unwrap_or_default(),
+            path_var: format!("{host_path}:{}", dir.join("fake-bin").display()),
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
             resources: resources::Sources::system(""),
             launcher: launcher_paths(&dir, Arc::clone(&icons)),
@@ -126,6 +131,14 @@ impl TestDaemon {
                 bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
                 covers: dir.join("media"),
                 proc: dir.join("proc"),
+            },
+            // No UPower, HeadsetControl or USB devices either: the
+            // peripherals' own tests give it theirs.
+            peripherals: peripherals::Sources {
+                upower: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                sys_root: dir.join("sys"),
+                path_var: dir.join("no-programs").display().to_string(),
+                usb_devices: dir.join("usb"),
             },
             icons,
         };

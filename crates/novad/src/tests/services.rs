@@ -1,4 +1,4 @@
-//! Screenshots, recording, host, tray, notifications and resources over the socket.
+//! Screenshots, recording, host, tray, notifications, media, resources and peripherals over the socket.
 
 use super::*;
 
@@ -141,4 +141,14 @@ fn watching_resources_needs_the_feature() {
     let mut client = novad.connect();
     let reply = client.request(1, "watch_resources", Some(json!({"watching": true})));
     assert!(reply["error"].as_str().is_some_and(|error| error.contains("quick-settings")), "{reply}");
+}
+
+/// The peripherals' own tests cover UPower and HeadsetControl; here there's
+/// neither, so subscribing sends an empty list.
+#[test]
+fn subscribing_to_peripherals_sends_the_devices() {
+    let novad = TestDaemon::start("peripherals", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["peripherals"]})));
+    assert_eq!(client.next_event("peripherals"), json!({"devices": []}));
 }
