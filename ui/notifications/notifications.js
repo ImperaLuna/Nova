@@ -1,8 +1,8 @@
 .pragma library
 
 // Notifications' logic without QML, so ui/tests can check it: the quick
-// settings list's groups, the unread count, how long a pop-up stays and
-// what a click does. Notifications are a notifications event's items (nova-protocol's
+// settings list's groups, the unread count and how long a pop-up stays.
+// Notifications are a notifications event's items (nova-protocol's
 // Notification).
 
 // `items` (newest first) grouped by app, the group with the newest first:
@@ -40,14 +40,3 @@ function timeout(notification, fallback) {
         return 0;
     return notification.timeout_ms ?? fallback;
 }
-
-// What clicking `notification` does: "action" when its app takes the
-// click, "launch" when the app can only be opened, "none" otherwise.
-function clickDoes(notification) {
-    if (notification.live && notification.has_default)
-        return "action";
-    if (notification.app_id)
-        return "launch";
-    return "none";
-}
-

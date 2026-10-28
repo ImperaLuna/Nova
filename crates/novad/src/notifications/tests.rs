@@ -277,7 +277,7 @@ fn clicks_reach_the_app_and_keep_the_notification_read() {
     };
     assert_eq!(list["items"][0]["id"], id, "still listed");
     assert_eq!(list["items"][0].get("live"), None, "its app is done with it");
-    assert!(server.action(id, None).is_err(), "a click on it again opens the app instead");
+    assert!(server.action(id, None).is_err(), "a click on it again opens the app instead (`click`)");
     // Many apps close it on a click too: it stays.
     zbus::block_on(app.connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "CloseNotification", &(id,)))
         .unwrap();
@@ -478,7 +478,27 @@ fn an_app_that_quits_leaves_its_notifications_unclickable() {
         }
     };
     assert_eq!(list["items"][0]["id"], id);
-    assert!(server.action(id, None).is_err(), "the UI opens the app instead");
+    assert!(server.action(id, None).is_err());
+    let clicked = server.click(id).unwrap();
+    assert_eq!(clicked, Clicked { app_id: None, heard: false }, "novad opens the app instead");
+    let list = fixture.next("notifications");
+    assert_eq!(list["items"][0].get("unread"), None, "read all the same");
+}
+
+#[test]
+fn a_click_says_which_app_sent_it_and_whether_the_app_heard() {
+    let fixture = Fixture::new("click-app");
+    let server = fixture.server();
+    let app = fixture.app();
+    let hints = HashMap::from([("desktop-entry", Variant::from("discord"))]);
+    let id = app.notify(("Discord", 0, "", "Mara", "hi", vec!["default", "Open"], hints.clone(), -1));
+    let discord = Some("discord.desktop".to_string());
+    assert_eq!(server.click(id).unwrap(), Clicked { app_id: discord.clone(), heard: true });
+    assert_eq!(app.signal(), ("ActionInvoked".into(), json!([id, "default"])));
+    assert_eq!(server.click(id).unwrap(), Clicked { app_id: discord.clone(), heard: false }, "done with it");
+    let plain = app.notify(("Discord", 0, "", "Mara", "hi", vec![], hints, -1));
+    assert_eq!(server.click(plain).unwrap(), Clicked { app_id: discord, heard: false }, "does nothing on a click");
+    assert!(server.click(999).unwrap_err().contains("no notification 999"));
 }
 
 #[test]

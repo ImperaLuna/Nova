@@ -116,21 +116,6 @@ Item {
             }), 6000), 6000);
         }
 
-        function test_a_click_goes_to_the_app_one_way_or_another() {
-            compare(Notifications.clickDoes(note(1, "A", {
-                has_default: true
-            })), "action");
-            compare(Notifications.clickDoes(note(1, "A", {
-                has_default: true,
-                live: false,
-                app_id: "a.desktop"
-            })), "launch", "kept from before novad restarted");
-            compare(Notifications.clickDoes(note(1, "A", {
-                app_id: "a.desktop"
-            })), "launch");
-            compare(Notifications.clickDoes(note(1, "A")), "none");
-        }
-
         function test_each_notification_takes_its_own_slot_and_the_same_one_updates_in_place() {
             const stack = createTemporaryObject(stackComponent, stage);
             stack.add(note(1, "Discord"));

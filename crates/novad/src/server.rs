@@ -208,8 +208,9 @@ impl<'a> Connection<'a> {
             Command::HideTrayApp { id, hidden } => done(self.tray().and_then(|tray| tray.hide(id, *hidden))),
             Command::ActivateTrayItem { address } => return self.activate_tray_item(address),
             Command::TrayMenuPicked { address } => return self.tray_menu_picked(address),
+            Command::OpenNotification { id, output } => return self.open_notification(*id, output.clone()),
             Command::NotificationAction { id, action } => {
-                done(self.notifications().and_then(|notifications| notifications.action(*id, action.as_deref())))
+                done(self.notifications().and_then(|notifications| notifications.action(*id, Some(action))))
             }
             Command::DismissNotification { id } => {
                 done(self.notifications().map(|notifications| notifications.dismiss(*id)))
@@ -218,9 +219,6 @@ impl<'a> Connection<'a> {
                 done(self.notifications().map(|notifications| notifications.clear(app.as_deref())))
             }
             Command::ReadNotifications => done(self.notifications().map(|notifications| notifications.read(None))),
-            Command::ReadNotification { id } => {
-                done(self.notifications().map(|notifications| notifications.read(Some(*id))))
-            }
             Command::SetDoNotDisturb { on } => {
                 done(self.notifications().map(|notifications| notifications.set_do_not_disturb(*on)))
             }
@@ -387,6 +385,38 @@ impl<'a> Connection<'a> {
         })
     }
 
+    /// A click on the notification `id`, on `output`. Its app hears of it
+    /// and shows its window, which takes focus once it shows: niri gives
+    /// it none, as the app gets no activation token from the click. Nothing
+    /// starts when none shows: the app took the click. An app that can't
+    /// hear of it (gone, or does nothing on a click) is opened instead, as
+    /// the launcher does.
+    fn open_notification(&self, id: u32, output: Option<String>) -> Answer {
+        let clicked = match self.notifications().and_then(|notifications| notifications.click(id)) {
+            Ok(clicked) => clicked,
+            Err(e) => return Answer::Now(Outcome::Error(e)),
+        };
+        let (Some(app), Ok(launcher)) = (clicked.app_id, self.launcher()) else { return Answer::Now(done(Ok(()))) };
+        if !clicked.heard {
+            return self.launch_app(&app, output, false);
+        }
+        let (Some(ids), Some(compositor)) = (launcher.window_ids(&app), self.daemon.compositor.clone()) else {
+            return Answer::Now(done(Ok(())));
+        };
+        let logger = Arc::clone(&self.daemon.logger);
+        Answer::later(move || {
+            crate::launcher::focus_shown(
+                &app,
+                &ids,
+                &compositor,
+                output.as_deref(),
+                crate::launcher::SHOWN_WINDOW_WAIT,
+                &logger,
+            );
+            done(Ok(()))
+        })
+    }
+
     /// A click on the tray item at `address`: focuses the window its app
     /// has open, then asks the item to show (or hide) its window
     /// (`Activate`). Apps get no activation token from a tray click, so niri
@@ -418,7 +448,7 @@ impl<'a> Connection<'a> {
                 let open = ids.is_empty() || compositor.focus_app(&ids, None).unwrap_or(true);
                 tray.activate(&address)?;
                 let shown = |wait| crate::launcher::focus_shown(&app, &ids, compositor, None, wait, &logger);
-                if open || shown(crate::launcher::TRAY_WINDOW_WAIT) {
+                if open || shown(crate::launcher::SHOWN_WINDOW_WAIT) {
                     return Ok(());
                 }
                 launcher.start_app(&app)?;
@@ -452,7 +482,7 @@ impl<'a> Connection<'a> {
         if compositor.app_workspace(&ids).is_ok_and(|workspace| workspace.is_none()) {
             let logger = Arc::clone(&self.daemon.logger);
             std::thread::spawn(move || {
-                crate::launcher::focus_shown(&app, &ids, &compositor, None, crate::launcher::TRAY_WINDOW_WAIT, &logger)
+                crate::launcher::focus_shown(&app, &ids, &compositor, None, crate::launcher::SHOWN_WINDOW_WAIT, &logger)
             });
         }
         Answer::Now(Outcome::Result(serde_json::Value::Null))
@@ -692,7 +722,7 @@ impl<'a> Connection<'a> {
             | Command::DismissNotification { .. }
             | Command::ClearNotifications { .. }
             | Command::ReadNotifications
-            | Command::ReadNotification { .. }
+            | Command::OpenNotification { .. }
             | Command::SetDoNotDisturb { .. }
             | Command::MuteNotificationApp { .. }
             | Command::MediaControl { .. }

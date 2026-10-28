@@ -1059,13 +1059,21 @@ pub enum Command {
     TrayMenuPicked {
         address: String,
     },
-    /// The notification `id` was clicked, or its button `action` (feature
-    /// `notifications`): the app hears of it, and it stays on the list,
-    /// read.
-    NotificationAction {
+    /// The notification `id` was clicked on `output` (feature
+    /// `notifications`): the app hears of it and its window takes focus, or,
+    /// when it can't hear of it, the app opens (as with `launch_app`). It
+    /// stays on the list, read.
+    OpenNotification {
         id: u32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        action: Option<String>,
+        output: Option<String>,
+    },
+    /// The button `action` of notification `id` was clicked (feature
+    /// `notifications`): the app hears of it, nothing takes focus, and it
+    /// stays on the list, read.
+    NotificationAction {
+        id: u32,
+        action: String,
     },
     /// Closes the notification `id` and takes it off the list (feature
     /// `notifications`).
@@ -1081,11 +1089,6 @@ pub enum Command {
     /// The list was seen: no notification is unread any more (feature
     /// `notifications`).
     ReadNotifications,
-    /// The notification `id` was seen (its app opened from it): it's no
-    /// longer unread (feature `notifications`).
-    ReadNotification {
-        id: u32,
-    },
     /// Turns do not disturb on or off (feature `notifications`).
     /// Remembered across restarts.
     SetDoNotDisturb {
@@ -1711,16 +1714,12 @@ mod tests {
             encode(Event::Tray(tray())),
             encode(Event::Notifications(notifications())),
             encode(Event::NotificationPopup(notifications().items[0].clone())),
-            encode(Request {
-                id: Some(40),
-                command: Command::NotificationAction { id: 7, action: Some("open".into()) },
-            }),
-            encode(Request { id: None, command: Command::NotificationAction { id: 7, action: None } }),
+            encode(Request { id: Some(40), command: Command::NotificationAction { id: 7, action: "open".into() } }),
+            encode(Request { id: None, command: Command::OpenNotification { id: 7, output: Some("DP-1".into()) } }),
             encode(Request { id: Some(41), command: Command::DismissNotification { id: 7 } }),
             encode(Request { id: None, command: Command::ClearNotifications { app: Some("Discord".into()) } }),
             encode(Request { id: None, command: Command::ClearNotifications { app: None } }),
             encode(Request { id: None, command: Command::ReadNotifications }),
-            encode(Request { id: None, command: Command::ReadNotification { id: 7 } }),
             encode(Request { id: Some(42), command: Command::SetDoNotDisturb { on: true } }),
             encode(Request {
                 id: Some(43),
