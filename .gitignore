@@ -5,3 +5,5 @@
 .direnv/
 .qmlls.ini
 __pycache__/
+/.scratch/
+/.worktrees/
