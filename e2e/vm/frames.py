@@ -126,16 +126,32 @@ with subtest("a playing pill draws only its equalizer's steps; a paused one draw
     commits = surface_commits(IDLE_SECS)
     frames = int(machine.succeed("grep -c 'nova-frame:' /tmp/ui-wayland.log || true").strip() or 0)
     print(f"now playing on {COMPOSITOR}: {frames} frames, {commits} commits in {IDLE_SECS} s; UI Pss {pss_mb(playing['ui']['pid'])} MB")
-    # IMP-204 diagnostics: when each commit went out, and what the UI said.
-    commit_ms: list[float] = []
+    # IMP-204 diagnostics: each commit's gap to the one before, and how long
+    # its frame callback took to come back.
+    stamp = re.compile(r"\[\s*(?:(\d+):(\d+):)?(\d+(?:\.\d+)?)\]")
+
+    def at_ms(line: str) -> float | None:
+        if not (match := stamp.search(line)):
+            return None
+        hours, minutes, seconds = match.groups()
+        return float(seconds) if hours is None else ((int(hours) * 60 + int(minutes)) * 60 + float(seconds)) * 1000
+
+    asked_at: dict[str, float] = {}
+    rows: list[str] = []
+    last_commit = None
     for line in machine.succeed("cat /tmp/ui-wayland.log").splitlines():
-        if match := TIMED_COMMIT.search(line):
-            hours, minutes, seconds, _surface = match.groups()
-            ms = float(seconds) if hours is None else ((int(hours) * 60 + int(minutes)) * 60 + float(seconds)) * 1000
-            commit_ms.append(ms)
-        elif "nova:" in line or "nova-frame:" in line or "qml" in line.lower():
-            print(f"IMP-204 ui: {line[:300]}")
-    print(f"IMP-204 commit gaps (ms): {[round(b - a) for a, b in zip(commit_ms, commit_ms[1:])]}")
+        ms = at_ms(line)
+        if ms is None:
+            continue
+        if match := FRAME_REQUEST.search(line):
+            asked_at[match.group(2)] = ms
+        elif "->" not in line and (match := FRAME_DONE.search(line)):
+            if (asked := asked_at.pop(match.group(1), None)) is not None:
+                rows.append(f"done +{round(ms - asked)}")
+        elif TIMED_COMMIT.search(line):
+            rows.append(f"commit gap {round(ms - last_commit) if last_commit is not None else '-'}")
+            last_commit = ms
+    print(f"IMP-204 timeline: {rows}")
     assert 0 < commits <= IDLE_SECS * EQUALIZER_STEPS_MAX, f"a playing pill made {commits} commits in {IDLE_SECS} s"
     machine.succeed(as_user(PAUSE_PLAYER))
     assert_idle("with a paused player's pill")
