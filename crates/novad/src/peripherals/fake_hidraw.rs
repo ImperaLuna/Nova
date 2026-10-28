@@ -33,6 +33,9 @@ pub struct Recording {
     /// Its report descriptor, in hex.
     pub descriptor: String,
     pub exchanges: Vec<Exchange>,
+    /// Reports its devices sent by themselves, by what happened.
+    #[serde(default)]
+    pub notices: HashMap<String, String>,
 }
 
 #[derive(Deserialize, Clone)]

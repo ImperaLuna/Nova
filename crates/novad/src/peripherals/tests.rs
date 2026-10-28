@@ -470,8 +470,7 @@ impl Fixture {
     /// A Logitech hidraw node answering as `recorded/<name>` does, on
     /// kernel driver `driver` (the recording's own when `None`).
     fn receiver(&self, name: &str, node: &str, driver: Option<&str>) {
-        let mut recording: fake_hidraw::Recording =
-            serde_json::from_str(&std::fs::read_to_string(recorded(name)).unwrap()).unwrap();
+        let mut recording = fake_hidraw_recording(name);
         recording.node = node.into();
         if let Some(driver) = driver {
             recording.driver = driver.into();
@@ -492,30 +491,35 @@ fn hidpp_reads_a_mouse_on_a_receiver_the_kernel_left_alone() {
                 "battery": {"percent": 94}, "charging": false, "source": "hidpp"}])
     );
 
-    // Plugged into its cable: the mouse says its battery changed, and is
+    let notices = fake_hidraw_recording(RECEIVER).notices;
+    // Its cable plugged in: the mouse says its battery changed, and is
     // asked again.
-    fixture.hidraw.answer(G502_BATTERY, &["1101061b5f080100000000000000000000000000"]);
-    fixture.hidraw.say("1101060059080100000000000000000000000000");
+    fixture.hidraw.answer(G502_BATTERY, &["1101061b5e080101000000000000000000000000"]);
+    fixture.hidraw.say(&notices["cable_in_battery"]);
     let devices = fixture.next();
-    assert_eq!((devices[0]["battery"].clone(), devices[0]["charging"].clone()), (json!({"percent": 95}), json!(true)));
+    assert_eq!((devices[0]["battery"].clone(), devices[0]["charging"].clone()), (json!({"percent": 94}), json!(true)));
 
-    // Turned off: the receiver says it went, and has no device there.
-    fixture.hidraw.answer(G502_PING, &["10018f001b0900"]);
-    fixture.hidraw.say("100141044099c0");
+    // Asleep (or on its cable): the receiver says the link is lost, and
+    // answers for the slot that nothing is connected there.
+    fixture.hidraw.answer(G502_PING, &["10018f001b0800"]);
+    fixture.hidraw.say(&notices["cable_in_link_lost"]);
     assert_eq!(fixture.next(), json!([]));
-    // Back on.
+    // Woken: the receiver says so, and it's read at once.
     let capture = recording_exchange(RECEIVER, G502_PING);
     fixture.hidraw.answer(G502_PING, &[&capture]);
-    fixture.hidraw.say("100141044099c0");
+    fixture.hidraw.say(&notices["woke"]);
     assert_eq!(ids(&fixture.next()), [G502]);
     peripherals.stop();
 }
 
+fn fake_hidraw_recording(name: &str) -> fake_hidraw::Recording {
+    serde_json::from_str(&std::fs::read_to_string(recorded(name)).unwrap()).unwrap()
+}
+
 /// The reply a recording has for `request`.
 fn recording_exchange(name: &str, request: &str) -> String {
-    let recording: fake_hidraw::Recording =
-        serde_json::from_str(&std::fs::read_to_string(recorded(name)).unwrap()).unwrap();
-    recording.exchanges.into_iter().find(|exchange| exchange.request == request).unwrap().replies[0].clone()
+    fake_hidraw_recording(name).exchanges.into_iter().find(|exchange| exchange.request == request).unwrap().replies[0]
+        .clone()
 }
 
 /// A receiver one of the kernel's Logitech drivers has is UPower's to

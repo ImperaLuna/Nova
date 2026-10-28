@@ -1,5 +1,5 @@
 {
- "source": "A real capture (2026-10-28, RyzenShine, kernel 6.18.58): the Lightspeed receiver 046d:c547 on hid-generic with a G502 X PLUS paired at index 1, through hidraw12. Each exchange is a request and what the node answered.",
+ "source": "A real capture (2026-10-28, RyzenShine, kernel 6.18.58): the Lightspeed receiver 046d:c547 on hid-generic with a G502 X PLUS paired at index 1, through hidraw12. The register exchanges (0x00, notifications: none set, then novad setting the wireless bit) and `notices` (reports the mouse sent by itself: waking, and its USB cable plugged in) are from novad's own run on it. Each exchange is a request and what the node answered.",
  "node": "hidraw12",
  "hid": "0003:046D:C547.001B",
  "driver": "hid-generic",
@@ -9,6 +9,18 @@
    "request": "10ff001b00005a",
    "replies": [
     "10ff8f001b0100"
+   ]
+  },
+  {
+   "request": "10ff8100000000",
+   "replies": [
+    "10ff8100000000"
+   ]
+  },
+  {
+   "request": "10ff8000000100",
+   "replies": [
+    "10ff8000000000"
    ]
   },
   {
@@ -125,5 +137,10 @@
     "10068f001b0800"
    ]
   }
- ]
+ ],
+ "notices": {
+  "woke": "10014111a29940",
+  "cable_in_battery": "110106005e080101000000000000000000000000",
+  "cable_in_link_lost": "10014111629940"
+ }
 }
