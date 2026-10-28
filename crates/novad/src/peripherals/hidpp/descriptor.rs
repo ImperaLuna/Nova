@@ -1,5 +1,6 @@
 //! Which HID++ reports a hidraw node takes, from its HID report
-//! descriptor: HID++ is Logitech's vendor protocol on usage page `0xFF00`,
+//! descriptor: HID++ is Logitech's vendor protocol on usage page `0xFF00`
+//! (`0xFF43` on newer Bluetooth devices),
 //! in a short report (id `0x10`, 7 bytes) and a long one (`0x11`, 20
 //! bytes). A receiver has it on one of its interfaces; the others (the
 //! mouse's and keyboard's input) don't.
@@ -10,8 +11,8 @@
 
 use super::protocol::{LONG, SHORT};
 
-/// The vendor usage page HID++ reports are on.
-const HIDPP_USAGE_PAGE: u32 = 0xFF00;
+/// The vendor usage pages HID++ reports are on.
+const HIDPP_USAGE_PAGES: [u32; 2] = [0xFF00, 0xFF43];
 /// Global items: Usage Page, and Report ID (tag and type, size bits off).
 const USAGE_PAGE_ITEM: u8 = 0x04;
 const REPORT_ID_ITEM: u8 = 0x84;
@@ -51,7 +52,7 @@ pub fn reports(descriptor: &[u8]) -> Reports {
         let value = data.iter().rev().fold(0u32, |value, byte| (value << 8) | u32::from(*byte));
         match prefix & 0xFC {
             USAGE_PAGE_ITEM => page = value,
-            REPORT_ID_ITEM if page == HIDPP_USAGE_PAGE => match value {
+            REPORT_ID_ITEM if HIDPP_USAGE_PAGES.contains(&page) => match value {
                 id if id == u32::from(SHORT) => found.short = true,
                 id if id == u32::from(LONG) => found.long = true,
                 _ => {}
@@ -78,6 +79,7 @@ mod tests {
         assert_eq!(reports(&hex("0600ff8510851185")), Reports { short: true, long: true }, "a cut-off item ends it");
         // A mouse's Report ID 0x10 on the Generic Desktop page isn't HID++.
         assert_eq!(reports(&hex("05010902a1018510")), Reports::default());
+        assert_eq!(reports(&hex("0643ff0a02028511")), Reports { short: false, long: true }, "Bluetooth's page");
         assert_eq!(reports(&[]), Reports::default());
     }
 }

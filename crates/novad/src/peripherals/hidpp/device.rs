@@ -46,6 +46,10 @@ const LEVEL_CRITICAL: u8 = 0x01;
 const UNIFIED_CHARGING: [u8; 2] = [1, 2];
 /// BATTERY_STATUS's: recharging, almost full, slow recharge.
 const STATUS_CHARGING: [u8; 3] = [1, 2, 4];
+/// A receiver's HID++ 1.0 register of what it reports by itself, and its
+/// wireless bit (`0x000100`: which byte, which bit).
+const NOTIFICATIONS_REGISTER: u8 = 0x00;
+const WIRELESS_NOTICES: (usize, u8) = (1, 0x01);
 /// The longest name read: the sidebar shows less.
 const MAX_NAME_BYTES: usize = 64;
 /// DEVICE_INFO's transports, in the order their product ids follow:
@@ -143,8 +147,14 @@ impl Conversation {
         function: u8,
         params: &[u8],
     ) -> Result<Vec<u8>, Failure> {
-        let request = protocol::request(self.reports, length, device, feature, function, params);
-        self.channel.send(&request)?;
+        self.send(protocol::request(self.reports, length, device, feature, function, params))
+    }
+
+    /// Sends `request` and waits for its answer.
+    fn send(&mut self, request: Vec<u8>) -> Result<Vec<u8>, Failure> {
+        if !self.channel.send(&request)? {
+            return Err(Failure::Stopped);
+        }
         let until = Instant::now() + ANSWER_TIMEOUT;
         loop {
             match self.channel.receive(until)? {
@@ -170,23 +180,46 @@ impl Conversation {
         }
     }
 
+    /// Has a receiver say when a paired device connects or goes (HID++
+    /// 1.0 notice `0x41`), as Solaar and the kernel's driver do: the
+    /// wireless bit of its notifications register, keeping the bits others
+    /// set. A device waking from sleep is then read at once, not on the
+    /// next poll.
+    pub fn follow_connections(&mut self) -> Result<(), Failure> {
+        if !self.reports.short {
+            return Ok(());
+        }
+        let flags = self.send(protocol::read_register(NOTIFICATIONS_REGISTER))?;
+        let mut value = [0; 3];
+        for (byte, flag) in value.iter_mut().zip(&flags) {
+            *byte = *flag;
+        }
+        if value[WIRELESS_NOTICES.0] & WIRELESS_NOTICES.1 != 0 {
+            return Ok(());
+        }
+        value[WIRELESS_NOTICES.0] |= WIRELESS_NOTICES.1;
+        self.send(protocol::write_register(NOTIFICATIONS_REGISTER, value)).map(|_| ())
+    }
+
     /// The index of feature `id` on `device`, if it has it.
     fn feature(&mut self, device: u8, id: u16) -> Result<Option<u8>, Failure> {
         let reply = self.call(device, ROOT, ROOT_GET_FEATURE, &id.to_be_bytes())?;
         Ok(reply.first().copied().filter(|index| *index != 0))
     }
 
-    /// What `device` is.
+    /// What `device` is. Its name, type and ids are nice to have: one it
+    /// won't give is left out, and only its battery feature must be found.
     pub fn info(&mut self, device: u8) -> Result<Info, Failure> {
         let mut info =
             Info { name: None, kind: PeripheralKind::Other, unit_id: None, product_ids: Vec::new(), battery: None };
-        if let Some(index) = self.feature(device, DEVICE_NAME)? {
-            info.name = self.name(device, index)?;
-            let kind = self.call(device, index, NAME_TYPE, &[])?;
-            info.kind = kind.first().map_or(PeripheralKind::Other, |kind| kind_of(*kind));
+        if let Some(index) = optional(self.feature(device, DEVICE_NAME))?.flatten() {
+            info.name = optional(self.name(device, index))?.flatten();
+            let kind = optional(self.call(device, index, NAME_TYPE, &[]))?;
+            info.kind = kind.as_deref().and_then(<[u8]>::first).map_or(PeripheralKind::Other, |kind| kind_of(*kind));
         }
-        if let Some(index) = self.feature(device, DEVICE_INFO)? {
-            let reply = self.call(device, index, DEVICE_INFO_GET, &[])?;
+        if let Some(index) = optional(self.feature(device, DEVICE_INFO))?.flatten()
+            && let Some(reply) = optional(self.call(device, index, DEVICE_INFO_GET, &[]))?
+        {
             (info.unit_id, info.product_ids) = ids(&reply);
         }
         info.battery = if let Some(index) = self.feature(device, UNIFIED_BATTERY)? {
@@ -224,6 +257,16 @@ impl Conversation {
             }
             BatteryFeature::Status { index } => status(&self.call(device, index, BATTERY_STATUS_GET, &[])?),
         })
+    }
+}
+
+/// `result`, or `None` when the device said no or didn't answer; a stop or
+/// a lost node still ends it.
+fn optional<T>(result: Result<T, Failure>) -> Result<Option<T>, Failure> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(Failure::Error(_) | Failure::NoAnswer) => Ok(None),
+        Err(e) => Err(e),
     }
 }
 

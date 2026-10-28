@@ -60,6 +60,21 @@ pub fn request(reports: Reports, length: Length, device: u8, feature: u8, functi
     message
 }
 
+/// HID++ 1.0's register requests to a receiver: short, read or write, then
+/// the register's address and up to 3 bytes.
+const READ_REGISTER: u8 = 0x81;
+const WRITE_REGISTER: u8 = 0x80;
+
+/// A request reading register `register` of the receiver.
+pub fn read_register(register: u8) -> Vec<u8> {
+    vec![SHORT, OWN_INDEX, READ_REGISTER, register, 0, 0, 0]
+}
+
+/// A request writing `value` to register `register` of the receiver.
+pub fn write_register(register: u8, value: [u8; 3]) -> Vec<u8> {
+    vec![SHORT, OWN_INDEX, WRITE_REGISTER, register, value[0], value[1], value[2]]
+}
+
 /// What a report is to a request.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Answer {

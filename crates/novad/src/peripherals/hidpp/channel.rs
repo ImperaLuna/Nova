@@ -1,38 +1,15 @@
 //! Reports to and from one hidraw node: each write sends one report, each
 //! read returns one. Reads wait with `poll` on the node and on an eventfd
 //! that stopping writes to, so a reader blocked on a quiet receiver ends
-//! at once.
+//! at once; nothing is sent once stopped.
 
+use crate::inotify::Stopper;
 use std::io::{Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-use std::sync::Arc;
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::time::Instant;
 
 /// The longest HID++ report, and more: one read takes one report.
 const READ_BYTES: usize = 64;
-
-/// Ends a [`Channel`]'s waits, from any thread.
-#[derive(Clone)]
-pub struct Stopper(Arc<std::fs::File>);
-
-impl Stopper {
-    pub fn new() -> std::io::Result<Self> {
-        // SAFETY: no pointers; returns a new descriptor or -1.
-        let fd = unsafe { libc::eventfd(0, libc::EFD_CLOEXEC) };
-        if fd == -1 {
-            return Err(std::io::Error::last_os_error());
-        }
-        // SAFETY: `fd` was just opened and nothing else owns it.
-        Ok(Self(Arc::new(unsafe { OwnedFd::from_raw_fd(fd) }.into())))
-    }
-
-    pub fn stop(&self) {
-        // An eventfd adds the 8-byte number written to its counter.
-        if let Err(e) = (&*self.0).write_all(&1u64.to_ne_bytes()) {
-            eprintln!("novad: can't stop a hidraw reader: {e}");
-        }
-    }
-}
 
 /// What a wait for a report ended with.
 pub enum Received {
@@ -51,15 +28,20 @@ impl Channel {
         Self { node: node.into(), stop }
     }
 
-    pub fn send(&mut self, report: &[u8]) -> std::io::Result<()> {
-        self.node.write_all(report)
+    /// Sends `report`, unless stopped (`false`).
+    pub fn send(&mut self, report: &[u8]) -> std::io::Result<bool> {
+        if self.stop.stopped() {
+            return Ok(false);
+        }
+        self.node.write_all(report)?;
+        Ok(true)
     }
 
     /// The next report, waiting until `until` at most.
     pub fn receive(&mut self, until: Instant) -> std::io::Result<Received> {
         let mut fds = [
             libc::pollfd { fd: self.node.as_raw_fd(), events: libc::POLLIN, revents: 0 },
-            libc::pollfd { fd: self.stop.0.as_raw_fd(), events: libc::POLLIN, revents: 0 },
+            libc::pollfd { fd: self.stop.as_raw_fd(), events: libc::POLLIN, revents: 0 },
         ];
         loop {
             let left = until.saturating_duration_since(Instant::now());

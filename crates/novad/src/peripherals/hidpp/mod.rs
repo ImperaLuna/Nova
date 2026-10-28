@@ -24,8 +24,9 @@ mod device;
 mod protocol;
 
 use super::{Found, LOG_SOURCE, Report, Running, Source, UsbId, hotplug};
+use crate::inotify::Stopper;
 use crate::lock;
-use channel::{Channel, Stopper};
+use channel::Channel;
 use descriptor::Reports;
 use device::{Conversation, Failure, Info, Ping};
 use nova_protocol::{LogLevel, Peripheral, PeripheralLink, PeripheralSource};
@@ -45,6 +46,12 @@ const HOTPLUG_SETTLE: Duration = Duration::from_secs(1);
 /// How long after a device says something by itself it's asked again:
 /// one that just connected needs a moment.
 const NOTICE_SETTLE: Duration = Duration::from_secs(1);
+/// How soon a device that didn't answer is asked again, and how many reads
+/// in a row may fail before it leaves the list.
+const RETRY: Duration = Duration::from_secs(5);
+const MAX_MISSES: u32 = 3;
+/// What hidraw nodes in `/dev` are named.
+const NODE_PREFIX: &str = "hidraw";
 /// The driver a HID device has when no other claimed it.
 const GENERIC_DRIVER: &str = "hid-generic";
 /// HID's bus numbers (`BUS_USB`, `BUS_BLUETOOTH` in linux/input.h).
@@ -119,14 +126,21 @@ impl Devices {
             by_node.insert(name.to_owned(), found);
         }
         if changed {
-            self.report.found(by_node.values().flatten().cloned().collect());
+            // A device two nodes reach (its cable and its receiver) once.
+            let mut all: Vec<Found> = Vec::new();
+            for device in by_node.values().flatten() {
+                if !all.iter().any(|known| known.device.id == device.device.id) {
+                    all.push(device.clone());
+                }
+            }
+            self.report.found(all);
         }
     }
 }
 
 struct Finding {
     waker: Arc<Waker>,
-    hotplug: Option<crate::inotify::Stopper>,
+    hotplug: Option<Stopper>,
 }
 
 impl Running for Finding {
@@ -144,8 +158,9 @@ impl Source for Hidpp {
         let waker = Arc::new(Waker::default());
         let plugged = Arc::clone(&waker);
         let failed = report.clone();
-        let hotplug = hotplug::watch_folder(
+        let hotplug = hotplug::watch_entries(
             &self.dev,
+            NODE_PREFIX,
             move || {
                 lock(&plugged.wakes).plugged = Some(Instant::now());
                 plugged.condvar.notify_all();
@@ -230,6 +245,7 @@ impl Hidpp {
                 }
                 match self.start_reader(&node, devices) {
                     Ok(reader) => {
+                        problems.remove(&node.name);
                         readers.insert(node.name.clone(), reader);
                     }
                     Err(problem) => note_problem(&mut problems, &node.name, problem, logger),
@@ -306,12 +322,25 @@ fn read_node(node: &Node, mut talk: Conversation, devices: &Devices) -> Option<S
     };
     let indices: Vec<u8> = match talk.ping(protocol::OWN_INDEX) {
         Ok(Ping::There) => vec![protocol::OWN_INDEX],
-        Ok(Ping::Receiver) => protocol::PAIRED_INDICES.collect(),
-        Ok(Ping::Gone) => return Some("it doesn't answer HID++".into()),
+        Ok(Ping::Receiver) => {
+            match talk.follow_connections() {
+                Err(failure @ (Failure::Stopped | Failure::Io(_))) => return ended(failure),
+                Err(e) => devices.report.logger().log(
+                    LogLevel::Debug,
+                    LOG_SOURCE,
+                    &format!("{}: receiver won't say when devices connect ({e:?}); read every minute", node.name),
+                ),
+                Ok(()) => {}
+            }
+            protocol::PAIRED_INDICES.collect()
+        }
+        Ok(Ping::Gone) | Err(Failure::NoAnswer) => return Some("it doesn't answer HID++".into()),
         Err(failure) => return ended(failure),
     };
     let mut known: HashMap<u8, Info> = HashMap::new();
     let mut found: BTreeMap<u8, Found> = BTreeMap::new();
+    // Reads in a row that failed, by device.
+    let mut misses: HashMap<u8, u32> = HashMap::new();
     let mut due: BTreeMap<u8, Instant> = BTreeMap::new();
     let mut next_poll = Instant::now();
     loop {
@@ -324,16 +353,26 @@ fn read_node(node: &Node, mut talk: Conversation, devices: &Devices) -> Option<S
         for index in &ready {
             due.remove(index);
             match read_device(&mut talk, node, *index, &mut known) {
-                Ok(Some(device)) => {
-                    found.insert(*index, device);
-                }
-                Ok(None) => {
-                    found.remove(index);
+                Ok(read) => {
+                    misses.remove(index);
+                    match read {
+                        Some(device) => found.insert(*index, device),
+                        None => found.remove(index),
+                    };
                 }
                 Err(failure @ (Failure::Stopped | Failure::Io(_))) => return ended(failure),
-                // It went quiet or failed mid-way: asked again next round.
+                // A slow or lost answer over the air: its last reading
+                // stays while it's asked again soon, a few times.
                 Err(_) => {
-                    found.remove(index);
+                    let missed = misses.entry(*index).or_default();
+                    *missed += 1;
+                    if *missed < MAX_MISSES {
+                        due.insert(*index, Instant::now() + RETRY);
+                    } else {
+                        misses.remove(index);
+                        known.remove(index);
+                        found.remove(index);
+                    }
                 }
             }
         }
@@ -412,5 +451,8 @@ fn read_device(
         charging: charge.charging,
         source: PeripheralSource::Hidpp,
     };
-    Ok(Some(Found { device, usb_ids, serial: None }))
+    // As the kernel's driver gives it (`df-70-97-d8`), and UPower then, so
+    // two of one model aren't taken for one.
+    let serial = info.unit_id.map(|unit| unit.iter().map(|byte| format!("{byte:02x}")).collect::<Vec<_>>().join("-"));
+    Ok(Some(Found { device, usb_ids, serial }))
 }

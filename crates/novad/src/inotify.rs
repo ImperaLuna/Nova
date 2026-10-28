@@ -45,16 +45,37 @@ pub struct Inotify {
     stop: Stopper,
 }
 
-/// Ends a blocked or future `Inotify::read`, from any thread.
+/// Ends a blocked or future `Inotify::read` (or any wait that polls its
+/// eventfd, like a hidraw reader's), from any thread. Once stopped, it
+/// stays stopped: the eventfd is never read.
 #[derive(Clone)]
 pub struct Stopper(Arc<std::fs::File>);
 
 impl Stopper {
+    pub fn new() -> std::io::Result<Self> {
+        // SAFETY: no pointers; returns a new descriptor or -1.
+        let stop = owned(unsafe { libc::eventfd(0, libc::EFD_CLOEXEC) })?;
+        Ok(Self(Arc::new(stop.into())))
+    }
+
     pub fn stop(&self) {
         // An eventfd adds the 8-byte number written to its counter.
         if let Err(e) = (&*self.0).write_all(&1u64.to_ne_bytes()) {
-            eprintln!("novad: can't stop a file watcher: {e}");
+            eprintln!("novad: can't stop a watcher: {e}");
         }
+    }
+
+    /// Whether it was stopped, without waiting.
+    pub fn stopped(&self) -> bool {
+        let mut fd = libc::pollfd { fd: self.0.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+        // SAFETY: `fd` is one valid pollfd for the call.
+        unsafe { libc::poll(&raw mut fd, 1, 0) > 0 }
+    }
+}
+
+impl AsRawFd for Stopper {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.0.as_raw_fd()
     }
 }
 
@@ -63,9 +84,7 @@ impl Inotify {
     pub fn new(mask: u32) -> std::io::Result<Self> {
         // SAFETY: no pointers; returns a new descriptor or -1.
         let file = owned(unsafe { libc::inotify_init1(libc::IN_CLOEXEC) })?;
-        // SAFETY: as above.
-        let stop = owned(unsafe { libc::eventfd(0, libc::EFD_CLOEXEC) })?;
-        Ok(Self { file: file.into(), mask, dirs: HashMap::new(), stop: Stopper(Arc::new(stop.into())) })
+        Ok(Self { file: file.into(), mask, dirs: HashMap::new(), stop: Stopper::new()? })
     }
 
     /// A handle that makes `read` return `None`.

@@ -17,30 +17,35 @@ pub fn watch(
     changed: impl Fn() + Send + 'static,
     failed: impl FnOnce(std::io::Error) + Send + 'static,
 ) -> std::io::Result<inotify::Stopper> {
-    follow(dir, true, changed, failed)
+    follow(dir, None, changed, failed)
 }
 
-/// Like [`watch`], for the entries of `dir` itself only (`/dev`, for its
-/// hidraw nodes), not the folders in it.
-pub fn watch_folder(
+/// Like [`watch`], for the entries of `dir` itself whose names start with
+/// `prefix` (`/dev`'s `hidraw` nodes), not the folders in it: they come,
+/// go, or have their access changed (udev giving the user its ACL, a
+/// moment after the node appears).
+pub fn watch_entries(
     dir: &Path,
+    prefix: &'static str,
     changed: impl Fn() + Send + 'static,
     failed: impl FnOnce(std::io::Error) + Send + 'static,
 ) -> std::io::Result<inotify::Stopper> {
-    follow(dir, false, changed, failed)
+    follow(dir, Some(prefix), changed, failed)
 }
 
+/// Follows `dir`'s tree, or with `prefix` only those entries of its own.
 fn follow(
     dir: &Path,
-    tree: bool,
+    prefix: Option<&'static str>,
     changed: impl Fn() + Send + 'static,
     failed: impl FnOnce(std::io::Error) + Send + 'static,
 ) -> std::io::Result<inotify::Stopper> {
+    let tree = prefix.is_none();
     let mut watcher = Inotify::new(inotify::ENTRIES)?;
     if tree {
         watcher.watch_tree(dir)?;
     } else {
-        watcher.watch(dir)?;
+        watcher.watch_for(dir, inotify::ENTRIES | libc::IN_ATTRIB)?;
     }
     let stopper = watcher.stopper();
     let dir = dir.to_owned();
@@ -62,7 +67,14 @@ fn follow(
             {
                 return failed(e);
             }
-            changed();
+            let named = |change: &inotify::Change| {
+                prefix.is_none_or(|prefix| {
+                    change.path.file_name().is_some_and(|name| name.to_string_lossy().starts_with(prefix))
+                })
+            };
+            if changes.overflowed || changes.found.iter().any(named) {
+                changed();
+            }
         }
     });
     Ok(stopper)
