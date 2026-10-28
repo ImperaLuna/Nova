@@ -170,12 +170,14 @@ impl Conversation {
         }
     }
 
-    /// Whether `device` is there.
+    /// Whether `device` is there. An error says it isn't (a receiver
+    /// answers so for an empty slot, or a device asleep); no answer at all
+    /// fails, as it may only have been lost over the air.
     pub fn ping(&mut self, device: u8) -> Result<Ping, Failure> {
         match self.call_as(Length::Short, device, ROOT, ROOT_PING, &[0, 0, PING_MARK]) {
             Ok(_) => Ok(Ping::There),
             Err(Failure::Error(protocol::ERROR_INVALID_COMMAND)) if device == protocol::OWN_INDEX => Ok(Ping::Receiver),
-            Err(Failure::Error(_) | Failure::NoAnswer) => Ok(Ping::Gone),
+            Err(Failure::Error(_)) => Ok(Ping::Gone),
             Err(e) => Err(e),
         }
     }

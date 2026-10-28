@@ -44,6 +44,11 @@ impl Channel {
             libc::pollfd { fd: self.stop.as_raw_fd(), events: libc::POLLIN, revents: 0 },
         ];
         loop {
+            // Checked first, so a node that keeps talking can't hold a wait
+            // past its end.
+            if Instant::now() >= until {
+                return Ok(Received::TimedOut);
+            }
             let left = until.saturating_duration_since(Instant::now());
             // Rounded up, so a wait never ends just before `until`.
             let timeout = i32::try_from(left.as_millis() + 1).unwrap_or(i32::MAX);
@@ -71,9 +76,6 @@ impl Channel {
             if fds[0].revents != 0 {
                 // Unplugged: the node hangs up.
                 return Err(std::io::Error::from_raw_os_error(libc::ENODEV));
-            }
-            if Instant::now() >= until {
-                return Ok(Received::TimedOut);
             }
         }
     }
