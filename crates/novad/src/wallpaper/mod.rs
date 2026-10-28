@@ -32,7 +32,7 @@ mod source;
 use crate::backoff::{Backoff, Restarts};
 use crate::config::WallpaperConfig;
 use crate::logger::Logger;
-use crate::{child, lock, state_file};
+use crate::{child, inotify, lock, state_file};
 use nova_protocol::{LogLevel, Wallpapers};
 use serde::{Deserialize, Serialize};
 use source::{Kind, Source};
@@ -68,10 +68,9 @@ const READY_POLL: Duration = Duration::from_millis(50);
 const QUERY_TIMEOUT: Duration = Duration::from_secs(1);
 /// How long `awww img` may take: it decodes and scales the image itself.
 const IMAGE_TIMEOUT: Duration = Duration::from_secs(30);
-/// How often a started engine's frame is looked for, and for how long: it
-/// writes it once it drew a few frames, which it doesn't while paused under
-/// a fullscreen window.
-const FRAME_POLL: Duration = Duration::from_millis(250);
+/// How long a started engine's frame is waited for: it writes it once it
+/// drew a few frames, which it doesn't while paused under a fullscreen
+/// window.
 const FRAME_WAIT: Duration = Duration::from_secs(30);
 /// Waits before sending an image again after `awww img` failed: doubling
 /// from the first while it keeps failing.
@@ -214,6 +213,10 @@ struct State {
     engine: Running,
     /// What's wanted changed since the thread last looked.
     changed: bool,
+    /// A file was written in the engine's folder (its frame, say) since
+    /// the thread last looked, and what watches it.
+    frame_written: bool,
+    frame_watch: Option<inotify::Stopper>,
     stopped: bool,
 }
 
@@ -270,6 +273,8 @@ impl Wallpaper {
             daemon: Running::default(),
             engine: Running::default(),
             changed: false,
+            frame_written: false,
+            frame_watch: None,
             stopped: false,
         };
         let shared = Arc::new(Shared { state: Mutex::new(state), wake: Condvar::new() });
@@ -374,6 +379,9 @@ impl Wallpaper {
         state.stopped = true;
         state.daemon.end();
         state.engine.end();
+        if let Some(watch) = state.frame_watch.take() {
+            watch.stop();
+        }
         self.changed(state);
     }
 
@@ -614,7 +622,6 @@ struct EngineRun {
 /// A started engine's frame, being waited for.
 struct Frame {
     screens: BTreeMap<String, PathBuf>,
-    look_at: Instant,
     until: Instant,
 }
 
@@ -632,11 +639,16 @@ impl Shared {
         let mut engine = EngineRun::default();
         loop {
             let mut state = lock(&self.state);
-            let idle =
-                |state: &mut State| !state.stopped && !state.changed && !state.daemon.crashed && !state.engine.crashed;
+            let idle = |state: &mut State| {
+                !state.stopped
+                    && !state.changed
+                    && !state.daemon.crashed
+                    && !state.engine.crashed
+                    && !state.frame_written
+            };
             let timers = [awww.start_at, awww.resend_at, engine.start_at];
-            let look_at = engine.frame.as_ref().map(|frame| frame.look_at);
-            state = match timers.into_iter().chain([look_at]).flatten().min() {
+            let given_up_at = engine.frame.as_ref().map(|frame| frame.until);
+            state = match timers.into_iter().chain([given_up_at]).flatten().min() {
                 None => self.wake.wait_while(state, idle).unwrap_or_else(|e| e.into_inner()),
                 Some(due) => {
                     let wait = due.saturating_duration_since(Instant::now());
@@ -646,12 +658,15 @@ impl Shared {
             if state.stopped {
                 return;
             }
-            // Only the frame is due: nothing else to work out.
+            // Only the frame was written or waited for long enough: nothing
+            // else to work out.
             let now = Instant::now();
             let due = timers.into_iter().flatten().any(|at| at <= now);
             if !state.changed && !state.daemon.crashed && !state.engine.crashed && !due {
+                let written = std::mem::take(&mut state.frame_written);
                 drop(state);
-                keep_stills(&mut engine, &awww.sizes, places, logger);
+                let stopped = || lock(&self.state).stopped;
+                keep_stills(&mut engine, written, &awww.sizes, places, logger, &stopped);
                 continue;
             }
             if std::mem::take(&mut state.daemon.crashed) {
@@ -822,8 +837,13 @@ impl Shared {
         // the folder it writes it to.
         let frame = engine::frame_file(&places.engine);
         let _ = std::fs::remove_file(&frame);
-        if let Err(e) = std::fs::create_dir_all(&places.engine) {
-            logger.warn(LOG_SOURCE, &format!("can't make {}: {e}", places.engine.display()));
+        match std::fs::create_dir_all(&places.engine) {
+            Ok(()) if state.frame_watch.is_none() => match self.watch_frames(&places.engine) {
+                Ok(watch) => state.frame_watch = Some(watch),
+                Err(e) => logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", places.engine.display())),
+            },
+            Ok(()) => {}
+            Err(e) => logger.warn(LOG_SOURCE, &format!("can't make {}: {e}", places.engine.display())),
         }
         let started = engine::assets(&places.steam_roots(), &places.engine).and_then(|assets| {
             let command = engine::command(screens, &assets, &frame, &places.path_var);
@@ -833,15 +853,32 @@ impl Shared {
         match started {
             Ok(()) => {
                 (engine.shown, engine.above) = (Some(screens.clone()), awww_starts);
-                let now = Instant::now();
-                engine.frame =
-                    Some(Frame { screens: screens.clone(), look_at: now + FRAME_POLL, until: now + FRAME_WAIT });
+                engine.frame = Some(Frame { screens: screens.clone(), until: Instant::now() + FRAME_WAIT });
             }
             Err(e) => {
                 logger.warn(LOG_SOURCE, &format!("can't start {}: {e}", engine::PROGRAM));
                 engine.start_at = Some(Instant::now() + engine.restarts.after_exit());
             }
         }
+    }
+
+    /// Wakes the thread whenever a file in `folder` is written: the
+    /// engine's frame is, once, after each start.
+    fn watch_frames(self: &Arc<Self>, folder: &Path) -> std::io::Result<inotify::Stopper> {
+        let mut watcher = inotify::Inotify::new(libc::IN_CLOSE_WRITE | libc::IN_MOVED_TO)?;
+        watcher.watch(folder)?;
+        let stopper = watcher.stopper();
+        let shared = Arc::clone(self);
+        let frame = engine::frame_file(folder);
+        std::thread::spawn(move || {
+            while let Ok(Some(changes)) = watcher.read() {
+                if changes.overflowed || changes.found.iter().any(|change| change.path == frame) {
+                    lock(&shared.state).frame_written = true;
+                    shared.wake.notify_all();
+                }
+            }
+        });
+        Ok(stopper)
     }
 
     /// Starts `command` as the program `running` picks out of the state,
@@ -1000,24 +1037,31 @@ fn sizes(answer: &str) -> BTreeMap<String, (u32, u32)> {
     answer.lines().filter_map(size).collect()
 }
 
-/// Looks for the engine's frame once it's due, and cuts it into stills for
-/// next time. Given up on once it's waited long enough, or when it can't be
-/// cut up.
-fn keep_stills(engine: &mut EngineRun, sizes: &BTreeMap<String, (u32, u32)>, places: &Places, logger: &Logger) {
-    let Some(frame) = engine.frame.as_mut().filter(|frame| frame.look_at <= Instant::now()) else {
+/// Cuts the engine's frame into stills for next time, once it's been
+/// `written`. Given up on once it's waited long enough, or when it can't be
+/// cut up. Checks `stopped` before each change to the state folder.
+fn keep_stills(
+    engine: &mut EngineRun,
+    written: bool,
+    sizes: &BTreeMap<String, (u32, u32)>,
+    places: &Places,
+    logger: &Logger,
+    stopped: &dyn Fn() -> bool,
+) {
+    let Some(frame) = engine.frame.as_ref() else {
         return;
     };
     let file = engine::frame_file(&places.engine);
-    let saved = match std::fs::read(&file) {
-        Ok(bytes) => engine::save_stills(&bytes, &frame.screens, sizes, &places.engine),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(engine::Unsaved::NotYet),
-        Err(e) => Err(engine::Unsaved::Never(format!("can't read {}: {e}", file.display()))),
+    let saved = match written {
+        false => Err(engine::Unsaved::NotYet),
+        true => match std::fs::read(&file) {
+            Ok(bytes) => engine::save_stills(&bytes, &frame.screens, sizes, &places.engine, stopped),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(engine::Unsaved::NotYet),
+            Err(e) => Err(engine::Unsaved::Never(format!("can't read {}: {e}", file.display()))),
+        },
     };
     let why = match saved {
-        Err(engine::Unsaved::NotYet) if frame.look_at < frame.until => {
-            frame.look_at = Instant::now() + FRAME_POLL;
-            return;
-        }
+        Err(engine::Unsaved::NotYet) if Instant::now() < frame.until => return,
         Ok(()) => None,
         Err(engine::Unsaved::NotYet) => Some("it didn't write one".to_owned()),
         Err(engine::Unsaved::Never(why)) => Some(why),
@@ -1027,7 +1071,9 @@ fn keep_stills(engine: &mut EngineRun, sizes: &BTreeMap<String, (u32, u32)>, pla
         Some(why) => logger.info(LOG_SOURCE, &format!("no stills from the engine's frame: {why}")),
     }
     engine.frame = None;
-    let _ = std::fs::remove_file(&file);
+    if !stopped() {
+        let _ = std::fs::remove_file(&file);
+    }
 }
 
 /// `awww img` for `path` on `outputs`, or every output.

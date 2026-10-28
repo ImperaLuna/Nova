@@ -192,12 +192,13 @@ pub enum Unsaved {
 /// one output, the frame's own size stands in for an unknown one. Nothing
 /// is kept from a frame that isn't laid out as those sizes say (with an
 /// output at a fractional scale, which the engine draws at a size of its
-/// own, say).
+/// own, say). Checks `stopped` before each still it writes.
 pub fn save_stills(
     frame: &[u8],
     screens: &BTreeMap<String, PathBuf>,
     sizes: &BTreeMap<String, (u32, u32)>,
     folder: &Path,
+    stopped: &dyn Fn() -> bool,
 ) -> Result<(), Unsaved> {
     let mut reader = png::Decoder::new(std::io::Cursor::new(frame)).read_info().map_err(|_| Unsaved::NotYet)?;
     let mut pixels = vec![0; reader.output_buffer_size().ok_or(Unsaved::Never("it's too big".into()))?];
@@ -230,6 +231,9 @@ pub fn save_stills(
         };
         let still: Vec<u8> = (0..height).flat_map(row).copied().collect();
         left += width;
+        if stopped() {
+            return Err(Unsaved::Never("novad is stopping".into()));
+        }
         let stills = stills_of(&screens[output], folder)
             .ok_or_else(|| Unsaved::Never(format!("can't read {}", screens[output].display())))?;
         save_png(&still, (width, height), channels == 4, &stills.join(still_name((width, height))))
@@ -321,7 +325,7 @@ mod tests {
         // Side by side in name order, the shorter one from the top.
         let sizes = [("DP-1".to_owned(), (3, 2)), ("HDMI-A-1".to_owned(), (2, 1))].into();
         assert!(!has_stills(&tide, &folder));
-        save_stills(&frame(5, 2), &screens, &sizes, &folder).unwrap();
+        save_stills(&frame(5, 2), &screens, &sizes, &folder, &|| false).unwrap();
         assert!(has_stills(&tide, &folder));
         assert_eq!(
             pixels(&still(&tide, (3, 2), &folder).unwrap()),
@@ -344,14 +348,18 @@ mod tests {
         let sizes = [("DP-1".to_owned(), (3, 2)), ("DP-2".to_owned(), (3, 2))].into();
         let png = frame(5, 2);
         assert!(
-            matches!(save_stills(&png, &screens, &sizes, &folder), Err(Unsaved::Never(why)) if why.contains("5x2"))
+            matches!(save_stills(&png, &screens, &sizes, &folder, &|| false), Err(Unsaved::Never(why)) if why.contains("5x2"))
         );
-        assert_eq!(save_stills(&png[..png.len() - 20], &screens, &sizes, &folder), Err(Unsaved::NotYet), "cut off");
-        let no_sizes = save_stills(&png, &screens, &BTreeMap::new(), &folder);
+        assert_eq!(
+            save_stills(&png[..png.len() - 20], &screens, &sizes, &folder, &|| false),
+            Err(Unsaved::NotYet),
+            "cut off"
+        );
+        let no_sizes = save_stills(&png, &screens, &BTreeMap::new(), &folder, &|| false);
         assert!(matches!(no_sizes, Err(Unsaved::Never(why)) if why.contains("DP-1's size")));
         assert!(!has_stills(&tide, &folder));
         // One output: the frame is its size.
-        save_stills(&png, &[("DP-1".to_owned(), tide.clone())].into(), &BTreeMap::new(), &folder).unwrap();
+        save_stills(&png, &[("DP-1".to_owned(), tide.clone())].into(), &BTreeMap::new(), &folder, &|| false).unwrap();
         assert!(still(&tide, (5, 2), &folder).is_some());
     }
 
