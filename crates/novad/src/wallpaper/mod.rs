@@ -526,7 +526,11 @@ impl Plan {
             {
                 logger.warn(LOG_SOURCE, &e);
             }
-            if !stopped()
+            // Kept while a wallpaper can't be looked up (a library not
+            // mounted yet, say): it may be one of them.
+            let dynamic = kinds.values().filter(|kind| kind.as_ref().is_none_or(Kind::is_dynamic)).count();
+            if used.len() == dynamic
+                && !stopped()
                 && let Err(e) = engine::forget_stills(&places.engine, &used)
             {
                 logger.warn(LOG_SOURCE, &e);
@@ -632,8 +636,9 @@ impl Shared {
             let mut state = lock(&self.state);
             let idle =
                 |state: &mut State| !state.stopped && !state.changed && !state.daemon.crashed && !state.engine.crashed;
+            let timers = [awww.start_at, awww.resend_at, engine.start_at];
             let look_at = engine.frame.as_ref().map(|frame| frame.look_at);
-            state = match [awww.start_at, awww.resend_at, engine.start_at, look_at].into_iter().flatten().min() {
+            state = match timers.into_iter().chain([look_at]).flatten().min() {
                 None => self.wake.wait_while(state, idle).unwrap_or_else(|e| e.into_inner()),
                 Some(due) => {
                     let wait = due.saturating_duration_since(Instant::now());
@@ -645,7 +650,7 @@ impl Shared {
             }
             // Only the frame is due: nothing else to work out.
             let now = Instant::now();
-            let due = [awww.start_at, awww.resend_at, engine.start_at].into_iter().flatten().any(|at| at <= now);
+            let due = timers.into_iter().flatten().any(|at| at <= now);
             if !state.changed && !state.daemon.crashed && !state.engine.crashed && !due {
                 drop(state);
                 keep_stills(&mut engine, &awww.sizes, places, logger);
@@ -709,6 +714,17 @@ impl Shared {
             (awww.start_at, awww.resend_at) = (None, None);
             return;
         }
+        // The outputs whose size picks their still. Only ones the compositor
+        // reported: one named in the config may not be plugged in.
+        let dynamic: Vec<&String> = match outputs {
+            Outputs::Known(_) => images
+                .outputs
+                .iter()
+                .filter(|(_, picture)| matches!(picture, Picture::Dynamic { .. }))
+                .map(|(name, _)| name)
+                .collect(),
+            _ => Vec::new(),
+        };
         if state.daemon.pid.is_none() {
             if awww.start_at.is_some_and(|at| at > Instant::now()) {
                 // Nothing to resend to until it runs again.
@@ -730,12 +746,6 @@ impl Shared {
             }
             awww.starts += 1;
             drop(state);
-            let dynamic: Vec<&String> = images
-                .outputs
-                .iter()
-                .filter(|(_, picture)| matches!(picture, Picture::Dynamic { .. }))
-                .map(|(name, _)| name)
-                .collect();
             match self.wait_ready(&places.path_var, &dynamic) {
                 Ok(sizes) => awww.sizes = sizes,
                 Err(e) => {
@@ -751,7 +761,9 @@ impl Shared {
         } else {
             drop(state);
             // A mode change since doesn't tell novad.
-            if let Some(sizes) = query_sizes(&places.path_var) {
+            if !dynamic.is_empty()
+                && let Some(sizes) = query_sizes(&places.path_var)
+            {
                 awww.sizes = sizes;
             }
         }
@@ -864,18 +876,18 @@ impl Shared {
     /// that fit.
     fn wait_ready(&self, path_var: &str, outputs: &[&String]) -> Result<BTreeMap<String, (u32, u32)>, String> {
         let deadline = Instant::now() + READY_TIMEOUT;
+        let mut answered = None;
         loop {
             if lock(&self.state).stopped {
                 return Err("novad is stopping".into());
             }
-            let mut query = awww(path_var);
-            query.args(["query", "--namespace", NAMESPACE]);
-            let answer = child::output_within(query, QUERY_TIMEOUT);
+            let answer = query(path_var);
             if let Some(output) = answer.as_ref().ok().filter(|output| output.status.success()) {
-                let sizes = sizes(&String::from_utf8_lossy(&output.stdout));
-                if outputs.iter().all(|name| sizes.contains_key(*name)) || Instant::now() >= deadline {
-                    return Ok(sizes);
+                let found = sizes(&String::from_utf8_lossy(&output.stdout));
+                if outputs.iter().all(|name| found.contains_key(*name)) || Instant::now() >= deadline {
+                    return Ok(found);
                 }
+                answered = Some(found);
                 std::thread::sleep(READY_POLL);
                 continue;
             }
@@ -883,6 +895,10 @@ impl Shared {
                 return Err("it exited".into());
             }
             if Instant::now() >= deadline {
+                // It answered before: it's up, just not sized yet.
+                if let Some(found) = answered {
+                    return Ok(found);
+                }
                 return Err(match answer {
                     Ok(output) => String::from_utf8_lossy(&output.stderr).trim().to_owned(),
                     Err(e) => e.to_string(),
@@ -951,11 +967,16 @@ fn show(
     }
 }
 
-/// Each output's size in pixels, as `awww query` says now.
-fn query_sizes(path_var: &str) -> Option<BTreeMap<String, (u32, u32)>> {
+/// `awww query`: what the daemon shows on each output, once it answers.
+fn query(path_var: &str) -> std::io::Result<std::process::Output> {
     let mut query = awww(path_var);
     query.args(["query", "--namespace", NAMESPACE]);
-    let output = child::output_within(query, QUERY_TIMEOUT).ok().filter(|output| output.status.success())?;
+    child::output_within(query, QUERY_TIMEOUT)
+}
+
+/// Each output's size in pixels, as `awww query` says now.
+fn query_sizes(path_var: &str) -> Option<BTreeMap<String, (u32, u32)>> {
+    let output = query(path_var).ok().filter(|output| output.status.success())?;
     Some(sizes(&String::from_utf8_lossy(&output.stdout)))
 }
 
