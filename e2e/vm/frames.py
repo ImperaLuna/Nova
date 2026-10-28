@@ -152,6 +152,8 @@ with subtest("a playing pill draws only its equalizer's steps; a paused one draw
             rows.append(f"commit gap {round(ms - last_commit) if last_commit is not None else '-'}")
             last_commit = ms
     print(f"IMP-204 timeline: {rows}")
+    for line in machine.succeed("grep -E 'nova-motion:|nova-frame:|nova:|qml:' /tmp/ui-wayland.log || true").splitlines():
+        print(f"IMP-204 ui: {line[:300]}")
     assert 0 < commits <= IDLE_SECS * EQUALIZER_STEPS_MAX, f"a playing pill made {commits} commits in {IDLE_SECS} s"
     machine.succeed(as_user(PAUSE_PLAYER))
     assert_idle("with a paused player's pill")

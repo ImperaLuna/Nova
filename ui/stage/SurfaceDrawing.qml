@@ -25,7 +25,15 @@ QtObject {
         out.request();
     }
 
+    // With NOVA_FRAME_LOG=1, when it draws until a change is out (FrameOut).
+    onSettlingChanged: {
+        if (Quickshell.env("NOVA_FRAME_LOG") === "1")
+            console.info(`nova-motion: ${name} ${settling ? "settling" : "settled"}`);
+    }
+
     onMovingChanged: {
+        if (Quickshell.env("NOVA_FRAME_LOG") === "1")
+            console.info(`nova-motion: ${name} ${moving ? "moving" : "still"}`);
         StageMotion.setMoving(name, moving);
         if (!moving)
             settle();

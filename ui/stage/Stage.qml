@@ -333,6 +333,19 @@ Scope {
         FrameLog {
             surfaceName: root.output.name
         }
+
+        // With NOVA_FRAME_LOG=1, when each panel starts and stops moving,
+        // to tell what a burst of frames is for.
+        Instantiator {
+            model: Quickshell.env("NOVA_FRAME_LOG") === "1" ? root.panels : []
+            delegate: Connections {
+                required property StagePanel modelData
+                target: modelData
+                function onMovingChanged() {
+                    console.info(`nova-motion: ${modelData.name} ${modelData.moving ? "moving" : "still"}`);
+                }
+            }
+        }
     }
 
     ClickCatcher {
