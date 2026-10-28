@@ -159,6 +159,7 @@ StagePanel {
                     recorders: SoundService.recorders
                     micVolume: SoundService.sourceVolume
                     reading: QuickSettingsService.resources
+                    devices: QuickSettingsService.devices
                     trayApps: TrayService.all
                     trayIconSource: entry => TrayService.iconSource(entry)
                     onTrayActivated: entry => {

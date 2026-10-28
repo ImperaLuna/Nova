@@ -34,7 +34,7 @@ use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::Bus;
-use nova_protocol::{Event, Peripheral, PeripheralSource, Peripherals as PeripheralsEvent};
+use nova_protocol::{Event, Peripheral, PeripheralLink, PeripheralSource, Peripherals as PeripheralsEvent};
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -262,7 +262,8 @@ impl Shared {
 
 /// One list from every source's: each device once, as the first source in
 /// [`PRIORITY`] that reports it has it, with a later source's battery when
-/// it has none.
+/// it has none, and a later source's link when the first knows none or
+/// only says wired.
 fn merge(found: &[(PeripheralSource, Vec<Found>)]) -> PeripheralsEvent {
     let mut kept: Vec<&Found> = Vec::new();
     let mut devices: Vec<Peripheral> = Vec::new();
@@ -273,6 +274,11 @@ fn merge(found: &[(PeripheralSource, Vec<Found>)]) -> PeripheralsEvent {
                 if device.battery.is_none() && candidate.device.battery.is_some() {
                     device.battery = candidate.device.battery;
                     device.charging = candidate.device.charging;
+                }
+                // sysfs can't tell a headset's USB dongle from a cable: a
+                // source that knows it's wireless says how it connects.
+                if matches!(device.link, None | Some(PeripheralLink::Wired)) && candidate.device.link.is_some() {
+                    device.link = candidate.device.link;
                 }
             }
             None => {

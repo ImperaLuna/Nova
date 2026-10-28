@@ -29,8 +29,11 @@ pub fn watch(
             };
             // A new bus, or lost events: watch every bus folder again
             // (watching one twice is harmless).
+            // A bus folder that went again in between (a dock unplugged)
+            // is no reason to stop.
             if (changes.overflowed || changes.found.iter().any(|change| change.is_dir))
                 && let Err(e) = watcher.watch_tree(&dir)
+                && e.kind() != std::io::ErrorKind::NotFound
             {
                 return failed(e);
             }

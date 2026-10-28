@@ -358,7 +358,7 @@ fn headsetcontrol_reads_the_headset_and_reads_again_on_hotplug() {
     let peripherals = fixture.start();
     assert_eq!(
         fixture.next(),
-        json!([{"id": "headsetcontrol/1038:2253", "name": "SteelSeries Arctis Nova 5X", "kind": "headset",
+        json!([{"id": "headsetcontrol/1038:2253", "name": "Arctis Nova 5X", "kind": "headset",
                 "link": "dongle", "battery": {"percent": 30}, "charging": true,
                 "source": "headsetcontrol"}])
     );
@@ -400,6 +400,7 @@ fn a_headset_both_sources_report_is_listed_once() {
     assert_eq!(headsets.len(), 1, "{devices}");
     assert_eq!(headsets[0]["source"], "upower");
     assert_eq!(headsets[0]["battery"], json!({"percent": 40}));
+    assert_eq!(headsets[0]["link"], "dongle", "sysfs sees a cable; HeadsetControl knows the dongle");
     peripherals.stop();
 }
 

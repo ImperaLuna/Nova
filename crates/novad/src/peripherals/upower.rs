@@ -61,6 +61,8 @@ impl Source for UPower {
         std::thread::spawn(move || {
             if let Err(e) = zbus::block_on(follow(&self, &report, &following)) {
                 report.logger().info(LOG_SOURCE, &format!("no batteries from UPower: {e}"));
+                // What it last said can't be trusted any more.
+                report.found(Vec::new());
             }
         });
         Box::new(Following(stop))

@@ -354,6 +354,26 @@ QtObject {
     readonly property real appMutedOpacity: 0.45
     // The mic slider while an app records: the second accent.
     readonly property real micFillOpacity: 0.34
+    // The Devices card: a row per wireless device, its link in a small
+    // chip, and a little battery (body, the nub on its right, the gap
+    // between its rim and the fill).
+    readonly property int deviceRowHeight: 36
+    readonly property int deviceIconSize: 17
+    readonly property int deviceLinkIconSize: 10
+    readonly property int deviceChipHeight: 18
+    readonly property int deviceChipPad: 7
+    readonly property int deviceChipGap: 4
+    readonly property int deviceBatteryWidth: 22
+    readonly property int deviceBatteryHeight: 11
+    readonly property int deviceBatteryRadius: 3
+    readonly property int deviceBatteryInset: 2
+    readonly property int deviceBatteryNubWidth: 2
+    readonly property int deviceBatteryNubHeight: 4
+    readonly property real deviceBatteryRim: 1.25
+    readonly property real deviceBatteryRimOpacity: 0.55
+    readonly property int deviceBoltSize: 9
+    // Room for "100%" (or "High"), so the batteries line up.
+    readonly property int deviceLevelWidth: 34
     // Resource rings, and the labels under them.
     readonly property int ringSize: 52
     readonly property int ringStroke: 4

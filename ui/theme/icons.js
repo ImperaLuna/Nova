@@ -75,3 +75,16 @@ var LOCK = "M7.5 11h9a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-2.5 2.5h-9a2.5 2.5 0
 var MOON = "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z";
 var LOG_OUT = "M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h10";
 var REBOOT = "M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4";
+
+// Wireless devices in quick settings, by kind, and how they connect.
+var MOUSE = "M12 3a6 6 0 0 1 6 6v6a6 6 0 0 1-12 0V9a6 6 0 0 1 6-6zM12 7v4";
+var KEYBOARD = "M4.5 6h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zM6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M7 14h10";
+var GAMEPAD = "M7 8h10a4 4 0 0 1 4 4.5l-.6 3.6a2 2 0 0 1-3.5 1L15 15H9l-1.9 2.1a2 2 0 0 1-3.5-1L3 12.5A4 4 0 0 1 7 8zM7.5 11v3M6 12.5h3M15.5 12h.01M17.5 13.5h.01";
+// Anything else with a battery: a small device with a button.
+var DEVICE = "M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM11 18h2";
+// A 2.4 GHz receiver: two arcs over a dot.
+var DONGLE = "M5 12a7 7 0 0 1 14 0M8 12a4 4 0 0 1 8 0M12 13h.01";
+// A cable, for a device plugged in.
+var PLUG = "M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0zM12 16v5";
+// Charging: solid, so pass it as `fill` too.
+var BOLT = "M13 2L4 14h7l-1 8 9-12h-7z";

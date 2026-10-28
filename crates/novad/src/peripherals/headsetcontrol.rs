@@ -191,6 +191,9 @@ struct Device {
     /// The model itself (`SteelSeries Arctis Nova 5X`).
     #[serde(default)]
     product: String,
+    /// Its maker (`SteelSeries`), left off the front of the name shown.
+    #[serde(default)]
+    vendor: String,
     /// Its dongle's USB ids, as hex (`"0x1038"`), or a number.
     #[serde(default)]
     id_vendor: serde_json::Value,
@@ -238,7 +241,9 @@ fn found(device: &Device) -> Option<Found> {
     let battery = level.and_then(|level| u8::try_from(level).ok()).map(Battery::Percent);
     let device = Peripheral {
         id: format!("{ID_PREFIX}{id}"),
-        name: name(&device.product).or_else(|| name(&device.device)).unwrap_or_else(|| id.to_string()),
+        name: name(without_vendor(&device.product, &device.vendor))
+            .or_else(|| name(&device.device))
+            .unwrap_or_else(|| id.to_string()),
         kind: PeripheralKind::Headset,
         // HeadsetControl reaches headsets through their USB dongle.
         link: Some(PeripheralLink::Dongle),
@@ -249,6 +254,20 @@ fn found(device: &Device) -> Option<Found> {
     Some(Found { device, usb_ids: vec![id], serial: None })
 }
 
+/// `product` without its maker's name in front (`Arctis Nova 5X`), since a
+/// row in the sidebar has little room. Only a whole word comes off, and
+/// nothing when that would leave nothing.
+fn without_vendor<'a>(product: &'a str, vendor: &str) -> &'a str {
+    let product = product.trim();
+    let vendor = vendor.trim();
+    match product.strip_prefix(vendor) {
+        Some(rest) if !vendor.is_empty() && rest.starts_with(char::is_whitespace) && !rest.trim().is_empty() => {
+            rest.trim_start()
+        }
+        _ => product,
+    }
+}
+
 /// A USB id: text in hex, with or without `0x`, or a number.
 fn hex(value: &serde_json::Value) -> Option<u16> {
     if let Some(number) = value.as_u64() {
@@ -257,4 +276,17 @@ fn hex(value: &serde_json::Value) -> Option<u16> {
     let digits = value.as_str()?.trim();
     let digits = digits.strip_prefix("0x").or_else(|| digits.strip_prefix("0X")).unwrap_or(digits);
     u16::from_str_radix(digits, 16).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::without_vendor;
+
+    #[test]
+    fn only_the_makers_whole_name_comes_off() {
+        assert_eq!(without_vendor("SteelSeries Arctis Nova 5X", "SteelSeries"), "Arctis Nova 5X");
+        assert_eq!(without_vendor("Logitech G733", "Logi"), "Logitech G733");
+        assert_eq!(without_vendor("HyperX", "HyperX"), "HyperX");
+        assert_eq!(without_vendor("Arctis 7", ""), "Arctis 7");
+    }
 }

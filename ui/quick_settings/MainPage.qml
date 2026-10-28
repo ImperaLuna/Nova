@@ -43,6 +43,8 @@ Item {
     property real micVolume: 0
 
     property var reading: null
+    // The wireless devices connected now (a peripherals event's list).
+    property var devices: []
     // Every tray app, hidden ones too (TrayService.all), and what an Image
     // shows for one.
     property var trayApps: []
@@ -73,7 +75,7 @@ Item {
     signal notificationAppMuted(string app)
     signal doNotDisturbToggled
 
-    readonly property bool revealing: [header, tiles, sliders, tray, notes, foot].some(section => section.running)
+    readonly property bool revealing: [header, tiles, sliders, deviceSection, tray, notes, foot].some(section => section.running) || deviceCard.running
 
     Column {
         id: sections
@@ -165,13 +167,28 @@ Item {
             }
         }
 
+        // Wireless devices and their batteries, while any is connected.
+        Reveal {
+            id: deviceSection
+            width: parent.width
+            shown: page.shown
+            order: 3
+            visible: page.devices.length > 0
+
+            DevicesCard {
+                id: deviceCard
+                width: parent.width
+                devices: page.devices
+            }
+        }
+
         // The tray's apps, all of them: the bar shows at most a few, and
         // none of those hidden from it.
         Reveal {
             id: tray
             width: parent.width
             shown: page.shown
-            order: 3
+            order: 4
             visible: page.trayApps.length > 0
 
             Column {
@@ -250,7 +267,7 @@ Item {
         height: foot.y - y - Tokens.quickSettingsGap
         visible: page.notificationsShown
         shown: page.shown
-        order: 4
+        order: 5
 
         NotificationList {
             anchors.fill: parent
@@ -272,7 +289,7 @@ Item {
         anchors.bottom: parent.bottom
         width: parent.width
         shown: page.shown
-        order: 5
+        order: 6
 
         ResourcesCard {
             width: parent.width
