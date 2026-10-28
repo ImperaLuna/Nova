@@ -441,7 +441,8 @@ fn check_output(name: &str, outputs: &Outputs) -> Result<(), String> {
 enum Picture {
     Image(PathBuf),
     /// A dynamic wallpaper's still: its project's frame kept for the
-    /// output's size, else its preview.
+    /// output's size, else its preview, else none. awww runs under it
+    /// even with none, so the outputs' sizes are known to cut its frame.
     Dynamic {
         project: PathBuf,
         preview: Option<PathBuf>,
@@ -449,11 +450,6 @@ enum Picture {
 }
 
 impl Picture {
-    /// `None` when there's nothing to show yet: no preview, no frame kept.
-    fn dynamic(project: PathBuf, preview: Option<PathBuf>, folder: &Path) -> Option<Self> {
-        (preview.is_some() || engine::has_stills(&project, folder)).then_some(Self::Dynamic { project, preview })
-    }
-
     /// The image for an output `size` pixels big, when that's known.
     fn image(&self, size: Option<(u32, u32)>, folder: &Path) -> Option<PathBuf> {
         match self {
@@ -539,8 +535,10 @@ impl Plan {
         let image = |source: &Source| match kinds.get(source)?.as_ref()? {
             _ if !images_ready => None,
             Kind::Image(path) => Some(Picture::Image(path.clone())),
-            Kind::Project { folder, preview } => Picture::dynamic(folder.clone(), preview.clone(), &places.engine),
-            Kind::Video(_) => Picture::dynamic(projects.get(source)?.clone(), None, &places.engine),
+            Kind::Project { folder, preview } => {
+                Some(Picture::Dynamic { project: folder.clone(), preview: preview.clone() })
+            }
+            Kind::Video(_) => Some(Picture::Dynamic { project: projects.get(source)?.clone(), preview: None }),
         };
         let mut plan = Self::default();
         match outputs {
@@ -820,9 +818,13 @@ impl Shared {
         }
         engine.start_at = None;
         engine.restarts.started();
-        // An older run's frame isn't this one's.
+        // An older run's frame isn't this one's. The engine doesn't make
+        // the folder it writes it to.
         let frame = engine::frame_file(&places.engine);
         let _ = std::fs::remove_file(&frame);
+        if let Err(e) = std::fs::create_dir_all(&places.engine) {
+            logger.warn(LOG_SOURCE, &format!("can't make {}: {e}", places.engine.display()));
+        }
         let started = engine::assets(&places.steam_roots(), &places.engine).and_then(|assets| {
             let command = engine::command(screens, &assets, &frame, &places.path_var);
             self.spawn(&mut state, command, |state| &mut state.engine, engine::PROGRAM, logger)
@@ -1467,6 +1469,9 @@ mod tests {
     #[test]
     fn a_dynamic_wallpaper_starts_from_its_last_frame_next_time() {
         let fixture = Fixture::new("stills");
+        // With Steam's assets, nothing else makes the folder the frame goes to.
+        std::fs::create_dir_all(fixture.dir.join("home/.local/share/Steam/steamapps/common/wallpaper_engine/assets"))
+            .unwrap();
         // DP-2 is scaled: 1x1 before, 2x2 in pixels. The engine draws both
         // side by side.
         let query = |dp1: &str| {
@@ -1510,6 +1515,34 @@ mod tests {
         bigger.set(&fixture.image("dusk.png"), None).unwrap();
         wait_until(WAIT, "the unused stills to go", || !engine::has_stills(Path::new(&item), &engine_folder));
         bigger.stop();
+    }
+
+    #[test]
+    fn a_video_on_two_outputs_gets_stills_too() {
+        let fixture = Fixture::new("video-stills");
+        // DP-1 and DP-2 are 1x1 pixels: side by side, 2x1.
+        let file = std::fs::File::create(fixture.dir.join("frame.png")).unwrap();
+        let mut encoder = png::Encoder::new(file, 2, 1);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.write_header().unwrap().write_image_data(&[9; 2 * 3]).unwrap();
+        let config = WallpaperConfig { path: Some(fixture.image("rain.webm")), ..Default::default() };
+        let first = fixture.start();
+        first.outputs(outputs(&["DP-1", "DP-2"]));
+        first.configure(true, true, &config);
+        let project = eventually(WAIT, "the engine to start", || fixture.engine_runs().first()?.1.first().cloned()).1;
+        let engine_folder = fixture.dir.join("state").join("wallpaper-engine");
+        // No preview to show, but awww runs to say the outputs' sizes.
+        wait_until(WAIT, "the frame to be kept", || {
+            engine::still(Path::new(&project), (1, 1), &engine_folder).is_some()
+        });
+        assert!(fixture.sent().is_empty(), "nothing to show the first time");
+        first.stop();
+        let again = fixture.start();
+        again.outputs(outputs(&["DP-1", "DP-2"]));
+        again.configure(true, true, &config);
+        let still = engine::still(Path::new(&project), (1, 1), &engine_folder).unwrap().display().to_string();
+        fixture.shows(&[("DP-1", &still), ("DP-2", &still)]);
+        again.stop();
     }
 
     #[test]

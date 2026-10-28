@@ -163,6 +163,7 @@ pub fn still(project: &Path, size: (u32, u32), folder: &Path) -> Option<PathBuf>
 }
 
 /// Whether any still of `project` was kept.
+#[cfg(test)]
 pub fn has_stills(project: &Path, folder: &Path) -> bool {
     stills_of(project, folder).is_some_and(|stills| stills.is_dir())
 }
