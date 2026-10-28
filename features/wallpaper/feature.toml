@@ -1,6 +1,6 @@
 id = "wallpaper"
 name = "Wallpapers"
-description = "Shows the image in config.toml's [wallpaper] or from `nova wallpaper`, on every screen or one per screen, fading in when it changes. Nothing changes until you set one."
+description = "Shows the image in config.toml's [wallpaper] or from `nova wallpaper`, on every screen or one per screen, fading in when it changes; `nova toggle wallpaper` picks one from your wallpaper folder. Nothing changes until you set one."
 default = true
 daemon = "wallpaper"
 

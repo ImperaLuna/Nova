@@ -404,6 +404,11 @@ pub struct Workspace {
     /// A special workspace showing on another output.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub shown_elsewhere: bool,
+    /// The window focus goes to on it (`FocusedWindow::id`), known even
+    /// while a Nova panel holds the keyboard and no window is focused. Only
+    /// niri sends it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_window: Option<String>,
 }
 
 /// The compositor's own workspace id. Hyprland's named workspaces have
@@ -412,6 +417,11 @@ pub type WorkspaceId = i64;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FocusedWindow {
+    /// The compositor's own name for the window, to tell one from another
+    /// (a title can change, and two windows can share an app id). Empty
+    /// from a novad from before it was sent.
+    #[serde(default)]
+    pub id: String,
     /// The Wayland app id (Hyprland calls it the class), empty when unset.
     pub app_id: String,
     pub title: String,
@@ -438,11 +448,20 @@ pub enum Panel {
     Tray,
     /// The now-playing pill's panel, while a player shows.
     Media,
+    /// The wallpaper carousel.
+    Wallpaper,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 6] =
-        [Panel::AiUsage, Panel::Power, Panel::QuickSettings, Panel::Launcher, Panel::Tray, Panel::Media];
+    pub const ALL: [Panel; 7] = [
+        Panel::AiUsage,
+        Panel::Power,
+        Panel::QuickSettings,
+        Panel::Launcher,
+        Panel::Tray,
+        Panel::Media,
+        Panel::Wallpaper,
+    ];
 
     /// Its name on the wire and on the command line, which is also its
     /// feature's id.
@@ -454,6 +473,7 @@ impl Panel {
             Panel::Launcher => "launcher",
             Panel::Tray => "tray",
             Panel::Media => "media",
+            Panel::Wallpaper => "wallpaper",
         }
     }
 }
@@ -513,6 +533,10 @@ pub struct TrayItem {
     /// it, when there is one (and the `launcher` feature is on).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<App>,
+    /// It has no `Activate` (libayatana's items, like Spotify's): a click
+    /// on it shows its menu, as one on an item that says `ItemIsMenu` does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub menu_only: bool,
 }
 
 /// The media players (feature `media`): every MPRIS player on the session
@@ -641,8 +665,10 @@ pub struct NotificationList {
     pub items: Vec<Notification>,
     /// No pop-ups, except critical ones.
     pub do_not_disturb: bool,
-    /// Apps, by [`Notification::app`], whose notifications never pop up and
-    /// don't count as unread. They're still listed.
+    /// Apps, by [`Notification::app`], whose notifications are hidden: not
+    /// in `items`, never popping up, never unread. Those from before the
+    /// app was muted come back once it's unmuted; those it sends meanwhile
+    /// aren't kept.
     pub muted: Vec<String>,
     /// Every app that sent one lately or is muted, the latest first, for
     /// the settings page's per-app switches.
@@ -1027,13 +1053,27 @@ pub enum Command {
     ActivateTrayItem {
         address: String,
     },
-    /// The notification `id` was clicked, or its button `action` (feature
-    /// `notifications`): the app hears of it, and it leaves the list unless
-    /// the app keeps it.
-    NotificationAction {
+    /// An entry of the menu of the tray item at `address` was picked
+    /// (feature `tray`): a window its app shows next takes focus, as it
+    /// gets none from a menu either.
+    TrayMenuPicked {
+        address: String,
+    },
+    /// The notification `id` was clicked on `output` (feature
+    /// `notifications`): the app hears of it and its window takes focus, or,
+    /// when it can't hear of it, the app opens (as with `launch_app`). It
+    /// stays on the list, read.
+    OpenNotification {
         id: u32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        action: Option<String>,
+        output: Option<String>,
+    },
+    /// The button `action` of notification `id` was clicked (feature
+    /// `notifications`): the app hears of it, nothing takes focus, and it
+    /// stays on the list, read.
+    NotificationAction {
+        id: u32,
+        action: String,
     },
     /// Closes the notification `id` and takes it off the list (feature
     /// `notifications`).
@@ -1060,17 +1100,23 @@ pub enum Command {
         app: String,
         muted: bool,
     },
-    /// Shows the image at `path` (an absolute path) as the wallpaper on
-    /// every output, or only on `output` (`nova wallpaper`, feature
-    /// `wallpaper`). Remembered across restarts until config.toml's
-    /// `[wallpaper]` changes. Fails when the file can't be read.
+    /// Shows `path` as the wallpaper on every output, or only on `output`
+    /// (`nova wallpaper`): an absolute path to an image (feature
+    /// `wallpaper`), or to a video or a Wallpaper Engine project folder, or
+    /// a Steam Workshop ID (feature `wallpaper-engine`). Remembered across
+    /// restarts until config.toml's `[wallpaper]` changes. Fails when it
+    /// can't be shown.
     SetWallpaper {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
     },
-    /// Replies with the [`Wallpapers`] shown now (feature `wallpaper`).
+    /// Replies with the [`Wallpapers`] shown now (feature `wallpaper` or
+    /// `wallpaper-engine`).
     Wallpapers,
+    /// Replies with the [`WallpaperFolder`]: the images in the wallpaper
+    /// folder, for the carousel (feature `wallpaper`).
+    WallpaperFolder,
     /// Plays or pauses the media player `player` (a [`MediaPlayer::id`]),
     /// or skips a track (feature `media`).
     MediaControl {
@@ -1100,8 +1146,14 @@ pub enum Command {
     },
 }
 
-/// What `wallpapers` returns: the image every output shows, and the outputs
-/// that show one of their own. Absolute paths; empty when none is set.
+/// Whether a `set_wallpaper` path is a Steam Workshop ID: only digits.
+pub fn is_workshop_id(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// What `wallpapers` returns: the wallpaper every output shows, and the
+/// outputs that show one of their own. Absolute paths or Workshop IDs;
+/// empty when none is set.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Wallpapers {
@@ -1110,6 +1162,21 @@ pub struct Wallpapers {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub outputs: std::collections::BTreeMap<String, String>,
 }
+
+/// What `wallpaper_folder` returns: the wallpaper folder (config.toml's
+/// `[wallpaper] folder`) and the images in it, sorted by name, at most
+/// [`WALLPAPER_FOLDER_MAX_IMAGES`]. Absolute paths; no images when the folder
+/// doesn't exist.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WallpaperFolder {
+    pub folder: String,
+    pub images: Vec<String>,
+}
+
+/// The most images `wallpaper_folder` lists: a carousel with more is no use,
+/// and a reply's size is capped.
+pub const WALLPAPER_FOLDER_MAX_IMAGES: usize = 1000;
 
 /// What the power menu does, in the order it lists them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1639,15 +1706,16 @@ mod tests {
                 id: Some(28),
                 command: Command::ActivateTrayItem { address: ":1.42/StatusNotifierItem".into() },
             }),
+            encode(Request {
+                id: Some(29),
+                command: Command::TrayMenuPicked { address: ":1.42/StatusNotifierItem".into() },
+            }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
             encode(Event::Tray(tray())),
             encode(Event::Notifications(notifications())),
             encode(Event::NotificationPopup(notifications().items[0].clone())),
-            encode(Request {
-                id: Some(40),
-                command: Command::NotificationAction { id: 7, action: Some("open".into()) },
-            }),
-            encode(Request { id: None, command: Command::NotificationAction { id: 7, action: None } }),
+            encode(Request { id: Some(40), command: Command::NotificationAction { id: 7, action: "open".into() } }),
+            encode(Request { id: None, command: Command::OpenNotification { id: 7, output: Some("DP-1".into()) } }),
             encode(Request { id: Some(41), command: Command::DismissNotification { id: 7 } }),
             encode(Request { id: None, command: Command::ClearNotifications { app: Some("Discord".into()) } }),
             encode(Request { id: None, command: Command::ClearNotifications { app: None } }),
@@ -1679,6 +1747,21 @@ mod tests {
                     .unwrap(),
                 ),
             }),
+            encode(Request { id: Some(53), command: Command::WallpaperFolder }),
+            encode(Response {
+                id: 53,
+                outcome: Outcome::Result(
+                    serde_json::to_value(WallpaperFolder {
+                        folder: "/home/luna/Pictures/Wallpapers".into(),
+                        images: vec![
+                            "/home/luna/Pictures/Wallpapers/dusk.jpg".into(),
+                            "/home/luna/Pictures/Wallpapers/tide.jpg".into(),
+                        ],
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Request { id: None, command: Command::Toggle { panel: Panel::Wallpaper } }),
             encode(Event::Media(media())),
             encode(Request {
                 id: Some(45),
@@ -1783,6 +1866,7 @@ mod tests {
             fullscreen: false,
             special: false,
             shown_elsewhere: false,
+            active_window: None,
         };
         Desktop {
             compositor: "niri".into(),
@@ -1793,7 +1877,7 @@ mod tests {
                     focused: true,
                     workspaces: vec![
                         Workspace { empty: true, ..workspace(1, "1", false, false) },
-                        workspace(2, "web", true, true),
+                        Workspace { active_window: Some("7".into()), ..workspace(2, "web", true, true) },
                     ],
                 },
                 Output {
@@ -1802,7 +1886,7 @@ mod tests {
                     workspaces: vec![Workspace { urgent: true, fullscreen: true, ..workspace(3, "1", true, false) }],
                 },
             ],
-            focused_window: Some(FocusedWindow { app_id: "foot".into(), title: "~".into() }),
+            focused_window: Some(FocusedWindow { id: "7".into(), app_id: "foot".into(), title: "~".into() }),
             keyboard_layout: None,
         }
     }
@@ -1950,12 +2034,14 @@ mod tests {
                         description: Some("All-in-one cross-platform voice and text chat for gamers".into()),
                         icon: Some("discord".into()),
                     }),
+                    menu_only: false,
                 },
                 TrayItem {
                     address: ":1.607/org/ayatana/NotificationItem/steam".into(),
                     id: "steam".into(),
                     title: "Steam".into(),
                     app: None,
+                    menu_only: true,
                 },
             ],
             hidden: vec!["steam".into()],
@@ -2084,7 +2170,7 @@ mod tests {
             "calculator"
                 .parse::<Panel>()
                 .unwrap_err()
-                .contains("known: ai-usage, power, quick-settings, launcher, tray, media")
+                .contains("known: ai-usage, power, quick-settings, launcher, tray, media, wallpaper")
         );
         let features = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         for panel in Panel::ALL {

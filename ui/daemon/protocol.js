@@ -32,6 +32,8 @@ var CMD_LAUNCH_APP = "launch_app";
 var CMD_PIN_APP = "pin_app";
 var CMD_HIDE_TRAY_APP = "hide_tray_app";
 var CMD_ACTIVATE_TRAY_ITEM = "activate_tray_item";
+var CMD_TRAY_MENU_PICKED = "tray_menu_picked";
+var CMD_OPEN_NOTIFICATION = "open_notification";
 var CMD_NOTIFICATION_ACTION = "notification_action";
 var CMD_DISMISS_NOTIFICATION = "dismiss_notification";
 var CMD_CLEAR_NOTIFICATIONS = "clear_notifications";
@@ -43,6 +45,9 @@ var CMD_MEDIA_SEEK = "media_seek";
 var CMD_MEDIA_SHOW = "media_show";
 var CMD_MEDIA_FOCUS = "media_focus";
 var CMD_MEDIA_WINDOW = "media_window";
+var CMD_SET_WALLPAPER = "set_wallpaper";
+var CMD_WALLPAPERS = "wallpapers";
+var CMD_WALLPAPER_FOLDER = "wallpaper_folder";
 // novad refuses longer search_apps queries and media player ids
 // (SEARCH_APPS_MAX_CHARS and MEDIA_PLAYER_MAX_BYTES in nova-protocol, which
 // checks these match).
@@ -120,6 +125,7 @@ var FEATURE_LAUNCHER = "launcher";
 var FEATURE_TRAY = "tray";
 var FEATURE_NOTIFICATIONS = "notifications";
 var FEATURE_MEDIA = "media";
+var FEATURE_WALLPAPER = "wallpaper";
 
 // Power menu actions (PowerAction in nova-protocol).
 var POWER_LOCK = "lock";
@@ -199,6 +205,17 @@ function focusedWorkspace(desktop) {
         }
     }
     return null;
+}
+
+// Where the compositor's focus is (a focusedWorkspace, or null), as one
+// string that changes when focus moves to another workspace or another
+// window on it: "" while it isn't known. It goes by the workspace's
+// `active_window`, not `focused_window`, which is empty while a Nova panel
+// holds the keyboard.
+function focusKey(workspace) {
+    if (!workspace)
+        return "";
+    return workspace.id + "/" + (workspace.active_window ?? "");
 }
 
 // The workspaces the bar lists for an output (one of a compositor event's

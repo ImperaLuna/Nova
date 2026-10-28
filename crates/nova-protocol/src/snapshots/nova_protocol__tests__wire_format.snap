@@ -18,7 +18,7 @@ expression: all
 {"v":2,"id":12,"cmd":"show_ai_usage","args":{"provider":"codex"}}
 {"v":2,"cmd":"refresh_ai_usage"}
 {"v":2,"id":13,"cmd":"report_claude_usage","args":{"limits":[{"window":"session","percent":42,"resets_at":"2026-10-23T11:00:00Z"},{"window":"weekly","percent":61}]}}
-{"v":2,"event":"compositor","data":{"compositor":"niri","capabilities":["workspaces","focused_window","fullscreen"],"outputs":[{"name":"DP-1","focused":true,"workspaces":[{"id":1,"name":"1","active":false,"focused":false,"urgent":false,"empty":true,"fullscreen":false},{"id":2,"name":"web","active":true,"focused":true,"urgent":false,"empty":false,"fullscreen":false}]},{"name":"HDMI-A-1","focused":false,"workspaces":[{"id":3,"name":"1","active":true,"focused":false,"urgent":true,"empty":false,"fullscreen":true}]}],"focused_window":{"app_id":"foot","title":"~"}}}
+{"v":2,"event":"compositor","data":{"compositor":"niri","capabilities":["workspaces","focused_window","fullscreen"],"outputs":[{"name":"DP-1","focused":true,"workspaces":[{"id":1,"name":"1","active":false,"focused":false,"urgent":false,"empty":true,"fullscreen":false},{"id":2,"name":"web","active":true,"focused":true,"urgent":false,"empty":false,"fullscreen":false,"active_window":"7"}]},{"name":"HDMI-A-1","focused":false,"workspaces":[{"id":3,"name":"1","active":true,"focused":false,"urgent":true,"empty":false,"fullscreen":true}]}],"focused_window":{"id":"7","app_id":"foot","title":"~"}}}
 {"v":2,"id":14,"cmd":"focus_workspace","args":{"id":-1337}}
 {"v":2,"cmd":"step_workspace","args":{"output":"DP-1","step":"previous"}}
 {"v":2,"id":15,"cmd":"toggle","args":{"panel":"ai-usage"}}
@@ -69,12 +69,13 @@ expression: all
 {"v":2,"id":26,"cmd":"pin_app","args":{"id":"foot.desktop","pinned":true}}
 {"v":2,"id":27,"cmd":"hide_tray_app","args":{"id":"steam","hidden":true}}
 {"v":2,"id":28,"cmd":"activate_tray_item","args":{"address":":1.42/StatusNotifierItem"}}
+{"v":2,"id":29,"cmd":"tray_menu_picked","args":{"address":":1.42/StatusNotifierItem"}}
 {"v":2,"cmd":"toggle","args":{"panel":"launcher"}}
-{"v":2,"event":"tray","data":{"items":[{"address":":1.421/StatusNotifierItem","id":"discord_status_icon_1","title":"","app":{"id":"discord.desktop","name":"Discord","description":"All-in-one cross-platform voice and text chat for gamers","icon":"discord"}},{"address":":1.607/org/ayatana/NotificationItem/steam","id":"steam","title":"Steam"}],"hidden":["steam"]}}
+{"v":2,"event":"tray","data":{"items":[{"address":":1.421/StatusNotifierItem","id":"discord_status_icon_1","title":"","app":{"id":"discord.desktop","name":"Discord","description":"All-in-one cross-platform voice and text chat for gamers","icon":"discord"}},{"address":":1.607/org/ayatana/NotificationItem/steam","id":"steam","title":"Steam","menu_only":true}],"hidden":["steam"]}}
 {"v":2,"event":"notifications","data":{"items":[{"id":7,"app":"Firefox","icon":"firefox","app_id":"org.mozilla.firefox.desktop","summary":"Download complete","body":"niri-26.04.tar.gz","actions":[{"key":"open","label":"Open file"}],"has_default":true,"urgency":"normal","time":1761400000,"unread":true,"live":true},{"id":3,"app":"Discord","summary":"Mara","body":"sent you the map","image":"/home/mara/.local/state/nova/notifications/3.png","urgency":"critical","progress":40,"timeout_ms":0,"time":1761399000}],"do_not_disturb":false,"muted":["Discord"],"apps":[{"name":"Firefox","icon":"firefox","app_id":"org.mozilla.firefox.desktop"},{"name":"Discord"}]}}
 {"v":2,"event":"notification_popup","data":{"id":7,"app":"Firefox","icon":"firefox","app_id":"org.mozilla.firefox.desktop","summary":"Download complete","body":"niri-26.04.tar.gz","actions":[{"key":"open","label":"Open file"}],"has_default":true,"urgency":"normal","time":1761400000,"unread":true,"live":true}}
 {"v":2,"id":40,"cmd":"notification_action","args":{"id":7,"action":"open"}}
-{"v":2,"cmd":"notification_action","args":{"id":7}}
+{"v":2,"cmd":"open_notification","args":{"id":7,"output":"DP-1"}}
 {"v":2,"id":41,"cmd":"dismiss_notification","args":{"id":7}}
 {"v":2,"cmd":"clear_notifications","args":{"app":"Discord"}}
 {"v":2,"cmd":"clear_notifications","args":{}}
@@ -85,6 +86,9 @@ expression: all
 {"v":2,"id":51,"cmd":"set_wallpaper","args":{"path":"/home/luna/Pictures/tide.jpg","output":"DP-2"}}
 {"v":2,"id":52,"cmd":"wallpapers"}
 {"v":2,"id":52,"result":{"outputs":{"DP-2":"/home/luna/Pictures/tide.jpg"},"path":"/home/luna/Pictures/dusk.jpg"}}
+{"v":2,"id":53,"cmd":"wallpaper_folder"}
+{"v":2,"id":53,"result":{"folder":"/home/luna/Pictures/Wallpapers","images":["/home/luna/Pictures/Wallpapers/dusk.jpg","/home/luna/Pictures/Wallpapers/tide.jpg"]}}
+{"v":2,"cmd":"toggle","args":{"panel":"wallpaper"}}
 {"v":2,"event":"media","data":{"players":[{"id":"org.mpris.MediaPlayer2.spotify","app":{"id":"spotify.desktop","name":"Spotify","description":"Music Player","icon":"/usr/share/icons/hicolor/256x256/apps/spotify-client.png"},"identity":"Spotify","status":"playing","title":"Aruarian Dance","artist":"Nujabes","album":"Samurai Champloo: Departure","cover":"/run/user/1000/nova/media/5f2c0e8a.jpg","length_us":238000000,"position_us":84000000,"position_at_ms":1793000000000,"rate":1.0,"can_next":true,"can_previous":true,"can_play":true,"can_pause":true,"can_seek":true,"can_raise":true},{"id":"org.mpris.MediaPlayer2.firefox.instance_1_42","browser":true,"identity":"Mozilla Firefox","status":"paused","title":"How the scrolling layout in niri works","artist":"Linux Desktop Weekly","album":"","length_us":0,"position_us":0,"position_at_ms":1793000000000,"rate":1.0,"can_next":false,"can_previous":false,"can_play":true,"can_pause":true,"can_seek":false,"can_raise":false}],"shown":"org.mpris.MediaPlayer2.spotify"}}
 {"v":2,"id":45,"cmd":"media_control","args":{"player":"org.mpris.MediaPlayer2.spotify","action":"play_pause"}}
 {"v":2,"cmd":"media_control","args":{"player":"org.mpris.MediaPlayer2.spotify","action":"next"}}

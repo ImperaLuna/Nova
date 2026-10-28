@@ -321,6 +321,7 @@ StagePanel {
                 trayMenu.keepOpen = true;
                 TrayService.hide(key, hidden);
             }
+            runEntry: run => TrayService.menuPicked(trayMenu.entry, run)
             onDone: {
                 trayMenu.entry = null;
                 if (!trayMenu.keepOpen)

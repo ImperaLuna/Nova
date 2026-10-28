@@ -218,6 +218,7 @@ fn wallpaper_says_why_it_cant() {
     std::fs::write(&image, "an image").unwrap();
     assert!(stderr(&["wallpaper", image.to_str().unwrap()]).contains("isn't ready"));
     assert!(stderr(&["wallpaper"]).contains("isn't ready"));
+    assert!(stderr(&["wallpaper", "2861349227"]).contains("isn't ready"), "a Workshop ID isn't a missing file");
     assert!(stderr(&["wallpaper", "--output", "DP-1"]).contains("<FILE>"), "an output needs a file");
 }
 

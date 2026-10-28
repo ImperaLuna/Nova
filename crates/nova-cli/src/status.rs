@@ -172,6 +172,7 @@ mod tests {
             fullscreen: false,
             special: false,
             shown_elsewhere: false,
+            active_window: None,
         };
         let desktop = Desktop {
             compositor: "niri".into(),
@@ -188,7 +189,7 @@ mod tests {
                 },
                 Output { name: "HDMI-A-1".into(), focused: false, workspaces: vec![workspace(4, "1", true)] },
             ],
-            focused_window: Some(FocusedWindow { app_id: "foot".into(), title: "~/Projects".into() }),
+            focused_window: Some(FocusedWindow { id: "1".into(), app_id: "foot".into(), title: "~/Projects".into() }),
             keyboard_layout: Some("English (US)".into()),
         };
         assert_eq!(
@@ -206,7 +207,11 @@ mod tests {
             compositor: "niri".into(),
             capabilities: vec![],
             outputs: vec![],
-            focused_window: Some(FocusedWindow { app_id: "firefox".into(), title: "page\x1b]52;c;cHdu\x07".into() }),
+            focused_window: Some(FocusedWindow {
+                id: "1".into(),
+                app_id: "firefox".into(),
+                title: "page\x1b]52;c;cHdu\x07".into(),
+            }),
             keyboard_layout: None,
         };
         let text = describe_desktop(Some(&desktop));

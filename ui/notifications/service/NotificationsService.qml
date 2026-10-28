@@ -3,7 +3,6 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import "../../daemon"
-import "../../launcher/service"
 import "../../daemon/protocol.js" as Protocol
 import "../notifications.js" as Notifications
 
@@ -54,27 +53,19 @@ Singleton {
             Daemon.call(Protocol.CMD_READ_NOTIFICATIONS);
     }
 
-    // `notification` was clicked: its app takes the click, or opens on
-    // `output`. Either way it leaves the list.
+    // `notification` was clicked on `output`: novad tells its app and
+    // focuses the window it shows, or opens the app. Either way it stays on
+    // the list, read.
     function open(notification: var, output: string) {
-        const does = Notifications.clickDoes(notification);
-        if (does === "action") {
-            act(notification.id, null);
-            return;
-        }
-        if (does === "launch" && LauncherService.ready)
-            LauncherService.launch(notification.app_id, output, false, error => {
-                if (error)
-                    console.warn(`nova: can't open ${notification.app_id}: ${error}`);
-            });
-        dismiss(notification.id);
+        Daemon.call(Protocol.CMD_OPEN_NOTIFICATION, {
+            id: notification.id,
+            output: output
+        });
     }
 
-    // One of its buttons (`action` its key), or the click itself (null).
-    function act(id: int, action: var) {
-        Daemon.call(Protocol.CMD_NOTIFICATION_ACTION, action === null ? {
-            id: id
-        } : {
+    // Its button `action` was clicked.
+    function act(id: int, action: string) {
+        Daemon.call(Protocol.CMD_NOTIFICATION_ACTION, {
             id: id,
             action: action
         });
