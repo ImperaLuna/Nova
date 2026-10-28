@@ -74,7 +74,7 @@ pub struct UiSettings {
     /// The only EGL vendor file the UI loads, when there's one to pick
     /// (`egl::nvidia_only_vendor`).
     pub egl_vendor: Option<PathBuf>,
-    /// The Qt render loop the UI uses, when there's one to pick
+    /// The Qt render loop the UI uses, unless the session picks one
     /// (`render_loop::for_ui`).
     pub render_loop: Option<&'static str>,
     /// The icon theme novad finds icons in, passed as `QS_ICON_THEME` so
