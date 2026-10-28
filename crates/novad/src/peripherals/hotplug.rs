@@ -1,8 +1,9 @@
-//! USB devices coming and going, from their device nodes: the kernel adds
-//! and removes `/dev/bus/usb/<bus>/<device>` as they're plugged in and out,
-//! so watching those folders with inotify costs nothing while nothing
-//! changes, and needs neither udev nor netlink. A bus that appears later
-//! (a new controller) is watched from then on.
+//! Devices coming and going, from their device nodes: the kernel adds and
+//! removes `/dev/bus/usb/<bus>/<device>` as USB devices are plugged in and
+//! out, and `/dev/hidraw<n>` as HID devices are, so watching those folders
+//! with inotify costs nothing while nothing changes, and needs neither
+//! udev nor netlink. A USB bus that appears later (a new controller) is
+//! watched from then on.
 
 use crate::inotify::{self, Inotify};
 use std::path::Path;
@@ -16,8 +17,31 @@ pub fn watch(
     changed: impl Fn() + Send + 'static,
     failed: impl FnOnce(std::io::Error) + Send + 'static,
 ) -> std::io::Result<inotify::Stopper> {
+    follow(dir, true, changed, failed)
+}
+
+/// Like [`watch`], for the entries of `dir` itself only (`/dev`, for its
+/// hidraw nodes), not the folders in it.
+pub fn watch_folder(
+    dir: &Path,
+    changed: impl Fn() + Send + 'static,
+    failed: impl FnOnce(std::io::Error) + Send + 'static,
+) -> std::io::Result<inotify::Stopper> {
+    follow(dir, false, changed, failed)
+}
+
+fn follow(
+    dir: &Path,
+    tree: bool,
+    changed: impl Fn() + Send + 'static,
+    failed: impl FnOnce(std::io::Error) + Send + 'static,
+) -> std::io::Result<inotify::Stopper> {
     let mut watcher = Inotify::new(inotify::ENTRIES)?;
-    watcher.watch_tree(dir)?;
+    if tree {
+        watcher.watch_tree(dir)?;
+    } else {
+        watcher.watch(dir)?;
+    }
     let stopper = watcher.stopper();
     let dir = dir.to_owned();
     std::thread::spawn(move || {
@@ -31,7 +55,8 @@ pub fn watch(
             // (watching one twice is harmless).
             // A bus folder that went again in between (a dock unplugged)
             // is no reason to stop.
-            if (changes.overflowed || changes.found.iter().any(|change| change.is_dir))
+            if tree
+                && (changes.overflowed || changes.found.iter().any(|change| change.is_dir))
                 && let Err(e) = watcher.watch_tree(&dir)
                 && e.kind() != std::io::ErrorKind::NotFound
             {

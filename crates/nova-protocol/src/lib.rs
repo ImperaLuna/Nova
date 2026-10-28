@@ -698,12 +698,14 @@ pub enum BatteryLevel {
     Full,
 }
 
-/// Where novad read a device: UPower (the kernel's drivers and BlueZ) or
+/// Where novad read a device: UPower (the kernel's drivers and BlueZ),
+/// HID++ (Logitech devices on a receiver the kernel doesn't drive) or
 /// HeadsetControl (headsets the kernel doesn't know the battery of).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PeripheralSource {
     Upower,
+    Hidpp,
     Headsetcontrol,
 }
 

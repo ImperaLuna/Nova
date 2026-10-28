@@ -182,6 +182,7 @@
                   substituteInPlace $out/lib/systemd/user/nova.service \
                     --replace-fail @nova@ $out/bin/nova
                   install -Dm644 ${./packaging/systemd/app-.service.d/nova.conf} $out/lib/systemd/user/app-.service.d/nova.conf
+                  install -Dm644 -t $out/lib/udev/rules.d ${./features/peripherals/udev}/*.rules
                 ''
               );
         };

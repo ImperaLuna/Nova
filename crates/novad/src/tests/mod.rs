@@ -132,11 +132,13 @@ impl TestDaemon {
                 covers: dir.join("media"),
                 proc: dir.join("proc"),
             },
-            // No UPower, HeadsetControl or USB devices either: the
-            // peripherals' own tests give it theirs.
+            // No UPower, hidraw nodes, HeadsetControl or USB devices
+            // either: the peripherals' own tests give it theirs.
             peripherals: peripherals::Sources {
                 upower: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
                 sys_root: dir.join("sys"),
+                dev: dir.join("dev"),
+                open_hidraw: Arc::new(|_| Err(std::io::ErrorKind::NotFound.into())),
                 path_var: dir.join("no-programs").display().to_string(),
                 usb_devices: dir.join("usb"),
             },
