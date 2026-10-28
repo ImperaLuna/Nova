@@ -109,14 +109,14 @@ impl TestDaemon {
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
             resources: resources::Sources::system(""),
             launcher: launcher_paths(&dir, Arc::clone(&icons)),
-            // No bus unless the test starts one there (`session_bus::TestBus`).
+            // No bus for the tray and notifications unless the test starts
+            // one there (`session_bus::TestBus`).
             tray: tray::Sources {
                 bus: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
                 state_file: dir.join("tray.json"),
             },
-            // No bus: the notifications' own tests give them one.
             notifications: notifications::Sources {
-                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
                 state_file: dir.join("notifications.json"),
                 images: dir.join("notifications"),
                 icons: Arc::clone(&icons),

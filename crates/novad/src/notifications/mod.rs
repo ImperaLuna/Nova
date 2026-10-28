@@ -110,6 +110,16 @@ impl Sources {
     }
 }
 
+/// What a click on a notification ([`Notifications::click`]) did.
+#[derive(Debug, PartialEq)]
+pub struct Clicked {
+    /// The app that sent it, by its desktop file id, when it said.
+    pub app_id: Option<String>,
+    /// Its app heard of the click (`ActionInvoked`): it's still there and
+    /// does something when the notification is clicked.
+    pub heard: bool,
+}
+
 pub struct Notifications {
     shared: Arc<Shared>,
 }
@@ -221,11 +231,23 @@ impl Notifications {
         self.shared.hub.send_to(id, &Event::Notifications(list(&state)));
     }
 
+    /// The notification `id` itself was clicked: its app hears of it when
+    /// it can, and it's read either way. What novad does next, the click
+    /// taken or missed, goes by what's returned.
+    pub fn click(&self, id: u32) -> Result<Clicked, String> {
+        let app_id = find(&lock(&self.shared.state), id).ok_or_else(|| format!("no notification {id}"))?.app_id.clone();
+        let heard = self.action(id, None).is_ok();
+        if !heard {
+            self.read(Some(id));
+        }
+        Ok(Clicked { app_id, heard })
+    }
+
     /// The notification `id` was clicked (`action` `None`) or one of its
     /// buttons: its app hears of it, and it closes unless the app keeps it.
     /// Either way it's read; closed, it stays on the list as one its app no
     /// longer hears about (clicking it again opens the app). An error when its app can't
-    /// hear of it; the UI opens the app instead.
+    /// hear of it.
     pub fn action(&self, id: u32, action: Option<&str>) -> Result<(), String> {
         let (key, closes) = {
             let mut state = lock(&self.shared.state);

@@ -75,12 +75,11 @@ expression: all
 {"v":2,"event":"notifications","data":{"items":[{"id":7,"app":"Firefox","icon":"firefox","app_id":"org.mozilla.firefox.desktop","summary":"Download complete","body":"niri-26.04.tar.gz","actions":[{"key":"open","label":"Open file"}],"has_default":true,"urgency":"normal","time":1761400000,"unread":true,"live":true},{"id":3,"app":"Discord","summary":"Mara","body":"sent you the map","image":"/home/mara/.local/state/nova/notifications/3.png","urgency":"critical","progress":40,"timeout_ms":0,"time":1761399000}],"do_not_disturb":false,"muted":["Discord"],"apps":[{"name":"Firefox","icon":"firefox","app_id":"org.mozilla.firefox.desktop"},{"name":"Discord"}]}}
 {"v":2,"event":"notification_popup","data":{"id":7,"app":"Firefox","icon":"firefox","app_id":"org.mozilla.firefox.desktop","summary":"Download complete","body":"niri-26.04.tar.gz","actions":[{"key":"open","label":"Open file"}],"has_default":true,"urgency":"normal","time":1761400000,"unread":true,"live":true}}
 {"v":2,"id":40,"cmd":"notification_action","args":{"id":7,"action":"open"}}
-{"v":2,"cmd":"notification_action","args":{"id":7}}
+{"v":2,"cmd":"open_notification","args":{"id":7,"output":"DP-1"}}
 {"v":2,"id":41,"cmd":"dismiss_notification","args":{"id":7}}
 {"v":2,"cmd":"clear_notifications","args":{"app":"Discord"}}
 {"v":2,"cmd":"clear_notifications","args":{}}
 {"v":2,"cmd":"read_notifications"}
-{"v":2,"cmd":"read_notification","args":{"id":7}}
 {"v":2,"id":42,"cmd":"set_do_not_disturb","args":{"on":true}}
 {"v":2,"id":43,"cmd":"mute_notification_app","args":{"app":"Discord","muted":true}}
 {"v":2,"id":50,"cmd":"set_wallpaper","args":{"path":"/home/luna/Pictures/dusk.jpg"}}

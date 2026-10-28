@@ -649,3 +649,97 @@ fn a_window_shown_from_a_tray_menu_takes_focus() {
     std::thread::sleep(Duration::from_millis(500));
     assert_eq!(compositor.actions(), [focused.to_string()], "no other window took focus");
 }
+
+/// Sends a notification from `app` (on `connection`) whose desktop entry is
+/// `entry`, with a default action and a button `reply`; returns its id.
+fn notify(connection: &zbus::Connection, app: &str, entry: &str) -> u32 {
+    let hints = std::collections::HashMap::from([("desktop-entry", zbus::Variant::from(entry))]);
+    let sent = (app, 0u32, "", "Mara", "hi", vec!["default", "Open", "reply", "Reply"], hints, -1i32);
+    let path = "/org/freedesktop/Notifications";
+    let reply = zbus::block_on(connection.call_method(
+        Some(notifications::BUS_NAME),
+        path,
+        Some(notifications::BUS_NAME),
+        "Notify",
+        &sent,
+    ))
+    .unwrap();
+    reply.body().deserialize().unwrap()
+}
+
+#[test]
+fn a_notification_click_focuses_the_window_its_app_shows_or_opens_an_app_that_has_gone() {
+    let mut bus = None;
+    let mut compositor = None;
+    let novad = TestDaemon::open_following(
+        "notification-click",
+        None,
+        |dir| {
+            std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
+            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+        },
+        |dir| {
+            let (fake, backend) = FakeCompositor::niri(dir);
+            compositor = Some(fake);
+            Some(backend)
+        },
+    );
+    let (bus, compositor) = (bus.unwrap(), Arc::new(compositor.unwrap()));
+    // The recording has no window of either app.
+    let (third, fourth) = (novad.dir.join("third-ran"), novad.dir.join("fourth-ran"));
+    for (file, name, marker) in [("third.desktop", "Third", &third), ("fourth.desktop", "Fourth", &fourth)] {
+        let entry = format!("Name={name}\nExec=touch \"{}\"\nStartupWMClass=Nova-{name}\n", marker.display());
+        install_app(&novad, file, &entry);
+    }
+    let (mut client, desktop) = follow_to_the_end(&novad);
+    client.subscribe_launcher(2);
+    let output = focused_output(&desktop);
+    let app = bus.connect();
+    let (button, clicked) = (notify(&app, "Third", "third"), notify(&app, "Third", "third"));
+    // Like Ferdium: shows its window when told of the click, which niri
+    // doesn't focus.
+    let rule =
+        zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal).member("ActionInvoked").build().unwrap();
+    let mut invoked = zbus::block_on(zbus::MessageStream::for_match_rule(rule, &app, None)).unwrap();
+    let shows = {
+        let compositor = Arc::clone(&compositor);
+        std::thread::spawn(move || {
+            loop {
+                use futures_core::Stream;
+                let next = std::future::poll_fn(|cx| std::pin::Pin::new(&mut invoked).poll_next(cx));
+                let message = zbus::block_on(next).unwrap().unwrap();
+                let (id, key): (u32, String) = message.body().deserialize().unwrap();
+                if key == "default" {
+                    assert_eq!(id, clicked);
+                    compositor.open_window(9, "nova-third");
+                    return;
+                }
+            }
+        })
+    };
+
+    let reply = client.request(2, "notification_action", Some(json!({"id": button, "action": "reply"})));
+    assert_eq!(reply["result"], Value::Null, "{reply}");
+    let click = client.request(3, "open_notification", Some(json!({"id": clicked, "output": output})));
+    assert_eq!(click["result"], Value::Null, "{click}");
+    shows.join().unwrap();
+    let focused = json!({"Action": {"FocusWindow": {"id": 9}}});
+    assert_eq!(compositor.actions(), [focused.to_string()], "the window it shows takes focus; a button moves none");
+    assert!(!ran(&third), "the app took the click, so it isn't started");
+
+    // Like notify-send: its sender is gone by the time it's clicked.
+    let gone = bus.connect();
+    let dead = notify(&gone, "Fourth", "fourth");
+    drop(gone);
+    client.request(4, "subscribe", Some(json!({"topics": ["notifications"]})));
+    loop {
+        let list = client.next_event("notifications");
+        let items = list["items"].as_array().unwrap();
+        if items.iter().any(|item| item["id"] == dead && item.get("live").is_none()) {
+            break;
+        }
+    }
+    let click = client.request(5, "open_notification", Some(json!({"id": dead, "output": output})));
+    assert_eq!(click["result"], Value::Null, "{click}");
+    assert!(ran(&fourth), "an app that can't hear of the click is opened instead");
+}

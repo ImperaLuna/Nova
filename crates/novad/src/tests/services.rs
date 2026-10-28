@@ -69,7 +69,9 @@ fn notifications_are_listed_and_set_over_the_socket() {
     assert_eq!(client.next_event("notifications")["do_not_disturb"], true);
     let refused = client.request(3, "mute_notification_app", Some(json!({"app": "Discord", "muted": true})));
     assert!(refused["error"].as_str().unwrap().contains("Discord"), "{refused}");
-    let missing = client.request(4, "notification_action", Some(json!({"id": 9})));
+    let missing = client.request(4, "notification_action", Some(json!({"id": 9, "action": "reply"})));
+    assert!(missing["error"].as_str().unwrap().contains("no notification 9"), "{missing}");
+    let missing = client.request(5, "open_notification", Some(json!({"id": 9})));
     assert!(missing["error"].as_str().unwrap().contains("no notification 9"), "{missing}");
 }
 

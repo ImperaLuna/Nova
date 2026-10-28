@@ -208,8 +208,9 @@ impl<'a> Connection<'a> {
             Command::HideTrayApp { id, hidden } => done(self.tray().and_then(|tray| tray.hide(id, *hidden))),
             Command::ActivateTrayItem { address } => return self.activate_tray_item(address),
             Command::TrayMenuPicked { address } => return self.tray_menu_picked(address),
+            Command::OpenNotification { id, output } => return self.open_notification(*id, output.clone()),
             Command::NotificationAction { id, action } => {
-                done(self.notifications().and_then(|notifications| notifications.action(*id, action.as_deref())))
+                done(self.notifications().and_then(|notifications| notifications.action(*id, Some(action))))
             }
             Command::DismissNotification { id } => {
                 done(self.notifications().map(|notifications| notifications.dismiss(*id)))
@@ -218,9 +219,6 @@ impl<'a> Connection<'a> {
                 done(self.notifications().map(|notifications| notifications.clear(app.as_deref())))
             }
             Command::ReadNotifications => done(self.notifications().map(|notifications| notifications.read(None))),
-            Command::ReadNotification { id } => {
-                done(self.notifications().map(|notifications| notifications.read(Some(*id))))
-            }
             Command::SetDoNotDisturb { on } => {
                 done(self.notifications().map(|notifications| notifications.set_do_not_disturb(*on)))
             }
@@ -384,6 +382,38 @@ impl<'a> Connection<'a> {
                 crate::launcher::focus_open(&id, ids, compositor.as_deref(), tray, output.as_deref(), start, &logger)
             };
             done(launcher.launch(&id, focus))
+        })
+    }
+
+    /// A click on the notification `id`, on `output`. Its app hears of it
+    /// and shows its window, which takes focus once it shows: niri gives
+    /// it none, as the app gets no activation token from the click. Nothing
+    /// starts when none shows: the app took the click. An app that can't
+    /// hear of it (gone, or does nothing on a click) is opened instead, as
+    /// the launcher does.
+    fn open_notification(&self, id: u32, output: Option<String>) -> Answer {
+        let clicked = match self.notifications().and_then(|notifications| notifications.click(id)) {
+            Ok(clicked) => clicked,
+            Err(e) => return Answer::Now(Outcome::Error(e)),
+        };
+        let (Some(app), Ok(launcher)) = (clicked.app_id, self.launcher()) else { return Answer::Now(done(Ok(()))) };
+        if !clicked.heard {
+            return self.launch_app(&app, output, false);
+        }
+        let (Some(ids), Some(compositor)) = (launcher.window_ids(&app), self.daemon.compositor.clone()) else {
+            return Answer::Now(done(Ok(())));
+        };
+        let logger = Arc::clone(&self.daemon.logger);
+        Answer::later(move || {
+            crate::launcher::focus_shown(
+                &app,
+                &ids,
+                &compositor,
+                output.as_deref(),
+                crate::launcher::TRAY_WINDOW_WAIT,
+                &logger,
+            );
+            done(Ok(()))
         })
     }
 
@@ -692,7 +722,7 @@ impl<'a> Connection<'a> {
             | Command::DismissNotification { .. }
             | Command::ClearNotifications { .. }
             | Command::ReadNotifications
-            | Command::ReadNotification { .. }
+            | Command::OpenNotification { .. }
             | Command::SetDoNotDisturb { .. }
             | Command::MuteNotificationApp { .. }
             | Command::MediaControl { .. }
