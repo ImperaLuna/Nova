@@ -195,6 +195,9 @@ impl Peripherals {
             hub,
             logger,
         });
+        // Clients that heard an earlier run's list (the feature was off a
+        // while) start from nothing again, even if nothing is found now.
+        shared.hub.publish(&Event::Peripherals(PeripheralsEvent { devices: Vec::new() }));
         let publisher = Arc::clone(&shared);
         std::thread::spawn(move || publisher.publish_when_settled());
         let started: [(PeripheralSource, Box<dyn Source>); 2] = [

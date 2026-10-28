@@ -93,7 +93,7 @@ async fn follow(upower: &UPower, report: &Report, stop: &Stop) -> zbus::Result<(
     // upowerd's unique name while it runs: only its signals count.
     let mut owner = name_owner(&connection).await;
     let mut devices = match &owner {
-        Some(_) => list(&connection, &upower.sys_root, report).await,
+        Some(_) => list(&connection, &upower.sys_root, report, stop).await,
         None => {
             report.logger().info(LOG_SOURCE, "UPower isn't running; following it in case it starts");
             HashMap::new()
@@ -130,7 +130,7 @@ async fn follow(upower: &UPower, report: &Report, stop: &Stop) -> zbus::Result<(
                 } else {
                     report.logger().info(LOG_SOURCE, "UPower started");
                     owner = Some(new);
-                    devices = list(&connection, &upower.sys_root, report).await;
+                    devices = list(&connection, &upower.sys_root, report, stop).await;
                 }
             }
             Signal::Device if from_upower => {
@@ -193,8 +193,14 @@ async fn name_owner(connection: &Connection) -> Option<String> {
 }
 
 /// Every device UPower knows, each read (`None` for those that aren't
-/// peripherals, so changes to them are ignored).
-async fn list(connection: &Connection, sys_root: &Path, report: &Report) -> HashMap<OwnedObjectPath, Option<Found>> {
+/// peripherals, so changes to them are ignored). Stops asking once `stop`
+/// is used.
+async fn list(
+    connection: &Connection,
+    sys_root: &Path,
+    report: &Report,
+    stop: &Stop,
+) -> HashMap<OwnedObjectPath, Option<Found>> {
     let paths: Vec<OwnedObjectPath> = match connection
         .call_method(Some(UPOWER), UPOWER_PATH, Some(UPOWER), "EnumerateDevices", &())
         .await
@@ -208,6 +214,9 @@ async fn list(connection: &Connection, sys_root: &Path, report: &Report) -> Hash
     };
     let mut devices = HashMap::new();
     for path in paths {
+        if stop.stopped() {
+            break;
+        }
         let found = read(connection, &path, sys_root, report).await;
         devices.insert(path, found);
     }

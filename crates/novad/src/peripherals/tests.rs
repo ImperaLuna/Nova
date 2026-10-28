@@ -107,7 +107,10 @@ impl Fixture {
             path_var: self.dir.join("bin").display().to_string(),
             usb_devices: self.dir.join("usb"),
         };
-        Peripherals::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger))
+        let peripherals = Peripherals::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger));
+        // A new run first clears what clients heard from an earlier one.
+        assert_eq!(self.next(), json!([]));
+        peripherals
     }
 
     /// Serves UPower with the devices of `recorded/<name>`, their `/sys`
