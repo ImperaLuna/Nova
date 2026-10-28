@@ -126,6 +126,16 @@ with subtest("a playing pill draws only its equalizer's steps; a paused one draw
     commits = surface_commits(IDLE_SECS)
     frames = int(machine.succeed("grep -c 'nova-frame:' /tmp/ui-wayland.log || true").strip() or 0)
     print(f"now playing on {COMPOSITOR}: {frames} frames, {commits} commits in {IDLE_SECS} s; UI Pss {pss_mb(playing['ui']['pid'])} MB")
+    # IMP-204 diagnostics: when each commit went out, and what the UI said.
+    commit_ms: list[float] = []
+    for line in machine.succeed("cat /tmp/ui-wayland.log").splitlines():
+        if match := TIMED_COMMIT.search(line):
+            hours, minutes, seconds, _surface = match.groups()
+            ms = float(seconds) if hours is None else ((int(hours) * 60 + int(minutes)) * 60 + float(seconds)) * 1000
+            commit_ms.append(ms)
+        elif "nova:" in line or "nova-frame:" in line or "qml" in line.lower():
+            print(f"IMP-204 ui: {line[:300]}")
+    print(f"IMP-204 commit gaps (ms): {[round(b - a) for a, b in zip(commit_ms, commit_ms[1:])]}")
     assert 0 < commits <= IDLE_SECS * EQUALIZER_STEPS_MAX, f"a playing pill made {commits} commits in {IDLE_SECS} s"
     machine.succeed(as_user(PAUSE_PLAYER))
     assert_idle("with a paused player's pill")
