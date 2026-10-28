@@ -673,6 +673,11 @@ impl<'a> Connection<'a> {
                                 media.send_state(self.id);
                             }
                         }
+                        Topic::Peripherals => {
+                            if let Some(peripherals) = &settings.peripherals {
+                                peripherals.send_state(self.id);
+                            }
+                        }
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }

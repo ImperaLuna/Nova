@@ -110,6 +110,10 @@ pub enum Event {
     /// (feature `media`). Topic [`Topic::Media`], sent right after
     /// subscribing and whenever a player comes, goes or changes.
     Media(Media),
+    /// Wireless devices and their batteries (feature `peripherals`). Topic
+    /// [`Topic::Peripherals`], sent right after subscribing and whenever a
+    /// device comes, goes or changes.
+    Peripherals(Peripherals),
 }
 
 /// Groups of events a client can subscribe to.
@@ -132,6 +136,7 @@ pub enum Topic {
     Tray,
     Notifications,
     Media,
+    Peripherals,
 }
 
 impl Event {
@@ -156,6 +161,7 @@ impl Event {
             Event::Tray(_) => Some(Topic::Tray),
             Event::Notifications(_) | Event::NotificationPopup(_) => Some(Topic::Notifications),
             Event::Media(_) => Some(Topic::Media),
+            Event::Peripherals(_) => Some(Topic::Peripherals),
         }
     }
 }
@@ -610,6 +616,95 @@ pub enum MediaAction {
     PlayPause,
     Next,
     Previous,
+}
+
+/// The devices with a battery (feature `peripherals`): mice, keyboards,
+/// headsets and the like that are connected and on right now and report
+/// one, each listed once however many sources report it. One that's off or
+/// out of reach (a headset whose dongle stays plugged in) isn't listed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Peripherals {
+    pub devices: Vec<Peripheral>,
+}
+
+/// One device and its battery. Text is plain and capped in length.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Peripheral {
+    /// Stable while the device stays, like `upower/mouse_hidpp_battery_0`
+    /// or `headsetcontrol/1038:2253`.
+    pub id: String,
+    /// Its model, like `PRO X Wireless`.
+    pub name: String,
+    pub kind: PeripheralKind,
+    /// How it's connected, when novad can tell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<PeripheralLink>,
+    /// Its charge, when it has said yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battery: Option<Battery>,
+    pub charging: bool,
+    /// Where the reading comes from.
+    pub source: PeripheralSource,
+}
+
+/// What a device is, for its icon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeripheralKind {
+    Mouse,
+    Keyboard,
+    Touchpad,
+    GamingInput,
+    Pen,
+    Tablet,
+    Headset,
+    Headphones,
+    Speakers,
+    RemoteControl,
+    Wearable,
+    Other,
+}
+
+/// How a device is connected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeripheralLink {
+    /// Through its own USB receiver (2.4 GHz).
+    Dongle,
+    Bluetooth,
+    /// By its cable.
+    Wired,
+}
+
+/// A device's charge: a percentage, or only a rough level for devices that
+/// report no more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Battery {
+    /// 0 to 100.
+    Percent(u8),
+    Level(BatteryLevel),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BatteryLevel {
+    Critical,
+    Low,
+    Normal,
+    High,
+    Full,
+}
+
+/// Where novad read a device: UPower (the kernel's drivers and BlueZ) or
+/// HeadsetControl (headsets the kernel doesn't know the battery of).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeripheralSource {
+    Upower,
+    Headsetcontrol,
 }
 
 /// The longest player id a media command takes, in bytes: a bus name is at
@@ -1546,6 +1641,7 @@ mod tests {
                         Topic::Tray,
                         Topic::Notifications,
                         Topic::Media,
+                        Topic::Peripherals,
                     ],
                 },
             }),
@@ -1805,6 +1901,8 @@ mod tests {
                 command: Command::MediaWindow { player: "org.mpris.MediaPlayer2.spotify".into() },
             }),
             encode(Response { id: 49, outcome: Outcome::Result(json!("3")) }),
+            encode(Event::Peripherals(peripherals())),
+            encode(Event::Peripherals(Peripherals { devices: vec![] })),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
@@ -1967,6 +2065,40 @@ mod tests {
             ],
             pinned: vec!["foot.desktop".into()],
             recent: vec!["org.mozilla.firefox.desktop".into(), "foot.desktop".into()],
+        }
+    }
+
+    fn peripherals() -> Peripherals {
+        Peripherals {
+            devices: vec![
+                Peripheral {
+                    id: "upower/mouse_hidpp_battery_0".into(),
+                    name: "PRO X Wireless".into(),
+                    kind: PeripheralKind::Mouse,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(72)),
+                    charging: false,
+                    source: PeripheralSource::Upower,
+                },
+                Peripheral {
+                    id: "upower/keyboard_dev_AA_BB_CC_DD_EE_FF".into(),
+                    name: "K380".into(),
+                    kind: PeripheralKind::Keyboard,
+                    link: Some(PeripheralLink::Bluetooth),
+                    battery: Some(Battery::Level(BatteryLevel::High)),
+                    charging: false,
+                    source: PeripheralSource::Upower,
+                },
+                Peripheral {
+                    id: "headsetcontrol/1038:2253".into(),
+                    name: "SteelSeries Arctis Nova 5X".into(),
+                    kind: PeripheralKind::Headset,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(30)),
+                    charging: true,
+                    source: PeripheralSource::Headsetcontrol,
+                },
+            ],
         }
     }
 
@@ -2215,6 +2347,21 @@ mod tests {
         assert_eq!(Event::Notifications(notifications()).topic(), Some(Topic::Notifications));
         assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(Topic::Notifications));
         assert_eq!(Event::Media(media()).topic(), Some(Topic::Media));
+        assert_eq!(Event::Peripherals(peripherals()).topic(), Some(Topic::Peripherals));
+    }
+
+    #[test]
+    fn peripherals_reject_unknown_fields() {
+        let list = serde_json::to_value(peripherals()).unwrap();
+        assert!(serde_json::from_value::<Peripherals>(list.clone()).is_ok());
+        for pointer in ["", "/devices/0"] {
+            let mut extra = list.clone();
+            extra.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
+            assert!(serde_json::from_value::<Peripherals>(extra).is_err(), "{pointer}");
+        }
+        let mut odd = list.clone();
+        odd["devices"][0]["battery"] = json!({"percent": 30, "level": "low"});
+        assert!(serde_json::from_value::<Peripherals>(odd).is_err());
     }
 
     #[test]
