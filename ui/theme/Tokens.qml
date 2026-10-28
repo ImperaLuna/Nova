@@ -358,6 +358,8 @@ QtObject {
     // chip, and a little battery (body, the nub on its right, the gap
     // between its rim and the fill).
     readonly property int deviceRowHeight: 36
+    // Rows the card shows before it scrolls.
+    readonly property int deviceListMaxRows: 4
     readonly property int deviceIconSize: 17
     readonly property int deviceLinkIconSize: 10
     readonly property int deviceChipHeight: 18

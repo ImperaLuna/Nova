@@ -48,7 +48,7 @@ Column {
 
     Rectangle {
         width: parent.width
-        height: list.contentHeight + 2 * Tokens.menuPad
+        height: list.height + 2 * Tokens.menuPad
         radius: Tokens.radiusCard
         color: Tokens.surfaceRaised
         Behavior on height {
@@ -65,8 +65,12 @@ Column {
             x: Tokens.menuPad
             y: Tokens.menuPad
             width: parent.width - 2 * Tokens.menuPad
-            height: contentHeight
-            interactive: false
+            // A few rows, then it scrolls, so many devices never push the
+            // cards below off the sidebar.
+            height: Math.min(contentHeight, Tokens.deviceListMaxRows * Tokens.deviceRowHeight)
+            interactive: contentHeight > height
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
             model: rowModel
 
             add: Transition {

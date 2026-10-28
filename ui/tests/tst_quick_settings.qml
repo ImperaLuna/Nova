@@ -495,6 +495,28 @@ Item {
             compare(amounts(card), ["High"]);
         }
 
+        function test_many_devices_scroll_inside_the_card() {
+            const many = [];
+            for (let i = 0; i < 9; i++)
+                many.push({
+                    id: `upower/mouse_${i}`,
+                    name: `Mouse ${i}`,
+                    kind: "mouse",
+                    link: "bluetooth",
+                    battery: {
+                        percent: 50
+                    },
+                    charging: false,
+                    source: "upower"
+                });
+            const card = createTemporaryObject(devicesComponent, stage, {
+                devices: many
+            });
+            const rows = findChild(card, "deviceRows");
+            compare(rows.height, Tokens.deviceListMaxRows * Tokens.deviceRowHeight);
+            verify(rows.interactive, "the rest scrolls");
+        }
+
         function test_sound_page_switches_outputs() {
             const page = createTemporaryObject(soundComponent, stage, {
                 outputAvailable: true,

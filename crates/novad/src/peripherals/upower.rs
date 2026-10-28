@@ -79,13 +79,17 @@ async fn follow(upower: &UPower, report: &Report, stop: &Stop) -> zbus::Result<(
     // in between is missed.
     let owner_rule = signal(DBUS_NAME, "NameOwnerChanged").sender(DBUS_NAME).arg(0, UPOWER).build()?;
     let mut owners = MessageStream::for_match_rule(owner_rule, &connection, None).await?;
-    let added_rule = signal(UPOWER, "DeviceAdded").path(UPOWER_PATH).build()?;
-    let mut added = MessageStream::for_match_rule(added_rule, &connection, None).await?;
-    let removed_rule = signal(UPOWER, "DeviceRemoved").path(UPOWER_PATH).build()?;
-    let mut removed = MessageStream::for_match_rule(removed_rule, &connection, None).await?;
+    // DeviceAdded and DeviceRemoved in one stream, so a device unplugged
+    // and plugged back in while a call waits is handled in that order.
+    let devices_rule =
+        MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(UPOWER).path(UPOWER_PATH).build()?;
+    let mut comings = MessageStream::for_match_rule(devices_rule, &connection, None).await?;
     let changed_rule = signal(PROPERTIES, "PropertiesChanged").path_namespace(DEVICES_PATH).build()?;
     let mut changes = MessageStream::for_match_rule(changed_rule, &connection, None).await?;
 
+    // upowerd starts on demand (D-Bus activation), and Nova may be its
+    // only client: ask for it, or it may never run.
+    start(&connection, report).await;
     // upowerd's unique name while it runs: only its signals count.
     let mut owner = name_owner(&connection).await;
     let mut devices = match &owner {
@@ -102,12 +106,9 @@ async fn follow(upower: &UPower, report: &Report, stop: &Stop) -> zbus::Result<(
             if stop.poll(cx).is_ready() {
                 return Poll::Ready(None);
             }
-            for (kind, stream) in [
-                (Signal::Owner, &mut owners),
-                (Signal::Added, &mut added),
-                (Signal::Removed, &mut removed),
-                (Signal::Changed, &mut changes),
-            ] {
+            for (kind, stream) in
+                [(Signal::Owner, &mut owners), (Signal::Device, &mut comings), (Signal::Changed, &mut changes)]
+            {
                 if let Poll::Ready(message) = Pin::new(stream).poll_next(cx) {
                     return Poll::Ready(message.map(|message| (kind, message)));
                 }
@@ -132,14 +133,19 @@ async fn follow(upower: &UPower, report: &Report, stop: &Stop) -> zbus::Result<(
                     devices = list(&connection, &upower.sys_root, report).await;
                 }
             }
-            Signal::Added if from_upower => {
+            Signal::Device if from_upower => {
+                let member = message.header().member().map(|member| member.to_string());
                 let Ok(path) = message.body().deserialize::<OwnedObjectPath>() else { continue };
-                let found = read(&connection, &path, &upower.sys_root, report).await;
-                devices.insert(path, found);
-            }
-            Signal::Removed if from_upower => {
-                let Ok(path) = message.body().deserialize::<OwnedObjectPath>() else { continue };
-                devices.remove(&path);
+                match member.as_deref() {
+                    Some("DeviceAdded") => {
+                        let found = read(&connection, &path, &upower.sys_root, report).await;
+                        devices.insert(path, found);
+                    }
+                    Some("DeviceRemoved") => {
+                        devices.remove(&path);
+                    }
+                    _ => continue,
+                }
             }
             Signal::Changed if from_upower => {
                 let Some(path) = message.header().path().map(|path| OwnedObjectPath::from(path.to_owned())) else {
@@ -156,7 +162,7 @@ async fn follow(upower: &UPower, report: &Report, stop: &Stop) -> zbus::Result<(
                 let found = read(&connection, &path, &upower.sys_root, report).await;
                 devices.insert(path, found);
             }
-            Signal::Added | Signal::Removed | Signal::Changed => continue,
+            Signal::Device | Signal::Changed => continue,
         }
         report.found(devices.values().flatten().cloned().collect());
     }
@@ -165,9 +171,18 @@ async fn follow(upower: &UPower, report: &Report, stop: &Stop) -> zbus::Result<(
 #[derive(Clone, Copy)]
 enum Signal {
     Owner,
-    Added,
-    Removed,
+    Device,
     Changed,
+}
+
+/// Asks the bus to start upowerd if it isn't running. Where it can't (no
+/// UPower installed), Nova follows it in case it's started later.
+async fn start(connection: &Connection, report: &Report) {
+    if let Err(e) =
+        connection.call_method(Some(DBUS_NAME), DBUS_PATH, Some(DBUS_NAME), "StartServiceByName", &(UPOWER, 0u32)).await
+    {
+        report.logger().info(LOG_SOURCE, &format!("couldn't start UPower: {e}"));
+    }
 }
 
 /// upowerd's unique name, `None` while it doesn't run.
