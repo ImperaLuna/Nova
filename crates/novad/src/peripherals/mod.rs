@@ -5,15 +5,18 @@
 //! Each source of devices is a module of its own behind [`Source`], run on
 //! threads of its own, and sends its whole list to [`Report`] whenever it
 //! changes: `upower` follows UPower on the system bus (the kernel's drivers
-//! and BlueZ, event-driven), `headsetcontrol` runs HeadsetControl for the
-//! headsets the kernel can't read (every [`headsetcontrol::POLL`] and when a
-//! USB device comes or goes). A source that isn't there (no UPower, no
-//! HeadsetControl) just reports nothing.
+//! and BlueZ, event-driven), `hidpp` asks Logitech devices over HID++ when
+//! the kernel left their receiver to `hid-generic` (every [`hidpp::POLL`],
+//! when hidraw nodes come or go and when a device says something), and
+//! `headsetcontrol` runs HeadsetControl for the headsets the kernel can't
+//! read (every [`headsetcontrol::POLL`] and when a USB device comes or
+//! goes). A source that isn't there (no UPower, no HeadsetControl, no
+//! access to a receiver's node) just reports nothing.
 //!
 //! The lists are merged into one [`Event::Peripherals`]: a device two
 //! sources report (the same USB vendor and product, and serial when both
 //! know it) is listed once, as the source first in [`PRIORITY`] (UPower,
-//! the kernel's reading) has it, with the other's battery only when it has
+//! the kernel's reading, then HID++) has it, with the other's battery only when it has
 //! none. Changes that come together are published once they settle, and
 //! only when the list differs from the last one sent.
 //!
@@ -23,7 +26,10 @@
 //! hid-generic) aren't listed either: finding them would take a HID
 //! enumeration of its own.
 
+#[cfg(test)]
+mod fake_hidraw;
 mod headsetcontrol;
+mod hidpp;
 mod hotplug;
 mod sysfs;
 #[cfg(test)]
@@ -47,7 +53,8 @@ const SETTLE: Duration = Duration::from_millis(250);
 /// ...or this long after the first of them, if they never pause.
 const MAX_DELAY: Duration = Duration::from_secs(1);
 /// The sources, the one whose reading wins first.
-const PRIORITY: [PeripheralSource; 2] = [PeripheralSource::Upower, PeripheralSource::Headsetcontrol];
+const PRIORITY: [PeripheralSource; 3] =
+    [PeripheralSource::Upower, PeripheralSource::Hidpp, PeripheralSource::Headsetcontrol];
 /// The most devices one source lists: more than any desk has.
 const MAX_DEVICES: usize = 32;
 /// Device names are cut to this many characters.
@@ -58,8 +65,13 @@ const MAX_NAME_CHARS: usize = 100;
 pub struct Sources {
     /// The bus UPower is on.
     pub upower: Bus,
-    /// `/sys`, where a UPower device's connection is looked up.
+    /// `/sys`, where a UPower device's connection and hidraw nodes are
+    /// looked up.
     pub sys_root: PathBuf,
+    /// `/dev`, where hidraw nodes are.
+    pub dev: PathBuf,
+    /// Opens a hidraw node.
+    pub open_hidraw: hidpp::Opener,
     /// Searched for `headsetcontrol`.
     pub path_var: String,
     /// `/dev/bus/usb`, whose device nodes come and go with USB devices.
@@ -71,6 +83,8 @@ impl Sources {
         Self {
             upower: Bus::System,
             sys_root: "/sys".into(),
+            dev: "/dev".into(),
+            open_hidraw: Arc::new(hidpp::open_node),
             path_var: path_var.into(),
             usb_devices: "/dev/bus/usb".into(),
         }
@@ -200,8 +214,15 @@ impl Peripherals {
         shared.hub.publish(&Event::Peripherals(PeripheralsEvent { devices: Vec::new() }));
         let publisher = Arc::clone(&shared);
         std::thread::spawn(move || publisher.publish_when_settled());
-        let started: [(PeripheralSource, Box<dyn Source>); 2] = [
-            (PeripheralSource::Upower, Box::new(upower::UPower { bus: sources.upower, sys_root: sources.sys_root })),
+        let started: [(PeripheralSource, Box<dyn Source>); 3] = [
+            (
+                PeripheralSource::Upower,
+                Box::new(upower::UPower { bus: sources.upower, sys_root: sources.sys_root.clone() }),
+            ),
+            (
+                PeripheralSource::Hidpp,
+                Box::new(hidpp::Hidpp { sys_root: sources.sys_root, dev: sources.dev, open: sources.open_hidraw }),
+            ),
             (
                 PeripheralSource::Headsetcontrol,
                 Box::new(headsetcontrol::HeadsetControl {

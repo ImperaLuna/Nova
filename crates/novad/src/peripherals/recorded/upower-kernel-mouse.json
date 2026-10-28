@@ -1,0 +1,16 @@
+{
+  "source": "Like upower.json, documented API: the G502 X PLUS of hidpp-c547.json on its USB cable (046d:c095, the USB product id its DEVICE_INFO names), as the kernel's hid-logitech-hidpp reports it, to check that one mouse UPower and HID++ both report is listed once.",
+  "usb_devices": {
+    "devices/pci0000:00/0000:00:08.1/0000:0b:00.3/usb3/3-5": "046d:c095"
+  },
+  "devices": [
+    {
+      "path": "/org/freedesktop/UPower/devices/mouse_hidpp_battery_2",
+      "sysfs": "devices/pci0000:00/0000:00:08.1/0000:0b:00.3/usb3/3-5/3-5:1.1/0003:046D:C095.0009",
+      "properties": {
+        "NativePath": "hidpp_battery_2", "Vendor": "Logitech", "Model": "G502 X PLUS", "Serial": "df-70-97-d8",
+        "Type": 5, "PowerSupply": false, "Percentage": 95.0, "BatteryLevel": 1, "State": 1, "IsPresent": true
+      }
+    }
+  ]
+}
