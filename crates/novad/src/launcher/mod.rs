@@ -42,9 +42,10 @@ const MAX_RECENT: usize = 8;
 /// Apps whose launches are remembered (for recent and for ranking); the
 /// least recently launched are forgotten first.
 const MAX_REMEMBERED: usize = 200;
-/// How long a launch waits for the window of an app it reopened from the
-/// tray, to focus it, and how often it looks.
-pub const TRAY_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(3) };
+/// How long novad waits to focus the window an app was just asked to show
+/// (from its tray icon or menu, or a click on its notification), and how
+/// often it looks.
+pub const SHOWN_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_secs(1) } else { Duration::from_secs(3) };
 const TRAY_WINDOW_RETRY: Duration = Duration::from_millis(100);
 /// How long it waits for the window of an app in the tray that it started
 /// again: the new process first starts up, then hands over to the running
@@ -549,7 +550,7 @@ pub fn focus_open(
         false
     });
     let shown = |wait| compositor.is_none_or(|compositor| focus_shown(id, ids, compositor, output, wait, logger));
-    if activated && shown(TRAY_WINDOW_WAIT) {
+    if activated && shown(SHOWN_WINDOW_WAIT) {
         return Ok(true);
     }
     start()?;
@@ -558,9 +559,10 @@ pub fn focus_open(
 }
 
 /// Focuses the window of app `id` (with one of the app ids `ids`) that it
-/// was just asked to show (by its tray icon, its menu, or starting it again
-/// while it runs), once it shows: niri gives it no focus, as none of those
-/// hands the app an activation token. Gives up (logged) after `wait`.
+/// was just asked to show (by its tray icon, its menu, a click on its
+/// notification, or starting it again while it runs), once it shows: niri
+/// gives it no focus, as none of those hands the app an activation token.
+/// Gives up (logged) after `wait`.
 /// `false` when no window showed; `true` also when that can't be told (an
 /// app in a terminal, the compositor failing).
 pub fn focus_shown(

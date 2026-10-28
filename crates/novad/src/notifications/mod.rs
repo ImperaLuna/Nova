@@ -236,7 +236,12 @@ impl Notifications {
     /// taken or missed, goes by what's returned.
     pub fn click(&self, id: u32) -> Result<Clicked, String> {
         let app_id = find(&lock(&self.shared.state), id).ok_or_else(|| format!("no notification {id}"))?.app_id.clone();
-        let heard = self.action(id, None).is_ok();
+        let heard = match self.action(id, None) {
+            Ok(()) => true,
+            // Taken off the list meanwhile (dismissed, cleared): nothing to open.
+            Err(e) if find(&lock(&self.shared.state), id).is_none() => return Err(e),
+            Err(_) => false,
+        };
         if !heard {
             self.read(Some(id));
         }

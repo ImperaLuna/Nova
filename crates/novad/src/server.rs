@@ -410,7 +410,7 @@ impl<'a> Connection<'a> {
                 &ids,
                 &compositor,
                 output.as_deref(),
-                crate::launcher::TRAY_WINDOW_WAIT,
+                crate::launcher::SHOWN_WINDOW_WAIT,
                 &logger,
             );
             done(Ok(()))
@@ -448,7 +448,7 @@ impl<'a> Connection<'a> {
                 let open = ids.is_empty() || compositor.focus_app(&ids, None).unwrap_or(true);
                 tray.activate(&address)?;
                 let shown = |wait| crate::launcher::focus_shown(&app, &ids, compositor, None, wait, &logger);
-                if open || shown(crate::launcher::TRAY_WINDOW_WAIT) {
+                if open || shown(crate::launcher::SHOWN_WINDOW_WAIT) {
                     return Ok(());
                 }
                 launcher.start_app(&app)?;
@@ -482,7 +482,7 @@ impl<'a> Connection<'a> {
         if compositor.app_workspace(&ids).is_ok_and(|workspace| workspace.is_none()) {
             let logger = Arc::clone(&self.daemon.logger);
             std::thread::spawn(move || {
-                crate::launcher::focus_shown(&app, &ids, &compositor, None, crate::launcher::TRAY_WINDOW_WAIT, &logger)
+                crate::launcher::focus_shown(&app, &ids, &compositor, None, crate::launcher::SHOWN_WINDOW_WAIT, &logger)
             });
         }
         Answer::Now(Outcome::Result(serde_json::Value::Null))
