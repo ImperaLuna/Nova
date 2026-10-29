@@ -741,7 +741,7 @@ fn a_battery_running_down_alerts_once_at_each_step() {
     let fixture = Fixture::new("alerts");
     let upower = fixture.upower(&["upower.json"]);
     let peripherals = fixture.start();
-    let _server = fixture.notifications(&peripherals);
+    let server = fixture.notifications(&peripherals);
     let mut popups = std::collections::VecDeque::new();
     // Changes the mouse and waits for the list to show it, keeping the
     // pop-ups that come meanwhile: an alert comes right after its list.
@@ -777,6 +777,7 @@ fn a_battery_running_down_alerts_once_at_each_step() {
     read(&discharging(19.0));
     read(&discharging(18.0));
     peripherals.stop();
+    server.stop();
     let mut popups = popups.into_iter().chain(std::iter::from_fn(|| Some(fixture.popup())));
 
     let first = popups.next().unwrap();

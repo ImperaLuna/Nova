@@ -7,8 +7,9 @@
 //! charged), for that step and the ones under it, so a reading wobbling
 //! around a step doesn't say it twice. A device that only reports a level
 //! reads as [`level_percent`]: `low` is the 10% alert, `critical` the 5%
-//! one. What's been said is kept by device id while novad runs, also while
-//! a device is away, so one that reconnects still low isn't alerted again.
+//! one. What's been said is kept by device ([`key`]) while novad runs, also
+//! while a device is away, so one that reconnects still low isn't alerted
+//! again.
 
 use crate::notifications::Own;
 use nova_protocol::{Battery, BatteryLevel, NotificationDevice, Peripheral, PeripheralKind};
@@ -37,10 +38,10 @@ struct Said {
     notification: u32,
 }
 
-/// An alert to send for device `id`.
+/// An alert to send for the device `key` names.
 #[derive(Debug, PartialEq)]
 pub struct Alert {
-    pub id: String,
+    pub key: String,
     pub own: Own,
 }
 
@@ -50,7 +51,7 @@ impl Alerts {
         let mut alerts = Vec::new();
         for device in devices {
             let Some(battery) = device.battery else { continue };
-            let said = self.devices.entry(device.id.clone()).or_default();
+            let said = self.devices.entry(key(device)).or_default();
             let percent = match battery {
                 Battery::Percent(percent) => percent,
                 Battery::Level(level) => level_percent(level),
@@ -69,20 +70,28 @@ impl Alerts {
                 continue;
             }
             said.step = Some(step);
-            alerts.push(Alert { id: device.id.clone(), own: own(device, battery, step, said.notification) });
+            alerts.push(Alert { key: key(device), own: own(device, battery, step, said.notification) });
         }
         if self.devices.len() > MAX_REMEMBERED {
-            self.devices.retain(|id, _| devices.iter().any(|device| &device.id == id));
+            self.devices.retain(|kept, _| devices.iter().any(|device| &key(device) == kept));
         }
         alerts
     }
 
-    /// Device `id`'s alert was sent as notification `notification`.
-    pub fn sent(&mut self, id: &str, notification: u32) {
-        if let Some(said) = self.devices.get_mut(id) {
+    /// The alert for the device `key` names was sent as notification
+    /// `notification`.
+    pub fn sent(&mut self, key: &str, notification: u32) {
+        if let Some(said) = self.devices.get_mut(key) {
             said.notification = notification;
         }
     }
+}
+
+/// What a device is known by across reconnects: what it is and its name.
+/// Not its id: UPower numbers a Logitech device's battery anew each time it
+/// connects (`mouse_hidpp_battery_3`).
+fn key(device: &Peripheral) -> String {
+    format!("{:?}/{}", device.kind, device.name)
 }
 
 /// About how full a battery that only reports `level` is.
@@ -232,6 +241,14 @@ mod tests {
     }
 
     #[test]
+    fn a_device_back_under_a_new_id_is_still_known() {
+        let mut alerts = Alerts::default();
+        assert_eq!(alerts.update(&[mouse(Battery::Percent(4), false)]).len(), 1);
+        let back = Peripheral { id: "upower/mouse_hidpp_battery_1".into(), ..mouse(Battery::Percent(4), false) };
+        assert_eq!(alerts.update(&[back]), []);
+    }
+
+    #[test]
     fn levels_say_10_and_5() {
         let level = |level| (Battery::Level(level), false);
         assert_eq!(
@@ -245,7 +262,7 @@ mod tests {
         let mut alerts = Alerts::default();
         let first = alerts.update(&[mouse(Battery::Percent(20), false)]);
         assert_eq!(first[0].own.replaces, 0);
-        alerts.sent("upower/mouse", 7);
+        alerts.sent(&first[0].key, 7);
         let next = alerts.update(&[mouse(Battery::Percent(10), false)]);
         assert_eq!((next[0].own.replaces, next[0].own.critical), (7, false));
         assert!(alerts.update(&[mouse(Battery::Percent(5), false)])[0].own.critical);

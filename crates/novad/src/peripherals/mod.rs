@@ -313,31 +313,35 @@ impl Shared {
             let event = merge(&state.found);
             if event != state.sent {
                 self.hub.publish(&Event::Peripherals(event.clone()));
-                let alerts = state.alerts.update(&event.devices);
+                // Only while notifications are on: alerts nobody can see
+                // aren't counted as said.
+                let notifications = lock(&self.notifications).upgrade();
+                let alerts = match &notifications {
+                    Some(_) => state.alerts.update(&event.devices),
+                    None => Vec::new(),
+                };
                 state.sent = event;
-                if !alerts.is_empty() {
+                if let Some(notifications) = notifications.filter(|_| !alerts.is_empty()) {
                     // Sent unlocked: the notification server takes locks of its own.
                     drop(state);
-                    let sent = self.alert(alerts);
+                    let sent = self.alert(&notifications, alerts);
                     state = lock(&self.state);
-                    for (id, notification) in sent {
-                        state.alerts.sent(&id, notification);
+                    for (key, notification) in sent {
+                        state.alerts.sent(&key, notification);
                     }
                 }
             }
         }
     }
 
-    /// Sends `alerts`, when notifications are on, and says which
-    /// notification each became.
-    fn alert(&self, alerts: Vec<alerts::Alert>) -> Vec<(String, u32)> {
-        let Some(notifications) = lock(&self.notifications).upgrade() else { return Vec::new() };
+    /// Sends `alerts` and says which notification each became.
+    fn alert(&self, notifications: &Notifications, alerts: Vec<alerts::Alert>) -> Vec<(String, u32)> {
         alerts
             .into_iter()
             .map(|alert| {
                 self.logger.info(LOG_SOURCE, &alert.own.summary);
                 let id = notifications.send_own(alert.own);
-                (alert.id, id)
+                (alert.key, id)
             })
             .collect()
     }
