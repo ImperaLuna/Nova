@@ -1,0 +1,20 @@
+{
+ "source": "A real capture (2026-10-29, RyzenShine): the Keychron Link dongle 3434:d030 with a K2 HE on the community battery firmware, its raw HID node (usage page 0xFF60, usage 0x61) read for 75 s with the keyboard at rest. `pushes` are what the keyboard sent by itself, in order (run 2, at 11.8, 13.8, 15.8, 41.8 and 43.8 s; change pushes land on a 2 s grid, the 30 s heartbeat repeats the last). The dongle answered no request (a 0xA4 request written to it got nothing in 3 s): no exchanges. `notices` are from a second capture that day: what the dongle passed on when the keyboard's cable went in (81 %, charging, at once) and out (69 %, on battery, 1 s later).",
+ "node": "hidraw14",
+ "hid": "0003:3434:D030.000F",
+ "driver": "hid-generic",
+ "hid_name": "Keychron  Keychron Link ",
+ "descriptor": "0660ff0961a1010962150026ff009520750881020963150026ff00952075089102c0",
+ "unrecorded": "silent",
+ "pushes": [
+  "a445220f00040300000000000000000000000000000000000000000000000000",
+  "a446230f00040300000000000000000000000000000000000000000000000000",
+  "a4451e0f00040300000000000000000000000000000000000000000000000000",
+  "a4493e0f00040300000000000000000000000000000000000000000000000000",
+  "a4451e0f00040300000000000000000000000000000000000000000000000000"
+ ],
+ "notices": {
+  "cable_in": "a4517a0f01040300000000000000000000000000000000000000000000000000",
+  "cable_out": "a4451e0f00040300000000000000000000000000000000000000000000000000"
+ }
+}

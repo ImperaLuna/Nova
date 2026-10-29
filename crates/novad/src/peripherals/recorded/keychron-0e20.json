@@ -1,0 +1,23 @@
+{
+ "source": "A real capture (2026-10-29, RyzenShine): the K2 HE (3434:0e20) on its USB cable, charging, through its own raw HID node (hidraw17; hidraw16 is its keyboard/mouse interface). It sent nothing by itself in 5 s; each 0xA4 request (report id 0, then 32 bytes) was answered within about 2 ms, with transport 0x04 (it stays linked to its dongle on the cable) and charging 1. The answers went 81, 82, 82, 82, 82 %; the first is kept. A Launcher request (0xA0) got its own answer.",
+ "node": "hidraw17",
+ "hid": "0003:3434:0E20.001E",
+ "driver": "hid-generic",
+ "hid_name": "Keychron Keychron K2 HE",
+ "descriptor": "0660ff0961a1010962150026ff009520750881020963150026ff00952075089102c0",
+ "unrecorded": "silent",
+ "exchanges": [
+  {
+   "request": "00a400000000000000000000000000000000000000000000000000000000000000",
+   "replies": [
+    "a451790f01040300000000000000000000000000000000000000000000000000"
+   ]
+  },
+  {
+   "request": "00a000000000000000000000000000000000000000000000000000000000000000",
+   "replies": [
+    "a002000200000000000000000000000000000000000000000000000000000000"
+   ]
+  }
+ ]
+}

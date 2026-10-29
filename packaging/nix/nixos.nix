@@ -39,7 +39,7 @@ in
 
     # Device batteries: novad reads upowerd on the system bus,
     # HeadsetControl needs its udev rules to open headsets without root, and
-    # Nova's own rule lets novad open Logitech receivers' hidraw nodes.
+    # Nova's own rules let novad open Logitech's and Keychron's hidraw nodes.
     services.upower.enable = lib.mkIf (lib.elem "peripherals" on) (lib.mkDefault true);
     services.udev.packages = lib.mkIf (lib.elem "peripherals" on) [
       pkgs.headsetcontrol

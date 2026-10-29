@@ -99,6 +99,6 @@ expression: all
 {"v":2,"id":48,"result":true}
 {"v":2,"id":49,"cmd":"media_window","args":{"player":"org.mpris.MediaPlayer2.spotify"}}
 {"v":2,"id":49,"result":"3"}
-{"v":2,"event":"peripherals","data":{"devices":[{"id":"upower/mouse_hidpp_battery_0","name":"PRO X Wireless","kind":"mouse","link":"dongle","battery":{"percent":72},"charging":false,"source":"upower"},{"id":"upower/keyboard_dev_AA_BB_CC_DD_EE_FF","name":"K380","kind":"keyboard","link":"bluetooth","battery":{"level":"high"},"charging":false,"source":"upower"},{"id":"headsetcontrol/1038:2253","name":"SteelSeries Arctis Nova 5X","kind":"headset","link":"dongle","battery":{"percent":30},"charging":true,"source":"headsetcontrol"}]}}
+{"v":2,"event":"peripherals","data":{"devices":[{"id":"upower/mouse_hidpp_battery_0","name":"PRO X Wireless","kind":"mouse","link":"dongle","battery":{"percent":72},"charging":false,"source":"upower"},{"id":"upower/keyboard_dev_AA_BB_CC_DD_EE_FF","name":"K380","kind":"keyboard","link":"bluetooth","battery":{"level":"high"},"charging":false,"source":"upower"},{"id":"keychron/model-3","name":"Keychron K2 HE","kind":"keyboard","link":"dongle","battery":{"percent":78},"charging":false,"source":"keychron"},{"id":"headsetcontrol/1038:2253","name":"SteelSeries Arctis Nova 5X","kind":"headset","link":"dongle","battery":{"percent":30},"charging":true,"source":"headsetcontrol"}]}}
 {"v":2,"event":"peripherals","data":{"devices":[]}}
 {"v":2,"id":8,"error":"bad request"}
