@@ -54,14 +54,16 @@ parse() {
   # subtest, its error.
   jq -cRn --arg outside "$OUTSIDE" '
     def failed_test: capture("!!! Test \"(?<subtest>.*)\" failed with error: \"(?<error>.*)\"$");
-    [inputs | sub("\r$"; "")] as $lines
+    # Without GitHub'"'"'s timestamp in front of each line of a job'"'"'s log.
+    [inputs | sub("\r$"; "") | sub("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z "; "")] as $lines
     | [$lines[] | capture("vm-test-run-nova-(?<vm>[a-z]+-[a-z]+)> (?<line>!!! Test .*)$") | {vm} + (.line | failed_test)]
     | . as $logged
     | [range(0; $lines | length) as $i
         | $lines[$i] | capture("Cannot build \\x27[^\\x27]*-vm-test-run-nova-(?<vm>[a-z]+-[a-z]+)\\.drv\\x27")
         | select(($lines[$i + 1] // "") | test("builder failed"))
         | .vm as $vm
-        | $lines[$i + 2:$i + 40] as $last
+        # Up to the next error, which is another derivation'"'"'s.
+        | $lines[$i + 2:$i + 40] | (.[:map(test("^error: ")) | index(true)] ) as $last
         | ([$last[] | select(test("^\\s*> !!! Test ")) | failed_test] | last)
             // {subtest: $outside, error: ([$last[] | capture("> [A-Za-z_.]*(Error|Failed): (?<e>.*)$").e] | last // "")}
         | {vm: $vm} + .] as $built
@@ -105,18 +107,21 @@ record() {
   local repo=$GITHUB_REPOSITORY work
   local run="https://github.com/$repo/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT"
   work=$(mktemp -d)
-  trap 'rm -rf "$work"' EXIT
+  # Expanded now: the EXIT trap runs after `work`, a local, is gone.
+  # shellcheck disable=SC2064
+  trap "rm -rf '$work'" EXIT
 
-  local job
+  local job logs=()
   for job in $(gh api "repos/$repo/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs" \
     --jq '.jobs[] | select(.conclusion == "failure") | .id'); do
     gh api "repos/$repo/actions/jobs/$job/logs" >"$work/job-$job.log"
+    logs+=("$work/job-$job.log")
   done
-  if ! compgen -G "$work/job-*.log" >/dev/null; then
+  if ((${#logs[@]} == 0)); then
     echo "No job of $run failed."
     return
   fi
-  parse "$work"/job-*.log |
+  parse "${logs[@]}" |
     jq -c --arg pr "$PR" --arg run "$run" --arg date "$RUN_DATE" '. + {pr: $pr, run: $run, date: $date}' \
       >"$work/new"
   if [[ ! -s $work/new ]]; then

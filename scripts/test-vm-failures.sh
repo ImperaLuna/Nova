@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests scripts/vm-failures.sh's parse, render and records on CI logs and
 # failures recorded from real runs (scripts/vm-failures/). `record` talks to
-# GitHub, so only its parts are tested here.
+# GitHub, so only its parts are tested here, and that it exits cleanly when
+# no job of the run failed.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -23,10 +24,10 @@ expect "one failed subtest" \
   "$($script parse "$data/one-subtest.log")"
 
 # Two VMs: hyprland-session with its subtest's line; niri-frames whose line
-# the log doesn't hold, so only Nix's last lines name its error.
+# the log doesn't hold, so only Nix's last lines name it.
 expect "two VMs, one without its subtest's line" \
   'hyprland-session	nova toggle launcher opens the launcher, empty; typing finds foot, Enter starts it in a scope of its own, Esc closes	action timed out after 120.25 seconds (timeout=120.0)
-niri-frames	(outside any subtest)	3 clicks at (24, 22) never logged '\''nova: ai usage panel opened'\''' \
+niri-frames	an idle bar draws nothing, shown or beside a fullscreen window; the panel draws briefly; the launcher over a fullscreen window moves Nova to Overlay and back, each time; the bar gives a fullscreen window its space, and its pills take clicks once back	3 clicks at (24, 22) never logged '\''nova: ai usage panel opened'\''' \
   "$($script parse "$data/two-vms.log" | jq -r '[.vm, .subtest, .error] | @tsv')"
 
 # A failed run whose VM tests all passed (clippy failed) lists nothing.
@@ -72,6 +73,16 @@ expect "comment end escaped" "a --> b" \
 expect "records round trip" "$(jq -c . "$data/records.jsonl")" "$($script records <<<"$body")"
 expect "records with CRLF" "$(jq -c . "$data/records.jsonl")" "$($script records <<<"${body//$'\n'/$'\r\n'}")"
 expect "no records" "" "$($script records <<<"Filled in by the next failed CI run.")"
+
+# A run whose jobs all passed: GitHub lists no failed job, and `record`
+# cleans up and exits 0.
+fake=$(mktemp -d)
+trap 'rm -rf "$fake"' EXIT
+printf '#!%s\n' "$BASH" >"$fake/gh"
+chmod +x "$fake/gh"
+expect "record with no failed job" $'No job of https://github.com/o/r/actions/runs/1/attempts/1 failed.\nexit 0' \
+  "$(PATH="$fake:$PATH" GITHUB_REPOSITORY=o/r RUN_ID=1 RUN_ATTEMPT=1 RUN_DATE=2026-10-29T00:00:00Z PR='' \
+    $script record 2>&1; echo "exit $?")"
 
 if [[ $failed == 0 ]]; then
   echo "vm-failures.sh: all tests passed"
