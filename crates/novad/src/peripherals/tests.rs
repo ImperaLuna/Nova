@@ -9,7 +9,11 @@
 //! `headsetcontrol.json` is a real capture (`headsetcontrol -o json` with an
 //! Arctis Nova 5X charging), `headsetcontrol-none.json` HeadsetControl 4.2
 //! with no headset (it exits 1), `hidpp-c547.json` a Lightspeed receiver
-//! and its G502 X PLUS answering HID++. The UPower files follow UPower's
+//! and its G502 X PLUS answering HID++, `keychron-d030.json` a Keychron
+//! Link dongle passing on its K2 HE's battery reports and
+//! `keychron-d026.json` one with nothing behind it that sends them
+//! (`keychron-0e20.json`, the keyboard on its cable, is built from the
+//! firmware's protocol until it's captured). The UPower files follow UPower's
 //! D-Bus API: the desktop they're for has no peripheral in UPower (its
 //! UPower lists only the DisplayDevice, which the fake serves too).
 
@@ -570,5 +574,98 @@ fn a_mouse_both_upower_and_hidpp_report_is_listed_once() {
     let devices = serde_json::to_value(&lock(&peripherals.shared.state).sent.devices).unwrap();
     assert_eq!(ids(&devices), ["upower/mouse_hidpp_battery_2"], "{devices}");
     assert_eq!(devices[0]["source"], "upower");
+    peripherals.stop();
+}
+
+/// The real capture: a K2 HE on the community battery firmware, behind
+/// its Keychron Link dongle (3434:d030), and the Link-KM dongle (3434:d026)
+/// with nothing behind it that sends the report.
+const KEYCHRON_LINK: &str = "keychron-d030.json";
+const KEYCHRON_LINK_KM: &str = "keychron-d026.json";
+const KEYCHRON_CABLE: &str = "keychron-0e20.json";
+/// Keychron Launcher's protocol version request, on the same interface.
+const LAUNCHER_REPORT: &str = "a0000000000000000000000000000000";
+
+impl Fixture {
+    /// A hidraw node as `recorded/<name>` has it; its file in `/dev`.
+    fn hidraw_node(&self, name: &str) -> PathBuf {
+        let recording = fake_hidraw_recording(name);
+        let path = self.dir.join("dev").join(&recording.node);
+        self.hidraw.add(&self.dir.join("sys"), &self.dir.join("dev"), &recording);
+        path
+    }
+
+    fn wait_opened(&self, node: &Path) {
+        wait_until(WAIT, "the node is opened", || lock(&self.hidraw.opened).iter().any(|opened| opened == node));
+    }
+}
+
+/// A keyboard behind its dongle is listed while it sends its battery, as
+/// it says it, and leaves when it falls silent (turned off: the dongle
+/// stays). Another dongle with the same interface lists nothing, and other
+/// reports on it are ignored.
+#[test]
+fn keychron_lists_a_keyboard_on_its_dongle_while_it_sends() {
+    let fixture = Fixture::new("keychron-dongle");
+    let link = fixture.hidraw_node(KEYCHRON_LINK);
+    let link_km = fixture.hidraw_node(KEYCHRON_LINK_KM);
+    let peripherals = fixture.start();
+    fixture.wait_opened(&link);
+    fixture.wait_opened(&link_km);
+    let pushes = fake_hidraw_recording(KEYCHRON_LINK).pushes;
+    fixture.hidraw.say_on(&link, LAUNCHER_REPORT);
+    fixture.hidraw.say_on(&link, &pushes[0]);
+    assert_eq!(
+        fixture.next(),
+        json!([{"id": "keychron/3434:d030", "name": "Keychron K2 HE", "kind": "keyboard", "link": "dongle",
+                "battery": {"percent": 69}, "charging": false, "source": "keychron"}])
+    );
+    // The percent wanders a point: nothing changes on screen.
+    for push in &pushes[1..] {
+        fixture.hidraw.say_on(&link, push);
+    }
+    // Silent past a few heartbeats: off.
+    assert_eq!(fixture.next(), json!([]));
+    // It was asked, as any node is, but only a few times: the dongle
+    // doesn't pass requests on.
+    let asked = fixture.hidraw.requests(&link);
+    assert!((1..=3).contains(&asked.len()), "{} requests", asked.len());
+    peripherals.stop();
+}
+
+/// A report cut after its transport (no model id) still lists the
+/// keyboard, by the name a Keychron keyboard on a dongle gets.
+#[test]
+fn keychron_reads_a_report_without_a_model() {
+    let fixture = Fixture::new("keychron-short");
+    let link = fixture.hidraw_node(KEYCHRON_LINK);
+    let peripherals = fixture.start();
+    fixture.wait_opened(&link);
+    fixture.hidraw.say_on(&link, "a445220f0104");
+    let devices = fixture.next();
+    assert_eq!((devices[0]["name"].clone(), devices[0]["charging"].clone()), (json!("Keychron keyboard"), json!(true)));
+    peripherals.stop();
+}
+
+/// On its cable the keyboard says nothing by itself: it's asked, and
+/// asked again while it stays.
+#[test]
+fn keychron_asks_a_keyboard_on_its_cable() {
+    let fixture = Fixture::new("keychron-cable");
+    let cable = fixture.hidraw_node(KEYCHRON_CABLE);
+    let peripherals = fixture.start();
+    assert_eq!(
+        fixture.next(),
+        json!([{"id": "keychron/3434:0e20", "name": "Keychron K2 HE", "kind": "keyboard", "link": "wired",
+                "battery": {"percent": 78}, "charging": true, "source": "keychron"}])
+    );
+    let request = fake_hidraw_recording(KEYCHRON_CABLE).exchanges[0].request.clone();
+    wait_until(WAIT, "asked again", || fixture.hidraw.requests(&cable).len() >= 4);
+    assert!(fixture.hidraw.requests(&cable).iter().all(|asked| *asked == fake_hidraw::hex(&request)));
+    // Unplugged: its node goes.
+    std::fs::remove_dir_all(fixture.dir.join("sys/class/hidraw/hidraw17")).unwrap();
+    std::fs::remove_file(&cable).unwrap();
+    fixture.hidraw.unplug();
+    assert_eq!(fixture.next(), json!([]));
     peripherals.stop();
 }

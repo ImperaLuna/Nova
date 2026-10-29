@@ -7,8 +7,10 @@
 //! changes: `upower` follows UPower on the system bus (the kernel's drivers
 //! and BlueZ, event-driven), `hidpp` asks Logitech devices over HID++ when
 //! the kernel left their receiver to `hid-generic` (every [`hidpp::POLL`],
-//! when hidraw nodes come or go and when a device says something), and
-//! `headsetcontrol` runs HeadsetControl for the headsets the kernel can't
+//! when hidraw nodes come or go and when a device says something),
+//! `keychron` listens for the battery report that Keychron keyboards on
+//! the community battery firmware send over raw HID (by themselves over
+//! their dongle, when asked on their cable), and `headsetcontrol` runs HeadsetControl for the headsets the kernel can't
 //! read (every [`headsetcontrol::POLL`] and when a USB device comes or
 //! goes). A source that isn't there (no UPower, no HeadsetControl, no
 //! access to a receiver's node) just reports nothing.
@@ -16,15 +18,15 @@
 //! The lists are merged into one [`Event::Peripherals`]: a device two
 //! sources report (the same USB vendor and product, and serial when both
 //! know it) is listed once, as the source first in [`PRIORITY`] (UPower,
-//! the kernel's reading, then HID++) has it, with the other's battery only when it has
-//! none. Changes that come together are published once they settle, and
+//! the kernel's reading, then HID++ and Keychron's) has it, with the
+//! other's battery only when it has none. Changes that come together are published once they settle, and
 //! only when the list differs from the last one sent.
 //!
 //! Only devices that are connected and on now are listed: one that's off
 //! (a headset whose dongle stays plugged in) or not present leaves the
-//! list. Devices that report no battery anywhere (a keyboard's dongle on
-//! hid-generic) aren't listed either: finding them would take a HID
-//! enumeration of its own.
+//! list. Devices that report no battery anywhere (a keyboard on stock
+//! firmware behind its dongle) aren't listed either: finding them would
+//! take a HID enumeration of its own.
 
 #[cfg(test)]
 mod fake_hidraw;
@@ -32,6 +34,7 @@ mod headsetcontrol;
 mod hidpp;
 mod hidraw;
 mod hotplug;
+mod keychron;
 mod sysfs;
 #[cfg(test)]
 mod tests;
@@ -54,8 +57,8 @@ const SETTLE: Duration = Duration::from_millis(250);
 /// ...or this long after the first of them, if they never pause.
 const MAX_DELAY: Duration = Duration::from_secs(1);
 /// The sources, the one whose reading wins first.
-const PRIORITY: [PeripheralSource; 3] =
-    [PeripheralSource::Upower, PeripheralSource::Hidpp, PeripheralSource::Headsetcontrol];
+const PRIORITY: [PeripheralSource; 4] =
+    [PeripheralSource::Upower, PeripheralSource::Hidpp, PeripheralSource::Keychron, PeripheralSource::Headsetcontrol];
 /// The most devices one source lists: more than any desk has.
 const MAX_DEVICES: usize = 32;
 /// Device names are cut to this many characters.
@@ -215,7 +218,7 @@ impl Peripherals {
         shared.hub.publish(&Event::Peripherals(PeripheralsEvent { devices: Vec::new() }));
         let publisher = Arc::clone(&shared);
         std::thread::spawn(move || publisher.publish_when_settled());
-        let started: [(PeripheralSource, Box<dyn Source>); 3] = [
+        let started: [(PeripheralSource, Box<dyn Source>); 4] = [
             (
                 PeripheralSource::Upower,
                 Box::new(upower::UPower { bus: sources.upower, sys_root: sources.sys_root.clone() }),
@@ -223,10 +226,19 @@ impl Peripherals {
             (
                 PeripheralSource::Hidpp,
                 Box::new(hidraw::Hidraw {
+                    sys_root: sources.sys_root.clone(),
+                    dev: sources.dev.clone(),
+                    open: Arc::clone(&sources.open_hidraw),
+                    protocol: hidpp::Hidpp,
+                }),
+            ),
+            (
+                PeripheralSource::Keychron,
+                Box::new(hidraw::Hidraw {
                     sys_root: sources.sys_root,
                     dev: sources.dev,
                     open: sources.open_hidraw,
-                    protocol: hidpp::Hidpp,
+                    protocol: keychron::Keychron,
                 }),
             ),
             (

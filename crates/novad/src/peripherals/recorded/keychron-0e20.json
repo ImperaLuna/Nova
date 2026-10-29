@@ -1,0 +1,17 @@
+{
+ "source": "Built from the firmware's protocol, not yet captured: the K2 HE (3434:0e20) on its cable, charging, its own raw HID node answering a 0xA4 request (report id 0, then 32 bytes) with 78%, 3990 mV, charging (1), USB (0x01), model 3. Its descriptor is the dongle's raw HID one. On its cable the keyboard sends nothing by itself (RyzenShine, 18 s on the cable, 2026-10-29).",
+ "node": "hidraw17",
+ "hid": "0003:3434:0E20.001A",
+ "driver": "hid-generic",
+ "hid_name": "Keychron Keychron K2 HE",
+ "descriptor": "0660ff0961a1010962150026ff009520750881020963150026ff00952075089102c0",
+ "unrecorded": "silent",
+ "exchanges": [
+  {
+   "request": "00a400000000000000000000000000000000000000000000000000000000000000",
+   "replies": [
+    "a44e960f01010300000000000000000000000000000000000000000000000000"
+   ]
+  }
+ ]
+}

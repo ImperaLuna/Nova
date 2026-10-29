@@ -699,13 +699,15 @@ pub enum BatteryLevel {
 }
 
 /// Where novad read a device: UPower (the kernel's drivers and BlueZ),
-/// HID++ (Logitech devices on a receiver the kernel doesn't drive) or
-/// HeadsetControl (headsets the kernel doesn't know the battery of).
+/// HID++ (Logitech devices on a receiver the kernel doesn't drive),
+/// Keychron (keyboards on firmware that reports the battery over raw HID)
+/// or HeadsetControl (headsets the kernel doesn't know the battery of).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PeripheralSource {
     Upower,
     Hidpp,
+    Keychron,
     Headsetcontrol,
 }
 
@@ -2090,6 +2092,15 @@ mod tests {
                     battery: Some(Battery::Level(BatteryLevel::High)),
                     charging: false,
                     source: PeripheralSource::Upower,
+                },
+                Peripheral {
+                    id: "keychron/3434:d030".into(),
+                    name: "Keychron K2 HE".into(),
+                    kind: PeripheralKind::Keyboard,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(78)),
+                    charging: false,
+                    source: PeripheralSource::Keychron,
                 },
                 Peripheral {
                     id: "headsetcontrol/1038:2253".into(),
