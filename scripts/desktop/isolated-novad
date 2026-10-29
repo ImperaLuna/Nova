@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Builds a branch and runs a second novad from it beside the live Nova,
+# without a UI, so a session can watch what the branch's daemon sees on
+# this desktop (devices, the compositor...) without touching the bar,
+# nova.service or the live novad's socket.
+#
+# Only the features named run (and `core`, which always does): the rest
+# would act on the desktop too, like a second wallpaper daemon drawing over
+# the live one's or a second sleep inhibitor. It has its own runtime dir
+# (its socket, covers, frames), feature choices, state and logs, all in a
+# temporary folder under $XDG_RUNTIME_DIR that's removed when it stops. It
+# reads the user's config.toml, but none of the AI usage credentials, and
+# has no session bus (DBUS_SESSION_BUS_ADDRESS=disabled:), where it would
+# queue behind the live Nova for the tray's and notifications' names.
+#
+# With topics, it prints their events as JSON lines (`nova ipc subscribe`)
+# until Ctrl+C; without, it follows its log. Either way Ctrl+C stops it.
+# Talk to it from another shell with the `nova --socket` line it prints.
+#
+# Usage: scripts/desktop/isolated-novad <branch> <feature,...> [topic...]
+#   e.g. scripts/desktop/isolated-novad claude/my-branch peripherals peripherals logs
+#   (the feature list may be empty, "", for core alone)
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/lib.sh"
+
+(($# >= 2)) || die "usage: isolated-novad <branch> <feature,...> [topic...]"
+branch=$1
+IFS=, read -ra wanted <<<"$2"
+shift 2
+topics=("$@")
+
+checkout=$("$(dirname "$0")/worktree" "$branch" | tail -n 1)
+echo "building $branch..." >&2
+in_dev_shell "$checkout" cargo build --quiet -p nova-cli --target-dir "$checkout/target"
+nova=$checkout/target/debug/nova
+
+run_dir=$(mktemp -d "${XDG_RUNTIME_DIR:?}/nova-isolated.XXXXXX")
+socket=$run_dir/nova/novad.sock
+daemon_pid=
+watcher_pid=
+stop() {
+  local pid
+  for pid in $watcher_pid $daemon_pid; do
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  done
+  rm -rf "$run_dir"
+}
+trap stop EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+# Every other feature off: `enabled` only adds to the defaults.
+declare -A available=()
+for manifest in "$checkout"/features/*/feature.toml; do
+  id=$(basename "$(dirname "$manifest")")
+  available[$id]=1
+done
+for id in "${wanted[@]}"; do
+  [[ -n ${available[$id]:-} ]] || die "$branch has no feature $id (features/$id)"
+  unset 'available[$id]'
+done
+# ["a", "b"], in TOML and JSON alike.
+toml_list() { # <id...>
+  local list=
+  (($#)) && list=$(printf '"%s", ' "$@")
+  echo "[${list%, }]"
+}
+{
+  echo "enabled = $(toml_list "${wanted[@]}")"
+  echo "disabled = $(toml_list "${!available[@]}")"
+} >"$run_dir/features.toml"
+
+mkdir -p "$run_dir/nova"
+DBUS_SESSION_BUS_ADDRESS=disabled: "$nova" --socket "$socket" daemon --no-ui \
+  --features-dir "$checkout/features" --selection "$run_dir/features.toml" --themes-dir "$checkout/themes" \
+  --log-dir "$run_dir/logs" --state-dir "$run_dir/state" \
+  --codex-home "$run_dir/codex" --claude-credentials "$run_dir/claude/.credentials.json" \
+  >"$run_dir/novad.out" 2>&1 &
+daemon_pid=$!
+
+for _ in $(seq 100); do
+  [[ -S $socket ]] && break
+  kill -0 "$daemon_pid" 2>/dev/null || {
+    cat "$run_dir/novad.out" >&2
+    die "novad stopped while starting (output above)"
+  }
+  sleep 0.1
+done
+[[ -S $socket ]] || die "novad didn't open its socket within 10 s"
+
+echo "novad from $branch is running (pid $daemon_pid). From another shell:" >&2
+echo "  $nova --socket $socket ipc status" >&2
+# In the background, then waited for: a signal to this script (Ctrl+C,
+# `timeout`, a kill) then runs `stop` at once instead of after the watcher
+# exits on its own. It ends by itself when novad does.
+if ((${#topics[@]})); then
+  "$nova" --socket "$socket" ipc subscribe "{\"topics\": $(toml_list "${topics[@]}")}" &
+else
+  "$nova" --socket "$socket" logs --log-dir "$run_dir/logs" &
+fi
+watcher_pid=$!
+wait "$watcher_pid"
