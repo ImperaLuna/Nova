@@ -170,6 +170,13 @@ tests need KVM. Without KVM (cloud sessions), approve goldens with the "Approve
 goldens" workflow from main on the PR branch instead of `just e2e-approve`.
 `just run` logs to `~/.local/state/nova-dev`.
 
+A failed VM subtest prints who had the keyboard and the UI's and the
+compositor's logs (`print_failure_state` in `e2e/vm/lifecycle.py`); read that
+before re-running. Each failed subtest is listed in the "VM test failures"
+issue (`scripts/vm-failures.sh`), which marks one that failed on more than one
+PR as a repeat and says so on the PR: a repeat gets a fix ticket instead of
+another re-run.
+
 Every change goes through a pull request; `main` is protected.
 
 Everything a session makes for Nova on the desktop stays inside `~/Projects/Nova`;

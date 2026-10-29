@@ -1,0 +1,65 @@
+2026-10-29T13:29:02.2152451Z vm-test-run-nova-niri-frames> !!! Test "a playing pill draws only its equalizer's steps; a paused one draws nothing" failed with error: "a playing pill made 54 commits in 5 s"
+2026-10-29T13:29:02.5915025Z error: Cannot build '/nix/store/73psynf3yfaj9hskz6yxmrjv15wz4yy9-vm-test-run-nova-niri-frames.drv'.
+2026-10-29T13:29:02.5915784Z        Reason: builder failed with exit code 1.
+2026-10-29T13:29:02.5915992Z        Output paths:
+2026-10-29T13:29:02.5916350Z          /nix/store/d3apidsii6d4hxak8yw0is2j10wycidb-vm-test-run-nova-niri-frames
+2026-10-29T13:29:02.5916677Z        Last 25 log lines:
+2026-10-29T13:29:02.5917032Z        > machine: (finished: must succeed: awk '/^Pss:/ { print $2 }' /proc/4102/smaps_rollup, in 0.01 seconds)
+2026-10-29T13:29:02.5917556Z        > now playing on niri: 54 frames, 54 commits in 5 s; UI Pss 281.8 MB
+2026-10-29T13:29:02.5918028Z        > !!! Test "a playing pill draws only its equalizer's steps; a paused one draws nothing" failed with error: "a playing pill made 54 commits in 5 s"
+2026-10-29T13:29:02.5918591Z        > cleanup
+2026-10-29T13:29:02.5918764Z        > kill QemuMachine (pid 46)
+2026-10-29T13:29:02.5919184Z        > machine # qemu-system-x86_64: terminating on signal 15 from pid 39 (/nix/store/xahxrjs30p3mw0a42bqg9ikgkikskw8m-python3-3.14.8/bin/python3.14)
+2026-10-29T13:29:02.5919861Z        > machine # [2026-10-29T13:29:02Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-29T13:29:02.5920221Z        > machine # [2026-10-29T13:29:02Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-29T13:29:02.5920557Z        > machine # [2026-10-29T13:29:02Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-29T13:29:02.5920834Z        > (finished: cleanup, in 0.24 seconds)
+2026-10-29T13:29:02.5921039Z        > Traceback (most recent call last):
+2026-10-29T13:29:02.5921460Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/bin/.nixos-test-driver-wrapped", line 9, in <module>
+2026-10-29T13:29:02.5921862Z        >     sys.exit(main())
+2026-10-29T13:29:02.5922027Z        >              ~~~~^^
+2026-10-29T13:29:02.5922452Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/lib/python3.14/site-packages/test_driver/__init__.py", line 194, in main
+2026-10-29T13:29:02.5922927Z        >     driver.run_tests()
+2026-10-29T13:29:02.5923162Z        >     ~~~~~~~~~~~~~~~~^^
+2026-10-29T13:29:02.5923621Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/lib/python3.14/site-packages/test_driver/driver.py", line 437, in run_tests
+2026-10-29T13:29:02.5924379Z        >     self.test_script()
+2026-10-29T13:29:02.5924541Z        >     ~~~~~~~~~~~~~~~~^^
+2026-10-29T13:29:02.5924962Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/lib/python3.14/site-packages/test_driver/driver.py", line 395, in test_script
+2026-10-29T13:29:02.5925481Z        >     exec(self.tests, symbols, None)
+2026-10-29T13:29:02.5925683Z        >     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-10-29T13:29:02.5925888Z        >   File "<string>", line 737, in <module>
+2026-10-29T13:29:02.5926132Z        > AssertionError: a playing pill made 54 commits in 5 s
+2026-10-29T13:29:02.5926359Z        For full logs, run:
+2026-10-29T13:29:02.5926661Z          nix log /nix/store/73psynf3yfaj9hskz6yxmrjv15wz4yy9-vm-test-run-nova-niri-frames.drv
+2026-10-29T13:29:21.8165713Z error: build of '/nix/store/73psynf3yfaj9hskz6yxmrjv15wz4yy9-vm-test-run-nova-niri-frames.drv^*' failed: Cannot build '/nix/store/73psynf3yfaj9hskz6yxmrjv15wz4yy9-vm-test-run-nova-niri-frames.drv'.
+2026-10-29T13:29:21.8166372Z        Reason: builder failed with exit code 1.
+2026-10-29T13:29:21.8166573Z        Output paths:
+2026-10-29T13:29:21.8166845Z          /nix/store/d3apidsii6d4hxak8yw0is2j10wycidb-vm-test-run-nova-niri-frames
+2026-10-29T13:29:21.8167142Z        Last 25 log lines:
+2026-10-29T13:29:21.8167441Z        > machine: (finished: must succeed: awk '/^Pss:/ { print $2 }' /proc/4102/smaps_rollup, in 0.01 seconds)
+2026-10-29T13:29:21.8167912Z        > now playing on niri: 54 frames, 54 commits in 5 s; UI Pss 281.8 MB
+2026-10-29T13:29:21.8168383Z        > !!! Test "a playing pill draws only its equalizer's steps; a paused one draws nothing" failed with error: "a playing pill made 54 commits in 5 s"
+2026-10-29T13:29:21.8168774Z        > cleanup
+2026-10-29T13:29:21.8168928Z        > kill QemuMachine (pid 46)
+2026-10-29T13:29:21.8169362Z        > machine # qemu-system-x86_64: terminating on signal 15 from pid 39 (/nix/store/xahxrjs30p3mw0a42bqg9ikgkikskw8m-python3-3.14.8/bin/python3.14)
+2026-10-29T13:29:21.8169931Z        > machine # [2026-10-29T13:29:02Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-29T13:29:21.8170293Z        > machine # [2026-10-29T13:29:02Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-29T13:29:21.8170632Z        > machine # [2026-10-29T13:29:02Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-29T13:29:21.8170908Z        > (finished: cleanup, in 0.24 seconds)
+2026-10-29T13:29:21.8171116Z        > Traceback (most recent call last):
+2026-10-29T13:29:21.8171532Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/bin/.nixos-test-driver-wrapped", line 9, in <module>
+2026-10-29T13:29:21.8171939Z        >     sys.exit(main())
+2026-10-29T13:29:21.8172103Z        >              ~~~~^^
+2026-10-29T13:29:21.8172530Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/lib/python3.14/site-packages/test_driver/__init__.py", line 194, in main
+2026-10-29T13:29:21.8172974Z        >     driver.run_tests()
+2026-10-29T13:29:21.8173146Z        >     ~~~~~~~~~~~~~~~~^^
+2026-10-29T13:29:21.8173562Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/lib/python3.14/site-packages/test_driver/driver.py", line 437, in run_tests
+2026-10-29T13:29:21.8174003Z        >     self.test_script()
+2026-10-29T13:29:21.8174209Z        >     ~~~~~~~~~~~~~~~~^^
+2026-10-29T13:29:21.8174627Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/lib/python3.14/site-packages/test_driver/driver.py", line 395, in test_script
+2026-10-29T13:29:21.8175156Z        >     exec(self.tests, symbols, None)
+2026-10-29T13:29:21.8175348Z        >     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-10-29T13:29:21.8175535Z        >   File "<string>", line 737, in <module>
+2026-10-29T13:29:21.8175772Z        > AssertionError: a playing pill made 54 commits in 5 s
+2026-10-29T13:29:21.8176000Z        For full logs, run:
+2026-10-29T13:29:21.8176291Z          nix log /nix/store/73psynf3yfaj9hskz6yxmrjv15wz4yy9-vm-test-run-nova-niri-frames.drv
