@@ -43,8 +43,10 @@ let
       steps,
       # Prints the compositor's recent log, for when a step fails.
       compositorLog,
-      # The `queries` entry that lists the open windows.
+      # The `queries` entry that lists the open windows, and the one that
+      # names the focused window.
       listWindows,
+      focusedWindow,
       # Lists the layer surfaces (Nova's among them), for when a test fails.
       listLayers,
     }:
@@ -67,14 +69,23 @@ let
         };
         environment = {
           variables.LIBSEAT_BACKEND = "seatd";
-          # Qt otherwise picks subpixel or grayscale text from the monitor's
-          # subpixel info, depending on whether that has arrived yet, so
-          # screenshots of text would differ from run to run. Set through
-          # PAM, so the systemd user manager (and nova.service) has it.
-          sessionVariables.QT_SUBPIXEL_AA_TYPE = "RGB";
-          # The central pill shows this instead of the clock (ui/bar/Bar.qml),
-          # so screenshots don't change from minute to minute.
-          sessionVariables.NOVA_FROZEN_TIME = "2026-10-24T16:40:00";
+          sessionVariables = {
+            # Qt otherwise picks subpixel or grayscale text from the monitor's
+            # subpixel info, depending on whether that has arrived yet, so
+            # screenshots of text would differ from run to run. Set through
+            # PAM, so the systemd user manager (and nova.service) has them.
+            QT_SUBPIXEL_AA_TYPE = "RGB";
+            # The central pill shows this instead of the clock
+            # (ui/bar/Bar.qml), so screenshots don't change from minute to
+            # minute.
+            NOVA_FROZEN_TIME = "2026-10-24T16:40:00";
+            # Qt's render loop and frame callbacks, in every Qt program: it
+            # logs them at debug level, which novad keeps only with
+            # NOVA_LOG=debug, so they reach the UI's log in the subtests that
+            # turn that on. A file rather than QT_LOGGING_RULES, whose `;`
+            # breaks `machine.systemctl("set-environment ...")`'s quoting.
+            QT_LOGGING_CONF = "${qtLoggingConf}";
+          };
           # foot is a window to have.
           systemPackages = [ pkgs.foot ];
         };
@@ -175,6 +186,7 @@ let
             FULLSCREEN_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."fullscreen the focused window"}"}
             CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
             LIST_WINDOWS = ${builtins.toJSON "${ipcEnv} ${listWindows}"}
+            FOCUSED_WINDOW = ${builtins.toJSON "${ipcEnv} ${focusedWindow}"}
             LIST_LAYERS = ${builtins.toJSON "${ipcEnv} ${listLayers}"}
             ADDED_OUTPUTS = ${
               builtins.toJSON (stepsIfAny [
@@ -274,6 +286,17 @@ let
     };
   };
 
+  # What Qt logs when the UI draws or skips a frame (QT_LOGGING_CONF): the
+  # render loop's steps and timing, and the Wayland side's update requests
+  # and frame callbacks ("Didn't receive frame callback in time", which
+  # unexposes a window, IMP-204 and IMP-208).
+  qtLoggingConf = pkgs.writeText "qtlogging.ini" ''
+    [Rules]
+    qt.scenegraph.renderloop.debug=true
+    qt.scenegraph.time.renderloop.debug=true
+    qt.qpa.wayland.backingstore.debug=true
+  '';
+
   hyprlandConfig = pkgs.writeText "hyprland.conf" ''
     # How Nova starts on Hyprland without uwsm (see nova.service).
     exec-once = nova
@@ -369,6 +392,7 @@ in
     };
     compositorLog = "journalctl --user -u niri -n 100 --no-pager";
     listWindows = queries.windows;
+    focusedWindow = queries.focused-window;
     listLayers = "niri msg --json layers";
     steps = {
       "focus the next workspace" = "niri msg action focus-workspace-down";
@@ -407,6 +431,7 @@ in
     };
     compositorLog = "tail -n 100 $XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprland.log";
     listWindows = queries.clients;
+    focusedWindow = queries.activewindow;
     listLayers = "hyprctl -j layers";
     steps = {
       "focus the next workspace" = "hyprctl dispatch workspace 2";

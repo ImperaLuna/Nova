@@ -418,6 +418,24 @@
                 touch $out
               '';
 
+          # The CI failure tracker (scripts/vm-failures.sh): shellcheck, and
+          # its tests on recorded CI logs.
+          vm-failures-script =
+            pkgs.runCommand "nova-vm-failures-script"
+              {
+                nativeBuildInputs = [
+                  pkgs.shellcheck
+                  pkgs.jq
+                ];
+              }
+              ''
+                cp -r ${./scripts} scripts && chmod -R u+w scripts
+                shellcheck scripts/vm-failures.sh scripts/test-vm-failures.sh
+                patchShebangs scripts
+                scripts/test-vm-failures.sh
+                touch $out
+              '';
+
           # The blur rules `nova setup` writes for niri, against this niri.
           niri-rules = pkgs.runCommand "nova-niri-rules" { nativeBuildInputs = [ pkgs.niri ]; } ''
             niri validate -c ${./packaging/compositor/niri.kdl}

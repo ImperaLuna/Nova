@@ -100,19 +100,13 @@ with subtest("nova toggle launcher opens the launcher, empty; typing finds foot,
     retry(lambda _last_try: ui_log_count(BAR_SPACE_GIVEN) > given, timeout=WAIT)
     before = ui_log_count(LAUNCHER_TYPING)
     machine.succeed(as_user("nova toggle launcher"))
-    try:
-        # Opened over it, it holds the keyboard too, so Esc reaches it. It
-        # sometimes never did while Qt's threaded render loop could stop
-        # drawing its surface (IMP-208, crates/novad/src/render_loop.rs):
-        # who had the keyboard then.
-        retry(lambda _last_try: ui_log_count(LAUNCHER_TYPING) > before, timeout=CLICK_EFFECT)
-        assert_layers("overlay", "nova-panel", "nova-stage", "nova-click-catcher")
-        press_until_logged(ESC, LAUNCHER_CLOSED)
-    except Exception:
-        for command in (LIST_LAYERS, LIST_WINDOWS, "nova logs --no-follow --ui -n 50", COMPOSITOR_LOG):
-            print(f"$ {command}")
-            print(machine.execute(as_user(command))[1])
-        raise
+    # Opened over it, it holds the keyboard too, so Esc reaches it. It
+    # sometimes never did while Qt's threaded render loop could stop drawing
+    # its surface (IMP-208, crates/novad/src/render_loop.rs); a failure here
+    # prints who had the keyboard (print_failure_state).
+    retry(lambda _last_try: ui_log_count(LAUNCHER_TYPING) > before, timeout=CLICK_EFFECT)
+    assert_layers("overlay", "nova-panel", "nova-stage", "nova-click-catcher")
+    press_until_logged(ESC, LAUNCHER_CLOSED)
     assert_layers("top", "nova-click-catcher")
     assert_layers("overlay", "nova-stage")
     # The top edge brings the pills back over the fullscreen window, and

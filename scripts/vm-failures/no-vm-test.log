@@ -1,0 +1,8 @@
+2026-10-29T10:03:45.4488435Z vm-test-run-nova-hyprland-session> machine # [  139.594389] pipewire[1057]: mod.x11-bell: X11 I/O error handler called on display :0
+2026-10-29T10:03:45.4501710Z vm-test-run-nova-hyprland-session> machine # [  139.594983] pipewire[1057]: mod.x11-bell: X11 display (:0) has encountered a fatal I/O error
+2026-10-29T10:04:08.9840372Z error: failed to build attribute 'checks.x86_64-linux.clippy', build of '/nix/store/zld93qak1nl4sx159sqxjgj3ls9j0al4-nova-clippy-0.1.0.drv^*' failed: Cannot build '/nix/store/zld93qak1nl4sx159sqxjgj3ls9j0al4-nova-clippy-0.1.0.drv'.
+2026-10-29T10:04:08.9841087Z        Reason: builder failed with exit code 101.
+2026-10-29T10:04:08.9846552Z        > error: draining all elements of a collection into a new collection of the same type
+2026-10-29T10:04:08.9849811Z        > error: could not compile `novad` (lib test) due to 1 previous error
+2026-10-29T10:04:08.9958186Z error: some errors were encountered during the evaluation
+2026-10-29T10:04:09.0888431Z ##[error]Process completed with exit code 1.
