@@ -7,6 +7,9 @@ import "../daemon/protocol.js" as Protocol
 // on Lock, the harmless one. Lock and suspend run at once. Log out, restart
 // and shut down ask once more: a second pick within Tokens.durationConfirm
 // runs them, otherwise they disarm. Nothing else is picked while one runs.
+// Those three end the session, so they wait for the menu to close first
+// (`leaving`): run while it closes, the session went down mid-animation and
+// left the half-closed menu frozen on screen (IMP-200).
 QtObject {
     id: choice
 
@@ -17,35 +20,40 @@ QtObject {
             label: qsTr("Lock"),
             doing: qsTr("Locking"),
             key: "l",
-            confirm: false
+            confirm: false,
+            leaves: false
         },
         {
             action: Protocol.POWER_SUSPEND,
             label: qsTr("Suspend"),
             doing: qsTr("Suspending"),
             key: "s",
-            confirm: false
+            confirm: false,
+            leaves: false
         },
         {
             action: Protocol.POWER_LOG_OUT,
             label: qsTr("Log out"),
             doing: qsTr("Logging out"),
             key: "o",
-            confirm: true
+            confirm: true,
+            leaves: true
         },
         {
             action: Protocol.POWER_REBOOT,
             label: qsTr("Restart"),
             doing: qsTr("Restarting"),
             key: "r",
-            confirm: true
+            confirm: true,
+            leaves: true
         },
         {
             action: Protocol.POWER_POWER_OFF,
             label: qsTr("Shut down"),
             doing: qsTr("Shutting down"),
             key: "p",
-            confirm: true
+            confirm: true,
+            leaves: true
         }
     ]
 
@@ -57,8 +65,11 @@ QtObject {
     // left (1 down to 0).
     property string armed: ""
     property real armedLeft: 0
-    // The action novad is running.
+    // The action novad is running, or that waits for the menu to close.
     property string running: ""
+    // The action that ends the session, waiting for the menu to close and
+    // that to be on screen (left()).
+    property string leaving: ""
     // Why the last action failed, until the menu opens again.
     property string problem: ""
     // Whether the wait is draining.
@@ -66,6 +77,8 @@ QtObject {
 
     // An action to run now.
     signal runRequested(string action)
+    // An action that ends the session: close the menu, then call left().
+    signal leaveRequested(string action)
     // Esc with nothing armed.
     signal closeRequested
 
@@ -77,8 +90,17 @@ QtObject {
         return options[action]?.reason ?? "";
     }
 
-    // The menu opened.
+    function leaves(action: string): bool {
+        return actions.find(entry => entry.action === action)?.leaves ?? false;
+    }
+
+    // The menu opened. One opened again before it closed for an action
+    // that ends the session keeps the session.
     function reset() {
+        if (leaving !== "") {
+            leaving = "";
+            running = "";
+        }
         disarm();
         selected = Protocol.POWER_LOCK;
         problem = "";
@@ -117,6 +139,21 @@ QtObject {
         }
         disarm();
         running = action;
+        if (entry.leaves) {
+            leaving = action;
+            leaveRequested(action);
+            return;
+        }
+        runRequested(action);
+    }
+
+    // The menu has closed, and that's on screen: the action waiting for it
+    // runs.
+    function left() {
+        if (leaving === "")
+            return;
+        const action = leaving;
+        leaving = "";
         runRequested(action);
     }
 

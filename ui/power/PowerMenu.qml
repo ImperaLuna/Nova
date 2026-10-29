@@ -33,6 +33,10 @@ StagePanel {
         onRunRequested: action => {
             console.info(`nova: power menu: ${action}`);
             PowerService.run(action, error => {
+                // The menu closed before an action that ends the session;
+                // it opens again to say why that didn't happen.
+                if (error && menu.choice.leaves(action))
+                    menu.open = true;
                 menu.choice.finished(error);
                 if (error)
                     console.warn(`nova: power menu: ${action}: ${error}`);
@@ -40,7 +44,28 @@ StagePanel {
                     menu.open = false;
             });
         }
+        onLeaveRequested: {
+            menu.open = false;
+            menu.leaveIfClosed();
+        }
         onCloseRequested: menu.open = false
+    }
+
+    // Closed, its last frame drawn: the action waiting for that runs once
+    // the frame is on screen (FrameOut), so the session never ends on a
+    // half-closed menu.
+    readonly property bool closed: !open && !morph.moving && !reveal.running
+    onClosedChanged: leaveIfClosed()
+    function leaveIfClosed() {
+        if (closed && choice.leaving !== "")
+            out.request();
+    }
+    readonly property FrameOut out: FrameOut {
+        window: menu.Window.window
+        onPendingChanged: {
+            if (!pending && menu.closed)
+                menu.choice.left();
+        }
     }
     // How long the system has been up, in whole minutes, ticking while the
     // menu is open.
@@ -52,9 +77,10 @@ StagePanel {
     readonly property string uptime: Duration.uptime((clock.date.getTime() - PowerService.bootedAt) / Duration.SECOND_MS)
 
     // An action still running after the menu closed shows nothing, so it
-    // keeps neither the surface mapped nor its spinner turning.
+    // keeps neither the surface mapped nor its spinner turning. One waiting
+    // for the menu to close keeps it drawing until that's on screen.
     readonly property bool showsRunning: open && choice.running !== ""
-    moving: morph.moving || reveal.running || showsRunning || choice.counting
+    moving: morph.moving || reveal.running || showsRunning || choice.counting || choice.leaving !== ""
 
     // Open, it's as tall as its rows; closed, a nub at the edge.
     readonly property real openWidth: Tokens.powerMenuWidth

@@ -4,8 +4,9 @@ import "../power"
 import "../daemon/protocol.js" as Protocol
 
 // The power menu's picking: starts on Lock, arrows skip what can't run,
-// lock runs at once, shut down only on a second pick, Esc disarms before it
-// closes, and nothing else runs while one action does.
+// lock runs at once, shut down only on a second pick and once the menu has
+// closed, Esc disarms before it closes, and nothing else runs while one
+// action does.
 TestCase {
     name: "PowerChoice"
 
@@ -24,14 +25,21 @@ TestCase {
         signalName: "closeRequested"
     }
 
+    SignalSpy {
+        id: leaves
+        signalName: "leaveRequested"
+    }
+
     function make(options) {
         const choice = createTemporaryObject(choiceComponent, null, {
             options: options ?? {}
         });
         runs.clear();
         closes.clear();
+        leaves.clear();
         runs.target = choice;
         closes.target = choice;
+        leaves.target = choice;
         return choice;
     }
 
@@ -51,9 +59,54 @@ TestCase {
         verify(choice.counting);
         compare(runs.count, 0);
         choice.pick(Protocol.POWER_POWER_OFF);
-        compare(runs.count, 1);
+        compare(leaves.count, 1);
         compare(choice.armed, "");
         verify(!choice.counting);
+    }
+
+    // IMP-200: run while the menu closed, the session ended on a frozen,
+    // half-closed menu.
+    function test_ending_the_session_waits_for_the_menu_to_close() {
+        const choice = make();
+        for (const action of [Protocol.POWER_LOG_OUT, Protocol.POWER_REBOOT, Protocol.POWER_POWER_OFF]) {
+            runs.clear();
+            leaves.clear();
+            choice.pick(action);
+            choice.pick(action);
+            compare(leaves.count, 1, action);
+            compare(leaves.signalArguments[0][0], action);
+            compare(runs.count, 0, `${action} waits for the menu to close`);
+            compare(choice.running, action);
+            choice.pick(Protocol.POWER_LOCK);
+            compare(runs.count, 0, "nothing else runs meanwhile");
+            choice.left();
+            compare(runs.count, 1);
+            compare(runs.signalArguments[0][0], action);
+            compare(choice.leaving, "");
+            choice.left();
+            compare(runs.count, 1, "runs once");
+            choice.finished(null);
+        }
+    }
+
+    function test_lock_and_suspend_dont_wait() {
+        const choice = make();
+        choice.pick(Protocol.POWER_SUSPEND);
+        compare(runs.count, 1);
+        compare(leaves.count, 0);
+    }
+
+    function test_opening_again_before_closed_keeps_the_session() {
+        const choice = make();
+        choice.pick(Protocol.POWER_REBOOT);
+        choice.pick(Protocol.POWER_REBOOT);
+        compare(leaves.count, 1);
+        choice.reset();
+        compare(choice.running, "");
+        choice.left();
+        compare(runs.count, 0);
+        choice.pick(Protocol.POWER_LOCK);
+        compare(runs.count, 1, "picks again");
     }
 
     function test_esc_disarms_then_closes() {
