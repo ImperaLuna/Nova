@@ -841,6 +841,19 @@ pub struct Notification {
     /// those kept from before novad started.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub live: bool,
+    /// The device a low battery alert of Nova's own is about, for its
+    /// icon: never set on an app's notification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<NotificationDevice>,
+}
+
+/// The device a low battery alert is about: what it is and its charge
+/// when the alert was sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationDevice {
+    pub kind: PeripheralKind,
+    pub battery: Battery,
 }
 
 /// One of a notification's buttons.
@@ -2212,6 +2225,7 @@ mod tests {
                     time: 1_761_400_000,
                     unread: true,
                     live: true,
+                    device: None,
                 },
                 Notification {
                     id: 3,
@@ -2229,6 +2243,10 @@ mod tests {
                     time: 1_761_399_000,
                     unread: false,
                     live: false,
+                    device: Some(NotificationDevice {
+                        kind: PeripheralKind::Mouse,
+                        battery: Battery::Level(BatteryLevel::Critical),
+                    }),
                 },
             ],
             do_not_disturb: false,

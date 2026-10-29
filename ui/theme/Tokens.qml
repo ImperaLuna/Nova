@@ -499,6 +499,15 @@ QtObject {
     readonly property int countdownTick: 83
     readonly property color notificationTimer: alpha(fg, 0.35)
     readonly property real notificationCriticalRim: 1.5
+    // A low battery alert's icon: the device's glyph on a rounded tile (its
+    // radius and the glyph a share of the icon's size), and the device's
+    // little battery on the tile's corner, scaled down at the 40 px size,
+    // on a chip of the card's color that sticks out a little.
+    readonly property real notificationDeviceRadius: 0.3
+    readonly property real notificationDeviceGlyph: 0.55
+    readonly property real notificationDeviceBattery: 0.75
+    readonly property int notificationDeviceChipPad: 3
+    readonly property int notificationDeviceChipOut: 4
     // Counts in the list: its heading's, and "+2" on a stack of an app's.
     readonly property int notificationChipHeight: 16
     readonly property int notificationChipPad: 6

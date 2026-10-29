@@ -231,6 +231,10 @@ impl Settings {
             || peripherals::Peripherals::start(sources.peripherals.clone(), Arc::clone(hub), Arc::clone(logger)),
             logger,
         );
+        // Its low battery alerts go to whatever notification server is up.
+        if let Some(peripherals) = &peripherals {
+            peripherals.set_notifications(notifications.as_ref());
+        }
         // It has no options either. Its icons reach whatever tray is up.
         let x11_tray = reconcile(
             x11_tray::FEATURE_ID,
