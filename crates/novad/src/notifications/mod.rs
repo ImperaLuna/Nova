@@ -32,7 +32,8 @@ use crate::session_bus::{self, Bus, Stop};
 use crate::{lock, state_file};
 use futures_core::Stream;
 use nova_protocol::{
-    Event, LogLevel, MAX_NOTIFICATIONS, Notification, NotificationAction, NotificationApp, NotificationList, Urgency,
+    Event, LogLevel, MAX_NOTIFICATIONS, Notification, NotificationAction, NotificationApp, NotificationDevice,
+    NotificationList, Urgency,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::poll_fn;
@@ -108,6 +109,20 @@ impl Sources {
             icons,
         }
     }
+}
+
+/// A notification of Nova's own (a device's low battery), sent with
+/// [`Notifications::send_own`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Own {
+    /// Who it reads as from, on its app line.
+    pub app: String,
+    pub summary: String,
+    pub body: String,
+    pub critical: bool,
+    /// The id of an earlier one it takes the place of, or 0.
+    pub replaces: u32,
+    pub device: Option<NotificationDevice>,
 }
 
 /// What a click on a notification ([`Notifications::click`]) did.
@@ -213,6 +228,32 @@ impl Notifications {
         // Waits as long as connecting may take; a timed-out call fails sooner.
         let _ = started.recv_timeout(2 * CALL_TIMEOUT);
         Arc::new(Self { shared })
+    }
+
+    /// Shows a notification of Nova's own, as if an app sent it, and
+    /// returns its id (0 once stopped).
+    pub fn send_own(&self, own: Own) -> u32 {
+        let mut hints = HashMap::new();
+        if own.critical
+            && let Ok(critical) = OwnedVariant::try_from(Variant::U8(2))
+        {
+            hints.insert("urgency".to_string(), critical);
+        }
+        let sent = Sent {
+            app_name: own.app,
+            replaces_id: own.replaces,
+            app_icon: String::new(),
+            summary: own.summary,
+            body: own.body,
+            actions: Vec::new(),
+            hints,
+            expire_timeout: -1,
+        };
+        let (id, gone) = self.shared.notify(sent, None, own.device);
+        for old in gone {
+            self.shared.signal("NotificationClosed", &(old, Closed::Other as u32));
+        }
+        id
     }
 
     /// Writes what's still unsaved, lets go of the server's name and
@@ -362,10 +403,10 @@ impl Notifications {
 }
 
 impl Shared {
-    /// Takes a notification an app, the bus connection `sender`, sent.
-    /// Returns its id, and the ones it pushed off the list, whose apps are
-    /// to be told.
-    fn notify(&self, sent: Sent, sender: Option<String>) -> (u32, Vec<u32>) {
+    /// Takes a notification an app, the bus connection `sender`, sent, or
+    /// Nova itself about `device`. Returns its id, and the ones it pushed
+    /// off the list, whose apps are to be told.
+    fn notify(&self, sent: Sent, sender: Option<String>, device: Option<NotificationDevice>) -> (u32, Vec<u32>) {
         let now = jiff::Timestamp::now().as_second();
         let mut sent = sent;
         let transient = take_bool(&mut sent.hints, "transient");
@@ -380,7 +421,7 @@ impl Shared {
         }
         .unwrap_or_else(|| next_id(&mut state));
         let notification = self.read(id, sent, now);
-        let notification = Notification { unread: !transient, ..notification };
+        let notification = Notification { unread: !transient, device, ..notification };
         // A muted app's notification isn't kept, nor the one it replaces.
         if state.saved.muted.contains(&notification.app) {
             for old in state.saved.items.iter().chain(&state.transient).filter(|old| old.id == id) {
@@ -499,6 +540,7 @@ impl Shared {
             time: now,
             unread: false,
             live: true,
+            device: None,
         }
     }
 
@@ -823,7 +865,7 @@ impl Server {
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> zbus::fdo::Result<u32> {
         let sent = Sent { app_name, replaces_id, app_icon, summary, body, actions, hints, expire_timeout };
-        let (id, gone) = self.shared.notify(sent, header.sender().map(|sender| sender.to_string()));
+        let (id, gone) = self.shared.notify(sent, header.sender().map(|sender| sender.to_string()), None);
         for old in gone {
             Self::notification_closed(&emitter, old, Closed::Other as u32).await?;
         }

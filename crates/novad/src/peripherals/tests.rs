@@ -19,6 +19,8 @@
 
 use super::*;
 use crate::hub::{ClientQueue, Outgoing};
+use crate::icons::Icons;
+use crate::notifications::{self, Notifications};
 use crate::session_bus::TestBus;
 use fake_hidraw::FakeHidraw;
 use nova_protocol::{LogLevel, Topic};
@@ -89,6 +91,7 @@ struct Fixture {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     ui: Receiver<Outgoing>,
+    client: ClientId,
     _ui_stream: UnixStream,
     hidraw: FakeHidraw,
 }
@@ -106,7 +109,7 @@ impl Fixture {
         for folder in ["sys", "bin", "usb/001"] {
             std::fs::create_dir_all(dir.join(folder)).unwrap();
         }
-        Self { dir, bus, hub, logger, ui, _ui_stream: ui_stream, hidraw: FakeHidraw::default() }
+        Self { dir, bus, hub, logger, ui, client: id, _ui_stream: ui_stream, hidraw: FakeHidraw::default() }
     }
 
     fn start(&self) -> Arc<Peripherals> {
@@ -122,6 +125,26 @@ impl Fixture {
         // A new run first clears what clients heard from an earlier one.
         assert_eq!(self.next(), json!([]));
         peripherals
+    }
+
+    /// A notification server on the test's bus, low battery alerts going
+    /// to it, and the UI hearing its pop-ups.
+    fn notifications(&self, peripherals: &Peripherals) -> Arc<Notifications> {
+        let sources = notifications::Sources {
+            bus: Bus::Address(self.bus.address.clone()),
+            state_file: self.dir.join("notifications.json"),
+            images: self.dir.join("images"),
+            icons: Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[], None)),
+        };
+        let server = Notifications::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger));
+        self.hub.subscribe(self.client, Topic::Notifications);
+        peripherals.set_notifications(Some(&server));
+        server
+    }
+
+    /// The next notification to pop up.
+    fn popup(&self) -> Value {
+        crate::hub::next_named(&self.ui, "notification_popup", WAIT)
     }
 
     /// Serves UPower with the devices of `recorded/<name>`, their `/sys`
@@ -711,4 +734,62 @@ fn keychron_lists_a_keyboard_on_cable_and_dongle_once() {
     }
     assert_eq!(json!({"link": devices[0]["link"], "charging": devices[0]["charging"]}), on_battery, "{devices}");
     peripherals.stop();
+}
+
+#[test]
+fn a_battery_running_down_alerts_once_at_each_step() {
+    let fixture = Fixture::new("alerts");
+    let upower = fixture.upower(&["upower.json"]);
+    let peripherals = fixture.start();
+    let _server = fixture.notifications(&peripherals);
+    let mut popups = std::collections::VecDeque::new();
+    // Changes the mouse and waits for the list to show it, keeping the
+    // pop-ups that come meanwhile: an alert comes right after its list.
+    let mut read = |change: &dyn Fn(&mut Props)| {
+        upower.change(MOUSE, change);
+        loop {
+            let event = crate::hub::next_event(&fixture.ui, WAIT);
+            match event["event"].as_str() {
+                Some("peripherals") => return,
+                Some("notification_popup") => popups.push_back(event["data"].clone()),
+                _ => {}
+            }
+        }
+    };
+    let discharging = |percent: f64| {
+        move |mouse: &mut Props| {
+            mouse.percentage = percent;
+            mouse.state = 2;
+            mouse.is_present = true;
+        }
+    };
+
+    read(&discharging(20.0));
+    // Under 20% but over 10%: said already.
+    read(&discharging(15.0));
+    read(&discharging(10.0));
+    read(&discharging(4.0));
+    // Away and back still low: nothing again.
+    read(&|mouse| mouse.is_present = false);
+    read(&discharging(4.0));
+    // Charging says them all again: a fresh discharge alerts at 20% again.
+    read(&|mouse| mouse.state = 1);
+    read(&discharging(19.0));
+    read(&discharging(18.0));
+    peripherals.stop();
+    let mut popups = popups.into_iter().chain(std::iter::from_fn(|| Some(fixture.popup())));
+
+    let first = popups.next().unwrap();
+    assert_eq!(first["app"], alerts::APP);
+    assert_eq!(first["summary"], "Mouse battery at 20%");
+    assert_eq!(first["body"], "PRO X SUPERLIGHT is running low.");
+    assert_eq!(first["urgency"], "normal");
+    assert_eq!(first["device"], json!({"kind": "mouse", "battery": {"percent": 20}}));
+    let low = popups.next().unwrap();
+    assert_eq!(low["summary"], "Mouse battery low: 10%");
+    assert_eq!(low["id"], first["id"], "the newer alert takes the older one's place");
+    let critical = popups.next().unwrap();
+    assert_eq!(critical["summary"], "Mouse battery critical: 4%");
+    assert_eq!((critical["urgency"].clone(), critical["timeout_ms"].clone()), (json!("critical"), json!(0)));
+    assert_eq!(popups.next().unwrap()["summary"], "Mouse battery at 19%");
 }

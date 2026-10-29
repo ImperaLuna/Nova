@@ -23,12 +23,16 @@
 //! published once they settle, and only when the list differs from the
 //! last one sent.
 //!
+//! When a device's battery runs low, `alerts` says so with a notification
+//! (feature `notifications`), at 20%, 10% and 5%.
+//!
 //! Only devices that are connected and on now are listed: one that's off
 //! (a headset whose dongle stays plugged in) or not present leaves the
 //! list. Devices that report no battery anywhere (a keyboard on stock
 //! firmware behind its dongle) aren't listed either: finding them would
 //! take a HID enumeration of its own.
 
+mod alerts;
 #[cfg(test)]
 mod fake_hidraw;
 mod headsetcontrol;
@@ -44,10 +48,11 @@ mod upower;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
+use crate::notifications::Notifications;
 use crate::session_bus::Bus;
 use nova_protocol::{Event, Peripheral, PeripheralLink, PeripheralSource, Peripherals as PeripheralsEvent};
 use std::path::PathBuf;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 pub const FEATURE_ID: &str = "peripherals";
@@ -187,6 +192,8 @@ struct Shared {
     wake: Condvar,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
+    /// Where low battery alerts go, while notifications are on.
+    notifications: Mutex<Weak<Notifications>>,
 }
 
 struct State {
@@ -197,6 +204,7 @@ struct State {
     /// When the first and the last change not yet published came.
     pending: Option<(Instant, Instant)>,
     stopped: bool,
+    alerts: alerts::Alerts,
 }
 
 impl Peripherals {
@@ -209,10 +217,12 @@ impl Peripherals {
                 sent: PeripheralsEvent { devices: Vec::new() },
                 pending: None,
                 stopped: false,
+                alerts: alerts::Alerts::default(),
             }),
             wake: Condvar::new(),
             hub,
             logger,
+            notifications: Mutex::new(Weak::new()),
         });
         // Clients that heard an earlier run's list (the feature was off a
         // while) start from nothing again, even if nothing is found now.
@@ -266,6 +276,12 @@ impl Peripherals {
         }
     }
 
+    /// Where low battery alerts go from now on: nowhere while
+    /// notifications are off.
+    pub fn set_notifications(&self, notifications: Option<&Arc<Notifications>>) {
+        *lock(&self.shared.notifications) = notifications.map(Arc::downgrade).unwrap_or_default();
+    }
+
     /// Sends a new subscriber, client `id`, the devices last published,
     /// under the lock that publishing takes, so a newer event can't arrive
     /// before it.
@@ -297,9 +313,33 @@ impl Shared {
             let event = merge(&state.found);
             if event != state.sent {
                 self.hub.publish(&Event::Peripherals(event.clone()));
+                let alerts = state.alerts.update(&event.devices);
                 state.sent = event;
+                if !alerts.is_empty() {
+                    // Sent unlocked: the notification server takes locks of its own.
+                    drop(state);
+                    let sent = self.alert(alerts);
+                    state = lock(&self.state);
+                    for (id, notification) in sent {
+                        state.alerts.sent(&id, notification);
+                    }
+                }
             }
         }
+    }
+
+    /// Sends `alerts`, when notifications are on, and says which
+    /// notification each became.
+    fn alert(&self, alerts: Vec<alerts::Alert>) -> Vec<(String, u32)> {
+        let Some(notifications) = lock(&self.notifications).upgrade() else { return Vec::new() };
+        alerts
+            .into_iter()
+            .map(|alert| {
+                self.logger.info(LOG_SOURCE, &alert.own.summary);
+                let id = notifications.send_own(alert.own);
+                (alert.id, id)
+            })
+            .collect()
     }
 }
 
