@@ -1,6 +1,6 @@
 id = "peripherals"
 name = "Device batteries"
-description = "The battery of your wireless mouse, keyboard, headset or controller in quick settings, from UPower, Logitech's HID++ for receivers the kernel doesn't drive, and HeadsetControl for headsets the kernel can't read."
+description = "The battery of your wireless mouse, keyboard, headset or controller in quick settings, from UPower, Logitech's HID++ for receivers the kernel doesn't drive, Keychron keyboards on the community battery firmware, and HeadsetControl for headsets the kernel can't read."
 default = true
 daemon = "peripherals"
 
@@ -10,9 +10,10 @@ daemon = "peripherals"
 # the feature works without it. Fedora and Debian don't all package it:
 # install it from its releases and novad picks it up.
 # Logitech devices on a receiver the kernel doesn't drive are read over
-# HID++, which needs udev/70-nova-logitech-hidpp.rules: the NixOS module
-# installs it; elsewhere copy it to /etc/udev/rules.d and replug the
-# receiver.
+# HID++, and Keychron keyboards over raw HID, which need the rules in
+# udev/ (70-nova-logitech-hidpp.rules, 70-nova-keychron-raw-hid.rules):
+# the NixOS module installs them; elsewhere copy them to
+# /etc/udev/rules.d and replug the receiver or dongle.
 [variants.default]
 nix = ["upower", "headsetcontrol"]
 arch = ["upower", "headsetcontrol"]

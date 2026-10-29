@@ -8,9 +8,9 @@
 //! for its id. The battery comes from UNIFIED_BATTERY (`0x1004`, newer
 //! devices) or else BATTERY_STATUS (`0x1000`).
 
-use super::channel::{Channel, Received};
 use super::descriptor::Reports;
 use super::protocol::{self, Answer, Length};
+use crate::peripherals::hidraw::channel::{Channel, Received};
 use crate::peripherals::name;
 use nova_protocol::{Battery, BatteryLevel, PeripheralKind};
 use std::time::{Duration, Instant};
