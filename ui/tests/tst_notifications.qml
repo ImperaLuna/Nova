@@ -382,6 +382,28 @@ Item {
             compare(spy.signalArguments[0][0], "show");
         }
 
+        function test_a_low_battery_alert_shows_its_device_and_battery() {
+            const card = createTemporaryObject(cardComponent, stage, {
+                notification: note(9, "Devices", {
+                    device: {
+                        kind: "mouse",
+                        battery: {
+                            percent: 10
+                        }
+                    }
+                })
+            });
+            const device = findChild(card, "device");
+            verify(device.visible, "the device's glyph instead of the app's letter");
+            const battery = findChild(card, "deviceBattery");
+            compare(battery.fill, 0.1);
+            verify(battery.low);
+            const plain = createTemporaryObject(cardComponent, stage, {
+                notification: note(10, "Firefox")
+            });
+            verify(!findChild(plain, "device").visible, "apps' notifications keep their icon");
+        }
+
         function test_buttons_that_dont_fit_wrap_and_stay_on_the_card() {
             const actions = [];
             for (let i = 0; i < 8; i++)
