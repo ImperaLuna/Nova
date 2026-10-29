@@ -105,6 +105,7 @@ enum NovaCommand {
     /// which sets the wallpapers Nova starts with.
     Wallpaper(wallpaper::WallpaperArgs),
     /// Send a raw request to novad and print the reply as JSON, for scripts.
+    /// `subscribe` prints its topics' events as they come instead.
     Ipc(ipc::IpcArgs),
 }
 

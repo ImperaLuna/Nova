@@ -1,9 +1,13 @@
 //! `nova ipc`: one raw request to novad, its result printed as JSON, for
 //! scripts. The command and its arguments are checked against
-//! nova-protocol before anything is sent.
+//! nova-protocol before anything is sent. `subscribe` instead prints the
+//! events of its topics, one JSON object per line, until novad stops or the
+//! command is interrupted (watching a topic from a shell, like
+//! `scripts/desktop/isolated-novad` does).
 
 use crate::client::Client;
 use nova_protocol::Command;
+use std::io::Write;
 use std::path::Path;
 
 #[derive(clap::Args)]
@@ -18,7 +22,21 @@ pub struct IpcArgs {
 pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
     let command = parse(&args.command, args.args.as_deref())?;
     let mut client = Client::reach(socket).map_err(|unreachable| unreachable.advice())?;
-    println!("{}", client.request(command)?);
+    let follows = matches!(command, Command::Subscribe { .. });
+    let result = client.request(command)?;
+    if !follows {
+        println!("{result}");
+        return Ok(());
+    }
+    client.follow()?;
+    let mut stdout = std::io::stdout().lock();
+    while let Some(event) = client.next_event()? {
+        let line = serde_json::to_string(&event).map_err(|e| e.to_string())?;
+        // A closed pipe (`| head`) ends the watch, quietly.
+        if writeln!(stdout, "{line}").and_then(|()| stdout.flush()).is_err() {
+            break;
+        }
+    }
     Ok(())
 }
 

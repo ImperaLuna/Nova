@@ -173,6 +173,18 @@ fn ipc_prints_novads_result_and_refuses_unknown_requests() {
 }
 
 #[test]
+fn ipc_subscribe_prints_the_topics_events_as_they_come() {
+    let novad = Novad::start("ipc-subscribe");
+    let mut child =
+        novad.nova(&["ipc", "subscribe", r#"{"topics": ["features"]}"#]).stdout(Stdio::piped()).spawn().unwrap();
+    let first = BufReader::new(child.stdout.take().unwrap()).lines().next().unwrap().unwrap();
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let event: serde_json::Value = serde_json::from_str(&first).unwrap();
+    assert_eq!(event["event"], "features", "{first}");
+}
+
+#[test]
 fn completions_cover_the_commands() {
     let output = Command::new(env!("CARGO_BIN_EXE_nova")).args(["completions", "bash"]).output().unwrap();
     let script = stdout(&output);
