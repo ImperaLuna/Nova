@@ -135,6 +135,9 @@ pub struct Args {
 
 /// Everything a connection needs to answer requests.
 pub struct Daemon {
+    /// The commit novad was built from, read at start: share/nova may be
+    /// replaced under a running novad.
+    revision: Option<String>,
     started: Instant,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
@@ -157,10 +160,7 @@ impl Daemon {
         let disabled = UiStatus { state: UiState::Disabled, pid: None, pss_kib: None, restarts: 0, last_crash: None };
         Status {
             daemon: env!("CARGO_PKG_VERSION").into(),
-            revision: nova_paths::installed(REVISION_FILE)
-                .and_then(|file| std::fs::read_to_string(file).ok())
-                .map(|text| text.trim().to_owned())
-                .filter(|revision| !revision.is_empty()),
+            revision: self.revision.clone(),
             pid: std::process::id(),
             uptime_secs: self.started.elapsed().as_secs(),
             pss_kib: procfs::pss_kib(Path::new(procfs::PROC), std::process::id()),
@@ -371,6 +371,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         start_wallpaper(&args.state_dir, nova_paths::home(), &sources.path_var, compositor.as_ref(), &logger);
     let daemon = Arc::new(Daemon {
         started: Instant::now(),
+        revision: installed_revision(),
         hub,
         logger,
         ui,
@@ -550,6 +551,14 @@ pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// The file in share/nova that names the commit Nova was built from
 /// (flake.nix writes it).
 const REVISION_FILE: &str = "revision";
+
+/// The commit this novad was built from, when its package records one.
+fn installed_revision() -> Option<String> {
+    nova_paths::installed(REVISION_FILE)
+        .and_then(|file| std::fs::read_to_string(file).ok())
+        .map(|text| text.trim().to_owned())
+        .filter(|revision| !revision.is_empty())
+}
 
 /// Runs a short-lived program with a deadline, for the CLI's own lookups.
 pub use child::output_within;

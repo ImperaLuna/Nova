@@ -62,7 +62,7 @@ pub fn path_var(name: &str) -> Option<PathBuf> {
 /// `<prefix>/share/nova/<name>` next to the running binary (the Nix and
 /// distro package layout) when it exists, else `./<name>` for a checkout.
 pub fn installed_or_checkout(name: &str) -> PathBuf {
-    installed(name).unwrap_or_else(|| PathBuf::from(name))
+    installed(name).filter(|dir| dir.is_dir()).unwrap_or_else(|| PathBuf::from(name))
 }
 
 /// `<prefix>/share/nova/<name>` next to the running binary, when it exists.

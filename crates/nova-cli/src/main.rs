@@ -2,6 +2,14 @@
 //! talking to the daemon, which is this same binary run as `nova daemon`;
 //! the daemon's logic lives in the novad crate.
 
+/// Nova's GitHub repository (`owner/name`), as a literal so messages can
+/// `concat!` it.
+macro_rules! github_repo {
+    () => {
+        "ImperaLuna/Nova"
+    };
+}
+
 mod client;
 mod config;
 mod doctor;

@@ -309,6 +309,16 @@
         }
         // {
           build = (novaFor pkgs).nova;
+          # The package records its commit where novad reads it
+          # (share/nova/revision); the other checks build without one.
+          revision =
+            let
+              revision = "0123456789abcdef0123456789abcdef01234567-dirty";
+            in
+            pkgs.runCommand "nova-revision" { } ''
+              [[ "$(cat ${(novaFor pkgs).novaAt revision}/share/nova/revision)" == ${revision} ]]
+              touch $out
+            '';
           tests =
             let
               inherit (rustFor pkgs) craneLib common cargoArtifacts;

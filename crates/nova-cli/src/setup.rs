@@ -46,10 +46,14 @@ const FEDORA_QUICKSHELL_COPR: &str = "errornointernet/quickshell";
 /// AUR helpers, in the order setup prefers them. They install repo packages
 /// too, and ask for sudo themselves.
 const AUR_HELPERS: &[&str] = &["paru", "yay"];
-const FLAKE_HINT: &str = "On NixOS, Nova comes from its flake: add `github:ImperaLuna/Nova` to your flake inputs \
+const FLAKE_HINT: &str = concat!(
+    "On NixOS, Nova comes from its flake: add `github:",
+    github_repo!(),
+    "` to your flake inputs \
      and set `programs.nova.enable = true;` in its home-manager or NixOS module. Turn features on with \
      `programs.nova.features.<id>.enable` (or `programs.nova.featuresFile`) and rebuild, which installs what they \
-     need. `nova setup` changes nothing here.";
+     need. `nova setup` changes nothing here."
+);
 
 #[derive(clap::Args)]
 pub struct SetupArgs {

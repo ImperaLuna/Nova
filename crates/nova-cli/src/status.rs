@@ -8,8 +8,6 @@ use std::process::Command;
 use std::time::Duration;
 
 const KIB_PER_MB: u64 = 1024;
-/// Where Nova's main branch lives, to say how far a build is behind it.
-const GITHUB_REPO: &str = "ImperaLuna/Nova";
 /// How long `nova status` waits for GitHub's answer.
 const GITHUB_TIMEOUT: Duration = Duration::from_secs(5);
 /// How many characters of a commit hash `nova status` shows.
@@ -23,37 +21,71 @@ pub fn show(socket: &Path, json: bool) -> Result<(), String> {
         println!("{}", client.request(nova_protocol::Command::Status)?);
     } else {
         let status = client.status()?;
-        let behind = status.revision.as_deref().and_then(behind_main);
-        print!("{}", describe(&status, behind));
+        let build = status.revision.as_deref().map(Build::parse);
+        let main = build.as_ref().and_then(|build| against_main(build.commit));
+        print!("{}", describe(&status, main));
     }
     Ok(())
 }
 
-/// How many commits main has that `revision` doesn't, asked of GitHub with
-/// the `gh` CLI (the repository is private). `None` without gh, its login
-/// or the network.
-fn behind_main(revision: &str) -> Option<u64> {
-    let commit = revision.strip_suffix(DIRTY).unwrap_or(revision);
+/// The commit novad was built from, as its package records it.
+struct Build<'a> {
+    commit: &'a str,
+    /// Built from a checkout with uncommitted changes.
+    dirty: bool,
+}
+
+impl<'a> Build<'a> {
+    fn parse(revision: &'a str) -> Self {
+        match revision.strip_suffix(DIRTY) {
+            Some(commit) => Build { commit, dirty: true },
+            None => Build { commit: revision, dirty: false },
+        }
+    }
+}
+
+/// Where a build stands against main.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum AgainstMain {
+    /// main has these many commits the build doesn't (0: it's main).
+    Behind(u64),
+    /// The build has commits main doesn't (a branch), and main has these
+    /// many it doesn't.
+    OffMain(u64),
+}
+
+/// Where `commit` stands against main, asked of GitHub with the `gh` CLI
+/// (the repository is private). `None` without gh, its login or the network.
+fn against_main(commit: &str) -> Option<AgainstMain> {
+    // From the socket, so checked before it goes in a URL.
+    if commit.is_empty() || !commit.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
     let mut gh = Command::new("gh");
-    gh.args(["api", &format!("repos/{GITHUB_REPO}/compare/{commit}...main"), "--jq", ".ahead_by"]);
+    let endpoint = format!("repos/{}/compare/{commit}...main", github_repo!());
+    gh.args(["api", &endpoint, "--jq", r#""\(.behind_by) \(.ahead_by)""#]);
     let output = novad::output_within(gh, GITHUB_TIMEOUT).ok()?;
     if !output.status.success() {
         return None;
     }
-    String::from_utf8(output.stdout).ok()?.trim().parse().ok()
+    // behind_by: commits the build has that main doesn't; ahead_by: main's.
+    let text = String::from_utf8(output.stdout).ok()?;
+    let (extra, newer) = text.trim().split_once(' ')?;
+    let (extra, newer): (u64, u64) = (extra.parse().ok()?, newer.parse().ok()?);
+    Some(if extra == 0 { AgainstMain::Behind(newer) } else { AgainstMain::OffMain(newer) })
 }
 
-/// The commit novad runs, short, and how far main has moved on from it.
-fn describe_build(revision: &str, behind: Option<u64>) -> String {
-    let (commit, dirty) = match revision.strip_suffix(DIRTY) {
-        Some(commit) => (commit, " with uncommitted changes"),
-        None => (revision, ""),
-    };
-    let short: String = commit.chars().take(SHORT_REVISION).collect();
-    let main = match behind {
-        Some(0) => ", current with main".to_owned(),
-        Some(1) => ", 1 commit behind main".to_owned(),
-        Some(commits) => format!(", {commits} commits behind main"),
+/// The commit novad runs, short, and where it stands against main.
+fn describe_build(build: &Build, main: Option<AgainstMain>) -> String {
+    let short: String = build.commit.chars().take(SHORT_REVISION).collect();
+    let dirty = if build.dirty { " with uncommitted changes" } else { "" };
+    let commits = |n: u64| if n == 1 { "1 commit".to_owned() } else { format!("{n} commits") };
+    let main = match main {
+        Some(AgainstMain::Behind(0)) if !build.dirty => ", current with main".to_owned(),
+        Some(AgainstMain::Behind(0)) => ", on main".to_owned(),
+        Some(AgainstMain::Behind(n)) => format!(", {} behind main", commits(n)),
+        Some(AgainstMain::OffMain(0)) => ", not on main".to_owned(),
+        Some(AgainstMain::OffMain(n)) => format!(", not on main, which has {} newer", commits(n)),
         None => String::new(),
     };
     row("build", &format!("{}{dirty}{main}", printable(&short)))
@@ -71,8 +103,8 @@ pub fn version(socket: &Path) {
     }
 }
 
-/// `behind`: how many commits main is ahead of the running build, when known.
-fn describe(status: &Status, behind: Option<u64>) -> String {
+/// `main`: where the running build stands against main, when known.
+fn describe(status: &Status, main: Option<AgainstMain>) -> String {
     let mut out = String::new();
     let mut daemon = format!("running, pid {}, up {}", status.pid, duration(status.uptime_secs));
     if let Some(kib) = status.pss_kib {
@@ -80,7 +112,7 @@ fn describe(status: &Status, behind: Option<u64>) -> String {
     }
     out += &row("daemon", &daemon);
     if let Some(revision) = &status.revision {
-        out += &describe_build(revision, behind);
+        out += &describe_build(&Build::parse(revision), main);
     }
 
     let ui = &status.ui;
@@ -266,16 +298,30 @@ mod tests {
     }
 
     #[test]
-    fn the_build_row_names_the_commit_and_how_far_main_moved_on() {
+    fn the_build_row_names_the_commit_and_where_it_stands_against_main() {
         let commit = "0123456789abcdef0123456789abcdef01234567";
-        assert_eq!(describe_build(commit, Some(0)), "build      0123456, current with main\n");
-        assert_eq!(describe_build(commit, Some(1)), "build      0123456, 1 commit behind main\n");
-        assert_eq!(describe_build(commit, Some(12)), "build      0123456, 12 commits behind main\n");
-        assert_eq!(describe_build(commit, None), "build      0123456\n");
+        let row = |revision: &str, main| describe_build(&Build::parse(revision), main);
+        assert_eq!(row(commit, Some(AgainstMain::Behind(0))), "build      0123456, current with main\n");
+        assert_eq!(row(commit, Some(AgainstMain::Behind(1))), "build      0123456, 1 commit behind main\n");
+        assert_eq!(row(commit, Some(AgainstMain::Behind(12))), "build      0123456, 12 commits behind main\n");
+        assert_eq!(row(commit, Some(AgainstMain::OffMain(0))), "build      0123456, not on main\n");
         assert_eq!(
-            describe_build(&format!("{commit}-dirty"), Some(3)),
+            row(commit, Some(AgainstMain::OffMain(2))),
+            "build      0123456, not on main, which has 2 commits newer\n"
+        );
+        assert_eq!(row(commit, None), "build      0123456\n");
+        let dirty = format!("{commit}-dirty");
+        assert_eq!(row(&dirty, Some(AgainstMain::Behind(0))), "build      0123456 with uncommitted changes, on main\n");
+        assert_eq!(
+            row(&dirty, Some(AgainstMain::Behind(3))),
             "build      0123456 with uncommitted changes, 3 commits behind main\n"
         );
+    }
+
+    #[test]
+    fn only_a_hex_commit_is_asked_about() {
+        assert_eq!(against_main("x/../../user?"), None);
+        assert_eq!(against_main(""), None);
     }
 
     #[test]
