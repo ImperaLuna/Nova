@@ -1,0 +1,97 @@
+2026-10-28T14:15:31.2267507Z vm-test-run-nova-hyprland-session> !!! Test "nova toggle launcher opens the launcher, empty; typing finds foot, Enter starts it in a scope of its own, Esc closes" failed with error: "action timed out after 120.25 seconds (timeout=120.0)"
+2026-10-28T14:15:32.7343722Z error: Cannot build '/nix/store/mgwk96i4f8p1bc7cq3vm7mc85d755lql-vm-test-run-nova-hyprland-session.drv'.
+2026-10-28T14:15:32.7349864Z        Reason: builder failed with exit code 1.
+2026-10-28T14:15:32.7350308Z        Output paths:
+2026-10-28T14:15:32.7351042Z          /nix/store/7q8hk5188pahcfi4zi44cwbr61xi24b8-vm-test-run-nova-hyprland-session
+2026-10-28T14:15:32.7358015Z        Last 25 log lines:
+2026-10-28T14:15:32.7358516Z        > machine # [  237.800330] su[3560]: pam_unix(su:session): session closed for user alice
+2026-10-28T14:15:32.7360797Z        > machine: (finished: must succeed: su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; export WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-* | grep -v lock | head -n1); cd ~/.local/state/nova && for f in nova.log nova.log.1 nova.log.2 nova.log.3 nova.log.4 nova.log.5; do [ -f $f ] || break; grep -F '"'"' ui: '"'"' $f | grep -cF '"'"'nova: bar space given to a fullscreen window'"'"'; grep -qF '"'"' starting (pid '"'"' $f && break; done; true', in 0.16 seconds)
+2026-10-28T14:15:32.7446927Z        > machine: must succeed: su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; export WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-* | grep -v lock | head -n1); cd ~/.local/state/nova && for f in nova.log nova.log.1 nova.log.2 nova.log.3 nova.log.4 nova.log.5; do [ -f $f ] || break; grep -F '"'"' ui: '"'"' $f | grep -cF '"'"'nova: bar space given to a fullscreen window'"'"'; grep -qF '"'"' starting (pid '"'"' $f && break; done; true'
+2026-10-28T14:15:32.7501949Z        > machine # [  238.845594] su[3572]: Successful su for alice by root
+2026-10-28T14:15:32.7531915Z        > machine # [  238.878397] su[3572]: pam_unix(su:session): session opened for user alice(uid=1000) by (uid=0)
+2026-10-28T14:15:32.7551684Z        > machine # [  238.961372] su[3572]: pam_unix(su:session): session closed for user alice
+2026-10-28T14:15:32.7582604Z        > machine: (finished: must succeed: su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; export WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-* | grep -v lock | head -n1); cd ~/.local/state/nova && for f in nova.log nova.log.1 nova.log.2 nova.log.3 nova.log.4 nova.log.5; do [ -f $f ] || break; grep -F '"'"' ui: '"'"' $f | grep -cF '"'"'nova: bar space given to a fullscreen window'"'"'; grep -qF '"'"' starting (pid '"'"' $f && break; done; true', in 0.17 seconds)
+2026-10-28T14:15:32.7621032Z        > machine: must succeed: su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; export WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-* | grep -v lock | head -n1); cd ~/.local/state/nova && for f in nova.log nova.log.1 nova.log.2 nova.log.3 nova.log.4 nova.log.5; do [ -f $f ] || break; grep -F '"'"' ui: '"'"' $f | grep -cF '"'"'nova: bar space given to a fullscreen window'"'"'; grep -qF '"'"' starting (pid '"'"' $f && break; done; true'
+2026-10-28T14:15:32.7662159Z        > machine # [  240.034166] su[3584]: Successful su for alice by root
+2026-10-28T14:15:32.7681750Z        > machine # [  240.061302] su[3584]: pam_unix(su:session): session opened for user alice(uid=1000) by (uid=0)
+2026-10-28T14:15:32.7710129Z        > machine # [  240.158167] su[3584]: pam_unix(su:session): session closed for user alice
+2026-10-28T14:15:32.7733549Z        > machine: (finished: must succeed: su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; export WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-* | grep -v lock | head -n1); cd ~/.local/state/nova && for f in nova.log nova.log.1 nova.log.2 nova.log.3 nova.log.4 nova.log.5; do [ -f $f ] || break; grep -F '"'"' ui: '"'"' $f | grep -cF '"'"'nova: bar space given to a fullscreen window'"'"'; grep -qF '"'"' starting (pid '"'"' $f && break; done; true', in 0.20 seconds)
+2026-10-28T14:15:32.7735678Z        > !!! Test "nova toggle launcher opens the launcher, empty; typing finds foot, Enter starts it in a scope of its own, Esc closes" failed with error: "action timed out after 120.25 seconds (timeout=120.0)"
+2026-10-28T14:15:32.7736466Z        > !!! Traceback (most recent call last):
+2026-10-28T14:15:32.7736862Z        > !!!   File "<string>", line 708, in <module>
+2026-10-28T14:15:32.7737593Z        > !!!     retry(lambda _last_try: ui_log_count(BAR_SPACE_GIVEN) > given, timeout=WAIT)
+2026-10-28T14:15:32.7738064Z        > !!! 
+2026-10-28T14:15:32.7738469Z        > !!! RequestedAssertionFailed: action timed out after 120.25 seconds (timeout=120.0)
+2026-10-28T14:15:32.7738914Z        > cleanup
+2026-10-28T14:15:32.7739191Z        > kill QemuMachine (pid 46)
+2026-10-28T14:15:32.7739814Z        > machine # qemu-system-x86_64: terminating on signal 15 from pid 39 (/nix/store/xahxrjs30p3mw0a42bqg9ikgkikskw8m-python3-3.14.8/bin/python3.14)
+2026-10-28T14:15:32.7740765Z        > machine # [2026-10-28T14:15:31Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-28T14:15:32.7741332Z        > machine # [2026-10-28T14:15:31Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-28T14:15:32.7741869Z        > machine # [2026-10-28T14:15:31Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-28T14:15:32.7742317Z        > (finished: cleanup, in 0.63 seconds)
+2026-10-28T14:15:32.7742660Z        For full logs, run:
+2026-10-28T14:15:32.7743128Z          nix log /nix/store/mgwk96i4f8p1bc7cq3vm7mc85d755lql-vm-test-run-nova-hyprland-session.drv
+2026-10-28T14:15:32.7748804Z error: build of '/nix/store/7zd1kpfnq3fp4ds70xvkvyy0zycn3hrj-vm-test-run-nova-niri-frames.drv^*' failed: Cannot build '/nix/store/7zd1kpfnq3fp4ds70xvkvyy0zycn3hrj-vm-test-run-nova-niri-frames.drv'.
+2026-10-28T14:15:32.7749647Z        Reason: builder failed with exit code 1.
+2026-10-28T14:15:32.7749976Z        Output paths:
+2026-10-28T14:15:32.7750375Z          /nix/store/q4i0hhh4xb56rr4wbpqvkiqh350d3f1l-vm-test-run-nova-niri-frames
+2026-10-28T14:15:32.7750827Z        Last 25 log lines:
+2026-10-28T14:15:32.7751200Z        > no 'nova: ai usage panel opened' after a click at (24, 22), clicking again
+2026-10-28T14:15:32.7752490Z        > !!! Test "an idle bar draws nothing, shown or beside a fullscreen window; the panel draws briefly; the launcher over a fullscreen window moves Nova to Overlay and back, each time; the bar gives a fullscreen window its space, and its pills take clicks once back" failed with error: "3 clicks at (24, 22) never logged 'nova: ai usage panel opened'"
+2026-10-28T14:15:32.7753669Z        > cleanup
+2026-10-28T14:15:32.7753995Z        > kill QemuMachine (pid 46)
+2026-10-28T14:15:32.7754696Z        > machine # qemu-system-x86_64: terminating on signal 15 from pid 39 (/nix/store/xahxrjs30p3mw0a42bqg9ikgkikskw8m-python3-3.14.8/bin/python3.14)
+2026-10-28T14:15:32.7755519Z        > machine # [2026-10-28T14:13:33Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-28T14:15:32.7756118Z        > machine # [2026-10-28T14:13:33Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-28T14:15:32.7756718Z        > machine # [2026-10-28T14:13:33Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-28T14:15:32.7757217Z        > (finished: cleanup, in 0.53 seconds)
+2026-10-28T14:15:32.7757588Z        > Traceback (most recent call last):
+2026-10-28T14:15:32.7758308Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/bin/.nixos-test-driver-wrapped", line 9, in <module>
+2026-10-28T14:15:32.7758982Z        >     sys.exit(main())
+2026-10-28T14:15:32.7759403Z        >              ~~~~^^
+2026-10-28T14:15:32.7760106Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/lib/python3.14/site-packages/test_driver/__init__.py", line 194, in main
+2026-10-28T14:15:32.7760834Z        >     driver.run_tests()
+2026-10-28T14:15:32.7761154Z        >     ~~~~~~~~~~~~~~~~^^
+2026-10-28T14:15:32.7761888Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/lib/python3.14/site-packages/test_driver/driver.py", line 437, in run_tests
+2026-10-28T14:15:32.7762585Z        >     self.test_script()
+2026-10-28T14:15:32.7762888Z        >     ~~~~~~~~~~~~~~~~^^
+2026-10-28T14:15:32.7763559Z        >   File "/nix/store/9a17m19ckncxr4bg1lfalvqxs7gnfj0f-nixos-test-driver-1.1/lib/python3.14/site-packages/test_driver/driver.py", line 395, in test_script
+2026-10-28T14:15:32.7764281Z        >     exec(self.tests, symbols, None)
+2026-10-28T14:15:32.7764623Z        >     ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-10-28T14:15:32.7764965Z        >   File "<string>", line 649, in <module>
+2026-10-28T14:15:32.7765342Z        >   File "<string>", line 438, in click_until_logged
+2026-10-28T14:15:32.7765823Z        > AssertionError: 3 clicks at (24, 22) never logged 'nova: ai usage panel opened'
+2026-10-28T14:15:32.7766271Z        For full logs, run:
+2026-10-28T14:15:32.7766753Z          nix log /nix/store/7zd1kpfnq3fp4ds70xvkvyy0zycn3hrj-vm-test-run-nova-niri-frames.drv
+2026-10-28T14:15:32.7773308Z error: build of '/nix/store/mgwk96i4f8p1bc7cq3vm7mc85d755lql-vm-test-run-nova-hyprland-session.drv^*' failed: Cannot build '/nix/store/mgwk96i4f8p1bc7cq3vm7mc85d755lql-vm-test-run-nova-hyprland-session.drv'.
+2026-10-28T14:15:32.7774246Z        Reason: builder failed with exit code 1.
+2026-10-28T14:15:32.7774592Z        Output paths:
+2026-10-28T14:15:32.7775031Z          /nix/store/7q8hk5188pahcfi4zi44cwbr61xi24b8-vm-test-run-nova-hyprland-session
+2026-10-28T14:15:32.7775568Z        Last 25 log lines:
+2026-10-28T14:15:32.7775975Z        > machine # [  237.800330] su[3560]: pam_unix(su:session): session closed for user alice
+2026-10-28T14:15:32.7777539Z        > machine: (finished: must succeed: su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; export WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-* | grep -v lock | head -n1); cd ~/.local/state/nova && for f in nova.log nova.log.1 nova.log.2 nova.log.3 nova.log.4 nova.log.5; do [ -f $f ] || break; grep -F '"'"' ui: '"'"' $f | grep -cF '"'"'nova: bar space given to a fullscreen window'"'"'; grep -qF '"'"' starting (pid '"'"' $f && break; done; true', in 0.16 seconds)
+2026-10-28T14:15:32.7780005Z        > machine: must succeed: su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; export WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-* | grep -v lock | head -n1); cd ~/.local/state/nova && for f in nova.log nova.log.1 nova.log.2 nova.log.3 nova.log.4 nova.log.5; do [ -f $f ] || break; grep -F '"'"' ui: '"'"' $f | grep -cF '"'"'nova: bar space given to a fullscreen window'"'"'; grep -qF '"'"' starting (pid '"'"' $f && break; done; true'
+2026-10-28T14:15:32.7781429Z        > machine # [  238.845594] su[3572]: Successful su for alice by root
+2026-10-28T14:15:32.7782110Z        > machine # [  238.878397] su[3572]: pam_unix(su:session): session opened for user alice(uid=1000) by (uid=0)
+2026-10-28T14:15:32.7782716Z        > machine # [  238.961372] su[3572]: pam_unix(su:session): session closed for user alice
+2026-10-28T14:15:32.7784225Z        > machine: (finished: must succeed: su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; export WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-* | grep -v lock | head -n1); cd ~/.local/state/nova && for f in nova.log nova.log.1 nova.log.2 nova.log.3 nova.log.4 nova.log.5; do [ -f $f ] || break; grep -F '"'"' ui: '"'"' $f | grep -cF '"'"'nova: bar space given to a fullscreen window'"'"'; grep -qF '"'"' starting (pid '"'"' $f && break; done; true', in 0.17 seconds)
+2026-10-28T14:15:32.7786615Z        > machine: must succeed: su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; export WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-* | grep -v lock | head -n1); cd ~/.local/state/nova && for f in nova.log nova.log.1 nova.log.2 nova.log.3 nova.log.4 nova.log.5; do [ -f $f ] || break; grep -F '"'"' ui: '"'"' $f | grep -cF '"'"'nova: bar space given to a fullscreen window'"'"'; grep -qF '"'"' starting (pid '"'"' $f && break; done; true'
+2026-10-28T14:15:32.7788028Z        > machine # [  240.034166] su[3584]: Successful su for alice by root
+2026-10-28T14:15:32.7788572Z        > machine # [  240.061302] su[3584]: pam_unix(su:session): session opened for user alice(uid=1000) by (uid=0)
+2026-10-28T14:15:32.7789162Z        > machine # [  240.158167] su[3584]: pam_unix(su:session): session closed for user alice
+2026-10-28T14:15:32.7790805Z        > machine: (finished: must succeed: su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; export WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-* | grep -v lock | head -n1); cd ~/.local/state/nova && for f in nova.log nova.log.1 nova.log.2 nova.log.3 nova.log.4 nova.log.5; do [ -f $f ] || break; grep -F '"'"' ui: '"'"' $f | grep -cF '"'"'nova: bar space given to a fullscreen window'"'"'; grep -qF '"'"' starting (pid '"'"' $f && break; done; true', in 0.20 seconds)
+2026-10-28T14:15:32.7793057Z        > !!! Test "nova toggle launcher opens the launcher, empty; typing finds foot, Enter starts it in a scope of its own, Esc closes" failed with error: "action timed out after 120.25 seconds (timeout=120.0)"
+2026-10-28T14:15:32.7793883Z        > !!! Traceback (most recent call last):
+2026-10-28T14:15:32.7794256Z        > !!!   File "<string>", line 708, in <module>
+2026-10-28T14:15:32.7794735Z        > !!!     retry(lambda _last_try: ui_log_count(BAR_SPACE_GIVEN) > given, timeout=WAIT)
+2026-10-28T14:15:32.7795194Z        > !!! 
+2026-10-28T14:15:32.7795611Z        > !!! RequestedAssertionFailed: action timed out after 120.25 seconds (timeout=120.0)
+2026-10-28T14:15:32.7796098Z        > cleanup
+2026-10-28T14:15:32.7796441Z        > kill QemuMachine (pid 46)
+2026-10-28T14:15:32.7797118Z        > machine # qemu-system-x86_64: terminating on signal 15 from pid 39 (/nix/store/xahxrjs30p3mw0a42bqg9ikgkikskw8m-python3-3.14.8/bin/python3.14)
+2026-10-28T14:15:32.7797956Z        > machine # [2026-10-28T14:15:31Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-28T14:15:32.7798544Z        > machine # [2026-10-28T14:15:31Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-28T14:15:32.7799121Z        > machine # [2026-10-28T14:15:31Z INFO  virtiofsd] Client disconnected, shutting down
+2026-10-28T14:15:32.7799597Z        > (finished: cleanup, in 0.63 seconds)
+2026-10-28T14:15:32.7799949Z        For full logs, run:
+2026-10-28T14:15:32.7800454Z          nix log /nix/store/mgwk96i4f8p1bc7cq3vm7mc85d755lql-vm-test-run-nova-hyprland-session.drv

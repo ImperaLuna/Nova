@@ -3,16 +3,24 @@
 # came up; session.py or frames.py follows it, each in a VM of its own, so
 # the two halves run side by side. default.nix defines USER, UID, PASSWORD,
 # COMPOSITOR, QUIT_COMPOSITOR, FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW,
-# CLOSE_WINDOW, LIST_WINDOWS, LIST_LAYERS, ADDED_OUTPUTS (the commands that
-# add an output, focus the VM's own one, and remove the added one, as one
-# triple, or none where the compositor can't), COMPOSITOR_LOG and FRAMES_REPORT above this script.
+# CLOSE_WINDOW, LIST_WINDOWS, FOCUSED_WINDOW, LIST_LAYERS, ADDED_OUTPUTS (the
+# commands that add an output, focus the VM's own one, and remove the added
+# one, as one triple, or none where the compositor can't), COMPOSITOR_LOG,
+# FRAMES_REPORT and QT_LOGGING_CONF (Qt's drawing lines, for frames.py) above
+# this script.
+#
+# A failing subtest prints who had the keyboard and what the UI and the
+# compositor logged (print_failure_state), so a flaky failure in CI can be
+# read from that one run; passing runs print none of it.
 import collections
+import contextlib
 import datetime as dt
 import itertools
 import json
 import re
 import shlex
 import statistics
+from collections.abc import Generator
 
 UNIT = "nova.service"
 RUNTIME_DIR = f"/run/user/{UID}"
@@ -84,6 +92,8 @@ LOG_HISTORY = 1_000_000
 LOG_DIR = "~/.local/state/nova"
 KEPT_LOGS = 5
 RUN_START = " starting (pid "
+# Where surface_commits saves what the UI logged while it counted.
+UI_WAYLAND_LOG = "/tmp/ui-wayland.log"
 # A frame the UI hands the compositor, in its WAYLAND_DEBUG lines.
 SURFACE_COMMIT = r"wl_surface#[0-9]*\.commit("
 # The same line, with libwayland's timestamp and the surface, after
@@ -193,6 +203,18 @@ PANEL_SETTLE_SECS = 2
 # The window the tests open, and how it shows in novad's focused window.
 FOOT = "foot"
 NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
+# How much of the UI's and novad's log a failing subtest prints, and how long
+# each command printing its state may take: a VM that hangs mustn't hide the
+# failure behind a second one.
+FAILURE_LOG_LINES = 150
+FAILURE_COMMAND_TIMEOUT = dt.timedelta(seconds=30)
+# Qt's lines about drawing (default.nix's QT_LOGGING_CONF), and the one that
+# says a window stopped being exposed because a frame callback came late.
+QT_DRAWING = ("qt.scenegraph.", "qt.qpa.wayland.backingstore")
+QT_UNEXPOSED = "Didn't receive frame callback in time"
+# A line of the UI's in `nova logs` that libwayland printed (WAYLAND_DEBUG):
+# its timestamp follows the source.
+WAYLAND_LINE = r"ui: \[ *[0-9:.]+\] "
 
 
 def as_user(command: str) -> str:
@@ -425,14 +447,102 @@ def click_until_logged(x: int, y: int, line: str, count=ui_log_count, clicker=cl
     raise AssertionError(f"{CLICK_TRIES} clicks at ({x}, {y}) never logged {line!r}")
 
 
+def print_failure_state(what: str) -> None:
+    """Prints who has the keyboard (the focused window and the layer
+    surfaces, with their keyboard interactivity), what novad reports, the
+    UI's and the compositor's latest log lines, and each time this novad run
+    saw Qt unexpose a window, for a subtest that failed. Never fails itself."""
+    print(f"--- state after {what!r} failed ---")
+    files = " ".join(["nova.log"] + [f"nova.log.{runs_ago}" for runs_ago in range(1, KEPT_LOGS + 1)])
+    # This novad run's log, oldest first, read back through the files to the
+    # one it started in (see ui_log_count), not `nova logs`' in-memory
+    # backlog, which libwayland's lines (WAYLAND_DEBUG) fill.
+    this_run = (
+        f"cd {LOG_DIR} && set -- && for f in {files}; do [ -f $f ] || break; "
+        f'set -- $f "$@"; grep -qF {shlex.quote(RUN_START)} $f && break; done; cat "$@" </dev/null'
+    )
+    for command in (
+        FOCUSED_WINDOW,
+        LIST_LAYERS,
+        LIST_WINDOWS,
+        "nova status --json",
+        # Without libwayland's lines.
+        f"{this_run} | grep -Ev {shlex.quote(WAYLAND_LINE)} | tail -n {FAILURE_LOG_LINES}",
+        f"{this_run} | grep -F {shlex.quote(QT_UNEXPOSED)}"
+        " || echo 'none (novad keeps these Qt lines only with NOVA_LOG=debug)'",
+        COMPOSITOR_LOG,
+    ):
+        print(f"$ {command}")
+        try:
+            print(machine.execute(as_user(command), timeout=FAILURE_COMMAND_TIMEOUT)[1])
+        except Exception as error:
+            print(f"(failed: {error})")
+    print(f"--- end of state after {what!r} ---")
+
+
+driver_subtest = subtest
+
+
+@contextlib.contextmanager
+def diagnosed_subtest(name: str) -> Generator[None]:
+    """The test driver's subtest, which prints print_failure_state's dump
+    when it fails."""
+    with driver_subtest(name):
+        try:
+            yield
+        except Exception:
+            print_failure_state(name)
+            raise
+
+
+# Every subtest below, and in session.py and frames.py. The driver's type
+# hints name subtest's parameter `str`, so ty sees another signature.
+subtest = diagnosed_subtest  # ty: ignore[invalid-assignment]
+
+
+def print_frame_timeline(log: str) -> None:
+    """Prints the frames in a `nova logs --ui` capture with WAYLAND_DEBUG
+    on, as milliseconds from its first line: each commit and how long after
+    the surface's last one, beside Qt's lines about drawing and the UI's own
+    (`nova:`, `nova-frame:`). For a frame count over its budget: it shows
+    whether the extra frames came in a burst, and what Qt did before it."""
+    status, output = machine.execute(f"cat {log}", timeout=FAILURE_COMMAND_TIMEOUT)
+    if status != 0:
+        # Printed, not raised: the caller's assertion says what failed.
+        print(f"(no frame timeline: cat {log} failed: {output})")
+        return
+    lines = output.splitlines()
+    start = None
+    last_commit: dict[str, float] = {}
+    print(f"frame timeline of {log}:")
+    for line in lines:
+        # `nova logs` starts each line with the time of day, as 17:08:41.411.
+        entry_time, _, rest = line.partition(" ")
+        try:
+            clock = dt.time.fromisoformat(entry_time)
+        except ValueError:
+            continue
+        at = ((clock.hour * 60 + clock.minute) * 60 + clock.second) * 1000 + clock.microsecond / 1000
+        start = at if start is None else start
+        offset = f"{at - start:8.0f} ms"
+        if match := TIMED_COMMIT.search(line):
+            surface = match.group(4)
+            gap = f", {at - last_commit[surface]:.0f} ms after its last" if surface in last_commit else ""
+            last_commit[surface] = at
+            print(f"  {offset}  commit wl_surface#{surface}{gap}")
+        elif any(marker in rest for marker in QT_DRAWING + ("nova:", "nova-frame:")):
+            # Without the level and the source (`DEBUG ui`).
+            print(f"  {offset}  {rest.split(' ui ', 1)[-1]}")
+
+
 def surface_commits(secs: int) -> int:
     """The surface commits the UI makes over the next `secs` seconds, from
     its WAYLAND_DEBUG lines as novad logs them."""
-    follow = f"timeout {secs} nova logs --ui -n 0 > /tmp/ui-wayland.log; grep -c {shlex.quote(SURFACE_COMMIT)} /tmp/ui-wayland.log || true"
+    follow = f"timeout {secs} nova logs --ui -n 0 > {UI_WAYLAND_LOG}; grep -c {shlex.quote(SURFACE_COMMIT)} {UI_WAYLAND_LOG} || true"
     commits = int(machine.succeed(as_user(follow)).strip() or 0)
     # What else the UI and the compositor said meanwhile, for when it fails.
     print(f"{commits} commits in {secs} s; Wayland lines by kind:")
-    print(machine.succeed("grep -o '[a-z_]*#[0-9]*\\.[a-z_]*' /tmp/ui-wayland.log | sed 's/#[0-9]*//' | sort | uniq -c || true"))
+    print(machine.succeed(f"grep -o '[a-z_]*#[0-9]*\\.[a-z_]*' {UI_WAYLAND_LOG} | sed 's/#[0-9]*//' | sort | uniq -c || true"))
     return commits
 
 
@@ -447,6 +557,7 @@ def assert_idle(what: str) -> None:
     try:
         retry(idle, timeout=WAIT)
     except Exception:
+        print_frame_timeline(UI_WAYLAND_LOG)
         raise AssertionError(f"the UI kept drawing {what}: commits per {IDLE_SECS} s: {counts}")
 
 
@@ -510,9 +621,11 @@ def morph_frames(what: str, logged: str) -> None:
     print(report)
     assert status == 0 or "nothing animated" in report, f"the frame report failed after the panel {what}"
     qt = [tuple(map(int, match.groups())) for line in after_logged if (match := QT_FRAME.search(line))]
-    if qt:
-        for name, values in zip(("frame", "sync", "render"), zip(*qt)):
-            print(f"  Qt {name} time: median {statistics.median(values)} ms, longest {max(values)} ms over {len(values)} frames")
+    # Qt's lines are the diagnostics for the next flaky frame count: fail
+    # when they stop reaching the log, rather than lose them unseen.
+    assert qt, f"no Qt frame timing in the UI's log after the panel {what}: does the UI read QT_LOGGING_CONF?"
+    for name, values in zip(("frame", "sync", "render"), zip(*qt)):
+        print(f"  Qt {name} time: median {statistics.median(values)} ms, longest {max(values)} ms over {len(values)} frames")
     assert len(frames) <= MORPH_SURFACES, f"{len(frames)} surfaces drew after the panel {what}, at most {MORPH_SURFACES} may"
     budget_ms = MORPH_DRAWS_FOR / dt.timedelta(milliseconds=1)
     # From the first frame any surface drew, so one that starts late counts.
