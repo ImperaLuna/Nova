@@ -279,7 +279,16 @@ impl Peripherals {
     /// Where low battery alerts go from now on: nowhere while
     /// notifications are off.
     pub fn set_notifications(&self, notifications: Option<&Arc<Notifications>>) {
-        *lock(&self.shared.notifications) = notifications.map(Arc::downgrade).unwrap_or_default();
+        let notifications = notifications.map(Arc::downgrade).unwrap_or_default();
+        let changed = !lock(&self.shared.notifications).ptr_eq(&notifications);
+        *lock(&self.shared.notifications) = notifications;
+        // Devices already low are alerted now, not at their next change.
+        if changed {
+            let mut state = lock(&self.shared.state);
+            let now = Instant::now();
+            state.pending = Some(state.pending.map_or((now, now), |(first, _)| (first, now)));
+            self.shared.wake.notify_all();
+        }
     }
 
     /// Sends a new subscriber, client `id`, the devices last published,
@@ -313,22 +322,20 @@ impl Shared {
             let event = merge(&state.found);
             if event != state.sent {
                 self.hub.publish(&Event::Peripherals(event.clone()));
-                // Only while notifications are on: alerts nobody can see
-                // aren't counted as said.
-                let notifications = lock(&self.notifications).upgrade();
-                let alerts = match &notifications {
-                    Some(_) => state.alerts.update(&event.devices),
-                    None => Vec::new(),
-                };
                 state.sent = event;
-                if let Some(notifications) = notifications.filter(|_| !alerts.is_empty()) {
-                    // Sent unlocked: the notification server takes locks of its own.
-                    drop(state);
-                    let sent = self.alert(&notifications, alerts);
-                    state = lock(&self.state);
-                    for (key, notification) in sent {
-                        state.alerts.sent(&key, notification);
-                    }
+            }
+            // Only while notifications are on: alerts nobody can see aren't
+            // counted as said. Also when only that changed (`set_notifications`).
+            let Some(notifications) = lock(&self.notifications).upgrade() else { continue };
+            let State { alerts, sent, .. } = &mut *state;
+            let alerts = alerts.update(&sent.devices);
+            if !alerts.is_empty() {
+                // Sent unlocked: the notification server takes locks of its own.
+                drop(state);
+                let sent = self.alert(&notifications, alerts);
+                state = lock(&self.state);
+                for (id, notification) in sent {
+                    state.alerts.sent(&id, notification);
                 }
             }
         }
@@ -338,10 +345,12 @@ impl Shared {
     fn alert(&self, notifications: &Notifications, alerts: Vec<alerts::Alert>) -> Vec<(String, u32)> {
         alerts
             .into_iter()
+            // Stopped meanwhile: no more.
+            .take_while(|_| !lock(&self.state).stopped)
             .map(|alert| {
                 self.logger.info(LOG_SOURCE, &alert.own.summary);
                 let id = notifications.send_own(alert.own);
-                (alert.key, id)
+                (alert.id, id)
             })
             .collect()
     }
