@@ -207,7 +207,7 @@ NOVA_SEES_FOOT = f"nova status --json | grep -qF '\"app_id\":\"{FOOT}\"'"
 # each command printing its state may take: a VM that hangs mustn't hide the
 # failure behind a second one.
 FAILURE_LOG_LINES = 150
-FAILURE_COMMAND_SECS = 30
+FAILURE_COMMAND_TIMEOUT = dt.timedelta(seconds=30)
 # Qt's lines about drawing (default.nix's QT_LOGGING_CONF), and the one that
 # says a window stopped being exposed because a frame callback came late.
 QT_DRAWING = ("qt.scenegraph.", "qt.qpa.wayland.backingstore")
@@ -474,7 +474,7 @@ def print_failure_state(what: str) -> None:
     ):
         print(f"$ {command}")
         try:
-            print(machine.execute(as_user(command), timeout=FAILURE_COMMAND_SECS)[1])
+            print(machine.execute(as_user(command), timeout=FAILURE_COMMAND_TIMEOUT)[1])
         except Exception as error:
             print(f"(failed: {error})")
     print(f"--- end of state after {what!r} ---")
@@ -516,11 +516,13 @@ def print_frame_timeline(log: str) -> None:
     last_commit: dict[str, float] = {}
     print(f"frame timeline of {log}:")
     for line in lines:
+        # `nova logs` starts each line with the time of day, as 17:08:41.411.
         entry_time, _, rest = line.partition(" ")
         try:
-            at = dt.datetime.fromisoformat(entry_time).timestamp() * 1000
+            clock = dt.time.fromisoformat(entry_time)
         except ValueError:
             continue
+        at = ((clock.hour * 60 + clock.minute) * 60 + clock.second) * 1000 + clock.microsecond / 1000
         start = at if start is None else start
         offset = f"{at - start:8.0f} ms"
         if match := TIMED_COMMIT.search(line):
@@ -529,7 +531,8 @@ def print_frame_timeline(log: str) -> None:
             last_commit[surface] = at
             print(f"  {offset}  commit wl_surface#{surface}{gap}")
         elif any(marker in rest for marker in QT_DRAWING + ("nova:", "nova-frame:")):
-            print(f"  {offset}  {rest.split(': ', 1)[-1]}")
+            # Without the level and the source (`DEBUG ui`).
+            print(f"  {offset}  {rest.split(' ui ', 1)[-1]}")
 
 
 def surface_commits(secs: int) -> int:
