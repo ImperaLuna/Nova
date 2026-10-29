@@ -127,7 +127,8 @@ jobs:
   checks:
     name: checks
     needs: [fast, vm]
-    if: always()
+    # Not on a run a newer push cancelled: that head no longer matters.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
