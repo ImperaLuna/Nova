@@ -6,8 +6,10 @@ name: Newest Quickshell
 # whether the release is in the tested range.
 #
 # Weekly on main, by hand (Actions > Newest Quickshell), and on PRs that change
-# the range or how Nova packages Quickshell. While the newest release is the
-# one nixpkgs has, everything here is cached from CI and takes seconds.
+# which Quickshell Nova is on: the tested range or flake.lock (nixpkgs'
+# Quickshell, quickshell-newest). Not on PRs that only change VM tests or
+# packaging: while the newest release is the pinned one, this repeats CI's VM
+# tests and holds the second runner (IMP-226).
 on:
   schedule:
     - cron: "0 6 * * 1"
@@ -15,9 +17,7 @@ on:
   pull_request:
     paths:
       - packaging/quickshell.toml
-      - packaging/nix/**
-      - flake.nix
-      - e2e/vm/**
+      - flake.lock
       - scripts/newest-quickshell.sh
       - .github/workflows/newest-quickshell.yml
 
