@@ -617,7 +617,7 @@ fn keychron_lists_a_keyboard_on_its_dongle_while_it_sends() {
     fixture.hidraw.say_on(&link, &pushes[0]);
     assert_eq!(
         fixture.next(),
-        json!([{"id": "keychron/3434:d030", "name": "Keychron K2 HE", "kind": "keyboard", "link": "dongle",
+        json!([{"id": "keychron/model-3", "name": "Keychron K2 HE", "kind": "keyboard", "link": "dongle",
                 "battery": {"percent": 69}, "charging": false, "source": "keychron"}])
     );
     // The percent wanders a point: nothing changes on screen.
@@ -656,7 +656,7 @@ fn keychron_asks_a_keyboard_on_its_cable() {
     let peripherals = fixture.start();
     assert_eq!(
         fixture.next(),
-        json!([{"id": "keychron/3434:0e20", "name": "Keychron K2 HE", "kind": "keyboard", "link": "wired",
+        json!([{"id": "keychron/model-3", "name": "Keychron K2 HE", "kind": "keyboard", "link": "wired",
                 "battery": {"percent": 78}, "charging": true, "source": "keychron"}])
     );
     let request = fake_hidraw_recording(KEYCHRON_CABLE).exchanges[0].request.clone();
@@ -667,5 +667,22 @@ fn keychron_asks_a_keyboard_on_its_cable() {
     std::fs::remove_file(&cable).unwrap();
     fixture.hidraw.unplug();
     assert_eq!(fixture.next(), json!([]));
+    peripherals.stop();
+}
+
+/// Plugged in by its cable, a keyboard heard behind its dongle a moment
+/// ago is listed once, as its cable has it.
+#[test]
+fn keychron_lists_a_keyboard_on_cable_and_dongle_once() {
+    let fixture = Fixture::new("keychron-both");
+    let link = fixture.hidraw_node(KEYCHRON_LINK);
+    let peripherals = fixture.start();
+    fixture.wait_opened(&link);
+    fixture.hidraw.say_on(&link, &fake_hidraw_recording(KEYCHRON_LINK).pushes[0]);
+    assert_eq!(fixture.next()[0]["link"], "dongle");
+    fixture.hidraw_node(KEYCHRON_CABLE);
+    let devices = fixture.next();
+    assert_eq!(ids(&devices), ["keychron/model-3"], "{devices}");
+    assert_eq!(devices[0]["link"], "wired");
     peripherals.stop();
 }

@@ -20,12 +20,14 @@
 //!
 //! The percent comes from the cell's voltage as the firmware reads it,
 //! which wanders several points either way within a minute on a keyboard
-//! at rest, now and then by 5 points or more in one reading (and by 17
-//! when the cable goes in, a moment before the charging state says so).
-//! So what's shown is the median of the readings of the last
-//! [`SMOOTHING`], which one odd reading doesn't move, and it changes only
-//! once that moves [`HYSTERESIS`] points from it. Starting or stopping
-//! charging moves the voltage itself, so the readings start over then.
+//! at rest, and now and then dips or jumps 5 to 13 points for one reading
+//! (17 when the cable goes in, a moment before the charging state says
+//! so). So a reading [`OUTLIER`] points or more from what's shown counts
+//! only when the next one is that far off too; what's shown is the median
+//! of the readings of the last [`SMOOTHING`] that counted, and changes
+//! only once that moves [`HYSTERESIS`] points from it. Starting or
+//! stopping charging moves the voltage itself, so the readings start over
+//! then.
 //!
 //! Nodes are any of Keychron's with the raw HID usage, found as
 //! [`super::hidraw`] finds them, whatever the product: one whose keyboard
@@ -84,6 +86,9 @@ const MAX_UNANSWERED: u32 = 3;
 const SMOOTHING: Duration = Duration::from_secs(180);
 /// ...and how far their median moves from it before it changes.
 const HYSTERESIS: u8 = 2;
+/// A reading this far from what's shown is an odd one, unless the next is
+/// as far off too.
+const OUTLIER: u8 = 5;
 /// The longest a reader waits with nothing due: it only listens then.
 const IDLE_WAIT: Duration = Duration::from_secs(3600);
 /// The id a keyboard's comes after.
@@ -160,14 +165,17 @@ impl Protocol for Keychron {
 /// A keyboard's readings, and the percent shown for them.
 struct Smoothed {
     last: Reading,
-    /// The percents of the last [`SMOOTHING`], and when they came.
+    /// The percents of the last [`SMOOTHING`] that counted, and when they
+    /// came.
     recent: VecDeque<(Instant, u8)>,
     shown: u8,
+    /// Whether the last reading was [`OUTLIER`] points or more off.
+    last_odd: bool,
 }
 
 impl Smoothed {
     fn new(reading: Reading, at: Instant) -> Self {
-        Self { last: reading, recent: VecDeque::from([(at, reading.percent)]), shown: reading.percent }
+        Self { last: reading, recent: VecDeque::from([(at, reading.percent)]), shown: reading.percent, last_odd: false }
     }
 
     fn add(&mut self, reading: Reading, at: Instant) {
@@ -178,14 +186,18 @@ impl Smoothed {
             return;
         }
         self.last = reading;
+        let odd = reading.percent.abs_diff(self.shown) >= OUTLIER;
+        let was_odd = std::mem::replace(&mut self.last_odd, odd);
+        if odd && !was_odd {
+            return;
+        }
         self.recent.push_back((at, reading.percent));
         while self.recent.front().is_some_and(|(then, _)| at.duration_since(*then) > SMOOTHING) {
             self.recent.pop_front();
         }
         let mut percents: Vec<u8> = self.recent.iter().map(|(_, percent)| *percent).collect();
         percents.sort_unstable();
-        // The middle one, or the lower of the middle two: one odd reading
-        // either way doesn't move it.
+        // The middle one, or the lower of the middle two.
         let median = percents[(percents.len() - 1) / 2];
         if median.abs_diff(self.shown) >= HYSTERESIS {
             self.shown = median;
@@ -245,8 +257,14 @@ fn found(node: &Node, reading: Reading) -> Found {
     let model = MODELS.iter().find(|(id, _)| *id == reading.model).map(|(_, name)| (*name).to_owned());
     // On its cable the node is the keyboard's own, and so is its name.
     let own_name = node.hid_name.clone().filter(|_| reading.on_cable());
+    // By its model when it says it, so on its cable and behind its dongle
+    // it's one keyboard: the node that heard it last tells.
+    let id = match reading.model {
+        0 => format!("{ID_PREFIX}{}", node.id),
+        known => format!("{ID_PREFIX}model-{known}"),
+    };
     let device = Peripheral {
-        id: format!("{ID_PREFIX}{}", node.id),
+        id,
         name: model.or(own_name).unwrap_or_else(|| UNKNOWN_KEYBOARD.to_owned()),
         kind: PeripheralKind::Keyboard,
         link,
@@ -305,11 +323,21 @@ mod tests {
         assert_eq!(shown(&mut smoothed, start + Duration::from_secs(120), &[66, 71, 88, 70]), [72]);
     }
 
+    /// The percents the same keyboard sent during novad's own run on
+    /// RyzenShine: dips of 11 and 13 points for one reading each.
+    #[test]
+    fn single_deep_dips_never_show() {
+        let start = Instant::now();
+        let mut smoothed = Smoothed::new(on_battery(69), start);
+        assert_eq!(shown(&mut smoothed, start, &[58, 69, 55, 68, 68, 68, 68, 73, 68, 70, 68]), [69]);
+    }
+
     #[test]
     fn a_real_drop_shows_and_charging_starts_over() {
         let start = Instant::now();
         let mut smoothed = Smoothed::new(on_battery(70), start);
-        // Old readings leave the window: a lasting drop shows in full.
+        // Old readings leave the window: a lasting drop shows in full,
+        // once a second reading says so.
         for minute in 1..=4 {
             smoothed.add(on_battery(60), start + Duration::from_secs(minute * 60));
         }

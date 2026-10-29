@@ -2094,7 +2094,7 @@ mod tests {
                     source: PeripheralSource::Upower,
                 },
                 Peripheral {
-                    id: "keychron/3434:d030".into(),
+                    id: "keychron/model-3".into(),
                     name: "Keychron K2 HE".into(),
                     kind: PeripheralKind::Keyboard,
                     link: Some(PeripheralLink::Dongle),

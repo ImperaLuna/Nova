@@ -105,9 +105,10 @@ struct Waker {
     condvar: Condvar,
 }
 
-/// The devices every node's reader has found, by node.
+/// The devices every node's reader has found, by node, and when it last
+/// said so.
 struct Devices {
-    by_node: Mutex<BTreeMap<String, Vec<Found>>>,
+    by_node: Mutex<BTreeMap<String, (Instant, Vec<Found>)>>,
     report: Report,
 }
 
@@ -116,18 +117,21 @@ impl Devices {
     fn set(&self, name: &str, found: Vec<Found>) {
         let mut by_node = lock(&self.by_node);
         let changed = match by_node.get(name) {
-            Some(known) => *known != found,
+            Some((_, known)) => *known != found,
             None => !found.is_empty(),
         };
         if found.is_empty() {
             by_node.remove(name);
         } else {
-            by_node.insert(name.to_owned(), found);
+            by_node.insert(name.to_owned(), (Instant::now(), found));
         }
         if changed {
-            // A device two nodes reach (its cable and its receiver) once.
+            // A device two nodes reach (its cable and its receiver) once,
+            // as the node that heard it last has it.
+            let mut newest_first: Vec<&(Instant, Vec<Found>)> = by_node.values().collect();
+            newest_first.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
             let mut all: Vec<Found> = Vec::new();
-            for device in by_node.values().flatten() {
+            for device in newest_first.into_iter().flat_map(|(_, found)| found) {
                 if !all.iter().any(|known| known.device.id == device.device.id) {
                     all.push(device.clone());
                 }
