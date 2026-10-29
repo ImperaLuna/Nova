@@ -9,7 +9,7 @@
 //! A request nobody recorded is answered as a receiver answers one for an
 //! empty slot: HID++ 1.0's error `0x09`.
 
-use super::hidpp::Opener;
+use super::hidraw::Opener;
 use crate::lock;
 use serde::Deserialize;
 use std::collections::HashMap;

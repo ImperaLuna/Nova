@@ -30,6 +30,7 @@
 mod fake_hidraw;
 mod headsetcontrol;
 mod hidpp;
+mod hidraw;
 mod hotplug;
 mod sysfs;
 #[cfg(test)]
@@ -71,7 +72,7 @@ pub struct Sources {
     /// `/dev`, where hidraw nodes are.
     pub dev: PathBuf,
     /// Opens a hidraw node.
-    pub open_hidraw: hidpp::Opener,
+    pub open_hidraw: hidraw::Opener,
     /// Searched for `headsetcontrol`.
     pub path_var: String,
     /// `/dev/bus/usb`, whose device nodes come and go with USB devices.
@@ -84,7 +85,7 @@ impl Sources {
             upower: Bus::System,
             sys_root: "/sys".into(),
             dev: "/dev".into(),
-            open_hidraw: Arc::new(hidpp::open_node),
+            open_hidraw: Arc::new(hidraw::open_node),
             path_var: path_var.into(),
             usb_devices: "/dev/bus/usb".into(),
         }
@@ -221,7 +222,12 @@ impl Peripherals {
             ),
             (
                 PeripheralSource::Hidpp,
-                Box::new(hidpp::Hidpp { sys_root: sources.sys_root, dev: sources.dev, open: sources.open_hidraw }),
+                Box::new(hidraw::Hidraw {
+                    sys_root: sources.sys_root,
+                    dev: sources.dev,
+                    open: sources.open_hidraw,
+                    protocol: hidpp::Hidpp,
+                }),
             ),
             (
                 PeripheralSource::Headsetcontrol,
