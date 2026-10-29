@@ -1,9 +1,10 @@
 //! `nova ipc`: one raw request to novad, its result printed as JSON, for
 //! scripts. The command and its arguments are checked against
 //! nova-protocol before anything is sent. `subscribe` instead prints the
-//! events of its topics, one JSON object per line, until novad stops or the
-//! command is interrupted (watching a topic from a shell, like
-//! `scripts/desktop/isolated-novad` does).
+//! events of its topics, one JSON object per line, until the command is
+//! interrupted (watching a topic from a shell, like
+//! `scripts/desktop/isolated-novad` does); novad going away is an error, so
+//! a script can tell it from a normal end.
 
 use crate::client::Client;
 use nova_protocol::Command;
@@ -34,10 +35,10 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
         let line = serde_json::to_string(&event).map_err(|e| e.to_string())?;
         // A closed pipe (`| head`) ends the watch, quietly.
         if writeln!(stdout, "{line}").and_then(|()| stdout.flush()).is_err() {
-            break;
+            return Ok(());
         }
     }
-    Ok(())
+    Err("novad closed the connection".into())
 }
 
 /// The command `name` with `args`, as novad would read it off the socket.

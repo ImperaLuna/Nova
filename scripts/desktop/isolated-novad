@@ -58,9 +58,12 @@ for manifest in "$checkout"/features/*/feature.toml; do
   id=$(basename "$(dirname "$manifest")")
   available[$id]=1
 done
+chosen=()
 for id in "${wanted[@]}"; do
+  [[ -n $id ]] || continue
   [[ -n ${available[$id]:-} ]] || die "$branch has no feature $id (features/$id)"
   unset 'available[$id]'
+  chosen+=("$id")
 done
 # ["a", "b"], in TOML and JSON alike.
 toml_list() { # <id...>
@@ -69,7 +72,7 @@ toml_list() { # <id...>
   echo "[${list%, }]"
 }
 {
-  echo "enabled = $(toml_list "${wanted[@]}")"
+  echo "enabled = $(toml_list "${chosen[@]}")"
   echo "disabled = $(toml_list "${!available[@]}")"
 } >"$run_dir/features.toml"
 
@@ -102,4 +105,12 @@ else
   "$nova" --socket "$socket" logs --log-dir "$run_dir/logs" &
 fi
 watcher_pid=$!
-wait "$watcher_pid"
+wait "$watcher_pid" || true
+# The watcher ends on its own only when novad does: show why before the
+# folder with its output goes.
+# (A zombie counts as stopped: nothing has waited for it yet.)
+if ! state=$(ps -o stat= -p "$daemon_pid") || [[ $state == Z* ]]; then
+  "$nova" --socket "$socket" logs --no-follow -n 20 --log-dir "$run_dir/logs" >&2 || true
+  tail -n 40 "$run_dir/novad.out" >&2
+  die "novad from $branch stopped (its last log lines and output above)"
+fi

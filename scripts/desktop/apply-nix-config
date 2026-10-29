@@ -34,17 +34,20 @@ while true; do
   waited=$((waited + runner_poll_secs))
 done
 
+# Both: a switch sets the profile (and boot entry) before it activates.
 system_before=$(readlink /run/current-system)
+profile_before=$(readlink /nix/var/nix/profiles/system)
 # nixos-apply's tee empties the log when it starts; -F follows it from there.
 tail -F -n 0 "$log" 2>/dev/null &
 tail_pid=$!
-trap 'kill "$tail_pid" 2>/dev/null || true' EXIT
+# A moment first, so the log's last lines (the error, often) get printed.
+trap 'sleep 1; kill "$tail_pid" 2>/dev/null || true' EXIT
 
 if systemctl start nixos-apply; then
   echo "applied: $(readlink /run/current-system)" >&2
   exit 0
 fi
-if [[ $(readlink /run/current-system) != "$system_before" ]]; then
+if [[ $(readlink /run/current-system) != "$system_before" || $(readlink /nix/var/nix/profiles/system) != "$profile_before" ]]; then
   echo "nixos-apply failed after switching; rolling back" >&2
   systemctl start nixos-rollback || die "rollback failed too; see /var/log/nixos-rollback.log"
   die "nixos-apply failed and was rolled back; see $log"

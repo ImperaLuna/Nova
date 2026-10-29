@@ -20,6 +20,10 @@ path=$worktrees/$branch
 
 fetch_branch "$branch"
 if [[ -e $path ]]; then
+  # A leftover folder that isn't a worktree any more would otherwise send
+  # the git calls below up to the main checkout.
+  [[ $(git -C "$path" rev-parse --show-toplevel 2>/dev/null) == "$path" ]] ||
+    die "$path exists but isn't a worktree; remove it and run this again"
   [[ -z $(git -C "$path" status --porcelain --untracked-files=no) ]] ||
     die "$path has uncommitted changes; left as it is"
   git -C "$path" checkout --quiet --detach "origin/$branch"
