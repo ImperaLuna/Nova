@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Fetches a branch and checks it out in its own worktree,
+# ~/Projects/Nova/.worktrees/<branch>, creating it or bringing it up to the
+# branch's latest commit (also after a force-push). Prints the worktree's
+# path on its last line. The checkout is detached: local sessions test, they
+# don't commit. A worktree with uncommitted changes is left as it is.
+#
+# Worktrees whose pull request is merged or closed are removed by a timer,
+# so there's nothing to clean up afterwards.
+#
+# Usage: scripts/desktop/worktree <branch>
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/lib.sh"
+
+(($# == 1)) || die "usage: worktree <branch>"
+branch=$1
+git check-ref-format --branch "$branch" >/dev/null 2>&1 || die "not a branch name: $branch"
+path=$worktrees/$branch
+
+fetch_branch "$branch"
+if [[ -e $path ]]; then
+  # A leftover folder that isn't a worktree any more would otherwise send
+  # the git calls below up to the main checkout.
+  [[ $(git -C "$path" rev-parse --show-toplevel 2>/dev/null) == "$path" ]] ||
+    die "$path exists but isn't a worktree; remove it and run this again"
+  [[ -z $(git -C "$path" status --porcelain --untracked-files=no) ]] ||
+    die "$path has uncommitted changes; left as it is"
+  git -C "$path" checkout --quiet --detach "origin/$branch"
+  echo "updated $path to $(git -C "$path" log -1 --format='%h %s')" >&2
+else
+  git -C "$main_checkout" worktree add --quiet --detach "$path" "origin/$branch"
+  echo "created $path at $(git -C "$path" log -1 --format='%h %s')" >&2
+fi
+echo "$path"
