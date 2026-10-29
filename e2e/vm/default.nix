@@ -170,6 +170,11 @@ let
         pkgs.testers.runNixOSTest {
           name = "nova-${compositor}-${part}";
           nodes = { inherit machine; };
+          # A half takes 2 to 4 minutes. The driver's own limit is an hour,
+          # and `machine.succeed` has none, so a hung step held a CI runner
+          # (and the other one, waiting on the same build) for that long
+          # (PR #140).
+          globalTimeout = vmTestTimeoutSecs;
           testScript = ''
             USER = ${builtins.toJSON user}
             UID = ${toString uid}
@@ -289,6 +294,8 @@ let
   # these debug lines. Not for the whole session: with it on in every run,
   # the lock screen's PAM helper (forked from the UI) hung after "Starting
   # pam session" on both compositors (PR #140's first CI run).
+  vmTestTimeoutSecs = 15 * 60;
+
   qtLoggingConf = pkgs.writeText "qtlogging.ini" ''
     [Rules]
     qt.scenegraph.renderloop.debug=true

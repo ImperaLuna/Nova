@@ -459,7 +459,7 @@ def print_failure_state(what: str) -> None:
     # backlog, which libwayland's lines (WAYLAND_DEBUG) fill.
     this_run = (
         f"cd {LOG_DIR} && set -- && for f in {files}; do [ -f $f ] || break; "
-        f'set -- $f "$@"; grep -qF {shlex.quote(RUN_START)} $f && break; done; cat "$@"'
+        f'set -- $f "$@"; grep -qF {shlex.quote(RUN_START)} $f && break; done; cat "$@" </dev/null'
     )
     for command in (
         FOCUSED_WINDOW,
@@ -506,7 +506,7 @@ def print_frame_timeline(log: str) -> None:
     the surface's last one, beside Qt's lines about drawing and the UI's own
     (`nova:`, `nova-frame:`). For a frame count over its budget: it shows
     whether the extra frames came in a burst, and what Qt did before it."""
-    status, output = machine.execute(f"cat {log}")
+    status, output = machine.execute(f"cat {log}", timeout=FAILURE_COMMAND_TIMEOUT)
     if status != 0:
         # Printed, not raised: the caller's assertion says what failed.
         print(f"(no frame timeline: cat {log} failed: {output})")
