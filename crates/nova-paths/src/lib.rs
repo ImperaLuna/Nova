@@ -62,13 +62,13 @@ pub fn path_var(name: &str) -> Option<PathBuf> {
 /// `<prefix>/share/nova/<name>` next to the running binary (the Nix and
 /// distro package layout) when it exists, else `./<name>` for a checkout.
 pub fn installed_or_checkout(name: &str) -> PathBuf {
-    let installed = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent()?.parent().map(|prefix| prefix.join("share/nova").join(name)));
-    match installed {
-        Some(dir) if dir.is_dir() => dir,
-        _ => PathBuf::from(name),
-    }
+    installed(name).unwrap_or_else(|| PathBuf::from(name))
+}
+
+/// `<prefix>/share/nova/<name>` next to the running binary, when it exists.
+pub fn installed(name: &str) -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.parent()?.parent()?.join("share/nova").join(name)).filter(|path| path.exists())
 }
 
 /// One of the user's folders from `user-dirs.dirs` (`xdg-user-dir`):

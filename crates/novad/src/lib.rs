@@ -157,6 +157,10 @@ impl Daemon {
         let disabled = UiStatus { state: UiState::Disabled, pid: None, pss_kib: None, restarts: 0, last_crash: None };
         Status {
             daemon: env!("CARGO_PKG_VERSION").into(),
+            revision: nova_paths::installed(REVISION_FILE)
+                .and_then(|file| std::fs::read_to_string(file).ok())
+                .map(|text| text.trim().to_owned())
+                .filter(|revision| !revision.is_empty()),
             pid: std::process::id(),
             uptime_secs: self.started.elapsed().as_secs(),
             pss_kib: procfs::pss_kib(Path::new(procfs::PROC), std::process::id()),
@@ -542,6 +546,13 @@ fn wayland_socket() -> Option<PathBuf> {
 pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
+
+/// The file in share/nova that names the commit Nova was built from
+/// (flake.nix writes it).
+const REVISION_FILE: &str = "revision";
+
+/// Runs a short-lived program with a deadline, for the CLI's own lookups.
+pub use child::output_within;
 
 /// Claude's limits from a Claude Code status line input, for
 /// `nova claude-statusline`.

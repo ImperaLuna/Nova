@@ -4,17 +4,59 @@ use crate::client::Client;
 use crate::lifecycle::RESTART_COMMAND;
 use nova_protocol::{Desktop, FeatureStatus, Status, UiState};
 use std::path::Path;
+use std::process::Command;
+use std::time::Duration;
 
 const KIB_PER_MB: u64 = 1024;
+/// Where Nova's main branch lives, to say how far a build is behind it.
+const GITHUB_REPO: &str = "ImperaLuna/Nova";
+/// How long `nova status` waits for GitHub's answer.
+const GITHUB_TIMEOUT: Duration = Duration::from_secs(5);
+/// How many characters of a commit hash `nova status` shows.
+const SHORT_REVISION: usize = 7;
+/// The end of a revision built from a checkout with uncommitted changes.
+const DIRTY: &str = "-dirty";
 
 pub fn show(socket: &Path, json: bool) -> Result<(), String> {
     let mut client = Client::reach(socket).map_err(|unreachable| unreachable.advice())?;
     if json {
         println!("{}", client.request(nova_protocol::Command::Status)?);
     } else {
-        print!("{}", describe(&client.status()?));
+        let status = client.status()?;
+        let behind = status.revision.as_deref().and_then(behind_main);
+        print!("{}", describe(&status, behind));
     }
     Ok(())
+}
+
+/// How many commits main has that `revision` doesn't, asked of GitHub with
+/// the `gh` CLI (the repository is private). `None` without gh, its login
+/// or the network.
+fn behind_main(revision: &str) -> Option<u64> {
+    let commit = revision.strip_suffix(DIRTY).unwrap_or(revision);
+    let mut gh = Command::new("gh");
+    gh.args(["api", &format!("repos/{GITHUB_REPO}/compare/{commit}...main"), "--jq", ".ahead_by"]);
+    let output = novad::output_within(gh, GITHUB_TIMEOUT).ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok()?.trim().parse().ok()
+}
+
+/// The commit novad runs, short, and how far main has moved on from it.
+fn describe_build(revision: &str, behind: Option<u64>) -> String {
+    let (commit, dirty) = match revision.strip_suffix(DIRTY) {
+        Some(commit) => (commit, " with uncommitted changes"),
+        None => (revision, ""),
+    };
+    let short: String = commit.chars().take(SHORT_REVISION).collect();
+    let main = match behind {
+        Some(0) => ", current with main".to_owned(),
+        Some(1) => ", 1 commit behind main".to_owned(),
+        Some(commits) => format!(", {commits} commits behind main"),
+        None => String::new(),
+    };
+    row("build", &format!("{}{dirty}{main}", printable(&short)))
 }
 
 /// Prints nova's version. A running novad from another version is pointed
@@ -29,13 +71,17 @@ pub fn version(socket: &Path) {
     }
 }
 
-fn describe(status: &Status) -> String {
+/// `behind`: how many commits main is ahead of the running build, when known.
+fn describe(status: &Status, behind: Option<u64>) -> String {
     let mut out = String::new();
     let mut daemon = format!("running, pid {}, up {}", status.pid, duration(status.uptime_secs));
     if let Some(kib) = status.pss_kib {
         daemon += &format!(", {}", megabytes(kib));
     }
     out += &row("daemon", &daemon);
+    if let Some(revision) = &status.revision {
+        out += &describe_build(revision, behind);
+    }
 
     let ui = &status.ui;
     let mut line = match (ui.state, ui.pid) {
@@ -220,6 +266,19 @@ mod tests {
     }
 
     #[test]
+    fn the_build_row_names_the_commit_and_how_far_main_moved_on() {
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(describe_build(commit, Some(0)), "build      0123456, current with main\n");
+        assert_eq!(describe_build(commit, Some(1)), "build      0123456, 1 commit behind main\n");
+        assert_eq!(describe_build(commit, Some(12)), "build      0123456, 12 commits behind main\n");
+        assert_eq!(describe_build(commit, None), "build      0123456\n");
+        assert_eq!(
+            describe_build(&format!("{commit}-dirty"), Some(3)),
+            "build      0123456 with uncommitted changes, 3 commits behind main\n"
+        );
+    }
+
+    #[test]
     fn durations_read_naturally() {
         assert_eq!(duration(42), "42s");
         assert_eq!(duration(310), "5m 10s");
@@ -230,6 +289,7 @@ mod tests {
     fn status_mentions_restarts_crashes_and_missing_packages() {
         let status = Status {
             daemon: "0.1.0".into(),
+            revision: None,
             pid: 10,
             uptime_secs: 65,
             pss_kib: Some(10 * 1024),
@@ -252,16 +312,17 @@ mod tests {
             log_dir: "/x".into(),
             desktop: None,
         };
-        let text = describe(&status);
+        let text = describe(&status, None);
         assert!(text.contains("daemon     running, pid 10, up 1m 5s, 10 MB"), "{text}");
         assert!(text.contains("UI         running, pid 11, 180 MB, restarted 2 times"), "{text}");
         assert!(text.contains("last crash not a time: see `nova logs --crash`"), "{text}");
         assert!(text.contains("features   core on, recording missing wf-recorder"), "{text}");
         assert!(!text.contains("warning"), "a supported Quickshell gets no row: {text}");
         assert!(text.contains("compositor none followed"), "{text}");
+        assert!(!text.contains("build"), "a checkout build gets no row: {text}");
 
         let untested = Status { quickshell: Some("0.1.0".into()), ..status };
-        let text = describe(&untested);
+        let text = describe(&untested, None);
         assert!(text.contains("warning    Quickshell 0.1.0 is older than Nova is tested with"), "{text}");
     }
 }

@@ -162,8 +162,12 @@
             }
           );
           # The binary is copied, not linked: nova finds share/nova next to
-          # the file it runs from.
-          nova =
+          # the file it runs from. `revision`, the commit it's built from,
+          # goes in share/nova/revision for `nova status`; the checks build
+          # it without one, so a merge to main doesn't rerun them.
+          nova = novaAt null;
+          novaAt =
+            revision:
             pkgs.runCommand "nova-${version}"
               {
                 meta = {
@@ -183,6 +187,9 @@
                     --replace-fail @nova@ $out/bin/nova
                   install -Dm644 ${./packaging/systemd/app-.service.d/nova.conf} $out/lib/systemd/user/app-.service.d/nova.conf
                   install -Dm644 -t $out/lib/udev/rules.d ${./features/peripherals/udev}/*.rules
+                ''
+                + pkgs.lib.optionalString (revision != null) ''
+                  echo ${revision} > $out/share/nova/revision
                 ''
               );
         };
@@ -244,7 +251,10 @@
       packages = forAllSystems (pkgs: {
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 
-        inherit (novaFor pkgs) nova nova-ui;
+        # Records the commit for `nova status`: the clean one, or the dirty
+        # one with its -dirty mark.
+        nova = (novaFor pkgs).novaAt (self.rev or self.dirtyRev or null);
+        inherit (novaFor pkgs) nova-ui;
         # .github/workflows/release.yml attaches this to a GitHub release.
         dist = distFor pkgs;
       });
@@ -295,10 +305,10 @@
         # VM tests on niri and Hyprland (e2e/vm): e2e-niri, e2e-hyprland.
         import ./e2e/vm {
           inherit pkgs;
-          inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) nova;
+          inherit (novaFor pkgs) nova;
         }
         // {
-          build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
+          build = (novaFor pkgs).nova;
           tests =
             let
               inherit (rustFor pkgs) craneLib common cargoArtifacts;
@@ -476,9 +486,7 @@
                     cp -r ${e2eSrc pkgs.lib}/. . && chmod -R u+w .
                     patchShebangs e2e
                     export HOME=$TMPDIR
-                    e2e/run.sh ${
-                      self.packages.${pkgs.stdenv.hostPlatform.system}.nova
-                    }/bin/nova >e2e.log 2>&1 || touch failed
+                    e2e/run.sh ${(novaFor pkgs).nova}/bin/nova >e2e.log 2>&1 || touch failed
                     mkdir -p $out
                     cp -r e2e/out/. e2e.log $out/
                     if [[ -e failed ]]; then touch $out/failed; fi

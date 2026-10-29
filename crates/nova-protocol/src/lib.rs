@@ -1408,6 +1408,10 @@ pub struct PowerMenu {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Status {
     pub daemon: String,
+    /// The Nova commit novad was built from, when its package records one
+    /// (the Nix flake does; a checkout build doesn't).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
     pub pid: u32,
     pub uptime_secs: u64,
     /// Proportional memory use in KiB, when readable.
@@ -2278,6 +2282,7 @@ mod tests {
     fn status() -> Status {
         Status {
             daemon: "0.1.0".into(),
+            revision: Some("0123456789abcdef0123456789abcdef01234567".into()),
             pid: 100,
             uptime_secs: 42,
             pss_kib: Some(4096),
