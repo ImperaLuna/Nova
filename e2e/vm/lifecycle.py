@@ -449,18 +449,26 @@ def click_until_logged(x: int, y: int, line: str, count=ui_log_count, clicker=cl
 def print_failure_state(what: str) -> None:
     """Prints who has the keyboard (the focused window and the layer
     surfaces, with their keyboard interactivity), what novad reports, the
-    UI's and the compositor's latest log lines, and every time Qt unexposed
-    a window, for a subtest that failed. Never fails itself."""
+    UI's and the compositor's latest log lines, and each time this novad run
+    saw Qt unexpose a window, for a subtest that failed. Never fails itself."""
     print(f"--- state after {what!r} failed ---")
     files = " ".join(["nova.log"] + [f"nova.log.{runs_ago}" for runs_ago in range(1, KEPT_LOGS + 1)])
+    # This novad run's log, oldest first, read back through the files to the
+    # one it started in (see ui_log_count), not `nova logs`' in-memory
+    # backlog, which libwayland's lines (WAYLAND_DEBUG) fill.
+    this_run = (
+        f"cd {LOG_DIR} && set -- && for f in {files}; do [ -f $f ] || break; "
+        f'set -- $f "$@"; grep -qF {shlex.quote(RUN_START)} $f && break; done; cat "$@"'
+    )
     for command in (
         FOCUSED_WINDOW,
         LIST_LAYERS,
         LIST_WINDOWS,
         "nova status --json",
-        # Without libwayland's lines (WAYLAND_DEBUG), which would fill it.
-        f"nova logs --no-follow -n {LOG_HISTORY} | grep -Ev {shlex.quote(WAYLAND_LINE)} | tail -n {FAILURE_LOG_LINES}",
-        f"cd {LOG_DIR} && grep -hF {shlex.quote(QT_UNEXPOSED)} {files} 2>/dev/null || echo none",
+        # Without libwayland's lines.
+        f"{this_run} | grep -Ev {shlex.quote(WAYLAND_LINE)} | tail -n {FAILURE_LOG_LINES}",
+        f"{this_run} | grep -F {shlex.quote(QT_UNEXPOSED)}"
+        " || echo 'none (novad keeps these Qt lines only with NOVA_LOG=debug)'",
         COMPOSITOR_LOG,
     ):
         print(f"$ {command}")
@@ -497,7 +505,12 @@ def print_frame_timeline(log: str) -> None:
     the surface's last one, beside Qt's lines about drawing and the UI's own
     (`nova:`, `nova-frame:`). For a frame count over its budget: it shows
     whether the extra frames came in a burst, and what Qt did before it."""
-    lines = machine.succeed(f"cat {log}").splitlines()
+    status, output = machine.execute(f"cat {log}")
+    if status != 0:
+        # Printed, not raised: the caller's assertion says what failed.
+        print(f"(no frame timeline: cat {log} failed: {output})")
+        return
+    lines = output.splitlines()
     start = None
     last_commit: dict[str, float] = {}
     print(f"frame timeline of {log}:")

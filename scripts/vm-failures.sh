@@ -12,7 +12,8 @@
 #   render [data]   The tracking issue's body for the records in `data` (or
 #                   stdin), one JSON object per line: {vm, subtest, error,
 #                   pr, run, date}. Each subtest gets one row, newest first;
-#                   one that failed on more than one PR is marked a repeat.
+#                   one that failed on more than one PR is marked a repeat
+#                   (not OUTSIDE, whose failures need not share a cause).
 #                   The records go at the end, in a comment, for the next
 #                   `record`.
 #   records [body]  The records in an issue body that `render` wrote (or
@@ -39,9 +40,9 @@ OUTSIDE="(outside any subtest)"
 # Where the records start and end in the issue's body.
 DATA_START="<!-- vm-failures-data"
 DATA_END="-->"
-# How many records the issue keeps (its body holds at most 65536
-# characters), and how many runs a row links.
-KEPT_RECORDS=200
+# The issue body's size cap (GitHub's limit is 65536 characters): the oldest
+# records are dropped until the body fits. And how many runs a row links.
+MAX_BODY_BYTES=60000
 LINKED_RUNS=5
 # A subtest's error, cut to this many characters in its row.
 ERROR_CHARS=160
@@ -72,7 +73,7 @@ parse() {
 
 render() {
   jq -rs --arg start "$DATA_START" --arg end "$DATA_END" --argjson runs "$LINKED_RUNS" \
-    --argjson chars "$ERROR_CHARS" '
+    --argjson chars "$ERROR_CHARS" --arg outside "$OUTSIDE" '
     def cell: tostring | gsub("\\|"; "\\|") | gsub("\n"; " ");
     def short: if length > $chars then .[:$chars] + "…" else . end;
     def prs: map(.pr | select(. != null and . != "")) | unique;
@@ -84,7 +85,7 @@ render() {
       "| Subtest | VM | Failures | PRs | Last failed | Last error | Runs |",
       "|---|---|---|---|---|---|---|",
       ($rows[]
-        | "| \(if (.prs | length) > 1 then "**repeat** " else "" end)\(.last.subtest | cell) | \(.last.vm) | \(.count) | \(.prs | map("#\(.)") | join(", ")) | \(.last.date[:10]) | \(.last.error | short | cell) | \([.runs | to_entries[] | "[\(.key + 1)](\(.value.run))"] | join(" ")) |"),
+        | "| \(if (.prs | length) > 1 and .last.subtest != $outside then "**repeat** " else "" end)\(.last.subtest | cell) | \(.last.vm) | \(.count) | \(.prs | map("#\(.)") | join(", ")) | \(.last.date[:10]) | \(.last.error | short | cell) | \([.runs | to_entries[] | "[\(.key + 1)](\(.value.run))"] | join(" ")) |"),
       "",
       $start,
       # Escaped, so an error with `-->` in it cannot end the comment early.
@@ -136,17 +137,23 @@ record() {
   gh issue view "$issue" --repo "$repo" --json body --jq .body | records >"$work/old"
 
   # A re-delivered run adds nothing twice.
-  cat "$work/old" "$work/new" | jq -cs --argjson kept "$KEPT_RECORDS" \
-    'unique_by([.run, .vm, .subtest]) | sort_by(.date) | .[-$kept:][]' >"$work/all"
+  cat "$work/old" "$work/new" | jq -cs 'unique_by([.run, .vm, .subtest]) | sort_by(.date) | .[]' >"$work/all"
   render "$work/all" >"$work/body"
+  while (($(wc -c <"$work/body") > MAX_BODY_BYTES)); do
+    tail -n +2 "$work/all" >"$work/kept" && mv "$work/kept" "$work/all"
+    render "$work/all" >"$work/body"
+  done
   gh issue edit "$issue" --repo "$repo" --body-file "$work/body"
   echo "Recorded in https://github.com/$repo/issues/$issue"
 
   [[ -n $PR ]] || return 0
-  # Each subtest that failed here and before on another PR, with those PRs.
+  # Each subtest that failed here and before on another PR, with those PRs;
+  # once per PR, not again on each re-run.
   jq -rs --slurpfile old "$work/old" --arg pr "$PR" --arg outside "$OUTSIDE" '
     .[] | select(.subtest != $outside) | . as $failure
-    | [$old[] | select(.vm == $failure.vm and .subtest == $failure.subtest and .pr != $pr and .pr != "") | .pr]
+    | [$old[] | select(.vm == $failure.vm and .subtest == $failure.subtest)] as $before
+    | select([$before[] | select(.pr == $pr)] | length == 0)
+    | [$before[] | select(.pr != "") | .pr]
     | unique | select(length > 0)
     | "- `\($failure.subtest)` (\($failure.vm)), before on \(map("#\(.)") | join(", "))"' "$work/new" >"$work/repeats"
   if [[ -s $work/repeats ]]; then

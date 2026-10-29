@@ -53,6 +53,9 @@ expect "counts and PRs" \
 # aren't.
 expect "repeats" "3" "$(grep -c '^| \*\*repeat\*\* ' <<<"$rows")"
 expect "one PR is no repeat" "1" "$(grep -c '^| nova toggle power' <<<"$rows")"
+# Failures outside any subtest share a row per VM, but not a cause.
+expect "outside a subtest is no repeat" "0" \
+  "$(jq -c '.subtest = "(outside any subtest)"' "$data/records.jsonl" | $script render | grep -c '^| \*\*repeat\*\* ' || true)"
 
 # A row links its latest runs.
 expect "linked runs" "5" "$(grep -F 'an idle bar' <<<"$rows" | grep -o '](https://' | wc -l | tr -d ' ')"
