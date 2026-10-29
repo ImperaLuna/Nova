@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Applies ~/nix-config's working tree on this desktop (RyzenShine), the way
+# a local session may: waits until neither CI runner has a job (they build
+# through the same nix daemon, and a switch mid-job has failed VM tests),
+# starts nixos-apply (polkit lets the user start it without sudo) and shows
+# its log as it goes. If the switch fails after the system changed, it
+# rolls back with nixos-rollback.
+#
+# It doesn't restart nova.service or anything else of the user's: the live
+# Nova picks up a new build when nova-auto-update restarts it, and a test
+# runs its own novad (isolated-novad) or `just run` when asked to.
+#
+# Usage: scripts/desktop/apply-nix-config
+set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+source "$(dirname "$0")/lib.sh"
+
+log=/var/log/nixos-apply.log
+# How long to wait for busy runners before giving up, and how often to ask.
+runner_wait_secs=$((20 * 60))
+runner_poll_secs=30
+
+busy_runners() {
+  gh api "repos/$github_repo/actions/runners" --jq '[.runners[] | select(.busy) | .name] | join(" ")'
+}
+
+waited=0
+while true; do
+  busy=$(busy_runners) || die "can't ask GitHub whether the CI runners are busy (is \`gh auth status\` logged in?)"
+  [[ -n $busy ]] || break
+  ((waited < runner_wait_secs)) || die "CI runners still busy after $((runner_wait_secs / 60)) min ($busy); try again later"
+  echo "waiting for CI runner(s) to finish: $busy" >&2
+  sleep "$runner_poll_secs"
+  waited=$((waited + runner_poll_secs))
+done
+
+# Both: a switch sets the profile (and boot entry) before it activates.
+system_before=$(readlink /run/current-system)
+profile_before=$(readlink /nix/var/nix/profiles/system)
+# nixos-apply's tee empties the log when it starts; -F follows it from there.
+tail -F -n 0 "$log" 2>/dev/null &
+tail_pid=$!
+# A moment first, so the log's last lines (the error, often) get printed.
+trap 'sleep 1; kill "$tail_pid" 2>/dev/null || true' EXIT
+
+if systemctl start nixos-apply; then
+  echo "applied: $(readlink /run/current-system)" >&2
+  exit 0
+fi
+if [[ $(readlink /run/current-system) != "$system_before" || $(readlink /nix/var/nix/profiles/system) != "$profile_before" ]]; then
+  echo "nixos-apply failed after switching; rolling back" >&2
+  systemctl start nixos-rollback || die "rollback failed too; see /var/log/nixos-rollback.log"
+  die "nixos-apply failed and was rolled back; see $log"
+fi
+die "nixos-apply failed before switching; nothing changed. See $log"

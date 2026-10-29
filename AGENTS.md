@@ -190,6 +190,14 @@ should keep goes in the PR or an artifact, and the session deletes its
 `~/Projects/Nova/.worktrees/<branch>`. A daily timer removes worktrees whose
 PR is merged or closed, and scratch nobody touched for a week.
 
+On the desktop, use `scripts/desktop/` rather than doing these steps by hand
+(each script's header says more): `worktree <branch>` fetches a branch into
+its worktree (over HTTPS, so no SSH workaround), `isolated-novad <branch>
+<feature,...> [topic...]` runs that branch's novad with only those features
+beside the live Nova and prints the topics' events, and `apply-nix-config`
+applies `~/nix-config` once the CI runners are idle, rolling back on failure. Never restart or stop
+`nova.service` or the live novad unless asked.
+
 Test runs on the desktop stay off the maintainer's screen. Frame captures and
 screenshots run headless (`just e2e`, or `e2e/run.sh`'s sway with grim on its
 output), and niri- or Hyprland-only behaviour goes to the VM tests; never open

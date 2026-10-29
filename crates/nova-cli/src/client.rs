@@ -1,6 +1,7 @@
 //! A connection to novad's socket. Every read and write gives up after
 //! [`REPLY_TIMEOUT`], so a stuck novad can't hang the CLI (`nova restart` is
-//! what you run then); only following events (`nova logs`) waits forever.
+//! what you run then); only following events (`nova logs`, `nova ipc
+//! subscribe`) waits forever.
 
 use crate::lifecycle::RESTART_COMMAND;
 use nova_protocol::{Command, Envelope, Event, Outcome, Request, Response, Status, Topic, encode};
