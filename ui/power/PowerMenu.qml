@@ -67,6 +67,15 @@ StagePanel {
                 menu.choice.left();
         }
     }
+    // A frame that never comes out (the screen blanked, the compositor
+    // stopped asking for frames) must not keep the session from ending:
+    // past this, the action runs anyway.
+    readonly property int leaveWaitMaxMs: 1500
+    Timer {
+        interval: menu.leaveWaitMaxMs
+        running: menu.choice.leaving !== ""
+        onTriggered: menu.choice.left()
+    }
     // How long the system has been up, in whole minutes, ticking while the
     // menu is open.
     SystemClock {
