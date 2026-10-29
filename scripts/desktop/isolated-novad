@@ -39,6 +39,7 @@ run_dir=$(mktemp -d "${XDG_RUNTIME_DIR:?}/nova-isolated.XXXXXX")
 socket=$run_dir/nova/novad.sock
 daemon_pid=
 watcher_pid=
+# shellcheck disable=SC2329 # run by the EXIT trap
 stop() {
   local pid
   for pid in $watcher_pid $daemon_pid; do
@@ -105,12 +106,14 @@ else
   "$nova" --socket "$socket" logs --log-dir "$run_dir/logs" &
 fi
 watcher_pid=$!
-wait "$watcher_pid" || true
-# The watcher ends on its own only when novad does: show why before the
-# folder with its output goes.
-# (A zombie counts as stopped: nothing has waited for it yet.)
+watcher_status=0
+wait "$watcher_pid" || watcher_status=$?
+# When novad stopped, show why before the folder with its output goes (a
+# zombie counts as stopped: nothing has waited for it yet).
 if ! state=$(ps -o stat= -p "$daemon_pid") || [[ $state == Z* ]]; then
   "$nova" --socket "$socket" logs --no-follow -n 20 --log-dir "$run_dir/logs" >&2 || true
   tail -n 40 "$run_dir/novad.out" >&2
   die "novad from $branch stopped (its last log lines and output above)"
 fi
+# Otherwise the watcher's own failure (a misspelled topic) is the script's.
+exit "$watcher_status"
