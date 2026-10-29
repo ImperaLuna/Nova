@@ -5,8 +5,9 @@
 # COMPOSITOR, QUIT_COMPOSITOR, FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW,
 # CLOSE_WINDOW, LIST_WINDOWS, FOCUSED_WINDOW, LIST_LAYERS, ADDED_OUTPUTS (the
 # commands that add an output, focus the VM's own one, and remove the added
-# one, as one triple, or none where the compositor can't), COMPOSITOR_LOG and
-# FRAMES_REPORT above this script.
+# one, as one triple, or none where the compositor can't), COMPOSITOR_LOG,
+# FRAMES_REPORT and QT_LOGGING_CONF (Qt's drawing lines, for frames.py) above
+# this script.
 #
 # A failing subtest prints who had the keyboard and what the UI and the
 # compositor logged (print_failure_state), so a flaky failure in CI can be

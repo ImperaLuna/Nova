@@ -79,12 +79,6 @@ let
             # (ui/bar/Bar.qml), so screenshots don't change from minute to
             # minute.
             NOVA_FROZEN_TIME = "2026-10-24T16:40:00";
-            # Qt's render loop and frame callbacks, in every Qt program: it
-            # logs them at debug level, which novad keeps only with
-            # NOVA_LOG=debug, so they reach the UI's log in the subtests that
-            # turn that on. A file rather than QT_LOGGING_RULES, whose `;`
-            # breaks `machine.systemctl("set-environment ...")`'s quoting.
-            QT_LOGGING_CONF = "${qtLoggingConf}";
           };
           # foot is a window to have.
           systemPackages = [ pkgs.foot ];
@@ -187,6 +181,7 @@ let
             CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
             LIST_WINDOWS = ${builtins.toJSON "${ipcEnv} ${listWindows}"}
             FOCUSED_WINDOW = ${builtins.toJSON "${ipcEnv} ${focusedWindow}"}
+            QT_LOGGING_CONF = ${builtins.toJSON "${qtLoggingConf}"}
             LIST_LAYERS = ${builtins.toJSON "${ipcEnv} ${listLayers}"}
             ADDED_OUTPUTS = ${
               builtins.toJSON (stepsIfAny [
@@ -290,6 +285,10 @@ let
   # render loop's steps and timing, and the Wayland side's update requests
   # and frame callbacks ("Didn't receive frame callback in time", which
   # unexposes a window, IMP-204 and IMP-208).
+  # frames.py turns it on with NOVA_LOG=debug, which novad needs to keep
+  # these debug lines. Not for the whole session: with it on in every run,
+  # the lock screen's PAM helper (forked from the UI) hung after "Starting
+  # pam session" on both compositors (PR #140's first CI run).
   qtLoggingConf = pkgs.writeText "qtlogging.ini" ''
     [Rules]
     qt.scenegraph.renderloop.debug=true
