@@ -12,11 +12,17 @@
 //! Over the dongle the keyboard sends it by itself (when the link
 //! connects, when it changes, and every [`HEARTBEAT`] otherwise), and the
 //! dongle doesn't pass the host's requests on; on its cable it only
-//! answers a request. So each node is asked when it's opened, and again
-//! every [`ASK`] while it's on a cable or until it has stayed silent for
-//! [`MAX_UNANSWERED`] requests; besides that its reader only listens. A
-//! dongle's node stays when its keyboard is off, so a keyboard is listed
-//! only while it was heard in the last [`SILENCE`].
+//! answers a request, within milliseconds. The transport byte doesn't
+//! tell them apart: on its cable the keyboard stays linked to its dongle
+//! and says 2.4 GHz. So each node is asked when it's opened, and a node
+//! that answers [`CONFIRMATIONS`] requests in a row (each within
+//! [`ANSWER_TIMEOUT`]) is the keyboard's own, on its cable: it's listed
+//! as wired and asked every [`ASK`]. Any other node is asked until it has
+//! left [`MAX_UNANSWERED`] requests unanswered, and then only listened
+//! to. A dongle's node stays when its keyboard is off, so a keyboard is
+//! listed only while it was heard in the last [`SILENCE`]. On its cable
+//! it's still heard through its dongle too; the cable's reading wins (see
+//! [`super::hidraw`]).
 //!
 //! The percent comes from the cell's voltage as the firmware reads it,
 //! which wanders several points either way within a minute on a keyboard
@@ -82,6 +88,11 @@ pub const ASK: Duration = if cfg!(test) { Duration::from_millis(500) } else { HE
 /// Requests in a row a node may leave unanswered before it's only
 /// listened to: a dongle doesn't pass them on.
 const MAX_UNANSWERED: u32 = 3;
+/// How soon an answer comes on the cable (a few milliseconds), and how
+/// many in a row tell the node is the keyboard's own: a dongle's push
+/// right after a request isn't mistaken for one.
+const ANSWER_TIMEOUT: Duration = Duration::from_millis(100);
+const CONFIRMATIONS: u32 = 2;
 /// How far back the readings that make the shown percent go...
 const SMOOTHING: Duration = Duration::from_secs(180);
 /// ...and how far their median moves from it before it changes.
@@ -108,16 +119,23 @@ impl Protocol for Keychron {
     fn read(&self, node: &Node, mut channel: Channel, listing: &Listing) -> Option<String> {
         // What's shown, and when the keyboard was last heard.
         let mut heard: Option<(Smoothed, Instant)> = None;
-        // Whether it last said it's on its cable, where it only answers.
-        let mut on_cable = false;
+        // Whether the node is the keyboard's own, on its cable.
+        let mut wired = false;
         let mut can_ask = true;
         let mut unanswered = 0;
+        let mut answered = 0;
+        // When the last request went, while its answer may still come.
+        let mut asked: Option<Instant> = None;
         let mut next_ask = Some(Instant::now());
         loop {
             let now = Instant::now();
+            if asked.is_some_and(|at| at + ANSWER_TIMEOUT <= now) {
+                asked = None;
+                answered = 0;
+            }
             if next_ask.is_some_and(|at| at <= now) {
                 match channel.send(&request()) {
-                    Ok(true) => {}
+                    Ok(true) => asked = Some(now),
                     Ok(false) => return None,
                     // It can still be listened to.
                     Err(e) => {
@@ -127,19 +145,31 @@ impl Protocol for Keychron {
                     }
                 }
                 unanswered += 1;
-                next_ask = (can_ask && (on_cable || unanswered < MAX_UNANSWERED)).then_some(now + ASK);
+                next_ask = (can_ask && (wired || unanswered < MAX_UNANSWERED)).then_some(now + ASK);
             }
             if heard.as_ref().is_some_and(|(_, at)| *at + SILENCE <= now) {
                 heard = None;
                 listing.set(Vec::new());
             }
             let expires = heard.as_ref().map(|(_, at)| *at + SILENCE);
-            let until = [next_ask, expires].into_iter().flatten().min().unwrap_or(now + IDLE_WAIT);
+            let answer_due = asked.map(|at| at + ANSWER_TIMEOUT);
+            let until = [next_ask, expires, answer_due].into_iter().flatten().min().unwrap_or(now + IDLE_WAIT);
             match channel.receive(until) {
                 Ok(Received::Report(report)) => {
                     let Some(reading) = Reading::parse(&report) else { continue };
                     let now = Instant::now();
-                    unanswered = 0;
+                    if asked.take().is_some_and(|at| now.duration_since(at) <= ANSWER_TIMEOUT) {
+                        unanswered = 0;
+                        answered += 1;
+                        if answered >= CONFIRMATIONS {
+                            wired = true;
+                        } else if can_ask {
+                            // Asked again at once, to be sure.
+                            next_ask = Some(now);
+                        }
+                    } else {
+                        answered = 0;
+                    }
                     let smoothed = match heard.take() {
                         Some((mut smoothed, _)) => {
                             smoothed.add(reading, now);
@@ -148,11 +178,11 @@ impl Protocol for Keychron {
                         None => Smoothed::new(reading, now),
                     };
                     // Unchanged lists aren't sent on.
-                    listing.set(vec![found(node, smoothed.shown())]);
+                    listing.set(vec![found(node, smoothed.shown(), wired)]);
                     heard = Some((smoothed, now));
-                    // Off its cable it says it by itself.
-                    on_cable = reading.on_cable();
-                    next_ask = (on_cable && can_ask).then_some(now + ASK);
+                    if wired && can_ask {
+                        next_ask = Some(now + ASK);
+                    }
                 }
                 Ok(Received::TimedOut) => {}
                 Ok(Received::Stopped) => return None,
@@ -240,15 +270,13 @@ impl Reading {
             model: report.get(6).copied().unwrap_or(0),
         })
     }
-
-    fn on_cable(self) -> bool {
-        self.transport == TRANSPORT_USB
-    }
 }
 
-/// The keyboard `reading` came from, through `node`.
-fn found(node: &Node, reading: Reading) -> Found {
+/// The keyboard `reading` came from, through `node` (its own, on its
+/// cable, when `wired`).
+fn found(node: &Node, reading: Reading, wired: bool) -> Found {
     let link = match reading.transport {
+        _ if wired => Some(PeripheralLink::Wired),
         TRANSPORT_USB => Some(PeripheralLink::Wired),
         TRANSPORT_BLUETOOTH => Some(PeripheralLink::Bluetooth),
         TRANSPORT_DONGLE => Some(PeripheralLink::Dongle),
@@ -256,9 +284,9 @@ fn found(node: &Node, reading: Reading) -> Found {
     };
     let model = MODELS.iter().find(|(id, _)| *id == reading.model).map(|(_, name)| (*name).to_owned());
     // On its cable the node is the keyboard's own, and so is its name.
-    let own_name = node.hid_name.clone().filter(|_| reading.on_cable());
+    let own_name = node.hid_name.clone().filter(|_| wired);
     // By its model when it says it, so on its cable and behind its dongle
-    // it's one keyboard: the node that heard it last tells.
+    // it's one keyboard.
     let id = match reading.model {
         0 => format!("{ID_PREFIX}{}", node.id),
         known => format!("{ID_PREFIX}model-{known}"),

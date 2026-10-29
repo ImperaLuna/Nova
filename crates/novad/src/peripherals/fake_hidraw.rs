@@ -148,14 +148,22 @@ impl FakeHidraw {
         lock(&self.nodes).get(path).map(|node| node.requests.clone()).unwrap_or_default()
     }
 
+    /// Node `path` hangs up, as hidraw does when its device is unplugged.
+    pub fn hang_up(&self, path: &Path) {
+        let ends: Vec<std::fs::File> =
+            lock(&self.nodes).get_mut(path).map(|node| node.ends.drain(..).collect()).unwrap_or_default();
+        for end in ends {
+            // SAFETY: `end` is an open socket for the call.
+            unsafe { libc::shutdown(end.as_raw_fd(), libc::SHUT_RDWR) };
+        }
+    }
+
     /// Every open node hangs up, as hidraw does when its device is
     /// unplugged.
     pub fn unplug(&self) {
-        for node in lock(&self.nodes).values_mut() {
-            for end in node.ends.drain(..) {
-                // SAFETY: `end` is an open socket for the call.
-                unsafe { libc::shutdown(end.as_raw_fd(), libc::SHUT_RDWR) };
-            }
+        let paths: Vec<PathBuf> = lock(&self.nodes).keys().cloned().collect();
+        for path in paths {
+            self.hang_up(&path);
         }
     }
 

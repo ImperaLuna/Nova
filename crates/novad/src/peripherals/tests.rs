@@ -11,9 +11,9 @@
 //! with no headset (it exits 1), `hidpp-c547.json` a Lightspeed receiver
 //! and its G502 X PLUS answering HID++, `keychron-d030.json` a Keychron
 //! Link dongle passing on its K2 HE's battery reports and
-//! `keychron-d026.json` one with nothing behind it that sends them
-//! (`keychron-0e20.json`, the keyboard on its cable, is built from the
-//! firmware's protocol until it's captured). The UPower files follow UPower's
+//! `keychron-d026.json` one with nothing behind it that sends them,
+//! and `keychron-0e20.json` the K2 HE on its cable answering requests.
+//! The UPower files follow UPower's
 //! D-Bus API: the desktop they're for has no peripheral in UPower (its
 //! UPower lists only the DisplayDevice, which the fake serves too).
 
@@ -583,8 +583,9 @@ fn a_mouse_both_upower_and_hidpp_report_is_listed_once() {
 const KEYCHRON_LINK: &str = "keychron-d030.json";
 const KEYCHRON_LINK_KM: &str = "keychron-d026.json";
 const KEYCHRON_CABLE: &str = "keychron-0e20.json";
-/// Keychron Launcher's protocol version request, on the same interface.
-const LAUNCHER_REPORT: &str = "a0000000000000000000000000000000";
+/// The K2 HE's answer to Keychron Launcher's protocol version request,
+/// on the same interface.
+const LAUNCHER_REPORT: &str = "a002000200000000000000000000000000000000000000000000000000000000";
 
 impl Fixture {
     /// A hidraw node as `recorded/<name>` has it; its file in `/dev`.
@@ -627,9 +628,10 @@ fn keychron_lists_a_keyboard_on_its_dongle_while_it_sends() {
     // Silent past a few heartbeats: off.
     assert_eq!(fixture.next(), json!([]));
     // It was asked, as any node is, but only a few times: the dongle
-    // doesn't pass requests on.
+    // doesn't pass requests on (a push just after one looks like an
+    // answer, until the request sent to make sure goes unanswered).
     let asked = fixture.hidraw.requests(&link);
-    assert!((1..=3).contains(&asked.len()), "{} requests", asked.len());
+    assert!((1..=6).contains(&asked.len()), "{} requests", asked.len());
     peripherals.stop();
 }
 
@@ -647,8 +649,9 @@ fn keychron_reads_a_report_without_a_model() {
     peripherals.stop();
 }
 
-/// On its cable the keyboard says nothing by itself: it's asked, and
-/// asked again while it stays.
+/// On its cable the keyboard says nothing by itself and its report says
+/// 2.4 GHz: it's asked, answers, is listed as wired, and asked again
+/// while it stays.
 #[test]
 fn keychron_asks_a_keyboard_on_its_cable() {
     let fixture = Fixture::new("keychron-cable");
@@ -657,7 +660,7 @@ fn keychron_asks_a_keyboard_on_its_cable() {
     assert_eq!(
         fixture.next(),
         json!([{"id": "keychron/model-3", "name": "Keychron K2 HE", "kind": "keyboard", "link": "wired",
-                "battery": {"percent": 78}, "charging": true, "source": "keychron"}])
+                "battery": {"percent": 81}, "charging": true, "source": "keychron"}])
     );
     let request = fake_hidraw_recording(KEYCHRON_CABLE).exchanges[0].request.clone();
     wait_until(WAIT, "asked again", || fixture.hidraw.requests(&cable).len() >= 4);
@@ -670,19 +673,42 @@ fn keychron_asks_a_keyboard_on_its_cable() {
     peripherals.stop();
 }
 
-/// Plugged in by its cable, a keyboard heard behind its dongle a moment
-/// ago is listed once, as its cable has it.
+/// Plugged in by its cable, a keyboard heard behind its dongle is listed
+/// once, as its cable has it, even while its dongle still passes on what
+/// it says; unplugged, as its dongle has it again.
 #[test]
 fn keychron_lists_a_keyboard_on_cable_and_dongle_once() {
     let fixture = Fixture::new("keychron-both");
     let link = fixture.hidraw_node(KEYCHRON_LINK);
     let peripherals = fixture.start();
     fixture.wait_opened(&link);
-    fixture.hidraw.say_on(&link, &fake_hidraw_recording(KEYCHRON_LINK).pushes[0]);
+    let dongle = fake_hidraw_recording(KEYCHRON_LINK);
+    fixture.hidraw.say_on(&link, &dongle.pushes[0]);
     assert_eq!(fixture.next()[0]["link"], "dongle");
-    fixture.hidraw_node(KEYCHRON_CABLE);
+    // The cable in: the dongle says so first, then the cable's node comes.
+    fixture.hidraw.say_on(&link, &dongle.notices["cable_in"]);
+    assert_eq!(fixture.next()[0]["charging"], true);
+    let cable = fixture.hidraw_node(KEYCHRON_CABLE);
     let devices = fixture.next();
     assert_eq!(ids(&devices), ["keychron/model-3"], "{devices}");
     assert_eq!(devices[0]["link"], "wired");
+    // The dongle's heartbeat while on the cable changes nothing.
+    fixture.hidraw.say_on(&link, &dongle.notices["cable_in"]);
+    // Unplugged: the cable's node goes, and the dongle says it's on
+    // battery.
+    std::fs::remove_dir_all(fixture.dir.join("sys/class/hidraw/hidraw17")).unwrap();
+    std::fs::remove_file(&cable).unwrap();
+    fixture.hidraw.hang_up(&cable);
+    fixture.hidraw.say_on(&link, &dongle.notices["cable_out"]);
+    // The dongle's last reading may show a moment before its new one.
+    let on_battery = json!({"link": "dongle", "charging": false});
+    let mut devices = fixture.next();
+    for _ in 0..2 {
+        if json!({"link": devices[0]["link"], "charging": devices[0]["charging"]}) == on_battery {
+            break;
+        }
+        devices = fixture.next();
+    }
+    assert_eq!(json!({"link": devices[0]["link"], "charging": devices[0]["charging"]}), on_battery, "{devices}");
     peripherals.stop();
 }

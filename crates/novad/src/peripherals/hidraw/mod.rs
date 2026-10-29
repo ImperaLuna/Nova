@@ -9,7 +9,9 @@
 //! has a reader thread of its own ([`Protocol::read`]), which ends when
 //! the node goes or the source stops; one that ended by itself is started
 //! again on the next look, and why it ended is logged once while that
-//! stays the same.
+//! stays the same. A device two nodes reach (its cable and its receiver)
+//! is listed once: as its cable has it while plugged in, else as the node
+//! that heard it last has it.
 //!
 //! Opening a node needs read and write access: Nova's udev rules give it
 //! to the logged-in user for the vendors read here. Without it, nothing is
@@ -23,7 +25,7 @@ use crate::inotify::Stopper;
 use crate::lock;
 use crate::logger::Logger;
 use channel::Channel;
-use nova_protocol::LogLevel;
+use nova_protocol::{LogLevel, PeripheralLink};
 use std::collections::{BTreeMap, HashMap};
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
@@ -126,12 +128,15 @@ impl Devices {
         } else {
             by_node.insert(name.to_owned(), (Instant::now(), found));
         }
-        // A device two nodes reach (its cable and its receiver) once, as
-        // the node that heard it last has it.
-        let mut newest_first: Vec<&(Instant, Vec<Found>)> = by_node.values().collect();
-        newest_first.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
+        // A device two nodes reach (its cable and its receiver) once: as
+        // its cable has it while plugged in, else as the node that heard
+        // it last has it.
+        let mut candidates: Vec<(&Instant, &Found)> =
+            by_node.values().flat_map(|(at, found)| found.iter().map(move |device| (at, device))).collect();
+        candidates
+            .sort_by_key(|(at, device)| (device.device.link != Some(PeripheralLink::Wired), std::cmp::Reverse(**at)));
         let mut all: Vec<Found> = Vec::new();
-        for device in newest_first.into_iter().flat_map(|(_, found)| found) {
+        for (_, device) in candidates {
             if !all.iter().any(|known| known.device.id == device.device.id) {
                 all.push(device.clone());
             }
