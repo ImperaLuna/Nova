@@ -294,7 +294,7 @@ let
   # these debug lines. Not for the whole session: with it on in every run,
   # the lock screen's PAM helper (forked from the UI) hung after "Starting
   # pam session" on both compositors (PR #140's first CI run).
-  vmTestTimeoutSecs = 15 * 60;
+  vmTestTimeoutSecs = 10 * 60;
 
   qtLoggingConf = pkgs.writeText "qtlogging.ini" ''
     [Rules]

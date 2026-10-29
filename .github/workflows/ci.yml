@@ -4,8 +4,19 @@ name: CI
 # young, so rapid pushes cost no GitHub minutes. To move back to GitHub's
 # runners: set `runs-on: ubuntu-latest` and add
 # `- uses: cachix/install-nix-action@v31` after checkout.
+#
+# Two jobs, behind the one `checks` status the ruleset and the merge lane
+# (scripts/update-prs.sh) read:
+#   - fast: every flake check but the VM tests (build, cargo tests, lints,
+#     QML tests, headless e2e), on every push, so a draft hears back in a
+#     couple of minutes.
+#   - vm: the NixOS VM tests on niri and Hyprland, only on PRs that aren't
+#     drafts (and when a draft is marked ready), in parallel with fast.
+# A draft's `checks` passes without the VM tests; marking it ready runs them
+# (IMP-228).
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 # PR code runs here; it gets a token that can only read.
@@ -20,32 +31,62 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  checks:
-    name: checks
+  fast:
+    name: fast checks
+    runs-on: [self-hosted, nova]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # What `nix flake check` evaluates (outputs, modules), without building.
+      - name: nix flake check --no-build
+        run: nix flake check --no-build
+      - name: flake checks but the VM tests
+        run: |
+          checks=.#checks.x86_64-linux
+          names=$(nix eval --raw "$checks" --apply 'c: builtins.concatStringsSep " " (builtins.filter (n: n != "e2e-niri" && n != "e2e-hyprland") (builtins.attrNames c))')
+          targets=()
+          for name in $names; do targets+=("$checks.$name"); done
+          nix build -L --no-link --keep-going "${targets[@]}"
+      # The headless e2e's logs and screenshot. --max-jobs 0 skips building
+      # it again when the test itself failed.
+      - name: e2e results
+        if: always()
+        run: |
+          mkdir -p e2e/out
+          if out=$(nix build --max-jobs 0 --no-link --print-out-paths .#checks.x86_64-linux.e2e-headless.run); then
+            cp -r --no-preserve=mode "$out/." e2e/out/
+            # Its memory warning, as an annotation.
+            grep '^::warning' e2e/out/e2e.log || true
+          fi
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-headless
+          path: e2e/out
+          if-no-files-found: ignore
+
+  vm:
+    name: VM tests
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: [self-hosted, nova]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: nix flake check
-        run: nix flake check -L --keep-going
-      # The headless e2e's logs and screenshot, and the VM tests' screenshots,
-      # report and odiff diffs. The flake check already built them, also when
-      # it failed on them; --max-jobs 0 skips building them again when a
-      # test itself failed.
+      - name: VM tests on niri and Hyprland
+        run: nix build -L --no-link --keep-going .#checks.x86_64-linux.e2e-niri .#checks.x86_64-linux.e2e-hyprland
+      # The VM tests' screenshots, report and odiff diffs. The step above
+      # already built them, also when it failed on them; --max-jobs 0 skips
+      # building them again when a test itself failed.
       - name: e2e results
         if: always()
         run: |
           mkdir -p e2e/out
-          checks=.#checks.x86_64-linux
-          if out=$(nix build --max-jobs 0 --no-link --print-out-paths "$checks.e2e-headless.run"); then
-            cp -r --no-preserve=mode "$out/." e2e/out/
-            # Its memory warning, as an annotation.
-            grep '^::warning' e2e/out/e2e.log || true
-          fi
           for compositor in niri hyprland; do
-            shots=$(nix build --max-jobs 0 --no-link --print-out-paths "$checks.e2e-$compositor.compare") &&
+            shots=$(nix build --max-jobs 0 --no-link --print-out-paths ".#checks.x86_64-linux.e2e-$compositor.compare") &&
               cp -r --no-preserve=mode "$shots" "e2e/out/vm-$compositor" || true
           done
       # Each state's Pss (frames.py) against main's, in the job summary.
@@ -80,3 +121,28 @@ jobs:
           name: e2e
           path: e2e/out
           if-no-files-found: ignore
+
+  # The status the ruleset requires. Green when fast passed and the VM tests
+  # passed, or were skipped on a draft.
+  checks:
+    name: checks
+    needs: [fast, vm]
+    # Not on a run a newer push cancelled: that head no longer matters.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: fast and VM results
+        env:
+          FAST: ${{ needs.fast.result }}
+          VM: ${{ needs.vm.result }}
+          DRAFT: ${{ github.event.pull_request.draft == true }}
+        run: |
+          echo "fast checks: $FAST, VM tests: $VM"
+          [[ $FAST == success ]] || exit 1
+          [[ $VM == success ]] && exit 0
+          if [[ $VM == skipped && $DRAFT == true ]]; then
+            echo "::notice::Draft PR: VM tests run once it's marked ready."
+            exit 0
+          fi
+          exit 1
