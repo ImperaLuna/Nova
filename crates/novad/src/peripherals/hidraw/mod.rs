@@ -113,31 +113,30 @@ struct Devices {
 }
 
 impl Devices {
-    /// Node `name` has `found` now.
+    /// Node `name` has `found` now. The merged list is sent on even when
+    /// `found` is what the node had: hearing it again can make that node
+    /// the newest for a device another node reaches too. An unchanged
+    /// list goes no further.
     fn set(&self, name: &str, found: Vec<Found>) {
         let mut by_node = lock(&self.by_node);
-        let changed = match by_node.get(name) {
-            Some((_, known)) => *known != found,
-            None => !found.is_empty(),
-        };
         if found.is_empty() {
-            by_node.remove(name);
+            if by_node.remove(name).is_none() {
+                return;
+            }
         } else {
             by_node.insert(name.to_owned(), (Instant::now(), found));
         }
-        if changed {
-            // A device two nodes reach (its cable and its receiver) once,
-            // as the node that heard it last has it.
-            let mut newest_first: Vec<&(Instant, Vec<Found>)> = by_node.values().collect();
-            newest_first.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
-            let mut all: Vec<Found> = Vec::new();
-            for device in newest_first.into_iter().flat_map(|(_, found)| found) {
-                if !all.iter().any(|known| known.device.id == device.device.id) {
-                    all.push(device.clone());
-                }
+        // A device two nodes reach (its cable and its receiver) once, as
+        // the node that heard it last has it.
+        let mut newest_first: Vec<&(Instant, Vec<Found>)> = by_node.values().collect();
+        newest_first.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
+        let mut all: Vec<Found> = Vec::new();
+        for device in newest_first.into_iter().flat_map(|(_, found)| found) {
+            if !all.iter().any(|known| known.device.id == device.device.id) {
+                all.push(device.clone());
             }
-            self.report.found(all);
         }
+        self.report.found(all);
     }
 }
 
