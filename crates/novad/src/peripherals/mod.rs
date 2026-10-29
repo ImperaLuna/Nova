@@ -10,8 +10,8 @@
 //! when hidraw nodes come or go and when a device says something),
 //! `keychron` listens for the battery report that Keychron keyboards on
 //! the community battery firmware send over raw HID (by themselves over
-//! their dongle, when asked on their cable), and `headsetcontrol` runs HeadsetControl for the headsets the kernel can't
-//! read (every [`headsetcontrol::POLL`] and when a USB device comes or
+//! their dongle, when asked on their cable), and `headsetcontrol` runs
+//! HeadsetControl for the headsets the kernel can't read (every [`headsetcontrol::POLL`] and when a USB device comes or
 //! goes). A source that isn't there (no UPower, no HeadsetControl, no
 //! access to a receiver's node) just reports nothing.
 //!
@@ -19,8 +19,9 @@
 //! sources report (the same USB vendor and product, and serial when both
 //! know it) is listed once, as the source first in [`PRIORITY`] (UPower,
 //! the kernel's reading, then HID++ and Keychron's) has it, with the
-//! other's battery only when it has none. Changes that come together are published once they settle, and
-//! only when the list differs from the last one sent.
+//! other's battery only when it has none. Changes that come together are
+//! published once they settle, and only when the list differs from the
+//! last one sent.
 //!
 //! Only devices that are connected and on now are listed: one that's off
 //! (a headset whose dongle stays plugged in) or not present leaves the

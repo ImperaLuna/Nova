@@ -7,14 +7,14 @@
 //!
 //! Nodes are found as [`super::hidraw`] finds them: those whose HID device
 //! is on `hid-generic` (one a Logitech driver has is UPower's to report)
-//! //! and whose report descriptor has HID++ reports. Each node's reader asks
+//! and whose report descriptor has HID++ reports. Each node's reader asks
 //! a receiver's paired devices (or the device itself) whether they're
 //! there, what they are and how charged, again every [`POLL`] and shortly
 //! after a device says something by itself (it connected, its battery
 //! changed).
 //!
 //! Opening a node needs read and write access: Nova's udev rule gives it
-//! to the logged-in user for Logitech's. Without it, nothing is listed and
+//! to the logged-in user for Logitech's nodes. Without it, nothing is listed and
 //! the problem is logged once.
 
 mod descriptor;

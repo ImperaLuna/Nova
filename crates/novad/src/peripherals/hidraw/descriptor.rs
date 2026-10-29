@@ -63,13 +63,9 @@ pub fn has_usage(descriptor: &[u8], page: u16, usage: u16) -> bool {
 }
 
 #[cfg(test)]
-pub fn hex(text: &str) -> Vec<u8> {
-    (0..text.len()).step_by(2).map(|at| u8::from_str_radix(&text[at..at + 2], 16).unwrap()).collect()
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::peripherals::fake_hidraw::hex;
 
     #[test]
     fn items_are_read_in_order_and_long_ones_skipped() {

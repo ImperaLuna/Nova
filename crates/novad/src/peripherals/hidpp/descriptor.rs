@@ -46,7 +46,7 @@ pub fn reports(descriptor: &[u8]) -> Reports {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::peripherals::hidraw::descriptor::hex;
+    use crate::peripherals::fake_hidraw::hex;
 
     #[test]
     fn hidpp_reports_are_found_on_the_vendor_page_only() {

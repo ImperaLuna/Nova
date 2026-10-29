@@ -20,10 +20,12 @@
 //!
 //! The percent comes from the cell's voltage as the firmware reads it,
 //! which wanders several points either way within a minute on a keyboard
-//! at rest. So what's shown is the mean of the readings of the last
-//! [`SMOOTHING`], and changes only once that moves [`HYSTERESIS`] points
-//! from it (or the keyboard starts or stops charging, which moves the
-//! voltage itself).
+//! at rest, now and then by 5 points or more in one reading (and by 17
+//! when the cable goes in, a moment before the charging state says so).
+//! So what's shown is the median of the readings of the last
+//! [`SMOOTHING`], which one odd reading doesn't move, and it changes only
+//! once that moves [`HYSTERESIS`] points from it. Starting or stopping
+//! charging moves the voltage itself, so the readings start over then.
 //!
 //! Nodes are any of Keychron's with the raw HID usage, found as
 //! [`super::hidraw`] finds them, whatever the product: one whose keyboard
@@ -80,7 +82,7 @@ pub const ASK: Duration = if cfg!(test) { Duration::from_millis(500) } else { HE
 const MAX_UNANSWERED: u32 = 3;
 /// How far back the readings that make the shown percent go...
 const SMOOTHING: Duration = Duration::from_secs(180);
-/// ...and how far their mean moves from it before it changes.
+/// ...and how far their median moves from it before it changes.
 const HYSTERESIS: u8 = 2;
 /// The longest a reader waits with nothing due: it only listens then.
 const IDLE_WAIT: Duration = Duration::from_secs(3600);
@@ -101,6 +103,9 @@ impl Protocol for Keychron {
     fn read(&self, node: &Node, mut channel: Channel, listing: &Listing) -> Option<String> {
         // What's shown, and when the keyboard was last heard.
         let mut heard: Option<(Smoothed, Instant)> = None;
+        // Whether it last said it's on its cable, where it only answers.
+        let mut on_cable = false;
+        let mut can_ask = true;
         let mut unanswered = 0;
         let mut next_ask = Some(Instant::now());
         loop {
@@ -113,12 +118,11 @@ impl Protocol for Keychron {
                     Err(e) => {
                         let problem = format!("{}: can't ask for the battery ({e}); only listening", node.name);
                         listing.logger().log(LogLevel::Debug, LOG_SOURCE, &problem);
-                        unanswered = MAX_UNANSWERED;
+                        can_ask = false;
                     }
                 }
                 unanswered += 1;
-                let on_cable = heard.as_ref().is_some_and(|(smoothed, _)| smoothed.last.on_cable());
-                next_ask = (unanswered < MAX_UNANSWERED || on_cable).then_some(now + ASK);
+                next_ask = (can_ask && (on_cable || unanswered < MAX_UNANSWERED)).then_some(now + ASK);
             }
             if heard.as_ref().is_some_and(|(_, at)| *at + SILENCE <= now) {
                 heard = None;
@@ -142,7 +146,8 @@ impl Protocol for Keychron {
                     listing.set(vec![found(node, smoothed.shown())]);
                     heard = Some((smoothed, now));
                     // Off its cable it says it by itself.
-                    next_ask = reading.on_cable().then_some(now + ASK);
+                    on_cable = reading.on_cable();
+                    next_ask = (on_cable && can_ask).then_some(now + ASK);
                 }
                 Ok(Received::TimedOut) => {}
                 Ok(Received::Stopped) => return None,
@@ -177,12 +182,13 @@ impl Smoothed {
         while self.recent.front().is_some_and(|(then, _)| at.duration_since(*then) > SMOOTHING) {
             self.recent.pop_front();
         }
-        let sum: u32 = self.recent.iter().map(|(_, percent)| u32::from(*percent)).sum();
-        let count = u32::try_from(self.recent.len()).unwrap_or(u32::MAX).max(1);
-        // Rounded; never past 100, since every reading is at most that.
-        let mean = u8::try_from((sum + count / 2) / count).unwrap_or(FULL);
-        if mean.abs_diff(self.shown) >= HYSTERESIS {
-            self.shown = mean;
+        let mut percents: Vec<u8> = self.recent.iter().map(|(_, percent)| *percent).collect();
+        percents.sort_unstable();
+        // The middle one, or the lower of the middle two: one odd reading
+        // either way doesn't move it.
+        let median = percents[(percents.len() - 1) / 2];
+        if median.abs_diff(self.shown) >= HYSTERESIS {
+            self.shown = median;
         }
     }
 
@@ -254,7 +260,7 @@ fn found(node: &Node, reading: Reading) -> Found {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::peripherals::hidraw::descriptor::hex;
+    use crate::peripherals::fake_hidraw::hex;
 
     #[test]
     fn battery_reports_are_read_and_others_ignored() {
@@ -269,38 +275,47 @@ mod tests {
         assert_eq!(Reading::parse(&hex("a4ff0f0f000403")), None);
     }
 
-    /// The percents a K2 HE at rest sent over the dongle on RyzenShine,
-    /// two minutes in a row (`recorded/keychron-d030.json`).
+    /// The percents a K2 HE at rest sent over the dongle on RyzenShine in
+    /// two captures a minute long (`recorded/keychron-d030.json` has the
+    /// second).
     const AT_REST: [u8; 12] = [74, 72, 71, 66, 72, 71, 71, 69, 70, 69, 73, 69];
 
     fn on_battery(percent: u8) -> Reading {
         Reading { percent, charging: false, transport: TRANSPORT_DONGLE, model: 3 }
     }
 
-    #[test]
-    fn a_wandering_percent_is_shown_steady() {
-        let start = Instant::now();
-        let mut smoothed = Smoothed::new(on_battery(AT_REST[0]), start);
-        let mut shown = vec![smoothed.shown().percent];
-        for (at, percent) in (1u64..).zip(&AT_REST[1..]) {
+    /// The percents shown as `percents` come, 10 s apart.
+    fn shown(smoothed: &mut Smoothed, start: Instant, percents: &[u8]) -> Vec<u8> {
+        let mut shown = Vec::new();
+        for (at, percent) in (1u64..).zip(percents) {
             smoothed.add(on_battery(*percent), start + Duration::from_secs(at * 10));
             shown.push(smoothed.shown().percent);
         }
         shown.dedup();
-        assert_eq!(shown, [74, 72], "it follows the mean, not each reading");
+        shown
+    }
+
+    #[test]
+    fn a_wandering_percent_is_shown_steady() {
+        let start = Instant::now();
+        let mut smoothed = Smoothed::new(on_battery(AT_REST[0]), start);
+        assert_eq!(shown(&mut smoothed, start, &AT_REST[1..]), [72], "it follows the median, not each reading");
+        // One dip, or the jump of the cable going in before the charging
+        // state says so, doesn't show.
+        assert_eq!(shown(&mut smoothed, start + Duration::from_secs(120), &[66, 71, 88, 70]), [72]);
     }
 
     #[test]
     fn a_real_drop_shows_and_charging_starts_over() {
         let start = Instant::now();
         let mut smoothed = Smoothed::new(on_battery(70), start);
-        // Old readings leave the mean: a lasting drop shows in full.
+        // Old readings leave the window: a lasting drop shows in full.
         for minute in 1..=4 {
             smoothed.add(on_battery(60), start + Duration::from_secs(minute * 60));
         }
         assert_eq!(smoothed.shown().percent, 60);
         // On power the voltage jumps: it's shown as it comes.
-        let charging = Reading { charging: true, ..on_battery(75) };
+        let charging = Reading { charging: true, ..on_battery(78) };
         smoothed.add(charging, start + Duration::from_secs(300));
         assert_eq!(smoothed.shown(), charging);
     }
