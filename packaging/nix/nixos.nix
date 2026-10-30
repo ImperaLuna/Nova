@@ -45,5 +45,8 @@ in
       pkgs.headsetcontrol
       cfg.package
     ];
+
+    # Bluetooth: novad talks to bluetoothd on the system bus.
+    hardware.bluetooth.enable = lib.mkIf (lib.elem "bluetooth" on) (lib.mkDefault true);
   };
 }

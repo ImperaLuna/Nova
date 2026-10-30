@@ -1,0 +1,19 @@
+id = "bluetooth"
+name = "Bluetooth"
+description = "Bluetooth in quick settings: turn it on or off, connect your devices, and pair new ones in one click, with the codes shown in the sidebar."
+default = true
+daemon = "bluetooth"
+
+# novad talks to BlueZ (bluetoothd) on the system bus and is its pairing
+# agent. The NixOS module turns on hardware.bluetooth; elsewhere enable
+# bluetooth.service. Without BlueZ running the tile says there's no
+# adapter. novad never runs bluetoothctl: it's checked for as the sign that
+# BlueZ is installed (Arch ships it in bluez-utils).
+[variants.default]
+nix = ["bluez"]
+arch = ["bluez", "bluez-utils"]
+fedora = ["bluez"]
+debian = ["bluez"]
+
+[check]
+binaries = ["bluetoothctl"]

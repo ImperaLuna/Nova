@@ -26,6 +26,7 @@
 
 mod ai_usage;
 mod backoff;
+mod bluetooth;
 pub mod checks;
 mod child;
 mod compositor;
@@ -312,6 +313,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         notifications: notifications::Sources::new(&args.state_dir, Arc::clone(&icons)),
         media: media::Sources::new(&runtime_dir),
         peripherals: peripherals::Sources::system(&path_var),
+        bluetooth: bluetooth::Sources::system(),
         icons,
     };
     let settings = Settings::load(&sources, &hub, &logger);

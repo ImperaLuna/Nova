@@ -4,7 +4,8 @@
 //! that do decode must be exactly what a client meant to send.
 
 use nova_protocol::{
-    AiProvider, Command, PROTOCOL_VERSION, Request, Step, Topic, UsageLimit, UsageWindow, decode_request, encode,
+    AiProvider, Command, PROTOCOL_VERSION, PairingAnswer, Request, Step, Topic, UsageLimit, UsageWindow,
+    decode_request, encode,
 };
 use proptest::prelude::*;
 use serde_json::{Map, Value, json};
@@ -45,6 +46,12 @@ const NAMES: &[&str] = &[
     "end_app",
     "watching",
     "key",
+    "bluetooth_connect",
+    "bluetooth_answer",
+    "address",
+    "answer",
+    "accept",
+    "code",
 ];
 
 fn topic() -> impl Strategy<Value = Topic> {
@@ -82,7 +89,13 @@ fn command() -> impl Strategy<Value = Command> {
             .prop_map(|(output, step)| Command::StepWorkspace { output, step }),
         any::<bool>().prop_map(|watching| Command::WatchResources { watching }),
         ".*".prop_map(|key| Command::EndApp { key }),
+        ".*".prop_map(|address| Command::BluetoothConnect { address }),
+        (any::<u64>(), pairing_answer()).prop_map(|(id, answer)| Command::BluetoothAnswer { id, answer }),
     ]
+}
+
+fn pairing_answer() -> impl Strategy<Value = PairingAnswer> {
+    prop_oneof![Just(PairingAnswer::Accept), Just(PairingAnswer::Reject), ".*".prop_map(PairingAnswer::Code)]
 }
 
 fn request() -> impl Strategy<Value = Request> {

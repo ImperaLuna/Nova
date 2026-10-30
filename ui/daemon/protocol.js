@@ -45,6 +45,12 @@ var CMD_MEDIA_SEEK = "media_seek";
 var CMD_MEDIA_SHOW = "media_show";
 var CMD_MEDIA_FOCUS = "media_focus";
 var CMD_MEDIA_WINDOW = "media_window";
+var CMD_BLUETOOTH_POWER = "bluetooth_power";
+var CMD_WATCH_BLUETOOTH = "watch_bluetooth";
+var CMD_BLUETOOTH_CONNECT = "bluetooth_connect";
+var CMD_BLUETOOTH_DISCONNECT = "bluetooth_disconnect";
+var CMD_BLUETOOTH_FORGET = "bluetooth_forget";
+var CMD_BLUETOOTH_ANSWER = "bluetooth_answer";
 var CMD_SET_WALLPAPER = "set_wallpaper";
 var CMD_WALLPAPERS = "wallpapers";
 var CMD_WALLPAPER_FOLDER = "wallpaper_folder";
@@ -78,6 +84,7 @@ var EVENT_NOTIFICATIONS = "notifications";
 var EVENT_NOTIFICATION_POPUP = "notification_popup";
 var EVENT_MEDIA = "media";
 var EVENT_PERIPHERALS = "peripherals";
+var EVENT_BLUETOOTH = "bluetooth";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
 var TOPIC_FEATURES = "features";
@@ -97,6 +104,7 @@ var TOPIC_TRAY = "tray";
 var TOPIC_NOTIFICATIONS = "notifications";
 var TOPIC_MEDIA = "media";
 var TOPIC_PERIPHERALS = "peripherals";
+var TOPIC_BLUETOOTH = "bluetooth";
 
 // What a compositor can report or do (Capability in nova-protocol).
 var CAPABILITY_WORKSPACES = "workspaces";
@@ -128,6 +136,7 @@ var FEATURE_TRAY = "tray";
 var FEATURE_NOTIFICATIONS = "notifications";
 var FEATURE_MEDIA = "media";
 var FEATURE_PERIPHERALS = "peripherals";
+var FEATURE_BLUETOOTH = "bluetooth";
 var FEATURE_WALLPAPER = "wallpaper";
 
 // Power menu actions (PowerAction in nova-protocol).

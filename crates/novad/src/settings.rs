@@ -12,7 +12,9 @@ use crate::hub::Hub;
 use crate::icons::Icons;
 use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
-use crate::{ai_usage, features, host, launcher, media, notifications, peripherals, resources, theme, tray, x11_tray};
+use crate::{
+    ai_usage, bluetooth, features, host, launcher, media, notifications, peripherals, resources, theme, tray, x11_tray,
+};
 use nova_features::{Manifest, Selection};
 use nova_protocol::{Event, FeatureState, Host, Theme};
 use std::collections::BTreeSet;
@@ -43,6 +45,7 @@ pub struct Sources {
     pub notifications: notifications::Sources,
     pub media: media::Sources,
     pub peripherals: peripherals::Sources,
+    pub bluetooth: bluetooth::Sources,
     /// Where app icons are found, for every feature that shows them.
     pub icons: Arc<Icons>,
 }
@@ -69,6 +72,8 @@ pub struct Settings {
     pub media: Option<Arc<media::Media>>,
     /// Following devices' batteries while the `peripherals` feature is ready.
     pub peripherals: Option<Arc<peripherals::Peripherals>>,
+    /// Following BlueZ while the `bluetooth` feature is ready.
+    pub bluetooth: Option<Arc<bluetooth::Bluetooth>>,
     /// For the quick settings header's logo.
     icons: Arc<Icons>,
 }
@@ -235,6 +240,15 @@ impl Settings {
         if let Some(peripherals) = &peripherals {
             peripherals.set_notifications(notifications.as_ref());
         }
+        // No options either.
+        let bluetooth = reconcile(
+            bluetooth::FEATURE_ID,
+            previous.as_deref_mut().and_then(|previous| previous.bluetooth.take()),
+            ready(bluetooth::FEATURE_ID),
+            |_| true,
+            || bluetooth::Bluetooth::start(sources.bluetooth.clone(), Arc::clone(hub), Arc::clone(logger)),
+            logger,
+        );
         // It has no options either. Its icons reach whatever tray is up.
         let x11_tray = reconcile(
             x11_tray::FEATURE_ID,
@@ -267,6 +281,7 @@ impl Settings {
             notifications,
             media,
             peripherals,
+            bluetooth,
             icons,
         }
     }
@@ -276,7 +291,7 @@ impl Settings {
     /// Stops every feature service running, for a novad that ends without
     /// exiting the process ([`crate::InProcess`]).
     pub fn stop_services(&self) {
-        let services: [Option<&dyn Service>; 8] = [
+        let services: [Option<&dyn Service>; 9] = [
             self.ai_usage.as_deref().map(|service| service as &dyn Service),
             self.resources.as_deref().map(|service| service as &dyn Service),
             self.launcher.as_deref().map(|service| service as &dyn Service),
@@ -285,6 +300,7 @@ impl Settings {
             self.notifications.as_deref().map(|service| service as &dyn Service),
             self.media.as_deref().map(|service| service as &dyn Service),
             self.peripherals.as_deref().map(|service| service as &dyn Service),
+            self.bluetooth.as_deref().map(|service| service as &dyn Service),
         ];
         for service in services.into_iter().flatten() {
             service.stop();
@@ -335,7 +351,8 @@ services!(
     notifications::Notifications,
     x11_tray::X11Tray,
     media::Media,
-    peripherals::Peripherals
+    peripherals::Peripherals,
+    bluetooth::Bluetooth
 );
 
 /// The service for feature `id` after a change: `running` (from the

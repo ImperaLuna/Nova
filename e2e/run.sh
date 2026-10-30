@@ -76,6 +76,10 @@ EOF
   wait_for 10 "the session bus" test -S "$XDG_RUNTIME_DIR/bus"
   export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 fi
+# Never the machine's system bus either: novad would register as the
+# BlueZ pairing agent of the session running the tests. With no bus of
+# its own, Bluetooth and UPower are just missing.
+export DBUS_SYSTEM_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS/#disabled:/unix:path=$XDG_RUNTIME_DIR/no-system-bus}
 
 # Playing before Nova starts, so novad finds it among the names already
 # on the bus.
