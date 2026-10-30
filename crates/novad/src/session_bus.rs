@@ -1,6 +1,7 @@
 //! What novad's services on the session bus share: which bus to connect
-//! to, how they claim their names, and a stop flag that ends a service's
-//! loop on the bus.
+//! to (the session's, or the system's for the few that read system
+//! services), how they claim their names, and a stop flag that ends a
+//! service's loop on the bus.
 
 use crate::lock;
 use std::sync::Mutex;
@@ -14,6 +15,8 @@ use zbus::{Connection, connection};
 pub enum Bus {
     /// The session's, from `DBUS_SESSION_BUS_ADDRESS`.
     Session,
+    /// The system's, for system services like UPower.
+    System,
     /// A bus at this address, for tests.
     #[cfg(test)]
     Address(String),
@@ -23,6 +26,7 @@ impl Bus {
     pub fn builder(&self) -> connection::Builder<'static> {
         match self {
             Bus::Session => connection::Builder::session(),
+            Bus::System => connection::Builder::system(),
             #[cfg(test)]
             Bus::Address(address) => connection::Builder::address(address.as_str()),
         }

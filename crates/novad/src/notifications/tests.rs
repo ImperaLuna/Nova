@@ -202,23 +202,28 @@ fn replacing_keeps_the_id_and_moves_it_to_the_top() {
 }
 
 #[test]
-fn muted_apps_and_do_not_disturb_hold_back_pop_ups() {
+fn muted_apps_are_hidden_and_do_not_disturb_holds_back_pop_ups() {
     let fixture = Fixture::new("quiet");
     let server = fixture.server();
     let app = fixture.app();
-    app.simple("Discord", "first");
+    let first = app.simple("Discord", "first");
     fixture.next("notification_popup");
     // Only an app that sent one can be muted.
     assert!(server.mute("Slack", true).is_err());
     server.mute("Discord", true).unwrap();
     let list = fixture.next("notifications");
     assert_eq!(list["muted"], json!(["Discord"]));
-    assert_eq!(list["items"][0].get("unread"), None, "muting reads its notifications");
+    assert_eq!(list["items"], json!([]), "muting hides its notifications");
 
+    // New ones aren't kept, and clearing leaves the hidden ones.
     app.simple("Discord", "muted");
+    server.clear(None);
+    server.mute("Discord", false).unwrap();
     let list = fixture.next("notifications");
-    assert_eq!(list["items"][0]["summary"], "muted");
-    assert_eq!(list["items"][0].get("unread"), None);
+    assert_eq!(list["muted"], json!([]));
+    assert_eq!(list["items"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list["items"][0]["id"], first, "unmuting shows them again");
+    assert_eq!(list["items"][0].get("unread"), None, "muting read them");
     fixture.none_waiting("notification_popup");
 
     server.set_do_not_disturb(true);
@@ -231,13 +236,30 @@ fn muted_apps_and_do_not_disturb_hold_back_pop_ups() {
     app.notify(("Firefox", 0, "", "battery low", "", vec![], critical, -1));
     assert_eq!(fixture.next("notification_popup")["summary"], "battery low");
 
-    server.read();
+    server.read(None);
     let list = fixture.next("notifications");
     assert!(list["items"].as_array().unwrap().iter().all(|item| item.get("unread").is_none()));
 }
 
 #[test]
-fn clicks_reach_the_app_and_close_the_notification() {
+fn one_notification_can_be_read() {
+    let fixture = Fixture::new("read-one");
+    let server = fixture.server();
+    let app = fixture.app();
+    let first = app.simple("Discord", "first");
+    app.simple("Discord", "second");
+    let list = fixture.next("notifications");
+    assert_eq!(list["items"].as_array().unwrap().len(), 1);
+    fixture.next("notifications");
+    server.read(Some(first));
+    let list = fixture.next("notifications");
+    assert_eq!(list["items"][0]["unread"], true);
+    assert_eq!(list["items"][1]["id"], first);
+    assert_eq!(list["items"][1].get("unread"), None);
+}
+
+#[test]
+fn clicks_reach_the_app_and_keep_the_notification_read() {
     let fixture = Fixture::new("click");
     let server = fixture.server();
     let app = fixture.app();
@@ -247,7 +269,26 @@ fn clicks_reach_the_app_and_close_the_notification() {
     server.action(id, Some("reply")).unwrap();
     assert_eq!(app.signal(), ("ActionInvoked".into(), json!([id, "reply"])));
     assert_eq!(app.signal(), ("NotificationClosed".into(), json!([id, 2])));
-    assert!(server.action(id, None).is_err(), "it's gone");
+    let list = loop {
+        let list = fixture.next("notifications");
+        if list["items"][0].get("unread").is_none() {
+            break list;
+        }
+    };
+    assert_eq!(list["items"][0]["id"], id, "still listed");
+    assert_eq!(list["items"][0].get("live"), None, "its app is done with it");
+    assert!(server.action(id, None).is_err(), "a click on it again opens the app instead (`click`)");
+    // Many apps close it on a click too: it stays.
+    zbus::block_on(app.connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "CloseNotification", &(id,)))
+        .unwrap();
+    app.simple("Mail", "later");
+    let list = loop {
+        let list = fixture.next("notifications");
+        if list["items"][0]["summary"] == "later" {
+            break list;
+        }
+    };
+    assert_eq!(list["items"][1]["id"], id, "closing it again leaves it listed");
 
     // A resident one stays when a button is clicked, and goes on a click.
     let resident = HashMap::from([("resident", Variant::Bool(true))]);
@@ -279,6 +320,30 @@ fn closing_dismissing_and_clearing_tell_the_app_why() {
     while !list["items"].as_array().unwrap().is_empty() {
         list = fixture.next("notifications");
     }
+}
+
+// Chat apps (a web notification's tag in Electron) close the last
+// message's notification as they send the next one: both stay listed.
+#[test]
+fn an_app_closing_its_notification_leaves_it_listed() {
+    let fixture = Fixture::new("closed-by-app");
+    let _server = fixture.server();
+    let app = fixture.app();
+    let first = app.simple("Ferdium", "one");
+    zbus::block_on(app.connection.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), "CloseNotification", &(first,)))
+        .unwrap();
+    assert_eq!(app.signal(), ("NotificationClosed".into(), json!([first, 3])));
+    let second = app.simple("Ferdium", "two");
+    let list = loop {
+        let list = fixture.next("notifications");
+        if list["items"][0]["id"] == second {
+            break list;
+        }
+    };
+    assert_eq!(list["items"].as_array().unwrap().len(), 2, "{list}");
+    assert_eq!(list["items"][1]["id"], first);
+    assert_eq!(list["items"][1]["unread"], true, "not seen yet");
+    assert_eq!(list["items"][1].get("live"), None, "its app is done with it");
 }
 
 #[test]
@@ -413,7 +478,27 @@ fn an_app_that_quits_leaves_its_notifications_unclickable() {
         }
     };
     assert_eq!(list["items"][0]["id"], id);
-    assert!(server.action(id, None).is_err(), "the UI opens the app instead");
+    assert!(server.action(id, None).is_err());
+    let clicked = server.click(id).unwrap();
+    assert_eq!(clicked, Clicked { app_id: None, heard: false }, "novad opens the app instead");
+    let list = fixture.next("notifications");
+    assert_eq!(list["items"][0].get("unread"), None, "read all the same");
+}
+
+#[test]
+fn a_click_says_which_app_sent_it_and_whether_the_app_heard() {
+    let fixture = Fixture::new("click-app");
+    let server = fixture.server();
+    let app = fixture.app();
+    let hints = HashMap::from([("desktop-entry", Variant::from("discord"))]);
+    let id = app.notify(("Discord", 0, "", "Mara", "hi", vec!["default", "Open"], hints.clone(), -1));
+    let discord = Some("discord.desktop".to_string());
+    assert_eq!(server.click(id).unwrap(), Clicked { app_id: discord.clone(), heard: true });
+    assert_eq!(app.signal(), ("ActionInvoked".into(), json!([id, "default"])));
+    assert_eq!(server.click(id).unwrap(), Clicked { app_id: discord.clone(), heard: false }, "done with it");
+    let plain = app.notify(("Discord", 0, "", "Mara", "hi", vec![], hints, -1));
+    assert_eq!(server.click(plain).unwrap(), Clicked { app_id: discord, heard: false }, "does nothing on a click");
+    assert!(server.click(999).unwrap_err().contains("no notification 999"));
 }
 
 #[test]
@@ -424,8 +509,10 @@ fn the_list_and_settings_survive_a_restart() {
     let id = app.simple("Chat", "kept");
     server.set_do_not_disturb(true);
     server.stop();
-    // Let go of the name before the next one claims it.
-    wait_until(WAIT, "the server to stop", || lock(&server.shared.connection).is_none());
+    // Let go of the name before the next one claims it: the bus frees it
+    // only once the old connection has closed, after `serve` returns, and
+    // an app calling before then reaches the closing server and gets no reply.
+    wait_until(WAIT, "the server to let go of its name", || fixture.name_owner().is_empty());
     drop(server);
     while fixture.ui.try_recv().is_ok() {}
 

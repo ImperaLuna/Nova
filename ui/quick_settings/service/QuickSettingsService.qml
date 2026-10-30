@@ -6,7 +6,8 @@ import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
 
 // Quick settings' link to novad: the machine and its user for the header,
-// the resources card's numbers while the sidebar shows them, and keep awake.
+// the resources card's numbers while the sidebar shows them, the Devices
+// card's wireless devices, and keep awake.
 // The sidebar (../QuickSettings.qml) reads and acts through here.
 Singleton {
     id: root
@@ -16,6 +17,9 @@ Singleton {
     readonly property var host: Daemon.host
     // The latest resources event's data, or null until one has come.
     readonly property var resources: Daemon.resources
+    // The wireless devices connected now, with their batteries (a
+    // peripherals event's list; empty with the feature off).
+    readonly property var devices: Daemon.readyFeatures.includes(Protocol.FEATURE_PERIPHERALS) ? (Daemon.peripherals?.devices ?? []) : []
 
     // Keep awake: every screen's stage holds an idle inhibitor while it's
     // on. Lasts until the UI restarts.

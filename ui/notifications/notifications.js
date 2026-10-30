@@ -1,8 +1,8 @@
 .pragma library
 
 // Notifications' logic without QML, so ui/tests can check it: the quick
-// settings list's groups, how long ago something came, and the pop-ups'
-// queue. Notifications are a notifications event's items (nova-protocol's
+// settings list's groups, the unread count and how long a pop-up stays.
+// Notifications are a notifications event's items (nova-protocol's
 // Notification).
 
 // `items` (newest first) grouped by app, the group with the newest first:
@@ -30,30 +30,6 @@ function unread(items) {
     }).length;
 }
 
-// Whether a pop-up of `notification` takes in a newer one from the same
-// app, as "+N": plain ones do; critical ones and progress stay their own.
-function merges(notification) {
-    return notification.urgency !== "critical" && notification.progress === undefined;
-}
-
-// Where `notification` goes among the pop-ups `shown` (each {key, id, app,
-// mergeable}, newest first): {at, merged} for the one it replaces (the same
-// notification, or a mergeable one from its app, which counts one more),
-// or null for a new pop-up.
-function placeIn(shown, notification) {
-    for (var i = 0; i < shown.length; i++) {
-        if (shown[i].id === notification.id)
-            return { at: i, merged: false };
-    }
-    if (!merges(notification))
-        return null;
-    for (var j = 0; j < shown.length; j++) {
-        if (shown[j].app === notification.app && shown[j].mergeable)
-            return { at: j, merged: true };
-    }
-    return null;
-}
-
 // How long a pop-up of `notification` stays, in ms: what the app asked,
 // else `fallback`. 0 is until it's closed: critical ones, and progress
 // still running.
@@ -64,14 +40,3 @@ function timeout(notification, fallback) {
         return 0;
     return notification.timeout_ms ?? fallback;
 }
-
-// What clicking `notification` does: "action" when its app takes the
-// click, "launch" when the app can only be opened, "none" otherwise.
-function clickDoes(notification) {
-    if (notification.live && notification.has_default)
-        return "action";
-    if (notification.app_id)
-        return "launch";
-    return "none";
-}
-

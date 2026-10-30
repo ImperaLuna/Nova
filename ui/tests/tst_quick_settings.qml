@@ -3,6 +3,7 @@ import QtTest
 import "../quick_settings"
 import "../theme"
 import "../quick_settings/quick_settings.js" as QuickSettings
+import "../quick_settings/devices.js" as Devices
 
 // Quick settings' logic, and its pages driven with data in the shapes
 // novad and SoundService give them. The root is an Item: a TestCase root
@@ -35,6 +36,13 @@ Item {
             ResourcesPage {
                 width: 328
                 height: 868
+            }
+        }
+
+        Component {
+            id: devicesComponent
+            DevicesCard {
+                width: 328
             }
         }
 
@@ -385,6 +393,128 @@ Item {
             const scroll = findChild(page, "trayScroll");
             compare(scroll.height, Tokens.trayGridMaxRows * (Tokens.trayGridCell + Tokens.trayGridGap) - Tokens.trayGridGap);
             verify(scroll.contentHeight > scroll.height, "the rest scrolls");
+        }
+
+        // The headset is the real capture's (novad's peripherals event for
+        // RyzenShine's Arctis Nova 5X); the controller reports only a step.
+        function peripherals() {
+            return [
+                {
+                    id: "headsetcontrol/1038:2253",
+                    name: "Arctis Nova 5X",
+                    kind: "headset",
+                    link: "dongle",
+                    battery: {
+                        percent: 30
+                    },
+                    charging: true,
+                    source: "headsetcontrol"
+                },
+                {
+                    id: "upower/gaming_input_dev_AA_BB",
+                    name: "Xbox Wireless Controller",
+                    kind: "gaming_input",
+                    link: "bluetooth",
+                    battery: {
+                        level: "high"
+                    },
+                    charging: false,
+                    source: "upower"
+                }
+            ];
+        }
+
+        function amounts(card) {
+            const rows = findChild(card, "deviceRows");
+            const texts = [];
+            for (let i = 0; i < rows.count; i++)
+                texts.push(findChild(rows.itemAtIndex(i), "amount").text);
+            return texts;
+        }
+
+        function test_low_is_fifteen_percent_or_a_low_step_unless_charging() {
+            verify(Devices.low(15, "", false));
+            verify(!Devices.low(16, "", false));
+            verify(!Devices.low(9, "", true), "charging is never low");
+            verify(Devices.low(-1, "critical", false));
+            verify(!Devices.low(-1, "normal", false));
+            verify(!Devices.low(-1, "", false), "no battery is not low");
+            compare(Devices.fill(30, ""), 0.3);
+            compare(Devices.fill(-1, "full"), 1);
+            compare(Devices.fill(-1, ""), 0);
+            compare(Devices.icon("headset"), Devices.icon("headphones"));
+            compare(Devices.icon("pen"), Devices.icon("tablet"), "kinds without their own icon share one");
+        }
+
+        function test_devices_card_lists_connected_devices_above_the_tray() {
+            const page = createTemporaryObject(mainComponent, stage, {
+                devices: peripherals(),
+                trayApps: [
+                    {
+                        key: "discord.desktop",
+                        name: "Discord",
+                        icon: "",
+                        appIcon: "",
+                        attention: false,
+                        hidden: false
+                    }
+                ],
+                reading: reading()
+            });
+            waitForRendering(page);
+            shot(page, "devices");
+            const rows = findChild(page, "deviceRows");
+            verify(rows.visible);
+            compare(amounts(page), ["30%", "High"]);
+            verify(rows.mapToItem(page, 0, 0).y < findChild(page, "trayScroll").mapToItem(page, 0, 0).y);
+        }
+
+        function test_no_connected_device_hides_the_card() {
+            const page = createTemporaryObject(mainComponent, stage, {
+                devices: [],
+                reading: reading()
+            });
+            verify(!findChild(page, "deviceRows").visible);
+        }
+
+        function test_a_new_reading_keeps_the_rows_and_a_device_that_goes_leaves() {
+            const card = createTemporaryObject(devicesComponent, stage, {
+                devices: peripherals()
+            });
+            const rows = findChild(card, "deviceRows");
+            const headset = rows.itemAtIndex(0);
+            const next = peripherals();
+            next[0].battery.percent = 31;
+            card.devices = next;
+            compare(rows.itemAtIndex(0), headset, "the headset's row stays, so its battery eases");
+            compare(amounts(card), ["31%", "High"]);
+
+            card.devices = [next[1]];
+            tryCompare(rows, "count", 1);
+            tryCompare(card, "running", false);
+            compare(amounts(card), ["High"]);
+        }
+
+        function test_many_devices_scroll_inside_the_card() {
+            const many = [];
+            for (let i = 0; i < 9; i++)
+                many.push({
+                    id: `upower/mouse_${i}`,
+                    name: `Mouse ${i}`,
+                    kind: "mouse",
+                    link: "bluetooth",
+                    battery: {
+                        percent: 50
+                    },
+                    charging: false,
+                    source: "upower"
+                });
+            const card = createTemporaryObject(devicesComponent, stage, {
+                devices: many
+            });
+            const rows = findChild(card, "deviceRows");
+            compare(rows.height, Tokens.deviceListMaxRows * Tokens.deviceRowHeight);
+            verify(rows.interactive, "the rest scrolls");
         }
 
         function test_sound_page_switches_outputs() {

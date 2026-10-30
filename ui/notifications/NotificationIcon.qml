@@ -1,11 +1,14 @@
 import QtQuick
 import "../launcher"
+import "../quick_settings"
 import "../theme"
+import "../quick_settings/devices.js" as Devices
 import "../text/files.js" as Files
 
-// Who a notification is from, `size` square: the picture it came with (a
-// sender's photo), round, with the app's icon on its corner; or the app's
-// icon alone. The app's icon falls back to its letter (AppIcon).
+// Who a notification is from, `size` square: for Nova's low battery
+// alerts, the device's glyph with its low battery on the corner; else the
+// picture it came with (a sender's photo), round, on its own; or else the
+// app's icon, which falls back to its letter (AppIcon).
 Item {
     id: icon
 
@@ -14,7 +17,8 @@ Item {
     property var iconSource: name => ""
     property int size: Tokens.notificationAvatar
 
-    readonly property bool pictured: picture.status === Image.Ready
+    readonly property var device: notification.device ?? null
+    readonly property bool pictured: !device && picture.status === Image.Ready
 
     implicitWidth: size
     implicitHeight: size
@@ -38,23 +42,49 @@ Item {
         }
     }
 
-    // The app's icon: on the picture's corner, or the whole icon.
-    Rectangle {
-        readonly property int badge: Tokens.notificationAppBadge
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: icon.pictured ? -Tokens.notificationBadgeRing : 0
-        width: icon.pictured ? badge + 2 * Tokens.notificationBadgeRing : icon.size
-        height: width
-        radius: icon.pictured ? Tokens.notificationBadgeRadius + Tokens.notificationBadgeRing : 0
-        color: icon.pictured ? Tokens.bg : "transparent"
+    // The app's icon, when there's no picture.
+    AppIcon {
+        anchors.centerIn: parent
+        visible: !icon.device && !icon.pictured
+        size: icon.size
+        appId: icon.notification.app_id ?? icon.notification.app
+        name: icon.notification.app
+        source: icon.iconSource(icon.notification.icon ?? "")
+    }
 
-        AppIcon {
+    // A low battery alert's device.
+    Rectangle {
+        objectName: "device"
+        anchors.fill: parent
+        visible: icon.device !== null
+        radius: Math.round(icon.size * Tokens.notificationDeviceRadius)
+        color: Tokens.surfaceRaised
+
+        LineIcon {
             anchors.centerIn: parent
-            size: icon.pictured ? parent.badge : icon.size
-            appId: icon.notification.app_id ?? icon.notification.app
-            name: icon.notification.app
-            source: icon.iconSource(icon.notification.icon ?? "")
+            path: Devices.icon(icon.device?.kind ?? "")
+            size: Math.round(icon.size * Tokens.notificationDeviceGlyph)
+        }
+    }
+
+    Rectangle {
+        readonly property real scaled: Tokens.notificationDeviceBattery * icon.size / Tokens.notificationAvatar
+
+        visible: icon.device !== null
+        x: icon.size + Tokens.notificationDeviceChipOut - width
+        y: icon.size + Tokens.notificationDeviceChipOut - height
+        width: battery.implicitWidth * scaled + 2 * Tokens.notificationDeviceChipPad
+        height: battery.implicitHeight * scaled + 2 * Tokens.notificationDeviceChipPad
+        radius: height / 2
+        color: Tokens.bg
+
+        DeviceBattery {
+            id: battery
+            objectName: "deviceBattery"
+            anchors.centerIn: parent
+            scale: parent.scaled
+            fill: Devices.fill(icon.device?.battery?.percent ?? -1, icon.device?.battery?.level ?? "")
+            low: true
         }
     }
 }

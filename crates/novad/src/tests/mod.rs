@@ -94,6 +94,11 @@ impl TestDaemon {
         std::fs::create_dir_all(dir.join("ai-usage")).unwrap();
         std::fs::create_dir_all(dir.join("launcher/share/applications")).unwrap();
         prepare(&dir);
+        // The `upower` command `peripherals` checks for, which a test
+        // machine may lack; novad never runs it.
+        std::fs::create_dir_all(dir.join("fake-bin")).unwrap();
+        write_program(&dir.join("fake-bin"), "upower", "exit 0");
+        let host_path = std::env::var("PATH").unwrap_or_default();
         let socket = dir.join("novad.sock");
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
@@ -102,21 +107,21 @@ impl TestDaemon {
         let icons = test_icons(&dir);
         let sources = Sources {
             config: dir.join("config/config.toml"),
-            selection: dir.join("config/features.toml"),
+            selection: vec![dir.join("config/features.toml")],
             themes_dir: theme::default_dir(),
             manifests: nova_features::load_all(&repo_features()).unwrap(),
-            path_var: std::env::var("PATH").unwrap_or_default(),
+            path_var: format!("{host_path}:{}", dir.join("fake-bin").display()),
             ai_usage: ai_usage_paths(&dir.join("ai-usage")),
             resources: resources::Sources::system(""),
             launcher: launcher_paths(&dir, Arc::clone(&icons)),
-            // No bus unless the test starts one there (`session_bus::TestBus`).
+            // No bus for the tray and notifications unless the test starts
+            // one there (`session_bus::TestBus`).
             tray: tray::Sources {
                 bus: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
                 state_file: dir.join("tray.json"),
             },
-            // No bus: the notifications' own tests give them one.
             notifications: notifications::Sources {
-                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
                 state_file: dir.join("notifications.json"),
                 images: dir.join("notifications"),
                 icons: Arc::clone(&icons),
@@ -125,6 +130,17 @@ impl TestDaemon {
             media: media::Sources {
                 bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
                 covers: dir.join("media"),
+                proc: dir.join("proc"),
+            },
+            // No UPower, hidraw nodes, HeadsetControl or USB devices
+            // either: the peripherals' own tests give it theirs.
+            peripherals: peripherals::Sources {
+                upower: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                sys_root: dir.join("sys"),
+                dev: dir.join("dev"),
+                open_hidraw: Arc::new(|_| Err(std::io::ErrorKind::NotFound.into())),
+                path_var: dir.join("no-programs").display().to_string(),
+                usb_devices: dir.join("usb"),
             },
             icons,
         };
@@ -140,7 +156,7 @@ impl TestDaemon {
         ));
         let recordings =
             Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
-        let wallpaper = start_wallpaper(&dir, &sources.path_var, compositor.as_ref(), &logger);
+        let wallpaper = start_wallpaper(&dir, None, &sources.path_var, compositor.as_ref(), &logger);
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
             hub,
@@ -165,7 +181,7 @@ impl TestDaemon {
     }
 
     fn features_file(&self) -> PathBuf {
-        self.daemon.sources.selection.clone()
+        self.daemon.sources.selection[0].clone()
     }
 
     /// Connects and reads the hello.

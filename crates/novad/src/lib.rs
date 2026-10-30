@@ -42,6 +42,7 @@ mod logind;
 mod media;
 mod notifications;
 mod notify;
+mod peripherals;
 mod power;
 mod procfs;
 mod recording;
@@ -57,6 +58,7 @@ mod supervisor;
 mod theme;
 mod tray;
 mod wallpaper;
+mod wallpaper_folder;
 mod x11_tray;
 
 use hub::Hub;
@@ -88,9 +90,10 @@ pub struct Args {
     /// Folder of feature manifests.
     #[arg(long, default_value_os_t = nova_features::default_dir())]
     features_dir: PathBuf,
-    /// The user's feature choices. Reloaded when it changes.
-    #[arg(long, default_value_os_t = nova_paths::config_dir().join("features.toml"))]
-    selection: PathBuf,
+    /// The user's feature choices. Reloaded when it changes. By default
+    /// the user's features.toml, else the system's (`/etc/xdg/nova`).
+    #[arg(long)]
+    selection: Option<PathBuf>,
     /// Folder of theme files (`<id>.toml`).
     #[arg(long, default_value_os_t = theme::default_dir())]
     themes_dir: PathBuf,
@@ -181,14 +184,15 @@ impl Daemon {
     fn apply_services(&self) {
         self.recordings.allow(self.feature_ready(recording::FEATURE_ID));
         let settings = lock(&self.settings);
-        let wallpaper_ready = features::is_ready(&settings.features, wallpaper::FEATURE_ID);
-        self.wallpaper.configure(wallpaper_ready, settings.wallpaper_config());
+        let ready = |id| features::is_ready(&settings.features, id);
+        let (images, engine) = (ready(wallpaper::FEATURE_ID), ready(wallpaper::ENGINE_FEATURE_ID));
+        self.wallpaper.configure(images, engine, settings.wallpaper_config());
     }
 
     /// Starts watching the settings files, reloading when they change.
     fn watch_settings(self: &Arc<Self>) -> Option<inotify::Stopper> {
         let daemon = Arc::clone(self);
-        let files = vec![self.sources.config.clone(), self.sources.selection.clone()];
+        let files = [vec![self.sources.config.clone()], self.sources.selection.clone()].concat();
         settings::watch(files, Arc::clone(&self.logger), move || daemon.reload())
     }
 
@@ -297,7 +301,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     logger.info(LOG_SOURCE, &format!("icons from the {} icon theme", icons.theme()));
     let sources = Sources {
         config: args.config,
-        selection: args.selection,
+        selection: args.selection.map_or_else(|| nova_paths::config_files("features.toml"), |path| vec![path]),
         themes_dir: args.themes_dir,
         manifests: nova_features::load_all(&args.features_dir)?,
         path_var: path_var.clone(),
@@ -307,6 +311,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         tray: tray::Sources::new(&args.state_dir),
         notifications: notifications::Sources::new(&args.state_dir, Arc::clone(&icons)),
         media: media::Sources::new(&runtime_dir),
+        peripherals: peripherals::Sources::system(&path_var),
         icons,
     };
     let settings = Settings::load(&sources, &hub, &logger);
@@ -332,7 +337,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
             path_var,
             wayland_socket,
             egl_vendor: egl::nvidia_only_vendor(Path::new("/"), |name| std::env::var_os(name)),
-            render_loop: render_loop::for_ui(Path::new("/"), |name| std::env::var_os(name)),
+            render_loop: render_loop::for_ui(|name| std::env::var_os(name)),
             icon_theme: sources.icons.theme().to_string(),
         };
         Supervisor::start(settings, Arc::clone(&logger))
@@ -358,7 +363,8 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     ));
     let recordings =
         Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
-    let wallpaper = start_wallpaper(&args.state_dir, &sources.path_var, compositor.as_ref(), &logger);
+    let wallpaper =
+        start_wallpaper(&args.state_dir, nova_paths::home(), &sources.path_var, compositor.as_ref(), &logger);
     let daemon = Arc::new(Daemon {
         started: Instant::now(),
         hub,
@@ -392,12 +398,13 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
 /// The wallpaper service, told about the outputs whenever they change.
 fn start_wallpaper(
     state_dir: &Path,
+    home: Option<PathBuf>,
     path_var: &str,
     compositor: Option<&Arc<compositor::Compositor>>,
     logger: &Arc<Logger>,
 ) -> Arc<wallpaper::Wallpaper> {
     let wallpaper =
-        wallpaper::Wallpaper::start(state_dir, path_var.to_owned(), compositor.is_some(), Arc::clone(logger));
+        wallpaper::Wallpaper::start(state_dir, home, path_var.to_owned(), compositor.is_some(), Arc::clone(logger));
     if let Some(compositor) = compositor {
         let told = Arc::downgrade(&wallpaper);
         compositor.on_outputs(move |names| {

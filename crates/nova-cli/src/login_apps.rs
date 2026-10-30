@@ -177,6 +177,7 @@ spawn "not-at-startup"
             id: id.into(),
             title: String::new(),
             app: app.map(|(id, name)| App { id: id.into(), name: name.into(), description: None, icon: None }),
+            menu_only: false,
         }
     }
 

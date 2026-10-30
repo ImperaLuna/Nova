@@ -19,7 +19,7 @@
 //! an item its app says isn't there is dropped.
 
 mod app;
-pub use app::BRIDGE;
+pub use app::{BRIDGE, candidates};
 #[cfg(test)]
 pub mod tests;
 
@@ -54,6 +54,8 @@ const ITEM_INTERFACE: &str = "org.kde.StatusNotifierItem";
 const DBUS_NAME: &str = "org.freedesktop.DBus";
 const DBUS_PATH: &str = "/org/freedesktop/DBus";
 const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
+const INTROSPECTABLE: &str = "org.freedesktop.DBus.Introspectable";
+const UNKNOWN_METHOD: &str = "org.freedesktop.DBus.Error.UnknownMethod";
 
 /// More than any desktop has; past it, registrations are refused.
 pub const MAX_ITEMS: usize = 64;
@@ -126,6 +128,16 @@ struct Item {
     read: Option<Read>,
 }
 
+/// What came of calling an item's `Activate`.
+#[derive(PartialEq)]
+enum Sent {
+    Activated,
+    /// The tray isn't on the bus (yet).
+    NotOnBus,
+    /// The item has no `Activate`.
+    MenuOnly,
+}
+
 struct Read {
     id: String,
     title: String,
@@ -133,6 +145,8 @@ struct Read {
     app_ids: Vec<String>,
     /// Put up by the X11 icon bridge (see `app::is_bridge`).
     bridged: bool,
+    /// It has no `Activate` (see [`TrayItem::menu_only`]).
+    menu_only: bool,
 }
 
 impl Tray {
@@ -227,14 +241,21 @@ impl Tray {
         Ok(())
     }
 
+    /// Whether the app `app_id` (a desktop entry id) has a tray item: it
+    /// runs, even with no window open.
+    pub fn has_app(&self, app_id: &str) -> bool {
+        self.item(|item| item.app.as_ref().is_some_and(|app| app.id == app_id)).is_some()
+    }
+
     /// Asks the tray item of the app `app_id` (a desktop entry id) to show
     /// its window, as a click on its icon does (`Activate`). False when no
-    /// item belongs to that app. For the launcher, to reopen an app that
-    /// only sits in the tray.
+    /// item belongs to that app, or its item has no `Activate`. For the
+    /// launcher, to reopen an app that only sits in the tray.
     pub fn activate_app(&self, app_id: &str) -> Result<bool, String> {
-        let item = self.item(|item| item.app.as_ref().is_some_and(|app| app.id == app_id));
+        let item = self.item(|item| item.app.as_ref().is_some_and(|app| app.id == app_id) && !item.menu_only);
         let Some(item) = item else { return Ok(false) };
-        self.send_activate(&item.address).map_err(|e| format!("{app_id}'s tray icon didn't answer: {e}"))
+        let sent = self.send_activate(&item.address).map_err(|e| format!("{app_id}'s tray icon didn't answer: {e}"))?;
+        Ok(sent == Sent::Activated)
     }
 
     /// The installed app the item at `address` belongs to, if novad found it.
@@ -247,10 +268,11 @@ impl Tray {
     /// icon does (`Activate`).
     pub fn activate(&self, address: &str) -> Result<(), String> {
         let item = self.item(|item| item.address == address).ok_or_else(|| format!("no tray icon at {address}"))?;
-        if !self.send_activate(address).map_err(|e| format!("{}'s tray icon didn't answer: {e}", item.id))? {
-            return Err("the tray isn't on the session bus".into());
+        match self.send_activate(address).map_err(|e| format!("{}'s tray icon didn't answer: {e}", item.id))? {
+            Sent::Activated => Ok(()),
+            Sent::NotOnBus => Err("the tray isn't on the session bus".into()),
+            Sent::MenuOnly => Err(format!("{}'s tray icon has only a menu", item.id)),
         }
-        Ok(())
     }
 
     /// The first item published (one whose id and title were read) that
@@ -260,17 +282,23 @@ impl Tray {
         self.shared.event(&state).items.into_iter().find(|item| wanted(item))
     }
 
-    /// Calls `Activate` on the item at `address`; false while the tray isn't
-    /// on the bus.
-    fn send_activate(&self, address: &str) -> Result<bool, String> {
+    /// Calls `Activate` on the item at `address`. An item that turns out to
+    /// have none (its app didn't say what it has) is menu only from then on.
+    fn send_activate(&self, address: &str) -> Result<Sent, String> {
         let Some(connection) = lock(&self.shared.connection).clone() else {
-            return Ok(false);
+            return Ok(Sent::NotOnBus);
         };
         let slash = address.find('/').ok_or_else(|| format!("bad tray address {address}"))?;
         let (bus, path) = address.split_at(slash);
-        zbus::block_on(connection.call_method(Some(bus), path, Some(ITEM_INTERFACE), "Activate", &(0i32, 0i32)))
-            .map_err(|e| e.to_string())?;
-        Ok(true)
+        match zbus::block_on(connection.call_method(Some(bus), path, Some(ITEM_INTERFACE), "Activate", &(0i32, 0i32))) {
+            Ok(_) => Ok(Sent::Activated),
+            Err(e) if error_name(&e).as_deref() == Some(UNKNOWN_METHOD) => {
+                self.shared.logger.info(LOG_SOURCE, &format!("{address} has no Activate, so it shows its menu"));
+                self.shared.mark_menu_only(address);
+                Ok(Sent::MenuOnly)
+            }
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     /// Sends a new subscriber, client `id`, the items as they are, under the
@@ -300,6 +328,7 @@ impl Shared {
                         id: read.id.clone(),
                         title: read.title.clone(),
                         app: launcher.as_ref().and_then(|launcher| launcher.find_app(&read.app_ids)),
+                        menu_only: read.menu_only,
                     },
                 ))
             })
@@ -387,6 +416,7 @@ impl Shared {
             Err(_) => String::new(),
         };
         let title = item_text(connection, &owner, path, "Title").await;
+        let menu_only = !can_activate(connection, &owner, path).await;
         let pid = connection
             .call_method(Some(DBUS_NAME), DBUS_PATH, Some(DBUS_NAME), "GetConnectionUnixProcessID", &(owner.as_str(),))
             .await
@@ -409,8 +439,18 @@ impl Shared {
             return;
         };
         self.logger.info(LOG_SOURCE, &format!("{address} came: {id} ({})", app_ids.join(", ")));
-        item.read = Some(Read { id, title, app_ids, bridged });
+        item.read = Some(Read { id, title, app_ids, bridged, menu_only });
         self.publish(&mut state);
+    }
+
+    /// Marks the item at `address` as having no `Activate`.
+    fn mark_menu_only(&self, address: &str) {
+        let mut state = lock(&self.state);
+        let read = state.items.iter_mut().find(|item| item.address == address).and_then(|item| item.read.as_mut());
+        if let Some(read) = read {
+            read.menu_only = true;
+            self.publish(&mut state);
+        }
     }
 
     /// Drops the items on `name`, a bus name that lost its owner, and says
@@ -522,19 +562,23 @@ async fn next_unless_stopped(stream: &mut MessageStream, stop: &Stop) -> Option<
 /// Whether `e` is an app's answer that it has no such item, rather than
 /// no answer in time or a passing failure.
 fn says_not_there(e: &zbus::Error) -> bool {
-    use zbus::DBusError;
-    let name = match e {
-        zbus::Error::MethodError(name, ..) => name.to_string(),
-        zbus::Error::FDO(e) => e.name().to_string(),
-        _ => return false,
-    };
     matches!(
-        name.as_str(),
+        error_name(e).as_deref().unwrap_or_default(),
         "org.freedesktop.DBus.Error.UnknownObject"
             | "org.freedesktop.DBus.Error.UnknownInterface"
             | "org.freedesktop.DBus.Error.UnknownMethod"
             | "org.freedesktop.DBus.Error.UnknownProperty"
     )
+}
+
+/// The name of the D-Bus error an app answered with, if it answered.
+fn error_name(e: &zbus::Error) -> Option<String> {
+    use zbus::DBusError;
+    match e {
+        zbus::Error::MethodError(name, ..) => Some(name.to_string()),
+        zbus::Error::FDO(e) => Some(e.name().to_string()),
+        _ => None,
+    }
 }
 
 /// Tells hosts the items at `addresses` went.
@@ -555,6 +599,30 @@ async fn item_text(connection: &Connection, bus: &str, path: &str, name: &str) -
     let reply = connection.call_method(Some(bus), path, Some(PROPERTIES), "Get", &(ITEM_INTERFACE, name)).await?;
     let text: String = reply.body().deserialize::<OwnedVariant>()?.try_into()?;
     Ok(text.chars().take(MAX_TEXT_CHARS).collect())
+}
+
+/// Whether the item at `bus` and `path` has `Activate`. libayatana's items
+/// (Spotify's, Steam's) only have a menu, and say so when introspected;
+/// an item that can't be introspected (Electron's) is taken to have it,
+/// and `Tray::send_activate` finds out otherwise.
+async fn can_activate(connection: &Connection, bus: &str, path: &str) -> bool {
+    let Ok(reply) = connection.call_method(Some(bus), path, Some(INTROSPECTABLE), "Introspect", &()).await else {
+        return true;
+    };
+    reply.body().deserialize::<String>().map_or(true, |xml| has_method(&xml, ITEM_INTERFACE, "Activate") != Some(false))
+}
+
+/// Whether the introspection data `xml` gives `interface` the method
+/// `method`; `None` when it doesn't list the interface.
+fn has_method(xml: &str, interface: &str, method: &str) -> Option<bool> {
+    let quoted = |name: &str| [format!("name=\"{name}\""), format!("name='{name}'")];
+    let start = quoted(interface).iter().filter_map(|attribute| xml.find(attribute.as_str())).min()?;
+    let body = &xml[start..];
+    let body = &body[..body.find("</interface>").unwrap_or(body.len())];
+    Some(body.split("<method").skip(1).any(|tag| {
+        let tag = &tag[..tag.find('>').unwrap_or(tag.len())];
+        quoted(method).iter().any(|attribute| tag.contains(attribute.as_str()))
+    }))
 }
 
 /// The watcher apps see on the bus.

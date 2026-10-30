@@ -47,7 +47,9 @@ const FEDORA_QUICKSHELL_COPR: &str = "errornointernet/quickshell";
 /// too, and ask for sudo themselves.
 const AUR_HELPERS: &[&str] = &["paru", "yay"];
 const FLAKE_HINT: &str = "On NixOS, Nova comes from its flake: add `github:ImperaLuna/Nova` to your flake inputs \
-     and turn on its NixOS or home-manager module. `nova setup` changes nothing here.";
+     and set `programs.nova.enable = true;` in its home-manager or NixOS module. Turn features on with \
+     `programs.nova.features.<id>.enable` (or `programs.nova.featuresFile`) and rebuild, which installs what they \
+     need. `nova setup` changes nothing here.";
 
 #[derive(clap::Args)]
 pub struct SetupArgs {
@@ -106,7 +108,7 @@ impl Facts {
     fn gather(yes: bool) -> Result<Self, String> {
         let paths = Paths::of_this_user()?;
         let manifests = nova_features::load_all(&nova_features::default_dir()).map_err(|e| e.to_string())?;
-        let selection = checks::read_selection(&paths.config_dir.join("features.toml"))?;
+        let selection = checks::read_selection(&[paths.config_dir.join("features.toml")])?;
         Ok(Self {
             host: Host::detect(Path::new("/")),
             manifests,
@@ -292,6 +294,9 @@ fn default_config() -> String {
          \n\
          # [wallpaper]  # or `nova wallpaper <file>`\n\
          # path = \"~/Pictures/Wallpapers/dusk.jpg\"  # on every screen\n\
+         # (a video, a Wallpaper Engine folder or a Workshop ID moves, with the\n\
+         #  wallpaper-engine feature on)\n\
+         # folder = \"~/Pictures/Wallpapers\"  # what `nova toggle wallpaper` offers\n\
          # [wallpaper.outputs]\n\
          # DP-2 = \"~/Pictures/Wallpapers/tide.jpg\"  # one screen's own\n",
         checks::DEFAULT_THEME_ID
@@ -536,14 +541,16 @@ mod tests {
         assert_eq!(gpu_for_packages(&hybrid), Some(Gpu::Intel));
     }
 
-    /// A temporary home with `quickshell` and `wf-recorder` on its PATH.
+    /// A temporary home with what the default features check for on its PATH.
     struct Home(nova_test_support::TempDir);
 
     impl Home {
         fn new(name: &str) -> Self {
             let home = nova_test_support::TempDir::new(&format!("setup-{name}"));
             std::fs::create_dir_all(home.join("usr/bin")).unwrap();
-            for bin in ["quickshell", "wf-recorder", "grim", "wl-copy", "xdg-open", "awww", "awww-daemon", "paru"] {
+            for bin in
+                ["quickshell", "wf-recorder", "grim", "wl-copy", "xdg-open", "awww", "awww-daemon", "upower", "paru"]
+            {
                 nova_test_support::write_program(&home.join("usr/bin"), bin, "exit 0");
             }
             Self(home)
@@ -561,7 +568,8 @@ mod tests {
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
         let Step::Run { why, argv } = &steps[0] else { panic!("{:?}", steps[0]) };
         // recording's wf-recorder, screenshot's grim, wl-copy and xdg-open
-        // and wallpaper's awww are there; core has no binary check.
+        // wallpaper's awww and peripherals' upower are there; core has no
+        // binary check.
         assert_eq!(why, "install packages for core");
         assert_eq!(argv, &words(&["paru", "-S", "--needed", "quickshell"]));
     }
@@ -573,13 +581,14 @@ mod tests {
         assert_eq!(
             steps[0],
             Step::Run {
-                why: "install packages for core, recording, screenshot".into(),
+                why: "install packages for core, peripherals, recording, screenshot".into(),
                 argv: words(&[
                     "sudo",
                     "apt-get",
                     "install",
                     "-y",
                     "quickshell",
+                    "upower",
                     "wf-recorder",
                     "grim",
                     "wl-clipboard",
@@ -653,6 +662,6 @@ mod tests {
         assert_eq!(checks::read_config(&config, &themes), Ok(vec![]));
         let selection = home.0.join("features.toml");
         std::fs::write(&selection, default_selection(&manifests())).unwrap();
-        assert_eq!(checks::read_selection(&selection), Ok(Selection::default()));
+        assert_eq!(checks::read_selection(&[selection]), Ok(Selection::default()));
     }
 }

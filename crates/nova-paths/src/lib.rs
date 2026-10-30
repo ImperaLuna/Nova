@@ -21,6 +21,17 @@ pub fn config_dir() -> PathBuf {
     in_or_here(config_home()).join("nova")
 }
 
+/// Where Nova looks for its config file `name`, in order: the user's
+/// ([`config_dir`]), then the system's in each `$XDG_CONFIG_DIRS` folder
+/// (`/etc/xdg` when unset), where the NixOS module puts features.toml. The
+/// first that exists is the one read.
+pub fn config_files(name: &str) -> Vec<PathBuf> {
+    let system = path_var("XDG_CONFIG_DIRS").unwrap_or_else(|| PathBuf::from("/etc/xdg"));
+    std::iter::once(config_dir().join(name))
+        .chain(std::env::split_paths(&system).filter(|dir| dir.is_absolute()).map(|dir| dir.join("nova").join(name)))
+        .collect()
+}
+
 /// `$XDG_STATE_HOME/nova`, else `~/.local/state/nova`. Logs live here.
 pub fn state_dir() -> PathBuf {
     in_or_here(xdg_home("XDG_STATE_HOME", ".local/state")).join("nova")

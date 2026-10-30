@@ -1,4 +1,4 @@
-//! Screenshots, recording, host, tray, notifications and resources over the socket.
+//! Screenshots, recording, host, tray, notifications, media, resources and peripherals over the socket.
 
 use super::*;
 
@@ -69,7 +69,9 @@ fn notifications_are_listed_and_set_over_the_socket() {
     assert_eq!(client.next_event("notifications")["do_not_disturb"], true);
     let refused = client.request(3, "mute_notification_app", Some(json!({"app": "Discord", "muted": true})));
     assert!(refused["error"].as_str().unwrap().contains("Discord"), "{refused}");
-    let missing = client.request(4, "notification_action", Some(json!({"id": 9})));
+    let missing = client.request(4, "notification_action", Some(json!({"id": 9, "action": "reply"})));
+    assert!(missing["error"].as_str().unwrap().contains("no notification 9"), "{missing}");
+    let missing = client.request(5, "open_notification", Some(json!({"id": 9})));
     assert!(missing["error"].as_str().unwrap().contains("no notification 9"), "{missing}");
 }
 
@@ -139,4 +141,14 @@ fn watching_resources_needs_the_feature() {
     let mut client = novad.connect();
     let reply = client.request(1, "watch_resources", Some(json!({"watching": true})));
     assert!(reply["error"].as_str().is_some_and(|error| error.contains("quick-settings")), "{reply}");
+}
+
+/// The peripherals' own tests cover UPower and HeadsetControl; here there's
+/// neither, so subscribing sends an empty list.
+#[test]
+fn subscribing_to_peripherals_sends_the_devices() {
+    let novad = TestDaemon::start("peripherals", None);
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["peripherals"]})));
+    assert_eq!(client.next_event("peripherals"), json!({"devices": []}));
 }

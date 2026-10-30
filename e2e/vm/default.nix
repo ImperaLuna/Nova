@@ -43,8 +43,10 @@ let
       steps,
       # Prints the compositor's recent log, for when a step fails.
       compositorLog,
-      # The `queries` entry that lists the open windows.
+      # The `queries` entry that lists the open windows, and the one that
+      # names the focused window.
       listWindows,
+      focusedWindow,
       # Lists the layer surfaces (Nova's among them), for when a test fails.
       listLayers,
     }:
@@ -67,14 +69,17 @@ let
         };
         environment = {
           variables.LIBSEAT_BACKEND = "seatd";
-          # Qt otherwise picks subpixel or grayscale text from the monitor's
-          # subpixel info, depending on whether that has arrived yet, so
-          # screenshots of text would differ from run to run. Set through
-          # PAM, so the systemd user manager (and nova.service) has it.
-          sessionVariables.QT_SUBPIXEL_AA_TYPE = "RGB";
-          # The central pill shows this instead of the clock (ui/bar/Bar.qml),
-          # so screenshots don't change from minute to minute.
-          sessionVariables.NOVA_FROZEN_TIME = "2026-10-24T16:40:00";
+          sessionVariables = {
+            # Qt otherwise picks subpixel or grayscale text from the monitor's
+            # subpixel info, depending on whether that has arrived yet, so
+            # screenshots of text would differ from run to run. Set through
+            # PAM, so the systemd user manager (and nova.service) has them.
+            QT_SUBPIXEL_AA_TYPE = "RGB";
+            # The central pill shows this instead of the clock
+            # (ui/bar/Bar.qml), so screenshots don't change from minute to
+            # minute.
+            NOVA_FROZEN_TIME = "2026-10-24T16:40:00";
+          };
           # foot is a window to have.
           systemPackages = [ pkgs.foot ];
         };
@@ -100,20 +105,27 @@ let
         };
       };
 
-      # Nova installed the way a NixOS user would: the package and its user unit.
+      # Nova installed the way a NixOS user would: its NixOS module, which
+      # brings the package, its user unit and the default features' packages.
       machine = {
-        imports = [ desktop ];
+        imports = [
+          desktop
+          # The flake's packages aren't at hand here; `package` sets Nova.
+          (import ../../packaging/nix/nixos.nix { packages = null; })
+        ];
+        programs.nova = {
+          enable = true;
+          package = nova;
+        };
         # grim takes the screenshots, and `quickshell ipc` asks the UI what
         # it got from novad.
         environment.systemPackages = [
-          nova
           pkgs.grim
           pkgs.quickshell
           pkgs.wireplumber
           # nova-test-player, for the now-playing pill.
           (import ../player.nix { inherit pkgs; })
         ];
-        systemd.packages = [ nova ];
         environment.etc."xdg/autostart/nova-login-probe.desktop".text = ''
           [Desktop Entry]
           Type=Application
@@ -141,9 +153,6 @@ let
             }
           ];
         };
-        # NixOS ignores [Install] in packaged units; this is the unit's
-        # WantedBy=.
-        systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
       };
 
       # Steps only some compositors have, as shell commands: none elsewhere.
@@ -161,6 +170,11 @@ let
         pkgs.testers.runNixOSTest {
           name = "nova-${compositor}-${part}";
           nodes = { inherit machine; };
+          # A half takes 2 to 4 minutes. The driver's own limit is an hour,
+          # and `machine.succeed` has none, so a hung step held a CI runner
+          # (and the other one, waiting on the same build) for that long
+          # (PR #140).
+          globalTimeout = vmTestTimeoutSecs;
           testScript = ''
             USER = ${builtins.toJSON user}
             UID = ${toString uid}
@@ -171,6 +185,8 @@ let
             FULLSCREEN_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."fullscreen the focused window"}"}
             CLOSE_WINDOW = ${builtins.toJSON "${ipcEnv} ${steps."close the focused window"}"}
             LIST_WINDOWS = ${builtins.toJSON "${ipcEnv} ${listWindows}"}
+            FOCUSED_WINDOW = ${builtins.toJSON "${ipcEnv} ${focusedWindow}"}
+            QT_LOGGING_CONF = ${builtins.toJSON "${qtLoggingConf}"}
             LIST_LAYERS = ${builtins.toJSON "${ipcEnv} ${listLayers}"}
             ADDED_OUTPUTS = ${
               builtins.toJSON (stepsIfAny [
@@ -270,6 +286,23 @@ let
     };
   };
 
+  # What Qt logs when the UI draws or skips a frame (QT_LOGGING_CONF): the
+  # render loop's steps and timing, and the Wayland side's update requests
+  # and frame callbacks ("Didn't receive frame callback in time", which
+  # unexposes a window, IMP-204 and IMP-208).
+  # frames.py turns it on with NOVA_LOG=debug, which novad needs to keep
+  # these debug lines. Not for the whole session: with it on in every run,
+  # the lock screen's PAM helper (forked from the UI) hung after "Starting
+  # pam session" on both compositors (PR #140's first CI run).
+  vmTestTimeoutSecs = 10 * 60;
+
+  qtLoggingConf = pkgs.writeText "qtlogging.ini" ''
+    [Rules]
+    qt.scenegraph.renderloop.debug=true
+    qt.scenegraph.time.renderloop.debug=true
+    qt.qpa.wayland.backingstore.debug=true
+  '';
+
   hyprlandConfig = pkgs.writeText "hyprland.conf" ''
     # How Nova starts on Hyprland without uwsm (see nova.service).
     exec-once = nova
@@ -365,6 +398,7 @@ in
     };
     compositorLog = "journalctl --user -u niri -n 100 --no-pager";
     listWindows = queries.windows;
+    focusedWindow = queries.focused-window;
     listLayers = "niri msg --json layers";
     steps = {
       "focus the next workspace" = "niri msg action focus-workspace-down";
@@ -403,6 +437,7 @@ in
     };
     compositorLog = "tail -n 100 $XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprland.log";
     listWindows = queries.clients;
+    focusedWindow = queries.activewindow;
     listLayers = "hyprctl -j layers";
     steps = {
       "focus the next workspace" = "hyprctl dispatch workspace 2";

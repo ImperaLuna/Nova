@@ -536,3 +536,210 @@ fn a_tray_click_starts_its_app_when_no_window_shows() {
     // Like Claude Desktop, whose icon ignores Activate: started again, it shows.
     assert!(ran(&marker), "no window showed, so the app is started");
 }
+
+#[test]
+fn launching_an_app_whose_tray_icon_has_only_a_menu_starts_it_again_and_focuses_its_window() {
+    let mut bus = None;
+    let mut compositor = None;
+    let novad = TestDaemon::open_following(
+        "launcher-tray-menu",
+        None,
+        |dir| {
+            std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
+            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+        },
+        |dir| {
+            let (fake, backend) = FakeCompositor::niri(dir);
+            compositor = Some(fake);
+            Some(backend)
+        },
+    );
+    let (bus, compositor) = (bus.unwrap(), Arc::new(compositor.unwrap()));
+    let marker = novad.dir.join("ran");
+    let entry = format!("Name=Third\nExec=touch \"{}\"\nStartupWMClass=Nova-Third\n", marker.display());
+    install_app(&novad, "third.desktop", &entry);
+    let (mut client, desktop) = follow_to_the_end(&novad);
+    client.subscribe_launcher(1);
+    // Like Spotify's: libayatana's icons have only a menu, no Activate.
+    let app = bus.connect();
+    let item = tray::tests::MenuOnlyItem { id: "nova-third".into(), title: "Third".into() };
+    tray::tests::serve_item(
+        &app,
+        None,
+        "/org/ayatana/NotificationItem/third",
+        "/org/ayatana/NotificationItem/third",
+        item,
+    );
+    client.request(4, "subscribe", Some(json!({"topics": ["tray"]})));
+    while client.next_event("tray")["items"][0]["app"]["id"] != "third.desktop" {}
+    // Started again, the running app shows its window, which the compositor
+    // doesn't focus.
+    let shows = {
+        let (marker, compositor) = (marker.clone(), Arc::clone(&compositor));
+        std::thread::spawn(move || {
+            if ran(&marker) {
+                compositor.open_window(9, "nova-third");
+            }
+        })
+    };
+
+    let launch = json!({"id": "third.desktop", "output": focused_output(&desktop)});
+    assert_eq!(client.request(5, "launch_app", Some(launch))["result"], Value::Null);
+    shows.join().unwrap();
+    assert!(marker.exists(), "its icon can't show its window, so the app is started again");
+    let focused = json!({"Action": {"FocusWindow": {"id": 9}}});
+    assert_eq!(compositor.actions(), [focused.to_string()], "the window it shows takes focus");
+}
+
+#[test]
+fn a_window_shown_from_a_tray_menu_takes_focus() {
+    let mut bus = None;
+    let mut compositor = None;
+    let novad = TestDaemon::open_following(
+        "tray-menu-focus",
+        None,
+        |dir| {
+            std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
+            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+        },
+        |dir| {
+            let (fake, backend) = FakeCompositor::niri(dir);
+            compositor = Some(fake);
+            Some(backend)
+        },
+    );
+    let (bus, compositor) = (bus.unwrap(), Arc::new(compositor.unwrap()));
+    // The recording's window on workspace `web` is Second's; Third has none.
+    install_app(&novad, "second.desktop", "Name=Second\nExec=true\nStartupWMClass=Nova-Second\n");
+    install_app(&novad, "third.desktop", "Name=Third\nExec=true\nStartupWMClass=Nova-Third\n");
+    let (mut client, _desktop) = follow_to_the_end(&novad);
+    client.subscribe_launcher(2);
+    let app = bus.connect();
+    for name in ["second", "third"] {
+        let path = format!("/org/ayatana/NotificationItem/{name}");
+        let item = tray::tests::MenuOnlyItem { id: format!("nova-{name}"), title: name.into() };
+        tray::tests::serve_item(&app, None, &path, &path, item);
+    }
+    client.request(2, "subscribe", Some(json!({"topics": ["tray"]})));
+    let address = |items: &Value, app: &str| {
+        let items = items.as_array().unwrap();
+        items.iter().find(|item| item["app"]["id"] == app).map(|item| item["address"].as_str().unwrap().to_owned())
+    };
+    let (second, third) = loop {
+        let items = client.next_event("tray")["items"].clone();
+        if let (Some(second), Some(third)) = (address(&items, "second.desktop"), address(&items, "third.desktop")) {
+            break (second, third);
+        }
+    };
+
+    // "Show Third": novad answers once it has looked, the UI runs the entry,
+    // and the window that shows takes focus.
+    let picked = client.request(3, "tray_menu_picked", Some(json!({"address": third})));
+    assert_eq!(picked["result"], Value::Null, "{picked}");
+    compositor.open_window(9, "nova-third");
+    let focused = json!({"Action": {"FocusWindow": {"id": 9}}});
+    nova_test_support::wait_until(Duration::from_secs(5), "the shown window to take focus", || {
+        !compositor.actions().is_empty()
+    });
+    assert_eq!(compositor.actions(), [focused.to_string()]);
+
+    // Any entry of an app with a window open, like pausing a song, leaves it be.
+    let picked = client.request(4, "tray_menu_picked", Some(json!({"address": second})));
+    assert_eq!(picked["result"], Value::Null, "{picked}");
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(compositor.actions(), [focused.to_string()], "no other window took focus");
+}
+
+/// Sends a notification from `app` (on `connection`) whose desktop entry is
+/// `entry`, with a default action and a button `reply`; returns its id.
+fn notify(connection: &zbus::Connection, app: &str, entry: &str) -> u32 {
+    let hints = std::collections::HashMap::from([("desktop-entry", zbus::Variant::from(entry))]);
+    let sent = (app, 0u32, "", "Mara", "hi", vec!["default", "Open", "reply", "Reply"], hints, -1i32);
+    let path = "/org/freedesktop/Notifications";
+    let reply = zbus::block_on(connection.call_method(
+        Some(notifications::BUS_NAME),
+        path,
+        Some(notifications::BUS_NAME),
+        "Notify",
+        &sent,
+    ))
+    .unwrap();
+    reply.body().deserialize().unwrap()
+}
+
+#[test]
+fn a_notification_click_focuses_the_window_its_app_shows_or_opens_an_app_that_has_gone() {
+    let mut bus = None;
+    let mut compositor = None;
+    let novad = TestDaemon::open_following(
+        "notification-click",
+        None,
+        |dir| {
+            std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
+            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+        },
+        |dir| {
+            let (fake, backend) = FakeCompositor::niri(dir);
+            compositor = Some(fake);
+            Some(backend)
+        },
+    );
+    let (bus, compositor) = (bus.unwrap(), Arc::new(compositor.unwrap()));
+    // The recording has no window of either app.
+    let (third, fourth) = (novad.dir.join("third-ran"), novad.dir.join("fourth-ran"));
+    for (file, name, marker) in [("third.desktop", "Third", &third), ("fourth.desktop", "Fourth", &fourth)] {
+        let entry = format!("Name={name}\nExec=touch \"{}\"\nStartupWMClass=Nova-{name}\n", marker.display());
+        install_app(&novad, file, &entry);
+    }
+    let (mut client, desktop) = follow_to_the_end(&novad);
+    client.subscribe_launcher(2);
+    let output = focused_output(&desktop);
+    let app = bus.connect();
+    let (button, clicked) = (notify(&app, "Third", "third"), notify(&app, "Third", "third"));
+    // Like Ferdium: shows its window when told of the click, which niri
+    // doesn't focus.
+    let rule =
+        zbus::MatchRule::builder().msg_type(zbus::message::Type::Signal).member("ActionInvoked").build().unwrap();
+    let mut invoked = zbus::block_on(zbus::MessageStream::for_match_rule(rule, &app, None)).unwrap();
+    let shows = {
+        let compositor = Arc::clone(&compositor);
+        std::thread::spawn(move || {
+            loop {
+                use futures_core::Stream;
+                let next = std::future::poll_fn(|cx| std::pin::Pin::new(&mut invoked).poll_next(cx));
+                let message = zbus::block_on(next).unwrap().unwrap();
+                let (id, key): (u32, String) = message.body().deserialize().unwrap();
+                if key == "default" {
+                    assert_eq!(id, clicked);
+                    compositor.open_window(9, "nova-third");
+                    return;
+                }
+            }
+        })
+    };
+
+    let reply = client.request(2, "notification_action", Some(json!({"id": button, "action": "reply"})));
+    assert_eq!(reply["result"], Value::Null, "{reply}");
+    let click = client.request(3, "open_notification", Some(json!({"id": clicked, "output": output})));
+    assert_eq!(click["result"], Value::Null, "{click}");
+    shows.join().unwrap();
+    let focused = json!({"Action": {"FocusWindow": {"id": 9}}});
+    assert_eq!(compositor.actions(), [focused.to_string()], "the window it shows takes focus; a button moves none");
+    assert!(!ran(&third), "the app took the click, so it isn't started");
+
+    // Like notify-send: its sender is gone by the time it's clicked.
+    let gone = bus.connect();
+    let dead = notify(&gone, "Fourth", "fourth");
+    drop(gone);
+    client.request(4, "subscribe", Some(json!({"topics": ["notifications"]})));
+    loop {
+        let list = client.next_event("notifications");
+        let items = list["items"].as_array().unwrap();
+        if items.iter().any(|item| item["id"] == dead && item.get("live").is_none()) {
+            break;
+        }
+    }
+    let click = client.request(5, "open_notification", Some(json!({"id": dead, "output": output})));
+    assert_eq!(click["result"], Value::Null, "{click}");
+    assert!(ran(&fourth), "an app that can't hear of the click is opened instead");
+}

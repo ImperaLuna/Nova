@@ -110,6 +110,10 @@ pub enum Event {
     /// (feature `media`). Topic [`Topic::Media`], sent right after
     /// subscribing and whenever a player comes, goes or changes.
     Media(Media),
+    /// Wireless devices and their batteries (feature `peripherals`). Topic
+    /// [`Topic::Peripherals`], sent right after subscribing and whenever a
+    /// device comes, goes or changes.
+    Peripherals(Peripherals),
 }
 
 /// Groups of events a client can subscribe to.
@@ -132,6 +136,7 @@ pub enum Topic {
     Tray,
     Notifications,
     Media,
+    Peripherals,
 }
 
 impl Event {
@@ -156,6 +161,7 @@ impl Event {
             Event::Tray(_) => Some(Topic::Tray),
             Event::Notifications(_) | Event::NotificationPopup(_) => Some(Topic::Notifications),
             Event::Media(_) => Some(Topic::Media),
+            Event::Peripherals(_) => Some(Topic::Peripherals),
         }
     }
 }
@@ -404,6 +410,11 @@ pub struct Workspace {
     /// A special workspace showing on another output.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub shown_elsewhere: bool,
+    /// The window focus goes to on it (`FocusedWindow::id`), known even
+    /// while a Nova panel holds the keyboard and no window is focused. Only
+    /// niri sends it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_window: Option<String>,
 }
 
 /// The compositor's own workspace id. Hyprland's named workspaces have
@@ -412,6 +423,11 @@ pub type WorkspaceId = i64;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FocusedWindow {
+    /// The compositor's own name for the window, to tell one from another
+    /// (a title can change, and two windows can share an app id). Empty
+    /// from a novad from before it was sent.
+    #[serde(default)]
+    pub id: String,
     /// The Wayland app id (Hyprland calls it the class), empty when unset.
     pub app_id: String,
     pub title: String,
@@ -438,11 +454,20 @@ pub enum Panel {
     Tray,
     /// The now-playing pill's panel, while a player shows.
     Media,
+    /// The wallpaper carousel.
+    Wallpaper,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 6] =
-        [Panel::AiUsage, Panel::Power, Panel::QuickSettings, Panel::Launcher, Panel::Tray, Panel::Media];
+    pub const ALL: [Panel; 7] = [
+        Panel::AiUsage,
+        Panel::Power,
+        Panel::QuickSettings,
+        Panel::Launcher,
+        Panel::Tray,
+        Panel::Media,
+        Panel::Wallpaper,
+    ];
 
     /// Its name on the wire and on the command line, which is also its
     /// feature's id.
@@ -454,6 +479,7 @@ impl Panel {
             Panel::Launcher => "launcher",
             Panel::Tray => "tray",
             Panel::Media => "media",
+            Panel::Wallpaper => "wallpaper",
         }
     }
 }
@@ -513,6 +539,10 @@ pub struct TrayItem {
     /// it, when there is one (and the `launcher` feature is on).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<App>,
+    /// It has no `Activate` (libayatana's items, like Spotify's): a click
+    /// on it shows its menu, as one on an item that says `ItemIsMenu` does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub menu_only: bool,
 }
 
 /// The media players (feature `media`): every MPRIS player on the session
@@ -588,6 +618,99 @@ pub enum MediaAction {
     Previous,
 }
 
+/// The devices with a battery (feature `peripherals`): mice, keyboards,
+/// headsets and the like that are connected and on right now and report
+/// one, each listed once however many sources report it. One that's off or
+/// out of reach (a headset whose dongle stays plugged in) isn't listed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Peripherals {
+    pub devices: Vec<Peripheral>,
+}
+
+/// One device and its battery. Text is plain and capped in length.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Peripheral {
+    /// Stable while the device stays, like `upower/mouse_hidpp_battery_0`
+    /// or `headsetcontrol/1038:2253`.
+    pub id: String,
+    /// Its model, like `PRO X Wireless`.
+    pub name: String,
+    pub kind: PeripheralKind,
+    /// How it's connected, when novad can tell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<PeripheralLink>,
+    /// Its charge, when it has said yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battery: Option<Battery>,
+    pub charging: bool,
+    /// Where the reading comes from.
+    pub source: PeripheralSource,
+}
+
+/// What a device is, for its icon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeripheralKind {
+    Mouse,
+    Keyboard,
+    Touchpad,
+    GamingInput,
+    Pen,
+    Tablet,
+    Headset,
+    Headphones,
+    Speakers,
+    RemoteControl,
+    Wearable,
+    Other,
+}
+
+/// How a device is connected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeripheralLink {
+    /// Through its own USB receiver (2.4 GHz).
+    Dongle,
+    Bluetooth,
+    /// By its cable.
+    Wired,
+}
+
+/// A device's charge: a percentage, or only a rough level for devices that
+/// report no more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Battery {
+    /// 0 to 100.
+    Percent(u8),
+    Level(BatteryLevel),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BatteryLevel {
+    Critical,
+    Low,
+    Normal,
+    High,
+    Full,
+}
+
+/// Where novad read a device: UPower (the kernel's drivers and BlueZ),
+/// HID++ (Logitech devices on a receiver the kernel doesn't drive),
+/// Keychron (keyboards on firmware that reports the battery over raw HID)
+/// or HeadsetControl (headsets the kernel doesn't know the battery of).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeripheralSource {
+    Upower,
+    Hidpp,
+    Keychron,
+    Headsetcontrol,
+}
+
 /// The longest player id a media command takes, in bytes: a bus name is at
 /// most 255.
 pub const MEDIA_PLAYER_MAX_BYTES: usize = 255;
@@ -641,8 +764,10 @@ pub struct NotificationList {
     pub items: Vec<Notification>,
     /// No pop-ups, except critical ones.
     pub do_not_disturb: bool,
-    /// Apps, by [`Notification::app`], whose notifications never pop up and
-    /// don't count as unread. They're still listed.
+    /// Apps, by [`Notification::app`], whose notifications are hidden: not
+    /// in `items`, never popping up, never unread. Those from before the
+    /// app was muted come back once it's unmuted; those it sends meanwhile
+    /// aren't kept.
     pub muted: Vec<String>,
     /// Every app that sent one lately or is muted, the latest first, for
     /// the settings page's per-app switches.
@@ -716,6 +841,19 @@ pub struct Notification {
     /// those kept from before novad started.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub live: bool,
+    /// The device a low battery alert of Nova's own is about, for its
+    /// icon: never set on an app's notification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<NotificationDevice>,
+}
+
+/// The device a low battery alert is about: what it is and its charge
+/// when the alert was sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationDevice {
+    pub kind: PeripheralKind,
+    pub battery: Battery,
 }
 
 /// One of a notification's buttons.
@@ -1027,13 +1165,27 @@ pub enum Command {
     ActivateTrayItem {
         address: String,
     },
-    /// The notification `id` was clicked, or its button `action` (feature
-    /// `notifications`): the app hears of it, and it leaves the list unless
-    /// the app keeps it.
-    NotificationAction {
+    /// An entry of the menu of the tray item at `address` was picked
+    /// (feature `tray`): a window its app shows next takes focus, as it
+    /// gets none from a menu either.
+    TrayMenuPicked {
+        address: String,
+    },
+    /// The notification `id` was clicked on `output` (feature
+    /// `notifications`): the app hears of it and its window takes focus, or,
+    /// when it can't hear of it, the app opens (as with `launch_app`). It
+    /// stays on the list, read.
+    OpenNotification {
         id: u32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        action: Option<String>,
+        output: Option<String>,
+    },
+    /// The button `action` of notification `id` was clicked (feature
+    /// `notifications`): the app hears of it, nothing takes focus, and it
+    /// stays on the list, read.
+    NotificationAction {
+        id: u32,
+        action: String,
     },
     /// Closes the notification `id` and takes it off the list (feature
     /// `notifications`).
@@ -1060,17 +1212,23 @@ pub enum Command {
         app: String,
         muted: bool,
     },
-    /// Shows the image at `path` (an absolute path) as the wallpaper on
-    /// every output, or only on `output` (`nova wallpaper`, feature
-    /// `wallpaper`). Remembered across restarts until config.toml's
-    /// `[wallpaper]` changes. Fails when the file can't be read.
+    /// Shows `path` as the wallpaper on every output, or only on `output`
+    /// (`nova wallpaper`): an absolute path to an image (feature
+    /// `wallpaper`), or to a video or a Wallpaper Engine project folder, or
+    /// a Steam Workshop ID (feature `wallpaper-engine`). Remembered across
+    /// restarts until config.toml's `[wallpaper]` changes. Fails when it
+    /// can't be shown.
     SetWallpaper {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
     },
-    /// Replies with the [`Wallpapers`] shown now (feature `wallpaper`).
+    /// Replies with the [`Wallpapers`] shown now (feature `wallpaper` or
+    /// `wallpaper-engine`).
     Wallpapers,
+    /// Replies with the [`WallpaperFolder`]: the images in the wallpaper
+    /// folder, for the carousel (feature `wallpaper`).
+    WallpaperFolder,
     /// Plays or pauses the media player `player` (a [`MediaPlayer::id`]),
     /// or skips a track (feature `media`).
     MediaControl {
@@ -1100,8 +1258,14 @@ pub enum Command {
     },
 }
 
-/// What `wallpapers` returns: the image every output shows, and the outputs
-/// that show one of their own. Absolute paths; empty when none is set.
+/// Whether a `set_wallpaper` path is a Steam Workshop ID: only digits.
+pub fn is_workshop_id(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// What `wallpapers` returns: the wallpaper every output shows, and the
+/// outputs that show one of their own. Absolute paths or Workshop IDs;
+/// empty when none is set.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Wallpapers {
@@ -1110,6 +1274,21 @@ pub struct Wallpapers {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub outputs: std::collections::BTreeMap<String, String>,
 }
+
+/// What `wallpaper_folder` returns: the wallpaper folder (config.toml's
+/// `[wallpaper] folder`) and the images in it, sorted by name, at most
+/// [`WALLPAPER_FOLDER_MAX_IMAGES`]. Absolute paths; no images when the folder
+/// doesn't exist.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WallpaperFolder {
+    pub folder: String,
+    pub images: Vec<String>,
+}
+
+/// The most images `wallpaper_folder` lists: a carousel with more is no use,
+/// and a reply's size is capped.
+pub const WALLPAPER_FOLDER_MAX_IMAGES: usize = 1000;
 
 /// What the power menu does, in the order it lists them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1479,6 +1658,7 @@ mod tests {
                         Topic::Tray,
                         Topic::Notifications,
                         Topic::Media,
+                        Topic::Peripherals,
                     ],
                 },
             }),
@@ -1639,15 +1819,16 @@ mod tests {
                 id: Some(28),
                 command: Command::ActivateTrayItem { address: ":1.42/StatusNotifierItem".into() },
             }),
+            encode(Request {
+                id: Some(29),
+                command: Command::TrayMenuPicked { address: ":1.42/StatusNotifierItem".into() },
+            }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
             encode(Event::Tray(tray())),
             encode(Event::Notifications(notifications())),
             encode(Event::NotificationPopup(notifications().items[0].clone())),
-            encode(Request {
-                id: Some(40),
-                command: Command::NotificationAction { id: 7, action: Some("open".into()) },
-            }),
-            encode(Request { id: None, command: Command::NotificationAction { id: 7, action: None } }),
+            encode(Request { id: Some(40), command: Command::NotificationAction { id: 7, action: "open".into() } }),
+            encode(Request { id: None, command: Command::OpenNotification { id: 7, output: Some("DP-1".into()) } }),
             encode(Request { id: Some(41), command: Command::DismissNotification { id: 7 } }),
             encode(Request { id: None, command: Command::ClearNotifications { app: Some("Discord".into()) } }),
             encode(Request { id: None, command: Command::ClearNotifications { app: None } }),
@@ -1679,6 +1860,21 @@ mod tests {
                     .unwrap(),
                 ),
             }),
+            encode(Request { id: Some(53), command: Command::WallpaperFolder }),
+            encode(Response {
+                id: 53,
+                outcome: Outcome::Result(
+                    serde_json::to_value(WallpaperFolder {
+                        folder: "/home/luna/Pictures/Wallpapers".into(),
+                        images: vec![
+                            "/home/luna/Pictures/Wallpapers/dusk.jpg".into(),
+                            "/home/luna/Pictures/Wallpapers/tide.jpg".into(),
+                        ],
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Request { id: None, command: Command::Toggle { panel: Panel::Wallpaper } }),
             encode(Event::Media(media())),
             encode(Request {
                 id: Some(45),
@@ -1722,6 +1918,8 @@ mod tests {
                 command: Command::MediaWindow { player: "org.mpris.MediaPlayer2.spotify".into() },
             }),
             encode(Response { id: 49, outcome: Outcome::Result(json!("3")) }),
+            encode(Event::Peripherals(peripherals())),
+            encode(Event::Peripherals(Peripherals { devices: vec![] })),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
@@ -1783,6 +1981,7 @@ mod tests {
             fullscreen: false,
             special: false,
             shown_elsewhere: false,
+            active_window: None,
         };
         Desktop {
             compositor: "niri".into(),
@@ -1793,7 +1992,7 @@ mod tests {
                     focused: true,
                     workspaces: vec![
                         Workspace { empty: true, ..workspace(1, "1", false, false) },
-                        workspace(2, "web", true, true),
+                        Workspace { active_window: Some("7".into()), ..workspace(2, "web", true, true) },
                     ],
                 },
                 Output {
@@ -1802,7 +2001,7 @@ mod tests {
                     workspaces: vec![Workspace { urgent: true, fullscreen: true, ..workspace(3, "1", true, false) }],
                 },
             ],
-            focused_window: Some(FocusedWindow { app_id: "foot".into(), title: "~".into() }),
+            focused_window: Some(FocusedWindow { id: "7".into(), app_id: "foot".into(), title: "~".into() }),
             keyboard_layout: None,
         }
     }
@@ -1886,6 +2085,49 @@ mod tests {
         }
     }
 
+    fn peripherals() -> Peripherals {
+        Peripherals {
+            devices: vec![
+                Peripheral {
+                    id: "upower/mouse_hidpp_battery_0".into(),
+                    name: "PRO X Wireless".into(),
+                    kind: PeripheralKind::Mouse,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(72)),
+                    charging: false,
+                    source: PeripheralSource::Upower,
+                },
+                Peripheral {
+                    id: "upower/keyboard_dev_AA_BB_CC_DD_EE_FF".into(),
+                    name: "K380".into(),
+                    kind: PeripheralKind::Keyboard,
+                    link: Some(PeripheralLink::Bluetooth),
+                    battery: Some(Battery::Level(BatteryLevel::High)),
+                    charging: false,
+                    source: PeripheralSource::Upower,
+                },
+                Peripheral {
+                    id: "keychron/model-3".into(),
+                    name: "Keychron K2 HE".into(),
+                    kind: PeripheralKind::Keyboard,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(78)),
+                    charging: false,
+                    source: PeripheralSource::Keychron,
+                },
+                Peripheral {
+                    id: "headsetcontrol/1038:2253".into(),
+                    name: "SteelSeries Arctis Nova 5X".into(),
+                    kind: PeripheralKind::Headset,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(30)),
+                    charging: true,
+                    source: PeripheralSource::Headsetcontrol,
+                },
+            ],
+        }
+    }
+
     fn media() -> Media {
         let spotify = MediaPlayer {
             id: "org.mpris.MediaPlayer2.spotify".into(),
@@ -1950,12 +2192,14 @@ mod tests {
                         description: Some("All-in-one cross-platform voice and text chat for gamers".into()),
                         icon: Some("discord".into()),
                     }),
+                    menu_only: false,
                 },
                 TrayItem {
                     address: ":1.607/org/ayatana/NotificationItem/steam".into(),
                     id: "steam".into(),
                     title: "Steam".into(),
                     app: None,
+                    menu_only: true,
                 },
             ],
             hidden: vec!["steam".into()],
@@ -1981,6 +2225,7 @@ mod tests {
                     time: 1_761_400_000,
                     unread: true,
                     live: true,
+                    device: None,
                 },
                 Notification {
                     id: 3,
@@ -1998,6 +2243,10 @@ mod tests {
                     time: 1_761_399_000,
                     unread: false,
                     live: false,
+                    device: Some(NotificationDevice {
+                        kind: PeripheralKind::Mouse,
+                        battery: Battery::Level(BatteryLevel::Critical),
+                    }),
                 },
             ],
             do_not_disturb: false,
@@ -2084,7 +2333,7 @@ mod tests {
             "calculator"
                 .parse::<Panel>()
                 .unwrap_err()
-                .contains("known: ai-usage, power, quick-settings, launcher, tray, media")
+                .contains("known: ai-usage, power, quick-settings, launcher, tray, media, wallpaper")
         );
         let features = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         for panel in Panel::ALL {
@@ -2129,6 +2378,21 @@ mod tests {
         assert_eq!(Event::Notifications(notifications()).topic(), Some(Topic::Notifications));
         assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(Topic::Notifications));
         assert_eq!(Event::Media(media()).topic(), Some(Topic::Media));
+        assert_eq!(Event::Peripherals(peripherals()).topic(), Some(Topic::Peripherals));
+    }
+
+    #[test]
+    fn peripherals_reject_unknown_fields() {
+        let list = serde_json::to_value(peripherals()).unwrap();
+        assert!(serde_json::from_value::<Peripherals>(list.clone()).is_ok());
+        for pointer in ["", "/devices/0"] {
+            let mut extra = list.clone();
+            extra.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
+            assert!(serde_json::from_value::<Peripherals>(extra).is_err(), "{pointer}");
+        }
+        let mut odd = list.clone();
+        odd["devices"][0]["battery"] = json!({"percent": 30, "level": "low"});
+        assert!(serde_json::from_value::<Peripherals>(odd).is_err());
     }
 
     #[test]

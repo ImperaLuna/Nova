@@ -14,7 +14,7 @@ use nova_protocol::{Event, FeatureState, FeatureStatus, Topic, TrayItem};
 use nova_quickshell::Range;
 use novad::checks;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Qt's render loop variable, and the value that keeps the UI's memory down
 /// on NVIDIA's driver.
@@ -91,7 +91,7 @@ impl Facts {
             quickshell: checks::read_quickshell_version(&quickshell, &path_var),
             daemon: reach(socket),
             config: checks::read_config(&config_dir.join("config.toml"), &checks::default_themes_dir()),
-            features: features(&nova_features::default_dir(), &config_dir.join("features.toml"), &path_var),
+            features: features(&nova_features::default_dir(), &nova_paths::config_files("features.toml"), &path_var),
             startup: config_dir.parent().map(login_apps::read).unwrap_or_default(),
         }
     }
@@ -119,7 +119,7 @@ fn reach(socket: &Path) -> Daemon {
     }
 }
 
-fn features(manifests_dir: &Path, selection: &Path, path_var: &str) -> Result<Vec<FeatureState>, String> {
+fn features(manifests_dir: &Path, selection: &[PathBuf], path_var: &str) -> Result<Vec<FeatureState>, String> {
     let manifests = nova_features::load_all(manifests_dir).map_err(|e| e.to_string())?;
     let selection = checks::read_selection(selection)?;
     Ok(checks::feature_states(&manifests, &selection, path_var))
@@ -134,7 +134,7 @@ pub fn lines(facts: &Facts) -> Vec<Line> {
         daemon(&facts.daemon),
         config(&facts.config),
     ];
-    lines.extend(features_lines(&facts.features));
+    lines.extend(features_lines(&facts.features, &facts.host.distro));
     lines.extend(login_apps_line(&facts.daemon, &facts.startup));
     lines
 }
@@ -233,7 +233,7 @@ fn config(read: &Result<Vec<String>, String>) -> Line {
 }
 
 /// One line for all features when they're fine, one per feature that isn't.
-fn features_lines(features: &Result<Vec<FeatureState>, String>) -> Vec<Line> {
+fn features_lines(features: &Result<Vec<FeatureState>, String>, distro: &Distro) -> Vec<Line> {
     let features = match features {
         Ok(features) => features,
         Err(problem) => return vec![Line::new(Level::Fail, "features", problem.clone())],
@@ -243,11 +243,14 @@ fn features_lines(features: &Result<Vec<FeatureState>, String>) -> Vec<Line> {
         .filter(|feature| feature.status == FeatureStatus::MissingDeps)
         .map(|feature| {
             let needs: Vec<String> = feature.missing.iter().map(|entry| entry.replace('|', " or ")).collect();
-            Line::new(
-                Level::Fail,
-                "features",
-                format!("{} needs {}; `{SETUP_COMMAND}` installs it", feature.id, needs.join(", ")),
-            )
+            let install = match distro {
+                Distro::NixOs => format!(
+                    "Nova's Nix module installs it with `programs.nova.features.{}.enable = true;` and a rebuild",
+                    feature.id
+                ),
+                _ => format!("`{SETUP_COMMAND}` installs it"),
+            };
+            Line::new(Level::Fail, "features", format!("{} needs {}; {install}", feature.id, needs.join(", ")))
         })
         .collect();
     if !missing.is_empty() {
@@ -324,6 +327,7 @@ mod tests {
                 id: "discord_status_icon_1".into(),
                 title: String::new(),
                 app: None,
+                menu_only: false,
             }],
         };
         let text = rendered(&facts);
@@ -410,6 +414,10 @@ mod tests {
             "{text}"
         );
         assert!(!text.contains("nothing missing"), "{text}");
+
+        let nixos = Facts { host: host(Distro::NixOs, vec![Gpu::Nvidia], true), ..facts };
+        let text = rendered(&nixos);
+        assert!(text.contains("recording needs gpu-screen-recorder or wf-recorder; Nova's Nix module installs it with `programs.nova.features.recording.enable = true;` and a rebuild"), "{text}");
     }
 
     #[test]
@@ -457,11 +465,11 @@ mod tests {
         let selection = root.0.join("features.toml");
         std::fs::write(&selection, "enabled = [\"recording\"]\n").unwrap();
         let manifests = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
-        let states = features(&manifests, &selection, "/nonexistent").unwrap();
+        let states = features(&manifests, std::slice::from_ref(&selection), "/nonexistent").unwrap();
         let recording = states.iter().find(|state| state.id == "recording").unwrap();
         assert_eq!(recording.status, FeatureStatus::MissingDeps);
 
         std::fs::write(&selection, "enabled = [\n").unwrap();
-        assert!(features(&manifests, &selection, "/nonexistent").is_err());
+        assert!(features(&manifests, std::slice::from_ref(&selection), "/nonexistent").is_err());
     }
 }

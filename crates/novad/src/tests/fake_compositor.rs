@@ -7,6 +7,8 @@ use super::*;
 /// Hyprland, its answers at the end of the recording. Every request is kept.
 pub(super) struct FakeCompositor {
     requests: Arc<Mutex<Vec<String>>>,
+    /// The windows the fake niri lists, as JSON (the recording's at first).
+    windows: Arc<Mutex<Vec<Value>>>,
 }
 
 impl FakeCompositor {
@@ -52,17 +54,19 @@ impl FakeCompositor {
     }
 
     pub(super) fn niri(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
-        let fake = Self { requests: Arc::default() };
-        let events = Self::recorded("niri", "events.txt");
         let steps: Vec<Value> = serde_json::from_str(&Self::recorded("niri", "steps.json")).unwrap();
         let windows = Self::recorded("niri", &format!("{:02}/windows.json", steps.len() - 1));
+        let fake =
+            Self { requests: Arc::default(), windows: Arc::new(Mutex::new(serde_json::from_str(&windows).unwrap())) };
+        let events = Self::recorded("niri", "events.txt");
+        let windows = Arc::clone(&fake.windows);
         let outputs = Self::recorded("niri", &format!("{:02}/outputs.json", steps.len() - 1));
         let outputs = format!("{}\n", json!({"Ok": {"Outputs": serde_json::from_str::<Value>(&outputs).unwrap()}}));
         let socket = dir.join("niri.sock");
         fake.answer(&socket, move |request| match request {
             // The recording starts with niri's answer to this.
             r#""EventStream""# => events.clone(),
-            r#""Windows""# => format!("{{\"Ok\":{{\"Windows\":{}}}}}\n", windows.trim()),
+            r#""Windows""# => format!("{}\n", json!({"Ok": {"Windows": *lock(&windows)}})),
             r#""Outputs""# => outputs.clone(),
             _ => "{\"Ok\":\"Handled\"}\n".into(),
         });
@@ -72,7 +76,7 @@ impl FakeCompositor {
 
     pub(super) fn hyprland(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
         const INSTANCE: &str = "recorded";
-        let fake = Self { requests: Arc::default() };
+        let fake = Self { requests: Arc::default(), windows: Arc::default() };
         let instance = dir.join("hypr").join(INSTANCE);
         std::fs::create_dir_all(&instance).unwrap();
         let steps: Vec<Value> = serde_json::from_str(&Self::recorded("hyprland", "steps.json")).unwrap();
@@ -91,6 +95,14 @@ impl FakeCompositor {
         })
         .unwrap();
         (fake, backend)
+    }
+
+    /// Has the fake niri list a window of `app_id`, with id `id`, on the
+    /// recording's workspace 2, as an app that shows one does.
+    pub(super) fn open_window(&self, id: u64, app_id: &str) {
+        let window = json!({"id": id, "title": app_id, "app_id": app_id, "pid": 2000, "workspace_id": 2,
+            "is_focused": false, "is_floating": false, "is_urgent": false});
+        lock(&self.windows).push(window);
     }
 
     /// The requests that weren't queries or the event stream.

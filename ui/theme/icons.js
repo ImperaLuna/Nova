@@ -29,6 +29,8 @@ var HEADPHONES = HEADPHONES_BAND + "M5 14h2.5v6H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1
 // The cups solid, under HEADPHONES_BAND.
 var HEADPHONES_CUPS = "M4 15h3.5v6H5.5A1.5 1.5 0 0 1 4 19.5zM20 15h-3.5v6h2a1.5 1.5 0 0 0 1.5-1.5z";
 var MONITOR = "M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 20h8M12 16v4";
+// Two screens, one over the other's corner: every screen.
+var MONITORS = "M3.5 4h9A1.5 1.5 0 0 1 14 5.5V9h-3.5A1.5 1.5 0 0 0 9 10.5V13H3.5A1.5 1.5 0 0 1 2 11.5v-6A1.5 1.5 0 0 1 3.5 4zM10.5 9h10a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 9 16.5v-6A1.5 1.5 0 0 1 10.5 9zM13 21h5";
 var BLUETOOTH = "M7 7l10 10-5 4V3l5 4L7 17";
 var CLOSE = "M6 6l12 12M18 6L6 18";
 var BELL = "M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0";
@@ -73,3 +75,16 @@ var LOCK = "M7.5 11h9a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-2.5 2.5h-9a2.5 2.5 0
 var MOON = "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z";
 var LOG_OUT = "M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h10";
 var REBOOT = "M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4";
+
+// Wireless devices in quick settings, by kind, and how they connect.
+var MOUSE = "M12 3a6 6 0 0 1 6 6v6a6 6 0 0 1-12 0V9a6 6 0 0 1 6-6zM12 7v4";
+var KEYBOARD = "M4.5 6h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zM6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M7 14h10";
+var GAMEPAD = "M7 8h10a4 4 0 0 1 4 4.5l-.6 3.6a2 2 0 0 1-3.5 1L15 15H9l-1.9 2.1a2 2 0 0 1-3.5-1L3 12.5A4 4 0 0 1 7 8zM7.5 11v3M6 12.5h3M15.5 12h.01M17.5 13.5h.01";
+// Anything else with a battery: a small device with a button.
+var DEVICE = "M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM11 18h2";
+// A 2.4 GHz receiver: two arcs over a dot.
+var DONGLE = "M5 12a7 7 0 0 1 14 0M8 12a4 4 0 0 1 8 0M12 13h.01";
+// A cable, for a device plugged in.
+var PLUG = "M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0zM12 16v5";
+// Charging: solid, so pass it as `fill` too.
+var BOLT = "M13 2L4 14h7l-1 8 9-12h-7z";

@@ -354,6 +354,28 @@ QtObject {
     readonly property real appMutedOpacity: 0.45
     // The mic slider while an app records: the second accent.
     readonly property real micFillOpacity: 0.34
+    // The Devices card: a row per wireless device, its link in a small
+    // chip, and a little battery (body, the nub on its right, the gap
+    // between its rim and the fill).
+    readonly property int deviceRowHeight: 36
+    // Rows the card shows before it scrolls.
+    readonly property int deviceListMaxRows: 4
+    readonly property int deviceIconSize: 17
+    readonly property int deviceLinkIconSize: 10
+    readonly property int deviceChipHeight: 18
+    readonly property int deviceChipPad: 7
+    readonly property int deviceChipGap: 4
+    readonly property int deviceBatteryWidth: 22
+    readonly property int deviceBatteryHeight: 11
+    readonly property int deviceBatteryRadius: 3
+    readonly property int deviceBatteryInset: 2
+    readonly property int deviceBatteryNubWidth: 2
+    readonly property int deviceBatteryNubHeight: 4
+    readonly property real deviceBatteryRim: 1.25
+    readonly property real deviceBatteryRimOpacity: 0.55
+    readonly property int deviceBoltSize: 9
+    // Room for "100%" (or "High"), so the batteries line up.
+    readonly property int deviceLevelWidth: 34
     // Resource rings, and the labels under them.
     readonly property int ringSize: 52
     readonly property int ringStroke: 4
@@ -454,18 +476,17 @@ QtObject {
 
     // Notifications (ui/notifications): pop-ups this wide under the right
     // pill, at most notificationsShown at once, each staying
-    // durationNotification unless its app asks otherwise. Who it's from (a
-    // picture with the app's icon on its corner), its lines, buttons,
+    // durationNotification unless its app asks otherwise; several coming
+    // at once open into their slots notificationStagger ms apart. Who it's
+    // from (a picture, or else the app's icon), its lines, buttons,
     // progress and the line draining its time; critical ones get a rim.
     readonly property int notificationWidth: 380
-    readonly property int notificationsShown: 3
+    readonly property int notificationsShown: 5
+    readonly property int notificationStagger: 60
     readonly property int durationNotification: 6000
     readonly property int radiusNotification: 20
     readonly property int notificationPadBottom: 14
     readonly property int notificationAvatar: 40
-    readonly property int notificationAppBadge: 18
-    readonly property int notificationBadgeRadius: 6
-    readonly property int notificationBadgeRing: 2
     readonly property int notificationAppLine: 18
     readonly property int notificationLineGap: 2
     readonly property int notificationBodyLines: 3
@@ -473,13 +494,21 @@ QtObject {
     readonly property int notificationActionHeight: 28
     readonly property int notificationProgressHeight: 6
     readonly property int notificationTimerHeight: 2
-    // A card's time left (Countdown): this many pieces, this far apart, one
-    // going out per step, so it costs a few frames, not one each vblank.
-    readonly property int countdownSegments: 6
-    readonly property int countdownGap: 4
+    // A card's time left (Countdown) moves every this many ms (12 a
+    // second): smooth to the eye, a few frames, not one each vblank.
+    readonly property int countdownTick: 83
     readonly property color notificationTimer: alpha(fg, 0.35)
     readonly property real notificationCriticalRim: 1.5
-    // "+2" beside the app, and the count in the list's heading.
+    // A low battery alert's icon: the device's glyph on a rounded tile (its
+    // radius and the glyph a share of the icon's size), and the device's
+    // little battery on the tile's corner, scaled down at the 40 px size,
+    // on a chip of the card's color that sticks out a little.
+    readonly property real notificationDeviceRadius: 0.3
+    readonly property real notificationDeviceGlyph: 0.55
+    readonly property real notificationDeviceBattery: 0.75
+    readonly property int notificationDeviceChipPad: 3
+    readonly property int notificationDeviceChipOut: 4
+    // Counts in the list: its heading's, and "+2" on a stack of an app's.
     readonly property int notificationChipHeight: 16
     readonly property int notificationChipPad: 6
     // The ✕ and ⋯ on a card's corner, shown on hover.
@@ -582,6 +611,52 @@ QtObject {
     readonly property int durationProgressStep: 1000
     readonly property int durationSeekHold: 2000
 
+    // The wallpaper carousel (ui/wallpaper): over the whole screen, which
+    // previews the picked image, a deck of the wallpaper folder's images in
+    // the middle that loops both ways. The middle card is this share of the
+    // screen's width, shaped like the screen; its neighbours sit this many
+    // card widths out, tilted away (degrees), smaller and dimmer, and the
+    // ones past them each this much further and smaller. This many show
+    // either side; the picked one has a ring.
+    readonly property real carouselCardShare: 0.26
+    readonly property real carouselNeighbour: 0.74
+    readonly property real carouselStep: 0.27
+    readonly property real carouselTilt: 50
+    readonly property real carouselSideScale: 0.86
+    readonly property real carouselDepthScale: 0.06
+    readonly property real carouselSideDim: 0.28
+    readonly property int carouselSides: 3
+    readonly property int carouselRing: 3
+    // Opening, the deck rises this far into place and its cards spread out
+    // from this share of their distance.
+    readonly property int carouselEnterRise: 24
+    readonly property real carouselEnterSpread: 0.6
+    // Under the deck, the picked image's name and where the pick goes.
+    readonly property int carouselLabelGap: 28
+    readonly property int carouselLabelHeight: 40
+    readonly property int carouselLabelPad: 16
+    readonly property int carouselChipHeight: 28
+    // With more than one screen, the label also holds the screen picker:
+    // every screen drawn to scale, the widest this wide, apart by this gap,
+    // the ones not picked for faded to this; and the label grows to fit
+    // their names. The screen picked for gets a ring this wide round its
+    // edge, and its mini one this wide.
+    readonly property int carouselPickerHeight: 64
+    readonly property int carouselMiniWidth: 52
+    readonly property int carouselMiniGap: 10
+    readonly property int carouselMiniRadius: 4
+    readonly property int carouselMiniRing: 2
+    readonly property real carouselMiniIdle: 0.7
+    readonly property int carouselScreenRing: 4
+    // The note an empty folder shows instead.
+    readonly property int carouselNoteWidth: 420
+    // A shade from this far down the preview to its bottom, so the label
+    // reads on a bright picture.
+    readonly property real carouselShadeFrom: 0.3
+    readonly property color carouselShade: Qt.rgba(0, 0, 0, 0.55)
+    // A card whose image is still loading.
+    readonly property color carouselLoading: alpha(fg, 0.07)
+
     // Type
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"
@@ -643,6 +718,13 @@ QtObject {
     // brought back over a fullscreen window, so moving from the top edge
     // down to a pill doesn't hide it again.
     readonly property int durationPeekLinger: 400
+    // The wallpaper carousel moving one card, and the preview fading to
+    // the next image.
+    readonly property int durationCarouselStep: 280
+    readonly property int durationPreview: 250
+    // After a pick, how long the preview stays while awww fades the new
+    // image in under it: its fade (novad's TRANSITION_SECONDS) and a little.
+    readonly property int durationWallpaperHandOver: 1100
     // The cubic-bezier every panel motion uses (fast out, gentle stop).
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
 

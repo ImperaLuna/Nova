@@ -1,0 +1,9 @@
+# Nova's device batteries: lets the logged-in user open Logitech's hidraw
+# nodes, so novad can ask a receiver the kernel doesn't drive (Lightspeed
+# c547, Bolt c548 on older kernels) for its devices' batteries over HID++,
+# as Solaar does. On USB, and on Bluetooth (HID bus 0005).
+#
+# 70-, not 99-: the uaccess tag must be set before 73-seat-late.rules
+# turns it into the seat user's ACL.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", TAG+="uaccess"
+SUBSYSTEM=="hidraw", KERNELS=="0005:046D:*", TAG+="uaccess"

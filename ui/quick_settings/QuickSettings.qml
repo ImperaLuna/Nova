@@ -159,6 +159,7 @@ StagePanel {
                     recorders: SoundService.recorders
                     micVolume: SoundService.sourceVolume
                     reading: QuickSettingsService.resources
+                    devices: QuickSettingsService.devices
                     trayApps: TrayService.all
                     trayIconSource: entry => TrayService.iconSource(entry)
                     onTrayActivated: entry => {
@@ -321,6 +322,7 @@ StagePanel {
                 trayMenu.keepOpen = true;
                 TrayService.hide(key, hidden);
             }
+            runEntry: run => TrayService.menuPicked(trayMenu.entry, run)
             onDone: {
                 trayMenu.entry = null;
                 if (!trayMenu.keepOpen)

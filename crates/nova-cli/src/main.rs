@@ -99,10 +99,13 @@ enum NovaCommand {
     Record,
     /// Set the wallpaper on every screen, or one; without a file, show what's set.
     ///
-    /// It fades in and is remembered until you change `[wallpaper]` in
-    /// config.toml, which sets the wallpapers Nova starts with.
+    /// An image fades in. A video, a Wallpaper Engine project folder or a
+    /// Steam Workshop ID moves, with the `wallpaper-engine` feature turned
+    /// on. It's remembered until you change `[wallpaper]` in config.toml,
+    /// which sets the wallpapers Nova starts with.
     Wallpaper(wallpaper::WallpaperArgs),
     /// Send a raw request to novad and print the reply as JSON, for scripts.
+    /// `subscribe` prints its topics' events as they come instead.
     Ipc(ipc::IpcArgs),
 }
 

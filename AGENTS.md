@@ -26,7 +26,9 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   running (no `isNiri`).
 - A feature is `features/<id>/feature.toml`, the single source of truth for
   its packages; `daemon = "x"` needs a cargo feature `x` in novad. A feature
-  that is off or missing dependencies is never loaded by the UI.
+  that is off or missing dependencies is never loaded by the UI. Its `nix`
+  list is what the flake's modules (`programs.nova`, packaging/nix) install
+  when it's on, so never ask users to add a feature's packages by hand.
 - Window model is "stage": one masked layer surface per monitor, across the
   top and only as tall as the tallest panel open (niri blurs the whole
   surface behind glass each frame, so its size is the blur cost). The bar,
@@ -161,21 +163,41 @@ that needs a bus starts its own (`session_bus::TestBus`).
 
 ## Commands
 
-Run `just` inside `nix develop` to list the recipes. CI runs `nix flake
-check`: what `just check` runs, plus the headless e2e and the VM tests on niri
-and Hyprland. Locally, `just check` and `just e2e` cover most of it; the VM
+Run `just` inside `nix develop` to list the recipes. CI runs the flake checks:
+what `just check` runs plus the headless e2e on every push, and the VM tests on
+niri and Hyprland only once a PR is out of draft (so mark a PR ready, or open
+it ready, to get VM results). Locally, `just check` and `just e2e` cover most of it; the VM
 tests need KVM. Without KVM (cloud sessions), approve goldens with the "Approve
 goldens" workflow from main on the PR branch instead of `just e2e-approve`.
 `just run` logs to `~/.local/state/nova-dev`.
 
+A failed VM subtest prints who had the keyboard and the UI's and the
+compositor's logs (`print_failure_state` in `e2e/vm/lifecycle.py`); read that
+before re-running. Each failed subtest is listed in the "VM test failures"
+issue (`scripts/vm-failures.sh`), which marks one that failed on more than one
+PR as a repeat and says so on the PR: a repeat gets a fix ticket instead of
+another re-run.
+
 Every change goes through a pull request; `main` is protected.
 
-Scratch output (measurements, logs, screenshots, audit reports) goes in your
-session's scratchpad or the worktree's ignored `e2e/out/`, never in
-`~/Projects` or the repo root. Anything the maintainer should keep goes in the
-PR or an artifact. Worktrees on the desktop go in
-`~/Projects/Nova/.worktrees/<branch>`; a daily timer removes them once their PR
-is merged or closed.
+Everything a session makes for Nova on the desktop stays inside `~/Projects/Nova`;
+never create a folder elsewhere in `~`, such as `~/Projects/nova-imp121`, even
+when a prompt names one. Scratch output (measurements, logs, screenshots,
+scripts, audit data) goes in the git-ignored `~/Projects/Nova/.scratch/<ticket>/`
+(for example `.scratch/imp-121/`), in a cloud session's scratchpad, or in a
+worktree's ignored `e2e/out/`; never in the repo root. Anything the maintainer
+should keep goes in the PR or an artifact, and the session deletes its
+`.scratch/<ticket>/` when its work is done. Worktrees on the desktop go in
+`~/Projects/Nova/.worktrees/<branch>`. A daily timer removes worktrees whose
+PR is merged or closed, and scratch nobody touched for a week.
+
+On the desktop, use `scripts/desktop/` rather than doing these steps by hand
+(each script's header says more): `worktree <branch>` fetches a branch into
+its worktree (over HTTPS, so no SSH workaround), `isolated-novad <branch>
+<feature,...> [topic...]` runs that branch's novad with only those features
+beside the live Nova and prints the topics' events, and `apply-nix-config`
+applies `~/nix-config` once the CI runners are idle, rolling back on failure. Never restart or stop
+`nova.service` or the live novad unless asked.
 
 Test runs on the desktop stay off the maintainer's screen. Frame captures and
 screenshots run headless (`just e2e`, or `e2e/run.sh`'s sway with grim on its
