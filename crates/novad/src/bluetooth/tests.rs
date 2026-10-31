@@ -525,7 +525,12 @@ impl Fixture {
     }
 
     fn start(&self) -> Arc<Bluetooth> {
-        let sources = Sources { bus: Bus::Address(self.bus.address.clone()), rfkill: self.rfkill() };
+        self.start_with(CONNECT_LIMIT)
+    }
+
+    /// Started with connects stopped after `connect_limit`.
+    fn start_with(&self, connect_limit: Duration) -> Arc<Bluetooth> {
+        let sources = Sources { bus: Bus::Address(self.bus.address.clone()), rfkill: self.rfkill(), connect_limit };
         Bluetooth::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
@@ -843,6 +848,23 @@ fn a_connect_under_way_can_be_stopped() {
     assert_eq!(connecting.join().unwrap(), Ok(()), "stopped: nothing to explain");
     let event = fixture.until("the phone back", |event| status(event, PHONE).as_deref() == Some("paired"));
     assert_eq!(find(&event, PHONE).unwrap().get("error"), None);
+}
+
+/// A device that never answers (off, or a headset switched to its dongle)
+/// doesn't keep the row connecting: the connect stops at its limit and
+/// says why.
+#[test]
+fn a_connect_that_runs_too_long_stops_and_says_so() {
+    let fixture = Fixture::new("connect-limit");
+    let bluez = fixture.bluez();
+    let bluetooth = fixture.start_with(Duration::from_millis(300));
+    fixture.until("the devices", |event| event["radio"] == "on");
+    let connecting = held_connect(&fixture, &bluez, &bluetooth, PHONE);
+    let failure = connecting.join().unwrap().unwrap_err();
+    assert!(failure.contains("didn't answer in time"), "{failure}");
+    assert!(bluez.calls().contains(&format!("Disconnect {}", device_path(PHONE))), "BlueZ stops trying");
+    let event = fixture.until("the phone back", |event| status(event, PHONE).as_deref() == Some("paired"));
+    assert_eq!(find(&event, PHONE).unwrap()["error"].as_str(), Some(failure.as_str()));
 }
 
 #[test]
