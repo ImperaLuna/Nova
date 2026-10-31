@@ -1,6 +1,7 @@
 //! What the sources that talk to devices over hidraw themselves (HID++ for
-//! Logitech's receivers, Keychron's raw HID) share: finding their nodes,
-//! one reader thread on each, and gathering what the readers find.
+//! Logitech's receivers, Keychron's raw HID and mouse interface) share:
+//! finding their nodes, one reader thread on each, and gathering what the
+//! readers find.
 //!
 //! Nodes are found under `/sys/class/hidraw`: those of the protocol's USB
 //! vendor that its [`Protocol::reads`] takes, from the HID device's ids,

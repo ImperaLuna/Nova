@@ -1,0 +1,17 @@
+{
+ "source": "A real capture (2026-10-31, RyzenShine): a Keychron M6 on its USB cable, 3434:d064, its vendor node (interface 4, usage page 0xFFC1). The status request got the same answer as through its Link-KM dongle but for the battery byte, 0xE3: 99 % with the top bit set while it charges (0xE2, 98 %, a minute before). Its dongle answered nothing meanwhile.",
+ "node": "hidraw20",
+ "hid": "0003:3434:D064.0017",
+ "driver": "hid-generic",
+ "hid_name": "Keychron Keychron M6",
+ "descriptor": "06c1ff0901a101150026ff00750885b40902953f810285b30903953f910285b509049514910285b6090795148102c0",
+ "unrecorded": "silent",
+ "exchanges": [
+  {
+   "request": "b3060000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "replies": [
+    "b40600222202900120034006800c88131505041ee300000000000037000000040414040404040404040000000001020000000305000000000000000000000000"
+   ]
+  }
+ ]
+}

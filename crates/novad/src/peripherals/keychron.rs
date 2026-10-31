@@ -38,12 +38,13 @@
 //! Nodes are any of Keychron's with the raw HID usage, found as
 //! [`super::hidraw`] finds them, whatever the product: one whose keyboard
 //! never sends the report (stock firmware, a mouse's dongle) lists
-//! nothing.
+//! nothing. Nodes with the mice's vendor interface are read by
+//! [`keychron_mouse`] instead, so both are one source.
 
 use super::hidraw::channel::{Channel, Received};
 use super::hidraw::descriptor::has_usage;
 use super::hidraw::{Listing, Node, Protocol};
-use super::{Found, LOG_SOURCE};
+use super::{Found, LOG_SOURCE, keychron_mouse};
 use nova_protocol::{Battery, LogLevel, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -113,10 +114,13 @@ impl Protocol for Keychron {
     const NAME: &'static str = "Keychron";
 
     fn reads(&self, node: &Node) -> bool {
-        has_usage(&node.descriptor, RAW_HID_PAGE, RAW_HID_USAGE)
+        has_usage(&node.descriptor, RAW_HID_PAGE, RAW_HID_USAGE) || keychron_mouse::reads(node)
     }
 
     fn read(&self, node: &Node, mut channel: Channel, listing: &Listing) -> Option<String> {
+        if keychron_mouse::reads(node) {
+            return keychron_mouse::read(node, channel, listing);
+        }
         // What's shown, and when the keyboard was last heard.
         let mut heard: Option<(Smoothed, Instant)> = None;
         // Whether the node is the keyboard's own, on its cable.
