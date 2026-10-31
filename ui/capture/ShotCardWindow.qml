@@ -4,6 +4,7 @@ import Quickshell.Wayland
 import "../stage"
 import "../theme"
 import "service"
+import "capture.js" as Capture
 
 // The screenshot (or recording) card's own layer surface in the bottom-right corner of one
 // screen: on the overlay layer like the volume capsule, so it shows over
@@ -65,7 +66,11 @@ PanelWindow { // qmllint disable uncreatable-type
         shot: window.shot
         video: window.video
         onActionRequested: action => {
-            if (window.video)
+            if (action === Capture.CARD_RETRY)
+                RecordingService.again();
+            else if (action === Capture.CARD_LOG)
+                RecordingService.openLog();
+            else if (window.video)
                 RecordingService.act(window.shot.id, action);
             else
                 ScreenshotService.act(window.shot.id, action);

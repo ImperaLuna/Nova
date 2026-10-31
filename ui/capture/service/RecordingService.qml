@@ -41,6 +41,9 @@ Singleton {
 
     // The last recording saved ({id, path, duration_ms}), for the card.
     signal saved(var saved)
+    // The recording didn't start after the countdown: novad's reason, for
+    // the card.
+    signal failed(string reason)
 
     onActiveChanged: {
         _since = Date.now();
@@ -109,6 +112,13 @@ Singleton {
         });
     }
 
+    // The card's Try again: the picker once more, with the same sound,
+    // unless it's already open or something is recording.
+    function again() {
+        if (ready && !recording && !picking && !_opening)
+            open();
+    }
+
     // Switches to a screenshot in `mode`: the held frames' picker, or a new
     // freeze once this picker has gone.
     function toScreenshot(mode: string) {
@@ -140,6 +150,11 @@ Singleton {
         Daemon.call(Protocol.CMD_PAUSE_RECORDING, {
             paused: paused
         });
+    }
+
+    // Opens novad's log, where the whole of a failed start is.
+    function openLog() {
+        Daemon.call(Protocol.CMD_OPEN_LOG);
     }
 
     // Runs a Protocol.SHOT_* action on a saved recording.
@@ -180,8 +195,10 @@ Singleton {
                     mic: root.micAudio
                 }
             }, error => {
-                if (error)
-                    console.warn(`nova: recording didn't start: ${error}`);
+                if (!error)
+                    return;
+                console.warn(`nova: recording didn't start: ${error}`);
+                root.failed(error);
             });
         }
     }

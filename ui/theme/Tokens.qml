@@ -476,6 +476,10 @@ QtObject {
     readonly property int shotCardGap: 12
     // How long the card stays; the pointer on it holds it.
     readonly property int durationShotCard: 6000
+    // A recording that didn't start: longer, as there's a reason to read.
+    readonly property int durationFailedCard: 10000
+    // The reason's lines at most, on that card.
+    readonly property int failedCardLines: 3
     // Recording: the count before it starts, shown big in the middle of
     // what's recorded. The pause after the picker goes so it isn't in what's
     // captured next: a recording's first frames, or a screenshot's frozen
