@@ -107,6 +107,28 @@ TestCase {
         }), "speakers");
     }
 
+    // The Arctis Nova 5X on its dongle and on Bluetooth at once: one name,
+    // told apart by link (properties from pw-cli, trimmed).
+    function test_a_headset_on_two_links_is_told_apart_by_link() {
+        compare(Volume.link({
+            "node.name": "alsa_output.usb-SteelSeries_Arctis_Nova_5X-00.analog-stereo",
+            "device.api": "alsa",
+            "device.bus": "usb"
+        }), "usb");
+        compare(Volume.link({
+            "node.name": "bluez_output.28_9A_4B_10_C3_5E.1",
+            "device.api": "bluez5"
+        }), "bluetooth");
+        compare(Volume.link({
+            "node.name": "bluez_input.28_9A_4B_10_C3_5E.0"
+        }), "bluetooth");
+        compare(Volume.link({
+            "node.name": "alsa_output.pci-0000_0e_00.4.analog-stereo",
+            "device.api": "alsa"
+        }), "");
+        compare(Volume.link(null), "");
+    }
+
     function test_icons_follow_output_mute_and_volume() {
         compare(Volume.icon("none", false, 0), "none");
         compare(Volume.icon("speakers", true, 0.6), "muted");

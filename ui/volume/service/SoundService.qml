@@ -11,8 +11,8 @@ import "../../quick_settings/quick_settings.js" as QuickSettings
 // Everything quick settings shows about sound beyond the default output
 // (VolumeService has that): the default input and who records from it,
 // every output and input to switch between, and each app's own volume.
-// Lists come as plain objects ({id, name, kind, volume, muted, ready,
-// icon, current};
+// Lists come as plain objects ({id, name, kind, link, volume, muted,
+// ready, icon, current};
 // apps also have `ids`),
 // so the pages showing them don't need PipeWire's types; acting goes
 // through the functions here by id.
@@ -52,6 +52,7 @@ Singleton {
             id: node.id,
             name: props["application.name"] || node.nickname || node.description || node.name,
             kind: Volume.outputKind(true, props),
+            link: Volume.link(props),
             volume: node.ready && node.audio.volumes.length > 0 ? node.audio.volume : 0,
             muted: node.ready && node.audio.muted,
             ready: node.ready && node.audio.volumes.length > 0,

@@ -156,3 +156,18 @@ function kindLabel(kind) {
         speakers: qsTr("Speakers")
     }[kind] || "";
 }
+
+// A list row's second line: what the output is (kindLabel) and how it's
+// connected (volume.js link), like "Headphones · Bluetooth", so a headset
+// listed on both its links reads as two. An input has no kind, only the
+// link. A Bluetooth speaker's kind already says it.
+function soundSubtitle(kind, link) {
+    var linkLabel = {
+        bluetooth: qsTr("Bluetooth"),
+        usb: qsTr("USB")
+    }[link] || "";
+    var kindText = kindLabel(kind);
+    if (kind === "bluetooth" || linkLabel === "")
+        return kindText;
+    return kindText === "" ? linkLabel : kindText + " · " + linkLabel;
+}
