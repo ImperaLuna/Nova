@@ -162,12 +162,27 @@ function kindLabel(kind) {
 // listed on both its links reads as two. An input has no kind, only the
 // link. A Bluetooth speaker's kind already says it.
 function soundSubtitle(kind, link) {
-    var linkLabel = {
+    var linkText = linkLabel(link);
+    var kindText = kindLabel(kind);
+    if (kind === "bluetooth" || linkText === "")
+        return kindText;
+    return kindText === "" ? linkText : kindText + " · " + linkText;
+}
+
+// How an output or input is connected (volume.js link): "Bluetooth",
+// "USB", or "" for one built in.
+function linkLabel(link) {
+    return {
         bluetooth: qsTr("Bluetooth"),
         usb: qsTr("USB")
     }[link] || "";
-    var kindText = kindLabel(kind);
-    if (kind === "bluetooth" || linkLabel === "")
-        return kindText;
-    return kindText === "" ? linkLabel : kindText + " · " + linkLabel;
+}
+
+// The Sound page's line under the device in use: how it's connected. Its
+// icon already says what it is.
+function currentLink(devices) {
+    var current = (devices || []).filter(function (device) {
+        return device.current;
+    })[0];
+    return linkLabel(current ? current.link : "");
 }

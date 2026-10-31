@@ -39,8 +39,8 @@ fn logind_methods(action: PowerAction) -> Option<(&'static str, &'static str)> {
 fn from_can(action: PowerAction, answer: Result<String, String>, logger: &Logger) -> PowerOption {
     let (available, reason) = match answer.as_deref() {
         Ok("yes" | "challenge") => (true, None),
-        Ok("no") => (false, Some("Not allowed for this session".to_string())),
-        Ok("na") => (false, Some("Turned off on this system".to_string())),
+        Ok("no") => (false, Some("Not allowed".to_string())),
+        Ok("na") => (false, Some("Turned off".to_string())),
         Ok(other) => (false, Some(format!("logind says {other:?}"))),
         Err(e) => {
             logger.warn(LOG_SOURCE, &format!("couldn't ask logind whether it can {action:?}: {e}"));

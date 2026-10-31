@@ -93,10 +93,11 @@ Item {
                         text: page.input ? (page.inputAvailable ? page.inputName : qsTr("No input")) : page.outputAvailable ? page.outputName : qsTr("No output")
                     }
                     Text {
+                        visible: text !== ""
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSizeTiny
                         color: Tokens.fgDim
-                        text: page.input ? qsTr("Microphone") : QuickSettings.kindLabel(page.outputKind)
+                        text: QuickSettings.currentLink(page.input ? page.inputs : page.outputs)
                     }
                 }
 
@@ -229,7 +230,7 @@ Item {
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSizeSmall
                         color: Tokens.fgDim
-                        text: qsTr("No app is playing sound")
+                        text: qsTr("Nothing playing")
                     }
                 }
             }

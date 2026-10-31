@@ -254,7 +254,7 @@ pub fn failure(error: &zbus::Error) -> Option<String> {
     let name = match error {
         zbus::Error::MethodError(name, ..) => name.as_str().to_owned(),
         zbus::Error::FDO(error) if matches!(**error, zbus::fdo::Error::NoReply(_)) => {
-            return Some("It didn't answer in time. Make sure it's on and nearby, then try again.".into());
+            return Some("No answer".into());
         }
         _ => return Some(format!("Something went wrong: {error}")),
     };
@@ -265,25 +265,19 @@ pub fn failure(error: &zbus::Error) -> Option<String> {
     Some(match name.trim_start_matches("org.bluez.Error.") {
         // The user (or the device) said no: nothing to explain.
         "AuthenticationCanceled" | "AuthenticationRejected" | "Canceled" => return None,
-        "AuthenticationFailed" | "AuthenticationTimeout" | "ConnectionAttemptFailed" => {
-            "Couldn't pair. Put it in pairing mode (often: hold its power or Bluetooth button until a light \
-             blinks), then try again."
-                .into()
-        }
-        "NotReady" => "Bluetooth is still starting. Try again in a moment.".into(),
-        "Blocked" => "Bluetooth is blocked. Turn it on first.".into(),
-        "AlreadyConnected" | "AlreadyExists" | "InProgress" => "It's already on its way. Give it a moment.".into(),
-        "DoesNotExist" => "It's gone out of range. Try scanning again.".into(),
+        "AuthenticationFailed" | "AuthenticationTimeout" | "ConnectionAttemptFailed" => "Couldn't pair".into(),
+        "NotReady" => "Still starting".into(),
+        "Blocked" => "Blocked".into(),
+        "AlreadyConnected" | "AlreadyExists" | "InProgress" => "Already under way".into(),
+        "DoesNotExist" => "Out of range".into(),
         // The user stopped it.
         _ if detail.contains("connection-canceled") => return None,
-        _ if detail.contains("le-connection-abort-by-local") => {
-            "Couldn't connect. Make sure it's on and nearby, then try again.".into()
-        }
+        _ if detail.contains("le-connection-abort-by-local") => "Couldn't connect".into(),
         _ if detail.contains("page-timeout") || detail.contains("Page Timeout") || detail.contains("Host is down") => {
-            "Couldn't reach it. Make sure it's on and nearby.".into()
+            "Out of reach".into()
         }
         _ if detail.contains("profile-unavailable") || detail.contains("Protocol not available") => {
-            "Connected, but Nova can't use it: its kind of device isn't supported here.".into()
+            "Not supported".into()
         }
         _ => format!("Something went wrong: {}", if detail.is_empty() { name } else { detail }),
     })

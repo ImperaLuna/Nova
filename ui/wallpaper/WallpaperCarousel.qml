@@ -547,11 +547,14 @@ StagePanel {
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeTitle
                     font.weight: Font.DemiBold
+                    wrapMode: Text.Wrap
                     color: Tokens.fg
-                    text: carousel.problem !== "" ? qsTr("Can't show your wallpapers") : qsTr("No wallpapers yet")
+                    textFormat: Text.PlainText
+                    text: carousel.problem !== "" ? qsTr("Can't show your wallpapers") : qsTr("No wallpapers in %1").arg(carousel.folder)
                 }
 
                 Text {
+                    visible: carousel.problem !== ""
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
@@ -560,7 +563,7 @@ StagePanel {
                     font.pixelSize: Tokens.fontSize
                     color: Tokens.fgDim
                     textFormat: Text.PlainText
-                    text: carousel.problem !== "" ? carousel.problem : qsTr("Put pictures in %1, or point [wallpaper] folder in config.toml at another folder.").arg(carousel.folder)
+                    text: carousel.problem
                 }
             }
         }

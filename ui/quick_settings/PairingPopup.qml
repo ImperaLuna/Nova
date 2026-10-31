@@ -78,22 +78,10 @@ PanelWindow { // qmllint disable uncreatable-type
             width: parent.width - 2 * Tokens.pad
             spacing: Tokens.gap
 
-            Row {
-                spacing: Tokens.gap
-                LineIcon {
-                    anchors.verticalCenter: parent.verticalCenter
-                    path: Icons.BLUETOOTH
-                    size: Tokens.iconSizeSmall
-                    color: Tokens.primary
-                }
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizeTiny
-                    font.weight: Font.Medium
-                    color: Tokens.fgDim
-                    text: qsTr("Bluetooth")
-                }
+            LineIcon {
+                path: Icons.BLUETOOTH
+                size: Tokens.iconSizeSmall
+                color: Tokens.primary
             }
 
             PairingPrompt {

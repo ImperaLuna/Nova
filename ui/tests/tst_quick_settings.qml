@@ -524,6 +524,22 @@ Item {
             compare(QuickSettings.soundSubtitle("bluetooth", "bluetooth"), "Bluetooth");
             compare(QuickSettings.soundSubtitle("", "usb"), "USB");
             compare(QuickSettings.soundSubtitle("", ""), "");
+            compare(QuickSettings.currentLink([
+                {
+                    link: "usb",
+                    current: false
+                },
+                {
+                    link: "bluetooth",
+                    current: true
+                }
+            ]), "Bluetooth", "the header names the one in use's link");
+            compare(QuickSettings.currentLink([
+                {
+                    link: "",
+                    current: true
+                }
+            ]), "", "nothing for one built in");
         }
 
         function test_sound_page_switches_outputs() {

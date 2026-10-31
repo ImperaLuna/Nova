@@ -5,9 +5,11 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "../text/duration.js" as Duration
 
-// A notification in quick settings' list: its icon, "App · summary", how
-// long ago, and the body in two lines; a dot while it's unread. A click
-// opens it; ⋯ (on hover) offers muting its app and dismissing it.
+// A notification in quick settings' list: its icon, "App · summary" (just
+// the summary in an open stack, under the app's name), how long ago, and
+// the body in two lines; a dot while it's unread. A low battery alert is
+// one line: the device's name, then its battery and percent. A click opens
+// it; ⋯ (on hover) offers muting its app and dismissing it.
 Item {
     id: row
 
@@ -16,6 +18,10 @@ Item {
     property real now: Date.now() / 1000
     // The ⋯ menu is open (the list keeps one open at a time).
     property bool menuOpen: false
+    // Its app's name before the summary: not in an open stack, whose
+    // heading names the app.
+    property bool showApp: true
+    readonly property bool battery: !!notification.device?.battery
 
     signal clicked
     signal menuToggled
@@ -63,7 +69,8 @@ Item {
     Column {
         id: lines
         x: icon.x + icon.width + Tokens.rowInset
-        y: Tokens.rowInset
+        // One line for a battery alert, beside the icon's middle.
+        y: row.battery ? (row.height - implicitHeight) / 2 : Tokens.rowInset
         width: parent.width - x - Tokens.pad
 
         Item {
@@ -72,28 +79,44 @@ Item {
 
             Text {
                 id: title
-                width: parent.width - when.width - Tokens.gap
+                objectName: "title"
+                width: parent.width - end.width - Tokens.gap
                 elide: Text.ElideRight
                 font.family: Tokens.fontSans
                 font.pixelSize: Tokens.fontSizeSmall
                 font.weight: Font.DemiBold
                 color: Tokens.fg
                 textFormat: Text.PlainText
-                text: row.notification.summary === "" ? row.notification.app : `${row.notification.app} · ${row.notification.summary}`
+                text: row.notification.summary === "" ? row.notification.app : row.showApp ? `${row.notification.app} · ${row.notification.summary}` : row.notification.summary
             }
-            Text {
-                id: when
+            // The battery, then how long ago; ⋯ takes the time's place on
+            // hover.
+            Row {
+                id: end
                 anchors.right: parent.right
-                visible: !hover.hovered && !row.menuOpen
-                font.family: Tokens.fontMono
-                font.pixelSize: Tokens.fontSizeTiny
-                color: Tokens.fgSoft
-                text: Duration.ago(row.notification.time, row.now)
+                anchors.verticalCenter: title.verticalCenter
+                spacing: Tokens.gap
+                rightPadding: when.visible ? 0 : more.width
+
+                BatteryAmount {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: row.battery
+                    notification: row.notification
+                }
+                Text {
+                    id: when
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: !hover.hovered && !row.menuOpen
+                    font.family: Tokens.fontMono
+                    font.pixelSize: Tokens.fontSizeTiny
+                    color: Tokens.fgSoft
+                    text: Duration.ago(row.notification.time, row.now)
+                }
             }
         }
         Text {
             width: parent.width
-            visible: text !== ""
+            visible: !row.battery && text !== ""
             wrapMode: Text.Wrap
             maximumLineCount: Tokens.notificationRowLines
             elide: Text.ElideRight

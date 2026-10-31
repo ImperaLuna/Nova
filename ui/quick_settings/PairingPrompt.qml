@@ -115,25 +115,7 @@ Rectangle {
                 onAccepted: prompt.accept()
                 onTextEdited: prompt.drafted(text)
                 Component.onCompleted: text = prompt.draft
-
-                Text {
-                    visible: field.text === ""
-                    font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSize
-                    color: Tokens.fgDim
-                    text: prompt.ask.kind === "enter_passkey" ? qsTr("Code") : qsTr("PIN")
-                }
             }
-        }
-
-        Text {
-            visible: prompt.ask.kind === "enter_pin"
-            width: parent.width
-            wrapMode: Text.Wrap
-            font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSizeTiny
-            color: Tokens.fgDim
-            text: qsTr("It's in the device's manual. Many use 0000.")
         }
 
         Row {

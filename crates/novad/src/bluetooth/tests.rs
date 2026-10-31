@@ -811,10 +811,7 @@ fn an_aborted_le_connect_connects_over_classic_bluetooth() {
     assert_eq!(calls, [format!("Connect {path}"), format!("ConnectProfile {A2DP_SINK} {path}")]);
 
     // A device with no classic profile keeps BlueZ's failure.
-    assert_eq!(
-        bluetooth.connect(PHONE).unwrap_err(),
-        "Couldn't connect. Make sure it's on and nearby, then try again."
-    );
+    assert_eq!(bluetooth.connect(PHONE).unwrap_err(), "Couldn't connect");
 }
 
 /// Starts connecting `address` on a thread: the fake holds it until it's

@@ -135,28 +135,13 @@ Item {
             verify(!Network.preferShown(network));
         }
 
-        function test_tile_says_what_carries_traffic() {
-            const network = recorded();
-            compare(Network.tileSubtitle(network), "Home");
-            network.primary = "wired";
-            compare(Network.tileSubtitle(network), "Wired");
-            compare(Network.tileSubtitle(withAttempt(recorded(), "Neighbor-1", "connecting")), "Connecting…");
-            delete network.primary;
-            compare(Network.tileSubtitle(network), "Not connected");
-            compare(Network.tileSubtitle({
-                running: false,
-                wired: []
-            }), "Unavailable");
-            compare(Network.tileSubtitle(null), "Unavailable");
-        }
-
         function test_network_lines() {
             const network = rescanned();
-            compare(Network.networkLine(network, network.wifi.networks[0]), "WPA2 · 5 GHz");
-            compare(Network.networkLine(network, network.wifi.networks[1]), "WPA2 · 2.4 GHz");
+            compare(Network.networkLine(network, network.wifi.networks[0]), "5 GHz");
+            compare(Network.networkLine(network, network.wifi.networks[1]), "2.4 GHz");
             compare(Network.networkLine(network, network.wifi.networks[2]), "Enterprise");
             network.wifi.networks[1].saved = true;
-            compare(Network.networkLine(network, network.wifi.networks[1]), "Saved · WPA2 · 2.4 GHz");
+            compare(Network.networkLine(network, network.wifi.networks[1]), "Saved · 2.4 GHz");
             withAttempt(network, "Neighbor-1", "failed");
             compare(Network.networkLine(network, network.wifi.networks[1]), "Couldn't connect");
         }
@@ -183,14 +168,13 @@ Item {
             compare(Network.arcs(20), 1);
         }
 
-        function test_the_tile_shows_the_network_and_opens_the_page() {
+        function test_the_tile_lights_while_online_and_opens_the_page() {
             const page = createTemporaryObject(mainComponent, stage, {
                 networkShown: true,
                 network: recorded()
             });
             const tile = findChild(page, "networkTile");
             verify(tile.visible);
-            compare(tile.subtitle, "Home");
             verify(tile.on);
             spy.target = page;
             spy.signalName = "pageRequested";

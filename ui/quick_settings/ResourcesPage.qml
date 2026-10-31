@@ -340,7 +340,7 @@ Item {
                                     font.pixelSize: Tokens.fontSizeTiny
                                     color: Tokens.fg
                                     textFormat: Text.PlainText
-                                    text: entry.app.processes > 1 ? qsTr("End %1 and its %2 processes? It's asked to close.").arg(entry.app.name).arg(entry.app.processes) : qsTr("End %1? It's asked to close.").arg(entry.app.name)
+                                    text: qsTr("End %1?").arg(entry.app.name)
                                 }
                                 Row {
                                     id: buttons

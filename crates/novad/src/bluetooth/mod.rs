@@ -205,7 +205,7 @@ impl Bluetooth {
             let name = adapter.as_ref().map(bluez::adapter_name);
             let blocked = shared.sources.rfkill.blocked(name);
             if blocked.hard {
-                return Err("Bluetooth is off by a hardware switch, key or BIOS setting: Nova can't turn it on.".into());
+                return Err("Blocked by a hardware switch".into());
             }
             if blocked.soft {
                 shared.sources.rfkill.unblock(name)?;
@@ -304,7 +304,7 @@ impl Bluetooth {
         let shared = &self.shared;
         let (path, ..) = shared.device(address)?;
         let adapter = lock(&shared.state).objects.adapter().map(|adapter| adapter.path);
-        let Some(adapter) = adapter else { return Err("There's no Bluetooth adapter.".into()) };
+        let Some(adapter) = adapter else { return Err("No Bluetooth adapter".into()) };
         let result = shared.calls().and_then(|calls| {
             zbus::block_on(calls.call_method(Some(BLUEZ), adapter.as_str(), Some(ADAPTER), "RemoveDevice", &(path,)))
                 .map(|_| ())
@@ -400,7 +400,7 @@ impl Shared {
             return Err(format!("{address:?} isn't a Bluetooth address"));
         }
         let state = lock(&self.state);
-        let device = state.objects.device(address).ok_or("That device isn't around any more.")?;
+        let device = state.objects.device(address).ok_or("Out of range")?;
         Ok((device.path, device.paired, device.connected))
     }
 
