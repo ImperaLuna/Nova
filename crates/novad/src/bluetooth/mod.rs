@@ -613,9 +613,13 @@ impl Shared {
             let until = state.scan_asked.map(|asked| asked + SCAN_LIMIT).filter(|until| *until > now);
             let adapter = state.objects.adapter().map(|adapter| (adapter.path, adapter.powered, adapter.discovering));
             let resting = retry_at.filter(|at| *at > now);
+            // The radio pages a device while connecting: scanning then
+            // slows the connect, and BlueZ refuses to start it.
+            let connecting = state.busy.values().any(|status| *status == BluetoothStatus::Connecting);
             let want = !state.watchers.is_empty()
                 && until.is_some()
                 && resting.is_none()
+                && !connecting
                 && adapter.as_ref().is_some_and(|a| a.1);
             let discovering = adapter.as_ref().is_some_and(|a| a.2);
             // Ended by BlueZ (powered off, adapter gone): it's off.

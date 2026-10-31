@@ -733,6 +733,24 @@ fn scanning_tries_again_when_the_adapter_isnt_ready() {
     assert_eq!(starts, 2, "refused once, then asked again");
 }
 
+/// Scanning pauses while a device connects, and goes on after.
+#[test]
+fn scanning_pauses_while_a_device_connects() {
+    let fixture = Fixture::new("scan-connect");
+    let bluez = fixture.bluez();
+    let bluetooth = fixture.start();
+    fixture.until("the devices", |event| event["radio"] == "on");
+    bluetooth.watch(fixture.client, true);
+    fixture.until("scanning", |event| event["scanning"] == true);
+    let connecting = held_connect(&fixture, &bluez, &bluetooth, PHONE);
+    fixture.until("scanning paused", |event| event["scanning"] == false);
+    bluetooth.disconnect(PHONE).unwrap();
+    connecting.join().unwrap().unwrap();
+    fixture.until("scanning again", |event| event["scanning"] == true);
+    let scans: Vec<String> = bluez.calls().into_iter().filter(|call| call.ends_with("Discovery")).collect();
+    assert_eq!(scans, ["StartDiscovery", "StopDiscovery", "StartDiscovery"]);
+}
+
 #[test]
 fn turning_on_lifts_the_software_block() {
     let fixture = Fixture::new("unblock");
