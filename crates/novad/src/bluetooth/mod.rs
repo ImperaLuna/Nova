@@ -59,6 +59,10 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long pairing and connecting may take: pairing waits for the user's
 /// answer (up to [`agent::ANSWER_TIMEOUT`]), connecting for the device.
 const LONG_CALL_TIMEOUT: Duration = Duration::from_secs(90);
+/// How long a connect may run before it's stopped: a device that's off, or
+/// a headset switched to its dongle, can keep BlueZ trying for most of a
+/// minute after it knows the device is gone.
+pub const CONNECT_LIMIT: Duration = Duration::from_secs(20);
 /// How long scanning runs after the page asks for it.
 const SCAN_LIMIT: Duration = Duration::from_secs(120);
 /// How long to wait before asking again when scanning didn't start.
@@ -79,11 +83,13 @@ pub struct Sources {
     /// The bus BlueZ is on.
     pub bus: Bus,
     pub rfkill: Rfkill,
+    /// How long a connect may run ([`CONNECT_LIMIT`]).
+    pub connect_limit: Duration,
 }
 
 impl Sources {
     pub fn system() -> Self {
-        Self { bus: Bus::System, rfkill: Rfkill::system() }
+        Self { bus: Bus::System, rfkill: Rfkill::system(), connect_limit: CONNECT_LIMIT }
     }
 }
 
@@ -115,6 +121,12 @@ struct State {
     /// Devices the user stopped pairing or connecting: the command takes
     /// no further step.
     halted: BTreeSet<String>,
+    /// Each device's latest connect, numbered, so a limit only stops the
+    /// connect it was set for.
+    connects: HashMap<String, u64>,
+    last_connect: u64,
+    /// Devices whose connect ran past its limit and was stopped.
+    timed_out: BTreeSet<String>,
     /// The question pairing asks the user now.
     pairing: Option<Asked>,
     last_request: u64,
@@ -268,6 +280,7 @@ impl Bluetooth {
             }
             shared.set_busy(address, BluetoothStatus::Connecting);
             shared.go_on(address)?;
+            Shared::limit_connect(shared, address, &path);
             match shared.long_call(&path, DEVICE, "Connect") {
                 Err(e) if bluez::le_aborted(&e) => shared.connect_classic(address, &path, e),
                 result => result,
@@ -430,6 +443,35 @@ impl Shared {
         }
     }
 
+    /// Stops the connect to `address` starting now if it still runs after
+    /// the limit, on a thread of its own.
+    fn limit_connect(shared: &Arc<Self>, address: &str, path: &OwnedObjectPath) {
+        let key = address.to_uppercase();
+        let number = {
+            let mut state = lock(&shared.state);
+            state.last_connect += 1;
+            let number = state.last_connect;
+            state.connects.insert(key.clone(), number);
+            number
+        };
+        let (shared, path) = (Arc::clone(shared), path.clone());
+        std::thread::spawn(move || {
+            std::thread::sleep(shared.sources.connect_limit);
+            // Stopped under the lock: the connect can't end, and a retry
+            // can't start, between the check and the stop.
+            let mut state = lock(&shared.state);
+            let running =
+                state.connects.get(&key) == Some(&number) && state.busy.get(&key) == Some(&BluetoothStatus::Connecting);
+            let Some(calls) = state.calls.clone().filter(|_| running) else { return };
+            state.timed_out.insert(key.clone());
+            shared.logger.info(LOG_SOURCE, &format!("{key}: connect took too long, stopping it"));
+            if let Err(e) = zbus::block_on(call(&calls, &path, DEVICE, "Disconnect")) {
+                shared.logger.info(LOG_SOURCE, &format!("can't stop connecting {path}: {e}"));
+            }
+            drop(state);
+        });
+    }
+
     /// Whether a command on `address` may take its next step: not once the
     /// user stopped it.
     fn go_on(&self, address: &str) -> zbus::Result<()> {
@@ -453,8 +495,16 @@ impl Shared {
         let mut state = lock(&self.state);
         let key = address.to_uppercase();
         state.busy.remove(&key);
-        // Stopped: however it ended, there's nothing to explain.
-        let result = if state.halted.remove(&key) { Ok(()) } else { result };
+        state.connects.remove(&key);
+        // Stopped: however it ended, there's nothing to explain, unless
+        // the limit stopped it.
+        let result = if state.timed_out.remove(&key) {
+            Err(zbus::Error::FDO(Box::new(zbus::fdo::Error::NoReply("connect took too long".into()))))
+        } else if state.halted.remove(&key) {
+            Ok(())
+        } else {
+            result
+        };
         let shown = state.pairing.as_ref().is_some_and(|asked| asked.slot.is_none() && asked.request.address == key);
         if shown {
             state.pairing = None;

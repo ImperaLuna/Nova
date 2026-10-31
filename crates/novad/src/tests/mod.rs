@@ -161,6 +161,7 @@ impl TestDaemon {
                     device: dir.join("dev/rfkill"),
                     adapters: dir.join("sys/class/bluetooth"),
                 },
+                connect_limit: bluetooth::CONNECT_LIMIT,
             },
             icons,
         };
