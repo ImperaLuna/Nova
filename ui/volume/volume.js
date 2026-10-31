@@ -65,16 +65,17 @@ function link(properties) {
     return "";
 }
 
-// The Bluetooth output among `outputs` ({id, name}, PipeWire's sinks) that
-// `known` (the ids seen before) didn't have, or null: the one to make the
-// default. Turning a headset to Bluetooth, from Nova or on the headset,
-// means wanting to hear it there. BlueZ's sinks are named bluez_output.*,
-// which an unbound node already has.
-function arrivedBluetooth(known, outputs) {
-    for (var i = 0; i < outputs.length; i++) {
-        var output = outputs[i];
-        if (/^bluez_output\./.test(output.name) && known.indexOf(output.id) < 0)
-            return output.id;
+// The Bluetooth output or input among `nodes` ({id, name}, PipeWire's
+// sinks or sources) that `known` (the ids seen before) didn't have, or
+// null: the one to make the default. Turning a headset to Bluetooth, from
+// Nova or on the headset, means wanting to hear it and talk through it
+// there. BlueZ's nodes are named bluez_output.* and bluez_input.*, which an
+// unbound node already has.
+function arrivedBluetooth(known, nodes) {
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (/^bluez_(output|input)\./.test(node.name) && known.indexOf(node.id) < 0)
+            return node.id;
     }
     return null;
 }
