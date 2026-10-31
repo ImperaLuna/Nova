@@ -113,6 +113,17 @@ struct Fake {
     refuse_discovery: usize,
     /// Whether `Connect` fails as BlueZ does when it tried LE and gave up.
     abort_le: bool,
+    /// A `Connect` that waits for a device that doesn't answer, until a
+    /// `Disconnect` cancels it, as BlueZ does. Powering off is refused
+    /// meanwhile.
+    held: Option<Held>,
+}
+
+#[derive(Default)]
+struct Held {
+    waiting: bool,
+    cancelled: bool,
+    waker: Option<std::task::Waker>,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -132,6 +143,7 @@ impl FakeBlueZ {
             pairing: Pairing::Confirm(123_456),
             refuse_discovery: 0,
             abort_le: false,
+            held: None,
             soft_block,
         }));
         zbus::block_on(async {
@@ -232,6 +244,7 @@ enum BlueZError {
     AuthenticationRejected(String),
     AuthenticationCanceled(String),
     Failed(String),
+    Busy(String),
 }
 
 struct Manager(Shared);
@@ -326,6 +339,9 @@ impl FakeAdapter {
         let blocked = {
             let mut fake = lock(&self.0);
             fake.calls.push(format!("Powered {on}"));
+            if fake.held.as_ref().is_some_and(|held| held.waiting && !held.cancelled) {
+                return Err(BlueZError::Busy("Operation already in progress".into()));
+            }
             std::fs::read_to_string(&fake.soft_block).is_ok_and(|soft| soft.trim() == "1")
         };
         if on && blocked {
@@ -384,6 +400,24 @@ impl FakeDevice {
         if lock(&self.fake).abort_le {
             return Err(BlueZError::Failed("le-connection-abort-by-local".into()));
         }
+        if let Some(held) = lock(&self.fake).held.as_mut() {
+            held.waiting = true;
+        }
+        let cancelled = poll_fn(|cx| {
+            let mut fake = lock(&self.fake);
+            match fake.held.as_mut() {
+                Some(held) if held.cancelled => Poll::Ready(true),
+                Some(held) => {
+                    held.waker = Some(cx.waker().clone());
+                    Poll::Pending
+                }
+                None => Poll::Ready(false),
+            }
+        })
+        .await;
+        if cancelled {
+            return Err(BlueZError::Failed("br-connection-canceled".into()));
+        }
         changed(connection, &self.fake, &self.path, DEVICE, "Connected", OwnedVariant::from(true)).await;
         Ok(())
     }
@@ -395,6 +429,13 @@ impl FakeDevice {
 
     async fn disconnect(&self, #[zbus(connection)] connection: &Connection) {
         self.log("Disconnect");
+        if let Some(held) = lock(&self.fake).held.as_mut().filter(|held| held.waiting) {
+            held.cancelled = true;
+            if let Some(waker) = held.waker.take() {
+                waker.wake();
+            }
+            return;
+        }
         changed(connection, &self.fake, &self.path, DEVICE, "Connected", OwnedVariant::from(false)).await;
     }
 
@@ -753,4 +794,53 @@ fn an_aborted_le_connect_connects_over_classic_bluetooth() {
         bluetooth.connect(PHONE).unwrap_err(),
         "Couldn't connect. Make sure it's on and nearby, then try again."
     );
+}
+
+/// Starts connecting `address` on a thread: the fake holds it until it's
+/// cancelled.
+fn held_connect(
+    fixture: &Fixture,
+    bluez: &FakeBlueZ,
+    bluetooth: &Arc<Bluetooth>,
+    address: &'static str,
+) -> std::thread::JoinHandle<Result<(), String>> {
+    lock(&bluez.fake).held = Some(Held::default());
+    let connecting = {
+        let bluetooth = Arc::clone(bluetooth);
+        std::thread::spawn(move || bluetooth.connect(address))
+    };
+    fixture.until("connecting", |event| status(event, address).as_deref() == Some("connecting"));
+    wait_until(WAIT, "the connect under way", || lock(&bluez.fake).held.as_ref().is_some_and(|held| held.waiting));
+    connecting
+}
+
+#[test]
+fn a_connect_under_way_can_be_stopped() {
+    let fixture = Fixture::new("stop");
+    let bluez = fixture.bluez();
+    let bluetooth = fixture.start();
+    fixture.until("the devices", |event| event["radio"] == "on");
+    let connecting = held_connect(&fixture, &bluez, &bluetooth, PHONE);
+    bluetooth.disconnect(PHONE).unwrap();
+    assert_eq!(connecting.join().unwrap(), Ok(()), "stopped: nothing to explain");
+    let event = fixture.until("the phone back", |event| status(event, PHONE).as_deref() == Some("paired"));
+    assert_eq!(find(&event, PHONE).unwrap().get("error"), None);
+}
+
+#[test]
+fn turning_off_stops_a_connect_first() {
+    let fixture = Fixture::new("off-while-connecting");
+    let bluez = fixture.bluez();
+    let bluetooth = fixture.start();
+    fixture.until("the devices", |event| event["radio"] == "on");
+    let connecting = held_connect(&fixture, &bluez, &bluetooth, PHONE);
+    bluetooth.power(false).unwrap();
+    assert_eq!(connecting.join().unwrap(), Ok(()));
+    fixture.until("the radio off", |event| event["radio"] == "off");
+    let calls: Vec<String> = bluez
+        .calls()
+        .into_iter()
+        .filter(|call| call.starts_with("Disconnect") || call.starts_with("Powered"))
+        .collect();
+    assert_eq!(calls, [format!("Disconnect {}", device_path(PHONE)), "Powered false".to_owned()]);
 }
