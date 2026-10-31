@@ -6,7 +6,7 @@ expression: all
 {"v":2,"event":"features","data":{"features":[{"id":"core","status":"ready"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
-{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray","notifications","media","peripherals"]}}
+{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray","notifications","media","peripherals","bluetooth"]}}
 {"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","backdrop":"#000000","fg":"#F5E7C6","fgAlt":"#525252","fgDim":"#9A9A9A","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
 {"v":2,"id":10,"cmd":"status"}
 {"v":2,"id":11,"cmd":"quit"}
@@ -101,4 +101,12 @@ expression: all
 {"v":2,"id":49,"result":"3"}
 {"v":2,"event":"peripherals","data":{"devices":[{"id":"upower/mouse_hidpp_battery_0","name":"PRO X Wireless","kind":"mouse","link":"dongle","battery":{"percent":72},"charging":false,"source":"upower"},{"id":"upower/keyboard_dev_AA_BB_CC_DD_EE_FF","name":"K380","kind":"keyboard","link":"bluetooth","battery":{"level":"high"},"charging":false,"source":"upower"},{"id":"keychron/model-3","name":"Keychron K2 HE","kind":"keyboard","link":"dongle","battery":{"percent":78},"charging":false,"source":"keychron"},{"id":"headsetcontrol/1038:2253","name":"SteelSeries Arctis Nova 5X","kind":"headset","link":"dongle","battery":{"percent":30},"charging":true,"source":"headsetcontrol"}]}}
 {"v":2,"event":"peripherals","data":{"devices":[]}}
+{"v":2,"event":"bluetooth","data":{"radio":"on","scanning":true,"devices":[{"address":"00:1B:66:AA:BB:CC","name":"WH-1000XM5","kind":"headphones","status":"connected","battery":80},{"address":"9C:2A:70:11:22:33","name":"Pixel 8","kind":"phone","status":"pairing"},{"address":"C4:30:18:44:55:66","name":"JBL Flip 6","kind":"speaker","status":"nearby","error":"Couldn't reach it. Make sure it's on and nearby."}],"pairing":{"id":3,"address":"9C:2A:70:11:22:33","ask":{"kind":"confirm","code":"482913"},"incoming":false}}}
+{"v":2,"id":60,"cmd":"bluetooth_power","args":{"on":true}}
+{"v":2,"id":61,"cmd":"watch_bluetooth","args":{"watching":true}}
+{"v":2,"id":62,"cmd":"bluetooth_connect","args":{"address":"9C:2A:70:11:22:33"}}
+{"v":2,"id":63,"cmd":"bluetooth_disconnect","args":{"address":"00:1B:66:AA:BB:CC"}}
+{"v":2,"id":64,"cmd":"bluetooth_forget","args":{"address":"00:1B:66:AA:BB:CC"}}
+{"v":2,"id":65,"cmd":"bluetooth_answer","args":{"id":3,"answer":"accept"}}
+{"v":2,"id":66,"cmd":"bluetooth_answer","args":{"id":4,"answer":{"code":"0000"}}}
 {"v":2,"id":8,"error":"bad request"}

@@ -1,1 +1,2 @@
+singleton BluetoothService BluetoothService.qml
 singleton QuickSettingsService QuickSettingsService.qml

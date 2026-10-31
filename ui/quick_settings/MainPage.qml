@@ -5,6 +5,7 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "../volume/volume.js" as Volume
 import "quick_settings.js" as QuickSettings
+import "bluetooth.js" as Bluetooth
 import "../text/duration.js" as Duration
 import "../tray"
 
@@ -30,6 +31,9 @@ Item {
     property bool keepAwake: false
     property bool micAvailable: false
     property bool micMuted: false
+    // Bluetooth, while its feature is on: a bluetooth event's data, or null.
+    property bool bluetoothShown: false
+    property var bluetooth: null
 
     // The default output: whether there is one, its name and kind
     // (volume.js outputKind), volume and mute.
@@ -60,6 +64,8 @@ Item {
 
     signal keepAwakeToggled
     signal micMuteToggled
+    // Turn Bluetooth on (true) or off.
+    signal bluetoothPowered(bool on)
     signal volumeMoved(real value)
     signal muteToggled
     signal micVolumeMoved(real value)
@@ -110,6 +116,21 @@ Item {
                 spacing: Tokens.gap
                 readonly property real cell: (width - spacing) / columns
 
+                // A click turns it on or off; turned off by a switch, it
+                // opens the page, which says so.
+                Tile {
+                    objectName: "bluetoothTile"
+                    visible: page.bluetoothShown
+                    width: grid.cell
+                    icon: Icons.BLUETOOTH
+                    title: qsTr("Bluetooth")
+                    subtitle: Bluetooth.tileSubtitle(page.bluetooth)
+                    on: Bluetooth.isOn(page.bluetooth)
+                    available: (page.bluetooth?.radio ?? "missing") !== "missing"
+                    opens: true
+                    onToggled: page.bluetooth.radio === "switched_off" ? page.pageRequested("bluetooth") : page.bluetoothPowered(!on)
+                    onOpened: page.pageRequested("bluetooth")
+                }
                 Tile {
                     width: grid.cell
                     icon: Icons.CUP

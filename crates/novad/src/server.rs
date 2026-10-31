@@ -240,6 +240,28 @@ impl<'a> Connection<'a> {
             }
             Command::MediaFocus { player } => return self.media_focus(player),
             Command::MediaWindow { player } => return self.media_window(player),
+            Command::WatchBluetooth { watching } => {
+                done(self.bluetooth().map(|bluetooth| bluetooth.watch(self.id, *watching)))
+            }
+            Command::BluetoothPower { on } => {
+                let on = *on;
+                return self.bluetooth_later(move |bluetooth| bluetooth.power(on));
+            }
+            Command::BluetoothConnect { address } => {
+                let address = address.clone();
+                return self.bluetooth_later(move |bluetooth| bluetooth.connect(&address));
+            }
+            Command::BluetoothDisconnect { address } => {
+                let address = address.clone();
+                return self.bluetooth_later(move |bluetooth| bluetooth.disconnect(&address));
+            }
+            Command::BluetoothForget { address } => {
+                let address = address.clone();
+                return self.bluetooth_later(move |bluetooth| bluetooth.forget(&address));
+            }
+            Command::BluetoothAnswer { id, answer } => {
+                done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
+            }
         };
         Answer::Now(outcome)
     }
@@ -270,6 +292,10 @@ impl<'a> Connection<'a> {
 
     fn media(&self) -> Result<Arc<crate::media::Media>, String> {
         running(lock(&self.daemon.settings).media.clone(), crate::media::FEATURE_ID)
+    }
+
+    fn bluetooth(&self) -> Result<Arc<crate::bluetooth::Bluetooth>, String> {
+        running(lock(&self.daemon.settings).bluetooth.clone(), crate::bluetooth::FEATURE_ID)
     }
 
     fn compositor(&self) -> Result<&crate::compositor::Compositor, String> {
@@ -503,6 +529,18 @@ impl<'a> Connection<'a> {
         }
     }
 
+    /// Runs `work` with Bluetooth on its own thread: BlueZ, the device and
+    /// the user's answer to pairing take their time.
+    fn bluetooth_later(
+        &self,
+        work: impl FnOnce(&crate::bluetooth::Bluetooth) -> Result<(), String> + Send + 'static,
+    ) -> Answer {
+        match self.bluetooth() {
+            Ok(bluetooth) => Answer::later(move || done(work(&bluetooth))),
+            Err(e) => Answer::Now(Outcome::Error(e)),
+        }
+    }
+
     fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
         match self.media() {
             Ok(media) => Answer::later(move || work(&media)),
@@ -678,6 +716,11 @@ impl<'a> Connection<'a> {
                                 peripherals.send_state(self.id);
                             }
                         }
+                        Topic::Bluetooth => {
+                            if let Some(bluetooth) = &settings.bluetooth {
+                                bluetooth.send_state(self.id);
+                            }
+                        }
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -734,7 +777,13 @@ impl<'a> Connection<'a> {
             | Command::MediaSeek { .. }
             | Command::MediaShow { .. }
             | Command::MediaFocus { .. }
-            | Command::MediaWindow { .. } => {}
+            | Command::MediaWindow { .. }
+            | Command::BluetoothPower { .. }
+            | Command::WatchBluetooth { .. }
+            | Command::BluetoothConnect { .. }
+            | Command::BluetoothDisconnect { .. }
+            | Command::BluetoothForget { .. }
+            | Command::BluetoothAnswer { .. } => {}
         }
     }
 
@@ -759,9 +808,15 @@ impl<'a> Connection<'a> {
 impl Drop for Connection<'_> {
     fn drop(&mut self) {
         self.daemon.hub.unregister(self.id);
-        let resources = lock(&self.daemon.settings).resources.clone();
+        let (resources, bluetooth) = {
+            let settings = lock(&self.daemon.settings);
+            (settings.resources.clone(), settings.bluetooth.clone())
+        };
         if let Some(resources) = resources {
             resources.watch(self.id, false);
+        }
+        if let Some(bluetooth) = bluetooth {
+            bluetooth.watch(self.id, false);
         }
     }
 }

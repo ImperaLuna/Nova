@@ -342,6 +342,16 @@ QtObject {
     readonly property int tileHeight: 58
     readonly property int tileArrowWidth: 22
     readonly property real tileSubOpacity: 0.72
+    // The Bluetooth page: a pairing code in a row of cells, the field a PIN
+    // is typed in, a note after pairing that stays this long, and a device
+    // that's off with the radio.
+    readonly property int pairingCellWidth: 28
+    readonly property int pairingCellHeight: 36
+    readonly property int pairingCellGap: 4
+    readonly property int fontSizePairingCode: 18
+    readonly property int pairingFieldHeight: 34
+    readonly property int durationPairedNote: 5000
+    readonly property real pairingTintOpacity: 0.10
     // Thick sliders: a round icon button (mute) beside the track, the track
     // filled only to the value, and a button after it that opens a page. An
     // app's slider shows the app's icon, its corners less round.

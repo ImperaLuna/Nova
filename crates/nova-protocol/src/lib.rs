@@ -114,6 +114,10 @@ pub enum Event {
     /// [`Topic::Peripherals`], sent right after subscribing and whenever a
     /// device comes, goes or changes.
     Peripherals(Peripherals),
+    /// Bluetooth: the radio, the devices and the pairing waiting for the
+    /// user (feature `bluetooth`). Topic [`Topic::Bluetooth`], sent right
+    /// after subscribing and whenever any of it changes.
+    Bluetooth(Bluetooth),
 }
 
 /// Groups of events a client can subscribe to.
@@ -137,6 +141,7 @@ pub enum Topic {
     Notifications,
     Media,
     Peripherals,
+    Bluetooth,
 }
 
 impl Event {
@@ -162,6 +167,7 @@ impl Event {
             Event::Notifications(_) | Event::NotificationPopup(_) => Some(Topic::Notifications),
             Event::Media(_) => Some(Topic::Media),
             Event::Peripherals(_) => Some(Topic::Peripherals),
+            Event::Bluetooth(_) => Some(Topic::Bluetooth),
         }
     }
 }
@@ -711,6 +717,126 @@ pub enum PeripheralSource {
     Headsetcontrol,
 }
 
+/// Bluetooth as the quick settings page shows it (feature `bluetooth`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Bluetooth {
+    pub radio: BluetoothRadio,
+    /// Looking for new devices now (`watch_bluetooth`).
+    pub scanning: bool,
+    /// Connected devices first, then paired ones, then the new ones nearby,
+    /// each group by name. Only while the radio is on.
+    pub devices: Vec<BluetoothDevice>,
+    /// What pairing asks of the user now, if anything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pairing: Option<PairingRequest>,
+}
+
+/// Whether Bluetooth can be used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BluetoothRadio {
+    /// No adapter, or BlueZ isn't running.
+    Missing,
+    /// Off, or blocked in software: `bluetooth_power` turns it on either way.
+    Off,
+    /// Off by a hardware switch or key, which only the user can turn on.
+    SwitchedOff,
+    On,
+}
+
+/// A device the adapter knows. Text is plain and capped in length.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BluetoothDevice {
+    /// Its address, like `9C:2A:70:11:22:33`: the id the commands take.
+    pub address: String,
+    pub name: String,
+    pub kind: BluetoothKind,
+    pub status: BluetoothStatus,
+    /// 0 to 100, when the device reports its battery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battery: Option<u8>,
+    /// Why the last connect, pair or disconnect failed, in words for the
+    /// user. Cleared by the next one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// What a Bluetooth device is, for its icon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BluetoothKind {
+    Headphones,
+    Headset,
+    Speaker,
+    Keyboard,
+    Mouse,
+    Gamepad,
+    Tablet,
+    Phone,
+    Computer,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BluetoothStatus {
+    /// Seen while scanning, never paired.
+    Nearby,
+    Pairing,
+    /// Paired and not connected.
+    Paired,
+    Connecting,
+    Connected,
+    Disconnecting,
+}
+
+/// A question pairing asks the user, answered with `bluetooth_answer`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PairingRequest {
+    /// Names it in `bluetooth_answer`.
+    pub id: u64,
+    /// The device's address; it's in `devices`.
+    pub address: String,
+    pub ask: PairingAsk,
+    /// The device started it (a phone pairing with this computer), not
+    /// `bluetooth_connect`.
+    pub incoming: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PairingAsk {
+    /// Does the device show this code? `accept` or `reject`.
+    Confirm { code: String },
+    /// Type the PIN the device came with (old devices): answer a `code`.
+    EnterPin,
+    /// Type the six-digit code the device shows: answer a `code`.
+    EnterPasskey,
+    /// Type this PIN on the device. Needs no answer.
+    ShowPin { pin: String },
+    /// Type this code on the device; `typed` digits are in so far. Needs no
+    /// answer.
+    ShowPasskey { code: String, typed: u8 },
+    /// May this device pair (or use a service)? `accept` or `reject`.
+    Authorize,
+}
+
+/// The user's answer to a [`PairingRequest`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum PairingAnswer {
+    Accept,
+    Reject,
+    /// The PIN or passkey typed.
+    Code(String),
+}
+
+/// The longest PIN a `bluetooth_answer` takes, in bytes (BlueZ's limit).
+pub const BLUETOOTH_PIN_MAX_BYTES: usize = 16;
+
 /// The longest player id a media command takes, in bytes: a bus name is at
 /// most 255.
 pub const MEDIA_PLAYER_MAX_BYTES: usize = 255;
@@ -1256,6 +1382,36 @@ pub enum Command {
     MediaWindow {
         player: String,
     },
+    /// Turns Bluetooth on or off (feature `bluetooth`). On also lifts a
+    /// software block (rfkill); a hardware switch is refused.
+    BluetoothPower {
+        on: bool,
+    },
+    /// Starts or stops this connection looking for new devices, while the
+    /// Bluetooth page shows (feature `bluetooth`). Scanning runs while any
+    /// connection watches, for at most two minutes from the last start.
+    WatchBluetooth {
+        watching: bool,
+    },
+    /// Connects the device at `address` (feature `bluetooth`). A new one is
+    /// paired and trusted first, so it reconnects by itself later; pairing
+    /// may ask the user (`Bluetooth::pairing`). Answers once it's connected,
+    /// or with why it failed.
+    BluetoothConnect {
+        address: String,
+    },
+    BluetoothDisconnect {
+        address: String,
+    },
+    /// Removes the device's pairing.
+    BluetoothForget {
+        address: String,
+    },
+    /// Answers the pairing request `id`.
+    BluetoothAnswer {
+        id: u64,
+        answer: PairingAnswer,
+    },
 }
 
 /// Whether a `set_wallpaper` path is a Steam Workshop ID: only digits.
@@ -1659,6 +1815,7 @@ mod tests {
                         Topic::Notifications,
                         Topic::Media,
                         Topic::Peripherals,
+                        Topic::Bluetooth,
                     ],
                 },
             }),
@@ -1920,6 +2077,26 @@ mod tests {
             encode(Response { id: 49, outcome: Outcome::Result(json!("3")) }),
             encode(Event::Peripherals(peripherals())),
             encode(Event::Peripherals(Peripherals { devices: vec![] })),
+            encode(Event::Bluetooth(bluetooth())),
+            encode(Request { id: Some(60), command: Command::BluetoothPower { on: true } }),
+            encode(Request { id: Some(61), command: Command::WatchBluetooth { watching: true } }),
+            encode(Request {
+                id: Some(62),
+                command: Command::BluetoothConnect { address: "9C:2A:70:11:22:33".into() },
+            }),
+            encode(Request {
+                id: Some(63),
+                command: Command::BluetoothDisconnect { address: "00:1B:66:AA:BB:CC".into() },
+            }),
+            encode(Request { id: Some(64), command: Command::BluetoothForget { address: "00:1B:66:AA:BB:CC".into() } }),
+            encode(Request {
+                id: Some(65),
+                command: Command::BluetoothAnswer { id: 3, answer: PairingAnswer::Accept },
+            }),
+            encode(Request {
+                id: Some(66),
+                command: Command::BluetoothAnswer { id: 4, answer: PairingAnswer::Code("0000".into()) },
+            }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
@@ -2082,6 +2259,45 @@ mod tests {
             ],
             pinned: vec!["foot.desktop".into()],
             recent: vec!["org.mozilla.firefox.desktop".into(), "foot.desktop".into()],
+        }
+    }
+
+    fn bluetooth() -> Bluetooth {
+        Bluetooth {
+            radio: BluetoothRadio::On,
+            scanning: true,
+            devices: vec![
+                BluetoothDevice {
+                    address: "00:1B:66:AA:BB:CC".into(),
+                    name: "WH-1000XM5".into(),
+                    kind: BluetoothKind::Headphones,
+                    status: BluetoothStatus::Connected,
+                    battery: Some(80),
+                    error: None,
+                },
+                BluetoothDevice {
+                    address: "9C:2A:70:11:22:33".into(),
+                    name: "Pixel 8".into(),
+                    kind: BluetoothKind::Phone,
+                    status: BluetoothStatus::Pairing,
+                    battery: None,
+                    error: None,
+                },
+                BluetoothDevice {
+                    address: "C4:30:18:44:55:66".into(),
+                    name: "JBL Flip 6".into(),
+                    kind: BluetoothKind::Speaker,
+                    status: BluetoothStatus::Nearby,
+                    battery: None,
+                    error: Some("Couldn't reach it. Make sure it's on and nearby.".into()),
+                },
+            ],
+            pairing: Some(PairingRequest {
+                id: 3,
+                address: "9C:2A:70:11:22:33".into(),
+                ask: PairingAsk::Confirm { code: "482913".into() },
+                incoming: false,
+            }),
         }
     }
 
@@ -2379,6 +2595,23 @@ mod tests {
         assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(Topic::Notifications));
         assert_eq!(Event::Media(media()).topic(), Some(Topic::Media));
         assert_eq!(Event::Peripherals(peripherals()).topic(), Some(Topic::Peripherals));
+        assert_eq!(Event::Bluetooth(bluetooth()).topic(), Some(Topic::Bluetooth));
+    }
+
+    #[test]
+    fn bluetooth_rejects_unknown_fields() {
+        let state = serde_json::to_value(bluetooth()).unwrap();
+        assert!(serde_json::from_value::<Bluetooth>(state.clone()).is_ok());
+        for pointer in ["", "/devices/0", "/pairing", "/pairing/ask"] {
+            let mut extra = state.clone();
+            extra.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
+            assert!(serde_json::from_value::<Bluetooth>(extra).is_err(), "{pointer}");
+        }
+        let answer = |value| serde_json::from_value::<PairingAnswer>(value).ok();
+        assert_eq!(answer(json!("accept")), Some(PairingAnswer::Accept));
+        assert_eq!(answer(json!({"code": "0000"})), Some(PairingAnswer::Code("0000".into())));
+        assert_eq!(answer(json!({"code": "0000", "extra": 1})), None);
+        assert_eq!(answer(json!("maybe")), None);
     }
 
     #[test]
