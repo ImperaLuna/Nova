@@ -394,6 +394,21 @@ fn merge(found: &[(PeripheralSource, Vec<Found>)]) -> PeripheralsEvent {
     let mut kept: Vec<&Found> = Vec::new();
     let mut devices: Vec<Peripheral> = Vec::new();
     for candidate in found.iter().flat_map(|(_, list)| list) {
+        if let Some(index) = kept.iter().position(|known| known.same_over_bluetooth(candidate))
+            && !kept.iter().any(|known| known.same_as(candidate))
+            && candidate.device.link != Some(PeripheralLink::Bluetooth)
+        {
+            // A headset on Bluetooth and on its dongle: the dongle's entry
+            // names it, so its id (and the alerts kept by id) stays put
+            // while the Bluetooth link comes and goes.
+            let bluetooth = std::mem::replace(&mut devices[index], candidate.device.clone());
+            if devices[index].battery.is_none() {
+                devices[index].battery = bluetooth.battery;
+                devices[index].charging = bluetooth.charging;
+            }
+            kept[index] = candidate;
+            continue;
+        }
         let same = kept
             .iter()
             .position(|known| known.same_as(candidate))

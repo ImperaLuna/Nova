@@ -7,6 +7,7 @@ import "../../daemon"
 import "../volume.js" as Volume
 import "../../daemon/protocol.js" as Protocol
 import "../../quick_settings/quick_settings.js" as QuickSettings
+import "../../quick_settings/devices.js" as Devices
 
 // Everything quick settings shows about sound beyond the default output
 // (VolumeService has that): the default input and who records from it,
@@ -52,7 +53,7 @@ Singleton {
             id: node.id,
             name: props["application.name"] || node.nickname || node.description || node.name,
             kind: Volume.outputKind(true, props),
-            link: Volume.link(props),
+            link: Devices.soundLink(Volume.link(props), props["node.nick"] || node.description || "", Daemon.peripherals?.devices),
             volume: node.ready && node.audio.volumes.length > 0 ? node.audio.volume : 0,
             muted: node.ready && node.audio.muted,
             ready: node.ready && node.audio.volumes.length > 0,
