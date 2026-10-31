@@ -12,6 +12,7 @@
 use super::*;
 use crate::hub::{ClientQueue, Outgoing};
 use crate::session_bus::TestBus;
+use bluez::MEDIA_TRANSPORT;
 use nova_protocol::{LogLevel, Topic};
 use nova_test_support::{TempDir, wait_until};
 use serde_json::{Value, json};
@@ -24,6 +25,8 @@ use zbus::wire::{OwnedVariant, Str};
 
 /// How long a test waits for what should come at once.
 const WAIT: Duration = Duration::from_secs(15);
+/// How long A2DP may take to come up here: the fake brings it at once.
+const AUDIO_WAIT_HERE: Duration = Duration::from_millis(500);
 const ADAPTER_PATH: &str = "/org/bluez/hci0";
 const HEADPHONES: &str = "00:1B:66:AA:BB:CC";
 const PHONE: &str = "9C:2A:70:11:22:33";
@@ -113,6 +116,9 @@ struct Fake {
     refuse_discovery: usize,
     /// Whether `Connect` fails as BlueZ does when it tried LE and gave up.
     abort_le: bool,
+    /// How many times a device that plays music connects without it, as
+    /// a headset that refuses A2DP right after connecting does.
+    refuse_a2dp: usize,
     /// A step that waits until a `Disconnect` or `CancelPairing` releases
     /// it: a `Connect` to a device that doesn't answer (BlueZ cancels it
     /// on `Disconnect`; powering off is refused meanwhile), or a slow
@@ -150,6 +156,7 @@ impl FakeBlueZ {
             pairing: Pairing::Confirm(123_456),
             refuse_discovery: 0,
             abort_le: false,
+            refuse_a2dp: 0,
             held: None,
             soft_block,
         }));
@@ -388,6 +395,58 @@ impl FakeDevice {
         .await
     }
 
+    /// Where BlueZ puts the A2DP transport of a device that plays music.
+    fn transport(&self) -> String {
+        format!("{}/sep1/fd0", self.path)
+    }
+
+    /// A device that plays music brings its A2DP transport up, unless the
+    /// test has it refuse: BlueZ adds the transport under the device.
+    async fn music_up(&self, connection: &Connection) {
+        let interfaces = {
+            let mut fake = lock(&self.fake);
+            let uuids = fake.objects[&self.path][DEVICE]
+                .get("UUIDs")
+                .map(|uuids| Vec::<String>::try_from(uuids.try_clone().unwrap()).unwrap());
+            if !uuids.is_some_and(|uuids| uuids.iter().any(|uuid| uuid == A2DP_SINK))
+                || fake.objects.contains_key(&self.transport())
+            {
+                return;
+            }
+            if fake.refuse_a2dp > 0 {
+                fake.refuse_a2dp -= 1;
+                return;
+            }
+            let transport: Properties = HashMap::from([
+                // This computer's end: the source, playing to the device.
+                ("UUID".into(), text(bluez::A2DP_SOURCE)),
+                ("Device".into(), path(&self.path)),
+                ("State".into(), text("idle")),
+            ]);
+            let interfaces: Interfaces = HashMap::from([(MEDIA_TRANSPORT.to_owned(), transport)]);
+            fake.objects.insert(self.transport(), interfaces.clone());
+            interfaces
+        };
+        let transport = ObjectPath::try_from(self.transport()).unwrap();
+        connection
+            .emit_signal(None::<&str>, "/", OBJECT_MANAGER, "InterfacesAdded", &(transport, interfaces))
+            .await
+            .unwrap();
+    }
+
+    /// Disconnected, its transport goes.
+    async fn music_down(&self, connection: &Connection) {
+        if lock(&self.fake).objects.remove(&self.transport()).is_none() {
+            return;
+        }
+        let transport = ObjectPath::try_from(self.transport()).unwrap();
+        let interfaces = vec![MEDIA_TRANSPORT.to_owned()];
+        connection
+            .emit_signal(None::<&str>, "/", OBJECT_MANAGER, "InterfacesRemoved", &(transport, interfaces))
+            .await
+            .unwrap();
+    }
+
     /// Releases a held step; true when one was waiting.
     fn release(&self) -> bool {
         let mut fake = lock(&self.fake);
@@ -441,12 +500,16 @@ impl FakeDevice {
             return Err(BlueZError::Failed("br-connection-canceled".into()));
         }
         changed(connection, &self.fake, &self.path, DEVICE, "Connected", OwnedVariant::from(true)).await;
+        self.music_up(connection).await;
         Ok(())
     }
 
     async fn connect_profile(&self, uuid: String, #[zbus(connection)] connection: &Connection) {
         self.log(&format!("ConnectProfile {uuid}"));
         changed(connection, &self.fake, &self.path, DEVICE, "Connected", OwnedVariant::from(true)).await;
+        if uuid == A2DP_SINK {
+            self.music_up(connection).await;
+        }
     }
 
     async fn disconnect(&self, #[zbus(connection)] connection: &Connection) {
@@ -455,6 +518,7 @@ impl FakeDevice {
             return;
         }
         changed(connection, &self.fake, &self.path, DEVICE, "Connected", OwnedVariant::from(false)).await;
+        self.music_down(connection).await;
     }
 
     fn cancel_pairing(&self) {
@@ -530,7 +594,12 @@ impl Fixture {
 
     /// Started with connects stopped after `connect_limit`.
     fn start_with(&self, connect_limit: Duration) -> Arc<Bluetooth> {
-        let sources = Sources { bus: Bus::Address(self.bus.address.clone()), rfkill: self.rfkill(), connect_limit };
+        let sources = Sources {
+            bus: Bus::Address(self.bus.address.clone()),
+            rfkill: self.rfkill(),
+            connect_limit,
+            audio_wait: AUDIO_WAIT_HERE,
+        };
         Bluetooth::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
@@ -922,4 +991,57 @@ fn a_stop_between_steps_holds() {
     bluetooth.disconnect(BUDS).unwrap();
     assert_eq!(connecting.join().unwrap(), Ok(()), "stopped: nothing to explain");
     assert!(!bluez.calls().iter().any(|call| call.starts_with("Connect")), "{:?}", bluez.calls());
+}
+
+/// Starts connecting the new earbuds on a thread and accepts the pairing
+/// question.
+fn connect_buds(fixture: &Fixture, bluetooth: &Arc<Bluetooth>) -> std::thread::JoinHandle<Result<(), String>> {
+    fixture.until("the devices", |event| event["radio"] == "on");
+    let connecting = {
+        let bluetooth = Arc::clone(bluetooth);
+        std::thread::spawn(move || bluetooth.connect(BUDS))
+    };
+    let event = fixture.until("the question", |event| !event["pairing"].is_null());
+    bluetooth.answer(event["pairing"]["id"].as_u64().unwrap(), PairingAnswer::Accept).unwrap();
+    connecting
+}
+
+fn connects(bluez: &FakeBlueZ) -> Vec<String> {
+    bluez.calls().into_iter().filter(|call| call.contains("Connect")).collect()
+}
+
+#[test]
+fn a_headset_that_connects_without_music_is_asked_for_it_again() {
+    let fixture = Fixture::new("a2dp-again");
+    let bluez = fixture.bluez();
+    lock(&bluez.fake).refuse_a2dp = 1;
+    let bluetooth = fixture.start();
+    assert_eq!(connect_buds(&fixture, &bluetooth).join().unwrap(), Ok(()));
+    let path = device_path(BUDS);
+    assert_eq!(connects(&bluez), [format!("Connect {path}"), format!("ConnectProfile {A2DP_SINK} {path}")]);
+    assert!(lock(&bluez.fake).objects.contains_key(&format!("{path}/sep1/fd0")), "music is up");
+    fixture.until("the earbuds connected", |event| status(event, BUDS).as_deref() == Some("connected"));
+}
+
+#[test]
+fn a_headset_that_never_plays_music_stays_connected() {
+    let fixture = Fixture::new("a2dp-never");
+    let bluez = fixture.bluez();
+    lock(&bluez.fake).refuse_a2dp = usize::MAX;
+    let bluetooth = fixture.start();
+    assert_eq!(connect_buds(&fixture, &bluetooth).join().unwrap(), Ok(()));
+    let path = device_path(BUDS);
+    let again = format!("ConnectProfile {A2DP_SINK} {path}");
+    assert_eq!(connects(&bluez), [format!("Connect {path}"), again.clone(), again], "asked twice more, then left");
+    fixture.until("the earbuds connected", |event| status(event, BUDS).as_deref() == Some("connected"));
+}
+
+#[test]
+fn a_device_without_music_isnt_asked_for_it() {
+    let fixture = Fixture::new("a2dp-none");
+    let bluez = fixture.bluez();
+    let bluetooth = fixture.start();
+    fixture.until("the devices", |event| event["radio"] == "on");
+    bluetooth.connect(PHONE).unwrap();
+    assert_eq!(connects(&bluez), [format!("Connect {}", device_path(PHONE))]);
 }
