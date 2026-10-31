@@ -22,6 +22,8 @@ pub const AGENT_MANAGER: &str = "org.bluez.AgentManager1";
 pub const MEDIA_TRANSPORT: &str = "org.bluez.MediaTransport1";
 /// A2DP's audio sink: music to headphones and speakers.
 pub const A2DP_SINK: &str = "0000110b-0000-1000-8000-00805f9b34fb";
+/// A2DP's audio source: this computer's end when it plays to them.
+pub const A2DP_SOURCE: &str = "0000110a-0000-1000-8000-00805f9b34fb";
 /// Where BlueZ serves `AgentManager1`.
 pub const BLUEZ_PATH: &str = "/org/bluez";
 
@@ -150,14 +152,16 @@ impl Objects {
     }
 
     /// Whether the device at `path` has its A2DP audio up: a transport
-    /// for it is under the device.
+    /// for it is under the device. A transport names this computer's end:
+    /// the A2DP source when it plays to headphones, the sink when a phone
+    /// plays to it.
     pub fn a2dp(&self, path: &str) -> bool {
         self.0.iter().any(|(object, interfaces)| {
             object.strip_prefix(path).is_some_and(|rest| rest.starts_with('/'))
                 && interfaces
                     .get(MEDIA_TRANSPORT)
                     .and_then(|transport| text(transport, "UUID"))
-                    .is_some_and(|uuid| uuid.eq_ignore_ascii_case(A2DP_SINK))
+                    .is_some_and(|uuid| [A2DP_SOURCE, A2DP_SINK].iter().any(|a2dp| uuid.eq_ignore_ascii_case(a2dp)))
         })
     }
 

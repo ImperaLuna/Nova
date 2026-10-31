@@ -418,7 +418,8 @@ impl FakeDevice {
                 return;
             }
             let transport: Properties = HashMap::from([
-                ("UUID".into(), text(A2DP_SINK)),
+                // This computer's end: the source, playing to the device.
+                ("UUID".into(), text(bluez::A2DP_SOURCE)),
                 ("Device".into(), path(&self.path)),
                 ("State".into(), text("idle")),
             ]);

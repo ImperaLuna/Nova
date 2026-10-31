@@ -458,7 +458,8 @@ impl Shared {
         }
         for attempt in 0..=AUDIO_RETRIES {
             if attempt > 0 {
-                if self.go_on(address).is_err() {
+                // Stopped by the user, or the whole service stopped.
+                if self.go_on(address).is_err() || lock(&self.state).stopped {
                     return;
                 }
                 self.logger.info(LOG_SOURCE, &format!("{address}: connected without A2DP, asking for it again"));
