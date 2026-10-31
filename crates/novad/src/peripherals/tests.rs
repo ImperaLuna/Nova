@@ -441,6 +441,56 @@ fn a_headset_both_sources_report_is_listed_once() {
     peripherals.stop();
 }
 
+/// A headset on Bluetooth and on its dongle at once is listed once: no USB
+/// id joins the two, its kind and name do. The merge is checked alone, as
+/// the sources' lists come in any order.
+#[test]
+fn a_headset_on_bluetooth_and_its_dongle_is_listed_once() {
+    let upower: Vec<Found> = ["upower.json", "upower-bluetooth-headset.json"]
+        .into_iter()
+        .flat_map(|name| recording(name).devices)
+        .filter_map(|device| {
+            let p = device.properties;
+            let properties = upower::Properties {
+                native_path: p.native_path,
+                vendor: p.vendor,
+                model: p.model,
+                serial: p.serial,
+                kind: p.kind,
+                power_supply: p.power_supply,
+                percentage: p.percentage,
+                battery_level: p.battery_level,
+                state: p.state,
+                is_present: p.is_present,
+            };
+            upower::found(&device.path, &properties, Path::new("/nonexistent"))
+        })
+        .collect();
+    let dongle =
+        headsetcontrol::parse(std::fs::read_to_string(recorded("headsetcontrol.json")).unwrap().as_bytes()).unwrap();
+    let merged = merge(&[(PeripheralSource::Upower, upower), (PeripheralSource::Headsetcontrol, dongle)]);
+    let ids: Vec<&str> = merged.devices.iter().map(|device| device.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "upower/mouse_hidpp_battery_0",
+            "upower/keyboard_hidpp_battery_1",
+            "upower/gaming_input_dev_A0_5A_5C_11_22_33",
+            "upower/headphones_dev_20_AF_1B_0A_FD_79"
+        ]
+    );
+    assert_eq!(merged.devices[3].link, Some(PeripheralLink::Bluetooth));
+}
+
+/// Only names that hold one another's words, in order, are one device's.
+#[test]
+fn names_match_by_whole_words() {
+    assert!(names_match("SteelSeries Arctis Nova 5X", "arctis nova 5x"));
+    assert!(!names_match("Arctis Nova 5", "Arctis Nova 5X"));
+    assert!(!names_match("Arctis Nova 5X", "Nova 5X Arctis"));
+    assert!(!names_match("", "Arctis"));
+}
+
 /// Waits for an event listing `count` devices (the sources report apart).
 fn eventually_devices(fixture: &Fixture, count: usize) -> Value {
     loop {
