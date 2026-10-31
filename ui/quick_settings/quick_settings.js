@@ -1,5 +1,6 @@
 .pragma library
 .import "../util/numbers.js" as Numbers
+.import "devices.js" as Devices
 
 // Quick settings' pure logic: the greeting, which logo to show,
 // how sizes and percents read, which apps record from the mic, and the
@@ -157,17 +158,9 @@ function kindLabel(kind) {
     }[kind] || "";
 }
 
-// A list row's second line: what the output is (kindLabel) and how it's
-// connected (volume.js link), like "Headphones · Bluetooth", so a headset
-// listed on both its links reads as two. An input has no kind, only the
-// link. A Bluetooth speaker's kind already says it.
+// A list row's second line: how the output or input is connected
+// (devices.js soundLink), so a headset listed on both its links reads as
+// two, else what it is (kindLabel).
 function soundSubtitle(kind, link) {
-    var linkLabel = {
-        bluetooth: qsTr("Bluetooth"),
-        usb: qsTr("USB")
-    }[link] || "";
-    var kindText = kindLabel(kind);
-    if (kind === "bluetooth" || linkLabel === "")
-        return kindText;
-    return kindText === "" ? linkLabel : kindText + " · " + linkLabel;
+    return Devices.linkLabel(link) || kindLabel(kind);
 }
