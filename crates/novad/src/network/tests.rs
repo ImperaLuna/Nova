@@ -276,7 +276,8 @@ fn a_preference_holds_for_ipv6_where_its_metrics_differ() {
     // Already Wi-Fi's for IPv4, so the event doesn't change.
     network.prefer(LinkKind::Wifi).unwrap();
     let wifi_device = "/org/freedesktop/NetworkManager/Devices/3";
-    nova_test_support::wait_until(WAIT, "a reapply", || !nm.calls("Reapply").is_empty());
+    // Calls are counted as they come, metrics once they're applied.
+    nova_test_support::wait_until(WAIT, "a reapply", || nm.applied_metrics(wifi_device).is_some());
     assert_eq!(nm.calls("Reapply"), [wifi_device], "only Wi-Fi's IPv6 needed to change");
     assert_eq!(
         nm.applied_metrics(wifi_device),
