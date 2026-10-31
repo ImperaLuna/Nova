@@ -240,6 +240,24 @@ impl<'a> Connection<'a> {
             }
             Command::MediaFocus { player } => return self.media_focus(player),
             Command::MediaWindow { player } => return self.media_window(player),
+            Command::SetWifi { enabled } => {
+                let enabled = *enabled;
+                return self.network_later(move |network| done(network.set_wifi(enabled)));
+            }
+            Command::ScanWifi => return self.network_later(|network| done(network.scan())),
+            Command::ConnectWifi { ssid, password } => {
+                let (ssid, password) = (ssid.clone(), password.clone());
+                return self.network_later(move |network| done(network.connect(&ssid, password.as_ref())));
+            }
+            Command::DisconnectWifi => return self.network_later(|network| done(network.disconnect())),
+            Command::ForgetWifi { ssid } => {
+                let ssid = ssid.clone();
+                return self.network_later(move |network| done(network.forget(&ssid)));
+            }
+            Command::PreferNetwork { kind } => done(self.network().and_then(|network| network.prefer(*kind))),
+            Command::WatchNetworkTraffic { watching } => {
+                done(self.network().map(|network| network.watch_traffic(self.id, *watching)))
+            }
         };
         Answer::Now(outcome)
     }
@@ -270,6 +288,18 @@ impl<'a> Connection<'a> {
 
     fn media(&self) -> Result<Arc<crate::media::Media>, String> {
         running(lock(&self.daemon.settings).media.clone(), crate::media::FEATURE_ID)
+    }
+
+    fn network(&self) -> Result<Arc<crate::network::Network>, String> {
+        running(lock(&self.daemon.settings).network.clone(), crate::network::FEATURE_ID)
+    }
+
+    /// Runs `work` on its own thread: NetworkManager may take a while.
+    fn network_later(&self, work: impl FnOnce(&crate::network::Network) -> Outcome + Send + 'static) -> Answer {
+        match self.network() {
+            Ok(network) => Answer::later(move || work(&network)),
+            Err(e) => Answer::Now(Outcome::Error(e)),
+        }
     }
 
     fn compositor(&self) -> Result<&crate::compositor::Compositor, String> {
@@ -678,6 +708,11 @@ impl<'a> Connection<'a> {
                                 peripherals.send_state(self.id);
                             }
                         }
+                        Topic::Network => {
+                            if let Some(network) = &settings.network {
+                                network.send_state(self.id);
+                            }
+                        }
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -734,7 +769,14 @@ impl<'a> Connection<'a> {
             | Command::MediaSeek { .. }
             | Command::MediaShow { .. }
             | Command::MediaFocus { .. }
-            | Command::MediaWindow { .. } => {}
+            | Command::MediaWindow { .. }
+            | Command::SetWifi { .. }
+            | Command::ScanWifi
+            | Command::ConnectWifi { .. }
+            | Command::DisconnectWifi
+            | Command::ForgetWifi { .. }
+            | Command::PreferNetwork { .. }
+            | Command::WatchNetworkTraffic { .. } => {}
         }
     }
 
@@ -759,9 +801,15 @@ impl<'a> Connection<'a> {
 impl Drop for Connection<'_> {
     fn drop(&mut self) {
         self.daemon.hub.unregister(self.id);
-        let resources = lock(&self.daemon.settings).resources.clone();
+        let (resources, network) = {
+            let settings = lock(&self.daemon.settings);
+            (settings.resources.clone(), settings.network.clone())
+        };
         if let Some(resources) = resources {
             resources.watch(self.id, false);
+        }
+        if let Some(network) = network {
+            network.watch_traffic(self.id, false);
         }
     }
 }
