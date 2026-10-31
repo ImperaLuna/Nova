@@ -92,8 +92,9 @@ Item {
                         textFormat: Text.PlainText
                         text: page.input ? (page.inputAvailable ? page.inputName : qsTr("No input")) : page.outputAvailable ? page.outputName : qsTr("No output")
                     }
+                    // Kept when empty, so the card is the same height on
+                    // every tab.
                     Text {
-                        visible: text !== ""
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSizeTiny
                         color: Tokens.fgDim
