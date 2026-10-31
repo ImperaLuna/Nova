@@ -65,6 +65,8 @@ struct Fake {
     /// A method whose next call fails, as NetworkManager's do when a
     /// connection changed under the caller.
     fail_next: Option<String>,
+    /// Activations stay activating, as when the network doesn't answer.
+    stall: bool,
     /// Every call novad made: (path, interface, method).
     calls: Vec<(String, String, String)>,
 }
@@ -105,6 +107,16 @@ impl FakeNm {
     /// The calls novad made of `method`, by path.
     pub fn calls(&self, method: &str) -> Vec<String> {
         lock(&self.state).calls.iter().filter(|call| call.2 == method).map(|call| call.0.clone()).collect()
+    }
+
+    /// Leaves connections it activates from now activating.
+    pub fn stall(&self) {
+        lock(&self.state).stall = true;
+    }
+
+    /// Goes off the bus, as NetworkManager does when it stops.
+    pub fn vanish(&self) {
+        zbus::block_on(self.connection.release_name(NM)).unwrap();
     }
 
     /// Makes the next call of `method` fail.
@@ -347,7 +359,7 @@ impl FakeNm {
     /// Activates `profile` on `device`: it connects a moment later, or
     /// fails for missing secrets when its password isn't the network's.
     fn activate(&self, profile: &str, device: &str) -> OwnedObjectPath {
-        let (active, works, ssid) = {
+        let (active, works, ssid, stall) = {
             let mut state = lock(&self.state);
             state.next_id += 1;
             let active = format!("{ACTIVE_PREFIX}{}", state.next_id);
@@ -372,8 +384,11 @@ impl FakeNm {
                 ("Default".to_string(), ("b".to_string(), json!(false))),
             ]);
             state.objects.insert(active.clone(), BTreeMap::from([(ACTIVE.to_string(), properties)]));
-            (active, works, ssid)
+            (active, works, ssid, state.stall)
         };
+        if stall {
+            return object_path(&active);
+        }
         let connection = self.connection.clone();
         let state = Arc::clone(&self.state);
         let finishing = active.clone();

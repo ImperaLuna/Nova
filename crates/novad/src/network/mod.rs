@@ -383,6 +383,9 @@ impl Shared {
                     if state.reading.is_some() {
                         self.logger.info(LOG_SOURCE, &format!("NetworkManager stopped answering: {e}"));
                     }
+                    // Its active connections went with it: an attempt's
+                    // last state change won't come.
+                    state.attempt = None;
                     None
                 }
             };
@@ -398,13 +401,15 @@ impl Shared {
             let forget = self.wrong_password_profile(&mut state);
             let preference = self.preference_due(&mut state);
             drop(state);
+            let stopped = || lock(&self.state).stopped;
             if let Some(profile) = forget
+                && !stopped()
                 && let Err(e) = zbus::block_on(actions::forget_created(&connection, &profile))
             {
                 self.logger.warn(LOG_SOURCE, &format!("can't remove the profile of a network it couldn't join: {e}"));
             }
             let failed = preference.and_then(|(reading, pick)| {
-                let e = zbus::block_on(apply_preference(&connection, &reading, pick)).err()?;
+                let e = zbus::block_on(apply_preference(&connection, &reading, pick, &stopped)).err()?;
                 self.logger.warn(LOG_SOURCE, &format!("can't prefer the {pick:?} link: {e}"));
                 Some(())
             });
@@ -561,7 +566,14 @@ fn links(reading: &Reading) -> Vec<String> {
 /// Sets both links' route metrics so the picked one carries traffic, IPv4
 /// and IPv6 each on its own: each keeps its profile's metric when that
 /// already does it, else the picked one's goes just under the other's.
-async fn apply_preference(connection: &Connection, reading: &Reading, pick: LinkKind) -> zbus::Result<()> {
+/// Stops short once `stopped` says the service stopped meanwhile: a new
+/// instance may be setting them.
+async fn apply_preference(
+    connection: &Connection,
+    reading: &Reading,
+    pick: LinkKind,
+    stopped: &dyn Fn() -> bool,
+) -> zbus::Result<()> {
     let Some((wired, wifi)) = connected_pair(reading) else { return Ok(()) };
     let wired_link = Link::read(connection, &wired.path, wired.active.as_ref(), DEFAULT_METRIC_WIRED).await?;
     let wifi_link = Link::read(connection, &wifi.path, wifi.active.as_ref(), DEFAULT_METRIC_WIFI).await?;
@@ -578,7 +590,7 @@ async fn apply_preference(connection: &Connection, reading: &Reading, pick: Link
     for (link, metrics) in [(other, other_metrics), (picked, picked_metrics)] {
         let changes = (0..manager::FAMILIES.len())
             .any(|family| link.applied_metric(family) != metrics[family].unwrap_or(link.default_metric));
-        if changes {
+        if changes && !stopped() {
             actions::set_route_metric(connection, &link.device, link.applied, link.version, metrics).await?;
         }
     }

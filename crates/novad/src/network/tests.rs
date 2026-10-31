@@ -327,6 +327,26 @@ fn without_networkmanager_nothing_runs_and_commands_say_why() {
 }
 
 #[test]
+fn an_attempt_ends_when_networkmanager_goes() {
+    let fixture = Fixture::new("gone");
+    let nm = fixture.nm();
+    let network = fixture.start();
+    fixture.next();
+    network.disconnect().unwrap();
+    fixture.until("Wi-Fi off its network", |event| event["wifi"].get("network").is_none());
+
+    nm.stall();
+    network.connect("Home", None).unwrap();
+    fixture.until("connecting", |event| event["wifi"]["attempt"]["outcome"] == "connecting");
+    nm.vanish();
+    fixture.until("NetworkManager gone", |event| event["running"] == false);
+    let _back = fixture.nm();
+    let event = fixture.until("NetworkManager back", |event| event["running"] == true);
+    assert!(event["wifi"].get("attempt").is_none(), "its last state change won't come: {event}");
+    network.stop();
+}
+
+#[test]
 fn networkmanager_starting_later_is_read() {
     let fixture = Fixture::new("later");
     let network = fixture.start();

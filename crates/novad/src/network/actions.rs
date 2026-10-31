@@ -73,7 +73,7 @@ pub async fn connect(
     let point = wifi
         .access_points
         .iter()
-        .filter(|point| point.ssid == ssid.as_bytes())
+        .filter(|point| manager::names_ssid(ssid, &point.ssid))
         .max_by_key(|point| point.strength)
         .ok_or_else(|| format!("{ssid} isn't in reach"))?;
     match point.security {
@@ -86,10 +86,9 @@ pub async fn connect(
     if let Some(password) = password {
         validate_password(password, point.key_mgmt)?;
     }
-    let saved = reading
-        .profiles
-        .iter()
-        .find(|profile| profile.kind == TYPE_WIFI && profile.ssid.as_deref() == Some(ssid.as_bytes()));
+    let saved = reading.profiles.iter().find(|profile| {
+        profile.kind == TYPE_WIFI && profile.ssid.as_deref().is_some_and(|bytes| manager::names_ssid(ssid, bytes))
+    });
     let failed = |e: zbus::Error| format!("can't connect to {ssid}: {e}");
     if let Some(saved) = saved {
         if let (Some(password), Some(key_mgmt)) = (password, point.key_mgmt) {
@@ -105,7 +104,7 @@ pub async fn connect(
         return Err(format!("{ssid} needs a password"));
     }
     let mut settings: HashMap<&str, HashMap<&str, Variant<'_>>> = HashMap::new();
-    settings.insert(TYPE_WIFI, HashMap::from([("ssid", Variant::from(ssid.as_bytes().to_vec()))]));
+    settings.insert(TYPE_WIFI, HashMap::from([("ssid", Variant::from(point.ssid.clone()))]));
     if let (Some(password), Some(key_mgmt)) = (password, point.key_mgmt) {
         settings.insert(
             SECURITY_SETTING,
@@ -167,7 +166,9 @@ pub async fn forget(connection: &Connection, reading: &Reading, ssid: &str) -> R
     let profiles: Vec<_> = reading
         .profiles
         .iter()
-        .filter(|profile| profile.kind == TYPE_WIFI && profile.ssid.as_deref() == Some(ssid.as_bytes()))
+        .filter(|profile| {
+            profile.kind == TYPE_WIFI && profile.ssid.as_deref().is_some_and(|bytes| manager::names_ssid(ssid, bytes))
+        })
         .collect();
     if profiles.is_empty() {
         return Err(format!("{ssid} isn't saved"));

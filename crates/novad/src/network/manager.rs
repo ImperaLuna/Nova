@@ -315,6 +315,13 @@ pub fn ssid_text(ssid: &[u8]) -> String {
     String::from_utf8_lossy(ssid).chars().filter(|c| !c.is_control()).collect()
 }
 
+/// The network a command names (by its name as the UI shows it, from
+/// ssid_text) is the one with these bytes: commands come back with the text,
+/// so a name that isn't UTF-8 still matches its network.
+pub fn names_ssid(name: &str, ssid: &[u8]) -> bool {
+    ssid == name.as_bytes() || ssid_text(ssid) == name
+}
+
 fn text(properties: &Properties, name: &str) -> String {
     properties.get(name).and_then(|value| String::try_from(value.try_clone().ok()?).ok()).unwrap_or_default()
 }
@@ -338,6 +345,15 @@ fn path(properties: &Properties, name: &str) -> Option<OwnedObjectPath> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_name_that_isnt_utf8_still_names_its_network() {
+        let ssid = b"Caf\xe9\x07";
+        assert_eq!(ssid_text(ssid), "Caf\u{fffd}");
+        assert!(names_ssid(&ssid_text(ssid), ssid), "commands come back with the shown name");
+        assert!(names_ssid("Home", b"Home"));
+        assert!(!names_ssid("Home", b"Home-2G"));
+    }
 
     #[test]
     fn access_points_are_secured_by_their_best_method() {
