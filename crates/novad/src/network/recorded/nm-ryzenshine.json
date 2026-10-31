@@ -1,0 +1,197 @@
+{
+ "/org/freedesktop/NetworkManager": {
+  "org.freedesktop.NetworkManager": {"data": [{
+   "ActiveConnections": {"data": ["/org/freedesktop/NetworkManager/ActiveConnection/4", "/org/freedesktop/NetworkManager/ActiveConnection/3", "/org/freedesktop/NetworkManager/ActiveConnection/2", "/org/freedesktop/NetworkManager/ActiveConnection/1"], "type": "ao"},
+   "Devices": {"data": ["/org/freedesktop/NetworkManager/Devices/1", "/org/freedesktop/NetworkManager/Devices/2", "/org/freedesktop/NetworkManager/Devices/3", "/org/freedesktop/NetworkManager/Devices/4", "/org/freedesktop/NetworkManager/Devices/5", "/org/freedesktop/NetworkManager/Devices/6"], "type": "ao"},
+   "PrimaryConnection": {"data": "/org/freedesktop/NetworkManager/ActiveConnection/4", "type": "o"},
+   "PrimaryConnectionType": {"data": "802-11-wireless", "type": "s"},
+   "State": {"data": 70, "type": "u"},
+   "WirelessEnabled": {"data": true, "type": "b"},
+   "WirelessHardwareEnabled": {"data": true, "type": "b"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/AccessPoint/2": {
+  "org.freedesktop.NetworkManager.AccessPoint": {"data": [{
+   "Flags": {"data": 3, "type": "u"},
+   "Frequency": {"data": 5180, "type": "u"},
+   "RsnFlags": {"data": 392, "type": "u"},
+   "Ssid": {"data": [72, 111, 109, 101], "type": "ay"},
+   "Strength": {"data": 69, "type": "y"},
+   "WpaFlags": {"data": 0, "type": "u"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/AccessPoint/301": {
+  "org.freedesktop.NetworkManager.AccessPoint": {"data": [{
+   "Flags": {"data": 1, "type": "u"},
+   "Frequency": {"data": 5180, "type": "u"},
+   "RsnFlags": {"data": 392, "type": "u"},
+   "Ssid": {"data": [], "type": "ay"},
+   "Strength": {"data": 79, "type": "y"},
+   "WpaFlags": {"data": 0, "type": "u"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/AccessPoint/302": {
+  "org.freedesktop.NetworkManager.AccessPoint": {"data": [{
+   "Flags": {"data": 3, "type": "u"},
+   "Frequency": {"data": 2437, "type": "u"},
+   "RsnFlags": {"data": 392, "type": "u"},
+   "Ssid": {"data": [72, 111, 109, 101], "type": "ay"},
+   "Strength": {"data": 84, "type": "y"},
+   "WpaFlags": {"data": 0, "type": "u"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/AccessPoint/303": {
+  "org.freedesktop.NetworkManager.AccessPoint": {"data": [{
+   "Flags": {"data": 1, "type": "u"},
+   "Frequency": {"data": 2437, "type": "u"},
+   "RsnFlags": {"data": 392, "type": "u"},
+   "Ssid": {"data": [], "type": "ay"},
+   "Strength": {"data": 84, "type": "y"},
+   "WpaFlags": {"data": 0, "type": "u"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/AccessPoint/304": {
+  "org.freedesktop.NetworkManager.AccessPoint": {"data": [{
+   "Flags": {"data": 3, "type": "u"},
+   "Frequency": {"data": 2437, "type": "u"},
+   "RsnFlags": {"data": 392, "type": "u"},
+   "Ssid": {"data": [72, 111, 109, 101], "type": "ay"},
+   "Strength": {"data": 17, "type": "y"},
+   "WpaFlags": {"data": 0, "type": "u"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/AccessPoint/305": {
+  "org.freedesktop.NetworkManager.AccessPoint": {"data": [{
+   "Flags": {"data": 1, "type": "u"},
+   "Frequency": {"data": 2437, "type": "u"},
+   "RsnFlags": {"data": 392, "type": "u"},
+   "Ssid": {"data": [], "type": "ay"},
+   "Strength": {"data": 17, "type": "y"},
+   "WpaFlags": {"data": 0, "type": "u"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/ActiveConnection/1": {
+  "org.freedesktop.NetworkManager.Connection.Active": {"data": [{
+   "Connection": {"data": "/org/freedesktop/NetworkManager/Settings/4", "type": "o"},
+   "Default": {"data": false, "type": "b"},
+   "Devices": {"data": ["/org/freedesktop/NetworkManager/Devices/1"], "type": "ao"},
+   "Id": {"data": "lo", "type": "s"},
+   "State": {"data": 2, "type": "u"},
+   "Type": {"data": "loopback", "type": "s"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/ActiveConnection/2": {
+  "org.freedesktop.NetworkManager.Connection.Active": {"data": [{
+   "Connection": {"data": "/org/freedesktop/NetworkManager/Settings/5", "type": "o"},
+   "Default": {"data": false, "type": "b"},
+   "Devices": {"data": ["/org/freedesktop/NetworkManager/Devices/4"], "type": "ao"},
+   "Id": {"data": "virbr0", "type": "s"},
+   "State": {"data": 2, "type": "u"},
+   "Type": {"data": "bridge", "type": "s"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/ActiveConnection/3": {
+  "org.freedesktop.NetworkManager.Connection.Active": {"data": [{
+   "Connection": {"data": "/org/freedesktop/NetworkManager/Settings/3", "type": "o"},
+   "Default": {"data": false, "type": "b"},
+   "Devices": {"data": ["/org/freedesktop/NetworkManager/Devices/2"], "type": "ao"},
+   "Id": {"data": "Wired connection 1", "type": "s"},
+   "State": {"data": 2, "type": "u"},
+   "Type": {"data": "802-3-ethernet", "type": "s"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/ActiveConnection/4": {
+  "org.freedesktop.NetworkManager.Connection.Active": {"data": [{
+   "Connection": {"data": "/org/freedesktop/NetworkManager/Settings/1", "type": "o"},
+   "Default": {"data": true, "type": "b"},
+   "Devices": {"data": ["/org/freedesktop/NetworkManager/Devices/3"], "type": "ao"},
+   "Id": {"data": "Home", "type": "s"},
+   "State": {"data": 2, "type": "u"},
+   "Type": {"data": "802-11-wireless", "type": "s"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/Devices/1": {
+  "org.freedesktop.NetworkManager.Device": {"data": [{
+   "ActiveConnection": {"data": "/org/freedesktop/NetworkManager/ActiveConnection/1", "type": "o"},
+   "DeviceType": {"data": 32, "type": "u"},
+   "Interface": {"data": "lo", "type": "s"},
+   "Managed": {"data": true, "type": "b"},
+   "Real": {"data": true, "type": "b"},
+   "State": {"data": 100, "type": "u"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/Devices/2": {
+  "org.freedesktop.NetworkManager.Device": {"data": [{
+   "ActiveConnection": {"data": "/org/freedesktop/NetworkManager/ActiveConnection/3", "type": "o"},
+   "DeviceType": {"data": 1, "type": "u"},
+   "Interface": {"data": "enp5s0", "type": "s"},
+   "Managed": {"data": true, "type": "b"},
+   "Real": {"data": true, "type": "b"},
+   "State": {"data": 100, "type": "u"}
+  }], "type": "a{sv}"},
+  "org.freedesktop.NetworkManager.Device.Wired": {"data": [{
+   "Speed": {"data": 1000, "type": "u"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/Devices/3": {
+  "org.freedesktop.NetworkManager.Device": {"data": [{
+   "ActiveConnection": {"data": "/org/freedesktop/NetworkManager/ActiveConnection/4", "type": "o"},
+   "DeviceType": {"data": 2, "type": "u"},
+   "Interface": {"data": "wlp6s0", "type": "s"},
+   "Managed": {"data": true, "type": "b"},
+   "Real": {"data": true, "type": "b"},
+   "State": {"data": 100, "type": "u"}
+  }], "type": "a{sv}"},
+  "org.freedesktop.NetworkManager.Device.Wireless": {"data": [{
+   "AccessPoints": {"data": ["/org/freedesktop/NetworkManager/AccessPoint/2", "/org/freedesktop/NetworkManager/AccessPoint/301", "/org/freedesktop/NetworkManager/AccessPoint/302", "/org/freedesktop/NetworkManager/AccessPoint/303", "/org/freedesktop/NetworkManager/AccessPoint/304", "/org/freedesktop/NetworkManager/AccessPoint/305"], "type": "ao"},
+   "ActiveAccessPoint": {"data": "/org/freedesktop/NetworkManager/AccessPoint/2", "type": "o"},
+   "Bitrate": {"data": 585000, "type": "u"},
+   "LastScan": {"data": 26375372, "type": "x"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/Devices/4": {
+  "org.freedesktop.NetworkManager.Device": {"data": [{
+   "ActiveConnection": {"data": "/org/freedesktop/NetworkManager/ActiveConnection/2", "type": "o"},
+   "DeviceType": {"data": 13, "type": "u"},
+   "Interface": {"data": "virbr0", "type": "s"},
+   "Managed": {"data": true, "type": "b"},
+   "Real": {"data": true, "type": "b"},
+   "State": {"data": 100, "type": "u"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/Devices/5": {
+  "org.freedesktop.NetworkManager.Device": {"data": [{
+   "ActiveConnection": {"data": "/", "type": "o"},
+   "DeviceType": {"data": 30, "type": "u"},
+   "Interface": {"data": "p2p-dev-wlp6s0", "type": "s"},
+   "Managed": {"data": true, "type": "b"},
+   "Real": {"data": true, "type": "b"},
+   "State": {"data": 30, "type": "u"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/Devices/6": {
+  "org.freedesktop.NetworkManager.Device": {"data": [{
+   "ActiveConnection": {"data": "/", "type": "o"},
+   "DeviceType": {"data": 16, "type": "u"},
+   "Interface": {"data": "tailscale0", "type": "s"},
+   "Managed": {"data": false, "type": "b"},
+   "Real": {"data": true, "type": "b"},
+   "State": {"data": 10, "type": "u"}
+  }], "type": "a{sv}"}
+ },
+ "/org/freedesktop/NetworkManager/Settings/1": {
+  "org.freedesktop.NetworkManager.Settings.Connection": {"GetSettings": {"data": [{"802-11-wireless": {"mode": {"data": "infrastructure", "type": "s"}, "security": {"data": "802-11-wireless-security", "type": "s"}, "seen-bssids": {"data": ["02:00:00:00:00:08", "02:00:00:00:00:0C", "02:00:00:00:00:10"], "type": "as"}, "ssid": {"data": [72, 111, 109, 101], "type": "ay"}}, "802-11-wireless-security": {"auth-alg": {"data": "open", "type": "s"}, "key-mgmt": {"data": "wpa-psk", "type": "s"}}, "connection": {"id": {"data": "Home", "type": "s"}, "interface-name": {"data": "wlp6s0", "type": "s"}, "permissions": {"data": [], "type": "as"}, "timestamp": {"data": 1793377026, "type": "t"}, "type": {"data": "802-11-wireless", "type": "s"}, "uuid": {"data": "6a3b8501-d9fe-4949-9bc9-4110da8de231", "type": "s"}}, "ipv4": {"method": {"data": "auto", "type": "s"}, "route-metric": {"data": 10, "type": "x"}}, "ipv6": {"method": {"data": "auto", "type": "s"}, "route-metric": {"data": 10, "type": "x"}}, "proxy": {}}], "type": "a{sa{sv}}"}}
+ },
+ "/org/freedesktop/NetworkManager/Settings/2": {
+  "org.freedesktop.NetworkManager.Settings.Connection": {"GetSettings": {"data": [{"802-11-wireless": {"mode": {"data": "infrastructure", "type": "s"}, "security": {"data": "802-11-wireless-security", "type": "s"}, "seen-bssids": {"data": ["02:00:00:00:00:16"], "type": "as"}, "ssid": {"data": [80, 104, 111, 110, 101, 32, 104, 111, 116, 115, 112, 111, 116], "type": "ay"}}, "802-11-wireless-security": {"key-mgmt": {"data": "wpa-psk", "type": "s"}}, "connection": {"autoconnect-priority": {"data": 10, "type": "i"}, "id": {"data": "Phone hotspot", "type": "s"}, "permissions": {"data": [], "type": "as"}, "timestamp": {"data": 1776248586, "type": "t"}, "type": {"data": "802-11-wireless", "type": "s"}, "uuid": {"data": "b5ff45df-1cc5-4d40-b029-33caf2c18630", "type": "s"}}, "ipv4": {"method": {"data": "auto", "type": "s"}, "route-metric": {"data": 300, "type": "x"}}, "ipv6": {"method": {"data": "auto", "type": "s"}, "route-metric": {"data": 300, "type": "x"}}, "proxy": {}}], "type": "a{sa{sv}}"}}
+ },
+ "/org/freedesktop/NetworkManager/Settings/3": {
+  "org.freedesktop.NetworkManager.Settings.Connection": {"GetSettings": {"data": [{"802-3-ethernet": {"auto-negotiate": {"data": false, "type": "b"}, "s390-options": {"data": {}, "type": "a{ss}"}}, "connection": {"autoconnect-priority": {"data": 100, "type": "i"}, "id": {"data": "Wired connection 1", "type": "s"}, "interface-name": {"data": "enp5s0", "type": "s"}, "permissions": {"data": [], "type": "as"}, "timestamp": {"data": 1793377026, "type": "t"}, "type": {"data": "802-3-ethernet", "type": "s"}, "uuid": {"data": "3e1936b9-f35e-3b06-ab3b-f80844f7dfb0", "type": "s"}}, "ipv4": {"method": {"data": "auto", "type": "s"}, "route-metric": {"data": 900, "type": "x"}}, "ipv6": {"method": {"data": "auto", "type": "s"}, "route-metric": {"data": 900, "type": "x"}}, "proxy": {}}], "type": "a{sa{sv}}"}}
+ },
+ "/org/freedesktop/NetworkManager/Settings/4": {
+  "org.freedesktop.NetworkManager.Settings.Connection": {"GetSettings": {"data": [{"connection": {"id": {"data": "lo", "type": "s"}, "interface-name": {"data": "lo", "type": "s"}, "permissions": {"data": [], "type": "as"}, "timestamp": {"data": 1793377020, "type": "t"}, "type": {"data": "loopback", "type": "s"}, "uuid": {"data": "a8cd7d9c-4895-4298-a514-0c4d392b41b7", "type": "s"}}, "ipv4": {"method": {"data": "manual", "type": "s"}}, "ipv6": {"method": {"data": "manual", "type": "s"}}, "loopback": {}, "proxy": {}}], "type": "a{sa{sv}}"}}
+ },
+ "/org/freedesktop/NetworkManager/Settings/5": {
+  "org.freedesktop.NetworkManager.Settings.Connection": {"GetSettings": {"data": [{"802-3-ethernet": {"auto-negotiate": {"data": false, "type": "b"}, "s390-options": {"data": {}, "type": "a{ss}"}}, "bridge": {"forward-delay": {"data": 2, "type": "u"}, "interface-name": {"data": "virbr0", "type": "s"}, "vlans": {"data": [], "type": "aa{sv}"}}, "connection": {"id": {"data": "virbr0", "type": "s"}, "interface-name": {"data": "virbr0", "type": "s"}, "permissions": {"data": [], "type": "as"}, "timestamp": {"data": 1793377023, "type": "t"}, "type": {"data": "bridge", "type": "s"}, "uuid": {"data": "ecfd6c69-0924-489c-af00-fb06db239047", "type": "s"}}, "ipv4": {"method": {"data": "manual", "type": "s"}}, "ipv6": {"method": {"data": "disabled", "type": "s"}}, "proxy": {}}], "type": "a{sa{sv}}"}}
+ }
+}

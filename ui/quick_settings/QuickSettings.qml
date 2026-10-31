@@ -22,9 +22,10 @@ import "../icons"
 // were, and its sections fade in one after another. A click outside
 // closes it.
 //
-// Pages slide in from the right (sound, Bluetooth, resources, notification
-// settings) and back out to the first page. Reading and acting go through
-// QuickSettingsService, BluetoothService, VolumeService, SoundService and
+// Pages slide in from the right (sound, network, Bluetooth, resources,
+// notification settings) and back out to the first page. Reading and acting
+// go through QuickSettingsService, NetworkService, BluetoothService,
+// VolumeService, SoundService and
 // NotificationsService; the pages themselves only get
 // properties, so ui/tests can drive them.
 StagePanel {
@@ -44,7 +45,7 @@ StagePanel {
     name: Protocol.FEATURE_QUICK_SETTINGS
     placement: "right"
 
-    // "main", "sound", "bluetooth", "resources" or "notifications".
+    // "main", "sound", "network", "bluetooth", "resources" or "notifications".
     property string page: "main"
 
     readonly property Morph morph: Morph {
@@ -131,7 +132,7 @@ StagePanel {
         // What the top row leaves for the pill's buttons.
         readonly property real headerInset: panel.output.width - Tokens.quickSettingsPad - (panel.buttonsX - Tokens.pillButtonInset) + Tokens.gap
 
-        readonly property bool sliding: [mainSlot, soundSlot, bluetoothSlot, resourcesSlot, notificationsSlot].some(slot => slot.sliding)
+        readonly property bool sliding: [mainSlot, soundSlot, networkSlot, bluetoothSlot, resourcesSlot, notificationsSlot].some(slot => slot.sliding)
 
         PageSlot {
             id: mainSlot
@@ -154,6 +155,8 @@ StagePanel {
                     logo: QuickSettings.logo(QuickSettingsService.host?.os, Qt.resolvedUrl("logos"), path => AppIcons.source(path))
                     host: QuickSettingsService.host
                     now: panel.now
+                    networkShown: NetworkService.ready
+                    network: NetworkService.network
                     keepAwake: QuickSettingsService.keepAwake
                     micAvailable: SoundService.sourceReady
                     micMuted: SoundService.sourceMuted
@@ -237,6 +240,39 @@ StagePanel {
                     onAppVolumeMoved: (ids, value) => SoundService.setVolumes(ids, value)
                     onAppMuteToggled: (ids, muted) => SoundService.setMuted(ids, muted)
                     iconSource: name => AppIcons.source(name)
+                }
+            }
+        }
+
+        PageSlot {
+            id: networkSlot
+            key: "network"
+
+            // Open, it scans and watches traffic every second.
+            Loader {
+                active: networkSlot.live
+                onStatusChanged: {
+                    NetworkService.watching = status === Loader.Ready;
+                    if (status === Loader.Ready)
+                        NetworkService.scan();
+                }
+                // Gone while open (its screen went away).
+                Component.onDestruction: {
+                    if (status === Loader.Ready)
+                        NetworkService.watching = false;
+                }
+                sourceComponent: NetworkPage {
+                    width: pages.width
+                    height: pages.height
+                    headerInset: pages.headerInset
+                    network: NetworkService.network
+                    traffic: NetworkService.traffic
+                    onBack: panel.page = "main"
+                    onWifiToggled: enabled => NetworkService.setWifi(enabled)
+                    onConnectRequested: (ssid, password) => NetworkService.connect(ssid, password)
+                    onDisconnectRequested: NetworkService.disconnect()
+                    onForgetRequested: ssid => NetworkService.forget(ssid)
+                    onPreferPicked: kind => NetworkService.prefer(kind)
                 }
             }
         }

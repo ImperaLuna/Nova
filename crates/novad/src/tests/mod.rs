@@ -99,6 +99,8 @@ impl TestDaemon {
         // runs them.
         std::fs::create_dir_all(dir.join("fake-bin")).unwrap();
         write_program(&dir.join("fake-bin"), "upower", "exit 0");
+        // And `nmcli`, which `network` checks for.
+        write_program(&dir.join("fake-bin"), "nmcli", "exit 0");
         write_program(&dir.join("fake-bin"), "bluetoothctl", "exit 0");
         let host_path = std::env::var("PATH").unwrap_or_default();
         let socket = dir.join("novad.sock");
@@ -143,6 +145,12 @@ impl TestDaemon {
                 open_hidraw: Arc::new(|_| Err(std::io::ErrorKind::NotFound.into())),
                 path_var: dir.join("no-programs").display().to_string(),
                 usb_devices: dir.join("usb"),
+            },
+            // No NetworkManager either: the network's own tests give it one.
+            network: network::Sources {
+                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                sys_root: dir.join("sys"),
+                state_dir: dir.join("state"),
             },
             // No BlueZ either, and never the system's: a test novad must not
             // become the machine's pairing agent. Its own tests give it one.

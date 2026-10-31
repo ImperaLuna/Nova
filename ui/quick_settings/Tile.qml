@@ -9,6 +9,8 @@ Item {
     id: tile
 
     required property string icon
+    // The icon's solid parts (LineIcon `fill`).
+    property string iconFill: ""
     required property string title
     required property string subtitle
     property bool on: false
@@ -48,6 +50,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         x: Tokens.pad + Tokens.labelNudge
         path: tile.icon
+        fill: tile.iconFill
         size: Tokens.iconSizeMenu
         color: tile.ink
     }
