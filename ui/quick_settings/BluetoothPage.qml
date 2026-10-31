@@ -8,9 +8,10 @@ import "bluetooth.js" as Bluetooth
 import "devices.js" as Devices
 
 // The Bluetooth page: the switch, then the devices connected, the known
-// ones and the ones nearby. One click on a device does what it needs: a new
+// ones and the ones nearby. A click on a device does what it needs: a new
 // one is paired, trusted and connected, a known one connects, a connected
-// one shows Disconnect and Forget. Pairing questions and failures show
+// one disconnects. A right click opens its menu: Disconnect and Forget for
+// a connected one, Forget for a known one. Pairing questions and failures show
 // under the device's row. `state` is a bluetooth event's data (null: none
 // yet); properties in, signals out, like the other pages.
 Item {
@@ -47,41 +48,11 @@ Item {
     // What's typed into a PIN field, kept while the rows below a new device
     // shift.
     property string draft: ""
-    // Devices being paired now: once one connects, a note says it's done.
-    property var pairingNow: []
-    property string note: ""
 
     onPairingChanged: {
         if (!pairing)
             draft = "";
     }
-    onDevicesChanged: {
-        const done = [];
-        const still = [];
-        for (const address of pairingNow) {
-            const device = devices.find(device => device.address === address);
-            if (device?.status === "connected")
-                done.push(device.name);
-            else if (device && (device.status === "pairing" || device.status === "connecting"))
-                still.push(address);
-        }
-        for (const device of devices) {
-            if (device.status === "pairing" && !still.includes(device.address))
-                still.push(device.address);
-        }
-        pairingNow = still;
-        if (done.length > 0) {
-            note = qsTr("%1 is paired and connected. It reconnects by itself from now on.").arg(done[done.length - 1]);
-            noteTimer.restart();
-        }
-    }
-
-    Timer {
-        id: noteTimer
-        interval: Tokens.durationPairedNote
-        onTriggered: page.note = ""
-    }
-
     function act(device: var) {
         forgetting = "";
         switch (Bluetooth.click(device)) {
@@ -89,8 +60,23 @@ Item {
             opened = "";
             connectRequested(device.address);
             break;
-        case "open":
+        case "disconnect":
+            opened = "";
+            disconnectRequested(device.address);
+            break;
+        }
+    }
+
+    // A right click: the device's menu, or shut it when it's open.
+    function openMenu(device: var) {
+        switch (Bluetooth.menu(device)) {
+        case "actions":
+            forgetting = "";
             opened = opened === device.address ? "" : device.address;
+            break;
+        case "forget":
+            opened = "";
+            forgetting = forgetting === device.address ? "" : device.address;
             break;
         }
     }
@@ -132,37 +118,6 @@ Item {
             width: parent.width
             title: page.radio === "missing" ? qsTr("No Bluetooth adapter") : page.radio === "switched_off" ? qsTr("Off by a hardware switch") : qsTr("Bluetooth is off")
             body: page.radio === "missing" ? qsTr("This computer has no Bluetooth, or its adapter isn't working.") : page.radio === "switched_off" ? qsTr("This is a hardware block, so Nova can't turn it on. Flip the wireless switch or key (often Fn plus a key with an antenna), or check the BIOS, and Bluetooth comes back here by itself.") : qsTr("Turn it on to use your devices. Known ones reconnect by themselves.")
-        }
-
-        // Pairing went through.
-        Rectangle {
-            objectName: "note"
-            visible: page.on && page.note !== ""
-            width: parent.width
-            height: noteText.implicitHeight + 2 * Tokens.pad
-            radius: Tokens.radiusRow
-            color: Tokens.alpha(Tokens.primary, Tokens.pairingTintOpacity)
-
-            LineIcon {
-                id: noteIcon
-                x: Tokens.pad
-                y: Tokens.pad
-                path: Icons.BLUETOOTH
-                size: Tokens.iconSizeSmall
-                color: Tokens.primary
-            }
-            Text {
-                id: noteText
-                x: noteIcon.x + noteIcon.width + Tokens.gap
-                y: Tokens.pad
-                width: parent.width - x - Tokens.pad
-                wrapMode: Text.Wrap
-                font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeSmall
-                color: Tokens.fg
-                textFormat: Text.PlainText
-                text: page.note
-            }
         }
     }
 
@@ -295,8 +250,9 @@ Item {
                 id: press
                 anchors.fill: parent
                 hoverEnabled: true
-                enabled: page.on && entry.device !== null && Bluetooth.click(entry.device) !== ""
-                onClicked: page.act(entry.device)
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                enabled: page.on && entry.device !== null && (Bluetooth.click(entry.device) !== "" || Bluetooth.menu(entry.device) !== "")
+                onClicked: mouse => mouse.button === Qt.RightButton ? page.openMenu(entry.device) : page.act(entry.device)
             }
 
             LineIcon {
@@ -347,7 +303,7 @@ Item {
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeTiny
                     color: entry.busy !== "" ? Tokens.primary : Tokens.fgDim
-                    text: entry.busy !== "" ? entry.busy : !press.containsMouse ? "" : entry.device?.status === "nearby" ? qsTr("Pair") : entry.device?.status === "paired" ? qsTr("Connect") : ""
+                    text: entry.busy !== "" ? entry.busy : !press.containsMouse ? "" : entry.device?.status === "nearby" ? qsTr("Pair") : entry.device?.status === "paired" ? qsTr("Connect") : entry.device?.status === "connected" ? qsTr("Disconnect") : ""
                 }
                 Spinner {
                     anchors.verticalCenter: parent.verticalCenter

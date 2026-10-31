@@ -111,12 +111,12 @@ Item {
             }
             return null;
         }
-        function click(page, name) {
+        function click(page, name, button) {
             // Positioners lay out what just showed on the next frame.
             waitForRendering(page);
             const item = shown(page, name);
             verify(item, `${name} shows`);
-            mouseClick(item);
+            mouseClick(item, undefined, undefined, button ?? Qt.LeftButton);
         }
         function listen(page, signalName) {
             spy.clear();
@@ -206,7 +206,7 @@ Item {
             verify(!tile.visible, "none with the feature off");
         }
 
-        function test_one_click_connects_and_a_connected_one_offers_disconnect() {
+        function test_one_click_connects_or_disconnects() {
             const page = createTemporaryObject(pageComponent, stage, {
                 state: event([headphones("connected"), phone("paired"), speaker("nearby")])
             });
@@ -219,12 +219,29 @@ Item {
             click(page, "device-9C:2A:70:11:22:33");
             compare(spy.signalArguments[1][0], "9C:2A:70:11:22:33", "a known one connects");
 
-            click(page, "device-00:1B:66:AA:BB:CC");
-            compare(spy.count, 2, "a connected one doesn't connect again");
             listen(page, "disconnectRequested");
+            click(page, "device-00:1B:66:AA:BB:CC");
+            compare(spy.signalArguments[0][0], "00:1B:66:AA:BB:CC", "a connected one disconnects");
+            verify(!shown(page, "connectedActions"), "no menu on a left click");
+        }
+
+        function test_a_right_click_opens_the_menu() {
+            const page = createTemporaryObject(pageComponent, stage, {
+                state: event([headphones("connected"), phone("paired")])
+            });
+            waitForRendering(page);
+            listen(page, "disconnectRequested");
+            click(page, "device-00:1B:66:AA:BB:CC", Qt.RightButton);
+            compare(spy.count, 0, "it doesn't disconnect");
+            verify(shown(page, "connectedActions"));
             click(page, "disconnect");
             compare(spy.signalArguments[0][0], "00:1B:66:AA:BB:CC");
-            verify(!shown(page, "disconnect"), "it closes");
+            verify(!shown(page, "connectedActions"), "it closes");
+
+            listen(page, "connectRequested");
+            click(page, "device-9C:2A:70:11:22:33", Qt.RightButton);
+            compare(spy.count, 0, "a known one doesn't connect");
+            verify(shown(page, "confirmForget"), "it asks to forget it");
         }
 
         function test_a_connect_under_way_can_be_stopped() {
@@ -339,18 +356,6 @@ Item {
             listen(page, "connectRequested");
             click(page, "retry");
             compare(spy.count, 1, "Try again connects");
-        }
-
-        function test_paired_and_connected_says_so() {
-            const page = createTemporaryObject(pageComponent, stage, {
-                state: event([speaker("pairing")])
-            });
-            page.state = event([speaker("connecting")]);
-            verify(!shown(page, "note"));
-            page.state = event([speaker("connected")]);
-            waitForRendering(page);
-            const note = shown(page, "note");
-            verify(note, "shows once connected");
         }
 
         function test_off_lists_known_devices_dimmed() {
