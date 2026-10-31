@@ -124,15 +124,27 @@ function rowSubtitle(device) {
     return kindName(device.kind);
 }
 
-// What clicking a row does: "connect" (pairs a new one first), "open"
-// (shows Disconnect and Forget) or "" while it's busy.
+// What clicking a row does: "connect" (pairs a new one first),
+// "disconnect" or "" while it's busy.
 function click(device) {
     switch (device.status) {
     case "nearby":
     case "paired":
         return "connect";
     case "connected":
-        return "open";
+        return "disconnect";
+    }
+    return "";
+}
+
+// What right clicking a row opens: "actions" (Disconnect and Forget),
+// "forget" (asks to forget a known one) or "" when there's nothing to do.
+function menu(device) {
+    switch (device.status) {
+    case "connected":
+        return "actions";
+    case "paired":
+        return "forget";
     }
     return "";
 }
