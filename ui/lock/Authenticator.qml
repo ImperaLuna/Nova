@@ -82,7 +82,7 @@ Scope {
             } else if (result === PamResult.Failed) {
                 root.fail(qsTr("Wrong password"), "wrong password");
             } else if (result === PamResult.MaxTries) {
-                root.fail(qsTr("Too many tries. Wait a moment, then try again"), "PAM's tries ran out");
+                root.fail(qsTr("Too many tries"), "PAM's tries ran out");
             } else {
                 root.fail(qsTr("Couldn't check the password"), `PAM: ${PamResult.toString(result)} ${message}`);
             }

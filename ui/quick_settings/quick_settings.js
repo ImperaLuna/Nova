@@ -164,3 +164,12 @@ function kindLabel(kind) {
 function soundSubtitle(kind, link) {
     return Devices.linkLabel(link) || kindLabel(kind);
 }
+
+// The Sound page's line under the device in use: how it's connected
+// (devices.js linkLabel). Its icon already says what it is.
+function currentLink(devices) {
+    var current = (devices || []).filter(function (device) {
+        return device.current;
+    })[0];
+    return Devices.linkLabel(current ? current.link : "");
+}

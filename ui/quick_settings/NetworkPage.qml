@@ -192,16 +192,10 @@ Item {
 
                 Item {
                     width: parent.width
-                    height: past.implicitHeight
+                    height: today.implicitHeight
 
                     Text {
-                        id: past
-                        font.family: Tokens.fontMono
-                        font.pixelSize: Tokens.fontSizeMicro
-                        color: Tokens.fgDim
-                        text: qsTr("last %1 s").arg(Protocol.NETWORK_TRAFFIC_HISTORY_SECS)
-                    }
-                    Text {
+                        id: today
                         objectName: "today"
                         anchors.right: parent.right
                         visible: page.traffic !== null

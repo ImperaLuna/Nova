@@ -523,6 +523,22 @@ Item {
             compare(QuickSettings.soundSubtitle("speakers", "usb"), "USB");
             compare(QuickSettings.soundSubtitle("display", ""), "HDMI or DisplayPort");
             compare(QuickSettings.soundSubtitle("", ""), "");
+            compare(QuickSettings.currentLink([
+                {
+                    link: "usb",
+                    current: false
+                },
+                {
+                    link: "bluetooth",
+                    current: true
+                }
+            ]), "Bluetooth", "the header names the one in use's link");
+            compare(QuickSettings.currentLink([
+                {
+                    link: "",
+                    current: true
+                }
+            ]), "", "nothing for one built in");
         }
 
         // The Arctis Nova 5X's dongle sink (node.nick from pw-cli) and the

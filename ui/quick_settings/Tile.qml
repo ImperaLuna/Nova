@@ -2,9 +2,9 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 
-// A toggle tile: an icon, a title and a line under it, filled with the
-// accent while on. With `opens`, an arrow at its end opens the tile's page
-// instead of toggling.
+// A toggle tile: an icon and a title, filled with the accent while on. The
+// fill says its state, so no line under the title does. With `opens`, an
+// arrow at its end opens the tile's page instead of toggling.
 Item {
     id: tile
 
@@ -12,7 +12,6 @@ Item {
     // The icon's solid parts (LineIcon `fill`).
     property string iconFill: ""
     required property string title
-    required property string subtitle
     property bool on: false
     property bool available: true
     property bool opens: false
@@ -55,32 +54,17 @@ Item {
         color: tile.ink
     }
 
-    Column {
+    Text {
         anchors.verticalCenter: parent.verticalCenter
         x: glyph.x + glyph.width + Tokens.rowInset
         width: (tile.opens ? arrow.x : tile.width - Tokens.pad) - x
-
-        Text {
-            width: parent.width
-            elide: Text.ElideRight
-            font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSize
-            font.weight: Font.DemiBold
-            color: tile.ink
-            text: tile.title
-        }
-
-        Text {
-            width: parent.width
-            elide: Text.ElideRight
-            font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSizeTiny
-            color: tile.on ? Tokens.alpha(tile.ink, Tokens.tileSubOpacity) : Tokens.fgDim
-            textFormat: Text.PlainText
-            text: tile.subtitle
-        }
+        elide: Text.ElideRight
+        font.family: Tokens.fontSans
+        font.pixelSize: Tokens.fontSize
+        font.weight: Font.DemiBold
+        color: tile.ink
+        text: tile.title
     }
-
     Item {
         id: arrow
         visible: tile.opens

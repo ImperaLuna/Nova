@@ -112,12 +112,11 @@ Item {
             }
         }
 
-        // Why it's off, when it is.
+        // Why it can't turn on, when it can't. Plain off is the switch's.
         Message {
-            visible: !page.on
+            visible: page.radio === "missing" || page.radio === "switched_off"
             width: parent.width
-            title: page.radio === "missing" ? qsTr("No Bluetooth adapter") : page.radio === "switched_off" ? qsTr("Off by a hardware switch") : qsTr("Bluetooth is off")
-            body: page.radio === "missing" ? qsTr("This computer has no Bluetooth, or its adapter isn't working.") : page.radio === "switched_off" ? qsTr("This is a hardware block, so Nova can't turn it on. Flip the wireless switch or key (often Fn plus a key with an antenna), or check the BIOS, and Bluetooth comes back here by itself.") : qsTr("Turn it on to use your devices. Known ones reconnect by themselves.")
+            text: page.radio === "missing" ? qsTr("No Bluetooth adapter") : qsTr("Blocked by a hardware switch")
         }
     }
 
@@ -162,13 +161,13 @@ Item {
                 spinning: page.bluetooth?.scanning ?? false
 
                 Text {
-                    visible: page.nearby.length === 0
+                    visible: page.nearby.length === 0 && !(page.bluetooth?.scanning ?? false)
                     leftPadding: Tokens.pad
                     topPadding: Tokens.labelNudge * 2
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.fgDim
-                    text: page.bluetooth?.scanning ? qsTr("Looking for devices… Put yours in pairing mode.") : qsTr("No new devices nearby.")
+                    text: qsTr("None found")
                 }
             }
         }
@@ -262,29 +261,19 @@ Item {
                 path: Bluetooth.icon(entry.device?.kind ?? "")
                 size: Tokens.iconSizeMenu
             }
-            Column {
+            // Its name alone: the icon says what it is, the section where
+            // it stands.
+            Text {
                 anchors.verticalCenter: parent.verticalCenter
                 x: glyph.x + glyph.width + Tokens.pad
                 width: end.x - x - Tokens.gap
-
-                Text {
-                    width: parent.width
-                    elide: Text.ElideRight
-                    font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSize
-                    font.weight: Font.Medium
-                    color: Tokens.fg
-                    textFormat: Text.PlainText
-                    text: entry.device?.name ?? ""
-                }
-                Text {
-                    width: parent.width
-                    elide: Text.ElideRight
-                    font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizeTiny
-                    color: Tokens.fgDim
-                    text: entry.device ? Bluetooth.rowSubtitle(entry.device) : ""
-                }
+                elide: Text.ElideRight
+                font.family: Tokens.fontSans
+                font.pixelSize: Tokens.fontSize
+                font.weight: Font.Medium
+                color: Tokens.fg
+                textFormat: Text.PlainText
+                text: entry.device?.name ?? ""
             }
 
             // Busy: what's happening and a spinner. Connected: its battery.
@@ -412,7 +401,7 @@ Item {
         Card {
             objectName: "confirmForget"
             visible: page.forgetting === entry.address && page.on
-            text: qsTr("Forget %1? You'll need to pair it again to use it.").arg(entry.device?.name ?? "")
+            text: qsTr("Forget %1?").arg(entry.device?.name ?? "")
 
             PromptButton {
                 text: qsTr("Cancel")
@@ -467,40 +456,26 @@ Item {
         }
     }
 
-    // A title and a line: why it's off.
+    // Why it can't turn on.
     component Message: Rectangle {
         id: message
-        required property string title
-        required property string body
+        required property string text
 
         height: visible ? messageText.implicitHeight + 2 * Tokens.pad : 0
         radius: Tokens.radiusCard
         color: Tokens.surfaceRaised
 
-        Column {
+        Text {
             id: messageText
             x: Tokens.pad
             y: Tokens.pad
             width: parent.width - 2 * Tokens.pad
-            spacing: Tokens.labelNudge * 2
-
-            Text {
-                width: parent.width
-                wrapMode: Text.Wrap
-                font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSize
-                font.weight: Font.DemiBold
-                color: Tokens.fg
-                text: message.title
-            }
-            Text {
-                width: parent.width
-                wrapMode: Text.Wrap
-                font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeSmall
-                color: Tokens.fgDim
-                text: message.body
-            }
+            wrapMode: Text.Wrap
+            font.family: Tokens.fontSans
+            font.pixelSize: Tokens.fontSize
+            font.weight: Font.DemiBold
+            color: Tokens.fg
+            text: message.text
         }
     }
 }

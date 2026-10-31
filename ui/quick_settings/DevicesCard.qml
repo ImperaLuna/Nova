@@ -40,10 +40,6 @@ Column {
             id: title
             text: qsTr("Devices")
         }
-        CardTitle {
-            anchors.right: parent.right
-            text: qsTr("%n connected", "", rowModel.count)
-        }
     }
 
     Rectangle {

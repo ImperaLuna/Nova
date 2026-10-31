@@ -39,13 +39,13 @@ pub enum Problem {
 impl Problem {
     /// What the panel says about `provider` when there are no numbers.
     pub fn hint(&self, provider: AiProvider) -> String {
-        let (tool, account, company, name) = match provider {
-            AiProvider::Claude => ("Claude Code", "Claude", "Anthropic", "Claude"),
-            AiProvider::Codex => ("Codex", "ChatGPT", "OpenAI", "Codex"),
+        let (tool, company, name) = match provider {
+            AiProvider::Claude => ("Claude Code", "Anthropic", "Claude"),
+            AiProvider::Codex => ("Codex", "OpenAI", "Codex"),
         };
         match self {
-            Problem::SignedOut => format!("Sign in to {tool} with your {account} account to see your limits."),
-            Problem::Expired => format!("{tool}'s sign-in has expired. Open {tool} to renew it."),
+            Problem::SignedOut => format!("Signed out of {tool}"),
+            Problem::Expired => format!("{tool} sign-in expired"),
             Problem::Unsafe(path) => format!(
                 "Nova won't use {} because other users could read it or it isn't yours. To fix it, run\nchmod 600 {}",
                 path.display(),
@@ -187,13 +187,7 @@ mod tests {
 
     #[test]
     fn hints_name_the_provider() {
-        assert_eq!(
-            Problem::Expired.hint(AiProvider::Claude),
-            "Claude Code's sign-in has expired. Open Claude Code to renew it."
-        );
-        assert_eq!(
-            Problem::SignedOut.hint(AiProvider::Codex),
-            "Sign in to Codex with your ChatGPT account to see your limits."
-        );
+        assert_eq!(Problem::Expired.hint(AiProvider::Claude), "Claude Code sign-in expired");
+        assert_eq!(Problem::SignedOut.hint(AiProvider::Codex), "Signed out of Codex");
     }
 }

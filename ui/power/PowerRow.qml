@@ -81,7 +81,7 @@ Item {
             font.pixelSize: Tokens.fontSizeTiny
             color: row.selected ? Tokens.alpha(Tokens.onAccent, Tokens.drainOpacity) : Tokens.fgDim
             textFormat: Text.PlainText
-            text: row.armed ? qsTr("Click again") : row.available ? "" : row.reason
+            text: row.armed || row.available ? "" : row.reason
         }
     }
 
