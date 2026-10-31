@@ -13,6 +13,8 @@ import "lock"
 import "lock/service"
 import "notifications"
 import "notifications/service"
+import "quick_settings"
+import "quick_settings/service"
 import "stage"
 import "volume"
 
@@ -46,6 +48,12 @@ ShellRoot {
     LazyLoader {
         active: Daemon.theme !== null && NotificationsService.ready
         component: NotificationPopups {}
+    }
+
+    // Bluetooth pairing questions while the Bluetooth page isn't open.
+    LazyLoader {
+        active: Daemon.theme !== null && BluetoothService.ready
+        component: PairingPopup {}
     }
 
     // Screenshots and recordings: the region picker while it's open, the

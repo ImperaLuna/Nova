@@ -51,6 +51,10 @@ Singleton {
     // arrives, which only happens with the peripherals feature on. Read it
     // through the QuickSettingsService singleton.
     property var peripherals: null
+    // The latest bluetooth event's data ({radio, scanning, devices,
+    // pairing}); null until one arrives, which only happens with the
+    // bluetooth feature on. Read it through the BluetoothService singleton.
+    property var bluetooth: null
     // The latest notifications event's data ({items, do_not_disturb, muted,
     // apps}); null until one arrives, which only happens with the
     // notifications feature on. Read it, and hear notificationPopped,
@@ -151,6 +155,8 @@ Singleton {
             resources = msg.data;
         } else if (msg.event === Protocol.EVENT_PERIPHERALS) {
             peripherals = msg.data;
+        } else if (msg.event === Protocol.EVENT_BLUETOOTH) {
+            bluetooth = msg.data;
         } else if (msg.event === Protocol.EVENT_LAUNCHER) {
             launcher = msg.data;
         } else if (msg.event === Protocol.EVENT_TRAY) {
@@ -185,7 +191,7 @@ Singleton {
                 // Only hello arrives unasked; everything else is subscribed to.
                 // Topics of features that are off send nothing.
                 root.call(Protocol.CMD_SUBSCRIBE, {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_PERIPHERALS, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS, Protocol.TOPIC_MEDIA]
+                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_PERIPHERALS, Protocol.TOPIC_BLUETOOTH, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS, Protocol.TOPIC_MEDIA]
                 });
             } else {
                 // A picker novad still has open is sent again on reconnect.
