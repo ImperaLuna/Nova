@@ -52,15 +52,21 @@ Item {
     readonly property var menuNet: [current].concat(others).find(net => net !== null && net.ssid === menuFor) ?? null
 
     // A wrong password (or none, for a saved network whose password
-    // changed) opens the field again, the text kept to fix a typo. One
-    // from before the page opened stays shut: novad keeps the last attempt
-    // until the next.
+    // changed) opens the field again, the text kept to fix a typo; joining
+    // clears it. Each attempt's outcome acts once: every network event
+    // repeats it, and one from before the page opened stays shut.
     readonly property var attempt: wifi?.attempt ?? null
+    readonly property string outcome: attempt ? `${attempt.ssid}\n${attempt.outcome}` : ""
+    property string handled: ""
     property bool opened: false
-    Component.onCompleted: opened = true
-    onAttemptChanged: {
-        if (!opened)
+    Component.onCompleted: {
+        handled = outcome;
+        opened = true;
+    }
+    onOutcomeChanged: {
+        if (!opened || outcome === handled)
             return;
+        handled = outcome;
         if (attempt?.outcome === "wrong_password") {
             asked = attempt.ssid;
             wrong = true;

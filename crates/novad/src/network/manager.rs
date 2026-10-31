@@ -21,6 +21,8 @@ pub const WIRED: &str = "org.freedesktop.NetworkManager.Device.Wired";
 pub const WIRELESS: &str = "org.freedesktop.NetworkManager.Device.Wireless";
 pub const ACCESS_POINT: &str = "org.freedesktop.NetworkManager.AccessPoint";
 pub const ACTIVE: &str = "org.freedesktop.NetworkManager.Connection.Active";
+/// The address families a profile sets a route metric for, each its own.
+pub const FAMILIES: [&str; 2] = ["ipv4", "ipv6"];
 pub const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
 /// An object path that names nothing, as NetworkManager says "none".
 pub const NO_OBJECT: &str = "/";

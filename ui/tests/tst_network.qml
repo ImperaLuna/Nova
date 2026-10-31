@@ -299,6 +299,23 @@ Item {
             verify(!findChild(row.parent, "wrong").visible, "typing clears it");
             keyClick(Qt.Key_Escape);
             verify(!field.visible);
+            page.network = withAttempt(rescanned(), "Neighbor-1", "wrong_password");
+            verify(!field.visible, "the same attempt again doesn't reopen it");
+        }
+
+        function test_a_joined_network_doesnt_clear_a_password_typed_later() {
+            const page = createTemporaryObject(pageComponent, stage, {
+                network: rescanned()
+            });
+            page.network = withAttempt(rescanned(), "Home", "connected");
+            const row = findChild(page, "network-Neighbor-1");
+            mouseClick(row);
+            for (const key of "longenough")
+                keyClick(key);
+            const network = withAttempt(rescanned(), "Home", "connected");
+            network.wifi.networks[0].strength = 80;
+            page.network = network;
+            compare(findChild(row.parent, "password").text, "longenough");
         }
 
         function test_a_wrong_password_from_before_the_page_opened_stays_shut() {

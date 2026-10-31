@@ -59,9 +59,12 @@ struct Fake {
     passwords: HashMap<String, String>,
     /// Passwords saved in profiles, by profile path.
     saved_passwords: HashMap<String, String>,
-    /// Route metrics reapplied on devices, by device path.
-    metrics: HashMap<String, i64>,
+    /// Route metrics (IPv4, IPv6) reapplied on devices, by device path.
+    metrics: HashMap<String, [i64; 2]>,
     next_id: u32,
+    /// A method whose next call fails, as NetworkManager's do when a
+    /// connection changed under the caller.
+    fail_next: Option<String>,
     /// Every call novad made: (path, interface, method).
     calls: Vec<(String, String, String)>,
 }
@@ -102,6 +105,16 @@ impl FakeNm {
     /// The calls novad made of `method`, by path.
     pub fn calls(&self, method: &str) -> Vec<String> {
         lock(&self.state).calls.iter().filter(|call| call.2 == method).map(|call| call.0.clone()).collect()
+    }
+
+    /// Makes the next call of `method` fail.
+    pub fn fail_next(&self, method: &str) {
+        lock(&self.state).fail_next = Some(method.to_owned());
+    }
+
+    /// The route metrics (IPv4, IPv6) last reapplied on `device`.
+    pub fn applied_metrics(&self, device: &str) -> Option<[i64; 2]> {
+        lock(&self.state).metrics.get(device).copied()
     }
 
     pub fn property(&self, path: &str, interface: &str, name: &str) -> Value {
@@ -179,7 +192,19 @@ impl FakeNm {
             let interface = header.interface().map(|interface| interface.to_string()).unwrap_or_default();
             let method = header.member().map(|member| member.to_string()).unwrap_or_default();
             lock(&self.state).calls.push((path.clone(), interface.clone(), method.clone()));
-            let reply = self.call(&message, &path, &interface, &method);
+            let fails = {
+                let mut state = lock(&self.state);
+                let fails = state.fail_next.as_deref() == Some(method.as_str());
+                if fails {
+                    state.fail_next = None;
+                }
+                fails
+            };
+            let reply = if fails {
+                Err("the connection changed meanwhile".to_owned())
+            } else {
+                self.call(&message, &path, &interface, &method)
+            };
             let sent = match reply {
                 Ok(reply) => self.connection.send(&reply.build(&header)).await,
                 Err(error) => {
@@ -268,8 +293,8 @@ impl FakeNm {
                 let active = self.property(path, DEVICE, "ActiveConnection");
                 let profile = self.property(active.as_str().unwrap(), ACTIVE, "Connection");
                 let mut settings = lock(&self.state).profiles[profile.as_str().unwrap()].clone();
-                if let Some(metric) = lock(&self.state).metrics.get(path) {
-                    for family in ["ipv4", "ipv6"] {
+                if let Some(metrics) = lock(&self.state).metrics.get(path) {
+                    for (family, metric) in ["ipv4", "ipv6"].into_iter().zip(metrics) {
                         settings[family]["route-metric"] = json!({"type": "x", "data": metric});
                     }
                 }
@@ -278,12 +303,14 @@ impl FakeNm {
             (DEVICE, "Reapply") => {
                 let (settings, _version, _flags): (Settings, u64, u32) =
                     body.deserialize().map_err(|e| e.to_string())?;
-                let metric = settings["ipv4"]["route-metric"]
-                    .try_clone()
-                    .ok()
-                    .and_then(|value| i64::try_from(value).ok())
-                    .unwrap();
-                lock(&self.state).metrics.insert(path.into(), metric);
+                let metrics = ["ipv4", "ipv6"].map(|family| {
+                    settings[family]["route-metric"]
+                        .try_clone()
+                        .ok()
+                        .and_then(|value| i64::try_from(value).ok())
+                        .unwrap()
+                });
+                lock(&self.state).metrics.insert(path.into(), metrics);
                 self.choose_primary();
                 Ok(Reply::Empty)
             }
@@ -480,8 +507,13 @@ impl FakeNm {
                         .profiles
                         .get(profile)
                         .and_then(|settings| settings["ipv4"]["route-metric"]["data"].as_i64());
-                    let metric =
-                        state.metrics.get(&device).copied().or(saved).filter(|metric| *metric >= 0).unwrap_or(default);
+                    let metric = state
+                        .metrics
+                        .get(&device)
+                        .map(|metrics| metrics[0])
+                        .or(saved)
+                        .filter(|metric| *metric >= 0)
+                        .unwrap_or(default);
                     Some((metric, active.to_owned(), kind.to_owned()))
                 })
                 .min()

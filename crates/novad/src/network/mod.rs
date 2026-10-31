@@ -69,6 +69,9 @@ const MAX_NAME_CHARS: usize = 100;
 /// How many connections' last `StateChanged` are kept.
 const MAX_TRANSITIONS: usize = 32;
 /// NetworkManager's default route metrics, for a profile that sets none.
+/// How many times a failed preference is tried again before it waits for
+/// the links or the pick to change.
+const PREFERENCE_TRIES: u32 = 3;
 const DEFAULT_METRIC_WIRED: i64 = 100;
 const DEFAULT_METRIC_WIFI: i64 = 600;
 
@@ -121,6 +124,9 @@ struct State {
     /// The connections (wired, Wi-Fi) the preference was last set on, and
     /// for which pick: it's set once per pair.
     preferred_on: Option<(OwnedObjectPath, OwnedObjectPath, LinkKind)>,
+    /// The pair and pick last tried, and how many times setting it failed.
+    last_preference: Option<(OwnedObjectPath, OwnedObjectPath, LinkKind)>,
+    preference_tries: u32,
     sent: NetworkEvent,
     stopped: bool,
 }
@@ -167,6 +173,8 @@ impl Network {
                 scan: None,
                 prefer,
                 preferred_on: None,
+                last_preference: None,
+                preference_tries: 0,
                 sent: sent.clone(),
                 stopped: false,
             }),
@@ -364,6 +372,11 @@ impl Shared {
             drop(state);
             let reading = zbus::block_on(manager::read(&connection));
             state = lock(&self.state);
+            // Stopped meanwhile: a new instance may be running, and this one
+            // mustn't publish over it or call NetworkManager for it.
+            if state.stopped {
+                return;
+            }
             let reading = match reading {
                 Ok(reading) => Some(reading),
                 Err(e) => {
@@ -390,12 +403,20 @@ impl Shared {
             {
                 self.logger.warn(LOG_SOURCE, &format!("can't remove the profile of a network it couldn't join: {e}"));
             }
-            if let Some((reading, pick)) = preference
-                && let Err(e) = zbus::block_on(apply_preference(&connection, &reading, pick))
-            {
+            let failed = preference.and_then(|(reading, pick)| {
+                let e = zbus::block_on(apply_preference(&connection, &reading, pick)).err()?;
                 self.logger.warn(LOG_SOURCE, &format!("can't prefer the {pick:?} link: {e}"));
-            }
+                Some(())
+            });
             state = lock(&self.state);
+            // A failed apply (often a profile that changed under it) is tried
+            // again after a fresh read, a few times.
+            if failed.is_some() && state.preference_tries < PREFERENCE_TRIES {
+                state.preference_tries += 1;
+                state.preferred_on = None;
+                let now = Instant::now();
+                state.stale.get_or_insert((now, now));
+            }
         }
     }
 
@@ -417,6 +438,10 @@ impl Shared {
         if state.preferred_on.as_ref() == Some(&key) {
             return None;
         }
+        if state.last_preference.as_ref() != Some(&key) {
+            state.preference_tries = 0;
+        }
+        state.last_preference = Some(key.clone());
         state.preferred_on = Some(key);
         Some((reading.clone(), pick))
     }
@@ -533,9 +558,9 @@ fn links(reading: &Reading) -> Vec<String> {
         .collect()
 }
 
-/// Sets both links' route metrics so the picked one carries traffic: each
-/// keeps its profile's metric when that already does it, else the picked
-/// one's goes just under the other's.
+/// Sets both links' route metrics so the picked one carries traffic, IPv4
+/// and IPv6 each on its own: each keeps its profile's metric when that
+/// already does it, else the picked one's goes just under the other's.
 async fn apply_preference(connection: &Connection, reading: &Reading, pick: LinkKind) -> zbus::Result<()> {
     let Some((wired, wifi)) = connected_pair(reading) else { return Ok(()) };
     let wired_link = Link::read(connection, &wired.path, wired.active.as_ref(), DEFAULT_METRIC_WIRED).await?;
@@ -544,10 +569,17 @@ async fn apply_preference(connection: &Connection, reading: &Reading, pick: Link
         LinkKind::Wifi => (wifi_link, wired_link),
         _ => (wired_link, wifi_link),
     };
-    let (picked_metric, other_metric) = targets(picked.saved_metric(), other.saved_metric(), picked.saved, other.saved);
-    for (link, metric) in [(other, other_metric), (picked, picked_metric)] {
-        if link.applied_metric() != metric.unwrap_or(link.default_metric) {
-            actions::set_route_metric(connection, &link.device, link.applied, link.version, metric).await?;
+    let mut picked_metrics = [None; 2];
+    let mut other_metrics = [None; 2];
+    for family in 0..manager::FAMILIES.len() {
+        (picked_metrics[family], other_metrics[family]) =
+            targets(picked.saved_metric(family), other.saved_metric(family), picked.saved[family], other.saved[family]);
+    }
+    for (link, metrics) in [(other, other_metrics), (picked, picked_metrics)] {
+        let changes = (0..manager::FAMILIES.len())
+            .any(|family| link.applied_metric(family) != metrics[family].unwrap_or(link.default_metric));
+        if changes {
+            actions::set_route_metric(connection, &link.device, link.applied, link.version, metrics).await?;
         }
     }
     Ok(())
@@ -566,12 +598,13 @@ fn targets(picked: i64, other: i64, picked_saved: Option<i64>, other_saved: Opti
     }
 }
 
-/// One link's metrics: its profile's and what's applied now.
+/// One link's metrics, per [`manager::FAMILIES`]: its profile's and what's
+/// applied now.
 struct Link {
     device: OwnedObjectPath,
     applied: manager::Settings,
     version: u64,
-    saved: Option<i64>,
+    saved: [Option<i64>; 2],
     default_metric: i64,
 }
 
@@ -591,18 +624,21 @@ impl Link {
             None => None,
         };
         let saved = match profile {
-            Some(profile) => manager::route_metric(&manager::settings(connection, &profile).await?, "ipv4"),
-            None => None,
+            Some(profile) => {
+                let settings = manager::settings(connection, &profile).await?;
+                manager::FAMILIES.map(|family| manager::route_metric(&settings, family))
+            }
+            None => [None; 2],
         };
         Ok(Self { device: device.clone(), applied, version, saved, default_metric })
     }
 
-    fn saved_metric(&self) -> i64 {
-        self.saved.unwrap_or(self.default_metric)
+    fn saved_metric(&self, family: usize) -> i64 {
+        self.saved[family].unwrap_or(self.default_metric)
     }
 
-    fn applied_metric(&self) -> i64 {
-        manager::route_metric(&self.applied, "ipv4").unwrap_or(self.default_metric)
+    fn applied_metric(&self, family: usize) -> i64 {
+        manager::route_metric(&self.applied, manager::FAMILIES[family]).unwrap_or(self.default_metric)
     }
 }
 

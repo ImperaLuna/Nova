@@ -197,17 +197,17 @@ pub async fn applied(connection: &Connection, device: &OwnedObjectPath) -> zbus:
     call(connection, device.as_str(), DEVICE, "GetAppliedConnection", &(0u32,)).await?.body().deserialize()
 }
 
-/// Sets the device's route metrics (IPv4 and IPv6) to `metric` (`None`
-/// for NetworkManager's default) without touching its saved profile: they
+/// Sets the device's route metrics, one per [`manager::FAMILIES`] (`None`
+/// for NetworkManager's default), without touching its saved profile: they
 /// last while it stays connected.
 pub async fn set_route_metric(
     connection: &Connection,
     device: &OwnedObjectPath,
     mut settings: Settings,
     version: u64,
-    metric: Option<i64>,
+    metrics: [Option<i64>; 2],
 ) -> zbus::Result<()> {
-    for family in ["ipv4", "ipv6"] {
+    for (family, metric) in manager::FAMILIES.into_iter().zip(metrics) {
         settings
             .entry(family.into())
             .or_default()

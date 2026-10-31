@@ -52,10 +52,18 @@ impl Fixture {
 
     /// NetworkManager as RyzenShine's was.
     fn nm(&self) -> FakeNm {
+        self.nm_with(|_| {})
+    }
+
+    /// NetworkManager as RyzenShine's was, after `edit` changes the
+    /// recording.
+    fn nm_with(&self, edit: impl FnOnce(&mut Value)) -> FakeNm {
+        let mut recording = serde_json::from_str(&recorded("nm-ryzenshine.json")).unwrap();
+        edit(&mut recording);
         // A connection of its own, without zbus's object server: the fake
         // answers every call itself.
         let connection = zbus::block_on(zbus::connection::Builder::address(self.bus.address.as_str()).build()).unwrap();
-        FakeNm::start(connection, &serde_json::from_str(&recorded("nm-ryzenshine.json")).unwrap())
+        FakeNm::start(connection, &recording)
     }
 
     fn start(&self) -> Arc<Network> {
@@ -93,6 +101,15 @@ impl Fixture {
         std::fs::create_dir_all(&statistics).unwrap();
         crate::state_file::write(&statistics.join("rx_bytes"), down.to_string().as_bytes()).unwrap();
         crate::state_file::write(&statistics.join("tx_bytes"), up.to_string().as_bytes()).unwrap();
+    }
+}
+
+/// Waits for `done`, which no event tells of.
+fn eventually(what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + WAIT;
+    while !done() {
+        assert!(Instant::now() < deadline, "no {what}");
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 
@@ -235,6 +252,46 @@ fn preferring_a_link_sets_route_metrics_on_the_devices_not_the_profiles() {
     let _nm = fixture2.nm();
     let network = fixture2.start();
     assert_eq!(fixture2.next()["prefer"], "wifi");
+    network.stop();
+}
+
+#[test]
+fn a_preference_that_failed_to_apply_is_tried_again() {
+    let fixture = Fixture::new("prefer-retry");
+    let nm = fixture.nm();
+    let network = fixture.start();
+    fixture.next();
+
+    nm.fail_next("Reapply");
+    network.prefer(LinkKind::Wired).unwrap();
+    fixture.until("the cable in use", |event| event["primary"] == "wired");
+    assert_eq!(nm.calls("Reapply"), [WIRED_DEVICE, WIRED_DEVICE], "the first failed, the second took");
+    network.stop();
+}
+
+#[test]
+fn a_preference_holds_for_ipv6_where_its_metrics_differ() {
+    let fixture = Fixture::new("prefer-ipv6");
+    // Wi-Fi first for IPv4 (10 against 900), the cable first for IPv6.
+    let wired_profile = "/org/freedesktop/NetworkManager/Settings/3";
+    let nm =
+        fixture.nm_with(|recording| {
+            recording[wired_profile][manager::SETTINGS_CONNECTION]["GetSettings"]["data"][0]["ipv6"]["route-metric"]
+                ["data"] = json!(5);
+        });
+    let network = fixture.start();
+    fixture.next();
+
+    // Already Wi-Fi's for IPv4, so the event doesn't change.
+    network.prefer(LinkKind::Wifi).unwrap();
+    let wifi_device = "/org/freedesktop/NetworkManager/Devices/3";
+    eventually("a reapply", || !nm.calls("Reapply").is_empty());
+    assert_eq!(nm.calls("Reapply"), [wifi_device], "only Wi-Fi's IPv6 needed to change");
+    assert_eq!(
+        nm.applied_metrics(wifi_device),
+        Some([10, 4]),
+        "IPv4 keeps its profile's 10, IPv6 goes under the cable's 5"
+    );
     network.stop();
 }
 
