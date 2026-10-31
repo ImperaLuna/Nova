@@ -507,10 +507,12 @@ impl Shared {
             .filter(|entry| is_name(entry));
         // Like GNOME: the installed app the sender names is shown as its
         // desktop entry says (the user may have changed its name or icon
-        // there), and what the sender calls itself only when none is.
+        // there), and what the sender calls itself only when none is. Right
+        // after novad starts, it waits for the apps to be read, or a muted
+        // app would get past its mute under the sender's name.
         let installed = desktop_entry.as_deref().and_then(|entry| {
             let launcher = lock(&self.launcher).clone()?;
-            launcher.app(&format!("{entry}.desktop"))
+            launcher.app_once_scanned(&format!("{entry}.desktop"))
         });
         let (installed_name, installed_icon) = installed.map_or((None, None), |app| (Some(app.name), app.icon));
         let app = [installed_name.as_deref(), Some(sent.app_name.as_str()), desktop_entry.as_deref()]

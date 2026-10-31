@@ -84,7 +84,7 @@ impl Fixture {
     }
 
     /// A launcher finding the apps installed under `share/applications`
-    /// (`entries`: file name and contents), once it has found them all.
+    /// (`entries`: file name and contents); lookups wait for its first read.
     fn launcher(&self, entries: &[(&str, &str)]) -> Arc<Launcher> {
         let share = self.dir.join("share");
         std::fs::create_dir_all(share.join("applications")).unwrap();
@@ -101,11 +101,7 @@ impl Fixture {
             runner: crate::launcher::Runner::Direct,
             icons: Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[share], None)),
         };
-        let launcher = Launcher::start(paths, "", Arc::clone(&self.hub), Arc::clone(&self.logger));
-        wait_until(WAIT, "the launcher to find the apps", || {
-            entries.iter().all(|(file, _)| launcher.app(file).is_some())
-        });
-        launcher
+        Launcher::start(paths, "", Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
     /// The next event called `name`, skipping others.
