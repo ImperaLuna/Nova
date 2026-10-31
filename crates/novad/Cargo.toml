@@ -33,6 +33,7 @@ workspace = true
 # A test checks the two lists stay in sync.
 [features]
 ai-usage = []
+bluetooth = []
 launcher = []
 media = []
 network = []

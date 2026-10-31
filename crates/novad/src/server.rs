@@ -258,6 +258,28 @@ impl<'a> Connection<'a> {
             Command::WatchNetworkTraffic { watching } => {
                 done(self.network().map(|network| network.watch_traffic(self.id, *watching)))
             }
+            Command::WatchBluetooth { watching } => {
+                done(self.bluetooth().map(|bluetooth| bluetooth.watch(self.id, *watching)))
+            }
+            Command::BluetoothPower { on } => {
+                let on = *on;
+                return self.bluetooth_later(move |bluetooth| bluetooth.power(on));
+            }
+            Command::BluetoothConnect { address } => {
+                let address = address.clone();
+                return self.bluetooth_later(move |bluetooth| bluetooth.connect(&address));
+            }
+            Command::BluetoothDisconnect { address } => {
+                let address = address.clone();
+                return self.bluetooth_later(move |bluetooth| bluetooth.disconnect(&address));
+            }
+            Command::BluetoothForget { address } => {
+                let address = address.clone();
+                return self.bluetooth_later(move |bluetooth| bluetooth.forget(&address));
+            }
+            Command::BluetoothAnswer { id, answer } => {
+                done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
+            }
         };
         Answer::Now(outcome)
     }
@@ -300,6 +322,10 @@ impl<'a> Connection<'a> {
             Ok(network) => Answer::later(move || work(&network)),
             Err(e) => Answer::Now(Outcome::Error(e)),
         }
+    }
+
+    fn bluetooth(&self) -> Result<Arc<crate::bluetooth::Bluetooth>, String> {
+        running(lock(&self.daemon.settings).bluetooth.clone(), crate::bluetooth::FEATURE_ID)
     }
 
     fn compositor(&self) -> Result<&crate::compositor::Compositor, String> {
@@ -533,6 +559,18 @@ impl<'a> Connection<'a> {
         }
     }
 
+    /// Runs `work` with Bluetooth on its own thread: BlueZ, the device and
+    /// the user's answer to pairing take their time.
+    fn bluetooth_later(
+        &self,
+        work: impl FnOnce(&crate::bluetooth::Bluetooth) -> Result<(), String> + Send + 'static,
+    ) -> Answer {
+        match self.bluetooth() {
+            Ok(bluetooth) => Answer::later(move || done(work(&bluetooth))),
+            Err(e) => Answer::Now(Outcome::Error(e)),
+        }
+    }
+
     fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
         match self.media() {
             Ok(media) => Answer::later(move || work(&media)),
@@ -713,6 +751,11 @@ impl<'a> Connection<'a> {
                                 network.send_state(self.id);
                             }
                         }
+                        Topic::Bluetooth => {
+                            if let Some(bluetooth) = &settings.bluetooth {
+                                bluetooth.send_state(self.id);
+                            }
+                        }
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -776,7 +819,13 @@ impl<'a> Connection<'a> {
             | Command::DisconnectWifi
             | Command::ForgetWifi { .. }
             | Command::PreferNetwork { .. }
-            | Command::WatchNetworkTraffic { .. } => {}
+            | Command::WatchNetworkTraffic { .. }
+            | Command::BluetoothPower { .. }
+            | Command::WatchBluetooth { .. }
+            | Command::BluetoothConnect { .. }
+            | Command::BluetoothDisconnect { .. }
+            | Command::BluetoothForget { .. }
+            | Command::BluetoothAnswer { .. } => {}
         }
     }
 
@@ -801,15 +850,18 @@ impl<'a> Connection<'a> {
 impl Drop for Connection<'_> {
     fn drop(&mut self) {
         self.daemon.hub.unregister(self.id);
-        let (resources, network) = {
+        let (resources, network, bluetooth) = {
             let settings = lock(&self.daemon.settings);
-            (settings.resources.clone(), settings.network.clone())
+            (settings.resources.clone(), settings.network.clone(), settings.bluetooth.clone())
         };
         if let Some(resources) = resources {
             resources.watch(self.id, false);
         }
         if let Some(network) = network {
             network.watch_traffic(self.id, false);
+        }
+        if let Some(bluetooth) = bluetooth {
+            bluetooth.watch(self.id, false);
         }
     }
 }

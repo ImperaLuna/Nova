@@ -22,10 +22,10 @@ import "../icons"
 // were, and its sections fade in one after another. A click outside
 // closes it.
 //
-// Pages slide in from the right (sound, network, resources, notification
-// settings)
-// and back out to the first page. Reading and acting go through
-// QuickSettingsService, NetworkService, VolumeService, SoundService and
+// Pages slide in from the right (sound, network, Bluetooth, resources,
+// notification settings) and back out to the first page. Reading and acting
+// go through QuickSettingsService, NetworkService, BluetoothService,
+// VolumeService, SoundService and
 // NotificationsService; the pages themselves only get
 // properties, so ui/tests can drive them.
 StagePanel {
@@ -45,7 +45,7 @@ StagePanel {
     name: Protocol.FEATURE_QUICK_SETTINGS
     placement: "right"
 
-    // "main", "sound", "network", "resources" or "notifications".
+    // "main", "sound", "network", "bluetooth", "resources" or "notifications".
     property string page: "main"
 
     readonly property Morph morph: Morph {
@@ -87,6 +87,10 @@ StagePanel {
     // The list is on the first page: another page hides it.
     readonly property bool listShown: open && page === "main"
     onListShownChanged: NotificationsService.showList(output.name, listShown)
+    // The Bluetooth page looks for devices, and asks pairing questions in
+    // place of the pop-up, while it shows.
+    readonly property bool bluetoothShown: open && page === "bluetooth"
+    onBluetoothShownChanged: BluetoothService.watching = bluetoothShown
     // Back to the first page once it has closed, so it opens there.
     onMovingChanged: {
         if (!moving && !open)
@@ -109,6 +113,8 @@ StagePanel {
         NotificationsService.showList(output.name, false);
         if (resourcesShown)
             QuickSettingsService.watching = false;
+        if (bluetoothShown)
+            BluetoothService.watching = false;
     }
     Glass {
         anchors.fill: parent
@@ -126,7 +132,7 @@ StagePanel {
         // What the top row leaves for the pill's buttons.
         readonly property real headerInset: panel.output.width - Tokens.quickSettingsPad - (panel.buttonsX - Tokens.pillButtonInset) + Tokens.gap
 
-        readonly property bool sliding: [mainSlot, soundSlot, networkSlot, resourcesSlot, notificationsSlot].some(slot => slot.sliding)
+        readonly property bool sliding: [mainSlot, soundSlot, networkSlot, bluetoothSlot, resourcesSlot, notificationsSlot].some(slot => slot.sliding)
 
         PageSlot {
             id: mainSlot
@@ -154,6 +160,9 @@ StagePanel {
                     keepAwake: QuickSettingsService.keepAwake
                     micAvailable: SoundService.sourceReady
                     micMuted: SoundService.sourceMuted
+                    bluetoothShown: BluetoothService.ready
+                    bluetooth: BluetoothService.state
+                    onBluetoothPowered: on => BluetoothService.setPower(on)
                     outputAvailable: VolumeService.ready
                     outputName: panel.outputName
                     outputKind: VolumeService.output
@@ -264,6 +273,27 @@ StagePanel {
                     onDisconnectRequested: NetworkService.disconnect()
                     onForgetRequested: ssid => NetworkService.forget(ssid)
                     onPreferPicked: kind => NetworkService.prefer(kind)
+                }
+            }
+        }
+
+        PageSlot {
+            id: bluetoothSlot
+            key: "bluetooth"
+
+            Loader {
+                active: bluetoothSlot.live
+                sourceComponent: BluetoothPage {
+                    width: pages.width
+                    height: pages.height
+                    headerInset: pages.headerInset
+                    state: BluetoothService.state
+                    onBack: panel.page = "main"
+                    onPowerToggled: on => BluetoothService.setPower(on)
+                    onConnectRequested: address => BluetoothService.connectDevice(address)
+                    onDisconnectRequested: address => BluetoothService.disconnectDevice(address)
+                    onForgetRequested: address => BluetoothService.forget(address)
+                    onAnswered: (id, answer) => BluetoothService.answer(id, answer)
                 }
             }
         }

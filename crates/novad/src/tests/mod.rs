@@ -94,12 +94,14 @@ impl TestDaemon {
         std::fs::create_dir_all(dir.join("ai-usage")).unwrap();
         std::fs::create_dir_all(dir.join("launcher/share/applications")).unwrap();
         prepare(&dir);
-        // The `upower` command `peripherals` checks for, which a test
-        // machine may lack; novad never runs it.
+        // The `upower` and `bluetoothctl` commands `peripherals` and
+        // `bluetooth` check for, which a test machine may lack; novad never
+        // runs them.
         std::fs::create_dir_all(dir.join("fake-bin")).unwrap();
         write_program(&dir.join("fake-bin"), "upower", "exit 0");
         // And `nmcli`, which `network` checks for.
         write_program(&dir.join("fake-bin"), "nmcli", "exit 0");
+        write_program(&dir.join("fake-bin"), "bluetoothctl", "exit 0");
         let host_path = std::env::var("PATH").unwrap_or_default();
         let socket = dir.join("novad.sock");
         let hub = Arc::new(Hub::default());
@@ -149,6 +151,16 @@ impl TestDaemon {
                 bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
                 sys_root: dir.join("sys"),
                 state_dir: dir.join("state"),
+            },
+            // No BlueZ either, and never the system's: a test novad must not
+            // become the machine's pairing agent. Its own tests give it one.
+            bluetooth: bluetooth::Sources {
+                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                rfkill: bluetooth::Rfkill {
+                    class: dir.join("sys/class/rfkill"),
+                    device: dir.join("dev/rfkill"),
+                    adapters: dir.join("sys/class/bluetooth"),
+                },
             },
             icons,
         };

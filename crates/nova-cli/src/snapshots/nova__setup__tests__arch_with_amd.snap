@@ -2,8 +2,8 @@
 source: crates/nova-cli/src/setup.rs
 expression: "shown(&facts(Distro::Arch, vec![Gpu::Amd], false))"
 ---
-install packages for core, peripherals, recording, screenshot, wallpaper (packages only in the AUR need paru or yay installed first):
-    sudo pacman -S --needed quickshell upower headsetcontrol wf-recorder grim wl-clipboard xdg-utils awww
+install packages for bluetooth, core, peripherals, recording, screenshot, wallpaper (packages only in the AUR need paru or yay installed first):
+    sudo pacman -S --needed bluez bluez-utils quickshell upower headsetcontrol wf-recorder grim wl-clipboard xdg-utils awww
 create /home/me/.config/nova/config.toml
 create /home/me/.config/nova/features.toml
 write /home/me/.config/systemd/user/nova.service
