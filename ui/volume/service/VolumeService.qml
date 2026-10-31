@@ -86,9 +86,9 @@ Singleton {
         if (!listed || known === null)
             return null;
         const id = Volume.arrivedBluetooth(known, nodes.map(node => ({
-                        id: node.id,
-                        name: node.name
-                    })));
+                    id: node.id,
+                    name: node.name
+                })));
         return nodes.find(node => node.id === id) ?? null;
     }
 
