@@ -17,7 +17,8 @@
 //!
 //! The lists are merged into one [`Event::Peripherals`]: a device two
 //! sources report (the same USB vendor and product, and serial when both
-//! know it) is listed once, as the source first in [`PRIORITY`] (UPower,
+//! know it, or for one on Bluetooth and its dongle at once, the same kind
+//! and name) is listed once, as the source first in [`PRIORITY`] (UPower,
 //! the kernel's reading, then HID++ and Keychron's) has it, with the
 //! other's battery only when it has none. Changes that come together are
 //! published once they settle, and only when the list differs from the
@@ -50,7 +51,9 @@ use crate::lock;
 use crate::logger::Logger;
 use crate::notifications::Notifications;
 use crate::session_bus::Bus;
-use nova_protocol::{Event, Peripheral, PeripheralLink, PeripheralSource, Peripherals as PeripheralsEvent};
+use nova_protocol::{
+    Event, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource, Peripherals as PeripheralsEvent,
+};
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -132,6 +135,33 @@ impl Found {
             && !serials_differ
             && self.usb_ids.iter().any(|id| other.usb_ids.contains(id))
     }
+
+    /// Whether `other` is this device reached the other way: a headset
+    /// paired over Bluetooth and on its USB dongle at once. No USB id
+    /// leads from Bluetooth to the dongle, so the same kind and a name
+    /// that holds the other's (`SteelSeries Arctis Nova 5X` and `Arctis
+    /// Nova 5X`) tell.
+    fn same_over_bluetooth(&self, other: &Found) -> bool {
+        let bluetooth = |found: &Found| found.device.link == Some(PeripheralLink::Bluetooth);
+        bluetooth(self) != bluetooth(other)
+            && same_kind(self.device.kind, other.device.kind)
+            && names_match(&self.device.name, &other.device.name)
+    }
+}
+
+/// Whether two kinds can be one device: sources call a headset headphones
+/// as often as a headset.
+fn same_kind(a: PeripheralKind, b: PeripheralKind) -> bool {
+    let audio = |kind| matches!(kind, PeripheralKind::Headset | PeripheralKind::Headphones);
+    a == b || (audio(a) && audio(b))
+}
+
+/// Whether one name's words, any case, run in order inside the other's.
+fn names_match(a: &str, b: &str) -> bool {
+    let words = |name: &str| name.split_whitespace().map(str::to_lowercase).collect::<Vec<_>>();
+    let (a, b) = (words(a), words(b));
+    let (short, long) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    !short.is_empty() && long.windows(short.len()).any(|run| run == short.as_slice())
 }
 
 /// A source of devices.
@@ -364,7 +394,11 @@ fn merge(found: &[(PeripheralSource, Vec<Found>)]) -> PeripheralsEvent {
     let mut kept: Vec<&Found> = Vec::new();
     let mut devices: Vec<Peripheral> = Vec::new();
     for candidate in found.iter().flat_map(|(_, list)| list) {
-        match kept.iter().position(|known| known.same_as(candidate)) {
+        let same = kept
+            .iter()
+            .position(|known| known.same_as(candidate))
+            .or_else(|| kept.iter().position(|known| known.same_over_bluetooth(candidate)));
+        match same {
             Some(index) => {
                 let device = &mut devices[index];
                 if device.battery.is_none() && candidate.device.battery.is_some() {

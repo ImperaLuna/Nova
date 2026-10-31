@@ -1,0 +1,12 @@
+{
+  "source": "Like upower.json, documented API, with what the desktop's novad listed: the Arctis Nova 5X paired over Bluetooth while its dongle (1038:2253) stays plugged in. UPower reads its battery from BlueZ, calls it headphones and names it by its Bluetooth name; HeadsetControl reads it on the dongle as `Arctis Nova 5X`.",
+  "devices": [
+    {
+      "path": "/org/freedesktop/UPower/devices/headphones_dev_20_AF_1B_0A_FD_79",
+      "properties": {
+        "NativePath": "/org/bluez/hci0/dev_20_AF_1B_0A_FD_79", "Vendor": "", "Model": "SteelSeries Arctis Nova 5X", "Serial": "20:AF:1B:0A:FD:79",
+        "Type": 19, "PowerSupply": false, "Percentage": 12.0, "BatteryLevel": 1, "State": 2, "IsPresent": true
+      }
+    }
+  ]
+}
