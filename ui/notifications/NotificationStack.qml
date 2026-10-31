@@ -4,8 +4,8 @@ import QtQuick
 import "../theme"
 
 // The pop-ups, newest on top, each in a slot of its own, at most
-// Tokens.notificationsShown at once; the rest wait, held, under a "+N more
-// in the list" chip and come up as room frees. A new one grows out of the
+// Tokens.notificationsShown at once; the rest wait, held, under a "+N"
+// chip and come up as room frees. A new one grows out of the
 // quick settings button above the stack's top right corner and, when its
 // time runs out, folds back into it; one that's clicked, dismissed or
 // closed elsewhere slides away. Several coming at once take their slots in
@@ -347,7 +347,7 @@ Item {
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSizeTiny
             color: Tokens.fgSoft
-            text: qsTr("+%1 more in the list").arg(stack.waiting.length)
+            text: `+${stack.waiting.length}`
         }
     }
 }

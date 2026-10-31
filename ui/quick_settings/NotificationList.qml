@@ -235,6 +235,7 @@ Item {
                                 Entry {
                                     required property var modelData
                                     notification: modelData
+                                    showApp: false
                                 }
                             }
                         }
@@ -263,13 +264,6 @@ Item {
             font.pixelSize: Tokens.fontSizeEmpty
             color: Tokens.fg
             text: qsTr("All caught up")
-        }
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSize
-            color: Tokens.fgDim
-            text: qsTr("New notifications land here.")
         }
     }
 

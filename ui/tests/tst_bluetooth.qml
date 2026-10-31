@@ -124,21 +124,6 @@ Item {
             spy.signalName = signalName;
         }
 
-        function test_the_tile_says_why_it_is_off_or_what_is_connected() {
-            compare(Bluetooth.tileSubtitle(null), "No adapter");
-            compare(Bluetooth.tileSubtitle({
-                radio: "switched_off",
-                devices: []
-            }), "Off by hardware switch");
-            compare(Bluetooth.tileSubtitle({
-                radio: "off",
-                devices: [phone("paired")]
-            }), "Off");
-            compare(Bluetooth.tileSubtitle(event([phone("paired")])), "On");
-            compare(Bluetooth.tileSubtitle(event([headphones("connected"), phone("paired")])), "WH-1000XM5");
-            compare(Bluetooth.tileSubtitle(event([headphones("connected"), phone("connected")])), "2 connected");
-        }
-
         function test_devices_sort_into_connected_mine_and_nearby() {
             const devices = [headphones("connected"), phone("connecting"), speaker("pairing"), speaker("paired")];
             compare(Bluetooth.inSection(devices, "connected").length, 2, "on its way counts");

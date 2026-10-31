@@ -341,10 +341,8 @@ QtObject {
     // Toggle tiles, two per row, with an arrow to a page on some.
     readonly property int tileHeight: 58
     readonly property int tileArrowWidth: 22
-    readonly property real tileSubOpacity: 0.72
     // The Bluetooth page: a pairing code in a row of cells, the field a PIN
-    // is typed in, a note after pairing that stays this long, and a device
-    // that's off with the radio.
+    // is typed in, and the tint of the cards under a row.
     readonly property int pairingCellWidth: 28
     readonly property int pairingCellHeight: 36
     readonly property int pairingCellGap: 4
@@ -519,15 +517,10 @@ QtObject {
     readonly property int countdownTick: 83
     readonly property color notificationTimer: alpha(fg, 0.35)
     readonly property real notificationCriticalRim: 1.5
-    // A low battery alert's icon: the device's glyph on a rounded tile (its
-    // radius and the glyph a share of the icon's size), and the device's
-    // little battery on the tile's corner, scaled down at the 40 px size,
-    // on a chip of the card's color that sticks out a little.
+    // A low battery alert's icon: the device's glyph on a rounded tile, its
+    // radius and the glyph a share of the icon's size.
     readonly property real notificationDeviceRadius: 0.3
     readonly property real notificationDeviceGlyph: 0.55
-    readonly property real notificationDeviceBattery: 0.75
-    readonly property int notificationDeviceChipPad: 3
-    readonly property int notificationDeviceChipOut: 4
     // Counts in the list: its heading's, and "+2" on a stack of an app's.
     readonly property int notificationChipHeight: 16
     readonly property int notificationChipPad: 6

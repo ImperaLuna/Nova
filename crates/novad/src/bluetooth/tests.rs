@@ -816,10 +816,7 @@ fn an_aborted_le_connect_connects_over_classic_bluetooth() {
     assert_eq!(calls, [format!("Connect {path}"), format!("ConnectProfile {A2DP_SINK} {path}")]);
 
     // A device with no classic profile keeps BlueZ's failure.
-    assert_eq!(
-        bluetooth.connect(PHONE).unwrap_err(),
-        "Couldn't connect. Make sure it's on and nearby, then try again."
-    );
+    assert_eq!(bluetooth.connect(PHONE).unwrap_err(), "Couldn't connect");
 }
 
 /// Starts connecting `address` on a thread: the fake holds it until it's
@@ -864,7 +861,7 @@ fn a_connect_that_runs_too_long_stops_and_says_so() {
     fixture.until("the devices", |event| event["radio"] == "on");
     let connecting = held_connect(&fixture, &bluez, &bluetooth, PHONE);
     let failure = connecting.join().unwrap().unwrap_err();
-    assert!(failure.contains("didn't answer in time"), "{failure}");
+    assert_eq!(failure, "No answer");
     assert!(bluez.calls().contains(&format!("Disconnect {}", device_path(PHONE))), "BlueZ stops trying");
     let event = fixture.until("the phone back", |event| status(event, PHONE).as_deref() == Some("paired"));
     assert_eq!(find(&event, PHONE).unwrap()["error"].as_str(), Some(failure.as_str()));

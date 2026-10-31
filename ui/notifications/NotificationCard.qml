@@ -6,9 +6,10 @@ import "../theme/icons.js" as Icons
 import "notifications.js" as Notifications
 import "../text/duration.js" as Duration
 
-// A pop-up: who it's from, the app, the summary and body, progress, and
-// the app's buttons (the first one in the accent). A thin line along the
-// bottom drains over its time; the pointer on it holds it. Critical ones have a rim in the error color and
+// A pop-up: who it's from, the app, the summary and body (a low battery
+// alert's battery and percent instead), progress, and the app's buttons
+// (the first one in the accent). A thin line along the bottom drains over
+// its time; the pointer on it holds it. Critical ones have a rim in the error color and
 // stay until they're closed. A click opens it, ✕ (on hover) dismisses it.
 Item {
     id: card
@@ -23,6 +24,7 @@ Item {
     property bool waiting: false
     readonly property int timeout: Notifications.timeout(notification, Tokens.durationNotification)
     readonly property bool critical: notification.urgency === "critical"
+    readonly property bool battery: !!notification.device?.battery
 
     signal clicked
     signal dismissed
@@ -118,24 +120,39 @@ Item {
                         font.family: Tokens.fontMono
                         font.pixelSize: Tokens.fontSizeMicro
                         color: Tokens.fgSoft
-                        text: card.critical ? qsTr("urgent") : Duration.ago(card.notification.time, card.now)
+                        text: Duration.ago(card.notification.time, card.now)
+                    }
+                }
+
+                // The summary; a low battery alert's battery and percent
+                // at its end, in place of the body.
+                Item {
+                    width: parent.width
+                    height: summary.implicitHeight
+
+                    Text {
+                        id: summary
+                        width: parent.width - (amount.visible ? amount.width + Tokens.gap : 0)
+                        elide: Text.ElideRight
+                        font.family: Tokens.fontSans
+                        font.pixelSize: Tokens.fontSize
+                        font.weight: Font.DemiBold
+                        color: Tokens.fg
+                        textFormat: Text.PlainText
+                        text: card.notification.summary
+                    }
+                    BatteryAmount {
+                        id: amount
+                        anchors.right: parent.right
+                        anchors.verticalCenter: summary.verticalCenter
+                        visible: card.battery
+                        notification: card.notification
                     }
                 }
 
                 Text {
                     width: parent.width
-                    elide: Text.ElideRight
-                    font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSize
-                    font.weight: Font.DemiBold
-                    color: Tokens.fg
-                    textFormat: Text.PlainText
-                    text: card.notification.summary
-                }
-
-                Text {
-                    width: parent.width
-                    visible: text !== ""
+                    visible: !card.battery && text !== ""
                     wrapMode: Text.Wrap
                     maximumLineCount: Tokens.notificationBodyLines
                     elide: Text.ElideRight

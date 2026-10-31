@@ -33,53 +33,8 @@ function icon(kind) {
     return KIND_ICONS[kind] ?? Icons.BLUETOOTH;
 }
 
-function kindName(kind) {
-    switch (kind) {
-    case "headphones":
-        return qsTr("Headphones");
-    case "headset":
-        return qsTr("Headset");
-    case "speaker":
-        return qsTr("Speaker");
-    case "keyboard":
-        return qsTr("Keyboard");
-    case "mouse":
-        return qsTr("Mouse");
-    case "gamepad":
-        return qsTr("Gamepad");
-    case "tablet":
-        return qsTr("Tablet");
-    case "phone":
-        return qsTr("Phone");
-    case "computer":
-        return qsTr("Computer");
-    }
-    return qsTr("Device");
-}
-
 function isOn(state) {
     return state?.radio === "on";
-}
-
-// The tile's line: why it's off, else the one connected device's name or
-// how many are.
-function tileSubtitle(state) {
-    switch (state?.radio ?? "missing") {
-    case "missing":
-        return qsTr("No adapter");
-    case "switched_off":
-        return qsTr("Off by hardware switch");
-    case "off":
-        return qsTr("Off");
-    }
-    var connected = state.devices.filter(function (device) {
-        return device.status === "connected";
-    });
-    if (connected.length === 0)
-        return qsTr("On");
-    if (connected.length === 1)
-        return connected[0].name;
-    return qsTr("%1 connected").arg(connected.length);
 }
 
 // The page's lists: devices in use or on their way there under Connected,
@@ -115,13 +70,6 @@ function busyText(status, waiting) {
         return qsTr("Disconnecting");
     }
     return "";
-}
-
-// The line under a row's name.
-function rowSubtitle(device) {
-    if (device.status === "connected")
-        return qsTr("%1 · connected").arg(kindName(device.kind));
-    return kindName(device.kind);
 }
 
 // What clicking a row does: "connect" (pairs a new one first),

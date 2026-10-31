@@ -130,7 +130,6 @@ Item {
                     icon: Network.tileIcon(page.network)
                     iconFill: Network.iconFill(icon)
                     title: qsTr("Network")
-                    subtitle: Network.tileSubtitle(page.network)
                     on: (page.network?.primary ?? "") !== "" || Network.connecting(page.network) !== ""
                     opens: true
                     onToggled: page.pageRequested("network")
@@ -146,7 +145,6 @@ Item {
                     width: grid.cell
                     icon: Icons.BLUETOOTH
                     title: qsTr("Bluetooth")
-                    subtitle: Bluetooth.tileSubtitle(page.bluetooth)
                     on: Bluetooth.isOn(page.bluetooth)
                     available: (page.bluetooth?.radio ?? "missing") !== "missing"
                     opens: true
@@ -157,7 +155,6 @@ Item {
                     width: grid.cell
                     icon: Icons.CUP
                     title: qsTr("Keep awake")
-                    subtitle: page.keepAwake ? qsTr("Screen stays on") : qsTr("Off")
                     on: page.keepAwake
                     onToggled: page.keepAwakeToggled()
                 }
@@ -165,7 +162,6 @@ Item {
                     width: grid.cell
                     icon: page.micMuted ? Icons.MIC_OFF : Icons.MIC
                     title: qsTr("Microphone")
-                    subtitle: !page.micAvailable ? qsTr("None") : page.micMuted ? qsTr("Muted") : qsTr("On")
                     on: page.micAvailable && page.micMuted
                     available: page.micAvailable
                     onToggled: page.micMuteToggled()

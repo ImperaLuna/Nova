@@ -37,7 +37,6 @@ Item {
         SwitchRow {
             width: parent.width
             title: qsTr("Do not disturb")
-            subtitle: qsTr("Hide pop-ups, keep them in the list")
             on: page.doNotDisturb
             selected: true
             onClicked: page.doNotDisturbToggled()
@@ -72,7 +71,6 @@ Item {
                     readonly property bool isMuted: page.muted.includes(modelData.name)
                     width: appList.width
                     title: modelData.name
-                    subtitle: isMuted ? qsTr("Muted: hidden, no pop-ups") : qsTr("Pop-ups and list")
                     on: !isMuted
                     onClicked: page.muteToggled(modelData.name, !isMuted)
 
@@ -89,12 +87,11 @@ Item {
         }
     }
 
-    // A row with a name, a line under it and a switch at its end; `lead`
-    // holds an icon before the name, when there is one.
+    // A row with a name and a switch at its end; `lead` holds an icon
+    // before the name, when there is one.
     component SwitchRow: Item {
         id: row
         required property string title
-        property string subtitle: ""
         property bool on: false
         property bool selected: false
         readonly property Item lead: leadSlot
@@ -119,31 +116,17 @@ Item {
             width: children.length > 0 ? Tokens.notificationRowIcon : 0
             height: parent.height
         }
-        Column {
+        Text {
             anchors.verticalCenter: parent.verticalCenter
             x: leadSlot.x + leadSlot.width + (leadSlot.width > 0 ? Tokens.pad : 0)
             width: toggle.x - x - Tokens.gap
-
-            Text {
-                width: parent.width
-                elide: Text.ElideRight
-                font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSize
-                font.weight: Font.Medium
-                color: Tokens.fg
-                textFormat: Text.PlainText
-                text: row.title
-            }
-            Text {
-                visible: text !== ""
-                width: parent.width
-                elide: Text.ElideRight
-                font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeTiny
-                color: Tokens.fgDim
-                textFormat: Text.PlainText
-                text: row.subtitle
-            }
+            elide: Text.ElideRight
+            font.family: Tokens.fontSans
+            font.pixelSize: Tokens.fontSize
+            font.weight: Font.Medium
+            color: Tokens.fg
+            textFormat: Text.PlainText
+            text: row.title
         }
         ToggleSwitch {
             id: toggle

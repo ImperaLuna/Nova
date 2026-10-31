@@ -92,20 +92,6 @@ function iconFill(path) {
     return path === Icons.WIFI || path === Icons.WIFI_OFF ? Icons.WIFI_DOT : "";
 }
 
-function tileSubtitle(network) {
-    if (!network || !network.running)
-        return qsTr("Unavailable");
-    if (connecting(network) !== "")
-        return qsTr("Connecting…");
-    if (network.primary === "wired")
-        return qsTr("Wired");
-    if (network.primary === "wifi")
-        return network.wifi.network || qsTr("Wi-Fi");
-    if (network.primary === "other")
-        return qsTr("Connected");
-    return qsTr("Not connected");
-}
-
 // The traffic card's title: the link in use, or "Not connected".
 function linkName(network) {
     var primary = network ? network.primary : undefined;
@@ -135,13 +121,13 @@ function linkSpeed(mbps) {
     return mbps + " Mb/s";
 }
 
+// The security a network row names: only the kinds that change what a
+// click does (no password, or Nova can't join it). The lock on the signal
+// shows the rest.
 function securityLabel(security) {
     return {
         open: qsTr("Open"),
         wep: "WEP",
-        wpa: "WPA",
-        wpa2: "WPA2",
-        wpa3: "WPA3",
         enterprise: qsTr("Enterprise")
     }[security] || "";
 }
@@ -165,7 +151,7 @@ function needsPassword(net) {
     return joinable(net) && !net.saved && net.security !== "open";
 }
 
-// A network row's second line: "Saved · WPA2 · 2.4 GHz", or how a connect
+// A network row's second line: "Saved · 2.4 GHz", or how a connect
 // to it is going.
 function networkLine(network, net) {
     if (connecting(network) === net.ssid)

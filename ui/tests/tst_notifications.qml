@@ -398,6 +398,23 @@ Item {
             const battery = findChild(card, "deviceBattery");
             compare(battery.fill, 0.1);
             verify(battery.low);
+            compare(findChild(card, "percent").text, "10%");
+
+            const list = createTemporaryObject(listComponent, stage, {
+                items: [note(9, "Devices", {
+                        summary: "Keychron K2 HE",
+                        body: "Low",
+                        device: {
+                            kind: "keyboard",
+                            battery: {
+                                level: "low"
+                            }
+                        }
+                    })]
+            });
+            const row = findChild(list, "row-9");
+            compare(findChild(row, "percent").text, "Low", "a level without a percent says it in words");
+            verify(findChild(row, "percent").visible);
             const plain = createTemporaryObject(cardComponent, stage, {
                 notification: note(10, "Firefox")
             });
@@ -443,11 +460,13 @@ Item {
             });
             verify(!findChild(list, "empty").visible);
             verify(findChild(list, "row-5") !== null);
+            compare(findChild(findChild(list, "row-5"), "title").text, "Discord · Discord 5");
             compare(findChild(list, "row-3"), null, "the stack shows its newest only");
             spy.target = list;
             spy.signalName = "opened";
             mouseClick(findChild(list, "row-5"));
             tryVerify(() => findChild(list, "row-3") !== null, 1000, "a click opens the stack");
+            compare(findChild(findChild(list, "row-3"), "title").text, "Discord 3", "its heading names the app");
             compare(spy.count, 0, "and not its newest notification");
             spy.clear();
 
@@ -529,7 +548,7 @@ Item {
                 }
             };
             walk(page);
-            compare(rows.map(row => row.subtitle), ["Muted: hidden, no pop-ups", "Pop-ups and list"]);
+            compare(rows.map(row => row.on), [false, true], "the switch says which are muted");
             mouseClick(rows[0]);
             compare([...spy.signalArguments[0]], ["Discord", false]);
             mouseClick(rows[1]);
