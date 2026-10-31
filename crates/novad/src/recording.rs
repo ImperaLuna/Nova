@@ -6,9 +6,10 @@
 //! the UI counts down and sends `start_recording`. The same key stops the
 //! recording, as does the bar's recording pill (`stop_recording`).
 //!
-//! gpu-screen-recorder records when it's installed (it encodes on the GPU
-//! and can pause), else wf-recorder. Either writes a hidden file in the
-//! recording folder, which is moved to its name once the recorder has
+//! gpu-screen-recorder records when it's installed (it encodes on the GPU,
+//! or the CPU when the GPU can't, and can pause), else wf-recorder. Either
+//! writes a hidden file in the recording folder, which is moved to its name
+//! once the recorder has
 //! finished it, so a name only ever shows a whole video. The recorder is
 //! novad's child: SIGINT tells it to finish the file, and it gets that too
 //! when novad goes away, so a crash doesn't leave it recording.
@@ -41,6 +42,10 @@ const START_GRACE: Duration = Duration::from_millis(800);
 const FINISH_TIMEOUT: Duration = Duration::from_secs(10);
 /// Frames per second.
 const FPS: &str = "60";
+/// gpu-screen-recorder encodes on the CPU when the GPU can't (a driver
+/// whose NVENC API is older than its FFmpeg wants, or no hardware encoder),
+/// instead of exiting before it records anything.
+const GSR_CPU_FALLBACK: [&str; 2] = ["-fallback-cpu-encoding", "yes"];
 /// Saved recordings the card's buttons can still act on.
 const KEEP_SAVED: usize = 32;
 /// A saved recording's name, from the local time it started.
@@ -494,6 +499,7 @@ fn gsr_args(output: &str, region: Option<LayoutRect>, audio: RecordAudio, file: 
         None => vec!["-w".into(), output.into()],
     };
     args.extend(["-f".into(), FPS.into()]);
+    args.extend(GSR_CPU_FALLBACK.map(String::from));
     let sources: Vec<&str> = [(audio.desktop, GSR_DESKTOP), (audio.mic, GSR_MIC)]
         .into_iter()
         .filter_map(|(on, source)| on.then_some(source))
@@ -676,7 +682,10 @@ mod tests {
         fixture.start(None, RecordAudio::default()).unwrap();
         assert_eq!(
             fixture.args(),
-            format!("-w DP-1 -f 60 -o {}", fixture.folder().join(fixture.files()[0].clone()).display())
+            format!(
+                "-w DP-1 -f 60 -fallback-cpu-encoding yes -o {}",
+                fixture.folder().join(fixture.files()[0].clone()).display()
+            )
         );
         let started = fixture.next_event();
         assert_eq!(started["data"]["output"], "DP-1", "{started}");
@@ -705,9 +714,22 @@ mod tests {
         fixture.start(Some(REGION), RecordAudio { desktop: true, mic: true }).unwrap();
         let args = fixture.args();
         assert!(
-            args.starts_with("-w region -region 960x540+2560+-40 -f 60 -a default_output|default_input -o "),
+            args.starts_with("-w region -region 960x540+2560+-40 -f 60 -fallback-cpu-encoding yes -a default_output|default_input -o "),
             "{args}"
         );
+    }
+
+    #[test]
+    fn a_gpu_that_cant_encode_records_on_the_cpu() {
+        // gpu-screen-recorder 6.1 with an NVENC API older than its FFmpeg
+        // wants: without the fallback it finds no encoder and exits 52.
+        let fixture = Fixture::new(
+            "cpu",
+            GPU_SCREEN_RECORDER,
+            "case \"$*\" in *'-fallback-cpu-encoding yes'*) ;; *) echo 'no video encoder' >&2; exit 52;; esac",
+        );
+        fixture.start(None, RecordAudio::default()).unwrap();
+        assert_eq!(fixture.next_event()["data"]["output"], "DP-1");
     }
 
     #[test]
