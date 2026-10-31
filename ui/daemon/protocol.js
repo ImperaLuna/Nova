@@ -24,6 +24,7 @@ var CMD_START_RECORDING = "start_recording";
 var CMD_STOP_RECORDING = "stop_recording";
 var CMD_PAUSE_RECORDING = "pause_recording";
 var CMD_RECORDING_ACTION = "recording_action";
+var CMD_OPEN_LOG = "open_log";
 var CMD_WATCH_RESOURCES = "watch_resources";
 var CMD_END_APP = "end_app";
 var CMD_SEARCH_APPS = "search_apps";
