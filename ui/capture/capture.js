@@ -12,6 +12,12 @@ var ICON_PAUSE = "pause";
 var ICON_RESUME = "resume";
 var ICON_STOP = "stop";
 var ICON_VIDEO = "video";
+var ICON_VIDEO_OFF = "video-off";
+
+// The card's buttons after a recording didn't start (a saved shot's are
+// Protocol.SHOT_*); they're its icon names too.
+var CARD_RETRY = "retry";
+var CARD_LOG = "log";
 
 // The rectangle between where a drag started and where it is now, in the
 // window's logical pixels: {x, y, width, height}.

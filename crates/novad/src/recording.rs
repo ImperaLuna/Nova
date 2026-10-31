@@ -40,6 +40,10 @@ const START_GRACE: Duration = Duration::from_millis(800);
 /// How long a stopped recorder may take to finish the file before it's
 /// killed.
 const FINISH_TIMEOUT: Duration = Duration::from_secs(10);
+/// What starts the line saying why, in either recorder's errors
+/// (`gsr error: …`, `wf-recorder: error: …`); the earlier lines are warnings
+/// and progress.
+const ERROR_MARK: &str = "error: ";
 /// Frames per second.
 const FPS: &str = "60";
 /// gpu-screen-recorder encodes on the CPU when the GPU can't (a driver
@@ -342,6 +346,11 @@ impl Recordings {
         }
     }
 
+    /// Opens nova.log (the card's Open log, after a recording didn't start).
+    pub fn open_log(&self) -> Result<(), String> {
+        crate::launcher::open(&nova_paths::log_file(&self.logger.dir()), &self.path_var, &self.logger)
+    }
+
     /// Opens a saved recording, its folder, or deletes it.
     pub fn act(&self, id: u64, action: ScreenshotAction) -> Result<(), String> {
         let mut state = lock(&self.state);
@@ -403,7 +412,9 @@ impl Keeper {
             Ok(None) => {}
             Ok(Some(status)) => {
                 let message = errors.text();
-                let _ = started.send(Err(format!("{} didn't start ({status}): {}", recorder.name(), message.trim())));
+                self.logger
+                    .warn(LOG_SOURCE, &format!("{} didn't start ({status}): {}", recorder.name(), message.trim()));
+                let _ = started.send(Err(why_not_started(recorder, status, &message)));
                 return;
             }
             Err(e) => {
@@ -434,6 +445,20 @@ impl Keeper {
         if let Some((duration, active)) = active {
             finish(&self.state, &self.hub, &self.logger, active, duration, status, message.trim());
         }
+    }
+}
+
+/// What the recording card says when the recorder quit at once: its last
+/// error line, without the recorder's own prefix. All it said is in the log.
+fn why_not_started(recorder: Recorder, status: std::process::ExitStatus, errors: &str) -> String {
+    let lines: Vec<&str> = errors.lines().map(str::trim).filter(|line| !line.is_empty()).collect();
+    let line = lines.iter().rev().find(|line| line.to_ascii_lowercase().contains(ERROR_MARK)).or(lines.last());
+    match line {
+        Some(line) => {
+            let reason = line.to_ascii_lowercase().find(ERROR_MARK).map_or(*line, |at| &line[at + ERROR_MARK.len()..]);
+            format!("{} didn't start: {}", recorder.name(), reason.trim())
+        }
+        None => format!("{} didn't start ({status})", recorder.name()),
     }
 }
 
@@ -773,6 +798,21 @@ mod tests {
         assert!(error.contains("didn't start") && error.contains("no capture permission"), "{error}");
         assert!(fixture.files().is_empty());
         assert!(fixture.ui.try_recv().is_err(), "nothing was announced");
+    }
+
+    #[test]
+    fn a_failed_start_says_its_error_line_and_logs_the_rest() {
+        let fixture = Fixture::new(
+            "why",
+            GPU_SCREEN_RECORDER,
+            "echo 'gsr info: gsr-kms-server is connected' >&2\n\
+             echo 'gsr error: no video encoder was specified and none is supported' >&2\n\
+             echo 'gsr info: try -fallback-cpu-encoding yes' >&2; exit 52",
+        );
+        let error = fixture.start(None, RecordAudio::default()).unwrap_err();
+        assert_eq!(error, "gpu-screen-recorder didn't start: no video encoder was specified and none is supported");
+        let log = std::fs::read_to_string(nova_paths::log_file(&fixture.dir.join("logs"))).unwrap();
+        assert!(log.contains("gsr-kms-server is connected") && log.contains("-fallback-cpu-encoding"), "{log}");
     }
 
     #[test]

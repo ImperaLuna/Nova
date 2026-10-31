@@ -6,8 +6,8 @@ import "../compositor"
 import "../stage"
 import "service"
 
-// Where saved screenshots and recordings land: the card, on the screen that
-// had focus when it was saved. A new one while it's out replaces it in
+// Where saved screenshots and recordings land, and a recording that didn't
+// start: the card, on the screen that had focus when it was saved. A new one while it's out replaces it in
 // place.
 Scope {
     id: cards
@@ -31,6 +31,11 @@ Scope {
         target: RecordingService
         function onSaved(saved: var) {
             cards.show(saved, true);
+        }
+        function onFailed(reason: string) {
+            cards.show({
+                reason: reason
+            }, true);
         }
     }
 

@@ -55,6 +55,7 @@ expression: all
 {"v":2,"event":"recording","data":null}
 {"v":2,"event":"recording_saved","data":{"id":1,"path":"/home/me/Videos/Recordings/Recording 2026-10-25 18-03-41.mp4","duration_ms":42000}}
 {"v":2,"cmd":"recording_action","args":{"id":1,"action":"open"}}
+{"v":2,"cmd":"open_log"}
 {"v":2,"event":"host","data":{"host":"RyzenShine","user":"Luna","booted_at":1793000000,"os":{"id":"nixos","name":"NixOS","logo":"nix-snowflake"}}}
 {"v":2,"id":22,"cmd":"watch_resources","args":{"watching":true}}
 {"v":2,"event":"resources","data":{"cpu":23.5,"memory_used":10093173760,"memory_total":34359738368,"gpu":18.0,"history":[{"cpu":21.0,"memory":29.0},{"cpu":23.5,"memory":29.4}],"history_size":36,"apps":[{"name":"firefox","key":"/usr/lib/firefox/firefox","processes":9,"cpu":6.1,"memory":2400000000,"protected":false}]}}

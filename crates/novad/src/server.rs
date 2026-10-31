@@ -192,6 +192,9 @@ impl<'a> Connection<'a> {
             Command::StopRecording => done(self.daemon.recordings.stop()),
             Command::PauseRecording { paused } => done(self.daemon.recordings.pause(*paused)),
             Command::RecordingAction { id, action } => done(self.daemon.recordings.act(*id, *action)),
+            Command::OpenLog => done(
+                self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.daemon.recordings.open_log()),
+            ),
             Command::SearchApps { query } => value(self.launcher().and_then(|launcher| launcher.search(query))),
             Command::AppIcon { icon_name, program, name } => {
                 let launcher = lock(&self.daemon.settings).launcher.clone();
@@ -791,6 +794,7 @@ impl<'a> Connection<'a> {
             | Command::StopRecording
             | Command::PauseRecording { .. }
             | Command::RecordingAction { .. }
+            | Command::OpenLog
             | Command::Volume { .. }
             | Command::WatchResources { .. }
             | Command::EndApp { .. }

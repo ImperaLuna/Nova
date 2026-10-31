@@ -1449,6 +1449,9 @@ pub enum Command {
         id: u64,
         action: ScreenshotAction,
     },
+    /// Opens novad's log (feature `recording`: the recording card's Open log,
+    /// after a recording didn't start).
+    OpenLog,
     /// Starts or stops this connection watching the machine's resources
     /// (feature `quick-settings`): while any connection watches, novad
     /// samples them every few seconds and sends `resources` events. A
@@ -2194,6 +2197,7 @@ mod tests {
                 duration_ms: 42_000,
             })),
             encode(Request { id: None, command: Command::RecordingAction { id: 1, action: ScreenshotAction::Open } }),
+            encode(Request { id: None, command: Command::OpenLog }),
             encode(Event::Host(host())),
             encode(Request { id: Some(22), command: Command::WatchResources { watching: true } }),
             encode(Event::Resources(resources())),
