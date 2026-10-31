@@ -37,14 +37,37 @@ in
       lib.mkDefault true
     );
 
-    # Device batteries: novad reads upowerd on the system bus,
-    # HeadsetControl needs its udev rules to open headsets without root, and
-    # Nova's own rules let novad open Logitech's and Keychron's hidraw nodes.
-    services.upower.enable = lib.mkIf (lib.elem "peripherals" on) (lib.mkDefault true);
-    services.udev.packages = lib.mkIf (lib.elem "peripherals" on) [
-      pkgs.headsetcontrol
-      cfg.package
-    ];
+    services = {
+      # Device batteries: novad reads upowerd on the system bus,
+      # HeadsetControl needs its udev rules to open headsets without root,
+      # and Nova's own rules let novad open Logitech's and Keychron's hidraw
+      # nodes.
+      upower.enable = lib.mkIf (lib.elem "peripherals" on) (lib.mkDefault true);
+      udev.packages = lib.mkIf (lib.elem "peripherals" on) [
+        pkgs.headsetcontrol
+        cfg.package
+      ];
+
+      # Bluetooth outputs stay awake through silence. WirePlumber suspends
+      # an idle output after 5 s, which releases the A2DP stream: headsets
+      # beep as if they dropped, and the next sound starts late.
+      #
+      # A headset's mic only works in its call profile, so WirePlumber
+      # switches to it while something records and back to music quality
+      # when recording stops. Its 2 to 4 s wait before switching back made
+      # every dictation pay a switch and a ping; Nova waits the most it
+      # allows, a minute, so back-to-back dictation stays in call mode.
+      # WirePlumber reads this from 0.5.19 on.
+      pipewire.wireplumber.extraConfig."51-nova-bluetooth" = lib.mkIf (lib.elem "bluetooth" on) {
+        "wireplumber.settings"."bluetooth.autoswitch-restore-timeout" = 60000;
+        "monitor.bluez.rules" = [
+          {
+            matches = [ { "node.name" = "~bluez_output.*"; } ];
+            actions.update-props."session.suspend-timeout-seconds" = 0;
+          }
+        ];
+      };
+    };
 
     # Bluetooth: novad talks to bluetoothd on the system bus.
     hardware.bluetooth.enable = lib.mkIf (lib.elem "bluetooth" on) (lib.mkDefault true);
