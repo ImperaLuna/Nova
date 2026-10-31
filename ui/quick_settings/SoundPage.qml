@@ -8,8 +8,8 @@ import "quick_settings.js" as QuickSettings
 
 // The sound page: the output in use with its volume, then tabs for every
 // output and input to switch to, and each app's own volume. Lists are
-// SoundService's plain objects ({id, name, kind, volume, muted, current};
-// apps also have `ids` and `icon`).
+// SoundService's plain objects ({id, name, kind, link, volume, muted,
+// current}; apps also have `ids` and `icon`).
 Item {
     id: page
 
@@ -179,12 +179,13 @@ Item {
                                 id: -1,
                                 name: "",
                                 kind: "",
+                                link: "",
                                 current: false
                             }
                             width: parent.width
                             icon: page.tab === "input" ? Icons.MIC : page.kindIcon(modelData.kind)
                             title: modelData.name
-                            subtitle: page.tab === "input" ? "" : QuickSettings.kindLabel(modelData.kind)
+                            subtitle: QuickSettings.soundSubtitle(page.tab === "input" ? "" : modelData.kind, modelData.link ?? "")
                             status: modelData.current ? qsTr("In use") : ""
                             selected: modelData.current
                             onClicked: page.tab === "input" ? page.inputPicked(modelData.id) : page.outputPicked(modelData.id)

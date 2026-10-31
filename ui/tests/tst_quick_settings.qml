@@ -517,6 +517,15 @@ Item {
             verify(rows.interactive, "the rest scrolls");
         }
 
+        function test_sound_rows_say_how_they_are_connected() {
+            compare(QuickSettings.soundSubtitle("headphones", "bluetooth"), "Headphones · Bluetooth");
+            compare(QuickSettings.soundSubtitle("headphones", "usb"), "Headphones · USB");
+            compare(QuickSettings.soundSubtitle("display", ""), "HDMI or DisplayPort");
+            compare(QuickSettings.soundSubtitle("bluetooth", "bluetooth"), "Bluetooth");
+            compare(QuickSettings.soundSubtitle("", "usb"), "USB");
+            compare(QuickSettings.soundSubtitle("", ""), "");
+        }
+
         function test_sound_page_switches_outputs() {
             const page = createTemporaryObject(soundComponent, stage, {
                 outputAvailable: true,
@@ -528,6 +537,7 @@ Item {
                         id: 1,
                         name: "Arctis Nova 5",
                         kind: "headphones",
+                        link: "bluetooth",
                         current: true
                     },
                     {

@@ -52,6 +52,19 @@ function outputKind(available, properties) {
     return "speakers";
 }
 
+// How an output or input is connected, when that tells it apart from the
+// same device's other link (a headset on Bluetooth and on its USB dongle has
+// one name for both): "bluetooth", "usb", or "" for the rest. A dongle's
+// radio (2.4 GHz) isn't in PipeWire's properties, only its USB port.
+function link(properties) {
+    var props = properties || {};
+    if (props["device.api"] === "bluez5" || matches(/^bluez_(output|input)\./, props, ["node.name"]))
+        return "bluetooth";
+    if (props["device.bus"] === "usb" || matches(/^alsa_(output|input)\.usb-/, props, ["node.name"]))
+        return "usb";
+    return "";
+}
+
 // The Bluetooth output among `outputs` ({id, name}, PipeWire's sinks) that
 // `known` (the ids seen before) didn't have, or null: the one to make the
 // default. Turning a headset to Bluetooth, from Nova or on the headset,
