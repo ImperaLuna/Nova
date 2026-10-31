@@ -861,7 +861,7 @@ fn a_connect_that_runs_too_long_stops_and_says_so() {
     fixture.until("the devices", |event| event["radio"] == "on");
     let connecting = held_connect(&fixture, &bluez, &bluetooth, PHONE);
     let failure = connecting.join().unwrap().unwrap_err();
-    assert!(failure.contains("didn't answer in time"), "{failure}");
+    assert_eq!(failure, "No answer");
     assert!(bluez.calls().contains(&format!("Disconnect {}", device_path(PHONE))), "BlueZ stops trying");
     let event = fixture.until("the phone back", |event| status(event, PHONE).as_deref() == Some("paired"));
     assert_eq!(find(&event, PHONE).unwrap()["error"].as_str(), Some(failure.as_str()));
