@@ -52,6 +52,20 @@ function outputKind(available, properties) {
     return "speakers";
 }
 
+// The Bluetooth output among `outputs` ({id, name}, PipeWire's sinks) that
+// `known` (the ids seen before) didn't have, or null: the one to make the
+// default. Turning a headset to Bluetooth, from Nova or on the headset,
+// means wanting to hear it there. BlueZ's sinks are named bluez_output.*,
+// which an unbound node already has.
+function arrivedBluetooth(known, outputs) {
+    for (var i = 0; i < outputs.length; i++) {
+        var output = outputs[i];
+        if (/^bluez_output\./.test(output.name) && known.indexOf(output.id) < 0)
+            return output.id;
+    }
+    return null;
+}
+
 // Whether any of `props`' `keys` matches `pattern`.
 function matches(pattern, props, keys) {
     return keys.some(function (key) {

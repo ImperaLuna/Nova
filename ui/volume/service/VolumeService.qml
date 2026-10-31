@@ -41,6 +41,34 @@ Singleton {
     // started, by anything: a key, an app, this capsule.
     signal changed
 
+    // A Bluetooth output that appears becomes the default (volume.js
+    // arrivedBluetooth); one there when Nova starts is left as WirePlumber
+    // chose: the outputs seen once PipeWire's first listing is done (nodes
+    // come one by one until it's ready) are the start. Going back to the
+    // dongle needs nothing: the Bluetooth sink goes and PipeWire falls back.
+    // qmllint disable missing-property
+    readonly property list<PwNode> outputs: Pipewire.nodes.values.filter(node => node.isSink && !node.isStream && node.audio !== null)
+    // qmllint enable missing-property
+    property var knownOutputs: null
+    onOutputsChanged: followOutputs()
+    readonly property bool listed: Pipewire.ready
+    onListedChanged: followOutputs()
+    function followOutputs() {
+        if (!listed)
+            return;
+        const now = outputs.map(node => ({
+                    id: node.id,
+                    name: node.name
+                }));
+        const arrived = knownOutputs === null ? null : Volume.arrivedBluetooth(knownOutputs, now);
+        knownOutputs = now.map(output => output.id);
+        const node = outputs.find(node => node.id === arrived);
+        if (node) {
+            console.info(`nova: switching sound to ${node.description || node.name}`);
+            Pipewire.preferredDefaultAudioSink = node;
+        }
+    }
+
     // Volume and mute are only valid on a bound node.
     PwObjectTracker {
         objects: root.sink ? [root.sink] : []

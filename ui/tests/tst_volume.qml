@@ -30,6 +30,20 @@ TestCase {
         compare(Volume.atFraction(-0.2), 0);
     }
 
+    function test_a_bluetooth_output_that_arrives_is_picked() {
+        const dongle = {
+            id: 40,
+            name: "alsa_output.usb-SteelSeries_Arctis_Nova_5X-00.analog-stereo"
+        };
+        const headset = {
+            id: 71,
+            name: "bluez_output.20_AF_1B_0A_FD_79.1"
+        };
+        compare(Volume.arrivedBluetooth([40], [dongle, headset]), 71, "the headset turned to Bluetooth");
+        compare(Volume.arrivedBluetooth([40, 71], [dongle, headset]), null, "already there");
+        compare(Volume.arrivedBluetooth([], [dongle]), null, "a USB output isn't");
+    }
+
     function test_level_is_full_above_100_and_empty_without_an_output() {
         compare(Volume.level(1.2, true), 1);
         compare(Volume.level(0.4, true), 0.4);
