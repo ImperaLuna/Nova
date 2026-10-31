@@ -139,10 +139,11 @@ fn on_bluetooth(device: &Peripheral) -> bool {
 }
 
 /// Whether `listed` is the row an earlier alert like `own` left: Nova's,
-/// about a device of its kind and name.
+/// about a device of its kind and the same name. A row doesn't say how its
+/// device was connected, so a name inside another's isn't enough.
 pub fn row_of(listed: &Notification, own: &Own) -> bool {
     let kinds = listed.device.zip(own.device).is_some_and(|(listed, own)| same_kind(listed.kind, own.kind));
-    listed.app == own.app && kinds && names_match(&listed.summary, &own.summary)
+    listed.app == own.app && kinds && listed.summary == own.summary
 }
 
 /// About how full a battery that only reports `level` is.
