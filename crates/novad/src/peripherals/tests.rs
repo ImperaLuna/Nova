@@ -442,8 +442,9 @@ fn a_headset_both_sources_report_is_listed_once() {
 }
 
 /// A headset on Bluetooth and on its dongle at once is listed once: no USB
-/// id joins the two, its kind and name do. The merge is checked alone, as
-/// the sources' lists come in any order.
+/// id joins the two, its kind and name do. The dongle's entry names it, so
+/// it keeps its id when the Bluetooth link drops. The merge is checked
+/// alone, as the sources' lists come in any order.
 #[test]
 fn a_headset_on_bluetooth_and_its_dongle_is_listed_once() {
     let upower: Vec<Found> = ["upower.json", "upower-bluetooth-headset.json"]
@@ -468,7 +469,8 @@ fn a_headset_on_bluetooth_and_its_dongle_is_listed_once() {
         .collect();
     let dongle =
         headsetcontrol::parse(std::fs::read_to_string(recorded("headsetcontrol.json")).unwrap().as_bytes()).unwrap();
-    let merged = merge(&[(PeripheralSource::Upower, upower), (PeripheralSource::Headsetcontrol, dongle)]);
+    let merged =
+        merge(&[(PeripheralSource::Upower, upower.clone()), (PeripheralSource::Headsetcontrol, dongle.clone())]);
     let ids: Vec<&str> = merged.devices.iter().map(|device| device.id.as_str()).collect();
     assert_eq!(
         ids,
@@ -476,10 +478,14 @@ fn a_headset_on_bluetooth_and_its_dongle_is_listed_once() {
             "upower/mouse_hidpp_battery_0",
             "upower/keyboard_hidpp_battery_1",
             "upower/gaming_input_dev_A0_5A_5C_11_22_33",
-            "upower/headphones_dev_20_AF_1B_0A_FD_79"
+            "headsetcontrol/1038:2253"
         ]
     );
-    assert_eq!(merged.devices[3].link, Some(PeripheralLink::Bluetooth));
+    assert_eq!(merged.devices[3].link, Some(PeripheralLink::Dongle));
+    let reversed = merge(&[(PeripheralSource::Headsetcontrol, dongle), (PeripheralSource::Upower, upower)]);
+    let ids: Vec<&str> = reversed.devices.iter().map(|device| device.id.as_str()).collect();
+    assert_eq!(ids[0], "headsetcontrol/1038:2253");
+    assert!(!ids.contains(&"upower/headphones_dev_20_AF_1B_0A_FD_79"));
 }
 
 /// Only names that hold one another's words, in order, are one device's.

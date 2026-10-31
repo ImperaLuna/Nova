@@ -154,11 +154,7 @@ Column {
                             font.family: Tokens.fontSans
                             font.pixelSize: Tokens.fontSizeMicro
                             color: Tokens.fgSoft
-                            text: ({
-                                    dongle: qsTr("2.4 GHz"),
-                                    bluetooth: qsTr("Bluetooth"),
-                                    wired: qsTr("Wired")
-                                })[row.link] ?? ""
+                            text: Devices.linkLabel(row.link)
                         }
                     }
                 }

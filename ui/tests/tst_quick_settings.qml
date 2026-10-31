@@ -518,11 +518,10 @@ Item {
         }
 
         function test_sound_rows_say_how_they_are_connected() {
-            compare(QuickSettings.soundSubtitle("headphones", "bluetooth"), "Headphones · Bluetooth");
-            compare(QuickSettings.soundSubtitle("headphones", "usb"), "Headphones · USB");
+            compare(QuickSettings.soundSubtitle("headphones", "bluetooth"), "Bluetooth");
+            compare(QuickSettings.soundSubtitle("headphones", "dongle"), "2.4 GHz");
+            compare(QuickSettings.soundSubtitle("speakers", "usb"), "USB");
             compare(QuickSettings.soundSubtitle("display", ""), "HDMI or DisplayPort");
-            compare(QuickSettings.soundSubtitle("bluetooth", "bluetooth"), "Bluetooth");
-            compare(QuickSettings.soundSubtitle("", "usb"), "USB");
             compare(QuickSettings.soundSubtitle("", ""), "");
             compare(QuickSettings.currentLink([
                 {
@@ -540,6 +539,29 @@ Item {
                     current: true
                 }
             ]), "", "nothing for one built in");
+        }
+
+        // The Arctis Nova 5X's dongle sink (node.nick from pw-cli) and the
+        // headset as novad reads it over the dongle.
+        function test_a_headset_dongle_reads_as_2_4_ghz() {
+            const headset = {
+                id: "headsetcontrol/1038:2253",
+                name: "Arctis Nova 5X",
+                kind: "headset",
+                link: "dongle"
+            };
+            compare(Devices.soundLink("usb", "SteelSeries Arctis Nova 5X", [headset]), "dongle");
+            compare(Devices.soundLink("usb", "Scarlett 2i2 USB", [headset]), "usb", "another USB device stays USB");
+            compare(Devices.soundLink("usb", "SteelSeries Arctis Nova 5X", []), "usb", "without novad's reading");
+            compare(Devices.soundLink("usb", "SteelSeries Arctis Nova 5X", undefined), "usb");
+            compare(Devices.soundLink("bluetooth", "SteelSeries Arctis Nova 5X", [headset]), "bluetooth");
+            const keyboard = Object.assign({}, headset, {
+                kind: "keyboard"
+            });
+            compare(Devices.soundLink("usb", "SteelSeries Arctis Nova 5X", [keyboard]), "usb", "only a headset's dongle");
+            verify(Devices.namesMatch("SteelSeries Arctis Nova 5X", "arctis nova 5x"));
+            verify(!Devices.namesMatch("Arctis Nova 5", "Arctis Nova 5X"));
+            verify(!Devices.namesMatch("", "Arctis"));
         }
 
         function test_sound_page_switches_outputs() {

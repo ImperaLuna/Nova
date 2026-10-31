@@ -1,5 +1,6 @@
 .pragma library
 .import "../util/numbers.js" as Numbers
+.import "devices.js" as Devices
 
 // Quick settings' pure logic: the greeting, which logo to show,
 // how sizes and percents read, which apps record from the mic, and the
@@ -157,32 +158,18 @@ function kindLabel(kind) {
     }[kind] || "";
 }
 
-// A list row's second line: what the output is (kindLabel) and how it's
-// connected (volume.js link), like "Headphones · Bluetooth", so a headset
-// listed on both its links reads as two. An input has no kind, only the
-// link. A Bluetooth speaker's kind already says it.
+// A list row's second line: how the output or input is connected
+// (devices.js soundLink), so a headset listed on both its links reads as
+// two, else what it is (kindLabel).
 function soundSubtitle(kind, link) {
-    var linkText = linkLabel(link);
-    var kindText = kindLabel(kind);
-    if (kind === "bluetooth" || linkText === "")
-        return kindText;
-    return kindText === "" ? linkText : kindText + " · " + linkText;
+    return Devices.linkLabel(link) || kindLabel(kind);
 }
 
-// How an output or input is connected (volume.js link): "Bluetooth",
-// "USB", or "" for one built in.
-function linkLabel(link) {
-    return {
-        bluetooth: qsTr("Bluetooth"),
-        usb: qsTr("USB")
-    }[link] || "";
-}
-
-// The Sound page's line under the device in use: how it's connected. Its
-// icon already says what it is.
+// The Sound page's line under the device in use: how it's connected
+// (devices.js linkLabel). Its icon already says what it is.
 function currentLink(devices) {
     var current = (devices || []).filter(function (device) {
         return device.current;
     })[0];
-    return linkLabel(current ? current.link : "");
+    return Devices.linkLabel(current ? current.link : "");
 }
