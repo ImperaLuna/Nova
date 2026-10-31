@@ -19,7 +19,9 @@
 
 use super::{names_match, same_kind};
 use crate::notifications::Own;
-use nova_protocol::{Battery, BatteryLevel, Notification, NotificationDevice, Peripheral, PeripheralKind};
+use nova_protocol::{
+    Battery, BatteryLevel, Notification, NotificationDevice, Peripheral, PeripheralKind, PeripheralLink,
+};
 use std::collections::HashMap;
 
 /// The percents alerted at, highest first; the last one is critical.
@@ -39,9 +41,11 @@ pub struct Alerts {
 
 #[derive(Debug, Clone)]
 struct Said {
-    /// What the device is and its name, to know it under another id.
+    /// What the device is, its name and whether it's on Bluetooth, to
+    /// know it under another id.
     kind: PeripheralKind,
     name: String,
+    bluetooth: bool,
     /// The lowest step alerted this discharge.
     step: Option<u8>,
     /// The device's last alert, which its next one takes the place of.
@@ -66,8 +70,16 @@ impl Alerts {
                     same_device(said, device) && !devices.iter().any(|connected| &connected.id == *id)
                 });
                 let said = away.map(|(id, _)| id.clone()).and_then(|id| self.devices.remove(&id));
-                let (step, notification) = said.map_or((None, 0), |said| (said.step, said.notification));
-                let said = Said { kind: device.kind, name: device.name.clone(), step, notification };
+                let mut said = said.unwrap_or(Said {
+                    kind: device.kind,
+                    name: String::new(),
+                    bluetooth: false,
+                    step: None,
+                    notification: 0,
+                });
+                said.kind = device.kind;
+                said.name.clone_from(&device.name);
+                said.bluetooth = on_bluetooth(device);
                 self.devices.insert(device.id.clone(), said);
             }
             let Some(said) = self.devices.get_mut(&device.id) else { continue };
@@ -113,10 +125,17 @@ impl Alerts {
 /// Whether what was `said` is about `device` back under a new id: UPower
 /// numbers a Logitech battery anew each time it connects
 /// (`mouse_hidpp_battery_3`), and a headset on Bluetooth and its dongle is
-/// listed as the dongle's (`Arctis Nova 5X`) while Bluetooth is away. Known
-/// the way the list merges a device two sources report.
+/// listed as the dongle's (`Arctis Nova 5X`) while Bluetooth is away. The
+/// same name, or the way the list merges a device on Bluetooth and its
+/// dongle: one of them on Bluetooth, and one name inside the other.
 fn same_device(said: &Said, device: &Peripheral) -> bool {
-    same_kind(said.kind, device.kind) && names_match(&said.name, &device.name)
+    let names =
+        said.name == device.name || (said.bluetooth != on_bluetooth(device) && names_match(&said.name, &device.name));
+    same_kind(said.kind, device.kind) && names
+}
+
+fn on_bluetooth(device: &Peripheral) -> bool {
+    device.link == Some(PeripheralLink::Bluetooth)
 }
 
 /// Whether `listed` is the row an earlier alert like `own` left: Nova's,
@@ -293,7 +312,7 @@ mod tests {
             id: "upower/headphones_dev_20_AF_1B_0A_FD_79".into(),
             name: "SteelSeries Arctis Nova 5X".into(),
             kind: PeripheralKind::Headphones,
-            link: Some(nova_protocol::PeripheralLink::Bluetooth),
+            link: Some(PeripheralLink::Bluetooth),
             battery: Some(Battery::Percent(percent)),
             charging: false,
             source: PeripheralSource::Upower,
@@ -302,7 +321,7 @@ mod tests {
             id: "headsetcontrol/1038:2253".into(),
             name: "Arctis Nova 5X".into(),
             kind: PeripheralKind::Headset,
-            link: Some(nova_protocol::PeripheralLink::Dongle),
+            link: Some(PeripheralLink::Dongle),
             battery: Some(Battery::Percent(percent)),
             charging: false,
             source: PeripheralSource::Headsetcontrol,
@@ -318,5 +337,21 @@ mod tests {
         assert_eq!(alerts.update(&[bluetooth(9)]), [], "and back");
         let critical = alerts.update(&[dongle(5)]);
         assert_eq!((critical[0].own.replaces, critical[0].own.body.as_str()), (7, "5%"));
+    }
+
+    /// A name inside another's is one device only across Bluetooth and a
+    /// dongle: an MX Keys Mini isn't the MX Keys that left.
+    #[test]
+    fn another_device_with_a_longer_name_is_another_device() {
+        let keyboard = |id: &str, name: &str, percent| Peripheral {
+            id: id.into(),
+            name: name.into(),
+            kind: PeripheralKind::Keyboard,
+            battery: Some(Battery::Percent(percent)),
+            ..mouse(Battery::Percent(percent), false)
+        };
+        let mut alerts = Alerts::default();
+        assert_eq!(alerts.update(&[keyboard("upower/keyboard_0", "MX Keys", 10)]).len(), 1);
+        assert_eq!(alerts.update(&[keyboard("upower/keyboard_1", "MX Keys Mini", 8)]).len(), 1);
     }
 }

@@ -363,7 +363,7 @@ impl Shared {
                 let held = state.alerts.notifications();
                 // Sent unlocked: the notification server takes locks of its own.
                 drop(state);
-                let sent = self.alert(&notifications, alerts, &held);
+                let sent = self.alert(&notifications, alerts, held);
                 state = lock(&self.state);
                 for (id, notification) in sent {
                     state.alerts.sent(&id, notification);
@@ -374,7 +374,12 @@ impl Shared {
 
     /// Sends `alerts` and says which notification each became. `held` are
     /// the notifications devices known now sent.
-    fn alert(&self, notifications: &Notifications, alerts: Vec<alerts::Alert>, held: &[u32]) -> Vec<(String, u32)> {
+    fn alert(
+        &self,
+        notifications: &Notifications,
+        alerts: Vec<alerts::Alert>,
+        mut held: Vec<u32>,
+    ) -> Vec<(String, u32)> {
         alerts
             .into_iter()
             // Stopped meanwhile: no more.
@@ -388,6 +393,7 @@ impl Shared {
                 }
                 self.logger.info(LOG_SOURCE, &format!("{}: {}", alert.own.summary, alert.own.body));
                 let id = notifications.send_own(alert.own);
+                held.push(id);
                 (alert.id, id)
             })
             .collect()
