@@ -136,8 +136,10 @@ Item {
                     onToggled: page.pageRequested("network")
                     onOpened: page.pageRequested("network")
                 }
-                // A click turns it on or off; turned off by a switch, it
-                // opens the page, which says so.
+                // A click turns it on when it's off, and opens the page when
+                // it's on: turning it off is the page's switch, so a click
+                // meant for the page doesn't drop the headphones. Turned off
+                // by a hardware switch, it opens the page, which says so.
                 Tile {
                     objectName: "bluetoothTile"
                     visible: page.bluetoothShown
@@ -148,7 +150,7 @@ Item {
                     on: Bluetooth.isOn(page.bluetooth)
                     available: (page.bluetooth?.radio ?? "missing") !== "missing"
                     opens: true
-                    onToggled: page.bluetooth.radio === "switched_off" ? page.pageRequested("bluetooth") : page.bluetoothPowered(!on)
+                    onToggled: page.bluetooth.radio === "off" ? page.bluetoothPowered(true) : page.pageRequested("bluetooth")
                     onOpened: page.pageRequested("bluetooth")
                 }
                 Tile {
