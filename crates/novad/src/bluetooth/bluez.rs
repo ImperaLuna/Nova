@@ -20,6 +20,14 @@ pub const AGENT_MANAGER: &str = "org.bluez.AgentManager1";
 /// Where BlueZ serves `AgentManager1`.
 pub const BLUEZ_PATH: &str = "/org/bluez";
 
+/// Audio profiles only classic Bluetooth carries, the one to use
+/// first: A2DP's audio sink, then the hands-free and headset ones.
+const CLASSIC_AUDIO: [&str; 3] = [
+    "0000110b-0000-1000-8000-00805f9b34fb",
+    "0000111e-0000-1000-8000-00805f9b34fb",
+    "00001108-0000-1000-8000-00805f9b34fb",
+];
+
 pub type Properties = HashMap<String, OwnedVariant>;
 /// Interfaces by name, and their properties.
 pub type Interfaces = HashMap<String, Properties>;
@@ -42,6 +50,11 @@ pub struct Device {
     pub name: Option<String>,
     pub paired: bool,
     pub connected: bool,
+    /// Heard in this scan: BlueZ gives `RSSI` while discovery hears it and
+    /// takes it back when discovery stops.
+    seen: bool,
+    /// The profiles it offers, as UUIDs.
+    pub uuids: Vec<String>,
     icon: String,
     battery: Option<u8>,
 }
@@ -114,6 +127,11 @@ impl Objects {
                         .and_then(|name| clean(&name)),
                     paired: flag(device, "Paired"),
                     connected: flag(device, "Connected"),
+                    seen: device.contains_key("RSSI"),
+                    uuids: device
+                        .get("UUIDs")
+                        .and_then(|value| <Vec<String>>::try_from(value.try_clone().ok()?).ok())
+                        .unwrap_or_default(),
                     icon: text(device, "Icon").unwrap_or_default(),
                     battery: object
                         .get(BATTERY)
@@ -137,10 +155,21 @@ impl Objects {
 
 impl Device {
     /// Whether the page lists it: paired or connected ones always, new ones
-    /// only with a name of their own (nameless ones are beacons, other
-    /// people's watches and the like).
+    /// only while this scan hears them (BlueZ remembers new devices a while
+    /// after they leave) and with a name of their own (nameless ones are
+    /// beacons, other people's watches and the like).
     pub fn listed(&self) -> bool {
-        self.paired || self.connected || self.name.is_some()
+        self.paired || self.connected || (self.seen && self.name.is_some())
+    }
+
+    /// A profile only classic Bluetooth (BR/EDR) carries, to connect over
+    /// it when connecting over Bluetooth LE failed: the first audio one it
+    /// offers.
+    pub fn classic_profile(&self) -> Option<&str> {
+        CLASSIC_AUDIO
+            .iter()
+            .find_map(|wanted| self.uuids.iter().find(|uuid| uuid.eq_ignore_ascii_case(wanted)))
+            .map(String::as_str)
     }
 
     /// As the event lists it, `busy` while a command works on it.
@@ -245,6 +274,9 @@ pub fn failure(error: &zbus::Error) -> Option<String> {
         "Blocked" => "Bluetooth is blocked. Turn it on first.".into(),
         "AlreadyConnected" | "AlreadyExists" | "InProgress" => "It's already on its way. Give it a moment.".into(),
         "DoesNotExist" => "It's gone out of range. Try scanning again.".into(),
+        _ if detail.contains("le-connection-abort-by-local") => {
+            "Couldn't connect. Make sure it's on and nearby, then try again.".into()
+        }
         _ if detail.contains("page-timeout") || detail.contains("Page Timeout") || detail.contains("Host is down") => {
             "Couldn't reach it. Make sure it's on and nearby.".into()
         }
@@ -253,6 +285,12 @@ pub fn failure(error: &zbus::Error) -> Option<String> {
         }
         _ => format!("Something went wrong: {}", if detail.is_empty() { name } else { detail }),
     })
+}
+
+/// Whether BlueZ gave up connecting over Bluetooth LE: a device that has
+/// both (many headsets) can still connect over classic Bluetooth.
+pub fn le_aborted(error: &zbus::Error) -> bool {
+    matches!(error, zbus::Error::MethodError(_, Some(detail), _) if detail.contains("le-connection-abort-by-local"))
 }
 
 /// An adapter's kernel name (`hci0`), the last part of its path.

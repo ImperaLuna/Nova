@@ -30,6 +30,9 @@ const PHONE: &str = "9C:2A:70:11:22:33";
 const BUDS: &str = "C4:30:18:44:55:66";
 const NAMELESS: &str = "4C:11:22:33:44:55";
 const BATTERY: &str = "org.bluez.Battery1";
+const A2DP_SINK: &str = "0000110b-0000-1000-8000-00805f9b34fb";
+/// LE Audio's published audio capabilities.
+const LE_AUDIO: &str = "00001850-0000-1000-8000-00805f9b34fb";
 
 fn device_path(address: &str) -> String {
     format!("{ADAPTER_PATH}/dev_{}", address.replace(':', "_"))
@@ -71,11 +74,17 @@ fn objects() -> BTreeMap<String, Interfaces> {
     ]);
     let mut headphones = device(HEADPHONES, Some("WH-1000XM5"), "audio-headphones", true, true);
     headphones.insert(BATTERY.into(), HashMap::from([("Percentage".into(), OwnedVariant::from(80u8))]));
+    // Heard by a scan, and offering audio over classic Bluetooth and LE.
+    let mut buds = device(BUDS, Some("Pixel Buds Pro"), "audio-headphones", false, false);
+    let properties = buds.get_mut(DEVICE).unwrap();
+    properties.insert("RSSI".into(), OwnedVariant::from(-60i16));
+    let uuids = vec![LE_AUDIO.to_owned(), A2DP_SINK.to_owned()];
+    properties.insert("UUIDs".into(), OwnedVariant::try_from(zbus::Variant::from(uuids)).unwrap());
     BTreeMap::from([
         (ADAPTER_PATH.to_owned(), HashMap::from([(ADAPTER.to_owned(), adapter)])),
         (device_path(HEADPHONES), headphones),
         (device_path(PHONE), device(PHONE, Some("Pixel 8"), "phone", true, false)),
-        (device_path(BUDS), device(BUDS, Some("Pixel Buds Pro"), "audio-headphones", false, false)),
+        (device_path(BUDS), buds),
         (device_path(NAMELESS), device(NAMELESS, None, "", false, false)),
     ])
 }
@@ -102,6 +111,8 @@ struct Fake {
     /// How many `StartDiscovery` calls to refuse, as an adapter still
     /// coming up does.
     refuse_discovery: usize,
+    /// Whether `Connect` fails as BlueZ does when it tried LE and gave up.
+    abort_le: bool,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -120,6 +131,7 @@ impl FakeBlueZ {
             agent: None,
             pairing: Pairing::Confirm(123_456),
             refuse_discovery: 0,
+            abort_le: false,
             soft_block,
         }));
         zbus::block_on(async {
@@ -142,6 +154,20 @@ impl FakeBlueZ {
     /// Changes a property, and says so as BlueZ does.
     fn change(&self, path: &str, interface: &str, name: &str, value: OwnedVariant) {
         zbus::block_on(changed(&self.connection, &self.fake, path, interface, name, value));
+    }
+
+    /// A property goes, as BlueZ says it (`RSSI` when discovery stops).
+    fn invalidate(&self, path: &str, interface: &str, name: &str) {
+        lock(&self.fake).objects.get_mut(path).unwrap().get_mut(interface).unwrap().remove(name);
+        let changed: HashMap<String, OwnedVariant> = HashMap::new();
+        zbus::block_on(self.connection.emit_signal(
+            None::<&str>,
+            path,
+            PROPERTIES,
+            "PropertiesChanged",
+            &(interface, changed, vec![name.to_owned()]),
+        ))
+        .unwrap();
     }
 
     /// A device goes, as BlueZ says it.
@@ -205,6 +231,7 @@ enum BlueZError {
     NotReady(String),
     AuthenticationRejected(String),
     AuthenticationCanceled(String),
+    Failed(String),
 }
 
 struct Manager(Shared);
@@ -352,8 +379,17 @@ impl FakeDevice {
         }
     }
 
-    async fn connect(&self, #[zbus(connection)] connection: &Connection) {
+    async fn connect(&self, #[zbus(connection)] connection: &Connection) -> Result<(), BlueZError> {
         self.log("Connect");
+        if lock(&self.fake).abort_le {
+            return Err(BlueZError::Failed("le-connection-abort-by-local".into()));
+        }
+        changed(connection, &self.fake, &self.path, DEVICE, "Connected", OwnedVariant::from(true)).await;
+        Ok(())
+    }
+
+    async fn connect_profile(&self, uuid: String, #[zbus(connection)] connection: &Connection) {
+        self.log(&format!("ConnectProfile {uuid}"));
         changed(connection, &self.fake, &self.path, DEVICE, "Connected", OwnedVariant::from(true)).await;
     }
 
@@ -676,4 +712,45 @@ fn disconnecting_and_forgetting() {
     assert!(bluez.calls().contains(&format!("RemoveDevice {}", device_path(PHONE))));
     assert!(bluetooth.connect("not an address").unwrap_err().contains("isn't a Bluetooth address"));
     assert!(bluetooth.connect("AA:AA:AA:AA:AA:AA").is_err(), "a device BlueZ doesn't have");
+}
+
+#[test]
+fn new_devices_show_only_while_a_scan_hears_them() {
+    let fixture = Fixture::new("heard");
+    let bluez = fixture.bluez();
+    let _bluetooth = fixture.start();
+    fixture.until("the earbuds", |event| status(event, BUDS).as_deref() == Some("nearby"));
+    // Out of range or the scan ended: BlueZ takes `RSSI` back but keeps
+    // the device a while.
+    bluez.invalidate(&device_path(BUDS), DEVICE, "RSSI");
+    let event = fixture.until("the earbuds gone", |event| find(event, BUDS).is_none());
+    assert_eq!(status(&event, PHONE).as_deref(), Some("paired"), "paired ones stay");
+    bluez.change(&device_path(BUDS), DEVICE, "RSSI", OwnedVariant::from(-70i16));
+    fixture.until("the earbuds back", |event| status(event, BUDS).as_deref() == Some("nearby"));
+}
+
+#[test]
+fn an_aborted_le_connect_connects_over_classic_bluetooth() {
+    let fixture = Fixture::new("le-abort");
+    let bluez = fixture.bluez();
+    lock(&bluez.fake).abort_le = true;
+    let bluetooth = fixture.start();
+    fixture.until("the devices", |event| event["radio"] == "on");
+    let connecting = {
+        let bluetooth = Arc::clone(&bluetooth);
+        std::thread::spawn(move || bluetooth.connect(BUDS))
+    };
+    let event = fixture.until("the question", |event| !event["pairing"].is_null());
+    bluetooth.answer(event["pairing"]["id"].as_u64().unwrap(), PairingAnswer::Accept).unwrap();
+    assert_eq!(connecting.join().unwrap(), Ok(()));
+    fixture.until("the earbuds connected", |event| status(event, BUDS).as_deref() == Some("connected"));
+    let path = device_path(BUDS);
+    let calls: Vec<String> = bluez.calls().into_iter().filter(|call| call.contains("Connect")).collect();
+    assert_eq!(calls, [format!("Connect {path}"), format!("ConnectProfile {A2DP_SINK} {path}")]);
+
+    // A device with no classic profile keeps BlueZ's failure.
+    assert_eq!(
+        bluetooth.connect(PHONE).unwrap_err(),
+        "Couldn't connect. Make sure it's on and nearby, then try again."
+    );
 }

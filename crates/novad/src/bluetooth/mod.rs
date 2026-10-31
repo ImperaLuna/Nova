@@ -246,7 +246,10 @@ impl Bluetooth {
                 zbus::block_on(set(&shared.calls()?, &path, DEVICE, "Trusted", true))?;
             }
             shared.set_busy(address, BluetoothStatus::Connecting);
-            shared.long_call(&path, DEVICE, "Connect")
+            match shared.long_call(&path, DEVICE, "Connect") {
+                Err(e) if bluez::le_aborted(&e) => shared.connect_classic(address, &path, e),
+                result => result,
+            }
         })();
         shared.done(address, result)
     }
@@ -362,6 +365,19 @@ impl Shared {
         let state = lock(&self.state);
         let device = state.objects.device(address).ok_or("That device isn't around any more.")?;
         Ok((device.path, device.paired, device.connected))
+    }
+
+    /// Connects over classic Bluetooth the device whose connect over
+    /// Bluetooth LE failed with `error`, through its first classic audio
+    /// profile: BlueZ picks LE again for a plain `Connect`.
+    fn connect_classic(&self, address: &str, path: &OwnedObjectPath, error: zbus::Error) -> zbus::Result<()> {
+        let profile =
+            lock(&self.state).objects.device(address).and_then(|device| device.classic_profile().map(str::to_owned));
+        let Some(profile) = profile else { return Err(error) };
+        self.logger.info(LOG_SOURCE, &format!("{address}: LE connect aborted, connecting over classic Bluetooth"));
+        let agent = lock(&self.state).agent.clone().ok_or_else(not_followed)?;
+        zbus::block_on(agent.call_method(Some(BLUEZ), path.as_str(), Some(DEVICE), "ConnectProfile", &(profile,)))
+            .map(|_| ())
     }
 
     fn set_busy(&self, address: &str, status: BluetoothStatus) {
