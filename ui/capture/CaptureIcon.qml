@@ -24,6 +24,9 @@ LineIcon {
             [Capture.ICON_PAUSE]: Icons.PAUSE,
             [Capture.ICON_RESUME]: Icons.PLAY,
             [Capture.ICON_STOP]: Icons.STOP,
-            [Capture.ICON_VIDEO]: Icons.VIDEO
+            [Capture.ICON_VIDEO]: Icons.VIDEO,
+            [Capture.ICON_VIDEO_OFF]: Icons.VIDEO_OFF,
+            [Capture.CARD_RETRY]: Icons.REBOOT,
+            [Capture.CARD_LOG]: Icons.DOCUMENT
         })[name] ?? ""
 }

@@ -10,7 +10,7 @@ import "../theme"
 
 // The region picker's sums (capture.js), the picker taking a drag, a click
 // or a screen, picking what to record, switching between the two, the screenshot card's buttons and
-// drain, and the recording pill, without novad or a window: those need
+// drain, the card of a recording that didn't start, and the recording pill, without novad or a window: those need
 // Quickshell, which the VM tests cover. The frame
 // is 400x300 on a 200x150 picker: a screen at scale 2. The root is an Item:
 // a TestCase root gets no mouse events.
@@ -45,6 +45,16 @@ Item {
                         width: 960,
                         height: 560,
                         copied: true
+                    })
+            }
+        }
+
+        Component {
+            id: failedCardComponent
+            ShotCard {
+                video: true
+                shot: ({
+                        reason: "gpu-screen-recorder didn't start: no video encoder works"
                     })
             }
         }
@@ -424,6 +434,33 @@ Item {
             verify(!card.held);
             tryCompare(expiries, "count", 1, 10000);
             compare(card.remaining, 0);
+        }
+
+        function test_a_recording_that_didnt_start_says_why_and_offers_try_again_and_the_log() {
+            const card = createTemporaryObject(failedCardComponent, stage);
+            actions.target = card;
+            actions.clear();
+            verify(card.failed);
+            verify(findText(card, "Recording didn't start"));
+            verify(findText(card, "gpu-screen-recorder didn't start: no video encoder works"));
+            const buttons = findButtons(card);
+            compare(buttons.length, 2);
+            // Side by side once the row has laid them out.
+            tryVerify(() => buttons[1].x > buttons[0].x + buttons[0].width / 2);
+            mouseClick(buttons[0]);
+            mouseClick(buttons[1]);
+            compare(actions.signalArguments.map(args => args[0]), [Capture.CARD_RETRY, Capture.CARD_LOG]);
+        }
+
+        function findText(item, text) {
+            for (const child of item.children) {
+                if (child instanceof Text && child.visible && child.text === text)
+                    return child;
+                const found = findText(child, text);
+                if (found)
+                    return found;
+            }
+            return null;
         }
 
         function findSwitch(item) {
