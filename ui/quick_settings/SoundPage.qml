@@ -82,11 +82,6 @@ Item {
 
                 // The device in use: the slider's icon below is its one icon.
                 Column {
-                    FontMetrics {
-                        id: linkLine
-                        font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSizeTiny
-                    }
                     Text {
                         width: current.width
                         elide: Text.ElideRight
@@ -97,11 +92,13 @@ Item {
                         textFormat: Text.PlainText
                         text: page.input ? (page.inputAvailable ? page.inputName : qsTr("No input")) : page.outputAvailable ? page.outputName : qsTr("No output")
                     }
-                    // One line tall even when empty, so the card is the
-                    // same height on every tab.
+                    // Full width even when empty: the Column skips an item
+                    // with no width, and the card would get shorter.
                     Text {
-                        height: linkLine.height
-                        font: linkLine.font
+                        width: current.width
+                        elide: Text.ElideRight
+                        font.family: Tokens.fontSans
+                        font.pixelSize: Tokens.fontSizeTiny
                         color: Tokens.fgDim
                         text: QuickSettings.currentLink(page.input ? page.inputs : page.outputs)
                     }
