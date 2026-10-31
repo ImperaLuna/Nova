@@ -112,6 +112,9 @@ struct State {
     busy: HashMap<String, BluetoothStatus>,
     /// Why the last command on a device failed, by address.
     errors: HashMap<String, String>,
+    /// Devices the user stopped pairing or connecting: the command takes
+    /// no further step.
+    halted: BTreeSet<String>,
     /// The question pairing asks the user now.
     pairing: Option<Asked>,
     last_request: u64,
@@ -251,6 +254,8 @@ impl Bluetooth {
         if connected {
             return Ok(());
         }
+        // A stop that came as an earlier command ended isn't for this one.
+        lock(&shared.state).halted.remove(&address.to_uppercase());
         let result = (|| {
             if !paired {
                 shared.set_busy(address, BluetoothStatus::Pairing);
@@ -258,9 +263,11 @@ impl Bluetooth {
                     Err(e) if !named(&e, "AlreadyExists") => return Err(e),
                     _ => {}
                 }
+                shared.go_on(address)?;
                 zbus::block_on(set(&shared.calls()?, &path, DEVICE, "Trusted", true))?;
             }
             shared.set_busy(address, BluetoothStatus::Connecting);
+            shared.go_on(address)?;
             match shared.long_call(&path, DEVICE, "Connect") {
                 Err(e) if bluez::le_aborted(&e) => shared.connect_classic(address, &path, e),
                 result => result,
@@ -278,6 +285,9 @@ impl Bluetooth {
         match busy {
             // The command under way ends, and says so.
             Some(BluetoothStatus::Pairing | BluetoothStatus::Connecting) => {
+                // Between two steps no call is under way: the next one
+                // doesn't start.
+                lock(&shared.state).halted.insert(address.to_uppercase());
                 shared.cancel(&path, busy);
                 Ok(())
             }
@@ -420,6 +430,15 @@ impl Shared {
         }
     }
 
+    /// Whether a command on `address` may take its next step: not once the
+    /// user stopped it.
+    fn go_on(&self, address: &str) -> zbus::Result<()> {
+        match lock(&self.state).halted.contains(&address.to_uppercase()) {
+            true => Err(zbus::Error::Failure("stopped by the user".into())),
+            false => Ok(()),
+        }
+    }
+
     fn set_busy(&self, address: &str, status: BluetoothStatus) {
         let mut state = lock(&self.state);
         let key = address.to_uppercase();
@@ -434,6 +453,8 @@ impl Shared {
         let mut state = lock(&self.state);
         let key = address.to_uppercase();
         state.busy.remove(&key);
+        // Stopped: however it ended, there's nothing to explain.
+        let result = if state.halted.remove(&key) { Ok(()) } else { result };
         let shown = state.pairing.as_ref().is_some_and(|asked| asked.slot.is_none() && asked.request.address == key);
         if shown {
             state.pairing = None;
