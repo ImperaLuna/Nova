@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::time::Duration;
 
 pub const FEATURE_ID: &str = "launcher";
@@ -51,6 +51,9 @@ const TRAY_WINDOW_RETRY: Duration = Duration::from_millis(100);
 /// again: the new process first starts up, then hands over to the running
 /// one.
 pub const STARTED_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_secs(2) } else { Duration::from_secs(10) };
+/// How long a lookup made while novad starts (`app_once_scanned`) waits
+/// for the apps to be read the first time.
+const FIRST_SCAN_WAIT: Duration = Duration::from_secs(2);
 /// The desktop entry category of web browsers.
 const BROWSER: &str = "WebBrowser";
 
@@ -79,6 +82,8 @@ impl Paths {
 
 pub struct Launcher {
     state: Mutex<State>,
+    /// Wakes lookups waiting for the first look at the apps.
+    scanned: Condvar,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     paths: Paths,
@@ -99,6 +104,8 @@ type Rescanned = Box<dyn Fn() + Send + Sync>;
 
 struct State {
     apps: BTreeMap<String, Entry>,
+    /// The apps have been read at least once.
+    scanned: bool,
     /// The apps' icon files, by app id, for those that have one.
     icons: BTreeMap<String, String>,
     saved: Saved,
@@ -136,7 +143,14 @@ impl Launcher {
         };
         let desktops = current_desktops();
         let launcher = Arc::new(Self {
-            state: Mutex::new(State { apps: BTreeMap::new(), icons: BTreeMap::new(), saved, sent: None }),
+            scanned: Condvar::new(),
+            state: Mutex::new(State {
+                apps: BTreeMap::new(),
+                scanned: false,
+                icons: BTreeMap::new(),
+                saved,
+                sent: None,
+            }),
             hub,
             logger,
             paths,
@@ -158,6 +172,7 @@ impl Launcher {
         {
             let _state = lock(&self.state);
             self.stopped.store(true, Ordering::SeqCst);
+            self.scanned.notify_all();
         }
         if let Some(watch) = watch.take() {
             watch.stop();
@@ -255,6 +270,18 @@ impl Launcher {
         }
         launch::launch(&entry, &self.paths.runner, &self.path_var, &self.logger)
             .inspect_err(|e| self.logger.warn(LOG_SOURCE, &format!("can't launch {id}: {e}")))
+    }
+
+    /// The installed app `id` (its desktop file id), as the launcher lists
+    /// it. Right after the launcher starts, it first waits (a while at most)
+    /// for the apps to be read, so an app isn't taken for missing meanwhile.
+    pub fn app_once_scanned(&self, id: &str) -> Option<App> {
+        let state = lock(&self.state);
+        let (state, _) = self
+            .scanned
+            .wait_timeout_while(state, FIRST_SCAN_WAIT, |state| !state.scanned && !self.stopped())
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.apps.get(id).map(|entry| app(entry, &state.icons))
     }
 
     /// The installed app whose windows may have one of `ids` (lower case,
@@ -453,6 +480,8 @@ impl Launcher {
         }
         state.apps = apps;
         state.icons = found;
+        state.scanned = true;
+        self.scanned.notify_all();
         self.publish(&mut state);
         drop(state);
         if let Some(rescanned) = &*lock(&self.rescanned) {

@@ -49,13 +49,18 @@ impl Fixture {
     }
 
     fn server(&self) -> Arc<Notifications> {
+        self.server_with(None)
+    }
+
+    /// A server naming apps as `launcher` finds them.
+    fn server_with(&self, launcher: Option<Arc<Launcher>>) -> Arc<Notifications> {
         let sources = Sources {
             bus: Bus::Address(self.bus.address.clone()),
             state_file: self.dir.join("notifications.json"),
             images: self.dir.join("images"),
             icons: Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[self.dir.join("share")], None)),
         };
-        Notifications::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger))
+        Notifications::start(sources, launcher, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
     fn app(&self) -> App {
@@ -76,6 +81,27 @@ impl Fixture {
             }
         });
         App { connection, signals }
+    }
+
+    /// A launcher finding the apps installed under `share/applications`
+    /// (`entries`: file name and contents); lookups wait for its first read.
+    fn launcher(&self, entries: &[(&str, &str)]) -> Arc<Launcher> {
+        let share = self.dir.join("share");
+        std::fs::create_dir_all(share.join("applications")).unwrap();
+        for (file, entry) in entries {
+            std::fs::write(
+                share.join("applications").join(file),
+                format!("[Desktop Entry]\nType=Application\n{entry}"),
+            )
+            .unwrap();
+        }
+        let paths = crate::launcher::Paths {
+            data_dirs: vec![share.clone()],
+            state_file: self.dir.join("launcher.json"),
+            runner: crate::launcher::Runner::Direct,
+            icons: Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[share], None)),
+        };
+        Launcher::start(paths, "", Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
     /// The next event called `name`, skipping others.
@@ -483,6 +509,34 @@ fn an_app_that_quits_leaves_its_notifications_unclickable() {
     assert_eq!(clicked, Clicked { app_id: None, heard: false }, "novad opens the app instead");
     let list = fixture.next("notifications");
     assert_eq!(list["items"][0].get("unread"), None, "read all the same");
+}
+
+#[test]
+fn an_installed_desktop_entry_names_the_app_before_the_sender_does() {
+    let fixture = Fixture::new("desktop-entry-name");
+    let patched = fixture.install_icon("discord-patched");
+    let theme = fixture.install_icon("vesktop");
+    let launcher = fixture.launcher(&[("discord.desktop", "Name=Discord\nIcon=discord-patched\nExec=true\n")]);
+    let _server = fixture.server_with(Some(launcher));
+    let app = fixture.app();
+
+    // The entry the sender names is installed: its name and icon win over
+    // what the sender calls itself and the icon it gives.
+    let hints = HashMap::from([("desktop-entry", Variant::from("discord"))]);
+    app.notify(("discord-canary", 0, "vesktop", "Mara", "hi", vec![], hints, -1));
+    let popup = fixture.next("notification_popup");
+    assert_eq!((&popup["app"], &popup["icon"]), (&json!("Discord"), &json!(patched)));
+    assert_eq!(popup["app_id"], "discord.desktop");
+
+    // Not installed: the sender's own name and icon.
+    let hints = HashMap::from([("desktop-entry", Variant::from("vesktop"))]);
+    app.notify(("Vesktop", 0, "vesktop", "Mara", "hi", vec![], hints, -1));
+    let popup = fixture.next("notification_popup");
+    assert_eq!((&popup["app"], &popup["icon"]), (&json!("Vesktop"), &json!(theme)));
+
+    // No entry named: the sender's name.
+    app.simple("Chat", "hello");
+    assert_eq!(fixture.next("notification_popup")["app"], "Chat");
 }
 
 #[test]
