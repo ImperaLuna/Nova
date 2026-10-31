@@ -10,10 +10,16 @@
 //! one. What's been said is kept by device id while novad runs, also while
 //! a device is away, so one that reconnects still low isn't alerted again;
 //! one back under a new id takes over what was said under an id that's gone
-//! for a device of its kind and name ([`model`]).
+//! for the same device ([`same_device`]): a headset whose Bluetooth drops
+//! while its dongle carries on is still the headset.
+//!
+//! An alert is the device's name and its percent, and takes the place of
+//! the device's last one; after a restart, of its row still in the list
+//! ([`row_of`]).
 
+use super::{names_match, same_kind};
 use crate::notifications::Own;
-use nova_protocol::{Battery, BatteryLevel, NotificationDevice, Peripheral, PeripheralKind};
+use nova_protocol::{Battery, BatteryLevel, Notification, NotificationDevice, Peripheral, PeripheralKind};
 use std::collections::HashMap;
 
 /// The percents alerted at, highest first; the last one is critical.
@@ -31,10 +37,11 @@ pub struct Alerts {
     devices: HashMap<String, Said>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 struct Said {
-    /// The device's [`model`].
-    model: String,
+    /// What the device is and its name, to know it under another id.
+    kind: PeripheralKind,
+    name: String,
     /// The lowest step alerted this discharge.
     step: Option<u8>,
     /// The device's last alert, which its next one takes the place of.
@@ -55,13 +62,13 @@ impl Alerts {
         for device in devices {
             let Some(battery) = device.battery else { continue };
             if !self.devices.contains_key(&device.id) {
-                let model = model(device);
-                let away = self
-                    .devices
-                    .iter()
-                    .find(|(id, said)| said.model == model && !devices.iter().any(|connected| &connected.id == *id));
+                let away = self.devices.iter().find(|(id, said)| {
+                    same_device(said, device) && !devices.iter().any(|connected| &connected.id == *id)
+                });
                 let said = away.map(|(id, _)| id.clone()).and_then(|id| self.devices.remove(&id));
-                self.devices.insert(device.id.clone(), said.unwrap_or(Said { model, ..Said::default() }));
+                let (step, notification) = said.map_or((None, 0), |said| (said.step, said.notification));
+                let said = Said { kind: device.kind, name: device.name.clone(), step, notification };
+                self.devices.insert(device.id.clone(), said);
             }
             let Some(said) = self.devices.get_mut(&device.id) else { continue };
             let percent = match battery {
@@ -90,6 +97,11 @@ impl Alerts {
         alerts
     }
 
+    /// The notifications sent for the devices known, by id.
+    pub fn notifications(&self) -> Vec<u32> {
+        self.devices.values().map(|said| said.notification).filter(|id| *id != 0).collect()
+    }
+
     /// Device `id`'s alert was sent as notification `notification`.
     pub fn sent(&mut self, id: &str, notification: u32) {
         if let Some(said) = self.devices.get_mut(id) {
@@ -98,11 +110,20 @@ impl Alerts {
     }
 }
 
-/// What a device is known by when it comes back under a new id (UPower
-/// numbers a Logitech battery anew each time it connects,
-/// `mouse_hidpp_battery_3`): what it is and its name.
-fn model(device: &Peripheral) -> String {
-    format!("{:?}/{}", device.kind, device.name)
+/// Whether what was `said` is about `device` back under a new id: UPower
+/// numbers a Logitech battery anew each time it connects
+/// (`mouse_hidpp_battery_3`), and a headset on Bluetooth and its dongle is
+/// listed as the dongle's (`Arctis Nova 5X`) while Bluetooth is away. Known
+/// the way the list merges a device two sources report.
+fn same_device(said: &Said, device: &Peripheral) -> bool {
+    same_kind(said.kind, device.kind) && names_match(&said.name, &device.name)
+}
+
+/// Whether `listed` is the row an earlier alert like `own` left: Nova's,
+/// about a device of its kind and name.
+pub fn row_of(listed: &Notification, own: &Own) -> bool {
+    let kinds = listed.device.zip(own.device).is_some_and(|(listed, own)| same_kind(listed.kind, own.kind));
+    listed.app == own.app && kinds && names_match(&listed.summary, &own.summary)
 }
 
 /// About how full a battery that only reports `level` is.
@@ -116,48 +137,23 @@ pub fn level_percent(level: BatteryLevel) -> u8 {
     }
 }
 
-/// The notification for `device`, at `battery`, reaching `step`.
+/// The notification for `device`, at `battery`, reaching `step`: its name
+/// and its percent. The icon says what it is; when critical, the card's
+/// rim says to charge it.
 fn own(device: &Peripheral, battery: Battery, step: u8, replaces: u32) -> Own {
     let critical = step == STEPS[STEPS.len() - 1];
-    let what = kind_name(device.kind);
-    let name = &device.name;
-    let summary = match (battery, critical) {
-        (Battery::Percent(percent), true) => format!("{what} battery critical: {percent}%"),
-        (Battery::Percent(percent), false) if step == STEPS[0] => format!("{what} battery at {percent}%"),
-        (Battery::Percent(percent), false) => format!("{what} battery low: {percent}%"),
-        (Battery::Level(_), true) => format!("{what} battery critical"),
-        (Battery::Level(_), false) => format!("{what} battery low"),
-    };
     let body = match (battery, critical) {
-        (_, true) => format!("{name} will turn off soon. Charge it now."),
-        (Battery::Level(_), false) => format!("{name} reports a low battery."),
-        (Battery::Percent(_), false) if step == STEPS[0] => format!("{name} is running low."),
-        (Battery::Percent(_), false) => format!("{name} needs charging soon."),
+        (Battery::Percent(percent), _) => format!("{percent}%"),
+        (Battery::Level(_), true) => "Critical".into(),
+        (Battery::Level(_), false) => "Low".into(),
     };
     Own {
         app: APP.into(),
-        summary,
+        summary: device.name.clone(),
         body,
         critical,
         replaces,
         device: Some(NotificationDevice { kind: device.kind, battery }),
-    }
-}
-
-fn kind_name(kind: PeripheralKind) -> &'static str {
-    match kind {
-        PeripheralKind::Mouse => "Mouse",
-        PeripheralKind::Keyboard => "Keyboard",
-        PeripheralKind::Touchpad => "Touchpad",
-        PeripheralKind::GamingInput => "Controller",
-        PeripheralKind::Pen => "Pen",
-        PeripheralKind::Tablet => "Tablet",
-        PeripheralKind::Headset => "Headset",
-        PeripheralKind::Headphones => "Headphones",
-        PeripheralKind::Speakers => "Speaker",
-        PeripheralKind::RemoteControl => "Remote",
-        PeripheralKind::Wearable => "Wearable",
-        PeripheralKind::Other => "Device",
     }
 }
 
@@ -178,13 +174,13 @@ mod tests {
         }
     }
 
-    /// The summaries of the alerts each reading in turn calls for.
-    fn summaries(readings: &[(Battery, bool)]) -> Vec<Vec<String>> {
+    /// What the alerts each reading in turn calls for say.
+    fn bodies(readings: &[(Battery, bool)]) -> Vec<Vec<String>> {
         let mut alerts = Alerts::default();
         readings
             .iter()
             .map(|(battery, charging)| {
-                alerts.update(&[mouse(*battery, *charging)]).into_iter().map(|alert| alert.own.summary).collect()
+                alerts.update(&[mouse(*battery, *charging)]).into_iter().map(|alert| alert.own.body).collect()
             })
             .collect()
     }
@@ -196,7 +192,7 @@ mod tests {
     #[test]
     fn each_step_is_said_once_going_down() {
         assert_eq!(
-            summaries(&[
+            bodies(&[
                 percent(30),
                 percent(20),
                 percent(19),
@@ -208,26 +204,26 @@ mod tests {
             ]),
             [
                 vec![],
-                vec!["Mouse battery at 20%".to_string()],
+                vec!["20%".to_string()],
                 vec![],
                 vec![],
                 vec![],
-                vec!["Mouse battery low: 10%".to_string()],
+                vec!["10%".to_string()],
                 vec![],
-                vec!["Mouse battery critical: 5%".to_string()],
+                vec!["5%".to_string()],
             ]
         );
     }
 
     #[test]
     fn a_first_low_reading_says_only_the_lowest_step() {
-        assert_eq!(summaries(&[percent(3), percent(8)]), [vec!["Mouse battery critical: 3%".to_string()], vec![]]);
+        assert_eq!(bodies(&[percent(3), percent(8)]), [vec!["3%".to_string()], vec![]]);
     }
 
     #[test]
     fn charging_or_a_reading_well_over_a_step_says_it_again() {
         assert_eq!(
-            summaries(&[
+            bodies(&[
                 percent(9),
                 (Battery::Percent(9), true),
                 percent(9),
@@ -238,14 +234,14 @@ mod tests {
                 percent(15),
             ]),
             [
-                vec!["Mouse battery low: 9%".to_string()],
+                vec!["9%".to_string()],
                 vec![],
-                vec!["Mouse battery low: 9%".to_string()],
+                vec!["9%".to_string()],
                 // 10 points over the 10% step says it again; 20% stays said.
                 vec![],
                 vec![],
                 vec![],
-                vec!["Mouse battery low: 10%".to_string()],
+                vec!["10%".to_string()],
                 vec![],
             ]
         );
@@ -273,8 +269,8 @@ mod tests {
     fn levels_say_10_and_5() {
         let level = |level| (Battery::Level(level), false);
         assert_eq!(
-            summaries(&[level(BatteryLevel::Normal), level(BatteryLevel::Low), level(BatteryLevel::Critical)]),
-            [vec![], vec!["Mouse battery low".to_string()], vec!["Mouse battery critical".to_string()]]
+            bodies(&[level(BatteryLevel::Normal), level(BatteryLevel::Low), level(BatteryLevel::Critical)]),
+            [vec![], vec!["Low".to_string()], vec!["Critical".to_string()]]
         );
     }
 
@@ -287,5 +283,40 @@ mod tests {
         let next = alerts.update(&[mouse(Battery::Percent(10), false)]);
         assert_eq!((next[0].own.replaces, next[0].own.critical), (7, false));
         assert!(alerts.update(&[mouse(Battery::Percent(5), false)])[0].own.critical);
+    }
+
+    /// The Arctis Nova 5X on Bluetooth and its dongle is listed as UPower's
+    /// while Bluetooth is there, as HeadsetControl's while it's away.
+    #[test]
+    fn a_headset_on_bluetooth_and_its_dongle_is_one_device() {
+        let bluetooth = |percent| Peripheral {
+            id: "upower/headphones_dev_20_AF_1B_0A_FD_79".into(),
+            name: "SteelSeries Arctis Nova 5X".into(),
+            kind: PeripheralKind::Headphones,
+            link: Some(nova_protocol::PeripheralLink::Bluetooth),
+            battery: Some(Battery::Percent(percent)),
+            charging: false,
+            source: PeripheralSource::Upower,
+        };
+        let dongle = |percent| Peripheral {
+            id: "headsetcontrol/1038:2253".into(),
+            name: "Arctis Nova 5X".into(),
+            kind: PeripheralKind::Headset,
+            link: Some(nova_protocol::PeripheralLink::Dongle),
+            battery: Some(Battery::Percent(percent)),
+            charging: false,
+            source: PeripheralSource::Headsetcontrol,
+        };
+        let mut alerts = Alerts::default();
+        let first = alerts.update(&[bluetooth(9)]);
+        assert_eq!(
+            first.iter().map(|alert| alert.own.summary.as_str()).collect::<Vec<_>>(),
+            ["SteelSeries Arctis Nova 5X"]
+        );
+        alerts.sent(&first[0].id, 7);
+        assert_eq!(alerts.update(&[dongle(10)]), [], "Bluetooth away: the dongle's reading is the same headset's");
+        assert_eq!(alerts.update(&[bluetooth(9)]), [], "and back");
+        let critical = alerts.update(&[dongle(5)]);
+        assert_eq!((critical[0].own.replaces, critical[0].own.body.as_str()), (7, "5%"));
     }
 }

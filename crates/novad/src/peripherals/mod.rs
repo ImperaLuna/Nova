@@ -360,9 +360,10 @@ impl Shared {
             let State { alerts, sent, .. } = &mut *state;
             let alerts = alerts.update(&sent.devices);
             if !alerts.is_empty() {
+                let held = state.alerts.notifications();
                 // Sent unlocked: the notification server takes locks of its own.
                 drop(state);
-                let sent = self.alert(&notifications, alerts);
+                let sent = self.alert(&notifications, alerts, &held);
                 state = lock(&self.state);
                 for (id, notification) in sent {
                     state.alerts.sent(&id, notification);
@@ -371,14 +372,21 @@ impl Shared {
         }
     }
 
-    /// Sends `alerts` and says which notification each became.
-    fn alert(&self, notifications: &Notifications, alerts: Vec<alerts::Alert>) -> Vec<(String, u32)> {
+    /// Sends `alerts` and says which notification each became. `held` are
+    /// the notifications devices known now sent.
+    fn alert(&self, notifications: &Notifications, alerts: Vec<alerts::Alert>, held: &[u32]) -> Vec<(String, u32)> {
         alerts
             .into_iter()
             // Stopped meanwhile: no more.
             .take_while(|_| !lock(&self.state).stopped)
-            .map(|alert| {
-                self.logger.info(LOG_SOURCE, &alert.own.summary);
+            .map(|mut alert| {
+                // After a restart nothing says which row is the device's;
+                // one another device of its name holds isn't.
+                if alert.own.replaces == 0 {
+                    let row = notifications.listed(|row| !held.contains(&row.id) && alerts::row_of(row, &alert.own));
+                    alert.own.replaces = row.unwrap_or(0);
+                }
+                self.logger.info(LOG_SOURCE, &format!("{}: {}", alert.own.summary, alert.own.body));
                 let id = notifications.send_own(alert.own);
                 (alert.id, id)
             })
