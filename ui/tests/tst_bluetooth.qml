@@ -162,7 +162,7 @@ Item {
             verify(!Bluetooth.validCode(passkey, "12a4"));
         }
 
-        function test_the_tile_toggles_and_its_arrow_opens_the_page() {
+        function test_the_tile_turns_on_or_opens_the_page() {
             const page = createTemporaryObject(mainComponent, stage, {
                 bluetoothShown: true,
                 bluetooth: event([headphones("connected")])
@@ -172,12 +172,23 @@ Item {
             verify(tile.visible);
             listen(page, "bluetoothPowered");
             mouseClick(tile, 40, tile.height / 2);
-            compare(spy.count, 1);
-            compare(spy.signalArguments[0][0], false, "on turns off");
+            compare(spy.count, 0, "on doesn't turn off");
 
             listen(page, "pageRequested");
+            mouseClick(tile, 40, tile.height / 2);
+            compare(spy.signalArguments[0][0], "bluetooth", "on opens the page");
             mouseClick(tile, tile.width - 12, tile.height / 2);
-            compare(spy.signalArguments[0][0], "bluetooth");
+            compare(spy.signalArguments[1][0], "bluetooth", "so does the arrow");
+
+            page.bluetooth = {
+                radio: "off",
+                scanning: false,
+                devices: [],
+                pairing: null
+            };
+            listen(page, "bluetoothPowered");
+            mouseClick(tile, 40, tile.height / 2);
+            compare(spy.signalArguments[0][0], true, "off turns on");
 
             // A hardware switch can't be turned on from here: the page says so.
             page.bluetooth = {
@@ -186,7 +197,7 @@ Item {
                 devices: [],
                 pairing: null
             };
-            spy.clear();
+            listen(page, "pageRequested");
             mouseClick(tile, 40, tile.height / 2);
             compare(spy.count, 1);
             compare(spy.signalArguments[0][0], "bluetooth");
@@ -214,6 +225,19 @@ Item {
             click(page, "disconnect");
             compare(spy.signalArguments[0][0], "00:1B:66:AA:BB:CC");
             verify(!shown(page, "disconnect"), "it closes");
+        }
+
+        function test_a_connect_under_way_can_be_stopped() {
+            const page = createTemporaryObject(pageComponent, stage, {
+                state: event([phone("connecting"), headphones("connected")])
+            });
+            waitForRendering(page);
+            listen(page, "disconnectRequested");
+            click(page, "stop");
+            compare(spy.signalArguments[0][0], "9C:2A:70:11:22:33");
+            page.state = event([phone("paired"), headphones("connected")]);
+            waitForRendering(page);
+            verify(!shown(page, "stop"), "only while it works");
         }
 
         function test_forget_asks_first() {
