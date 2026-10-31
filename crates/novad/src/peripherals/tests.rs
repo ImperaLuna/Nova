@@ -832,15 +832,37 @@ fn a_battery_running_down_alerts_once_at_each_step() {
 
     let first = popups.next().unwrap();
     assert_eq!(first["app"], alerts::APP);
-    assert_eq!(first["summary"], "Mouse battery at 20%");
-    assert_eq!(first["body"], "PRO X SUPERLIGHT is running low.");
+    assert_eq!((first["summary"].clone(), first["body"].clone()), (json!("PRO X SUPERLIGHT"), json!("20%")));
     assert_eq!(first["urgency"], "normal");
     assert_eq!(first["device"], json!({"kind": "mouse", "battery": {"percent": 20}}));
     let low = popups.next().unwrap();
-    assert_eq!(low["summary"], "Mouse battery low: 10%");
+    assert_eq!(low["body"], "10%");
     assert_eq!(low["id"], first["id"], "the newer alert takes the older one's place");
     let critical = popups.next().unwrap();
-    assert_eq!(critical["summary"], "Mouse battery critical: 4%");
+    assert_eq!(critical["body"], "4%");
     assert_eq!((critical["urgency"].clone(), critical["timeout_ms"].clone()), (json!("critical"), json!(0)));
-    assert_eq!(popups.next().unwrap()["summary"], "Mouse battery at 19%");
+    assert_eq!(popups.next().unwrap()["body"], "19%");
+}
+
+/// What was said is gone when novad restarts, but the device's row in the
+/// list isn't: the next alert takes its place instead of adding a row.
+#[test]
+fn an_alert_after_a_restart_takes_the_devices_row() {
+    let fixture = Fixture::new("alerts-restart");
+    let upower = fixture.upower(&["upower.json"]);
+    upower.change(MOUSE, |mouse| {
+        mouse.percentage = 9.0;
+        mouse.state = 2;
+    });
+    let peripherals = fixture.start();
+    let server = fixture.notifications(&peripherals);
+    let first = fixture.popup();
+    peripherals.stop();
+    let peripherals = fixture.start();
+    peripherals.set_notifications(Some(&server));
+    let again = fixture.popup();
+    peripherals.stop();
+    server.stop();
+    assert_eq!(first["body"], "9%");
+    assert_eq!((again["id"].clone(), again["body"].clone()), (first["id"].clone(), json!("9%")));
 }

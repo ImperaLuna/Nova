@@ -256,6 +256,13 @@ impl Notifications {
         id
     }
 
+    /// The newest listed notification `matches` picks, by id: the one a
+    /// notification of Nova's own takes the place of when it knows no
+    /// earlier id, such as after a restart.
+    pub fn listed(&self, matches: impl Fn(&Notification) -> bool) -> Option<u32> {
+        lock(&self.shared.state).saved.items.iter().find(|kept| matches(kept)).map(|kept| kept.id)
+    }
+
     /// Writes what's still unsaved, lets go of the server's name and
     /// publishes nothing more.
     pub fn stop(&self) {
