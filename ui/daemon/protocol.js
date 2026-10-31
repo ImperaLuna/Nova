@@ -55,11 +55,16 @@ var CMD_DISCONNECT_WIFI = "disconnect_wifi";
 var CMD_FORGET_WIFI = "forget_wifi";
 var CMD_PREFER_NETWORK = "prefer_network";
 var CMD_WATCH_NETWORK_TRAFFIC = "watch_network_traffic";
-// novad refuses longer search_apps queries and media player ids
-// (SEARCH_APPS_MAX_CHARS and MEDIA_PLAYER_MAX_BYTES in nova-protocol, which
-// checks these match).
+// novad refuses longer search_apps queries, media player ids and Wi-Fi
+// passwords, and WPA passwords shorter than WPA_PASSWORD_MIN_BYTES (the
+// same names in nova-protocol, which checks these match).
 var SEARCH_APPS_MAX_CHARS = 200;
 var MEDIA_PLAYER_MAX_BYTES = 255;
+var WIFI_PASSWORD_MAX_BYTES = 128;
+var WPA_PASSWORD_MIN_BYTES = 8;
+// How far back a network_traffic event's history goes, in seconds (one
+// sample each).
+var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 
 // Events novad sends (Event in nova-protocol). Each topic's events carry the
 // topic's name.

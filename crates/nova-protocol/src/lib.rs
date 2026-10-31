@@ -927,6 +927,9 @@ pub const WIFI_SSID_MAX_BYTES: usize = 32;
 /// The longest password a command takes, in bytes: WPA's passphrases stop
 /// at 63 (64 as hex), WPA3's have no limit of their own.
 pub const WIFI_PASSWORD_MAX_BYTES: usize = 128;
+/// The shortest WPA passphrase, in bytes (WPA3's SAE takes shorter ones, but
+/// a shorter one is never a WPA2 key, and networks offering both are common).
+pub const WPA_PASSWORD_MIN_BYTES: usize = 8;
 
 /// The longest player id a media command takes, in bytes: a bus name is at
 /// most 255.
@@ -2245,6 +2248,9 @@ mod tests {
         for max in [
             format!("var SEARCH_APPS_MAX_CHARS = {SEARCH_APPS_MAX_CHARS};"),
             format!("var MEDIA_PLAYER_MAX_BYTES = {MEDIA_PLAYER_MAX_BYTES};"),
+            format!("var WIFI_PASSWORD_MAX_BYTES = {WIFI_PASSWORD_MAX_BYTES};"),
+            format!("var WPA_PASSWORD_MIN_BYTES = {WPA_PASSWORD_MIN_BYTES};"),
+            format!("var NETWORK_TRAFFIC_HISTORY_SECS = {NETWORK_TRAFFIC_HISTORY_SECS};"),
         ] {
             assert!(js.contains(&max), "protocol.js: {max} is missing");
         }

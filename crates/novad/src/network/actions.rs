@@ -9,14 +9,11 @@ use super::manager::{
     self, ACTIVE_STATE_DEACTIVATED, DEVICE, NM, NM_PATH, NO_OBJECT, PROPERTIES, Reading, SETTINGS_CONNECTION, Settings,
     TYPE_WIFI, WIRELESS,
 };
-use nova_protocol::{WIFI_PASSWORD_MAX_BYTES, WIFI_SSID_MAX_BYTES, WifiPassword, WifiSecurity};
+use nova_protocol::{WIFI_PASSWORD_MAX_BYTES, WIFI_SSID_MAX_BYTES, WPA_PASSWORD_MIN_BYTES, WifiPassword, WifiSecurity};
 use std::collections::HashMap;
 use zbus::Connection;
 use zbus::wire::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
 
-/// The shortest WPA passphrase (WPA3's SAE takes shorter ones, but a
-/// shorter one is never a WPA2 key, and networks offering both are common).
-const WPA_PASSWORD_MIN_BYTES: usize = 8;
 const SECURITY_SETTING: &str = "802-11-wireless-security";
 /// NetworkManager's error when a scan comes too soon after the last one:
 /// the list is fresh, so that's no failure.

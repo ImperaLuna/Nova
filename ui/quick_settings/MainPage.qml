@@ -5,6 +5,7 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "../volume/volume.js" as Volume
 import "quick_settings.js" as QuickSettings
+import "network.js" as Network
 import "../text/duration.js" as Duration
 import "../tray"
 
@@ -25,6 +26,10 @@ Item {
     property string logo: ""
     property var host: null
     property date now: new Date()
+
+    // The network tile, while its feature is on: a network event's data.
+    property bool networkShown: false
+    property var network: null
 
     // Keep awake and the microphone.
     property bool keepAwake: false
@@ -110,6 +115,21 @@ Item {
                 spacing: Tokens.gap
                 readonly property real cell: (width - spacing) / columns
 
+                // Opens the network page, the whole tile: its switches are
+                // there.
+                Tile {
+                    objectName: "networkTile"
+                    visible: page.networkShown
+                    width: grid.cell
+                    icon: Network.tileIcon(page.network)
+                    iconFill: Network.iconFill(icon)
+                    title: qsTr("Network")
+                    subtitle: Network.tileSubtitle(page.network)
+                    on: (page.network?.primary ?? "") !== "" || Network.connecting(page.network) !== ""
+                    opens: true
+                    onToggled: page.pageRequested("network")
+                    onOpened: page.pageRequested("network")
+                }
                 Tile {
                     width: grid.cell
                     icon: Icons.CUP
