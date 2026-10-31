@@ -61,8 +61,9 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const LONG_CALL_TIMEOUT: Duration = Duration::from_secs(90);
 /// How long a connect may run before it's stopped: a device that's off, or
 /// a headset switched to its dongle, can keep BlueZ trying for most of a
-/// minute after it knows the device is gone.
-pub const CONNECT_LIMIT: Duration = Duration::from_secs(20);
+/// minute after it knows the device is gone. A headset just woken from
+/// pairing mode took 23 s to connect.
+pub const CONNECT_LIMIT: Duration = Duration::from_secs(30);
 /// How long scanning runs after the page asks for it.
 const SCAN_LIMIT: Duration = Duration::from_secs(120);
 /// How long to wait before asking again when scanning didn't start.
@@ -672,9 +673,13 @@ impl Shared {
             let until = state.scan_asked.map(|asked| asked + SCAN_LIMIT).filter(|until| *until > now);
             let adapter = state.objects.adapter().map(|adapter| (adapter.path, adapter.powered, adapter.discovering));
             let resting = retry_at.filter(|at| *at > now);
+            // The radio pages a device while connecting: scanning then
+            // slows the connect, and BlueZ refuses to start it.
+            let connecting = state.busy.values().any(|status| *status == BluetoothStatus::Connecting);
             let want = !state.watchers.is_empty()
                 && until.is_some()
                 && resting.is_none()
+                && !connecting
                 && adapter.as_ref().is_some_and(|a| a.1);
             let discovering = adapter.as_ref().is_some_and(|a| a.2);
             // Ended by BlueZ (powered off, adapter gone): it's off.
