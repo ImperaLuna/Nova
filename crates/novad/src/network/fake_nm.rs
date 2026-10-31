@@ -1,7 +1,7 @@
 //! A stand-in NetworkManager on a test's bus, serving the objects of a
-//! recording (`recorded/nm-*.json`: every property of every object, as
-//! `busctl --json=short` prints them, and each saved profile's
-//! `GetSettings`). It answers calls itself, straight off the bus, rather
+//! recording (`recorded/nm-*.json`: every object, with the properties
+//! novad reads as `busctl --json=short` prints them, and each saved
+//! profile's `GetSettings`). It answers calls itself, straight off the bus, rather
 //! than through zbus's object server: one generic handler serves whatever
 //! the recording holds.
 //!
