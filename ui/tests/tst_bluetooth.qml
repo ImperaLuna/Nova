@@ -208,7 +208,7 @@ Item {
 
         function test_one_click_connects_or_disconnects() {
             const page = createTemporaryObject(pageComponent, stage, {
-                state: event([headphones("connected"), phone("paired"), speaker("nearby")])
+                bluetooth: event([headphones("connected"), phone("paired"), speaker("nearby")])
             });
             waitForRendering(page);
             shot(page, "bluetooth");
@@ -227,7 +227,7 @@ Item {
 
         function test_a_right_click_opens_the_menu() {
             const page = createTemporaryObject(pageComponent, stage, {
-                state: event([headphones("connected"), phone("paired")])
+                bluetooth: event([headphones("connected"), phone("paired")])
             });
             waitForRendering(page);
             listen(page, "disconnectRequested");
@@ -246,20 +246,20 @@ Item {
 
         function test_a_connect_under_way_can_be_stopped() {
             const page = createTemporaryObject(pageComponent, stage, {
-                state: event([phone("connecting"), headphones("connected")])
+                bluetooth: event([phone("connecting"), headphones("connected")])
             });
             waitForRendering(page);
             listen(page, "disconnectRequested");
             click(page, "stop");
             compare(spy.signalArguments[0][0], "9C:2A:70:11:22:33");
-            page.state = event([phone("paired"), headphones("connected")]);
+            page.bluetooth = event([phone("paired"), headphones("connected")]);
             waitForRendering(page);
             verify(!shown(page, "stop"), "only while it works");
         }
 
         function test_forget_asks_first() {
             const page = createTemporaryObject(pageComponent, stage, {
-                state: event([phone("paired")])
+                bluetooth: event([phone("paired")])
             });
             waitForRendering(page);
             listen(page, "forgetRequested");
@@ -272,7 +272,7 @@ Item {
 
         function test_a_code_to_compare_shows_under_its_device() {
             const page = createTemporaryObject(pageComponent, stage, {
-                state: event([headphones("connected"), phone("pairing")], {
+                bluetooth: event([headphones("connected"), phone("pairing")], {
                     id: 3,
                     address: "9C:2A:70:11:22:33",
                     ask: {
@@ -305,7 +305,7 @@ Item {
                 incoming: false
             };
             const page = createTemporaryObject(pageComponent, stage, {
-                state: event([speaker("pairing")], pairing)
+                bluetooth: event([speaker("pairing")], pairing)
             });
             waitForRendering(page);
             const accept = shown(page, "accept");
@@ -319,7 +319,7 @@ Item {
             verify(accept.enabled);
 
             // A device found nearby sorts above it: the row it's in changes.
-            page.state = event([
+            page.bluetooth = event([
                 {
                     address: "00:00:00:00:00:01",
                     name: "Bose",
@@ -331,7 +331,7 @@ Item {
             compare(shown(page, "field").text, "1234");
 
             // It goes again: the first row, made for the Bose, shows it now.
-            page.state = event([speaker("pairing")], pairing);
+            page.bluetooth = event([speaker("pairing")], pairing);
             waitForRendering(page);
             compare(shown(page, "field").text, "1234", "a reused row too");
 
@@ -346,7 +346,7 @@ Item {
         function test_a_failure_says_what_to_do_and_tries_again() {
             const words = "Couldn't reach it. Make sure it's on and nearby.";
             const page = createTemporaryObject(pageComponent, stage, {
-                state: event([speaker("nearby", words)])
+                bluetooth: event([speaker("nearby", words)])
             });
             waitForRendering(page);
             shot(page, "bluetooth-failure");
@@ -360,7 +360,7 @@ Item {
 
         function test_off_lists_known_devices_dimmed() {
             const page = createTemporaryObject(pageComponent, stage, {
-                state: {
+                bluetooth: {
                     radio: "off",
                     scanning: false,
                     devices: [phone("paired")],
@@ -382,7 +382,7 @@ Item {
 
         function test_a_hardware_switch_cannot_be_overridden() {
             const page = createTemporaryObject(pageComponent, stage, {
-                state: {
+                bluetooth: {
                     radio: "switched_off",
                     scanning: false,
                     devices: [],

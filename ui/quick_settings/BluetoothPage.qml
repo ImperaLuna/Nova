@@ -12,12 +12,12 @@ import "devices.js" as Devices
 // one is paired, trusted and connected, a known one connects, a connected
 // one disconnects. A right click opens its menu: Disconnect and Forget for
 // a connected one, Forget for a known one. Pairing questions and failures show
-// under the device's row. `state` is a bluetooth event's data (null: none
+// under the device's row. `bluetooth` is a bluetooth event's data (null: none
 // yet); properties in, signals out, like the other pages.
 Item {
     id: page
 
-    property var state: null
+    property var bluetooth: null
     // Room the top row leaves on its right (the pill's buttons).
     property real headerInset: 0
 
@@ -29,10 +29,10 @@ Item {
     // A pairing question's id and its answer ("accept", "reject" or {code}).
     signal answered(int id, var answer)
 
-    readonly property string radio: state?.radio ?? "missing"
+    readonly property string radio: bluetooth?.radio ?? "missing"
     readonly property bool on: radio === "on"
-    readonly property var devices: state?.devices ?? []
-    readonly property var pairing: state?.pairing ?? null
+    readonly property var devices: bluetooth?.devices ?? []
+    readonly property var pairing: bluetooth?.pairing ?? null
     readonly property var connected: Bluetooth.inSection(devices, "connected")
     readonly property var mine: Bluetooth.inSection(devices, "mine")
     readonly property var nearby: Bluetooth.inSection(devices, "nearby")
@@ -159,7 +159,7 @@ Item {
                 title: qsTr("Nearby")
                 list: page.on ? page.nearby : []
                 shown: page.on
-                spinning: page.state?.scanning ?? false
+                spinning: page.bluetooth?.scanning ?? false
 
                 Text {
                     visible: page.nearby.length === 0
@@ -168,7 +168,7 @@ Item {
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.fgDim
-                    text: page.state?.scanning ? qsTr("Looking for devices… Put yours in pairing mode.") : qsTr("No new devices nearby.")
+                    text: page.bluetooth?.scanning ? qsTr("Looking for devices… Put yours in pairing mode.") : qsTr("No new devices nearby.")
                 }
             }
         }
