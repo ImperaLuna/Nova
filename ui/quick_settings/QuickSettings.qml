@@ -287,7 +287,7 @@ StagePanel {
                     width: pages.width
                     height: pages.height
                     headerInset: pages.headerInset
-                    state: BluetoothService.state
+                    bluetooth: BluetoothService.state
                     onBack: panel.page = "main"
                     onPowerToggled: on => BluetoothService.setPower(on)
                     onConnectRequested: address => BluetoothService.connectDevice(address)

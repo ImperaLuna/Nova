@@ -350,7 +350,6 @@ QtObject {
     readonly property int pairingCellGap: 4
     readonly property int fontSizePairingCode: 18
     readonly property int pairingFieldHeight: 34
-    readonly property int durationPairedNote: 5000
     readonly property real pairingTintOpacity: 0.10
     // Thick sliders: a round icon button (mute) beside the track, the track
     // filled only to the value, and a button after it that opens a page. An
