@@ -33,12 +33,52 @@ var LINK_ICONS = {
     wired: Icons.PLUG
 };
 
+// How each link reads, here and on the sound page's rows.
+var LINK_LABELS = {
+    dongle: qsTr("2.4 GHz"),
+    bluetooth: qsTr("Bluetooth"),
+    wired: qsTr("Wired"),
+    usb: qsTr("USB")
+};
+
 function icon(kind) {
     return KIND_ICONS[kind] ?? Icons.DEVICE;
 }
 
 function linkIcon(link) {
     return LINK_ICONS[link] ?? "";
+}
+
+function linkLabel(link) {
+    return LINK_LABELS[link] ?? "";
+}
+
+// Whether one name's words, any case, run in order inside the other's, as
+// novad matches a headset's two links (`SteelSeries Arctis Nova 5X` and
+// `Arctis Nova 5X`).
+function namesMatch(a, b) {
+    const words = name => name.split(/\s+/).filter(word => word !== "").map(word => word.toLowerCase());
+    let short = words(a);
+    let long = words(b);
+    if (short.length > long.length)
+        [short, long] = [long, short];
+    if (short.length === 0)
+        return false;
+    for (let start = 0; start + short.length <= long.length; start++) {
+        if (short.every((word, i) => long[start + i] === word))
+            return true;
+    }
+    return false;
+}
+
+// How a sound output or input is connected, from volume.js link: a USB
+// one is a wireless dongle (2.4 GHz) when a headset novad reads over a
+// dongle has its name. PipeWire alone can't tell a dongle from a cable.
+function soundLink(link, name, devices) {
+    if (link !== "usb")
+        return link;
+    const dongle = (devices ?? []).some(device => device.link === "dongle" && (device.kind === "headset" || device.kind === "headphones") && namesMatch(device.name, name));
+    return dongle ? "dongle" : link;
 }
 
 // A device as a row of the card's ListModel: flat roles, -1 percent and ""
