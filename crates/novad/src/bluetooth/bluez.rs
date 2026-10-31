@@ -27,11 +27,8 @@ pub const BLUEZ_PATH: &str = "/org/bluez";
 
 /// Audio profiles only classic Bluetooth carries, the one to use
 /// first: A2DP's audio sink, then the hands-free and headset ones.
-const CLASSIC_AUDIO: [&str; 3] = [
-    A2DP_SINK,
-    "0000111e-0000-1000-8000-00805f9b34fb",
-    "00001108-0000-1000-8000-00805f9b34fb",
-];
+const CLASSIC_AUDIO: [&str; 3] =
+    [A2DP_SINK, "0000111e-0000-1000-8000-00805f9b34fb", "00001108-0000-1000-8000-00805f9b34fb"];
 
 pub type Properties = HashMap<String, OwnedVariant>;
 /// Interfaces by name, and their properties.
