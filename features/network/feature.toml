@@ -1,0 +1,11 @@
+id = "network"
+name = "Network"
+description = "Wired and Wi-Fi in quick settings, from NetworkManager: what you're on, its speed and traffic, the Wi-Fi networks in reach with their passwords, and which link to prefer when both are connected."
+default = true
+daemon = "network"
+
+# novad talks to NetworkManager's daemon on the system bus, which most
+# desktops already run (on NixOS: networking.networkmanager.enable). nmcli
+# comes with it everywhere, so it's what tells novad it's installed.
+[check]
+binaries = ["nmcli"]

@@ -415,6 +415,13 @@ QtObject {
     readonly property int searchHeight: 34
     // A legend's colored dot.
     readonly property int legendDot: 7
+    // The network page: its traffic card's speeds and graph, a link's role
+    // chip ("In use", "Backup"), how faint Wi-Fi's arcs are that a weak
+    // signal doesn't reach, and a network row's ⋯ menu.
+    readonly property int fontSizeTraffic: 17
+    readonly property int trafficGraphHeight: 54
+    readonly property real wifiArcFadedOpacity: 0.3
+    readonly property int networkMenuWidth: 170
     // The launcher (ui/launcher): a deck in the middle of the screen, this
     // share of the screen's height from the top, that fades in at
     // launcherEnterScale and launcherEnterRise above its place. A search

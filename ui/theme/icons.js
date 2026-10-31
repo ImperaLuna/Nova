@@ -90,3 +90,19 @@ var DONGLE = "M5 12a7 7 0 0 1 14 0M8 12a4 4 0 0 1 8 0M12 13h.01";
 var PLUG = "M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0zM12 16v5";
 // Charging: solid, so pass it as `fill` too.
 var BOLT = "M13 2L4 14h7l-1 8 9-12h-7z";
+
+// Network: Wi-Fi's arcs, outer to inner, over a solid dot (pass WIFI_DOT as
+// `fill`), with WifiIcon fading the arcs a weak signal doesn't reach; Wi-Fi
+// struck out; an Ethernet port, plugged and struck out.
+var WIFI_ARC_OUTER = "M2 8.5a15 15 0 0 1 20 0";
+var WIFI_ARC_MIDDLE = "M5 12a10.5 10.5 0 0 1 14 0";
+var WIFI_ARC_INNER = "M8.5 15.5a5.5 5.5 0 0 1 7 0";
+var WIFI = WIFI_ARC_OUTER + WIFI_ARC_MIDDLE + WIFI_ARC_INNER;
+var WIFI_DOT = "M12 17.8a1.2 1.2 0 1 1 0 2.4a1.2 1.2 0 1 1 0-2.4z";
+var WIFI_OFF = "M2 8.5a15 15 0 0 1 4.6-2.9M10.5 4.6A15 15 0 0 1 22 8.5M5 12a10.5 10.5 0 0 1 3.2-2M15 9.6a10.5 10.5 0 0 1 4 2.4" + WIFI_ARC_INNER + STRIKE;
+var PORT = "M7.5 4h9A1.5 1.5 0 0 1 18 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 12.5v-7A1.5 1.5 0 0 1 7.5 4zM9 14v3h6v-3M12 17v3";
+var WIRED = PORT + "M9 7v2M12 7v2M15 7v2";
+var WIRED_OFF = PORT + STRIKE;
+// A password field's show and hide.
+var EYE = "M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12zM12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6z";
+var EYE_OFF = "M10 5.7A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4M6.6 6.6C3.9 8.3 2.5 12 2.5 12s3.5 6.5 9.5 6.5a9.3 9.3 0 0 0 5.4-1.7M9.9 9.9a3 3 0 0 0 4.2 4.2" + STRIKE;

@@ -41,6 +41,7 @@ mod launcher;
 mod logger;
 mod logind;
 mod media;
+mod network;
 mod notifications;
 mod notify;
 mod peripherals;
@@ -313,6 +314,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         notifications: notifications::Sources::new(&args.state_dir, Arc::clone(&icons)),
         media: media::Sources::new(&runtime_dir),
         peripherals: peripherals::Sources::system(&path_var),
+        network: network::Sources::system(&args.state_dir),
         bluetooth: bluetooth::Sources::system(),
         icons,
     };

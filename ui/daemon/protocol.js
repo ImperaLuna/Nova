@@ -55,11 +55,23 @@ var CMD_BLUETOOTH_ANSWER = "bluetooth_answer";
 var CMD_SET_WALLPAPER = "set_wallpaper";
 var CMD_WALLPAPERS = "wallpapers";
 var CMD_WALLPAPER_FOLDER = "wallpaper_folder";
-// novad refuses longer search_apps queries and media player ids
-// (SEARCH_APPS_MAX_CHARS and MEDIA_PLAYER_MAX_BYTES in nova-protocol, which
-// checks these match).
+var CMD_SET_WIFI = "set_wifi";
+var CMD_SCAN_WIFI = "scan_wifi";
+var CMD_CONNECT_WIFI = "connect_wifi";
+var CMD_DISCONNECT_WIFI = "disconnect_wifi";
+var CMD_FORGET_WIFI = "forget_wifi";
+var CMD_PREFER_NETWORK = "prefer_network";
+var CMD_WATCH_NETWORK_TRAFFIC = "watch_network_traffic";
+// novad refuses longer search_apps queries, media player ids and Wi-Fi
+// passwords, and WPA passwords shorter than WPA_PASSWORD_MIN_BYTES (the
+// same names in nova-protocol, which checks these match).
 var SEARCH_APPS_MAX_CHARS = 200;
 var MEDIA_PLAYER_MAX_BYTES = 255;
+var WIFI_PASSWORD_MAX_BYTES = 128;
+var WPA_PASSWORD_MIN_BYTES = 8;
+// How far back a network_traffic event's history goes, in seconds (one
+// sample each).
+var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 
 // Events novad sends (Event in nova-protocol). Each topic's events carry the
 // topic's name.
@@ -85,6 +97,8 @@ var EVENT_NOTIFICATIONS = "notifications";
 var EVENT_NOTIFICATION_POPUP = "notification_popup";
 var EVENT_MEDIA = "media";
 var EVENT_PERIPHERALS = "peripherals";
+var EVENT_NETWORK = "network";
+var EVENT_NETWORK_TRAFFIC = "network_traffic";
 var EVENT_BLUETOOTH = "bluetooth";
 
 // Event topics a client subscribes to (Topic in nova-protocol).
@@ -105,6 +119,7 @@ var TOPIC_TRAY = "tray";
 var TOPIC_NOTIFICATIONS = "notifications";
 var TOPIC_MEDIA = "media";
 var TOPIC_PERIPHERALS = "peripherals";
+var TOPIC_NETWORK = "network";
 var TOPIC_BLUETOOTH = "bluetooth";
 
 // What a compositor can report or do (Capability in nova-protocol).
@@ -137,6 +152,7 @@ var FEATURE_TRAY = "tray";
 var FEATURE_NOTIFICATIONS = "notifications";
 var FEATURE_MEDIA = "media";
 var FEATURE_PERIPHERALS = "peripherals";
+var FEATURE_NETWORK = "network";
 var FEATURE_BLUETOOTH = "bluetooth";
 var FEATURE_WALLPAPER = "wallpaper";
 
