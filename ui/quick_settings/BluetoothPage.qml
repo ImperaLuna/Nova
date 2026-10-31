@@ -355,6 +355,15 @@ Item {
                     size: Tokens.iconSizeSmall
                     color: Tokens.primary
                 }
+                // Stops pairing or connecting: novad cancels what's under way.
+                RoundButton {
+                    objectName: "stop"
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: !entry.asking && (entry.device?.status === "connecting" || entry.device?.status === "pairing")
+                    icon: Icons.CLOSE
+                    quiet: true
+                    onClicked: page.disconnectRequested(entry.address)
+                }
                 Row {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: entry.busy === "" && entry.device?.status === "connected" && entry.device?.battery !== undefined

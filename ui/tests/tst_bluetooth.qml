@@ -216,6 +216,19 @@ Item {
             verify(!shown(page, "disconnect"), "it closes");
         }
 
+        function test_a_connect_under_way_can_be_stopped() {
+            const page = createTemporaryObject(pageComponent, stage, {
+                state: event([phone("connecting"), headphones("connected")])
+            });
+            waitForRendering(page);
+            listen(page, "disconnectRequested");
+            click(page, "stop");
+            compare(spy.signalArguments[0][0], "9C:2A:70:11:22:33");
+            page.state = event([phone("paired"), headphones("connected")]);
+            waitForRendering(page);
+            verify(!shown(page, "stop"), "only while it works");
+        }
+
         function test_forget_asks_first() {
             const page = createTemporaryObject(pageComponent, stage, {
                 state: event([phone("paired")])

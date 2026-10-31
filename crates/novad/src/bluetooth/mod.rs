@@ -112,6 +112,9 @@ struct State {
     busy: HashMap<String, BluetoothStatus>,
     /// Why the last command on a device failed, by address.
     errors: HashMap<String, String>,
+    /// Devices the user stopped pairing or connecting: the command takes
+    /// no further step.
+    halted: BTreeSet<String>,
     /// The question pairing asks the user now.
     pairing: Option<Asked>,
     last_request: u64,
@@ -209,6 +212,20 @@ impl Bluetooth {
                 shared.logger.info(LOG_SOURCE, "lifted the software block on Bluetooth");
             }
         }
+        if !on {
+            // BlueZ refuses to power off while it pairs or connects.
+            let busy: Vec<_> = {
+                let state = lock(&shared.state);
+                state
+                    .busy
+                    .iter()
+                    .filter_map(|(address, status)| Some((state.objects.device(address)?.path, Some(*status))))
+                    .collect()
+            };
+            for (path, status) in busy {
+                shared.cancel(&path, status);
+            }
+        }
         let deadline = Instant::now() + POWER_SETTLE;
         loop {
             let (calls, adapter) = {
@@ -222,7 +239,8 @@ impl Bluetooth {
             match tried {
                 Ok(()) => return Ok(()),
                 // Just unblocked: the adapter comes back on its own time.
-                Err(_) if on && Instant::now() < deadline => std::thread::sleep(POWER_RETRY),
+                // Or still busy ending a connect that was stopped.
+                Err(e) if (on || named(&e, "Busy")) && Instant::now() < deadline => std::thread::sleep(POWER_RETRY),
                 Err(e) => return Err(bluez::failure(&e).unwrap_or_else(|| e.to_string())),
             }
         }
@@ -236,6 +254,8 @@ impl Bluetooth {
         if connected {
             return Ok(());
         }
+        // A stop that came as an earlier command ended isn't for this one.
+        lock(&shared.state).halted.remove(&address.to_uppercase());
         let result = (|| {
             if !paired {
                 shared.set_busy(address, BluetoothStatus::Pairing);
@@ -243,9 +263,11 @@ impl Bluetooth {
                     Err(e) if !named(&e, "AlreadyExists") => return Err(e),
                     _ => {}
                 }
+                shared.go_on(address)?;
                 zbus::block_on(set(&shared.calls()?, &path, DEVICE, "Trusted", true))?;
             }
             shared.set_busy(address, BluetoothStatus::Connecting);
+            shared.go_on(address)?;
             match shared.long_call(&path, DEVICE, "Connect") {
                 Err(e) if bluez::le_aborted(&e) => shared.connect_classic(address, &path, e),
                 result => result,
@@ -254,12 +276,27 @@ impl Bluetooth {
         shared.done(address, result)
     }
 
+    /// Disconnects the device at `address`, or stops pairing or connecting
+    /// it when a command is under way.
     pub fn disconnect(&self, address: &str) -> Result<(), String> {
         let shared = &self.shared;
         let (path, ..) = shared.device(address)?;
-        shared.set_busy(address, BluetoothStatus::Disconnecting);
-        let result = shared.long_call(&path, DEVICE, "Disconnect");
-        shared.done(address, result)
+        let busy = lock(&shared.state).busy.get(&address.to_uppercase()).copied();
+        match busy {
+            // The command under way ends, and says so.
+            Some(BluetoothStatus::Pairing | BluetoothStatus::Connecting) => {
+                // Between two steps no call is under way: the next one
+                // doesn't start.
+                lock(&shared.state).halted.insert(address.to_uppercase());
+                shared.cancel(&path, busy);
+                Ok(())
+            }
+            _ => {
+                shared.set_busy(address, BluetoothStatus::Disconnecting);
+                let result = shared.long_call(&path, DEVICE, "Disconnect");
+                shared.done(address, result)
+            }
+        }
     }
 
     /// Removes the device's pairing (BlueZ forgets it altogether).
@@ -380,6 +417,28 @@ impl Shared {
             .map(|_| ())
     }
 
+    /// Stops what's under way on the device at `path`: pairing, or
+    /// connecting (BlueZ ends a connect it's asked to disconnect).
+    fn cancel(&self, path: &OwnedObjectPath, status: Option<BluetoothStatus>) {
+        let method = match status {
+            Some(BluetoothStatus::Pairing) => "CancelPairing",
+            _ => "Disconnect",
+        };
+        let result = self.calls().and_then(|calls| zbus::block_on(call(&calls, path, DEVICE, method)));
+        if let Err(e) = result {
+            self.logger.info(LOG_SOURCE, &format!("can't stop what {path} was doing: {e}"));
+        }
+    }
+
+    /// Whether a command on `address` may take its next step: not once the
+    /// user stopped it.
+    fn go_on(&self, address: &str) -> zbus::Result<()> {
+        match lock(&self.state).halted.contains(&address.to_uppercase()) {
+            true => Err(zbus::Error::Failure("stopped by the user".into())),
+            false => Ok(()),
+        }
+    }
+
     fn set_busy(&self, address: &str, status: BluetoothStatus) {
         let mut state = lock(&self.state);
         let key = address.to_uppercase();
@@ -394,6 +453,8 @@ impl Shared {
         let mut state = lock(&self.state);
         let key = address.to_uppercase();
         state.busy.remove(&key);
+        // Stopped: however it ended, there's nothing to explain.
+        let result = if state.halted.remove(&key) { Ok(()) } else { result };
         let shown = state.pairing.as_ref().is_some_and(|asked| asked.slot.is_none() && asked.request.address == key);
         if shown {
             state.pairing = None;

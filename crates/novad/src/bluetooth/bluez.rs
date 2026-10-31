@@ -274,6 +274,8 @@ pub fn failure(error: &zbus::Error) -> Option<String> {
         "Blocked" => "Bluetooth is blocked. Turn it on first.".into(),
         "AlreadyConnected" | "AlreadyExists" | "InProgress" => "It's already on its way. Give it a moment.".into(),
         "DoesNotExist" => "It's gone out of range. Try scanning again.".into(),
+        // The user stopped it.
+        _ if detail.contains("connection-canceled") => return None,
         _ if detail.contains("le-connection-abort-by-local") => {
             "Couldn't connect. Make sure it's on and nearby, then try again.".into()
         }
