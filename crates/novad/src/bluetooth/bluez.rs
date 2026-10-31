@@ -17,13 +17,18 @@ pub const ADAPTER: &str = "org.bluez.Adapter1";
 pub const DEVICE: &str = "org.bluez.Device1";
 pub const BATTERY: &str = "org.bluez.Battery1";
 pub const AGENT_MANAGER: &str = "org.bluez.AgentManager1";
+/// An audio stream's transport, under its device's path while the
+/// profile is up (A2DP's even while nothing plays).
+pub const MEDIA_TRANSPORT: &str = "org.bluez.MediaTransport1";
+/// A2DP's audio sink: music to headphones and speakers.
+pub const A2DP_SINK: &str = "0000110b-0000-1000-8000-00805f9b34fb";
 /// Where BlueZ serves `AgentManager1`.
 pub const BLUEZ_PATH: &str = "/org/bluez";
 
 /// Audio profiles only classic Bluetooth carries, the one to use
 /// first: A2DP's audio sink, then the hands-free and headset ones.
 const CLASSIC_AUDIO: [&str; 3] = [
-    "0000110b-0000-1000-8000-00805f9b34fb",
+    A2DP_SINK,
     "0000111e-0000-1000-8000-00805f9b34fb",
     "00001108-0000-1000-8000-00805f9b34fb",
 ];
@@ -147,6 +152,18 @@ impl Objects {
         self.devices().into_iter().find(|device| device.address.eq_ignore_ascii_case(address))
     }
 
+    /// Whether the device at `path` has its A2DP audio up: a transport
+    /// for it is under the device.
+    pub fn a2dp(&self, path: &str) -> bool {
+        self.0.iter().any(|(object, interfaces)| {
+            object.strip_prefix(path).is_some_and(|rest| rest.starts_with('/'))
+                && interfaces
+                    .get(MEDIA_TRANSPORT)
+                    .and_then(|transport| text(transport, "UUID"))
+                    .is_some_and(|uuid| uuid.eq_ignore_ascii_case(A2DP_SINK))
+        })
+    }
+
     /// The address of the device at `path`.
     pub fn address(&self, path: &str) -> Option<String> {
         text(self.0.get(path)?.get(DEVICE)?, "Address")
@@ -170,6 +187,11 @@ impl Device {
             .iter()
             .find_map(|wanted| self.uuids.iter().find(|uuid| uuid.eq_ignore_ascii_case(wanted)))
             .map(String::as_str)
+    }
+
+    /// Whether it plays music over A2DP.
+    pub fn offers_a2dp(&self) -> bool {
+        self.uuids.iter().any(|uuid| uuid.eq_ignore_ascii_case(A2DP_SINK))
     }
 
     /// As the event lists it, `busy` while a command works on it.

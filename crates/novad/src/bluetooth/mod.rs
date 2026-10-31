@@ -72,6 +72,12 @@ const SCAN_RETRY: Duration = Duration::from_secs(2);
 /// own time; BlueZ refuses until it has.
 const POWER_SETTLE: Duration = Duration::from_secs(3);
 const POWER_RETRY: Duration = Duration::from_millis(100);
+/// How long a headset's music (A2DP) may take to come up after it
+/// connects, and how many times it's asked for again when it doesn't: a
+/// headset can refuse it right after connecting, and BlueZ doesn't ask
+/// again, so it plays only call audio.
+pub const AUDIO_WAIT: Duration = Duration::from_secs(4);
+const AUDIO_RETRIES: u32 = 2;
 const DBUS_NAME: &str = "org.freedesktop.DBus";
 const DBUS_PATH: &str = "/org/freedesktop/DBus";
 const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
@@ -85,11 +91,13 @@ pub struct Sources {
     pub rfkill: Rfkill,
     /// How long a connect may run ([`CONNECT_LIMIT`]).
     pub connect_limit: Duration,
+    /// How long A2DP may take to come up ([`AUDIO_WAIT`]).
+    pub audio_wait: Duration,
 }
 
 impl Sources {
     pub fn system() -> Self {
-        Self { bus: Bus::System, rfkill: Rfkill::system(), connect_limit: CONNECT_LIMIT }
+        Self { bus: Bus::System, rfkill: Rfkill::system(), connect_limit: CONNECT_LIMIT, audio_wait: AUDIO_WAIT }
     }
 }
 
@@ -284,7 +292,9 @@ impl Bluetooth {
             match shared.long_call(&path, DEVICE, "Connect") {
                 Err(e) if bluez::le_aborted(&e) => shared.connect_classic(address, &path, e),
                 result => result,
-            }
+            }?;
+            shared.ensure_a2dp(address, &path);
+            Ok(())
         })();
         shared.done(address, result)
     }
@@ -425,9 +435,58 @@ impl Shared {
             lock(&self.state).objects.device(address).and_then(|device| device.classic_profile().map(str::to_owned));
         let Some(profile) = profile else { return Err(error) };
         self.logger.info(LOG_SOURCE, &format!("{address}: LE connect aborted, connecting over classic Bluetooth"));
+        self.connect_profile(path, &profile)
+    }
+
+    fn connect_profile(&self, path: &OwnedObjectPath, profile: &str) -> zbus::Result<()> {
         let agent = lock(&self.state).agent.clone().ok_or_else(not_followed)?;
         zbus::block_on(agent.call_method(Some(BLUEZ), path.as_str(), Some(DEVICE), "ConnectProfile", &(profile,)))
             .map(|_| ())
+    }
+
+    /// A connected device that plays music has its A2DP audio up, asked
+    /// for again when it didn't come: connected over LE alone, or with
+    /// A2DP refused, a headset plays nothing, or only call audio.
+    fn ensure_a2dp(&self, address: &str, path: &OwnedObjectPath) {
+        {
+            let mut state = lock(&self.state);
+            if !state.objects.device(address).is_some_and(|device| device.offers_a2dp()) {
+                return;
+            }
+            // It answered: the limit is for reaching it.
+            state.connects.remove(&address.to_uppercase());
+        }
+        for attempt in 0..=AUDIO_RETRIES {
+            if attempt > 0 {
+                if self.go_on(address).is_err() {
+                    return;
+                }
+                self.logger.info(LOG_SOURCE, &format!("{address}: connected without A2DP, asking for it again"));
+                if let Err(e) = self.connect_profile(path, bluez::A2DP_SINK) {
+                    self.logger.info(LOG_SOURCE, &format!("{address}: A2DP refused: {e}"));
+                }
+            }
+            if self.wait_for_a2dp(path) {
+                return;
+            }
+        }
+        self.logger.info(LOG_SOURCE, &format!("{address}: connected, but A2DP never came up"));
+    }
+
+    /// Whether A2DP comes up on the device at `path` within the wait.
+    fn wait_for_a2dp(&self, path: &OwnedObjectPath) -> bool {
+        let deadline = Instant::now() + self.sources.audio_wait;
+        let mut state = lock(&self.state);
+        loop {
+            if state.objects.a2dp(path.as_str()) {
+                return true;
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() || state.stopped {
+                return false;
+            }
+            state = self.wake.wait_timeout(state, left).unwrap_or_else(std::sync::PoisonError::into_inner).0;
+        }
     }
 
     /// Stops what's under way on the device at `path`: pairing, or

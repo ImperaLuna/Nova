@@ -162,6 +162,7 @@ impl TestDaemon {
                     adapters: dir.join("sys/class/bluetooth"),
                 },
                 connect_limit: bluetooth::CONNECT_LIMIT,
+                audio_wait: bluetooth::AUDIO_WAIT,
             },
             icons,
         };
