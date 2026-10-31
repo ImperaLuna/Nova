@@ -27,6 +27,7 @@ mod text;
 
 use crate::hub::{ClientId, Hub};
 use crate::icons::Icons;
+use crate::launcher::Launcher;
 use crate::logger::Logger;
 use crate::session_bus::{self, Bus, Stop};
 use crate::{lock, state_file};
@@ -146,6 +147,9 @@ struct Shared {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     sources: Sources,
+    /// The installed apps, whose names and icons a notification naming its
+    /// desktop entry shows; `None` while the launcher is off.
+    launcher: Mutex<Option<Arc<Launcher>>>,
     /// The server's connection, once it's up, to tell apps about clicks.
     connection: Mutex<Option<Connection>>,
     /// The next picture's revision (`image::save`).
@@ -202,7 +206,7 @@ impl Notifications {
     /// Claims the server's name on the bus and serves it on a thread of its
     /// own. Returns once the name is claimed, queued behind another server,
     /// or connecting failed (logged).
-    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+    pub fn start(sources: Sources, launcher: Option<Arc<Launcher>>, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let saved = load(&sources, &logger);
         let shared = Arc::new(Shared {
             state: Mutex::new(State { written: Some(saved.clone()), saved, ..State::default() }),
@@ -210,6 +214,7 @@ impl Notifications {
             hub,
             logger,
             sources,
+            launcher: Mutex::new(launcher),
             connection: Mutex::new(None),
             // From the clock, so a revision is never one an earlier run used.
             revision: AtomicU64::new(jiff::Timestamp::now().as_millisecond().unsigned_abs()),
@@ -228,6 +233,12 @@ impl Notifications {
         // Waits as long as connecting may take; a timed-out call fails sooner.
         let _ = started.recv_timeout(2 * CALL_TIMEOUT);
         Arc::new(Self { shared })
+    }
+
+    /// Finds apps with `launcher` from now on (`None` while the launcher is
+    /// off), for notifications sent after this.
+    pub fn set_launcher(&self, launcher: Option<Arc<Launcher>>) {
+        *lock(&self.shared.launcher) = launcher;
     }
 
     /// Shows a notification of Nova's own, as if an app sent it, and
@@ -494,12 +505,24 @@ impl Shared {
         let desktop_entry = take_str(&mut sent.hints, "desktop-entry")
             .map(|entry| entry.strip_suffix(".desktop").unwrap_or(&entry).to_string())
             .filter(|entry| is_name(entry));
-        let app = match text::cut(sent.app_name.trim(), MAX_LABEL_CHARS) {
-            app if !app.is_empty() => app,
-            _ => desktop_entry.clone().unwrap_or_else(|| "Unknown app".into()),
-        };
+        // Like GNOME: the installed app the sender names is shown as its
+        // desktop entry says (the user may have changed its name or icon
+        // there), and what the sender calls itself only when none is.
+        let installed = desktop_entry.as_deref().and_then(|entry| {
+            let launcher = lock(&self.launcher).clone()?;
+            launcher.app(&format!("{entry}.desktop"))
+        });
+        let (installed_name, installed_icon) = installed.map_or((None, None), |app| (Some(app.name), app.icon));
+        let app = [installed_name.as_deref(), Some(sent.app_name.as_str()), desktop_entry.as_deref()]
+            .into_iter()
+            .flatten()
+            .map(|name| text::cut(name.trim(), MAX_LABEL_CHARS))
+            .find(|name| !name.is_empty())
+            .unwrap_or_else(|| "Unknown app".into());
         let icons = &self.sources.icons;
-        let icon = icon(&sent.app_icon, icons).or_else(|| desktop_entry.as_deref().and_then(|entry| icons.find(entry)));
+        let icon = installed_icon
+            .or_else(|| icon(&sent.app_icon, icons))
+            .or_else(|| desktop_entry.as_deref().and_then(|entry| icons.find(entry)));
         let urgency = match take(&mut sent.hints, "urgency").as_deref() {
             Some(Variant::U8(0)) => Urgency::Low,
             Some(Variant::U8(2)) => Urgency::Critical,

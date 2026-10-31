@@ -136,7 +136,7 @@ impl Fixture {
             images: self.dir.join("images"),
             icons: Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[], None)),
         };
-        let server = Notifications::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger));
+        let server = Notifications::start(sources, None, Arc::clone(&self.hub), Arc::clone(&self.logger));
         self.hub.subscribe(self.client, Topic::Notifications);
         peripherals.set_notifications(Some(&server));
         server

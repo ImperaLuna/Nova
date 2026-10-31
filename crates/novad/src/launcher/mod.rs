@@ -257,6 +257,12 @@ impl Launcher {
             .inspect_err(|e| self.logger.warn(LOG_SOURCE, &format!("can't launch {id}: {e}")))
     }
 
+    /// The installed app `id` (its desktop file id), as the launcher lists it.
+    pub fn app(&self, id: &str) -> Option<App> {
+        let state = lock(&self.state);
+        state.apps.get(id).map(|entry| app(entry, &state.icons))
+    }
+
     /// The installed app whose windows may have one of `ids` (lower case,
     /// the likeliest first), like a tray icon's process names: the first id
     /// that any app matches decides. Of the apps it matches, one it names

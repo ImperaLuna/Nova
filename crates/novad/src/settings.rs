@@ -198,13 +198,24 @@ impl Settings {
             logger,
         );
         // Started before the UI, which settings start ahead of, so
-        // notifications sent while it starts are kept. No options either.
+        // notifications sent while it starts are kept. No options either. It
+        // names apps as the launcher's entries do, like the tray.
         let notifications = reconcile(
             notifications::FEATURE_ID,
             previous.as_deref_mut().and_then(|previous| previous.notifications.take()),
             ready(notifications::FEATURE_ID),
-            |_| true,
-            || notifications::Notifications::start(sources.notifications.clone(), Arc::clone(hub), Arc::clone(logger)),
+            |running| {
+                running.set_launcher(launcher.clone());
+                true
+            },
+            || {
+                notifications::Notifications::start(
+                    sources.notifications.clone(),
+                    launcher.clone(),
+                    Arc::clone(hub),
+                    Arc::clone(logger),
+                )
+            },
             logger,
         );
         // It finds players' apps with the launcher, like the tray.
