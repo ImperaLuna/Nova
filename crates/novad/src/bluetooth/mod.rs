@@ -61,8 +61,9 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const LONG_CALL_TIMEOUT: Duration = Duration::from_secs(90);
 /// How long a connect may run before it's stopped: a device that's off, or
 /// a headset switched to its dongle, can keep BlueZ trying for most of a
-/// minute after it knows the device is gone.
-pub const CONNECT_LIMIT: Duration = Duration::from_secs(20);
+/// minute after it knows the device is gone. A headset just woken from
+/// pairing mode took 23 s to connect.
+pub const CONNECT_LIMIT: Duration = Duration::from_secs(30);
 /// How long scanning runs after the page asks for it.
 const SCAN_LIMIT: Duration = Duration::from_secs(120);
 /// How long to wait before asking again when scanning didn't start.
