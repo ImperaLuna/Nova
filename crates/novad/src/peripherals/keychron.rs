@@ -37,9 +37,9 @@
 //!
 //! Nodes are any of Keychron's with the raw HID usage, found as
 //! [`super::hidraw`] finds them, whatever the product: one whose keyboard
-//! never sends the report (stock firmware, a mouse's dongle) lists
-//! nothing. Nodes with the mice's vendor interface are read by
-//! [`keychron_mouse`] instead, so both are one source.
+//! never sends the report (stock firmware, or no keyboard behind the
+//! dongle) lists nothing. Nodes with the mice's vendor interface are read
+//! by [`keychron_mouse`] instead, so keyboards and mice are one source.
 
 use super::hidraw::channel::{Channel, Received};
 use super::hidraw::descriptor::has_usage;

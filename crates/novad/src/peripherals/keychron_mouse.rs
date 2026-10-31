@@ -8,14 +8,20 @@
 //! report `0xB4`, the command again, the mouse's settings (its DPI
 //! stages) and, at byte [`BATTERY_AT`], its percent, with the top bit set
 //! while it charges (`0xE3` is 99% on its cable). The mouse says
-//! nothing by itself, so it's asked when the node is opened and every
-//! [`ASK`]; one that leaves a request unanswered for [`ANSWER_TIMEOUT`]
-//! (off, or no mouse behind the dongle) isn't listed until it answers
-//! again. On its cable the mouse is a USB device of its own, named for
-//! its model (`Keychron M6`), and its dongle stops answering; Keychron
-//! names its dongles `Link` something, so a node named so is a dongle.
-//! The same protocol is what `keychron-battery-dkms` speaks to the M5 and
-//! the Ultra-Link 8K.
+//! nothing by itself, so it's asked when the node is opened, then every
+//! [`ASK`] while it answers (within [`ANSWER_TIMEOUT`]) and every
+//! [`RETRY`] while it doesn't, so one switched on shows within seconds.
+//! It leaves the list after [`MAX_MISSED`] unanswered requests in a row
+//! (off, or no mouse behind the dongle), so one lost answer doesn't hide
+//! it.
+//!
+//! On its cable the mouse is a USB device of its own, named for its model
+//! (`Keychron M6`), and its dongle stops answering; Keychron names its
+//! dongles `Link` something, so a node named so is a dongle. Both list it
+//! under one id, so while the dongle's last answer is still listed the
+//! cable's wins ([`super::hidraw`]): two Keychron mice at once would show
+//! as one. The same protocol is what `keychron-battery-dkms` speaks to
+//! the M5 and the Ultra-Link 8K.
 
 use super::Found;
 use super::LOG_SOURCE;
@@ -41,29 +47,33 @@ const BATTERY_AT: usize = 20;
 const CHARGING: u8 = 0x80;
 /// The highest percent there is.
 const FULL: u8 = 100;
-/// How often the mouse is asked. Its percent moves a point every few
-/// hours of use.
-pub const ASK: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(60) };
+/// How often the mouse is asked while it answers: its percent moves a
+/// point every few hours of use...
+const ASK: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(60) };
+/// ...and while it doesn't, so one switched on shows soon.
+const RETRY: Duration = if cfg!(test) { Duration::from_millis(100) } else { Duration::from_secs(5) };
 /// How soon an answer comes (a few milliseconds through the dongle).
 const ANSWER_TIMEOUT: Duration = Duration::from_millis(500);
+/// Unanswered requests in a row before the mouse leaves the list.
+const MAX_MISSED: u32 = 2;
 /// What a mouse behind its dongle is called: neither the dongle's name
 /// (`Keychron Link-KM`) nor the answer says which model it is.
 const NAME: &str = "Keychron mouse";
 /// What every Keychron dongle's name has (`Link-KM`, `Ultra-Link 8K`).
 const DONGLE_WORD: &str = "Link";
-/// The id a mouse's comes after, the node's USB ids after it.
-const ID_PREFIX: &str = "keychron/mouse-";
+/// A mouse's id, on its dongle and on its cable.
+const ID: &str = "keychron/mouse";
 
 /// Whether `node` is the mice's vendor interface.
 pub fn reads(node: &Node) -> bool {
     has_usage(&node.descriptor, VENDOR_PAGE, VENDOR_USAGE)
 }
 
-/// Asks the mouse behind `node` for its battery every [`ASK`] until
-/// stopped or the node goes, listing it while it answers.
+/// Asks the mouse behind `node` for its battery until stopped or the
+/// node goes, listing it while it answers.
 pub fn read(node: &Node, mut channel: Channel, listing: &Listing) -> Option<String> {
-    // Whether the mouse is listed, so its going quiet is logged once.
     let mut listed = false;
+    let mut missed = 0;
     loop {
         match channel.send(&request()) {
             Ok(true) => {}
@@ -71,35 +81,49 @@ pub fn read(node: &Node, mut channel: Channel, listing: &Listing) -> Option<Stri
             Err(e) => return Some(format!("can't ask for the battery ({e})")),
         }
         let asked = Instant::now();
-        let next_ask = asked + ASK;
-        let mut answer_due = Some(asked + ANSWER_TIMEOUT);
-        // Waits out the answer, then the rest of the interval: anything
-        // else said meanwhile (Keychron Launcher's traffic) is ignored.
-        loop {
-            let now = Instant::now();
-            if answer_due.is_some_and(|due| due <= now) {
-                answer_due = None;
-                if std::mem::take(&mut listed) {
-                    let quiet = format!("{}: the mouse stopped answering", node.name);
-                    listing.logger().log(LogLevel::Debug, LOG_SOURCE, &quiet);
-                }
+        let reading = match answer(&mut channel, asked + ANSWER_TIMEOUT) {
+            Ok(reading) => reading,
+            Err(ended) => return ended,
+        };
+        if let Some(reading) = reading {
+            missed = 0;
+            listed = true;
+            listing.set(vec![found(node, reading)]);
+        } else {
+            missed += 1;
+            if listed && missed >= MAX_MISSED {
+                listed = false;
+                let quiet = format!("{}: the mouse stopped answering", node.name);
+                listing.logger().log(LogLevel::Debug, LOG_SOURCE, &quiet);
                 listing.set(Vec::new());
             }
-            if answer_due.is_none() && now >= next_ask {
-                break;
-            }
-            match channel.receive(answer_due.unwrap_or(next_ask)) {
-                Ok(Received::Report(report)) => {
-                    if let Some(reading) = parse(&report).filter(|_| answer_due.is_some()) {
-                        answer_due = None;
-                        listed = true;
-                        listing.set(vec![found(node, reading)]);
-                    }
-                }
-                Ok(Received::TimedOut) => {}
+        }
+        let next_ask = asked + if reading.is_some() { ASK } else { RETRY };
+        // Anything said until then (Keychron Launcher's traffic) is ignored.
+        loop {
+            match channel.receive(next_ask) {
+                Ok(Received::Report(_)) => {}
+                Ok(Received::TimedOut) => break,
                 Ok(Received::Stopped) => return None,
                 Err(e) => return Some(e.to_string()),
             }
+        }
+    }
+}
+
+/// The first status answer until `until`, if one comes; `Err` with why
+/// reading ended when it did (`None` for a stop).
+fn answer(channel: &mut Channel, until: Instant) -> Result<Option<Reading>, Option<String>> {
+    loop {
+        match channel.receive(until) {
+            Ok(Received::Report(report)) => {
+                if let Some(reading) = parse(&report) {
+                    return Ok(Some(reading));
+                }
+            }
+            Ok(Received::TimedOut) => return Ok(None),
+            Ok(Received::Stopped) => return Err(None),
+            Err(e) => return Err(Some(e.to_string())),
         }
     }
 }
@@ -131,7 +155,7 @@ fn found(node: &Node, reading: Reading) -> Found {
     let own_name = node.hid_name.as_deref().filter(|name| !name.contains(DONGLE_WORD)).map(without_maker_twice);
     let link = if own_name.is_some() { PeripheralLink::Wired } else { PeripheralLink::Dongle };
     let device = Peripheral {
-        id: format!("{ID_PREFIX}{}", node.id),
+        id: ID.to_owned(),
         name: own_name.unwrap_or_else(|| NAME.to_owned()),
         kind: PeripheralKind::Mouse,
         link: Some(link),

@@ -808,7 +808,7 @@ fn keychron_asks_a_mouse_behind_its_dongle() {
     let peripherals = fixture.start();
     assert_eq!(
         fixture.next(),
-        json!([{"id": "keychron/mouse-3434:d026", "name": "Keychron mouse", "kind": "mouse", "link": "dongle",
+        json!([{"id": "keychron/mouse", "name": "Keychron mouse", "kind": "mouse", "link": "dongle",
                 "battery": {"percent": 94}, "charging": false, "source": "keychron"}])
     );
     let request = fake_hidraw_recording(KEYCHRON_MOUSE).exchanges[0].request.clone();
@@ -819,22 +819,29 @@ fn keychron_asks_a_mouse_behind_its_dongle() {
     peripherals.stop();
 }
 
-/// On its cable the mouse is a device of its own: listed by its own name,
-/// wired and charging, while its dongle answers nothing.
+/// On its cable the mouse is a device of its own: listed once, by its own
+/// name, wired and charging, even while its dongle's last answer is still
+/// listed.
 #[test]
-fn keychron_lists_a_mouse_on_its_cable() {
+fn keychron_lists_a_mouse_on_its_cable_once() {
     let fixture = Fixture::new("keychron-mouse-cable");
     let dongle = fixture.hidraw_node(KEYCHRON_MOUSE);
-    let request = fake_hidraw_recording(KEYCHRON_MOUSE).exchanges[0].request.clone();
-    fixture.hidraw.answer(&request, &[]);
-    fixture.hidraw_node(KEYCHRON_MOUSE_CABLE);
     let peripherals = fixture.start();
-    fixture.wait_opened(&dongle);
+    assert_eq!(fixture.next()[0]["link"], "dongle");
+    fixture.hidraw_node(KEYCHRON_MOUSE_CABLE);
     assert_eq!(
         fixture.next(),
-        json!([{"id": "keychron/mouse-3434:d064", "name": "Keychron M6", "kind": "mouse", "link": "wired",
+        json!([{"id": "keychron/mouse", "name": "Keychron M6", "kind": "mouse", "link": "wired",
                 "battery": {"percent": 99}, "charging": true, "source": "keychron"}])
     );
+    // The dongle stops answering on the cable: nothing changes.
+    let request = fake_hidraw_recording(KEYCHRON_MOUSE).exchanges[0].request.clone();
+    fixture.hidraw.answer(&request, &[]);
+    let asked = fixture.hidraw.requests(&dongle).len();
+    wait_until(WAIT, "the dongle asked twice more", || fixture.hidraw.requests(&dongle).len() >= asked + 2);
+    wait_until(WAIT, "settled", || lock(&peripherals.shared.state).pending.is_none());
+    let devices = serde_json::to_value(&lock(&peripherals.shared.state).sent.devices).unwrap();
+    assert_eq!((ids(&devices), devices[0]["link"].clone()), (vec!["keychron/mouse"], json!("wired")));
     peripherals.stop();
 }
 
