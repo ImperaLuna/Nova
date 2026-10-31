@@ -12,7 +12,9 @@
 //! and its G502 X PLUS answering HID++, `keychron-d030.json` a Keychron
 //! Link dongle passing on its K2 HE's battery reports and
 //! `keychron-d026.json` one with nothing behind it that sends them,
-//! and `keychron-0e20.json` the K2 HE on its cable answering requests.
+//! `keychron-0e20.json` the K2 HE on its cable answering requests,
+//! `keychron-d026-mouse.json` the Link-KM's mouse interface answering
+//! status requests, and `keychron-d064.json` its M6 on its cable.
 //! The UPower files follow UPower's
 //! D-Bus API: the desktop they're for has no peripheral in UPower (its
 //! UPower lists only the DisplayDevice, which the fake serves too).
@@ -662,6 +664,10 @@ fn a_mouse_both_upower_and_hidpp_report_is_listed_once() {
 const KEYCHRON_LINK: &str = "keychron-d030.json";
 const KEYCHRON_LINK_KM: &str = "keychron-d026.json";
 const KEYCHRON_CABLE: &str = "keychron-0e20.json";
+/// The Link-KM's vendor node with a Keychron mouse behind it, answering.
+const KEYCHRON_MOUSE: &str = "keychron-d026-mouse.json";
+/// A Keychron M6 on its cable, charging; its dongle answers nothing then.
+const KEYCHRON_MOUSE_CABLE: &str = "keychron-d064.json";
 /// The K2 HE's answer to Keychron Launcher's protocol version request,
 /// on the same interface.
 const LAUNCHER_REPORT: &str = "a002000200000000000000000000000000000000000000000000000000000000";
@@ -789,6 +795,53 @@ fn keychron_lists_a_keyboard_on_cable_and_dongle_once() {
         devices = fixture.next();
     }
     assert_eq!(json!({"link": devices[0]["link"], "charging": devices[0]["charging"]}), on_battery, "{devices}");
+    peripherals.stop();
+}
+
+/// A mouse behind its dongle says nothing by itself: it's asked, listed
+/// while it answers, and leaves once it stops (switched off: the dongle
+/// stays).
+#[test]
+fn keychron_asks_a_mouse_behind_its_dongle() {
+    let fixture = Fixture::new("keychron-mouse");
+    let dongle = fixture.hidraw_node(KEYCHRON_MOUSE);
+    let peripherals = fixture.start();
+    assert_eq!(
+        fixture.next(),
+        json!([{"id": "keychron/mouse", "name": "Keychron mouse", "kind": "mouse", "link": "dongle",
+                "battery": {"percent": 94}, "charging": false, "source": "keychron"}])
+    );
+    let request = fake_hidraw_recording(KEYCHRON_MOUSE).exchanges[0].request.clone();
+    wait_until(WAIT, "asked again", || fixture.hidraw.requests(&dongle).len() >= 2);
+    assert!(fixture.hidraw.requests(&dongle).iter().all(|asked| *asked == fake_hidraw::hex(&request)));
+    fixture.hidraw.answer(&request, &[]);
+    assert_eq!(fixture.next(), json!([]));
+    peripherals.stop();
+}
+
+/// On its cable the mouse is a device of its own: listed once, by its own
+/// name, wired and charging, even while its dongle's last answer is still
+/// listed.
+#[test]
+fn keychron_lists_a_mouse_on_its_cable_once() {
+    let fixture = Fixture::new("keychron-mouse-cable");
+    let dongle = fixture.hidraw_node(KEYCHRON_MOUSE);
+    let peripherals = fixture.start();
+    assert_eq!(fixture.next()[0]["link"], "dongle");
+    fixture.hidraw_node(KEYCHRON_MOUSE_CABLE);
+    assert_eq!(
+        fixture.next(),
+        json!([{"id": "keychron/mouse", "name": "Keychron M6", "kind": "mouse", "link": "wired",
+                "battery": {"percent": 99}, "charging": true, "source": "keychron"}])
+    );
+    // The dongle stops answering on the cable: nothing changes.
+    let request = fake_hidraw_recording(KEYCHRON_MOUSE).exchanges[0].request.clone();
+    fixture.hidraw.answer(&request, &[]);
+    let asked = fixture.hidraw.requests(&dongle).len();
+    wait_until(WAIT, "the dongle asked twice more", || fixture.hidraw.requests(&dongle).len() >= asked + 2);
+    wait_until(WAIT, "settled", || lock(&peripherals.shared.state).pending.is_none());
+    let devices = serde_json::to_value(&lock(&peripherals.shared.state).sent.devices).unwrap();
+    assert_eq!((ids(&devices), devices[0]["link"].clone()), (vec!["keychron/mouse"], json!("wired")));
     peripherals.stop();
 }
 

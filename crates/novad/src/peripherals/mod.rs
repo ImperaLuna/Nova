@@ -10,10 +10,12 @@
 //! when hidraw nodes come or go and when a device says something),
 //! `keychron` listens for the battery report that Keychron keyboards on
 //! the community battery firmware send over raw HID (by themselves over
-//! their dongle, when asked on their cable), and `headsetcontrol` runs
-//! HeadsetControl for the headsets the kernel can't read (every [`headsetcontrol::POLL`] and when a USB device comes or
-//! goes). A source that isn't there (no UPower, no HeadsetControl, no
-//! access to a receiver's node) just reports nothing.
+//! their dongle, when asked on their cable) and asks Keychron mice over
+//! their vendor interface (`keychron_mouse`), and `headsetcontrol` runs
+//! HeadsetControl for the headsets the kernel can't read (every
+//! [`headsetcontrol::POLL`] and when a USB device comes or goes). A
+//! source that isn't there (no UPower, no HeadsetControl, no access to a
+//! receiver's node) just reports nothing.
 //!
 //! The lists are merged into one [`Event::Peripherals`]: a device two
 //! sources report (the same USB vendor and product, and serial when both
@@ -41,6 +43,7 @@ mod hidpp;
 mod hidraw;
 mod hotplug;
 mod keychron;
+mod keychron_mouse;
 mod sysfs;
 #[cfg(test)]
 mod tests;
