@@ -255,6 +255,11 @@ pub fn failure(error: &zbus::Error) -> Option<String> {
     })
 }
 
+/// An adapter's kernel name (`hci0`), the last part of its path.
+pub fn adapter_name(path: &OwnedObjectPath) -> &str {
+    path.as_str().rsplit('/').next().unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

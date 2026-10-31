@@ -25,6 +25,9 @@ Rectangle {
     readonly property string code: Bluetooth.code(ask)
     readonly property bool typed: Bluetooth.typed(ask)
     readonly property var labels: Bluetooth.buttons(ask, request.incoming)
+    // A row reused for another device (rows above it went) picks up what
+    // was typed, as a new one does.
+    onRequestChanged: field.text = draft
     readonly property bool canAccept: !typed || Bluetooth.validCode(ask, field.text)
 
     function accept() {

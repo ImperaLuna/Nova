@@ -61,6 +61,8 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const LONG_CALL_TIMEOUT: Duration = Duration::from_secs(90);
 /// How long scanning runs after the page asks for it.
 const SCAN_LIMIT: Duration = Duration::from_secs(120);
+/// How long to wait before asking again when scanning didn't start.
+const SCAN_RETRY: Duration = Duration::from_secs(2);
 /// After lifting a block, how long the adapter may take to power on, and how
 /// often it's asked meanwhile. The kernel brings the adapter back up on its
 /// own time; BlueZ refuses until it has.
@@ -196,12 +198,14 @@ impl Bluetooth {
     pub fn power(&self, on: bool) -> Result<(), String> {
         let shared = &self.shared;
         if on {
-            let blocked = shared.sources.rfkill.blocked();
+            let adapter = lock(&shared.state).objects.adapter().map(|adapter| adapter.path);
+            let name = adapter.as_ref().map(bluez::adapter_name);
+            let blocked = shared.sources.rfkill.blocked(name);
             if blocked.hard {
-                return Err("Bluetooth is off by a switch or key on the computer: turn it on there.".into());
+                return Err("Bluetooth is off by a hardware switch, key or BIOS setting: Nova can't turn it on.".into());
             }
             if blocked.soft {
-                shared.sources.rfkill.unblock()?;
+                shared.sources.rfkill.unblock(name)?;
                 shared.logger.info(LOG_SOURCE, "lifted the software block on Bluetooth");
             }
         }
@@ -302,6 +306,12 @@ impl Bluetooth {
 impl Shared {
     /// The event for `state`, published when it differs from the last one.
     fn publish(&self, state: &mut MutexGuard<'_, State>) {
+        // A stopped service's late command ends must not cover what its
+        // replacement sent.
+        if state.stopped {
+            self.wake.notify_all();
+            return;
+        }
         let event = self.event(state);
         if state.sent.as_ref() != Some(&event) {
             self.hub.publish(&Event::Bluetooth(event.clone()));
@@ -311,8 +321,8 @@ impl Shared {
     }
 
     fn event(&self, state: &State) -> BluetoothEvent {
-        let blocked = self.sources.rfkill.blocked();
         let adapter = state.objects.adapter();
+        let blocked = self.sources.rfkill.blocked(adapter.as_ref().map(|adapter| bluez::adapter_name(&adapter.path)));
         let radio = match &adapter {
             None => BluetoothRadio::Missing,
             Some(_) if blocked.hard => BluetoothRadio::SwitchedOff,
@@ -456,9 +466,7 @@ impl Shared {
         if let Some(asked) = state.pairing.take() {
             asked.end(Reply::Cancelled);
         }
-        if !state.stopped {
-            self.publish(&mut state);
-        }
+        self.publish(&mut state);
     }
 
     /// Starts and stops scanning, until stopped.
@@ -466,6 +474,9 @@ impl Shared {
         let mut state = lock(&self.state);
         // BlueZ has said it's scanning since novad started it.
         let mut confirmed = false;
+        // StartDiscovery failed (the adapter not ready yet): not again
+        // before this.
+        let mut retry_at: Option<Instant> = None;
         loop {
             if state.stopped {
                 return;
@@ -473,7 +484,11 @@ impl Shared {
             let now = Instant::now();
             let until = state.scan_asked.map(|asked| asked + SCAN_LIMIT).filter(|until| *until > now);
             let adapter = state.objects.adapter().map(|adapter| (adapter.path, adapter.powered, adapter.discovering));
-            let want = !state.watchers.is_empty() && until.is_some() && adapter.as_ref().is_some_and(|a| a.1);
+            let resting = retry_at.filter(|at| *at > now);
+            let want = !state.watchers.is_empty()
+                && until.is_some()
+                && resting.is_none()
+                && adapter.as_ref().is_some_and(|a| a.1);
             let discovering = adapter.as_ref().is_some_and(|a| a.2);
             // Ended by BlueZ (powered off, adapter gone): it's off.
             if state.scanning && confirmed && !discovering {
@@ -485,10 +500,13 @@ impl Shared {
                 (true, false, Some((path, ..)), Some(calls)) => {
                     state.scanning = true;
                     drop(state);
-                    if let Err(e) = zbus::block_on(call(&calls, &path, ADAPTER, "StartDiscovery")) {
-                        self.logger.info(LOG_SOURCE, &format!("can't scan for devices: {e}"));
-                    }
+                    let started = zbus::block_on(call(&calls, &path, ADAPTER, "StartDiscovery"));
                     state = lock(&self.state);
+                    if let Err(e) = started {
+                        self.logger.info(LOG_SOURCE, &format!("can't scan for devices: {e}"));
+                        state.scanning = false;
+                        retry_at = Some(Instant::now() + SCAN_RETRY);
+                    }
                 }
                 (false, _, Some((path, ..)), Some(calls)) if state.scanning => {
                     state.scanning = false;
@@ -500,6 +518,10 @@ impl Shared {
                     state = lock(&self.state);
                 }
                 _ => {
+                    let until = match (until, resting) {
+                        (Some(until), Some(resting)) => Some(until.min(resting)),
+                        (until, _) => until,
+                    };
                     state = match until {
                         Some(until) => {
                             self.wake

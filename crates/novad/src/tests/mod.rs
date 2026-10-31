@@ -148,7 +148,11 @@ impl TestDaemon {
             // become the machine's pairing agent. Its own tests give it one.
             bluetooth: bluetooth::Sources {
                 bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
-                rfkill: bluetooth::Rfkill { class: dir.join("sys/class/rfkill"), device: dir.join("dev/rfkill") },
+                rfkill: bluetooth::Rfkill {
+                    class: dir.join("sys/class/rfkill"),
+                    device: dir.join("dev/rfkill"),
+                    adapters: dir.join("sys/class/bluetooth"),
+                },
             },
             icons,
         };

@@ -289,6 +289,11 @@ Item {
             waitForRendering(page);
             compare(shown(page, "field").text, "1234");
 
+            // It goes again: the first row, made for the Bose, shows it now.
+            page.state = event([speaker("pairing")], pairing);
+            waitForRendering(page);
+            compare(shown(page, "field").text, "1234", "a reused row too");
+
             listen(page, "answered");
             click(page, "accept");
             compare(spy.signalArguments[0][0], 4);

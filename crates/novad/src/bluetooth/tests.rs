@@ -99,6 +99,9 @@ struct Fake {
     pairing: Pairing,
     /// `/sys/class/rfkill/rfkill0/soft`: `Powered` is refused while it says 1.
     soft_block: PathBuf,
+    /// How many `StartDiscovery` calls to refuse, as an adapter still
+    /// coming up does.
+    refuse_discovery: usize,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -116,6 +119,7 @@ impl FakeBlueZ {
             calls: Vec::new(),
             agent: None,
             pairing: Pairing::Confirm(123_456),
+            refuse_discovery: 0,
             soft_block,
         }));
         zbus::block_on(async {
@@ -198,6 +202,7 @@ enum BlueZError {
     #[zbus(error)]
     ZBus(zbus::Error),
     Blocked(String),
+    NotReady(String),
     AuthenticationRejected(String),
     AuthenticationCanceled(String),
 }
@@ -253,9 +258,17 @@ struct FakeAdapter(Shared);
 
 #[interface(name = "org.bluez.Adapter1")]
 impl FakeAdapter {
-    async fn start_discovery(&self, #[zbus(connection)] connection: &Connection) {
-        lock(&self.0).calls.push("StartDiscovery".into());
+    async fn start_discovery(&self, #[zbus(connection)] connection: &Connection) -> Result<(), BlueZError> {
+        {
+            let mut fake = lock(&self.0);
+            fake.calls.push("StartDiscovery".into());
+            if fake.refuse_discovery > 0 {
+                fake.refuse_discovery -= 1;
+                return Err(BlueZError::NotReady("Resource Not Ready".into()));
+            }
+        }
         changed(connection, &self.0, ADAPTER_PATH, ADAPTER, "Discovering", OwnedVariant::from(true)).await;
+        Ok(())
     }
 
     async fn stop_discovery(&self, #[zbus(connection)] connection: &Connection) {
@@ -393,7 +406,11 @@ impl Fixture {
     }
 
     fn rfkill(&self) -> Rfkill {
-        Rfkill { class: self.dir.join("sys/class/rfkill"), device: self.dir.join("dev/rfkill") }
+        Rfkill {
+            class: self.dir.join("sys/class/rfkill"),
+            device: self.dir.join("dev/rfkill"),
+            adapters: self.dir.join("sys/class/bluetooth"),
+        }
     }
 
     /// Sets the Bluetooth radio switch.
@@ -598,6 +615,19 @@ fn scanning_runs_while_someone_watches() {
     fixture.until("no scanning", |event| event["scanning"] == false);
     let scans: Vec<String> = bluez.calls().into_iter().filter(|call| call.ends_with("Discovery")).collect();
     assert_eq!(scans, ["StartDiscovery", "StopDiscovery"]);
+}
+
+#[test]
+fn scanning_tries_again_when_the_adapter_isnt_ready() {
+    let fixture = Fixture::new("scan-retry");
+    let bluez = fixture.bluez();
+    lock(&bluez.fake).refuse_discovery = 1;
+    let bluetooth = fixture.start();
+    fixture.until("the devices", |event| event["radio"] == "on");
+    bluetooth.watch(fixture.client, true);
+    fixture.until("scanning", |event| event["scanning"] == true);
+    let starts = bluez.calls().into_iter().filter(|call| call == "StartDiscovery").count();
+    assert_eq!(starts, 2, "refused once, then asked again");
 }
 
 #[test]
