@@ -457,17 +457,18 @@ impl Shared {
         let (shared, path) = (Arc::clone(shared), path.clone());
         std::thread::spawn(move || {
             std::thread::sleep(shared.sources.connect_limit);
-            {
-                let mut state = lock(&shared.state);
-                let running = state.connects.get(&key) == Some(&number)
-                    && state.busy.get(&key) == Some(&BluetoothStatus::Connecting);
-                if !running {
-                    return;
-                }
-                state.timed_out.insert(key.clone());
-            }
+            // Stopped under the lock: the connect can't end, and a retry
+            // can't start, between the check and the stop.
+            let mut state = lock(&shared.state);
+            let running =
+                state.connects.get(&key) == Some(&number) && state.busy.get(&key) == Some(&BluetoothStatus::Connecting);
+            let Some(calls) = state.calls.clone().filter(|_| running) else { return };
+            state.timed_out.insert(key.clone());
             shared.logger.info(LOG_SOURCE, &format!("{key}: connect took too long, stopping it"));
-            shared.cancel(&path, Some(BluetoothStatus::Connecting));
+            if let Err(e) = zbus::block_on(call(&calls, &path, DEVICE, "Disconnect")) {
+                shared.logger.info(LOG_SOURCE, &format!("can't stop connecting {path}: {e}"));
+            }
+            drop(state);
         });
     }
 
