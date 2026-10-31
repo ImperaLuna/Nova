@@ -371,6 +371,27 @@ Item {
             verify(!findChild(page, "menu").visible);
         }
 
+        function test_a_work_network_its_on_still_disconnects() {
+            const network = rescanned();
+            network.wifi.network = "eduroam";
+            network.wifi.networks = [Object.assign(network.wifi.networks[2], {
+                    saved: true,
+                    connected: true
+                })];
+            const page = createTemporaryObject(pageComponent, stage, {
+                network: network
+            });
+            const more = findChild(findChild(page, "network-eduroam"), "more");
+            verify(more.visible);
+            mouseClick(more);
+            spy.target = page;
+            spy.signalName = "disconnectRequested";
+            const disconnect = findChild(page, "disconnect");
+            waitForItemPolished(disconnect.parent);
+            mouseClick(disconnect);
+            compare(spy.count, 1);
+        }
+
         function test_a_blocked_switch_doesnt_turn_wifi_on() {
             const network = recorded();
             network.primary = "wired";

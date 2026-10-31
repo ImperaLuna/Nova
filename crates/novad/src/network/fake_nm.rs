@@ -546,7 +546,8 @@ impl FakeNm {
         );
     }
 
-    fn state_changed(&self, active: &str, state: u32, reason: u32) {
+    /// Sends `active`'s `StateChanged`.
+    pub fn state_changed(&self, active: &str, state: u32, reason: u32) {
         self.signal(active, ACTIVE, "StateChanged", &(state, reason));
     }
 

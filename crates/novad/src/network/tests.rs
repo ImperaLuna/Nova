@@ -104,15 +104,6 @@ impl Fixture {
     }
 }
 
-/// Waits for `done`, which no event tells of.
-fn eventually(what: &str, done: impl Fn() -> bool) {
-    let deadline = Instant::now() + WAIT;
-    while !done() {
-        assert!(Instant::now() < deadline, "no {what}");
-        std::thread::sleep(Duration::from_millis(20));
-    }
-}
-
 fn network_names(event: &Value) -> Vec<&str> {
     event["wifi"]["networks"].as_array().unwrap().iter().map(|network| network["ssid"].as_str().unwrap()).collect()
 }
@@ -285,7 +276,7 @@ fn a_preference_holds_for_ipv6_where_its_metrics_differ() {
     // Already Wi-Fi's for IPv4, so the event doesn't change.
     network.prefer(LinkKind::Wifi).unwrap();
     let wifi_device = "/org/freedesktop/NetworkManager/Devices/3";
-    eventually("a reapply", || !nm.calls("Reapply").is_empty());
+    nova_test_support::wait_until(WAIT, "a reapply", || !nm.calls("Reapply").is_empty());
     assert_eq!(nm.calls("Reapply"), [wifi_device], "only Wi-Fi's IPv6 needed to change");
     assert_eq!(
         nm.applied_metrics(wifi_device),
@@ -323,6 +314,27 @@ fn without_networkmanager_nothing_runs_and_commands_say_why() {
     assert_eq!(network.scan(), Err("NetworkManager isn't running".into()));
     assert_eq!(network.connect("Home", None), Err("NetworkManager isn't running".into()));
     assert_eq!(network.connect("", None), Err("a network name can't be empty".into()));
+    network.stop();
+}
+
+#[test]
+fn an_attempt_keeps_its_outcome_through_other_connections_changing() {
+    let fixture = Fixture::new("churn");
+    let nm = fixture.nm();
+    let network = fixture.start();
+    fixture.next();
+    network.disconnect().unwrap();
+    fixture.until("Wi-Fi off its network", |event| event["wifi"].get("network").is_none());
+    network.connect("Home", None).unwrap();
+    fixture.until("connected", |event| event["wifi"]["attempt"]["outcome"] == "connected");
+
+    // A VPN or the cable going up and down, many times over.
+    for _ in 0..=MAX_TRANSITIONS {
+        nm.state_changed("/org/freedesktop/NetworkManager/ActiveConnection/1", ACTIVE_STATE_ACTIVATED, 0);
+    }
+    network.scan().unwrap();
+    let event = fixture.until("a read after them", |event| event["wifi"]["scanning"] == true);
+    assert_eq!(event["wifi"]["attempt"]["outcome"], "connected");
     network.stop();
 }
 

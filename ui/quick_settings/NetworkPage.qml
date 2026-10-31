@@ -430,7 +430,8 @@ Item {
             objectName: `network-${entry.ssid}`
             width: parent.width
             selected: entry.net?.connected ?? false
-            enabled: entry.joinable
+            // Not joinable still has its ⋯ (pick() won't join it).
+            clickable: entry.joinable
             opacity: entry.joinable ? 1 : Tokens.dimOpacity
             title: entry.ssid
             subtitle: entry.net ? Network.networkLine(page.network, entry.net) : ""
@@ -591,6 +592,8 @@ Item {
         property color subtitleColor: Tokens.fgDim
         property string role: ""
         property bool selected: false
+        // Clicks and hovers on the row itself (not what's in `end`).
+        property bool clickable: true
         readonly property bool hovered: press.containsMouse
         readonly property Item lead: leadSlot
         readonly property Item end: endSlot
@@ -601,7 +604,7 @@ Item {
         Rectangle {
             anchors.fill: parent
             radius: Tokens.radiusRow
-            color: press.containsMouse && line.enabled ? Tokens.hover : line.selected ? Tokens.surfaceRaised : "transparent"
+            color: press.containsMouse && line.clickable ? Tokens.hover : line.selected ? Tokens.surfaceRaised : "transparent"
         }
         MouseArea {
             id: press

@@ -116,7 +116,8 @@ struct State {
     reading: Option<Reading>,
     /// When the first and the last signal not yet read came.
     stale: Option<(Instant, Instant)>,
-    /// The latest `StateChanged` (state, reason) of active connections.
+    /// The latest `StateChanged` (state, reason) of active connections, for
+    /// an attempt whose first ones come before `connect` has its path.
     transitions: VecDeque<(OwnedObjectPath, u32, u32)>,
     attempt: Option<Attempt>,
     scan: Option<Scan>,
@@ -136,6 +137,9 @@ struct Attempt {
     active: OwnedObjectPath,
     /// The profile novad made, until it's removed.
     created: Option<OwnedObjectPath>,
+    /// Its active connection's latest (state, reason), kept here so newer
+    /// transitions of other connections can't push it out.
+    last: Option<(u32, u32)>,
 }
 
 struct Scan {
@@ -241,7 +245,14 @@ impl Network {
         let started = zbus::block_on(actions::connect(&connection, &reading, ssid, password))?;
         self.shared.logger.info(LOG_SOURCE, &format!("connecting to {ssid}"));
         let mut state = lock(&self.shared.state);
-        state.attempt = Some(Attempt { ssid: ssid.to_owned(), active: started.active, created: started.created });
+        // Its first state changes may have come before the reply.
+        let last = state
+            .transitions
+            .iter()
+            .rev()
+            .find(|(path, ..)| *path == started.active)
+            .map(|(_, active_state, reason)| (*active_state, *reason));
+        state.attempt = Some(Attempt { ssid: ssid.to_owned(), active: started.active, created: started.created, last });
         self.shared.publish(&mut state);
         Ok(())
     }
@@ -333,7 +344,9 @@ impl Shared {
                 }
                 state.transitions.push_back((path.to_owned().into(), active_state, reason));
                 // The outcome shows at once, without waiting for a read.
-                if state.attempt.as_ref().is_some_and(|attempt| attempt.active.as_str() == path.as_str()) {
+                if let Some(attempt) = state.attempt.as_mut().filter(|attempt| attempt.active.as_str() == path.as_str())
+                {
+                    attempt.last = Some((active_state, reason));
                     self.publish(&mut state);
                 }
             }
@@ -497,13 +510,12 @@ fn event(state: &State) -> NetworkEvent {
 /// How the attempt went, by its connection's last `StateChanged`.
 fn outcome(state: &State) -> Option<AttemptOutcome> {
     let attempt = state.attempt.as_ref()?;
-    let Some((_, active_state, reason)) = state.transitions.iter().rev().find(|(path, ..)| *path == attempt.active)
-    else {
+    let Some((active_state, reason)) = attempt.last else {
         return Some(AttemptOutcome::Connecting);
     };
-    Some(match *active_state {
+    Some(match active_state {
         ACTIVE_STATE_ACTIVATED => AttemptOutcome::Connected,
-        _ if actions::wrong_password(*active_state, *reason) => AttemptOutcome::WrongPassword,
+        _ if actions::wrong_password(active_state, reason) => AttemptOutcome::WrongPassword,
         manager::ACTIVE_STATE_DEACTIVATED => AttemptOutcome::Failed,
         _ => AttemptOutcome::Connecting,
     })
