@@ -41,32 +41,55 @@ Singleton {
     // started, by anything: a key, an app, this capsule.
     signal changed
 
-    // A Bluetooth output that appears becomes the default (volume.js
+    // A Bluetooth output or mic that appears becomes the default (volume.js
     // arrivedBluetooth); one there when Nova starts is left as WirePlumber
-    // chose: the outputs seen once PipeWire's first listing is done (nodes
+    // chose: the nodes seen once PipeWire's first listing is done (nodes
     // come one by one until it's ready) are the start. Going back to the
-    // dongle needs nothing: the Bluetooth sink goes and PipeWire falls back.
+    // dongle needs nothing: the Bluetooth node goes and PipeWire falls back.
+    // A Bluetooth mic in use puts the headset in call mode (mono sound)
+    // until it's let go; the user chose that over a dongle mic that may be
+    // silent.
     // qmllint disable missing-property
     readonly property list<PwNode> outputs: Pipewire.nodes.values.filter(node => node.isSink && !node.isStream && node.audio !== null)
+    readonly property list<PwNode> inputs: Pipewire.nodes.values.filter(node => !node.isSink && !node.isStream && node.audio !== null)
     // qmllint enable missing-property
     property var knownOutputs: null
+    property var knownInputs: null
     onOutputsChanged: followOutputs()
+    onInputsChanged: followInputs()
     readonly property bool listed: Pipewire.ready
-    onListedChanged: followOutputs()
+    onListedChanged: {
+        followOutputs();
+        followInputs();
+    }
     function followOutputs() {
-        if (!listed)
-            return;
-        const now = outputs.map(node => ({
-                    id: node.id,
-                    name: node.name
-                }));
-        const arrived = knownOutputs === null ? null : Volume.arrivedBluetooth(knownOutputs, now);
-        knownOutputs = now.map(output => output.id);
-        const node = outputs.find(node => node.id === arrived);
+        const node = arrived(outputs, knownOutputs);
+        if (listed)
+            knownOutputs = outputs.map(node => node.id);
         if (node) {
             console.info(`nova: switching sound to ${node.description || node.name}`);
             Pipewire.preferredDefaultAudioSink = node;
         }
+    }
+    function followInputs() {
+        const node = arrived(inputs, knownInputs);
+        if (listed)
+            knownInputs = inputs.map(node => node.id);
+        if (node) {
+            console.info(`nova: switching the mic to ${node.description || node.name}`);
+            Pipewire.preferredDefaultAudioSource = node;
+        }
+    }
+    // The Bluetooth node among `nodes` that `known` didn't have, or null
+    // before PipeWire's first listing is done.
+    function arrived(nodes: var, known: var): var {
+        if (!listed || known === null)
+            return null;
+        const id = Volume.arrivedBluetooth(known, nodes.map(node => ({
+                        id: node.id,
+                        name: node.name
+                    })));
+        return nodes.find(node => node.id === id) ?? null;
     }
 
     // Volume and mute are only valid on a bound node.

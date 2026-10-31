@@ -30,7 +30,7 @@ TestCase {
         compare(Volume.atFraction(-0.2), 0);
     }
 
-    function test_a_bluetooth_output_that_arrives_is_picked() {
+    function test_a_bluetooth_output_or_mic_that_arrives_is_picked() {
         const dongle = {
             id: 40,
             name: "alsa_output.usb-SteelSeries_Arctis_Nova_5X-00.analog-stereo"
@@ -42,6 +42,16 @@ TestCase {
         compare(Volume.arrivedBluetooth([40], [dongle, headset]), 71, "the headset turned to Bluetooth");
         compare(Volume.arrivedBluetooth([40, 71], [dongle, headset]), null, "already there");
         compare(Volume.arrivedBluetooth([], [dongle]), null, "a USB output isn't");
+        // Its mic: WirePlumber's Bluetooth source, there even on A2DP.
+        const dongleMic = {
+            id: 64,
+            name: "alsa_input.usb-SteelSeries_SteelSeries_Arctis_Nova_5X-00.mono-fallback"
+        };
+        const headsetMic = {
+            id: 104,
+            name: "bluez_input.20:AF:1B:0A:FD:79"
+        };
+        compare(Volume.arrivedBluetooth([64], [dongleMic, headsetMic]), 104, "the mic follows");
     }
 
     function test_level_is_full_above_100_and_empty_without_an_output() {
