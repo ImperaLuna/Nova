@@ -455,6 +455,7 @@ StagePanel {
                 // Which screen the deck picks for: every one, or one of
                 // them drawn to scale with its pick. Not with one screen.
                 Row {
+                    id: picker
                     anchors.verticalCenter: parent.verticalCenter
                     visible: carousel.screenNames.length > 1
                     spacing: Tokens.carouselMiniGap
@@ -500,7 +501,10 @@ StagePanel {
 
                         ScreenMini {
                             required property var modelData
-                            anchors.verticalCenter: parent.verticalCenter
+                            // Not anchored to its parent: a screen going
+                            // away takes it out of the row (parent null)
+                            // before it's destroyed.
+                            y: Math.round((picker.height - height) / 2)
                             name: modelData.name
                             path: carousel.picks[modelData.name] ?? ""
                             chosen: carousel.choosingFor === modelData.name
