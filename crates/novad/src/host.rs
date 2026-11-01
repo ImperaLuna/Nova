@@ -16,7 +16,7 @@ const DEFAULT_OS_ID: &str = "linux";
 const DEFAULT_OS_NAME: &str = "Linux";
 
 /// What the header shows now. `name` is what to call the user when the
-/// config says (`[quick-settings] name`), else their account's first name.
+/// config says (`[quick-settings] name`), else their login name.
 pub fn read(name: Option<&str>, icons: &Icons) -> Host {
     let os_release = OS_RELEASE.iter().find_map(|path| std::fs::read_to_string(path).ok()).unwrap_or_default();
     let mut os = operating_system(&os_release);
@@ -69,21 +69,14 @@ fn unquote(value: &str) -> String {
     out
 }
 
-/// The first name from the user's full name (the GECOS field), else their
-/// login name, else `$USER`.
+/// The user's login name, else `$USER`.
 fn user_name() -> String {
-    let (login, gecos) = account();
-    first_name(&gecos).or(login).or_else(|| std::env::var("USER").ok()).unwrap_or_default()
+    login_name().or_else(|| std::env::var("USER").ok()).unwrap_or_default()
 }
 
-/// The GECOS field's full name, up to its first comma, first word only.
-fn first_name(gecos: &str) -> Option<String> {
-    gecos.split(',').next()?.split_whitespace().next().map(str::to_string)
-}
-
-/// This process's user's login name and GECOS field, from the user
-/// database (which may be LDAP or systemd-userdb, not just /etc/passwd).
-fn account() -> (Option<String>, String) {
+/// This process's user's login name, from the user database (which may be
+/// LDAP or systemd-userdb, not just /etc/passwd).
+fn login_name() -> Option<String> {
     // Big enough for any real entry; getpwuid_r says ERANGE otherwise.
     let mut buffer = vec![0u8; 16 * 1024];
     // SAFETY: zeroed is a valid passwd (null pointers, zero ids); it's only
@@ -94,14 +87,12 @@ fn account() -> (Option<String>, String) {
     // strings point into `buffer`, which outlives their use below.
     let status =
         unsafe { libc::getpwuid_r(libc::getuid(), &mut entry, buffer.as_mut_ptr().cast(), buffer.len(), &mut found) };
-    if status != 0 || found.is_null() {
-        return (None, String::new());
+    if status != 0 || found.is_null() || entry.pw_name.is_null() {
+        return None;
     }
-    let text = |pointer: *const libc::c_char| {
-        // SAFETY: getpwuid_r set it to null or a NUL-terminated string in `buffer`.
-        (!pointer.is_null()).then(|| unsafe { std::ffi::CStr::from_ptr(pointer) }.to_string_lossy().into_owned())
-    };
-    (text(entry.pw_name).filter(|name| !name.is_empty()), text(entry.pw_gecos).unwrap_or_default())
+    // SAFETY: getpwuid_r set it to a NUL-terminated string in `buffer`.
+    let name = unsafe { std::ffi::CStr::from_ptr(entry.pw_name) }.to_string_lossy().into_owned();
+    Some(name).filter(|name| !name.is_empty())
 }
 
 #[cfg(test)]
@@ -135,18 +126,11 @@ mod tests {
     }
 
     #[test]
-    fn first_name_comes_from_the_full_name() {
-        assert_eq!(first_name("Luna Impera,,,"), Some("Luna".into()));
-        assert_eq!(first_name(",room 4"), None);
-        assert_eq!(first_name(""), None);
-    }
-
-    #[test]
     fn reads_this_machine() {
         let icons = Icons::new(crate::icons::HICOLOR.into(), &[], None);
         let host = read(None, &icons);
         assert!(host.booted_at > 0, "/proc/stat has btime");
-        assert!(!host.user.is_empty(), "every user has a name or a login");
+        assert!(!host.user.is_empty(), "every user has a login name");
         assert_eq!(read(Some(" Katov "), &icons).user, "Katov", "the config's name wins");
         assert_eq!(host.os.logo, None, "no icon theme to find a logo in");
         assert!(!host.os.id.is_empty());
