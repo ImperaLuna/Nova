@@ -14,10 +14,9 @@ import "../daemon/protocol.js" as Protocol
 // The copy is Nova's too, so it's taken only while nothing of Nova's but
 // the bar is on the screen (`quiet`): glass that sees itself would thin out,
 // then thicken again on the next copy. The bar's row is never looked at
-// (`skipTop`). A copy is taken once it can be, then a moment after the
-// focused window, its title or the focused workspace last changed (a page
-// that changes, mostly changes the title), or once it's quiet again after
-// that. It's downscaled on the GPU into a few texels and never shown.
+// (`skipTop`). A copy is taken once it can be, then after what's on the
+// screen last changed (`scene`), or once it's quiet again after that. It's
+// downscaled on the GPU into a few texels and never shown.
 Item {
     id: backdrop
 
@@ -38,28 +37,51 @@ Item {
         skipTop: Tokens.barGap + Tokens.barHeight
     }
 
-    readonly property string scene: [Compositor.focusedWindow?.id ?? "", Compositor.focusedWindow?.title ?? "", Protocol.focusKey(Compositor.focusedWorkspace)].join("\n")
+    // What's on this screen: the workspace it shows and that workspace's
+    // window, and the focused window's title while focus is here (a page
+    // that changes, mostly changes the title). Another screen's changes
+    // don't copy this one.
+    readonly property string scene: {
+        const name = screen?.name ?? "";
+        const shown = Compositor.output(name)?.workspaces.find(workspace => workspace.active) ?? null;
+        const title = Compositor.focusedOutput?.name === name ? Compositor.focusedWindow?.title ?? "" : "";
+        return Protocol.focusKey(shown) + "\n" + title;
+    }
     property bool wanted: false
     onSceneChanged: {
         wanted = true;
+        later.stop();
         settle.restart();
     }
     onQuietChanged: {
         if (quiet && wanted)
             settle.restart();
     }
+    // Without a first copy there's nothing to take one with yet (no screen
+    // capture, or not ready): that first one comes by itself.
+    function take() {
+        if (!quiet || !copy?.hasContent)
+            return;
+        wanted = false;
+        console.debug(`nova: glass copies ${screen.name}`);
+        copy.captureFrame();
+    }
+    // A copy soon after a change, then one more once windows have moved
+    // into place: one taken while a window still grew left a seam where it
+    // was then.
     Timer {
         id: settle
         interval: Tokens.glassBackdropDelayMs
-        // Without a first copy there's nothing to take one with yet (no
-        // screen capture, or not ready): that first one comes by itself.
         onTriggered: {
-            if (!backdrop.quiet || !backdrop.copy?.hasContent)
-                return;
-            backdrop.wanted = false;
-            console.info(`nova: glass copies ${backdrop.screen.name}`);
-            backdrop.copy.captureFrame();
+            backdrop.take();
+            if (!backdrop.wanted)
+                later.restart();
         }
+    }
+    Timer {
+        id: later
+        interval: Tokens.glassBackdropSettleMs
+        onTriggered: backdrop.take()
     }
 
     // Only where glass can draw with a shader: Qt Quick's software renderer
