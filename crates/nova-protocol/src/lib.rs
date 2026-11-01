@@ -229,9 +229,11 @@ pub struct Palette {
     pub bg_alt: Color,
     /// Behind everything when nothing else is drawn, like the lock screen.
     pub backdrop: Color,
+    /// Glass: laid over the compositor's blur, translucent (Tokens sets how
+    /// much).
+    pub glass_tint: Color,
+    /// Text and icons. Tokens derives the dimmer levels from it.
     pub fg: Color,
-    pub fg_alt: Color,
-    pub fg_dim: Color,
     pub primary: Color,
     pub secondary: Color,
     pub on_accent: Color,
@@ -2839,7 +2841,7 @@ mod tests {
 
     fn theme() -> Theme {
         let colors: Palette = serde_json::from_value(json!({
-            "bg": "#1D1D1D", "bgAlt": "#393E46", "backdrop": "#000000", "fg": "#F5E7C6", "fgAlt": "#525252", "fgDim": "#9A9A9A",
+            "bg": "#1D1D1D", "bgAlt": "#393E46", "backdrop": "#000000", "glassTint": "#0A0807", "fg": "#FFF6EB",
             "primary": "#FD7014", "secondary": "#BE95FF", "onAccent": "#1D1D1D",
             "info": "#00ADB5", "success": "#25BE6A", "warning": "#FAEB92", "error": "#EE5396",
             "swatch1": "#5988DB", "swatch2": "#E8650E", "swatch3": "#07A7A5", "swatch4": "#9067CC",

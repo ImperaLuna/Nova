@@ -67,7 +67,6 @@ Item {
             Tokens.apply({
                 bg: "#1D1D1D",
                 fg: "#F5E7C6",
-                fgDim: "#9A9A9A",
                 primary: "#FD7014",
                 secondary: "#BE95FF",
                 onAccent: "#1D1D1D"

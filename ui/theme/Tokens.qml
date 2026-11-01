@@ -19,11 +19,14 @@ QtObject {
     property color bgAlt
     // Behind everything when nothing else is drawn, like the lock screen
     property color backdrop
+    // Glass, laid translucent over the compositor's blur (see `glass`)
+    property color glassTint
 
-    // Foregrounds
+    // Foregrounds: text and icons. The dimmer levels are this ink at less
+    // opacity, so over glass they take on what's behind like the ink does.
     property color fg
-    property color fgAlt
-    property color fgDim
+    readonly property real fgDimOpacity: 0.66
+    readonly property color fgDim: alpha(fg, fgDimOpacity)
 
     // Accents
     property color primary
@@ -48,43 +51,38 @@ QtObject {
 
     // Glass surfaces, derived from the theme
     readonly property real surfaceOpacity: 0.75
-    readonly property real raisedOpacity: 0.06
+    readonly property real raisedOpacity: 0.09
     readonly property real outlineOpacity: 0.08
     readonly property color surface: alpha(bg, surfaceOpacity)
     readonly property color surfaceRaised: alpha(fg, raisedOpacity)
     readonly property color outline: alpha(fg, outlineOpacity)
 
-    // Liquid glass behind pills and the panels that morph out of them
-    // (Glass.qml), over the compositor's blur of what's behind: a light tint
-    // with a hint of the accent, so the blurred windows show through.
-    readonly property real glassOpacity: 0.40
-    readonly property real glassAccent: 0.05
-    readonly property color glass: {
-        const tinted = tint(primary, glassAccent);
-        return alpha(tinted, glassOpacity);
-    }
-    // A sheen across the top fading into a faint veil, and a shade along the
-    // bottom edge.
+    // Smoked glass behind pills and the panels that morph out of them
+    // (Glass.qml), over the compositor's blur of what's behind: a warm
+    // near-black that only darkens what's behind, so its colors still show.
+    readonly property real glassOpacity: 0.55
+    readonly property color glass: alpha(glassTint, glassOpacity)
+    // Its edge: a dark outline outside, a faint light line inside, and a
+    // highlight along the top that fades out before the corners (where it
+    // starts, as a share of the corner radius).
+    readonly property color glassOutline: Qt.rgba(0, 0, 0, 0.45)
+    readonly property color glassInnerLine: alpha(fg, 0.06)
+    readonly property color glassHighlight: alpha(fg, 0.22)
+    readonly property real glassHighlightInset: 0.7
+    readonly property real glassHighlightFade: 0.15
+    readonly property real glassEdgeWidth: 1
+    // The volume capsule's glass (Capsule.qml): a sheen across the top and a
+    // rim lit from the top-left, brightest there, a softer glow at the
+    // bottom-right; `glassRimShade` is its unlit side, relative to the lit
+    // corner.
     readonly property color glassSheen: alpha(fg, 0.12)
-    readonly property color glassVeil: alpha(fg, 0.03)
-    readonly property color glassShade: Qt.rgba(0, 0, 0, 0.22)
-    // Where, top to bottom, the sheen has faded to the veil, and where the
-    // veil has cleared before the shade starts.
     readonly property real glassVeilAt: 0.45
-    readonly property real glassClearAt: 0.85
-    // The rim, lit from the top-left: brightest there, a softer glow at the
-    // bottom-right, faint along the sides between.
     readonly property real glassRimWidth: 1.2
-    // Where, along the diagonal, the lit corner has faded to the plain rim
-    // (and, mirrored, where the glow corner starts).
-    readonly property real glassRimFade: 0.28
-    // A rim drawn in one pass (the volume capsule's shader): its brightness
-    // on the unlit side, relative to the lit corner.
     readonly property real glassRimShade: 0.35
     readonly property color glassRimLit: alpha(fg, 0.60)
     readonly property color glassRimGlow: alpha(fg, 0.36)
+    // A hairline around things inside glass.
     readonly property color glassRim: alpha(fg, 0.10)
-    readonly property color glassRimDim: alpha(fg, 0.03)
     // The soft shadow under glass, and the room it needs around the glass.
     readonly property color shadow: Qt.rgba(0, 0, 0, 0.35)
     readonly property real shadowBlur: 30
@@ -93,12 +91,12 @@ QtObject {
     // Hover wash on things inside glass.
     readonly property color hover: alpha(fg, 0.06)
     // The selected row of a list, like the launcher's.
-    readonly property color selected: alpha(fg, 0.10)
+    readonly property color selected: alpha(fg, 0.18)
     // What's selected where the focus isn't, like the workspace shown on a
     // monitor you're not using: a quiet fill instead of the accent.
     readonly property color selectedQuiet: alpha(fg, 0.14)
     // Meters: the empty track and a neutral fill.
-    readonly property color track: alpha(fg, 0.10)
+    readonly property color track: alpha(fg, 0.14)
     readonly property color meter: alpha(fg, 0.85)
 
     // `target` mixed into bg: 0 is bg, 1 is the color itself. One function for
@@ -230,7 +228,7 @@ QtObject {
     readonly property real liquidOpacity: 0.95
     readonly property color liquid: alpha(secondary, liquidOpacity)
     readonly property real liquidMutedOpacity: 0.7
-    readonly property color liquidMuted: alpha(fgDim, liquidMutedOpacity)
+    readonly property color liquidMuted: alpha(fg, fgDimOpacity * liquidMutedOpacity)
     // Its surface (px): a slow swell, the waves a change stirs up (at most),
     // the swell kept while it sits still, and how far the surface creeps
     // up the glass.
