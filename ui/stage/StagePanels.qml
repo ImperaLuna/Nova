@@ -46,6 +46,21 @@ QtObject {
     readonly property bool catchesClicks: panels.some(panel => panel.open && panel.closesOnClickOutside)
     // Whether anything drawn is animating.
     readonly property bool moving: panels.some(panel => panel.moving)
+    // The drawn items a shown panel is over, like the now-playing pill while
+    // the AI usage panel beside it opens: they hide meanwhile. Glass is
+    // see-through, and the compositor blurs only what's below the surface,
+    // so they'd show through the panel sharp.
+    readonly property list<Item> underPanels: items.filter(item => item.visible && shown.some(panel => panel !== item && panel.visible && overlaps(panel, item)))
+
+    // Whether `above` and `below`, on the same surface, share any pixels.
+    function overlaps(above: Item, below: Item): bool {
+        // Their sizes, read here so a panel growing re-checks (mapping a
+        // point isn't watched).
+        const aboveSize = Qt.size(above.width, above.height);
+        const belowSize = Qt.size(below.width, below.height);
+        const at = above.mapToItem(below, 0, 0);
+        return at.x < belowSize.width && at.x + aboveSize.width > 0 && at.y < belowSize.height && at.y + aboveSize.height > 0;
+    }
 
     // `nova toggle <name>` on the screen named `screen`, with `output` the
     // focused one: only that screen toggles, and opening there closes the

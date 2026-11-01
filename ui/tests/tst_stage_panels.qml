@@ -78,6 +78,7 @@ Item {
                 panel.moving = false;
             }
             usage.x = usage.y = usage.width = usage.height = 0;
+            fixedPill.x = fixedPill.width = 0;
             usage.parts = [];
             fillet.visible = true;
             drawn.panels = [usage, launcher, notes];
@@ -114,6 +115,35 @@ Item {
             compare(drawn.reach, 44, "the stage doesn't shrink under it");
             fixedPill.visible = true;
             verify(drawn.shapes.includes(fixedPill));
+        }
+
+        // The AI usage panel opening over the now-playing pill beside it:
+        // that pill hides while the panel is over it, not before, not after.
+        function test_an_item_a_shown_panel_is_over_hides() {
+            fixedPill.x = 316;
+            fixedPill.y = 8;
+            fixedPill.width = 200;
+            fixedPill.height = 36;
+            usage.x = 16;
+            usage.y = 8;
+            usage.width = 290;
+            usage.height = 36;
+            usage.moving = true;
+            compare(drawn.underPanels.length, 0, "beside it, a gap apart");
+            usage.width = 301;
+            verify(drawn.underPanels.includes(fixedPill), "grown over its edge");
+            verify(!drawn.underPanels.includes(usage), "never under itself");
+            usage.width = 420;
+            usage.height = 300;
+            usage.moving = false;
+            usage.open = true;
+            verify(drawn.underPanels.includes(fixedPill), "open over it");
+            usage.open = false;
+            compare(drawn.underPanels.length, 0, "a closed panel is over nothing");
+            usage.moving = true;
+            usage.width = 290;
+            usage.height = 36;
+            compare(drawn.underPanels.length, 0, "closed back off it");
         }
 
         function test_a_click_on_a_drawn_item_is_not_outside() {
