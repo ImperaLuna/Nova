@@ -250,7 +250,9 @@ Item {
             });
             compare(cards(carousel).map(card => card.modelData), ["/w/dusk.png", "/w/aurora.png"]);
             keyClick(Qt.Key_Right);
-            tryCompare(carousel, "position", 2, 1000);
+            // Exactly: tryCompare passes within 0.00001, a frame before the
+            // deck rests, while the card leaving left still shows a little.
+            tryVerify(() => carousel.position === 2, 1000, "the deck comes to rest");
             compare(cards(carousel).map(card => card.modelData), ["/w/aurora.png", "/w/dusk.png"], "round again, still each once");
             const arrived = cards(carousel)[1];
             verify(arrived.opacity < 1, "the card that came round fades in");
