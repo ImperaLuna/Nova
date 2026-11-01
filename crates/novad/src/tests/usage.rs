@@ -148,6 +148,50 @@ fn claude_limits_come_from_anthropic_with_claude_codes_sign_in() {
 }
 
 #[test]
+fn claude_limits_use_the_desktop_apps_sign_in_when_claude_code_has_none() {
+    let (url, requests) = fake_endpoint(r#"{"five_hour":{"utilization":4.0,"resets_at":"2100-01-01T05:00:00Z"}}"#);
+    let novad = TestDaemon::with_ai_usage("ai-usage-claude-desktop", |root| {
+        claude_sign_in(root, &url);
+        // What Claude Code leaves when the desktop app signs it in.
+        let empty = r#"{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":0,"subscriptionType":"max"}}"#;
+        std::fs::write(root.join("claude/.credentials.json"), empty).unwrap();
+        let expires = jiff::Timestamp::now().as_millisecond() + 3_600_000;
+        let cache = json!({
+            ai_usage::claude_desktop_entry("user:inference user:profile"):
+                {"token": "app-token", "expiresAt": expires, "subscriptionType": "pro"}
+        });
+        ai_usage::write_claude_desktop_config(&root.join("claude-desktop"), &cache);
+        std::fs::write(root.join("../config/config.toml"), CLAUDE_ENDPOINT_ON).unwrap();
+    });
+    let claude = provider(&novad.connect().subscribe_usage(), "claude").clone();
+    assert_eq!((claude["state"].as_str(), claude["plan"].as_str()), (Some("ready"), Some("Pro")), "{claude}");
+    assert_eq!(claude["limits"][0]["percent"], 4);
+    let head = requests.lock().unwrap()[0].to_lowercase();
+    assert!(head.contains("authorization: bearer app-token\r\n"), "{head}");
+}
+
+#[test]
+fn reset_numbers_give_way_to_why_there_are_none() {
+    let novad = TestDaemon::with_ai_usage("ai-usage-claude-stale", |root| {
+        // Numbers from a status line whose windows have all reset since.
+        let saved = json!({"claude": [
+            {"window": "session", "percent": 1, "resets_at": "2026-10-30T17:59:59Z"},
+            {"window": "weekly", "percent": 8, "resets_at": "2026-10-31T21:00:00Z"}
+        ], "claude_plan": "Max"});
+        std::fs::create_dir_all(root.join("state")).unwrap();
+        std::fs::write(root.join("state/ai-usage.json"), saved.to_string()).unwrap();
+        std::fs::write(root.join("../config/config.toml"), CLAUDE_ENDPOINT_ON).unwrap();
+    });
+    let mut client = novad.connect();
+    let mut usage = client.subscribe_usage();
+    // Once the endpoint has said why: the 0% before it is a guess.
+    while provider(&usage, "claude")["state"] != "unavailable" {
+        usage = client.next_usage();
+    }
+    assert_eq!(provider(&usage, "claude")["hint"], "Signed out of Claude Code");
+}
+
+#[test]
 fn a_status_line_report_beats_an_older_endpoint_answer() {
     let (open_gate, gate) = std::sync::mpsc::channel();
     let (url, requests) = fake_endpoint_gated(r#"{"five_hour":{"utilization":8.4,"resets_at":null}}"#, Some(gate));

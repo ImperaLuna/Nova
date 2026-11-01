@@ -1,22 +1,35 @@
 //! AI usage (feature `ai-usage`): how much of their Claude and Codex plan
 //! limits the user has used. Claude's come from Claude Code's status line
 //! (`nova claude-statusline`) when a terminal session runs and, if the user
-//! turns it on, from Anthropic's usage endpoint with Claude Code's sign-in
-//! (see `claude_api`), polled gently. Codex logs its limits in its session
+//! turns it on, from Anthropic's usage endpoint with Claude Code's sign-in,
+//! or the Claude desktop app's (see `claude_api`, `claude_desktop`), polled
+//! gently. Codex logs its limits in its session
 //! files, which novad watches, after each turn; if the user turns it on,
 //! OpenAI's usage endpoint is polled the same way (see `codex_api`), so the
 //! numbers stay current between turns.
 //!
 //! Numbers change only when a source does, except at a window's reset time:
 //! novad wakes then and shows that window at 0% until the tool is used again.
+//! When every window has reset and the endpoint is on but can't answer
+//! (signed out), that 0% would be a guess, so the panel shows why instead.
 
 mod claude;
 mod claude_api;
+mod claude_desktop;
 mod codex;
 mod codex_api;
 mod endpoint;
 
 pub use claude::limits_from_statusline;
+
+#[cfg(test)]
+pub use claude_desktop::{entry_name as claude_desktop_entry, write_unsealed_config as write_claude_desktop_config};
+
+/// The desktop app's sign-in under `config_home`.
+#[cfg(test)]
+pub fn claude_desktop_in(config_home: &Path) -> claude_desktop::Desktop {
+    claude_desktop::Desktop::at(claude_desktop::config_in(config_home))
+}
 
 use crate::backoff::Backoff;
 use crate::config::AiUsageConfig;
@@ -65,16 +78,27 @@ pub struct Paths {
     pub state_file: PathBuf,
     /// Claude Code's credentials file, `None` without `HOME`.
     pub claude_credentials: Option<PathBuf>,
+    /// The Claude desktop app's sign-in, asked when Claude Code's file has
+    /// no token; `None` without `HOME`.
+    pub claude_desktop: Option<claude_desktop::Desktop>,
     pub claude_usage_url: String,
     pub codex_usage_url: String,
 }
 
 impl Paths {
-    pub fn new(state_dir: &Path, codex_home: Option<PathBuf>, claude_credentials: Option<PathBuf>) -> Self {
+    pub fn new(
+        state_dir: &Path,
+        codex_home: Option<PathBuf>,
+        claude_credentials: Option<PathBuf>,
+        claude_desktop_config: Option<PathBuf>,
+    ) -> Self {
         Self {
             codex_home: codex_home.or_else(codex::default_home),
             state_file: state_dir.join("ai-usage.json"),
             claude_credentials: claude_credentials.or_else(claude_api::default_credentials),
+            claude_desktop: claude_desktop_config
+                .map(claude_desktop::Desktop::at)
+                .or_else(claude_desktop::Desktop::default_location),
             claude_usage_url: claude_api::USAGE_URL.into(),
             codex_usage_url: codex_api::USAGE_URL.into(),
         }
@@ -100,6 +124,9 @@ struct State {
     /// Why there are no Claude numbers yet; `None` while the first answer
     /// is pending. Starts as the opt-in hint when the endpoint is off.
     claude_problem: Option<String>,
+    /// Whether Claude's endpoint is on. Only then does a problem mean the
+    /// numbers can't be told, rather than that only the status line tells.
+    claude_endpoint: bool,
     codex: Codex,
     /// When the status line last reported Claude's limits. An endpoint
     /// answer to a request sent before then is older, so it's dropped.
@@ -136,7 +163,7 @@ enum Wake {
 
 /// A provider's usage endpoint, asked by `Usage::poll`.
 enum Endpoint {
-    Claude { credentials: Option<PathBuf>, url: String },
+    Claude { credentials: Option<PathBuf>, desktop: Option<claude_desktop::Desktop>, url: String },
     Codex { auth: Option<PathBuf>, url: String },
 }
 
@@ -151,13 +178,31 @@ impl Endpoint {
     /// The limits and plan, read with the tool's sign-in.
     fn ask(&self) -> Result<(Vec<UsageLimit>, Option<String>), Problem> {
         match self {
-            Endpoint::Claude { credentials: Some(path), url } => claude_api::read_token(path, Timestamp::now())
+            Endpoint::Claude { credentials, desktop, url } => claude_token(credentials.as_deref(), desktop.as_ref())
                 .and_then(|token| claude_api::fetch(url, &token).map(|limits| (limits, token.plan))),
             Endpoint::Codex { auth: Some(path), url } => {
                 codex_api::read_token(path).and_then(|token| codex_api::fetch(url, &token))
             }
-            Endpoint::Claude { credentials: None, .. } | Endpoint::Codex { auth: None, .. } => Err(Problem::SignedOut),
+            Endpoint::Codex { auth: None, .. } => Err(Problem::SignedOut),
         }
+    }
+}
+
+/// Claude Code's own token, else the desktop app's when Claude Code has none
+/// that works. The desktop app being signed out too leaves Claude Code's
+/// problem, which says more.
+fn claude_token(
+    credentials: Option<&Path>,
+    desktop: Option<&claude_desktop::Desktop>,
+) -> Result<claude_api::Token, Problem> {
+    let now = Timestamp::now();
+    let own = credentials.map_or(Err(Problem::SignedOut), |path| claude_api::read_token(path, now));
+    match (own, desktop) {
+        (Err(problem @ (Problem::SignedOut | Problem::Expired)), Some(desktop)) => match desktop.read_token(now) {
+            Err(Problem::SignedOut) => Err(problem),
+            other => other,
+        },
+        (own, _) => own,
     }
 }
 
@@ -175,7 +220,11 @@ impl Usage {
         let (wake, wakes) = mpsc::channel();
         let mut endpoints = Vec::new();
         if config.claude_usage_endpoint {
-            endpoints.push(Endpoint::Claude { credentials: paths.claude_credentials, url: paths.claude_usage_url });
+            endpoints.push(Endpoint::Claude {
+                credentials: paths.claude_credentials,
+                desktop: paths.claude_desktop,
+                url: paths.claude_usage_url,
+            });
         }
         if config.codex_usage_endpoint {
             let auth = paths.codex_home.as_deref().map(codex_api::auth_file);
@@ -186,6 +235,7 @@ impl Usage {
             state: Mutex::new(State {
                 saved,
                 claude_problem: (!config.claude_usage_endpoint).then(|| CLAUDE_ENDPOINT_OFF.into()),
+                claude_endpoint: config.claude_usage_endpoint,
                 codex: Codex::Loading,
                 claude_reported: None,
                 sent: None,
@@ -546,9 +596,14 @@ fn watch_codex_home(watcher: &mut inotify::Inotify, home: &Path, sessions: &Path
     Ok(())
 }
 
-/// The event for `state` at `now`: windows past their reset show 0%.
+/// The event for `state` at `now`: windows past their reset show 0%, unless
+/// all of Claude's have and its endpoint, which is on, has a problem: that
+/// shows instead.
 fn snapshot(state: &State, now: Timestamp) -> AiUsage {
     let claude = match (&state.saved.claude, &state.claude_problem) {
+        (Some(limits), Some(hint)) if state.claude_endpoint && all_reset(limits, now) => {
+            unavailable(AiProvider::Claude, hint.clone())
+        }
         (Some(limits), _) => ready(AiProvider::Claude, state.saved.claude_plan.clone(), limits, now),
         (None, Some(hint)) => unavailable(AiProvider::Claude, hint.clone()),
         (None, None) => loading(AiProvider::Claude),
@@ -570,6 +625,12 @@ fn ready(provider: AiProvider, plan: Option<String>, limits: &[UsageLimit], now:
         })
         .collect();
     ProviderUsage { provider, state: UsageState::Ready, plan, limits, hint: None }
+}
+
+/// Whether every window in `limits` has passed its reset at `now`, so none
+/// is known any more. A window without a reset time never has.
+fn all_reset(limits: &[UsageLimit], now: Timestamp) -> bool {
+    limits.iter().all(|limit| reset_time(limit).is_some_and(|at| at <= now))
 }
 
 fn loading(provider: AiProvider) -> ProviderUsage {

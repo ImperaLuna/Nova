@@ -128,6 +128,11 @@ pub struct Args {
     /// `~/.claude/.credentials.json`.
     #[arg(long)]
     claude_credentials: Option<PathBuf>,
+    /// The Claude desktop app's config, whose sign-in the `ai-usage`
+    /// feature uses when Claude Code's file has none. By default
+    /// `$XDG_CONFIG_HOME/Claude/config.json`, else `~/.config/Claude/config.json`.
+    #[arg(long)]
+    claude_desktop_config: Option<PathBuf>,
     /// Start the login apps (XDG autostart) once the tray is up, once a
     /// session. `nova` asks for it when it starts novad without systemd,
     /// whose own autostart does it otherwise.
@@ -307,7 +312,12 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         themes_dir: args.themes_dir,
         manifests: nova_features::load_all(&args.features_dir)?,
         path_var: path_var.clone(),
-        ai_usage: ai_usage::Paths::new(&args.state_dir, args.codex_home, args.claude_credentials),
+        ai_usage: ai_usage::Paths::new(
+            &args.state_dir,
+            args.codex_home,
+            args.claude_credentials,
+            args.claude_desktop_config,
+        ),
         resources: resources::Sources::system(&path_var),
         launcher: launcher::Paths::new(&args.state_dir, &path_var, Arc::clone(&icons)),
         tray: tray::Sources::new(&args.state_dir),
