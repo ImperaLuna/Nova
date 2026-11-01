@@ -382,7 +382,7 @@ StagePanel {
                     Label {
                         width: parent.width
                         font.pixelSize: Tokens.fontSizeSmall
-                        color: Tokens.fgAlt
+                        color: Tokens.fgDim
                         visible: text !== ""
                         text: root.current?.album ?? ""
                     }

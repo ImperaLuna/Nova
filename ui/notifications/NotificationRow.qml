@@ -122,7 +122,7 @@ Item {
             elide: Text.ElideRight
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSizeSmall
-            color: Tokens.fgAlt
+            color: Tokens.fgDim
             textFormat: Text.PlainText
             text: row.notification.body
         }
