@@ -18,8 +18,9 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 /// The answers are a few KiB at most.
 const MAX_BODY_BYTES: u64 = 64 * 1024;
 const USER_AGENT: &str = concat!("nova/", env!("CARGO_PKG_VERSION"));
-/// Sign-in files are a few KiB; past this isn't read.
-const MAX_SIGN_IN_BYTES: u64 = 64 * 1024;
+/// Sign-in files are a few KiB, the Claude desktop app's config (its
+/// window layout too) some tens; past this isn't read.
+const MAX_SIGN_IN_BYTES: u64 = 1024 * 1024;
 /// Permission bits for anyone but the owner.
 const GROUP_OTHER_BITS: u32 = 0o077;
 
@@ -34,6 +35,8 @@ pub enum Problem {
     /// The provider asked to slow down, for this long if it said.
     RateLimited(Option<Duration>),
     Failed(String),
+    /// The worker was stopped before its next request; nothing was asked.
+    Stopped,
 }
 
 impl Problem {
@@ -53,6 +56,7 @@ impl Problem {
             ),
             Problem::RateLimited(_) => format!("{company} is busy; trying again in a while."),
             Problem::Failed(e) => format!("Can't get {name}'s limits: {e}"),
+            Problem::Stopped => format!("Stopped asking for {name}'s limits"),
         }
     }
 }

@@ -50,6 +50,8 @@ impl Novad {
             dir.join("codex").into(),
             "--claude-credentials".into(),
             dir.join("claude/.credentials.json").into(),
+            "--claude-desktop-config".into(),
+            dir.join("claude-desktop/config.json").into(),
         ];
         let running =
             novad::spawn(<DaemonArgs as clap::Parser>::parse_from(args).args, dir.join("novad.sock")).unwrap();
@@ -322,6 +324,8 @@ impl DaemonProcess {
             .arg(dir.join("codex"))
             .arg("--claude-credentials")
             .arg(dir.join("claude/.credentials.json"))
+            .arg("--claude-desktop-config")
+            .arg(dir.join("claude-desktop/config.json"))
             .spawn()
             .unwrap();
         Self { dir, child }

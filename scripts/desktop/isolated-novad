@@ -82,6 +82,7 @@ DBUS_SESSION_BUS_ADDRESS=disabled: "$nova" --socket "$socket" daemon --no-ui \
   --features-dir "$checkout/features" --selection "$run_dir/features.toml" --themes-dir "$checkout/themes" \
   --log-dir "$run_dir/logs" --state-dir "$run_dir/state" \
   --codex-home "$run_dir/codex" --claude-credentials "$run_dir/claude/.credentials.json" \
+  --claude-desktop-config "$run_dir/claude-desktop/config.json" \
   >"$run_dir/novad.out" 2>&1 &
 daemon_pid=$!
 

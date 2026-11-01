@@ -1,6 +1,8 @@
 //! Claude's limits from Anthropic's usage endpoint, the one Claude Code's
-//! `/usage` screen reads, signed in with Claude Code's own OAuth token. It
-//! works however Claude Code runs; the status line only runs in a terminal.
+//! `/usage` screen reads, signed in with Claude Code's own OAuth token, or
+//! the Claude desktop app's when Claude Code runs only inside the app
+//! (`claude_desktop`). It works however Claude Code runs; the status line
+//! only runs in a terminal.
 //!
 //! Off unless the user turns it on (`config`): Anthropic doesn't document
 //! this use of Claude Code's sign-in. How the token is kept safe is in
@@ -13,7 +15,15 @@ use nova_protocol::{UsageLimit, UsageWindow};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
-pub const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+/// Anthropic's API, a macro so `USAGE_URL` can be built from it.
+macro_rules! api_origin {
+    () => {
+        "https://api.anthropic.com"
+    };
+}
+/// Anthropic's API, which the usage endpoint is on.
+pub const API_ORIGIN: &str = api_origin!();
+pub const USAGE_URL: &str = concat!(api_origin!(), "/api/oauth/usage");
 const BETA_HEADER: &str = "oauth-2025-04-20";
 
 /// Claude Code's credentials file: `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
@@ -27,6 +37,17 @@ pub struct Token {
     access: String,
     /// The subscription's display name, like `Max`.
     pub plan: Option<String>,
+}
+
+impl Token {
+    pub fn new(access: String, plan: Option<String>) -> Self {
+        Self { access, plan }
+    }
+
+    #[cfg(test)]
+    pub fn access(&self) -> &str {
+        &self.access
+    }
 }
 
 /// The token in `path`, if it's there, private to the user and hasn't

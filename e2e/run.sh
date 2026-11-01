@@ -106,6 +106,7 @@ export SWAYSOCK
 # never touches the user's files and never asks Anthropic.
 "$nova" daemon --ui ui --log-dir "$out/state" --state-dir "$out/state" --codex-home "$out/codex" \
   --claude-credentials "$out/claude/.credentials.json" \
+  --claude-desktop-config "$out/claude-desktop/config.json" \
   --config "$out/config/config.toml" --selection "$out/config/features.toml" >"$out/daemon.log" 2>&1 &
 pids+=($!)
 wait_for 10 "novad socket" test -S "$XDG_RUNTIME_DIR/nova/novad.sock"

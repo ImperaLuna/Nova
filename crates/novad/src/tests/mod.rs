@@ -307,6 +307,8 @@ fn ai_usage_paths(root: &Path) -> ai_usage::Paths {
         codex_home: Some(root.join("codex")),
         state_file: root.join("state/ai-usage.json"),
         claude_credentials: Some(root.join("claude/.credentials.json")),
+        // Missing, so the keyring is never asked.
+        claude_desktop: Some(ai_usage::claude_desktop_in(&root.join("claude-desktop"))),
         claude_usage_url: std::fs::read_to_string(root.join("claude/url")).unwrap_or("http://127.0.0.1:9/".into()),
         codex_usage_url: std::fs::read_to_string(root.join("codex-url")).unwrap_or("http://127.0.0.1:9/".into()),
     }

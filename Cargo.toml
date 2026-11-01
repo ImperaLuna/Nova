@@ -28,6 +28,12 @@ futures-core = { version = "0.3", default-features = false }
 png = "0.18"
 # Telling an image from another file before awww gets it (headers only, no dependencies).
 imagesize = "0.15"
+# Decrypting the Claude desktop app's sign-in (Chromium's OS crypt), pure Rust for the static musl build.
+aes = "0.9"
+cbc = { version = "0.2", features = ["alloc", "block-padding"] }
+pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
+sha1 = { version = "0.11", default-features = false }
+base64 = "0.23"
 nova-protocol = { path = "crates/nova-protocol" }
 nova-features = { path = "crates/nova-features" }
 nova-paths = { path = "crates/nova-paths" }
