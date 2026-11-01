@@ -73,7 +73,7 @@ Scope {
     onSurfaceLayerChanged: drawing.settle()
     // Nothing of Nova's but the bar is on this screen: a Backdrop can copy
     // it.
-    readonly property bool quiet: all.shown.length === 0 && NotificationsService.popUps.length === 0
+    readonly property bool quiet: all.shown.length === 0 && !NotificationsService.popUpsShown
     // Where the PanelSurfaces with panels shown are, in screen coordinates.
     readonly property list<rect> panelBoxes: [right, center].filter(surface => !surface.parked).map(surface => surface.box)
     function placed(placement: string): list<StagePanel> {

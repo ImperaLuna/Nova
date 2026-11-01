@@ -57,6 +57,7 @@ Item {
             if (!backdrop.quiet || !backdrop.copy?.hasContent)
                 return;
             backdrop.wanted = false;
+            console.info(`nova: glass copies ${backdrop.screen.name}`);
             backdrop.copy.captureFrame();
         }
     }

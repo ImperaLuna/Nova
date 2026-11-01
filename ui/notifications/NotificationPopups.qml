@@ -27,6 +27,11 @@ PanelWindow { // qmllint disable uncreatable-type
 
     screen: target
     visible: stack.busy
+    Binding {
+        target: NotificationsService
+        property: "popUpsShown"
+        value: window.visible
+    }
     anchors.top: true
     anchors.right: true
     // The stack sits this far down, under the bar; the room above it is
