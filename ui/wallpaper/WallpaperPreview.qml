@@ -11,6 +11,10 @@ import "../theme"
 PanelWindow { // qmllint disable uncreatable-type
     id: window
 
+    readonly property CoversGlass cover: CoversGlass {
+        shown: window.visible
+    }
+
     required property string path
     property bool shown: false
     property bool picking: false

@@ -56,7 +56,7 @@ fn hyprland_focuses_an_output_without_its_workspaces() {
     // hide (or, by the one under it, cover the new window with).
     let dir = nova_test_support::TempDir::new("focus-output-hyprland");
     let (fake, backend) = FakeCompositor::hyprland(dir.path());
-    let output = nova_protocol::Output { name: "DP-2".into(), focused: false, workspaces: Vec::new() };
+    let output = nova_protocol::Output { name: "DP-2".into(), focused: false, workspaces: Vec::new(), layout: 0 };
     backend.focus_output(&output).unwrap();
     assert_eq!(fake.actions(), ["dispatch focusmonitor DP-2"]);
 }

@@ -36,6 +36,8 @@ PanelWindow { // qmllint disable uncreatable-type
     // The stage hasn't yet drawn the item a closing panel grew out of
     // (StagePanel `from`) back: the surface stays until it has.
     property bool holding: false
+    // Nothing of Nova's but the bar is on the screen (Backdrop).
+    property bool quiet: true
 
     // Esc, or a click off the panels while `clickAnywhere`.
     signal dismissRequested
@@ -174,6 +176,13 @@ PanelWindow { // qmllint disable uncreatable-type
         enabled: surface.clickAnywhere
         stagePanels: surface.drawn
         onDismissRequested: surface.dismissRequested()
+    }
+
+    // For its panels' glass to thicken over bright windows.
+    Backdrop {
+        screen: surface.screen
+        origin: Qt.point(surface.box.x, surface.box.y)
+        quiet: surface.quiet
     }
 
     // The screen, placed so that what's on it lines up with the surface.

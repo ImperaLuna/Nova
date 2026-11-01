@@ -1,5 +1,6 @@
 singleton OpenPanels OpenPanels.qml
 singleton StageMotion StageMotion.qml
+Backdrop 1.0 Backdrop.qml
 ClickCatcher 1.0 ClickCatcher.qml
 DismissArea 1.0 DismissArea.qml
 ExclusionZone 1.0 ExclusionZone.qml

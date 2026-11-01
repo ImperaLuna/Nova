@@ -27,6 +27,9 @@ PanelWindow { // qmllint disable uncreatable-type
 
     screen: target
     visible: stack.busy
+    readonly property CoversGlass cover: CoversGlass {
+        shown: window.visible
+    }
     anchors.top: true
     anchors.right: true
     // The stack sits this far down, under the bar; the room above it is
