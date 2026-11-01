@@ -15,8 +15,9 @@
 # (a GitHub annotation in CI). Set NOVA_PSS_STRICT=1 to fail instead.
 #
 # Needs: sway, grim, jq, quickshell (or the nova-ui launcher), and a built
-# nova binary; dbus-daemon and nova-test-player for the media check
-# (cargo build). Logs land in e2e/out; the UI's lines are in e2e/out/ui.log.
+# nova binary; awww, or the wallpaper carousel never loads and goes
+# unchecked; dbus-daemon and nova-test-player for the media check (cargo
+# build). Logs land in e2e/out; the UI's lines are in e2e/out/ui.log.
 # Usage: e2e/run.sh [path/to/nova]
 set -euo pipefail
 cd "$(dirname "$0")/.."
