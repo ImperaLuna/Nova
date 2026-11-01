@@ -255,6 +255,8 @@ pub(super) struct State {
     stale_workspaces: bool,
     stale_windows: bool,
     stale_layout: bool,
+    /// Each output's `layout`, by name: how often windows on it moved.
+    moved: HashMap<String, u64>,
 }
 
 impl State {
@@ -270,6 +272,7 @@ impl State {
             stale_workspaces: true,
             stale_windows: true,
             stale_layout: true,
+            moved: HashMap::new(),
         };
         state.catch_up(ask)?;
         Ok(state)
@@ -283,10 +286,15 @@ impl State {
             | "renameworkspace" | "monitoraddedv2" | "monitorremovedv2" | "configreloaded" | "activespecialv2" => {
                 self.stale_workspaces = true;
             }
-            "openwindow" | "movewindowv2" | "fullscreen" => self.stale_windows = true,
+            "openwindow" | "movewindowv2" | "fullscreen" => {
+                self.stale_windows = true;
+                self.window_moved();
+            }
+            "changefloatingmode" => self.window_moved(),
             "closewindow" => {
                 self.windows.remove(data);
                 self.urgent.remove(data);
+                self.window_moved();
             }
             "windowtitlev2" => {
                 if let Some((address, title)) = data.split_once(',')
@@ -310,6 +318,14 @@ impl State {
             // One per keyboard; which is the main one is in the devices.
             "activelayout" => self.stale_layout = true,
             _ => {}
+        }
+    }
+
+    /// Windows moved on the focused monitor, where Hyprland moves them (it
+    /// reports no resizes).
+    fn window_moved(&mut self) {
+        if let Some(monitor) = self.monitors.iter().find(|monitor| monitor.focused) {
+            *self.moved.entry(monitor.name.clone()).or_default() += 1;
         }
     }
 
@@ -380,6 +396,7 @@ impl State {
                 Output {
                     name: monitor.name.clone(),
                     focused: monitor.focused,
+                    layout: self.moved.get(&monitor.name).copied().unwrap_or_default(),
                     workspaces: listed
                         .map(|(workspace, name, special)| {
                             // A special workspace showing covers the one

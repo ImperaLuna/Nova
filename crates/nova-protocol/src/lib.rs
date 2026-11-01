@@ -400,6 +400,11 @@ pub struct Output {
     pub focused: bool,
     /// In the compositor's order.
     pub workspaces: Vec<Workspace>,
+    /// Goes up whenever windows on it move or change size, for the UI to
+    /// notice (glass copies the screen again); the number itself means
+    /// nothing. Hyprland reports no resizes.
+    #[serde(default)]
+    pub layout: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2463,11 +2468,13 @@ mod tests {
                         Workspace { empty: true, ..workspace(1, "1", false, false) },
                         Workspace { active_window: Some("7".into()), ..workspace(2, "web", true, true) },
                     ],
+                    layout: 3,
                 },
                 Output {
                     name: "HDMI-A-1".into(),
                     focused: false,
                     workspaces: vec![Workspace { urgent: true, fullscreen: true, ..workspace(3, "1", true, false) }],
+                    layout: 0,
                 },
             ],
             focused_window: Some(FocusedWindow { id: "7".into(), app_id: "foot".into(), title: "~".into() }),

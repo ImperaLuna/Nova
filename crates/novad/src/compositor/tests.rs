@@ -111,6 +111,15 @@ fn without_urgency(mut desktop: Desktop) -> Desktop {
     desktop
 }
 
+/// Without the counts of windows moving: only events count them, so an
+/// answer to a query always says 0.
+fn without_layout(mut desktop: Desktop) -> Desktop {
+    for output in &mut desktop.outputs {
+        output.layout = 0;
+    }
+    desktop
+}
+
 fn focused_workspace(desktop: &Desktop) -> &Workspace {
     let mut focused = desktop.outputs.iter().flat_map(|output| &output.workspaces).filter(|w| w.focused);
     let workspace = focused.next().expect("a focused workspace");
@@ -170,6 +179,10 @@ fn check_the_script(followed: &Followed) {
     assert!(before.iter().all(|(_, desktop)| fullscreen(desktop).is_empty()), "fullscreen too early: {before:#?}");
     let full = step(followed, "fullscreen the focused window");
     assert_eq!(fullscreen(full), [focused_workspace(full).name.clone()], "{full:#?}");
+    // Its window grew: the screen's layout count goes up, for glass to copy
+    // the screen again.
+    let layout = |desktop: &Desktop| desktop.outputs.iter().find(|output| output.focused).map(|output| output.layout);
+    assert!(layout(full) > layout(&before.last().unwrap().1), "{full:#?}");
 
     let closed = step(followed, "close the focused window");
     assert_eq!(window(closed), None);
@@ -217,7 +230,7 @@ fn niri_events_add_up_to_what_niri_reports() {
     let recording = Recording::load("niri");
     let followed = follow_niri(&recording);
     for (index, (name, desktop)) in followed.iter().enumerate() {
-        assert_eq!(desktop, &niri_answer(&recording, index), "after {name:?}");
+        assert_eq!(without_layout(desktop.clone()), niri_answer(&recording, index), "after {name:?}");
     }
     check_the_script(&followed);
     // A Nova panel holding the keyboard leaves no window focused; the
@@ -231,7 +244,11 @@ fn hyprland_events_add_up_to_what_hyprland_reports() {
     let recording = Recording::load("hyprland");
     let followed = follow_hyprland(&recording);
     for (index, (name, desktop)) in followed.iter().enumerate() {
-        assert_eq!(without_urgency(desktop.clone()), hyprland_answer(&recording, index), "after {name:?}");
+        assert_eq!(
+            without_urgency(without_layout(desktop.clone())),
+            hyprland_answer(&recording, index),
+            "after {name:?}"
+        );
     }
     check_the_script(&followed);
     check_the_special_workspace(&followed);
