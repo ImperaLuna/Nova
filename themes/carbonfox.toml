@@ -1,5 +1,6 @@
 # Carbonfox, Nova's default theme. Mirrors modules/_lib/themes/carbonfox.nix
-# in nix-config, with upstream Carbonfox's green and red for success/error.
+# in nix-config, with upstream Carbonfox's green and red for success/error,
+# and a warmer white text made for Nova's smoked glass.
 #
 # A theme has a [dark] table and may have a [light] one. Each table sets
 # every color token exactly once (novad refuses missing or unknown ones).
@@ -12,11 +13,10 @@ name = "Carbonfox"
 bg = "#1D1D1D"        # main background
 bgAlt = "#393E46"     # secondary background, borders, selection
 backdrop = "#000000"  # behind everything, like the lock screen
+glassTint = "#0A0807" # glass: a warm near-black over the compositor's blur
 
 # Foregrounds
-fg = "#F5E7C6"        # primary text
-fgAlt = "#525252"     # dimmed text, inactive elements
-fgDim = "#9A9A9A"     # visible but muted: hints, secondary labels
+fg = "#FFF6EB"        # text and icons; Tokens derives the dimmer levels
 
 # Accents
 primary = "#FD7014"   # main accent, highlights
@@ -47,11 +47,10 @@ swatch8 = "#9C7C02"   # yellow
 bg = "#F6F2EA"
 bgAlt = "#DDD6C8"
 backdrop = "#FFFFFF"
+glassTint = "#F4EADF"
 
 # Foregrounds
 fg = "#26231F"
-fgAlt = "#A39E94"
-fgDim = "#6B665D"
 
 # Accents
 primary = "#C4520A"
