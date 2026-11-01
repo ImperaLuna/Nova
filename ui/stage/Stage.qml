@@ -98,7 +98,7 @@ Scope {
         id: drawing
         window: stage
         name: `${root.output.name}/top`
-        moving: drawn.moving || bar.sliding
+        moving: drawn.moving || bar.sliding || bar.fading
     }
 
     // The power menu on the right edge, while its feature is on.
@@ -320,6 +320,8 @@ Scope {
             // closed, and the surface it's on stays until that's drawn.
             covered: root.panels.filter(panel => panel.covering && panel.from).map(panel => panel.from)
             onCoveredChanged: drawing.settle()
+            // Its items an open panel on the stage is over, so they fade.
+            underPanels: drawn.underPanels
             quickSettings: QuickSettingsService.ready
             power: PowerService.ready
             quickSettingsOpen: quickSettings.item?.open ?? false
