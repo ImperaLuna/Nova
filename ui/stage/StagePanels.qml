@@ -46,20 +46,23 @@ QtObject {
     readonly property bool catchesClicks: panels.some(panel => panel.open && panel.closesOnClickOutside)
     // Whether anything drawn is animating.
     readonly property bool moving: panels.some(panel => panel.moving)
-    // The drawn items a shown panel is over, like the now-playing pill while
-    // the AI usage panel beside it opens: they hide meanwhile. Glass is
-    // see-through, and the compositor blurs only what's below the surface,
-    // so they'd show through the panel sharp.
-    readonly property list<Item> underPanels: items.filter(item => item.visible && shown.some(panel => panel !== item && panel.visible && overlaps(panel, item)))
+    // The drawn items an open panel is over, like the now-playing pill while
+    // the AI usage panel beside it is open: they hide meanwhile, clicks and
+    // blur too. Glass is see-through, and the compositor blurs only what's
+    // below the surface, so they'd show through the panel sharp. An open
+    // panel is drawn on top (a closing one isn't), and two open ones never
+    // hide each other. Whether an item is shown doesn't count: hiding it
+    // mustn't bring it back.
+    readonly property list<Item> underPanels: items.filter(item => !(item.open ?? false) && panels.some(panel => panel.open && panel !== item && overlaps(panel, item)))
 
     // Whether `above` and `below`, on the same surface, share any pixels.
     function overlaps(above: Item, below: Item): bool {
-        // Their sizes, read here so a panel growing re-checks (mapping a
-        // point isn't watched).
-        const aboveSize = Qt.size(above.width, above.height);
-        const belowSize = Qt.size(below.width, below.height);
+        // Their own boxes, read here so the binding re-checks when either
+        // moves or grows: mapping a point isn't watched.
+        const aboveBox = Qt.rect(above.x, above.y, above.width, above.height);
+        const belowBox = Qt.rect(below.x, below.y, below.width, below.height);
         const at = above.mapToItem(below, 0, 0);
-        return at.x < belowSize.width && at.x + aboveSize.width > 0 && at.y < belowSize.height && at.y + aboveSize.height > 0;
+        return at.x < belowBox.width && at.x + aboveBox.width > 0 && at.y < belowBox.height && at.y + aboveBox.height > 0;
     }
 
     // `nova toggle <name>` on the screen named `screen`, with `output` the

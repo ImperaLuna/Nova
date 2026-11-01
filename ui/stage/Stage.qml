@@ -320,7 +320,7 @@ Scope {
             // closed, and the surface it's on stays until that's drawn.
             covered: root.panels.filter(panel => panel.covering && panel.from).map(panel => panel.from)
             onCoveredChanged: drawing.settle()
-            // Its items a panel on the stage is drawn over, so they fade.
+            // Its items an open panel on the stage is over, so they fade.
             underPanels: drawn.underPanels
             quickSettings: QuickSettingsService.ready
             power: PowerService.ready

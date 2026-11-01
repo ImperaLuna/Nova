@@ -122,8 +122,8 @@ Item {
     // `from`): hidden meanwhile. The stage sets it.
     property list<Item> covered: []
     // Its items a panel of another pill is drawn over, like the now-playing
-    // pill while AI usage opens over it (StagePanels `underPanels`): they
-    // fade out meanwhile. The stage sets it.
+    // pill while AI usage is open over it (StagePanels `underPanels`): they
+    // fade out meanwhile, then hide. The stage sets it.
     property list<Item> underPanels: []
     // One of them is fading, so the stage draws.
     readonly property bool fading: [aiUsageFade, mediaFade, centerFade, rightFade, recordingFade].some(fade => fade.running)
@@ -204,6 +204,8 @@ Item {
             z: bar.aiUsagePill?.open ? 1 : 0
             // On the Loader: the pill's own opacity is its own.
             opacity: bar.underPanels.includes(bar.aiUsagePill) ? 0 : 1
+            // Faded out, it takes no clicks and needs no blur.
+            visible: opacity > 0
             GiveWay on opacity {
                 id: aiUsageFade
             }
@@ -221,6 +223,7 @@ Item {
             y: Tokens.barGap
             // On the Loader: the pill fades in and out with what plays.
             opacity: bar.underPanels.includes(bar.mediaPill) ? 0 : 1
+            visible: opacity > 0
             GiveWay on opacity {
                 id: mediaFade
             }
@@ -248,7 +251,7 @@ Item {
             id: center
             readonly property var output: Compositor.output(bar.screenName)
 
-            visible: !bar.covered.includes(center)
+            visible: !bar.covered.includes(center) && opacity > 0
             opacity: bar.underPanels.includes(center) ? 0 : 1
             GiveWay on opacity {
                 id: centerFade
@@ -270,7 +273,7 @@ Item {
         RightPill {
             id: rightPill
             // Also for the tray alone, with quick settings and power off.
-            visible: (bar.quickSettings || bar.power || rightPill.hasTray) && !bar.covered.includes(rightPill)
+            visible: (bar.quickSettings || bar.power || rightPill.hasTray) && !bar.covered.includes(rightPill) && opacity > 0
             opacity: bar.underPanels.includes(rightPill) ? 0 : 1
             GiveWay on opacity {
                 id: rightFade
@@ -319,7 +322,7 @@ Item {
 
         RecordingPill {
             id: recordingPill
-            visible: RecordingService.recording
+            visible: RecordingService.recording && opacity > 0
             opacity: bar.underPanels.includes(recordingPill) ? 0 : 1
             GiveWay on opacity {
                 id: recordingFade
