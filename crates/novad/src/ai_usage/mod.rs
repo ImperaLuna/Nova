@@ -175,13 +175,20 @@ impl Endpoint {
         }
     }
 
-    /// The limits and plan, read with the tool's sign-in.
-    fn ask(&self) -> Result<(Vec<UsageLimit>, Option<String>), Problem> {
+    /// The limits and plan, read with the tool's sign-in. `stopped` is
+    /// checked before each request (the keyring's, the provider's).
+    fn ask(&self, stopped: &dyn Fn() -> bool) -> Result<(Vec<UsageLimit>, Option<String>), Problem> {
+        let unless_stopped = || if stopped() { Err(Problem::Stopped) } else { Ok(()) };
         match self {
-            Endpoint::Claude { credentials, desktop, url } => claude_token(credentials.as_deref(), desktop.as_ref())
-                .and_then(|token| claude_api::fetch(url, &token).map(|limits| (limits, token.plan))),
+            Endpoint::Claude { credentials, desktop, url } => {
+                let token = claude_token(credentials.as_deref(), desktop.as_ref(), stopped)?;
+                unless_stopped()?;
+                claude_api::fetch(url, &token).map(|limits| (limits, token.plan))
+            }
             Endpoint::Codex { auth: Some(path), url } => {
-                codex_api::read_token(path).and_then(|token| codex_api::fetch(url, &token))
+                let token = codex_api::read_token(path)?;
+                unless_stopped()?;
+                codex_api::fetch(url, &token)
             }
             Endpoint::Codex { auth: None, .. } => Err(Problem::SignedOut),
         }
@@ -194,14 +201,17 @@ impl Endpoint {
 fn claude_token(
     credentials: Option<&Path>,
     desktop: Option<&claude_desktop::Desktop>,
+    stopped: &dyn Fn() -> bool,
 ) -> Result<claude_api::Token, Problem> {
     let now = Timestamp::now();
     let own = credentials.map_or(Err(Problem::SignedOut), |path| claude_api::read_token(path, now));
     match (own, desktop) {
-        (Err(problem @ (Problem::SignedOut | Problem::Expired)), Some(desktop)) => match desktop.read_token(now) {
-            Err(Problem::SignedOut) => Err(problem),
-            other => other,
-        },
+        (Err(problem @ (Problem::SignedOut | Problem::Expired)), Some(desktop)) => {
+            match desktop.read_token(now, stopped) {
+                Err(Problem::SignedOut) => Err(problem),
+                other => other,
+            }
+        }
         (own, _) => own,
     }
 }
@@ -318,7 +328,7 @@ impl Usage {
             }
             let asked = Instant::now();
             let asked_at = Timestamp::now();
-            let result = endpoint.ask();
+            let result = endpoint.ask(&|| self.stopped());
             // Local problems cost the provider nothing; only failed requests back off.
             let wait = match &result {
                 Ok(_) | Err(Problem::SignedOut | Problem::Expired | Problem::Unsafe(_)) => {
@@ -332,6 +342,7 @@ impl Usage {
                     after.map_or(wait, |after| after.max(wait)).min(ENDPOINT_MAX_BACKOFF)
                 }
                 Err(Problem::Failed(_)) => backoff.next(),
+                Err(Problem::Stopped) => return,
             };
             let backing_off = wait > ENDPOINT_POLL;
             if self.stopped() {
@@ -350,6 +361,8 @@ impl Usage {
                                     state.saved.claude_plan = plan;
                                 }
                             });
+                            // A cleared problem shows even when the numbers didn't change.
+                            let _ = self.wake.send(Wake::Changed);
                         }
                         AiProvider::Codex => {
                             // As of the request: a log line written meanwhile is newer.

@@ -35,6 +35,8 @@ pub enum Problem {
     /// The provider asked to slow down, for this long if it said.
     RateLimited(Option<Duration>),
     Failed(String),
+    /// The worker was stopped before its next request; nothing was asked.
+    Stopped,
 }
 
 impl Problem {
@@ -54,6 +56,7 @@ impl Problem {
             ),
             Problem::RateLimited(_) => format!("{company} is busy; trying again in a while."),
             Problem::Failed(e) => format!("Can't get {name}'s limits: {e}"),
+            Problem::Stopped => format!("Stopped asking for {name}'s limits"),
         }
     }
 }

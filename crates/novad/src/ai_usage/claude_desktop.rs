@@ -80,18 +80,27 @@ impl Desktop {
         Self { config, bus: Bus::Session }
     }
 
-    /// A token that can read the usage endpoint at `now`.
-    pub fn read_token(&self, now: Timestamp) -> Result<Token, Problem> {
+    /// A token that can read the usage endpoint at `now`. `stopped` is
+    /// checked before the keyring is asked. A cache that can't be opened
+    /// (a locked keyring) doesn't hide a token in another; its problem
+    /// shows only when no cache has one.
+    pub fn read_token(&self, now: Timestamp, stopped: &dyn Fn() -> bool) -> Result<Token, Problem> {
         let config = endpoint::read_sign_in(&self.config)?;
         let caches: Vec<&str> = TOKEN_CACHES.iter().filter_map(|name| config.get(*name)?.as_str()).collect();
-        if caches.is_empty() {
-            return Err(Problem::SignedOut);
-        }
         let mut password = None;
         let mut best: Option<(i64, Token)> = None;
+        let mut problem = Problem::SignedOut;
         for cache in caches {
             let Some(sealed) = base64::engine::general_purpose::STANDARD.decode(cache).ok() else { continue };
-            let Some(plain) = self.open(&sealed, &mut password)? else { continue };
+            let plain = match self.open(&sealed, &mut password, stopped) {
+                Ok(Some(plain)) => plain,
+                Ok(None) => continue,
+                Err(Problem::Stopped) => return Err(Problem::Stopped),
+                Err(e) => {
+                    problem = e;
+                    continue;
+                }
+            };
             let Ok(entries) = serde_json::from_slice::<Value>(&plain) else { continue };
             for (expires, token) in usable_tokens(&entries, now) {
                 if best.as_ref().is_none_or(|(latest, _)| expires > *latest) {
@@ -99,15 +108,20 @@ impl Desktop {
                 }
             }
         }
-        best.map(|(_, token)| token).ok_or(Problem::SignedOut)
+        best.map(|(_, token)| token).ok_or(problem)
     }
 
     /// `sealed` decrypted, `None` when it isn't in a format this knows or
     /// doesn't decrypt. The keyring is asked once, the first time it's needed.
-    fn open(&self, sealed: &[u8], password: &mut Option<Vec<u8>>) -> Result<Option<Vec<u8>>, Problem> {
+    fn open(
+        &self,
+        sealed: &[u8],
+        password: &mut Option<Vec<u8>>,
+        stopped: &dyn Fn() -> bool,
+    ) -> Result<Option<Vec<u8>>, Problem> {
         let (password, ciphertext) = if let Some(rest) = sealed.strip_prefix(KEYRING_PREFIX) {
             if password.is_none() {
-                *password = Some(keyring_password(&self.bus)?);
+                *password = Some(keyring_password(&self.bus, stopped)?);
             }
             (password.as_deref().unwrap_or_default(), rest)
         } else if let Some(rest) = sealed.strip_prefix(NO_KEYRING_PREFIX) {
@@ -147,13 +161,17 @@ fn usable_tokens(entries: &Value, now: Timestamp) -> Vec<(i64, Token)> {
 
 /// The `safeStorage` password from the Secret Service on `bus`. No item
 /// means the app never stored one (signed out); a locked one isn't
-/// unlocked, since that would prompt the user.
-fn keyring_password(bus: &Bus) -> Result<Vec<u8>, Problem> {
+/// unlocked, since that would prompt the user. `stopped` is checked before
+/// each call.
+fn keyring_password(bus: &Bus, stopped: &dyn Fn() -> bool) -> Result<Vec<u8>, Problem> {
     let failed = |e: zbus::Error| Problem::Failed(format!("can't ask the keyring: {e}"));
+    let unless_stopped = || if stopped() { Err(Problem::Stopped) } else { Ok(()) };
     zbus::block_on(async {
+        unless_stopped()?;
         let connection = bus.builder().method_timeout(CALL_TIMEOUT).build().await.map_err(failed)?;
         let service = |method: &'static str| (Some(SECRETS_SERVICE), SECRETS_PATH, Some(SECRETS_INTERFACE), method);
         let attributes = HashMap::from([("application", KEYRING_APPLICATION)]);
+        unless_stopped()?;
         let (name, path, interface, method) = service("SearchItems");
         let reply = connection.call_method(name, path, interface, method, &(attributes,)).await.map_err(failed)?;
         let (unlocked, locked): (Vec<OwnedObjectPath>, Vec<OwnedObjectPath>) =
@@ -166,10 +184,12 @@ fn keyring_password(bus: &Bus) -> Result<Vec<u8>, Problem> {
             });
         };
         // The session ends with the connection, when this returns.
+        unless_stopped()?;
         let (name, path, interface, method) = service("OpenSession");
         let request = (PLAIN_ALGORITHM, Variant::from(""));
         let reply = connection.call_method(name, path, interface, method, &request).await.map_err(failed)?;
         let (_, session): (OwnedVariant, OwnedObjectPath) = reply.body().deserialize().map_err(failed)?;
+        unless_stopped()?;
         let (name, path, interface, method) = service("GetSecrets");
         let request = (vec![&item], &session);
         let reply = connection.call_method(name, path, interface, method, &request).await.map_err(failed)?;
@@ -219,6 +239,8 @@ mod tests {
     use serde_json::json;
 
     const PASSWORD: &[u8] = b"keyring-password";
+    /// A `stopped` that never is.
+    const RUNNING: fn() -> bool = || false;
 
     fn now() -> Timestamp {
         "2026-11-01T21:00:00Z".parse().unwrap()
@@ -300,7 +322,7 @@ mod tests {
     fn reads_the_profile_token_with_the_keyrings_password() {
         let config = json!({"locale": "en-US", TOKEN_CACHES[0]: seal(KEYRING_PREFIX, PASSWORD, &cache())});
         let fixture = fixture("v11", config, false);
-        let token = fixture.desktop.read_token(now()).unwrap();
+        let token = fixture.desktop.read_token(now(), &RUNNING).unwrap();
         assert_eq!((token.access(), token.plan.as_deref()), ("profile-token", Some("Max")));
     }
 
@@ -310,7 +332,7 @@ mod tests {
         // No keyring on this bus: a `v10` cache never asks it.
         let fixture = fixture("v10", config, false);
         let desktop = Desktop { bus: Bus::Address("unix:path=/nonexistent".into()), ..fixture.desktop.clone() };
-        assert_eq!(desktop.read_token(now()).unwrap().access(), "profile-token");
+        assert_eq!(desktop.read_token(now(), &RUNNING).unwrap().access(), "profile-token");
     }
 
     #[test]
@@ -321,35 +343,57 @@ mod tests {
             TOKEN_CACHES[1]: seal(KEYRING_PREFIX, PASSWORD, &newer),
         });
         let fixture = fixture("latest", config, false);
-        assert_eq!(fixture.desktop.read_token(now()).unwrap().access(), "newer");
+        assert_eq!(fixture.desktop.read_token(now(), &RUNNING).unwrap().access(), "newer");
     }
 
     #[test]
     fn expired_tokens_are_not_used() {
         let expired = json!({entry_name("user:profile"): {"token": "old", "expiresAt": 1_700_000_000_000_i64}});
         let fixture = fixture("expired", json!({TOKEN_CACHES[0]: seal(KEYRING_PREFIX, PASSWORD, &expired)}), false);
-        assert_eq!(fixture.desktop.read_token(now()).err(), Some(Problem::SignedOut));
+        assert_eq!(fixture.desktop.read_token(now(), &RUNNING).err(), Some(Problem::SignedOut));
     }
 
     #[test]
     fn a_locked_keyring_is_not_unlocked() {
         let config = json!({TOKEN_CACHES[0]: seal(KEYRING_PREFIX, PASSWORD, &cache())});
         let fixture = fixture("locked", config, true);
-        assert_eq!(fixture.desktop.read_token(now()).err(), Some(Problem::Failed("the keyring is locked".into())));
+        assert_eq!(
+            fixture.desktop.read_token(now(), &RUNNING).err(),
+            Some(Problem::Failed("the keyring is locked".into()))
+        );
     }
 
     #[test]
     fn a_cache_sealed_with_another_password_is_signed_out() {
         let config = json!({TOKEN_CACHES[0]: seal(KEYRING_PREFIX, b"another", &cache())});
         let fixture = fixture("other-password", config, false);
-        assert_eq!(fixture.desktop.read_token(now()).err(), Some(Problem::SignedOut));
+        assert_eq!(fixture.desktop.read_token(now(), &RUNNING).err(), Some(Problem::SignedOut));
+    }
+
+    #[test]
+    fn a_locked_keyring_leaves_a_cache_that_needs_none() {
+        let config = json!({
+            TOKEN_CACHES[0]: seal(KEYRING_PREFIX, PASSWORD, &cache()),
+            TOKEN_CACHES[1]: seal(NO_KEYRING_PREFIX, NO_KEYRING_PASSWORD, &cache()),
+        });
+        let fixture = fixture("locked-mixed", config, true);
+        assert_eq!(fixture.desktop.read_token(now(), &RUNNING).unwrap().access(), "profile-token");
+    }
+
+    #[test]
+    fn a_stopped_read_never_asks_the_keyring() {
+        let config = json!({TOKEN_CACHES[0]: seal(KEYRING_PREFIX, PASSWORD, &cache())});
+        // No keyring here: asking it would fail, not stop.
+        let fixture = fixture("stopped", config, false);
+        let desktop = Desktop { bus: Bus::Address("unix:path=/nonexistent".into()), ..fixture.desktop.clone() };
+        assert_eq!(desktop.read_token(now(), &|| true).err(), Some(Problem::Stopped));
     }
 
     #[test]
     fn no_app_or_no_cache_means_signed_out() {
         let desktop = Desktop { config: PathBuf::from("/nonexistent/config.json"), bus: Bus::Session };
-        assert_eq!(desktop.read_token(now()).err(), Some(Problem::SignedOut));
+        assert_eq!(desktop.read_token(now(), &RUNNING).err(), Some(Problem::SignedOut));
         let fixture = fixture("no-cache", json!({"locale": "en-US"}), false);
-        assert_eq!(fixture.desktop.read_token(now()).err(), Some(Problem::SignedOut));
+        assert_eq!(fixture.desktop.read_token(now(), &RUNNING).err(), Some(Problem::SignedOut));
     }
 }
