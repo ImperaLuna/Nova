@@ -1750,8 +1750,7 @@ pub struct Host {
     /// The machine's host name.
     pub host: String,
     /// What to call the user: config.toml's `[quick-settings] name` ("" for
-    /// none), else the first name from their account's full name, else
-    /// their login name.
+    /// none), else their login name.
     pub user: String,
     /// When the machine booted, in seconds since the Unix epoch.
     pub booted_at: i64,

@@ -83,8 +83,8 @@ impl WallpaperConfig {
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct QuickSettingsConfig {
-    /// What the greeting calls the user, instead of the first name from
-    /// their account; "" for no name.
+    /// What the greeting calls the user, instead of their login name; ""
+    /// for no name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -220,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn the_greeting_name_is_the_accounts_unless_set() {
+    fn the_greeting_name_is_the_login_unless_set() {
         let config: Config = toml::from_str("").unwrap();
         assert_eq!(config.quick_settings.name, None);
         let config: Config = toml::from_str("[quick-settings]\nname = \"Katov\"").unwrap();
