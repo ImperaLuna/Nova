@@ -270,6 +270,7 @@ StagePanel {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, Tokens.mediaArtistMax)
                 visible: root.showsArtist
+                elide: Text.ElideRight
                 font.pixelSize: Tokens.fontSizeSmall
                 color: Tokens.fgDim
                 text: root.current?.artist ?? ""

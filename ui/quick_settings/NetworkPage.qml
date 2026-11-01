@@ -139,17 +139,22 @@ Item {
                 readonly property int mbps: Network.linkMbps(page.network)
 
                 Row {
+                    id: link
                     spacing: Tokens.gap
 
                     LineIcon {
+                        id: linkIcon
                         anchors.verticalCenter: parent.verticalCenter
                         path: card.icon
                         fill: Network.iconFill(card.icon)
                         size: Tokens.iconSizeSmall
                     }
+                    // A long network name ends in an ellipsis; the link speed stays.
                     Text {
                         objectName: "linkName"
                         anchors.verticalCenter: parent.verticalCenter
+                        width: Math.min(implicitWidth, Math.max(0, card.width - linkIcon.width - (linkSpeed.visible ? linkSpeed.width + link.spacing : 0) - link.spacing))
+                        elide: Text.ElideRight
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSizeSmall
                         font.weight: Font.DemiBold
@@ -158,6 +163,7 @@ Item {
                         text: Network.linkName(page.network)
                     }
                     Text {
+                        id: linkSpeed
                         anchors.verticalCenter: parent.verticalCenter
                         visible: card.mbps > 0
                         font.family: Tokens.fontSans

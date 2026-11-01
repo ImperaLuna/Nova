@@ -192,11 +192,15 @@ Item {
                                 height: Tokens.notificationChipHeight + Tokens.labelNudge * 4
 
                                 Row {
+                                    id: appHeading
                                     x: Tokens.labelNudge * 4
                                     anchors.verticalCenter: parent.verticalCenter
                                     spacing: Tokens.gap
 
+                                    // A long app name ends in an ellipsis before the count and the buttons.
                                     Text {
+                                        width: Math.min(implicitWidth, Math.max(0, appActions.x - appHeading.x - Tokens.gap - appCount.width - appHeading.spacing))
+                                        elide: Text.ElideRight
                                         font.family: Tokens.fontSans
                                         font.pixelSize: Tokens.fontSizeSmall
                                         font.weight: Font.DemiBold
@@ -205,6 +209,7 @@ Item {
                                         text: group.modelData.app
                                     }
                                     Text {
+                                        id: appCount
                                         font.family: Tokens.fontMono
                                         font.pixelSize: Tokens.fontSizeTiny
                                         color: Tokens.fgDim
@@ -212,6 +217,7 @@ Item {
                                     }
                                 }
                                 Row {
+                                    id: appActions
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
                                     TextButton {

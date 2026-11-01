@@ -61,8 +61,12 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             Repeater {
                 model: row.app.runs
+                // Each run takes what's left of the label, so a long name
+                // ends in an ellipsis instead of being cut mid-letter.
                 delegate: Text {
                     required property var modelData
+                    width: Math.min(implicitWidth, Math.max(0, label.width - x))
+                    elide: Text.ElideRight
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSize
                     font.weight: modelData.matched ? Font.DemiBold : Font.Medium
