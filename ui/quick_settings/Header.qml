@@ -44,17 +44,17 @@ Item {
         width: header.width - x
 
         // The greeting at its size where it fits, else smaller, down to
-        // fontSizeGreetingMin; then the name is cut short.
+        // fontSizeHeading; then the name is cut short.
         TextMetrics {
             id: hello
             font.family: Tokens.fontDisplay
-            font.pixelSize: Tokens.fontSizeGreeting
+            font.pixelSize: Tokens.fontSizeDisplay
             text: greeting.text
         }
         TextMetrics {
             id: called
             font.family: Tokens.fontDisplay
-            font.pixelSize: Tokens.fontSizeGreeting
+            font.pixelSize: Tokens.fontSizeDisplay
             font.italic: true
             text: header.name
         }
@@ -63,7 +63,7 @@ Item {
             id: greetingRow
             width: parent.width
             readonly property real wide: hello.advanceWidth + called.advanceWidth
-            readonly property int size: wide <= width ? Tokens.fontSizeGreeting : Math.max(Tokens.fontSizeGreetingMin, Math.floor(Tokens.fontSizeGreeting * width / wide))
+            readonly property int size: wide <= width ? Tokens.fontSizeDisplay : Math.max(Tokens.fontSizeHeading, Math.floor(Tokens.fontSizeDisplay * width / wide))
 
             Text {
                 id: greeting
@@ -98,7 +98,7 @@ Item {
             }
             Text {
                 font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeTiny
+                font.pixelSize: Tokens.fontSizeSmall
                 color: Tokens.fgDim
                 textFormat: Text.PlainText
                 text: header.detail

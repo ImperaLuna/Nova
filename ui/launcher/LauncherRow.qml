@@ -130,7 +130,7 @@ Item {
         Text {
             anchors.verticalCenter: parent.verticalCenter
             font.family: Tokens.fontMono
-            font.pixelSize: Tokens.fontSizeTiny
+            font.pixelSize: Tokens.fontSizeSmall
             color: row.dim
             opacity: row.selected ? 1 : 0
             text: "↵"

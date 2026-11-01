@@ -106,7 +106,7 @@ Item {
                         width: parent.width - when.width - Tokens.gap
                         elide: Text.ElideRight
                         font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSizeTiny
+                        font.pixelSize: Tokens.fontSizeSmall
                         color: Tokens.fgSoft
                         textFormat: Text.PlainText
                         text: card.notification.app

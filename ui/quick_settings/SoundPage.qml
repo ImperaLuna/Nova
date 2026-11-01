@@ -98,7 +98,7 @@ Item {
                         width: current.width
                         elide: Text.ElideRight
                         font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSizeTiny
+                        font.pixelSize: Tokens.fontSizeSmall
                         color: Tokens.fgDim
                         text: QuickSettings.currentLink(page.input ? page.inputs : page.outputs)
                     }

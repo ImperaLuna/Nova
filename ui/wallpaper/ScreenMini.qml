@@ -46,7 +46,7 @@ Item {
         anchors.topMargin: Tokens.carouselMiniRing + 1
         anchors.horizontalCenter: parent.horizontalCenter
         font.family: Tokens.fontMono
-        font.pixelSize: Tokens.fontSizeTiny
+        font.pixelSize: Tokens.fontSizeSmall
         color: mini.chosen ? Tokens.fg : Tokens.fgDim
         textFormat: Text.PlainText
         text: mini.name

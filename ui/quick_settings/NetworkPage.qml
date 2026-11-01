@@ -167,7 +167,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: card.mbps > 0
                         font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSizeTiny
+                        font.pixelSize: Tokens.fontSizeSmall
                         color: Tokens.fgDim
                         text: qsTr("%1 link").arg(Network.linkSpeed(card.mbps))
                     }
@@ -562,7 +562,7 @@ Item {
                     visible: page.wrong
                     rightPadding: Tokens.gap
                     font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.error
                     text: qsTr("Wrong password")
                 }
@@ -638,7 +638,7 @@ Item {
                 width: parent.width
                 elide: Text.ElideRight
                 font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeTiny
+                font.pixelSize: Tokens.fontSizeSmall
                 color: line.subtitleColor
                 textFormat: Text.PlainText
                 text: line.subtitle
@@ -666,7 +666,7 @@ Item {
                     id: roleText
                     anchors.centerIn: parent
                     font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     font.weight: parent.inUse ? Font.DemiBold : Font.Normal
                     color: parent.inUse ? Tokens.onAccent : Tokens.fgSoft
                     text: Network.roleLabel(line.role)
@@ -732,7 +732,7 @@ Item {
             id: label
             anchors.centerIn: parent
             font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSizeTiny
+            font.pixelSize: Tokens.fontSizeSmall
             font.weight: button.accent ? Font.DemiBold : Font.Normal
             color: button.accent ? Tokens.onAccent : Tokens.fg
         }
@@ -762,7 +762,7 @@ Item {
         Text {
             anchors.verticalCenter: parent.verticalCenter
             font.family: Tokens.fontMono
-            font.pixelSize: Tokens.fontSizeTraffic
+            font.pixelSize: Tokens.fontSizeTitle
             color: Tokens.fg
             text: `${speed.arrow} ${Network.speed(speed.values.length > 0 ? speed.values[speed.values.length - 1] : 0)}`
         }

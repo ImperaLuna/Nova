@@ -229,7 +229,7 @@ StagePanel {
                 id: planText
                 anchors.centerIn: parent
                 font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeTiny
+                font.pixelSize: Tokens.fontSizeSmall
                 font.weight: Font.Medium
                 color: Tokens.fgDim
                 textFormat: Text.PlainText

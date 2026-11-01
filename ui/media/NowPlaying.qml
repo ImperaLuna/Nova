@@ -554,7 +554,7 @@ StagePanel {
                     anchors.rightMargin: Tokens.rowInset
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(implicitWidth, goTo.width / 2)
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.fgDim
                     text: root.workspace !== "" ? `workspace ${root.workspace}` : ""
                 }

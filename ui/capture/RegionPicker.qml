@@ -252,7 +252,7 @@ Item {
                 textFormat: Text.PlainText
                 color: Tokens.fgDim
                 font.family: Tokens.fontMono
-                font.pixelSize: Tokens.fontSizeTiny
+                font.pixelSize: Tokens.fontSizeSmall
             }
         }
 

@@ -126,7 +126,7 @@ Item {
                     id: mark
                     anchors.centerIn: parent
                     font.family: Tokens.fontMono
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     font.weight: Font.Medium
                     color: Tokens.fg
                     textFormat: Text.PlainText

@@ -435,7 +435,7 @@ StagePanel {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizePageTitle
+                    font.pixelSize: Tokens.fontSizeHeading
                     font.weight: Font.Medium
                     color: carousel.problem !== "" ? Tokens.error : Tokens.fg
                     textFormat: Text.PlainText
@@ -515,7 +515,7 @@ StagePanel {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: carousel.screenNames.length > 1
                     font.family: Tokens.fontMono
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.fgDim
                     text: qsTr("Tab")
                 }

@@ -240,7 +240,7 @@ StagePanel {
                     x: searchIcon.x + searchIcon.width + Tokens.launcherGap
                     width: escHint.x - x - Tokens.launcherGap
                     font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizeSearch
+                    font.pixelSize: Tokens.fontSizeHeading
                     font.weight: Font.Medium
                     color: Tokens.fg
                     selectionColor: Tokens.primary
@@ -276,7 +276,7 @@ StagePanel {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: field.text === ""
                         font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSizeSearch
+                        font.pixelSize: Tokens.fontSizeHeading
                         color: Tokens.fgDim
                         text: qsTr("Search apps")
                     }
@@ -288,7 +288,7 @@ StagePanel {
                     anchors.right: parent.right
                     anchors.rightMargin: Tokens.launcherPad
                     font.family: Tokens.fontMono
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.fgDim
                     text: qsTr("Esc")
                 }
@@ -422,7 +422,7 @@ StagePanel {
         leftPadding: Tokens.rowInset
         verticalAlignment: Text.AlignVCenter
         font.family: Tokens.fontSans
-        font.pixelSize: Tokens.fontSizeTiny
+        font.pixelSize: Tokens.fontSizeSmall
         font.capitalization: Font.AllUppercase
         color: Tokens.fgDim
     }

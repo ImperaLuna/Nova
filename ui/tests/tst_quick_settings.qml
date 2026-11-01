@@ -322,16 +322,16 @@ Item {
             waitForRendering(header);
             const greeting = findChild(header, "greeting");
             const name = findChild(header, "name");
-            verify(greeting.font.pixelSize < Tokens.fontSizeGreeting, "smaller to fit");
+            verify(greeting.font.pixelSize < Tokens.fontSizeDisplay, "smaller to fit");
             verify(greeting.width + name.width <= header.width - name.parent.x + 1);
             compare(name.text, "Katov");
             header.name = "Maximiliana-Bartholomea";
             waitForRendering(header);
-            compare(greeting.font.pixelSize, Tokens.fontSizeGreetingMin);
+            compare(greeting.font.pixelSize, Tokens.fontSizeHeading);
             verify(name.truncated, "a name too long is cut short");
             header.name = "";
             header.width = 400;
-            compare(greeting.font.pixelSize, Tokens.fontSizeGreeting);
+            compare(greeting.font.pixelSize, Tokens.fontSizeDisplay);
         }
 
         function test_graph_ends_at_the_right_edge() {

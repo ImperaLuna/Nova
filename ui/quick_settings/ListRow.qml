@@ -57,7 +57,7 @@ Item {
             width: parent.width
             elide: Text.ElideRight
             font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSizeTiny
+            font.pixelSize: Tokens.fontSizeSmall
             color: Tokens.fgDim
             textFormat: Text.PlainText
             text: row.subtitle
@@ -70,7 +70,7 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: Tokens.pad
         font.family: Tokens.fontSans
-        font.pixelSize: Tokens.fontSizeTiny
+        font.pixelSize: Tokens.fontSizeSmall
         color: row.selected ? Tokens.primary : Tokens.fgDim
         text: row.status
     }

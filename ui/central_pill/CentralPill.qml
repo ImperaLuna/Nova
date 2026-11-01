@@ -247,7 +247,7 @@ Item {
                         visible: slot.isDigit
                         text: slot.character
                         font.family: Tokens.fontMono
-                        font.pixelSize: Tokens.fontSizeTime
+                        font.pixelSize: Tokens.fontSize
                         font.weight: Font.DemiBold
                         color: Tokens.fg
                     }

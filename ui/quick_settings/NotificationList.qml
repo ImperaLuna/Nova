@@ -211,7 +211,7 @@ Item {
                                     Text {
                                         id: appCount
                                         font.family: Tokens.fontMono
-                                        font.pixelSize: Tokens.fontSizeTiny
+                                        font.pixelSize: Tokens.fontSizeSmall
                                         color: Tokens.fgDim
                                         text: group.modelData.items.length
                                     }
@@ -267,7 +267,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             font.family: Tokens.fontDisplay
             font.italic: true
-            font.pixelSize: Tokens.fontSizeEmpty
+            font.pixelSize: Tokens.fontSizeDisplay
             color: Tokens.fg
             text: qsTr("All caught up")
         }
@@ -330,7 +330,7 @@ Item {
             id: buttonText
             anchors.centerIn: parent
             font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSizeTiny
+            font.pixelSize: Tokens.fontSizeSmall
             font.weight: Font.Medium
             color: Tokens.fg
             textFormat: Text.PlainText

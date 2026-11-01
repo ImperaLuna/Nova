@@ -108,7 +108,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: !hover.hovered && !row.menuOpen
                     font.family: Tokens.fontMono
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.fgSoft
                     text: Duration.ago(row.notification.time, row.now)
                 }

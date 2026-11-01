@@ -59,7 +59,7 @@ Item {
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         font.family: Tokens.fontMono
-        font.pixelSize: Tokens.fontSizeTiny
+        font.pixelSize: Tokens.fontSizeSmall
         font.weight: Font.Medium
         color: Tokens.fg
         text: ring.reading

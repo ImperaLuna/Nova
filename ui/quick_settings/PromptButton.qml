@@ -21,7 +21,7 @@ Rectangle {
         id: label
         anchors.centerIn: parent
         font.family: Tokens.fontSans
-        font.pixelSize: Tokens.fontSizeTiny
+        font.pixelSize: Tokens.fontSizeSmall
         font.weight: button.accent ? Font.DemiBold : Font.Normal
         color: button.accent ? Tokens.onAccent : Tokens.fg
     }
