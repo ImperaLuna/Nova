@@ -38,14 +38,15 @@ Item {
     }
 
     // What's on this screen: the workspace it shows and that workspace's
-    // window, and the focused window's title while focus is here (a page
-    // that changes, mostly changes the title). Another screen's changes
-    // don't copy this one.
+    // window, its windows moving or resizing (`layout`), and the focused
+    // window's title while focus is here (a page that changes, mostly
+    // changes the title). Another screen's changes don't copy this one.
     readonly property string scene: {
         const name = screen?.name ?? "";
-        const shown = Compositor.output(name)?.workspaces.find(workspace => workspace.active) ?? null;
+        const output = Compositor.output(name);
+        const shown = output?.workspaces.find(workspace => workspace.active) ?? null;
         const title = Compositor.focusedOutput?.name === name ? Compositor.focusedWindow?.title ?? "" : "";
-        return Protocol.focusKey(shown) + "\n" + title;
+        return [Protocol.focusKey(shown), output?.layout ?? 0, title].join("\n");
     }
     property bool wanted: false
     onSceneChanged: {
