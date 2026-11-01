@@ -42,6 +42,11 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   PanelSurface, mapped only while one of its panels is shown and sized to
   their areas; the stage contract (mask, blur, keyboard, dismiss, toggle)
   is the same. One growing out of a stage pill sets `from` to that pill.
+- Glass thickens over bright windows from a small copy of the screen: one
+  `Backdrop` per window (a texture draws only in its own window), which
+  every `Glass` in that window finds by itself. Copies are taken only while
+  no panel or pop-up is out (`quiet`), so glass never sees itself; a window
+  without one keeps the fixed tint.
 - The stage never reserves space, so opening a panel never moves app
   windows. A separate, empty exclusion-zone surface reserves the bar's space
   and changes only when the bar shows or hides.

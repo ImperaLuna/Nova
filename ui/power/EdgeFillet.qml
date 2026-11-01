@@ -3,8 +3,9 @@ import QtQuick.Shapes
 import "../theme"
 
 // The concave corner that joins an edge tab to the screen's right edge: a
-// square of glass tint with a quarter circle cut from its far corner, and
-// the glass's outline along the curve. `above`: it sits on top of the tab,
+// square of glass tint (as thick as the tab's beside it, GlassTint) with a
+// quarter circle cut from its far corner, and the glass's outline along the
+// curve. `above`: it sits on top of the tab,
 // curving up into the edge; otherwise below, curving down. A part of the tab
 // (StagePanel `parts`): it takes clicks and is blurred like the tab, all but
 // its cutout.
@@ -27,13 +28,23 @@ Shape {
 
     preferredRendererType: Shape.CurveRenderer
 
+    // Under the outline.
+    GlassTint {
+        id: tint
+        z: -1
+        anchors.fill: parent
+        cutout: true
+        cutCentre: Qt.point(0, fillet.above ? 0 : fillet.height)
+        cutRadius: fillet.width
+    }
+
     // The tab's top (or bottom) edge, the screen edge, and the curve that
     // joins them away from the corner they share.
     readonly property real edgeY: above ? height : 0
     readonly property real farY: above ? 0 : height
     ShapePath {
         strokeColor: "transparent"
-        fillColor: Tokens.glass
+        fillColor: tint.active ? "transparent" : Tokens.glass
         startX: 0
         startY: fillet.edgeY
         PathLine {

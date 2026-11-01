@@ -78,6 +78,9 @@ Item {
                 panel.moving = false;
             }
             usage.x = usage.y = usage.width = usage.height = 0;
+            fixedPill.x = fixedPill.width = 0;
+            fixedPill.visible = true;
+            notes.x = notes.width = notes.height = 0;
             usage.parts = [];
             fillet.visible = true;
             drawn.panels = [usage, launcher, notes];
@@ -114,6 +117,52 @@ Item {
             compare(drawn.reach, 44, "the stage doesn't shrink under it");
             fixedPill.visible = true;
             verify(drawn.shapes.includes(fixedPill));
+        }
+
+        // The AI usage panel open over the now-playing pill beside it: that
+        // pill hides while the panel is open over it.
+        function test_an_item_an_open_panel_is_over_hides() {
+            fixedPill.x = 316;
+            fixedPill.y = 8;
+            fixedPill.width = 200;
+            fixedPill.height = 36;
+            usage.x = 16;
+            usage.y = 8;
+            usage.width = 290;
+            usage.height = 36;
+            usage.open = true;
+            compare(drawn.underPanels.length, 0, "beside it, a gap apart");
+            usage.width = 301;
+            verify(drawn.underPanels.includes(fixedPill), "grown over its edge");
+            verify(!drawn.underPanels.includes(usage), "never under itself");
+            fixedPill.x = 400;
+            verify(!drawn.underPanels.includes(fixedPill), "moved clear of it");
+            fixedPill.x = 300;
+            verify(drawn.underPanels.includes(fixedPill), "moved under it");
+            fixedPill.visible = false;
+            verify(drawn.underPanels.includes(fixedPill), "still under it once hidden");
+            usage.open = false;
+            usage.moving = true;
+            compare(drawn.underPanels.length, 0, "closing, it's drawn below again");
+        }
+
+        // A closed pill whose content moves (a scrolling title) isn't drawn
+        // over the open panel beside it, and open panels never hide each
+        // other.
+        function test_only_an_open_panel_hides_what_it_is_over() {
+            usage.x = 16;
+            usage.width = 420;
+            usage.height = 300;
+            usage.open = true;
+            notes.x = 300;
+            notes.width = 200;
+            notes.height = 36;
+            notes.moving = true;
+            verify(drawn.underPanels.includes(notes), "a closed pill under it");
+            verify(!drawn.underPanels.includes(usage), "its content moving doesn't hide the open one");
+            notes.moving = false;
+            notes.open = true;
+            compare(drawn.underPanels.length, 0, "both open");
         }
 
         function test_a_click_on_a_drawn_item_is_not_outside() {

@@ -14,6 +14,10 @@ import "volume.js" as Volume
 PanelWindow { // qmllint disable uncreatable-type
     id: window
 
+    readonly property CoversGlass cover: CoversGlass {
+        shown: window.visible
+    }
+
     screen: output.screen
     // Its screen (StageScreen).
     required property StageScreen output

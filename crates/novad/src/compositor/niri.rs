@@ -281,6 +281,8 @@ pub(super) struct State {
     output_sizes: HashMap<String, (f64, f64)>,
     /// Whether `output_sizes` is up to date; asked for in `catch_up`.
     outputs_known: bool,
+    /// Each output's `layout`, by name: how often windows on it moved.
+    moved: HashMap<String, u64>,
 }
 
 impl State {
@@ -336,6 +338,10 @@ impl State {
                 for (id, layout) in changes {
                     if let Some(window) = self.windows.get_mut(&id) {
                         window.layout = Some(layout);
+                        let output = window.workspace_id.and_then(|id| self.workspaces.get(&id)?.output.clone());
+                        if let Some(output) = output {
+                            *self.moved.entry(output).or_default() += 1;
+                        }
                     }
                 }
                 self.outputs_known = false;
@@ -411,6 +417,7 @@ impl State {
                 Output {
                     name: name.into(),
                     focused: workspaces.iter().any(|workspace| workspace.is_focused),
+                    layout: self.moved.get(name).copied().unwrap_or_default(),
                     workspaces: workspaces
                         .into_iter()
                         .map(|workspace| NovaWorkspace {

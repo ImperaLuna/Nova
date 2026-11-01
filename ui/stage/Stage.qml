@@ -71,6 +71,8 @@ Scope {
     // A new layer goes out with a frame, and the stage may not be drawing
     // (another surface's panel opened).
     onSurfaceLayerChanged: drawing.settle()
+    // Nothing of Nova's but the bar is on screen: a Backdrop can copy it.
+    readonly property bool quiet: all.shown.length === 0 && !GlassBackdrops.covered
     // Where the PanelSurfaces with panels shown are, in screen coordinates.
     readonly property list<rect> panelBoxes: [right, center].filter(surface => !surface.parked).map(surface => surface.box)
     function placed(placement: string): list<StagePanel> {
@@ -96,7 +98,7 @@ Scope {
         id: drawing
         window: stage
         name: `${root.output.name}/top`
-        moving: drawn.moving || bar.sliding
+        moving: drawn.moving || bar.sliding || bar.fading
     }
 
     // The power menu on the right edge, while its feature is on.
@@ -231,6 +233,7 @@ Scope {
         panels: root.placed("right")
         clickAnywhere: all.catchesClicks
         holding: root.settling
+        quiet: root.quiet
         onDismissRequested: OpenPanels.dismissed()
     }
 
@@ -241,6 +244,7 @@ Scope {
         panels: root.placed("center")
         clickAnywhere: all.catchesClicks
         holding: root.settling
+        quiet: root.quiet
         onDismissRequested: OpenPanels.dismissed()
     }
 
@@ -295,6 +299,13 @@ Scope {
             onDismissRequested: OpenPanels.dismissed()
         }
 
+        // For its glass to thicken over bright windows. A copy of the screen
+        // sees only what's behind while no panel or pop-up is out.
+        Backdrop {
+            screen: root.screen
+            quiet: root.quiet
+        }
+
         Bar {
             id: bar
             anchors.fill: parent
@@ -309,6 +320,8 @@ Scope {
             // closed, and the surface it's on stays until that's drawn.
             covered: root.panels.filter(panel => panel.covering && panel.from).map(panel => panel.from)
             onCoveredChanged: drawing.settle()
+            // Its items an open panel on the stage is over, so they fade.
+            underPanels: drawn.underPanels
             quickSettings: QuickSettingsService.ready
             power: PowerService.ready
             quickSettingsOpen: quickSettings.item?.open ?? false

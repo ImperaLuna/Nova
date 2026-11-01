@@ -255,6 +255,8 @@ pub(super) struct State {
     stale_workspaces: bool,
     stale_windows: bool,
     stale_layout: bool,
+    /// Each output's `layout`, by name: how often windows on it moved.
+    moved: HashMap<String, u64>,
 }
 
 impl State {
@@ -270,6 +272,7 @@ impl State {
             stale_workspaces: true,
             stale_windows: true,
             stale_layout: true,
+            moved: HashMap::new(),
         };
         state.catch_up(ask)?;
         Ok(state)
@@ -283,10 +286,32 @@ impl State {
             | "renameworkspace" | "monitoraddedv2" | "monitorremovedv2" | "configreloaded" | "activespecialv2" => {
                 self.stale_workspaces = true;
             }
-            "openwindow" | "movewindowv2" | "fullscreen" => self.stale_windows = true,
+            "openwindow" => {
+                self.stale_windows = true;
+                // ADDRESS,WORKSPACENAME,CLASS,TITLE
+                let workspace = data.split(',').nth(1).and_then(|name| self.workspace_named(name));
+                self.moved_on(workspace);
+            }
+            "movewindowv2" => {
+                self.stale_windows = true;
+                // ADDRESS,WORKSPACEID,WORKSPACENAME: where it was, and where it went.
+                let mut fields = data.split(',');
+                let from = fields.next().and_then(|address| Some(self.windows.get(address)?.workspace));
+                self.moved_on(from);
+                self.moved_on(fields.next().and_then(|id| id.parse().ok()));
+            }
+            "fullscreen" => {
+                self.stale_windows = true;
+                self.moved_on(None);
+            }
+            "changefloatingmode" => {
+                let workspace = data.split(',').next().and_then(|address| Some(self.windows.get(address)?.workspace));
+                self.moved_on(workspace);
+            }
             "closewindow" => {
-                self.windows.remove(data);
+                let workspace = self.windows.remove(data).map(|window| window.workspace);
                 self.urgent.remove(data);
+                self.moved_on(workspace);
             }
             "windowtitlev2" => {
                 if let Some((address, title)) = data.split_once(',')
@@ -310,6 +335,23 @@ impl State {
             // One per keyboard; which is the main one is in the devices.
             "activelayout" => self.stale_layout = true,
             _ => {}
+        }
+    }
+
+    fn workspace_named(&self, name: &str) -> Option<WorkspaceId> {
+        self.workspaces.iter().find(|workspace| workspace.name == name).map(|workspace| workspace.id)
+    }
+
+    /// Windows moved on the monitor showing `workspace`, or the focused one
+    /// when it isn't known (Hyprland reports no resizes).
+    fn moved_on(&mut self, workspace: Option<WorkspaceId>) {
+        let on = workspace.and_then(|id| self.workspaces.iter().find(|workspace| workspace.id == id));
+        let monitor = match on {
+            Some(workspace) => Some(workspace.monitor.clone()),
+            None => self.monitors.iter().find(|monitor| monitor.focused).map(|monitor| monitor.name.clone()),
+        };
+        if let Some(monitor) = monitor {
+            *self.moved.entry(monitor).or_default() += 1;
         }
     }
 
@@ -380,6 +422,7 @@ impl State {
                 Output {
                     name: monitor.name.clone(),
                     focused: monitor.focused,
+                    layout: self.moved.get(&monitor.name).copied().unwrap_or_default(),
                     workspaces: listed
                         .map(|(workspace, name, special)| {
                             // A special workspace showing covers the one

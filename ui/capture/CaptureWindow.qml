@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import "../stage"
+import "../theme"
 import "service"
 import "capture.js" as Capture
 
@@ -14,6 +15,10 @@ import "capture.js" as Capture
 // the live screen. The toolbar switches between the two, keeping its mode.
 PanelWindow { // qmllint disable uncreatable-type
     id: window
+
+    readonly property CoversGlass cover: CoversGlass {
+        shown: window.visible
+    }
 
     screen: output.screen
     // Its screen (StageScreen), kept while it goes away.

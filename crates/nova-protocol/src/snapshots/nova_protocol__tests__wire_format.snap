@@ -18,7 +18,7 @@ expression: all
 {"v":2,"id":12,"cmd":"show_ai_usage","args":{"provider":"codex"}}
 {"v":2,"cmd":"refresh_ai_usage"}
 {"v":2,"id":13,"cmd":"report_claude_usage","args":{"limits":[{"window":"session","percent":42,"resets_at":"2026-10-23T11:00:00Z"},{"window":"weekly","percent":61}]}}
-{"v":2,"event":"compositor","data":{"compositor":"niri","capabilities":["workspaces","focused_window","fullscreen"],"outputs":[{"name":"DP-1","focused":true,"workspaces":[{"id":1,"name":"1","active":false,"focused":false,"urgent":false,"empty":true,"fullscreen":false},{"id":2,"name":"web","active":true,"focused":true,"urgent":false,"empty":false,"fullscreen":false,"active_window":"7"}]},{"name":"HDMI-A-1","focused":false,"workspaces":[{"id":3,"name":"1","active":true,"focused":false,"urgent":true,"empty":false,"fullscreen":true}]}],"focused_window":{"id":"7","app_id":"foot","title":"~"}}}
+{"v":2,"event":"compositor","data":{"compositor":"niri","capabilities":["workspaces","focused_window","fullscreen"],"outputs":[{"name":"DP-1","focused":true,"workspaces":[{"id":1,"name":"1","active":false,"focused":false,"urgent":false,"empty":true,"fullscreen":false},{"id":2,"name":"web","active":true,"focused":true,"urgent":false,"empty":false,"fullscreen":false,"active_window":"7"}],"layout":3},{"name":"HDMI-A-1","focused":false,"workspaces":[{"id":3,"name":"1","active":true,"focused":false,"urgent":true,"empty":false,"fullscreen":true}],"layout":0}],"focused_window":{"id":"7","app_id":"foot","title":"~"}}}
 {"v":2,"id":14,"cmd":"focus_workspace","args":{"id":-1337}}
 {"v":2,"cmd":"step_workspace","args":{"output":"DP-1","step":"previous"}}
 {"v":2,"id":15,"cmd":"toggle","args":{"panel":"ai-usage"}}

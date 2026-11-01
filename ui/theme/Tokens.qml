@@ -62,6 +62,18 @@ QtObject {
     // near-black that only darkens what's behind, so its colors still show.
     readonly property real glassOpacity: 0.55
     readonly property color glass: alpha(glassTint, glassOpacity)
+    // Where the window has a copy of the screen (GlassTint), glass thickens
+    // over bright spots instead: as little tint as keeps the ink at
+    // `glassContrast` : 1 (WCAG), within these bounds. `glassOpacity` until
+    // the first copy. A copy is taken this long after what's on the screen
+    // last changed, and again this much later once windows have settled, at
+    // this many texels.
+    readonly property real glassMinOpacity: 0.35
+    readonly property real glassMaxOpacity: 0.90
+    readonly property real glassContrast: 7
+    readonly property int glassBackdropDelayMs: 300
+    readonly property int glassBackdropSettleMs: 700
+    readonly property size glassBackdropTexels: Qt.size(64, 36)
     // Its edge: a dark outline outside, a faint light line inside, and a
     // highlight along the top that fades out before the corners (where it
     // starts, as a share of the corner radius).
