@@ -1,0 +1,143 @@
+wayland/screencopy: read the output transform without a QtWayland wl_output
+
+OutputTransformQuery bound the output as a QtWayland::wl_output. Qt's
+QWaylandScreen::fromWlOutput accepts any of those, so wl_surface.enter for
+that binding put a fake QWaylandScreen in the surface's screen list, and
+QWaylandSurface::oldestEnteredScreen crashed reading it once the real
+screen left. Bind a plain wl_output with a listener of its own instead.
+Applied by packaging/nix/nova-ui.nix (IMP-262).
+
+diff --git a/src/wayland/screencopy/wlr_screencopy/wlr_screencopy.cpp b/src/wayland/screencopy/wlr_screencopy/wlr_screencopy.cpp
+index 927da8d..3bda4e6 100644
+--- a/src/wayland/screencopy/wlr_screencopy/wlr_screencopy.cpp
++++ b/src/wayland/screencopy/wlr_screencopy/wlr_screencopy.cpp
+@@ -10,6 +10,7 @@
+ #include <qtmetamacros.h>
+ #include <qtypes.h>
+ #include <qwaylandclientextension.h>
++#include <wayland-client-protocol.h>
+ #include <wayland-wlr-screencopy-unstable-v1-client-protocol.h>
+ 
+ #include "../../../core/logcat.hpp"
+@@ -161,8 +162,12 @@ void WlrScreencopyContext::submitFrame() {
+ WlrScreencopyContext::OutputTransformQuery::OutputTransformQuery(WlrScreencopyContext* context)
+     : context(context) {}
+ 
+-WlrScreencopyContext::OutputTransformQuery::~OutputTransformQuery() {
+-	if (this->isInitialized()) this->release();
++WlrScreencopyContext::OutputTransformQuery::~OutputTransformQuery() { this->release(); }
++
++void WlrScreencopyContext::OutputTransformQuery::release() {
++	if (this->output == nullptr) return;
++	wl_output_release(this->output);
++	this->output = nullptr;
+ }
+ 
+ void WlrScreencopyContext::OutputTransformQuery::setScreen(
+@@ -174,28 +179,34 @@ void WlrScreencopyContext::OutputTransformQuery::setScreen(
+ 		[[nodiscard]] int globalId() const { return this->m_outputId; }
+ 	};
+ 
+-	if (this->isInitialized()) this->release();
++	this->release();
+ 
+-	this->init(
++	this->output = static_cast<::wl_output*>(wl_registry_bind(
+ 	    screen->display()->wl_registry(),
+ 	    static_cast<QWaylandScreenReflector*>(screen)->globalId(), // NOLINT
++	    &wl_output_interface,
+ 	    3
+-	);
+-}
+-
+-void WlrScreencopyContext::OutputTransformQuery::output_geometry(
+-    qint32 /*x*/,
+-    qint32 /*y*/,
+-    qint32 /*width*/,
+-    qint32 /*height*/,
+-    qint32 /*subpixel*/,
+-    const QString& /*make*/,
+-    const QString& /*model*/,
+-    qint32 transform
+-) {
++	));
++	wl_output_add_listener(this->output, &LISTENER, this);
++}
++
++void WlrScreencopyContext::OutputTransformQuery::onGeometry(qint32 transform) {
+ 	auto newTransform = this->transform == -1;
+ 	this->transform = transform;
+ 	this->context->updateTransform(newTransform);
+ }
+ 
++// clang-format off
++const wl_output_listener WlrScreencopyContext::OutputTransformQuery::LISTENER = {
++    .geometry = [](void* data, ::wl_output* /*output*/, int32_t /*x*/, int32_t /*y*/, int32_t /*width*/, int32_t /*height*/, int32_t /*subpixel*/, const char* /*make*/, const char* /*model*/, int32_t transform) {
++	    static_cast<OutputTransformQuery*>(data)->onGeometry(transform);
++    },
++    .mode = [](void* /*data*/, ::wl_output* /*output*/, uint32_t /*flags*/, int32_t /*width*/, int32_t /*height*/, int32_t /*refresh*/) {},
++    .done = [](void* /*data*/, ::wl_output* /*output*/) {},
++    .scale = [](void* /*data*/, ::wl_output* /*output*/, int32_t /*factor*/) {},
++    .name = [](void* /*data*/, ::wl_output* /*output*/, const char* /*name*/) {},
++    .description = [](void* /*data*/, ::wl_output* /*output*/, const char* /*description*/) {},
++};
++// clang-format on
++
+ } // namespace qs::wayland::screencopy::wlr
+diff --git a/src/wayland/screencopy/wlr_screencopy/wlr_screencopy_p.hpp b/src/wayland/screencopy/wlr_screencopy/wlr_screencopy_p.hpp
+index 6e7620c..e0f8cbd 100644
+--- a/src/wayland/screencopy/wlr_screencopy/wlr_screencopy_p.hpp
++++ b/src/wayland/screencopy/wlr_screencopy/wlr_screencopy_p.hpp
+@@ -1,11 +1,11 @@
+ #pragma once
+ 
+-#include <private/qwayland-wayland.h>
+ #include <private/qwaylandscreen_p.h>
+ #include <qcontainerfwd.h>
+ #include <qtclasshelpermacros.h>
+ #include <qtypes.h>
+ #include <qwayland-wlr-screencopy-unstable-v1.h>
++#include <wayland-client-protocol.h>
+ 
+ #include "../manager.hpp"
+ 
+@@ -45,28 +45,25 @@ private slots:
+ private:
+ 	void submitFrame();
+ 
+-	class OutputTransformQuery: public QtWayland::wl_output {
++	// Its own wl_output binding, read with its own listener: Qt takes any
++	// QtWayland::wl_output for a QWaylandScreen, so surface enter events for
++	// this binding would otherwise add a fake screen to the surface.
++	class OutputTransformQuery {
+ 	public:
+ 		OutputTransformQuery(WlrScreencopyContext* context);
+-		~OutputTransformQuery() override;
++		~OutputTransformQuery();
+ 		Q_DISABLE_COPY_MOVE(OutputTransformQuery);
+ 
+ 		qint32 transform = -1;
+ 		void setScreen(QtWaylandClient::QWaylandScreen* screen);
+ 
+-	protected:
+-		void output_geometry(
+-		    qint32 x,
+-		    qint32 y,
+-		    qint32 width,
+-		    qint32 height,
+-		    qint32 subpixel,
+-		    const QString& make,
+-		    const QString& model,
+-		    qint32 transform
+-		) override;
+-
+ 	private:
++		void release();
++		void onGeometry(qint32 transform);
++
++		static const wl_output_listener LISTENER;
++
++		::wl_output* output = nullptr;
+ 		WlrScreencopyContext* context;
+ 	};
+ 
