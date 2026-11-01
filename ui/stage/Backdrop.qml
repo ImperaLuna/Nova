@@ -49,14 +49,22 @@ Item {
         return [Protocol.focusKey(shown), output?.layout ?? 0, title].join("\n");
     }
     property bool wanted: false
+    // The scene changed while quiet: windows may still be moving, so a
+    // second copy follows. Catching up once a panel is gone needs one; the
+    // panel's own closing was the wait (a later one made the stage draw
+    // again well after it closed).
+    property bool settleAgain: false
     onSceneChanged: {
         wanted = true;
+        settleAgain = quiet;
         later.stop();
         settle.restart();
     }
     onQuietChanged: {
-        if (quiet && wanted)
+        if (quiet && wanted) {
+            settleAgain = false;
             settle.restart();
+        }
     }
     // Without a first copy there's nothing to take one with yet (no screen
     // capture, or not ready): that first one comes by itself.
@@ -75,7 +83,7 @@ Item {
         interval: Tokens.glassBackdropDelayMs
         onTriggered: {
             backdrop.take();
-            if (!backdrop.wanted)
+            if (!backdrop.wanted && backdrop.settleAgain)
                 later.restart();
         }
     }
