@@ -209,6 +209,22 @@ Item {
             compare(findChild(page, "network-Home").role, "use");
         }
 
+        function test_a_long_network_name_ends_in_an_ellipsis_before_the_link_speed() {
+            // SSIDs run up to 32 bytes.
+            const ssid = "Vodafone-Homespot-5G-Extended-WW";
+            const network = recorded();
+            network.wifi.network = ssid;
+            network.wifi.networks[0].ssid = ssid;
+            const page = createTemporaryObject(pageComponent, stage, {
+                network: network
+            });
+            const name = findChild(page, "linkName");
+            compare(name.text, ssid);
+            tryVerify(() => name.truncated, 1000, "the name is cut short");
+            const link = name.parent;
+            verify(link.width <= link.parent.width, "the speed stays inside the card");
+        }
+
         function test_prefer_sends_the_pick() {
             const page = createTemporaryObject(pageComponent, stage, {
                 network: recorded()

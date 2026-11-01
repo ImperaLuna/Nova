@@ -50,6 +50,7 @@ Item {
 
     Row {
         id: label
+        objectName: "label"
         anchors.verticalCenter: parent.verticalCenter
         x: icon.x + icon.width + Tokens.pad
         width: end.x - x - Tokens.pad
@@ -65,6 +66,8 @@ Item {
                 // ends in an ellipsis instead of being cut mid-letter.
                 delegate: Text {
                     required property var modelData
+                    required property int index
+                    objectName: `nameRun${index}`
                     width: Math.min(implicitWidth, Math.max(0, label.width - x))
                     elide: Text.ElideRight
                     font.family: Tokens.fontSans

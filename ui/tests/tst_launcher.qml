@@ -37,6 +37,10 @@ Item {
         when: windowShown
 
         Component {
+            id: rowComponent
+            LauncherRow {}
+        }
+        Component {
             id: launcherComponent
             Launcher {
                 screenWidth: stage.width
@@ -327,6 +331,29 @@ Item {
             compare(LauncherLogic.step(0, 3, -1), 2);
             compare(LauncherLogic.step(2, 3, 1), 0);
             compare(LauncherLogic.step(0, 0, 1), 0);
+        }
+
+        function test_a_long_name_ends_in_an_ellipsis_inside_its_row() {
+            const name = "LibreOffice Impress Presentation Editor and Viewer";
+            const row = createTemporaryObject(rowComponent, stage, {
+                width: 300,
+                app: {
+                    id: "impress.desktop",
+                    name: name,
+                    runs: [{
+                            text: "Lib",
+                            matched: true
+                        }, {
+                            text: name.slice(3),
+                            matched: false
+                        }],
+                    description: ""
+                }
+            });
+            const label = findChild(row, "label");
+            const last = findChild(row, "nameRun1");
+            tryVerify(() => last.truncated, 1000, "the name is cut short");
+            verify(last.x + last.width <= label.width, "it ends inside the label");
         }
 
         function test_a_missing_icon_gets_a_letter_on_a_swatch() {
