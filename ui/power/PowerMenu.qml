@@ -179,7 +179,7 @@ StagePanel {
                     topPadding: Tokens.labelNudge
                     bottomPadding: Tokens.labelNudge
                     font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     font.capitalization: Font.AllUppercase
                     color: Tokens.fgDim
                     text: qsTr("Session")
@@ -191,7 +191,7 @@ StagePanel {
                     rightPadding: Tokens.pad
                     visible: PowerService.bootedAt > 0
                     font.family: Tokens.fontMono
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.fgDim
                     text: menu.uptime
                 }
@@ -224,7 +224,7 @@ StagePanel {
                 leftPadding: Tokens.pad + Tokens.labelNudge
                 rightPadding: Tokens.pad
                 font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeTiny
+                font.pixelSize: Tokens.fontSizeSmall
                 color: Tokens.error
                 wrapMode: Text.Wrap
                 textFormat: Text.PlainText

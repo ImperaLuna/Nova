@@ -56,7 +56,7 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSizeSmall
-                        font.weight: option.picked ? Font.DemiBold : Font.Normal
+                        font.weight: option.picked ? Tokens.weightTitle : Tokens.weightBody
                         color: option.ink
                         text: option.modelData.label
                     }

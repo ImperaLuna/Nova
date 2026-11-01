@@ -51,7 +51,8 @@ Column {
             NumberAnimation {
                 id: resize
                 duration: Tokens.durationPanel
-                easing.type: Easing.OutCubic
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Tokens.easing
             }
         }
 
@@ -88,7 +89,8 @@ Column {
                 NumberAnimation {
                     property: "y"
                     duration: Tokens.durationPanel
-                    easing.type: Easing.OutCubic
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Tokens.easing
                 }
             }
 

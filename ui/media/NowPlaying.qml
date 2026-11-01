@@ -270,6 +270,7 @@ StagePanel {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, Tokens.mediaArtistMax)
                 visible: root.showsArtist
+                elide: Text.ElideRight
                 font.pixelSize: Tokens.fontSizeSmall
                 color: Tokens.fgDim
                 text: root.current?.artist ?? ""
@@ -330,7 +331,7 @@ StagePanel {
             Label {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, root.contentWidth - Tokens.iconSizeSmall - Tokens.iconGap)
-                font.weight: Font.Medium
+                font.weight: Tokens.weightLabel
                 color: Tokens.fgDim
                 text: root.appName
             }
@@ -365,7 +366,7 @@ StagePanel {
                     Label {
                         width: parent.width
                         font.pixelSize: Tokens.fontSizeTitle
-                        font.weight: Font.DemiBold
+                        font.weight: Tokens.weightTitle
                         lineHeight: Tokens.mediaTitleLine
                         wrapMode: Text.Wrap
                         maximumLineCount: 2
@@ -382,7 +383,7 @@ StagePanel {
                     Label {
                         width: parent.width
                         font.pixelSize: Tokens.fontSizeSmall
-                        color: Tokens.fgAlt
+                        color: Tokens.fgDim
                         visible: text !== ""
                         text: root.current?.album ?? ""
                     }
@@ -494,7 +495,7 @@ StagePanel {
                             Label {
                                 anchors.verticalCenter: parent.verticalCenter
                                 font.pixelSize: Tokens.fontSizeSmall
-                                font.weight: Font.Medium
+                                font.weight: Tokens.weightLabel
                                 color: chip.chosen ? Tokens.onAccent : Tokens.fgDim
                                 text: Media.appName(chip.modelData)
                             }
@@ -543,7 +544,7 @@ StagePanel {
                     x: goToIcon.x + goToIcon.width + Tokens.rowInset
                     anchors.verticalCenter: parent.verticalCenter
                     width: where.x - x - Tokens.rowInset
-                    font.weight: Font.Medium
+                    font.weight: Tokens.weightLabel
                     text: `Go to ${root.appName}`
                 }
 
@@ -553,7 +554,7 @@ StagePanel {
                     anchors.rightMargin: Tokens.rowInset
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(implicitWidth, goTo.width / 2)
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.fgDim
                     text: root.workspace !== "" ? `workspace ${root.workspace}` : ""
                 }

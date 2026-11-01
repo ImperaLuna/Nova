@@ -192,26 +192,32 @@ Item {
                                 height: Tokens.notificationChipHeight + Tokens.labelNudge * 4
 
                                 Row {
+                                    id: appHeading
                                     x: Tokens.labelNudge * 4
                                     anchors.verticalCenter: parent.verticalCenter
                                     spacing: Tokens.gap
 
+                                    // A long app name ends in an ellipsis before the count and the buttons.
                                     Text {
+                                        width: Math.min(implicitWidth, Math.max(0, appActions.x - appHeading.x - Tokens.gap - appCount.width - appHeading.spacing))
+                                        elide: Text.ElideRight
                                         font.family: Tokens.fontSans
                                         font.pixelSize: Tokens.fontSizeSmall
-                                        font.weight: Font.DemiBold
+                                        font.weight: Tokens.weightTitle
                                         color: Tokens.fg
                                         textFormat: Text.PlainText
                                         text: group.modelData.app
                                     }
                                     Text {
+                                        id: appCount
                                         font.family: Tokens.fontMono
-                                        font.pixelSize: Tokens.fontSizeTiny
+                                        font.pixelSize: Tokens.fontSizeSmall
                                         color: Tokens.fgDim
                                         text: group.modelData.items.length
                                     }
                                 }
                                 Row {
+                                    id: appActions
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
                                     TextButton {
@@ -261,7 +267,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             font.family: Tokens.fontDisplay
             font.italic: true
-            font.pixelSize: Tokens.fontSizeEmpty
+            font.pixelSize: Tokens.fontSizeDisplay
             color: Tokens.fg
             text: qsTr("All caught up")
         }
@@ -324,8 +330,8 @@ Item {
             id: buttonText
             anchors.centerIn: parent
             font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSizeTiny
-            font.weight: Font.Medium
+            font.pixelSize: Tokens.fontSizeSmall
+            font.weight: Tokens.weightLabel
             color: Tokens.fg
             textFormat: Text.PlainText
             text: button.label

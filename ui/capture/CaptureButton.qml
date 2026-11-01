@@ -44,7 +44,7 @@ Rectangle {
             color: button.selected ? Tokens.onAccent : button.tint
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSize
-            font.weight: Font.Medium
+            font.weight: Tokens.weightLabel
         }
     }
 

@@ -21,8 +21,8 @@ Rectangle {
         id: label
         anchors.centerIn: parent
         font.family: Tokens.fontSans
-        font.pixelSize: Tokens.fontSizeTiny
-        font.weight: button.accent ? Font.DemiBold : Font.Normal
+        font.pixelSize: Tokens.fontSizeSmall
+        font.weight: button.accent ? Tokens.weightTitle : Tokens.weightBody
         color: button.accent ? Tokens.onAccent : Tokens.fg
     }
     MouseArea {

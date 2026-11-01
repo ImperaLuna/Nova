@@ -139,29 +139,35 @@ Item {
                 readonly property int mbps: Network.linkMbps(page.network)
 
                 Row {
+                    id: link
                     spacing: Tokens.gap
 
                     LineIcon {
+                        id: linkIcon
                         anchors.verticalCenter: parent.verticalCenter
                         path: card.icon
                         fill: Network.iconFill(card.icon)
                         size: Tokens.iconSizeSmall
                     }
+                    // A long network name ends in an ellipsis; the link speed stays.
                     Text {
                         objectName: "linkName"
                         anchors.verticalCenter: parent.verticalCenter
+                        width: Math.min(implicitWidth, Math.max(0, card.width - linkIcon.width - (linkSpeed.visible ? linkSpeed.width + link.spacing : 0) - link.spacing))
+                        elide: Text.ElideRight
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSizeSmall
-                        font.weight: Font.DemiBold
+                        font.weight: Tokens.weightTitle
                         color: Tokens.fg
                         textFormat: Text.PlainText
                         text: Network.linkName(page.network)
                     }
                     Text {
+                        id: linkSpeed
                         anchors.verticalCenter: parent.verticalCenter
                         visible: card.mbps > 0
                         font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSizeTiny
+                        font.pixelSize: Tokens.fontSizeSmall
                         color: Tokens.fgDim
                         text: qsTr("%1 link").arg(Network.linkSpeed(card.mbps))
                     }
@@ -556,7 +562,7 @@ Item {
                     visible: page.wrong
                     rightPadding: Tokens.gap
                     font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.error
                     text: qsTr("Wrong password")
                 }
@@ -622,7 +628,7 @@ Item {
                 elide: Text.ElideRight
                 font.family: Tokens.fontSans
                 font.pixelSize: Tokens.fontSize
-                font.weight: Font.Medium
+                font.weight: Tokens.weightLabel
                 color: Tokens.fg
                 textFormat: Text.PlainText
                 text: line.title
@@ -632,7 +638,7 @@ Item {
                 width: parent.width
                 elide: Text.ElideRight
                 font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeTiny
+                font.pixelSize: Tokens.fontSizeSmall
                 color: line.subtitleColor
                 textFormat: Text.PlainText
                 text: line.subtitle
@@ -660,8 +666,8 @@ Item {
                     id: roleText
                     anchors.centerIn: parent
                     font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizeTiny
-                    font.weight: parent.inUse ? Font.DemiBold : Font.Normal
+                    font.pixelSize: Tokens.fontSizeSmall
+                    font.weight: parent.inUse ? Tokens.weightTitle : Tokens.weightBody
                     color: parent.inUse ? Tokens.onAccent : Tokens.fgSoft
                     text: Network.roleLabel(line.role)
                 }
@@ -726,8 +732,8 @@ Item {
             id: label
             anchors.centerIn: parent
             font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSizeTiny
-            font.weight: button.accent ? Font.DemiBold : Font.Normal
+            font.pixelSize: Tokens.fontSizeSmall
+            font.weight: button.accent ? Tokens.weightTitle : Tokens.weightBody
             color: button.accent ? Tokens.onAccent : Tokens.fg
         }
         MouseArea {
@@ -756,7 +762,7 @@ Item {
         Text {
             anchors.verticalCenter: parent.verticalCenter
             font.family: Tokens.fontMono
-            font.pixelSize: Tokens.fontSizeTraffic
+            font.pixelSize: Tokens.fontSizeTitle
             color: Tokens.fg
             text: `${speed.arrow} ${Network.speed(speed.values.length > 0 ? speed.values[speed.values.length - 1] : 0)}`
         }

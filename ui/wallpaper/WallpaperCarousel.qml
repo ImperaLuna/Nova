@@ -435,8 +435,8 @@ StagePanel {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizePageTitle
-                    font.weight: Font.Medium
+                    font.pixelSize: Tokens.fontSizeHeading
+                    font.weight: Tokens.weightLabel
                     color: carousel.problem !== "" ? Tokens.error : Tokens.fg
                     textFormat: Text.PlainText
                     elide: Text.ElideMiddle
@@ -515,7 +515,7 @@ StagePanel {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: carousel.screenNames.length > 1
                     font.family: Tokens.fontMono
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.fgDim
                     text: qsTr("Tab")
                 }
@@ -546,7 +546,7 @@ StagePanel {
                     horizontalAlignment: Text.AlignHCenter
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeTitle
-                    font.weight: Font.DemiBold
+                    font.weight: Tokens.weightTitle
                     wrapMode: Text.Wrap
                     color: Tokens.fg
                     textFormat: Text.PlainText

@@ -99,7 +99,7 @@ Item {
         elide: Text.ElideRight
         font.family: Tokens.fontMono
         font.pixelSize: Tokens.fontSizeSmall
-        font.weight: Font.Medium
+        font.weight: Tokens.weightLabel
         color: number.ink
         textFormat: Text.PlainText
         text: number.special ? number.name.charAt(0).toUpperCase() : number.name

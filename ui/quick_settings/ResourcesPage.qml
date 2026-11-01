@@ -170,7 +170,7 @@ Item {
                     x: Tokens.pad
                     anchors.bottom: parent.bottom
                     font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.fgDim
                     text: qsTr("Apps by memory")
                 }
@@ -180,13 +180,13 @@ Item {
                     anchors.bottom: parent.bottom
                     Cell {
                         font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSizeTiny
+                        font.pixelSize: Tokens.fontSizeSmall
                         color: Tokens.fgDim
                         text: qsTr("CPU")
                     }
                     Cell {
                         font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSizeTiny
+                        font.pixelSize: Tokens.fontSizeSmall
                         color: Tokens.fgDim
                         text: qsTr("Memory")
                     }
@@ -337,7 +337,7 @@ Item {
                                     width: buttons.x - x - Tokens.gap
                                     wrapMode: Text.Wrap
                                     font.family: Tokens.fontSans
-                                    font.pixelSize: Tokens.fontSizeTiny
+                                    font.pixelSize: Tokens.fontSizeSmall
                                     color: Tokens.fg
                                     textFormat: Text.PlainText
                                     text: qsTr("End %1?").arg(entry.app.name)
@@ -384,8 +384,8 @@ Item {
             id: label
             anchors.centerIn: parent
             font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSizeTiny
-            font.weight: confirmButton.accent ? Font.DemiBold : Font.Normal
+            font.pixelSize: Tokens.fontSizeSmall
+            font.weight: confirmButton.accent ? Tokens.weightTitle : Tokens.weightBody
             color: confirmButton.accent ? Tokens.onAccent : Tokens.fg
         }
         MouseArea {

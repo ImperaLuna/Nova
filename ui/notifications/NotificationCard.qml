@@ -106,7 +106,7 @@ Item {
                         width: parent.width - when.width - Tokens.gap
                         elide: Text.ElideRight
                         font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSizeTiny
+                        font.pixelSize: Tokens.fontSizeSmall
                         color: Tokens.fgSoft
                         textFormat: Text.PlainText
                         text: card.notification.app
@@ -136,7 +136,7 @@ Item {
                         elide: Text.ElideRight
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSize
-                        font.weight: Font.DemiBold
+                        font.weight: Tokens.weightTitle
                         color: Tokens.fg
                         textFormat: Text.PlainText
                         text: card.notification.summary
@@ -158,7 +158,7 @@ Item {
                     elide: Text.ElideRight
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeSmall
-                    color: Tokens.fgAlt
+                    color: Tokens.fgDim
                     textFormat: Text.PlainText
                     text: card.notification.body
                 }
@@ -214,7 +214,7 @@ Item {
                                 elide: Text.ElideRight
                                 font.family: Tokens.fontSans
                                 font.pixelSize: Tokens.fontSizeSmall
-                                font.weight: action.primary ? Font.DemiBold : Font.Medium
+                                font.weight: action.primary ? Tokens.weightTitle : Tokens.weightLabel
                                 color: action.primary ? Tokens.onAccent : Tokens.fg
                                 textFormat: Text.PlainText
                                 text: action.modelData.label

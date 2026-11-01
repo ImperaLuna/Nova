@@ -345,7 +345,7 @@ Item {
             id: chipText
             anchors.centerIn: parent
             font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSizeTiny
+            font.pixelSize: Tokens.fontSizeSmall
             color: Tokens.fgSoft
             text: `+${stack.waiting.length}`
         }

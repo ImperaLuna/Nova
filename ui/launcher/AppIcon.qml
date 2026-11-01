@@ -41,7 +41,7 @@ Item {
             anchors.centerIn: parent
             font.family: Tokens.fontSans
             font.pixelSize: Math.round(icon.size * Tokens.letterScale)
-            font.weight: Font.DemiBold
+            font.weight: Tokens.weightTitle
             color: Tokens.onAccent
             textFormat: Text.PlainText
             text: LauncherLogic.letter(icon.name)

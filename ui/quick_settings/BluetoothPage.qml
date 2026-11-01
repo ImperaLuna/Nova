@@ -270,7 +270,7 @@ Item {
                 elide: Text.ElideRight
                 font.family: Tokens.fontSans
                 font.pixelSize: Tokens.fontSize
-                font.weight: Font.Medium
+                font.weight: Tokens.weightLabel
                 color: Tokens.fg
                 textFormat: Text.PlainText
                 text: entry.device?.name ?? ""
@@ -290,7 +290,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: text !== ""
                     font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: entry.busy !== "" ? Tokens.primary : Tokens.fgDim
                     text: entry.busy !== "" ? entry.busy : !press.containsMouse ? "" : entry.device?.status === "nearby" ? qsTr("Pair") : entry.device?.status === "paired" ? qsTr("Connect") : entry.device?.status === "connected" ? qsTr("Disconnect") : ""
                 }
@@ -322,7 +322,7 @@ Item {
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         font.family: Tokens.fontMono
-                        font.pixelSize: Tokens.fontSizeTiny
+                        font.pixelSize: Tokens.fontSizeSmall
                         color: Tokens.fgDim
                         text: `${entry.device?.battery ?? 0}%`
                     }
@@ -473,7 +473,7 @@ Item {
             wrapMode: Text.Wrap
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSize
-            font.weight: Font.DemiBold
+            font.weight: Tokens.weightTitle
             color: Tokens.fg
             text: message.text
         }

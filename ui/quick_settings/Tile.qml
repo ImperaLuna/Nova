@@ -61,7 +61,7 @@ Item {
         elide: Text.ElideRight
         font.family: Tokens.fontSans
         font.pixelSize: Tokens.fontSize
-        font.weight: Font.DemiBold
+        font.weight: Tokens.weightTitle
         color: tile.ink
         text: tile.title
     }

@@ -95,8 +95,8 @@ Row {
                 anchors.centerIn: parent
                 visible: !buttons.doNotDisturb
                 font.family: Tokens.fontMono
-                font.pixelSize: Tokens.fontSizeBadge
-                font.weight: Font.Bold
+                font.pixelSize: Tokens.fontSizeMicro
+                font.weight: Tokens.weightBadge
                 color: Tokens.onAccent
                 text: buttons.unread > Tokens.badgeMax ? `${Tokens.badgeMax}+` : buttons.unread
             }

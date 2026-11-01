@@ -217,7 +217,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             font.family: Tokens.fontMono
             font.pixelSize: Tokens.fontSize
-            font.weight: Font.Medium
+            font.weight: Tokens.weightLabel
             color: Tokens.fgDim
             textFormat: Text.PlainText
             text: Qt.formatDate(pill.now, pill.dayFormat)
@@ -247,8 +247,8 @@ Item {
                         visible: slot.isDigit
                         text: slot.character
                         font.family: Tokens.fontMono
-                        font.pixelSize: Tokens.fontSizeTime
-                        font.weight: Font.DemiBold
+                        font.pixelSize: Tokens.fontSize
+                        font.weight: Tokens.weightTitle
                         color: Tokens.fg
                     }
 

@@ -36,7 +36,7 @@ Column {
             anchors.centerIn: parent
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.lockInitialSize
-            font.weight: Font.Medium
+            font.weight: Tokens.weightLabel
             color: Tokens.fgDim
             textFormat: Text.PlainText
             text: root.userName.charAt(0).toUpperCase()
@@ -47,7 +47,7 @@ Column {
         anchors.horizontalCenter: parent.horizontalCenter
         font.family: Tokens.fontSans
         font.pixelSize: Tokens.fontSizeTitle
-        font.weight: Font.DemiBold
+        font.weight: Tokens.weightTitle
         color: Tokens.fg
         textFormat: Text.PlainText
         text: root.userName

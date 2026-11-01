@@ -50,6 +50,7 @@ Item {
 
     Row {
         id: label
+        objectName: "label"
         anchors.verticalCenter: parent.verticalCenter
         x: icon.x + icon.width + Tokens.pad
         width: end.x - x - Tokens.pad
@@ -61,11 +62,17 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             Repeater {
                 model: row.app.runs
+                // Each run takes what's left of the label, so a long name
+                // ends in an ellipsis instead of being cut mid-letter.
                 delegate: Text {
                     required property var modelData
+                    required property int index
+                    objectName: `nameRun${index}`
+                    width: Math.min(implicitWidth, Math.max(0, label.width - x))
+                    elide: Text.ElideRight
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSize
-                    font.weight: modelData.matched ? Font.DemiBold : Font.Medium
+                    font.weight: modelData.matched ? Tokens.weightTitle : Tokens.weightLabel
                     color: modelData.matched && !row.launching ? Tokens.primary : row.ink
                     textFormat: Text.PlainText
                     text: modelData.text
@@ -126,7 +133,7 @@ Item {
         Text {
             anchors.verticalCenter: parent.verticalCenter
             font.family: Tokens.fontMono
-            font.pixelSize: Tokens.fontSizeTiny
+            font.pixelSize: Tokens.fontSizeSmall
             color: row.dim
             opacity: row.selected ? 1 : 0
             text: "↵"

@@ -84,7 +84,7 @@ Item {
                 elide: Text.ElideRight
                 font.family: Tokens.fontSans
                 font.pixelSize: Tokens.fontSizeSmall
-                font.weight: Font.DemiBold
+                font.weight: Tokens.weightTitle
                 color: Tokens.fg
                 textFormat: Text.PlainText
                 text: row.notification.summary === "" ? row.notification.app : row.showApp ? `${row.notification.app} · ${row.notification.summary}` : row.notification.summary
@@ -108,7 +108,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: !hover.hovered && !row.menuOpen
                     font.family: Tokens.fontMono
-                    font.pixelSize: Tokens.fontSizeTiny
+                    font.pixelSize: Tokens.fontSizeSmall
                     color: Tokens.fgSoft
                     text: Duration.ago(row.notification.time, row.now)
                 }
@@ -122,7 +122,7 @@ Item {
             elide: Text.ElideRight
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSizeSmall
-            color: Tokens.fgAlt
+            color: Tokens.fgDim
             textFormat: Text.PlainText
             text: row.notification.body
         }

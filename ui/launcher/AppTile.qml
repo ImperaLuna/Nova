@@ -52,7 +52,7 @@ Item {
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight
         font.family: Tokens.fontSans
-        font.pixelSize: Tokens.fontSizeTiny
+        font.pixelSize: Tokens.fontSizeSmall
         color: Tokens.fgDim
         textFormat: Text.PlainText
         text: tile.name

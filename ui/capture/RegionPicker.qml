@@ -244,7 +244,7 @@ Item {
                 color: Tokens.fg
                 font.family: Tokens.fontSans
                 font.pixelSize: Tokens.fontSize
-                font.weight: Font.Medium
+                font.weight: Tokens.weightLabel
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -252,7 +252,7 @@ Item {
                 textFormat: Text.PlainText
                 color: Tokens.fgDim
                 font.family: Tokens.fontMono
-                font.pixelSize: Tokens.fontSizeTiny
+                font.pixelSize: Tokens.fontSizeSmall
             }
         }
 
@@ -278,7 +278,7 @@ Item {
         styleColor: Tokens.captureVeil
         font.family: Tokens.fontSans
         font.pixelSize: Tokens.fontSizeCountdown
-        font.weight: Font.DemiBold
+        font.weight: Tokens.weightTitle
     }
 
     MouseArea {

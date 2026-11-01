@@ -78,7 +78,7 @@ Item {
             width: parent.width
             elide: Text.ElideRight
             font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSizeTiny
+            font.pixelSize: Tokens.fontSizeSmall
             color: row.selected ? Tokens.alpha(Tokens.onAccent, Tokens.drainOpacity) : Tokens.fgDim
             textFormat: Text.PlainText
             text: row.armed || row.available ? "" : row.reason
@@ -91,7 +91,7 @@ Item {
         anchors.rightMargin: Tokens.pad
         visible: row.selected && !row.running
         font.family: Tokens.fontMono
-        font.pixelSize: Tokens.fontSizeTiny
+        font.pixelSize: Tokens.fontSizeSmall
         color: row.ink
         text: row.armed ? qsTr("%1 s").arg(Math.ceil(row.armedLeft * Tokens.durationConfirm / 1000)) : "↵"
     }

@@ -25,7 +25,7 @@ Row {
         anchors.verticalCenter: parent.verticalCenter
         font.family: Tokens.fontSans
         font.pixelSize: Tokens.fontSizeSmall
-        font.weight: Font.DemiBold
+        font.weight: Tokens.weightTitle
         color: Tokens.error
         textFormat: Text.PlainText
         text: amount.battery?.percent !== undefined ? `${amount.battery.percent}%` : amount.notification.body

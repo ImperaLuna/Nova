@@ -37,8 +37,8 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         x: button.width + Tokens.gap
         font.family: Tokens.fontSans
-        font.pixelSize: Tokens.fontSizePageTitle
-        font.weight: Font.DemiBold
+        font.pixelSize: Tokens.fontSizeHeading
+        font.weight: Tokens.weightTitle
         color: Tokens.fg
         text: header.title
     }

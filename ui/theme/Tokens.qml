@@ -334,10 +334,6 @@ QtObject {
     readonly property int revealRise: 6
     // The header: the distro logo on its own, the greeting beside it.
     readonly property int logoSize: 36
-    readonly property int fontSizeGreeting: 22
-    // The greeting shrinks to fit beside the pill's buttons, down to this;
-    // a name still too long is cut short.
-    readonly property int fontSizeGreetingMin: 16
     // Toggle tiles, two per row, with an arrow to a page on some.
     readonly property int tileHeight: 58
     readonly property int tileArrowWidth: 22
@@ -346,7 +342,6 @@ QtObject {
     readonly property int pairingCellWidth: 28
     readonly property int pairingCellHeight: 36
     readonly property int pairingCellGap: 4
-    readonly property int fontSizePairingCode: 18
     readonly property int pairingFieldHeight: 34
     readonly property real pairingTintOpacity: 0.10
     // Thick sliders: a round icon button (mute) beside the track, the track
@@ -386,7 +381,6 @@ QtObject {
     // Resource rings, and the labels under them.
     readonly property int ringSize: 52
     readonly property int ringStroke: 4
-    readonly property int fontSizeMicro: 10
     // Small uppercase labels spread out by this share of their size.
     readonly property real trackingLabel: 0.06
     readonly property color fgSoft: alpha(fg, 0.72)
@@ -415,7 +409,6 @@ QtObject {
     // The network page: its traffic card's speeds and graph, a link's role
     // chip ("In use", "Backup"), how faint Wi-Fi's arcs are that a weak
     // signal doesn't reach, and a network row's ⋯ menu.
-    readonly property int fontSizeTraffic: 17
     readonly property int trafficGraphHeight: 54
     readonly property real wifiArcFadedOpacity: 0.3
     readonly property int networkMenuWidth: 170
@@ -447,7 +440,6 @@ QtObject {
     readonly property real letterScale: 0.47
     // The pin button on a row.
     readonly property int pinButtonSize: 24
-    readonly property int fontSizeSearch: 15
     // The text cursor in a field: the accent, and steady, so an open field
     // doesn't redraw twice a second.
     readonly property int caretWidth: 2
@@ -483,7 +475,6 @@ QtObject {
     // frame after switching from video.
     readonly property int recordCountdown: 3
     readonly property int durationCountdownStep: 1000
-    readonly property int fontSizeCountdown: 96
     readonly property int pickerGoneDelay: 150
     // The red dot in the record button and the recording pill.
     readonly property int recordDotSize: 10
@@ -546,7 +537,6 @@ QtObject {
     readonly property int notificationPeekInset: 10
     readonly property int notificationMenuWidth: 170
     readonly property int notificationEmptyIcon: 28
-    readonly property int fontSizeEmpty: 26
     // On/off switches, like an app's on the notification settings page.
     readonly property int switchWidth: 40
     readonly property int switchHeight: 24
@@ -560,7 +550,6 @@ QtObject {
     readonly property int badgeRing: 2
     readonly property int badgeIcon: 9
     readonly property int badgeMax: 9
-    readonly property int fontSizeBadge: 9
     readonly property color badgeQuiet: alpha(fg, 0.55)
 
     // Now playing (ui/media): a pill right of the AI usage pill while
@@ -674,17 +663,30 @@ QtObject {
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"
     readonly property string fontDisplay: "Instrument Serif"
-    readonly property int fontSize: 13
+    // Weights: running text, labels and names, titles and picked options,
+    // and the unread badge's count.
+    readonly property int weightBody: Font.Normal
+    readonly property int weightLabel: Font.Medium
+    readonly property int weightTitle: Font.DemiBold
+    readonly property int weightBadge: Font.Bold
+    // The type scale: six steps, from labels up, then two big numbers.
+    // Small caps labels and badges.
+    readonly property int fontSizeMicro: 10
+    // Secondary text: notification bodies, subtitles, times.
     readonly property int fontSizeSmall: 12
-    readonly property int fontSizeTiny: 11
-    // A name or heading on its own, like the user's on the lock screen.
+    // Body text: rows, names, the central pill's time.
+    readonly property int fontSize: 13
+    // A page's title beside its back button, and the search field.
+    readonly property int fontSizeHeading: 15
+    // A name or number on its own: the lock screen, a pairing code, traffic.
     readonly property int fontSizeTitle: 18
-    // A sub page's title, beside its back button.
-    readonly property int fontSizePageTitle: 15
-    // The time in the central pill.
-    readonly property int fontSizeTime: 14
+    // Big words: the quick settings greeting (it shrinks to fontSizeHeading
+    // to fit), an empty list.
+    readonly property int fontSizeDisplay: 24
     // A panel's headline number.
     readonly property int fontSizeHero: 56
+    // The capture countdown, across the screen.
+    readonly property int fontSizeCountdown: 96
     readonly property int lineHeightHero: 60
     // The headline's tracking, as a share of its size (tighter when big), and
     // the size of a unit (like %) beside it, relative to its digits.

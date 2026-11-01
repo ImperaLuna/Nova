@@ -107,7 +107,7 @@ Column {
         Text {
             id: position
             font.family: Tokens.fontMono
-            font.pixelSize: Tokens.fontSizeTiny
+            font.pixelSize: Tokens.fontSizeSmall
             color: Tokens.fgDim
             text: Media.time(seek.held >= 0 ? Media.seekTarget(seek.player, seek.held) : Media.position(seek.player, seek.now))
         }
@@ -115,7 +115,7 @@ Column {
         Text {
             anchors.right: parent.right
             font.family: Tokens.fontMono
-            font.pixelSize: Tokens.fontSizeTiny
+            font.pixelSize: Tokens.fontSizeSmall
             color: Tokens.fgDim
             visible: (seek.player?.length_us ?? 0) > 0
             text: Media.time(seek.player?.length_us ?? 0)
