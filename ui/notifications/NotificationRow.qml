@@ -84,7 +84,7 @@ Item {
                 elide: Text.ElideRight
                 font.family: Tokens.fontSans
                 font.pixelSize: Tokens.fontSizeSmall
-                font.weight: Font.DemiBold
+                font.weight: Tokens.weightTitle
                 color: Tokens.fg
                 textFormat: Text.PlainText
                 text: row.notification.summary === "" ? row.notification.app : row.showApp ? `${row.notification.app} · ${row.notification.summary}` : row.notification.summary

@@ -69,7 +69,7 @@ Item {
                     elide: Text.ElideRight
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSize
-                    font.weight: modelData.matched ? Font.DemiBold : Font.Medium
+                    font.weight: modelData.matched ? Tokens.weightTitle : Tokens.weightLabel
                     color: modelData.matched && !row.launching ? Tokens.primary : row.ink
                     textFormat: Text.PlainText
                     text: modelData.text

@@ -385,7 +385,7 @@ Item {
             anchors.centerIn: parent
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSizeSmall
-            font.weight: confirmButton.accent ? Font.DemiBold : Font.Normal
+            font.weight: confirmButton.accent ? Tokens.weightTitle : Tokens.weightBody
             color: confirmButton.accent ? Tokens.onAccent : Tokens.fg
         }
         MouseArea {

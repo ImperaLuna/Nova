@@ -64,7 +64,7 @@ Item {
             id: label
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSize
-            font.weight: Font.DemiBold
+            font.weight: Tokens.weightTitle
             color: title.color
             textFormat: Text.PlainText
             text: title.text

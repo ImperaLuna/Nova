@@ -436,7 +436,7 @@ StagePanel {
                     anchors.verticalCenter: parent.verticalCenter
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeHeading
-                    font.weight: Font.Medium
+                    font.weight: Tokens.weightLabel
                     color: carousel.problem !== "" ? Tokens.error : Tokens.fg
                     textFormat: Text.PlainText
                     elide: Text.ElideMiddle
@@ -546,7 +546,7 @@ StagePanel {
                     horizontalAlignment: Text.AlignHCenter
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeTitle
-                    font.weight: Font.DemiBold
+                    font.weight: Tokens.weightTitle
                     wrapMode: Text.Wrap
                     color: Tokens.fg
                     textFormat: Text.PlainText

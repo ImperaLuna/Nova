@@ -203,7 +203,7 @@ Item {
                                         elide: Text.ElideRight
                                         font.family: Tokens.fontSans
                                         font.pixelSize: Tokens.fontSizeSmall
-                                        font.weight: Font.DemiBold
+                                        font.weight: Tokens.weightTitle
                                         color: Tokens.fg
                                         textFormat: Text.PlainText
                                         text: group.modelData.app
@@ -331,7 +331,7 @@ Item {
             anchors.centerIn: parent
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSizeSmall
-            font.weight: Font.Medium
+            font.weight: Tokens.weightLabel
             color: Tokens.fg
             textFormat: Text.PlainText
             text: button.label

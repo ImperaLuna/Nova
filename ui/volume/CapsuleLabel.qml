@@ -47,7 +47,7 @@ Item {
                 opacity: label.dimmed ? Tokens.dimOpacity : 1
                 font.family: Tokens.fontMono
                 font.pixelSize: Tokens.fontSize
-                font.weight: Font.DemiBold
+                font.weight: Tokens.weightTitle
                 textFormat: Text.PlainText
             }
         }

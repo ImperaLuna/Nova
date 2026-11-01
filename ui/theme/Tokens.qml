@@ -663,6 +663,12 @@ QtObject {
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"
     readonly property string fontDisplay: "Instrument Serif"
+    // Weights: running text, labels and names, titles and picked options,
+    // and the unread badge's count.
+    readonly property int weightBody: Font.Normal
+    readonly property int weightLabel: Font.Medium
+    readonly property int weightTitle: Font.DemiBold
+    readonly property int weightBadge: Font.Bold
     // The type scale: six steps, from labels up, then two big numbers.
     // Small caps labels and badges.
     readonly property int fontSizeMicro: 10

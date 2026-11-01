@@ -157,7 +157,7 @@ Item {
                         elide: Text.ElideRight
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSizeSmall
-                        font.weight: Font.DemiBold
+                        font.weight: Tokens.weightTitle
                         color: Tokens.fg
                         textFormat: Text.PlainText
                         text: Network.linkName(page.network)
@@ -628,7 +628,7 @@ Item {
                 elide: Text.ElideRight
                 font.family: Tokens.fontSans
                 font.pixelSize: Tokens.fontSize
-                font.weight: Font.Medium
+                font.weight: Tokens.weightLabel
                 color: Tokens.fg
                 textFormat: Text.PlainText
                 text: line.title
@@ -667,7 +667,7 @@ Item {
                     anchors.centerIn: parent
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeSmall
-                    font.weight: parent.inUse ? Font.DemiBold : Font.Normal
+                    font.weight: parent.inUse ? Tokens.weightTitle : Tokens.weightBody
                     color: parent.inUse ? Tokens.onAccent : Tokens.fgSoft
                     text: Network.roleLabel(line.role)
                 }
@@ -733,7 +733,7 @@ Item {
             anchors.centerIn: parent
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSizeSmall
-            font.weight: button.accent ? Font.DemiBold : Font.Normal
+            font.weight: button.accent ? Tokens.weightTitle : Tokens.weightBody
             color: button.accent ? Tokens.onAccent : Tokens.fg
         }
         MouseArea {

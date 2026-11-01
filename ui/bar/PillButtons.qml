@@ -96,7 +96,7 @@ Row {
                 visible: !buttons.doNotDisturb
                 font.family: Tokens.fontMono
                 font.pixelSize: Tokens.fontSizeMicro
-                font.weight: Font.Bold
+                font.weight: Tokens.weightBadge
                 color: Tokens.onAccent
                 text: buttons.unread > Tokens.badgeMax ? `${Tokens.badgeMax}+` : buttons.unread
             }

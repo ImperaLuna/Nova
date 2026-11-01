@@ -136,7 +136,7 @@ Item {
                         elide: Text.ElideRight
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSize
-                        font.weight: Font.DemiBold
+                        font.weight: Tokens.weightTitle
                         color: Tokens.fg
                         textFormat: Text.PlainText
                         text: card.notification.summary
@@ -214,7 +214,7 @@ Item {
                                 elide: Text.ElideRight
                                 font.family: Tokens.fontSans
                                 font.pixelSize: Tokens.fontSizeSmall
-                                font.weight: action.primary ? Font.DemiBold : Font.Medium
+                                font.weight: action.primary ? Tokens.weightTitle : Tokens.weightLabel
                                 color: action.primary ? Tokens.onAccent : Tokens.fg
                                 textFormat: Text.PlainText
                                 text: action.modelData.label

@@ -60,7 +60,7 @@ Item {
         verticalAlignment: Text.AlignVCenter
         font.family: Tokens.fontMono
         font.pixelSize: Tokens.fontSizeSmall
-        font.weight: Font.Medium
+        font.weight: Tokens.weightLabel
         color: Tokens.fg
         text: ring.reading
     }

@@ -22,7 +22,7 @@ Rectangle {
         anchors.centerIn: parent
         font.family: Tokens.fontSans
         font.pixelSize: Tokens.fontSizeSmall
-        font.weight: button.accent ? Font.DemiBold : Font.Normal
+        font.weight: button.accent ? Tokens.weightTitle : Tokens.weightBody
         color: button.accent ? Tokens.onAccent : Tokens.fg
     }
     MouseArea {

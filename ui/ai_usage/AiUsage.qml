@@ -99,7 +99,7 @@ StagePanel {
         id: heroMetrics
         font.family: Tokens.fontMono
         font.pixelSize: Tokens.fontSize
-        font.weight: Font.Medium
+        font.weight: Tokens.weightLabel
         text: root.summary.main ? root.summary.hero + "%" : root.summary.hero
     }
 
@@ -204,7 +204,7 @@ StagePanel {
             visible: opacity > 0
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSize
-            font.weight: Font.DemiBold
+            font.weight: Tokens.weightTitle
             color: Tokens.fg
             textFormat: Text.PlainText
             text: root.summary.name
@@ -230,7 +230,7 @@ StagePanel {
                 anchors.centerIn: parent
                 font.family: Tokens.fontSans
                 font.pixelSize: Tokens.fontSizeSmall
-                font.weight: Font.Medium
+                font.weight: Tokens.weightLabel
                 color: Tokens.fgDim
                 textFormat: Text.PlainText
                 text: root.summary.plan
@@ -253,7 +253,7 @@ StagePanel {
                 verticalAlignment: Text.AlignVCenter
                 font.family: Tokens.fontMono
                 font.pixelSize: root.heroSize
-                font.weight: Font.Medium
+                font.weight: Tokens.weightLabel
                 font.letterSpacing: morph.lerp(0, Tokens.trackingHero * root.heroSize)
                 color: root.summary.main ? root.percentColor(root.summary) : Tokens.fgDim
                 textFormat: Text.PlainText
@@ -274,7 +274,7 @@ StagePanel {
                 visible: root.summary.main !== null
                 font.family: Tokens.fontMono
                 font.pixelSize: root.heroSize * morph.lerp(1, Tokens.heroUnitScale)
-                font.weight: Font.Medium
+                font.weight: Tokens.weightLabel
                 color: number.color
                 text: "%"
             }
@@ -362,7 +362,7 @@ StagePanel {
                         anchors.baseline: secondName.baseline
                         font.family: Tokens.fontMono
                         font.pixelSize: Tokens.fontSize
-                        font.weight: Font.Medium
+                        font.weight: Tokens.weightLabel
                         color: root.percentColor(root.summary.second)
                         text: root.summary.second ? `${root.summary.second.percent}%` : ""
                     }
@@ -447,7 +447,7 @@ StagePanel {
                         anchors.verticalCenter: parent.verticalCenter
                         font.family: Tokens.fontMono
                         font.pixelSize: Tokens.fontSize
-                        font.weight: Font.Medium
+                        font.weight: Tokens.weightLabel
                         color: row.info.main ? root.percentColor(row.info) : Tokens.fgDim
                         text: row.info.main ? `${row.info.hero}%` : row.info.hero
                     }

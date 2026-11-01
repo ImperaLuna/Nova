@@ -38,7 +38,7 @@ Item {
         x: button.width + Tokens.gap
         font.family: Tokens.fontSans
         font.pixelSize: Tokens.fontSizeHeading
-        font.weight: Font.DemiBold
+        font.weight: Tokens.weightTitle
         color: Tokens.fg
         text: header.title
     }

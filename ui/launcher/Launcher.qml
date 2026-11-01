@@ -241,7 +241,7 @@ StagePanel {
                     width: escHint.x - x - Tokens.launcherGap
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeHeading
-                    font.weight: Font.Medium
+                    font.weight: Tokens.weightLabel
                     color: Tokens.fg
                     selectionColor: Tokens.primary
                     selectedTextColor: Tokens.onAccent

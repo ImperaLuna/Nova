@@ -82,7 +82,7 @@ Rectangle {
                         anchors.centerIn: parent
                         font.family: Tokens.fontMono
                         font.pixelSize: Tokens.fontSizeTitle
-                        font.weight: Font.DemiBold
+                        font.weight: Tokens.weightTitle
                         color: cell.done ? Tokens.onAccent : Tokens.fg
                         text: prompt.code.charAt(cell.index)
                     }

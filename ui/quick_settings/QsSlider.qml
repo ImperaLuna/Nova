@@ -81,7 +81,7 @@ Item {
             visible: slider.app && !appImage.visible
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSizeSmall
-            font.weight: Font.DemiBold
+            font.weight: Tokens.weightTitle
             color: slider.muted ? Tokens.fgDim : Tokens.fg
             text: slider.label.charAt(0).toUpperCase()
         }

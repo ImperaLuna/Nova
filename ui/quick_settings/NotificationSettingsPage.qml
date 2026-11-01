@@ -123,7 +123,7 @@ Item {
             elide: Text.ElideRight
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSize
-            font.weight: Font.Medium
+            font.weight: Tokens.weightLabel
             color: Tokens.fg
             textFormat: Text.PlainText
             text: row.title

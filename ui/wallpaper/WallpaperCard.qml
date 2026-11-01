@@ -99,7 +99,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 font.family: Tokens.fontSans
                 font.pixelSize: Tokens.fontSizeSmall
-                font.weight: Font.Medium
+                font.weight: Tokens.weightLabel
                 color: Tokens.fg
                 text: qsTr("Now")
             }
@@ -127,7 +127,7 @@ Item {
                     anchors.centerIn: parent
                     font.family: Tokens.fontMono
                     font.pixelSize: Tokens.fontSizeSmall
-                    font.weight: Font.Medium
+                    font.weight: Tokens.weightLabel
                     color: Tokens.fg
                     textFormat: Text.PlainText
                     text: parent.modelData
