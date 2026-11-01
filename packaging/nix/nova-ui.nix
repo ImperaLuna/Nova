@@ -6,15 +6,29 @@
 # named NovaUI to that binary, from a wrapper that sets the same Qt paths
 # nixpkgs' own wrapper does. --inherit-argv0 keeps the `NovaUI` argv[0]
 # that novad passes.
+#
+# Quickshell is built here with quickshell-wlr-output.patch, so it compiles
+# from source instead of coming from the binary cache (a few minutes, once
+# per nixpkgs update). Its wlr-screencopy code binds each monitor a second
+# time as a QtWayland::wl_output, which Qt mistakes for a screen: a Nova
+# window leaving a monitor on niri then crashes the UI while glass keeps a
+# screen copy (IMP-262). Drop the patch, and this override, once nixpkgs
+# ships a Quickshell with it fixed upstream; it stops applying when that
+# file changes, so the "Newest Quickshell" check flags it.
 {
   stdenv,
   qt6,
   makeBinaryWrapper,
   quickshell,
 }:
+let
+  patched = quickshell.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ./quickshell-wlr-output.patch ];
+  });
+in
 stdenv.mkDerivation {
   pname = "nova-ui";
-  inherit (quickshell) version;
+  inherit (patched) version;
   dontUnpack = true;
   nativeBuildInputs = [
     qt6.wrapQtAppsHook
@@ -22,19 +36,19 @@ stdenv.mkDerivation {
   ];
   # Quickshell's inputs, so wrapQtAppsHook collects the same plugin and QML
   # paths into qtWrapperArgs; Quickshell itself for its own QML modules.
-  buildInputs = quickshell.buildInputs ++ [ quickshell ];
+  buildInputs = patched.buildInputs ++ [ patched ];
   dontWrapQtApps = true;
   installPhase = ''
     runHook preInstall
     mkdir -p $out/libexec/nova $out/bin
-    ln -s ${quickshell}/bin/.quickshell-wrapped $out/libexec/nova/NovaUI
+    ln -s ${patched}/bin/.quickshell-wrapped $out/libexec/nova/NovaUI
     makeBinaryWrapper $out/libexec/nova/NovaUI $out/bin/nova-ui --inherit-argv0 \
-      --prefix XDG_DATA_DIRS : ${quickshell}/share "''${qtWrapperArgs[@]}"
+      --prefix XDG_DATA_DIRS : ${patched}/share "''${qtWrapperArgs[@]}"
     runHook postInstall
   '';
   meta = {
     description = "Quickshell, run under the name NovaUI";
-    inherit (quickshell.meta) license platforms;
+    inherit (patched.meta) license platforms;
     mainProgram = "nova-ui";
   };
 }
