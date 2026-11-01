@@ -378,6 +378,13 @@ Item {
             compare(carousel.screenNames, ["DP-1"]);
         }
 
+        function test_a_screen_going_away_leaves_the_picker_without_errors() {
+            const carousel = make();
+            failOnWarning(/TypeError/);
+            carousel.screens = [carousel.screens[0]];
+            compare(carousel.screenNames, ["DP-1"]);
+        }
+
         function test_a_failed_pick_says_why_and_stays_open() {
             const carousel = make();
             keyClick(Qt.Key_Right);
