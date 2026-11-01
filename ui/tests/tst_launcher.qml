@@ -340,13 +340,16 @@ Item {
                 app: {
                     id: "impress.desktop",
                     name: name,
-                    runs: [{
+                    runs: [
+                        {
                             text: "Lib",
                             matched: true
-                        }, {
+                        },
+                        {
                             text: name.slice(3),
                             matched: false
-                        }],
+                        }
+                    ],
                     description: ""
                 }
             });
