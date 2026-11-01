@@ -69,7 +69,12 @@ Item {
     // Without a first copy there's nothing to take one with yet (no screen
     // capture, or not ready): that first one comes by itself.
     function take() {
-        if (!quiet || !copy?.hasContent)
+        // Not now: once it's quiet again (one copy, the wait was long).
+        if (!quiet) {
+            wanted = true;
+            return;
+        }
+        if (!copy?.hasContent)
             return;
         wanted = false;
         console.debug(`nova: glass copies ${screen.name}`);

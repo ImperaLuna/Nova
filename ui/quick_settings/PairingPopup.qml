@@ -18,6 +18,10 @@ import "bluetooth.js" as Bluetooth
 PanelWindow { // qmllint disable uncreatable-type
     id: window
 
+    readonly property CoversGlass cover: CoversGlass {
+        shown: window.visible
+    }
+
     readonly property var request: BluetoothService.watching ? null : BluetoothService.pairing
     // The screen it shows on, picked when a question comes.
     property ShellScreen target: null

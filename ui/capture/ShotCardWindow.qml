@@ -14,6 +14,10 @@ import "capture.js" as Capture
 PanelWindow { // qmllint disable uncreatable-type
     id: window
 
+    readonly property CoversGlass cover: CoversGlass {
+        shown: window.visible
+    }
+
     screen: output.screen
     // Its screen (StageScreen), kept while it goes away.
     required property StageScreen output

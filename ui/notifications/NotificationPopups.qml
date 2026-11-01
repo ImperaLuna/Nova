@@ -27,10 +27,8 @@ PanelWindow { // qmllint disable uncreatable-type
 
     screen: target
     visible: stack.busy
-    Binding {
-        target: NotificationsService
-        property: "popUpsShown"
-        value: window.visible
+    readonly property CoversGlass cover: CoversGlass {
+        shown: window.visible
     }
     anchors.top: true
     anchors.right: true

@@ -1,6 +1,7 @@
 singleton Tokens Tokens.qml
 singleton GlassBackdrops GlassBackdrops.qml
 Countdown 1.0 Countdown.qml
+CoversGlass 1.0 CoversGlass.qml
 Glass 1.0 Glass.qml
 GlassBackdrop 1.0 GlassBackdrop.qml
 GlassShadow 1.0 GlassShadow.qml

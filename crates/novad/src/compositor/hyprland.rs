@@ -286,15 +286,32 @@ impl State {
             | "renameworkspace" | "monitoraddedv2" | "monitorremovedv2" | "configreloaded" | "activespecialv2" => {
                 self.stale_workspaces = true;
             }
-            "openwindow" | "movewindowv2" | "fullscreen" => {
+            "openwindow" => {
                 self.stale_windows = true;
-                self.window_moved();
+                // ADDRESS,WORKSPACENAME,CLASS,TITLE
+                let workspace = data.split(',').nth(1).and_then(|name| self.workspace_named(name));
+                self.moved_on(workspace);
             }
-            "changefloatingmode" => self.window_moved(),
+            "movewindowv2" => {
+                self.stale_windows = true;
+                // ADDRESS,WORKSPACEID,WORKSPACENAME: where it was, and where it went.
+                let mut fields = data.split(',');
+                let from = fields.next().and_then(|address| Some(self.windows.get(address)?.workspace));
+                self.moved_on(from);
+                self.moved_on(fields.next().and_then(|id| id.parse().ok()));
+            }
+            "fullscreen" => {
+                self.stale_windows = true;
+                self.moved_on(None);
+            }
+            "changefloatingmode" => {
+                let workspace = data.split(',').next().and_then(|address| Some(self.windows.get(address)?.workspace));
+                self.moved_on(workspace);
+            }
             "closewindow" => {
-                self.windows.remove(data);
+                let workspace = self.windows.remove(data).map(|window| window.workspace);
                 self.urgent.remove(data);
-                self.window_moved();
+                self.moved_on(workspace);
             }
             "windowtitlev2" => {
                 if let Some((address, title)) = data.split_once(',')
@@ -321,11 +338,20 @@ impl State {
         }
     }
 
-    /// Windows moved on the focused monitor, where Hyprland moves them (it
-    /// reports no resizes).
-    fn window_moved(&mut self) {
-        if let Some(monitor) = self.monitors.iter().find(|monitor| monitor.focused) {
-            *self.moved.entry(monitor.name.clone()).or_default() += 1;
+    fn workspace_named(&self, name: &str) -> Option<WorkspaceId> {
+        self.workspaces.iter().find(|workspace| workspace.name == name).map(|workspace| workspace.id)
+    }
+
+    /// Windows moved on the monitor showing `workspace`, or the focused one
+    /// when it isn't known (Hyprland reports no resizes).
+    fn moved_on(&mut self, workspace: Option<WorkspaceId>) {
+        let on = workspace.and_then(|id| self.workspaces.iter().find(|workspace| workspace.id == id));
+        let monitor = match on {
+            Some(workspace) => Some(workspace.monitor.clone()),
+            None => self.monitors.iter().find(|monitor| monitor.focused).map(|monitor| monitor.name.clone()),
+        };
+        if let Some(monitor) = monitor {
+            *self.moved.entry(monitor).or_default() += 1;
         }
     }
 

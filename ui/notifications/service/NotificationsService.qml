@@ -30,9 +30,6 @@ Singleton {
     // pop-ups meanwhile, and what's in it is read once it closes.
     property list<string> listShown: []
     readonly property bool listOpen: listShown.length > 0
-    // Pop-ups are on screen (NotificationPopups sets it): glass's copies of
-    // the screen wait for them to go (stage/Backdrop.qml).
-    property bool popUpsShown: false
 
     // A notification to pop up.
     signal popped(var notification)
