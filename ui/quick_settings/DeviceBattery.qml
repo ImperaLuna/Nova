@@ -36,7 +36,8 @@ Item {
             Behavior on width {
                 NumberAnimation {
                     duration: Tokens.durationFill
-                    easing.type: Easing.OutCubic
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Tokens.easing
                 }
             }
         }
