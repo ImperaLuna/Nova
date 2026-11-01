@@ -71,6 +71,9 @@ Scope {
     // A new layer goes out with a frame, and the stage may not be drawing
     // (another surface's panel opened).
     onSurfaceLayerChanged: drawing.settle()
+    // Nothing of Nova's but the bar is on this screen: a Backdrop can copy
+    // it.
+    readonly property bool quiet: all.shown.length === 0 && NotificationsService.popUps.length === 0
     // Where the PanelSurfaces with panels shown are, in screen coordinates.
     readonly property list<rect> panelBoxes: [right, center].filter(surface => !surface.parked).map(surface => surface.box)
     function placed(placement: string): list<StagePanel> {
@@ -231,6 +234,7 @@ Scope {
         panels: root.placed("right")
         clickAnywhere: all.catchesClicks
         holding: root.settling
+        quiet: root.quiet
         onDismissRequested: OpenPanels.dismissed()
     }
 
@@ -241,6 +245,7 @@ Scope {
         panels: root.placed("center")
         clickAnywhere: all.catchesClicks
         holding: root.settling
+        quiet: root.quiet
         onDismissRequested: OpenPanels.dismissed()
     }
 
@@ -293,6 +298,13 @@ Scope {
             enabled: root.catchesAnywhere
             stagePanels: drawn
             onDismissRequested: OpenPanels.dismissed()
+        }
+
+        // For its glass to thicken over bright windows. A copy of the screen
+        // sees only what's behind while no panel or pop-up is out.
+        Backdrop {
+            screen: root.screen
+            quiet: root.quiet
         }
 
         Bar {

@@ -2,9 +2,10 @@ import QtQuick
 
 // Nova's smoked glass. The compositor blurs whatever is behind it (the
 // window's BackgroundEffect region); this paints on top of that blur: a warm
-// near-black tint that darkens what's behind without greying it, then a dark
-// outline outside, a faint light line inside it, and a highlight along the
-// top that fades out before the corners. Children go on top.
+// near-black tint that darkens what's behind without greying it (thicker
+// over bright spots where its window has a copy of the screen, GlassTint),
+// then a dark outline outside, a faint light line inside it, and a highlight
+// along the top that fades out before the corners. Children go on top.
 Rectangle {
     id: glass
 
@@ -12,7 +13,13 @@ Rectangle {
     // something drawn beside it (the power tab into its fillets).
     property real rimEnd: width
 
-    color: Tokens.glass
+    color: fill.active ? "transparent" : Tokens.glass
+
+    GlassTint {
+        id: fill
+        anchors.fill: parent
+        radius: glass.radius
+    }
 
     Item {
         width: glass.rimEnd
