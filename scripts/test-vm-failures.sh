@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tests scripts/vm-failures.sh's parse, render and records on CI logs and
 # failures recorded from real runs (scripts/vm-failures/). `record` talks to
-# GitHub, so only its parts are tested here, and that it exits cleanly when
-# no job of the run failed.
+# GitHub, so only its parts are tested here, that it exits cleanly when no
+# job of the run failed, and that it reads a failed job's log.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -81,7 +81,17 @@ trap 'rm -rf "$fake"' EXIT
 printf '#!%s\n' "$BASH" >"$fake/gh"
 chmod +x "$fake/gh"
 expect "record with no failed job" $'No job of https://github.com/o/r/actions/runs/1/attempts/1 failed.\nexit 0' \
-  "$(PATH="$fake:$PATH" GITHUB_REPOSITORY=o/r RUN_ID=1 RUN_ATTEMPT=1 RUN_DATE=2026-10-29T00:00:00Z PR='' \
+  "$(PATH="$fake:$PATH" GH_TOKEN=t GITHUB_REPOSITORY=o/r RUN_ID=1 RUN_ATTEMPT=1 RUN_DATE=2026-10-29T00:00:00Z PR='' \
+    $script record 2>&1; echo "exit $?")"
+
+# A failed job whose log has colour codes in it (as every CI log does) is
+# downloaded and read; with no VM test in it, `record` stops there.
+printf '#!%s\necho 7\n' "$BASH" >"$fake/gh"
+printf '#!%s\n[[ $* == *"/actions/jobs/7/logs" ]] || exit 22\nprintf '"'"'\\e[36;1mjust check\\e[0m\\n'"'"'\ncat %q\n' \
+  "$BASH" "$PWD/$data/no-vm-test.log" >"$fake/curl"
+chmod +x "$fake/curl"
+expect "record with a colourful failed log" $'No VM test failed in https://github.com/o/r/actions/runs/1/attempts/1.\nexit 0' \
+  "$(PATH="$fake:$PATH" GH_TOKEN=t GITHUB_REPOSITORY=o/r RUN_ID=1 RUN_ATTEMPT=1 RUN_DATE=2026-10-29T00:00:00Z PR='' \
     $script record 2>&1; echo "exit $?")"
 
 if [[ $failed == 0 ]]; then
