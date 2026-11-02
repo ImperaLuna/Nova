@@ -23,8 +23,8 @@
 #                   made if there's none), and comments on the PR when a
 #                   subtest that failed there failed on another PR before.
 #
-# `record` needs gh and jq, and in the environment: GH_TOKEN (reads Actions
-# logs, writes issues and PR comments), GITHUB_REPOSITORY, RUN_ID and
+# `record` needs gh, curl and jq, and in the environment: GH_TOKEN (reads
+# Actions logs, writes issues and PR comments), GITHUB_REPOSITORY, RUN_ID and
 # RUN_ATTEMPT (the CI run), PR (its pull request's number; empty for none)
 # and RUN_DATE (when it ran, ISO 8601).
 # Usage: scripts/vm-failures.sh parse|render|records|record [file...]
@@ -103,7 +103,7 @@ records() {
 }
 
 record() {
-  : "${GITHUB_REPOSITORY:?}" "${RUN_ID:?}" "${RUN_ATTEMPT:?}" "${RUN_DATE:?}" "${PR?}"
+  : "${GH_TOKEN:?}" "${GITHUB_REPOSITORY:?}" "${RUN_ID:?}" "${RUN_ATTEMPT:?}" "${RUN_DATE:?}" "${PR?}"
   local repo=$GITHUB_REPOSITORY work
   local run="https://github.com/$repo/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT"
   work=$(mktemp -d)
@@ -114,7 +114,12 @@ record() {
   local job logs=()
   for job in $(gh api "repos/$repo/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs" \
     --jq '.jobs[] | select(.conclusion == "failure") | .id'); do
-    gh api "repos/$repo/actions/jobs/$job/logs" >"$work/job-$job.log"
+    # With curl, not `gh api`: newer gh refuses to print a response with
+    # terminal escape sequences in it, and CI logs are full of colour codes.
+    # The logs URL redirects to storage that needs no token; curl doesn't
+    # send the token on to another host.
+    curl -fsSL --retry 3 -H "Authorization: Bearer $GH_TOKEN" \
+      "${GITHUB_API_URL:-https://api.github.com}/repos/$repo/actions/jobs/$job/logs" >"$work/job-$job.log"
     logs+=("$work/job-$job.log")
   done
   if ((${#logs[@]} == 0)); then
