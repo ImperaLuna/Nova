@@ -64,6 +64,7 @@ mod theme;
 mod tray;
 mod wallpaper;
 mod wallpaper_folder;
+mod watch_points;
 mod x11_tray;
 
 use hub::Hub;

@@ -13,6 +13,7 @@ use crate::icons::Icons;
 use crate::inotify::{self, Inotify};
 use crate::lock;
 use crate::logger::Logger;
+use crate::watch_points::{self, Reporting};
 use nova_protocol::{APP_ICON_MAX_CHARS, App};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -21,8 +22,6 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, mpsc};
 use std::time::Duration;
 
 const LOG_SOURCE: &str = "apps";
-/// Installing a package writes many entries; they're read once it pauses.
-const SETTLE: Duration = Duration::from_millis(500);
 /// How long a lookup made while novad starts (`app_once_scanned`) waits
 /// for the apps to be read the first time.
 const FIRST_SCAN_WAIT: Duration = Duration::from_secs(2);
@@ -240,8 +239,7 @@ impl AppIndex {
         }
         // Watched first, so an app installed meanwhile isn't missed.
         self.rescan(stopped);
-        while changes.recv().is_ok() {
-            while changes.recv_timeout(SETTLE).is_ok() {}
+        while watch_points::settled(&changes) {
             if stopped.load(Ordering::SeqCst) {
                 return;
             }
@@ -253,7 +251,7 @@ impl AppIndex {
     /// change that may change the apps.
     fn watch(
         &self,
-        mut watcher: Inotify,
+        watcher: Inotify,
         changed: mpsc::Sender<()>,
         stopped: &AtomicBool,
         watch: &Mutex<Option<inotify::Stopper>>,
@@ -266,28 +264,8 @@ impl AppIndex {
             *watch = Some(watcher.stopper());
         }
         let data_dirs = self.sources.data_dirs.clone();
-        let logger = Arc::clone(&self.logger);
-        let mut points = watch_all(&mut watcher, &data_dirs, &logger);
-        std::thread::spawn(move || {
-            loop {
-                let found = match watcher.read() {
-                    Ok(Some(found)) => found,
-                    Ok(None) => return,
-                    Err(e) => {
-                        logger.warn(LOG_SOURCE, &format!("stopped watching for new apps: {e}"));
-                        return;
-                    }
-                };
-                if !found.overflowed && !found.found.iter().any(|change| points.counts(&change.path)) {
-                    continue;
-                }
-                // A folder or link may have come or gone: look again at what to watch.
-                points = watch_all(&mut watcher, &data_dirs, &logger);
-                if changed.send(()).is_err() {
-                    return;
-                }
-            }
-        });
+        let reporting = Reporting { logger: Arc::clone(&self.logger), source: LOG_SOURCE, what: "new apps" };
+        watch_points::follow(watcher, move || scan::watch_points(&data_dirs), changed, reporting);
     }
 
     fn rescan(&self, stopped: &AtomicBool) {
@@ -400,21 +378,4 @@ impl AppIndex {
         }
         index
     }
-}
-
-/// Watches what `scan::watch_points` says for `data_dirs`.
-fn watch_all(watcher: &mut Inotify, data_dirs: &[PathBuf], logger: &Logger) -> scan::WatchPoints {
-    let points = scan::watch_points(data_dirs);
-    // The parents first: a folder that's both gets the trees' wider mask.
-    for parent in &points.parents {
-        if let Err(e) = watcher.watch_for(parent, inotify::ENTRIES) {
-            logger.warn(LOG_SOURCE, &format!("can't watch {} for new apps: {e}", parent.display()));
-        }
-    }
-    for tree in &points.trees {
-        if let Err(e) = watcher.watch_tree(tree) {
-            logger.warn(LOG_SOURCE, &format!("can't watch {} for new apps: {e}", tree.display()));
-        }
-    }
-    points
 }

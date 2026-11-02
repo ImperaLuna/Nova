@@ -14,10 +14,12 @@
 //! - Opening files in apps is the shared `crate::apps::opening`, over the
 //!   module's one copy of the MIME database.
 //! - `views.rs`: the folders a window shows (`files_open`), read in pages
-//!   and followed with inotify while open, one thread per view.
+//!   and followed while open, one thread per view.
+//! - `watcher.rs`: the one inotify instance every view follows its folder
+//!   through, and the folders above it, so a renamed parent is seen.
 //! - `folder.rs`: a folder's entries, their types from the shared MIME
-//!   database (`crate::mime`, loaded once as the module starts), and the
-//!   view's order.
+//!   database (`crate::mime`, read as the module starts and again when a
+//!   package brings new types), and the view's order.
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
@@ -34,6 +36,7 @@ mod file_manager1;
 mod folder;
 mod target;
 mod views;
+mod watcher;
 mod window;
 
 use crate::apps::AppIndex;
@@ -74,6 +77,8 @@ pub struct Files {
     shared: Arc<Shared>,
     /// Opens files in apps.
     opener: Arc<Opener>,
+    /// The MIME database, followed while the module runs.
+    mime: Arc<crate::mime::Mime>,
     /// Ends the FileManager1 service.
     stop: Arc<Stop>,
     /// The folders the windows show.
@@ -112,14 +117,10 @@ impl Files {
         apps: Arc<AppIndex>,
         path_var: &str,
     ) -> Arc<Self> {
-        let (mime, problems) = crate::mime::MimeDb::load(&sources.data_dirs);
-        for problem in problems {
-            logger.warn(LOG_SOURCE, &problem);
-        }
-        let mime = Arc::new(mime);
+        let mime = crate::mime::Mime::follow(sources.data_dirs.clone(), Arc::clone(&logger));
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
         let opener = Opener::new(
-            mime,
+            Arc::clone(&mime),
             sources.associations.clone(),
             sources.runner.clone(),
             apps,
@@ -138,7 +139,7 @@ impl Files {
         });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, opener: Arc::new(opener), stop, folders, look: Mutex::default() })
+        Arc::new(Self { shared, opener: Arc::new(opener), mime, stop, folders, look: Mutex::default() })
     }
 
     /// What opens files in apps.
@@ -210,10 +211,11 @@ impl Files {
     }
 
     /// Stops it: it publishes nothing more, gives up FileManager1, closes
-    /// Nova Files' windows and folder views, and drops windows still
-    /// waiting.
+    /// Nova Files' windows and folder views, stops following the MIME
+    /// database and drops windows still waiting.
     pub fn stop(&self) {
         self.stop.stop();
+        self.mime.stop();
         self.folders.stop();
         if let Some(process) = &self.shared.process {
             process.stop();

@@ -4,12 +4,11 @@
 //! copy of an entry replaces the system's.
 
 use super::desktop_entry::{self, Context, Entry, Skipped};
+use crate::watch_points::WatchPoints;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 const ENTRY_EXTENSION: &str = "desktop";
-/// Links followed when looking for what to watch, like the kernel's limit.
-const MAX_LINKS: usize = 40;
 /// Folders below `applications/` that are looked in; deeper ones aren't.
 const MAX_DEPTH: usize = 8;
 /// A desktop entry is a few kilobytes; anything far bigger isn't one.
@@ -111,27 +110,6 @@ fn entry_files(root: &Path, dir: &Path, depth: usize, found: &mut Vec<(String, P
     }
 }
 
-/// What to watch so a change to the apps is seen, and the paths whose
-/// changes count.
-#[derive(Debug, Default, PartialEq)]
-pub struct WatchPoints {
-    /// Folders whose files and subfolders are apps (`applications/` and
-    /// below, where they resolve to).
-    pub trees: BTreeSet<PathBuf>,
-    /// Folders holding a link on the way to an `applications/` folder, or the
-    /// data folder it may appear in. Only `entries` count there.
-    pub parents: BTreeSet<PathBuf>,
-    /// Those links and would-be folders.
-    pub entries: BTreeSet<PathBuf>,
-}
-
-impl WatchPoints {
-    /// Whether a change at `path` may change the apps.
-    pub fn counts(&self, path: &Path) -> bool {
-        self.entries.contains(path) || self.trees.iter().any(|tree| path.starts_with(tree))
-    }
-}
-
 /// Where apps install icons in the user's data folder (the first), which
 /// may come after their entry (Steam's game shortcuts): a change there
 /// counts too, so the icons are looked up again. The system's folders
@@ -146,78 +124,12 @@ const USER_ICON_FOLDERS: [&str; 2] = ["icons/hicolor", "pixmaps"];
 pub fn watch_points(data_dirs: &[PathBuf]) -> WatchPoints {
     let mut points = WatchPoints::default();
     for dir in data_dirs {
-        watch_folder(&dir.join("applications"), &mut points);
+        points.add_tree(&dir.join("applications"), MAX_DEPTH);
     }
     for folder in data_dirs.first().into_iter().flat_map(|dir| USER_ICON_FOLDERS.map(|folder| dir.join(folder))) {
-        watch_folder(&folder, &mut points);
+        points.add_tree(&folder, MAX_DEPTH);
     }
     points
-}
-
-/// Adds `folder`, the links on the way to it and those below it, or where
-/// it would appear.
-fn watch_folder(folder: &Path, points: &mut WatchPoints) {
-    links_on_the_way(folder, points);
-    match std::fs::canonicalize(folder) {
-        // Watched through its folder too, so a replacement (one renamed
-        // over it, or one made after it was deleted) is seen.
-        Ok(resolved) => {
-            if let Some(parent) = resolved.parent() {
-                points.parents.insert(parent.to_owned());
-                points.entries.insert(resolved.clone());
-            }
-            linked_folders(&resolved, 0, points);
-            points.trees.insert(resolved);
-        }
-        // Not there (yet): the folder it would appear in is watched.
-        Err(_) => {
-            if let Some(existing) = folder.ancestors().skip(1).find(|dir| dir.is_dir()) {
-                points.parents.insert(existing.to_owned());
-                let child = folder.strip_prefix(existing).ok().and_then(|rest| rest.components().next());
-                points.entries.extend(child.map(|child| existing.join(child)));
-            }
-        }
-    }
-}
-
-/// Adds the folders that links below `dir` lead to as trees of their own:
-/// a tree's watches don't follow links, though reading it does.
-fn linked_folders(dir: &Path, depth: usize, points: &mut WatchPoints) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
-    for path in entries.flatten().map(|entry| entry.path()) {
-        if depth >= MAX_DEPTH || !path.is_dir() {
-            continue;
-        }
-        match path.is_symlink() {
-            true => {
-                if let Ok(target) = std::fs::canonicalize(&path)
-                    && points.trees.insert(target.clone())
-                {
-                    linked_folders(&target, depth + 1, points);
-                }
-            }
-            false => linked_folders(&path, depth + 1, points),
-        }
-    }
-}
-
-/// Adds each link on the way to `path`, following them, with its folder.
-fn links_on_the_way(path: &Path, points: &mut WatchPoints) {
-    let mut path = path.to_owned();
-    'resolve: for _ in 0..MAX_LINKS {
-        let mut prefix = PathBuf::new();
-        let mut components = path.components();
-        while let Some(component) = components.next() {
-            prefix.push(component);
-            let Ok(target) = std::fs::read_link(&prefix) else { continue };
-            let Some(parent) = prefix.parent() else { return };
-            points.parents.insert(parent.to_owned());
-            points.entries.insert(prefix.clone());
-            path = parent.join(target).join(components.as_path());
-            continue 'resolve;
-        }
-        return;
-    }
 }
 
 #[cfg(test)]
