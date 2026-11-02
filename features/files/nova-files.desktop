@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Nova Files
+GenericName=File Manager
+Exec=nova files %F
+Icon=system-file-manager
+Terminal=false
+Categories=System;FileTools;FileManager;
+MimeType=inode/directory;
+StartupWMClass=nova-files

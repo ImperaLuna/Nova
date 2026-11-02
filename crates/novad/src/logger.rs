@@ -7,7 +7,7 @@
 
 use crate::hub::{ClientId, Hub};
 use crate::lock;
-use nova_protocol::{Event, LogEntry, LogLevel, Topic, UI_LOG_SOURCE};
+use nova_protocol::{Event, LogEntry, LogLevel, Topic};
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -72,10 +72,11 @@ impl Logger {
         self.log(LogLevel::Error, source, message);
     }
 
-    /// One line the UI printed, in Quickshell's format.
-    pub fn ui_line(&self, line: &str) {
+    /// One line a Quickshell process of Nova's printed, in Quickshell's
+    /// format, logged as from `source` (the UI's is `UI_LOG_SOURCE`).
+    pub fn ui_line(&self, source: &str, line: &str) {
         let (level, message) = parse_ui_line(line);
-        self.log(level, UI_LOG_SOURCE, message);
+        self.log(level, source, message);
     }
 
     pub fn log(&self, level: LogLevel, source: &str, message: &str) {
@@ -265,6 +266,7 @@ fn next_secret(lower: &str, from: usize) -> Option<(usize, usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nova_protocol::UI_LOG_SOURCE;
 
     fn temp_dir(name: &str) -> nova_test_support::TempDir {
         nova_test_support::TempDir::new(&format!("logger-{name}"))
@@ -295,7 +297,7 @@ mod tests {
         let dir = temp_dir("crash");
         let log = logger(&dir);
         for i in 0..CRASH_ENTRIES + 5 {
-            log.ui_line(&format!("  WARN line {i}"));
+            log.ui_line(UI_LOG_SOURCE, &format!("  WARN line {i}"));
         }
         let snapshot = read_entries(&log.save_crash().unwrap());
         assert_eq!(snapshot.len(), CRASH_ENTRIES);

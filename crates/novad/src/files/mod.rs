@@ -9,6 +9,8 @@
 //!   exists, and items in it to select.
 //! - `file_manager1.rs`: `org.freedesktop.FileManager1`, so apps' "Show in
 //!   folder" opens Nova Files.
+//! - `window.rs`: the Nova Files process (`ui/files.qml`), started when a
+//!   window is asked for and none runs.
 //! - Opening files in apps is the shared `crate::apps::opening`, over the
 //!   module's one copy of the MIME database.
 //!
@@ -19,7 +21,9 @@
 
 mod file_manager1;
 mod target;
+mod window;
 
+use crate::apps::AppIndex;
 use crate::apps::associations::Places;
 use crate::apps::launch::Runner;
 use crate::apps::opening::Opener;
@@ -45,14 +49,9 @@ pub struct Sources {
     pub associations: Places,
     /// How apps opening files are started.
     pub runner: Runner,
-}
-
-impl Sources {
-    pub fn system(path_var: &str) -> Self {
-        let data_dirs = crate::data_dirs();
-        let associations = Places::system(&data_dirs);
-        Self { bus: Bus::Session, data_dirs, associations, runner: Runner::detect(path_var) }
-    }
+    /// How the Nova Files process runs; none for a novad without its UI,
+    /// where windows only wait.
+    pub ui: Option<crate::supervisor::UiSettings>,
 }
 
 pub struct Files {
@@ -70,11 +69,32 @@ struct Shared {
     logger: Arc<Logger>,
     /// Windows asked for that no Nova Files process has been sent yet.
     waiting: Mutex<Vec<FilesWindow>>,
+    process: Option<window::Process>,
 }
 
 impl Files {
-    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>, opener: Opener) -> Arc<Self> {
-        let shared = Arc::new(Shared { sources, hub, logger, waiting: Mutex::new(Vec::new()) });
+    /// Starts it, opening files in `apps` with programs from `path_var`.
+    pub fn start(
+        sources: Sources,
+        hub: Arc<Hub>,
+        logger: Arc<Logger>,
+        apps: Arc<AppIndex>,
+        path_var: &str,
+    ) -> Arc<Self> {
+        let (mime, problems) = crate::mime::MimeDb::load(&sources.data_dirs);
+        for problem in problems {
+            logger.warn(LOG_SOURCE, &problem);
+        }
+        let opener = Opener::new(
+            Arc::new(mime),
+            sources.associations.clone(),
+            sources.runner.clone(),
+            apps,
+            path_var,
+            Arc::clone(&logger),
+        );
+        let process = sources.ui.clone().map(|ui| window::Process::new(ui, Arc::clone(&logger)));
+        let shared = Arc::new(Shared { sources, hub, logger, waiting: Mutex::new(Vec::new()), process });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
         Arc::new(Self { shared, opener: Arc::new(opener), stop })
@@ -99,22 +119,29 @@ impl Files {
         }
     }
 
-    /// Stops it: it publishes nothing more, gives up FileManager1, and
-    /// windows still waiting are dropped.
+    /// Stops it: it publishes nothing more, gives up FileManager1, closes
+    /// Nova Files' windows, and drops those still waiting.
     pub fn stop(&self) {
         self.stop.stop();
+        if let Some(process) = &self.shared.process {
+            process.stop();
+        }
         lock(&self.shared.waiting).clear();
     }
 }
 
 impl Shared {
     /// Sends `window` to the Nova Files process, or keeps it for the next
-    /// one to subscribe.
+    /// one to subscribe, starting one.
     fn open(&self, window: FilesWindow) {
         let mut waiting = lock(&self.waiting);
-        if self.hub.publish(&Event::FilesWindow(window.clone())) == 0 {
-            self.logger.info(LOG_SOURCE, &format!("{} waits for Nova Files to start", window.folder));
-            waiting.push(window);
+        if self.hub.publish(&Event::FilesWindow(window.clone())) > 0 {
+            return;
+        }
+        self.logger.info(LOG_SOURCE, &format!("{} waits for Nova Files to start", window.folder));
+        waiting.push(window);
+        if let Some(process) = &self.process {
+            process.ensure_running();
         }
     }
 }
@@ -129,25 +156,22 @@ impl crate::modules::Module for Files {
     type Config = ();
 
     fn sources(env: &crate::modules::Env) -> Sources {
-        Sources::system(env.path_var)
+        let data_dirs = crate::data_dirs();
+        let associations = Places::system(&data_dirs);
+        let runner = Runner::detect(env.path_var);
+        Sources { bus: Bus::Session, data_dirs, associations, runner, ui: env.ui.cloned() }
     }
 
     fn config(_: &crate::config::Config) {}
 
     fn start(ctx: &crate::modules::Context, sources: &Sources, (): &(), _: &[FeatureState]) -> Arc<Self> {
-        let (mime, problems) = crate::mime::MimeDb::load(&sources.data_dirs);
-        for problem in problems {
-            ctx.logger.warn(LOG_SOURCE, &problem);
-        }
-        let opener = Opener::new(
-            Arc::new(mime),
-            sources.associations.clone(),
-            sources.runner.clone(),
+        Self::start(
+            sources.clone(),
+            Arc::clone(&ctx.hub),
+            Arc::clone(&ctx.logger),
             Arc::clone(&ctx.apps),
             &ctx.path_var,
-            Arc::clone(&ctx.logger),
-        );
-        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger), opener)
+        )
     }
 
     fn send_state(&self, client: ClientId) {

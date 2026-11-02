@@ -106,3 +106,18 @@ var WIRED_OFF = PORT + STRIKE;
 // A password field's show and hide.
 var EYE = "M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12zM12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6z";
 var EYE_OFF = "M10 5.7A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4M6.6 6.6C3.9 8.3 2.5 12 2.5 12s3.5 6.5 9.5 6.5a9.3 9.3 0 0 0 5.4-1.7M9.9 9.9a3 3 0 0 0 4.2 4.2" + STRIKE;
+// Nova Files: places in the sidebar, moving up a folder, and the command
+// row's actions. Back and forward are LEFT and RIGHT.
+var HOME = "M4 11l8-6.5 8 6.5v8.5h-5.5v-5h-5v5H4z";
+var DESKTOP = "M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 5 4.5zM9 20h6M12 16.5V20";
+var DOWNLOAD = "M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14";
+var PICTURE = "M5.5 5h13a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM6 17l4.5-5 3 3.5 2-2 3 3.5M15.5 7.5a1.5 1.5 0 1 1 0 3a1.5 1.5 0 1 1 0-3z";
+var UP = "M12 19V6M6.5 11.5L12 6l5.5 5.5";
+var CHEVRON_DOWN = "M7 9.5l5 5 5-5";
+var PLUS = "M12 5v14M5 12h14";
+var CUT = "M7 14.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5zM17 14.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5zM8.8 15.2L17 4M15.2 15.2L7 4";
+var COPY = "M10.5 8.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5";
+var PASTE = "M9 4.5h6v3H9zM15 6h2.5v14h-11V6H9";
+var RENAME = "M4 20h4L19 9l-4-4L4 16zM13 7l4 4";
+var SORT = "M7 5v14M4 16l3 3 3-3M17 19V5M14 8l3-3 3 3";
+var VIEW = "M4 6h16M4 12h16M4 18h16";

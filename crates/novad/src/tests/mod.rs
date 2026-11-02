@@ -302,6 +302,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
                 &[],
             ),
             runner: launcher::Runner::Direct,
+            ui: None,
         },
         session_lock: dir.to_owned(),
         screenshots: dir.to_owned(),

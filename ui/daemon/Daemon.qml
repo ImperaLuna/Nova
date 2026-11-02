@@ -90,6 +90,15 @@ Singleton {
     property var recording: null
     // A recording was saved: {id, path, duration_ms}.
     signal recordingSaved(var saved)
+    // A Nova Files window to open: {folder, select}. Only the Nova Files
+    // process subscribes to its topic.
+    signal filesWindowRequested(var window)
+
+    // The topics this process subscribes to on every connection: the
+    // shell's, unless its root sets its own as it's created (Nova Files,
+    // ../files.qml), before the first connection. Topics of features that
+    // are off send nothing.
+    property var topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_PERIPHERALS, Protocol.TOPIC_NETWORK, Protocol.TOPIC_BLUETOOTH, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS, Protocol.TOPIC_MEDIA]
 
     property int _nextId: 1
     property var _pending: ({})
@@ -178,6 +187,8 @@ Singleton {
             notificationPopped(msg.data);
         } else if (msg.event === Protocol.EVENT_MEDIA) {
             media = msg.data;
+        } else if (msg.event === Protocol.EVENT_FILES_WINDOW) {
+            filesWindowRequested(msg.data);
         }
     }
 
@@ -191,7 +202,9 @@ Singleton {
             const runtime = Quickshell.env("XDG_RUNTIME_DIR");
             return runtime ? `${runtime}/nova/novad.sock` : "";
         }
-        connected: true
+        // Connected once whatever made this singleton is created, so its
+        // root has set `topics` first.
+        Component.onCompleted: Qt.callLater(() => connected = true)
 
         parser: SplitParser {
             onRead: data => root._handle(data)
@@ -200,9 +213,8 @@ Singleton {
         onConnectionStateChanged: {
             if (connected) {
                 // Only hello arrives unasked; everything else is subscribed to.
-                // Topics of features that are off send nothing.
                 root.call(Protocol.CMD_SUBSCRIBE, {
-                    topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_PERIPHERALS, Protocol.TOPIC_NETWORK, Protocol.TOPIC_BLUETOOTH, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS, Protocol.TOPIC_MEDIA]
+                    topics: root.topics
                 });
             } else {
                 // A picker novad still has open is sent again on reconnect.
