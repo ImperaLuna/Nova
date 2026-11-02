@@ -7,7 +7,7 @@ import "paths.js" as Paths
 // The drives in Nova Files' sidebar, as novad lists them. One that comes
 // while the window is open (a stick plugged in) arrives with an animation.
 // `folder` is the window's, so the drive it's on shows as current; when
-// that drive goes away (ejected from any window, or pulled), `left` says
+// that drive goes away (ejected from any window, or pulled), `driveGone` says
 // the window should go elsewhere.
 Column {
     id: drives
@@ -16,7 +16,7 @@ Column {
 
     signal opened(string folder)
     signal menuRequested(var drive, point at)
-    signal left
+    signal driveGone
 
     // The ids listed so far, and whether the first list is in: rows are
     // made again on every change, and only a new one animates.
@@ -51,7 +51,7 @@ Column {
             const held = drives.heldMount;
             const gone = held !== "" && !FilesService.drives.some(drive => drive.mount === held);
             if (gone && Paths.inside(drives.folder, held))
-                drives.left();
+                drives.driveGone();
             drives.heldMount = drives.current?.mount ?? "";
             if (!drives.listed)
                 Qt.callLater(() => drives.listed = true);

@@ -133,7 +133,7 @@ Item {
             folder: sidebar.navigator.folder
             onOpened: folder => sidebar.navigator.visit(folder, null)
             onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
-            onLeft: sidebar.navigator.visit("~", null)
+            onDriveGone: sidebar.navigator.visit("~", null)
         }
     }
 
