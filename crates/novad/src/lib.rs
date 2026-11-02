@@ -33,6 +33,7 @@ mod compositor;
 mod config;
 mod egl;
 mod features;
+mod files;
 mod host;
 mod hub;
 mod icons;

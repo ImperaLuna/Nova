@@ -5,6 +5,7 @@
 mod client;
 mod config;
 mod doctor;
+mod files;
 mod host;
 mod ipc;
 mod lifecycle;
@@ -104,6 +105,10 @@ enum NovaCommand {
     /// on. It's remembered until you change `[wallpaper]` in config.toml,
     /// which sets the wallpapers Nova starts with.
     Wallpaper(wallpaper::WallpaperArgs),
+    /// Open Nova Files on a folder, or on a file's folder with it selected.
+    ///
+    /// Needs the `files` feature. Without a path, it opens your home folder.
+    Files(files::FilesArgs),
     /// Send a raw request to novad and print the reply as JSON, for scripts.
     /// `subscribe` prints its topics' events as they come instead.
     Ipc(ipc::IpcArgs),
@@ -141,6 +146,7 @@ fn main() -> ExitCode {
         Some(NovaCommand::Screenshot(args)) => toggle::screenshot(&args, &socket),
         Some(NovaCommand::Record) => toggle::record(&socket),
         Some(NovaCommand::Wallpaper(args)) => wallpaper::run(&args, &socket),
+        Some(NovaCommand::Files(args)) => files::run(&args, &socket),
         Some(NovaCommand::Daemon(args)) => novad::run(*args, socket).map_err(|e| format!("daemon: {e}")),
     };
     match result {
