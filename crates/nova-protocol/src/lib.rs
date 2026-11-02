@@ -136,12 +136,19 @@ pub enum Event {
     FilesWindow(FilesWindow),
     /// One page of a folder's entries in view `view` (feature `files`), in
     /// the view's order: entries `start..start + entries.len()` of `total`.
-    /// A page with `start: 0` replaces everything the view held. Sent only to the client that opened the
+    /// A page with `start: 0` replaces everything the view held, after
+    /// `files_open` and again when novad had to read the folder anew (it
+    /// lost track of changes). Sent only to the client that opened the
     /// view, whatever it subscribed to; topic [`Topic::Files`].
     FilesPage(FolderPage),
+    /// The folder in view `view` changed: apply `changes` in order, each
+    /// index counting in the list as the changes before it left it. Sent
+    /// only to the client that opened the view; topic [`Topic::Files`].
+    FilesChanged { view: u32, changes: Vec<FolderChange> },
     /// novad closed view `view` (feature `files`) by itself: its folder
-    /// couldn't be read, or went away. `error` says why, for the window.
-    /// Sent only to the client that opened the view; topic [`Topic::Files`].
+    /// couldn't be read, or was deleted, moved away or unmounted. `error`
+    /// says why, for the window. Sent only to the client that opened the
+    /// view; topic [`Topic::Files`].
     FilesClosed { view: u32, error: String },
 }
 
@@ -198,8 +205,7 @@ impl Event {
             Event::Network(_) | Event::NetworkTraffic(_) => Some(Topic::Network),
             Event::Bluetooth(_) => Some(Topic::Bluetooth),
             Event::FilesWindow(_) => Some(Topic::Files),
-            Event::FilesPage(_) => Some(Topic::Files),
-            Event::FilesClosed { .. } => Some(Topic::Files),
+            Event::FilesPage(_) | Event::FilesChanged { .. } | Event::FilesClosed { .. } => Some(Topic::Files),
         }
     }
 }
@@ -1775,8 +1781,9 @@ pub enum Command {
     /// name starting with a dot) only when `hidden`. Whatever the view
     /// showed is replaced. Answered once the view is open, without
     /// touching the disk, so a stalled mount holds up only this view; its
-    /// entries follow as [`Event::FilesPage`]s, or an
-    /// [`Event::FilesClosed`] when the folder can't be read.
+    /// entries follow as [`Event::FilesPage`]s and its changes as
+    /// [`Event::FilesChanged`] until `files_close`, or an
+    /// [`Event::FilesClosed`] when the folder can't be read or goes.
     FilesOpen {
         view: u32,
         path: String,
@@ -1845,6 +1852,18 @@ pub struct FileEntry {
     /// Last modified, in milliseconds since 1970.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified_ms: Option<i64>,
+}
+
+/// One change to a folder view ([`Event::FilesChanged`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+pub enum FolderChange {
+    /// `entry` is new, at `index`.
+    Insert { index: u32, entry: FileEntry },
+    /// The entry at `index` is gone.
+    Remove { index: u32 },
+    /// The entry at `index` changed and keeps its place.
+    Update { index: u32, entry: FileEntry },
 }
 
 /// Whether a `set_wallpaper` path is a Steam Workshop ID: only digits.
@@ -2602,6 +2621,36 @@ mod tests {
                     },
                 ],
             })),
+            encode(Event::FilesChanged {
+                view: 1,
+                changes: vec![
+                    FolderChange::Remove { index: 1 },
+                    FolderChange::Insert {
+                        index: 1,
+                        entry: FileEntry {
+                            name: "cover (2).png".into(),
+                            dir: false,
+                            link: false,
+                            hidden: false,
+                            mime: "image/png".into(),
+                            size: Some(48_213),
+                            modified_ms: Some(1_793_000_100_000),
+                        },
+                    },
+                    FolderChange::Update {
+                        index: 0,
+                        entry: FileEntry {
+                            name: "Screenshots".into(),
+                            dir: true,
+                            link: true,
+                            hidden: false,
+                            mime: "inode/directory".into(),
+                            size: None,
+                            modified_ms: None,
+                        },
+                    },
+                ],
+            }),
             encode(Event::FilesClosed { view: 1, error: "/home/user/Pictures doesn't exist".into() }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];

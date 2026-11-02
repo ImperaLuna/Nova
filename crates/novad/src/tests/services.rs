@@ -153,10 +153,10 @@ fn subscribing_to_peripherals_sends_the_devices() {
     assert_eq!(client.next_event("peripherals"), json!({"devices": []}));
 }
 
-/// Nova Files' views over the socket: a folder comes in a page. Its own
-/// tests cover paging and order.
+/// Nova Files' views over the socket: a folder comes in a page, then its
+/// changes, until the view closes. Its own tests cover paging and order.
 #[test]
-fn a_folder_view_is_listed_over_the_socket() {
+fn a_folder_view_is_listed_and_followed_over_the_socket() {
     let novad = TestDaemon::open("files", None, |dir| {
         std::fs::write(dir.join("config/features.toml"), "enabled = [\"files\"]\n").unwrap()
     });
@@ -170,6 +170,12 @@ fn a_folder_view_is_listed_over_the_socket() {
     assert_eq!((page["view"].clone(), page["start"].clone(), page["total"].clone()), (json!(1), json!(0), json!(1)));
     assert_eq!(page["entries"][0]["name"], "notes.txt");
     assert_eq!(page["entries"][0]["size"], 2);
+
+    std::fs::create_dir(folder.join("Photos")).unwrap();
+    let changed = client.next_event("files_changed");
+    assert_eq!(changed["changes"][0]["op"], "insert");
+    assert_eq!(changed["changes"][0]["index"], 0, "folders come first");
+    assert_eq!(changed["changes"][0]["entry"]["dir"], true);
 
     assert_eq!(client.request(2, "files_close", Some(json!({"view": 1})))["result"], Value::Null);
     let relative = json!({"view": 2, "path": "Documents", "sort": sort, "hidden": false});

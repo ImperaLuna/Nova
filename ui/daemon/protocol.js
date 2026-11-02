@@ -128,6 +128,7 @@ var EVENT_NETWORK_TRAFFIC = "network_traffic";
 var EVENT_BLUETOOTH = "bluetooth";
 var EVENT_FILES_WINDOW = "files_window";
 var EVENT_FILES_PAGE = "files_page";
+var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
 
 // Event topics a client subscribes to (Topic).
@@ -245,6 +246,11 @@ var FILE_SORT_NAME = "name";
 var FILE_SORT_KIND = "kind";
 var FILE_SORT_SIZE = "size";
 var FILE_SORT_MODIFIED = "modified";
+
+// The ops of a files_changed event (FolderChange).
+var FOLDER_INSERT = "insert";
+var FOLDER_REMOVE = "remove";
+var FOLDER_UPDATE = "update";
 
 // END GENERATED
 
