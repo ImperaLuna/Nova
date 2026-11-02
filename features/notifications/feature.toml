@@ -11,3 +11,8 @@ view = "notifications.list"
 [[slot]]
 host = "quick-settings.pages"
 view = "notifications.page"
+
+# Pop-ups under the right pill, or the top right with the bar off.
+[[slot]]
+host = "shell.overlays"
+view = "notifications.popups"

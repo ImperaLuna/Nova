@@ -1,0 +1,15 @@
+id = "bar"
+name = "Bar"
+description = "The pills across the top of each screen, which other features place their buttons in. Turned off, the launcher, volume capsule, lock screen and panels still open from their keys and `nova toggle`."
+default = true
+
+[[slot]]
+host = "bar.center"
+view = "central-pill"
+order = 10
+
+# At the right edge, with the tray and the right-pill.buttons host.
+[[slot]]
+host = "bar.right"
+view = "right-pill"
+order = 20

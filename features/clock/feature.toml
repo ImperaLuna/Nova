@@ -1,0 +1,9 @@
+id = "clock"
+name = "Clock"
+description = "The day and the time in the middle of the central pill."
+default = true
+
+[[slot]]
+host = "central-pill.parts"
+view = "clock.time"
+order = 20

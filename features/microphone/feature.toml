@@ -1,0 +1,14 @@
+id = "microphone"
+name = "Microphone"
+description = "A quick settings tile that mutes the mic, and its slider while an app is recording."
+default = true
+
+[[slot]]
+host = "quick-settings.tiles"
+view = "microphone.tile"
+order = 40
+
+[[slot]]
+host = "quick-settings.sliders"
+view = "microphone.slider"
+order = 20

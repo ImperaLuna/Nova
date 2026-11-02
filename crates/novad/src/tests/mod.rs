@@ -107,7 +107,6 @@ impl TestDaemon {
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
         let listener = server::bind(&socket).unwrap();
-        let ui = ui.map(|settings| Supervisor::start(settings, Arc::clone(&logger)));
         let icons = test_icons(&dir);
         let sources = Sources {
             config: dir.join("config/config.toml"),
@@ -121,6 +120,8 @@ impl TestDaemon {
         let compositor = compositor(&dir)
             .map(|backend| compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
         let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
+        let wanted = features::needs_ui(&sources.manifests, &settings.features);
+        let ui = ui.map(|ui_settings| Supervisor::start(ui_settings, wanted, Arc::clone(&logger)));
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
             hub,

@@ -18,10 +18,10 @@ fn subscribing_to_features_sends_their_state() {
     let event = client.next();
     assert_eq!(event["event"], "features");
     let features = event["data"]["features"].as_array().unwrap();
-    let core = features.iter().find(|feature| feature["id"] == "core").unwrap();
-    assert_eq!(core["status"], "ready");
+    let bar = features.iter().find(|feature| feature["id"] == "bar").unwrap();
+    assert_eq!(bar["status"], "ready");
     assert!(
-        core["slots"].as_array().unwrap().contains(&json!({"host": "bar.center", "view": "central-pill", "order": 10}))
+        bar["slots"].as_array().unwrap().contains(&json!({"host": "bar.center", "view": "central-pill", "order": 10}))
     );
 }
 
@@ -146,7 +146,7 @@ fn status_reports_the_daemon_ui_and_features() {
     let status: Status = serde_json::from_value(client.request(1, "status", None)["result"].clone()).unwrap();
     assert_eq!(status.pid, std::process::id());
     assert_eq!(status.ui.state, UiState::Disabled);
-    assert!(status.features.iter().any(|feature| feature.id == "core" && feature.status == FeatureStatus::Ready));
+    assert!(status.features.iter().any(|feature| feature.id == "bar" && feature.status == FeatureStatus::Ready));
     assert!(status.pss_kib.is_some());
 }
 
@@ -201,6 +201,46 @@ fn a_quickshell_outside_the_tested_range_is_warned_about() {
     let log = read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
     let warning = log.iter().find(|entry| entry.level == LogLevel::Warn && entry.message.contains("0.1.0"));
     assert!(warning.is_some_and(|entry| entry.message.contains("older than Nova is tested with")), "{log:?}");
+    novad.daemon.ui.as_ref().unwrap().stop();
+}
+
+/// With every feature off, novad runs without Quickshell; turning on one
+/// that draws (the bar) starts it, and turning it off again stops it without
+/// counting a crash.
+#[test]
+fn the_ui_runs_only_while_a_feature_with_a_ui_is_on() {
+    let scripts = nova_test_support::TempDir::new("ui-on-demand");
+    let fake_ui = write_program(&scripts, "quickshell", "exec sleep 60");
+    let settings = UiSettings {
+        quickshell: fake_ui,
+        ui_dir: PathBuf::from("ui"),
+        socket: PathBuf::from("unused.sock"),
+        path_var: std::env::var("PATH").unwrap_or_default(),
+        wayland_socket: None,
+        egl_vendor: None,
+        render_loop: None,
+        icon_theme: "hicolor".into(),
+    };
+    let ids: Vec<String> = nova_features::load_all(&repo_features()).unwrap().into_iter().map(|m| m.id).collect();
+    let selection = |on: &[&str]| {
+        let off: Vec<String> = ids.iter().filter(|id| !on.contains(&id.as_str())).map(|id| format!("{id:?}")).collect();
+        format!("disabled = [{}]\n", off.join(", "))
+    };
+    let all_off = selection(&[]);
+    let novad = TestDaemon::open("ui-on-demand", Some(settings), |dir| {
+        std::fs::write(dir.join("config/features.toml"), &all_off).unwrap();
+    });
+    let mut client = novad.connect();
+    let status: Status = serde_json::from_value(client.request(1, "status", None)["result"].clone()).unwrap();
+    assert_eq!((status.ui.state, status.ui.pid), (UiState::NotNeeded, None));
+    assert!(status.features.iter().all(|feature| feature.status == FeatureStatus::Off));
+
+    std::fs::write(novad.features_file(), selection(&["bar"])).unwrap();
+    wait_for_status(&mut client, |status| status.ui.state == UiState::Running);
+
+    std::fs::write(novad.features_file(), &all_off).unwrap();
+    let status = wait_for_status(&mut client, |status| status.ui.state == UiState::NotNeeded);
+    assert_eq!((status.ui.pid, status.ui.restarts, status.ui.last_crash), (None, 0, None));
     novad.daemon.ui.as_ref().unwrap().stop();
 }
 

@@ -39,8 +39,6 @@ const APP_DROP_IN_PATH: &str = "app-.service.d/nova.conf";
 const NIRI_RULES: &str = include_str!("../../../packaging/compositor/niri.kdl");
 /// Where the niri rules go, in Nova's config folder.
 const NIRI_RULES_FILE: &str = "niri.kdl";
-/// The feature whose packages hold Quickshell.
-const CORE_FEATURE: &str = "core";
 /// Fedora's Quickshell, until a Fedora release ships it.
 const FEDORA_QUICKSHELL_COPR: &str = "errornointernet/quickshell";
 /// AUR helpers, in the order setup prefers them. They install repo packages
@@ -199,9 +197,13 @@ pub fn plan(facts: &Facts) -> Result<Plan, String> {
     Ok(Plan::Steps(steps))
 }
 
-/// Installs the packages of every feature that's on and isn't complete yet.
+/// Installs Quickshell while a feature with a UI is on, and the packages of
+/// every feature that's on and isn't complete yet.
 fn package_steps(facts: &Facts, distro: &str) -> Vec<Step> {
     let gpu = gpu_for_packages(&facts.host);
+    let range = nova_quickshell::Range::supported();
+    let ui_needed = facts.manifests.iter().any(|manifest| manifest.has_ui() && facts.selection.is_on(manifest));
+    let quickshell = if ui_needed { range.packages(distro) } else { &[] };
     let needed: Vec<&Manifest> = facts
         .manifests
         .iter()
@@ -217,14 +219,21 @@ fn package_steps(facts: &Facts, distro: &str) -> Vec<Step> {
             }
         }
     }
+    for package in quickshell.iter().rev() {
+        if !packages.contains(package) {
+            packages.insert(0, package.clone());
+        }
+    }
     if packages.is_empty() {
         return vec![];
     }
     let yes = facts.yes;
-    let mut why = format!(
-        "install packages for {}",
-        needed.iter().map(|manifest| manifest.id.as_str()).collect::<Vec<_>>().join(", ")
-    );
+    let ids = needed.iter().map(|manifest| manifest.id.as_str()).collect::<Vec<_>>().join(", ");
+    let mut why = match (quickshell.is_empty(), ids.is_empty()) {
+        (false, true) => "install Quickshell for the UI".to_owned(),
+        (false, false) => format!("install Quickshell for the UI, and packages for {ids}"),
+        _ => format!("install packages for {ids}"),
+    };
     let mut steps = Vec::new();
     let install = match distro {
         "arch" => match AUR_HELPERS.iter().find(|helper| facts.on_path(helper).is_some()) {
@@ -235,8 +244,7 @@ fn package_steps(facts: &Facts, distro: &str) -> Vec<Step> {
             }
         },
         "fedora" => {
-            let core_needed = needed.iter().any(|manifest| manifest.id == CORE_FEATURE);
-            if core_needed && facts.on_path("quickshell").is_none() {
+            if !quickshell.is_empty() && facts.on_path("quickshell").is_none() {
                 steps.push(Step::Run {
                     why: "add the Quickshell package repository".into(),
                     argv: words(&["sudo", "dnf", "copr", "enable", "-y", FEDORA_QUICKSHELL_COPR]),
@@ -308,7 +316,7 @@ fn default_selection(manifests: &[Manifest]) -> String {
     let listed = |default: bool| {
         manifests
             .iter()
-            .filter(|manifest| !manifest.required && manifest.default == default)
+            .filter(|manifest| manifest.default == default)
             .map(|manifest| format!("#   {}: {}\n", manifest.id, manifest.name))
             .collect::<String>()
     };
@@ -578,9 +586,9 @@ mod tests {
         let Step::Run { why, argv } = &steps[0] else { panic!("{:?}", steps[0]) };
         // recording's wf-recorder, screenshot's grim, wl-copy and xdg-open
         // wallpaper's awww, peripherals' upower and bluetooth's bluetoothctl
-        // are there; core has no
-        // binary check.
-        assert_eq!(why, "install packages for core");
+        // are there; Quickshell has no binary check (the package manager
+        // skips it when it's installed).
+        assert_eq!(why, "install Quickshell for the UI");
         assert_eq!(argv, &words(&["paru", "-S", "--needed", "quickshell"]));
     }
 
@@ -591,14 +599,15 @@ mod tests {
         assert_eq!(
             steps[0],
             Step::Run {
-                why: "install packages for bluetooth, core, peripherals, recording, screenshot".into(),
+                why: "install Quickshell for the UI, and packages for bluetooth, peripherals, recording, screenshot"
+                    .into(),
                 argv: words(&[
                     "sudo",
                     "apt-get",
                     "install",
                     "-y",
-                    "bluez",
                     "quickshell",
+                    "bluez",
                     "upower",
                     "wf-recorder",
                     "grim",

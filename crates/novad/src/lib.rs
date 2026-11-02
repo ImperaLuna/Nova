@@ -179,7 +179,16 @@ impl Daemon {
 
     /// Reads the settings files again and applies what changed.
     fn reload(&self) {
-        lock(&self.settings).reload(&self.sources, &self.hub, &self.logger);
+        let settings = &mut lock(&self.settings);
+        settings.reload(&self.sources, &self.hub, &self.logger);
+        self.follow_features(settings);
+    }
+
+    /// Runs the UI while some feature that draws is ready.
+    fn follow_features(&self, settings: &Settings) {
+        if let Some(ui) = &self.ui {
+            ui.want(features::needs_ui(&self.sources.manifests, &settings.features), &self.logger);
+        }
     }
 
     /// The lock screen, kept whatever the settings.
@@ -350,7 +359,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
                  run `nova` from your compositor's autostart so it can pass the session on.",
             );
         }
-        let settings = UiSettings {
+        let ui_settings = UiSettings {
             quickshell: args.quickshell.clone().unwrap_or_else(|| supervisor::default_quickshell(&path_var)),
             ui_dir: args.ui.clone(),
             socket: socket.clone(),
@@ -360,7 +369,8 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
             render_loop: render_loop::for_ui(|name| std::env::var_os(name)),
             icon_theme: sources.icons.theme().to_string(),
         };
-        Supervisor::start(settings, Arc::clone(&logger))
+        let wanted = features::needs_ui(&sources.manifests, &settings.features);
+        Supervisor::start(ui_settings, wanted, Arc::clone(&logger))
     });
 
     let daemon = Arc::new(Daemon {

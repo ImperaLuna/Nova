@@ -51,32 +51,40 @@ pub const DISTROS: &[&str] = &["nix", "arch", "fedora", "debian"];
 pub struct Host {
     pub name: &'static str,
     /// The feature whose UI draws the host: its slots have nowhere to show
-    /// while that feature isn't ready.
-    pub owner: &'static str,
+    /// while that feature isn't ready. `None` for a host the shell draws
+    /// whatever is on (the stage's panels, the overlays).
+    pub owner: Option<&'static str>,
 }
 
 /// Every host a slot may name. A slot naming another host is never filled.
 pub const HOSTS: &[Host] = &[
     // The bar's rows of pills: left from the left edge, center around the
     // middle, right from the right edge.
-    Host { name: "bar.left", owner: "core" },
-    Host { name: "bar.center", owner: "core" },
-    Host { name: "bar.right", owner: "core" },
+    Host { name: "bar.left", owner: Some("bar") },
+    Host { name: "bar.center", owner: Some("bar") },
+    Host { name: "bar.right", owner: Some("bar") },
     // The buttons at the right pill's end (and on quick settings, in the
     // same place).
-    Host { name: "right-pill.buttons", owner: "core" },
+    Host { name: "right-pill.buttons", owner: Some("bar") },
+    // The central pill's parts beside the launcher's search button: the
+    // workspaces and the day and time.
+    Host { name: "central-pill.parts", owner: Some("bar") },
     // Panels drawn on the stage or its panel surfaces that aren't a pill
-    // of their own, like the launcher.
-    Host { name: "stage.panels", owner: "core" },
+    // of their own, like the launcher. They open from their keys and
+    // `nova toggle` with the bar off too.
+    Host { name: "stage.panels", owner: None },
+    // Windows of their own over the screen: the volume capsule, the lock
+    // screen, notification pop-ups, the capture overlay, pairing questions.
+    Host { name: "shell.overlays", owner: None },
     // Quick settings' first page: toggle tiles two to a row, sliders, cards,
     // one view in the room left below them and one pinned at the foot.
-    Host { name: "quick-settings.tiles", owner: "quick-settings" },
-    Host { name: "quick-settings.sliders", owner: "quick-settings" },
-    Host { name: "quick-settings.cards", owner: "quick-settings" },
-    Host { name: "quick-settings.fill", owner: "quick-settings" },
-    Host { name: "quick-settings.foot", owner: "quick-settings" },
+    Host { name: "quick-settings.tiles", owner: Some("quick-settings") },
+    Host { name: "quick-settings.sliders", owner: Some("quick-settings") },
+    Host { name: "quick-settings.cards", owner: Some("quick-settings") },
+    Host { name: "quick-settings.fill", owner: Some("quick-settings") },
+    Host { name: "quick-settings.foot", owner: Some("quick-settings") },
     // Quick settings' other pages, each sliding in over the first.
-    Host { name: "quick-settings.pages", owner: "quick-settings" },
+    Host { name: "quick-settings.pages", owner: Some("quick-settings") },
 ];
 
 /// The host named `name`, if there is one.
@@ -98,12 +106,10 @@ pub struct Manifest {
     pub id: String,
     pub name: String,
     pub description: String,
-    /// Turned on when the user hasn't said otherwise.
+    /// Turned on when the user hasn't said otherwise. Every feature can be
+    /// turned off, the bar too.
     #[serde(default)]
     pub default: bool,
-    /// Can't be turned off (the bar, launcher, notifications).
-    #[serde(default)]
-    pub required: bool,
     /// Names the feature's daemon side in novad (`novad::modules`).
     #[serde(default)]
     pub daemon: Option<String>,
@@ -177,6 +183,12 @@ impl Manifest {
             .unwrap_or(&[])
     }
 
+    /// Whether the feature draws anything, so the UI (Quickshell) has to run
+    /// while it's on: it fills at least one slot.
+    pub fn has_ui(&self) -> bool {
+        !self.slots.is_empty()
+    }
+
     /// Entries of `check.binaries` with no match on `PATH`.
     pub fn missing_binaries(&self, path_var: &str) -> Vec<String> {
         self.check
@@ -199,9 +211,6 @@ impl Manifest {
         };
         if !kebab(&self.id) {
             return Err(format!("id \"{}\" must be lowercase kebab-case", self.id));
-        }
-        if self.required && !self.default {
-            return Err("a required feature must also be default = true".into());
         }
         if !self.variants.is_empty() && !self.variants.contains_key("default") {
             return Err("variants need a [variants.default] fallback".into());
@@ -285,9 +294,6 @@ impl Selection {
     }
 
     pub fn is_on(&self, manifest: &Manifest) -> bool {
-        if manifest.required {
-            return true;
-        }
         if self.disabled.contains(&manifest.id) {
             return false;
         }
@@ -323,7 +329,7 @@ mod tests {
     #[test]
     fn every_manifest_in_the_repo_is_valid() {
         let all = load_all(&repo_features()).unwrap_or_else(|e| panic!("{e}"));
-        assert!(all.iter().any(|m| m.id == "core" && m.required));
+        assert!(all.iter().any(|m| m.id == "bar"));
     }
 
     #[test]
@@ -364,7 +370,6 @@ mod tests {
         let cases = [
             ("id = \"Rec\"\nname = \"x\"\ndescription = \"x\"", "Rec", "kebab-case"),
             ("id = \"a\"\nname = \"x\"\ndescription = \"x\"", "b", "must match"),
-            ("id = \"a\"\nname = \"x\"\ndescription = \"x\"\nrequired = true", "a", "default = true"),
             (
                 "id = \"a\"\nname = \"x\"\ndescription = \"x\"\n[variants.nvidia]\nwhen = { gpu = \"nvidia\" }",
                 "a",
@@ -398,14 +403,14 @@ mod tests {
     }
 
     #[test]
-    fn selection_respects_required_default_and_choices() {
-        let core = manifest("id = \"core\"\nname = \"x\"\ndescription = \"x\"\ndefault = true\nrequired = true");
+    fn selection_respects_default_and_choices() {
+        let bar = manifest("id = \"bar\"\nname = \"x\"\ndescription = \"x\"\ndefault = true");
         let rec = manifest(RECORDING);
         let none = Selection::default();
-        assert!(none.is_on(&core) && !none.is_on(&rec));
+        assert!(none.is_on(&bar) && !none.is_on(&rec));
 
-        let sel = Selection::parse("enabled = [\"recording\"]\ndisabled = [\"core\"]").unwrap();
-        assert!(sel.is_on(&core), "required features can't be disabled");
+        let sel = Selection::parse("enabled = [\"recording\"]\ndisabled = [\"bar\"]").unwrap();
+        assert!(!sel.is_on(&bar), "every feature can be turned off, the bar too");
         assert!(sel.is_on(&rec));
     }
 
@@ -443,7 +448,9 @@ mod tests {
         assert_eq!(ui, known, "ui/slots/slots.js and HOSTS differ");
         let ids: Vec<String> = load_all(&repo_features()).unwrap().into_iter().map(|m| m.id).collect();
         for host in HOSTS {
-            assert!(ids.iter().any(|id| id == host.owner), "{} is owned by unknown feature {}", host.name, host.owner);
+            if let Some(owner) = host.owner {
+                assert!(ids.iter().any(|id| id == owner), "{} is owned by unknown feature {owner}", host.name);
+            }
         }
     }
 

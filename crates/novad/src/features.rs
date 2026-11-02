@@ -42,10 +42,10 @@ pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> 
         .iter()
         .map(|state| {
             state.slots.is_empty()
-                || state
-                    .slots
-                    .iter()
-                    .any(|slot| nova_features::host(&slot.host).is_some_and(|host| is_ready(&states, host.owner)))
+                || state.slots.iter().any(|slot| {
+                    nova_features::host(&slot.host)
+                        .is_some_and(|host| host.owner.is_none_or(|owner| is_ready(&states, owner)))
+                })
         })
         .collect();
     for (state, hosted) in states.iter_mut().zip(hosted) {
@@ -60,6 +60,11 @@ pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> 
 /// novad runs its service.
 pub fn is_ready(features: &[FeatureState], id: &str) -> bool {
     features.iter().any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
+}
+
+/// Whether the UI has to run: some feature that draws is ready.
+pub fn needs_ui(manifests: &[Manifest], features: &[FeatureState]) -> bool {
+    manifests.iter().any(|manifest| manifest.has_ui() && is_ready(features, &manifest.id))
 }
 
 /// The error for a request that needs feature `id` while it's not ready
@@ -87,6 +92,19 @@ mod tests {
     }
 
     #[test]
+    fn the_ui_runs_only_while_a_feature_that_draws_is_ready() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let manifests = nova_features::load_all(&root).unwrap();
+        let ids = |selection: &str| states(&manifests, &Selection::parse(selection).unwrap(), "/nonexistent");
+        assert!(needs_ui(&manifests, &ids("")), "the defaults draw the bar");
+        let every_id: Vec<String> = manifests.iter().map(|m| format!("{:?}", m.id)).collect();
+        let all_off = format!("disabled = [{}]", every_id.join(", "));
+        assert!(!needs_ui(&manifests, &ids(&all_off)));
+        let only_bar = all_off.replace("\"bar\", ", "");
+        assert!(needs_ui(&manifests, &ids(&only_bar)), "{only_bar}");
+    }
+
+    #[test]
     fn states_follow_selection_and_path() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         let manifests = nova_features::load_all(&root).unwrap();
@@ -107,7 +125,12 @@ mod tests {
 
     #[test]
     fn a_feature_whose_hosts_are_all_gone_has_no_host() {
-        let manifests = [with_slot("core", "bar.center"), with_slot("pill", "bar.left"), with_slot("stray", "nowhere")];
+        let manifests = [
+            with_slot("bar", "bar.center"),
+            with_slot("pill", "bar.left"),
+            with_slot("stray", "nowhere"),
+            with_slot("capsule", "shell.overlays"),
+        ];
         let status = |states: &[FeatureState], id: &str| states.iter().find(|s| s.id == id).unwrap().status;
 
         let all_on = states(&manifests, &Selection::default(), "/nonexistent");
@@ -115,8 +138,9 @@ mod tests {
         assert_eq!(status(&all_on, "stray"), FeatureStatus::NoHost, "an unknown host never shows it");
         assert_eq!(all_on.iter().find(|s| s.id == "pill").unwrap().slots, manifests[1].slots);
 
-        let core_off = states(&manifests, &Selection::parse("disabled = [\"core\"]").unwrap(), "/nonexistent");
-        assert_eq!(status(&core_off, "pill"), FeatureStatus::NoHost, "the bar it goes in is off");
-        assert_eq!(status(&core_off, "core"), FeatureStatus::Off);
+        let bar_off = states(&manifests, &Selection::parse("disabled = [\"bar\"]").unwrap(), "/nonexistent");
+        assert_eq!(status(&bar_off, "pill"), FeatureStatus::NoHost, "the bar it goes in is off");
+        assert_eq!(status(&bar_off, "bar"), FeatureStatus::Off);
+        assert_eq!(status(&bar_off, "capsule"), FeatureStatus::Ready, "the shell draws overlays without the bar");
     }
 }

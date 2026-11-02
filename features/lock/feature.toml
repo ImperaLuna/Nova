@@ -3,3 +3,7 @@ name = "Lock screen"
 description = "Locks the screen from the power menu, `nova lock` or `loginctl lock-session`, and before sleep; your password unlocks it."
 default = true
 daemon = "lock"
+
+[[slot]]
+host = "shell.overlays"
+view = "lock.screen"

@@ -26,3 +26,8 @@ order = 20
 [[slot]]
 host = "quick-settings.pages"
 view = "bluetooth.page"
+
+# Pairing questions while the Bluetooth page isn't open.
+[[slot]]
+host = "shell.overlays"
+view = "bluetooth.pairing"
