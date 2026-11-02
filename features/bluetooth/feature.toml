@@ -17,3 +17,12 @@ debian = ["bluez"]
 
 [check]
 binaries = ["bluetoothctl"]
+
+[[slot]]
+host = "quick-settings.tiles"
+view = "bluetooth.tile"
+order = 20
+
+[[slot]]
+host = "quick-settings.pages"
+view = "bluetooth.page"

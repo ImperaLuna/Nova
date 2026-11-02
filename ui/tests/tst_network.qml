@@ -26,10 +26,9 @@ Item {
             }
         }
         Component {
-            id: mainComponent
-            MainPage {
-                width: 328
-                height: 868
+            id: tileComponent
+            NetworkTile {
+                width: 160
             }
         }
 
@@ -168,23 +167,14 @@ Item {
         }
 
         function test_the_tile_lights_while_online_and_opens_the_page() {
-            const page = createTemporaryObject(mainComponent, stage, {
-                networkShown: true,
+            const tile = createTemporaryObject(tileComponent, stage, {
                 network: recorded()
             });
-            const tile = findChild(page, "networkTile");
-            verify(tile.visible);
             verify(tile.on);
-            spy.target = page;
+            spy.target = tile;
             spy.signalName = "pageRequested";
             mouseClick(tile, tile.width / 3, tile.height / 2);
             compare(spy.count, 1);
-            compare(spy.signalArguments[0][0], "network");
-        }
-
-        function test_the_tile_waits_for_its_feature() {
-            const page = createTemporaryObject(mainComponent, stage);
-            verify(!findChild(page, "networkTile").visible);
         }
 
         function test_page_shows_both_links_as_recorded() {

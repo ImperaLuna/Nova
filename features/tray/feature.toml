@@ -3,3 +3,8 @@ name = "System tray"
 description = "Apps' tray icons (Discord, Steam and so on) and their menus, folded into the right pill."
 default = true
 daemon = "tray"
+
+[[slot]]
+host = "quick-settings.cards"
+view = "tray.card"
+order = 20

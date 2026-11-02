@@ -8,7 +8,8 @@
 // Each file is a thin adapter: it reads its feature's service and passes
 // props to a view that only draws them, so ui/tests can test the view with
 // recorded data. Its root takes what its host gives every view (see the
-// host: ui/bar/BarRow.qml, ui/bar/PillButtons.qml, ui/stage/PanelSlots.qml).
+// host: ui/bar/BarRow.qml, ui/bar/PillButtons.qml, ui/stage/PanelSlots.qml,
+// ui/quick_settings/MainPage.qml and QuickSettings.qml).
 var VIEWS = {
     "ai-usage.pill": "ai_usage/AiUsageSlot.qml",
     "media.pill": "media/NowPlayingSlot.qml",
@@ -20,7 +21,22 @@ var VIEWS = {
     "power.menu": "power/PowerMenuSlot.qml",
     "quick-settings.panel": "quick_settings/QuickSettingsSlot.qml",
     "launcher.panel": "launcher/LauncherSlot.qml",
-    "wallpaper.carousel": "wallpaper/WallpaperSlot.qml"
+    "wallpaper.carousel": "wallpaper/WallpaperSlot.qml",
+    "network.tile": "quick_settings/slots/NetworkTileSlot.qml",
+    "bluetooth.tile": "quick_settings/slots/BluetoothTileSlot.qml",
+    "keep-awake.tile": "quick_settings/slots/KeepAwakeTileSlot.qml",
+    "microphone.tile": "quick_settings/slots/MicrophoneTileSlot.qml",
+    "sound.slider": "quick_settings/slots/SoundSliderSlot.qml",
+    "microphone.slider": "quick_settings/slots/MicrophoneSliderSlot.qml",
+    "peripherals.card": "quick_settings/slots/DevicesCardSlot.qml",
+    "tray.card": "quick_settings/slots/TrayCardSlot.qml",
+    "notifications.list": "quick_settings/slots/NotificationListSlot.qml",
+    "resources.card": "quick_settings/slots/ResourcesCardSlot.qml",
+    "sound.page": "quick_settings/slots/SoundPageSlot.qml",
+    "network.page": "quick_settings/slots/NetworkPageSlot.qml",
+    "bluetooth.page": "quick_settings/slots/BluetoothPageSlot.qml",
+    "resources.page": "quick_settings/slots/ResourcesPageSlot.qml",
+    "notifications.page": "quick_settings/slots/NotificationSettingsPageSlot.qml"
 };
 
 // The file of view `view`, relative to ui/, or "" for one there isn't.

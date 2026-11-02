@@ -68,6 +68,15 @@ pub const HOSTS: &[Host] = &[
     // Panels drawn on the stage or its panel surfaces that aren't a pill
     // of their own, like the launcher.
     Host { name: "stage.panels", owner: "core" },
+    // Quick settings' first page: toggle tiles two to a row, sliders, cards,
+    // one view in the room left below them and one pinned at the foot.
+    Host { name: "quick-settings.tiles", owner: "quick-settings" },
+    Host { name: "quick-settings.sliders", owner: "quick-settings" },
+    Host { name: "quick-settings.cards", owner: "quick-settings" },
+    Host { name: "quick-settings.fill", owner: "quick-settings" },
+    Host { name: "quick-settings.foot", owner: "quick-settings" },
+    // Quick settings' other pages, each sliding in over the first.
+    Host { name: "quick-settings.pages", owner: "quick-settings" },
 ];
 
 /// The host named `name`, if there is one.

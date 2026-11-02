@@ -9,3 +9,12 @@ daemon = "network"
 # comes with it everywhere, so it's what tells novad it's installed.
 [check]
 binaries = ["nmcli"]
+
+[[slot]]
+host = "quick-settings.tiles"
+view = "network.tile"
+order = 10
+
+[[slot]]
+host = "quick-settings.pages"
+view = "network.page"
