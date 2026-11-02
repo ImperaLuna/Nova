@@ -301,6 +301,14 @@ impl<'a> Connection<'a> {
                 let (path, app) = (path.clone(), app.clone());
                 return self.opener_later(move |opener| opener.set_default(&path, &app));
             }
+            Command::FilesMount { drive } => {
+                let drive = drive.clone();
+                return self.files_later(move |files| files.mount(&drive));
+            }
+            Command::FilesEject { drive } => {
+                let drive = drive.clone();
+                return self.files_later(move |files| files.eject(&drive));
+            }
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -641,6 +649,18 @@ impl<'a> Connection<'a> {
         }
     }
 
+    /// Runs `work` with Nova Files on its own thread, for what waits on
+    /// udisks2.
+    fn files_later<T: serde::Serialize>(
+        &self,
+        work: impl FnOnce(&crate::files::Files) -> Result<T, String> + Send + 'static,
+    ) -> Answer {
+        match self.files() {
+            Ok(files) => Answer::later(move || value(work(&files))),
+            Err(e) => Answer::Now(Outcome::Error(e)),
+        }
+    }
+
     fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
         match self.media() {
             Ok(media) => Answer::later(move || work(&media)),
@@ -872,7 +892,9 @@ impl<'a> Connection<'a> {
             | Command::AttachFiles { .. }
             | Command::FilesLaunch { .. }
             | Command::FilesOpenWith { .. }
-            | Command::FilesSetDefault { .. } => {}
+            | Command::FilesSetDefault { .. }
+            | Command::FilesMount { .. }
+            | Command::FilesEject { .. } => {}
         }
     }
 

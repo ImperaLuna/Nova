@@ -150,6 +150,11 @@ pub enum Event {
     /// says why, for the window. Sent only to the client that opened the
     /// view; topic [`Topic::Files`].
     FilesClosed { view: u32, error: String },
+    /// The drives Nova Files' sidebar lists (feature `files`): every
+    /// filesystem udisks2 knows that a person would open, as it is now.
+    /// Topic [`Topic::Files`], sent right after subscribing and whenever a
+    /// drive comes, goes, mounts, unmounts or fills up.
+    FilesDrives { drives: Vec<Drive> },
 }
 
 /// Groups of events a client can subscribe to.
@@ -206,6 +211,7 @@ impl Event {
             Event::Bluetooth(_) => Some(Topic::Bluetooth),
             Event::FilesWindow(_) => Some(Topic::Files),
             Event::FilesPage(_) | Event::FilesChanged { .. } | Event::FilesClosed { .. } => Some(Topic::Files),
+            Event::FilesDrives { .. } => Some(Topic::Files),
         }
     }
 }
@@ -1837,6 +1843,49 @@ pub enum Command {
     FilesClose {
         view: u32,
     },
+    /// Mounts the drive `drive` (a [`Drive::id`], feature `files`), if it
+    /// isn't, and answers with the folder it's mounted at.
+    FilesMount {
+        drive: String,
+    },
+    /// Ejects the drive `drive` (a [`Drive::id`] of a removable one,
+    /// feature `files`): unmounts every filesystem on its device, writing
+    /// what's left first, then powers it off. Answered with an
+    /// [`EjectOutcome`]; once ejected, a "Safe To Remove Hardware"
+    /// notification says so.
+    FilesEject {
+        drive: String,
+    },
+}
+
+/// A drive in Nova Files' sidebar ([`Event::FilesDrives`]): one
+/// filesystem, on a disk inside the machine or a USB stick.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Drive {
+    /// What `files_mount` and `files_eject` name it by.
+    pub id: String,
+    pub name: String,
+    /// It can be unplugged: a USB stick or card, which can be ejected.
+    pub removable: bool,
+    /// The folder it's mounted at; none while it isn't.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount: Option<String>,
+    /// Its size, in bytes.
+    pub size: u64,
+    /// How much of it is used, in bytes, while it's mounted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used: Option<u64>,
+}
+
+/// How `files_eject` went, when it didn't fail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EjectOutcome {
+    /// Safe to unplug.
+    Ejected,
+    /// Something still has files open on it: it stays mounted.
+    Busy,
 }
 
 /// The order of a folder view (`files_open`). Folders always come before
@@ -2729,6 +2778,30 @@ mod tests {
                 ],
             }),
             encode(Event::FilesClosed { view: 1, error: "/home/user/Pictures doesn't exist".into() }),
+            encode(Event::FilesDrives {
+                drives: vec![
+                    Drive {
+                        id: "nvme0n1p2".into(),
+                        name: "System".into(),
+                        removable: false,
+                        mount: Some("/".into()),
+                        size: 1_000_000_000_000,
+                        used: Some(580_000_000_000),
+                    },
+                    Drive {
+                        id: "sdb1".into(),
+                        name: "SANDISK".into(),
+                        removable: true,
+                        mount: None,
+                        size: 32_000_000_000,
+                        used: None,
+                    },
+                ],
+            }),
+            encode(Request { id: Some(76), command: Command::FilesMount { drive: "sdb1".into() } }),
+            encode(Response { id: 76, outcome: Outcome::Result(json!("/run/media/user/SANDISK")) }),
+            encode(Request { id: Some(77), command: Command::FilesEject { drive: "sdb1".into() } }),
+            encode(Response { id: 77, outcome: Outcome::Result(serde_json::to_value(EjectOutcome::Busy).unwrap()) }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
