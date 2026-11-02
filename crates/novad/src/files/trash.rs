@@ -232,10 +232,16 @@ impl Trash {
         top.join(format!("{USER_TRASH_PREFIX}{}", self.uid))
     }
 
-    /// `dir` is a real folder of this user's: never a link someone else
-    /// put on a shared stick.
+    /// `dir` is a real folder of this user's, and so are its `files` and
+    /// `info` where they exist: never a link someone else put on a shared
+    /// stick, which emptying the trash would follow.
     fn is_ours(&self, dir: &Path) -> bool {
-        dir.symlink_metadata().is_ok_and(|meta| meta.is_dir() && meta.uid() == self.uid)
+        let owned = |path: &Path| path.symlink_metadata().is_ok_and(|meta| meta.is_dir() && meta.uid() == self.uid);
+        owned(dir)
+            && [FILES, INFO].iter().all(|child| {
+                let path = dir.join(child);
+                path.symlink_metadata().is_err() || owned(&path)
+            })
     }
 
     fn trash_one(&self, asked: &Path) -> Result<(), String> {
@@ -871,5 +877,23 @@ mod tests {
         assert_eq!(items[0].folder, top.join("Music").display().to_string());
         fixture.trash.restore(std::slice::from_ref(&items[0].id)).unwrap();
         assert!(top.join("Music/song.flac").is_file());
+    }
+
+    #[test]
+    fn a_drive_trash_whose_files_are_a_link_is_never_used() {
+        let fixture = Fixture::new("crafted");
+        let top = fixture.path("stick");
+        let mountinfo = format!("40 35 8:17 / {} rw - exfat /dev/sdc1 rw\n", top.display());
+        std::fs::write(fixture.path("mountinfo"), mountinfo).unwrap();
+        let elsewhere = fixture.path("home/Documents");
+        std::fs::write(elsewhere.join("keep.txt"), b"").unwrap();
+        let dir = fixture.trash.user_trash(&top);
+        std::fs::create_dir_all(dir.join(INFO)).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, dir.join(FILES)).unwrap();
+        std::fs::write(dir.join(INFO).join("keep.txt.trashinfo"), "[Trash Info]\nPath=keep.txt\n").unwrap();
+
+        assert!(fixture.trash.list().is_empty());
+        fixture.trash.empty().unwrap();
+        assert!(elsewhere.join("keep.txt").exists(), "emptying never follows the link");
     }
 }
