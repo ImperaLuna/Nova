@@ -131,7 +131,7 @@ impl Hub {
     /// many it was queued for.
     pub fn publish(&self, event: &Event) -> usize {
         let Some(topic) = event.topic() else { return 0 };
-        let Some(line) = encode_event(event) else { return 0 };
+        let Some(line) = Self::encode(event) else { return 0 };
         // A failed push means the client is gone or being disconnected; its
         // connection thread unregisters it, so there is nothing to do here.
         lock(&self.clients)
@@ -152,7 +152,8 @@ impl Hub {
     /// be encoded before taking a lock it's sent under. `None` when it
     /// can't be (reported).
     pub fn encode(event: &Event) -> Option<String> {
-        encode_event(event)
+        // Not logged through the logger: it publishes through this hub.
+        encode(event).map_err(|e| eprintln!("novad: can't encode an event: {e}")).ok()
     }
 
     /// Sends a line from [`Hub::encode`] to one client, like
@@ -164,11 +165,6 @@ impl Hub {
             .find(|client| client.id == id)
             .is_some_and(|client| client.queue.push(Outgoing::Line(line)))
     }
-}
-
-fn encode_event(event: &Event) -> Option<String> {
-    // Not logged through the logger: it publishes through this hub.
-    encode(event).map_err(|e| eprintln!("novad: can't encode an event: {e}")).ok()
 }
 
 /// The next event in a client's queue, as JSON, waiting up to `wait`; flush

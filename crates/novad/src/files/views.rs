@@ -18,8 +18,8 @@
 //!
 //! Every event of a view is sent while holding its state, after checking
 //! the view is still open, so nothing arrives after `files_close` or after
-//! another `files_open` replaced it. Pages are encoded before the state is
-//! taken, so a big folder doesn't hold up closing it.
+//! another `files_open` replaced it. Each page is encoded before the state
+//! is taken, so a big folder doesn't hold up closing it.
 
 use crate::files::folder::{self, Listing};
 use crate::files::watcher::{Following, Notice, Wait, Watcher};
@@ -159,7 +159,7 @@ impl Folders {
     /// The shared watcher, started now if no view needed it yet.
     fn watcher(&self) -> Result<Arc<Watcher>, String> {
         let mut watcher = lock(&self.watcher);
-        if let Some(running) = watcher.as_ref() {
+        if let Some(running) = watcher.as_ref().filter(|running| running.is_reading()) {
             return Ok(Arc::clone(running));
         }
         let started = Watcher::start().map_err(|e| format!("Can't watch folders: {e}"))?;
@@ -253,21 +253,23 @@ impl Worker {
         let total = u32::try_from(all.len()).unwrap_or(u32::MAX);
         // An empty folder still gets its one page.
         let pages = all.chunks(PAGE_ENTRIES).map(<[_]>::to_vec).chain(all.is_empty().then(Vec::new));
-        let mut lines = Vec::new();
         for (number, entries) in pages.enumerate() {
-            if !self.view.is_open() {
-                return false;
-            }
             let start = u32::try_from(number * PAGE_ENTRIES).unwrap_or(u32::MAX);
             let page = FolderPage { view, path: self.view.named.clone(), start, total, entries };
-            lines.extend(Hub::encode(&Event::FilesPage(page)));
+            let line = Hub::encode(&Event::FilesPage(page));
+            // Only this thread sends the view's events, so pages can't
+            // interleave with its changes.
+            let state = lock(&self.view.state);
+            if !state.open {
+                return false;
+            }
+            if let Some(line) = line {
+                self.hub.send_line_to(client, line);
+            }
         }
         let mut state = lock(&self.view.state);
         if !state.open {
             return false;
-        }
-        for line in lines {
-            self.hub.send_line_to(client, line);
         }
         state.listing = Some(listing);
         true
