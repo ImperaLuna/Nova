@@ -119,7 +119,7 @@ fn groups(features: &Path) -> Vec<Group> {
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 8] {
+fn limits() -> [(&'static str, u64, &'static str); 9] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
@@ -129,6 +129,11 @@ fn limits() -> [(&'static str, u64, &'static str); 8] {
         ("FILES_MAX_VIEWS", size(FILES_MAX_VIEWS), "novad refuses more open folder views per connection."),
         ("FILES_PATH_MAX_BYTES", size(FILES_PATH_MAX_BYTES), "novad refuses longer files_open paths."),
         ("FILES_SOLID_MAX", u64::from(FILES_SOLID_MAX), "A files_look part this high is fully solid; 0 is glass."),
+        (
+            "RAW_BYTE_BASE",
+            u64::from(RAW_BYTE_BASE),
+            "Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.",
+        ),
         (
             "NETWORK_TRAFFIC_HISTORY_SECS",
             NETWORK_TRAFFIC_HISTORY_SECS,
