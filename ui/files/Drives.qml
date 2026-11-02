@@ -6,7 +6,9 @@ import "paths.js" as Paths
 
 // The drives in Nova Files' sidebar, as novad lists them. One that comes
 // while the window is open (a stick plugged in) arrives with an animation.
-// `folder` is the window's, so the drive it's on shows as current.
+// `folder` is the window's, so the drive it's on shows as current; when
+// that drive goes away (ejected from any window, or pulled), `left` says
+// the window should go elsewhere.
 Column {
     id: drives
 
@@ -14,21 +16,38 @@ Column {
 
     signal opened(string folder)
     signal menuRequested(var drive, point at)
+    signal left
 
-    // The ids listed so far, and whether the window is past opening: rows
-    // are made again on every change, and only a new one animates.
+    // The ids listed so far, and whether the first list is in: rows are
+    // made again on every change, and only a new one animates.
     property var seen: ({})
     property bool listed: false
 
     // The mounted drive the folder is on: the one with the longest mount
     // that holds it, since one may be mounted inside another (/ and /mnt/games).
-    readonly property string currentId: {
+    readonly property var current: {
         let best = null;
         for (const drive of FilesService.drives)
             if (drive.mount !== undefined && Paths.inside(folder, drive.mount) && (best === null || drive.mount.length > best.mount.length))
                 best = drive;
-        return best?.id ?? "";
+        return best;
     }
+    // Where the drive the folder is on was mounted, before the latest list.
+    property string heldMount: ""
+
+    Connections {
+        target: FilesService
+        function onDrivesChanged() {
+            const held = drives.heldMount;
+            const gone = held !== "" && !FilesService.drives.some(drive => drive.mount === held);
+            if (gone && Paths.inside(drives.folder, held))
+                drives.left();
+            drives.heldMount = drives.current?.mount ?? "";
+            if (!drives.listed)
+                Qt.callLater(() => drives.listed = true);
+        }
+    }
+    onFolderChanged: heldMount = current?.mount ?? ""
 
     Repeater {
         model: FilesService.drives
@@ -38,7 +57,7 @@ Column {
 
             width: drives.width
             drive: modelData
-            current: modelData.id === drives.currentId
+            current: modelData.id === (drives.current?.id ?? "")
             arrived: drives.listed && !(modelData.id in drives.seen)
             Component.onCompleted: drives.seen[modelData.id] = true
             onOpened: FilesService.mount(modelData.id, mounted => {
@@ -49,7 +68,11 @@ Column {
         }
     }
 
-    // Drives already there when the window opens don't animate: novad sends
-    // the list as the process subscribes, before any window.
-    Component.onCompleted: Qt.callLater(() => listed = true)
+    // Drives in the first list the window sees don't animate, whether it was
+    // there as the window opened or came after (udisksd starting slowly).
+    Component.onCompleted: {
+        heldMount = current?.mount ?? "";
+        if (FilesService.drives.length > 0)
+            Qt.callLater(() => listed = true);
+    }
 }

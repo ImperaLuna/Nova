@@ -104,7 +104,15 @@ pub fn listed(known: &Known, home: Option<&Path>, used: impl Fn(&str) -> Option<
                 return None;
             }
             let mount = match mounts.first() {
-                Some(_) => Some(mounts.iter().find(|mount| browsed(mount, home))?.clone()),
+                // The root's own mount first, so it's "System" whatever
+                // else it's also mounted at.
+                Some(_) => Some(
+                    mounts
+                        .iter()
+                        .find(|mount| mount.as_str() == "/")
+                        .or_else(|| mounts.iter().find(|mount| browsed(mount, home)))?
+                        .clone(),
+                ),
                 None if block.hint_system => return None,
                 None => None,
             };
@@ -220,6 +228,13 @@ mod tests {
             ("sdb1", block(STICK, &["/run/media/user/SANDISK"])),
         ]);
         assert_eq!(names(&known), ["SanDisk Cruzer Blade"]);
+    }
+
+    #[test]
+    fn the_root_is_system_wherever_else_it_is_mounted() {
+        let known = known(&[("nvme0n1p2", Block { hint_system: true, ..block(SSD, &["/mnt/snapshots", "/"]) })]);
+        let drives = listed(&known, None, |_| None);
+        assert_eq!((drives[0].name.as_str(), drives[0].mount.as_deref()), ("System", Some("/")));
     }
 
     #[test]

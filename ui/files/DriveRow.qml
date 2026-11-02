@@ -3,7 +3,8 @@ import "../theme"
 import "../theme/icons.js" as Icons
 
 // A drive in Nova Files' sidebar: its icon (a USB stick or a disk), its
-// name, and under it how full it is while it's mounted. `arrived` slides
+// name, and under it how full it is while it's mounted (and novad could
+// tell). `arrived` slides
 // it in and glows it once, for a stick just plugged in. A click opens it,
 // a right-click asks for its menu at the pointer (in the window).
 Rectangle {
@@ -17,7 +18,8 @@ Rectangle {
     signal menuRequested(point at)
 
     readonly property bool mounted: drive.mount !== undefined
-    readonly property real fill: mounted && drive.size > 0 ? Math.min(1, drive.used / drive.size) : 0
+    readonly property bool measured: mounted && drive.used !== undefined && drive.size > 0
+    readonly property real fill: measured ? Math.min(1, drive.used / drive.size) : 0
 
     height: Tokens.filesDriveHeight
     radius: Tokens.menuRowRadius
@@ -66,7 +68,7 @@ Rectangle {
                 text: row.drive.name
             }
             Rectangle {
-                visible: row.mounted
+                visible: row.measured
                 width: parent.width
                 height: Tokens.filesDriveBarHeight
                 radius: height / 2

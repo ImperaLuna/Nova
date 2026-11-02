@@ -42,6 +42,8 @@ FloatingWindow {
         folder: window.folder
         onOpened: folder => window.folder = folder
         onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
+        // Ejected from any window, or pulled: the window goes Home.
+        onDriveLeft: window.folder = Quickshell.env("HOME") ?? "/"
     }
     FileList {
         anchors.left: sidebar.right
@@ -52,13 +54,10 @@ FloatingWindow {
     DriveMenu {
         id: driveMenu
         anchors.fill: parent
-        // Once it's ejected the window leaves it, for Home.
         onEjectChosen: drive => FilesService.eject(drive.id, outcome => {
-            if (outcome === Protocol.EJECT_BUSY)
-                ejectProblem.show(drive.name);
-            else if (outcome === Protocol.EJECT_EJECTED && Paths.inside(window.folder, drive.mount ?? ""))
-                window.folder = Quickshell.env("HOME") ?? "/";
-        })
+                if (outcome === Protocol.EJECT_BUSY)
+                    ejectProblem.show(drive.name);
+            })
     }
     EjectProblem {
         id: ejectProblem

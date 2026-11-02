@@ -11,14 +11,16 @@
 //! and what they're called is `drives.rs`; how full each is comes from
 //! `statvfs` on its mount, read again whenever udisks2 says something
 //! changed and when a window opens a folder ([`Drives::refresh`]). The
-//! list is sent only when it changed, under the lock that holds it, so
-//! clients never get an older one after a newer.
+//! list is worked out on one thread of its own and sent only when it
+//! changed, under the lock that holds it, so clients never get an older one
+//! after a newer and a slow `statvfs` holds up nothing else.
 //!
 //! Ejecting is Windows': every mounted filesystem on the drive is unmounted
 //! (udisks2 writes what's left first), then the drive is powered off, and
 //! a "Safe To Remove Hardware" notification says it can be pulled. When
 //! something still has files open on it, udisks2 refuses with `DeviceBusy`
-//! and it's answered as [`EjectOutcome::Busy`]: it stays mounted.
+//! and it's answered as [`EjectOutcome::Busy`]: it stays mounted, and its
+//! other filesystems already unmounted are mounted again.
 
 use crate::files::drives::{self, Block, DriveInfo, Known};
 use crate::hub::{ClientId, Hub};
@@ -34,7 +36,7 @@ use std::future::poll_fn;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::task::Poll;
 use std::time::Duration;
 use zbus::wire::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
@@ -79,6 +81,8 @@ struct Shared {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     state: Mutex<State>,
+    /// Wakes the lister when `State::stale` is set or it's stopped.
+    wake: Condvar,
     /// Where "Safe To Remove Hardware" goes, while notifications are on.
     notifications: Mutex<Weak<Notifications>>,
 }
@@ -86,9 +90,9 @@ struct Shared {
 #[derive(Default)]
 struct State {
     known: Known,
-    /// Counts changes to `known`, so a list worked out from an older one
-    /// isn't sent.
-    generation: u64,
+    /// The list must be worked out again: `known` changed, or how full the
+    /// drives are should be read again.
+    stale: bool,
     /// The list last sent.
     listed: Vec<Drive>,
     /// The connection for mounting and ejecting, made on first use.
@@ -106,6 +110,7 @@ impl Drives {
             hub,
             logger,
             state: Mutex::default(),
+            wake: Condvar::new(),
             notifications: Mutex::new(Weak::new()),
         });
         let stop = Arc::new(Stop::default());
@@ -116,6 +121,8 @@ impl Drives {
                 following.known(Known::default());
             }
         });
+        let lister = Arc::clone(&shared);
+        std::thread::spawn(move || lister.lister());
         Self { shared, stop }
     }
 
@@ -126,11 +133,9 @@ impl Drives {
     }
 
     /// Reads how full the mounted drives are again, and sends the list if
-    /// that changed it. On a thread of its own, so a drive slow to answer
-    /// holds up nobody.
+    /// that changed it.
     pub fn refresh(&self) {
-        let shared = Arc::clone(&self.shared);
-        std::thread::spawn(move || shared.list());
+        self.shared.list();
     }
 
     /// Where "Safe To Remove Hardware" goes: `notifications`, or nowhere.
@@ -145,16 +150,7 @@ impl Drives {
             return Ok(mount);
         }
         let calls = self.shared.calls()?;
-        let options: HashMap<&str, Variant> = HashMap::new();
-        let reply = zbus::block_on(calls.call_method(
-            Some(UDISKS),
-            block_path(id).as_str(),
-            Some(FILESYSTEM),
-            "Mount",
-            &(options,),
-        ))
-        .and_then(|reply| reply.body().deserialize::<String>())
-        .map_err(|e| format!("couldn't mount {}: {}", drive.name, error_text(&e)))?;
+        let reply = mount(&calls, id).map_err(|e| format!("couldn't mount {}: {e}", drive.name))?;
         self.shared.logger.info(LOG_SOURCE, &format!("mounted {} at {reply}", drive.name));
         self.shared.list();
         Ok(reply)
@@ -175,6 +171,7 @@ impl Drives {
             (device.to_string(), info.clone(), mounted)
         };
         let calls = self.shared.calls()?;
+        let mut done = Vec::new();
         for filesystem in &mounted {
             let options: HashMap<&str, Variant> = HashMap::new();
             let unmounted = zbus::block_on(calls.call_method(
@@ -185,9 +182,16 @@ impl Drives {
                 &(options,),
             ));
             match unmounted {
-                Ok(_) => {}
+                Ok(_) => done.push(filesystem),
                 Err(e) if is_busy(&e) => {
                     self.shared.logger.info(LOG_SOURCE, &format!("{} is in use: {}", drive.name, error_text(&e)));
+                    // It stays as it was: the drive's other filesystems
+                    // unmounted so far are mounted again.
+                    for filesystem in done {
+                        if let Err(e) = mount(&calls, filesystem) {
+                            self.shared.logger.warn(LOG_SOURCE, &format!("couldn't mount {filesystem} again: {e}"));
+                        }
+                    }
                     self.shared.list();
                     return Ok(EjectOutcome::Busy);
                 }
@@ -221,6 +225,7 @@ impl Drives {
     /// Stops following udisks2: no list is sent after this.
     pub fn stop(&self) {
         lock(&self.shared.state).stopped = true;
+        self.shared.wake.notify_all();
         self.stop.stop();
     }
 }
@@ -256,33 +261,49 @@ impl Shared {
 
     /// udisks2 now knows `known`: lists it.
     fn known(&self, known: Known) {
-        {
-            let mut state = lock(&self.state);
-            if state.known == known {
-                return;
-            }
+        let mut state = lock(&self.state);
+        if state.known != known {
             state.known = known;
-            state.generation += 1;
+            state.stale = true;
+            self.wake.notify_all();
         }
-        self.list();
     }
 
-    /// Works out the list from what udisks2 knows and how full each mount
-    /// is, and sends it if it changed. `statvfs` runs outside the lock; a
-    /// list worked out from what changed meanwhile is dropped, as the
-    /// change works out its own.
+    /// Asks the lister to work the list out again.
     fn list(&self) {
-        let (known, generation) = {
-            let state = lock(&self.state);
-            (state.known.clone(), state.generation)
-        };
-        let listed = drives::listed(&known, self.home.as_deref(), usage);
-        let mut state = lock(&self.state);
-        if state.stopped || state.generation != generation || state.listed == listed {
-            return;
+        lock(&self.state).stale = true;
+        self.wake.notify_all();
+    }
+
+    /// Works the list out whenever it's stale, from what udisks2 knows and
+    /// how full each mount is, and sends it if it changed, until stopped.
+    /// One thread of its own: `statvfs` on a drive slow to answer holds up
+    /// neither udisks2's signals nor a connection, and lists go out in the
+    /// order they were worked out. `statvfs` runs outside the lock; a change
+    /// meanwhile marks it stale again, so the newest is always sent last.
+    fn lister(&self) {
+        loop {
+            let known = {
+                let mut state = lock(&self.state);
+                while !state.stale && !state.stopped {
+                    state = self.wake.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
+                }
+                if state.stopped {
+                    return;
+                }
+                state.stale = false;
+                state.known.clone()
+            };
+            let listed = drives::listed(&known, self.home.as_deref(), usage);
+            let mut state = lock(&self.state);
+            if state.stopped {
+                return;
+            }
+            if state.listed != listed {
+                state.listed = listed;
+                self.hub.publish(&Event::FilesDrives { drives: state.listed.clone() });
+            }
         }
-        state.listed = listed;
-        self.hub.publish(&Event::FilesDrives { drives: state.listed.clone() });
     }
 }
 
@@ -303,6 +324,14 @@ fn usage(mount: &str) -> Option<(u64, u64)> {
     let size = stats.f_blocks.saturating_mul(unit);
     let used = stats.f_blocks.saturating_sub(stats.f_bfree).saturating_mul(unit);
     Some((size, used))
+}
+
+/// Mounts block device `id`'s filesystem and answers where.
+fn mount(calls: &Connection, id: &str) -> Result<String, String> {
+    let options: HashMap<&str, Variant> = HashMap::new();
+    zbus::block_on(calls.call_method(Some(UDISKS), block_path(id).as_str(), Some(FILESYSTEM), "Mount", &(options,)))
+        .and_then(|reply| reply.body().deserialize::<String>())
+        .map_err(|e| error_text(&e))
 }
 
 /// Block device `id`'s object.

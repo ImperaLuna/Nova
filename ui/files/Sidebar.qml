@@ -16,6 +16,8 @@ Item {
     // window).
     signal opened(string folder)
     signal driveMenuRequested(var drive, point at)
+    // The drive the window's folder is on went away.
+    signal driveLeft
 
     readonly property var places: [
         {
@@ -100,6 +102,7 @@ Item {
             folder: sidebar.folder
             onOpened: folder => sidebar.opened(folder)
             onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
+            onLeft: sidebar.driveLeft()
         }
     }
 }
