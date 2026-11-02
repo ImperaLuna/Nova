@@ -10,8 +10,8 @@
 //! name is claimed, once a session. Either way an app that looks for a tray
 //! only at startup (Electron) finds one (IMP-107).
 
-use super::launch::{self, Runner};
 use crate::apps::desktop_entry::{self, Context, Entry, Locale, Skipped};
+use crate::apps::launch::{self, Runner};
 use crate::logger::Logger;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

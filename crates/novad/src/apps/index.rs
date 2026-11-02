@@ -90,7 +90,12 @@ impl AppIndex {
     /// An index that knows no apps until it follows them.
     pub fn new(sources: Sources, path_var: &str, logger: Arc<Logger>) -> Arc<Self> {
         Arc::new(Self {
-            state: Mutex::new(State { apps: BTreeMap::new(), unlisted: BTreeMap::new(), scanned: false, icons: BTreeMap::new() }),
+            state: Mutex::new(State {
+                apps: BTreeMap::new(),
+                unlisted: BTreeMap::new(),
+                scanned: false,
+                icons: BTreeMap::new(),
+            }),
             scanned: Condvar::new(),
             logger,
             sources,

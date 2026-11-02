@@ -50,7 +50,12 @@ impl Places {
         Self::new(nova_paths::config_home(), &config_dirs, data_dirs, &super::current_desktops())
     }
 
-    pub fn new(config_home: Option<PathBuf>, config_dirs: &[PathBuf], data_dirs: &[PathBuf], desktops: &[String]) -> Self {
+    pub fn new(
+        config_home: Option<PathBuf>,
+        config_dirs: &[PathBuf],
+        data_dirs: &[PathBuf],
+        desktops: &[String],
+    ) -> Self {
         let names: Vec<String> = desktops
             .iter()
             .map(|desktop| format!("{}-{FILE_NAME}", desktop.to_lowercase()))
@@ -86,7 +91,9 @@ pub struct Associations {
 impl Associations {
     /// Reads the lists that are there.
     pub fn load(places: &Places) -> Self {
-        Self { lists: places.lists.iter().filter_map(|path| read(path).ok().flatten()).map(|text| parse(&text)).collect() }
+        Self {
+            lists: places.lists.iter().filter_map(|path| read(path).ok().flatten()).map(|text| parse(&text)).collect(),
+        }
     }
 
     /// The app that opens a file of `types` (a type, then the types it's a
@@ -156,7 +163,9 @@ pub fn set_default(places: &Places, mime: &str, app: &str) -> Result<PathBuf, St
 fn with_default(text: &str, mime: &str, app: &str) -> String {
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
     set_key(&mut lines, DEFAULTS, mime, |_| vec![app.to_string()]);
-    set_key(&mut lines, ADDED, mime, |ids| [app.to_string()].into_iter().chain(ids.into_iter().filter(|id| id != app)).collect());
+    set_key(&mut lines, ADDED, mime, |ids| {
+        [app.to_string()].into_iter().chain(ids.into_iter().filter(|id| id != app)).collect()
+    });
     let mut removed = None;
     if let Some(line) = find_key(&lines, REMOVED, mime) {
         removed = Some((line, ids(lines[line].split_once('=').map_or("", |(_, value)| value))));
@@ -278,7 +287,10 @@ mod tests {
                 "/usr/share/applications/mimeapps.list",
             ]
         );
-        assert_eq!(places.user, [PathBuf::from("/home/me/.config/niri-mimeapps.list"), "/home/me/.config/mimeapps.list".into()]);
+        assert_eq!(
+            places.user,
+            [PathBuf::from("/home/me/.config/niri-mimeapps.list"), "/home/me/.config/mimeapps.list".into()]
+        );
     }
 
     #[test]

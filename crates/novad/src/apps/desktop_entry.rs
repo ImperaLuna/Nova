@@ -542,7 +542,8 @@ mod tests {
 
     #[test]
     fn reads_the_types_an_app_opens() {
-        let found = entry("[Desktop Entry]\nType=Application\nName=X\nExec=x %F\nMimeType=image/png;image/jpeg;\n").unwrap();
+        let found =
+            entry("[Desktop Entry]\nType=Application\nName=X\nExec=x %F\nMimeType=image/png;image/jpeg;\n").unwrap();
         assert_eq!(found.mime_types, ["image/png", "image/jpeg"]);
         assert!(found.opens_types());
         assert!(!entry("[Desktop Entry]\nType=Application\nName=X\nExec=x\n").unwrap().opens_types());
