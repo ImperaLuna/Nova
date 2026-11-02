@@ -25,7 +25,10 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - The UI checks capabilities that novad reports, never which compositor is
   running (no `isNiri`).
 - A feature is `features/<id>/feature.toml`, the single source of truth for
-  its packages; `daemon = "x"` needs a cargo feature `x` in novad. A feature
+  its packages. Its daemon side is a novad module: an `impl Module` in its
+  own folder plus one line in the `modules!` registry
+  (`crates/novad/src/modules/`); apps come from the shared app index in
+  `Context`, never from another module. A feature
   that is off or missing dependencies is never loaded by the UI. Its `nix`
   list is what the flake's modules (`programs.nova`, packaging/nix) install
   when it's on, so never ask users to add a feature's packages by hand.
@@ -63,10 +66,10 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - One source of truth. A value used in more than one place (a color, size,
   duration, timeout, socket path, command name, event name) is defined once
   and referenced everywhere else: design values in `theme/Tokens.qml`, wire
-  names in `nova-protocol` and `ui/daemon/protocol.js`, Rust constants in the
-  crate that owns them. Never copy a literal into a second file.
-  `ui/daemon/protocol.js` mirrors `nova-protocol`: change both together,
-  with matching tests on both sides.
+  names in `nova-protocol`, Rust constants in the crate that owns them.
+  Never copy a literal into a second file. The wire names in
+  `ui/daemon/protocol.js` are generated from `nova-protocol`: change the
+  Rust types, then run `just protocol-js`.
 - Each crate, module and QML file opens with a comment saying what it does
   and how. Read it before changing that code and keep it true in the same
   change.

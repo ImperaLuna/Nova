@@ -1,5 +1,9 @@
 //! Runs the Quickshell UI as a child of novad and restarts it when it exits.
 //!
+//! It runs only while some feature with a UI is on ([`Supervisor::want`]):
+//! with every such feature off, novad keeps serving `nova` commands without
+//! Quickshell, and turning one on starts it again.
+//!
 //! The UI's stdout and stderr go into novad's log with source `ui`. When it
 //! exits on its own, the lines before the exit are saved as a crash snapshot
 //! and it starts again after a backoff. When the compositor is gone, the
@@ -14,7 +18,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -50,12 +54,16 @@ const SIMPLE_ANIMATION_DRIVER: (&str, &str) = ("QSG_USE_SIMPLE_ANIMATION_DRIVER"
 /// in a release build: anything local could connect and run code in the UI.
 const QML_DEBUG_PORT_VAR: &str = "NOVA_UI_QML_DEBUG_PORT";
 const LOG_SOURCE: &str = "supervisor";
+const NOT_NEEDED: &str = "no feature with a UI is on, so the UI isn't running";
 const FIRST_RETRY: Duration = Duration::from_secs(1);
 const MAX_RETRY: Duration = Duration::from_secs(30);
 /// A UI that ran this long counts as healthy: the backoff starts over.
 const HEALTHY_AFTER: Duration = Duration::from_secs(60);
 /// A UI that dies this quickly most likely failed to load.
 const EARLY_EXIT: Duration = Duration::from_secs(5);
+/// How often novad checks the compositor is still there while no UI runs
+/// (a UI's exit is the check otherwise).
+const SESSION_CHECK: Duration = Duration::from_secs(5);
 /// How long `quickshell --version` may take; novad's start waits for it.
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -84,20 +92,28 @@ pub struct UiSettings {
 
 pub struct Supervisor {
     record: Mutex<Record>,
+    /// Signalled when `wanted` or `quitting` changes.
+    changed: Condvar,
     quitting: AtomicBool,
     quickshell_version: Option<String>,
 }
 
 #[derive(Default)]
 struct Record {
+    /// Some feature with a UI is on, so the UI should run.
+    wanted: bool,
+    /// The running UI was told to stop because it's no longer wanted, so
+    /// its exit isn't a crash even if it's wanted again by then.
+    stopping: bool,
     pid: Option<u32>,
     restarts: u32,
     last_crash: Option<Crash>,
 }
 
 impl Supervisor {
-    /// Starts the UI on a thread of its own that lives as long as novad.
-    pub fn start(settings: UiSettings, logger: Arc<Logger>) -> Arc<Self> {
+    /// Starts the UI on a thread of its own that lives as long as novad,
+    /// running it while `wanted` (see [`Self::want`]).
+    pub fn start(settings: UiSettings, wanted: bool, logger: Arc<Logger>) -> Arc<Self> {
         let quickshell_version = quickshell_version(&settings, &logger);
         if let Some(vendor) = &settings.egl_vendor {
             logger.info(LOG_SOURCE, &format!("the UI loads only NVIDIA's EGL ({})", vendor.display()));
@@ -105,8 +121,15 @@ impl Supervisor {
         if let Some(render_loop) = settings.render_loop {
             logger.info(LOG_SOURCE, &format!("the UI uses Qt's {render_loop} render loop"));
         }
-        let supervisor =
-            Arc::new(Self { record: Mutex::default(), quitting: AtomicBool::new(false), quickshell_version });
+        if !wanted {
+            logger.info(LOG_SOURCE, NOT_NEEDED);
+        }
+        let supervisor = Arc::new(Self {
+            record: Mutex::new(Record { wanted, ..Record::default() }),
+            changed: Condvar::new(),
+            quitting: AtomicBool::new(false),
+            quickshell_version,
+        });
         let worker = Arc::clone(&supervisor);
         std::thread::spawn(move || worker.run(&settings, &logger));
         supervisor
@@ -114,8 +137,13 @@ impl Supervisor {
 
     pub fn status(&self) -> UiStatus {
         let record = lock(&self.record);
+        let state = match (record.pid, record.wanted) {
+            (Some(_), _) => UiState::Running,
+            (None, true) => UiState::Restarting,
+            (None, false) => UiState::NotNeeded,
+        };
         UiStatus {
-            state: if record.pid.is_some() { UiState::Running } else { UiState::Restarting },
+            state,
             pid: record.pid,
             pss_kib: record.pid.and_then(|pid| crate::procfs::pss_kib(Path::new(crate::procfs::PROC), pid)),
             restarts: record.restarts,
@@ -130,30 +158,60 @@ impl Supervisor {
     /// Stops the UI for good; it won't be restarted.
     pub fn stop(&self) {
         self.quitting.store(true, Ordering::SeqCst);
-        // Signalled under the record lock: `run_once` clears the pid under
-        // it before reaping, so the pid is still the UI's (at worst a
-        // zombie) and can't have been reused by another process.
         let record = lock(&self.record);
-        if let Some(pid) = record.pid
-            && let Ok(pid) = libc::pid_t::try_from(pid)
-        {
-            // SAFETY: kill has no memory effects.
-            unsafe { libc::kill(pid, libc::SIGTERM) };
+        terminate(&record);
+        self.changed.notify_all();
+    }
+
+    /// Runs the UI while `wanted` (some feature with a UI is on): stops it
+    /// when that turns false and starts it when it turns true again.
+    pub fn want(&self, wanted: bool, logger: &Logger) {
+        let mut record = lock(&self.record);
+        if record.wanted == wanted {
+            return;
         }
+        record.wanted = wanted;
+        if wanted {
+            logger.info(LOG_SOURCE, "a feature with a UI is on: starting the UI");
+        } else {
+            logger.info(LOG_SOURCE, NOT_NEEDED);
+            record.stopping = record.pid.is_some();
+            terminate(&record);
+        }
+        self.changed.notify_all();
     }
 
     fn run(&self, settings: &UiSettings, logger: &Arc<Logger>) {
         let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
         loop {
+            loop {
+                let record = lock(&self.record);
+                let (record, _timeout) = self
+                    .changed
+                    .wait_timeout_while(record, SESSION_CHECK, |record| {
+                        !record.wanted && !self.quitting.load(Ordering::SeqCst)
+                    })
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if record.wanted || self.quitting.load(Ordering::SeqCst) {
+                    break;
+                }
+                drop(record);
+                exit_if_session_over(settings, logger);
+            }
+            if self.quitting.load(Ordering::SeqCst) {
+                return;
+            }
             let started = Instant::now();
             let exit = self.run_once(settings, logger);
             if self.quitting.load(Ordering::SeqCst) {
                 return;
             }
-            if settings.wayland_socket.as_ref().is_some_and(|socket| !socket.exists()) {
-                logger.info(LOG_SOURCE, "the compositor is gone, so the session is over: exiting");
-                std::process::exit(0);
+            if std::mem::take(&mut lock(&self.record).stopping) {
+                // Stopped on purpose: no crash, and a fresh backoff.
+                retry.reset();
+                continue;
             }
+            exit_if_session_over(settings, logger);
             let ran_for = started.elapsed();
             self.record_crash(&exit, ran_for, logger);
             if ran_for > HEALTHY_AFTER {
@@ -161,17 +219,33 @@ impl Supervisor {
             }
             let wait = retry.next();
             logger.info(LOG_SOURCE, &format!("starting the UI again in {} s", wait.as_secs()));
-            std::thread::sleep(wait);
+            // Cut short by `stop`, or by `want(false)` (the loop then waits
+            // until it's wanted again).
+            let record = lock(&self.record);
+            let _waited = self
+                .changed
+                .wait_timeout_while(record, wait, |record| record.wanted && !self.quitting.load(Ordering::SeqCst))
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
         }
     }
 
     /// Runs the UI until it exits. Returns how it ended, as text for the log.
     fn run_once(&self, settings: &UiSettings, logger: &Arc<Logger>) -> String {
-        let mut child = match spawn(settings) {
-            Ok(child) => child,
-            Err(e) => return format!("couldn't start {}: {e}", settings.quickshell.display()),
+        // Spawned under the record lock, so a `want(false)` or `stop` either
+        // comes first (and nothing starts) or sees the pid and ends it.
+        let mut child = {
+            let mut record = lock(&self.record);
+            if !record.wanted || self.quitting.load(Ordering::SeqCst) {
+                return "not started: not wanted".into();
+            }
+            match spawn(settings) {
+                Ok(child) => {
+                    record.pid = Some(child.id());
+                    child
+                }
+                Err(e) => return format!("couldn't start {}: {e}", settings.quickshell.display()),
+            }
         };
-        lock(&self.record).pid = Some(child.id());
         logger.info(LOG_SOURCE, &format!("UI started (pid {}) from {}", child.id(), settings.ui_dir.display()));
         let readers = [
             child.stdout.take().map(|out| forward_lines(out, Arc::clone(logger))),
@@ -212,6 +286,27 @@ impl Supervisor {
         let mut record = lock(&self.record);
         record.restarts += 1;
         record.last_crash = Some(Crash { time: crate::logger::now(), log: snapshot });
+    }
+}
+
+/// Sends the UI SIGTERM, if it runs. Called under the record lock:
+/// `run_once` clears the pid under it before reaping, so the pid is still
+/// the UI's (at worst a zombie) and can't have been reused by another
+/// process.
+/// Exits novad once the compositor's socket is gone: the session is over.
+fn exit_if_session_over(settings: &UiSettings, logger: &Logger) {
+    if settings.wayland_socket.as_ref().is_some_and(|socket| !socket.exists()) {
+        logger.info(LOG_SOURCE, "the compositor is gone, so the session is over: exiting");
+        std::process::exit(0);
+    }
+}
+
+fn terminate(record: &Record) {
+    if let Some(pid) = record.pid
+        && let Ok(pid) = libc::pid_t::try_from(pid)
+    {
+        // SAFETY: kill has no memory effects.
+        unsafe { libc::kill(pid, libc::SIGTERM) };
     }
 }
 

@@ -1,4 +1,4 @@
-//! What the machine is busy with (feature `quick-settings`): CPU, memory,
+//! What the machine is busy with (feature `resources`): CPU, memory,
 //! GPU, the CPU's temperature and the apps using the most memory, for the quick
 //! settings sidebar's resources card and page.
 //!
@@ -27,7 +27,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use usage::{CpuTimes, ProcessTicks};
 
-pub const FEATURE_ID: &str = "quick-settings";
+pub const FEATURE_ID: &str = "resources";
 const LOG_SOURCE: &str = "resources";
 
 /// How often a watched look is taken and published.
@@ -319,6 +319,36 @@ fn page_size() -> u64 {
     // SAFETY: sysconf only reads a configuration value.
     let size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
     u64::try_from(size).unwrap_or(4096)
+}
+
+/// It has no options: it only starts and stops with its feature.
+impl crate::modules::Module for Resources {
+    const ID: &'static str = FEATURE_ID;
+    type Sources = Sources;
+    type Config = ();
+
+    fn sources(env: &crate::modules::Env) -> Sources {
+        Sources::system(env.path_var)
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(
+        ctx: &crate::modules::Context,
+        sources: &Sources,
+        (): &(),
+        _: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+    }
+
+    fn client_gone(&self, client: ClientId) {
+        self.watch(client, false);
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
+    }
 }
 
 #[cfg(test)]

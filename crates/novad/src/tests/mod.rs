@@ -107,7 +107,6 @@ impl TestDaemon {
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
         let listener = server::bind(&socket).unwrap();
-        let ui = ui.map(|settings| Supervisor::start(settings, Arc::clone(&logger)));
         let icons = test_icons(&dir);
         let sources = Sources {
             config: dir.join("config/config.toml"),
@@ -115,70 +114,14 @@ impl TestDaemon {
             themes_dir: theme::default_dir(),
             manifests: nova_features::load_all(&repo_features()).unwrap(),
             path_var: format!("{host_path}:{}", dir.join("fake-bin").display()),
-            ai_usage: ai_usage_paths(&dir.join("ai-usage")),
-            resources: resources::Sources::system(""),
-            launcher: launcher_paths(&dir, Arc::clone(&icons)),
-            // No bus for the tray and notifications unless the test starts
-            // one there (`session_bus::TestBus`).
-            tray: tray::Sources {
-                bus: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
-                state_file: dir.join("tray.json"),
-            },
-            notifications: notifications::Sources {
-                bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
-                state_file: dir.join("notifications.json"),
-                images: dir.join("notifications"),
-                icons: Arc::clone(&icons),
-            },
-            // No bus either: the media's own tests give it one.
-            media: media::Sources {
-                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
-                covers: dir.join("media"),
-                proc: dir.join("proc"),
-            },
-            // No UPower, hidraw nodes, HeadsetControl or USB devices
-            // either: the peripherals' own tests give it theirs.
-            peripherals: peripherals::Sources {
-                upower: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
-                sys_root: dir.join("sys"),
-                dev: dir.join("dev"),
-                open_hidraw: Arc::new(|_| Err(std::io::ErrorKind::NotFound.into())),
-                path_var: dir.join("no-programs").display().to_string(),
-                usb_devices: dir.join("usb"),
-            },
-            // No NetworkManager either: the network's own tests give it one.
-            network: network::Sources {
-                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
-                sys_root: dir.join("sys"),
-                state_dir: dir.join("state"),
-            },
-            // No BlueZ either, and never the system's: a test novad must not
-            // become the machine's pairing agent. Its own tests give it one.
-            bluetooth: bluetooth::Sources {
-                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
-                rfkill: bluetooth::Rfkill {
-                    class: dir.join("sys/class/rfkill"),
-                    device: dir.join("dev/rfkill"),
-                    adapters: dir.join("sys/class/bluetooth"),
-                },
-                connect_limit: bluetooth::CONNECT_LIMIT,
-                audio_wait: bluetooth::AUDIO_WAIT,
-            },
+            modules: test_modules(&dir, &icons),
             icons,
         };
-        let settings = Settings::load(&sources, &hub, &logger);
         let compositor = compositor(&dir)
             .map(|backend| compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger)));
-        let session_lock = Arc::new(session_lock::SessionLock::open(&dir, &logger));
-        let screenshots = Arc::new(screenshot::Screenshots::new(
-            &dir,
-            sources.path_var.clone(),
-            Arc::clone(&hub),
-            Arc::clone(&logger),
-        ));
-        let recordings =
-            Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
-        let wallpaper = start_wallpaper(&dir, None, &sources.path_var, compositor.as_ref(), &logger);
+        let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
+        let wanted = features::needs_ui(&sources.manifests, &settings.features);
+        let ui = ui.map(|ui_settings| Supervisor::start(ui_settings, wanted, Arc::clone(&logger)));
         let daemon = Arc::new(Daemon {
             started: Instant::now(),
             hub,
@@ -186,14 +129,10 @@ impl TestDaemon {
             ui,
             socket: socket.clone(),
             sources,
+            kept: settings.modules.kept(),
             settings: Mutex::new(settings),
             compositor,
-            session_lock,
-            screenshots,
-            recordings,
-            wallpaper,
         });
-        daemon.apply_services();
         let running = InProcess::serve(listener, Arc::clone(&daemon), daemon.watch_settings());
         Self { _running: running, dir: temp, socket, daemon }
     }
@@ -282,12 +221,67 @@ fn read_entries(path: &Path) -> Vec<LogEntry> {
 
 /// Apps come from `<dir>/launcher/share` only, and start forked twice,
 /// never as services of the desktop's systemd.
-fn launcher_paths(dir: &Path, icons: Arc<Icons>) -> launcher::Paths {
-    launcher::Paths {
-        data_dirs: vec![dir.join("launcher/share")],
-        state_file: dir.join("launcher/launcher.json"),
-        runner: launcher::Runner::Direct,
-        icons,
+/// The modules' sources for a test novad in `dir`: apps under
+/// `<dir>/launcher/share`, and no bus, UPower, NetworkManager or BlueZ
+/// unless a test starts one there.
+fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
+    modules::Sources {
+        apps: crate::apps::Sources { data_dirs: vec![dir.join("launcher/share")], icons: Arc::clone(icons) },
+        ai_usage: ai_usage_paths(&dir.join("ai-usage")),
+        resources: resources::Sources::system(""),
+        launcher: launcher::Paths { state_file: dir.join("launcher/launcher.json"), runner: launcher::Runner::Direct },
+        // No bus for the tray and notifications unless the test starts
+        // one there (`session_bus::TestBus`).
+        tray: tray::Sources {
+            bus: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+            state_file: dir.join("tray.json"),
+            proc_root: crate::procfs::PROC.into(),
+        },
+        notifications: notifications::Sources {
+            bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+            state_file: dir.join("notifications.json"),
+            images: dir.join("notifications"),
+            icons: Arc::clone(icons),
+        },
+        // No bus either: the media's own tests give it one.
+        media: media::Sources {
+            bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+            covers: dir.join("media"),
+            proc: dir.join("proc"),
+        },
+        // No UPower, hidraw nodes, HeadsetControl or USB devices
+        // either: the peripherals' own tests give it theirs.
+        peripherals: peripherals::Sources {
+            upower: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+            sys_root: dir.join("sys"),
+            dev: dir.join("dev"),
+            open_hidraw: Arc::new(|_| Err(std::io::ErrorKind::NotFound.into())),
+            path_var: dir.join("no-programs").display().to_string(),
+            usb_devices: dir.join("usb"),
+        },
+        // No NetworkManager either: the network's own tests give it one.
+        network: network::Sources {
+            bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+            sys_root: dir.join("sys"),
+            state_dir: dir.join("state"),
+        },
+        // No BlueZ either, and never the system's: a test novad must not
+        // become the machine's pairing agent. Its own tests give it one.
+        bluetooth: bluetooth::Sources {
+            bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+            rfkill: bluetooth::Rfkill {
+                class: dir.join("sys/class/rfkill"),
+                device: dir.join("dev/rfkill"),
+                adapters: dir.join("sys/class/bluetooth"),
+            },
+            connect_limit: bluetooth::CONNECT_LIMIT,
+            audio_wait: bluetooth::AUDIO_WAIT,
+        },
+        x11_tray: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+        session_lock: dir.to_owned(),
+        screenshots: dir.to_owned(),
+        recordings: (),
+        wallpaper: wallpaper::Sources { state_dir: dir.to_owned(), home: None },
     }
 }
 

@@ -3,7 +3,7 @@ source: crates/nova-protocol/src/lib.rs
 expression: all
 ---
 {"v":2,"event":"hello","data":{"daemon":"0.1.0"}}
-{"v":2,"event":"features","data":{"features":[{"id":"core","status":"ready"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
+{"v":2,"event":"features","data":{"features":[{"id":"bar","status":"ready","slots":[{"host":"bar.center","view":"central-pill","order":10}]},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
 {"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray","notifications","media","peripherals","network","bluetooth"]}}
@@ -12,7 +12,7 @@ expression: all
 {"v":2,"id":11,"cmd":"quit"}
 {"v":2,"event":"logs","data":{"backlog":true,"entries":[{"time":"2026-10-22T13:45:09.123Z","level":"warn","source":"ui","message":"Binding loop detected: x: y"}]}}
 {"v":2,"event":"logs","data":{"entries":[{"time":"2026-10-22T13:45:09.123Z","level":"warn","source":"ui","message":"Binding loop detected: x: y"}]}}
-{"v":2,"id":10,"result":{"daemon":"0.1.0","features":[{"id":"core","status":"ready"}],"log_dir":"/home/me/.local/state/nova","pid":100,"pss_kib":4096,"quickshell":"0.3.2","ui":{"last_crash":{"log":"/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log","time":"2026-10-22T13:40:00.000Z"},"pid":101,"pss_kib":180000,"restarts":1,"state":"running"},"uptime_secs":42}}
+{"v":2,"id":10,"result":{"daemon":"0.1.0","features":[{"id":"bar","status":"ready"}],"log_dir":"/home/me/.local/state/nova","pid":100,"pss_kib":4096,"quickshell":"0.3.2","ui":{"last_crash":{"log":"/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log","time":"2026-10-22T13:40:00.000Z"},"pid":101,"pss_kib":180000,"restarts":1,"state":"running"},"uptime_secs":42}}
 {"v":2,"id":7,"result":"pong"}
 {"v":2,"event":"ai_usage","data":{"shown":"claude","providers":[{"provider":"claude","state":"ready","limits":[{"window":"session","percent":42,"resets_at":"2026-10-23T11:00:00Z"},{"window":"weekly","percent":61}]},{"provider":"codex","state":"unavailable","hint":"No Codex sessions yet."}]}}
 {"v":2,"id":12,"cmd":"show_ai_usage","args":{"provider":"codex"}}
@@ -62,11 +62,11 @@ expression: all
 {"v":2,"id":23,"cmd":"end_app","args":{"key":"/usr/lib/firefox/firefox"}}
 {"v":2,"cmd":"toggle","args":{"panel":"quick-settings"}}
 {"v":2,"event":"launcher","data":{"apps":[{"id":"org.mozilla.firefox.desktop","name":"Firefox","description":"Web Browser","icon":"firefox"},{"id":"foot.desktop","name":"Foot"}],"pinned":["foot.desktop"],"recent":["org.mozilla.firefox.desktop","foot.desktop"]}}
-{"v":2,"id":24,"cmd":"search_apps","args":{"query":"fi"}}
-{"v":2,"id":24,"result":[{"id":"org.mozilla.firefox.desktop","name":[{"matched":true,"text":"Fi"},{"text":"refox"}]}]}
+{"v":2,"id":24,"cmd":"launcher_search","args":{"query":"fi"}}
+{"v":2,"id":24,"result":[{"description":"Web Browser","id":"org.mozilla.firefox.desktop","name":[{"matched":true,"text":"Fi"},{"text":"refox"}],"provider":"apps"}]}
 {"v":2,"id":44,"cmd":"app_icon","args":{"icon_name":"","program":"/nix/store/x-zen/lib/zen/.zen-wrapped","name":"Zen"}}
 {"v":2,"id":44,"result":"zen-browser"}
-{"v":2,"id":25,"cmd":"launch_app","args":{"id":"foot.desktop","output":"DP-1","new_window":true}}
+{"v":2,"id":25,"cmd":"launcher_run","args":{"provider":"apps","id":"foot.desktop","output":"DP-1","new_window":true}}
 {"v":2,"id":26,"cmd":"pin_app","args":{"id":"foot.desktop","pinned":true}}
 {"v":2,"id":27,"cmd":"hide_tray_app","args":{"id":"steam","hidden":true}}
 {"v":2,"id":28,"cmd":"activate_tray_item","args":{"address":":1.42/StatusNotifierItem"}}

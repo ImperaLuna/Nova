@@ -3,3 +3,13 @@ name = "Launcher"
 description = "Search and open apps, with pinned and recent ones, from Super+Space or the central pill."
 default = true
 daemon = "launcher"
+
+[[slot]]
+host = "stage.panels"
+view = "launcher.panel"
+order = 30
+
+[[slot]]
+host = "launcher.providers"
+view = "apps"
+order = 10

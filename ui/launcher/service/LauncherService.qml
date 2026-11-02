@@ -6,7 +6,7 @@ import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
 
 // The launcher's link to novad: the apps and the user's pinned and recent
-// ones, searching, launching and pinning. The launcher (../Launcher.qml)
+// ones, searching its providers, running what they found, and pinning. The launcher (../Launcher.qml)
 // gets these through the stage and never talks to Daemon itself.
 Singleton {
     id: root
@@ -16,10 +16,10 @@ Singleton {
     // The feature is on and novad has said what's installed.
     readonly property bool ready: Daemon.readyFeatures.includes(Protocol.FEATURE_LAUNCHER) && current !== null
 
-    // `done(matches)` gets novad's AppMatches for `query`, best first, or
-    // none when the search failed.
+    // `done(items)` gets the LauncherItems novad's providers found for
+    // `query`, or none when the search failed.
     function search(query: string, done: var) {
-        Daemon.call(Protocol.CMD_SEARCH_APPS, {
+        Daemon.call(Protocol.CMD_LAUNCHER_SEARCH, {
             query: query
         }, (error, result) => {
             if (error)
@@ -28,11 +28,12 @@ Singleton {
         });
     }
 
-    // Starts the app `id` (on the screen `output`), or focuses its open
-    // window where it is unless `newWindow`; `done(error)` gets novad's
-    // answer.
-    function launch(id: string, output: string, newWindow: bool, done: var) {
-        Daemon.call(Protocol.CMD_LAUNCH_APP, {
+    // Runs what `provider` found as `id` (on the screen `output`): an app
+    // starts, or its open window is focused where it is unless `newWindow`.
+    // `done(error)` gets novad's answer.
+    function run(provider: string, id: string, output: string, newWindow: bool, done: var) {
+        Daemon.call(Protocol.CMD_LAUNCHER_RUN, {
+            provider: provider,
             id: id,
             output: output,
             new_window: newWindow

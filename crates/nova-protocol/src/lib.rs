@@ -16,6 +16,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
+#[cfg(test)]
+mod js;
+
 /// Bumped on any incompatible change to the messages below.
 pub const PROTOCOL_VERSION: u32 = 2;
 
@@ -85,7 +88,7 @@ pub enum Event {
     /// The machine and its user, for the quick settings header. Topic
     /// [`Topic::Host`], sent right after subscribing.
     Host(Host),
-    /// What the machine is busy with (feature `quick-settings`). Topic
+    /// What the machine is busy with (feature `resources`). Topic
     /// [`Topic::Resources`], sent every few seconds while some client
     /// watches them (`watch_resources`), and right when one starts to.
     Resources(Resources),
@@ -189,6 +192,26 @@ pub struct FeatureState {
     /// Binaries the feature needs but that aren't on `PATH`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub missing: Vec<String>,
+    /// Where its UI goes (its manifest's `[[slot]]` entries). The UI fills
+    /// each host with the slots of the features that are ready.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slots: Vec<Slot>,
+}
+
+/// One place a feature's UI fills (`[[slot]]` in `feature.toml`): a view in
+/// a host, like the now-playing pill in the bar's left row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Slot {
+    /// The host's name, like `bar.left` (`nova_features::HOSTS`).
+    pub host: String,
+    /// The view's id, like `media.pill`: the UI maps it to its component
+    /// (ui/slots/Views.qml), so the manifest never names a file.
+    pub view: String,
+    /// Sort key inside the host, lowest first (leftmost in a row), counted
+    /// in tens to leave room. Ties sort by feature id.
+    #[serde(default)]
+    pub order: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1084,22 +1107,37 @@ pub struct App {
     pub icon: Option<String>,
 }
 
-/// The longest `search_apps` query, in characters: anything on the socket is
-/// capped, and nobody types more.
-pub const SEARCH_APPS_MAX_CHARS: usize = 200;
+/// The longest `launcher_search` query, in characters: anything on the
+/// socket is capped, and nobody types more.
+pub const LAUNCHER_SEARCH_MAX_CHARS: usize = 200;
 
 /// The longest each of an `app_icon` request's names may be, in
 /// characters.
 pub const APP_ICON_MAX_CHARS: usize = 512;
 
-/// An app that matches a launcher search, best first.
+/// The launcher provider (`launcher.providers` view) that finds installed
+/// apps: the `launcher` feature's own.
+pub const PROVIDER_APPS: &str = "apps";
+
+/// Something a launcher provider found for a search, best first within its
+/// provider.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AppMatch {
+pub struct LauncherItem {
+    /// The provider that found it (its `launcher.providers` view id), which
+    /// runs it.
+    pub provider: String,
+    /// What it is to its provider, like an app's desktop file id.
     pub id: String,
-    /// The app's name in runs of text, `matched` on the ones the search
-    /// matched, which the launcher highlights. All of it, unmatched, when
-    /// the search matched something else, like a keyword.
+    /// Its name in runs of text, `matched` on the ones the search matched,
+    /// which the launcher highlights. All of it, unmatched, when the search
+    /// matched something else, like a keyword.
     pub name: Vec<TextRun>,
+    /// A dimmer line beside the name: what it is or does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Its icon: an absolute path to an image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1460,7 +1498,7 @@ pub enum Command {
     /// after a recording didn't start).
     OpenLog,
     /// Starts or stops this connection watching the machine's resources
-    /// (feature `quick-settings`): while any connection watches, novad
+    /// (feature `resources`): while any connection watches, novad
     /// samples them every few seconds and sends `resources` events. A
     /// connection that closes stops watching.
     WatchResources {
@@ -1468,14 +1506,17 @@ pub enum Command {
     },
     /// Asks every process of an app in the latest `resources` event to
     /// close (SIGTERM), by its [`AppUsage::key`] (feature
-    /// `quick-settings`). Only the user's own processes, and never a
+    /// `resources`). Only the user's own processes, and never a
     /// [`AppUsage::protected`] app.
     EndApp {
         key: String,
     },
-    /// Replies with the apps matching `query`, as [`AppMatch`]es, best first
-    /// (feature `launcher`). An empty query matches nothing.
-    SearchApps {
+    /// Replies with what the launcher's providers find for `query`, as
+    /// [`LauncherItem`]s (feature `launcher`): the providers in their slot
+    /// order, each one's best first. A query that starts with a provider's
+    /// trigger goes to the providers with that trigger only, without it. A
+    /// blank query finds nothing.
+    LauncherSearch {
         query: String,
     },
     /// Replies with an icon (an absolute path to an image) for an app
@@ -1491,11 +1532,13 @@ pub enum Command {
         /// `application.name`.
         name: String,
     },
-    /// Opens an app by its id (feature `launcher`) on `output` (the focused
-    /// output when unset) and counts it towards the recent ones. When it
+    /// Runs what the launcher's provider `provider` found as `id` (feature
+    /// `launcher`), on `output` (the focused output when unset). An app
+    /// ([`PROVIDER_APPS`]) opens and counts towards the recent ones; when it
     /// already has a window, that window takes focus where it is, unless
     /// `new_window` asks for another one.
-    LaunchApp {
+    LauncherRun {
+        provider: String,
         id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
@@ -1885,6 +1928,8 @@ pub enum UiState {
     Restarting,
     /// novad was started with `--no-ui`.
     Disabled,
+    /// No feature with a UI is on, so novad doesn't run Quickshell.
+    NotNeeded,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2045,20 +2090,26 @@ mod tests {
     use serde_json::json;
 
     /// Every message shape on the wire. A change here changes the protocol:
-    /// update `ui/daemon/protocol.js` too, then accept with `cargo insta review`.
+    /// accept with `cargo insta review`, then run `just protocol-js`.
     #[test]
     fn wire_format() {
         let lines = [
             encode(Event::Hello { daemon: "0.1.0".into() }),
             encode(Event::Features {
                 features: vec![
-                    FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] },
+                    FeatureState {
+                        id: "bar".into(),
+                        status: FeatureStatus::Ready,
+                        missing: vec![],
+                        slots: vec![Slot { host: "bar.center".into(), view: "central-pill".into(), order: 10 }],
+                    },
                     FeatureState {
                         id: "recording".into(),
                         status: FeatureStatus::MissingDeps,
                         missing: vec!["gpu-screen-recorder|wf-recorder".into()],
+                        slots: vec![],
                     },
-                    FeatureState { id: "weather".into(), status: FeatureStatus::Off, missing: vec![] },
+                    FeatureState { id: "weather".into(), status: FeatureStatus::Off, missing: vec![], slots: vec![] },
                 ],
             }),
             encode(Request { id: Some(7), command: Command::Ping }),
@@ -2210,16 +2261,19 @@ mod tests {
             encode(Request { id: Some(23), command: Command::EndApp { key: "/usr/lib/firefox/firefox".into() } }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::QuickSettings } }),
             encode(Event::Launcher(launcher())),
-            encode(Request { id: Some(24), command: Command::SearchApps { query: "fi".into() } }),
+            encode(Request { id: Some(24), command: Command::LauncherSearch { query: "fi".into() } }),
             encode(Response {
                 id: 24,
                 outcome: Outcome::Result(
-                    serde_json::to_value(vec![AppMatch {
+                    serde_json::to_value(vec![LauncherItem {
+                        provider: PROVIDER_APPS.into(),
                         id: "org.mozilla.firefox.desktop".into(),
                         name: vec![
                             TextRun { text: "Fi".into(), matched: true },
                             TextRun { text: "refox".into(), matched: false },
                         ],
+                        description: Some("Web Browser".into()),
+                        icon: None,
                     }])
                     .unwrap(),
                 ),
@@ -2235,7 +2289,8 @@ mod tests {
             encode(Response { id: 44, outcome: Outcome::Result(json!("zen-browser")) }),
             encode(Request {
                 id: Some(25),
-                command: Command::LaunchApp {
+                command: Command::LauncherRun {
+                    provider: PROVIDER_APPS.into(),
                     id: "foot.desktop".into(),
                     output: Some("DP-1".into()),
                     new_window: true,
@@ -2395,52 +2450,6 @@ mod tests {
         let all: String = lines.into_iter().map(Result::unwrap).collect();
         assert!(all.lines().all(|l| l.starts_with(r#"{"v":2,"#)));
         insta::assert_snapshot!(all);
-    }
-
-    /// Every wire name `ui/daemon/protocol.js` declares is one novad knows:
-    /// commands and events as they appear in the wire format snapshot, the
-    /// enums by parsing, feature ids by their folder in `features/`.
-    #[test]
-    fn protocol_js_names_are_known() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let js = std::fs::read_to_string(root.join("ui/daemon/protocol.js")).unwrap();
-        let wire = include_str!("snapshots/nova_protocol__tests__wire_format.snap");
-        let parses = |value: &str, kind: fn(serde_json::Value) -> bool| kind(json!(value));
-        let mut checked = std::collections::HashSet::new();
-        for line in js.lines() {
-            let Some((name, value)) = line.strip_prefix("var ").and_then(|line| line.split_once(" = \"")) else {
-                continue;
-            };
-            assert!(checked.insert(name), "protocol.js: {name} is declared twice");
-            let value = value.trim_end_matches("\";");
-            let known = match name.split('_').next().unwrap() {
-                "CMD" => wire.contains(&format!(r#""cmd":"{value}""#)),
-                "EVENT" => wire.contains(&format!(r#""event":"{value}""#)),
-                "TOPIC" => parses(value, |v| serde_json::from_value::<Topic>(v).is_ok()),
-                "CAPABILITY" => parses(value, |v| serde_json::from_value::<Capability>(v).is_ok()),
-                "STEP" => parses(value, |v| serde_json::from_value::<Step>(v).is_ok()),
-                "POWER" => parses(value, |v| serde_json::from_value::<PowerAction>(v).is_ok()),
-                "VOLUME" => parses(value, |v| serde_json::from_value::<VolumeKey>(v).is_ok()),
-                "CAPTURE" => parses(value, |v| serde_json::from_value::<CaptureMode>(v).is_ok()),
-                "SHOT" => parses(value, |v| serde_json::from_value::<ScreenshotAction>(v).is_ok()),
-                "URGENCY" => parses(value, |v| serde_json::from_value::<Urgency>(v).is_ok()),
-                "MEDIA" => parses(value, |v| serde_json::from_value::<MediaAction>(v).is_ok()),
-                "PLAYBACK" => parses(value, |v| serde_json::from_value::<PlaybackStatus>(v).is_ok()),
-                "FEATURE" => root.join("features").join(value).join("feature.toml").is_file(),
-                _ => panic!("protocol.js: no check for {name}; add its kind to this test"),
-            };
-            assert!(known, "protocol.js: {name} = {value:?} isn't a name novad knows");
-        }
-        assert!(!checked.is_empty(), "protocol.js declares no names");
-        for max in [
-            format!("var SEARCH_APPS_MAX_CHARS = {SEARCH_APPS_MAX_CHARS};"),
-            format!("var MEDIA_PLAYER_MAX_BYTES = {MEDIA_PLAYER_MAX_BYTES};"),
-            format!("var WIFI_PASSWORD_MAX_BYTES = {WIFI_PASSWORD_MAX_BYTES};"),
-            format!("var WPA_PASSWORD_MIN_BYTES = {WPA_PASSWORD_MIN_BYTES};"),
-            format!("var NETWORK_TRAFFIC_HISTORY_SECS = {NETWORK_TRAFFIC_HISTORY_SECS};"),
-        ] {
-            assert!(js.contains(&max), "protocol.js: {max} is missing");
-        }
     }
 
     fn desktop() -> Desktop {
@@ -2883,7 +2892,12 @@ mod tests {
                     log: "/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log".into(),
                 }),
             },
-            features: vec![FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] }],
+            features: vec![FeatureState {
+                id: "bar".into(),
+                status: FeatureStatus::Ready,
+                missing: vec![],
+                slots: vec![],
+            }],
             log_dir: "/home/me/.local/state/nova".into(),
             desktop: None,
         }

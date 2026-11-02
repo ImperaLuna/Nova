@@ -10,8 +10,8 @@
 //! name is claimed, once a session. Either way an app that looks for a tray
 //! only at startup (Electron) finds one (IMP-107).
 
-use super::desktop_entry::{self, Context, Entry, Locale, Skipped};
 use super::launch::{self, Runner};
+use crate::apps::desktop_entry::{self, Context, Entry, Locale, Skipped};
 use crate::logger::Logger;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -63,7 +63,7 @@ pub fn entries(dirs: &[PathBuf], context: &Context) -> (Vec<Entry>, Vec<String>)
     let mut apps = Vec::new();
     let mut problems = Vec::new();
     for (id, file) in files {
-        let text = match super::scan::read_entry(&file) {
+        let text = match crate::apps::scan::read_entry(&file) {
             Ok(text) => text,
             Err(e) => {
                 problems.push(format!("can't read {}: {e}", file.display()));
@@ -102,7 +102,7 @@ pub fn start(marker: &Path, path_var: String, logger: Arc<Logger>) {
             Err(e) => logger.warn(LOG_SOURCE, &format!("can't write {}: {e}", marker.display())),
         }
         let locale = Locale::from_env();
-        let desktops = super::current_desktops();
+        let desktops = crate::apps::current_desktops();
         let context = Context { locale: &locale, desktops: &desktops, path_var: &path_var, autostart: true };
         let (apps, problems) = entries(&dirs(), &context);
         for problem in problems {

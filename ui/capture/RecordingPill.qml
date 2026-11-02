@@ -1,7 +1,6 @@
 import QtQuick
 import "../theme"
-import "../capture"
-import "../capture/capture.js" as Capture
+import "capture.js" as Capture
 import "../text/duration.js" as Duration
 
 // The recording pill, left of the right pill while a recording runs: a red

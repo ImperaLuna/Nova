@@ -17,7 +17,12 @@ fn subscribing_to_features_sends_their_state() {
     assert_eq!(reply["result"], Value::Null);
     let event = client.next();
     assert_eq!(event["event"], "features");
-    assert!(event["data"]["features"].as_array().unwrap().contains(&json!({"id": "core", "status": "ready"})));
+    let features = event["data"]["features"].as_array().unwrap();
+    let bar = features.iter().find(|feature| feature["id"] == "bar").unwrap();
+    assert_eq!(bar["status"], "ready");
+    assert!(
+        bar["slots"].as_array().unwrap().contains(&json!({"host": "bar.center", "view": "central-pill", "order": 10}))
+    );
 }
 
 #[test]
@@ -141,7 +146,7 @@ fn status_reports_the_daemon_ui_and_features() {
     let status: Status = serde_json::from_value(client.request(1, "status", None)["result"].clone()).unwrap();
     assert_eq!(status.pid, std::process::id());
     assert_eq!(status.ui.state, UiState::Disabled);
-    assert!(status.features.iter().any(|feature| feature.id == "core" && feature.status == FeatureStatus::Ready));
+    assert!(status.features.iter().any(|feature| feature.id == "bar" && feature.status == FeatureStatus::Ready));
     assert!(status.pss_kib.is_some());
 }
 
@@ -199,6 +204,56 @@ fn a_quickshell_outside_the_tested_range_is_warned_about() {
     novad.daemon.ui.as_ref().unwrap().stop();
 }
 
+/// With every feature off, novad runs without Quickshell; turning on one
+/// that draws (the bar) starts it, and turning it off again stops it without
+/// counting a crash.
+#[test]
+fn the_ui_runs_only_while_a_feature_with_a_ui_is_on() {
+    let scripts = nova_test_support::TempDir::new("ui-on-demand");
+    let fake_ui = write_program(&scripts, "quickshell", "exec sleep 60");
+    let settings = UiSettings {
+        quickshell: fake_ui,
+        ui_dir: PathBuf::from("ui"),
+        socket: PathBuf::from("unused.sock"),
+        path_var: std::env::var("PATH").unwrap_or_default(),
+        wayland_socket: None,
+        egl_vendor: None,
+        render_loop: None,
+        icon_theme: "hicolor".into(),
+    };
+    let ids: Vec<String> = nova_features::load_all(&repo_features()).unwrap().into_iter().map(|m| m.id).collect();
+    let selection = |on: &[&str]| {
+        let off: Vec<String> = ids.iter().filter(|id| !on.contains(&id.as_str())).map(|id| format!("{id:?}")).collect();
+        format!("disabled = [{}]\n", off.join(", "))
+    };
+    let all_off = selection(&[]);
+    let novad = TestDaemon::open("ui-on-demand", Some(settings), |dir| {
+        std::fs::write(dir.join("config/features.toml"), &all_off).unwrap();
+    });
+    let mut client = novad.connect();
+    let status: Status = serde_json::from_value(client.request(1, "status", None)["result"].clone()).unwrap();
+    assert_eq!((status.ui.state, status.ui.pid), (UiState::NotNeeded, None));
+    assert!(status.features.iter().all(|feature| feature.status == FeatureStatus::Off));
+
+    std::fs::write(novad.features_file(), selection(&["bar"])).unwrap();
+    wait_for_status(&mut client, |status| status.ui.state == UiState::Running);
+
+    std::fs::write(novad.features_file(), &all_off).unwrap();
+    let status = wait_for_status(&mut client, |status| status.ui.state == UiState::NotNeeded);
+    assert_eq!((status.ui.pid, status.ui.restarts, status.ui.last_crash), (None, 0, None));
+
+    // Off and straight back on, before the stopped UI has exited: a restart,
+    // not a crash.
+    let ui = novad.daemon.ui.as_ref().unwrap();
+    ui.want(true, &novad.daemon.logger);
+    let first = wait_for_status(&mut client, |status| status.ui.pid.is_some()).ui.pid;
+    ui.want(false, &novad.daemon.logger);
+    ui.want(true, &novad.daemon.logger);
+    let status = wait_for_status(&mut client, |status| status.ui.pid.is_some_and(|pid| Some(pid) != first));
+    assert_eq!((status.ui.restarts, status.ui.last_crash), (0, None));
+    ui.stop();
+}
+
 fn wait_for_status(client: &mut Client, done: impl Fn(&Status) -> bool) -> Status {
     for attempt in 0..100 {
         let status: Status = serde_json::from_value(client.request(attempt, "status", None)["result"].clone()).unwrap();
@@ -208,20 +263,4 @@ fn wait_for_status(client: &mut Client, done: impl Fn(&Status) -> bool) -> Statu
         std::thread::sleep(Duration::from_millis(50));
     }
     panic!("status never got there");
-}
-
-#[test]
-fn manifest_daemon_names_match_cargo_features() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let cargo: toml::Table = std::fs::read_to_string(root.join("Cargo.toml")).unwrap().parse().unwrap();
-    let mut cargo_features: Vec<String> = cargo
-        .get("features")
-        .and_then(|f| f.as_table())
-        .map(|t| t.keys().filter(|k| *k != "default").cloned().collect())
-        .unwrap_or_default();
-    let mut declared: Vec<String> =
-        nova_features::load_all(&root.join("../../features")).unwrap().into_iter().filter_map(|m| m.daemon).collect();
-    cargo_features.sort();
-    declared.sort();
-    assert_eq!(cargo_features, declared, "novad [features] and manifest `daemon` fields differ");
 }

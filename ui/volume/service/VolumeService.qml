@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Services.Pipewire
+import "../../daemon/protocol.js" as Protocol
 import "../../theme"
 import "../volume.js" as Volume
 
@@ -26,6 +27,8 @@ Singleton {
     // "none", "headphones", "bluetooth", "display" or "speakers" (volume.js
     // outputKind).
     readonly property string output: Volume.outputKind(available, ready ? sink.properties : null)
+    // The default output's name as people know it, or "" without one.
+    readonly property string outputName: sink ? (sink.nickname || sink.description || sink.name) : ""
 
     // Screens (by name) showing the volume somewhere else right now, like
     // open quick settings: the capsule stays in there, since it would only
@@ -40,6 +43,27 @@ Singleton {
     // The volume, mute or output changed after Nova had seen where they
     // started, by anything: a key, an app, this capsule.
     signal changed
+    // A volume key bound to `nova volume` was pressed, whether or not it
+    // changed anything (at either end, or without an output): the capsule
+    // shows then too.
+    signal keyPressed
+
+    // `nova volume up|down|mute` (Protocol.VOLUME_*), which the shell
+    // passes on whatever draws the volume: the capsule, quick settings or
+    // neither.
+    function pressKey(key: string) {
+        if (key === Protocol.VOLUME_UP)
+            step(1);
+        else if (key === Protocol.VOLUME_DOWN)
+            step(-1);
+        else if (key === Protocol.VOLUME_MUTE)
+            toggleMute();
+        else {
+            console.warn(`nova: unknown volume key ${key}`);
+            return;
+        }
+        keyPressed();
+    }
 
     // A Bluetooth output or mic that appears becomes the default (volume.js
     // arrivedBluetooth); one there when Nova starts is left as WirePlumber

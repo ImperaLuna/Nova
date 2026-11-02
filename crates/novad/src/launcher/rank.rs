@@ -3,7 +3,7 @@
 //! then the generic name, keywords and program, then the comment. Apps the
 //! user opens often climb a little; ties go to the shorter name.
 
-use super::desktop_entry::Entry;
+use crate::apps::desktop_entry::Entry;
 use nova_protocol::TextRun;
 
 /// What a match in the name is worth, by where it starts.

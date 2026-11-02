@@ -161,12 +161,12 @@ impl<'a> Connection<'a> {
             Command::Volume { key } => self.volume(*key),
             Command::Lock => done(
                 self.require_feature(crate::session_lock::FEATURE_ID)
-                    .and_then(|()| self.daemon.session_lock.lock(&self.daemon.hub)),
+                    .and_then(|()| self.session_lock().lock(&self.daemon.hub)),
             ),
-            Command::ReportLocked => done(self.sent_by_the_ui().map(|()| self.daemon.session_lock.secured())),
+            Command::ReportLocked => done(self.sent_by_the_ui().map(|()| self.session_lock().secured())),
             // Even with the feature off: the screen was locked while it was on.
             Command::ReportUnlocked => {
-                done(self.sent_by_the_ui().map(|()| self.daemon.session_lock.unlocked(&self.daemon.hub)))
+                done(self.sent_by_the_ui().map(|()| self.session_lock().unlocked(&self.daemon.hub)))
             }
             Command::WatchResources { watching } => {
                 done(self.resources().map(|resources| resources.watch(self.id, *watching)))
@@ -178,35 +178,33 @@ impl<'a> Connection<'a> {
             Command::SaveCapture { output, rect } => return self.save_capture(output.clone(), *rect),
             // Even with the feature off, so a reload can't strand the picker.
             Command::CancelCapture => {
-                self.daemon.screenshots.cancel();
+                self.screenshots().cancel();
                 done(Ok(()))
             }
-            Command::ScreenshotAction { id, action } => done(self.daemon.screenshots.act(*id, *action)),
+            Command::ScreenshotAction { id, action } => done(self.screenshots().act(*id, *action)),
             Command::Record => {
-                done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.daemon.recordings.record()))
+                done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().record()))
             }
             Command::StartRecording { output, region, audio } => {
                 return self.start_recording(output.clone(), *region, *audio);
             }
             // Even with the feature off, so a reload can't leave one running.
-            Command::StopRecording => done(self.daemon.recordings.stop()),
-            Command::PauseRecording { paused } => done(self.daemon.recordings.pause(*paused)),
-            Command::RecordingAction { id, action } => done(self.daemon.recordings.act(*id, *action)),
-            Command::OpenLog => done(
-                self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.daemon.recordings.open_log()),
-            ),
-            Command::SearchApps { query } => value(self.launcher().and_then(|launcher| launcher.search(query))),
-            Command::AppIcon { icon_name, program, name } => {
-                let launcher = lock(&self.daemon.settings).launcher.clone();
-                value(crate::launcher::Launcher::app_icon(
-                    launcher.as_deref(),
-                    &self.daemon.sources.icons,
-                    icon_name,
-                    program,
-                    name,
-                ))
+            Command::StopRecording => done(self.recordings().stop()),
+            Command::PauseRecording { paused } => done(self.recordings().pause(*paused)),
+            Command::RecordingAction { id, action } => done(self.recordings().act(*id, *action)),
+            Command::OpenLog => {
+                done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().open_log()))
             }
-            Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window),
+            Command::LauncherSearch { query } => {
+                value(self.launcher_providers().and_then(|providers| providers.search(query, &self.daemon.logger)))
+            }
+            Command::AppIcon { icon_name, program, name } => {
+                let apps = Arc::clone(&lock(&self.daemon.settings).context.apps);
+                value(apps.app_icon(&self.daemon.sources.icons, icon_name, program, name))
+            }
+            Command::LauncherRun { provider, id, output, new_window } => {
+                return self.launcher_run(provider, id, output.clone(), *new_window);
+            }
             Command::PinApp { id, pinned } => done(self.launcher().and_then(|launcher| launcher.pin(id, *pinned))),
             Command::HideTrayApp { id, hidden } => done(self.tray().and_then(|tray| tray.hide(id, *hidden))),
             Command::ActivateTrayItem { address } => return self.activate_tray_item(address),
@@ -229,8 +227,8 @@ impl<'a> Connection<'a> {
                 done(self.notifications().and_then(|notifications| notifications.mute(app, *muted)))
             }
             // The service knows which wallpapers need which feature.
-            Command::SetWallpaper { path, output } => done(self.daemon.wallpaper.set(path, output.as_deref())),
-            Command::Wallpapers => value(self.daemon.wallpaper.current()),
+            Command::SetWallpaper { path, output } => done(self.wallpaper().set(path, output.as_deref())),
+            Command::Wallpapers => value(self.wallpaper().current()),
             Command::WallpaperFolder => return self.wallpaper_folder(),
             Command::MediaShow { player } => done(self.media().and_then(|media| media.show(player))),
             Command::MediaControl { player, action } => {
@@ -287,36 +285,52 @@ impl<'a> Connection<'a> {
         Answer::Now(outcome)
     }
 
-    // The feature services, or why there's none. Taken out of the settings
-    // lock: acting may take a while, and a reload may stop one meanwhile
-    // (it then says the feature isn't ready).
+    // The modules, or why there's none (`Daemon::module`).
 
     fn ai_usage(&self) -> Result<Arc<crate::ai_usage::Usage>, String> {
-        running(lock(&self.daemon.settings).ai_usage.clone(), crate::ai_usage::FEATURE_ID)
+        self.daemon.module()
     }
 
     fn resources(&self) -> Result<Arc<crate::resources::Resources>, String> {
-        running(lock(&self.daemon.settings).resources.clone(), crate::resources::FEATURE_ID)
+        self.daemon.module()
     }
 
     fn launcher(&self) -> Result<Arc<crate::launcher::Launcher>, String> {
-        running(lock(&self.daemon.settings).launcher.clone(), crate::launcher::FEATURE_ID)
+        self.daemon.module()
     }
 
     fn tray(&self) -> Result<Arc<crate::tray::Tray>, String> {
-        running(lock(&self.daemon.settings).tray.clone(), crate::tray::FEATURE_ID)
+        self.daemon.module()
     }
 
     fn notifications(&self) -> Result<Arc<crate::notifications::Notifications>, String> {
-        running(lock(&self.daemon.settings).notifications.clone(), crate::notifications::FEATURE_ID)
+        self.daemon.module()
     }
 
     fn media(&self) -> Result<Arc<crate::media::Media>, String> {
-        running(lock(&self.daemon.settings).media.clone(), crate::media::FEATURE_ID)
+        self.daemon.module()
     }
 
     fn network(&self) -> Result<Arc<crate::network::Network>, String> {
-        running(lock(&self.daemon.settings).network.clone(), crate::network::FEATURE_ID)
+        self.daemon.module()
+    }
+
+    // Kept for novad's life, whatever the settings.
+
+    fn session_lock(&self) -> Arc<crate::session_lock::SessionLock> {
+        self.daemon.session_lock()
+    }
+
+    fn screenshots(&self) -> Arc<crate::screenshot::Screenshots> {
+        Arc::clone(&self.daemon.kept.screenshots)
+    }
+
+    fn recordings(&self) -> Arc<crate::recording::Recordings> {
+        Arc::clone(&self.daemon.kept.recordings)
+    }
+
+    fn wallpaper(&self) -> Arc<crate::wallpaper::Wallpaper> {
+        Arc::clone(&self.daemon.kept.wallpaper)
     }
 
     /// Runs `work` on its own thread: NetworkManager may take a while.
@@ -328,7 +342,7 @@ impl<'a> Connection<'a> {
     }
 
     fn bluetooth(&self) -> Result<Arc<crate::bluetooth::Bluetooth>, String> {
-        running(lock(&self.daemon.settings).bluetooth.clone(), crate::bluetooth::FEATURE_ID)
+        self.daemon.module()
     }
 
     fn compositor(&self) -> Result<&crate::compositor::Compositor, String> {
@@ -401,7 +415,7 @@ impl<'a> Connection<'a> {
         match action {
             PowerAction::Lock => Answer::Now(done(
                 self.require_feature(crate::session_lock::FEATURE_ID)
-                    .and_then(|()| self.daemon.session_lock.request(&self.daemon.hub)),
+                    .and_then(|()| self.session_lock().request(&self.daemon.hub)),
             )),
             PowerAction::LogOut => {
                 Answer::Now(done(self.compositor().and_then(crate::compositor::Compositor::log_out)))
@@ -423,24 +437,35 @@ impl<'a> Connection<'a> {
         })
     }
 
-    /// Focuses the app `id` or starts it (see `launcher::Launcher::launch`).
-    fn launch_app(&self, id: &str, output: Option<String>, new_window: bool) -> Answer {
-        let launcher = match self.launcher() {
-            Ok(launcher) => launcher,
+    /// The ready features' launcher providers, while the launcher runs.
+    fn launcher_providers(&self) -> Result<crate::launcher::providers::Host, String> {
+        self.launcher()?;
+        let settings = lock(&self.daemon.settings);
+        Ok(crate::launcher::providers::Host::new(&settings.features, |view| {
+            crate::launcher::providers::find(view, &settings.modules)
+        }))
+    }
+
+    /// Runs what the launcher's provider `provider` found as `id`, like an
+    /// app it focuses or starts (see `launcher::providers`).
+    fn launcher_run(&self, provider: &str, id: &str, output: Option<String>, new_window: bool) -> Answer {
+        let provider = match self.launcher_providers().and_then(|providers| providers.provider(provider)) {
+            Ok(provider) => provider,
             Err(e) => return Answer::Now(Outcome::Error(e)),
         };
         let compositor = self.daemon.compositor.clone();
-        let tray = lock(&self.daemon.settings).tray.clone();
+        let tray = self.tray().ok();
         let logger = Arc::clone(&self.daemon.logger);
         let id = id.to_owned();
         Answer::later(move || {
-            let focus = |ids: &[String]| {
-                // A new window is asked for: no open one, nor the tray's.
-                let (ids, tray) = if new_window { (&[][..], None) } else { (ids, tray.as_deref()) };
-                let start = || launcher.start_app(&id);
-                crate::launcher::focus_open(&id, ids, compositor.as_deref(), tray, output.as_deref(), start, &logger)
+            let how = crate::launcher::providers::Run {
+                output: output.as_deref(),
+                new_window,
+                compositor: compositor.as_deref(),
+                tray: tray.as_deref(),
+                logger: &logger,
             };
-            done(launcher.launch(&id, focus))
+            done(provider.run(&id, &how))
         })
     }
 
@@ -457,7 +482,7 @@ impl<'a> Connection<'a> {
         };
         let (Some(app), Ok(launcher)) = (clicked.app_id, self.launcher()) else { return Answer::Now(done(Ok(()))) };
         if !clicked.heard {
-            return self.launch_app(&app, output, false);
+            return self.launcher_run(nova_protocol::PROVIDER_APPS, &app, output, false);
         }
         let (Some(ids), Some(compositor)) = (launcher.window_ids(&app), self.daemon.compositor.clone()) else {
             return Answer::Now(done(Ok(())));
@@ -620,7 +645,7 @@ impl<'a> Connection<'a> {
         if let Err(e) = self.require_feature(crate::screenshot::FEATURE_ID) {
             return Answer::Now(Outcome::Error(e));
         }
-        let screenshots = Arc::clone(&self.daemon.screenshots);
+        let screenshots = self.screenshots();
         let compositor = self.daemon.compositor.clone();
         let folder = lock(&self.daemon.settings).screenshot_folder();
         Answer::later(move || {
@@ -645,7 +670,7 @@ impl<'a> Connection<'a> {
         if let Err(e) = self.require_feature(crate::screenshot::FEATURE_ID) {
             return Answer::Now(Outcome::Error(e));
         }
-        let screenshots = Arc::clone(&self.daemon.screenshots);
+        let screenshots = self.screenshots();
         let folder = lock(&self.daemon.settings).screenshot_folder();
         Answer::later(move || done(folder.and_then(|folder| screenshots.save_region(&output, rect, &folder))))
     }
@@ -660,7 +685,7 @@ impl<'a> Connection<'a> {
         if let Err(e) = self.require_feature(crate::recording::FEATURE_ID) {
             return Answer::Now(Outcome::Error(e));
         }
-        let recordings = Arc::clone(&self.daemon.recordings);
+        let recordings = self.recordings();
         let folder = lock(&self.daemon.settings).recording_folder();
         Answer::later(move || done(folder.and_then(|folder| recordings.start(&output, region, audio, &folder))))
     }
@@ -679,7 +704,8 @@ impl<'a> Connection<'a> {
     }
 
     /// Passes a volume key to the UI, which owns audio (PipeWire through
-    /// Quickshell) and the capsule. Volume is core, so it's always ready.
+    /// Quickshell) and the capsule. The keys change the volume while the UI
+    /// runs, whichever features draw it (the capsule, quick settings).
     fn volume(&self, key: VolumeKey) -> Outcome {
         match self.daemon.hub.publish(&Event::Volume { key }) {
             0 => Outcome::Error("the UI isn't connected to novad, so nothing can change the volume".into()),
@@ -703,62 +729,29 @@ impl<'a> Connection<'a> {
                     match topic {
                         Topic::Features => self.send(Event::Features { features: settings.features.clone() }),
                         Topic::Theme => self.send(Event::Theme(settings.theme.clone())),
-                        // Without the feature there is nothing to send until
-                        // a reload turns it on.
-                        Topic::AiUsage => {
-                            if let Some(usage) = &settings.ai_usage {
-                                self.send(usage.event());
-                            }
-                        }
                         // Sent once the compositor has said what it shows.
                         Topic::Compositor => {
                             if let Some(compositor) = &self.daemon.compositor {
                                 compositor.subscribe(self.id);
                             }
                         }
-                        Topic::Lock => self.daemon.session_lock.send_state(&self.daemon.hub, self.id),
-                        // A restarted UI picks up a region picker that was open.
-                        Topic::Screenshot => self.daemon.screenshots.send_state(&self.daemon.hub, self.id),
-                        Topic::Recording => self.daemon.recordings.send_state(&self.daemon.hub, self.id),
                         // Facts about the machine, there whatever the features.
                         Topic::Host => self.send(Event::Host(settings.host())),
                         // Sent while some connection watches them.
                         Topic::Resources => {}
-                        Topic::Launcher => {
-                            if let Some(launcher) = &settings.launcher {
-                                launcher.send_state(self.id);
-                            }
-                        }
-                        Topic::Tray => {
-                            if let Some(tray) = &settings.tray {
-                                tray.send_state(self.id);
-                            }
-                        }
-                        Topic::Notifications => {
-                            if let Some(notifications) = &settings.notifications {
-                                notifications.send_state(self.id);
-                            }
-                        }
-                        Topic::Media => {
-                            if let Some(media) = &settings.media {
-                                media.send_state(self.id);
-                            }
-                        }
-                        Topic::Peripherals => {
-                            if let Some(peripherals) = &settings.peripherals {
-                                peripherals.send_state(self.id);
-                            }
-                        }
-                        Topic::Network => {
-                            if let Some(network) = &settings.network {
-                                network.send_state(self.id);
-                            }
-                        }
-                        Topic::Bluetooth => {
-                            if let Some(bluetooth) = &settings.bluetooth {
-                                bluetooth.send_state(self.id);
-                            }
-                        }
+                        // A module's: without its feature there is nothing to
+                        // send until a reload turns it on.
+                        Topic::AiUsage
+                        | Topic::Lock
+                        | Topic::Screenshot
+                        | Topic::Recording
+                        | Topic::Launcher
+                        | Topic::Tray
+                        | Topic::Notifications
+                        | Topic::Media
+                        | Topic::Peripherals
+                        | Topic::Network
+                        | Topic::Bluetooth => settings.modules.send_state(topic, self.id),
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -798,9 +791,9 @@ impl<'a> Connection<'a> {
             | Command::Volume { .. }
             | Command::WatchResources { .. }
             | Command::EndApp { .. }
-            | Command::SearchApps { .. }
+            | Command::LauncherSearch { .. }
             | Command::AppIcon { .. }
-            | Command::LaunchApp { .. }
+            | Command::LauncherRun { .. }
             | Command::PinApp { .. }
             | Command::HideTrayApp { .. }
             | Command::ActivateTrayItem { .. }
@@ -854,19 +847,7 @@ impl<'a> Connection<'a> {
 impl Drop for Connection<'_> {
     fn drop(&mut self) {
         self.daemon.hub.unregister(self.id);
-        let (resources, network, bluetooth) = {
-            let settings = lock(&self.daemon.settings);
-            (settings.resources.clone(), settings.network.clone(), settings.bluetooth.clone())
-        };
-        if let Some(resources) = resources {
-            resources.watch(self.id, false);
-        }
-        if let Some(network) = network {
-            network.watch_traffic(self.id, false);
-        }
-        if let Some(bluetooth) = bluetooth {
-            bluetooth.watch(self.id, false);
-        }
+        lock(&self.daemon.settings).modules.client_gone(self.id);
     }
 }
 
@@ -942,9 +923,4 @@ fn value(result: Result<impl serde::Serialize, String>) -> Outcome {
         Ok(value) => Outcome::Result(value),
         Err(e) => Outcome::Error(e),
     }
-}
-
-/// A feature's service while it runs, else the error that it's not ready.
-fn running<S>(service: Option<Arc<S>>, feature: &str) -> Result<Arc<S>, String> {
-    service.ok_or_else(|| crate::features::not_ready(feature))
 }

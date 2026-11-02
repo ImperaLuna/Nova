@@ -698,6 +698,7 @@ name = "nova-features"
 version = "0.1.0"
 dependencies = [
  "nova-paths",
+ "nova-protocol",
  "nova-test-support",
  "serde",
  "toml",

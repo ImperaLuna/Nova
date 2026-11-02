@@ -14,7 +14,7 @@
 //! isn't playing, else the one that started playing last, else the
 //! one paused last.
 //!
-//! The app a player belongs to is looked up in the launcher by its
+//! The app a player belongs to is looked up in the app index by its
 //! `DesktopEntry`, then by the process that owns it on the bus, as the
 //! tray does (`tray::candidates`): never by its bus name, since browsers
 //! name theirs `org.mpris.MediaPlayer2.firefox.instance_NNN`. A player's own
@@ -26,8 +26,8 @@ mod player;
 #[cfg(test)]
 mod tests;
 
+use crate::apps::AppIndex;
 use crate::hub::{ClientId, Hub};
-use crate::launcher::Launcher;
 use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
@@ -84,8 +84,8 @@ struct Shared {
     state: Mutex<State>,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
-    /// Finds a player's app, while the `launcher` feature runs.
-    launcher: Mutex<Option<Arc<Launcher>>>,
+    /// Finds a player's app.
+    apps: Arc<AppIndex>,
     /// The connection to the bus, once it's up, for the commands.
     connection: Mutex<Option<Connection>>,
     covers: Covers,
@@ -132,12 +132,12 @@ impl Media {
     /// Connects to the bus and follows its players on a thread of its own.
     /// Returns once the players there are known (their reads may still run),
     /// or connecting failed (logged).
-    pub fn start(sources: Sources, launcher: Option<Arc<Launcher>>, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+    pub fn start(sources: Sources, apps: Arc<AppIndex>, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let shared = Arc::new(Shared {
             state: Mutex::new(State::default()),
             hub,
             logger,
-            launcher: Mutex::new(launcher),
+            apps,
             connection: Mutex::new(None),
             covers: Covers::new(sources.covers),
             proc: sources.proc,
@@ -154,7 +154,12 @@ impl Media {
         });
         // Waits as long as connecting may take; a timed-out call fails sooner.
         let _ = started.recv_timeout(2 * CALL_TIMEOUT);
-        Arc::new(Self { shared })
+        let media = Arc::new(Self { shared });
+        // Looked up again too, for a read of the apps that ended while it
+        // connected, before it listened.
+        media.shared.apps.on_change(&media, Self::apps_changed);
+        media.apps_changed();
+        media
     }
 
     /// Stops following the players and publishes nothing more.
@@ -163,15 +168,8 @@ impl Media {
         self.shared.stop.stop();
     }
 
-    /// Finds apps with `launcher` from now on (`None` while the launcher is
-    /// off), and publishes the players with their apps again.
-    pub fn set_launcher(&self, launcher: Option<Arc<Launcher>>) {
-        *lock(&self.shared.launcher) = launcher;
-        self.shared.publish(&mut lock(&self.shared.state));
-    }
-
-    /// Looks the players' apps up again, after the launcher's apps changed.
-    pub fn apps_changed(&self) {
+    /// Looks the players' apps up again, after the installed apps changed.
+    fn apps_changed(&self) {
         self.shared.publish(&mut lock(&self.shared.state));
     }
 
@@ -242,8 +240,8 @@ impl Media {
             let read = found.read.as_ref().ok_or_else(|| format!("{player} hasn't been read yet"))?;
             (names(found), read.desktop_entry.as_deref().map(str::to_lowercase))
         };
-        let launcher = lock(&self.shared.launcher).clone();
-        let Some(app_ids) = launcher.and_then(|launcher| launcher.window_ids(&launcher.find_app(&names)?.id)) else {
+        let apps = &self.shared.apps;
+        let Some(app_ids) = apps.find_app(&names).and_then(|app| apps.window_ids(&app.id)) else {
             return Ok(names);
         };
         let mut ids: Vec<String> = entry.into_iter().collect();
@@ -308,15 +306,13 @@ fn find<'a>(state: &'a State, id: &str) -> Result<&'a Player, String> {
 
 impl Shared {
     fn event(&self, state: &State) -> MediaEvent {
-        let launcher = lock(&self.launcher).clone();
+        let apps = self.apps.read();
         let players = state
             .players
             .iter()
             .filter_map(|player| {
                 let read = player.read.as_ref()?;
-                let app = launcher.as_ref().and_then(|launcher| {
-                    launcher.find_app(&names(player)).map(|app| (launcher.is_browser(&app.id), app))
-                });
+                let app = apps.find_app(&names(player)).map(|app| (apps.is_browser(&app.id), app));
                 let identity = if read.identity.is_empty() { &player.id[PREFIX.len()..] } else { &read.identity };
                 Some(MediaPlayer {
                     id: player.id.clone(),
@@ -693,4 +689,36 @@ fn is_player(name: &str) -> bool {
 
 fn now_ms() -> i64 {
     jiff::Timestamp::now().as_millisecond()
+}
+
+/// No options.
+impl crate::modules::Module for Media {
+    const ID: &'static str = FEATURE_ID;
+    const NEEDS_APPS: bool = true;
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Media);
+    type Sources = Sources;
+    type Config = ();
+
+    fn sources(env: &crate::modules::Env) -> Sources {
+        Sources::new(env.runtime_dir)
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(
+        ctx: &crate::modules::Context,
+        sources: &Sources,
+        (): &(),
+        _: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        Self::start(sources.clone(), Arc::clone(&ctx.apps), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+    }
+
+    fn send_state(&self, client: ClientId) {
+        Self::send_state(self, client);
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
+    }
 }

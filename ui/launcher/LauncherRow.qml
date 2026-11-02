@@ -4,18 +4,21 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 
-// One app in the launcher's list: its icon, its name (the letters a search
-// matched in the accent) and what it is, dimmer. Hovering shows a pin
-// button, which stays lit while the app is pinned; the selected row shows
+// One row in the launcher's list, an app or what another provider found:
+// its icon, its name (the letters a search matched in the accent) and what
+// it is, dimmer. Hovering an app shows a pin button, which stays lit while
+// the app is pinned; the selected row shows
 // ↵. The list draws the highlight behind it; while the row launches it
 // turns the accent and the row's text turns to match.
 Item {
     id: row
 
-    // A launcher.js row: {id, name, runs, description, icon}.
+    // A launcher.js row: {provider, id, name, runs, description, icon}.
     required property var app
     property string iconSource: ""
     property bool selected: false
+    // Only apps can be pinned.
+    property bool pinnable: true
     property bool pinned: false
     // Launching: on the accent.
     property bool launching: false
@@ -102,6 +105,7 @@ Item {
 
         Rectangle {
             id: pinButton
+            visible: row.pinnable
             width: Tokens.pinButtonSize
             height: Tokens.pinButtonSize
             radius: height / 2

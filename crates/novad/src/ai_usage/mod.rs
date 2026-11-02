@@ -703,3 +703,43 @@ fn display_plan(plan: &str) -> Option<String> {
 fn round_percent(used: f64) -> u8 {
     used.round().clamp(0.0, 100.0) as u8
 }
+
+impl crate::modules::Module for Usage {
+    const ID: &'static str = FEATURE_ID;
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::AiUsage);
+    type Sources = Paths;
+    type Config = AiUsageConfig;
+
+    fn sources(env: &crate::modules::Env) -> Paths {
+        let args = env.args;
+        Paths::new(
+            &args.state_dir,
+            args.codex_home.clone(),
+            args.claude_credentials.clone(),
+            args.claude_desktop_config.clone(),
+        )
+    }
+
+    fn config(config: &crate::config::Config) -> AiUsageConfig {
+        config.ai_usage.clone()
+    }
+
+    /// Before the features are published, so the UI that loads the feature
+    /// on that event gets its numbers.
+    fn start(
+        ctx: &crate::modules::Context,
+        paths: &Paths,
+        config: &AiUsageConfig,
+        _: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        Self::start(paths.clone(), config, Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+    }
+
+    fn send_state(&self, client: crate::hub::ClientId) {
+        self.hub.send_to(client, &self.event());
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
+    }
+}

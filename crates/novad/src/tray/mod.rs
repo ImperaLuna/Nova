@@ -11,7 +11,8 @@
 //! the UI.
 //!
 //! Each item is published as an [`Event::Tray`] once its id and title are
-//! read, with the desktop app it belongs to (see `app`), for the launcher
+//! read, with the desktop app it belongs to (see `app`, found in the app
+//! index, `crate::apps`), for the launcher
 //! to reopen an app that only sits in the tray. Items go when the bus name
 //! they're on goes. The tray takes at most [`MAX_ITEMS`] items, and checks
 //! what apps send it, since anything on the session bus can register:
@@ -23,8 +24,8 @@ pub use app::{BRIDGE, candidates};
 #[cfg(test)]
 pub mod tests;
 
+use crate::apps::AppIndex;
 use crate::hub::{ClientId, Hub};
-use crate::launcher::Launcher;
 use crate::logger::Logger;
 use crate::session_bus::{self, Bus, Stop};
 use crate::{lock, state_file};
@@ -77,11 +78,17 @@ pub struct Sources {
     pub bus: Bus,
     /// The apps hidden from the bar's tray.
     pub state_file: PathBuf,
+    /// Where an item's process is looked up (`/proc`, or a copy in tests).
+    pub proc_root: PathBuf,
 }
 
 impl Sources {
     pub fn new(state_dir: &std::path::Path) -> Self {
-        Self { bus: Bus::Session, state_file: state_dir.join("tray.json") }
+        Self {
+            bus: Bus::Session,
+            state_file: state_dir.join("tray.json"),
+            proc_root: PathBuf::from(crate::procfs::PROC),
+        }
     }
 }
 
@@ -96,8 +103,8 @@ struct Shared {
     /// Where an item's process is looked up (`/proc`, or a copy in tests).
     proc_root: PathBuf,
     state_file: PathBuf,
-    /// Finds the app an item belongs to, while the `launcher` feature runs.
-    launcher: Mutex<Option<Arc<Launcher>>>,
+    /// Finds the app an item belongs to.
+    apps: Arc<AppIndex>,
     /// The watcher's connection, once it's up, for `activate_app`.
     connection: Mutex<Option<Connection>>,
     stop: Stop,
@@ -154,14 +161,8 @@ impl Tray {
     /// own. Returns once the name is claimed, queued behind another
     /// watcher, or connecting failed (logged), so apps started after it
     /// find the watcher.
-    pub fn start(
-        sources: Sources,
-        proc_root: PathBuf,
-        launcher: Option<Arc<Launcher>>,
-        hub: Arc<Hub>,
-        logger: Arc<Logger>,
-    ) -> Arc<Self> {
-        let Sources { bus, state_file } = sources;
+    pub fn start(sources: Sources, apps: Arc<AppIndex>, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+        let Sources { bus, state_file, proc_root } = sources;
         let saved = match std::fs::read_to_string(&state_file) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
                 logger.warn(LOG_SOURCE, &format!("ignoring {}: {e}", state_file.display()));
@@ -175,7 +176,7 @@ impl Tray {
             logger,
             proc_root,
             state_file,
-            launcher: Mutex::new(launcher),
+            apps,
             connection: Mutex::new(None),
             stop: Stop::default(),
         });
@@ -190,7 +191,12 @@ impl Tray {
         });
         // Waits as long as connecting may take; a timed-out call fails sooner.
         let _ = started.recv_timeout(2 * CALL_TIMEOUT);
-        Arc::new(Self { shared })
+        let tray = Arc::new(Self { shared });
+        // Looked up again too, for a read of the apps that ended while it
+        // connected, before it listened.
+        tray.shared.apps.on_change(&tray, Self::apps_changed);
+        tray.apps_changed();
+        tray
     }
 
     /// Lets go of the watcher's name and publishes nothing more.
@@ -199,16 +205,13 @@ impl Tray {
         self.shared.stop.stop();
     }
 
-    /// Looks apps up with `launcher` from now on (`None` while the launcher
-    /// is off), and publishes the items with their apps again.
-    pub fn set_launcher(&self, launcher: Option<Arc<Launcher>>) {
-        *lock(&self.shared.launcher) = launcher;
-        self.shared.publish(&mut lock(&self.shared.state));
-    }
-
-    /// Looks the items' apps up again, after the launcher's apps changed.
-    pub fn apps_changed(&self) {
-        self.shared.publish(&mut lock(&self.shared.state));
+    /// Looks the items' apps up again, after the installed apps changed.
+    fn apps_changed(&self) {
+        let mut state = lock(&self.shared.state);
+        // Before its first event the tray has no names to change.
+        if state.sent.is_some() {
+            self.shared.publish(&mut state);
+        }
     }
 
     /// Hides the app `id` (an item's app id, or its own id without one)
@@ -315,7 +318,6 @@ impl Shared {
     }
 
     fn event(&self, state: &State) -> TrayEvent {
-        let launcher = lock(&self.launcher).clone();
         let read: Vec<(bool, TrayItem)> = state
             .items
             .iter()
@@ -327,7 +329,7 @@ impl Shared {
                         address: item.address.clone(),
                         id: read.id.clone(),
                         title: read.title.clone(),
-                        app: launcher.as_ref().and_then(|launcher| launcher.find_app(&read.app_ids)),
+                        app: self.apps.find_app(&read.app_ids),
                         menu_only: read.menu_only,
                     },
                 ))
@@ -692,4 +694,37 @@ impl Watcher {
 
     #[zbus(signal)]
     async fn status_notifier_host_registered(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+}
+
+/// Started before the UI, which settings start ahead of, so apps it
+/// autostarts find the watcher. No options.
+impl crate::modules::Module for Tray {
+    const ID: &'static str = FEATURE_ID;
+    const NEEDS_APPS: bool = true;
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Tray);
+    type Sources = Sources;
+    type Config = ();
+
+    fn sources(env: &crate::modules::Env) -> Sources {
+        Sources::new(&env.args.state_dir)
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(
+        ctx: &crate::modules::Context,
+        sources: &Sources,
+        (): &(),
+        _: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        Self::start(sources.clone(), Arc::clone(&ctx.apps), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+    }
+
+    fn send_state(&self, client: ClientId) {
+        Self::send_state(self, client);
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
+    }
 }

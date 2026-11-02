@@ -6,6 +6,15 @@
 // how sizes and percents read, which apps record from the mic, and the
 // resources graph's lines. No QML types, so ui/tests can check it all.
 
+// The sidebar's pages: the first one, and the others by the view id of
+// their quick-settings.pages slot (features/<id>/feature.toml).
+var PAGE_MAIN = "main";
+var PAGE_SOUND = "sound.page";
+var PAGE_NETWORK = "network.page";
+var PAGE_BLUETOOTH = "bluetooth.page";
+var PAGE_RESOURCES = "resources.page";
+var PAGE_NOTIFICATIONS = "notifications.page";
+
 // Distributions with a logo in logos/ (see logos/CREDITS).
 var BUNDLED_LOGOS = ["nixos"];
 

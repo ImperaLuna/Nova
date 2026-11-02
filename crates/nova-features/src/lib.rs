@@ -21,9 +21,22 @@
 //!
 //! [check]
 //! binaries = ["gpu-screen-recorder|wf-recorder"]
+//!
+//! [[slot]]
+//! host = "bar.right"
+//! view = "recording.pill"
+//! order = 10
 //! ```
+//!
+//! Each `[[slot]]` is a place its UI goes: a view (an id the UI maps to its
+//! component in ui/slots/Views.qml) in one of the [`HOSTS`], sorted there by
+//! `order`. novad sends them with the feature's state, so a new feature
+//! plugs into the bar from its own manifest instead of the shell's files.
 
 pub mod gpus;
+
+pub use nova_protocol::Slot;
+use nova_protocol::{FeatureState, FeatureStatus};
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -32,6 +45,79 @@ use std::path::{Path, PathBuf};
 
 /// Package sets a variant may list. `nix` holds nixpkgs attribute names.
 pub const DISTROS: &[&str] = &["nix", "arch", "fedora", "debian"];
+
+/// A place in the UI that slots fill, and the feature that draws it. The
+/// UI's names for them are the `HOST_*` constants in ui/slots/slots.js.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Host {
+    pub name: &'static str,
+    /// The feature whose UI draws the host: its slots have nowhere to show
+    /// while that feature isn't ready. `None` for a host the shell draws
+    /// whatever is on (the stage's panels, the overlays).
+    pub owner: Option<&'static str>,
+    /// What answers its views.
+    pub views: Views,
+}
+
+/// What a host's view ids name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Views {
+    /// A UI component each (ui/slots/views.js).
+    Ui,
+    /// A service in novad each, whose answers the owner's UI shows in its own
+    /// way (the launcher's providers, `novad::launcher::providers`).
+    Daemon,
+}
+
+/// Every host a slot may name. A slot naming another host is never filled.
+pub const HOSTS: &[Host] = &[
+    // The bar's rows of pills: left from the left edge, center around the
+    // middle, right from the right edge.
+    Host { name: "bar.left", owner: Some("bar"), views: Views::Ui },
+    Host { name: "bar.center", owner: Some("bar"), views: Views::Ui },
+    Host { name: "bar.right", owner: Some("bar"), views: Views::Ui },
+    // The buttons at the right pill's end (and on quick settings, in the
+    // same place).
+    Host { name: "right-pill.buttons", owner: Some("bar"), views: Views::Ui },
+    // The central pill's parts beside the launcher's search button: the
+    // workspaces and the day and time.
+    Host { name: "central-pill.parts", owner: Some("bar"), views: Views::Ui },
+    // Panels drawn on the stage or its panel surfaces that aren't a pill
+    // of their own, like the launcher. They open from their keys and
+    // `nova toggle` with the bar off too.
+    Host { name: "stage.panels", owner: None, views: Views::Ui },
+    // Windows of their own over the screen: the volume capsule, the lock
+    // screen, notification pop-ups, the capture overlay, pairing questions.
+    Host { name: "shell.overlays", owner: None, views: Views::Ui },
+    // Quick settings' first page: toggle tiles two to a row, sliders, cards,
+    // one view in the room left below them and one pinned at the foot.
+    Host { name: "quick-settings.tiles", owner: Some("quick-settings"), views: Views::Ui },
+    Host { name: "quick-settings.sliders", owner: Some("quick-settings"), views: Views::Ui },
+    Host { name: "quick-settings.cards", owner: Some("quick-settings"), views: Views::Ui },
+    Host { name: "quick-settings.fill", owner: Some("quick-settings"), views: Views::Ui },
+    Host { name: "quick-settings.foot", owner: Some("quick-settings"), views: Views::Ui },
+    // Quick settings' other pages, each sliding in over the first.
+    Host { name: "quick-settings.pages", owner: Some("quick-settings"), views: Views::Ui },
+    // What answers the launcher's searches and runs what they found, like
+    // installed apps. The launcher shows every provider's items alike.
+    Host { name: "launcher.providers", owner: Some("launcher"), views: Views::Daemon },
+];
+
+/// The host named `name`, if there is one.
+pub fn host(name: &str) -> Option<&'static Host> {
+    HOSTS.iter().find(|host| host.name == name)
+}
+
+/// Whether `feature` is ready but has slots and none of them can show:
+/// each names a host that doesn't exist or whose owner (in `all`) isn't
+/// ready. `nova doctor` warns about it; the feature still runs, since it
+/// may show elsewhere too (pop-ups, keybinds).
+pub fn has_no_host(feature: &FeatureState, all: &[FeatureState]) -> bool {
+    let ready = |id: &str| all.iter().any(|other| other.id == id && other.status == FeatureStatus::Ready);
+    feature.status == FeatureStatus::Ready
+        && !feature.slots.is_empty()
+        && !feature.slots.iter().any(|slot| host(&slot.host).is_some_and(|host| host.owner.is_none_or(ready)))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -47,19 +133,20 @@ pub struct Manifest {
     pub id: String,
     pub name: String,
     pub description: String,
-    /// Turned on when the user hasn't said otherwise.
+    /// Turned on when the user hasn't said otherwise. Every feature can be
+    /// turned off, the bar too.
     #[serde(default)]
     pub default: bool,
-    /// Can't be turned off (the bar, launcher, notifications).
-    #[serde(default)]
-    pub required: bool,
-    /// Cargo feature of `novad` that holds this feature's daemon side.
+    /// Names the feature's daemon side in novad (`novad::modules`).
     #[serde(default)]
     pub daemon: Option<String>,
     #[serde(default)]
     pub variants: BTreeMap<String, Variant>,
     #[serde(default)]
     pub check: Check,
+    /// Where its UI goes (`[[slot]]`).
+    #[serde(default, rename = "slot")]
+    pub slots: Vec<Slot>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -123,6 +210,12 @@ impl Manifest {
             .unwrap_or(&[])
     }
 
+    /// Whether the feature draws anything, so the UI (Quickshell) has to run
+    /// while it's on: it fills at least one slot with a UI view.
+    pub fn has_ui(&self) -> bool {
+        self.slots.iter().any(|slot| host(&slot.host).is_none_or(|host| host.views == Views::Ui))
+    }
+
     /// Entries of `check.binaries` with no match on `PATH`.
     pub fn missing_binaries(&self, path_var: &str) -> Vec<String> {
         self.check
@@ -146,9 +239,6 @@ impl Manifest {
         if !kebab(&self.id) {
             return Err(format!("id \"{}\" must be lowercase kebab-case", self.id));
         }
-        if self.required && !self.default {
-            return Err("a required feature must also be default = true".into());
-        }
         if !self.variants.is_empty() && !self.variants.contains_key("default") {
             return Err("variants need a [variants.default] fallback".into());
         }
@@ -164,6 +254,15 @@ impl Manifest {
                     "[variants.{name}] lists unknown distro \"{bad}\" (known: {})",
                     DISTROS.join(", ")
                 ));
+            }
+        }
+        for (index, slot) in self.slots.iter().enumerate() {
+            let well_formed = slot.view.split('.').all(kebab);
+            if !well_formed {
+                return Err(format!("[[slot]] view \"{}\" must be dot-separated kebab-case", slot.view));
+            }
+            if self.slots[..index].iter().any(|other| other.host == slot.host && other.view == slot.view) {
+                return Err(format!("[[slot]] {} in {} is listed twice", slot.view, slot.host));
             }
         }
         Ok(())
@@ -222,9 +321,6 @@ impl Selection {
     }
 
     pub fn is_on(&self, manifest: &Manifest) -> bool {
-        if manifest.required {
-            return true;
-        }
         if self.disabled.contains(&manifest.id) {
             return false;
         }
@@ -260,7 +356,7 @@ mod tests {
     #[test]
     fn every_manifest_in_the_repo_is_valid() {
         let all = load_all(&repo_features()).unwrap_or_else(|e| panic!("{e}"));
-        assert!(all.iter().any(|m| m.id == "core" && m.required));
+        assert!(all.iter().any(|m| m.id == "bar"));
     }
 
     #[test]
@@ -301,7 +397,6 @@ mod tests {
         let cases = [
             ("id = \"Rec\"\nname = \"x\"\ndescription = \"x\"", "Rec", "kebab-case"),
             ("id = \"a\"\nname = \"x\"\ndescription = \"x\"", "b", "must match"),
-            ("id = \"a\"\nname = \"x\"\ndescription = \"x\"\nrequired = true", "a", "default = true"),
             (
                 "id = \"a\"\nname = \"x\"\ndescription = \"x\"\n[variants.nvidia]\nwhen = { gpu = \"nvidia\" }",
                 "a",
@@ -317,6 +412,16 @@ mod tests {
                 "a",
                 "needs a `when`",
             ),
+            (
+                "id = \"a\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"bar.left\"\nview = \"a/pill\"",
+                "a",
+                "kebab-case",
+            ),
+            (
+                "id = \"a\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"bar.left\"\nview = \"a.pill\"\n[[slot]]\nhost = \"bar.left\"\nview = \"a.pill\"",
+                "a",
+                "twice",
+            ),
         ];
         for (text, dir, expected) in cases {
             let err = manifest(text).validate(dir).unwrap_err();
@@ -325,14 +430,120 @@ mod tests {
     }
 
     #[test]
-    fn selection_respects_required_default_and_choices() {
-        let core = manifest("id = \"core\"\nname = \"x\"\ndescription = \"x\"\ndefault = true\nrequired = true");
+    fn selection_respects_default_and_choices() {
+        let bar = manifest("id = \"bar\"\nname = \"x\"\ndescription = \"x\"\ndefault = true");
         let rec = manifest(RECORDING);
         let none = Selection::default();
-        assert!(none.is_on(&core) && !none.is_on(&rec));
+        assert!(none.is_on(&bar) && !none.is_on(&rec));
 
-        let sel = Selection::parse("enabled = [\"recording\"]\ndisabled = [\"core\"]").unwrap();
-        assert!(sel.is_on(&core), "required features can't be disabled");
+        let sel = Selection::parse("enabled = [\"recording\"]\ndisabled = [\"bar\"]").unwrap();
+        assert!(!sel.is_on(&bar), "every feature can be turned off, the bar too");
         assert!(sel.is_on(&rec));
+    }
+
+    #[test]
+    fn slots_parse_with_their_order() {
+        let m = manifest(
+            "id = \"a\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"bar.left\"\nview = \"a.pill\"\norder = 15\n[[slot]]\nhost = \"stage.panels\"\nview = \"a.panel\"",
+        );
+        let expected = [
+            Slot { host: "bar.left".into(), view: "a.pill".into(), order: 15 },
+            Slot { host: "stage.panels".into(), view: "a.panel".into(), order: 0 },
+        ];
+        assert_eq!(m.slots, expected);
+        let unknown = "id = \"a\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"bar.left\"\nview = \"a.pill\"\nwhere = 1";
+        assert!(toml::from_str::<Manifest>(unknown).is_err(), "unknown slot fields are rejected");
+    }
+
+    /// The quoted strings of `prefix` lines in a UI file, like
+    /// `var HOST_BAR_LEFT = "bar.left";` or `"media.pill": "../media/X.qml",`.
+    fn js_strings(file: &str, prefix: &str) -> Vec<Vec<String>> {
+        let text = std::fs::read_to_string(repo_features().join("../ui").join(file)).unwrap();
+        text.lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with(prefix))
+            .map(|line| line.split('"').skip(1).step_by(2).map(String::from).collect())
+            .collect()
+    }
+
+    #[test]
+    fn the_ui_names_the_same_hosts() {
+        let mut ui: Vec<String> = js_strings("slots/slots.js", "var HOST_").into_iter().flatten().collect();
+        let mut known: Vec<String> = HOSTS.iter().map(|host| host.name.to_string()).collect();
+        ui.sort();
+        known.sort();
+        assert_eq!(ui, known, "ui/slots/slots.js and HOSTS differ");
+        let ids: Vec<String> = load_all(&repo_features()).unwrap().into_iter().map(|m| m.id).collect();
+        for host in HOSTS {
+            if let Some(owner) = host.owner {
+                assert!(ids.iter().any(|id| id == owner), "{} is owned by unknown feature {owner}", host.name);
+            }
+        }
+    }
+
+    #[test]
+    fn only_slots_with_ui_views_need_the_ui() {
+        let provider = "id = \"calc\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"launcher.providers\"\nview = \"calc\"";
+        assert!(!toml::from_str::<Manifest>(provider).unwrap().has_ui());
+        let pill =
+            "id = \"calc\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"bar.left\"\nview = \"calc.pill\"";
+        assert!(toml::from_str::<Manifest>(pill).unwrap().has_ui());
+    }
+
+    #[test]
+    fn every_slot_names_a_known_host_and_a_registered_view() {
+        let views = js_strings("slots/Views.qml", "\"");
+        let imports = js_strings("slots/Views.qml", "import \"../");
+        let slots = repo_features().join("../ui/slots");
+        let whole_ui = repo_features().join("../ui/shell.qml").is_file();
+        for manifest in load_all(&repo_features()).unwrap() {
+            for slot in &manifest.slots {
+                let known = host(&slot.host).unwrap_or_else(|| panic!("{}: unknown host {}", manifest.id, slot.host));
+                if known.views == Views::Daemon {
+                    // novad's tests check its own (launcher::providers).
+                    continue;
+                }
+                let file = views
+                    .iter()
+                    .find(|entry| entry.first() == Some(&slot.view))
+                    .and_then(|entry| entry.get(1))
+                    .unwrap_or_else(|| panic!("{}: view {} isn't in ui/slots/Views.qml", manifest.id, slot.view));
+                // The Nix build's source has ui/slots but not the views.
+                if whole_ui {
+                    assert!(slots.join(file).is_file(), "{}: {file} doesn't exist next to ui/slots", slot.view);
+                }
+                let folder = file.split('/').nth(1).unwrap_or_default();
+                assert!(
+                    imports.iter().any(|import| import.first().is_some_and(|dir| dir == &format!("../{folder}"))),
+                    "{}: ui/slots/Views.qml must import \"../{folder}\" for Quickshell to load it",
+                    slot.view
+                );
+            }
+        }
+    }
+
+    fn state(id: &str, status: FeatureStatus, hosts: &[&str]) -> FeatureState {
+        let slots =
+            hosts.iter().map(|host| Slot { host: host.to_string(), view: format!("{id}.view"), order: 0 }).collect();
+        FeatureState { id: id.into(), status, missing: vec![], slots }
+    }
+
+    #[test]
+    fn a_feature_whose_hosts_are_all_gone_has_no_host() {
+        let bar = state("bar", FeatureStatus::Ready, &["bar.center"]);
+        let pill = state("pill", FeatureStatus::Ready, &["bar.left"]);
+        let stray = state("stray", FeatureStatus::Ready, &["nowhere"]);
+        let popups = state("popups", FeatureStatus::Ready, &[]);
+        let capsule = state("capsule", FeatureStatus::Ready, &["shell.overlays"]);
+        let all = [bar.clone(), pill.clone(), stray.clone(), popups.clone(), capsule.clone()];
+        assert!(!has_no_host(&pill, &all));
+        assert!(has_no_host(&stray, &all), "an unknown host never shows it");
+        assert!(!has_no_host(&popups, &all), "no slots: it shows elsewhere");
+
+        let bar_off = state("bar", FeatureStatus::Off, &["bar.center"]);
+        let all = [bar_off.clone(), pill.clone(), capsule.clone()];
+        assert!(has_no_host(&pill, &all), "the bar it goes in is off");
+        assert!(!has_no_host(&bar_off, &all), "off is its own state");
+        assert!(!has_no_host(&capsule, &all), "the shell draws overlays without the bar");
     }
 }

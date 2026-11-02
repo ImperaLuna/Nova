@@ -1,0 +1,13 @@
+id = "sound"
+name = "Sound"
+description = "The volume slider in quick settings and its page of outputs, inputs and apps; the volume keys change the volume through it."
+default = true
+
+[[slot]]
+host = "quick-settings.sliders"
+view = "sound.slider"
+order = 10
+
+[[slot]]
+host = "quick-settings.pages"
+view = "sound.page"

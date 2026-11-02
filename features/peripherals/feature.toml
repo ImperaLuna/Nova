@@ -23,3 +23,8 @@ debian = ["upower"]
 # The upower command comes with upowerd's package everywhere.
 [check]
 binaries = ["upower"]
+
+[[slot]]
+host = "quick-settings.cards"
+view = "peripherals.card"
+order = 10
