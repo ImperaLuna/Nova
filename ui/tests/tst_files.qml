@@ -24,6 +24,14 @@ TestCase {
         compare(names(Paths.crumbs("/", "/home/ana", "Home")), ["/"]);
     }
 
+    function test_a_folder_is_inside_a_mount_but_not_a_lookalike() {
+        verify(Paths.inside("/run/media/ana/SANDISK/Photos", "/run/media/ana/SANDISK"));
+        verify(Paths.inside("/run/media/ana/SANDISK", "/run/media/ana/SANDISK"));
+        verify(!Paths.inside("/run/media/ana/SANDISK2", "/run/media/ana/SANDISK"), "a name it starts isn't inside");
+        verify(Paths.inside("/home/ana", "/"), "everything is on the root");
+        verify(!Paths.inside("/home/ana", ""), "an unmounted drive holds nothing");
+    }
+
     function test_the_title_is_the_folder_name() {
         compare(Paths.folderName("/home/ana/Music"), "Music");
         compare(Paths.folderName("/"), "/");

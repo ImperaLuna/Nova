@@ -32,3 +32,8 @@ function folderName(folder) {
     const name = folder.slice(folder.lastIndexOf("/") + 1);
     return name === "" ? "/" : name;
 }
+
+// Whether `path` is `folder` or inside it; nothing is inside "".
+function inside(path, folder) {
+    return folder !== "" && (path === folder || path.startsWith(folder.endsWith("/") ? folder : folder + "/"));
+}

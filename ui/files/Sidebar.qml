@@ -3,11 +3,19 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
+import "service"
 
-// Nova Files' sidebar: the places first. The folder tree and the drives
-// come under them.
+// Nova Files' sidebar: the places first, then the drives (Drives.qml).
+// The folder tree comes between them. `folder` is the window's.
 Item {
     id: sidebar
+
+    property string folder: ""
+
+    // A drive was opened at `folder`, or its menu asked for at `at` (in the
+    // window).
+    signal opened(string folder)
+    signal driveMenuRequested(var drive, point at)
 
     readonly property var places: [
         {
@@ -73,6 +81,25 @@ Item {
                     id: hover
                 }
             }
+        }
+
+        Rectangle {
+            visible: FilesService.drives.length > 0
+            width: parent.width - 2 * Tokens.menuSeparatorInset
+            x: Tokens.menuSeparatorInset
+            height: Tokens.dividerWidth
+            color: Tokens.glassRim
+        }
+        Item {
+            visible: FilesService.drives.length > 0
+            width: parent.width
+            height: Tokens.menuSeparatorGap
+        }
+        Drives {
+            width: parent.width
+            folder: sidebar.folder
+            onOpened: folder => sidebar.opened(folder)
+            onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
         }
     }
 }

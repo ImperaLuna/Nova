@@ -93,6 +93,10 @@ Singleton {
     // A Nova Files window to open: {folder, select}. Only the Nova Files
     // process subscribes to its topic.
     signal filesWindowRequested(var window)
+    // The drives Nova Files' sidebar lists ({id, name, removable, mount,
+    // size, used} each), from the latest files_drives event. Read it
+    // through FilesService.
+    property var filesDrives: []
 
     // The topics this process subscribes to on every connection: the
     // shell's, unless its root sets its own as it's created (Nova Files,
@@ -189,6 +193,8 @@ Singleton {
             media = msg.data;
         } else if (msg.event === Protocol.EVENT_FILES_WINDOW) {
             filesWindowRequested(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_DRIVES) {
+            filesDrives = msg.data.drives;
         }
     }
 
