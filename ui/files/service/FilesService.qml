@@ -8,9 +8,9 @@ import "../../daemon/protocol.js" as Protocol
 // Nova Files' link to novad: the windows it asks for, the folders they
 // show (folder views: each FolderModel opens one under its own number and
 // gets its pages, changes and closing here), the sidebar's tree and
-// places, and opening files in apps (the default one on a double-click or
+// places, opening files in apps (the default one on a double-click or
 // Enter, or one from "Open with", which can also become the new
-// default). The Nova Files
+// default), and copy and move jobs. The Nova Files
 // process (../../files.qml) and its windows get these here and never talk
 // to Daemon themselves. Also how solid the windows are, from
 // config.toml's [files].
@@ -68,6 +68,11 @@ Singleton {
             view: view
         });
     }
+    // How a copy or move job is going (see Daemon.filesTransferChanged).
+    signal transferChanged(var transfer)
+
+    // The number the next job gets; novad numbers jobs per connection.
+    property int _nextJob: 1
 
     // Tells novad this process opens Nova Files' windows; done again on
     // every connection.
@@ -152,6 +157,44 @@ Singleton {
         });
     }
 
+    // Copies or moves (`mode`, a Protocol.TRANSFER_* mode) `sources`
+    // (absolute paths) into the folder `folder`. Returns the job's number,
+    // which its transferChanged events carry; `failed(error)` gets novad's
+    // refusal, when it doesn't start.
+    function transfer(mode: string, sources: var, folder: string, failed: var): int {
+        const job = _nextJob++;
+        Daemon.call(Protocol.CMD_FILES_TRANSFER, {
+            job: job,
+            mode: mode,
+            sources: sources,
+            folder: folder
+        }, error => {
+            if (error) {
+                console.warn(`nova: copying into ${folder}: ${error}`);
+                failed?.(error);
+            }
+        });
+        return job;
+    }
+
+    // Stops job `job`; it then reports it was cancelled.
+    function cancelTransfer(job: int) {
+        Daemon.call(Protocol.CMD_FILES_TRANSFER_CANCEL, {
+            job: job
+        });
+    }
+
+    // Answers job `job`'s clash `clash` with `answer` (a Protocol.CLASH_*
+    // answer), for the clashes like it too when `all`.
+    function answerClash(job: int, clash: int, answer: string, all: bool) {
+        Daemon.call(Protocol.CMD_FILES_TRANSFER_ANSWER, {
+            job: job,
+            clash: clash,
+            answer: answer,
+            all: all
+        });
+    }
+
     Connections {
         target: Daemon
         function onFilesWindowRequested(window: var) {
@@ -165,6 +208,9 @@ Singleton {
         }
         function onFilesClosed(closed: var) {
             root.viewClosed(closed);
+        }
+        function onFilesTransferChanged(transfer: var) {
+            root.transferChanged(transfer);
         }
         function onConnectedChanged() {
             if (Daemon.connected)

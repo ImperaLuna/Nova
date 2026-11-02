@@ -181,15 +181,15 @@ impl Part {
         }
     }
 
-    /// Gives it `meta`'s permissions and modified time, flushes it and puts
-    /// it at `target`, over anything there.
+    /// Gives it `meta`'s permissions and modified time and puts it at
+    /// `target`, over anything there. Not synced to disk: a file per sync
+    /// makes copying many small ones crawl, and unmounting flushes them.
     pub fn finish(mut self, meta: &Metadata, target: &Path) -> io::Result<()> {
         let Some(file) = self.file.take() else { return Err(io::Error::other("already finished")) };
         if let Ok(modified) = meta.modified() {
             file.set_modified(modified)?;
         }
         file.set_permissions(meta.permissions())?;
-        file.sync_all()?;
         drop(file);
         fs::rename(&self.path, target)
     }

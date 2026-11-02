@@ -6,12 +6,13 @@ import "paths.js" as Paths
 
 // A Nova Files window: an app window the compositor tiles and rounds,
 // showing `folder` with `select` selected. The navigation row, the command
-// row, then the sidebar beside the file list; opening a folder in the
-// list shows it in the same window. `folder` follows the window's
-// Navigator as it moves (Alt+Left, Alt+Right, Alt+Up and the mouse's back
-// and forward buttons too). Its frame and its file list each go from
-// glass to solid as config.toml's [files] says, live. Each draws its own
-// background, so one never shows through the other.
+// row, then the sidebar beside the file list, with its copies and moves
+// over them all; opening a folder in the list shows it in the same window.
+// `folder` follows the window's Navigator as it moves (Alt+Left,
+// Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
+// frame and its file list each go from glass to solid as config.toml's
+// [files] says, live. Each draws its own background, so one never shows
+// through the other.
 FloatingWindow {
     id: window
 
@@ -63,6 +64,12 @@ FloatingWindow {
         anchors.fill: sidebar
         color: window.frameColor
     }
+    // Copies or moves (a Protocol.TRANSFER_* mode) `sources` (absolute
+    // paths) into the folder `folder`, showing how it goes in this window.
+    function transfer(mode: string, sources: var, folder: string) {
+        transfers.start(mode, sources, folder);
+    }
+
     NavigationRow {
         id: navigation
         anchors.left: parent.left
@@ -98,5 +105,9 @@ FloatingWindow {
         focus: true
         onFolderOpened: path => window.navigator.visit(path, null)
         solid: FilesService.listSolid
+    }
+    Transfers {
+        id: transfers
+        anchors.fill: parent
     }
 }
