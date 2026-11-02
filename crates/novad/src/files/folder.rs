@@ -23,18 +23,18 @@ use std::path::Path;
 const BROKEN_LINK_MIME: &str = "inode/symlink";
 
 /// The entry `name` in `folder` as it is now, or `None` once it's gone.
-/// A link reports what it points to, when that exists. A name that isn't
-/// UTF-8 is listed as best it can be shown (IMP-300).
+/// A link reports what it points to, when that exists. The name is wire
+/// text ([`entry_name`]), so one that isn't UTF-8 still names its file.
 pub fn read_entry(folder: &Path, name: &OsStr, mime: &MimeDb) -> Option<FileEntry> {
     let path = folder.join(name);
-    let name = &*name.to_string_lossy();
+    let wire = entry_name(name);
     let own = std::fs::symlink_metadata(&path).ok()?;
     let link = own.file_type().is_symlink();
     let target = if link { std::fs::metadata(&path).ok() } else { Some(own) };
-    let hidden = is_hidden(name);
+    let hidden = is_hidden(&wire);
     let Some(target) = target else {
         return Some(FileEntry {
-            name: name.into(),
+            name: wire,
             dir: false,
             link,
             hidden,
@@ -45,11 +45,11 @@ pub fn read_entry(folder: &Path, name: &OsStr, mime: &MimeDb) -> Option<FileEntr
     };
     let dir = target.is_dir();
     Some(FileEntry {
-        name: name.into(),
+        mime: mime.type_by_name(&name.to_string_lossy(), &target).to_owned(),
+        name: wire,
         dir,
         link,
         hidden,
-        mime: mime.type_by_name(name, &target).to_owned(),
         size: (!dir).then_some(target.len()),
         modified_ms: modified_ms(&target),
     })
@@ -82,6 +82,11 @@ pub fn read_folder(
     Ok((!stopped()).then_some(entries))
 }
 
+/// `name` as an entry's name on the wire, which names it losslessly.
+pub fn entry_name(name: &OsStr) -> String {
+    nova_protocol::path_to_wire(name.as_encoded_bytes())
+}
+
 /// A dot file, hidden by default as on every Linux desktop.
 pub fn is_hidden(name: &str) -> bool {
     name.starts_with('.')
@@ -99,7 +104,8 @@ pub struct Listing {
     hidden: bool,
     /// In the view's order.
     entries: Vec<FileEntry>,
-    /// The same entries by name, to find an entry's place before it changed.
+    /// The same entries by name (wire text, so two names that look alike
+    /// are two keys), to find an entry's place before it changed.
     by_name: HashMap<String, FileEntry>,
 }
 
@@ -114,7 +120,7 @@ impl Listing {
         &self.entries
     }
 
-    /// The entry `name` is now `now` (`None`: gone). Returns the changes
+    /// The entry `name` (wire text) is now `now` (`None`: gone). Returns the changes
     /// that take the view's list there, none when it looks the same.
     pub fn apply(&mut self, name: &str, now: Option<FileEntry>) -> Vec<FolderChange> {
         let now = now.filter(|entry| self.hidden || !entry.hidden);
