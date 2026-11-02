@@ -1,7 +1,9 @@
 //! One folder as a view shows it: its entries read from disk
 //! ([`read_entry`], [`read_folder`]; types from the name alone, so no
-//! file is opened) and the view's order ([`order`]), so the UI never
-//! sorts.
+//! file is opened), kept in the view's order
+//! ([`Listing`]), and each change to an entry turned into the index
+//! operations the UI applies to its list ([`Listing::apply`]), so the UI
+//! never sorts or searches.
 //!
 //! The order is Windows Explorer's: folders first, then by the sort key,
 //! ties by name; names compare case aside and with numbers by value
@@ -9,8 +11,9 @@
 //! every entry has exactly one place and a binary search finds it.
 
 use crate::mime::MimeDb;
-use nova_protocol::{FileEntry, FileSort, FileSortKey};
+use nova_protocol::{FileEntry, FileSort, FileSortKey, FolderChange};
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::Metadata;
 use std::os::unix::fs::MetadataExt;
@@ -87,6 +90,82 @@ pub fn is_hidden(name: &str) -> bool {
 fn modified_ms(metadata: &Metadata) -> Option<i64> {
     let seconds = metadata.mtime().checked_mul(1000)?;
     seconds.checked_add(metadata.mtime_nsec() / 1_000_000)
+}
+
+/// A folder's entries in a view's order, and where each one is.
+pub struct Listing {
+    sort: FileSort,
+    /// Shown hidden entries.
+    hidden: bool,
+    /// In the view's order.
+    entries: Vec<FileEntry>,
+    /// The same entries by name, to find an entry's place before it changed.
+    by_name: HashMap<String, FileEntry>,
+}
+
+impl Listing {
+    pub fn new(sort: FileSort, hidden: bool, mut entries: Vec<FileEntry>) -> Self {
+        entries.sort_by(|a, b| order(sort, a, b));
+        let by_name = entries.iter().map(|entry| (entry.name.clone(), entry.clone())).collect();
+        Self { sort, hidden, entries, by_name }
+    }
+
+    pub fn entries(&self) -> &[FileEntry] {
+        &self.entries
+    }
+
+    /// The entry `name` is now `now` (`None`: gone). Returns the changes
+    /// that take the view's list there, none when it looks the same.
+    pub fn apply(&mut self, name: &str, now: Option<FileEntry>) -> Vec<FolderChange> {
+        let now = now.filter(|entry| self.hidden || !entry.hidden);
+        let before = self.by_name.get(name).map(|entry| self.place(entry));
+        match (before, now) {
+            (None, None) => Vec::new(),
+            (Some(index), None) => {
+                self.entries.remove(index);
+                self.by_name.remove(name);
+                vec![FolderChange::Remove { index: wire_index(index) }]
+            }
+            (None, Some(entry)) => vec![self.insert(entry)],
+            (Some(index), Some(entry)) if self.entries[index] == entry => Vec::new(),
+            (Some(index), Some(entry)) if self.keeps_place(index, &entry) => {
+                self.entries[index] = entry.clone();
+                self.by_name.insert(entry.name.clone(), entry.clone());
+                vec![FolderChange::Update { index: wire_index(index), entry }]
+            }
+            (Some(index), Some(entry)) => {
+                self.entries.remove(index);
+                vec![FolderChange::Remove { index: wire_index(index) }, self.insert(entry)]
+            }
+        }
+    }
+
+    /// Where `entry`, which is in the list, sits.
+    fn place(&self, entry: &FileEntry) -> usize {
+        self.entries.binary_search_by(|probe| order(self.sort, probe, entry)).unwrap_or_else(|index| index)
+    }
+
+    fn insert(&mut self, entry: FileEntry) -> FolderChange {
+        let index = self.entries.partition_point(|probe| order(self.sort, probe, &entry) == Ordering::Less);
+        self.entries.insert(index, entry.clone());
+        self.by_name.insert(entry.name.clone(), entry.clone());
+        FolderChange::Insert { index: wire_index(index), entry }
+    }
+
+    /// Whether `entry`, replacing the one at `index`, stays between its
+    /// neighbours.
+    fn keeps_place(&self, index: usize, entry: &FileEntry) -> bool {
+        let after_previous = index == 0 || order(self.sort, &self.entries[index - 1], entry) == Ordering::Less;
+        let before_next =
+            self.entries.get(index + 1).is_none_or(|next| order(self.sort, entry, next) == Ordering::Less);
+        after_previous && before_next
+    }
+}
+
+/// An index on the wire. A folder with more than `u32::MAX` entries can't
+/// be read into memory, let alone listed.
+fn wire_index(index: usize) -> u32 {
+    u32::try_from(index).unwrap_or(u32::MAX)
 }
 
 /// The view's order between two entries.
@@ -166,9 +245,8 @@ mod tests {
         FileEntry { dir: true, size: None, mime: "inode/directory".into(), ..file(name, 0) }
     }
 
-    fn sorted(sort: FileSort, mut entries: Vec<FileEntry>) -> Vec<String> {
-        entries.sort_by(|a, b| order(sort, a, b));
-        entries.into_iter().map(|entry| entry.name).collect()
+    fn names(listing: &Listing) -> Vec<&str> {
+        listing.entries().iter().map(|entry| entry.name.as_str()).collect()
     }
 
     const BY_NAME: FileSort = FileSort { key: FileSortKey::Name, descending: false };
@@ -183,9 +261,47 @@ mod tests {
     #[test]
     fn folders_come_first_and_descending_keeps_them_there() {
         let entries = vec![file("b.txt", 5), folder("Zeta"), file("a.txt", 9), folder("alpha")];
-        assert_eq!(sorted(BY_NAME, entries.clone()), ["alpha", "Zeta", "a.txt", "b.txt"]);
+        let listing = Listing::new(BY_NAME, false, entries.clone());
+        assert_eq!(names(&listing), ["alpha", "Zeta", "a.txt", "b.txt"]);
         let by_size = FileSort { key: FileSortKey::Size, descending: true };
-        assert_eq!(sorted(by_size, entries), ["alpha", "Zeta", "a.txt", "b.txt"]);
+        let listing = Listing::new(by_size, false, entries);
+        assert_eq!(names(&listing), ["alpha", "Zeta", "a.txt", "b.txt"]);
+    }
+
+    /// Each change's ops, applied to the UI's copy in order, give the
+    /// listing's own list.
+    #[test]
+    fn changes_replay_to_the_same_list() {
+        let by_size = FileSort { key: FileSortKey::Size, descending: false };
+        let mut listing = Listing::new(by_size, false, vec![file("a", 1), file("b", 2), file("c", 3)]);
+        let mut copy = listing.entries().to_vec();
+        let steps = [
+            ("d", Some(file("d", 0))),
+            ("b", Some(file("b", 2))),
+            ("a", Some(file("a", 10))),
+            ("c", Some(file("c", 4))),
+            ("d", None),
+            (".hidden", Some(file(".hidden", 1))),
+            ("ghost", None),
+        ];
+        let mut counts = Vec::new();
+        for (name, now) in steps {
+            let changes = listing.apply(name, now);
+            counts.push(changes.len());
+            for change in changes {
+                match change {
+                    FolderChange::Insert { index, entry } => copy.insert(index as usize, entry),
+                    FolderChange::Remove { index } => {
+                        copy.remove(index as usize);
+                    }
+                    FolderChange::Update { index, entry } => copy[index as usize] = entry,
+                }
+            }
+            assert_eq!(copy, listing.entries(), "after {name}");
+        }
+        // New, unchanged, moved, changed in place, gone, hidden, never there.
+        assert_eq!(counts, [1, 0, 2, 1, 1, 0, 0]);
+        assert_eq!(names(&listing), ["b", "c", "a"]);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! A thin wrapper over Linux inotify: novad learns about changed files (new
-//! Codex log lines, edited settings) when they're written instead of checking
-//! on a timer.
+//! Codex log lines, edited settings, a folder open in Nova Files) when
+//! they're written instead of checking on a timer.
 
 use std::collections::HashMap;
 use std::ffi::{CString, OsStr};
@@ -9,6 +9,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 /// Appends, new files and folders, and files moved in.
 pub const WRITES: u32 = libc::IN_MODIFY | libc::IN_CREATE | libc::IN_MOVED_TO;
@@ -20,6 +21,9 @@ pub const REPLACEMENTS: u32 = WRITES | libc::IN_DELETE | libc::IN_MOVED_FROM;
 /// folder whose files don't matter, only one entry in it, so writes to its
 /// other files cost nothing.
 pub const ENTRIES: u32 = libc::IN_CREATE | libc::IN_MOVED_TO | libc::IN_DELETE | libc::IN_MOVED_FROM;
+/// A watched folder itself deleted, moved or unmounted (reported in
+/// [`Changes::gone`]).
+pub const ITSELF: u32 = libc::IN_DELETE_SELF | libc::IN_MOVE_SELF | libc::IN_UNMOUNT;
 /// `struct inotify_event` before its name: wd, mask, cookie, len.
 const HEADER_BYTES: usize = 16;
 const BUFFER_BYTES: usize = 64 * 1024;
@@ -36,6 +40,20 @@ pub struct Changes {
     /// The kernel's queue filled up and dropped events, so `found` may miss
     /// changes: look again at everything watched.
     pub overflowed: bool,
+    /// Watched folders that were deleted, moved or unmounted, for a watch
+    /// with [`ITSELF`].
+    pub gone: Vec<PathBuf>,
+}
+
+impl Changes {
+    /// Nothing seen.
+    pub fn none() -> Self {
+        Self { found: Vec::new(), overflowed: false, gone: Vec::new() }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.found.is_empty() && !self.overflowed && self.gone.is_empty()
+    }
 }
 
 pub struct Inotify {
@@ -120,14 +138,32 @@ impl Inotify {
         Ok(())
     }
 
+    /// Stops watching `dir`, whatever it pointed to when it was watched.
+    pub fn unwatch(&mut self, dir: &Path) {
+        let watched: Vec<i32> = self.dirs.iter().filter(|(_, path)| *path == dir).map(|(wd, _)| *wd).collect();
+        for wd in watched {
+            // SAFETY: no pointers; a stale `wd` only fails with EINVAL.
+            unsafe { libc::inotify_rm_watch(self.file.as_raw_fd(), wd) };
+            self.dirs.remove(&wd);
+        }
+    }
+
     /// Blocks until something changes, or `None` once stopped.
     pub fn read(&mut self) -> std::io::Result<Option<Changes>> {
-        if !self.wait()? {
-            return Ok(None);
+        self.read_until(None)
+    }
+
+    /// Like [`Inotify::read`], but waits only until `deadline`: then the
+    /// changes are empty.
+    pub fn read_until(&mut self, deadline: Option<Instant>) -> std::io::Result<Option<Changes>> {
+        match self.wait(deadline)? {
+            Woke::Stopped => return Ok(None),
+            Woke::TimedOut => return Ok(Some(Changes::none())),
+            Woke::Changed => {}
         }
         let mut buffer = vec![0u8; BUFFER_BYTES];
         let read = self.file.read(&mut buffer)?;
-        let mut changes = Changes { found: Vec::new(), overflowed: false };
+        let mut changes = Changes::none();
         let mut at = 0;
         while at + HEADER_BYTES <= read {
             let field = |offset: usize| {
@@ -147,6 +183,12 @@ impl Inotify {
                 self.dirs.remove(&wd);
                 continue;
             }
+            if mask & ITSELF != 0 {
+                if let Some(dir) = self.dirs.get(&wd) {
+                    changes.gone.push(dir.clone());
+                }
+                continue;
+            }
             let name = name.split(|byte| *byte == 0).next().unwrap_or_default();
             if let (Some(dir), false) = (self.dirs.get(&wd), name.is_empty()) {
                 let path = dir.join(OsStr::from_bytes(name));
@@ -156,17 +198,26 @@ impl Inotify {
         Ok(Some(changes))
     }
 
-    /// Waits for changes (true) or a stop (false).
-    fn wait(&self) -> std::io::Result<bool> {
+    /// Waits for changes, a stop, or `deadline`.
+    fn wait(&self, deadline: Option<Instant>) -> std::io::Result<Woke> {
         let mut fds = [self.file.as_raw_fd(), self.stop.0.as_raw_fd()].map(|fd| libc::pollfd {
             fd,
             events: libc::POLLIN,
             revents: 0,
         });
         loop {
+            // Rounded up, so a wait never ends just before its deadline.
+            let timeout = deadline.map_or(-1, |deadline| {
+                let left = deadline.saturating_duration_since(Instant::now());
+                libc::c_int::try_from(left.as_micros().div_ceil(1000)).unwrap_or(libc::c_int::MAX)
+            });
             // SAFETY: `fds` is a valid array of `fds.len()` pollfds for the call.
-            if unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, -1) } != -1 {
-                return Ok(fds[1].revents == 0);
+            let ready = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, timeout) };
+            if ready == 0 {
+                return Ok(Woke::TimedOut);
+            }
+            if ready != -1 {
+                return Ok(if fds[1].revents == 0 { Woke::Changed } else { Woke::Stopped });
             }
             let error = std::io::Error::last_os_error();
             if error.kind() != std::io::ErrorKind::Interrupted {
@@ -174,6 +225,13 @@ impl Inotify {
             }
         }
     }
+}
+
+/// Why [`Inotify::wait`] returned.
+enum Woke {
+    Changed,
+    Stopped,
+    TimedOut,
 }
 
 fn owned(fd: libc::c_int) -> std::io::Result<OwnedFd> {

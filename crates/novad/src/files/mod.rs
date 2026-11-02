@@ -13,8 +13,8 @@
 //!   window is asked for and none runs.
 //! - Opening files in apps is the shared `crate::apps::opening`, over the
 //!   module's one copy of the MIME database.
-//! - `views.rs`: the folders a window shows (`files_open`), read and
-//!   sent in pages.
+//! - `views.rs`: the folders a window shows (`files_open`), read in pages
+//!   and followed with inotify while open, one thread per view.
 //! - `folder.rs`: a folder's entries, their types from the shared MIME
 //!   database (`crate::mime`, loaded once as the module starts), and the
 //!   view's order.
