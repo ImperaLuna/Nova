@@ -274,11 +274,11 @@ fn power_options_list_every_action_say_why_one_cant_run_and_when_the_system_boot
     let options = menu["options"].clone();
     let actions: Vec<&str> =
         options.as_array().unwrap().iter().map(|option| option["action"].as_str().unwrap()).collect();
-    assert_eq!(actions, ["lock", "suspend", "log_out", "reboot", "power_off"]);
+    assert_eq!(actions, ["lock", "log_out", "suspend", "reboot", "power_off"]);
     let lock = &options[0];
     assert_eq!(lock["available"], true, "the lock feature is on by default: {lock}");
     // No compositor here, so nothing to quit.
-    let log_out = &options[2];
+    let log_out = &options[1];
     assert_eq!(log_out["available"], false);
     assert!(log_out["reason"].as_str().unwrap().contains("Not on this compositor"), "{log_out}");
     for option in options.as_array().unwrap() {
