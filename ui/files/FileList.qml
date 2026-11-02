@@ -16,8 +16,8 @@ import "paths.js" as Paths
 // Home and End move the selection (Shift extends it), Ctrl+A selects all,
 // Ctrl+H shows or hides dot files. A double-click or Enter opens: a
 // folder is gone into (`folderOpened`), files open in their default app.
-// It sits on glass or, as `solid` (0..1) rises, the theme's solid list
-// surface.
+// It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
+// list surface.
 FocusScope {
     id: list
 
@@ -85,7 +85,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        color: Tokens.alpha(Tokens.filesSolidList, list.solid)
+        color: Tokens.mix(Tokens.glass, Tokens.filesSolidList, list.solid)
     }
 
     Timer {

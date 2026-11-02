@@ -10,7 +10,8 @@ import "paths.js" as Paths
 // list shows it in the same window. `folder` follows the window's
 // Navigator as it moves (Alt+Left, Alt+Right, Alt+Up and the mouse's back
 // and forward buttons too). Its frame and its file list each go from
-// glass to solid as config.toml's [files] says, live.
+// glass to solid as config.toml's [files] says, live. Each draws its own
+// background, so one never shows through the other.
 FloatingWindow {
     id: window
 
@@ -20,11 +21,12 @@ FloatingWindow {
         hidden: list.showHidden
         onFolderChanged: window.folder = folder
     }
+    readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     title: Paths.folderName(folder)
     implicitWidth: Tokens.filesWindowWidth
     implicitHeight: Tokens.filesWindowHeight
-    color: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
+    color: "transparent"
 
     Component.onCompleted: navigator.begin(folder)
 
@@ -49,6 +51,18 @@ FloatingWindow {
         onTapped: (point, button) => window.navigator.step(button === Qt.BackButton ? -1 : 1)
     }
 
+    // The frame's background: behind the two rows, and the sidebar.
+    Rectangle {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: commands.bottom
+        color: window.frameColor
+    }
+    Rectangle {
+        anchors.fill: sidebar
+        color: window.frameColor
+    }
     NavigationRow {
         id: navigation
         anchors.left: parent.left

@@ -42,7 +42,9 @@ QtObject {
 
     // This view's number, handed out as it's made.
     property int view: 0
-    property var _selected: ({})
+    // Selected names as keys of a map without a prototype, so a file
+    // named like an Object member (`__proto__`) is a name like any other.
+    property var _selected: Object.create(null)
     // Ctrl+A was the last selection: entries still to come are selected
     // as they come.
     property bool _selectingAll: false
@@ -57,7 +59,7 @@ QtObject {
 
     // Selects the entries named `names` (in this folder) and nothing else.
     function selectNames(names: var) {
-        _selected = {};
+        _selected = Object.create(null);
         for (const name of names)
             _selected[name] = true;
         selectedCount = Object.keys(_selected).length;
@@ -68,7 +70,7 @@ QtObject {
     // Applies a Listing.pick plan.
     function select(plan: var) {
         if (plan.clear) {
-            _selected = {};
+            _selected = Object.create(null);
             selectedCount = 0;
         }
         for (let index = plan.from; index <= plan.to; index++) {
@@ -124,7 +126,7 @@ QtObject {
     // Keeps only the selected names the folder lists, once every page is
     // in: dot files hidden again, or names asked for that aren't there.
     function _keepListed() {
-        const listed = {};
+        const listed = Object.create(null);
         let count = 0;
         for (let index = 0; index < rows.count; index++) {
             const name = rows.get(index).name;
