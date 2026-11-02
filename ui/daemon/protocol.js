@@ -27,6 +27,9 @@ var FILES_MAX_VIEWS = 16;
 // novad refuses longer files_open paths.
 var FILES_PATH_MAX_BYTES = 4096;
 
+// A files_look part this high is fully solid; 0 is glass.
+var FILES_SOLID_MAX = 100;
+
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 
@@ -134,6 +137,7 @@ var EVENT_FILES_WINDOW = "files_window";
 var EVENT_FILES_PAGE = "files_page";
 var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
+var EVENT_FILES_LOOK = "files_look";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
