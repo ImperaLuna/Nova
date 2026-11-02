@@ -483,6 +483,7 @@
                     nativeBuildInputs = [
                       pkgs.sway
                       pkgs.grim
+                      pkgs.awww # so the wallpaper feature, and its carousel, loads
                       pkgs.jq
                       pkgs.dbus
                       (import ./e2e/player.nix { inherit pkgs; })
@@ -558,6 +559,7 @@
             pkgs.qt6.qtshadertools # qsb, for scripts/shaders.sh
             pkgs.sway # headless compositor for e2e
             pkgs.grim
+            pkgs.awww # e2e: the wallpaper feature (and its carousel) needs it
             pkgs.dbus # dbus-daemon, for the tray's and notifications' tests
             (import ./e2e/player.nix { inherit pkgs; }) # nova-test-player, for e2e
             pkgs.cargo-insta # `cargo insta review` for snapshot tests

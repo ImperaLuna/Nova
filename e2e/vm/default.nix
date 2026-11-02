@@ -79,6 +79,9 @@ let
             # (ui/bar/Bar.qml), so screenshots don't change from minute to
             # minute.
             NOVA_FROZEN_TIME = "2026-10-24T16:40:00";
+            # And the now-playing pill's equalizer stands still, for the
+            # same reason.
+            NOVA_STILL_EQUALIZER = "1";
           };
           # foot is a window to have.
           systemPackages = [ pkgs.foot ];

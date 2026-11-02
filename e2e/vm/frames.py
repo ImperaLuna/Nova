@@ -114,8 +114,10 @@ with subtest("the launcher and each panel open and close without moving windows;
     machine.wait_until_fails(as_user(NOVA_SEES_FOOT), timeout=WAIT)
 
 with subtest("a playing pill draws only its equalizer's steps; a paused one draws nothing"):
-    # A moving equalizer: the bar's still one is only for screenshots.
-    machine.systemctl(f"set-environment NOVA_FROZEN_TIME= WAYLAND_DEBUG=client NO_COLOR=1 NOVA_LOG=debug NOVA_FRAME_LOG=1 QT_LOGGING_CONF={QT_LOGGING_CONF}", user=USER)
+    # A moving equalizer: the bar's still one is only for screenshots. The
+    # clock stays frozen: its digits roll for Tokens.durationPanel each
+    # minute, and a minute turning in the count added ~16 frames (IMP-223).
+    machine.systemctl(f"set-environment NOVA_STILL_EQUALIZER= WAYLAND_DEBUG=client NO_COLOR=1 NOVA_LOG=debug NOVA_FRAME_LOG=1 QT_LOGGING_CONF={QT_LOGGING_CONF}", user=USER)
     machine.succeed(as_user("nova restart"))
     playing = wait_running(not_daemon=first["pid"])
     machine.succeed(as_user(START_PLAYER))
@@ -130,4 +132,4 @@ with subtest("a playing pill draws only its equalizer's steps; a paused one draw
     machine.succeed(as_user(PAUSE_PLAYER))
     assert_idle("with a paused player's pill")
     machine.succeed(as_user(STOP_PLAYER))
-    machine.systemctl("unset-environment NOVA_FROZEN_TIME WAYLAND_DEBUG NO_COLOR NOVA_LOG NOVA_FRAME_LOG QT_LOGGING_CONF", user=USER)
+    machine.systemctl("unset-environment NOVA_STILL_EQUALIZER WAYLAND_DEBUG NO_COLOR NOVA_LOG NOVA_FRAME_LOG QT_LOGGING_CONF", user=USER)

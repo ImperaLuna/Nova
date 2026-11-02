@@ -42,7 +42,7 @@ with subtest("a media player playing slides out the now-playing pill; its panel 
     shown = ui_log_count(MEDIA_SHOWN)
     machine.succeed(as_user(START_PLAYER))
     retry(lambda _last_try: ui_log_count(MEDIA_SHOWN) > shown, timeout=WAIT)
-    # Its equalizer stands still here (NOVA_FROZEN_TIME), so the picture
+    # Its equalizer stands still here (NOVA_STILL_EQUALIZER), so the picture
     # settles.
     screenshot("now-playing")
     for line in (MEDIA_OPENED, MEDIA_CLOSED):

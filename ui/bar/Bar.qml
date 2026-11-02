@@ -235,7 +235,7 @@ Item {
                 // Loader: its blur and clicks only follow its own moves.
                 x: bar.aiUsagePill ? aiUsage.x + bar.aiUsagePill.pillWidth + Tokens.gap : Tokens.barMargin
                 media: MediaService.media
-                still: bar.frozenTime !== ""
+                still: bar.stillEqualizer
                 onControlRequested: (player, action) => MediaService.control(player, action)
                 onSeekRequested: (player, positionUs) => MediaService.seek(player, positionUs)
                 onShowRequested: player => MediaService.show(player)
@@ -348,6 +348,10 @@ Item {
     // A fixed time to show instead (an ISO date, like 2026-10-24T16:40), so
     // the VM tests' screenshots don't change with the clock.
     readonly property string frozenTime: Quickshell.env("NOVA_FROZEN_TIME") ?? ""
+    // The now-playing equalizer stands still (NOVA_STILL_EQUALIZER=1), for
+    // the same screenshots. Apart from the time, so a test can watch the
+    // equalizer move while the clock stays put.
+    readonly property bool stillEqualizer: Quickshell.env("NOVA_STILL_EQUALIZER") === "1"
 
     // Along the top edge while the bar steps aside: the pointer touching it
     // brings the pills back. Nothing is drawn.
