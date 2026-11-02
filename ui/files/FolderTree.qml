@@ -1,0 +1,173 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import "../theme"
+import "../theme/icons.js" as Icons
+import "navigation.js" as Navigation
+
+// The sidebar's folder tree, as novad lays it out for the window
+// (files_tree): open down to the window's folder, which is marked and
+// kept in view, with hidden folders dimmer. A row's chevron opens or
+// closes it; a click elsewhere on the row goes there. Rows that come slide in one
+// after another, the others move to make room.
+ListView {
+    id: tree
+
+    required property Navigator navigator
+    // Rows created since the last update, to stagger their slide in.
+    property int arrivals: 0
+
+    function update() {
+        arrivals = 0;
+        Navigation.sync(rows, navigator.treeRows);
+        for (let i = 0; i < rows.count; i++) {
+            if (rows.get(i).path === navigator.folder) {
+                positionViewAtIndex(i, ListView.Contain);
+                break;
+            }
+        }
+    }
+
+    clip: true
+    boundsBehavior: Flickable.StopAtBounds
+    spacing: Tokens.dividerWidth
+    model: ListModel {
+        id: rows
+    }
+
+    Connections {
+        target: tree.navigator
+        function onTreeRowsChanged() {
+            tree.update();
+        }
+    }
+    Component.onCompleted: update()
+
+    displaced: Transition {
+        NumberAnimation {
+            property: "y"
+            duration: Tokens.durationPanel
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Tokens.easing
+        }
+    }
+
+    delegate: Rectangle {
+        id: item
+
+        required property string name
+        required property string path
+        required property int depth
+        required property bool open
+        required property bool leaf
+        required property bool hidden
+        readonly property bool current: path === tree.navigator.folder
+        // The tree's top is Home, unless the window is outside it.
+        readonly property bool home: depth === 0 && path !== "/"
+
+        width: ListView.view.width
+        height: Tokens.filesPlaceHeight
+        radius: Tokens.menuRowRadius
+        color: current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
+
+        Behavior on color {
+            ColorAnimation {
+                duration: Tokens.durationFast
+            }
+        }
+
+        // Slides in from just above, after the rows that came before it.
+        opacity: 0
+        transform: Translate {
+            id: rise
+            y: -Tokens.filesTreeRise
+        }
+        Component.onCompleted: {
+            wait.duration = tree.arrivals++ * Tokens.filesTreeStagger;
+            arrive.start();
+        }
+        SequentialAnimation {
+            id: arrive
+            PauseAnimation {
+                id: wait
+            }
+            ParallelAnimation {
+                NumberAnimation {
+                    target: item
+                    property: "opacity"
+                    to: 1
+                    duration: Tokens.durationPanel
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Tokens.easing
+                }
+                NumberAnimation {
+                    target: rise
+                    property: "y"
+                    to: 0
+                    duration: Tokens.durationPanel
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Tokens.easing
+                }
+            }
+        }
+
+        Row {
+            id: content
+            anchors.left: parent.left
+            anchors.leftMargin: Tokens.gap + item.depth * Tokens.filesTreeIndent
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Tokens.filesTreeGap
+
+            LineIcon {
+                id: chevron
+                anchors.verticalCenter: parent.verticalCenter
+                size: Tokens.filesTreeChevron
+                color: Tokens.filesFaint
+                path: Icons.RIGHT
+                // Kept in place without subfolders, so names line up.
+                opacity: item.leaf ? 0 : 1
+                rotation: item.open ? 90 : 0
+
+                Behavior on rotation {
+                    NumberAnimation {
+                        duration: Tokens.durationPanel
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: Tokens.easing
+                    }
+                }
+            }
+            LineIcon {
+                anchors.verticalCenter: parent.verticalCenter
+                color: item.current ? Tokens.primary : item.hidden ? Tokens.filesFaint : Tokens.fgDim
+                path: item.home ? Icons.HOME : Icons.FOLDER
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - x
+                leftPadding: Tokens.filesTreeGap
+                elide: Text.ElideRight
+                font.family: Tokens.fontSans
+                font.pixelSize: Tokens.fontSize
+                font.weight: item.current ? Tokens.weightLabel : Tokens.weightBody
+                color: item.hidden ? Tokens.filesFaint : Tokens.fg
+                textFormat: Text.PlainText
+                text: item.home ? qsTr("Home") : item.name
+            }
+        }
+
+        HoverHandler {
+            id: hover
+        }
+        // One handler for the row, so a click on the chevron doesn't also
+        // go to the folder: up to the chevron's far edge it opens or closes.
+        TapHandler {
+            onTapped: point => {
+                if (!item.leaf && point.position.x < content.x + chevron.x + chevron.width)
+                    tree.navigator.toggle(item.path, item.open);
+                else
+                    tree.navigator.visit(item.path, null);
+            }
+        }
+    }
+}

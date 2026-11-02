@@ -30,8 +30,14 @@ var FILES_PATH_MAX_BYTES = 4096;
 // Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.
 var RAW_BYTE_BASE = 63232;
 
+// novad refuses a files_tree with more opened or closed folders.
+var FILES_TREE_MAX_FOLDERS = 256;
+
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
+
+// The trash place's path in files_places: the trash, not a folder.
+var FILES_TRASH_PLACE = "trash:///";
 
 // Commands a client sends (Command).
 var CMD_PING = "ping";
@@ -105,6 +111,11 @@ var CMD_FILES_OPEN_WITH = "files_open_with";
 var CMD_FILES_SET_DEFAULT = "files_set_default";
 var CMD_FILES_OPEN = "files_open";
 var CMD_FILES_CLOSE = "files_close";
+var CMD_FILES_TRANSFER = "files_transfer";
+var CMD_FILES_TRANSFER_CANCEL = "files_transfer_cancel";
+var CMD_FILES_TRANSFER_ANSWER = "files_transfer_answer";
+var CMD_FILES_TREE = "files_tree";
+var CMD_FILES_PLACES = "files_places";
 var CMD_FILES_TRASH = "files_trash";
 var CMD_FILES_DELETE = "files_delete";
 var CMD_FILES_TRASH_LIST = "files_trash_list";
@@ -147,6 +158,7 @@ var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
 var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
 var EVENT_FILES_DRIVES = "files_drives";
+var EVENT_FILES_TRANSFER = "files_transfer";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
@@ -272,6 +284,31 @@ var FOLDER_UPDATE = "update";
 // How files_eject went (EjectOutcome).
 var EJECT_EJECTED = "ejected";
 var EJECT_BUSY = "busy";
+
+// What a files_transfer job does (TransferMode).
+var TRANSFER_COPY = "copy";
+var TRANSFER_MOVE = "move";
+
+// How a files_transfer job is going (TransferState).
+var TRANSFER_COUNTING = "counting";
+var TRANSFER_RUNNING = "running";
+var TRANSFER_ASKING = "asking";
+var TRANSFER_DONE = "done";
+var TRANSFER_CANCELLED = "cancelled";
+var TRANSFER_FAILED = "failed";
+
+// Answers to a name clash (ClashAnswer).
+var CLASH_REPLACE = "replace";
+var CLASH_MERGE = "merge";
+var CLASH_SKIP = "skip";
+
+// The places on top of Nova Files' sidebar (PlaceKind).
+var PLACE_HOME = "home";
+var PLACE_DESKTOP = "desktop";
+var PLACE_DOCUMENTS = "documents";
+var PLACE_DOWNLOADS = "downloads";
+var PLACE_PICTURES = "pictures";
+var PLACE_TRASH = "trash";
 
 // END GENERATED
 

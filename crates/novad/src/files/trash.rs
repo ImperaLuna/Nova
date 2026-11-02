@@ -155,9 +155,8 @@ impl Trash {
         each(ids, |id| {
             let found = find(&roots, id)?;
             let (original, _) = read_info(&found.info, &found.root)?;
-            let shown = original.display();
-            if original.symlink_metadata().is_ok() {
-                return Err(format!("{shown} already exists"));
+            if let Ok(there) = original.symlink_metadata() {
+                return Err(taken(&original, there.is_dir()));
             }
             if let Some(folder) = original.parent() {
                 std::fs::create_dir_all(folder).map_err(|e| failed("restore", &original, &e))?;
@@ -403,6 +402,14 @@ fn failed(doing: &str, path: &Path, error: &std::io::Error) -> String {
     }
 }
 
+/// Why an item can't go back to `original`: something named like it is
+/// there now, a folder when `dir`. Windows' words, with the folder's name.
+fn taken(original: &Path, dir: bool) -> String {
+    let folder = original.parent().and_then(Path::file_name).unwrap_or(OsStr::new("/")).to_string_lossy();
+    let kind = if dir { "folder" } else { "file" };
+    format!("A {kind} with this name already exists in {folder}.")
+}
+
 /// Makes `dir` a trash with its `files/` and `info/`, private, if it
 /// isn't one yet.
 fn make_trash(dir: &Path) -> std::io::Result<()> {
@@ -641,7 +648,8 @@ mod tests {
         assert!(fixture.path("home/note").is_dir());
         // The file's place is taken now: it stays in the trash.
         let file = &fixture.trash.list()[0];
-        assert!(fixture.trash.restore(std::slice::from_ref(&file.id)).unwrap_err().contains("already exists"));
+        let error = fixture.trash.restore(std::slice::from_ref(&file.id)).unwrap_err();
+        assert!(error.starts_with("A folder with this name already exists in "), "{error}");
         std::fs::remove_dir(fixture.path("home/note")).unwrap();
         fixture.trash.restore(std::slice::from_ref(&file.id)).unwrap();
         assert_eq!(std::fs::read_to_string(&note).unwrap(), "home/note");

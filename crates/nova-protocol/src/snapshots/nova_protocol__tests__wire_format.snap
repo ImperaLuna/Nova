@@ -128,12 +128,20 @@ expression: all
 {"v":2,"id":73,"cmd":"files_set_default","args":{"path":"/home/me/photo.png","app":"org.gnome.Loupe.desktop"}}
 {"v":2,"id":74,"cmd":"files_open","args":{"view":1,"path":"/home/user/Pictures","sort":{"key":"modified","descending":true},"hidden":false}}
 {"v":2,"id":75,"cmd":"files_close","args":{"view":1}}
+{"v":2,"id":76,"cmd":"files_tree","args":{"folder":"~/.local/share","opened":["/home/user/Projects"],"hidden":false}}
+{"v":2,"id":76,"result":{"folder":"/home/user/.local/share","rows":[{"depth":0,"hidden":false,"leaf":false,"name":"user","open":true,"path":"/home/user"},{"depth":1,"hidden":true,"leaf":false,"name":".local","open":true,"path":"/home/user/.local"},{"depth":2,"hidden":true,"leaf":false,"name":"share","open":false,"path":"/home/user/.local/share"}]}}
+{"v":2,"id":77,"cmd":"files_places"}
+{"v":2,"id":77,"result":[{"kind":"home","path":"/home/user"}]}
 {"v":2,"event":"files_page","data":{"view":1,"path":"/home/user/Pictures","start":0,"total":2,"entries":[{"name":"Screenshots","dir":true,"link":false,"hidden":false,"mime":"inode/directory","modified_ms":1793000000000},{"name":"cover.png","dir":false,"link":false,"hidden":false,"mime":"image/png","size":48213,"modified_ms":1792900000000}]}}
 {"v":2,"event":"files_changed","data":{"view":1,"changes":[{"op":"remove","index":1},{"op":"insert","index":1,"entry":{"name":"cover (2).png","dir":false,"link":false,"hidden":false,"mime":"image/png","size":48213,"modified_ms":1793000100000}},{"op":"update","index":0,"entry":{"name":"Screenshots","dir":true,"link":true,"hidden":false,"mime":"inode/directory"}}]}}
 {"v":2,"event":"files_closed","data":{"view":1,"error":"/home/user/Pictures doesn't exist"}}
 {"v":2,"event":"files_drives","data":{"drives":[{"id":"nvme0n1p2","name":"System","removable":false,"mount":"/","size":1000000000000,"used":580000000000},{"id":"sdb1","name":"SANDISK","removable":true,"size":32000000000}]}}
-{"v":2,"id":76,"cmd":"files_mount","args":{"drive":"sdb1"}}
-{"v":2,"id":76,"result":"/run/media/user/SANDISK"}
-{"v":2,"id":77,"cmd":"files_eject","args":{"drive":"sdb1"}}
-{"v":2,"id":77,"result":"busy"}
+{"v":2,"id":79,"cmd":"files_mount","args":{"drive":"sdb1"}}
+{"v":2,"id":79,"result":"/run/media/user/SANDISK"}
+{"v":2,"id":80,"cmd":"files_eject","args":{"drive":"sdb1"}}
+{"v":2,"id":80,"result":"busy"}
+{"v":2,"id":76,"cmd":"files_transfer","args":{"job":2,"mode":"copy","sources":["/home/user/Pictures/cover.png"],"folder":"/run/media/user/SANDISK"}}
+{"v":2,"id":77,"cmd":"files_transfer_cancel","args":{"job":2}}
+{"v":2,"id":78,"cmd":"files_transfer_answer","args":{"job":2,"clash":1,"answer":"replace","all":true}}
+{"v":2,"event":"files_transfer","data":{"job":2,"mode":"copy","state":"asking","items":6,"name":"cover.png","done_bytes":1800000,"total_bytes":4700000,"clash":{"id":1,"name":"cover.png","folder":false,"original":{"size":1800000,"modified_ms":1791800000000},"replacement":{"size":2400000,"modified_ms":1793640000000},"others":2}}}
 {"v":2,"id":8,"error":"bad request"}

@@ -159,6 +159,11 @@ pub enum Event {
     /// Topic [`Topic::Files`], sent right after subscribing and whenever a
     /// drive comes, goes, mounts, unmounts or fills up.
     FilesDrives { drives: Vec<Drive> },
+    /// How copy or move job `job` is going (feature `files`): as it
+    /// starts, every [`FILES_TRANSFER_PROGRESS_MS`] while it runs, when it
+    /// asks about a name clash and when it ends. Sent only to the client
+    /// that started the job; topic [`Topic::Files`].
+    FilesTransfer(Transfer),
 }
 
 /// Groups of events a client can subscribe to.
@@ -214,10 +219,12 @@ impl Event {
             Event::Network(_) | Event::NetworkTraffic(_) => Some(Topic::Network),
             Event::Bluetooth(_) => Some(Topic::Bluetooth),
             Event::FilesWindow(_) => Some(Topic::Files),
-            Event::FilesPage(_) | Event::FilesChanged { .. } | Event::FilesClosed { .. } | Event::FilesTrashChanged => {
-                Some(Topic::Files)
-            }
-            Event::FilesDrives { .. } => Some(Topic::Files),
+            Event::FilesPage(_)
+            | Event::FilesChanged { .. }
+            | Event::FilesClosed { .. }
+            | Event::FilesTrashChanged
+            | Event::FilesTransfer(_)
+            | Event::FilesDrives { .. } => Some(Topic::Files),
         }
     }
 }
@@ -1180,6 +1187,17 @@ pub const FILES_MAX_VIEWS: usize = 16;
 /// The longest `files_open` path, in bytes: Linux's own limit.
 pub const FILES_PATH_MAX_BYTES: usize = 4096;
 
+/// Most copy or move jobs one connection may run at once
+/// (`files_transfer`).
+pub const FILES_MAX_TRANSFERS: usize = 16;
+
+/// Most items one `files_transfer` takes: a whole folder's selection, with
+/// each path at most [`FILES_PATH_MAX_BYTES`].
+pub const FILES_TRANSFER_MAX_SOURCES: usize = 10_000;
+
+/// How often a running copy or move reports its progress, in milliseconds.
+pub const FILES_TRANSFER_PROGRESS_MS: u64 = 100;
+
 /// The longest wire text a path of [`FILES_PATH_MAX_BYTES`] can be: each
 /// byte is at most a three-byte character ([`path_to_wire`]).
 pub const FILES_PATH_MAX_WIRE_BYTES: usize = 3 * FILES_PATH_MAX_BYTES;
@@ -1244,6 +1262,8 @@ pub fn wire_path(text: &str) -> std::path::PathBuf {
 fn raw_byte(character: char) -> Option<u8> {
     u8::try_from(u32::from(character).checked_sub(RAW_BYTE_BASE)?).ok().filter(|byte| *byte >= 0x80)
 }
+/// Most folders a `files_tree` may name as `opened` or as `closed`, each.
+pub const FILES_TREE_MAX_FOLDERS: usize = 256;
 
 /// The longest each of an `app_icon` request's names may be, in
 /// characters.
@@ -1914,6 +1934,51 @@ pub enum Command {
     FilesClose {
         view: u32,
     },
+    /// Copies or moves `sources` (absolute paths) into the folder `folder`
+    /// as this connection's job `job` (feature `files`). Answered once the
+    /// job is started, without touching the disk; how it goes follows as
+    /// [`Event::FilesTransfer`]s. An item copied into the folder it's
+    /// already in gets a number ("cover (2).png"); one moved there stays.
+    /// A name already taken asks first, with a [`Clash`]. A job ends by
+    /// itself when its connection closes.
+    FilesTransfer {
+        job: u32,
+        mode: TransferMode,
+        sources: Vec<String>,
+        folder: String,
+    },
+    /// Stops this connection's job `job`. What it already copied or moved
+    /// stays; a file it was halfway through is removed.
+    FilesTransferCancel {
+        job: u32,
+    },
+    /// Answers the name clash `clash` that job `job` asks about. With
+    /// `all`, the same answer goes to the job's later clashes of the same
+    /// kind (file or folder) without asking.
+    FilesTransferAnswer {
+        job: u32,
+        clash: u32,
+        answer: ClashAnswer,
+        all: bool,
+    },
+    /// The sidebar's folder tree for a window on `folder` (feature
+    /// `files`), answered with a [`FolderTree`], or an error when `folder`
+    /// isn't a folder. `folder` is absolute or starts at `~`. The tree
+    /// starts at Home, or at `/` for a folder outside it, and is open down
+    /// to `folder` except at the folders in `closed`; the folders in
+    /// `opened` are open too. Hidden folders show only on the way to
+    /// `folder`, or everywhere when `hidden`.
+    FilesTree {
+        folder: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        opened: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        closed: Vec<String>,
+        hidden: bool,
+    },
+    /// The places on top of Nova Files' sidebar (feature `files`),
+    /// answered with the [`FilePlace`]s that exist, in order.
+    FilesPlaces,
     /// Moves the items at `paths` (absolute) to the trash (feature
     /// `files`), each to its own drive's, as the freedesktop Trash spec
     /// says, so other apps see them. All are tried; the error names those
@@ -1985,6 +2050,61 @@ pub enum EjectOutcome {
     /// Something still has files open on it: it stays mounted.
     Busy,
 }
+
+/// The answer to [`Command::FilesTree`]: the folder as an absolute path,
+/// and the tree's rows, top to bottom.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FolderTree {
+    pub folder: String,
+    pub rows: Vec<TreeRow>,
+}
+
+/// One folder in the sidebar's tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TreeRow {
+    /// Its name; `/` for the root.
+    pub name: String,
+    /// Absolute.
+    pub path: String,
+    /// How far in from the tree's top: 0 for Home or `/`.
+    pub depth: u32,
+    /// Its subfolders are the rows that follow.
+    pub open: bool,
+    /// It has no subfolders to show.
+    pub leaf: bool,
+    /// It's a dot folder or inside one.
+    pub hidden: bool,
+}
+
+/// One of the places on top of Nova Files' sidebar.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilePlace {
+    pub kind: PlaceKind,
+    /// Absolute.
+    pub path: String,
+}
+
+/// Which place a [`FilePlace`] is: Home, one of the user's folders from
+/// `user-dirs.dirs`, or the trash.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaceKind {
+    Home,
+    Desktop,
+    Documents,
+    Downloads,
+    Pictures,
+    /// The trash, at [`FILES_TRASH_PLACE`]: not a folder, listed with
+    /// `files_trash_list`.
+    Trash,
+}
+
+/// The trash place's path ([`PlaceKind::Trash`]): a window there shows the
+/// trash instead of a folder.
+pub const FILES_TRASH_PLACE: &str = "trash:///";
 
 /// An item in the trash (feature `files`, [`Command::FilesTrashList`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2072,6 +2192,98 @@ pub enum FolderChange {
     Remove { index: u32 },
     /// The entry at `index` changed and keeps its place.
     Update { index: u32, entry: FileEntry },
+}
+
+/// What a `files_transfer` job does with its items.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransferMode {
+    Copy,
+    Move,
+}
+
+/// How a copy or move job is going ([`Event::FilesTransfer`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Transfer {
+    pub job: u32,
+    pub mode: TransferMode,
+    pub state: TransferState,
+    /// How many items it was given.
+    pub items: u32,
+    /// The first of them, by name.
+    pub name: String,
+    /// Bytes copied or moved so far, of `total_bytes`; both 0 while
+    /// counting.
+    pub done_bytes: u64,
+    pub total_bytes: u64,
+    /// The name clash it waits on, while `asking`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clash: Option<Clash>,
+    /// Why it stopped, once `failed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransferState {
+    /// Measuring what there is to copy.
+    Counting,
+    Running,
+    /// Waiting for `files_transfer_answer`.
+    Asking,
+    /// The last event of a job: it finished, was cancelled or failed.
+    Done,
+    Cancelled,
+    Failed,
+}
+
+/// A name a copy or move would take that's already taken in its folder.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Clash {
+    /// The job's number for it, for `files_transfer_answer`.
+    pub id: u32,
+    pub name: String,
+    /// A folder landing on a folder, which can be merged; otherwise the
+    /// one already there can be replaced.
+    pub folder: bool,
+    /// What's there now.
+    pub original: ClashItem,
+    /// What would take its place.
+    pub replacement: ClashItem,
+    /// How many more clashes of the same kind the job knows of after this
+    /// one: what `all` would answer too.
+    pub others: u32,
+}
+
+/// One side of a [`Clash`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClashItem {
+    /// A file's size in bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// How many entries a folder holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items: Option<u32>,
+    /// Last modified, in milliseconds since 1970.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified_ms: Option<i64>,
+}
+
+/// The answer to a [`Clash`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClashAnswer {
+    /// The one there now goes; only for a file clash.
+    Replace,
+    /// The folders' contents come together, asking about clashes inside;
+    /// only for a folder clash.
+    Merge,
+    /// The item isn't copied or moved.
+    Skip,
 }
 
 /// Whether a `set_wallpaper` path is a Steam Workshop ID: only digits.
@@ -2838,6 +3050,57 @@ mod tests {
                 },
             }),
             encode(Request { id: Some(75), command: Command::FilesClose { view: 1 } }),
+            encode(Request {
+                id: Some(76),
+                command: Command::FilesTree {
+                    folder: "~/.local/share".into(),
+                    opened: vec!["/home/user/Projects".into()],
+                    closed: vec![],
+                    hidden: false,
+                },
+            }),
+            encode(Response {
+                id: 76,
+                outcome: Outcome::Result(
+                    serde_json::to_value(FolderTree {
+                        folder: "/home/user/.local/share".into(),
+                        rows: vec![
+                            TreeRow {
+                                name: "user".into(),
+                                path: "/home/user".into(),
+                                depth: 0,
+                                open: true,
+                                leaf: false,
+                                hidden: false,
+                            },
+                            TreeRow {
+                                name: ".local".into(),
+                                path: "/home/user/.local".into(),
+                                depth: 1,
+                                open: true,
+                                leaf: false,
+                                hidden: true,
+                            },
+                            TreeRow {
+                                name: "share".into(),
+                                path: "/home/user/.local/share".into(),
+                                depth: 2,
+                                open: false,
+                                leaf: false,
+                                hidden: true,
+                            },
+                        ],
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Request { id: Some(77), command: Command::FilesPlaces }),
+            encode(Response {
+                id: 77,
+                outcome: Outcome::Result(
+                    serde_json::to_value(vec![FilePlace { kind: PlaceKind::Home, path: "/home/user".into() }]).unwrap(),
+                ),
+            }),
             encode(Event::FilesPage(FolderPage {
                 view: 1,
                 path: "/home/user/Pictures".into(),
@@ -2915,10 +3178,42 @@ mod tests {
                     },
                 ],
             }),
-            encode(Request { id: Some(76), command: Command::FilesMount { drive: "sdb1".into() } }),
-            encode(Response { id: 76, outcome: Outcome::Result(json!("/run/media/user/SANDISK")) }),
-            encode(Request { id: Some(77), command: Command::FilesEject { drive: "sdb1".into() } }),
-            encode(Response { id: 77, outcome: Outcome::Result(serde_json::to_value(EjectOutcome::Busy).unwrap()) }),
+            encode(Request { id: Some(79), command: Command::FilesMount { drive: "sdb1".into() } }),
+            encode(Response { id: 79, outcome: Outcome::Result(json!("/run/media/user/SANDISK")) }),
+            encode(Request { id: Some(80), command: Command::FilesEject { drive: "sdb1".into() } }),
+            encode(Response { id: 80, outcome: Outcome::Result(serde_json::to_value(EjectOutcome::Busy).unwrap()) }),
+            encode(Request {
+                id: Some(76),
+                command: Command::FilesTransfer {
+                    job: 2,
+                    mode: TransferMode::Copy,
+                    sources: vec!["/home/user/Pictures/cover.png".into()],
+                    folder: "/run/media/user/SANDISK".into(),
+                },
+            }),
+            encode(Request { id: Some(77), command: Command::FilesTransferCancel { job: 2 } }),
+            encode(Request {
+                id: Some(78),
+                command: Command::FilesTransferAnswer { job: 2, clash: 1, answer: ClashAnswer::Replace, all: true },
+            }),
+            encode(Event::FilesTransfer(Transfer {
+                job: 2,
+                mode: TransferMode::Copy,
+                state: TransferState::Asking,
+                items: 6,
+                name: "cover.png".into(),
+                done_bytes: 1_800_000,
+                total_bytes: 4_700_000,
+                clash: Some(Clash {
+                    id: 1,
+                    name: "cover.png".into(),
+                    folder: false,
+                    original: ClashItem { size: Some(1_800_000), items: None, modified_ms: Some(1_791_800_000_000) },
+                    replacement: ClashItem { size: Some(2_400_000), items: None, modified_ms: Some(1_793_640_000_000) },
+                    others: 2,
+                }),
+                error: None,
+            })),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();

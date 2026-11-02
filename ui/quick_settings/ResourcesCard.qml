@@ -4,6 +4,7 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 import "quick_settings.js" as QuickSettings
+import "../text/bytes.js" as Bytes
 
 // The resources card at the sidebar's foot: CPU, memory, GPU and the CPU's
 // temperature as rings, from a resources event. Readings novad doesn't
@@ -30,7 +31,7 @@ Item {
             {
                 label: qsTr("RAM"),
                 value: now ? QuickSettings.share(now.memory_used, now.memory_total) : 0,
-                reading: now ? QuickSettings.shortBytes(now.memory_used) : dash
+                reading: now ? Bytes.shortBytes(now.memory_used) : dash
             },
             {
                 label: qsTr("GPU"),
