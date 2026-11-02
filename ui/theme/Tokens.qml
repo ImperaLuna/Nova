@@ -692,6 +692,16 @@ QtObject {
     // The small chevron beside New, Sort and View.
     readonly property int iconSizeMini: 12
     readonly property real filesChevronOpacity: 0.6
+    // Copies and moves: each running job's card stacked at the window's
+    // bottom right, and the name clash dialog in its middle, its two sides
+    // with a big icon each and its answers as round buttons.
+    readonly property int filesJobWidth: 290
+    readonly property int filesOverlayInset: 16
+    readonly property int filesClashWidth: 440
+    readonly property int filesClashIconSize: 40
+    readonly property int filesClashButtonHeight: 34
+    // The scale the dialog pops in from and shrinks back to.
+    readonly property real filesClashEnterScale: 0.97
 
     // Type
     readonly property string fontSans: "Inter"

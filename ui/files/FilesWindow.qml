@@ -5,7 +5,8 @@ import "paths.js" as Paths
 
 // A Nova Files window: an app window the compositor tiles and rounds,
 // glass all through, showing `folder` with `select` selected. The
-// navigation row, the command row, then the sidebar beside the file list.
+// navigation row, the command row, then the sidebar beside the file list,
+// with its copies and moves over them all.
 FloatingWindow {
     id: window
 
@@ -16,6 +17,12 @@ FloatingWindow {
     implicitWidth: Tokens.filesWindowWidth
     implicitHeight: Tokens.filesWindowHeight
     color: Tokens.glass
+
+    // Copies or moves (a Protocol.TRANSFER_* mode) `sources` (absolute
+    // paths) into the folder `folder`, showing how it goes in this window.
+    function transfer(mode: string, sources: var, folder: string) {
+        transfers.start(mode, sources, folder);
+    }
 
     NavigationRow {
         id: navigation
@@ -42,5 +49,9 @@ FloatingWindow {
         anchors.right: parent.right
         anchors.top: commands.bottom
         anchors.bottom: parent.bottom
+    }
+    Transfers {
+        id: transfers
+        anchors.fill: parent
     }
 }
