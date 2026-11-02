@@ -22,6 +22,8 @@ struct Glob {
     weight: u32,
     mime: String,
     pattern: String,
+    /// The pattern's characters, for matching it as a shell glob.
+    chars: Vec<char>,
     case_sensitive: bool,
 }
 
@@ -64,7 +66,8 @@ impl Globs {
                 continue;
             }
             let case_sensitive = fields.next().is_some_and(|flags| flags.split(',').any(|flag| flag == CASE_SENSITIVE));
-            self.insert(Glob { weight, mime: mime.to_string(), pattern: pattern.to_string(), case_sensitive });
+            let chars = pattern.chars().collect();
+            self.insert(Glob { weight, mime: mime.to_string(), pattern: pattern.to_string(), chars, case_sensitive });
         }
     }
 
@@ -106,7 +109,9 @@ impl Globs {
             .into_iter()
             .flatten()
             .filter(|glob| ends_with(name, &glob.pattern[1..], glob.case_sensitive));
-        let others = self.others.iter().filter(|glob| matches(&glob.pattern, name, glob.case_sensitive));
+        // The name's characters, once for all the shell globs.
+        let name_chars: Vec<char> = if self.others.is_empty() { Vec::new() } else { name.chars().collect() };
+        let others = self.others.iter().filter(|glob| matches(&glob.chars, &name_chars, glob.case_sensitive));
         best(by_extension.chain(others).collect())
     }
 }
@@ -147,9 +152,7 @@ fn ends_with(name: &str, suffix: &str, case_sensitive: bool) -> bool {
 
 /// Whether `name` matches the shell glob `pattern` (`*`, `?`, `[...]`,
 /// `[!...]`), as fnmatch does without flags.
-fn matches(pattern: &str, name: &str, case_sensitive: bool) -> bool {
-    let pattern: Vec<char> = pattern.chars().collect();
-    let name: Vec<char> = name.chars().collect();
+fn matches(pattern: &[char], name: &[char], case_sensitive: bool) -> bool {
     let same = |a: char, b: char| if case_sensitive { a == b } else { a.eq_ignore_ascii_case(&b) };
     // Where to go back to when a later part fails: just after the last `*`,
     // with it swallowing one more character.
@@ -163,7 +166,7 @@ fn matches(pattern: &str, name: &str, case_sensitive: bool) -> bool {
                 continue;
             }
             Some('?') => Some(p + 1),
-            Some('[') => class(&pattern, p, name[n], &same),
+            Some('[') => class(pattern, p, name[n], case_sensitive),
             Some(&c) if same(c, name[n]) => Some(p + 1),
             _ => None,
         };
@@ -185,7 +188,10 @@ fn matches(pattern: &str, name: &str, case_sensitive: bool) -> bool {
 
 /// Where the pattern goes on after the class opening at `open`, if `c` is
 /// in it.
-fn class(pattern: &[char], open: usize, c: char, same: &impl Fn(char, char) -> bool) -> Option<usize> {
+fn class(pattern: &[char], open: usize, c: char, case_sensitive: bool) -> Option<usize> {
+    // The forms of `c` that count: any ASCII case unless the pattern is
+    // case-sensitive.
+    let forms = if case_sensitive { [c; 3] } else { [c, c.to_ascii_lowercase(), c.to_ascii_uppercase()] };
     let mut i = open + 1;
     let negated = matches!(pattern.get(i), Some('!' | '^'));
     if negated {
@@ -201,10 +207,10 @@ fn class(pattern: &[char], open: usize, c: char, same: &impl Fn(char, char) -> b
         first = false;
         if pattern.get(i + 1) == Some(&'-') && pattern.get(i + 2).is_some_and(|&end| end != ']') {
             let end = pattern[i + 2];
-            found |= (start..=end).contains(&c) || (start..=end).contains(&c.to_ascii_lowercase());
+            found |= forms.iter().any(|form| (start..=end).contains(form));
             i += 3;
         } else {
-            found |= same(start, c);
+            found |= forms.contains(&start);
             i += 1;
         }
     }
@@ -266,6 +272,11 @@ mod tests {
         assert_eq!(find(&globs, "a.txt"), ["text/plain"]);
     }
 
+    fn matches(pattern: &str, name: &str, case_sensitive: bool) -> bool {
+        let chars = |text: &str| text.chars().collect::<Vec<_>>();
+        super::matches(&chars(pattern), &chars(name), case_sensitive)
+    }
+
     #[test]
     fn shell_globs_match_like_fnmatch() {
         assert!(matches("*.anim[1-9j]", "x.anim7", false));
@@ -276,5 +287,8 @@ mod tests {
         assert!(matches("[!a]x", "bx", true) && !matches("[!a]x", "ax", true));
         assert!(matches("*a*b*", "xxaxxbxx", true) && !matches("*a*b", "xxbxxa", true));
         assert!(!matches("[abc", "a", true), "an unclosed class matches nothing");
+        assert!(!matches("*.[a-z]x", "file.Ax", true), "a case-sensitive range keeps its case");
+        assert!(matches("*.[A-Z]", "file.q", false) && matches("*.[a-z]", "FILE.Q", false));
+        assert!(matches("a?c", "aéc", true), "? is one character, not one byte");
     }
 }

@@ -17,7 +17,7 @@ use crate::logger::Logger;
 use crate::mime::MimeDb;
 use nova_protocol::OpenWith;
 use std::path::{Component, Path};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 const LOG_SOURCE: &str = "files";
 
@@ -28,6 +28,9 @@ pub struct Opener {
     runner: Runner,
     path_var: String,
     logger: Arc<Logger>,
+    /// Held while a default is written, so two at once don't each write
+    /// over what the other read.
+    writing: Mutex<()>,
 }
 
 impl Opener {
@@ -40,7 +43,7 @@ impl Opener {
         path_var: &str,
         logger: Arc<Logger>,
     ) -> Self {
-        Self { mime, places, apps, runner, path_var: path_var.to_string(), logger }
+        Self { mime, places, apps, runner, path_var: path_var.to_string(), logger, writing: Mutex::new(()) }
     }
 
     /// Opens `path` in its type's default app.
@@ -88,6 +91,7 @@ impl Opener {
         if self.apps.read().any_entry(id).is_none() {
             return Err(format!("{id} isn't installed"));
         }
+        let _writing = crate::lock(&self.writing);
         let written = associations::set_default(&self.places, &types[0], id)?;
         let state = self.apps.read();
         let now = Associations::load(&self.places).default_app(&types, &state).map(|entry| entry.id.clone());
@@ -218,6 +222,13 @@ mod tests {
             "[Added Associations]\nimage/png=terminal.desktop;\n[Removed Associations]\nimage/png=gimp.desktop;\n",
         );
         assert_eq!(machine.ids("photo.png"), ["viewer.desktop", "terminal.desktop"]);
+        // A list that adds and removes the same app removes it (viewer is
+        // still mimeapps.list's default).
+        machine.list(
+            "niri-mimeapps.list",
+            "[Added Associations]\nimage/png=terminal.desktop;\n[Removed Associations]\nimage/png=terminal.desktop;\n",
+        );
+        assert_eq!(machine.ids("photo.png"), ["viewer.desktop", "gimp.desktop"]);
         drop(machine.apps);
     }
 

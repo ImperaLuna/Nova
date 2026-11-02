@@ -231,7 +231,10 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
     if flag("Hidden") || (context.autostart && raw(AUTOSTART_ENABLED).map(str::trim) == Some("false")) {
         return Err(Skipped::Hidden);
     }
-    if raw("Type").map(str::trim) != Some("Application") {
+    // Kept unlisted only to open files; one that opens none is skipped
+    // before the work below.
+    let opens_none = raw("MimeType").is_none_or(|types| types.trim().is_empty());
+    if raw("Type").map(str::trim) != Some("Application") || (flag("NoDisplay") && !context.autostart && opens_none) {
         return Err(Skipped::NotShown);
     }
     let shown_here = |key: &str| {
@@ -496,8 +499,9 @@ mod tests {
             assert_eq!(entry(&format!("{base}{extra}")), Err(Skipped::NotShown), "{extra}");
         }
         assert!(entry(&format!("{base}OnlyShowIn=niri;\nTryExec=sh\n")).is_ok());
-        // Kept, since it may still open files, but not listed.
-        assert!(!entry(&format!("{base}NoDisplay=true\n")).unwrap().listed);
+        // Kept unlisted when it opens files, else skipped.
+        assert_eq!(entry(&format!("{base}NoDisplay=true\n")), Err(Skipped::NotShown));
+        assert!(!entry(&format!("{base}NoDisplay=true\nMimeType=text/plain;\n")).unwrap().listed);
         assert!(entry(base).unwrap().listed);
         assert_eq!(entry("[Desktop Entry]\nType=Link\nName=X\nURL=https://example.com\n"), Err(Skipped::NotShown));
         assert!(matches!(entry("[Desktop Entry]\nType=Application\nName=X\n"), Err(Skipped::Invalid(_))));

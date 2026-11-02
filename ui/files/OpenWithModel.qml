@@ -5,7 +5,7 @@ import "service"
 // to show: the apps that can open `path`, its type's default first, as
 // novad worked them out. `open(app)` opens the file in one; `makeDefault(app)`
 // makes one the default for files of this type and reads the apps again.
-// An answer for a path the model no longer shows is dropped.
+// Only the answer to the latest request counts.
 QtObject {
     id: model
 
@@ -19,17 +19,19 @@ QtObject {
     property var apps: []
     // Waiting for novad's answer.
     property bool loading: false
+    // Counts requests, so an older answer arriving late is dropped.
+    property int _asked: 0
 
     function reload() {
-        const asked = path;
+        const asked = ++_asked;
         mime = "";
         defaultApp = "";
         apps = [];
-        loading = asked !== "";
+        loading = path !== "";
         if (!loading)
             return;
-        FilesService.openWith(asked, openWith => {
-            if (asked !== model.path)
+        FilesService.openWith(path, openWith => {
+            if (asked !== model._asked)
                 return;
             model.mime = openWith?.mime ?? "";
             model.defaultApp = openWith?.default ?? "";

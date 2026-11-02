@@ -39,9 +39,14 @@ impl Magic {
     /// Adds a folder's `magic` file. A file that isn't one adds nothing.
     pub fn add(&mut self, bytes: &[u8]) -> Result<(), String> {
         let mut rest = bytes.strip_prefix(HEADER).ok_or("not a magic file")?;
+        // All of it read before any is kept.
+        let mut sections = Vec::new();
         while !rest.is_empty() {
             let section;
             (section, rest) = parse_section(rest)?;
+            sections.push(section);
+        }
+        for section in sections {
             self.extent = self.extent.max(section.rules.iter().map(Rule::extent).max().unwrap_or(0)).min(MAX_READ);
             self.sections.push(section);
         }
@@ -60,8 +65,9 @@ impl Magic {
     pub fn find(&self, data: &[u8], only: Option<&dyn Fn(&str) -> bool>) -> Option<(&str, u32)> {
         self.sections
             .iter()
-            .filter(|section| only.is_none_or(|only| only(&section.mime)))
-            .find(|section| matches_any(&section.rules, 0, data))
+            // The bytes first: they rule out nearly every section, cheaply.
+            .filter(|section| matches_any(&section.rules, 0, data))
+            .find(|section| only.is_none_or(|only| only(&section.mime)))
             .map(|section| (section.mime.as_str(), section.priority))
     }
 }
@@ -279,6 +285,10 @@ pub(super) mod tests {
         assert_eq!(magic.find(b"B", None), Some(("text/x-b", 50)));
         assert_eq!(magic.find(b"....Z", None), Some(("text/x-b", 50)));
         assert!(Magic::default().add(b"not magic").is_err());
-        assert!(Magic::default().add(b"MIME-Magic\0\n[50:x").is_err());
+        let mut half = magic_file(&[(80, "text/x-good", &[(0, 0, b"G", None, 1)])]);
+        half.extend(b"[50:x");
+        let mut kept = Magic::default();
+        assert!(kept.add(&half).is_err());
+        assert_eq!(kept.find(b"G", None), None, "a bad file adds nothing, not even its good sections");
     }
 }

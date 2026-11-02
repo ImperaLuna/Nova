@@ -111,6 +111,8 @@ impl Associations {
         for mime in types {
             let mut removed = BTreeSet::new();
             for list in &self.lists {
+                // A list's removals count for its own additions too.
+                removed.extend(list.removed.get(mime).into_iter().flatten());
                 for id in list.added.get(mime).into_iter().flatten() {
                     if !removed.contains(id)
                         && let Some(entry) = apps.any_entry(id)
@@ -119,7 +121,6 @@ impl Associations {
                         found.push(entry);
                     }
                 }
-                removed.extend(list.removed.get(mime).into_iter().flatten());
             }
             for entry in apps.openers() {
                 if entry.mime_types.iter().any(|opens| opens == mime)
@@ -147,8 +148,8 @@ pub fn set_default(places: &Places, mime: &str, app: &str) -> Result<PathBuf, St
             let (main, desktops) = places.user.split_last().ok_or("there's no config folder to write to")?;
             match (kind(main), desktops.first()) {
                 (None, _) => main.clone(),
-                (Some(_), Some(desktop)) => desktop.clone(),
-                (Some(_), None) => return Err(format!("{} is kept by something else", main.display())),
+                (Some(_), Some(desktop)) if kind(desktop).is_none() => desktop.clone(),
+                (Some(_), _) => return Err(format!("{} is kept by something else", main.display())),
             }
         }
     };
@@ -254,7 +255,14 @@ fn read(path: &Path) -> std::io::Result<Option<String>> {
     use std::io::Read;
     let mut text = String::new();
     match std::fs::File::open(path) {
-        Ok(file) => file.take(MAX_LIST_BYTES).read_to_string(&mut text).map(|_| Some(text)),
+        // One byte over the cap tells a list that's too big from one that
+        // fits, so a default is never written over a cut-off copy.
+        Ok(file) => match file.take(MAX_LIST_BYTES + 1).read_to_string(&mut text)? {
+            read if read as u64 > MAX_LIST_BYTES => {
+                Err(std::io::Error::other(format!("it's over {MAX_LIST_BYTES} bytes")))
+            }
+            _ => Ok(Some(text)),
+        },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e),
     }
@@ -331,5 +339,23 @@ mod tests {
         let list = parse(&std::fs::read_to_string(config.join("niri-mimeapps.list")).unwrap());
         assert_eq!(list.defaults["image/png"], ["a.desktop"]);
         assert_eq!(list.defaults["text/plain"], ["c.desktop"]);
+
+        // Both lists links someone else keeps: neither is written.
+        std::fs::remove_file(config.join("niri-mimeapps.list")).unwrap();
+        std::os::unix::fs::symlink(&store, config.join("niri-mimeapps.list")).unwrap();
+        assert!(set_default(&places, "image/png", "a.desktop").is_err());
+        assert!(std::fs::symlink_metadata(config.join("niri-mimeapps.list")).unwrap().file_type().is_symlink());
+    }
+
+    #[test]
+    fn a_list_too_big_to_read_whole_is_never_written() {
+        let dir = TempDir::new("mimeapps-big");
+        let config = dir.join("config");
+        std::fs::create_dir_all(&config).unwrap();
+        let big = "# padding\n".repeat(MAX_LIST_BYTES as usize / 10 + 1);
+        std::fs::write(config.join(FILE_NAME), &big).unwrap();
+        let places = Places::new(Some(config.clone()), &[], &[], &[]);
+        assert!(set_default(&places, "image/png", "a.desktop").is_err());
+        assert_eq!(std::fs::read_to_string(config.join(FILE_NAME)).unwrap(), big);
     }
 }
