@@ -1958,7 +1958,7 @@ pub enum Command {
     /// The places on top of Nova Files' sidebar (feature `files`),
     /// answered with the [`FilePlace`]s that exist, in order.
     FilesPlaces,
-    /// Copies or moves `sources` (absolute paths) into the folder `folder`
+    /// Copies or moves `sources` (absolute paths, wire text) into the folder `folder`
     /// as this connection's job `job` (feature `files`). Answered once the
     /// job is started, without touching the disk; how it goes follows as
     /// [`Event::FilesTransfer`]s. An item copied into the folder it's
@@ -2123,7 +2123,7 @@ pub struct Transfer {
     pub state: TransferState,
     /// How many items it was given.
     pub items: u32,
-    /// The first of them, by name.
+    /// The first of them, by name (wire text).
     pub name: String,
     /// Bytes copied or moved so far, of `total_bytes`; both 0 while
     /// counting.
@@ -2157,6 +2157,7 @@ pub enum TransferState {
 pub struct Clash {
     /// The job's number for it, for `files_transfer_answer`.
     pub id: u32,
+    /// The taken name (wire text).
     pub name: String,
     /// A folder landing on a folder, which can be merged; otherwise the
     /// one already there can be replaced.

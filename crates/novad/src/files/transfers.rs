@@ -97,7 +97,7 @@ impl Transfers {
         }
         let sources = sources.iter().map(|source| checked_path(source)).collect::<Result<Vec<_>, _>>()?;
         let folder = checked_path(folder)?;
-        let name = sources[0].file_name().map_or_else(|| "/".into(), |name| name.to_string_lossy().into_owned());
+        let name = sources[0].file_name().map_or_else(|| "/".into(), nova_protocol::wire_text);
         let key = (client, job);
         let mut jobs = lock(&self.jobs);
         let Some(running) = jobs.as_mut() else { return Err("Nova Files is off".into()) };
@@ -349,7 +349,7 @@ impl Run {
         };
         let clash = Clash {
             id,
-            name: target.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+            name: nova_protocol::wire_text(target.file_name().unwrap_or_default()),
             folder: folders,
             original: copying::clash_item(target, existing),
             replacement: copying::clash_item(source, meta),
