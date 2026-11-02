@@ -14,6 +14,8 @@ use crate::apps::desktop_entry::Entry;
 use crate::child;
 use crate::logger::Logger;
 use nova_paths::find_program;
+use std::ffi::{OsStr, OsString};
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -64,39 +66,45 @@ impl Runner {
 
 /// Starts `entry`'s app.
 pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logger>) -> Result<(), String> {
-    start(entry, entry.exec.clone(), runner, path_var, logger)
+    start(entry, entry.exec.iter().map(OsString::from).collect(), runner, path_var, logger)
 }
 
 /// Starts `entry`'s app to open `file`, an absolute path.
 pub fn launch_with_file(
     entry: &Entry,
-    file: &str,
+    file: &Path,
     runner: &Runner,
     path_var: &str,
     logger: &Arc<Logger>,
 ) -> Result<(), String> {
     // A relative one could pass for an option (`-rf`).
-    if !file.starts_with('/') {
-        return Err(format!("{file} isn't an absolute path"));
+    if !file.is_absolute() {
+        return Err(format!("{} isn't an absolute path", file.display()));
     }
-    start(entry, entry.exec_with(file), runner, path_var, logger)
+    start(entry, entry.exec_with(file.as_os_str()), runner, path_var, logger)
 }
 
 /// Starts `entry`'s app as `argv`.
 fn start(
     entry: &Entry,
-    mut argv: Vec<String>,
+    mut argv: Vec<OsString>,
     runner: &Runner,
     path_var: &str,
     logger: &Arc<Logger>,
 ) -> Result<(), String> {
     if entry.terminal {
-        argv.splice(0..0, terminal(path_var)?);
+        argv.splice(0..0, terminal(path_var)?.into_iter().map(OsString::from));
     }
-    let program = find_program(&argv[0], path_var).ok_or_else(|| format!("{} isn't installed", argv[0]))?;
+    // The program comes from the entry's own text, so it's UTF-8; only a
+    // file to open may not be.
+    let name = argv[0].to_string_lossy().into_owned();
+    let program = find_program(&name, path_var).ok_or_else(|| format!("{name} isn't installed"))?;
     let home = nova_paths::home();
     // A folder that isn't there would fail the start.
     let dir = entry.path.clone().into_iter().chain(home).find(|dir| dir.is_dir()).unwrap_or_else(|| "/".into());
+    // systemd-run hands the command to systemd over D-Bus, whose strings
+    // must be UTF-8: a file named otherwise starts directly instead.
+    let runner = if argv.iter().all(|arg| arg.to_str().is_some()) { runner } else { &Runner::Direct };
     let mut command = match runner {
         Runner::Service(systemd_run) => {
             let mut command = Command::new(systemd_run);
@@ -125,11 +133,7 @@ fn start(
             // The session's PATH, below.
             // systemd expands `$NAME` in the command line again; doubled,
             // each `$` reaches the app as it was written.
-            command
-                .arg("--setenv=PATH")
-                .arg("--")
-                .arg(&program)
-                .args(argv[1..].iter().map(|arg| arg.replace('$', "$$")));
+            command.arg("--setenv=PATH").arg("--").arg(&program).args(argv[1..].iter().map(|arg| doubled_dollars(arg)));
             command
         }
         Runner::Direct => {
@@ -217,6 +221,19 @@ pub fn open(target: &Path, path_var: &str, logger: &Arc<Logger>) -> Result<(), S
     launch(&opener, &Runner::detect(path_var), path_var, logger)
 }
 
+/// `arg` with each `$` doubled, byte by byte, so a file name that isn't
+/// UTF-8 keeps its bytes.
+fn doubled_dollars(arg: &OsStr) -> OsString {
+    let mut doubled = Vec::with_capacity(arg.len());
+    for &byte in arg.as_bytes() {
+        doubled.push(byte);
+        if byte == b'$' {
+            doubled.push(b'$');
+        }
+    }
+    OsString::from_vec(doubled)
+}
+
 /// A name of letters, digits and `_`, not starting with a digit.
 fn plain_name(name: &str) -> bool {
     !name.starts_with(|c: char| c.is_ascii_digit())
@@ -283,12 +300,25 @@ mod tests {
         assert!(error.contains("didn't start"), "{error}");
         let started = find_program("true", &path_var).unwrap();
         assert_eq!(launch(&entry, &Runner::Service(started), &path_var, &logger), Ok(()));
+        // A file named in Latin-1 can't go through systemd's D-Bus, so the
+        // failing systemd-run is never asked.
+        let latin1 = Path::new(OsStr::from_bytes(b"/tmp/caf\xe9.md"));
+        let failing = find_program("false", &path_var).unwrap();
+        let opens = Entry { file_arg: crate::apps::desktop_entry::FileArg { index: 1, within: None }, ..entry };
+        assert_eq!(launch_with_file(&opens, latin1, &Runner::Service(failing), &path_var, &logger), Ok(()));
     }
 
     #[test]
     fn only_plain_variable_names_pass_to_the_service() {
         assert!(plain_name("WAYLAND_DISPLAY") && plain_name("_x1"));
         assert!(!plain_name("BASH_FUNC_x%%") && !plain_name("1A") && !plain_name(""));
+    }
+
+    /// systemd expands `$` again; a name that isn't UTF-8 keeps its bytes.
+    #[test]
+    fn dollars_are_doubled_byte_for_byte() {
+        let arg = OsStr::from_bytes(b"/tmp/caf\xe9 $HOME.png");
+        assert_eq!(doubled_dollars(arg).as_bytes(), b"/tmp/caf\xe9 $$HOME.png");
     }
 
     #[test]

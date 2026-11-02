@@ -1,7 +1,9 @@
 //! Opening files in apps, for Nova Files: what type a file is (the shared
 //! MIME database, `crate::mime`), which app opens it by default and which
 //! others can (`associations`), starting one with the file (`launch`), and
-//! making an app the new default for that type.
+//! making an app the new default for that type. Paths come from the
+//! socket as wire text (`nova_protocol::path_to_wire`), so a name that
+//! isn't UTF-8 opens too.
 //!
 //! The MIME database is its owner's, kept up to date (Nova Files shares it
 //! with its folder listing). The
@@ -15,7 +17,7 @@ use super::desktop_entry::Entry;
 use super::launch::{self, Runner};
 use crate::logger::Logger;
 use crate::mime::Mime;
-use nova_protocol::OpenWith;
+use nova_protocol::{OpenWith, wire_path};
 use std::path::{Component, Path};
 use std::sync::{Arc, Mutex};
 
@@ -48,6 +50,7 @@ impl Opener {
 
     /// Opens `path` in its type's default app.
     pub fn open(&self, path: &str) -> Result<(), String> {
+        let path = &wire_path(path);
         let types = self.types_of(path)?;
         let entry = {
             let state = self.apps.read();
@@ -61,6 +64,7 @@ impl Opener {
 
     /// Opens `path` in the app `id`.
     pub fn open_with(&self, path: &str, id: &str) -> Result<(), String> {
+        let path = &wire_path(path);
         self.types_of(path)?;
         let entry = self.apps.read().any_entry(id).cloned().ok_or_else(|| format!("{id} isn't installed"))?;
         self.launch(&entry, path)
@@ -69,7 +73,7 @@ impl Opener {
     /// The apps that can open `path`, the default first. Apps the launcher
     /// doesn't list only show when they're the default.
     pub fn choices(&self, path: &str) -> Result<OpenWith, String> {
-        let types = self.types_of(path)?;
+        let types = self.types_of(&wire_path(path))?;
         let associations = Associations::load(&self.places);
         let state = self.apps.read();
         let default = associations.default_app(&types, &state);
@@ -87,7 +91,7 @@ impl Opener {
     /// checks that it is now: a list with more say that something else
     /// keeps may still name another.
     pub fn set_default(&self, path: &str, id: &str) -> Result<(), String> {
-        let types = self.types_of(path)?;
+        let types = self.types_of(&wire_path(path))?;
         if self.apps.read().any_entry(id).is_none() {
             return Err(format!("{id} isn't installed"));
         }
@@ -108,17 +112,17 @@ impl Opener {
 
     /// `path`'s type and those it's a kind of, the nearest first. The
     /// path comes from the socket: it must be absolute, without `..`.
-    fn types_of(&self, path: &str) -> Result<Vec<String>, String> {
+    fn types_of(&self, path: &Path) -> Result<Vec<String>, String> {
         let plain = |part: Component| matches!(part, Component::RootDir | Component::Normal(_));
-        if !Path::new(path).is_absolute() || !Path::new(path).components().all(plain) {
-            return Err(format!("{path} isn't an absolute path"));
+        if !path.is_absolute() || !path.components().all(plain) {
+            return Err(format!("{} isn't an absolute path", path.display()));
         }
         let db = self.mime.current();
-        let mime = db.type_of(Path::new(path)).map_err(|e| format!("can't open {path}: {e}"))?;
+        let mime = db.type_of(path).map_err(|e| format!("can't open {}: {e}", path.display()))?;
         Ok(db.with_parents(&mime))
     }
 
-    fn launch(&self, entry: &Entry, path: &str) -> Result<(), String> {
+    fn launch(&self, entry: &Entry, path: &Path) -> Result<(), String> {
         launch::launch_with_file(entry, path, &self.runner, &self.path_var, &self.logger)
     }
 }
@@ -275,5 +279,27 @@ mod tests {
         assert!(opener.open(&format!("{}/../files/photo.png", machine.dir.join("files").display())).is_err());
         assert!(opener.open(&machine.dir.join("files/missing.png").to_string_lossy()).is_err());
         assert!(opener.open_with(&file, "missing.desktop").is_err());
+    }
+
+    /// A file named in Latin-1, as the listing sends it, reaches the app
+    /// byte for byte.
+    #[test]
+    fn a_name_that_isnt_utf8_opens() {
+        use std::os::unix::ffi::OsStrExt;
+        let machine = machine("opening-latin1", &[]);
+        let bin = machine.dir.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let opened = machine.dir.join("opened");
+        let program =
+            nova_test_support::write_program(&bin, "record", &format!("printf '%s' \"$1\" > {}", opened.display()));
+        app(&machine.dir, "record.desktop", &program.to_string_lossy(), "MimeType=image/png;\n");
+        wait_until(WAIT, "the new app", || machine.apps.read().any_entry("record.desktop").is_some());
+        let file = machine.dir.join("files").join(std::ffi::OsStr::from_bytes(b"caf\xe9 $1.png"));
+        std::fs::write(&file, b"\x89PNG").unwrap();
+        let wire = nova_protocol::wire_text(&file);
+        assert_eq!(machine.opener.choices(&wire).unwrap().mime, "image/png");
+        machine.opener.open(&wire).unwrap();
+        let sent = file.as_os_str().as_bytes();
+        wait_until(WAIT, "the app to get the file", || std::fs::read(&opened).is_ok_and(|got| got == sent));
     }
 }

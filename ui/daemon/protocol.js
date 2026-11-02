@@ -33,6 +33,9 @@ var FILES_SOLID_MAX = 100;
 // novad refuses a files_tree with more opened or closed folders.
 var FILES_TREE_MAX_FOLDERS = 256;
 
+// Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.
+var RAW_BYTE_BASE = 63232;
+
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 

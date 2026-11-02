@@ -4,6 +4,7 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 import "navigation.js" as Navigation
+import "paths.js" as Paths
 
 // The sidebar's folder tree, as novad lays it out for the window
 // (files_tree): open down to the window's folder, which is marked and
@@ -161,7 +162,7 @@ ListView {
                 font.weight: item.current ? Tokens.weightLabel : Tokens.weightBody
                 color: item.hidden ? Tokens.filesFaint : Tokens.fg
                 textFormat: Text.PlainText
-                text: item.home ? qsTr("Home") : item.name
+                text: item.home ? qsTr("Home") : Paths.shown(item.name)
             }
         }
 

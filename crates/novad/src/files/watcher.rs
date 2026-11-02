@@ -17,7 +17,7 @@ use crate::lock;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -43,6 +43,8 @@ pub struct Watcher {
     needs: Mutex<HashMap<PathBuf, Need>>,
     routes: Mutex<HashMap<u64, Route>>,
     next_route: AtomicU64,
+    /// Its thread still reads the instance.
+    reading: AtomicBool,
 }
 
 #[derive(Default)]
@@ -104,10 +106,17 @@ impl Watcher {
             needs: Mutex::default(),
             routes: Mutex::default(),
             next_route: AtomicU64::new(0),
+            reading: AtomicBool::new(true),
         });
         let reader = Arc::clone(&watcher);
         std::thread::Builder::new().name("novad-files-watch".into()).spawn(move || reader.run())?;
         Ok(watcher)
+    }
+
+    /// Whether its thread still reads the instance: not once it stopped or
+    /// failed, when views need a new one.
+    pub fn is_reading(&self) -> bool {
+        self.reading.load(Ordering::Acquire)
     }
 
     /// Ends the thread; views following get `Wait::Stopped`.
@@ -131,6 +140,11 @@ impl Watcher {
     }
 
     fn run(&self) {
+        self.read_all();
+        self.reading.store(false, Ordering::Release);
+    }
+
+    fn read_all(&self) {
         loop {
             let changes = match self.inotify.read() {
                 Ok(Some(changes)) => changes,
@@ -154,25 +168,16 @@ impl Watcher {
     }
 
     /// Watches `folder` and every folder above it, counting this view.
+    /// Each is watched again even when counted, in case its watch went
+    /// (the folder deleted) before the views counting it closed.
     fn hold(&self, folder: &Path) -> std::io::Result<()> {
         let mut needs = lock(&self.needs);
-        let need = needs.entry(folder.to_owned()).or_default();
-        if need.folders == 0
-            && let Err(e) = self.inotify.watch_for(folder, FOLDER)
-        {
-            if need.ancestors == 0 {
-                needs.remove(folder);
-            }
-            return Err(e);
-        }
-        need.folders += 1;
+        self.inotify.watch_for(folder, FOLDER)?;
+        needs.entry(folder.to_owned()).or_default().folders += 1;
         for ancestor in folder.ancestors().skip(1) {
-            let need = needs.entry(ancestor.to_owned()).or_default();
-            if need.folders + need.ancestors == 0 {
-                // Best effort: one that can't be listed only isn't followed.
-                let _ = self.inotify.watch_for(ancestor, ANCESTOR);
-            }
-            need.ancestors += 1;
+            // Best effort: one that can't be listed only isn't followed.
+            let _ = self.inotify.watch_for(ancestor, needs.get(ancestor).map_or(ANCESTOR, Need::mask));
+            needs.entry(ancestor.to_owned()).or_default().ancestors += 1;
         }
         Ok(())
     }
@@ -185,7 +190,8 @@ impl Watcher {
         for ancestor in folder.ancestors().skip(1) {
             let _ = self.inotify.watch_for(ancestor, mask(ancestor));
         }
-        self.inotify.watch_for(folder, mask(folder)).inspect_err(|_| self.inotify.unwatch(folder))
+        // A watch that fails keeps the one before: other views may share it.
+        self.inotify.watch_for(folder, mask(folder))
     }
 
     /// Undoes [`Watcher::hold`].
@@ -213,7 +219,7 @@ impl Route {
         for change in &changes.found {
             if change.path.parent() == Some(&self.folder) {
                 seen.names.extend(change.path.file_name().map(ToOwned::to_owned));
-            } else if self.folder.starts_with(&change.path) {
+            } else if change.mask & inotify::ENTRIES != 0 && self.folder.starts_with(&change.path) {
                 // An entry on the way to the folder came or went.
                 seen.moved = true;
             }
