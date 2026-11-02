@@ -55,9 +55,11 @@ Scope {
             return null;
         }
         const created = component.createObject(host);
-        // A held view that's let go may have to go now.
-        if (created && created.heldChanged)
-            created.heldChanged.connect(host.sync);
+        // A held view that's let go may have to go now. Only some views
+        // have `held`, so the lint can't know it.
+        const heldChanged = created?.heldChanged; // qmllint disable missing-property
+        if (heldChanged)
+            heldChanged.connect(host.sync);
         return created;
     }
 }
