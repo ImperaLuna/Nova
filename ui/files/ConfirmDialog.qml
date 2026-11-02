@@ -2,8 +2,8 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import "../theme"
-import "listing.js" as Listing
 import "paths.js" as Paths
+import "listing.js" as Listing
 import "trash.js" as Trash
 
 // The dialog in the middle of a Nova Files window that asks before rows

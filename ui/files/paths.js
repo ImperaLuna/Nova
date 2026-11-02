@@ -1,7 +1,8 @@
 .pragma library
 .import "../daemon/protocol.js" as Protocol
 
-// Nova Files' path helpers, kept apart so ui/tests can check them. Paths
+// Nova Files' path helpers, kept apart so ui/tests can check them: the
+// address bar's parts, the window title, and an entry's path. Paths
 // and names from novad are wire text: a byte of a name that isn't UTF-8
 // comes as a stand-in character (Protocol.RAW_BYTE_BASE + byte), so they
 // join and go back to novad as plain strings; only `shown` text is for
@@ -71,4 +72,9 @@ function parent(folder) {
         return "";
     const cut = folder.lastIndexOf("/");
     return cut <= 0 ? "/" : folder.slice(0, cut);
+}
+
+// The path of the entry `name` in `folder` (absolute), as wire text.
+function child(folder, name) {
+    return (folder === "/" ? "" : folder) + "/" + name;
 }

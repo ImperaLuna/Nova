@@ -1,23 +1,19 @@
 .pragma library
 
-// Sizes as Nova writes them, in steps of 1024: short "9.4G" for tight
-// spots, "2.4 GB" for lists and dialogs. One decimal under 10.
+// Sizes in bytes as people read them, shared by every list that shows one
+// (quick settings' resources and network pages, Nova Files' Size column).
 
-var UNITS = ["B", "K", "M", "G", "T"];
-var STEP = 1024;
-// Past this a size moves up a unit, so it never reads "1012K".
-var MOST_DIGITS = 1000;
-
-// A size in bytes, short: "9.4G", "780M", "42K".
+// A size in bytes, short: "9.4G", "780M", "42K". One decimal under 10.
 function shortBytes(bytes) {
+    var units = ["B", "K", "M", "G", "T"];
     var value = bytes;
     var unit = 0;
-    while (value >= MOST_DIGITS && unit < UNITS.length - 1) {
-        value /= STEP;
+    while (value >= 1000 && unit < units.length - 1) {
+        value /= 1024;
         unit++;
     }
     var digits = value < 10 && unit > 0 ? 1 : 0;
-    return value.toFixed(digits) + UNITS[unit];
+    return value.toFixed(digits) + units[unit];
 }
 
 // A size in bytes for a list: "2.4 GB", "310 MB".

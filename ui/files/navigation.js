@@ -57,8 +57,8 @@ function toggle(kept, path, open, most) {
 
 // Makes `model` (a ListModel of tree rows) hold `rows` (from files_tree)
 // in order, removing and inserting only the rows that come or go, so the
-// rest stay put and only new ones animate in. Rows keep the tree's order
-// from one answer to the next, so the ones kept are already in order.
+// rest stay put and only new ones animate in. A kept row that changed
+// place is moved, never added twice.
 function sync(model, rows) {
     const wanted = {};
     for (const row of rows)
@@ -68,9 +68,19 @@ function sync(model, rows) {
             model.remove(i);
     }
     for (let i = 0; i < rows.length; i++) {
-        if (i < model.count && model.get(i).path === rows[i].path)
-            model.set(i, rows[i]);
-        else
+        let at = -1;
+        for (let k = i; k < model.count; k++) {
+            if (model.get(k).path === rows[i].path) {
+                at = k;
+                break;
+            }
+        }
+        if (at === -1) {
             model.insert(i, rows[i]);
+            continue;
+        }
+        if (at !== i)
+            model.move(at, i, 1);
+        model.set(i, rows[i]);
     }
 }

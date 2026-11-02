@@ -10,13 +10,15 @@ Rectangle {
     id: row
 
     required property TrashModel model
+    // How solid the window frame is (0..1): the row fades into it.
+    property real solid: 0
 
     signal emptyRequested
     signal restoreRequested
     signal eraseRequested
 
     implicitHeight: actions.implicitHeight + Tokens.filesCommandPadTop + Tokens.gap
-    color: Tokens.surfaceRaised
+    color: Tokens.alpha(Tokens.surfaceRaised, Tokens.raisedOpacity * (1 - solid))
 
     component Separator: Rectangle {
         anchors.verticalCenter: parent?.verticalCenter

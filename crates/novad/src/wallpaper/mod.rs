@@ -865,7 +865,7 @@ impl Shared {
     /// Wakes the thread whenever a file in `folder` is written: the
     /// engine's frame is, once, after each start.
     fn watch_frames(self: &Arc<Self>, folder: &Path) -> std::io::Result<inotify::Stopper> {
-        let mut watcher = inotify::Inotify::new(libc::IN_CLOSE_WRITE | libc::IN_MOVED_TO)?;
+        let watcher = inotify::Inotify::new(libc::IN_CLOSE_WRITE | libc::IN_MOVED_TO)?;
         watcher.watch(folder)?;
         let stopper = watcher.stopper();
         let shared = Arc::clone(self);

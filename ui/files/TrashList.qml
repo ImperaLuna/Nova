@@ -11,11 +11,14 @@ import "trash.js" as Trash
 // Size, after Windows' Recycle Bin) over every trashed item, the last
 // trashed first, and the count at the foot. Click, Ctrl and Shift pick
 // items, the arrow keys move, Ctrl+A picks all, Delete asks to delete the
-// picked ones for good. A trashed item doesn't open.
+// picked ones for good. A trashed item doesn't open. Like the file list,
+// it sits on its own glass or, as `solid` (0..1) rises, the theme's solid
+// list surface.
 Item {
     id: list
 
     required property TrashModel model
+    property real solid: 0
     readonly property var columns: [qsTr("Original location"), qsTr("Date deleted"), qsTr("Size")]
     readonly property real nameWidth: headerRow.width - Tokens.filesTrashColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
     // When the Date deleted column was last worked out.
@@ -35,6 +38,11 @@ Item {
         font.weight: Tokens.weightLabel
         color: Tokens.filesFaint
         elide: Text.ElideRight
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: Tokens.mix(Tokens.glass, Tokens.filesSolidList, list.solid)
     }
 
     Timer {

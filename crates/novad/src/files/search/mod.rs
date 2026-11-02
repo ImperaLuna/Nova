@@ -32,7 +32,7 @@ mod walk;
 use crate::files::folder::read_entry;
 use crate::inotify::{self, Changes, Inotify, Stopper};
 use crate::logger::Logger;
-use crate::mime::MimeDb;
+use crate::mime::Mime;
 use index::Index;
 use matching::Query;
 use nova_protocol::{FILES_SEARCH_MAX_CHARS, FILES_SEARCH_MAX_RESULTS, FileSearch, FoundFile, wire_path, wire_text};
@@ -91,7 +91,7 @@ pub struct Search {
 /// What searches read: the index, none until it's built.
 struct Shared {
     index: RwLock<Option<Index>>,
-    mime: Arc<MimeDb>,
+    mime: Arc<Mime>,
 }
 
 /// Answers searches; cheap to clone into a request's own thread.
@@ -100,7 +100,7 @@ pub struct Searcher(Arc<Shared>);
 
 impl Search {
     /// Starts building the index of `sources`' folders.
-    pub fn start(sources: Sources, logger: Arc<Logger>, mime: Arc<MimeDb>) -> Self {
+    pub fn start(sources: Sources, logger: Arc<Logger>, mime: Arc<Mime>) -> Self {
         let shared = Arc::new(Shared { index: RwLock::new(None), mime });
         let started = Inotify::new(WATCHED).and_then(|watcher| {
             let stopper = watcher.stopper();
@@ -137,11 +137,12 @@ impl Searcher {
         };
         let (hits, total) = index.search(&query, FILES_SEARCH_MAX_RESULTS);
         drop(held);
+        let mime = self.0.mime.current();
         let results = hits
             .into_iter()
             .filter_map(|hit| {
                 let name = wire_path(&hit.name);
-                let entry = read_entry(&wire_path(&hit.folder), name.as_os_str(), &self.0.mime)?;
+                let entry = read_entry(&wire_path(&hit.folder), name.as_os_str(), &mime)?;
                 Some(FoundFile {
                     folder: hit.folder,
                     marks: query.marks(&entry.name),
@@ -353,7 +354,8 @@ mod tests {
             prepare(&dir.join("home"));
             let hub = Arc::new(crate::hub::Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, hub).unwrap());
-            let search = Search::start(Sources::under(&dir), logger, Arc::new(MimeDb::default()));
+            let mime = Mime::follow(Vec::new(), Arc::clone(&logger));
+            let search = Search::start(Sources::under(&dir), logger, mime);
             let fixture = Self { dir, search };
             wait_until(WAIT, "the index is built", || fixture.find("").ready);
             fixture

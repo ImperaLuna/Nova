@@ -33,11 +33,17 @@ var FILES_SEARCH_MAX_CHARS = 200;
 // Most results a files_search answers with.
 var FILES_SEARCH_MAX_RESULTS = 200;
 
-// Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.
-var RAW_BYTE_BASE = 63232;
+// A files_look part this high is fully solid; 0 is glass.
+var FILES_SOLID_MAX = 100;
 
 // novad refuses a files_tree with more opened or closed folders.
 var FILES_TREE_MAX_FOLDERS = 256;
+
+// Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.
+var RAW_BYTE_BASE = 63232;
+
+// novad closes the connection on a longer request line.
+var REQUEST_MAX_BYTES = 65536;
 
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
@@ -117,11 +123,11 @@ var CMD_FILES_OPEN_WITH = "files_open_with";
 var CMD_FILES_SET_DEFAULT = "files_set_default";
 var CMD_FILES_OPEN = "files_open";
 var CMD_FILES_CLOSE = "files_close";
+var CMD_FILES_TREE = "files_tree";
+var CMD_FILES_PLACES = "files_places";
 var CMD_FILES_TRANSFER = "files_transfer";
 var CMD_FILES_TRANSFER_CANCEL = "files_transfer_cancel";
 var CMD_FILES_TRANSFER_ANSWER = "files_transfer_answer";
-var CMD_FILES_TREE = "files_tree";
-var CMD_FILES_PLACES = "files_places";
 var CMD_FILES_TRASH = "files_trash";
 var CMD_FILES_DELETE = "files_delete";
 var CMD_FILES_TRASH_LIST = "files_trash_list";
@@ -163,6 +169,7 @@ var EVENT_FILES_WINDOW = "files_window";
 var EVENT_FILES_PAGE = "files_page";
 var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
+var EVENT_FILES_LOOK = "files_look";
 var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
 var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
@@ -288,6 +295,14 @@ var FOLDER_INSERT = "insert";
 var FOLDER_REMOVE = "remove";
 var FOLDER_UPDATE = "update";
 
+// The places on top of Nova Files' sidebar (PlaceKind).
+var PLACE_HOME = "home";
+var PLACE_DESKTOP = "desktop";
+var PLACE_DOCUMENTS = "documents";
+var PLACE_DOWNLOADS = "downloads";
+var PLACE_PICTURES = "pictures";
+var PLACE_TRASH = "trash";
+
 // How files_eject went (EjectOutcome).
 var EJECT_EJECTED = "ejected";
 var EJECT_BUSY = "busy";
@@ -308,14 +323,6 @@ var TRANSFER_FAILED = "failed";
 var CLASH_REPLACE = "replace";
 var CLASH_MERGE = "merge";
 var CLASH_SKIP = "skip";
-
-// The places on top of Nova Files' sidebar (PlaceKind).
-var PLACE_HOME = "home";
-var PLACE_DESKTOP = "desktop";
-var PLACE_DOCUMENTS = "documents";
-var PLACE_DOWNLOADS = "downloads";
-var PLACE_PICTURES = "pictures";
-var PLACE_TRASH = "trash";
 
 // END GENERATED
 

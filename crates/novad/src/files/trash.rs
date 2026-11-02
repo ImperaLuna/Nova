@@ -11,9 +11,9 @@
 //! and when, in local time. The info file is made first, with create-new:
 //! that is how two apps trashing at once each get their own name.
 //!
-//! Over the socket an item is named by its id: its info file's path, as
-//! wire text (`nova_protocol::wire_text`), so names that aren't UTF-8
-//! still round-trip; names and folders go as wire text too. Every id is
+//! Over the socket an item is named by its id: its info file's path,
+//! percent-escaped, so names that aren't UTF-8 still round-trip; names
+//! and folders go as wire text (`nova_protocol::wire_text`). Every id is
 //! checked to be an info file in a trash that exists now before anything
 //! is touched, and every path to trash or delete must be absolute with no
 //! `..`, so nothing from the socket reaches outside what it names.
@@ -29,9 +29,9 @@ use crate::files::folder;
 use crate::hub::Hub;
 use crate::inotify::{self, Inotify, Stopper};
 use crate::logger::Logger;
-use crate::mime::MimeDb;
+use crate::mime::Mime;
 use crate::notifications::image::percent_decoded;
-use nova_protocol::{Event, FILES_PATH_MAX_BYTES, TrashItem, wire_path, wire_text};
+use nova_protocol::{Event, FILES_PATH_MAX_WIRE_BYTES, TrashItem, wire_text};
 use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -65,6 +65,10 @@ const PRIVATE_DIR_MODE: u32 = 0o700;
 const PRIVATE_FILE_MODE: u32 = 0o600;
 /// Names tried for one item before giving up: `name`, `name.2`, and on.
 const MOST_NAME_TRIES: u32 = 10_000;
+/// The longest name a folder entry takes on Linux's filesystems.
+const NAME_MAX_BYTES: usize = 255;
+/// Room for the `.N` a taken name gets, up to `.10000`.
+const NAME_TRY_ROOM: usize = 6;
 /// Bytes kept as they are in an info file's path; the rest are escaped.
 const PATH_SAFE: &[u8] = b"-_.~/";
 /// Drives whose trash is looked for: local disks and sticks. Network and
@@ -87,7 +91,7 @@ pub struct Trash {
     /// The mount table (`/proc/self/mountinfo`).
     mounts: PathBuf,
     uid: u32,
-    mime: Arc<MimeDb>,
+    mime: Arc<Mime>,
 }
 
 /// One trash: `files/` and `info/` under `dir`.
@@ -124,7 +128,7 @@ impl Found {
 }
 
 impl Trash {
-    pub fn new(home: Option<PathBuf>, mounts: PathBuf, mime: Arc<MimeDb>) -> Self {
+    pub fn new(home: Option<PathBuf>, mounts: PathBuf, mime: Arc<Mime>) -> Self {
         // SAFETY: no arguments; it can't fail.
         let uid = unsafe { libc::getuid() };
         Self { home, mounts, uid, mime }
@@ -161,7 +165,10 @@ impl Trash {
             if let Some(folder) = original.parent() {
                 std::fs::create_dir_all(folder).map_err(|e| failed("restore", &original, &e))?;
             }
-            std::fs::rename(found.file(), &original).map_err(|e| failed("restore", &original, &e))?;
+            rename_new(&found.file(), &original).map_err(|e| match e.raw_os_error() {
+                Some(libc::EEXIST) => taken(&original, original.is_dir()),
+                _ => failed("restore", &original, &e),
+            })?;
             // The item is back; a stale info file is only ignored by
             // every app.
             let _ = std::fs::remove_file(&found.info);
@@ -191,10 +198,8 @@ impl Trash {
                     problems.push(e);
                 }
             }
-            // Info files left without an item, which every app ignores.
-            for entry in std::fs::read_dir(&info).into_iter().flatten().flatten() {
-                let _ = std::fs::remove_file(entry.path());
-            }
+            // Info files without an item are left: one may be another
+            // app's, trashing its item right now.
             let _ = std::fs::remove_file(root.dir.join(DIRECTORY_SIZES));
         }
         joined(problems)
@@ -227,19 +232,30 @@ impl Trash {
         top.join(format!("{USER_TRASH_PREFIX}{}", self.uid))
     }
 
-    /// `dir` is a real folder of this user's: never a link someone else
-    /// put on a shared stick.
+    /// `dir` is a real folder of this user's, and so are its `files` and
+    /// `info` where they exist: never a link someone else put on a shared
+    /// stick, which emptying the trash would follow.
     fn is_ours(&self, dir: &Path) -> bool {
-        dir.symlink_metadata().is_ok_and(|meta| meta.is_dir() && meta.uid() == self.uid)
+        let owned = |path: &Path| path.symlink_metadata().is_ok_and(|meta| meta.is_dir() && meta.uid() == self.uid);
+        owned(dir)
+            && [FILES, INFO].iter().all(|child| {
+                let path = dir.join(child);
+                path.symlink_metadata().is_err() || owned(&path)
+            })
     }
 
-    fn trash_one(&self, path: &Path) -> Result<(), String> {
-        let meta = path.symlink_metadata().map_err(|e| failed("move to the trash", path, &e))?;
+    fn trash_one(&self, asked: &Path) -> Result<(), String> {
+        let meta = asked.symlink_metadata().map_err(|e| failed("move to the trash", asked, &e))?;
+        // Its folder as the mount table spells it (`~/Stick` may be a link
+        // to `/run/media/…`), so its drive's top is found; the item itself
+        // stays as named, so a link goes to the trash, not what it points to.
+        let name = asked.file_name().ok_or_else(|| format!("{} can't be moved to the trash", asked.display()))?;
+        let folder = asked.parent().unwrap_or(asked);
+        let path = &folder.canonicalize().map_err(|e| failed("move to the trash", asked, &e))?.join(name);
         let root = self.root_for(path, meta.dev())?;
         if root.dir.starts_with(path) || path.starts_with(&root.dir) {
             return Err(format!("{} holds the trash", path.display()));
         }
-        let name = path.file_name().ok_or_else(|| format!("{} can't be moved to the trash", path.display()))?;
         let original = match &root.top {
             Some(top) => path.strip_prefix(top).unwrap_or(path),
             None => path,
@@ -263,6 +279,12 @@ impl Trash {
             }
         }
         let top = top_of(path, dev);
+        // A trash on a drive the mount table doesn't list (tmpfs, a
+        // subvolume) would never be listed, so its items would be lost.
+        let tops = std::fs::read_to_string(&self.mounts).map(|table| disk_mounts(&table)).unwrap_or_default();
+        if !tops.contains(&top) {
+            return Err(format!("{} can't go to the trash: its drive has no trash", path.display()));
+        }
         if let Some(dir) = self.shared_trash(&top)
             && make_trash(&dir).is_ok()
             && self.is_ours(&dir)
@@ -280,18 +302,27 @@ impl Trash {
     /// The items in `root`: each info file with its item still there.
     fn items(&self, root: &Root) -> Vec<TrashItem> {
         let files = root.files();
+        let mime = self.mime.current();
         let Ok(found) = std::fs::read_dir(root.info()) else { return Vec::new() };
         found
             .flatten()
             .filter_map(|entry| {
                 let info = entry.path();
-                let name = info.file_name()?.as_bytes().strip_suffix(INFO_SUFFIX.as_bytes())?;
+                let name = stored_of(info.file_name()?)?;
                 let (original, deleted_ms) = read_info(&info, root).ok()?;
-                let mut entry = folder::read_entry(&files, OsStr::from_bytes(name), &self.mime)?;
-                entry.name = wire_text(original.file_name().unwrap_or(original.as_os_str()));
+                let mut entry = folder::read_entry(&files, OsStr::from_bytes(name), &mime)?;
+                let shown = original.file_name().unwrap_or(original.as_os_str());
+                entry.name = wire_text(shown);
+                // The item may be named `name.2` in the trash; its type is
+                // its original name's.
+                if !entry.dir
+                    && let Ok(metadata) = files.join(OsStr::from_bytes(name)).symlink_metadata()
+                {
+                    entry.mime = mime.type_by_name(&shown.to_string_lossy(), &metadata).to_owned();
+                }
                 entry.hidden = folder::is_hidden(&entry.name);
                 let folder = wire_text(original.parent().unwrap_or(Path::new("/")));
-                Some(TrashItem { id: wire_text(&info), folder, deleted_ms, entry })
+                Some(TrashItem { id: escape(info.as_os_str()), folder, deleted_ms, entry })
             })
             .collect()
     }
@@ -305,7 +336,7 @@ pub struct Watch {
 
 impl Watch {
     pub fn start(trash: Arc<Trash>, hub: Arc<Hub>, logger: Arc<Logger>) -> Option<Self> {
-        let watcher = match Inotify::new(inotify::ENTRIES) {
+        let watcher = match Inotify::new(inotify::ENTRIES | inotify::ITSELF) {
             Ok(watcher) => watcher,
             Err(e) => {
                 logger.warn(LOG_SOURCE, &format!("Can't follow the trash: {e}"));
@@ -336,13 +367,15 @@ impl Watch {
     }
 }
 
-fn follow(trash: &Trash, mut watcher: Inotify, hub: &Hub) {
+fn follow(trash: &Trash, watcher: Inotify, hub: &Hub) {
     let mut watched: Vec<PathBuf> = Vec::new();
     loop {
         // Trashes that came or went since (a drive plugged in, a drive's
         // first trashed item): follow them, and say so, since their items
         // come or go from the list.
-        let infos: Vec<PathBuf> = trash.roots().iter().map(Root::info).collect();
+        // Info files and items both, as another app may move an item in
+        // well after its info file.
+        let infos: Vec<PathBuf> = trash.roots().iter().flat_map(|root| [root.info(), root.files()]).collect();
         let mut changed = false;
         for gone in watched.iter().filter(|dir| !infos.contains(dir)) {
             watcher.unwatch(gone);
@@ -378,7 +411,7 @@ fn follow(trash: &Trash, mut watcher: Inotify, hub: &Hub) {
 /// `path` from the socket, once it's absolute, short enough and has no
 /// `.` or `..` in it.
 fn checked(path: &str) -> Result<PathBuf, String> {
-    if path.len() > FILES_PATH_MAX_BYTES || path.contains('\0') {
+    if path.len() > FILES_PATH_MAX_WIRE_BYTES || path.contains('\0') {
         return Err("Not a path".into());
     }
     super::target::clean(path)
@@ -421,9 +454,35 @@ fn make_trash(dir: &Path) -> std::io::Result<()> {
 
 /// A name in `root` for an item named `name`, claimed by writing its info
 /// file with `contents`: the name and the info file's path.
+/// The stored item an info file named `info_name` stands for: never empty,
+/// `.` or `..`, which would name the trash's `files` folder or the trash
+/// itself (a crafted drive's `...trashinfo`).
+fn stored_of(info_name: &OsStr) -> Option<&[u8]> {
+    let name = info_name.as_bytes().strip_suffix(INFO_SUFFIX.as_bytes())?;
+    (!matches!(name, b"" | b"." | b"..")).then_some(name)
+}
+
+/// `name`, cut short (at a character, when it's UTF-8) so its info file's
+/// name, with a `.N` for a taken name, still fits in a folder entry. The
+/// full name is kept in the info file's `Path`.
+fn stored_name(name: &OsStr) -> OsString {
+    let most = NAME_MAX_BYTES - INFO_SUFFIX.len() - NAME_TRY_ROOM;
+    let bytes = name.as_bytes();
+    if bytes.len() <= most {
+        return name.to_owned();
+    }
+    let mut end = most;
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+    }
+    OsStr::from_bytes(&bytes[..end]).to_owned()
+}
+
 fn claim(root: &Root, name: &OsStr, contents: &str) -> std::io::Result<(OsString, PathBuf)> {
     for attempt in 1..=MOST_NAME_TRIES {
-        let mut stored = name.to_owned();
+        let mut stored = stored_name(name);
         if attempt > 1 {
             stored.push(format!(".{attempt}"));
         }
@@ -546,11 +605,10 @@ fn escape(bytes: &OsStr) -> String {
 /// The item `id` names, once it's an info file in one of `roots`.
 fn find(roots: &[Root], id: &str) -> Result<Found, String> {
     let gone = || "That item is no longer in the trash".to_string();
-    let info = wire_path(id);
+    let info = PathBuf::from(OsString::from_vec(percent_decoded(id).ok_or_else(gone)?));
     let root = roots.iter().find(|root| info.parent() == Some(root.info().as_path())).ok_or_else(gone)?;
-    let name =
-        info.file_name().and_then(|name| name.as_bytes().strip_suffix(INFO_SUFFIX.as_bytes())).ok_or_else(gone)?;
-    if name.is_empty() || !info.is_file() {
+    let name = info.file_name().and_then(stored_of).ok_or_else(gone)?;
+    if !info.is_file() {
         return Err(gone());
     }
     Ok(Found { root: root.clone(), name: OsStr::from_bytes(name).to_owned(), info })
@@ -573,9 +631,30 @@ fn remove(path: &Path) -> std::io::Result<()> {
     if path.symlink_metadata()?.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) }
 }
 
+/// Renames `from` to `to`, failing with EEXIST when `to` is there, even
+/// if it came after a check.
+fn rename_new(from_path: &Path, to_path: &Path) -> std::io::Result<()> {
+    let from = std::ffi::CString::new(from_path.as_os_str().as_bytes())?;
+    let to = std::ffi::CString::new(to_path.as_os_str().as_bytes())?;
+    // SAFETY: both paths are NUL-terminated C strings that outlive the call.
+    let done =
+        unsafe { libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE) };
+    if done == 0 {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    // A filesystem without RENAME_NOREPLACE (some network ones): the check
+    // made before is all there is.
+    if error.raw_os_error() == Some(libc::EINVAL) {
+        return std::fs::rename(from_path, to_path);
+    }
+    Err(error)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nova_protocol::LogLevel;
     use nova_test_support::TempDir;
 
     /// A home trash in a temp folder, with no drives.
@@ -593,7 +672,8 @@ mod tests {
             let dir = TempDir::new(&format!("files-trash-{name}"));
             std::fs::create_dir_all(dir.join("home/Documents")).unwrap();
             std::fs::write(dir.join("mountinfo"), table).unwrap();
-            let mime = Arc::new(MimeDb::load(&[]).0);
+            let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::default()).unwrap());
+            let mime = Mime::follow(Vec::new(), logger);
             let trash = Trash::new(Some(dir.join("home/.local/share/Trash")), dir.join("mountinfo"), mime);
             Self { dir, trash }
         }
@@ -610,6 +690,31 @@ mod tests {
             std::fs::write(self.path(name), name).unwrap();
             self.text(name)
         }
+    }
+
+    #[test]
+    fn a_name_too_long_for_its_info_file_is_cut_short_in_the_trash() {
+        let fixture = Fixture::new("long");
+        let long = "é".repeat(123);
+        let file = fixture.write(&format!("home/Documents/{long}"));
+        fixture.trash.trash(std::slice::from_ref(&file)).unwrap();
+        let items = fixture.trash.list();
+        assert_eq!(items[0].entry.name, long, "the full name comes from the info file");
+        fixture.trash.restore(std::slice::from_ref(&items[0].id)).unwrap();
+        assert!(Path::new(&file).exists());
+    }
+
+    #[test]
+    fn an_item_in_a_linked_folder_goes_to_the_trash_itself() {
+        let fixture = Fixture::new("linked");
+        std::os::unix::fs::symlink(fixture.path("home/Documents"), fixture.path("home/Linked")).unwrap();
+        fixture.write("home/Documents/a.txt");
+        let through_link = fixture.text("home/Linked/a.txt");
+        fixture.trash.trash(std::slice::from_ref(&through_link)).unwrap();
+        assert!(!fixture.path("home/Documents/a.txt").exists());
+        assert!(fixture.path("home/Linked").exists(), "the link stays");
+        fixture.trash.restore(&[fixture.trash.list()[0].id.clone()]).unwrap();
+        assert!(fixture.path("home/Documents/a.txt").exists());
     }
 
     #[test]
@@ -779,5 +884,40 @@ mod tests {
         assert_eq!(items[0].folder, top.join("Music").display().to_string());
         fixture.trash.restore(std::slice::from_ref(&items[0].id)).unwrap();
         assert!(top.join("Music/song.flac").is_file());
+    }
+
+    #[test]
+    fn a_drive_trash_whose_files_are_a_link_is_never_used() {
+        let fixture = Fixture::new("crafted");
+        let top = fixture.path("stick");
+        let mountinfo = format!("40 35 8:17 / {} rw - exfat /dev/sdc1 rw\n", top.display());
+        std::fs::write(fixture.path("mountinfo"), mountinfo).unwrap();
+        let elsewhere = fixture.path("home/Documents");
+        std::fs::write(elsewhere.join("keep.txt"), b"").unwrap();
+        let dir = fixture.trash.user_trash(&top);
+        std::fs::create_dir_all(dir.join(INFO)).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, dir.join(FILES)).unwrap();
+        std::fs::write(dir.join(INFO).join("keep.txt.trashinfo"), "[Trash Info]\nPath=keep.txt\n").unwrap();
+
+        assert!(fixture.trash.list().is_empty());
+        fixture.trash.empty().unwrap();
+        assert!(elsewhere.join("keep.txt").exists(), "emptying never follows the link");
+    }
+
+    #[test]
+    fn info_files_for_dot_names_are_never_items() {
+        let fixture = Fixture::new("dots");
+        let trash = fixture.path("home/.local/share/Trash");
+        make_trash(&trash).unwrap();
+        std::fs::write(trash.join("files/kept.txt"), b"").unwrap();
+        std::fs::write(trash.join("info/kept.txt.trashinfo"), "[Trash Info]\nPath=/tmp/kept.txt\n").unwrap();
+        for dots in ["..", "."] {
+            std::fs::write(trash.join(format!("info/{dots}.trashinfo")), "[Trash Info]\nPath=/tmp/x\n").unwrap();
+        }
+        let items = fixture.trash.list();
+        assert_eq!(items.len(), 1, "only kept.txt");
+        let dots = escape(trash.join("info/...trashinfo").as_os_str());
+        assert!(fixture.trash.erase(&[dots]).unwrap_err().contains("no longer"));
+        assert!(trash.join("files/kept.txt").exists());
     }
 }

@@ -3,28 +3,34 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import "../theme"
+import "service"
 import "paths.js" as Paths
 import "trash.js" as Trash
-import "service"
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
-// glass all through, showing `folder` with `select` selected. The
-// navigation row, the command row, then the sidebar beside the file list,
-// with its copies and moves over them all. At the trash, the trash's
-// command row and list take the place of the folder's, and anything
-// deleted for good is asked about first (ConfirmDialog). A drive's menu
-// and the dialog when one can't be ejected lie over it all.
+// showing `folder` with `select` selected. The navigation row, the command
+// row, then the sidebar beside the file list, with its copies and moves
+// over them all; opening a folder in the list shows it in the same window.
+// At the trash, the trash's command row and list take the place of the
+// folder's, and anything deleted for good is asked about first
+// (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
+// lie over it all.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
-// Alt+Right, Alt+Up and the mouse's back and forward buttons too).
+// Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
+// frame and its file list each go from glass to solid as config.toml's
+// [files] says, live. Each draws its own background, so one never shows
+// through the other.
 FloatingWindow {
     id: window
 
     required property string folder
     property var select: []
     readonly property Navigator navigator: Navigator {
+        hidden: list.showHidden
         onFolderChanged: window.folder = folder
     }
+    readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
     // What the confirm dialog asks, and what a yes does: {asking, act}.
@@ -35,13 +41,7 @@ FloatingWindow {
     title: inTrash ? Trash.name() : Paths.folderName(folder)
     implicitWidth: Tokens.filesWindowWidth
     implicitHeight: Tokens.filesWindowHeight
-    color: Tokens.glass
-
-    // Copies or moves (a Protocol.TRANSFER_* mode) `sources` (absolute
-    // paths) into the folder `folder`, showing how it goes in this window.
-    function transfer(mode: string, sources: var, folder: string) {
-        transfers.start(mode, sources, folder);
-    }
+    color: "transparent"
 
     // Moves the rows (the file list's) in the folder shown to the trash, at
     // once: Delete.
@@ -109,6 +109,8 @@ FloatingWindow {
             act?.();
         if (inTrash)
             trashList.focusList();
+        else
+            list.forceActiveFocus();
     }
 
     function notice(row: var, error: string) {
@@ -121,6 +123,10 @@ FloatingWindow {
     }
 
     Component.onCompleted: navigator.begin(folder)
+    onConfirmingChanged: {
+        if (confirming)
+            confirmDialog.shown = confirming.asking;
+    }
 
     Shortcut {
         sequence: "Alt+Left"
@@ -143,18 +149,39 @@ FloatingWindow {
         onTapped: (point, button) => window.navigator.step(button === Qt.BackButton ? -1 : 1)
     }
 
+    // The frame's background: behind the two rows, and the sidebar.
+    Rectangle {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: window.inTrash ? trashCommands.bottom : commands.bottom
+        color: window.frameColor
+    }
+    Rectangle {
+        anchors.fill: sidebar
+        color: window.frameColor
+    }
+    // Copies or moves (a Protocol.TRANSFER_* mode) `sources` (absolute
+    // paths) into the folder `folder`, showing how it goes in this window.
+    function transfer(mode: string, sources: var, folder: string) {
+        transfers.start(mode, sources, folder);
+    }
+
     NavigationRow {
         id: navigation
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         navigator: window.navigator
+        solid: FilesService.frameSolid
+        onAddressClosed: list.forceActiveFocus()
     }
     CommandRow {
         id: commands
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: navigation.bottom
+        solid: FilesService.frameSolid
         visible: !window.inTrash
     }
     TrashCommandRow {
@@ -164,6 +191,7 @@ FloatingWindow {
         anchors.top: navigation.bottom
         visible: window.inTrash
         model: trash
+        solid: FilesService.frameSolid
         onEmptyRequested: window.empty()
         onRestoreRequested: window.restore()
         onEraseRequested: window.erase()
@@ -178,14 +206,23 @@ FloatingWindow {
         onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
     }
     FileList {
+        id: list
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.top: commands.bottom
         visible: !window.inTrash
         anchors.bottom: parent.bottom
+        folder: window.folder
+        select: window.select
+        focus: true
+        onFolderOpened: path => window.navigator.visit(path, null)
+        onTrashRequested: rows => window.moveToTrash(rows)
+        onDeleteRequested: rows => window.deleteForGood(rows)
+        solid: FilesService.listSolid
     }
     TrashModel {
         id: trash
+        service: FilesService
         active: window.inTrash
     }
     TrashList {
@@ -196,6 +233,7 @@ FloatingWindow {
         anchors.bottom: parent.bottom
         visible: window.inTrash
         model: trash
+        solid: FilesService.listSolid
         onEraseRequested: window.erase()
         onVisibleChanged: {
             if (visible)
@@ -245,13 +283,6 @@ FloatingWindow {
 
         // What it asked, kept while it fades out after an answer.
         property var shown: Trash.confirm([])
-        Connections {
-            target: window
-            function onConfirmingChanged() {
-                if (window.confirming)
-                    confirmDialog.shown = window.confirming.asking;
-            }
-        }
 
         Behavior on opacity {
             NumberAnimation {

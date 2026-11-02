@@ -150,6 +150,10 @@ pub enum Event {
     /// says why, for the window. Sent only to the client that opened the
     /// view; topic [`Topic::Files`].
     FilesClosed { view: u32, error: String },
+    /// How solid Nova Files' windows are (feature `files`), from
+    /// `config.toml`'s `[files]`. Topic [`Topic::Files`], sent right after
+    /// subscribing and whenever it changes.
+    FilesLook(FilesLook),
     /// Something in the trash changed, in Nova Files or any other app
     /// (feature `files`): ask `files_trash_list` again. Topic
     /// [`Topic::Files`].
@@ -225,6 +229,7 @@ impl Event {
             | Event::FilesTrashChanged
             | Event::FilesTransfer(_)
             | Event::FilesDrives { .. } => Some(Topic::Files),
+            Event::FilesLook(_) => Some(Topic::Files),
         }
     }
 }
@@ -1021,6 +1026,19 @@ pub struct FilesWindow {
     pub select: Vec<String>,
 }
 
+/// How solid Nova Files' window frame (the rows above the files and the
+/// sidebar) and its file list are, each a percentage from glass (0) to the
+/// theme's solid surfaces (100).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilesLook {
+    pub frame: u8,
+    pub list: u8,
+}
+
+/// The most solid a [`FilesLook`] part can be: the theme's solid surface.
+pub const FILES_SOLID_MAX: u8 = 100;
+
 /// The apps that can open a file (feature `files`), for its "Open with"
 /// menu: the answer to [`Command::FilesOpenWith`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1195,6 +1213,11 @@ pub const FILES_SEARCH_MAX_CHARS: usize = 200;
 /// before anyone types another letter.
 pub const FILES_SEARCH_MAX_RESULTS: usize = 200;
 
+/// Most folders a `files_tree` may name as `opened` or as `closed`, each.
+pub const FILES_TREE_MAX_FOLDERS: usize = 256;
+/// The longest request line novad reads: a longer one closes the
+/// connection, so a client splits a long list across requests.
+pub const REQUEST_MAX_BYTES: u64 = 64 * 1024;
 /// Most copy or move jobs one connection may run at once
 /// (`files_transfer`).
 pub const FILES_MAX_TRANSFERS: usize = 16;
@@ -1270,8 +1293,6 @@ pub fn wire_path(text: &str) -> std::path::PathBuf {
 fn raw_byte(character: char) -> Option<u8> {
     u8::try_from(u32::from(character).checked_sub(RAW_BYTE_BASE)?).ok().filter(|byte| *byte >= 0x80)
 }
-/// Most folders a `files_tree` may name as `opened` or as `closed`, each.
-pub const FILES_TREE_MAX_FOLDERS: usize = 256;
 
 /// The longest each of an `app_icon` request's names may be, in
 /// characters.
@@ -1942,7 +1963,25 @@ pub enum Command {
     FilesClose {
         view: u32,
     },
-    /// Copies or moves `sources` (absolute paths) into the folder `folder`
+    /// The sidebar's folder tree for a window on `folder` (feature
+    /// `files`), answered with a [`FolderTree`], or an error when `folder`
+    /// isn't a folder. `folder` is absolute or starts at `~`. The tree
+    /// starts at Home, or at `/` for a folder outside it, and is open down
+    /// to `folder` except at the folders in `closed`; the folders in
+    /// `opened` are open too. Hidden folders show only on the way to
+    /// `folder`, or everywhere when `hidden`.
+    FilesTree {
+        folder: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        opened: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        closed: Vec<String>,
+        hidden: bool,
+    },
+    /// The places on top of Nova Files' sidebar (feature `files`),
+    /// answered with the [`FilePlace`]s that exist, in order.
+    FilesPlaces,
+    /// Copies or moves `sources` (absolute paths, wire text) into the folder `folder`
     /// as this connection's job `job` (feature `files`). Answered once the
     /// job is started, without touching the disk; how it goes follows as
     /// [`Event::FilesTransfer`]s. An item copied into the folder it's
@@ -1969,24 +2008,6 @@ pub enum Command {
         answer: ClashAnswer,
         all: bool,
     },
-    /// The sidebar's folder tree for a window on `folder` (feature
-    /// `files`), answered with a [`FolderTree`], or an error when `folder`
-    /// isn't a folder. `folder` is absolute or starts at `~`. The tree
-    /// starts at Home, or at `/` for a folder outside it, and is open down
-    /// to `folder` except at the folders in `closed`; the folders in
-    /// `opened` are open too. Hidden folders show only on the way to
-    /// `folder`, or everywhere when `hidden`.
-    FilesTree {
-        folder: String,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        opened: Vec<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        closed: Vec<String>,
-        hidden: bool,
-    },
-    /// The places on top of Nova Files' sidebar (feature `files`),
-    /// answered with the [`FilePlace`]s that exist, in order.
-    FilesPlaces,
     /// Moves the items at `paths` (absolute) to the trash (feature
     /// `files`), each to its own drive's, as the freedesktop Trash spec
     /// says, so other apps see them. All are tried; the error names those
@@ -2264,7 +2285,7 @@ pub struct Transfer {
     pub state: TransferState,
     /// How many items it was given.
     pub items: u32,
-    /// The first of them, by name.
+    /// The first of them, by name (wire text).
     pub name: String,
     /// Bytes copied or moved so far, of `total_bytes`; both 0 while
     /// counting.
@@ -2298,6 +2319,7 @@ pub enum TransferState {
 pub struct Clash {
     /// The job's number for it, for `files_transfer_answer`.
     pub id: u32,
+    /// The taken name (wire text).
     pub name: String,
     /// A folder landing on a folder, which can be merged; otherwise the
     /// one already there can be replaced.
@@ -3211,6 +3233,7 @@ mod tests {
                 ],
             }),
             encode(Event::FilesClosed { view: 1, error: "/home/user/Pictures doesn't exist".into() }),
+            encode(Event::FilesLook(FilesLook { frame: 0, list: 100 })),
             encode(Event::FilesDrives {
                 drives: vec![
                     Drive {
