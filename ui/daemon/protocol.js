@@ -155,6 +155,8 @@ var FEATURE_PERIPHERALS = "peripherals";
 var FEATURE_NETWORK = "network";
 var FEATURE_BLUETOOTH = "bluetooth";
 var FEATURE_WALLPAPER = "wallpaper";
+var FEATURE_BAR = "bar";
+var FEATURE_KEEP_AWAKE = "keep-awake";
 
 // Power menu actions (PowerAction in nova-protocol).
 var POWER_LOCK = "lock";
@@ -211,7 +213,9 @@ function request(id, cmd, args) {
     return JSON.stringify(msg) + "\n";
 }
 
-// Feature ids the UI may load: only those novad reports as ready.
+// Feature ids the UI may load: only those novad reports as ready (not
+// off or missing_deps). Each feature's `slots` (where its UI goes) are
+// read through ui/slots/slots.js.
 function readyFeatures(features) {
     var ready = [];
     for (var i = 0; i < features.length; i++) {

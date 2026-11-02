@@ -43,6 +43,7 @@ fn describe(status: &Status) -> String {
         (UiState::Running, None) => "running".into(),
         (UiState::Restarting, _) => "stopped, starting again".into(),
         (UiState::Disabled, _) => "not run by the daemon (--no-ui)".into(),
+        (UiState::NotNeeded, _) => "not running: no feature with a UI is on".into(),
     };
     if let Some(kib) = ui.pss_kib {
         line += &format!(", {}", megabytes(kib));
@@ -248,11 +249,12 @@ mod tests {
                 last_crash: Some(Crash { time: "not a time".into(), log: "/x.log".into() }),
             },
             features: vec![
-                FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] },
+                FeatureState { id: "bar".into(), status: FeatureStatus::Ready, missing: vec![], slots: vec![] },
                 FeatureState {
                     id: "recording".into(),
                     status: FeatureStatus::MissingDeps,
                     missing: vec!["wf-recorder".into()],
+                    slots: vec![],
                 },
             ],
             log_dir: "/x".into(),
@@ -262,7 +264,7 @@ mod tests {
         assert!(text.contains("daemon     running, pid 10, up 1m 5s, 10 MB"), "{text}");
         assert!(text.contains("UI         running, pid 11, 180 MB, restarted 2 times"), "{text}");
         assert!(text.contains("last crash not a time: see `nova logs --crash`"), "{text}");
-        assert!(text.contains("features   core on, recording missing wf-recorder"), "{text}");
+        assert!(text.contains("features   bar on, recording missing wf-recorder"), "{text}");
         assert!(!text.contains("warning"), "a supported Quickshell gets no row: {text}");
         assert!(text.contains("compositor none followed"), "{text}");
 

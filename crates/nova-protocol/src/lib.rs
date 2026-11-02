@@ -85,7 +85,7 @@ pub enum Event {
     /// The machine and its user, for the quick settings header. Topic
     /// [`Topic::Host`], sent right after subscribing.
     Host(Host),
-    /// What the machine is busy with (feature `quick-settings`). Topic
+    /// What the machine is busy with (feature `resources`). Topic
     /// [`Topic::Resources`], sent every few seconds while some client
     /// watches them (`watch_resources`), and right when one starts to.
     Resources(Resources),
@@ -189,6 +189,26 @@ pub struct FeatureState {
     /// Binaries the feature needs but that aren't on `PATH`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub missing: Vec<String>,
+    /// Where its UI goes (its manifest's `[[slot]]` entries). The UI fills
+    /// each host with the slots of the features that are ready.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slots: Vec<Slot>,
+}
+
+/// One place a feature's UI fills (`[[slot]]` in `feature.toml`): a view in
+/// a host, like the now-playing pill in the bar's left row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Slot {
+    /// The host's name, like `bar.left` (`nova_features::HOSTS`).
+    pub host: String,
+    /// The view's id, like `media.pill`: the UI maps it to its component
+    /// (ui/slots/Views.qml), so the manifest never names a file.
+    pub view: String,
+    /// Sort key inside the host, lowest first (leftmost in a row), counted
+    /// in tens to leave room. Ties sort by feature id.
+    #[serde(default)]
+    pub order: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1460,7 +1480,7 @@ pub enum Command {
     /// after a recording didn't start).
     OpenLog,
     /// Starts or stops this connection watching the machine's resources
-    /// (feature `quick-settings`): while any connection watches, novad
+    /// (feature `resources`): while any connection watches, novad
     /// samples them every few seconds and sends `resources` events. A
     /// connection that closes stops watching.
     WatchResources {
@@ -1468,7 +1488,7 @@ pub enum Command {
     },
     /// Asks every process of an app in the latest `resources` event to
     /// close (SIGTERM), by its [`AppUsage::key`] (feature
-    /// `quick-settings`). Only the user's own processes, and never a
+    /// `resources`). Only the user's own processes, and never a
     /// [`AppUsage::protected`] app.
     EndApp {
         key: String,
@@ -1885,6 +1905,8 @@ pub enum UiState {
     Restarting,
     /// novad was started with `--no-ui`.
     Disabled,
+    /// No feature with a UI is on, so novad doesn't run Quickshell.
+    NotNeeded,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2052,13 +2074,19 @@ mod tests {
             encode(Event::Hello { daemon: "0.1.0".into() }),
             encode(Event::Features {
                 features: vec![
-                    FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] },
+                    FeatureState {
+                        id: "bar".into(),
+                        status: FeatureStatus::Ready,
+                        missing: vec![],
+                        slots: vec![Slot { host: "bar.center".into(), view: "central-pill".into(), order: 10 }],
+                    },
                     FeatureState {
                         id: "recording".into(),
                         status: FeatureStatus::MissingDeps,
                         missing: vec!["gpu-screen-recorder|wf-recorder".into()],
+                        slots: vec![],
                     },
-                    FeatureState { id: "weather".into(), status: FeatureStatus::Off, missing: vec![] },
+                    FeatureState { id: "weather".into(), status: FeatureStatus::Off, missing: vec![], slots: vec![] },
                 ],
             }),
             encode(Request { id: Some(7), command: Command::Ping }),
@@ -2883,7 +2911,12 @@ mod tests {
                     log: "/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log".into(),
                 }),
             },
-            features: vec![FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] }],
+            features: vec![FeatureState {
+                id: "bar".into(),
+                status: FeatureStatus::Ready,
+                missing: vec![],
+                slots: vec![],
+            }],
             log_dir: "/home/me/.local/state/nova".into(),
             desktop: None,
         }

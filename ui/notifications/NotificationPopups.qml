@@ -4,6 +4,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import "../compositor"
+import "../daemon"
+import "../daemon/protocol.js" as Protocol
 import "../stage"
 import "../theme"
 import "service"
@@ -33,8 +35,9 @@ PanelWindow { // qmllint disable uncreatable-type
     anchors.top: true
     anchors.right: true
     // The stack sits this far down, under the bar; the room above it is
-    // where the pop-ups grow out of the quick settings button.
-    readonly property real top: Tokens.barGap + Tokens.barHeight + Tokens.gap
+    // where the pop-ups grow out of the quick settings button. With the bar
+    // off it sits at the top, as far in as from the side.
+    readonly property real top: Daemon.readyFeatures.includes(Protocol.FEATURE_BAR) ? Tokens.barGap + Tokens.barHeight + Tokens.gap : Tokens.barMargin
     implicitWidth: Tokens.notificationWidth + Tokens.barMargin + Tokens.shadowRoom
     implicitHeight: Math.ceil(top + stack.implicitHeight + Tokens.shadowRoom)
     exclusionMode: ExclusionMode.Ignore

@@ -3,3 +3,8 @@ name = "AI usage"
 description = "Claude and Codex plan limits in the bar."
 default = true
 daemon = "ai-usage"
+
+[[slot]]
+host = "bar.left"
+view = "ai-usage.pill"
+order = 10

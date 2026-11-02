@@ -71,6 +71,6 @@ in
         default = { };
         description = "${manifest.name}.";
       }
-    ) features.optional;
+    ) features.manifests;
   };
 }

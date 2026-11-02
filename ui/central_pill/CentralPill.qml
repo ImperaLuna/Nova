@@ -6,10 +6,11 @@ import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 
 // The central pill: a search button that opens the launcher (while that
-// feature is on), the output's workspace numbers, then the day and the
-// time. The bar places it so the time's middle is the screen's middle
-// (`timeFromRight`), and it grows to the left as workspaces come and go, so
-// the time never moves. The workspace shown on the output sits in a capsule
+// feature is on), the output's workspace numbers (while workspaces is on),
+// then the day and the time (while clock is on). The bar places it so the
+// time's middle is the screen's middle (`timeFromRight`), and it grows to
+// the left as workspaces come and go, so the time never moves; without the
+// clock it sits centered. With none of the three it's `empty`. The workspace shown on the output sits in a capsule
 // that slides between numbers: the accent while the output has focus, a
 // quiet fill otherwise. A workspace whose window wants attention gets an
 // accent number and a pulsing dot. Clicking a number goes there; scrolling
@@ -30,6 +31,10 @@ Item {
     property bool canFocus: false
     // Whether the launcher is there to open: the search button shows.
     property bool canSearch: false
+    // Whether the day and time show (the clock feature).
+    property bool showClock: true
+    // Nothing to show: the bar leaves the pill out.
+    readonly property bool empty: !canSearch && list.count === 0 && !showClock
     property date now: new Date()
 
     // A number was clicked: go to that workspace (its id).
@@ -56,16 +61,27 @@ Item {
     // after them.
     readonly property real groupGap: list.specialCount > 0 && list.specialCount < list.count ? Tokens.workspaceGroupGap : 0
     readonly property real numbersWidth: list.count > 0 ? list.count * step - Tokens.workspaceGap + groupGap : 0
+    // From the last thing in the pill to its right edge, without the
+    // clock: as far in as the numbers are from the top.
+    readonly property real endInset: numbersInset - Tokens.pad
     // The search button and the divider after it, from the pill's left
     // edge: as far in as the numbers would be, and a gap either side of the
-    // divider.
-    readonly property real searchRoom: canSearch ? numbersInset + Tokens.workspaceSize + 2 * Tokens.gap + Tokens.dividerWidth : 0
+    // divider; with nothing after it, no divider and as far from the right
+    // edge.
+    readonly property bool searchFollowed: list.count > 0 || showClock
+    readonly property real searchRoom: canSearch ? numbersInset + Tokens.workspaceSize + (searchFollowed ? 2 * Tokens.gap + Tokens.dividerWidth : endInset) : 0
     // The room the numbers and the divider after them take, animated so the
     // pill's left edge glides as numbers come and go.
-    // Around the numbers: the gaps either side of the divider and the
-    // divider, and without the search button before them, their inset less
-    // the pad the pill has anyway.
-    readonly property real numbersFrame: 2 * Tokens.gap + Tokens.dividerWidth + (canSearch ? 0 : numbersInset - Tokens.pad)
+    // Around the numbers: the gaps either side of the divider before the
+    // clock and the divider (without the clock, their inset less the pad
+    // the pill has anyway), and without the search button before them,
+    // that inset again.
+    readonly property real numbersFrame: (showClock ? 2 * Tokens.gap + Tokens.dividerWidth : endInset) + (canSearch ? 0 : endInset)
+    // The day and the time, with the gap between them.
+    readonly property real clockRoom: showClock ? day.implicitWidth + Tokens.gap + time.width : 0
+    // Where the numbers end: by the divider before the clock, else as far
+    // from the right edge as from the top.
+    readonly property real numbersEnd: showClock ? divider.x - Tokens.gap : width - numbersInset
     property real numbersRoom: list.count > 0 ? numbersWidth + numbersFrame : 0
     Behavior on numbersRoom {
         NumberAnimation {
@@ -75,7 +91,7 @@ Item {
         }
     }
 
-    implicitWidth: (canSearch ? searchRoom : Tokens.pad) + numbersRoom + day.implicitWidth + Tokens.gap + time.width + Tokens.pad
+    implicitWidth: (canSearch ? searchRoom : Tokens.pad) + numbersRoom + clockRoom + Tokens.pad
     implicitHeight: Tokens.barHeight
 
     onWorkspacesChanged: list.sync(workspaces)
@@ -145,7 +161,7 @@ Item {
         }
 
         Rectangle {
-            visible: pill.canSearch
+            visible: pill.canSearch && pill.searchFollowed
             x: search.x + search.width + Tokens.gap
             anchors.verticalCenter: parent.verticalCenter
             width: Tokens.dividerWidth
@@ -157,9 +173,10 @@ Item {
         Item {
             id: numbers
             objectName: "numbers"
-            // Its right edge stays by the divider; its left edge follows the
+            // Its right edge stays put (by the divider before the clock);
+            // its left edge follows the
             // animated room, so the numbers already there glide over.
-            x: divider.x - Tokens.gap - (pill.numbersRoom - pill.numbersFrame)
+            x: pill.numbersEnd - (pill.numbersRoom - pill.numbersFrame)
             width: pill.numbersWidth
             height: parent.height
 
@@ -209,10 +226,12 @@ Item {
             height: Tokens.dividerHeight
             color: Tokens.glassRim
             opacity: list.count > 0 ? 1 : 0
+            visible: pill.showClock
         }
 
         Text {
             id: day
+            visible: pill.showClock
             x: time.x - Tokens.gap - width
             anchors.verticalCenter: parent.verticalCenter
             font.family: Tokens.fontMono
@@ -226,6 +245,7 @@ Item {
         Row {
             id: time
             objectName: "time"
+            visible: pill.showClock
             x: parent.width - Tokens.pad - width
             anchors.verticalCenter: parent.verticalCenter
 

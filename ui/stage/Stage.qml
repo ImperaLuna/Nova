@@ -4,22 +4,11 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import "../bar"
-import "../compositor"
 import "../demo"
-import "../launcher"
-import "../launcher/service"
-import "../notifications/service"
-import "../power"
-import "../power/service"
-import "../quick_settings"
 import "../quick_settings/service"
-import "../wallpaper"
-import "../wallpaper/service"
 import "../daemon"
-import "../theme"
 import "../daemon/protocol.js" as Protocol
-import "../wallpaper/carousel.js" as Carousel
-import "../icons"
+import "../theme"
 
 // One per screen: a transparent layer across the top of the screen that the
 // bar, its panels and popups are all drawn on, so a pill can grow into its
@@ -30,8 +19,10 @@ import "../icons"
 // (IMP-54). It reserves no space (ExclusionZone keeps the bar's) and takes
 // input only where something is drawn; clicks anywhere else reach the
 // windows below.
-// The bar lists what it draws as `panels` (StagePanel) and `fixedShapes`;
-// everything below follows from those.
+// The bar lists what it draws as `panels` (StagePanel) and `fixedShapes`,
+// and the stage.panels host (PanelSlots) the panels that aren't a pill:
+// everything below follows from those. Pills and panels open and close
+// each other through `toggle` and `isOpen`.
 Scope {
     id: root
 
@@ -54,7 +45,7 @@ Scope {
     onCatchesAnywhereChanged: drawing.settle()
 
     // Every panel on this screen, whatever surface it's drawn on.
-    readonly property list<StagePanel> panels: [...bar.panels, ...(power.item ? [power.item] : []), ...(quickSettings.item ? [quickSettings.item] : []), ...(launcher.item ? [launcher.item] : []), ...(wallpaper.item ? [wallpaper.item] : []), ...(demo.item?.panels ?? [])]
+    readonly property list<StagePanel> panels: [...bar.panels, ...panelSlots.panels, ...(demo.item?.panels ?? [])]
     // While a panel is open or closing on this screen, everything Nova draws
     // here sits on the Overlay layer (PanelSurface always does): niri and Hyprland draw a focused
     // fullscreen window over the Top layer, which hid the launcher under it.
@@ -79,6 +70,23 @@ Scope {
         return panels.filter(panel => panel.placement === placement);
     }
 
+    // Opens or closes the panel called `name` (its feature's id) on this
+    // screen, as `nova toggle` does.
+    function toggle(name: string) {
+        all.toggle(name, output.name, output.name);
+    }
+    // Whether the panel called `name` is open on this screen.
+    function isOpen(name: string): bool {
+        return panels.some(panel => panel.name === name && panel.open);
+    }
+    // The bar's view with id `view` (a BarSlot), or null: a panel grows out
+    // of its pill.
+    function barView(view: string): BarSlot {
+        return bar.view(view);
+    }
+    // How far the bar's pills sit above their place as they slide aside.
+    readonly property real barOffset: bar.slideOffset
+
     // The whole screen's: which panel holds the keyboard, toggling, closing.
     StagePanels {
         id: all
@@ -101,101 +109,11 @@ Scope {
         moving: drawn.moving || bar.sliding || bar.fading
     }
 
-    // The power menu on the right edge, while its feature is on.
-    LazyLoader {
-        id: power
-        active: PowerService.ready
-        component: PowerMenu {
-            output: root.output
-        }
-    }
-
-    // The quick settings sidebar, while its feature is on.
-    LazyLoader {
-        id: quickSettings
-        active: QuickSettingsService.ready
-        component: QuickSettings {
-            output: root.output
-            pill: bar.rightPillBox
-            pillItem: bar.rightPillItem
-            power: PowerService.ready
-            onQuickSettingsClicked: all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.output.name, root.output.name)
-            // The power menu takes its place.
-            onPowerClicked: {
-                all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.output.name, root.output.name);
-                all.toggle(Protocol.FEATURE_POWER, root.output.name, root.output.name);
-            }
-        }
-    }
-
-    // The launcher in the middle, while its feature is on.
-    LazyLoader {
-        id: launcher
-        active: LauncherService.ready
-        component: Launcher {
-            id: deck
-            screenWidth: root.output.width
-            screenHeight: root.output.height
-            apps: LauncherService.current.apps
-            pinned: LauncherService.current.pinned
-            recent: LauncherService.current.recent
-            iconSource: icon => AppIcons.source(icon)
-            onSearchRequested: query => LauncherService.search(query, found => deck.showMatches(query, found))
-            onLaunchRequested: (id, newWindow) => LauncherService.launch(id, root.output.name, newWindow, error => deck.launched(error))
-            onPinRequested: (id, pinned) => LauncherService.pin(id, pinned)
-        }
-    }
-
-    // The wallpaper carousel over the whole screen, while its feature is on.
-    LazyLoader {
-        id: wallpaper
-        active: WallpaperService.ready
-        component: WallpaperCarousel {
-            id: carousel
-            screenWidth: root.output.width
-            screenHeight: root.output.height
-            outputName: root.output.name
-            screens: Carousel.screenOrder(Quickshell.screens)
-            compositorFocus: Protocol.focusKey(Compositor.focusedWorkspace)
-            onLoadRequested: opening => WallpaperService.load((error, listing, shown) => carousel.loaded(opening, error, listing, shown))
-            onChosen: requests => WallpaperService.setAll(requests, error => carousel.applied(error))
-        }
-    }
-
-    // What the carousel previews while it's open or closing here, for the
-    // other screens. Opening it here closes it elsewhere, which may still be
-    // fading: an open one's preview wins, and a closing one only changes or
-    // clears its own.
-    readonly property var wallpaperPreview: {
-        const carousel = wallpaper.item as WallpaperCarousel;
-        if (!carousel || !carousel.shown)
-            return null;
-        return {
-            paths: carousel.previews,
-            choosingFor: carousel.choosingFor,
-            output: root.output.name,
-            shown: carousel.open
-        };
-    }
-    onWallpaperPreviewChanged: {
-        const ours = WallpaperService.preview?.output === root.output.name;
-        if (wallpaperPreview && (wallpaperPreview.shown || ours || !WallpaperService.preview))
-            WallpaperService.preview = wallpaperPreview;
-        else if (!wallpaperPreview && ours)
-            WallpaperService.preview = null;
-    }
-
-    // Another screen's carousel previews this screen's pick here, and
-    // marks it while it picks for it.
-    LazyLoader {
-        readonly property var preview: WallpaperService.preview
-        active: preview !== null && preview.output !== root.output.name
-        component: WallpaperPreview {
-            screen: root.screen
-            path: WallpaperService.preview?.paths[root.output.name] ?? ""
-            shown: WallpaperService.preview?.shown ?? false
-            picking: WallpaperService.preview?.choosingFor === root.output.name
-        }
+    // The panels that aren't a pill (the launcher, quick settings, the
+    // power menu, the wallpaper carousel), from the features' manifests.
+    PanelSlots {
+        id: panelSlots
+        stage: root
     }
 
     // Placeholder panels for each placement, with NOVA_DEMO_PANELS=1 only
@@ -205,7 +123,7 @@ Scope {
         active: Quickshell.env("NOVA_DEMO_PANELS") === "1"
         component: DemoPanels {
             output: root.output
-            centralPill: bar.centralPill
+            centralPill: root.barView("central-pill")?.pill ?? null
         }
     }
 
@@ -310,6 +228,7 @@ Scope {
             id: bar
             anchors.fill: parent
             screenName: root.output.name
+            stage: root
             screenHeight: root.output.height
             // A panel of the bar's is open: on the stage, or grown out of
             // one of its pills. Not `moving`, which a closed pill's own
@@ -322,25 +241,14 @@ Scope {
             onCoveredChanged: drawing.settle()
             // Its items an open panel on the stage is over, so they fade.
             underPanels: drawn.underPanels
-            quickSettings: QuickSettingsService.ready
-            power: PowerService.ready
-            quickSettingsOpen: quickSettings.item?.open ?? false
-            unread: NotificationsService.ready ? NotificationsService.unread : 0
-            doNotDisturb: NotificationsService.ready && NotificationsService.doNotDisturb
-            onQuickSettingsClicked: all.toggle(Protocol.FEATURE_QUICK_SETTINGS, root.output.name, root.output.name)
-            onPowerClicked: all.toggle(Protocol.FEATURE_POWER, root.output.name, root.output.name)
-            onLauncherRequested: {
-                const deck = launcher.item as Launcher;
-                if (deck)
-                    deck.open = !deck.open;
-            }
         }
 
-        // Keep awake (quick settings): the compositor doesn't idle while a
-        // shown surface holds an inhibitor, and the stage always shows.
+        // Keep awake (its quick settings tile): the compositor doesn't idle
+        // while a shown surface holds an inhibitor, and the stage always
+        // shows, with the bar off too. Turning the feature off lets go.
         IdleInhibitor {
             window: stage
-            enabled: QuickSettingsService.keepAwake
+            enabled: QuickSettingsService.keepAwake && Daemon.readyFeatures.includes(Protocol.FEATURE_KEEP_AWAKE)
         }
 
         FrameLog {

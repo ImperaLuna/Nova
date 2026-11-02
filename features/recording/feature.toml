@@ -20,3 +20,15 @@ debian = ["wf-recorder"]
 
 [check]
 binaries = ["gpu-screen-recorder|wf-recorder"]
+
+# While recording, left of the right pill.
+[[slot]]
+host = "bar.right"
+view = "recording.pill"
+order = 10
+
+# The region picker, a recording's marks and the card a capture lands in,
+# shared by screenshots and recordings (shown once while either is on).
+[[slot]]
+host = "shell.overlays"
+view = "capture.overlay"

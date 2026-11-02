@@ -6,24 +6,18 @@ import "../theme"
 import "../daemon"
 import "../daemon/protocol.js" as Protocol
 import "../compositor"
-import "../ai_usage"
-import "../ai_usage/service"
-import "../central_pill"
-import "../launcher/service"
-import "../media"
-import "../media/service"
-import "../capture/service"
 import "../stage"
-import "../tray"
-import "../tray/service"
+import "../slots/slots.js" as Slots
 
-// The bar on one screen: the AI usage pill on the left when that feature is
-// on, and right of it the now-playing pill while something plays; the
-// central pill (the launcher's search button, that screen's
-// workspaces, the day and the time) with its time in the middle of the
-// screen, and the right pill with the quick settings and power buttons;
-// while a screen recording runs, its pill left of the right one.
-// The hide policies come later.
+// The bar on one screen: three rows of pills (BarRow), filled from the
+// features' manifests (`[[slot]]` in the bar.left, bar.center and bar.right
+// hosts) in their `order`. Today that's the AI usage pill and, right of it,
+// the now-playing pill while something plays on the left; the central pill
+// (the launcher's search button, that screen's workspaces, the day and the
+// time) with its time in the middle of the screen; and the right pill with
+// the tray and the right-pill.buttons host on the right, the recording
+// pill left of it while a recording runs. A new pill needs only its own
+// manifest slot and its folder (ui/slots/Views.qml maps its view id).
 //
 // While the screen shows a workspace with a window over the whole screen
 // (fullscreen), the bar steps aside: the pills slide up out of sight, then
@@ -34,25 +28,35 @@ import "../tray/service"
 //
 // It's drawn on the screen's stage (ui/stage/Stage.qml), which builds its
 // input mask, blur and keyboard grab from `panels` and `fixedShapes`, so
-// panels can grow out of the pills without a window of their own. A new
-// pill that opens a panel is a StagePanel added to `panels`.
+// panels can grow out of the pills without a window of their own. Each
+// row collects them from its views (BarSlot).
+//
+// With the bar feature off its rows are empty (every bar.* host is the
+// bar's), and it keeps no space and has no reveal strip: windows get the
+// whole height, and panels still open from their keys and `nova toggle`.
 Item {
-    id: bar
+    id: root
 
     // The screen's output name (Quickshell's `screen.name`), whose
     // workspaces the central pill lists.
     required property string screenName
+    // The screen's stage (Stage.qml), which the pills open panels through.
+    required property var stage
     // The monitor's height: the bar itself is only as tall as the stage.
     property real screenHeight: 0
 
+    // The bar feature is on.
+    readonly property bool shown: Daemon.readyFeatures.includes(Protocol.FEATURE_BAR)
+
     // The space kept free for the bar at the top of the screen: the same gap
     // above and below the pills, none while it steps aside for a fullscreen
-    // window. The compositor's own top gap is meant to be off, so it doesn't
-    // add to the one below.
-    readonly property int reservedHeight: spaceKept ? Tokens.barGap + Tokens.barHeight + Tokens.barGap : 0
+    // window or with the bar off. The compositor's own top gap is meant to
+    // be off, so it doesn't add to the one below.
+    readonly property int reservedHeight: shown && spaceKept ? Tokens.barGap + Tokens.barHeight + Tokens.barGap : 0
 
-    // The shown workspace has a window over the whole screen.
-    readonly property bool fullscreenBelow: Compositor.has(Protocol.CAPABILITY_FULLSCREEN) && Protocol.fullscreenShown(Compositor.output(screenName))
+    // The shown workspace has a window over the whole screen, so the bar
+    // steps aside (it has none to step aside with the bar off).
+    readonly property bool fullscreenBelow: shown && Compositor.has(Protocol.CAPABILITY_FULLSCREEN) && Protocol.fullscreenShown(Compositor.output(screenName))
     // One of the bar's panels is open, so the pills stay. The stage sets it.
     property bool held: false
     // Brought back over a fullscreen window by the pointer at the top edge.
@@ -87,13 +91,13 @@ Item {
     Timer {
         id: spaceGoing
         interval: Tokens.durationPanel
-        onTriggered: bar.spaceKept = false
+        onTriggered: root.spaceKept = false
     }
     // ...and comes back before they slide in, so they never land on a window.
     Timer {
         id: spaceReturning
         interval: Tokens.durationPanel
-        onTriggered: bar.waitingForSpace = false
+        onTriggered: root.waitingForSpace = false
     }
     Timer {
         id: linger
@@ -109,15 +113,11 @@ Item {
         }
     }
 
-    readonly property AiUsage aiUsagePill: aiUsage.item as AiUsage
-    readonly property NowPlaying mediaPill: media.item as NowPlaying
+    readonly property list<BarRow> rows: [left, center, right]
     // The pills that open panels, for the stage (StagePanel has the contract).
-    readonly property list<StagePanel> panels: [aiUsagePill, mediaPill, rightPill, trayMenu].filter(panel => panel !== null)
+    readonly property list<StagePanel> panels: rows.reduce((all, row) => [...all, ...row.panels], [])
     // What else is drawn and takes clicks, each rounded by its `radius`.
-    readonly property list<Item> fixedShapes: [center, recordingPill, revealStrip]
-    // The pill in the middle, which a panel in the middle of the screen can
-    // grow out of.
-    readonly property Item centralPill: center
+    readonly property list<Item> fixedShapes: [...rows.reduce((all, row) => [...all, ...row.shapes], []), revealStrip]
     // Its items a panel on another surface is drawn over (StagePanel
     // `from`): hidden meanwhile. The stage sets it.
     property list<Item> covered: []
@@ -126,46 +126,26 @@ Item {
     // fade out meanwhile, then hide. The stage sets it.
     property list<Item> underPanels: []
     // One of them is fading, so the stage draws.
-    readonly property bool fading: [aiUsageFade, mediaFade, centerFade, rightFade, recordingFade].some(fade => fade.running)
+    readonly property bool fading: rows.some(row => row.fading)
 
-    // The right pill's buttons: whether their features are on, and whether
-    // quick settings is open on this screen.
-    property bool quickSettings: false
-    property bool power: false
-    property bool quickSettingsOpen: false
-    // Unread notifications and do not disturb, for the quick settings
-    // button's badge (PillButtons).
-    property int unread: 0
-    property bool doNotDisturb: false
-    signal quickSettingsClicked
-    signal powerClicked
-    // Where the right pill is, in screen coordinates (the stage's top-left
-    // is the screen's): quick settings grows out of it.
-    readonly property rect rightPillBox: Qt.rect(rightPill.x, shelf.y + rightPill.y, rightPill.width, rightPill.height)
-    readonly property Item rightPillItem: rightPill
-    // Opens the menu of the tray app `entry`, whose icon's middle is `at`
-    // in the right pill.
-    function showTrayMenu(entry: var, at: point) {
-        trayMenu.entry = entry;
-        trayMenu.anchorX = rightPill.x + at.x;
-        trayMenu.open = true;
+    // The view with id `view` (a BarSlot) in any row, or null: a panel
+    // elsewhere grows out of its pill.
+    function view(id: string): BarSlot {
+        return rows.map(row => row.view(id)).find(found => found !== null) ?? null;
     }
-
-    // The central pill's search button was clicked: open or close the
-    // launcher on this screen.
-    signal launcherRequested
 
     // Logs once the bar has drawn a frame while connected to novad, so the
     // VM tests know when to screenshot it.
     property bool shownLogged: false
 
     Connections {
-        target: center.Window.window
-        enabled: !bar.shownLogged
+        target: root.Window.window
+        enabled: !root.shownLogged
         function onFrameSwapped() {
-            if (!Daemon.connected)
+            // Its pills come with the features event.
+            if (!Daemon.connected || !root.rows.some(row => row.views.length > 0))
                 return;
-            bar.shownLogged = true;
+            root.shownLogged = true;
             console.info("nova: bar shown");
         }
     }
@@ -173,12 +153,12 @@ Item {
     // The pills, which slide up out of sight while the bar steps aside.
     Item {
         id: shelf
-        width: bar.width
-        height: bar.height
-        y: bar.tucked ? -(Tokens.barGap + Tokens.barHeight + Tokens.shadowRoom) : 0
-        opacity: bar.tucked ? 0 : 1
+        width: root.width
+        height: root.height
+        y: root.tucked ? -(Tokens.barGap + Tokens.barHeight + Tokens.shadowRoom) : 0
+        opacity: root.tucked ? 0 : 1
         // Gone once out of sight, so they take no clicks and need no blur.
-        visible: !bar.tucked || slide.running
+        visible: !root.tucked || slide.running
 
         Behavior on y {
             NumberAnimation {
@@ -196,155 +176,32 @@ Item {
             }
         }
 
-        Loader {
-            id: aiUsage
-            x: Tokens.barMargin
-            y: Tokens.barGap
-            // Open, it grows over the now-playing pill beside it.
-            z: bar.aiUsagePill?.open ? 1 : 0
-            // On the Loader: the pill's own opacity is its own.
-            opacity: bar.underPanels.includes(bar.aiUsagePill) ? 0 : 1
-            // Faded out, it takes no clicks and needs no blur.
-            visible: opacity > 0
-            GiveWay on opacity {
-                id: aiUsageFade
-            }
-            active: AiUsageService.ready
-            onLoaded: console.info("nova: ai usage pill shown")
-            sourceComponent: AiUsage {
-                usage: AiUsageService.usage
-                onShowRequested: provider => AiUsageService.show(provider)
-                onRefreshRequested: AiUsageService.refresh()
-            }
+        BarRow {
+            id: left
+            anchors.fill: parent
+            host: Slots.HOST_BAR_LEFT
+            shown: root.shown
+            bar: root
+            stage: root.stage
         }
-
-        Loader {
-            id: media
-            y: Tokens.barGap
-            // On the Loader: the pill fades in and out with what plays.
-            opacity: bar.underPanels.includes(bar.mediaPill) ? 0 : 1
-            visible: opacity > 0
-            GiveWay on opacity {
-                id: mediaFade
-            }
-            active: MediaService.ready
-            sourceComponent: NowPlaying {
-                id: nowPlaying
-                // Beside the AI usage pill as it is closed, so that one
-                // opening doesn't push it along. Placed itself, not by the
-                // Loader: its blur and clicks only follow its own moves.
-                x: bar.aiUsagePill ? aiUsage.x + bar.aiUsagePill.pillWidth + Tokens.gap : Tokens.barMargin
-                media: MediaService.media
-                still: bar.stillEqualizer
-                onControlRequested: (player, action) => MediaService.control(player, action)
-                onSeekRequested: (player, positionUs) => MediaService.seek(player, positionUs)
-                onShowRequested: player => MediaService.show(player)
-                onFocusRequested: player => MediaService.focus(player)
-                onWorkspaceAsked: player => MediaService.window(player, name => {
-                        if (nowPlaying.playerId === player)
-                            nowPlaying.workspace = name;
-                    })
-            }
-        }
-
-        CentralPill {
+        BarRow {
             id: center
-            readonly property var output: Compositor.output(bar.screenName)
-
-            visible: !bar.covered.includes(center) && opacity > 0
-            opacity: bar.underPanels.includes(center) ? 0 : 1
-            GiveWay on opacity {
-                id: centerFade
-            }
-            x: bar.width / 2 + timeFromRight - width
-            y: Tokens.barGap
-            width: implicitWidth
-            height: implicitHeight
-            workspaces: Compositor.has(Protocol.CAPABILITY_WORKSPACES) ? Protocol.barWorkspaces(output) : []
-            outputFocused: output?.focused ?? false
-            canFocus: Compositor.has(Protocol.CAPABILITY_FOCUS_WORKSPACE)
-            canSearch: LauncherService.ready
-            onSearchRequested: bar.launcherRequested()
-            now: bar.frozenTime ? new Date(bar.frozenTime) : clock.date
-            onFocusRequested: workspaceId => Compositor.focusWorkspace(workspaceId)
-            onStepRequested: step => Compositor.stepWorkspace(bar.screenName, step)
+            anchors.fill: parent
+            host: Slots.HOST_BAR_CENTER
+            shown: root.shown
+            bar: root
+            stage: root.stage
         }
-
-        RightPill {
-            id: rightPill
-            // Also for the tray alone, with quick settings and power off.
-            visible: (bar.quickSettings || bar.power || rightPill.hasTray) && !bar.covered.includes(rightPill) && opacity > 0
-            opacity: bar.underPanels.includes(rightPill) ? 0 : 1
-            GiveWay on opacity {
-                id: rightFade
-            }
-            x: bar.width - Tokens.barMargin - width
-            y: Tokens.barGap
-            width: implicitWidth
-            height: implicitHeight
-            quickSettings: bar.quickSettings
-            power: bar.power
-            quickSettingsOpen: bar.quickSettingsOpen
-            unread: bar.unread
-            doNotDisturb: bar.doNotDisturb
-            onQuickSettingsClicked: bar.quickSettingsClicked()
-            onPowerClicked: bar.powerClicked()
-            trayApps: TrayService.shown
-            trayAttention: TrayService.attention
-            iconSource: entry => TrayService.iconSource(entry)
-            // A click acts and closes the tray; an app that only has a menu
-            // shows it instead.
-            onTrayActivated: (entry, at) => {
-                if (TrayService.opensMenu(entry)) {
-                    bar.showTrayMenu(entry, at);
-                } else {
-                    TrayService.activate(entry);
-                    rightPill.open = false;
-                }
-            }
-            onTrayMenuRequested: (entry, at) => bar.showTrayMenu(entry, at)
-            onTraySecondaryActivated: entry => entry.item.secondaryActivate()
-            onOpenChanged: {
-                if (!open)
-                    trayMenu.open = false;
-            }
-        }
-
-        TrayMenu {
-            id: trayMenu
-            screenWidth: bar.width
-            screenHeight: bar.screenHeight
-            iconSource: entry ? TrayService.iconSource(entry) : ""
-            runEntry: run => TrayService.menuPicked(trayMenu.entry, run)
-            onDone: rightPill.open = false
-            onHideRequested: (key, hidden) => TrayService.hide(key, hidden)
-        }
-
-        RecordingPill {
-            id: recordingPill
-            visible: RecordingService.recording && opacity > 0
-            opacity: bar.underPanels.includes(recordingPill) ? 0 : 1
-            GiveWay on opacity {
-                id: recordingFade
-            }
-            x: (rightPill.visible ? rightPill.x - Tokens.gap : bar.width - Tokens.barMargin) - width
-            y: Tokens.barGap
-            width: implicitWidth
-            height: implicitHeight
-            elapsed: RecordingService.elapsed
-            paused: RecordingService.active?.paused ?? false
-            canPause: RecordingService.active?.can_pause ?? false
-            onPauseRequested: paused => RecordingService.pause(paused)
-            onStopRequested: RecordingService.stop()
+        BarRow {
+            id: right
+            anchors.fill: parent
+            host: Slots.HOST_BAR_RIGHT
+            shown: root.shown
+            bar: root
+            stage: root.stage
         }
     }
 
-    // Ticks once a minute, on the minute, for the central pill's time.
-    SystemClock {
-        id: clock
-        enabled: !bar.frozenTime
-        precision: SystemClock.Minutes
-    }
     // A fixed time to show instead (an ISO date, like 2026-10-24T16:40), so
     // the VM tests' screenshots don't change with the clock.
     readonly property string frozenTime: Quickshell.env("NOVA_FROZEN_TIME") ?? ""
@@ -358,8 +215,8 @@ Item {
     Item {
         id: revealStrip
         readonly property int radius: 0
-        visible: bar.fullscreenBelow
-        width: bar.width
+        visible: root.fullscreenBelow
+        width: root.width
         height: Tokens.revealStrip
     }
 }

@@ -55,6 +55,8 @@
             ./themes
             ./ui/theme/Tokens.qml
             ./ui/daemon/protocol.js
+            # The slot hosts and view registry, checked against the manifests.
+            ./ui/slots
           ];
         };
 
@@ -376,7 +378,7 @@
                       services.xserver = { inherit videoDrivers; };
                       programs.nova = {
                         enable = true;
-                        features = pkgs.lib.mapAttrs (_: _: { enable = true; }) features.optional;
+                        features = pkgs.lib.mapAttrs (_: _: { enable = true; }) features.manifests;
                       };
                     }
                   ];

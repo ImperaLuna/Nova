@@ -179,6 +179,40 @@ Item {
             compare(pill.timeFromRight, listed.timeFromRight);
         }
 
+        // The clock feature off: no day, time or divider before them, and the
+        // numbers as far from the right edge as from the top.
+        function test_without_the_clock_it_is_the_numbers_alone() {
+            const pill = createPill([workspace(1, true), workspace(2)]);
+            pill.showClock = false;
+            settle(pill);
+            verify(!findChild(pill, "time").visible);
+            verify(!findChild(pill, "divider").visible);
+            const inset = (Tokens.barHeight - Tokens.workspaceSize) / 2;
+            compare(pill.width, pill.numbersWidth + 2 * inset);
+            compare(numbers(pill)[0].mapToItem(pill, 0, 0).x, inset);
+            pill.canSearch = true;
+            settle(pill);
+            const search = findChild(pill, "search");
+            const last = numbers(pill)[1];
+            verify(last.mapToItem(pill, 0, 0).x > search.x + search.width, "the numbers come after the search button");
+            compare(pill.width - (last.mapToItem(pill, 0, 0).x + Tokens.workspaceSize), inset);
+            verify(!pill.empty);
+        }
+
+        // The search button alone has no divider after it, and nothing at
+        // all is `empty`, which the bar leaves out.
+        function test_with_nothing_after_the_search_button_it_stands_alone() {
+            const pill = createPill([]);
+            pill.showClock = false;
+            settle(pill);
+            verify(pill.empty);
+            pill.canSearch = true;
+            settle(pill);
+            verify(!pill.empty);
+            const inset = (Tokens.barHeight - Tokens.workspaceSize) / 2;
+            compare(pill.width, 2 * inset + Tokens.workspaceSize);
+        }
+
         function test_only_the_changing_digits_roll() {
             const pill = createPill([]);
             pill.now = new Date(2026, 9, 24, 16, 59);

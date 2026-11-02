@@ -24,10 +24,9 @@ Item {
             }
         }
         Component {
-            id: mainComponent
-            MainPage {
-                width: 328
-                height: 868
+            id: tileComponent
+            BluetoothTile {
+                width: 160
             }
         }
 
@@ -147,47 +146,40 @@ Item {
         }
 
         function test_the_tile_turns_on_or_opens_the_page() {
-            const page = createTemporaryObject(mainComponent, stage, {
-                bluetoothShown: true,
+            const tile = createTemporaryObject(tileComponent, stage, {
                 bluetooth: event([headphones("connected")])
             });
-            waitForRendering(page);
-            const tile = findChild(page, "bluetoothTile");
-            verify(tile.visible);
-            listen(page, "bluetoothPowered");
+            waitForRendering(tile);
+            listen(tile, "powered");
             mouseClick(tile, 40, tile.height / 2);
             compare(spy.count, 0, "on doesn't turn off");
 
-            listen(page, "pageRequested");
+            listen(tile, "pageRequested");
             mouseClick(tile, 40, tile.height / 2);
-            compare(spy.signalArguments[0][0], "bluetooth", "on opens the page");
+            compare(spy.count, 1, "on opens the page");
             mouseClick(tile, tile.width - 12, tile.height / 2);
-            compare(spy.signalArguments[1][0], "bluetooth", "so does the arrow");
+            compare(spy.count, 2, "so does the arrow");
 
-            page.bluetooth = {
+            tile.bluetooth = {
                 radio: "off",
                 scanning: false,
                 devices: [],
                 pairing: null
             };
-            listen(page, "bluetoothPowered");
+            listen(tile, "powered");
             mouseClick(tile, 40, tile.height / 2);
             compare(spy.signalArguments[0][0], true, "off turns on");
 
             // A hardware switch can't be turned on from here: the page says so.
-            page.bluetooth = {
+            tile.bluetooth = {
                 radio: "switched_off",
                 scanning: false,
                 devices: [],
                 pairing: null
             };
-            listen(page, "pageRequested");
+            listen(tile, "pageRequested");
             mouseClick(tile, 40, tile.height / 2);
             compare(spy.count, 1);
-            compare(spy.signalArguments[0][0], "bluetooth");
-
-            page.bluetoothShown = false;
-            verify(!tile.visible, "none with the feature off");
         }
 
         function test_one_click_connects_or_disconnects() {

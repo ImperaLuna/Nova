@@ -689,7 +689,8 @@ impl<'a> Connection<'a> {
     }
 
     /// Passes a volume key to the UI, which owns audio (PipeWire through
-    /// Quickshell) and the capsule. Volume is core, so it's always ready.
+    /// Quickshell) and the capsule. The keys change the volume while the UI
+    /// runs, whichever features draw it (the capsule, quick settings).
     fn volume(&self, key: VolumeKey) -> Outcome {
         match self.daemon.hub.publish(&Event::Volume { key }) {
             0 => Outcome::Error("the UI isn't connected to novad, so nothing can change the volume".into()),

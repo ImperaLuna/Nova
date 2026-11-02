@@ -136,11 +136,11 @@ fn ending_nova_or_a_missing_app_is_refused() {
 #[test]
 fn watching_resources_needs_the_feature() {
     let novad = TestDaemon::open("resources-off", None, |dir| {
-        std::fs::write(dir.join("config/features.toml"), "disabled = [\"ai-usage\", \"quick-settings\"]\n").unwrap();
+        std::fs::write(dir.join("config/features.toml"), "disabled = [\"ai-usage\", \"resources\"]\n").unwrap();
     });
     let mut client = novad.connect();
     let reply = client.request(1, "watch_resources", Some(json!({"watching": true})));
-    assert!(reply["error"].as_str().is_some_and(|error| error.contains("quick-settings")), "{reply}");
+    assert!(reply["error"].as_str().is_some_and(|error| error.contains("the resources feature")), "{reply}");
 }
 
 /// The peripherals' own tests cover UPower and HeadsetControl; here there's

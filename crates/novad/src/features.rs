@@ -19,16 +19,20 @@ pub fn read_selection(paths: &[PathBuf]) -> Result<Selection, String> {
     Ok(Selection::default())
 }
 
+/// Each feature's state (off, missing what it needs, or ready) and its
+/// slots, for the UI to fill its hosts with.
 pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> Vec<FeatureState> {
     manifests
         .iter()
         .map(|m| {
-            if !selection.is_on(m) {
-                return FeatureState { id: m.id.clone(), status: FeatureStatus::Off, missing: vec![] };
-            }
-            let missing = m.missing_binaries(path_var);
-            let status = if missing.is_empty() { FeatureStatus::Ready } else { FeatureStatus::MissingDeps };
-            FeatureState { id: m.id.clone(), status, missing }
+            let (status, missing) = if !selection.is_on(m) {
+                (FeatureStatus::Off, vec![])
+            } else {
+                let missing = m.missing_binaries(path_var);
+                let status = if missing.is_empty() { FeatureStatus::Ready } else { FeatureStatus::MissingDeps };
+                (status, missing)
+            };
+            FeatureState { id: m.id.clone(), status, missing, slots: m.slots.clone() }
         })
         .collect()
 }
@@ -37,6 +41,12 @@ pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> 
 /// novad runs its service.
 pub fn is_ready(features: &[FeatureState], id: &str) -> bool {
     features.iter().any(|feature| feature.id == id && feature.status == FeatureStatus::Ready)
+}
+
+/// Whether the UI has to run: some feature that draws (declares a slot) is
+/// ready.
+pub fn needs_ui(manifests: &[Manifest], features: &[FeatureState]) -> bool {
+    manifests.iter().any(|manifest| manifest.has_ui() && is_ready(features, &manifest.id))
 }
 
 /// The error for a request that needs feature `id` while it's not ready
@@ -64,6 +74,19 @@ mod tests {
     }
 
     #[test]
+    fn the_ui_runs_only_while_a_feature_that_draws_is_ready() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let manifests = nova_features::load_all(&root).unwrap();
+        let ids = |selection: &str| states(&manifests, &Selection::parse(selection).unwrap(), "/nonexistent");
+        assert!(needs_ui(&manifests, &ids("")), "the defaults draw the bar");
+        let every_id: Vec<String> = manifests.iter().map(|m| format!("{:?}", m.id)).collect();
+        let all_off = format!("disabled = [{}]", every_id.join(", "));
+        assert!(!needs_ui(&manifests, &ids(&all_off)));
+        let only_bar = all_off.replace("\"bar\", ", "");
+        assert!(needs_ui(&manifests, &ids(&only_bar)), "{only_bar}");
+    }
+
+    #[test]
     fn states_follow_selection_and_path() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         let manifests = nova_features::load_all(&root).unwrap();
@@ -73,5 +96,14 @@ mod tests {
         assert_eq!(rec.status, FeatureStatus::MissingDeps);
         let off = super::states(&manifests, &Selection::parse("disabled = [\"recording\"]").unwrap(), "/nonexistent");
         assert_eq!(off.iter().find(|s| s.id == "recording").unwrap().status, FeatureStatus::Off);
+    }
+
+    #[test]
+    fn states_carry_the_slots() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let manifests = nova_features::load_all(&root).unwrap();
+        let states = states(&manifests, &Selection::default(), "/nonexistent");
+        let bar = states.iter().find(|s| s.id == "bar").unwrap();
+        assert_eq!(bar.slots, manifests.iter().find(|m| m.id == "bar").unwrap().slots);
     }
 }
