@@ -73,7 +73,6 @@ impl Entry {
     }
 
     /// Its program and arguments with `file` to open.
-    #[allow(dead_code, reason = "Nova Files opens files with it (IMP-289)")]
     pub fn exec_with(&self, file: &str) -> Vec<String> {
         let mut argv = self.exec.clone();
         let index = self.file_arg.index.min(argv.len());

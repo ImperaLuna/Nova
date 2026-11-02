@@ -280,6 +280,21 @@ impl<'a> Connection<'a> {
             }
             Command::ShowFolder { folder, select } => done(self.files().and_then(|files| files.show(folder, select))),
             Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
+            Command::FilesLaunch { path, app } => {
+                let (path, app) = (path.clone(), app.clone());
+                return self.opener_later(move |opener| match app {
+                    Some(app) => opener.open_with(&path, &app),
+                    None => opener.open(&path),
+                });
+            }
+            Command::FilesOpenWith { path } => {
+                let path = path.clone();
+                return self.opener_later(move |opener| opener.choices(&path));
+            }
+            Command::FilesSetDefault { path, app } => {
+                let (path, app) = (path.clone(), app.clone());
+                return self.opener_later(move |opener| opener.set_default(&path, &app));
+            }
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -605,6 +620,21 @@ impl<'a> Connection<'a> {
         }
     }
 
+    /// Runs `work` with Nova Files' opener on its own thread: it reads the
+    /// file and may wait for an app to start.
+    fn opener_later<T: serde::Serialize>(
+        &self,
+        work: impl FnOnce(&crate::apps::opening::Opener) -> Result<T, String> + Send + 'static,
+    ) -> Answer {
+        match self.files() {
+            Ok(files) => {
+                let opener = files.opener();
+                Answer::later(move || value(work(&opener)))
+            }
+            Err(e) => Answer::Now(Outcome::Error(e)),
+        }
+    }
+
     fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
         match self.media() {
             Ok(media) => Answer::later(move || work(&media)),
@@ -831,7 +861,10 @@ impl<'a> Connection<'a> {
             | Command::BluetoothForget { .. }
             | Command::BluetoothAnswer { .. }
             | Command::ShowFolder { .. }
-            | Command::AttachFiles { .. } => {}
+            | Command::AttachFiles { .. }
+            | Command::FilesLaunch { .. }
+            | Command::FilesOpenWith { .. }
+            | Command::FilesSetDefault { .. } => {}
         }
     }
 

@@ -5,11 +5,11 @@
 //! which open which types of file (`associations`). The launcher, tray,
 //! notifications, media and files all name apps from the index.
 
-#[allow(dead_code, reason = "Nova Files opens files with it (IMP-289)")]
 pub mod associations;
 pub mod desktop_entry;
 mod index;
 pub mod launch;
+pub mod opening;
 mod program;
 pub mod scan;
 

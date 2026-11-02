@@ -11,6 +11,8 @@
 //!   folder" opens Nova Files.
 //! - `window.rs`: the Nova Files process (`ui/files.qml`), started when a
 //!   window is asked for and none runs.
+//! - Opening files in apps is the shared `crate::apps::opening`, over the
+//!   module's one copy of the MIME database.
 //!
 //! Windows go only to the Nova Files process, once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
@@ -23,11 +25,16 @@ mod file_manager1;
 mod target;
 mod window;
 
+use crate::apps::AppIndex;
+use crate::apps::associations::Places;
+use crate::apps::launch::Runner;
+use crate::apps::opening::Opener;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
 use nova_protocol::{Event, FeatureState, FilesWindow, Topic};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 
 pub const FEATURE_ID: &str = "files";
@@ -41,6 +48,12 @@ const MAX_WAITING: usize = 64;
 pub struct Sources {
     /// Where `org.freedesktop.FileManager1` is served.
     pub bus: Bus,
+    /// The data folders the MIME database is read from.
+    pub data_dirs: Vec<PathBuf>,
+    /// Where the `mimeapps.list` files are.
+    pub associations: Places,
+    /// How apps opening files are started.
+    pub runner: Runner,
     /// How the Nova Files process runs; none for a novad without its UI,
     /// where windows only wait.
     pub ui: Option<crate::supervisor::UiSettings>,
@@ -48,6 +61,8 @@ pub struct Sources {
 
 pub struct Files {
     shared: Arc<Shared>,
+    /// Opens files in apps.
+    opener: Arc<Opener>,
     /// Ends the FileManager1 service.
     stop: Arc<Stop>,
 }
@@ -74,7 +89,26 @@ struct Delivery {
 }
 
 impl Files {
-    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+    /// Starts it, opening files in `apps` with programs from `path_var`.
+    pub fn start(
+        sources: Sources,
+        hub: Arc<Hub>,
+        logger: Arc<Logger>,
+        apps: Arc<AppIndex>,
+        path_var: &str,
+    ) -> Arc<Self> {
+        let (mime, problems) = crate::mime::MimeDb::load(&sources.data_dirs);
+        for problem in problems {
+            logger.warn(LOG_SOURCE, &problem);
+        }
+        let opener = Opener::new(
+            Arc::new(mime),
+            sources.associations.clone(),
+            sources.runner.clone(),
+            apps,
+            path_var,
+            Arc::clone(&logger),
+        );
         let shared = Arc::new_cyclic(|shared: &Weak<Shared>| {
             let shared = Weak::clone(shared);
             let exited = move || {
@@ -87,7 +121,12 @@ impl Files {
         });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, stop })
+        Arc::new(Self { shared, opener: Arc::new(opener), stop })
+    }
+
+    /// What opens files in apps.
+    pub fn opener(&self) -> Arc<Opener> {
+        Arc::clone(&self.opener)
     }
 
     /// Opens a window on `folder` with `select` selected, once both check
@@ -180,17 +219,28 @@ impl Shared {
 impl crate::modules::Module for Files {
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<Topic> = Some(Topic::Files);
+    /// Files open in apps.
+    const NEEDS_APPS: bool = true;
     type Sources = Sources;
     type Config = ();
 
     fn sources(env: &crate::modules::Env) -> Sources {
-        Sources { bus: Bus::Session, ui: env.ui.cloned() }
+        let data_dirs = crate::data_dirs();
+        let associations = Places::system(&data_dirs);
+        let runner = Runner::detect(env.path_var);
+        Sources { bus: Bus::Session, data_dirs, associations, runner, ui: env.ui.cloned() }
     }
 
     fn config(_: &crate::config::Config) {}
 
     fn start(ctx: &crate::modules::Context, sources: &Sources, (): &(), _: &[FeatureState]) -> Arc<Self> {
-        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+        Self::start(
+            sources.clone(),
+            Arc::clone(&ctx.hub),
+            Arc::clone(&ctx.logger),
+            Arc::clone(&ctx.apps),
+            &ctx.path_var,
+        )
     }
 
     fn client_gone(&self, client: ClientId) {
@@ -228,9 +278,15 @@ mod tests {
             std::fs::create_dir_all(dir.join("Downloads")).unwrap();
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
-            let sources =
-                Sources { bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())), ui: None };
-            let files = Files::start(sources, Arc::clone(&hub), logger);
+            let sources = Sources {
+                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                data_dirs: vec![],
+                associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
+                runner: crate::apps::launch::Runner::Direct,
+                ui: None,
+            };
+            let apps = crate::apps::AppIndex::of(None, &logger);
+            let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");
             Self { dir, hub, files }
         }
 
