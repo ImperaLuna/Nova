@@ -174,6 +174,11 @@ fn a_folder_view_is_listed_over_the_socket() {
     assert_eq!(client.request(2, "files_close", Some(json!({"view": 1})))["result"], Value::Null);
     let relative = json!({"view": 2, "path": "Documents", "sort": sort, "hidden": false});
     assert!(client.request(3, "files_open", Some(relative))["error"].as_str().unwrap().contains("absolute"));
+    let missing = json!({"view": 3, "path": folder.join("missing").to_str().unwrap(), "sort": sort, "hidden": false});
+    assert_eq!(client.request(4, "files_open", Some(missing))["result"], Value::Null);
+    let closed = client.next_event("files_closed");
+    assert_eq!(closed["view"], 3);
+    assert!(closed["error"].as_str().unwrap().contains("doesn't exist"), "{closed}");
 }
 
 #[test]

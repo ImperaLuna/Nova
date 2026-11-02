@@ -124,4 +124,5 @@ expression: all
 {"v":2,"id":74,"cmd":"files_open","args":{"view":1,"path":"/home/user/Pictures","sort":{"key":"modified","descending":true},"hidden":false}}
 {"v":2,"id":75,"cmd":"files_close","args":{"view":1}}
 {"v":2,"event":"files_page","data":{"view":1,"path":"/home/user/Pictures","start":0,"total":2,"entries":[{"name":"Screenshots","dir":true,"link":false,"hidden":false,"mime":"inode/directory","modified_ms":1793000000000},{"name":"cover.png","dir":false,"link":false,"hidden":false,"mime":"image/png","size":48213,"modified_ms":1792900000000}]}}
+{"v":2,"event":"files_closed","data":{"view":1,"error":"/home/user/Pictures doesn't exist"}}
 {"v":2,"id":8,"error":"bad request"}

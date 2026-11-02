@@ -128,6 +128,7 @@ var EVENT_NETWORK_TRAFFIC = "network_traffic";
 var EVENT_BLUETOOTH = "bluetooth";
 var EVENT_FILES_WINDOW = "files_window";
 var EVENT_FILES_PAGE = "files_page";
+var EVENT_FILES_CLOSED = "files_closed";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";

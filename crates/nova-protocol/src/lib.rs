@@ -139,6 +139,10 @@ pub enum Event {
     /// A page with `start: 0` replaces everything the view held. Sent only to the client that opened the
     /// view, whatever it subscribed to; topic [`Topic::Files`].
     FilesPage(FolderPage),
+    /// novad closed view `view` (feature `files`) by itself: its folder
+    /// couldn't be read, or went away. `error` says why, for the window.
+    /// Sent only to the client that opened the view; topic [`Topic::Files`].
+    FilesClosed { view: u32, error: String },
 }
 
 /// Groups of events a client can subscribe to.
@@ -195,6 +199,7 @@ impl Event {
             Event::Bluetooth(_) => Some(Topic::Bluetooth),
             Event::FilesWindow(_) => Some(Topic::Files),
             Event::FilesPage(_) => Some(Topic::Files),
+            Event::FilesClosed { .. } => Some(Topic::Files),
         }
     }
 }
@@ -1768,9 +1773,10 @@ pub enum Command {
     /// Shows the folder at the absolute `path` in this connection's view
     /// `view` (feature `files`), in `sort` order, with hidden entries (a
     /// name starting with a dot) only when `hidden`. Whatever the view
-    /// showed is replaced. Answered once the folder can be read; its
-    /// entries come as [`Event::FilesPage`]s (the first may come before
-    /// the answer).
+    /// showed is replaced. Answered once the view is open, without
+    /// touching the disk, so a stalled mount holds up only this view; its
+    /// entries follow as [`Event::FilesPage`]s, or an
+    /// [`Event::FilesClosed`] when the folder can't be read.
     FilesOpen {
         view: u32,
         path: String,
@@ -2596,6 +2602,7 @@ mod tests {
                     },
                 ],
             })),
+            encode(Event::FilesClosed { view: 1, error: "/home/user/Pictures doesn't exist".into() }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();

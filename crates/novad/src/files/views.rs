@@ -1,11 +1,13 @@
 //! Folder views (`files_open`, `files_close`): each client's open folders.
 //!
-//! Opening a view checks the folder can be read, then a thread of its own
-//! reads it, puts it in the view's order and sends it in pages of
-//! [`PAGE_ENTRIES`], so a big folder never holds up the connection.
+//! Opening a view only records it; a thread of its own then reads the
+//! folder, puts it in the view's order and sends it in pages of
+//! [`PAGE_ENTRIES`], so neither a big folder nor a stalled mount holds up
+//! the connection. A folder that can't be read closes its view with
+//! `files_closed`. Reading stops as soon as the view closes.
 //!
-//! Every page is sent while holding the view's state, after checking the
-//! view is still open, so nothing arrives after `files_close` or after
+//! Every event of a view is sent while holding its state, after checking
+//! the view is still open, so nothing arrives after `files_close` or after
 //! another `files_open` replaced it.
 
 use crate::files::folder;
@@ -25,12 +27,16 @@ pub const PAGE_ENTRIES: usize = 500;
 /// A view, named by its client and the client's number for it.
 type Key = (ClientId, u32);
 
+/// The open views; `None` once the module stopped, so a `files_open`
+/// already on its way can't start a view after that.
+type Views = Arc<Mutex<Option<HashMap<Key, Arc<View>>>>>;
+
 /// The open folder views.
 pub struct Folders {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     mime: Arc<MimeDb>,
-    views: Mutex<HashMap<Key, Arc<View>>>,
+    views: Views,
 }
 
 struct View {
@@ -40,55 +46,58 @@ struct View {
     named: String,
     sort: FileSort,
     hidden: bool,
-    /// Still open: pages are sent only while it is.
+    /// Still open: events are sent only while it is.
     open: Mutex<bool>,
 }
 
 impl Folders {
     pub fn new(hub: Arc<Hub>, logger: Arc<Logger>, mime: Arc<MimeDb>) -> Self {
-        Self { hub, logger, mime, views: Mutex::default() }
+        Self { hub, logger, mime, views: Arc::new(Mutex::new(Some(HashMap::new()))) }
     }
 
     /// Opens `path` in `client`'s view `view`, replacing what it showed.
-    /// Returns once the folder can be read; its entries follow as events.
+    /// Doesn't touch the disk: the entries, or why they can't be read,
+    /// follow as events.
     pub fn open(&self, client: ClientId, view: u32, path: &str, sort: FileSort, hidden: bool) -> Result<(), String> {
         let folder = checked_path(path)?;
         let key = (client, view);
-        // Off the views' lock: a slow disk delays only this view.
-        std::fs::read_dir(&folder).map_err(|e| unreadable(path, &e))?;
         let mut views = lock(&self.views);
-        if !views.contains_key(&key) && views.keys().filter(|(owner, _)| *owner == client).count() >= FILES_MAX_VIEWS {
+        let Some(open) = views.as_mut() else { return Err("Nova Files is off".into()) };
+        if !open.contains_key(&key) && open.keys().filter(|(owner, _)| *owner == client).count() >= FILES_MAX_VIEWS {
             return Err(format!("At most {FILES_MAX_VIEWS} folders can be open at once"));
         }
-        if let Some(old) = views.remove(&key) {
+        if let Some(old) = open.remove(&key) {
             old.close();
         }
         let opened = Arc::new(View { key, path: folder, named: path.into(), sort, hidden, open: Mutex::new(true) });
-        views.insert(key, Arc::clone(&opened));
+        open.insert(key, Arc::clone(&opened));
         drop(views);
         let worker = Worker {
-            view: opened,
+            view: Arc::clone(&opened),
             hub: Arc::clone(&self.hub),
             logger: Arc::clone(&self.logger),
             mime: Arc::clone(&self.mime),
+            views: Arc::clone(&self.views),
         };
-        std::thread::Builder::new()
-            .name("novad-files-view".into())
-            .spawn(move || worker.send_all())
-            .map(drop)
-            .map_err(|e| format!("Can't read the folder: {e}"))
+        let spawned = std::thread::Builder::new().name("novad-files-view".into()).spawn(move || worker.send_all());
+        spawned.map(drop).map_err(|e| {
+            self.close(client, view);
+            format!("Can't read the folder: {e}")
+        })
     }
 
     /// Closes `client`'s view `view`; nothing more is sent for it.
     pub fn close(&self, client: ClientId, view: u32) {
-        if let Some(old) = lock(&self.views).remove(&(client, view)) {
+        if let Some(old) = lock(&self.views).as_mut().and_then(|open| open.remove(&(client, view))) {
             old.close();
         }
     }
 
     /// Closes every view of `client`, which hung up.
     pub fn client_gone(&self, client: ClientId) {
-        lock(&self.views).retain(|(owner, _), view| {
+        let mut views = lock(&self.views);
+        let Some(open) = views.as_mut() else { return };
+        open.retain(|(owner, _), view| {
             let keep = *owner != client;
             if !keep {
                 view.close();
@@ -97,9 +106,9 @@ impl Folders {
         });
     }
 
-    /// Closes every view.
+    /// Closes every view, for good.
     pub fn stop(&self) {
-        for (_, view) in lock(&self.views).drain() {
+        for (_, view) in lock(&self.views).take().into_iter().flatten() {
             view.close();
         }
     }
@@ -109,6 +118,10 @@ impl View {
     fn close(&self) {
         *lock(&self.open) = false;
     }
+
+    fn is_open(&self) -> bool {
+        *lock(&self.open)
+    }
 }
 
 /// The thread that reads one view's folder.
@@ -117,15 +130,19 @@ struct Worker {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     mime: Arc<MimeDb>,
+    views: Views,
 }
 
 impl Worker {
     /// Reads the whole folder and sends it from the start.
     fn send_all(&self) {
-        let mut entries = match folder::read_folder(&self.view.path, self.view.hidden, &self.mime) {
-            Ok(entries) => entries,
+        let read = folder::read_folder(&self.view.path, self.view.hidden, &self.mime, || !self.view.is_open());
+        let mut entries = match read {
+            Ok(Some(entries)) => entries,
+            Ok(None) => return,
             Err(e) => {
-                return self.logger.warn(LOG_SOURCE, &format!("can't read {}: {e}", self.view.path.display()));
+                self.logger.warn(LOG_SOURCE, &format!("can't read {}: {e}", self.view.path.display()));
+                return self.closed(unreadable(&self.view.named, &e));
             }
         };
         entries.sort_by(|a, b| folder::order(self.view.sort, a, b));
@@ -142,6 +159,23 @@ impl Worker {
             let page = FolderPage { view, path: self.view.named.clone(), start, total, entries };
             self.hub.send_to(client, &Event::FilesPage(page));
         }
+    }
+
+    /// Closes the view for `error`, telling its client once.
+    fn closed(&self, error: String) {
+        let mut views = lock(&self.views);
+        let mut open = lock(&self.view.open);
+        if !*open {
+            return;
+        }
+        *open = false;
+        if let Some(views) = views.as_mut()
+            && views.get(&self.view.key).is_some_and(|shown| Arc::ptr_eq(shown, &self.view))
+        {
+            views.remove(&self.view.key);
+        }
+        let (client, view) = self.view.key;
+        self.hub.send_to(client, &Event::FilesClosed { view, error });
     }
 }
 
@@ -322,12 +356,51 @@ mod tests {
         std::fs::write(dir.join("note.md"), b"").unwrap();
         let open = |path: &str| fixture.folders.open(fixture.client, 1, path, BY_NAME, false);
         assert!(open("relative/folder").unwrap_err().contains("absolute"));
-        assert!(open(dir.join("missing").to_str().unwrap()).unwrap_err().contains("doesn't exist"));
-        assert!(open(dir.join("note.md").to_str().unwrap()).unwrap_err().contains("isn't a folder"));
         assert!(open(&format!("/{}", "x".repeat(FILES_PATH_MAX_BYTES))).is_err());
         let views = (0..=FILES_MAX_VIEWS as u32)
             .map(|view| fixture.folders.open(fixture.client, view, dir.to_str().unwrap(), BY_NAME, false));
         assert_eq!(views.filter(Result::is_err).count(), 1, "one view past the limit");
+    }
+
+    #[test]
+    fn a_folder_that_cant_be_read_closes_its_view() {
+        let mut fixture = Fixture::new("files-unreadable");
+        let dir = TempDir::new("files-unreadable-folder");
+        std::fs::write(dir.join("note.md"), b"").unwrap();
+        for (path, why) in [(dir.join("missing"), "doesn't exist"), (dir.join("note.md"), "isn't a folder")] {
+            fixture.open(&path).unwrap();
+            let closed = fixture.next();
+            assert_eq!(closed["event"], "files_closed");
+            assert_eq!(closed["data"]["view"], 1);
+            assert!(closed["data"]["error"].as_str().unwrap().contains(why), "{closed}");
+        }
+        // The closed view no longer counts, and opens again.
+        fixture.open(&dir).unwrap();
+        fixture.until_shown(&["note.md"]);
+    }
+
+    #[test]
+    fn nothing_opens_after_stop() {
+        let fixture = Fixture::new("files-stopped");
+        let dir = TempDir::new("files-stopped-folder");
+        fixture.folders.stop();
+        assert!(fixture.open(&dir).is_err());
+        fixture.nothing_more();
+    }
+
+    #[test]
+    fn closing_stops_reading_the_folder() {
+        let fixture = Fixture::new("files-cancel");
+        let view = Arc::new(View {
+            key: (fixture.client, 1),
+            path: PathBuf::from("/"),
+            named: "/".into(),
+            sort: BY_NAME,
+            hidden: false,
+            open: Mutex::new(false),
+        });
+        let read = folder::read_folder(&view.path, true, &fixture.folders.mime, || !view.is_open());
+        assert!(read.unwrap().is_none());
     }
 
     /// The ticket's bar: 100,000 files open without a stall.

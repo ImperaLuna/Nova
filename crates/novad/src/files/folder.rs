@@ -53,9 +53,19 @@ pub fn read_entry(folder: &Path, name: &OsStr, mime: &MimeDb) -> Option<FileEntr
 }
 
 /// Every entry in `folder`, hidden ones only when `hidden`, in no order.
-pub fn read_folder(folder: &Path, hidden: bool, mime: &MimeDb) -> std::io::Result<Vec<FileEntry>> {
+/// `None` once `stopped` says the entries are no longer wanted, which is
+/// asked before each one, so leaving a big folder doesn't finish reading it.
+pub fn read_folder(
+    folder: &Path,
+    hidden: bool,
+    mime: &MimeDb,
+    stopped: impl Fn() -> bool,
+) -> std::io::Result<Option<Vec<FileEntry>>> {
     let mut entries = Vec::new();
     for found in std::fs::read_dir(folder)? {
+        if stopped() {
+            return Ok(None);
+        }
         // An entry deleted while the folder is read is simply not listed.
         let Ok(found) = found else { continue };
         let name = found.file_name();
@@ -66,7 +76,7 @@ pub fn read_folder(folder: &Path, hidden: bool, mime: &MimeDb) -> std::io::Resul
             entries.push(entry);
         }
     }
-    Ok(entries)
+    Ok((!stopped()).then_some(entries))
 }
 
 /// A dot file, hidden by default as on every Linux desktop.
