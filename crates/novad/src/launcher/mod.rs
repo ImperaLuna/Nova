@@ -4,18 +4,17 @@
 //! again each time the index reads them.
 
 pub mod autostart;
-mod launch;
 pub mod providers;
 mod rank;
 
 use crate::apps::AppIndex;
 use crate::apps::desktop_entry::Entry;
+pub use crate::apps::launch::Runner;
 use crate::compositor::Compositor;
 use crate::hub::Hub;
 use crate::logger::Logger;
 use crate::tray::Tray;
 use crate::{lock, state_file};
-pub use launch::{Runner, open};
 use nova_protocol::{App, Event, LauncherItem};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -224,7 +223,7 @@ impl Launcher {
         if self.stopped() {
             return Err(crate::features::not_ready(FEATURE_ID));
         }
-        launch::launch(&entry, &self.paths.runner, &self.path_var, &self.logger)
+        crate::apps::launch::launch(&entry, &self.paths.runner, &self.path_var, &self.logger)
             .inspect_err(|e| self.logger.warn(LOG_SOURCE, &format!("can't launch {id}: {e}")))
     }
 

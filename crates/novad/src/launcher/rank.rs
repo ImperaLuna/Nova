@@ -129,7 +129,9 @@ mod tests {
             exec: vec![name.to_lowercase()],
             terminal: false,
             path: None,
-            opens_types: false,
+            file_arg: Default::default(),
+            mime_types: vec![],
+            listed: true,
             window_class: None,
             categories: vec![],
         }
