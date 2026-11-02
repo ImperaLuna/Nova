@@ -37,6 +37,10 @@ lint-nix:
     statix check --ignore 'docs/*' .
     deadnix --fail $(git ls-files '*.nix')
 
+# Rewrite ui/daemon/protocol.js's generated names from crates/nova-protocol
+protocol-js:
+    NOVA_WRITE_PROTOCOL_JS=1 cargo test -p nova-protocol js::protocol_js_is_current
+
 # Review changed insta snapshots (crates/*/src/snapshots)
 snapshots:
     cargo insta review

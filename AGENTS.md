@@ -66,10 +66,10 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - One source of truth. A value used in more than one place (a color, size,
   duration, timeout, socket path, command name, event name) is defined once
   and referenced everywhere else: design values in `theme/Tokens.qml`, wire
-  names in `nova-protocol` and `ui/daemon/protocol.js`, Rust constants in the
-  crate that owns them. Never copy a literal into a second file.
-  `ui/daemon/protocol.js` mirrors `nova-protocol`: change both together,
-  with matching tests on both sides.
+  names in `nova-protocol`, Rust constants in the crate that owns them.
+  Never copy a literal into a second file. The wire names in
+  `ui/daemon/protocol.js` are generated from `nova-protocol`: change the
+  Rust types, then run `just protocol-js`.
 - Each crate, module and QML file opens with a comment saying what it does
   and how. Read it before changing that code and keep it true in the same
   change.
