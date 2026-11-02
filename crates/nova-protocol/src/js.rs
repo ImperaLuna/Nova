@@ -48,19 +48,22 @@ const UNKNOWN: &str = "";
 /// Every wire name of a plain enum (`"focus_workspace"`, ...), in
 /// declaration order.
 fn names_of<'de, T: Deserialize<'de>>() -> &'static [&'static str] {
-    caught(T::deserialize(StrDeserializer::<Variants>::new(UNKNOWN)).err())
+    caught::<T>(T::deserialize(StrDeserializer::<Variants>::new(UNKNOWN)).err())
 }
 
 /// Every wire name of an enum tagged by `tag` (`#[serde(tag = "cmd")]`).
 fn tagged_names_of<'de, T: Deserialize<'de>>(tag: &'static str) -> &'static [&'static str] {
     let message = MapDeserializer::<_, Variants>::new(std::iter::once((tag, UNKNOWN)));
-    caught(T::deserialize(message).err())
+    caught::<T>(T::deserialize(message).err())
 }
 
-fn caught(error: Option<Variants>) -> &'static [&'static str] {
+fn caught<T>(error: Option<Variants>) -> &'static [&'static str] {
     match error {
         Some(Variants(Some(names))) => names,
-        other => panic!("serde listed no variants: {other:?}"),
+        _ => panic!(
+            "serde listed no variants for {}: only a derived Deserialize of a plain or tagged enum does",
+            std::any::type_name::<T>()
+        ),
     }
 }
 
@@ -166,8 +169,9 @@ pub fn generated(features: &Path) -> String {
 pub fn with_block(protocol_js: &str, block: &str) -> String {
     let start = protocol_js.find(BEGIN).expect("protocol.js has no BEGIN GENERATED line");
     let end = protocol_js[start..].find(END).expect("protocol.js has no END GENERATED line") + start;
-    let after = end + END.len() + 1;
-    format!("{}{block}{}", &protocol_js[..start], &protocol_js[after.min(protocol_js.len())..])
+    // Everything after END's line stays, whatever ends that line.
+    let after = protocol_js[end..].find('\n').map_or(protocol_js.len(), |newline| end + newline + 1);
+    format!("{}{block}{}", &protocol_js[..start], &protocol_js[after..])
 }
 
 #[test]
@@ -181,6 +185,18 @@ fn protocol_js_is_current() {
         return;
     }
     assert!(current == expected, "ui/daemon/protocol.js is stale: run `just protocol-js`");
+}
+
+/// Wire names live only in the generated block: a `var` written by hand
+/// next to the functions would escape the check above and could shadow a
+/// generated one.
+#[test]
+fn protocol_js_declares_names_only_in_the_block() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let js = std::fs::read_to_string(root.join("ui/daemon/protocol.js")).unwrap();
+    let outside = with_block(&js, "");
+    let declared: Vec<&str> = outside.lines().filter(|line| line.starts_with("var ")).collect();
+    assert!(declared.is_empty(), "protocol.js declares names outside the generated block: {declared:?}");
 }
 
 #[test]
