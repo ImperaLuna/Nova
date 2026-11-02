@@ -5,18 +5,10 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import "capture"
-import "capture/service"
 import "compositor"
 import "daemon"
-import "lock"
-import "lock/service"
-import "notifications"
-import "notifications/service"
-import "quick_settings"
-import "quick_settings/service"
 import "stage"
-import "volume"
+import "volume/service"
 
 ShellRoot {
     Variants {
@@ -31,39 +23,16 @@ ShellRoot {
         }
     }
 
-    // Stays loaded while locked even if the feature turns off: dropping the
-    // session lock then would leave the screens covered for good.
-    LazyLoader {
-        active: Daemon.theme !== null && (LockService.ready || LockService.locked)
-        component: LockScreen {}
-    }
+    // The volume capsule, the lock screen, notification pop-ups, the
+    // capture overlay and pairing questions: the shell.overlays host.
+    OverlaySlots {}
 
-    // The volume capsule, on whichever screen has focus when it comes out.
-    LazyLoader {
-        active: Daemon.theme !== null
-        component: VolumeOsd {}
-    }
-
-    // Notifications' pop-ups, while their feature is on.
-    LazyLoader {
-        active: Daemon.theme !== null && NotificationsService.ready
-        component: NotificationPopups {}
-    }
-
-    // Bluetooth pairing questions while the Bluetooth page isn't open.
-    LazyLoader {
-        active: Daemon.theme !== null && BluetoothService.ready
-        component: PairingPopup {}
-    }
-
-    // Screenshots and recordings: the region picker while it's open, the
-    // marks around a region being recorded, and the card a saved shot or
-    // recording lands in.
-    LazyLoader {
-        active: Daemon.theme !== null && (ScreenshotService.ready || RecordingService.ready)
-        component: Scope {
-            CaptureOverlay {}
-            ShotCards {}
+    // Volume keys bound to `nova volume`, whatever draws the volume (the
+    // capsule, quick settings or neither).
+    Connections {
+        target: Daemon
+        function onVolumeRequested(key: string) {
+            VolumeService.pressKey(key);
         }
     }
 

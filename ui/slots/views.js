@@ -36,7 +36,16 @@ var VIEWS = {
     "network.page": "quick_settings/slots/NetworkPageSlot.qml",
     "bluetooth.page": "quick_settings/slots/BluetoothPageSlot.qml",
     "resources.page": "quick_settings/slots/ResourcesPageSlot.qml",
-    "notifications.page": "quick_settings/slots/NotificationSettingsPageSlot.qml"
+    "notifications.page": "quick_settings/slots/NotificationSettingsPageSlot.qml",
+    // The central pill draws its parts itself, the ones whose slots are
+    // filled (central-pill.parts).
+    "workspaces.list": "central_pill/CentralPill.qml",
+    "clock.time": "central_pill/CentralPill.qml",
+    "volume-osd.capsule": "volume/VolumeOsd.qml",
+    "lock.screen": "lock/LockScreenSlot.qml",
+    "notifications.popups": "notifications/NotificationPopups.qml",
+    "bluetooth.pairing": "quick_settings/PairingPopup.qml",
+    "capture.overlay": "capture/CaptureSlot.qml"
 };
 
 // The file of view `view`, relative to ui/, or "" for one there isn't.

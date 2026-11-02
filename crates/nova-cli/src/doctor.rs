@@ -253,15 +253,34 @@ fn features_lines(features: &Result<Vec<FeatureState>, String>, distro: &Distro)
             Line::new(Level::Fail, "features", format!("{} needs {}; {install}", feature.id, needs.join(", ")))
         })
         .collect();
-    let unhosted = features.iter().filter(|feature| feature.status == FeatureStatus::NoHost).map(|feature| {
-        let hosts: Vec<&str> = feature.slots.iter().map(|slot| slot.host.as_str()).collect();
-        Line::new(
-            Level::Warn,
-            "features",
-            format!("{} is on but has nowhere to show: {} is off or unknown", feature.id, hosts.join(", ")),
-        )
+    let unknown = features.iter().filter(|feature| feature.status != FeatureStatus::Off).flat_map(|feature| {
+        feature.slots.iter().filter(|slot| nova_features::host(&slot.host).is_none()).map(|slot| {
+            Line::new(
+                Level::Warn,
+                "features",
+                format!(
+                    "{} puts {} in {}, a slot host Nova doesn't have, so it never shows",
+                    feature.id, slot.view, slot.host
+                ),
+            )
+        })
     });
-    let problems: Vec<Line> = missing.into_iter().chain(unhosted).collect();
+    let unhosted = features.iter().filter(|feature| feature.status == FeatureStatus::NoHost).map(|feature| {
+        let mut owners: Vec<&str> = feature
+            .slots
+            .iter()
+            .filter_map(|slot| nova_features::host(&slot.host))
+            .filter_map(|host| host.owner)
+            .collect();
+        owners.sort_unstable();
+        owners.dedup();
+        let why = match owners.is_empty() {
+            true => "none of its slot hosts exist".to_owned(),
+            false => format!("{} is off", owners.join(" and ")),
+        };
+        Line::new(Level::Warn, "features", format!("{} is on but has nowhere to show: {why}", feature.id))
+    });
+    let problems: Vec<Line> = missing.into_iter().chain(unknown).chain(unhosted).collect();
     if !problems.is_empty() {
         return problems;
     }
@@ -270,6 +289,9 @@ fn features_lines(features: &Result<Vec<FeatureState>, String>, distro: &Distro)
         .filter(|feature| feature.status == FeatureStatus::Ready)
         .map(|feature| feature.id.as_str())
         .collect();
+    if on.is_empty() {
+        return vec![Line::new(Level::Ok, "features", "all off, so novad runs without a UI")];
+    }
     vec![Line::new(Level::Ok, "features", format!("{} on, nothing missing", on.join(", ")))]
 }
 
@@ -427,6 +449,32 @@ mod tests {
         let nixos = Facts { host: host(Distro::NixOs, vec![Gpu::Nvidia], true), ..facts };
         let text = rendered(&nixos);
         assert!(text.contains("recording needs gpu-screen-recorder or wf-recorder; Nova's Nix module installs it with `programs.nova.features.recording.enable = true;` and a rebuild"), "{text}");
+    }
+
+    /// A slot naming a host Nova doesn't have, and a feature whose hosts'
+    /// feature is off (now playing with the bar off), each warn; with
+    /// everything off the doctor says the UI doesn't run.
+    #[test]
+    fn slots_with_nowhere_to_show_warn() {
+        let slot = |host: &str, view: &str| nova_features::Slot { host: host.into(), view: view.into(), order: 0 };
+        let media = FeatureState {
+            slots: vec![slot("bar.left", "media.pill")],
+            ..feature("media", FeatureStatus::NoHost, &[])
+        };
+        let typo = FeatureState {
+            slots: vec![slot("bar.middle", "clock.big"), slot("shell.overlays", "clock.overlay")],
+            ..feature("clock", FeatureStatus::Ready, &[])
+        };
+        let facts = Facts { features: Ok(vec![feature("bar", FeatureStatus::Off, &[]), media, typo]), ..healthy() };
+        let text = rendered(&facts);
+        assert!(text.contains("warn  features    media is on but has nowhere to show: bar is off"), "{text}");
+        assert!(
+            text.contains("clock puts clock.big in bar.middle, a slot host Nova doesn't have, so it never shows"),
+            "{text}"
+        );
+
+        let all_off = Facts { features: Ok(vec![feature("bar", FeatureStatus::Off, &[])]), ..healthy() };
+        assert!(rendered(&all_off).contains("ok    features    all off, so novad runs without a UI"));
     }
 
     #[test]
