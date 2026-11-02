@@ -222,7 +222,8 @@ mod tests {
             std::fs::create_dir_all(dir.join("Downloads")).unwrap();
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
-            let sources = Sources { bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())), ui: None };
+            let sources =
+                Sources { bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())), ui: None };
             let files = Files::start(sources, Arc::clone(&hub), logger);
             Self { dir, hub, files }
         }
