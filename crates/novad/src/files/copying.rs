@@ -18,11 +18,16 @@ use std::time::UNIX_EPOCH;
 /// How much of a file is copied between progress reports and checks for a
 /// stop.
 pub const CHUNK_BYTES: usize = 1 << 20;
-/// The highest number tried for a free name ("cover (2).png" and on).
+/// How many numbers are tried for a free name ("cover (2).png" and on),
+/// and for a temporary one.
 const MOST_NUMBERED: u32 = 10_000;
-/// Ends the name of a file being copied, until it's complete and renamed
-/// to its own name.
-const PART_SUFFIX: &str = ".nova-part";
+/// Starts the name of a file being copied, until it's complete and renamed
+/// to its own name. Short, so even an item whose own name is as long as
+/// Linux allows can be copied.
+const PART_PREFIX: &str = ".nova-part.";
+/// Starts the name of something replaced, kept until what replaces it is
+/// in place.
+const ASIDE_PREFIX: &str = ".nova-aside.";
 
 /// What a job will copy or move, and the clashes it will meet on the way
 /// if every folder clash is merged.
@@ -41,10 +46,26 @@ impl Measure {
     }
 }
 
-/// Whether two entries clash as folders (a folder landing on a folder,
-/// which can merge) rather than as files.
-pub fn folders(source: &Metadata, existing: &Metadata) -> bool {
-    source.is_dir() && existing.is_dir()
+/// How an item clashes with what's already at its name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Clashing {
+    /// Neither is a folder: one file replaces the other.
+    Files,
+    /// A folder lands on a folder, which can merge.
+    Folders,
+    /// A folder and something else. Always asked about on its own, so an
+    /// answer given to all file clashes never deletes a folder unseen.
+    Mixed,
+}
+
+impl Clashing {
+    pub fn of(source: &Metadata, existing: &Metadata) -> Self {
+        match (source.is_dir(), existing.is_dir()) {
+            (true, true) => Self::Folders,
+            (false, false) => Self::Files,
+            _ => Self::Mixed,
+        }
+    }
 }
 
 /// Measures `source` as it would land at `target`: its bytes, and the
@@ -57,15 +78,13 @@ pub fn measure(source: &Path, target: Option<&Path>, stopped: &dyn Fn() -> bool)
     let meta = fs::symlink_metadata(source)?;
     let mut measured = Measure::default();
     let existing = target.and_then(|target| fs::symlink_metadata(target).ok());
-    let mut merges = false;
-    if let Some(existing) = &existing {
-        if folders(&meta, existing) {
-            measured.folder_clashes += 1;
-            merges = true;
-        } else {
-            measured.file_clashes += 1;
-        }
+    let clashing = existing.as_ref().map(|existing| Clashing::of(&meta, existing));
+    match clashing {
+        Some(Clashing::Files) => measured.file_clashes += 1,
+        Some(Clashing::Folders) => measured.folder_clashes += 1,
+        Some(Clashing::Mixed) | None => {}
     }
+    let merges = clashing == Some(Clashing::Folders);
     if meta.is_file() {
         measured.bytes = meta.len();
     } else if meta.is_dir() {
@@ -104,7 +123,7 @@ pub fn numbered(folder: &Path, name: &OsStr, dir: bool) -> io::Result<OsString> 
     let split = (!dir).then(|| bytes.iter().rposition(|byte| *byte == b'.')).flatten().filter(|at| *at > 0);
     let (stem, extension) = split.map_or((bytes, &b""[..]), |at| bytes.split_at(at));
     let (base, first) = numbered_parts(stem);
-    for number in first..=MOST_NUMBERED {
+    for number in first..first.saturating_add(MOST_NUMBERED) {
         let mut candidate = base.to_vec();
         candidate.extend_from_slice(format!(" ({number})").as_bytes());
         candidate.extend_from_slice(extension);
@@ -115,7 +134,7 @@ pub fn numbered(folder: &Path, name: &OsStr, dir: bool) -> io::Result<OsString> 
             Ok(_) => {}
         }
     }
-    Err(io::Error::other(format!("every name up to ({MOST_NUMBERED}) is taken")))
+    Err(io::Error::other("no free numbered name"))
 }
 
 /// A stem without its " (n)", and the number to try first.
@@ -140,18 +159,10 @@ pub struct Part {
 }
 
 impl Part {
-    /// Creates it in `folder` for an item called `name`, private until it's
-    /// finished.
-    pub fn create(folder: &Path, name: &OsStr) -> io::Result<Self> {
-        let mut base = OsString::from(".");
-        base.push(name);
+    /// Creates it in `folder`, private until it's finished.
+    pub fn create(folder: &Path) -> io::Result<Self> {
         for attempt in 0..MOST_NUMBERED {
-            let mut candidate = base.clone();
-            if attempt > 0 {
-                candidate.push(format!(".{attempt}"));
-            }
-            candidate.push(PART_SUFFIX);
-            let path = folder.join(candidate);
+            let path = folder.join(format!("{PART_PREFIX}{attempt}"));
             match OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path) {
                 Ok(file) => return Ok(Self { path, file: Some(file) }),
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
@@ -181,17 +192,21 @@ impl Part {
         }
     }
 
-    /// Gives it `meta`'s permissions and modified time and puts it at
-    /// `target`, over anything there. Not synced to disk: a file per sync
-    /// makes copying many small ones crawl, and unmounting flushes them.
+    /// Gives it `meta`'s permissions and modified time where the drive
+    /// keeps them (a FAT stick refuses permissions) and puts it at
+    /// `target`, over anything there; it's removed if that fails. Not
+    /// synced to disk: a sync per file makes copying many small ones crawl,
+    /// and unmounting flushes them.
     pub fn finish(mut self, meta: &Metadata, target: &Path) -> io::Result<()> {
-        let Some(file) = self.file.take() else { return Err(io::Error::other("already finished")) };
-        if let Ok(modified) = meta.modified() {
-            file.set_modified(modified)?;
+        if let Some(file) = &self.file {
+            if let Ok(modified) = meta.modified() {
+                let _ = file.set_modified(modified);
+            }
+            let _ = file.set_permissions(meta.permissions());
         }
-        file.set_permissions(meta.permissions())?;
-        drop(file);
-        fs::rename(&self.path, target)
+        fs::rename(&self.path, target)?;
+        self.file = None;
+        Ok(())
     }
 }
 
@@ -208,16 +223,51 @@ impl Drop for Part {
 pub fn copy_link(source: &Path, target: &Path) -> io::Result<()> {
     let points_to = fs::read_link(source)?;
     let folder = target.parent().unwrap_or(Path::new("/"));
-    let name = target.file_name().unwrap_or_default();
     // Made under a temporary name and renamed, so what was there is
     // replaced in one step.
-    let part = Part::create(folder, name)?;
+    let part = Part::create(folder)?;
     let temporary = part.path.clone();
     drop(part);
     std::os::unix::fs::symlink(points_to, &temporary)?;
     fs::rename(&temporary, target).inspect_err(|_| {
         let _ = fs::remove_file(&temporary);
     })
+}
+
+/// Something set aside under a temporary name while what replaces it is
+/// placed: [`Aside::discard`]ed once that worked, [`Aside::restore`]d if it
+/// didn't, so a failed or cancelled replace loses nothing.
+pub struct Aside {
+    path: PathBuf,
+    held: PathBuf,
+}
+
+impl Aside {
+    pub fn new(path: &Path) -> io::Result<Self> {
+        let folder = path.parent().unwrap_or(Path::new("/"));
+        for attempt in 0..MOST_NUMBERED {
+            let held = folder.join(format!("{ASIDE_PREFIX}{attempt}"));
+            match fs::symlink_metadata(&held) {
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                    fs::rename(path, &held)?;
+                    return Ok(Self { path: path.to_owned(), held });
+                }
+                Err(e) => return Err(e),
+                Ok(_) => {}
+            }
+        }
+        Err(io::Error::other("no free name to set it aside"))
+    }
+
+    pub fn discard(self) -> io::Result<()> {
+        remove(&self.held)
+    }
+
+    /// Puts it back, over whatever was half placed at its name.
+    pub fn restore(self) -> io::Result<()> {
+        remove(&self.path)?;
+        fs::rename(&self.held, &self.path)
+    }
 }
 
 /// Removes whatever is at `path`, a whole folder included.
@@ -252,6 +302,7 @@ mod tests {
         assert_eq!(name(&dir, ".bashrc", false), ".bashrc (2)");
         assert_eq!(name(&dir, "notes (draft).txt", false), "notes (draft) (2).txt");
         assert_eq!(name(&dir, "(1)", false), "(1) (2)");
+        assert_eq!(name(&dir, "scan (10000).pdf", false), "scan (10001).pdf");
     }
 
     #[test]
@@ -274,7 +325,7 @@ mod tests {
     fn a_part_left_unfinished_is_removed() {
         let dir = TempDir::new("part");
         fs::write(dir.join("big.bin"), vec![7; CHUNK_BYTES + 10]).unwrap();
-        let mut part = Part::create(&dir, OsStr::new("big.bin")).unwrap();
+        let mut part = Part::create(&dir).unwrap();
         let mut chunks = 0;
         assert!(
             !part

@@ -11,6 +11,8 @@ import "transfers.js" as Transfers
 // jobs it started, each as a card stacked at the bottom right, and the name
 // clash dialog in the middle while one of them asks. Clashes come one at a
 // time, oldest job first; the window behind takes no clicks meanwhile.
+// Closing the window cancels its jobs; novad stops them all when the
+// connection drops, so they're dropped here too.
 Item {
     id: transfers
 
@@ -41,8 +43,17 @@ Item {
     // windows'.
     property var mine: ({})
 
+    Component.onDestruction: {
+        for (const job of jobs)
+            FilesService.cancelTransfer(job.job);
+    }
+
     Connections {
         target: FilesService
+        function onTransfersLost() {
+            transfers.jobs = [];
+            transfers.mine = {};
+        }
         function onTransferChanged(transfer: var) {
             if (!transfers.mine[transfer.job])
                 return;

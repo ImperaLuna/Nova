@@ -19,7 +19,7 @@
 //! by the client's hang-up or the module stopped; the last one (done,
 //! cancelled or failed) unregisters it in the same step.
 
-use crate::files::copying::{self, Measure, Part};
+use crate::files::copying::{self, Aside, Clashing, Measure, Part};
 use crate::files::views::checked_path;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
@@ -207,6 +207,8 @@ struct Item {
     source: PathBuf,
     name: OsString,
     meta: Metadata,
+    /// Its bytes, as measured.
+    bytes: u64,
     /// It's copied into the folder it's in, under a new name.
     renamed: bool,
 }
@@ -272,7 +274,8 @@ impl Run {
                 .map_err(|e| failed(source, &e))?
                 .ok_or(Halt::Stopped)?;
             self.total.add(measured);
-            items.push(Item { source: source.clone(), name: name.to_owned(), meta, renamed: in_place });
+            let bytes = measured.bytes;
+            items.push(Item { source: source.clone(), name: name.to_owned(), meta, bytes, renamed: in_place });
         }
         Ok(items)
     }
@@ -280,32 +283,34 @@ impl Run {
     fn place_item(&mut self, item: Item) -> Step {
         if !item.renamed {
             let folder = self.folder.clone();
-            return self.place(&item.source, &folder, &item.name);
+            return self.place(&item.source, &folder, &item.name, Some(item.bytes));
         }
         self.check()?;
         let name =
             copying::numbered(&self.folder, &item.name, item.meta.is_dir()).map_err(|e| failed(&item.source, &e))?;
-        self.put(&item.source, &item.meta, &self.folder.join(name), None)
+        self.put(&item.source, &item.meta, &self.folder.join(name), None, Some(item.bytes))
     }
 
     /// Copies or moves `source` into the folder `into` as `name`, asking
-    /// when the name is taken.
-    fn place(&mut self, source: &Path, into: &Path, name: &std::ffi::OsStr) -> Step {
+    /// when the name is taken. `bytes` is its size when it's known.
+    fn place(&mut self, source: &Path, into: &Path, name: &std::ffi::OsStr, bytes: Option<u64>) -> Step {
         self.check()?;
         let meta = fs::symlink_metadata(source).map_err(|e| failed(source, &e))?;
         let target = into.join(name);
         let existing = match fs::symlink_metadata(&target) {
             Ok(existing) => existing,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return self.put(source, &meta, &target, None),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return self.put(source, &meta, &target, None, bytes),
             Err(e) => return Err(failed(&target, &e)),
         };
-        let folders = copying::folders(&meta, &existing);
-        match self.decide(source, &meta, &target, &existing, folders)? {
-            ClashAnswer::Skip => self.skip(source, &target, folders),
+        let clashing = Clashing::of(&meta, &existing);
+        match self.decide(source, &meta, &target, &existing, clashing)? {
+            ClashAnswer::Skip => self.skip(source, &target, clashing),
             ClashAnswer::Merge => self.merge(source, &target),
             ClashAnswer::Replace => {
-                self.total.file_clashes = self.total.file_clashes.saturating_sub(1);
-                self.put(source, &meta, &target, Some(&existing))
+                if clashing == Clashing::Files {
+                    self.total.file_clashes = self.total.file_clashes.saturating_sub(1);
+                }
+                self.put(source, &meta, &target, Some(&existing), bytes)
             }
         }
     }
@@ -318,15 +323,25 @@ impl Run {
         meta: &Metadata,
         target: &Path,
         existing: &Metadata,
-        folders: bool,
+        clashing: Clashing,
     ) -> Result<ClashAnswer, Halt> {
-        let kind = usize::from(folders);
-        if let Some(answer) = self.remembered[kind] {
+        // A folder against a file is never answered for all.
+        let kind = match clashing {
+            Clashing::Files => Some(0),
+            Clashing::Folders => Some(1),
+            Clashing::Mixed => None,
+        };
+        if let Some(answer) = kind.and_then(|kind| self.remembered[kind]) {
             return Ok(answer);
         }
         self.next_clash += 1;
         let id = self.next_clash;
-        let same_kind = if folders { self.total.folder_clashes } else { self.total.file_clashes };
+        let folders = clashing == Clashing::Folders;
+        let same_kind = match clashing {
+            Clashing::Files => self.total.file_clashes,
+            Clashing::Folders => self.total.folder_clashes,
+            Clashing::Mixed => 0,
+        };
         let clash = Clash {
             id,
             name: target.file_name().unwrap_or_default().to_string_lossy().into_owned(),
@@ -356,7 +371,7 @@ impl Run {
             control = self.job.changed.wait(control).unwrap_or_else(std::sync::PoisonError::into_inner);
         };
         drop(control);
-        if all {
+        if all && let Some(kind) = kind {
             self.remembered[kind] = Some(answer);
         }
         self.report(TransferState::Running, None, None);
@@ -365,14 +380,20 @@ impl Run {
 
     /// Leaves `source` where it is: its bytes and the clashes inside it
     /// come off what's ahead.
-    fn skip(&mut self, source: &Path, target: &Path, folders: bool) -> Step {
+    fn skip(&mut self, source: &Path, target: &Path, clashing: Clashing) -> Step {
+        let folders = clashing == Clashing::Folders;
         let job = Arc::clone(&self.job);
         let skipped = copying::measure(source, folders.then_some(target), &|| job.stopped())
             .map_err(|e| failed(source, &e))?
             .ok_or(Halt::Stopped)?;
         self.total.bytes = self.total.bytes.saturating_sub(skipped.bytes);
-        // A file clash measured on its own counts once, as a file.
-        let (files, folders) = if folders { (skipped.file_clashes, skipped.folder_clashes) } else { (1, 0) };
+        // Measured with what it clashed with, a skipped folder counts the
+        // clashes a merge would have met; anything else counts as itself.
+        let (files, folders) = match clashing {
+            Clashing::Folders => (skipped.file_clashes, skipped.folder_clashes),
+            Clashing::Files => (1, 0),
+            Clashing::Mixed => (0, 0),
+        };
         self.total.file_clashes = self.total.file_clashes.saturating_sub(files);
         self.total.folder_clashes = self.total.folder_clashes.saturating_sub(folders);
         Ok(())
@@ -394,35 +415,45 @@ impl Run {
         let entries = fs::read_dir(source).map_err(|e| failed(source, &e))?;
         for entry in entries {
             let name = entry.map_err(|e| failed(source, &e))?.file_name();
-            self.place(&source.join(&name), target, &name)?;
+            self.place(&source.join(&name), target, &name, None)?;
         }
         Ok(())
     }
 
-    /// Puts `source` at `target`, replacing `existing` there.
-    fn put(&mut self, source: &Path, meta: &Metadata, target: &Path, existing: Option<&Metadata>) -> Step {
+    /// Puts `source` at `target`, replacing `existing` there. A file over
+    /// a file is swapped in one step; a folder for a file, or a file for a
+    /// folder, sets the old one aside until the new one is in, and puts it
+    /// back if that fails or is cancelled. `bytes` is its size when known.
+    fn put(
+        &mut self,
+        source: &Path,
+        meta: &Metadata,
+        target: &Path,
+        existing: Option<&Metadata>,
+        bytes: Option<u64>,
+    ) -> Step {
         self.check()?;
-        // A folder replaces a file, or a file a folder: the old one goes
-        // first. A file over a file is swapped in one step by the rename.
-        if existing.is_some_and(|existing| existing.is_dir() || meta.is_dir()) {
-            copying::remove(target).map_err(|e| failed(target, &e))?;
+        let aside = match existing {
+            Some(existing) if existing.is_dir() || meta.is_dir() => {
+                Some(Aside::new(target).map_err(|e| failed(target, &e))?)
+            }
+            _ => None,
+        };
+        let placed = self.put_free(source, meta, target, bytes);
+        let Some(aside) = aside else { return placed };
+        let settled = if placed.is_ok() { aside.discard() } else { aside.restore() };
+        if let Err(e) = settled {
+            self.logger.warn(LOG_SOURCE, &format!("can't tidy up after replacing {}: {e}", target.display()));
         }
+        placed
+    }
+
+    /// Puts `source` at `target`, where only a file can be.
+    fn put_free(&mut self, source: &Path, meta: &Metadata, target: &Path, bytes: Option<u64>) -> Step {
         if self.job.mode == TransferMode::Move {
             match fs::rename(source, target) {
                 Ok(()) => {
-                    // Measured where it landed, so a move that falls back to
-                    // copying doesn't walk each folder twice.
-                    let bytes = if meta.is_dir() {
-                        let job = Arc::clone(&self.job);
-                        copying::measure(target, None, &|| job.stopped())
-                            .map_err(|e| failed(target, &e))?
-                            .ok_or(Halt::Stopped)?
-                            .bytes
-                    } else if meta.is_file() {
-                        meta.len()
-                    } else {
-                        0
-                    };
+                    let bytes = bytes.unwrap_or_else(|| moved_bytes(target, meta));
                     self.copied(bytes);
                     return Ok(());
                 }
@@ -434,7 +465,12 @@ impl Run {
         let placed = self.copy(source, meta, target)?;
         if placed && self.job.mode == TransferMode::Move {
             let removed = if meta.is_dir() { fs::remove_dir(source) } else { fs::remove_file(source) };
-            removed.map_err(|e| failed(source, &e))?;
+            match removed {
+                Ok(()) => {}
+                // What couldn't be copied (a socket, a pipe) stays behind.
+                Err(e) if meta.is_dir() && e.kind() == io::ErrorKind::DirectoryNotEmpty => {}
+                Err(e) => return Err(failed(source, &e)),
+            }
         }
         Ok(())
     }
@@ -445,8 +481,7 @@ impl Run {
         let file_type = meta.file_type();
         if file_type.is_file() {
             let into = target.parent().unwrap_or(Path::new("/"));
-            let mut part =
-                Part::create(into, target.file_name().unwrap_or_default()).map_err(|e| failed(target, &e))?;
+            let mut part = Part::create(into).map_err(|e| failed(target, &e))?;
             let filled = part.fill(source, &mut |bytes| {
                 self.copied(bytes);
                 !self.job.stopped()
@@ -517,6 +552,18 @@ impl Run {
         if last {
             running.remove(&self.job.key);
         }
+    }
+}
+
+/// The bytes of what was just moved to `target` in one rename, for the
+/// progress: a file's size, or what a folder holds (0 if it can't be read).
+fn moved_bytes(target: &Path, meta: &Metadata) -> u64 {
+    if meta.is_dir() {
+        copying::measure(target, None, &|| false).ok().flatten().map_or(0, |measured| measured.bytes)
+    } else if meta.is_file() {
+        meta.len()
+    } else {
+        0
     }
 }
 
@@ -674,6 +721,25 @@ mod tests {
             [fixture.read("to/a.txt"), fixture.read("to/b.txt"), fixture.read("to/c.txt")],
             ["old!", "new", "new"]
         );
+    }
+
+    #[test]
+    fn a_file_on_a_folder_is_always_asked_about_and_replaces_it_whole() {
+        let fixture = Fixture::new("mixed");
+        fixture.write("from/a.txt", "new");
+        fixture.write("to/a.txt", "old");
+        fixture.write("from/Photos", "a file now");
+        fixture.write("to/Photos/kept.png", "png");
+        fixture.start(TransferMode::Copy, &["from/a.txt", "from/Photos"], "to");
+        let clash = fixture.until(TransferState::Asking).clash.unwrap();
+        assert_eq!(clash.others, 0, "a file on a folder isn't one of the file clashes");
+        fixture.answer(&clash, ClashAnswer::Replace, true);
+        let mixed = fixture.until(TransferState::Asking).clash.unwrap();
+        assert_eq!((mixed.name.as_str(), mixed.folder, mixed.original.items), ("Photos", false, Some(1)));
+        fixture.answer(&mixed, ClashAnswer::Replace, false);
+        fixture.until(TransferState::Done);
+        assert_eq!(fixture.read("to/Photos"), "a file now");
+        assert_eq!(fixture.names("to"), ["Photos", "a.txt"], "nothing set aside is left");
     }
 
     #[test]

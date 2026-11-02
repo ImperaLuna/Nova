@@ -70,6 +70,8 @@ Singleton {
     }
     // How a copy or move job is going (see Daemon.filesTransferChanged).
     signal transferChanged(var transfer)
+    // The connection to novad dropped, and novad stopped every job with it.
+    signal transfersLost
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
@@ -215,6 +217,8 @@ Singleton {
         function onConnectedChanged() {
             if (Daemon.connected)
                 root.attach();
+            else
+                root.transfersLost();
         }
     }
 }
