@@ -6,10 +6,11 @@
 //! Paths are made absolute here, against this command's folder, since
 //! novad's is not the caller's; novad checks them again. Symlinks stay as
 //! typed, like the shell's `cd`: a linked file is shown where its link is,
-//! and a linked home folder still reads as home.
+//! and a linked home folder still reads as home. They go out as wire text
+//! (`nova_protocol::wire_text`), so any name opens, UTF-8 or not.
 
 use crate::client::Client;
-use nova_protocol::Command;
+use nova_protocol::{Command, wire_text};
 use std::path::{Component, Path, PathBuf};
 
 #[derive(clap::Args)]
@@ -40,9 +41,9 @@ fn show(path: &Path) -> Result<Command, String> {
         (path, Vec::new())
     } else {
         let folder = path.parent().ok_or_else(|| format!("{} has no folder", path.display()))?.to_path_buf();
-        (folder, vec![text(&path)?])
+        (folder, vec![wire_text(&path)])
     };
-    Ok(Command::ShowFolder { folder: text(&folder)?, select })
+    Ok(Command::ShowFolder { folder: wire_text(&folder), select })
 }
 
 /// `path` made absolute, with `.` and `..` worked out from the text alone.
@@ -58,12 +59,6 @@ fn absolute(path: &Path) -> std::io::Result<PathBuf> {
         }
     }
     Ok(absolute)
-}
-
-fn text(path: &Path) -> Result<String, String> {
-    path.to_str()
-        .map(str::to_string)
-        .ok_or_else(|| format!("{} isn't UTF-8, which Nova Files can't show", path.display()))
 }
 
 #[cfg(test)]
@@ -93,5 +88,20 @@ mod tests {
             Command::ShowFolder { folder: music.clone(), select: vec![format!("{music}/song.flac")] }
         );
         assert!(show(&dir.join("missing")).unwrap_err().contains("can't open"));
+    }
+
+    /// A Latin-1 name, and a UTF-8 one using a character from the range
+    /// raw bytes use, each go out as the wire text that names them.
+    #[test]
+    fn any_name_goes_out_as_wire_text() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = nova_test_support::TempDir::new("cli-files-wire");
+        let pua = dir.join("\u{f7e9}");
+        let latin1 = dir.join(std::ffi::OsStr::from_bytes(b"caf\xe9"));
+        for folder in [pua, latin1] {
+            std::fs::create_dir(&folder).unwrap();
+            let Command::ShowFolder { folder: sent, .. } = show(&folder).unwrap() else { unreachable!() };
+            assert_eq!(nova_protocol::wire_path(&sent), folder);
+        }
     }
 }
