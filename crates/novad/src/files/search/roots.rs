@@ -38,6 +38,19 @@ impl Mounts {
         self.points.get(path).copied().unwrap_or(true)
     }
 
+    /// The mount points inside `roots`, and whether each is on a disk:
+    /// the mounts that change what's searched.
+    pub fn inside(&self, roots: &[PathBuf]) -> Vec<(PathBuf, bool)> {
+        let mut inside: Vec<(PathBuf, bool)> = self
+            .points
+            .iter()
+            .filter(|(point, _)| roots.iter().any(|root| point.starts_with(root)))
+            .map(|(point, on_disk)| (point.clone(), *on_disk))
+            .collect();
+        inside.sort();
+        inside
+    }
+
     /// The folders searched: `home`, then each drive on a disk mounted in
     /// one of `places`, by path, without any inside another.
     pub fn roots(&self, home: Option<&Path>, places: &[&Path]) -> Vec<PathBuf> {
@@ -134,6 +147,21 @@ mod tests {
         assert!(!mounts.follows(Path::new("/run/user/1000/gvfs")));
         assert!(!mounts.follows(Path::new("/run/media/me/Pixel")));
         assert!(!mounts.follows(Path::new("/mnt/nas")));
+    }
+
+    #[test]
+    fn only_mounts_inside_the_roots_change_what_is_searched() {
+        let mounts = Mounts::parse(MOUNTINFO.as_bytes());
+        let roots = mounts.roots(Some(Path::new("/home/me")), &places());
+        assert_eq!(
+            mounts.inside(&roots),
+            [
+                (PathBuf::from("/home/me/Games"), true),
+                ("/mnt/backup".into(), true),
+                ("/mnt/backup/inner".into(), true),
+                ("/run/media/me/SANDISK USB".into(), true),
+            ]
+        );
     }
 
     #[test]

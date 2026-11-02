@@ -26,7 +26,8 @@ const TRASH_ON_DRIVES: &str = ".Trash";
 pub struct Walk<'a> {
     pub watcher: &'a mut Inotify,
     pub mounts: &'a Mounts,
-    /// Folders left out by path: [`SKIPPED_IN_HOME`] under Home.
+    /// Folders left out by path: [`SKIPPED_IN_HOME`] under Home, and the
+    /// roots, each read once as its own (Home on a drive).
     pub skipped: &'a [PathBuf],
     pub stopper: &'a Stopper,
     /// Folders that couldn't be watched, the first time it happened: the
@@ -60,13 +61,19 @@ impl Walk<'_> {
                 let name = name.to_string_lossy();
                 let dir = entry.file_type().is_ok_and(|kind| kind.is_dir());
                 let child = if fresh { index.add_new(id, &name, dir) } else { index.add(id, &name, dir) };
-                let path = folder.join(&*name);
+                // The real name, which may not be UTF-8, so the folder opens.
+                let path = entry.path();
                 if dir && self.follows(&path) {
                     folders.push((child, path));
                 }
             }
         }
         true
+    }
+
+    /// Stops watching `folder`, which left the index.
+    pub fn forget(&mut self, folder: &Path) {
+        self.watcher.unwatch(folder);
     }
 
     /// Whether the walk goes into the folder `path`.

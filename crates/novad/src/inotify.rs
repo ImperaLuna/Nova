@@ -172,15 +172,15 @@ impl Inotify {
     /// Like [`Inotify::read`], but waits only until `deadline`: then the
     /// changes are empty.
     pub fn read_until(&mut self, deadline: Option<Instant>) -> std::io::Result<Option<Changes>> {
-        match self.wait(deadline)? {
+        let woken = match self.wait(deadline)? {
             Woke::Stopped => return Ok(None),
             Woke::TimedOut => return Ok(Some(Changes::none())),
             Woke::Also => return Ok(Some(Changes { woken: true, ..Changes::none() })),
-            Woke::Changed => {}
-        }
+            Woke::Changed { also } => also,
+        };
         let mut buffer = vec![0u8; BUFFER_BYTES];
         let read = self.file.read(&mut buffer)?;
-        let mut changes = Changes::none();
+        let mut changes = Changes { woken, ..Changes::none() };
         let mut at = 0;
         while at + HEADER_BYTES <= read {
             let field = |offset: usize| {
@@ -237,10 +237,13 @@ impl Inotify {
                 return Ok(Woke::TimedOut);
             }
             if ready != -1 {
+                // The other file counts even alongside changes: a file like
+                // mountinfo reports each change to one poll only.
+                let also = fds[2].revents != 0;
                 return Ok(if fds[1].revents != 0 {
                     Woke::Stopped
                 } else if fds[0].revents != 0 {
-                    Woke::Changed
+                    Woke::Changed { also }
                 } else {
                     Woke::Also
                 });
@@ -255,7 +258,11 @@ impl Inotify {
 
 /// Why [`Inotify::wait`] returned.
 enum Woke {
-    Changed,
+    /// Events to read; `also` when the file given to
+    /// [`Inotify::wake_on`] is ready too.
+    Changed {
+        also: bool,
+    },
     Stopped,
     TimedOut,
     /// The file given to [`Inotify::wake_on`].

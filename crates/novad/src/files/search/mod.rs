@@ -165,8 +165,14 @@ struct Keeper {
 struct Built {
     mounts: Mounts,
     skipped: Vec<PathBuf>,
+    /// The folders searched and the mounts inside them: when either
+    /// changes, it's time for a rescan.
+    reach: Reach,
+    /// When it was done.
     at: Instant,
 }
+
+type Reach = (Vec<PathBuf>, Vec<(PathBuf, bool)>);
 
 impl Keeper {
     fn run(mut self) {
@@ -186,17 +192,19 @@ impl Keeper {
 
     /// Builds the index anew and swaps it in; `None` once stopped.
     fn build(&mut self, stopper: &Stopper) -> Option<Built> {
-        let at = Instant::now();
+        let started = Instant::now();
         let mounts = self.mounts();
-        let places: Vec<&Path> = self.sources.drive_places.iter().map(PathBuf::as_path).collect();
-        let roots = mounts.roots(self.sources.home.as_deref(), &places);
-        let skipped = walk::skipped_in(self.sources.home.as_deref());
+        let reach = self.reach(&mounts);
+        let roots = &reach.0;
+        // Each root is read as its own, never as part of another.
+        let skipped: Vec<PathBuf> =
+            walk::skipped_in(self.sources.home.as_deref()).into_iter().chain(roots.iter().cloned()).collect();
         let mut index = Index::default();
         let mut walk =
             Walk { watcher: &mut self.watcher, mounts: &mounts, skipped: &skipped, stopper, unwatched: None };
         for root in roots {
-            let id = index.add_root(&root);
-            if !walk.read(&mut index, id, root) {
+            let id = index.add_root(root);
+            if !walk.read(&mut index, id, root.clone()) {
                 return None;
             }
         }
@@ -212,13 +220,13 @@ impl Keeper {
             &format!(
                 "Indexed {} names in {:.1}s ({} MB, {} folders watched)",
                 index.len(),
-                at.elapsed().as_secs_f32(),
+                started.elapsed().as_secs_f32(),
                 index.bytes() / BYTES_PER_MB,
                 self.watcher.watched(),
             ),
         );
         *self.shared.index.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(index);
-        Some(Built { mounts, skipped, at })
+        Some(Built { mounts, skipped, reach, at: Instant::now() })
     }
 
     /// Applies changes until a rescan is due; `false` once stopped.
@@ -236,7 +244,7 @@ impl Keeper {
             if Instant::now() >= rescan_at {
                 return true;
             }
-            if changes.overflowed || (changes.woken && self.mounts() != built.mounts) {
+            if changes.overflowed || (changes.woken && self.reach(&self.mounts()) != built.reach) {
                 rescan_at = rescan_at.min((built.at + RESCAN_GAP).max(Instant::now()));
             }
             self.apply(changes, built, stopper);
@@ -245,7 +253,8 @@ impl Keeper {
 
     /// Adds what came and removes what went.
     fn apply(&mut self, changes: Changes, built: &Built, stopper: &Stopper) {
-        // Looked at before taking the lock, so a slow drive holds up only this.
+        // Looked at before taking the lock. A folder that came is read
+        // under it, which is quick for all but the biggest moved in.
         let found: Vec<(PathBuf, Option<bool>)> = changes
             .found
             .into_iter()
@@ -260,11 +269,6 @@ impl Keeper {
         }
         let mut index = self.shared.index.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         let Some(index) = index.as_mut() else { return };
-        for path in gone {
-            if let Some(id) = index.find(&path) {
-                index.remove(id);
-            }
-        }
         let mut walk = Walk {
             watcher: &mut self.watcher,
             mounts: &built.mounts,
@@ -272,13 +276,29 @@ impl Keeper {
             stopper,
             unwatched: None,
         };
+        for path in gone {
+            walk.forget(&path);
+            if let Some(id) = index.find(&path) {
+                index.remove(id);
+            }
+        }
         for (path, dir) in found {
             let (Some(folder), Some(name)) = (path.parent(), path.file_name()) else { continue };
-            let Some(parent) = index.find(folder) else { continue };
+            let Some(parent) = index.find(folder) else {
+                // A folder that left the index (moved to the trash) but is
+                // still watched.
+                walk.forget(folder);
+                continue;
+            };
             let name = name.to_string_lossy();
             match dir {
                 Some(dir) => {
-                    let id = index.add(parent, &name, dir);
+                    // Read afresh: what was there by this name before may
+                    // have been replaced since.
+                    if let Some(old) = index.child(parent, &name) {
+                        index.remove(old);
+                    }
+                    let id = index.add_new(parent, &name, dir);
                     if dir && walk.follows(&path) && !walk.read(index, id, path) {
                         return;
                     }
@@ -290,6 +310,14 @@ impl Keeper {
                 }
             }
         }
+    }
+
+    /// The folders searched, given `mounts`, and the mounts inside them.
+    fn reach(&self, mounts: &Mounts) -> Reach {
+        let places: Vec<&Path> = self.sources.drive_places.iter().map(PathBuf::as_path).collect();
+        let roots = mounts.roots(self.sources.home.as_deref(), &places);
+        let inside = mounts.inside(&roots);
+        (roots, inside)
     }
 
     /// The mounts now; none when they can't be read.
@@ -400,6 +428,20 @@ mod tests {
         fixture.finds("manual", &["Docs/inner/manual.pdf", "Docs/inner/manual 2.pdf"]);
         std::fs::remove_dir_all(home.join(".local/share/Steam")).unwrap();
         fixture.finds("crimson", &["crimson notes.txt"]);
+    }
+
+    #[test]
+    fn a_folder_replaced_by_one_of_the_same_name_loses_its_old_names() {
+        let fixture = Fixture::new("replaced", |home| {
+            std::fs::create_dir_all(home.join("dist")).unwrap();
+            std::fs::write(home.join("dist/old-bundle.js"), b"").unwrap();
+        });
+        let home = fixture.home();
+        std::fs::create_dir_all(home.join("dist-new")).unwrap();
+        std::fs::write(home.join("dist-new/new-bundle.js"), b"").unwrap();
+        std::fs::remove_dir_all(home.join("dist")).unwrap();
+        std::fs::rename(home.join("dist-new"), home.join("dist")).unwrap();
+        fixture.finds("bundle", &["dist/new-bundle.js"]);
     }
 
     #[test]

@@ -1864,8 +1864,9 @@ pub struct FileSearch {
     /// [`FILES_SEARCH_MAX_RESULTS`].
     pub total: u32,
     /// Best first: whole names, then names starting with the first word,
-    /// then a word in the name starting with it, then the rest; outside
-    /// hidden folders before inside, then shorter names first.
+    /// then a word in the name starting with it, then the rest; within
+    /// each, names that aren't hidden (themselves or by a folder they're
+    /// in) first, then shorter names.
     pub results: Vec<FoundFile>,
 }
 
