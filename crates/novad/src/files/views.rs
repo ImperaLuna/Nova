@@ -197,12 +197,8 @@ impl Worker {
                         return;
                     }
                 }
-                Ok(Some(Gathered::Lost)) => {
-                    if !self.send_all() {
-                        return;
-                    }
-                }
-                Ok(Some(Gathered::Moved)) => {
+                // Lost events may include the folder being replaced.
+                Ok(Some(Gathered::Lost | Gathered::Moved)) => {
                     if !self.reattach() {
                         return;
                     }
