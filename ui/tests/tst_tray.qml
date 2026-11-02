@@ -2,6 +2,7 @@ import QtQuick
 import QtTest
 import "../bar"
 import "../theme"
+import "../theme/icons.js" as Icons
 import "../tray"
 import "../tray/tray.js" as Tray
 
@@ -94,9 +95,22 @@ Item {
         Component {
             id: pillComponent
             RightPill {
-                quickSettings: true
-                power: true
+                // Quick settings' and power's, as on the bar.
+                buttons: Row {
+                    spacing: Tokens.pillButtonGap
+                    PillButton {
+                        icon: Icons.TUNE
+                    }
+                    PillButton {
+                        icon: Icons.POWER
+                    }
+                }
             }
+        }
+
+        Component {
+            id: trayOnlyComponent
+            RightPill {}
         }
 
         Component {
@@ -454,9 +468,7 @@ Item {
         }
 
         function test_the_tray_alone_has_no_divider() {
-            const pill = createTemporaryObject(pillComponent, stage, {
-                quickSettings: false,
-                power: false,
+            const pill = createTemporaryObject(trayOnlyComponent, stage, {
                 trayApps: [stage.entry("discord.desktop", false)]
             });
             verify(findChild(pill, "chevron").visible);

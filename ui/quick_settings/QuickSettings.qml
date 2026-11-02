@@ -10,7 +10,9 @@ import "../volume/service"
 import "service"
 import "../tray"
 import "../tray/service"
+import "../daemon"
 import "../daemon/protocol.js" as Protocol
+import "../slots/slots.js" as Slots
 import "quick_settings.js" as QuickSettings
 import "../util/numbers.js" as Numbers
 import "../icons"
@@ -37,10 +39,9 @@ StagePanel {
     required property Item pillItem
     property rect pill: Qt.rect(output.width - Tokens.barMargin, Tokens.barGap, 0, Tokens.barHeight)
     from: pillItem
-    // The pill's buttons, as on the pill.
-    property bool power: false
-    signal quickSettingsClicked
-    signal powerClicked
+    // The screen's stage (Stage.qml), which the pill's buttons open their
+    // panels through, here as on the pill.
+    required property var stage
 
     name: Protocol.FEATURE_QUICK_SETTINGS
     placement: "right"
@@ -406,13 +407,8 @@ StagePanel {
         id: buttons
         x: panel.buttonsX - panel.x
         y: panel.pill.y - panel.y + (panel.pill.height - height) / 2
-        quickSettings: true
-        power: panel.power
-        quickSettingsOpen: panel.open
-        unread: NotificationsService.ready ? NotificationsService.unread : 0
-        doNotDisturb: NotificationsService.ready && NotificationsService.doNotDisturb
-        onQuickSettingsClicked: panel.quickSettingsClicked()
-        onPowerClicked: panel.powerClicked()
+        stage: panel.stage
+        slots: Slots.forHost(Daemon.features, Slots.HOST_RIGHT_PILL_BUTTONS)
     }
 
     // A page: in place while it's the one shown, off to its side (the first

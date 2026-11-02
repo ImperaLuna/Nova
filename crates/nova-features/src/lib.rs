@@ -29,7 +29,7 @@
 //! ```
 //!
 //! Each `[[slot]]` is a place its UI goes: a view (an id the UI maps to its
-//! component in ui/slots/views.js) in one of the [`HOSTS`], sorted there by
+//! component in ui/slots/Views.qml) in one of the [`HOSTS`], sorted there by
 //! `order`. novad sends them with the feature's state, so a new feature
 //! plugs into the bar from its own manifest instead of the shell's files.
 
@@ -414,8 +414,8 @@ mod tests {
         assert!(toml::from_str::<Manifest>(unknown).is_err(), "unknown slot fields are rejected");
     }
 
-    /// The quoted strings of `prefix` lines in a UI JavaScript file, like
-    /// `var HOST_BAR_LEFT = "bar.left";` or `"media.pill": "media/x.qml",`.
+    /// The quoted strings of `prefix` lines in a UI file, like
+    /// `var HOST_BAR_LEFT = "bar.left";` or `"media.pill": "../media/X.qml",`.
     fn js_strings(file: &str, prefix: &str) -> Vec<Vec<String>> {
         let text = std::fs::read_to_string(repo_features().join("../ui").join(file)).unwrap();
         text.lines()
@@ -440,8 +440,9 @@ mod tests {
 
     #[test]
     fn every_slot_names_a_known_host_and_a_registered_view() {
-        let views = js_strings("slots/views.js", "\"");
-        let ui = repo_features().join("../ui");
+        let views = js_strings("slots/Views.qml", "\"");
+        let imports = js_strings("slots/Views.qml", "import \"../");
+        let slots = repo_features().join("../ui/slots");
         for manifest in load_all(&repo_features()).unwrap() {
             for slot in &manifest.slots {
                 assert!(host(&slot.host).is_some(), "{}: unknown host {}", manifest.id, slot.host);
@@ -449,8 +450,14 @@ mod tests {
                     .iter()
                     .find(|entry| entry.first() == Some(&slot.view))
                     .and_then(|entry| entry.get(1))
-                    .unwrap_or_else(|| panic!("{}: view {} isn't in ui/slots/views.js", manifest.id, slot.view));
-                assert!(ui.join(file).is_file(), "{}: ui/{file} doesn't exist", slot.view);
+                    .unwrap_or_else(|| panic!("{}: view {} isn't in ui/slots/Views.qml", manifest.id, slot.view));
+                assert!(slots.join(file).is_file(), "{}: {file} doesn't exist next to ui/slots", slot.view);
+                let folder = file.split('/').nth(1).unwrap_or_default();
+                assert!(
+                    imports.iter().any(|import| import.first().is_some_and(|dir| dir == &format!("../{folder}"))),
+                    "{}: ui/slots/Views.qml must import \"../{folder}\" for Quickshell to load it",
+                    slot.view
+                );
             }
         }
     }
