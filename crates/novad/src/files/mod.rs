@@ -9,6 +9,8 @@
 //!   exists, and items in it to select.
 //! - `file_manager1.rs`: `org.freedesktop.FileManager1`, so apps' "Show in
 //!   folder" opens Nova Files.
+//! - `window.rs`: the Nova Files process (`ui/files.qml`), started when a
+//!   window is asked for and none runs.
 //!
 //! Its events go on [`Topic::Files`], which only the Nova Files process
 //! subscribes to. A window asked for while no client is subscribed waits
@@ -17,6 +19,7 @@
 
 mod file_manager1;
 mod target;
+mod window;
 
 use crate::hub::{ClientId, Hub};
 use crate::lock;
@@ -33,12 +36,9 @@ const LOG_SOURCE: &str = "files";
 pub struct Sources {
     /// Where `org.freedesktop.FileManager1` is served.
     pub bus: Bus,
-}
-
-impl Sources {
-    pub fn system() -> Self {
-        Self { bus: Bus::Session }
-    }
+    /// How the Nova Files process runs; none for a novad without its UI,
+    /// where windows only wait.
+    pub ui: Option<crate::supervisor::UiSettings>,
 }
 
 pub struct Files {
@@ -54,11 +54,13 @@ struct Shared {
     logger: Arc<Logger>,
     /// Windows asked for that no Nova Files process has been sent yet.
     waiting: Mutex<Vec<FilesWindow>>,
+    process: Option<window::Process>,
 }
 
 impl Files {
     pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
-        let shared = Arc::new(Shared { sources, hub, logger, waiting: Mutex::new(Vec::new()) });
+        let process = sources.ui.clone().map(|ui| window::Process::new(ui, Arc::clone(&logger)));
+        let shared = Arc::new(Shared { sources, hub, logger, waiting: Mutex::new(Vec::new()), process });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
         Arc::new(Self { shared, stop })
@@ -78,22 +80,29 @@ impl Files {
         }
     }
 
-    /// Stops it: it publishes nothing more, gives up FileManager1, and
-    /// windows still waiting are dropped.
+    /// Stops it: it publishes nothing more, gives up FileManager1, closes
+    /// Nova Files' windows, and drops those still waiting.
     pub fn stop(&self) {
         self.stop.stop();
+        if let Some(process) = &self.shared.process {
+            process.stop();
+        }
         lock(&self.shared.waiting).clear();
     }
 }
 
 impl Shared {
     /// Sends `window` to the Nova Files process, or keeps it for the next
-    /// one to subscribe.
+    /// one to subscribe, starting one.
     fn open(&self, window: FilesWindow) {
         let mut waiting = lock(&self.waiting);
-        if self.hub.publish(&Event::FilesWindow(window.clone())) == 0 {
-            self.logger.info(LOG_SOURCE, &format!("{} waits for Nova Files to start", window.folder));
-            waiting.push(window);
+        if self.hub.publish(&Event::FilesWindow(window.clone())) > 0 {
+            return;
+        }
+        self.logger.info(LOG_SOURCE, &format!("{} waits for Nova Files to start", window.folder));
+        waiting.push(window);
+        if let Some(process) = &self.process {
+            process.ensure_running();
         }
     }
 }
@@ -105,8 +114,8 @@ impl crate::modules::Module for Files {
     type Sources = Sources;
     type Config = ();
 
-    fn sources(_: &crate::modules::Env) -> Sources {
-        Sources::system()
+    fn sources(env: &crate::modules::Env) -> Sources {
+        Sources { bus: Bus::Session, ui: env.ui.cloned() }
     }
 
     fn config(_: &crate::config::Config) {}

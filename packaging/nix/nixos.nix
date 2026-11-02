@@ -1,7 +1,8 @@
 # Nova's NixOS module (nixosModules.default): Nova, the packages of the
 # features that are on, its systemd user unit started with
-# graphical-session.target, and a system-wide features.toml in /etc/xdg/nova,
-# which novad reads when the user has none of their own.
+# graphical-session.target, a system-wide features.toml in /etc/xdg/nova,
+# which novad reads when the user has none of their own, and Nova Files as
+# the default for folders while the `files` feature is on.
 #
 #   programs.nova.enable = true;
 #   programs.nova.features.wallpaper-engine.enable = true;
@@ -18,6 +19,7 @@ let
   features = import ./features.nix { inherit lib; };
   cfg = config.programs.nova;
   on = features.onIds cfg.features;
+  filesOn = lib.elem "files" on;
 in
 {
   imports = [ (import ./options.nix { inherit packages; }) ];
@@ -25,7 +27,16 @@ in
   config = lib.mkIf cfg.enable {
     programs.nova.gpu = lib.mkDefault (features.gpuOf config);
 
-    environment.systemPackages = [ cfg.package ] ++ features.packagesFor pkgs cfg.gpu on;
+    environment.systemPackages = [
+      cfg.package
+    ]
+    ++ features.packagesFor pkgs cfg.gpu on
+    ++ lib.optional filesOn (features.filesDesktop pkgs cfg.package);
+    # Nova Files opens folders, in place of whichever app last claimed them
+    # (often an editor). A user's own mimeapps.list still wins.
+    xdg.mime.defaultApplications = lib.mkIf filesOn {
+      "inode/directory" = lib.mkDefault "nova-files.desktop";
+    };
     environment.etc."xdg/nova/features.toml".text = features.selectionFile on;
 
     systemd.packages = [ cfg.package ];

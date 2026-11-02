@@ -669,6 +669,30 @@ QtObject {
     // A card whose image is still loading.
     readonly property color carouselLoading: alpha(fg, 0.07)
 
+    // Nova Files: an app window with square edges (the compositor rounds
+    // windows), its size when it opens, the navigation row (back, forward,
+    // up, the address and search fields) and the command row under it, the
+    // sidebar of places, and the file list's header with its Modified, Type
+    // and Size columns. Rows and fields use the radius of a menu row and of
+    // a control; the fields sit darker than the glass.
+    readonly property int filesWindowWidth: 880
+    readonly property int filesWindowHeight: 700
+    readonly property int filesButtonSize: 30
+    readonly property int filesFieldHeight: 32
+    readonly property int filesSearchWidth: 220
+    readonly property color filesField: Qt.rgba(0, 0, 0, 0.22)
+    readonly property int filesRowPadY: 6
+    readonly property int filesCommandPadTop: 4
+    readonly property int filesSeparatorHeight: 16
+    readonly property int filesSidebarWidth: 220
+    readonly property int filesPlaceHeight: 26
+    readonly property int filesHeaderHeight: 30
+    readonly property list<int> filesColumns: [150, 110, 80]
+    readonly property color filesFaint: alpha(fg, 0.45)
+    // The small chevron beside New, Sort and View.
+    readonly property int iconSizeMini: 12
+    readonly property real filesChevronOpacity: 0.6
+
     // Type
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"
