@@ -11,9 +11,11 @@ QsSlot {
 
     present: NotificationsService.ready
     readonly property bool listShown: qs.open && qs.page === QuickSettings.PAGE_MAIN
-    onListShownChanged: NotificationsService.showList(qs.outputName, listShown)
-    Component.onCompleted: NotificationsService.showList(qs.outputName, listShown)
-    Component.onDestruction: NotificationsService.showList(qs.outputName, false)
+    // Its own copy: `qs` may be gone first when its screen goes.
+    readonly property string outputName: qs.outputName
+    onListShownChanged: NotificationsService.showList(outputName, listShown)
+    Component.onCompleted: NotificationsService.showList(outputName, listShown)
+    Component.onDestruction: NotificationsService.showList(outputName, false)
 
     NotificationList {
         anchors.fill: parent

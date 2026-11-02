@@ -71,6 +71,9 @@ StagePanel {
         fillSlots = slotsOf(Slots.HOST_QUICK_SETTINGS_FILL, fillSlots);
         footSlots = slotsOf(Slots.HOST_QUICK_SETTINGS_FOOT, footSlots);
         pageSlots = slotsOf(Slots.HOST_QUICK_SETTINGS_PAGES, pageSlots);
+        // Its page went with its feature: back to the first.
+        if (!pageSlots.some(slot => slot.view === page))
+            page = QuickSettings.PAGE_MAIN;
     }
     Connections {
         target: Daemon
@@ -95,8 +98,6 @@ StagePanel {
         fill: panel.fill
         now: panel.now
         outputName: panel.output.name
-        pageWidth: pages.width
-        pageHeight: pages.height
         headerInset: pages.headerInset
         menuArea: pages
         onPageRequested: page => panel.page = page
@@ -169,6 +170,9 @@ StagePanel {
         readonly property real headerInset: panel.output.width - Tokens.quickSettingsPad - (panel.buttonsX - Tokens.pillButtonInset) + Tokens.gap
 
         readonly property bool sliding: {
+            // itemAt doesn't notify: reading the revision re-evaluates this
+            // for new delegates.
+            pageRepeater.revision;
             let any = mainSlot.sliding;
             for (let i = 0; i < pageRepeater.count; i++)
                 any = any || ((pageRepeater.itemAt(i) as PageSlot)?.sliding ?? false);
@@ -209,6 +213,8 @@ StagePanel {
         Repeater {
             id: pageRepeater
             model: panel.pageSlots
+            property int revision: 0
+            onItemAdded: revision++
 
             PageSlot {
                 id: pageSlot

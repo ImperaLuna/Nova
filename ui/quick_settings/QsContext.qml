@@ -16,10 +16,7 @@ QtObject {
     property date now: new Date()
     // The screen the sidebar is on.
     property string outputName: ""
-    // A page's size, and the room its top row leaves on the right for the
-    // pill's buttons.
-    property real pageWidth: 0
-    property real pageHeight: 0
+    // The room a page's top row leaves on the right for the pill's buttons.
     property real headerInset: 0
     // Where tray menus are placed: `showTrayMenu`'s `at` is in this item.
     property Item menuArea: null
