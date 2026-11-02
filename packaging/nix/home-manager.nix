@@ -1,7 +1,10 @@
 # Nova's home-manager module (homeManagerModules.default): Nova, the
 # packages of the features that are on, its systemd user unit started with
-# graphical-session.target, the features.toml novad reads, and Nova Files as
-# the default for folders while the `files` feature is on.
+# graphical-session.target, the features.toml novad reads, Nova Files as
+# the default for folders while the `files` feature is on, and Nova's
+# compositor rules (blur, Nova Files' corners) in ~/.config/nova: include
+# niri.kdl from niri's config; home-manager's own Hyprland config sources
+# hyprland.conf by itself.
 #
 #   programs.nova.enable = true;
 #   programs.nova.features.wallpaper-engine.enable = true;
@@ -50,7 +53,16 @@ in
       # Orders login apps (XDG autostart) after Nova, so they find its tray.
       "systemd/user/app-.service.d/nova.conf".source =
         "${cfg.package}/lib/systemd/user/app-.service.d/nova.conf";
+      # The same files `nova setup` writes on other distros.
+      "nova/niri.kdl".source = ../compositor/niri.kdl;
+      "nova/hyprland.conf".source = ../compositor/hyprland.conf;
     };
+    # Sourced first, so the user's own rules win.
+    wayland.windowManager.hyprland.settings.source =
+      lib.mkIf config.wayland.windowManager.hyprland.enable
+        [
+          "${config.xdg.configHome}/nova/hyprland.conf"
+        ];
 
     warnings =
       lib.optional

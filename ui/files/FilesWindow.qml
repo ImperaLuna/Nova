@@ -1,12 +1,14 @@
 import QtQuick
 import Quickshell
 import "../theme"
+import "service"
 import "paths.js" as Paths
 
 // A Nova Files window: an app window the compositor tiles and rounds,
-// glass all through, showing `folder` with `select` selected. The
-// navigation row, the command row, then the sidebar beside the file list;
-// opening a folder in the list shows it in the same window.
+// showing `folder` with `select` selected. The navigation row, the command
+// row, then the sidebar beside the file list; opening a folder in the
+// list shows it in the same window. Its frame and its file list each go
+// from glass to solid as config.toml's [files] says, live.
 FloatingWindow {
     id: window
 
@@ -16,7 +18,7 @@ FloatingWindow {
     title: Paths.folderName(folder)
     implicitWidth: Tokens.filesWindowWidth
     implicitHeight: Tokens.filesWindowHeight
-    color: Tokens.glass
+    color: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     NavigationRow {
         id: navigation
@@ -24,12 +26,14 @@ FloatingWindow {
         anchors.right: parent.right
         anchors.top: parent.top
         folder: window.folder
+        solid: FilesService.frameSolid
     }
     CommandRow {
         id: commands
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: navigation.bottom
+        solid: FilesService.frameSolid
     }
     Sidebar {
         id: sidebar
@@ -47,5 +51,6 @@ FloatingWindow {
         select: window.select
         focus: true
         onFolderOpened: path => window.folder = path
+        solid: FilesService.listSolid
     }
 }

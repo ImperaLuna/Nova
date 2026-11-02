@@ -38,6 +38,10 @@ Singleton {
     // arrives, which only happens with the media feature on. Read it through
     // the MediaService singleton.
     property var media: null
+    // The latest files_look event's data ({frame, list}); null until one
+    // arrives, which only happens with the files feature on. Read it
+    // through the FilesService singleton.
+    property var filesLook: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
     // novad's word on whether the session is locked. Read it through the
     // LockService singleton, which also hears lockRequested.
@@ -201,6 +205,8 @@ Singleton {
             filesChanged(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_CLOSED) {
             filesClosed(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_LOOK) {
+            filesLook = msg.data;
         }
     }
 

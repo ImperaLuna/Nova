@@ -18,9 +18,14 @@
 //!   its drop-in that starts login apps after it (`app-.service.d`).
 //! - A `NovaUI` link to Quickshell in `~/.local/bin`, which novad runs so
 //!   the UI shows as NovaUI in ps and btop (the Nix package has a launcher).
-//! - niri's blur behind Nova's glass and a rule hiding xembedsniproxy's
-//!   window (`packaging/compositor/niri.kdl`), included from the user's
-//!   niri config. Hyprland blurs what Quickshell asks for without a rule.
+//! - niri's blur behind Nova's glass, a rule hiding xembedsniproxy's
+//!   window and Nova Files' corners (`packaging/compositor/niri.kdl`),
+//!   included from the user's niri config; Hyprland's rules
+//!   (`packaging/compositor/hyprland.conf`), sourced from its config.
+//!   Hyprland blurs what Quickshell asks for without a rule.
+//! - While the `files` feature is on: Nova Files' desktop entry and icon in
+//!   the user's data folder, and Nova Files as their default for folders
+//!   (the Nix modules do the same).
 
 use crate::host::{Distro, Host};
 use nova_features::{Gpu, Manifest, Selection};
@@ -39,6 +44,18 @@ const APP_DROP_IN_PATH: &str = "app-.service.d/nova.conf";
 const NIRI_RULES: &str = include_str!("../../../packaging/compositor/niri.kdl");
 /// Where the niri rules go, in Nova's config folder.
 const NIRI_RULES_FILE: &str = "niri.kdl";
+const HYPRLAND_RULES: &str = include_str!("../../../packaging/compositor/hyprland.conf");
+/// Where the Hyprland rules go, in Nova's config folder.
+const HYPRLAND_RULES_FILE: &str = "hyprland.conf";
+/// Nova Files (feature `files`): its desktop entry, whose `Exec=` runs
+/// `nova` from PATH until setup names the installed one, and its icon.
+const FILES_FEATURE: &str = "files";
+const FILES_DESKTOP: &str = include_str!("../../../features/files/nova-files.desktop");
+const FILES_DESKTOP_ID: &str = "nova-files.desktop";
+const FILES_EXEC: &str = "Exec=nova ";
+const FILES_ICON: &str = include_str!("../../../features/files/nova-files.svg");
+const FILES_ICON_PATH: &str = "icons/hicolor/scalable/apps/nova-files.svg";
+const FOLDER_MIME: &str = "inode/directory";
 /// Fedora's Quickshell, until a Fedora release ships it.
 const FEDORA_QUICKSHELL_COPR: &str = "errornointernet/quickshell";
 /// AUR helpers, in the order setup prefers them. They install repo packages
@@ -70,6 +87,14 @@ pub struct Paths {
     pub bin_dir: PathBuf,
     /// niri's config file (`~/.config/niri/config.kdl`), when there is one.
     pub niri_config: Option<PathBuf>,
+    /// Hyprland's config file (`~/.config/hypr/hyprland.conf`), when there
+    /// is one.
+    pub hyprland_config: Option<PathBuf>,
+    /// The user's config folder (`~/.config`), which holds `mimeapps.list`.
+    pub config_home: PathBuf,
+    /// The user's data folder (`~/.local/share`), for desktop entries and
+    /// icons.
+    pub data_home: PathBuf,
     /// The running nova binary, which the unit starts.
     pub nova: PathBuf,
 }
@@ -80,11 +105,16 @@ impl Paths {
         let config_home = nova_paths::config_home().ok_or("HOME isn't set")?;
         let niri_config = nova_paths::path_var("NIRI_CONFIG").unwrap_or_else(|| config_home.join("niri/config.kdl"));
         let niri_config = niri_config.is_file().then_some(niri_config);
+        let hyprland_config = config_home.join("hypr/hyprland.conf");
+        let hyprland_config = hyprland_config.is_file().then_some(hyprland_config);
         Ok(Self {
             config_dir: nova_paths::config_dir(),
             units_dir: config_home.join("systemd/user"),
             bin_dir: home.join(".local/bin"),
             niri_config,
+            hyprland_config,
+            data_home: nova_paths::data_home().ok_or("HOME isn't set")?,
+            config_home,
             nova: std::env::current_exe().map_err(|e| format!("can't find the nova binary: {e}"))?,
         })
     }
@@ -135,6 +165,9 @@ pub enum Step {
     /// Points `link` at Quickshell's binary, found on PATH when the step
     /// runs (it may have just been installed).
     LinkQuickshell { link: PathBuf },
+    /// Makes `app` the default for `mime` in the user's `mimeapps.list`
+    /// under `config_home`.
+    SetDefault { config_home: PathBuf, mime: String, app: String },
 }
 
 impl fmt::Display for Step {
@@ -145,6 +178,7 @@ impl fmt::Display for Step {
             Self::Replace { path, .. } => write!(f, "write {}", path.display()),
             Self::AppendLine { path, line } => write!(f, "add to {}:\n    {line}", path.display()),
             Self::LinkQuickshell { link } => write!(f, "link {} to quickshell", link.display()),
+            Self::SetDefault { mime, app, .. } => write!(f, "make {app} the default for {mime}"),
         }
     }
 }
@@ -194,7 +228,57 @@ pub fn plan(facts: &Facts) -> Result<Plan, String> {
         steps.push(Step::Replace { path: rules.clone(), contents: NIRI_RULES.into() });
         steps.push(Step::AppendLine { path: niri_config.clone(), line: format!("include {}", quoted(&rules)) });
     }
+    if let Some(hyprland_config) = &paths.hyprland_config {
+        let rules = paths.config_dir.join(HYPRLAND_RULES_FILE);
+        steps.push(Step::Replace { path: rules.clone(), contents: HYPRLAND_RULES.into() });
+        // Hyprland takes the rest of the line as the path, unquoted.
+        steps.push(Step::AppendLine { path: hyprland_config.clone(), line: format!("source = {}", rules.display()) });
+    }
+    if facts.manifests.iter().any(|manifest| manifest.id == FILES_FEATURE && facts.selection.is_on(manifest)) {
+        steps.extend(files_steps(paths));
+    }
     Ok(Plan::Steps(steps))
+}
+
+/// Nova Files' desktop entry running this nova, its icon, and it as the
+/// default for folders.
+fn files_steps(paths: &Paths) -> Vec<Step> {
+    let exec = format!("Exec={} ", exec_quoted(&paths.nova));
+    vec![
+        Step::Replace {
+            path: paths.data_home.join("applications").join(FILES_DESKTOP_ID),
+            contents: FILES_DESKTOP.replacen(FILES_EXEC, &exec, 1),
+        },
+        Step::Replace { path: paths.data_home.join(FILES_ICON_PATH), contents: FILES_ICON.into() },
+        Step::SetDefault {
+            config_home: paths.config_home.clone(),
+            mime: FOLDER_MIME.into(),
+            app: FILES_DESKTOP_ID.into(),
+        },
+    ]
+}
+
+/// `path` as one argument of a desktop entry's `Exec=`, as the Desktop Entry
+/// spec quotes one: in double quotes when it has a reserved character, with
+/// `"`, `` ` ``, `$` and `\` escaped inside them, then `\` escaped again for
+/// the entry's string value, and `%` doubled so it isn't a field code.
+fn exec_quoted(path: &Path) -> String {
+    const RESERVED: &str = " \t\n\"'\\><~|&;$*?#()`";
+    let text = path.display().to_string();
+    let argument = if text.chars().any(|c| RESERVED.contains(c)) {
+        let mut quoted = String::from('"');
+        for c in text.chars() {
+            if matches!(c, '"' | '`' | '$' | '\\') {
+                quoted.push('\\');
+            }
+            quoted.push(c);
+        }
+        quoted.push('"');
+        quoted
+    } else {
+        text
+    };
+    argument.replace('\\', "\\\\").replace('%', "%%")
 }
 
 /// Installs Quickshell while a feature with a UI is on, and the packages of
@@ -306,7 +390,11 @@ fn default_config() -> String {
          #  wallpaper-engine feature on)\n\
          # folder = \"~/Pictures/Wallpapers\"  # what `nova toggle wallpaper` offers\n\
          # [wallpaper.outputs]\n\
-         # DP-2 = \"~/Pictures/Wallpapers/tide.jpg\"  # one screen's own\n",
+         # DP-2 = \"~/Pictures/Wallpapers/tide.jpg\"  # one screen's own\n\
+         \n\
+         # [files]  # Nova Files, each from glass (0) to solid (100)\n\
+         # frame = 0  # the rows above the files, and the sidebar\n\
+         # list = 0  # the file list\n",
         checks::DEFAULT_THEME_ID
     )
 }
@@ -438,6 +526,9 @@ pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
             }
             std::os::unix::fs::symlink(&target, link).map_err(|e| format!("can't link {}: {e}", link.display()))?;
         }
+        Step::SetDefault { config_home, mime, app } => {
+            novad::set_default_app(config_home, mime, app)?;
+        }
     }
     Ok(())
 }
@@ -488,6 +579,9 @@ mod tests {
             units_dir: home.join(".config/systemd/user"),
             bin_dir: home.join(".local/bin"),
             niri_config: None,
+            hyprland_config: None,
+            config_home: home.join(".config"),
+            data_home: home.join(".local/share"),
             nova: home.join(".local/bin/nova"),
         }
     }
@@ -679,6 +773,62 @@ mod tests {
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
         let Some(Step::AppendLine { line, .. }) = steps.last() else { panic!("{steps:?}") };
         assert_eq!(line, r#"include "/home/a \"b\"\\c/.config/nova/niri.kdl""#);
+    }
+
+    #[test]
+    fn hyprland_sources_the_rules() {
+        let mut facts = facts(Distro::Fedora, vec![], false);
+        facts.paths.hyprland_config = Some("/home/me/.config/hypr/hyprland.conf".into());
+        let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
+        let Some(Step::AppendLine { path, line }) = steps.last() else { panic!("{steps:?}") };
+        assert_eq!(path, Path::new("/home/me/.config/hypr/hyprland.conf"));
+        assert_eq!(line, "source = /home/me/.config/nova/hyprland.conf");
+    }
+
+    /// With `files` on, a second run leaves the desktop entry, the icon and
+    /// the default as the first made them, and keeps the user's other
+    /// defaults.
+    #[test]
+    fn nova_files_becomes_the_default_for_folders() {
+        let home = Home::new("nova-files");
+        let paths = paths(&home.0);
+        let mimeapps = paths.config_home.join("mimeapps.list");
+        std::fs::create_dir_all(&paths.config_home).unwrap();
+        std::fs::write(&mimeapps, "[Default Applications]\ntext/plain=editor.desktop\n").unwrap();
+        let selection = Selection { enabled: vec![FILES_FEATURE.into()], disabled: vec![] };
+        let facts = Facts { selection, paths: paths.clone(), ..facts(Distro::Arch, vec![], false) };
+        let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
+        let files = &steps[steps.len() - 3..];
+        assert!(matches!(files[2], Step::SetDefault { .. }), "{steps:?}");
+        let mut lists = Vec::new();
+        for _ in 0..2 {
+            for step in files {
+                execute(step, &facts.path_var).unwrap();
+            }
+            lists.push(std::fs::read_to_string(&mimeapps).unwrap());
+        }
+        assert_eq!(lists[0], lists[1], "a second run changes nothing");
+        let entry = std::fs::read_to_string(paths.data_home.join("applications/nova-files.desktop")).unwrap();
+        assert!(entry.contains(&format!("\nExec={} files %F\n", paths.nova.display())), "{entry}");
+        assert_eq!(std::fs::read_to_string(paths.data_home.join(FILES_ICON_PATH)).unwrap(), FILES_ICON);
+        let list = &lists[0];
+        assert!(
+            list.contains("inode/directory=nova-files.desktop") && list.contains("text/plain=editor.desktop"),
+            "{list}"
+        );
+    }
+
+    #[test]
+    fn nova_files_is_left_out_while_its_feature_is_off() {
+        let Plan::Steps(steps) = plan(&facts(Distro::Debian, vec![], false)).unwrap() else { panic!() };
+        assert!(!steps.iter().any(|step| matches!(step, Step::SetDefault { .. })), "{steps:?}");
+    }
+
+    #[test]
+    fn exec_quotes_a_path_as_the_desktop_entry_spec_says() {
+        assert_eq!(exec_quoted(Path::new("/usr/bin/nova")), "/usr/bin/nova");
+        assert_eq!(exec_quoted(Path::new("/home/me/my apps/nova")), r#""/home/me/my apps/nova""#);
+        assert_eq!(exec_quoted(Path::new("/opt/a$b/50%/nova")), r#""/opt/a\\$b/50%%/nova""#);
     }
 
     #[test]

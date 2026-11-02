@@ -16,8 +16,12 @@ import "paths.js" as Paths
 // Home and End move the selection (Shift extends it), Ctrl+A selects all,
 // Ctrl+H shows or hides dot files. A double-click or Enter opens: a
 // folder is gone into (`folderOpened`), files open in their default app.
+// It sits on glass or, as `solid` (0..1) rises, the theme's solid list
+// surface.
 FocusScope {
     id: list
+
+    property real solid: 0
 
     required property string folder
     // Absolute paths to select once the folder is listed.
@@ -77,6 +81,11 @@ FocusScope {
     Component.onCompleted: {
         const prefix = Paths.child(folder, "");
         model.selectNames(select.filter(path => path.startsWith(prefix) && !path.slice(prefix.length).includes("/")).map(path => path.slice(prefix.length)));
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: Tokens.alpha(Tokens.filesSolidList, list.solid)
     }
 
     Timer {
