@@ -124,10 +124,10 @@ mod tests {
             let sources = Sources {
                 bus: Bus::Address(bus.address.clone()),
                 udisks: Bus::Address(bus.address.clone()),
-                home: None,
                 data_dirs: vec![],
                 associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
                 runner: crate::apps::launch::Runner::Direct,
+                home: dir.to_path_buf(),
                 ui: None,
                 search: crate::files::search::Sources::under(&dir),
                 trash: None,

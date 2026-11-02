@@ -116,11 +116,15 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("What a folder view is ordered by (FileSortKey).", "FILE_SORT", names_of::<FileSortKey>()),
         Group::new("The ops of a files_changed event (FolderChange).", "FOLDER", tagged_names_of::<FolderChange>("op")),
         Group::new("How files_eject went (EjectOutcome).", "EJECT", names_of::<EjectOutcome>()),
+        Group::new("What a files_transfer job does (TransferMode).", "TRANSFER", names_of::<TransferMode>()),
+        Group::new("How a files_transfer job is going (TransferState).", "TRANSFER", names_of::<TransferState>()),
+        Group::new("Answers to a name clash (ClashAnswer).", "CLASH", names_of::<ClashAnswer>()),
+        Group::new("The places on top of Nova Files' sidebar (PlaceKind).", "PLACE", names_of::<PlaceKind>()),
     ]
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 10] {
+fn limits() -> [(&'static str, u64, &'static str); 11] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
@@ -137,11 +141,21 @@ fn limits() -> [(&'static str, u64, &'static str); 10] {
             "Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.",
         ),
         (
+            "FILES_TREE_MAX_FOLDERS",
+            size(FILES_TREE_MAX_FOLDERS),
+            "novad refuses a files_tree with more opened or closed folders.",
+        ),
+        (
             "NETWORK_TRAFFIC_HISTORY_SECS",
             NETWORK_TRAFFIC_HISTORY_SECS,
             "How far back a network_traffic event's history goes, in seconds (one sample each).",
         ),
     ]
+}
+
+/// Fixed wire strings the UI compares with, as `(name, value, comment)`.
+fn texts() -> [(&'static str, &'static str, &'static str); 1] {
+    [("FILES_TRASH_PLACE", FILES_TRASH_PLACE, "The trash place's path in files_places: the trash, not a folder.")]
 }
 
 /// `"focus_workspace"` -> `FOCUS_WORKSPACE`, `"ai-usage"` -> `AI_USAGE`.
@@ -164,6 +178,11 @@ pub fn generated(features: &Path) -> String {
         line(String::new());
         line(format!("// {comment}"));
         line(format!("var {name} = {value};"));
+    }
+    for (name, value, comment) in texts() {
+        line(String::new());
+        line(format!("// {comment}"));
+        line(format!("var {name} = \"{value}\";"));
     }
     for group in groups(features) {
         line(String::new());

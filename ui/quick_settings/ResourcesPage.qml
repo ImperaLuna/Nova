@@ -4,6 +4,7 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 import "quick_settings.js" as QuickSettings
+import "../text/bytes.js" as Bytes
 
 // The resources page: CPU and memory over the last minutes, and the
 // apps using the most memory now (each with all its processes), from
@@ -290,7 +291,7 @@ Item {
                                     Cell {
                                         anchors.verticalCenter: parent.verticalCenter
                                         color: Tokens.fgDim
-                                        text: QuickSettings.bytes(entry.app.memory)
+                                        text: Bytes.bytes(entry.app.memory)
                                     }
                                     // ✕ while hovered: asks to confirm under
                                     // the row. Nova and the session have none.

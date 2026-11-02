@@ -673,8 +673,9 @@ QtObject {
     // windows), its size when it opens, the navigation row (back, forward,
     // up, the address and search fields) and the command row under it, the
     // sidebar of places, and the file list's header with its Modified, Type
-    // and Size columns. Rows and fields use the radius of a menu row and of
-    // a control; the fields sit darker than the glass.
+    // and Size columns (the sorted one with a small chevron). Rows and
+    // fields use the radius of a menu row and of a control; the fields sit
+    // darker than the glass.
     readonly property int filesWindowWidth: 880
     readonly property int filesWindowHeight: 700
     readonly property int filesButtonSize: 30
@@ -701,9 +702,59 @@ QtObject {
     readonly property int filesDialogWidth: 400
     readonly property int filesDialogPad: 22
     readonly property int filesDialogButtonPad: 16
+    // The file list's rows: a folder's icon in its own warm color (dimmer
+    // for a dot folder), and rows easing up into place one after another
+    // when a folder's entries come in.
+    readonly property int filesRowHeight: 32
+    readonly property color filesFolder: "#E8A35A"
+    readonly property real filesHiddenIconOpacity: 0.6
+    readonly property int filesRowRise: 4
+    readonly property int filesRowStagger: 25
+    readonly property int durationRowIn: 220
+    // How often the Modified column looks at the clock, so "Today" moves on.
+    readonly property int filesClockTick: 60000
+    // Solid Nova Files ([files] in config.toml) ends at the theme's soft
+    // greys: the frame a step above bg, the file list at bg. On the way the
+    // raised rows fade into the frame.
+    readonly property color filesSolidFrame: tint(fg, 0.025)
+    readonly property color filesSolidList: bg
     // The small chevron beside New, Sort and View.
     readonly property int iconSizeMini: 12
     readonly property real filesChevronOpacity: 0.6
+    // Copies and moves: each running job's card stacked at the window's
+    // bottom right, and the name clash dialog in its middle, its two sides
+    // with a big icon each and its answers as round buttons.
+    readonly property int filesJobWidth: 290
+    readonly property int filesOverlayInset: 16
+    readonly property int filesClashWidth: 440
+    readonly property int filesClashIconSize: 40
+    readonly property int filesClashButtonHeight: 34
+    // The scale the dialog pops in from and shrinks back to.
+    readonly property real filesClashEnterScale: 0.97
+    // The trash: its columns after the name (Original location, Date
+    // deleted, Size), the dialog asking before deleting for good (Yes and
+    // No at least this wide, the one item it names with a big icon), and
+    // the notice at the bottom right when an item can't go back.
+    readonly property list<int> filesTrashColumns: [190, 120, 70]
+    readonly property int filesConfirmWidth: 400
+    readonly property int filesDialogButtonMinWidth: 72
+    readonly property int filesNoticeWidth: 330
+    // The address bar: each folder's part, washed on hover, and the ring
+    // while a path is typed (in the error color for one that isn't a folder).
+    readonly property int filesCrumbPadY: 4
+    readonly property int filesCrumbRadius: 8
+    readonly property real filesFocusRing: strokeThin
+    // The sidebar: the line between places, tree and drives, and the tree,
+    // its rows the height of a place, each level this far in, with its
+    // chevron (turning as it opens) and folder icon. New rows slide in from
+    // just above, one after another, this much apart.
+    readonly property color filesRule: glassRim
+    readonly property int filesRuleInset: 6
+    readonly property int filesTreeIndent: 14
+    readonly property int filesTreeChevron: 14
+    readonly property int filesTreeGap: 4
+    readonly property int filesTreeRise: 4
+    readonly property int filesTreeStagger: 30
 
     // Type
     readonly property string fontSans: "Inter"
@@ -788,6 +839,13 @@ QtObject {
     readonly property int durationWallpaperHandOver: 1100
     // The cubic-bezier every panel motion uses (fast out, gentle stop).
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
+
+    // `from` blended into `to` by `amount` (0 is `from`, 1 is `to`), alpha
+    // too, so glass can turn solid.
+    function mix(from: color, to: color, amount: real): color {
+        const lerp = (a, b) => a + (b - a) * amount;
+        return Qt.rgba(lerp(from.r, to.r), lerp(from.g, to.g), lerp(from.b, to.b), lerp(from.a, to.a));
+    }
 
     // `color` at `opacity` (0..1), whatever its own alpha.
     function alpha(color: color, opacity: real): color {

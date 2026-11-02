@@ -295,7 +295,6 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
         files: crate::files::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
             udisks: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
-            home: None,
             data_dirs: vec![dir.join("launcher/share")],
             associations: crate::apps::associations::Places::new(
                 Some(dir.join("config")),
@@ -304,6 +303,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
                 &[],
             ),
             runner: launcher::Runner::Direct,
+            home: dir.join("home"),
             ui: None,
             search: crate::files::search::Sources::under(dir),
             // A home trash under `<dir>/trash`, and no drives.
@@ -344,6 +344,7 @@ mod apps;
 mod basics;
 mod desktop;
 mod fake_compositor;
+mod folder_tree;
 mod live_config;
 mod opening;
 mod services;

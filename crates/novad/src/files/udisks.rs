@@ -185,19 +185,7 @@ impl Drives {
             ));
             match unmounted {
                 Ok(_) => done.push(filesystem),
-                Err(e) if is_busy(&e) => {
-                    self.shared.logger.info(LOG_SOURCE, &format!("{} is in use: {}", drive.name, error_text(&e)));
-                    // It stays as it was: the drive's other filesystems
-                    // unmounted so far are mounted again.
-                    for filesystem in done {
-                        self.shared.running()?;
-                        if let Err(e) = mount(&calls, filesystem) {
-                            self.shared.logger.warn(LOG_SOURCE, &format!("couldn't mount {filesystem} again: {e}"));
-                        }
-                    }
-                    self.shared.list();
-                    return Ok(EjectOutcome::Busy);
-                }
+                Err(e) if is_busy(&e) => return self.in_use(&calls, &drive.name, &e, &done),
                 Err(e) => {
                     self.shared.list();
                     return Err(format!("couldn't unmount {}: {}", drive.name, error_text(&e)));
@@ -210,12 +198,15 @@ impl Drives {
         if let Some(method) = method {
             self.shared.running()?;
             let options: HashMap<&str, Variant> = HashMap::new();
-            if let Err(e) =
-                zbus::block_on(calls.call_method(Some(UDISKS), device.as_str(), Some(DRIVE), method, &(options,)))
-            {
-                self.shared
-                    .logger
-                    .warn(LOG_SOURCE, &format!("{} unmounted, but {method} failed: {}", drive.name, error_text(&e)));
+            match zbus::block_on(calls.call_method(Some(UDISKS), device.as_str(), Some(DRIVE), method, &(options,))) {
+                Ok(_) => {}
+                // Something mounted or opened the drive meanwhile (from
+                // another window): it isn't safe to pull.
+                Err(e) if is_busy(&e) => return self.in_use(&calls, &drive.name, &e, &done),
+                Err(e) => {
+                    self.shared.list();
+                    return Err(format!("{} unmounted, but {method} failed: {}", drive.name, error_text(&e)));
+                }
             }
         }
         self.shared.logger.info(LOG_SOURCE, &format!("ejected {}", drive.name));
@@ -225,6 +216,26 @@ impl Drives {
             notifications.send_own(safe_to_remove(&drive.name));
         }
         Ok(EjectOutcome::Ejected)
+    }
+
+    /// Drive `name` is in use (`error`): it stays as it was, so its
+    /// filesystems `unmounted` so far are mounted again.
+    fn in_use(
+        &self,
+        calls: &Connection,
+        name: &str,
+        error: &zbus::Error,
+        unmounted: &[&String],
+    ) -> Result<EjectOutcome, String> {
+        self.shared.logger.info(LOG_SOURCE, &format!("{name} is in use: {}", error_text(error)));
+        for filesystem in unmounted {
+            self.shared.running()?;
+            if let Err(e) = mount(calls, filesystem) {
+                self.shared.logger.warn(LOG_SOURCE, &format!("couldn't mount {filesystem} again: {e}"));
+            }
+        }
+        self.shared.list();
+        Ok(EjectOutcome::Busy)
     }
 
     /// Stops following udisks2: no list is sent after this.

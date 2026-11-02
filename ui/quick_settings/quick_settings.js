@@ -3,7 +3,7 @@
 .import "devices.js" as Devices
 
 // Quick settings' pure logic: the greeting, which logo to show,
-// how sizes and percents read, which apps record from the mic, and the
+// how percents read, which apps record from the mic, and the
 // resources graph's lines. No QML types, so ui/tests can check it all.
 
 // The sidebar's pages: the first one, and the others by the view id of
@@ -41,26 +41,6 @@ function logo(os, logosDir, fileUrl) {
             return logosDir + "/" + ids[i] + ".svg";
     }
     return os.logo ? fileUrl(os.logo) : "";
-}
-
-// A size in bytes, short: "9.4G", "780M", "42K". One decimal under 10.
-function shortBytes(bytes) {
-    var units = ["B", "K", "M", "G", "T"];
-    var value = bytes;
-    var unit = 0;
-    while (value >= 1000 && unit < units.length - 1) {
-        value /= 1024;
-        unit++;
-    }
-    var digits = value < 10 && unit > 0 ? 1 : 0;
-    return value.toFixed(digits) + units[unit];
-}
-
-// A size in bytes for a list: "2.4 GB", "310 MB".
-function bytes(bytes) {
-    var short = shortBytes(bytes);
-    var unit = short.slice(-1);
-    return short.slice(0, -1) + " " + (unit === "B" ? "B" : unit + "B");
 }
 
 // A 0-100 share as "23%".

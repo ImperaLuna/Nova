@@ -285,6 +285,15 @@ impl<'a> Connection<'a> {
                 done(self.files().and_then(|files| files.open(self.id, *view, path, *sort, *hidden)))
             }
             Command::FilesClose { view } => done(self.files().map(|files| files.close(self.id, *view))),
+            Command::FilesTransfer { job, mode, sources, folder } => {
+                done(self.files().and_then(|files| files.transfer(self.id, *job, *mode, sources, folder)))
+            }
+            Command::FilesTransferCancel { job } => {
+                done(self.files().map(|files| files.cancel_transfer(self.id, *job)))
+            }
+            Command::FilesTransferAnswer { job, clash, answer, all } => {
+                done(self.files().and_then(|files| files.answer_clash(self.id, *job, *clash, *answer, *all)))
+            }
             Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
             Command::FilesLaunch { path, app } => {
                 let (path, app) = (path.clone(), app.clone());
@@ -321,24 +330,36 @@ impl<'a> Connection<'a> {
                 let drive = drive.clone();
                 return self.files_later(move |files| files.eject(&drive));
             }
+            Command::FilesTree { folder, opened, closed, hidden } => {
+                let (folder, opened, closed, hidden) = (folder.clone(), opened.clone(), closed.clone(), *hidden);
+                return self.files_later(move |files| {
+                    files.tree(&crate::files::tree::Request {
+                        folder: &folder,
+                        opened: &opened,
+                        closed: &closed,
+                        hidden,
+                    })
+                });
+            }
+            Command::FilesPlaces => return self.files_later(|files| Ok(files.places())),
             Command::FilesTrash { paths } => {
                 let paths = paths.clone();
-                return self.trash_later(move |trash| trash.trash(&paths));
+                return self.files_later(move |files| files.trash().trash(&paths));
             }
             Command::FilesDelete { paths } => {
                 let paths = paths.clone();
-                return self.trash_later(move |_| crate::files::Trash::delete(&paths));
+                return self.files_later(move |_| crate::files::Trash::delete(&paths));
             }
-            Command::FilesTrashList => return self.trash_later(|trash| Ok(trash.list())),
+            Command::FilesTrashList => return self.files_later(|files| Ok(files.trash().list())),
             Command::FilesRestore { ids } => {
                 let ids = ids.clone();
-                return self.trash_later(move |trash| trash.restore(&ids));
+                return self.files_later(move |files| files.trash().restore(&ids));
             }
             Command::FilesTrashDelete { ids } => {
                 let ids = ids.clone();
-                return self.trash_later(move |trash| trash.erase(&ids));
+                return self.files_later(move |files| files.trash().erase(&ids));
             }
-            Command::FilesEmptyTrash => return self.trash_later(crate::files::Trash::empty),
+            Command::FilesEmptyTrash => return self.files_later(|files| files.trash().empty()),
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -679,29 +700,14 @@ impl<'a> Connection<'a> {
         }
     }
 
-    /// Runs `work` with Nova Files on its own thread, for what waits on
-    /// udisks2.
+    /// Runs `work` with Nova Files on its own thread: it reads folders and
+    /// moves or deletes files.
     fn files_later<T: serde::Serialize>(
         &self,
         work: impl FnOnce(&crate::files::Files) -> Result<T, String> + Send + 'static,
     ) -> Answer {
         match self.files() {
             Ok(files) => Answer::later(move || value(work(&files))),
-            Err(e) => Answer::Now(Outcome::Error(e)),
-        }
-    }
-
-    /// Runs `work` with the trash on its own thread: moving, deleting and
-    /// reading a big trash take time.
-    fn trash_later<T: serde::Serialize>(
-        &self,
-        work: impl FnOnce(&crate::files::Trash) -> Result<T, String> + Send + 'static,
-    ) -> Answer {
-        match self.files() {
-            Ok(files) => {
-                let trash = files.trash();
-                Answer::later(move || value(work(&trash)))
-            }
             Err(e) => Answer::Now(Outcome::Error(e)),
         }
     }
@@ -934,6 +940,9 @@ impl<'a> Connection<'a> {
             | Command::ShowFolder { .. }
             | Command::FilesOpen { .. }
             | Command::FilesClose { .. }
+            | Command::FilesTransfer { .. }
+            | Command::FilesTransferCancel { .. }
+            | Command::FilesTransferAnswer { .. }
             | Command::AttachFiles { .. }
             | Command::FilesLaunch { .. }
             | Command::FilesOpenWith { .. }
@@ -947,6 +956,7 @@ impl<'a> Connection<'a> {
             | Command::FilesEmptyTrash
             | Command::FilesMount { .. }
             | Command::FilesEject { .. } => {}
+            Command::FilesTree { .. } | Command::FilesPlaces => {}
         }
     }
 
