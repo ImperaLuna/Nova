@@ -115,6 +115,9 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("What a media player is doing (PlaybackStatus).", "PLAYBACK", names_of::<PlaybackStatus>()),
         Group::new("What a folder view is ordered by (FileSortKey).", "FILE_SORT", names_of::<FileSortKey>()),
         Group::new("The ops of a files_changed event (FolderChange).", "FOLDER", tagged_names_of::<FolderChange>("op")),
+        Group::new("What a files_transfer job does (TransferMode).", "TRANSFER", names_of::<TransferMode>()),
+        Group::new("How a files_transfer job is going (TransferState).", "TRANSFER", names_of::<TransferState>()),
+        Group::new("Answers to a name clash (ClashAnswer).", "CLASH", names_of::<ClashAnswer>()),
     ]
 }
 

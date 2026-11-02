@@ -285,6 +285,15 @@ impl<'a> Connection<'a> {
                 done(self.files().and_then(|files| files.open(self.id, *view, path, *sort, *hidden)))
             }
             Command::FilesClose { view } => done(self.files().map(|files| files.close(self.id, *view))),
+            Command::FilesTransfer { job, mode, sources, folder } => {
+                done(self.files().and_then(|files| files.transfer(self.id, *job, *mode, sources, folder)))
+            }
+            Command::FilesTransferCancel { job } => {
+                done(self.files().map(|files| files.cancel_transfer(self.id, *job)))
+            }
+            Command::FilesTransferAnswer { job, clash, answer, all } => {
+                done(self.files().and_then(|files| files.answer_clash(self.id, *job, *clash, *answer, *all)))
+            }
             Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
             Command::FilesLaunch { path, app } => {
                 let (path, app) = (path.clone(), app.clone());
@@ -869,6 +878,9 @@ impl<'a> Connection<'a> {
             | Command::ShowFolder { .. }
             | Command::FilesOpen { .. }
             | Command::FilesClose { .. }
+            | Command::FilesTransfer { .. }
+            | Command::FilesTransferCancel { .. }
+            | Command::FilesTransferAnswer { .. }
             | Command::AttachFiles { .. }
             | Command::FilesLaunch { .. }
             | Command::FilesOpenWith { .. }

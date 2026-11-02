@@ -18,6 +18,10 @@
 //! - `folder.rs`: a folder's entries, their types from the shared MIME
 //!   database (`crate::mime`, loaded once as the module starts), and the
 //!   view's order.
+//! - `transfers.rs`: copy and move jobs (`files_transfer`), one thread
+//!   each, asking the window about name clashes.
+//! - `copying.rs`: the file system side of those: measuring, numbered
+//!   names, and copying a file in chunks.
 //!
 //! Windows go only to the Nova Files process, once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
@@ -26,9 +30,11 @@
 //! the same lock, so none is lost or sent twice. A process that detached as
 //! it quit, with windows asked for since, is followed by a new one.
 
+mod copying;
 mod file_manager1;
 mod folder;
 mod target;
+mod transfers;
 mod views;
 mod window;
 
@@ -40,7 +46,7 @@ use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
-use nova_protocol::{Event, FeatureState, FileSort, FilesWindow, Topic};
+use nova_protocol::{ClashAnswer, Event, FeatureState, FileSort, FilesWindow, Topic, TransferMode};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 
@@ -74,6 +80,8 @@ pub struct Files {
     stop: Arc<Stop>,
     /// The folders the windows show.
     folders: views::Folders,
+    /// The copies and moves they run.
+    transfers: transfers::Transfers,
 }
 
 /// What the module's services share.
@@ -112,6 +120,7 @@ impl Files {
         }
         let mime = Arc::new(mime);
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
+        let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
         let opener = Opener::new(
             mime,
             sources.associations.clone(),
@@ -132,7 +141,7 @@ impl Files {
         });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, opener: Arc::new(opener), stop, folders })
+        Arc::new(Self { shared, opener: Arc::new(opener), stop, folders, transfers })
     }
 
     /// What opens files in apps.
@@ -149,6 +158,37 @@ impl Files {
     /// Closes client `client`'s view `view` (`files_close`).
     pub fn close(&self, client: ClientId, view: u32) {
         self.folders.close(client, view);
+    }
+
+    /// Starts client `client`'s job `job`, copying or moving `sources` into
+    /// `folder` (`files_transfer`, [`transfers::Transfers::start`]).
+    pub fn transfer(
+        &self,
+        client: ClientId,
+        job: u32,
+        mode: TransferMode,
+        sources: &[String],
+        folder: &str,
+    ) -> Result<(), String> {
+        self.transfers.start(client, job, mode, sources, folder)
+    }
+
+    /// Stops client `client`'s job `job` (`files_transfer_cancel`).
+    pub fn cancel_transfer(&self, client: ClientId, job: u32) {
+        self.transfers.cancel(client, job);
+    }
+
+    /// Answers a name clash of client `client`'s job `job`
+    /// (`files_transfer_answer`).
+    pub fn answer_clash(
+        &self,
+        client: ClientId,
+        job: u32,
+        clash: u32,
+        answer: ClashAnswer,
+        all: bool,
+    ) -> Result<(), String> {
+        self.transfers.answer(client, job, clash, answer, all)
     }
 
     /// Opens a window on `folder` with `select` selected, once both check
@@ -181,6 +221,7 @@ impl Files {
     /// Client `client` hung up: windows aren't sent to it any more.
     pub fn client_gone(&self, client: ClientId) {
         self.folders.client_gone(client);
+        self.transfers.client_gone(client);
         let mut delivery = lock(&self.shared.delivery);
         if delivery.attached == Some(client) {
             delivery.attached = None;
@@ -188,11 +229,12 @@ impl Files {
     }
 
     /// Stops it: it publishes nothing more, gives up FileManager1, closes
-    /// Nova Files' windows and folder views, and drops windows still
-    /// waiting.
+    /// Nova Files' windows and folder views, stops copies, and drops
+    /// windows still waiting.
     pub fn stop(&self) {
         self.stop.stop();
         self.folders.stop();
+        self.transfers.stop();
         if let Some(process) = &self.shared.process {
             process.stop();
         }
