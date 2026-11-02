@@ -5,6 +5,7 @@
 //! handed to a shell.
 
 use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use nova_paths::find_program;
@@ -73,12 +74,17 @@ impl Entry {
     }
 
     /// Its program and arguments with `file` to open.
-    pub fn exec_with(&self, file: &str) -> Vec<String> {
-        let mut argv = self.exec.clone();
+    pub fn exec_with(&self, file: &OsStr) -> Vec<OsString> {
+        let mut argv: Vec<OsString> = self.exec.iter().map(OsString::from).collect();
         let index = self.file_arg.index.min(argv.len());
         match &self.file_arg.within {
-            Some((before, after)) if index < argv.len() => argv[index] = format!("{before}{file}{after}"),
-            _ => argv.insert(index, file.to_string()),
+            Some((before, after)) if index < argv.len() => {
+                let mut within = OsString::from(before);
+                within.push(file);
+                within.push(after);
+                argv[index] = within;
+            }
+            _ => argv.insert(index, file.to_owned()),
         }
         argv
     }
@@ -455,7 +461,7 @@ mod tests {
     fn opening(line: &str, file: &str) -> Vec<String> {
         let mut found = entry(&format!("[Desktop Entry]\nType=Application\nName=X\nExec={line}\n")).unwrap();
         found.mime_types = vec!["text/plain".into()];
-        found.exec_with(file)
+        found.exec_with(OsStr::new(file)).into_iter().map(|arg| arg.into_string().unwrap()).collect()
     }
 
     #[test]

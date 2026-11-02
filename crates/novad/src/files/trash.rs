@@ -11,8 +11,9 @@
 //! and when, in local time. The info file is made first, with create-new:
 //! that is how two apps trashing at once each get their own name.
 //!
-//! Over the socket an item is named by its id: its info file's path,
-//! percent-escaped so names that aren't UTF-8 still round-trip. Every id is
+//! Over the socket an item is named by its id: its info file's path, as
+//! wire text (`nova_protocol::wire_text`), so names that aren't UTF-8
+//! still round-trip; names and folders go as wire text too. Every id is
 //! checked to be an info file in a trash that exists now before anything
 //! is touched, and every path to trash or delete must be absolute with no
 //! `..`, so nothing from the socket reaches outside what it names.
@@ -29,8 +30,8 @@ use crate::hub::Hub;
 use crate::inotify::{self, Inotify, Stopper};
 use crate::logger::Logger;
 use crate::mime::MimeDb;
-use crate::notifications::image::decode_percent_bytes;
-use nova_protocol::{Event, FILES_PATH_MAX_BYTES, TrashItem};
+use crate::notifications::image::percent_decoded;
+use nova_protocol::{Event, FILES_PATH_MAX_BYTES, TrashItem, wire_path, wire_text};
 use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -288,11 +289,10 @@ impl Trash {
                 let name = info.file_name()?.as_bytes().strip_suffix(INFO_SUFFIX.as_bytes())?;
                 let (original, deleted_ms) = read_info(&info, root).ok()?;
                 let mut entry = folder::read_entry(&files, OsStr::from_bytes(name), &self.mime)?;
-                let shown = original.file_name().unwrap_or(original.as_os_str()).to_string_lossy();
-                entry.hidden = folder::is_hidden(&shown);
-                entry.name = shown.into_owned();
-                let folder = original.parent().unwrap_or(Path::new("/")).to_string_lossy().into_owned();
-                Some(TrashItem { id: escape(info.as_os_str()), folder, deleted_ms, entry })
+                entry.name = wire_text(original.file_name().unwrap_or(original.as_os_str()));
+                entry.hidden = folder::is_hidden(&entry.name);
+                let folder = wire_text(original.parent().unwrap_or(Path::new("/")));
+                Some(TrashItem { id: wire_text(&info), folder, deleted_ms, entry })
             })
             .collect()
     }
@@ -502,7 +502,7 @@ fn read_info(info: &Path, root: &Root) -> Result<(PathBuf, Option<i64>), String>
         if line.starts_with('[') {
             in_group = line == INFO_GROUP;
         } else if in_group && let Some(value) = line.strip_prefix(PATH_KEY) {
-            path = decode_percent_bytes(value).map(|bytes| PathBuf::from(OsString::from_vec(bytes)));
+            path = percent_decoded(value).map(|bytes| PathBuf::from(OsString::from_vec(bytes)));
         } else if in_group && let Some(value) = line.strip_prefix(DATE_KEY) {
             date = deletion_ms(value);
         }
@@ -523,7 +523,7 @@ fn deletion_ms(value: &str) -> Option<i64> {
     Some(local.to_zoned(jiff::tz::TimeZone::system()).ok()?.timestamp().as_millisecond())
 }
 
-/// `bytes` percent-escaped as a URI path: an info file's `Path`, and ids.
+/// `bytes` percent-escaped as a URI path: an info file's `Path`.
 fn escape(bytes: &OsStr) -> String {
     let mut out = String::with_capacity(bytes.len());
     for &byte in bytes.as_bytes() {
@@ -539,7 +539,7 @@ fn escape(bytes: &OsStr) -> String {
 /// The item `id` names, once it's an info file in one of `roots`.
 fn find(roots: &[Root], id: &str) -> Result<Found, String> {
     let gone = || "That item is no longer in the trash".to_string();
-    let info = decode_percent_bytes(id).map(|bytes| PathBuf::from(OsString::from_vec(bytes))).ok_or_else(gone)?;
+    let info = wire_path(id);
     let root = roots.iter().find(|root| info.parent() == Some(root.info().as_path())).ok_or_else(gone)?;
     let name =
         info.file_name().and_then(|name| name.as_bytes().strip_suffix(INFO_SUFFIX.as_bytes())).ok_or_else(gone)?;
@@ -684,7 +684,7 @@ mod tests {
 
         let items = fixture.trash.list();
         let names: Vec<&str> = items.iter().map(|item| item.entry.name.as_str()).collect();
-        assert_eq!(names, ["café", "raw\u{fffd}"]);
+        assert_eq!(names, ["café".to_string(), wire_text(OsStr::from_bytes(b"raw\xff"))]);
         let expected = jiff::civil::date(2026, 11, 2).at(10, 0, 0, 0).to_zoned(jiff::tz::TimeZone::system()).unwrap();
         assert_eq!(items[0].deleted_ms, Some(expected.timestamp().as_millisecond()));
         // A name that isn't UTF-8 still erases by its id.
