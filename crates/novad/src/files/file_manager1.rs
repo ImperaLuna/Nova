@@ -126,6 +126,7 @@ mod tests {
                 data_dirs: vec![],
                 associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
                 runner: crate::apps::launch::Runner::Direct,
+                home: dir.to_path_buf(),
                 ui: None,
             };
             let apps = crate::apps::AppIndex::of(None, &logger);

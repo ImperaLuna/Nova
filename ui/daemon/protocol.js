@@ -30,6 +30,9 @@ var FILES_PATH_MAX_BYTES = 4096;
 // Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.
 var RAW_BYTE_BASE = 63232;
 
+// novad refuses a files_tree with more opened or closed folders.
+var FILES_TREE_MAX_FOLDERS = 256;
+
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 
@@ -108,6 +111,8 @@ var CMD_FILES_CLOSE = "files_close";
 var CMD_FILES_TRANSFER = "files_transfer";
 var CMD_FILES_TRANSFER_CANCEL = "files_transfer_cancel";
 var CMD_FILES_TRANSFER_ANSWER = "files_transfer_answer";
+var CMD_FILES_TREE = "files_tree";
+var CMD_FILES_PLACES = "files_places";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -279,6 +284,13 @@ var TRANSFER_FAILED = "failed";
 var CLASH_REPLACE = "replace";
 var CLASH_MERGE = "merge";
 var CLASH_SKIP = "skip";
+
+// The places on top of Nova Files' sidebar (PlaceKind).
+var PLACE_HOME = "home";
+var PLACE_DESKTOP = "desktop";
+var PLACE_DOCUMENTS = "documents";
+var PLACE_DOWNLOADS = "downloads";
+var PLACE_PICTURES = "pictures";
 
 // END GENERATED
 

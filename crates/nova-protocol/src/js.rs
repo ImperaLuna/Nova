@@ -118,11 +118,12 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("What a files_transfer job does (TransferMode).", "TRANSFER", names_of::<TransferMode>()),
         Group::new("How a files_transfer job is going (TransferState).", "TRANSFER", names_of::<TransferState>()),
         Group::new("Answers to a name clash (ClashAnswer).", "CLASH", names_of::<ClashAnswer>()),
+        Group::new("The places on top of Nova Files' sidebar (PlaceKind).", "PLACE", names_of::<PlaceKind>()),
     ]
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 8] {
+fn limits() -> [(&'static str, u64, &'static str); 9] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
@@ -135,6 +136,11 @@ fn limits() -> [(&'static str, u64, &'static str); 8] {
             "RAW_BYTE_BASE",
             u64::from(RAW_BYTE_BASE),
             "Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.",
+        ),
+        (
+            "FILES_TREE_MAX_FOLDERS",
+            size(FILES_TREE_MAX_FOLDERS),
+            "novad refuses a files_tree with more opened or closed folders.",
         ),
         (
             "NETWORK_TRAFFIC_HISTORY_SECS",

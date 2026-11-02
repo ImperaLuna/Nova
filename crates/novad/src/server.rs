@@ -310,6 +310,18 @@ impl<'a> Connection<'a> {
                 let (path, app) = (path.clone(), app.clone());
                 return self.opener_later(move |opener| opener.set_default(&path, &app));
             }
+            Command::FilesTree { folder, opened, closed, hidden } => {
+                let (folder, opened, closed, hidden) = (folder.clone(), opened.clone(), closed.clone(), *hidden);
+                return self.files_later(move |files| {
+                    files.tree(&crate::files::tree::Request {
+                        folder: &folder,
+                        opened: &opened,
+                        closed: &closed,
+                        hidden,
+                    })
+                });
+            }
+            Command::FilesPlaces => return self.files_later(|files| Ok(files.places())),
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -650,6 +662,17 @@ impl<'a> Connection<'a> {
         }
     }
 
+    /// Runs `work` with Nova Files on its own thread: it reads folders.
+    fn files_later<T: serde::Serialize>(
+        &self,
+        work: impl FnOnce(&crate::files::Files) -> Result<T, String> + Send + 'static,
+    ) -> Answer {
+        match self.files() {
+            Ok(files) => Answer::later(move || value(work(&files))),
+            Err(e) => Answer::Now(Outcome::Error(e)),
+        }
+    }
+
     fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
         match self.media() {
             Ok(media) => Answer::later(move || work(&media)),
@@ -884,7 +907,9 @@ impl<'a> Connection<'a> {
             | Command::AttachFiles { .. }
             | Command::FilesLaunch { .. }
             | Command::FilesOpenWith { .. }
-            | Command::FilesSetDefault { .. } => {}
+            | Command::FilesSetDefault { .. }
+            | Command::FilesTree { .. }
+            | Command::FilesPlaces => {}
         }
     }
 
