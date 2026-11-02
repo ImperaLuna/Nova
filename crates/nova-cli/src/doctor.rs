@@ -253,8 +253,17 @@ fn features_lines(features: &Result<Vec<FeatureState>, String>, distro: &Distro)
             Line::new(Level::Fail, "features", format!("{} needs {}; {install}", feature.id, needs.join(", ")))
         })
         .collect();
-    if !missing.is_empty() {
-        return missing;
+    let unhosted = features.iter().filter(|feature| feature.status == FeatureStatus::NoHost).map(|feature| {
+        let hosts: Vec<&str> = feature.slots.iter().map(|slot| slot.host.as_str()).collect();
+        Line::new(
+            Level::Warn,
+            "features",
+            format!("{} is on but has nowhere to show: {} is off or unknown", feature.id, hosts.join(", ")),
+        )
+    });
+    let problems: Vec<Line> = missing.into_iter().chain(unhosted).collect();
+    if !problems.is_empty() {
+        return problems;
     }
     let on: Vec<&str> = features
         .iter()
@@ -294,7 +303,7 @@ mod tests {
     }
 
     fn feature(id: &str, status: FeatureStatus, missing: &[&str]) -> FeatureState {
-        FeatureState { id: id.into(), status, missing: missing.iter().map(|m| m.to_string()).collect() }
+        FeatureState { id: id.into(), status, missing: missing.iter().map(|m| m.to_string()).collect(), slots: vec![] }
     }
 
     fn healthy() -> Facts {

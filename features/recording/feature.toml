@@ -20,3 +20,9 @@ debian = ["wf-recorder"]
 
 [check]
 binaries = ["gpu-screen-recorder|wf-recorder"]
+
+# While recording, left of the right pill.
+[[slot]]
+host = "bar.right"
+view = "recording.pill"
+order = 10

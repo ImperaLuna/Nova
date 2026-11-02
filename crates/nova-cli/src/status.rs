@@ -71,6 +71,7 @@ fn describe(status: &Status) -> String {
             FeatureStatus::Ready => format!("{} on", f.id),
             FeatureStatus::Off => format!("{} off", f.id),
             FeatureStatus::MissingDeps => format!("{} missing {}", f.id, f.missing.join(", ")),
+            FeatureStatus::NoHost => format!("{} with nowhere to show", f.id),
         })
         .collect();
     out += &row("features", &features.join(", "));
@@ -248,11 +249,12 @@ mod tests {
                 last_crash: Some(Crash { time: "not a time".into(), log: "/x.log".into() }),
             },
             features: vec![
-                FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] },
+                FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![], slots: vec![] },
                 FeatureState {
                     id: "recording".into(),
                     status: FeatureStatus::MissingDeps,
                     missing: vec!["wf-recorder".into()],
+                    slots: vec![],
                 },
             ],
             log_dir: "/x".into(),

@@ -17,7 +17,12 @@ fn subscribing_to_features_sends_their_state() {
     assert_eq!(reply["result"], Value::Null);
     let event = client.next();
     assert_eq!(event["event"], "features");
-    assert!(event["data"]["features"].as_array().unwrap().contains(&json!({"id": "core", "status": "ready"})));
+    let features = event["data"]["features"].as_array().unwrap();
+    let core = features.iter().find(|feature| feature["id"] == "core").unwrap();
+    assert_eq!(core["status"], "ready");
+    assert!(
+        core["slots"].as_array().unwrap().contains(&json!({"host": "bar.center", "view": "central-pill", "order": 10}))
+    );
 }
 
 #[test]

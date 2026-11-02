@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 nova-paths.workspace = true
+nova-protocol.workspace = true
 serde.workspace = true
 toml.workspace = true
 

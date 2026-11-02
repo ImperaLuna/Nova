@@ -3,3 +3,13 @@ name = "Quick settings"
 description = "The right pill's sidebar: sound, keep awake, microphone and what the machine is busy with."
 default = true
 daemon = "quick-settings"
+
+[[slot]]
+host = "right-pill.buttons"
+view = "quick-settings.button"
+order = 10
+
+[[slot]]
+host = "stage.panels"
+view = "quick-settings.panel"
+order = 20
