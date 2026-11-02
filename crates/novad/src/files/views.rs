@@ -10,8 +10,11 @@
 //! (or [`MOST_DELAY`] has passed, so a long copy still shows), reads those
 //! entries again and sends what changed as index operations
 //! ([`super::folder::Listing::apply`]). A full inotify queue means lost
-//! events, so the folder is read and sent again from the start. When the
-//! folder can't be read or goes, the view closes with `files_closed`.
+//! events, so the folder is read and sent again from the start. The
+//! folder's own entry is watched in its parent too: when it's replaced (a
+//! symlink pointed elsewhere, another folder renamed over it) the view
+//! follows the path to what it names now. When the folder can't be read
+//! or goes, the view closes with `files_closed`.
 //! Reading stops as soon as the view closes.
 //!
 //! Every event of a view is sent while holding its state, after checking
@@ -176,6 +179,11 @@ struct Worker {
 
 impl Worker {
     fn run(mut self) {
+        // Best effort: a parent that can't be listed still lets the folder
+        // be followed, only not replaced.
+        if let Some(parent) = self.view.path.parent() {
+            let _ = self.watcher.watch_for(parent, inotify::ENTRIES);
+        }
         if let Err(e) = self.watcher.watch(&self.view.path) {
             return self.closed(unreadable(&self.view.named, &e));
         }
@@ -194,14 +202,33 @@ impl Worker {
                         return;
                     }
                 }
-                Ok(Some(Gathered::Gone)) => {
-                    return self.closed(format!("{} was deleted or moved", self.view.named));
+                Ok(Some(Gathered::Moved)) => {
+                    if !self.reattach() {
+                        return;
+                    }
                 }
                 Ok(None) => return,
                 Err(e) => {
                     self.logger.warn(LOG_SOURCE, &format!("stopped following {}: {e}", self.view.path.display()));
                     return self.closed(format!("Stopped following {}: {e}", self.view.named));
                 }
+            }
+        }
+    }
+
+    /// Watches what the path names now and sends it from the start, or
+    /// closes the view when nothing is there. False once the view is closed.
+    fn reattach(&mut self) -> bool {
+        self.watcher.unwatch(&self.view.path);
+        match self.watcher.watch(&self.view.path) {
+            Ok(()) => self.send_all(),
+            Err(e) => {
+                let error = match e.kind() {
+                    std::io::ErrorKind::NotFound => format!("{} was deleted or moved", self.view.named),
+                    _ => unreadable(&self.view.named, &e),
+                };
+                self.closed(error);
+                false
             }
         }
     }
@@ -246,14 +273,18 @@ impl Worker {
         let mut changes = first;
         let most = Instant::now() + MOST_DELAY;
         loop {
-            if !changes.gone.is_empty() {
-                return Ok(Some(Gathered::Gone));
+            // The folder went, or its entry in the parent changed.
+            if !changes.gone.is_empty() || changes.found.iter().any(|change| change.path == self.view.path) {
+                return Ok(Some(Gathered::Moved));
             }
             if changes.overflowed {
                 return Ok(Some(Gathered::Lost));
             }
+            // The parent's other entries don't matter.
             for change in changes.found {
-                if let Some(name) = change.path.file_name() {
+                if change.path.parent() == Some(&self.view.path)
+                    && let Some(name) = change.path.file_name()
+                {
                     names.insert(name.to_owned());
                 }
             }
@@ -315,8 +346,8 @@ enum Gathered {
     Names(BTreeSet<OsString>),
     /// Events were lost: read everything again.
     Lost,
-    /// The folder itself is gone.
-    Gone,
+    /// The folder itself went or was replaced.
+    Moved,
 }
 
 /// `path` from the socket, if it's a usable absolute path.
@@ -548,6 +579,29 @@ mod tests {
         std::fs::remove_dir_all(&folder).unwrap();
         while fixture.next()["event"] != "files_closed" {}
         assert!(lock(&fixture.folders.views).as_ref().unwrap().is_empty());
+        fixture.nothing_more();
+    }
+
+    /// A symlink pointed elsewhere shows, and follows, its new folder.
+    #[test]
+    fn a_replaced_symlink_is_followed() {
+        let mut fixture = Fixture::new("files-relink");
+        let dir = TempDir::new("files-relink-folder");
+        let (old, new, link) = (dir.join("old"), dir.join("new"), dir.join("link"));
+        std::fs::create_dir(&old).unwrap();
+        std::fs::create_dir(&new).unwrap();
+        std::fs::write(old.join("a.md"), b"").unwrap();
+        std::fs::write(new.join("b.md"), b"").unwrap();
+        std::os::unix::fs::symlink(&old, &link).unwrap();
+        fixture.open(&link).unwrap();
+        fixture.until_shown(&["a.md"]);
+        std::os::unix::fs::symlink(&new, dir.join("link.new")).unwrap();
+        std::fs::rename(dir.join("link.new"), &link).unwrap();
+        fixture.until_shown(&["b.md"]);
+        std::fs::write(new.join("c.md"), b"").unwrap();
+        fixture.until_shown(&["b.md", "c.md"]);
+        std::fs::write(old.join("x.md"), b"").unwrap();
+        std::fs::write(dir.join("beside.md"), b"").unwrap();
         fixture.nothing_more();
     }
 

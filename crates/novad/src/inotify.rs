@@ -138,6 +138,16 @@ impl Inotify {
         Ok(())
     }
 
+    /// Stops watching `dir`, whatever it pointed to when it was watched.
+    pub fn unwatch(&mut self, dir: &Path) {
+        let watched: Vec<i32> = self.dirs.iter().filter(|(_, path)| *path == dir).map(|(wd, _)| *wd).collect();
+        for wd in watched {
+            // SAFETY: no pointers; a stale `wd` only fails with EINVAL.
+            unsafe { libc::inotify_rm_watch(self.file.as_raw_fd(), wd) };
+            self.dirs.remove(&wd);
+        }
+    }
+
     /// Blocks until something changes, or `None` once stopped.
     pub fn read(&mut self) -> std::io::Result<Option<Changes>> {
         self.read_until(None)
