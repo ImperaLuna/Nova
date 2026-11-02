@@ -42,6 +42,7 @@ mod launcher;
 mod logger;
 mod logind;
 mod media;
+mod mime;
 mod modules;
 mod network;
 mod notifications;

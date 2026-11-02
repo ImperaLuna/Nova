@@ -113,17 +113,21 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("How much a notification matters (Urgency).", "URGENCY", names_of::<Urgency>()),
         Group::new("The now-playing panel's buttons (MediaAction).", "MEDIA", names_of::<MediaAction>()),
         Group::new("What a media player is doing (PlaybackStatus).", "PLAYBACK", names_of::<PlaybackStatus>()),
+        Group::new("What a folder view is ordered by (FileSortKey).", "FILE_SORT", names_of::<FileSortKey>()),
+        Group::new("The ops of a files_changed event (FolderChange).", "FOLDER", tagged_names_of::<FolderChange>("op")),
     ]
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 5] {
+fn limits() -> [(&'static str, u64, &'static str); 7] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
         ("MEDIA_PLAYER_MAX_BYTES", size(MEDIA_PLAYER_MAX_BYTES), "novad refuses longer media player ids."),
         ("WIFI_PASSWORD_MAX_BYTES", size(WIFI_PASSWORD_MAX_BYTES), "novad refuses longer Wi-Fi passwords."),
         ("WPA_PASSWORD_MIN_BYTES", size(WPA_PASSWORD_MIN_BYTES), "novad refuses shorter WPA passwords."),
+        ("FILES_MAX_VIEWS", size(FILES_MAX_VIEWS), "novad refuses more open folder views per connection."),
+        ("FILES_PATH_MAX_BYTES", size(FILES_PATH_MAX_BYTES), "novad refuses longer files_open paths."),
         (
             "NETWORK_TRAFFIC_HISTORY_SECS",
             NETWORK_TRAFFIC_HISTORY_SECS,

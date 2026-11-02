@@ -15,9 +15,20 @@ const MAX_DEPTH: usize = 8;
 /// A desktop entry is a few kilobytes; anything far bigger isn't one.
 const MAX_ENTRY_BYTES: u64 = 1024 * 1024;
 
-/// Every app in `data_dirs`, by id, and the problems with entries that
-/// aren't valid, for the log.
-pub fn scan(data_dirs: &[PathBuf], context: &Context) -> (BTreeMap<String, Entry>, Vec<String>) {
+/// What a look at the apps found.
+pub struct Found {
+    /// The apps the launcher lists, by id.
+    pub apps: BTreeMap<String, Entry>,
+    /// Apps it doesn't list, by id, that a type's default may still name:
+    /// `NoDisplay` ones that open some type of file, and copies of a
+    /// listed app under another id.
+    pub unlisted: BTreeMap<String, Entry>,
+    /// The problems with entries that aren't valid, for the log.
+    pub problems: Vec<String>,
+}
+
+/// Every app in `data_dirs`.
+pub fn scan(data_dirs: &[PathBuf], context: &Context) -> Found {
     let mut apps = BTreeMap::new();
     // Ids already decided, shown or not: later folders can't bring them back.
     let mut decided = BTreeSet::new();
@@ -46,25 +57,29 @@ pub fn scan(data_dirs: &[PathBuf], context: &Context) -> (BTreeMap<String, Entry
             }
         }
     }
-    (without_copies(apps), problems)
+    let (apps, unlisted): (BTreeMap<String, Entry>, BTreeMap<String, Entry>) =
+        apps.into_iter().partition(|(_, entry)| entry.listed);
+    let mut unlisted: BTreeMap<String, Entry> = unlisted.into_iter().filter(|(_, entry)| entry.opens_types()).collect();
+    let (apps, copies) = without_copies(apps);
+    unlisted.extend(copies.into_iter().map(|entry| (entry.id.clone(), entry)));
+    Found { apps, unlisted, problems }
 }
 
 /// `apps` with one of each set of entries that show the same name and run
 /// the same command, like a package's entry and a copy the user's config
 /// adds under another id: the one that opens file or link types, else the
-/// first by id.
-fn without_copies(apps: BTreeMap<String, Entry>) -> BTreeMap<String, Entry> {
+/// first by id. The others come back apart.
+fn without_copies(apps: BTreeMap<String, Entry>) -> (BTreeMap<String, Entry>, Vec<Entry>) {
     let mut kept: BTreeMap<(String, Vec<String>, bool), Entry> = BTreeMap::new();
+    let mut copies = Vec::new();
     for entry in apps.into_values() {
         let key = (entry.name.clone(), entry.exec.clone(), entry.terminal);
         match kept.get(&key) {
-            Some(other) if other.opens_types || !entry.opens_types => {}
-            _ => {
-                kept.insert(key, entry);
-            }
+            Some(other) if other.opens_types() || !entry.opens_types() => copies.push(entry),
+            _ => copies.extend(kept.insert(key, entry)),
         }
     }
-    kept.into_values().map(|entry| (entry.id.clone(), entry)).collect()
+    (kept.into_values().map(|entry| (entry.id.clone(), entry)).collect(), copies)
 }
 
 pub(crate) fn read_entry(file: &Path) -> std::io::Result<String> {
@@ -224,7 +239,7 @@ mod tests {
     fn names(dirs: &[PathBuf]) -> BTreeMap<String, String> {
         let locale = Locale::default();
         let context = Context { locale: &locale, desktops: &[], path_var: "", autostart: false };
-        scan(dirs, &context).0.into_iter().map(|(id, entry)| (id, entry.name)).collect()
+        scan(dirs, &context).apps.into_iter().map(|(id, entry)| (id, entry.name)).collect()
     }
 
     #[test]
@@ -245,6 +260,19 @@ mod tests {
     }
 
     #[test]
+    fn unlisted_apps_are_kept_only_when_they_open_files() {
+        let root = temp("unlisted");
+        let share = root.join("share");
+        write_app(&share, "viewer.desktop", "Viewer", "NoDisplay=true\nMimeType=image/png;\n");
+        write_app(&share, "helper.desktop", "Helper", "NoDisplay=true\n");
+        let locale = Locale::default();
+        let context = Context { locale: &locale, desktops: &[], path_var: "", autostart: false };
+        let found = scan(std::slice::from_ref(&share), &context);
+        assert!(found.apps.is_empty());
+        assert_eq!(found.unlisted.keys().collect::<Vec<_>>(), ["viewer.desktop"]);
+    }
+
+    #[test]
     fn a_copy_of_an_app_under_another_id_shows_once() {
         // Like a home-manager entry beside the package's own.
         let root = temp("copies");
@@ -256,6 +284,11 @@ mod tests {
         write_app(&share, "other.desktop", "Other", "");
         let found = names(std::slice::from_ref(&share));
         assert_eq!(found.keys().collect::<Vec<_>>(), ["md.obsidian.Obsidian.desktop", "other.desktop"]);
+        // The copy is still there for a mimeapps.list that names it.
+        let locale = Locale::default();
+        let context = Context { locale: &locale, desktops: &[], path_var: "", autostart: false };
+        let unlisted = scan(std::slice::from_ref(&share), &context).unlisted;
+        assert_eq!(unlisted.keys().collect::<Vec<_>>(), ["obsidian.desktop"]);
     }
 
     #[test]

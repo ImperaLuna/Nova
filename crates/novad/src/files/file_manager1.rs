@@ -64,7 +64,7 @@ impl Server {
     fn show(&self, windows: Result<Vec<nova_protocol::FilesWindow>, String>) -> zbus::fdo::Result<()> {
         let windows = windows.map_err(zbus::fdo::Error::InvalidArgs)?;
         for window in windows {
-            self.shared.open(window);
+            self.shared.open(window).map_err(zbus::fdo::Error::LimitsExceeded)?;
         }
         Ok(())
     }
@@ -121,8 +121,15 @@ mod tests {
             let bus = TestBus::start(&dir.join("bus"));
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
-            let sources = Sources { bus: Bus::Address(bus.address.clone()), ui: None };
-            let files = Files::start(sources, Arc::clone(&hub), logger);
+            let sources = Sources {
+                bus: Bus::Address(bus.address.clone()),
+                data_dirs: vec![],
+                associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
+                runner: crate::apps::launch::Runner::Direct,
+                ui: None,
+            };
+            let apps = crate::apps::AppIndex::of(None, &logger);
+            let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");
             Self { dir, bus, hub, files }
         }
 

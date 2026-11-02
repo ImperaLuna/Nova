@@ -11,6 +11,13 @@
 //!   folder" opens Nova Files.
 //! - `window.rs`: the Nova Files process (`ui/files.qml`), started when a
 //!   window is asked for and none runs.
+//! - Opening files in apps is the shared `crate::apps::opening`, over the
+//!   module's one copy of the MIME database.
+//! - `views.rs`: the folders a window shows (`files_open`), read in pages
+//!   and followed with inotify while open, one thread per view.
+//! - `folder.rs`: a folder's entries, their types from the shared MIME
+//!   database (`crate::mime`, loaded once as the module starts), and the
+//!   view's order.
 //!
 //! Windows go only to the Nova Files process, once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
@@ -20,24 +27,40 @@
 //! it quit, with windows asked for since, is followed by a new one.
 
 mod file_manager1;
+mod folder;
 mod target;
+mod views;
 mod window;
 
+use crate::apps::AppIndex;
+use crate::apps::associations::Places;
+use crate::apps::launch::Runner;
+use crate::apps::opening::Opener;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
-use nova_protocol::{Event, FeatureState, FilesWindow, Topic};
+use nova_protocol::{Event, FeatureState, FileSort, FilesWindow, Topic};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 
 pub const FEATURE_ID: &str = "files";
 const LOG_SOURCE: &str = "files";
+/// More windows than anyone asks for before Nova Files starts; past it,
+/// more are refused rather than kept.
+const MAX_WAITING: usize = 64;
 
 /// Where Nova Files runs from.
 #[derive(Clone)]
 pub struct Sources {
     /// Where `org.freedesktop.FileManager1` is served.
     pub bus: Bus,
+    /// The data folders the MIME database is read from.
+    pub data_dirs: Vec<PathBuf>,
+    /// Where the `mimeapps.list` files are.
+    pub associations: Places,
+    /// How apps opening files are started.
+    pub runner: Runner,
     /// How the Nova Files process runs; none for a novad without its UI,
     /// where windows only wait.
     pub ui: Option<crate::supervisor::UiSettings>,
@@ -45,8 +68,12 @@ pub struct Sources {
 
 pub struct Files {
     shared: Arc<Shared>,
+    /// Opens files in apps.
+    opener: Arc<Opener>,
     /// Ends the FileManager1 service.
     stop: Arc<Stop>,
+    /// The folders the windows show.
+    folders: views::Folders,
 }
 
 /// What the module's services share.
@@ -71,7 +98,28 @@ struct Delivery {
 }
 
 impl Files {
-    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+    /// Starts it, opening files in `apps` with programs from `path_var`.
+    pub fn start(
+        sources: Sources,
+        hub: Arc<Hub>,
+        logger: Arc<Logger>,
+        apps: Arc<AppIndex>,
+        path_var: &str,
+    ) -> Arc<Self> {
+        let (mime, problems) = crate::mime::MimeDb::load(&sources.data_dirs);
+        for problem in problems {
+            logger.warn(LOG_SOURCE, &problem);
+        }
+        let mime = Arc::new(mime);
+        let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
+        let opener = Opener::new(
+            mime,
+            sources.associations.clone(),
+            sources.runner.clone(),
+            apps,
+            path_var,
+            Arc::clone(&logger),
+        );
         let shared = Arc::new_cyclic(|shared: &Weak<Shared>| {
             let shared = Weak::clone(shared);
             let exited = move || {
@@ -84,14 +132,29 @@ impl Files {
         });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, stop })
+        Arc::new(Self { shared, opener: Arc::new(opener), stop, folders })
+    }
+
+    /// What opens files in apps.
+    pub fn opener(&self) -> Arc<Opener> {
+        Arc::clone(&self.opener)
+    }
+
+    /// Shows the folder `path` in client `client`'s view `view`
+    /// (`files_open`, [`views::Folders::open`]).
+    pub fn open(&self, client: ClientId, view: u32, path: &str, sort: FileSort, hidden: bool) -> Result<(), String> {
+        self.folders.open(client, view, path, sort, hidden)
+    }
+
+    /// Closes client `client`'s view `view` (`files_close`).
+    pub fn close(&self, client: ClientId, view: u32) {
+        self.folders.close(client, view);
     }
 
     /// Opens a window on `folder` with `select` selected, once both check
     /// out ([`target::window`]).
     pub fn show(&self, folder: &str, select: &[String]) -> Result<(), String> {
-        self.shared.open(target::window(folder, select)?);
-        Ok(())
+        self.shared.open(target::window(folder, select)?)
     }
 
     /// Client `client`, the Nova Files process, can open windows
@@ -117,6 +180,7 @@ impl Files {
 
     /// Client `client` hung up: windows aren't sent to it any more.
     pub fn client_gone(&self, client: ClientId) {
+        self.folders.client_gone(client);
         let mut delivery = lock(&self.shared.delivery);
         if delivery.attached == Some(client) {
             delivery.attached = None;
@@ -124,9 +188,11 @@ impl Files {
     }
 
     /// Stops it: it publishes nothing more, gives up FileManager1, closes
-    /// Nova Files' windows, and drops those still waiting.
+    /// Nova Files' windows and folder views, and drops windows still
+    /// waiting.
     pub fn stop(&self) {
         self.stop.stop();
+        self.folders.stop();
         if let Some(process) = &self.shared.process {
             process.stop();
         }
@@ -136,20 +202,24 @@ impl Files {
 
 impl Shared {
     /// Sends `window` to the Nova Files process, or keeps it for the next
-    /// one to attach, starting one.
-    fn open(&self, window: FilesWindow) {
+    /// one to attach, starting one, unless [`MAX_WAITING`] already wait.
+    fn open(&self, window: FilesWindow) -> Result<(), String> {
         let mut delivery = lock(&self.delivery);
         if let Some(client) = delivery.attached {
             if self.send(client, &window) {
-                return;
+                return Ok(());
             }
             delivery.attached = None;
+        }
+        if delivery.waiting.len() >= MAX_WAITING {
+            return Err(format!("{MAX_WAITING} windows already wait for Nova Files to start"));
         }
         self.logger.info(LOG_SOURCE, &format!("{} waits for Nova Files to start", window.folder));
         delivery.waiting.push(window);
         if let Some(process) = &self.process {
             process.ensure_running();
         }
+        Ok(())
     }
 
     fn send(&self, client: ClientId, window: &FilesWindow) -> bool {
@@ -174,17 +244,28 @@ impl Shared {
 impl crate::modules::Module for Files {
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<Topic> = Some(Topic::Files);
+    /// Files open in apps.
+    const NEEDS_APPS: bool = true;
     type Sources = Sources;
     type Config = ();
 
     fn sources(env: &crate::modules::Env) -> Sources {
-        Sources { bus: Bus::Session, ui: env.ui.cloned() }
+        let data_dirs = crate::data_dirs();
+        let associations = Places::system(&data_dirs);
+        let runner = Runner::detect(env.path_var);
+        Sources { bus: Bus::Session, data_dirs, associations, runner, ui: env.ui.cloned() }
     }
 
     fn config(_: &crate::config::Config) {}
 
     fn start(ctx: &crate::modules::Context, sources: &Sources, (): &(), _: &[FeatureState]) -> Arc<Self> {
-        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+        Self::start(
+            sources.clone(),
+            Arc::clone(&ctx.hub),
+            Arc::clone(&ctx.logger),
+            Arc::clone(&ctx.apps),
+            &ctx.path_var,
+        )
     }
 
     fn client_gone(&self, client: ClientId) {
@@ -222,9 +303,15 @@ mod tests {
             std::fs::create_dir_all(dir.join("Downloads")).unwrap();
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
-            let sources =
-                Sources { bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())), ui: None };
-            let files = Files::start(sources, Arc::clone(&hub), logger);
+            let sources = Sources {
+                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                data_dirs: vec![],
+                associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
+                runner: crate::apps::launch::Runner::Direct,
+                ui: None,
+            };
+            let apps = crate::apps::AppIndex::of(None, &logger);
+            let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");
             Self { dir, hub, files }
         }
 
@@ -261,6 +348,15 @@ mod tests {
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
         assert!(watcher.try_recv().is_err(), "windows go only to Nova Files");
+    }
+
+    #[test]
+    fn windows_past_the_limit_are_refused_while_none_attaches() {
+        let fixture = Fixture::new("limit");
+        for _ in 0..MAX_WAITING {
+            fixture.files.show(&fixture.downloads(), &[]).unwrap();
+        }
+        assert!(fixture.files.show(&fixture.downloads(), &[]).unwrap_err().contains("already wait"));
     }
 
     #[test]
