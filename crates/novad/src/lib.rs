@@ -16,8 +16,8 @@
 //! - `config.rs`: its `[<id>]` options in config.toml, if any.
 //! - `server.rs`: its commands (through `Daemon::module`, which answers
 //!   when the feature isn't ready) and its topic among the modules'.
-//! - `ui/daemon/protocol.js` (`CMD_`/`EVENT_`/`TOPIC_`/`FEATURE_` names, checked
-//!   against nova-protocol) and `Daemon.qml` (subscribe, keep the event's data).
+//! - `just protocol-js` (regenerates the names in `ui/daemon/protocol.js`) and
+//!   `Daemon.qml` (subscribe, keep the event's data).
 //! - A QML service singleton beside the feature's components
 //!   (`ui/ai_usage/service/AiUsageService.qml`, its own folder so QML tests
 //!   can load the components without Quickshell) that reads that data and sends the

@@ -16,6 +16,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
+#[cfg(test)]
+mod js;
+
 /// Bumped on any incompatible change to the messages below.
 pub const PROTOCOL_VERSION: u32 = 2;
 
@@ -2087,7 +2090,7 @@ mod tests {
     use serde_json::json;
 
     /// Every message shape on the wire. A change here changes the protocol:
-    /// update `ui/daemon/protocol.js` too, then accept with `cargo insta review`.
+    /// accept with `cargo insta review`, then run `just protocol-js`.
     #[test]
     fn wire_format() {
         let lines = [
@@ -2447,58 +2450,6 @@ mod tests {
         let all: String = lines.into_iter().map(Result::unwrap).collect();
         assert!(all.lines().all(|l| l.starts_with(r#"{"v":2,"#)));
         insta::assert_snapshot!(all);
-    }
-
-    /// Every wire name `ui/daemon/protocol.js` declares is one novad knows:
-    /// commands and events as they appear in the wire format snapshot, the
-    /// enums by parsing, feature ids by their folder in `features/`, launcher
-    /// providers by a manifest's slot.
-    #[test]
-    fn protocol_js_names_are_known() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let js = std::fs::read_to_string(root.join("ui/daemon/protocol.js")).unwrap();
-        let wire = include_str!("snapshots/nova_protocol__tests__wire_format.snap");
-        let parses = |value: &str, kind: fn(serde_json::Value) -> bool| kind(json!(value));
-        let mut checked = std::collections::HashSet::new();
-        for line in js.lines() {
-            let Some((name, value)) = line.strip_prefix("var ").and_then(|line| line.split_once(" = \"")) else {
-                continue;
-            };
-            assert!(checked.insert(name), "protocol.js: {name} is declared twice");
-            let value = value.trim_end_matches("\";");
-            let known = match name.split('_').next().unwrap() {
-                "CMD" => wire.contains(&format!(r#""cmd":"{value}""#)),
-                "EVENT" => wire.contains(&format!(r#""event":"{value}""#)),
-                "TOPIC" => parses(value, |v| serde_json::from_value::<Topic>(v).is_ok()),
-                "CAPABILITY" => parses(value, |v| serde_json::from_value::<Capability>(v).is_ok()),
-                "STEP" => parses(value, |v| serde_json::from_value::<Step>(v).is_ok()),
-                "POWER" => parses(value, |v| serde_json::from_value::<PowerAction>(v).is_ok()),
-                "VOLUME" => parses(value, |v| serde_json::from_value::<VolumeKey>(v).is_ok()),
-                "CAPTURE" => parses(value, |v| serde_json::from_value::<CaptureMode>(v).is_ok()),
-                "SHOT" => parses(value, |v| serde_json::from_value::<ScreenshotAction>(v).is_ok()),
-                "URGENCY" => parses(value, |v| serde_json::from_value::<Urgency>(v).is_ok()),
-                "MEDIA" => parses(value, |v| serde_json::from_value::<MediaAction>(v).is_ok()),
-                "PLAYBACK" => parses(value, |v| serde_json::from_value::<PlaybackStatus>(v).is_ok()),
-                "FEATURE" => root.join("features").join(value).join("feature.toml").is_file(),
-                // A launcher provider is a view some feature's manifest slots in.
-                "PROVIDER" => std::fs::read_dir(root.join("features")).unwrap().flatten().any(|feature| {
-                    std::fs::read_to_string(feature.path().join("feature.toml"))
-                        .is_ok_and(|manifest| manifest.contains(&format!("view = \"{value}\"")))
-                }),
-                _ => panic!("protocol.js: no check for {name}; add its kind to this test"),
-            };
-            assert!(known, "protocol.js: {name} = {value:?} isn't a name novad knows");
-        }
-        assert!(!checked.is_empty(), "protocol.js declares no names");
-        for max in [
-            format!("var LAUNCHER_SEARCH_MAX_CHARS = {LAUNCHER_SEARCH_MAX_CHARS};"),
-            format!("var MEDIA_PLAYER_MAX_BYTES = {MEDIA_PLAYER_MAX_BYTES};"),
-            format!("var WIFI_PASSWORD_MAX_BYTES = {WIFI_PASSWORD_MAX_BYTES};"),
-            format!("var WPA_PASSWORD_MIN_BYTES = {WPA_PASSWORD_MIN_BYTES};"),
-            format!("var NETWORK_TRAFFIC_HISTORY_SECS = {NETWORK_TRAFFIC_HISTORY_SECS};"),
-        ] {
-            assert!(js.contains(&max), "protocol.js: {max} is missing");
-        }
     }
 
     fn desktop() -> Desktop {
