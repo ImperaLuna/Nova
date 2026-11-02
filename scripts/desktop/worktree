@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetches a branch and checks it out in its own worktree,
-# ~/Projects/Nova/.worktrees/<branch>, creating it or bringing it up to the
+# ~/Projects/Nova/.claude/worktrees/<branch>, creating it or bringing it up to the
 # branch's latest commit (also after a force-push). Prints the worktree's
 # path on its last line. The checkout is detached: local sessions test, they
 # don't commit. A worktree with uncommitted changes is left as it is.

@@ -193,7 +193,7 @@ scripts, audit data) goes in the git-ignored `~/Projects/Nova/.scratch/<ticket>/
 worktree's ignored `e2e/out/`; never in the repo root. Anything the maintainer
 should keep goes in the PR or an artifact, and the session deletes its
 `.scratch/<ticket>/` when its work is done. Worktrees on the desktop go in
-`~/Projects/Nova/.worktrees/<branch>`. A daily timer removes worktrees whose
+`~/Projects/Nova/.claude/worktrees/<branch>`. A daily timer removes worktrees whose
 PR is merged or closed, and scratch nobody touched for a week.
 
 On the desktop, use `scripts/desktop/` rather than doing these steps by hand
