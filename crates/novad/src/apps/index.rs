@@ -13,6 +13,7 @@ use crate::icons::Icons;
 use crate::inotify::{self, Inotify};
 use crate::lock;
 use crate::logger::Logger;
+use crate::watch_points::{self, Reporting};
 use nova_protocol::{APP_ICON_MAX_CHARS, App};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -253,7 +254,7 @@ impl AppIndex {
     /// change that may change the apps.
     fn watch(
         &self,
-        mut watcher: Inotify,
+        watcher: Inotify,
         changed: mpsc::Sender<()>,
         stopped: &AtomicBool,
         watch: &Mutex<Option<inotify::Stopper>>,
@@ -266,28 +267,8 @@ impl AppIndex {
             *watch = Some(watcher.stopper());
         }
         let data_dirs = self.sources.data_dirs.clone();
-        let logger = Arc::clone(&self.logger);
-        let mut points = watch_all(&mut watcher, &data_dirs, &logger);
-        std::thread::spawn(move || {
-            loop {
-                let found = match watcher.read() {
-                    Ok(Some(found)) => found,
-                    Ok(None) => return,
-                    Err(e) => {
-                        logger.warn(LOG_SOURCE, &format!("stopped watching for new apps: {e}"));
-                        return;
-                    }
-                };
-                if !found.overflowed && !found.found.iter().any(|change| points.counts(&change.path)) {
-                    continue;
-                }
-                // A folder or link may have come or gone: look again at what to watch.
-                points = watch_all(&mut watcher, &data_dirs, &logger);
-                if changed.send(()).is_err() {
-                    return;
-                }
-            }
-        });
+        let reporting = Reporting { logger: Arc::clone(&self.logger), source: LOG_SOURCE, what: "new apps" };
+        watch_points::follow(watcher, move || scan::watch_points(&data_dirs), changed, reporting);
     }
 
     fn rescan(&self, stopped: &AtomicBool) {
@@ -400,21 +381,4 @@ impl AppIndex {
         }
         index
     }
-}
-
-/// Watches what `scan::watch_points` says for `data_dirs`.
-fn watch_all(watcher: &mut Inotify, data_dirs: &[PathBuf], logger: &Logger) -> scan::WatchPoints {
-    let points = scan::watch_points(data_dirs);
-    // The parents first: a folder that's both gets the trees' wider mask.
-    for parent in &points.parents {
-        if let Err(e) = watcher.watch_for(parent, inotify::ENTRIES) {
-            logger.warn(LOG_SOURCE, &format!("can't watch {} for new apps: {e}", parent.display()));
-        }
-    }
-    for tree in &points.trees {
-        if let Err(e) = watcher.watch_tree(tree) {
-            logger.warn(LOG_SOURCE, &format!("can't watch {} for new apps: {e}", tree.display()));
-        }
-    }
-    points
 }
