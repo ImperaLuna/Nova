@@ -150,6 +150,7 @@ impl Drives {
             return Ok(mount);
         }
         let calls = self.shared.calls()?;
+        self.shared.running()?;
         let reply = mount(&calls, id).map_err(|e| format!("couldn't mount {}: {e}", drive.name))?;
         self.shared.logger.info(LOG_SOURCE, &format!("mounted {} at {reply}", drive.name));
         self.shared.list();
@@ -173,6 +174,7 @@ impl Drives {
         let calls = self.shared.calls()?;
         let mut done = Vec::new();
         for filesystem in &mounted {
+            self.shared.running()?;
             let options: HashMap<&str, Variant> = HashMap::new();
             let unmounted = zbus::block_on(calls.call_method(
                 Some(UDISKS),
@@ -188,6 +190,7 @@ impl Drives {
                     // It stays as it was: the drive's other filesystems
                     // unmounted so far are mounted again.
                     for filesystem in done {
+                        self.shared.running()?;
                         if let Err(e) = mount(&calls, filesystem) {
                             self.shared.logger.warn(LOG_SOURCE, &format!("couldn't mount {filesystem} again: {e}"));
                         }
@@ -205,6 +208,7 @@ impl Drives {
         // light go out, where it can.
         let method = if info.can_power_off { Some("PowerOff") } else { info.ejectable.then_some("Eject") };
         if let Some(method) = method {
+            self.shared.running()?;
             let options: HashMap<&str, Variant> = HashMap::new();
             if let Err(e) =
                 zbus::block_on(calls.call_method(Some(UDISKS), device.as_str(), Some(DRIVE), method, &(options,)))
@@ -216,6 +220,7 @@ impl Drives {
         }
         self.shared.logger.info(LOG_SOURCE, &format!("ejected {}", drive.name));
         self.shared.list();
+        self.shared.running()?;
         if let Some(notifications) = lock(&self.shared.notifications).upgrade() {
             notifications.send_own(safe_to_remove(&drive.name));
         }
@@ -247,6 +252,11 @@ impl Shared {
     fn listed(&self, id: &str) -> Result<Drive, String> {
         let state = lock(&self.state);
         state.listed.iter().find(|drive| drive.id == id).cloned().ok_or_else(|| format!("no drive {id}"))
+    }
+
+    /// An error once stopped: what was asked before then does nothing more.
+    fn running(&self) -> Result<(), String> {
+        if lock(&self.state).stopped { Err("Nova Files stopped".into()) } else { Ok(()) }
     }
 
     /// The connection for long calls, made on first use.
@@ -354,6 +364,8 @@ fn error_text(error: &zbus::Error) -> String {
 #[derive(Clone, Copy)]
 enum Signal {
     Owner,
+    /// Any of udisksd's, told apart by interface into the two below.
+    Udisks,
     Objects,
     Changed,
 }
@@ -365,12 +377,11 @@ async fn follow(shared: &Shared, stop: &Stop) -> zbus::Result<()> {
         |interface: &'static str| MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(interface);
     let owner_rule = signal(DBUS_NAME).member("NameOwnerChanged").sender(DBUS_NAME).arg(0, UDISKS).build()?;
     let mut owners = MessageStream::for_match_rule(owner_rule, &connection, None).await?;
-    // Objects coming and going in one stream, so a stick pulled and pushed
-    // back in while a call waits is handled in that order.
-    let objects_rule = signal(OBJECT_MANAGER).path(UDISKS_PATH).build()?;
-    let mut comings = MessageStream::for_match_rule(objects_rule, &connection, None).await?;
-    let changed_rule = signal(PROPERTIES).member("PropertiesChanged").path_namespace(UDISKS_PATH).build()?;
-    let mut changes = MessageStream::for_match_rule(changed_rule, &connection, None).await?;
+    // Objects coming and going and their changes in one stream, so a stick
+    // pulled and pushed back in while a call waits is handled in the order
+    // udisksd said it, never an old change after the new object.
+    let udisks_rule = MatchRule::builder().msg_type(zbus::message::Type::Signal).path_namespace(UDISKS_PATH).build()?;
+    let mut udisks = MessageStream::for_match_rule(udisks_rule, &connection, None).await?;
 
     // udisksd starts on demand (D-Bus activation): ask for it.
     if let Err(e) =
@@ -393,9 +404,7 @@ async fn follow(shared: &Shared, stop: &Stop) -> zbus::Result<()> {
             if stop.poll(cx).is_ready() {
                 return Poll::Ready(None);
             }
-            for (kind, stream) in
-                [(Signal::Owner, &mut owners), (Signal::Objects, &mut comings), (Signal::Changed, &mut changes)]
-            {
+            for (kind, stream) in [(Signal::Owner, &mut owners), (Signal::Udisks, &mut udisks)] {
                 if let Poll::Ready(message) = Pin::new(stream).poll_next(cx) {
                     return Poll::Ready(message.map(|message| (kind, message)));
                 }
@@ -407,6 +416,13 @@ async fn follow(shared: &Shared, stop: &Stop) -> zbus::Result<()> {
         let message = message?;
         let sender = message.header().sender().map(|sender| sender.to_string());
         let from_udisks = sender.is_some() && sender == owner;
+        let interface = message.header().interface().map(|interface| interface.to_string());
+        let kind = match (kind, interface.as_deref()) {
+            (Signal::Owner, _) => Signal::Owner,
+            (_, Some(OBJECT_MANAGER)) => Signal::Objects,
+            (_, Some(PROPERTIES)) => Signal::Changed,
+            _ => continue,
+        };
         match kind {
             Signal::Owner => {
                 let Ok((_name, _old, new)) = message.body().deserialize::<(String, String, String)>() else { continue };
@@ -460,7 +476,7 @@ async fn follow(shared: &Shared, stop: &Stop) -> zbus::Result<()> {
                     }
                 }
             }
-            Signal::Objects | Signal::Changed => continue,
+            Signal::Objects | Signal::Changed | Signal::Udisks => continue,
         }
         shared.known(known(&objects));
     }
