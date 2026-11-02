@@ -168,14 +168,6 @@ Item {
             }, "logos", url), "", "an icon theme without it shows Nova's mark");
         }
 
-        function test_sizes_read_short() {
-            compare(QuickSettings.shortBytes(10093173760), "9.4G");
-            compare(QuickSettings.shortBytes(780 * 1024 * 1024), "780M");
-            compare(QuickSettings.shortBytes(512), "512B");
-            compare(QuickSettings.bytes(2400000000), "2.2 GB");
-            compare(QuickSettings.bytes(310 * 1024 * 1024), "310 MB");
-        }
-
         function test_recorders_are_app_streams_on_the_default_source() {
             const mic = {
                 id: 50

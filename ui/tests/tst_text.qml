@@ -1,12 +1,21 @@
 import QtQuick
 import QtTest
+import "../text/bytes.js" as Bytes
 import "../text/duration.js" as Duration
 import "../text/files.js" as Files
 
 // How Nova writes a span of time (an uptime, a countdown, how long ago, a
-// recording's length) and a file's URL.
+// recording's length), a size in bytes and a file's URL.
 TestCase {
     name: "Text"
+
+    function test_sizes_read_short() {
+        compare(Bytes.shortBytes(10093173760), "9.4G");
+        compare(Bytes.shortBytes(780 * 1024 * 1024), "780M");
+        compare(Bytes.shortBytes(512), "512B");
+        compare(Bytes.bytes(2400000000), "2.2 GB");
+        compare(Bytes.bytes(310 * 1024 * 1024), "310 MB");
+    }
 
     function test_minutes_read_as_the_two_biggest_units() {
         compare(Duration.minutes(0), "0m");

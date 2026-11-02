@@ -8,6 +8,7 @@ import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 import "network.js" as Network
 import "quick_settings.js" as QuickSettings
+import "../text/bytes.js" as Bytes
 
 // The network page: traffic over the last minute on the link in use, which
 // link to prefer while a cable and Wi-Fi are both connected, the Wired row,
@@ -208,7 +209,7 @@ Item {
                         font.family: Tokens.fontMono
                         font.pixelSize: Tokens.fontSizeMicro
                         color: Tokens.fgDim
-                        text: page.traffic ? qsTr("today ↓ %1 ↑ %2").arg(QuickSettings.bytes(page.traffic.today_down)).arg(QuickSettings.bytes(page.traffic.today_up)) : ""
+                        text: page.traffic ? qsTr("today ↓ %1 ↑ %2").arg(Bytes.bytes(page.traffic.today_down)).arg(Bytes.bytes(page.traffic.today_up)) : ""
                     }
                 }
             }
