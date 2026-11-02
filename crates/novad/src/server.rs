@@ -279,6 +279,7 @@ impl<'a> Connection<'a> {
                 return self.bluetooth_later(move |bluetooth| bluetooth.forget(&address));
             }
             Command::ShowFolder { folder, select } => done(self.files().and_then(|files| files.show(folder, select))),
+            Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -829,7 +830,8 @@ impl<'a> Connection<'a> {
             | Command::BluetoothDisconnect { .. }
             | Command::BluetoothForget { .. }
             | Command::BluetoothAnswer { .. }
-            | Command::ShowFolder { .. } => {}
+            | Command::ShowFolder { .. }
+            | Command::AttachFiles { .. } => {}
         }
     }
 

@@ -90,6 +90,7 @@ var CMD_BLUETOOTH_DISCONNECT = "bluetooth_disconnect";
 var CMD_BLUETOOTH_FORGET = "bluetooth_forget";
 var CMD_BLUETOOTH_ANSWER = "bluetooth_answer";
 var CMD_SHOW_FOLDER = "show_folder";
+var CMD_ATTACH_FILES = "attach_files";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
