@@ -1104,22 +1104,37 @@ pub struct App {
     pub icon: Option<String>,
 }
 
-/// The longest `search_apps` query, in characters: anything on the socket is
-/// capped, and nobody types more.
-pub const SEARCH_APPS_MAX_CHARS: usize = 200;
+/// The longest `launcher_search` query, in characters: anything on the
+/// socket is capped, and nobody types more.
+pub const LAUNCHER_SEARCH_MAX_CHARS: usize = 200;
 
 /// The longest each of an `app_icon` request's names may be, in
 /// characters.
 pub const APP_ICON_MAX_CHARS: usize = 512;
 
-/// An app that matches a launcher search, best first.
+/// The launcher provider (`launcher.providers` view) that finds installed
+/// apps: the `launcher` feature's own.
+pub const PROVIDER_APPS: &str = "apps";
+
+/// Something a launcher provider found for a search, best first within its
+/// provider.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AppMatch {
+pub struct LauncherItem {
+    /// The provider that found it (its `launcher.providers` view id), which
+    /// runs it.
+    pub provider: String,
+    /// What it is to its provider, like an app's desktop file id.
     pub id: String,
-    /// The app's name in runs of text, `matched` on the ones the search
-    /// matched, which the launcher highlights. All of it, unmatched, when
-    /// the search matched something else, like a keyword.
+    /// Its name in runs of text, `matched` on the ones the search matched,
+    /// which the launcher highlights. All of it, unmatched, when the search
+    /// matched something else, like a keyword.
     pub name: Vec<TextRun>,
+    /// A dimmer line beside the name: what it is or does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Its icon: an absolute path to an image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1493,9 +1508,12 @@ pub enum Command {
     EndApp {
         key: String,
     },
-    /// Replies with the apps matching `query`, as [`AppMatch`]es, best first
-    /// (feature `launcher`). An empty query matches nothing.
-    SearchApps {
+    /// Replies with what the launcher's providers find for `query`, as
+    /// [`LauncherItem`]s (feature `launcher`): the providers in their slot
+    /// order, each one's best first. A query that starts with a provider's
+    /// trigger goes to the providers with that trigger only, without it. A
+    /// blank query finds nothing.
+    LauncherSearch {
         query: String,
     },
     /// Replies with an icon (an absolute path to an image) for an app
@@ -1511,11 +1529,13 @@ pub enum Command {
         /// `application.name`.
         name: String,
     },
-    /// Opens an app by its id (feature `launcher`) on `output` (the focused
-    /// output when unset) and counts it towards the recent ones. When it
+    /// Runs what the launcher's provider `provider` found as `id` (feature
+    /// `launcher`), on `output` (the focused output when unset). An app
+    /// ([`PROVIDER_APPS`]) opens and counts towards the recent ones; when it
     /// already has a window, that window takes focus where it is, unless
     /// `new_window` asks for another one.
-    LaunchApp {
+    LauncherRun {
+        provider: String,
         id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
@@ -2238,16 +2258,19 @@ mod tests {
             encode(Request { id: Some(23), command: Command::EndApp { key: "/usr/lib/firefox/firefox".into() } }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::QuickSettings } }),
             encode(Event::Launcher(launcher())),
-            encode(Request { id: Some(24), command: Command::SearchApps { query: "fi".into() } }),
+            encode(Request { id: Some(24), command: Command::LauncherSearch { query: "fi".into() } }),
             encode(Response {
                 id: 24,
                 outcome: Outcome::Result(
-                    serde_json::to_value(vec![AppMatch {
+                    serde_json::to_value(vec![LauncherItem {
+                        provider: PROVIDER_APPS.into(),
                         id: "org.mozilla.firefox.desktop".into(),
                         name: vec![
                             TextRun { text: "Fi".into(), matched: true },
                             TextRun { text: "refox".into(), matched: false },
                         ],
+                        description: Some("Web Browser".into()),
+                        icon: None,
                     }])
                     .unwrap(),
                 ),
@@ -2263,7 +2286,8 @@ mod tests {
             encode(Response { id: 44, outcome: Outcome::Result(json!("zen-browser")) }),
             encode(Request {
                 id: Some(25),
-                command: Command::LaunchApp {
+                command: Command::LauncherRun {
+                    provider: PROVIDER_APPS.into(),
                     id: "foot.desktop".into(),
                     output: Some("DP-1".into()),
                     new_window: true,
@@ -2427,7 +2451,8 @@ mod tests {
 
     /// Every wire name `ui/daemon/protocol.js` declares is one novad knows:
     /// commands and events as they appear in the wire format snapshot, the
-    /// enums by parsing, feature ids by their folder in `features/`.
+    /// enums by parsing, feature ids by their folder in `features/`, launcher
+    /// providers by a manifest's slot.
     #[test]
     fn protocol_js_names_are_known() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -2455,13 +2480,18 @@ mod tests {
                 "MEDIA" => parses(value, |v| serde_json::from_value::<MediaAction>(v).is_ok()),
                 "PLAYBACK" => parses(value, |v| serde_json::from_value::<PlaybackStatus>(v).is_ok()),
                 "FEATURE" => root.join("features").join(value).join("feature.toml").is_file(),
+                // A launcher provider is a view some feature's manifest slots in.
+                "PROVIDER" => std::fs::read_dir(root.join("features")).unwrap().flatten().any(|feature| {
+                    std::fs::read_to_string(feature.path().join("feature.toml"))
+                        .is_ok_and(|manifest| manifest.contains(&format!("view = \"{value}\"")))
+                }),
                 _ => panic!("protocol.js: no check for {name}; add its kind to this test"),
             };
             assert!(known, "protocol.js: {name} = {value:?} isn't a name novad knows");
         }
         assert!(!checked.is_empty(), "protocol.js declares no names");
         for max in [
-            format!("var SEARCH_APPS_MAX_CHARS = {SEARCH_APPS_MAX_CHARS};"),
+            format!("var LAUNCHER_SEARCH_MAX_CHARS = {LAUNCHER_SEARCH_MAX_CHARS};"),
             format!("var MEDIA_PLAYER_MAX_BYTES = {MEDIA_PLAYER_MAX_BYTES};"),
             format!("var WIFI_PASSWORD_MAX_BYTES = {WIFI_PASSWORD_MAX_BYTES};"),
             format!("var WPA_PASSWORD_MIN_BYTES = {WPA_PASSWORD_MIN_BYTES};"),

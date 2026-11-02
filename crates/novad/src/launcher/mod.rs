@@ -5,6 +5,7 @@
 
 pub mod autostart;
 mod launch;
+pub mod providers;
 mod rank;
 
 use crate::apps::AppIndex;
@@ -15,7 +16,7 @@ use crate::logger::Logger;
 use crate::tray::Tray;
 use crate::{lock, state_file};
 pub use launch::{Runner, open};
-use nova_protocol::{App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};
+use nova_protocol::{App, Event, LauncherItem};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -143,14 +144,12 @@ impl Launcher {
         self.hub.send_to(id, &Event::Launcher(snapshot(&state, &self.apps.read())));
     }
 
-    /// The apps matching `query`, best first.
-    pub fn search(&self, query: &str) -> Result<Vec<AppMatch>, String> {
-        if query.chars().count() > SEARCH_APPS_MAX_CHARS {
-            return Err(format!("searches are at most {SEARCH_APPS_MAX_CHARS} characters"));
-        }
+    /// The apps matching `query`, best first, as the apps provider's items
+    /// (`providers`). A blank query matches nothing.
+    pub fn search_apps(&self, query: &str) -> Vec<LauncherItem> {
         let query = query.trim().to_lowercase();
         if query.is_empty() {
-            return Ok(Vec::new());
+            return Vec::new();
         }
         let state = lock(&self.state);
         let apps = self.apps.read();
@@ -169,11 +168,20 @@ impl Launcher {
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
                 .then_with(|| a.id.cmp(&b.id))
         });
-        Ok(found
+        found
             .into_iter()
             .take(MAX_MATCHES)
-            .map(|(_, entry, name)| AppMatch { id: entry.id.clone(), name })
-            .collect())
+            .map(|(_, entry, name)| {
+                let app = apps.app_of(entry);
+                LauncherItem {
+                    provider: nova_protocol::PROVIDER_APPS.to_string(),
+                    id: app.id,
+                    name,
+                    description: app.description,
+                    icon: app.icon,
+                }
+            })
+            .collect()
     }
 
     /// Focuses a window the app `id` already has, through `focus` (given the

@@ -195,12 +195,16 @@ impl<'a> Connection<'a> {
             Command::OpenLog => {
                 done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().open_log()))
             }
-            Command::SearchApps { query } => value(self.launcher().and_then(|launcher| launcher.search(query))),
+            Command::LauncherSearch { query } => {
+                value(self.launcher_providers().and_then(|providers| providers.search(query, &self.daemon.logger)))
+            }
             Command::AppIcon { icon_name, program, name } => {
                 let apps = Arc::clone(&lock(&self.daemon.settings).context.apps);
                 value(apps.app_icon(&self.daemon.sources.icons, icon_name, program, name))
             }
-            Command::LaunchApp { id, output, new_window } => return self.launch_app(id, output.clone(), *new_window),
+            Command::LauncherRun { provider, id, output, new_window } => {
+                return self.launcher_run(provider, id, output.clone(), *new_window);
+            }
             Command::PinApp { id, pinned } => done(self.launcher().and_then(|launcher| launcher.pin(id, *pinned))),
             Command::HideTrayApp { id, hidden } => done(self.tray().and_then(|tray| tray.hide(id, *hidden))),
             Command::ActivateTrayItem { address } => return self.activate_tray_item(address),
@@ -433,10 +437,20 @@ impl<'a> Connection<'a> {
         })
     }
 
-    /// Focuses the app `id` or starts it (see `launcher::Launcher::launch`).
-    fn launch_app(&self, id: &str, output: Option<String>, new_window: bool) -> Answer {
-        let launcher = match self.launcher() {
-            Ok(launcher) => launcher,
+    /// The ready features' launcher providers, while the launcher runs.
+    fn launcher_providers(&self) -> Result<crate::launcher::providers::Host, String> {
+        self.launcher()?;
+        let settings = lock(&self.daemon.settings);
+        Ok(crate::launcher::providers::Host::new(&settings.features, |view| {
+            crate::launcher::providers::find(view, &settings.modules)
+        }))
+    }
+
+    /// Runs what the launcher's provider `provider` found as `id`, like an
+    /// app it focuses or starts (see `launcher::providers`).
+    fn launcher_run(&self, provider: &str, id: &str, output: Option<String>, new_window: bool) -> Answer {
+        let provider = match self.launcher_providers().and_then(|providers| providers.provider(provider)) {
+            Ok(provider) => provider,
             Err(e) => return Answer::Now(Outcome::Error(e)),
         };
         let compositor = self.daemon.compositor.clone();
@@ -444,13 +458,14 @@ impl<'a> Connection<'a> {
         let logger = Arc::clone(&self.daemon.logger);
         let id = id.to_owned();
         Answer::later(move || {
-            let focus = |ids: &[String]| {
-                // A new window is asked for: no open one, nor the tray's.
-                let (ids, tray) = if new_window { (&[][..], None) } else { (ids, tray.as_deref()) };
-                let start = || launcher.start_app(&id);
-                crate::launcher::focus_open(&id, ids, compositor.as_deref(), tray, output.as_deref(), start, &logger)
+            let how = crate::launcher::providers::Run {
+                output: output.as_deref(),
+                new_window,
+                compositor: compositor.as_deref(),
+                tray: tray.as_deref(),
+                logger: &logger,
             };
-            done(launcher.launch(&id, focus))
+            done(provider.run(&id, &how))
         })
     }
 
@@ -467,7 +482,7 @@ impl<'a> Connection<'a> {
         };
         let (Some(app), Ok(launcher)) = (clicked.app_id, self.launcher()) else { return Answer::Now(done(Ok(()))) };
         if !clicked.heard {
-            return self.launch_app(&app, output, false);
+            return self.launcher_run(nova_protocol::PROVIDER_APPS, &app, output, false);
         }
         let (Some(ids), Some(compositor)) = (launcher.window_ids(&app), self.daemon.compositor.clone()) else {
             return Answer::Now(done(Ok(())));
@@ -776,9 +791,9 @@ impl<'a> Connection<'a> {
             | Command::Volume { .. }
             | Command::WatchResources { .. }
             | Command::EndApp { .. }
-            | Command::SearchApps { .. }
+            | Command::LauncherSearch { .. }
             | Command::AppIcon { .. }
-            | Command::LaunchApp { .. }
+            | Command::LauncherRun { .. }
             | Command::PinApp { .. }
             | Command::HideTrayApp { .. }
             | Command::ActivateTrayItem { .. }

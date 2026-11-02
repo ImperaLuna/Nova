@@ -55,37 +55,52 @@ pub struct Host {
     /// while that feature isn't ready. `None` for a host the shell draws
     /// whatever is on (the stage's panels, the overlays).
     pub owner: Option<&'static str>,
+    /// What answers its views.
+    pub views: Views,
+}
+
+/// What a host's view ids name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Views {
+    /// A UI component each (ui/slots/views.js).
+    Ui,
+    /// A service in novad each, whose answers the owner's UI shows in its own
+    /// way (the launcher's providers, `novad::launcher::providers`).
+    Daemon,
 }
 
 /// Every host a slot may name. A slot naming another host is never filled.
 pub const HOSTS: &[Host] = &[
     // The bar's rows of pills: left from the left edge, center around the
     // middle, right from the right edge.
-    Host { name: "bar.left", owner: Some("bar") },
-    Host { name: "bar.center", owner: Some("bar") },
-    Host { name: "bar.right", owner: Some("bar") },
+    Host { name: "bar.left", owner: Some("bar"), views: Views::Ui },
+    Host { name: "bar.center", owner: Some("bar"), views: Views::Ui },
+    Host { name: "bar.right", owner: Some("bar"), views: Views::Ui },
     // The buttons at the right pill's end (and on quick settings, in the
     // same place).
-    Host { name: "right-pill.buttons", owner: Some("bar") },
+    Host { name: "right-pill.buttons", owner: Some("bar"), views: Views::Ui },
     // The central pill's parts beside the launcher's search button: the
     // workspaces and the day and time.
-    Host { name: "central-pill.parts", owner: Some("bar") },
+    Host { name: "central-pill.parts", owner: Some("bar"), views: Views::Ui },
     // Panels drawn on the stage or its panel surfaces that aren't a pill
     // of their own, like the launcher. They open from their keys and
     // `nova toggle` with the bar off too.
-    Host { name: "stage.panels", owner: None },
+    Host { name: "stage.panels", owner: None, views: Views::Ui },
     // Windows of their own over the screen: the volume capsule, the lock
     // screen, notification pop-ups, the capture overlay, pairing questions.
-    Host { name: "shell.overlays", owner: None },
+    Host { name: "shell.overlays", owner: None, views: Views::Ui },
     // Quick settings' first page: toggle tiles two to a row, sliders, cards,
     // one view in the room left below them and one pinned at the foot.
-    Host { name: "quick-settings.tiles", owner: Some("quick-settings") },
-    Host { name: "quick-settings.sliders", owner: Some("quick-settings") },
-    Host { name: "quick-settings.cards", owner: Some("quick-settings") },
-    Host { name: "quick-settings.fill", owner: Some("quick-settings") },
-    Host { name: "quick-settings.foot", owner: Some("quick-settings") },
+    Host { name: "quick-settings.tiles", owner: Some("quick-settings"), views: Views::Ui },
+    Host { name: "quick-settings.sliders", owner: Some("quick-settings"), views: Views::Ui },
+    Host { name: "quick-settings.cards", owner: Some("quick-settings"), views: Views::Ui },
+    Host { name: "quick-settings.fill", owner: Some("quick-settings"), views: Views::Ui },
+    Host { name: "quick-settings.foot", owner: Some("quick-settings"), views: Views::Ui },
     // Quick settings' other pages, each sliding in over the first.
-    Host { name: "quick-settings.pages", owner: Some("quick-settings") },
+    Host { name: "quick-settings.pages", owner: Some("quick-settings"), views: Views::Ui },
+    // What answers the launcher's searches and runs what they found, like
+    // installed apps. The launcher shows every provider's items alike.
+    Host { name: "launcher.providers", owner: Some("launcher"), views: Views::Daemon },
 ];
 
 /// The host named `name`, if there is one.
@@ -196,9 +211,9 @@ impl Manifest {
     }
 
     /// Whether the feature draws anything, so the UI (Quickshell) has to run
-    /// while it's on: it fills at least one slot.
+    /// while it's on: it fills at least one slot with a UI view.
     pub fn has_ui(&self) -> bool {
-        !self.slots.is_empty()
+        self.slots.iter().any(|slot| host(&slot.host).is_none_or(|host| host.views == Views::Ui))
     }
 
     /// Entries of `check.binaries` with no match on `PATH`.
@@ -467,6 +482,15 @@ mod tests {
     }
 
     #[test]
+    fn only_slots_with_ui_views_need_the_ui() {
+        let provider = "id = \"calc\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"launcher.providers\"\nview = \"calc\"";
+        assert!(!toml::from_str::<Manifest>(provider).unwrap().has_ui());
+        let pill =
+            "id = \"calc\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"bar.left\"\nview = \"calc.pill\"";
+        assert!(toml::from_str::<Manifest>(pill).unwrap().has_ui());
+    }
+
+    #[test]
     fn every_slot_names_a_known_host_and_a_registered_view() {
         let views = js_strings("slots/Views.qml", "\"");
         let imports = js_strings("slots/Views.qml", "import \"../");
@@ -474,7 +498,11 @@ mod tests {
         let whole_ui = repo_features().join("../ui/shell.qml").is_file();
         for manifest in load_all(&repo_features()).unwrap() {
             for slot in &manifest.slots {
-                assert!(host(&slot.host).is_some(), "{}: unknown host {}", manifest.id, slot.host);
+                let known = host(&slot.host).unwrap_or_else(|| panic!("{}: unknown host {}", manifest.id, slot.host));
+                if known.views == Views::Daemon {
+                    // novad's tests check its own (launcher::providers).
+                    continue;
+                }
                 let file = views
                     .iter()
                     .find(|entry| entry.first() == Some(&slot.view))

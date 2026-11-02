@@ -117,15 +117,15 @@ fn launcher_searches_rank_apps_and_refuse_long_queries() {
     let mut client = novad.connect();
     client.subscribe_launcher(3);
 
-    let found = client.request(2, "search_apps", Some(json!({"query": " FI "})));
+    let found = client.request(2, "launcher_search", Some(json!({"query": " FI "})));
     // Fooview has f and i in order, which counts least.
     assert_eq!(ids(&found["result"]), ["files.desktop", "firefox.desktop", "fooview.desktop"]);
     assert_eq!(found["result"][0]["name"], json!([{"text": "Fi", "matched": true}, {"text": "les"}]));
-    let by_keyword = client.request(3, "search_apps", Some(json!({"query": "folder"})));
-    assert_eq!(by_keyword["result"], json!([{"id": "files.desktop", "name": [{"text": "Files"}]}]));
-    assert_eq!(client.request(4, "search_apps", Some(json!({"query": ""})))["result"], json!([]));
-    assert_eq!(client.request(5, "search_apps", Some(json!({"query": "zzz"})))["result"], json!([]));
-    let long = client.request(6, "search_apps", Some(json!({"query": "x".repeat(201)})));
+    let by_keyword = client.request(3, "launcher_search", Some(json!({"query": "folder"})));
+    assert_eq!(by_keyword["result"], json!([{"provider": "apps", "id": "files.desktop", "name": [{"text": "Files"}]}]));
+    assert_eq!(client.request(4, "launcher_search", Some(json!({"query": ""})))["result"], json!([]));
+    assert_eq!(client.request(5, "launcher_search", Some(json!({"query": "zzz"})))["result"], json!([]));
+    let long = client.request(6, "launcher_search", Some(json!({"query": "x".repeat(201)})));
     assert!(long["error"].as_str().unwrap().contains("at most 200"));
 }
 
@@ -180,7 +180,10 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     let mut client = novad.connect();
     client.subscribe_launcher(2);
 
-    assert_eq!(client.request(2, "launch_app", Some(json!({"id": "touch.desktop"})))["result"], Value::Null);
+    assert_eq!(
+        client.request(2, "launcher_run", Some(json!({"provider": "apps", "id": "touch.desktop"})))["result"],
+        Value::Null
+    );
     let event = client.launcher_until(|event| !event["recent"].as_array().unwrap().is_empty());
     assert_eq!(event["recent"], json!(["touch.desktop"]));
     let ran = (0..100).any(|_| {
@@ -191,7 +194,10 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     assert!(novad.dir.join(";").exists(), "`;` reached touch as a file name, not a shell");
 
     // No Path= and a HOME that may not exist (Nix's builds): it starts in `/`.
-    assert_eq!(client.request(3, "launch_app", Some(json!({"id": "other.desktop"})))["result"], Value::Null);
+    assert_eq!(
+        client.request(3, "launcher_run", Some(json!({"provider": "apps", "id": "other.desktop"})))["result"],
+        Value::Null
+    );
     let event = client.launcher_until(|event| event["recent"].as_array().unwrap().len() == 2);
     assert_eq!(event["recent"], json!(["other.desktop", "touch.desktop"]), "the latest first");
     // A pinned app shows among the pins only, and is recent again unpinned.
@@ -211,7 +217,7 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     // SAFETY: getsid only reads.
     let ours = unsafe { libc::getsid(0) }.to_string();
     assert_ne!(fields[3], ours, "in novad's session: {copied}");
-    let missing = client.request(7, "launch_app", Some(json!({"id": "nothing.desktop"})));
+    let missing = client.request(7, "launcher_run", Some(json!({"provider": "apps", "id": "nothing.desktop"})));
     assert!(missing["error"].as_str().unwrap().contains("no app"));
 }
 
@@ -229,7 +235,10 @@ fn a_launched_app_outlives_the_request_that_started_it() {
     );
     let mut client = novad.connect();
     client.subscribe_launcher(1);
-    assert_eq!(client.request(2, "launch_app", Some(json!({"id": "doomed.desktop"})))["result"], Value::Null);
+    assert_eq!(
+        client.request(2, "launcher_run", Some(json!({"provider": "apps", "id": "doomed.desktop"})))["result"],
+        Value::Null
+    );
     let pid = (0..100).find_map(|_| {
         std::thread::sleep(Duration::from_millis(50));
         std::fs::read_to_string(&pid_file).ok().and_then(|text| text.trim().parse::<i32>().ok())
@@ -269,14 +278,14 @@ fn focus_the_recorded_window(
     let (mut client, desktop) = follow_to_the_end(&novad);
     client.subscribe_launcher(1);
     let output = focused_output(&desktop);
-    let launch = json!({"id": "second.desktop", "output": output});
-    assert_eq!(client.request(2, "launch_app", Some(launch))["result"], Value::Null);
+    let launch = json!({"provider": "apps", "id": "second.desktop", "output": output});
+    assert_eq!(client.request(2, "launcher_run", Some(launch))["result"], Value::Null);
     let event = client.launcher_until(|event| !event["recent"].as_array().unwrap().is_empty());
     assert_eq!(event["recent"], json!(["second.desktop"]), "focusing it counts as a launch");
     let actions = compositor.actions();
 
-    let fresh = json!({"id": "second.desktop", "output": output, "new_window": true});
-    assert_eq!(client.request(3, "launch_app", Some(fresh))["result"], Value::Null);
+    let fresh = json!({"provider": "apps", "id": "second.desktop", "output": output, "new_window": true});
+    assert_eq!(client.request(3, "launcher_run", Some(fresh))["result"], Value::Null);
     let ran = (0..100).any(|_| {
         std::thread::sleep(Duration::from_millis(50));
         marker.exists()
@@ -373,7 +382,7 @@ fn the_launcher_stops_with_its_feature() {
             break;
         }
     }
-    let off = client.request(2, "search_apps", Some(json!({"query": "a"})));
+    let off = client.request(2, "launcher_search", Some(json!({"query": "a"})));
     assert!(off["error"].as_str().unwrap().contains("feature isn't ready"));
     let toggle = client.request(3, "toggle", Some(json!({"panel": "launcher"})));
     assert!(toggle["error"].as_str().unwrap().contains("isn't ready"));
@@ -411,16 +420,16 @@ fn launching_a_tray_only_app_activates_its_item_then_starts_it_when_no_window_sh
     while client.next_event("tray")["items"][0]["app"]["id"] != "third.desktop" {}
     let output = focused_output(&desktop);
 
-    let launch = json!({"id": "third.desktop", "output": output});
-    assert_eq!(client.request(5, "launch_app", Some(launch))["result"], Value::Null);
+    let launch = json!({"provider": "apps", "id": "third.desktop", "output": output});
+    assert_eq!(client.request(5, "launcher_run", Some(launch))["result"], Value::Null);
     assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "the tray icon is asked to show its window");
     assert!(compositor.actions().is_empty(), "no window showed to focus");
     // Like Claude Desktop, whose icon ignores Activate: started again, it shows.
     assert!(ran(&marker), "no window showed, so the app is started");
 
     std::fs::remove_file(&marker).unwrap();
-    let fresh = json!({"id": "third.desktop", "output": output, "new_window": true});
-    assert_eq!(client.request(6, "launch_app", Some(fresh))["result"], Value::Null);
+    let fresh = json!({"provider": "apps", "id": "third.desktop", "output": output, "new_window": true});
+    assert_eq!(client.request(6, "launcher_run", Some(fresh))["result"], Value::Null);
     assert!(ran(&marker), "asked for a new window, the app runs");
     assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "a new window skips the tray");
 }
@@ -571,8 +580,8 @@ fn launching_an_app_whose_tray_icon_has_only_a_menu_starts_it_again_and_focuses_
         })
     };
 
-    let launch = json!({"id": "third.desktop", "output": focused_output(&desktop)});
-    assert_eq!(client.request(5, "launch_app", Some(launch))["result"], Value::Null);
+    let launch = json!({"provider": "apps", "id": "third.desktop", "output": focused_output(&desktop)});
+    assert_eq!(client.request(5, "launcher_run", Some(launch))["result"], Value::Null);
     shows.join().unwrap();
     assert!(marker.exists(), "its icon can't show its window, so the app is started again");
     let focused = json!({"Action": {"FocusWindow": {"id": 9}}});

@@ -1,4 +1,5 @@
 .pragma library
+.import "../daemon/protocol.js" as Protocol
 
 // The launcher's logic that needs no Qt: what its list shows, moving the
 // selection, and an app's stand-in when its icon is missing. The QML tests
@@ -25,14 +26,15 @@ function pick(known, ids) {
     return apps;
 }
 
-// What the list shows: the matches while there's a query (the name in runs,
-// matched letters marked), else the recent apps followed by every other app
-// by name, so the arrows reach any app without typing. Each row is
-// {id, name, runs, description, icon, group}, `group` being "results",
-// "recent" or "apps": the list's headings.
+// What the list shows: what the providers found while there's a query (the
+// name in runs, matched letters marked), else the recent apps followed by
+// every other app by name, so the arrows reach any app without typing. Each
+// row is {provider, id, name, runs, description, icon, group}, `group` being
+// "results", "recent" or "apps": the list's headings.
 function rows(query, matches, recent, apps, known) {
-    function row(app, group, runs) {
+    function row(app, group, runs, provider) {
         return {
+            provider: provider ?? Protocol.PROVIDER_APPS,
             id: app.id,
             name: app.name,
             runs: runs ?? [
@@ -47,18 +49,22 @@ function rows(query, matches, recent, apps, known) {
         };
     }
     if (query.trim() !== "") {
-        var found = [];
-        for (var i = 0; i < matches.length; i++) {
-            var app = known[matches[i].id];
-            if (app)
-                found.push(row(app, "results", matches[i].name.map(function (run) {
-                    return {
-                        text: run.text,
-                        matched: run.matched === true
-                    };
-                })));
-        }
-        return found;
+        return matches.map(function (item) {
+            var name = item.name.map(function (run) {
+                return run.text;
+            }).join("");
+            return row({
+                id: item.id,
+                name: name,
+                description: item.description,
+                icon: item.icon
+            }, "results", item.name.map(function (run) {
+                return {
+                    text: run.text,
+                    matched: run.matched === true
+                };
+            }), item.provider);
+        });
     }
     var shown = pick(known, recent).map(function (app) {
         return row(app, "recent");

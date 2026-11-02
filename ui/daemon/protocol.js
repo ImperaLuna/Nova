@@ -27,9 +27,9 @@ var CMD_RECORDING_ACTION = "recording_action";
 var CMD_OPEN_LOG = "open_log";
 var CMD_WATCH_RESOURCES = "watch_resources";
 var CMD_END_APP = "end_app";
-var CMD_SEARCH_APPS = "search_apps";
+var CMD_LAUNCHER_SEARCH = "launcher_search";
 var CMD_APP_ICON = "app_icon";
-var CMD_LAUNCH_APP = "launch_app";
+var CMD_LAUNCHER_RUN = "launcher_run";
 var CMD_PIN_APP = "pin_app";
 var CMD_HIDE_TRAY_APP = "hide_tray_app";
 var CMD_ACTIVATE_TRAY_ITEM = "activate_tray_item";
@@ -62,10 +62,10 @@ var CMD_DISCONNECT_WIFI = "disconnect_wifi";
 var CMD_FORGET_WIFI = "forget_wifi";
 var CMD_PREFER_NETWORK = "prefer_network";
 var CMD_WATCH_NETWORK_TRAFFIC = "watch_network_traffic";
-// novad refuses longer search_apps queries, media player ids and Wi-Fi
+// novad refuses longer launcher_search queries, media player ids and Wi-Fi
 // passwords, and WPA passwords shorter than WPA_PASSWORD_MIN_BYTES (the
 // same names in nova-protocol, which checks these match).
-var SEARCH_APPS_MAX_CHARS = 200;
+var LAUNCHER_SEARCH_MAX_CHARS = 200;
 var MEDIA_PLAYER_MAX_BYTES = 255;
 var WIFI_PASSWORD_MAX_BYTES = 128;
 var WPA_PASSWORD_MIN_BYTES = 8;
@@ -157,6 +157,9 @@ var FEATURE_BLUETOOTH = "bluetooth";
 var FEATURE_WALLPAPER = "wallpaper";
 var FEATURE_BAR = "bar";
 var FEATURE_KEEP_AWAKE = "keep-awake";
+
+// Launcher providers (launcher.providers views in features/*/feature.toml).
+var PROVIDER_APPS = "apps";
 
 // Power menu actions (PowerAction in nova-protocol).
 var POWER_LOCK = "lock";

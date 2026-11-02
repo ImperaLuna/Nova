@@ -23,6 +23,7 @@ var HOST_QUICK_SETTINGS_CARDS = "quick-settings.cards";
 var HOST_QUICK_SETTINGS_FILL = "quick-settings.fill";
 var HOST_QUICK_SETTINGS_FOOT = "quick-settings.foot";
 var HOST_QUICK_SETTINGS_PAGES = "quick-settings.pages";
+var HOST_LAUNCHER_PROVIDERS = "launcher.providers";
 
 // The central pill's parts: the views its central-pill.parts slots name,
 // which it draws itself (ui/central_pill/CentralPillSlot.qml).
