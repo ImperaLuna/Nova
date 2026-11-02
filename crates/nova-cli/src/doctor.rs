@@ -253,7 +253,7 @@ fn features_lines(features: &Result<Vec<FeatureState>, String>, distro: &Distro)
             Line::new(Level::Fail, "features", format!("{} needs {}; {install}", feature.id, needs.join(", ")))
         })
         .collect();
-    let unhosted = features.iter().filter(|feature| feature.status == FeatureStatus::NoHost).map(|feature| {
+    let unhosted = features.iter().filter(|feature| nova_features::has_no_host(feature, features)).map(|feature| {
         let hosts: Vec<&str> = feature.slots.iter().map(|slot| slot.host.as_str()).collect();
         Line::new(
             Level::Warn,

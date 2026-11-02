@@ -18,26 +18,26 @@ Row {
     required property var stage
     // Slots.forHost(Daemon.features, Slots.HOST_RIGHT_PILL_BUTTONS).
     required property var slots
-    // Kept while a features event changes nothing here.
-    property var shown: []
-    onSlotsChanged: {
-        if (!Slots.same(shown, slots))
-            shown = slots;
+    // The same as a model that changes only where they do.
+    ListModel {
+        id: shown
     }
-    Component.onCompleted: shown = slots
+    onSlotsChanged: Slots.sync(shown, slots)
+    Component.onCompleted: Slots.sync(shown, slots)
 
     spacing: Tokens.pillButtonGap
 
     Repeater {
-        model: buttons.shown
+        model: shown
 
         Loader {
-            required property var modelData
+            // Its view's id.
+            required property string view
 
             Component.onCompleted: {
-                const url = Views.url(modelData.view);
+                const url = Views.url(view);
                 if (url.toString() === "") {
-                    console.warn(`nova: no view ${modelData.view} for ${Slots.HOST_RIGHT_PILL_BUTTONS}`);
+                    console.warn(`nova: no view ${view} for ${Slots.HOST_RIGHT_PILL_BUTTONS}`);
                     return;
                 }
                 setSource(url, {

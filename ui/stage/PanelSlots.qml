@@ -19,49 +19,53 @@ Scope {
     // The screen's stage (Stage.qml).
     required property var stage
 
-    // The slots shown, kept while a features event changes nothing here so
-    // the panels stay.
-    property var shown: []
+    // Its slots, in order.
     readonly property var wanted: Slots.forHost(Daemon.features, Slots.HOST_STAGE_PANELS)
-    onWantedChanged: {
-        if (!Slots.same(shown, wanted))
-            shown = wanted;
+    // The same as a model that changes only where they do, so the panels
+    // that stay (and their state) are kept.
+    ListModel {
+        id: shown
     }
-    Component.onCompleted: shown = wanted
+    onWantedChanged: Slots.sync(shown, wanted)
+    Component.onCompleted: Slots.sync(shown, wanted)
 
     // The views created so far, by view id.
     property var created: ({})
     // Their panels, in their slots' order.
-    readonly property list<StagePanel> panels: shown.map(slot => created[slot.view]).filter(view => view).reduce((all, view) => [...all, ...view.panels], [])
+    readonly property list<StagePanel> panels: wanted.map(slot => created[slot.view]).filter(view => view).reduce((all, view) => [...all, ...view.panels], [])
 
     Instantiator {
-        model: host.shown
+        model: shown
 
         QtObject {
             id: entry
 
-            required property var modelData
-            property QtObject view: null
+            // Its view's id.
+            required property string view
+            property QtObject created: null
 
             Component.onCompleted: {
-                const url = Views.url(modelData.view);
+                const url = Views.url(view);
                 const component = url.toString() !== "" ? Qt.createComponent(url) : null;
                 if (!component || component.status !== Component.Ready) {
-                    console.warn(`nova: no view ${modelData.view} for ${Slots.HOST_STAGE_PANELS}${component ? `: ${component.errorString()}` : ""}`);
+                    console.warn(`nova: no view ${view} for ${Slots.HOST_STAGE_PANELS}${component ? `: ${component.errorString()}` : ""}`);
                     return;
                 }
-                view = component.createObject(host, {
+                created = component.createObject(host, {
                     stage: host.stage
                 });
                 host.created = Object.assign({}, host.created, {
-                    [modelData.view]: view
+                    [view]: created
                 });
             }
             Component.onDestruction: {
+                created?.destroy();
+                // Unless a newer one has taken its place.
+                if (host.created[view] !== created)
+                    return;
                 const left = Object.assign({}, host.created);
-                delete left[modelData.view];
+                delete left[view];
                 host.created = left;
-                view?.destroy();
             }
         }
     }

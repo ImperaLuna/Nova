@@ -212,8 +212,8 @@ function request(id, cmd, args) {
 }
 
 // Feature ids the UI may load: only those novad reports as ready (not
-// off, missing_deps or no_host). Each feature's `slots` (where its UI
-// goes) are read through ui/slots/slots.js.
+// off or missing_deps). Each feature's `slots` (where its UI goes) are
+// read through ui/slots/slots.js.
 function readyFeatures(features) {
     var ready = [];
     for (var i = 0; i < features.length; i++) {

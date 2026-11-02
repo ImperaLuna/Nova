@@ -55,6 +55,8 @@
             ./themes
             ./ui/theme/Tokens.qml
             ./ui/daemon/protocol.js
+            # The slot hosts and view registry, checked against the manifests.
+            ./ui/slots
           ];
         };
 

@@ -3,7 +3,7 @@ source: crates/nova-protocol/src/lib.rs
 expression: all
 ---
 {"v":2,"event":"hello","data":{"daemon":"0.1.0"}}
-{"v":2,"event":"features","data":{"features":[{"id":"core","status":"ready","slots":[{"host":"bar.center","view":"central-pill","order":10}]},{"id":"tray","status":"no_host"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
+{"v":2,"event":"features","data":{"features":[{"id":"core","status":"ready","slots":[{"host":"bar.center","view":"central-pill","order":10}]},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
 {"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray","notifications","media","peripherals","network","bluetooth"]}}

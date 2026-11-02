@@ -1,4 +1,5 @@
 .pragma library
+.import "../daemon/protocol.js" as Protocol
 
 // Slots: the places a feature's UI goes, from the `[[slot]]` entries of its
 // manifest (features/<id>/feature.toml), which novad sends with each
@@ -18,10 +19,11 @@ var HOST_STAGE_PANELS = "stage.panels";
 // event's list), as {feature, view, order}: lowest order first, ties by
 // feature id.
 function forHost(features, host) {
+    var ready = Protocol.readyFeatures(features);
     var found = [];
     for (var i = 0; i < features.length; i++) {
         var feature = features[i];
-        if (feature.status !== "ready")
+        if (ready.indexOf(feature.id) === -1)
             continue;
         var slots = feature.slots || [];
         for (var j = 0; j < slots.length; j++) {
@@ -37,15 +39,30 @@ function forHost(features, host) {
     return found;
 }
 
-// Whether two lists from forHost show the same views in the same order, so
-// a host can keep the views it has when a features event changes nothing
-// for it.
-function same(a, b) {
-    if (a.length !== b.length)
-        return false;
-    for (var i = 0; i < a.length; i++) {
-        if (a[i].view !== b[i].view)
-            return false;
+// Makes `model` (a ListModel of {feature, view, order}) list `wanted` (from
+// forHost) in its order, moving, adding and removing only what changed, so
+// a host keeps the views (and their open panels) that stay.
+function sync(model, wanted) {
+    for (var i = model.count - 1; i >= 0; i--) {
+        var view = model.get(i).view;
+        if (!wanted.some(function (slot) {
+                return slot.view === view;
+            }))
+            model.remove(i);
     }
-    return true;
+    for (var j = 0; j < wanted.length; j++) {
+        var at = -1;
+        for (var k = j; k < model.count; k++) {
+            if (model.get(k).view === wanted[j].view) {
+                at = k;
+                break;
+            }
+        }
+        if (at === -1)
+            model.insert(j, wanted[j]);
+        else if (at !== j)
+            model.move(at, j, 1);
+        else
+            model.setProperty(j, "order", wanted[j].order);
+    }
 }

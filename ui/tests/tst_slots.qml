@@ -52,32 +52,45 @@ TestCase {
         compare(Slots.forHost(features, Slots.HOST_BAR_RIGHT).map(found => found.view), ["a.pill", "b.pill"]);
     }
 
-    function test_same_compares_views_in_order() {
-        const one = [
-            {
-                view: "a"
-            },
-            {
-                view: "b"
-            }
-        ];
-        verify(Slots.same(one, [
-            {
-                view: "a"
-            },
-            {
-                view: "b"
-            }
-        ]));
-        verify(!Slots.same(one, [
-            {
-                view: "b"
-            },
-            {
-                view: "a"
-            }
-        ]));
-        verify(!Slots.same(one, one.slice(1)));
+    ListModel {
+        id: model
+    }
+
+    function shown() {
+        const views = [];
+        for (let i = 0; i < model.count; i++)
+            views.push(model.get(i).view);
+        return views;
+    }
+
+    function slots(views) {
+        return views.map(view => ({
+                    feature: view,
+                    view: view,
+                    order: 0
+                }));
+    }
+
+    function test_sync_changes_only_what_differs() {
+        model.clear();
+        Slots.sync(model, slots(["a", "b", "c"]));
+        compare(shown(), ["a", "b", "c"]);
+        const removed = [];
+        const inserted = [];
+        const onRemoved = (_, first) => removed.push(first);
+        const onInserted = (_, first) => inserted.push(first);
+        model.rowsRemoved.connect(onRemoved);
+        model.rowsInserted.connect(onInserted);
+        Slots.sync(model, slots(["a", "x", "c"]));
+        compare(shown(), ["a", "x", "c"]);
+        compare(removed, [1], "only b goes");
+        compare(inserted, [1], "only x comes");
+        Slots.sync(model, slots(["c", "a"]));
+        compare(shown(), ["c", "a"]);
+        Slots.sync(model, []);
+        compare(model.count, 0);
+        model.rowsRemoved.disconnect(onRemoved);
+        model.rowsInserted.disconnect(onInserted);
     }
 
     function test_views_map_ids_to_files() {

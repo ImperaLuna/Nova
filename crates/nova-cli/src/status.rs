@@ -71,7 +71,6 @@ fn describe(status: &Status) -> String {
             FeatureStatus::Ready => format!("{} on", f.id),
             FeatureStatus::Off => format!("{} off", f.id),
             FeatureStatus::MissingDeps => format!("{} missing {}", f.id, f.missing.join(", ")),
-            FeatureStatus::NoHost => format!("{} with nowhere to show", f.id),
         })
         .collect();
     out += &row("features", &features.join(", "));

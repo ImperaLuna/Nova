@@ -29,20 +29,20 @@ Item {
     required property Item bar
     required property var stage
 
-    // The slots shown, kept while a features event changes nothing here so
-    // the pills (and their open panels) stay.
-    property var shown: []
+    // Its slots, in order.
     readonly property var wanted: Slots.forHost(Daemon.features, host)
-    onWantedChanged: {
-        if (!Slots.same(shown, wanted))
-            shown = wanted;
+    // The same as a model that changes only where they do, so the pills
+    // that stay (and their open panels) are kept.
+    ListModel {
+        id: shown
     }
-    Component.onCompleted: shown = wanted
+    onWantedChanged: Slots.sync(shown, wanted)
+    Component.onCompleted: Slots.sync(shown, wanted)
 
     // The views loaded so far, by view id.
     property var loaded: ({})
     // Its views, in order.
-    readonly property list<BarSlot> views: shown.map(slot => loaded[slot.view]).filter(view => view)
+    readonly property list<BarSlot> views: wanted.map(slot => loaded[slot.view]).filter(view => view)
     // What they hand the stage.
     readonly property list<StagePanel> panels: views.reduce((all, view) => [...all, ...view.panels], [])
     readonly property list<Item> shapes: views.reduce((all, view) => [...all, ...view.shapes], [])
@@ -69,30 +69,31 @@ Item {
         spacing: Tokens.gap
 
         Repeater {
-            model: row.shown
+            model: shown
 
             Item {
                 id: place
 
-                required property var modelData
+                // Its view's id.
+                required property string view
                 required property int index
-                readonly property BarSlot view: loader.item as BarSlot
+                readonly property BarSlot slotView: loader.item as BarSlot
 
-                width: view?.closedWidth ?? 0
+                width: slotView?.closedWidth ?? 0
                 // A Row skips what has no height.
                 height: 1
-                visible: view?.present ?? false
+                visible: slotView?.present ?? false
 
                 Binding {
-                    target: place.view
+                    target: place.slotView
                     property: "slotX"
                     value: places.x + place.x
-                    when: place.view !== null
+                    when: place.slotView !== null
                 }
                 Binding {
                     target: row
                     property: "firstMiddle"
-                    value: place.view?.middle ?? 0
+                    value: place.slotView?.middle ?? 0
                     when: place.index === 0
                 }
 
@@ -100,14 +101,14 @@ Item {
                     id: loader
                     parent: row
                     anchors.fill: parent
-                    z: place.view?.raised ? 1 : row.host === Slots.HOST_BAR_RIGHT ? -place.index : 0
+                    z: place.slotView?.raised ? 1 : row.host === Slots.HOST_BAR_RIGHT ? -place.index : 0
                     onLoaded: row.loaded = Object.assign({}, row.loaded, {
-                        [place.modelData.view]: item
+                        [place.view]: item
                     })
                     Component.onCompleted: {
-                        const url = Views.url(place.modelData.view);
+                        const url = Views.url(place.view);
                         if (url.toString() === "") {
-                            console.warn(`nova: no view ${place.modelData.view} for ${row.host}`);
+                            console.warn(`nova: no view ${place.view} for ${row.host}`);
                             return;
                         }
                         setSource(url, {
@@ -116,8 +117,11 @@ Item {
                         });
                     }
                     Component.onDestruction: {
+                        // Unless a newer one has taken its place.
+                        if (row.loaded[place.view] !== item)
+                            return;
                         const left = Object.assign({}, row.loaded);
-                        delete left[place.modelData.view];
+                        delete left[place.view];
                         row.loaded = left;
                     }
                 }

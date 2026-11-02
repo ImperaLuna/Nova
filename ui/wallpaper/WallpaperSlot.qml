@@ -55,6 +55,11 @@ Scope {
         else if (!preview && ours)
             WallpaperService.preview = null;
     }
+    // Gone with its feature: what it previewed goes too.
+    Component.onDestruction: {
+        if (WallpaperService.preview?.output === slot.stage.output.name)
+            WallpaperService.preview = null;
+    }
 
     // Another screen's carousel previews this screen's pick here, and
     // marks it while it picks for it.

@@ -220,10 +220,6 @@ pub enum FeatureStatus {
     MissingDeps,
     /// Turned off. The UI doesn't load it.
     Off,
-    /// Turned on with all its dependencies, but every one of its slots
-    /// names a host that doesn't exist or whose feature isn't ready, so it
-    /// would have nowhere to show. The UI doesn't load it.
-    NoHost,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2082,7 +2078,6 @@ mod tests {
                         missing: vec![],
                         slots: vec![Slot { host: "bar.center".into(), view: "central-pill".into(), order: 10 }],
                     },
-                    FeatureState { id: "tray".into(), status: FeatureStatus::NoHost, missing: vec![], slots: vec![] },
                     FeatureState {
                         id: "recording".into(),
                         status: FeatureStatus::MissingDeps,

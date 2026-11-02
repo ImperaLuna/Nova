@@ -36,6 +36,7 @@
 pub mod gpus;
 
 pub use nova_protocol::Slot;
+use nova_protocol::{FeatureState, FeatureStatus};
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -73,6 +74,17 @@ pub const HOSTS: &[Host] = &[
 /// The host named `name`, if there is one.
 pub fn host(name: &str) -> Option<&'static Host> {
     HOSTS.iter().find(|host| host.name == name)
+}
+
+/// Whether `feature` is ready but has slots and none of them can show:
+/// each names a host that doesn't exist or whose owner (in `all`) isn't
+/// ready. `nova doctor` warns about it; the feature still runs, since it
+/// may show elsewhere too (pop-ups, keybinds).
+pub fn has_no_host(feature: &FeatureState, all: &[FeatureState]) -> bool {
+    let ready = |id: &str| all.iter().any(|other| other.id == id && other.status == FeatureStatus::Ready);
+    feature.status == FeatureStatus::Ready
+        && !feature.slots.is_empty()
+        && !feature.slots.iter().any(|slot| host(&slot.host).is_some_and(|host| ready(host.owner)))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -443,6 +455,7 @@ mod tests {
         let views = js_strings("slots/Views.qml", "\"");
         let imports = js_strings("slots/Views.qml", "import \"../");
         let slots = repo_features().join("../ui/slots");
+        let whole_ui = repo_features().join("../ui/shell.qml").is_file();
         for manifest in load_all(&repo_features()).unwrap() {
             for slot in &manifest.slots {
                 assert!(host(&slot.host).is_some(), "{}: unknown host {}", manifest.id, slot.host);
@@ -451,7 +464,10 @@ mod tests {
                     .find(|entry| entry.first() == Some(&slot.view))
                     .and_then(|entry| entry.get(1))
                     .unwrap_or_else(|| panic!("{}: view {} isn't in ui/slots/Views.qml", manifest.id, slot.view));
-                assert!(slots.join(file).is_file(), "{}: {file} doesn't exist next to ui/slots", slot.view);
+                // The Nix build's source has ui/slots but not the views.
+                if whole_ui {
+                    assert!(slots.join(file).is_file(), "{}: {file} doesn't exist next to ui/slots", slot.view);
+                }
                 let folder = file.split('/').nth(1).unwrap_or_default();
                 assert!(
                     imports.iter().any(|import| import.first().is_some_and(|dir| dir == &format!("../{folder}"))),
@@ -460,5 +476,28 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn state(id: &str, status: FeatureStatus, hosts: &[&str]) -> FeatureState {
+        let slots =
+            hosts.iter().map(|host| Slot { host: host.to_string(), view: format!("{id}.view"), order: 0 }).collect();
+        FeatureState { id: id.into(), status, missing: vec![], slots }
+    }
+
+    #[test]
+    fn a_feature_whose_hosts_are_all_gone_has_no_host() {
+        let core = state("core", FeatureStatus::Ready, &["bar.center"]);
+        let pill = state("pill", FeatureStatus::Ready, &["bar.left"]);
+        let stray = state("stray", FeatureStatus::Ready, &["nowhere"]);
+        let popups = state("popups", FeatureStatus::Ready, &[]);
+        let all = [core.clone(), pill.clone(), stray.clone(), popups.clone()];
+        assert!(!has_no_host(&pill, &all));
+        assert!(has_no_host(&stray, &all), "an unknown host never shows it");
+        assert!(!has_no_host(&popups, &all), "no slots: it shows elsewhere");
+
+        let core_off = state("core", FeatureStatus::Off, &["bar.center"]);
+        let all = [core_off.clone(), pill.clone()];
+        assert!(has_no_host(&pill, &all), "the bar it goes in is off");
+        assert!(!has_no_host(&core_off, &all), "off is its own state");
     }
 }

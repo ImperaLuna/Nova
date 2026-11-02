@@ -19,11 +19,10 @@ pub fn read_selection(paths: &[PathBuf]) -> Result<Selection, String> {
     Ok(Selection::default())
 }
 
-/// Each feature's state: off, missing what it needs, with no host for its
-/// slots (every one names a host that doesn't exist or whose feature isn't
-/// ready), or ready.
+/// Each feature's state (off, missing what it needs, or ready) and its
+/// slots, for the UI to fill its hosts with.
 pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> Vec<FeatureState> {
-    let mut states: Vec<FeatureState> = manifests
+    manifests
         .iter()
         .map(|m| {
             let (status, missing) = if !selection.is_on(m) {
@@ -35,25 +34,7 @@ pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> 
             };
             FeatureState { id: m.id.clone(), status, missing, slots: m.slots.clone() }
         })
-        .collect();
-    // Judged from the states above, so a host's owner that has no host
-    // itself doesn't chain on to the features it hosts.
-    let hosted: Vec<bool> = states
-        .iter()
-        .map(|state| {
-            state.slots.is_empty()
-                || state
-                    .slots
-                    .iter()
-                    .any(|slot| nova_features::host(&slot.host).is_some_and(|host| is_ready(&states, host.owner)))
-        })
-        .collect();
-    for (state, hosted) in states.iter_mut().zip(hosted) {
-        if state.status == FeatureStatus::Ready && !hosted {
-            state.status = FeatureStatus::NoHost;
-        }
-    }
-    states
+        .collect()
 }
 
 /// Whether feature `id` is on with all it needs, so the UI loads it and
@@ -98,25 +79,12 @@ mod tests {
         assert_eq!(off.iter().find(|s| s.id == "recording").unwrap().status, FeatureStatus::Off);
     }
 
-    fn with_slot(id: &str, host: &str) -> Manifest {
-        let text = format!(
-            "id = \"{id}\"\nname = \"x\"\ndescription = \"x\"\ndefault = true\n[[slot]]\nhost = \"{host}\"\nview = \"{id}.view\"\n"
-        );
-        toml::from_str(&text).unwrap()
-    }
-
     #[test]
-    fn a_feature_whose_hosts_are_all_gone_has_no_host() {
-        let manifests = [with_slot("core", "bar.center"), with_slot("pill", "bar.left"), with_slot("stray", "nowhere")];
-        let status = |states: &[FeatureState], id: &str| states.iter().find(|s| s.id == id).unwrap().status;
-
-        let all_on = states(&manifests, &Selection::default(), "/nonexistent");
-        assert_eq!(status(&all_on, "pill"), FeatureStatus::Ready);
-        assert_eq!(status(&all_on, "stray"), FeatureStatus::NoHost, "an unknown host never shows it");
-        assert_eq!(all_on.iter().find(|s| s.id == "pill").unwrap().slots, manifests[1].slots);
-
-        let core_off = states(&manifests, &Selection::parse("disabled = [\"core\"]").unwrap(), "/nonexistent");
-        assert_eq!(status(&core_off, "pill"), FeatureStatus::NoHost, "the bar it goes in is off");
-        assert_eq!(status(&core_off, "core"), FeatureStatus::Off);
+    fn states_carry_the_slots() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let manifests = nova_features::load_all(&root).unwrap();
+        let states = states(&manifests, &Selection::default(), "/nonexistent");
+        let core = states.iter().find(|s| s.id == "core").unwrap();
+        assert_eq!(core.slots, manifests.iter().find(|m| m.id == "core").unwrap().slots);
     }
 }
