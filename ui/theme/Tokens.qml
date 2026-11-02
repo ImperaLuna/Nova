@@ -699,6 +699,8 @@ QtObject {
     readonly property int filesRowRise: 4
     readonly property int filesRowStagger: 25
     readonly property int durationRowIn: 220
+    // How often the Modified column looks at the clock, so "Today" moves on.
+    readonly property int filesClockTick: 60000
     // The small chevron beside New, Sort and View.
     readonly property int iconSizeMini: 12
     readonly property real filesChevronOpacity: 0.6

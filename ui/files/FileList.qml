@@ -42,23 +42,26 @@ FocusScope {
         }
     ]
 
-    // The top row while the rows ease in after a folder's entries came in,
-    // or -1 once they have.
+    // The row the list opens at while the rows ease in after a folder's
+    // entries came in (they ripple out from it), or -1 once they have.
     property int riseFrom: -1
+    // The time the Modified column reads against, kept to the minute.
     property real now: Date.now()
 
     readonly property FolderModel model: FolderModel {
         path: list.folder
         hidden: list.showHidden
-        onReset: current => {
+        onFilling: current => {
             list.now = Date.now();
+            list.riseFrom = Math.max(current, 0);
+            settle.restart();
+        }
+        onReset: current => {
             entryList.currentIndex = current;
             if (current >= 0)
                 entryList.positionViewAtIndex(current, ListView.Contain);
             else
                 entryList.positionViewAtBeginning();
-            list.riseFrom = entryList.indexAt(0, entryList.contentY);
-            settle.restart();
         }
     }
 
@@ -76,6 +79,12 @@ FocusScope {
         model.selectNames(select.filter(path => path.startsWith(prefix) && !path.slice(prefix.length).includes("/")).map(path => path.slice(prefix.length)));
     }
 
+    Timer {
+        interval: Tokens.filesClockTick
+        running: true
+        repeat: true
+        onTriggered: list.now = Date.now()
+    }
     Timer {
         id: settle
         interval: Tokens.durationRowIn + Tokens.durationPanel
@@ -200,7 +209,7 @@ FocusScope {
             width: entryList.width
             nameWidth: list.nameWidth
             selected: list.model.revision >= 0 && list.model.isSelected(name)
-            riseOrder: list.riseFrom >= 0 ? Math.max(0, index - list.riseFrom) : -1
+            riseOrder: list.riseFrom >= 0 ? Math.min(Math.abs(index - list.riseFrom), entryList.page) : -1
             now: list.now
 
             onPressed: modifiers => {
@@ -239,6 +248,7 @@ FocusScope {
         font.pixelSize: Tokens.fontSizeSmall
         color: Tokens.filesFaint
         elide: Text.ElideRight
+        textFormat: Text.PlainText
         text: list.model.error !== "" ? list.model.error : list.model.loaded ? Listing.items(list.model.total) : ""
     }
 }

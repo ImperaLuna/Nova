@@ -34,13 +34,21 @@ QtObject {
     // The row Shift selects from: the last plain or Ctrl click's.
     property int anchor: -1
 
-    // The rows were filled anew; `current` is the first selected row's
-    // index (or -1), for the list to move to.
+    // A folder's entries are coming in anew: `current` is the first
+    // selected one's row (or -1). `reset` follows once they're in, for the
+    // list to move to it.
+    signal filling(int current)
     signal reset(int current)
 
     // This view's number, handed out as it's made.
     property int view: 0
     property var _selected: ({})
+    // Ctrl+A was the last selection: entries still to come are selected
+    // as they come.
+    property bool _selectingAll: false
+    // Which files_open the view shows, so a late answer to an earlier one
+    // can't mark this one failed.
+    property int _opening: 0
     property bool _wanted: false
 
     function isSelected(name: string): bool {
@@ -52,7 +60,8 @@ QtObject {
         _selected = {};
         for (const name of names)
             _selected[name] = true;
-        selectedCount = names.length;
+        selectedCount = Object.keys(_selected).length;
+        _selectingAll = false;
         revision++;
     }
 
@@ -73,6 +82,7 @@ QtObject {
                 delete _selected[name];
         }
         anchor = plan.anchor;
+        _selectingAll = false;
         revision++;
     }
 
@@ -84,6 +94,7 @@ QtObject {
             toggle: false,
             anchor: anchor
         });
+        _selectingAll = true;
     }
 
     // The selected rows, in the list's order.
@@ -101,29 +112,58 @@ QtObject {
         if (!_wanted || !FilesService.connected)
             return;
         error = "";
+        const opening = ++_opening;
         FilesService.open(view, path, sort.key, sort.descending, hidden, failure => {
-            if (failure)
+            if (failure && opening === _opening) {
                 error = failure;
+                loaded = true;
+            }
         });
+    }
+
+    // Keeps only the selected names the folder lists, once every page is
+    // in: dot files hidden again, or names asked for that aren't there.
+    function _keepListed() {
+        const listed = {};
+        let count = 0;
+        for (let index = 0; index < rows.count; index++) {
+            const name = rows.get(index).name;
+            if (isSelected(name)) {
+                listed[name] = true;
+                count++;
+            }
+        }
+        if (count === selectedCount)
+            return;
+        _selected = listed;
+        selectedCount = count;
+        revision++;
     }
 
     function _page(page: var) {
         if (view === 0 || page.view !== view || page.path !== path)
             return;
-        if (page.start === 0) {
+        const fresh = page.start === 0;
+        let current = -1;
+        if (fresh) {
+            current = page.entries.findIndex(entry => isSelected(entry.name));
+            filling(current);
             rows.clear();
             anchor = -1;
         } else if (page.start < rows.count) {
             rows.remove(page.start, rows.count - page.start);
         }
+        if (_selectingAll) {
+            for (const entry of page.entries)
+                _selected[entry.name] = true;
+        }
         rows.append(page.entries.map(Listing.row));
         total = page.total;
-        let current = -1;
-        if (page.start === 0) {
-            for (let index = 0; index < rows.count && current < 0; index++) {
-                if (isSelected(rows.get(index).name))
-                    current = index;
-            }
+        if (rows.count >= total)
+            _keepListed();
+        else if (_selectingAll)
+            selectedCount = Object.keys(_selected).length;
+        if (fresh) {
             loaded = true;
             reset(current);
         }
@@ -155,14 +195,23 @@ QtObject {
     function _closed(closed: var) {
         if (closed.view !== view)
             return;
-        rows.clear();
-        total = 0;
+        _clear();
         error = closed.error;
+        loaded = true;
     }
 
-    onPathChanged: {
+    function _clear() {
+        rows.clear();
+        total = 0;
+        anchor = -1;
         loaded = false;
         selectNames([]);
+    }
+
+    // Another folder: its rows go at once, so nothing opens the old ones
+    // under the new path while it's read.
+    onPathChanged: {
+        _clear();
         _open();
     }
     onSortChanged: _open()

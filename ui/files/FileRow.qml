@@ -6,7 +6,7 @@ import "listing.js" as Listing
 // Modified, Type and Size at the header's column widths. Hovered rows
 // lighten, selected ones fill; dot files read fainter. When a folder's
 // entries have just come in (`riseOrder`), it eases up into place after
-// the rows above it.
+// the rows nearer where the list opened.
 Rectangle {
     id: entry
 
@@ -20,7 +20,7 @@ Rectangle {
 
     required property real nameWidth
     required property bool selected
-    // Rows from the top of the list, while a folder's entries have just
+    // Rows from where the list opened, while a folder's entries have just
     // come in, or -1: read once, as the row is made.
     required property int riseOrder
     // When the Modified column was worked out, so "Today" moves on.
@@ -39,6 +39,7 @@ Rectangle {
         font.pixelSize: Tokens.fontSize
         color: Tokens.fgDim
         elide: Text.ElideRight
+        textFormat: Text.PlainText
     }
 
     Row {
