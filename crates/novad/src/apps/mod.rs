@@ -1,15 +1,20 @@
 //! The apps installed, as their desktop entries describe them: reading the
 //! entries (`desktop_entry`), finding them in the XDG data folders (`scan`),
-//! the index of them all that follows installs (`index`), and telling which
-//! app a running program is (`program`). The launcher, tray, notifications
-//! and media all name apps from the index.
+//! the index of them all that follows installs (`index`), telling which
+//! app a running program is (`program`), starting them (`launch`) and
+//! which open which types of file (`associations`). The launcher, tray,
+//! notifications, media and files all name apps from the index.
 
+#[allow(dead_code, reason = "Nova Files opens files with it (IMP-289)")]
+pub mod associations;
 pub mod desktop_entry;
 mod index;
+pub mod launch;
 mod program;
 pub mod scan;
 
 pub use index::{AppIndex, Sources, State};
+pub use launch::open;
 pub use program::program_name;
 
 /// `XDG_CURRENT_DESKTOP`'s names, like `niri`, which entries show in or not.
