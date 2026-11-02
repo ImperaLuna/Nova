@@ -1,8 +1,8 @@
 //! Following folders that may not be there yet or sit behind links that
 //! get swapped: what to watch so a change is seen ([`WatchPoints`]), and a
 //! thread that watches them and says when something that counts changed
-//! ([`follow`]). The app index follows `applications/` with it, the MIME
-//! database `mime/`.
+//! ([`follow`]). The app index follows `applications/` with it (trees),
+//! the MIME database `mime/` (only the folder's own files).
 //!
 //! A NixOS rebuild or a Nix profile switch swaps a link far above the
 //! folder (`/run/current-system`, `~/.local/state/nix/profiles/profile`)
@@ -15,9 +15,13 @@ use crate::logger::Logger;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
+use std::time::Duration;
 
 /// Links followed when looking for what to watch, like the kernel's limit.
 const MAX_LINKS: usize = 40;
+/// Installing a package writes many files; whoever follows them looks
+/// again once it pauses this long.
+pub const SETTLE: Duration = Duration::from_millis(500);
 
 /// What to watch so a change to some folders is seen, and the paths whose
 /// changes count.
@@ -25,6 +29,8 @@ const MAX_LINKS: usize = 40;
 pub struct WatchPoints {
     /// Folders whose files and subfolders count (where they resolve to).
     pub trees: BTreeSet<PathBuf>,
+    /// Folders whose files count, but not their subfolders.
+    pub folders: BTreeSet<PathBuf>,
     /// Folders holding a link on the way to a followed folder, or the
     /// folder it may appear in. Only `entries` count there.
     pub parents: BTreeSet<PathBuf>,
@@ -35,12 +41,31 @@ pub struct WatchPoints {
 impl WatchPoints {
     /// Whether a change at `path` counts.
     pub fn counts(&self, path: &Path) -> bool {
-        self.entries.contains(path) || self.trees.iter().any(|tree| path.starts_with(tree))
+        self.entries.contains(path)
+            || self.trees.iter().any(|tree| path.starts_with(tree))
+            || path.parent().is_some_and(|parent| self.folders.contains(parent))
     }
 
     /// Adds `folder` and what's below it, links down to `max_depth` folders
     /// deep included, the links on the way to it, or where it would appear.
     pub fn add_tree(&mut self, folder: &Path, max_depth: usize) {
+        if let Some(resolved) = self.add(folder) {
+            self.linked_folders(&resolved, 0, max_depth);
+            self.trees.insert(resolved);
+        }
+    }
+
+    /// Adds `folder`'s own files, the links on the way to it, or where it
+    /// would appear.
+    pub fn add_folder(&mut self, folder: &Path) {
+        if let Some(resolved) = self.add(folder) {
+            self.folders.insert(resolved);
+        }
+    }
+
+    /// Adds the links on the way to `folder` and its own entry, and gives
+    /// where it resolves to; or where it would appear, when it isn't there.
+    fn add(&mut self, folder: &Path) -> Option<PathBuf> {
         self.links_on_the_way(folder);
         match std::fs::canonicalize(folder) {
             // Watched through its folder too, so a replacement (one renamed
@@ -50,8 +75,7 @@ impl WatchPoints {
                     self.parents.insert(parent.to_owned());
                     self.entries.insert(resolved.clone());
                 }
-                self.linked_folders(&resolved, 0, max_depth);
-                self.trees.insert(resolved);
+                Some(resolved)
             }
             // Not there (yet): the folder it would appear in is watched.
             Err(_) => {
@@ -60,6 +84,7 @@ impl WatchPoints {
                     let child = folder.strip_prefix(existing).ok().and_then(|rest| rest.components().next());
                     self.entries.extend(child.map(|child| existing.join(child)));
                 }
+                None
             }
         }
     }
@@ -76,6 +101,11 @@ impl WatchPoints {
         for tree in &self.trees {
             if let Err(e) = watcher.watch_tree(tree) {
                 logger.warn(source, &format!("can't watch {} for {what}: {e}", tree.display()));
+            }
+        }
+        for folder in &self.folders {
+            if let Err(e) = watcher.watch(folder) {
+                logger.warn(source, &format!("can't watch {} for {what}: {e}", folder.display()));
             }
         }
     }

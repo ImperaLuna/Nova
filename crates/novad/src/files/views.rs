@@ -26,7 +26,7 @@ use crate::hub::{ClientId, Hub};
 use crate::inotify::{self, Inotify, Stopper};
 use crate::lock;
 use crate::logger::Logger;
-use crate::mime::MimeDb;
+use crate::mime::Mime;
 use nova_protocol::{Event, FILES_MAX_VIEWS, FILES_PATH_MAX_BYTES, FileSort, FolderPage};
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsString;
@@ -62,7 +62,7 @@ type Views = Arc<Mutex<Option<HashMap<Key, Arc<View>>>>>;
 pub struct Folders {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
-    mime: Arc<MimeDb>,
+    mime: Arc<Mime>,
     views: Views,
 }
 
@@ -83,7 +83,7 @@ struct State {
 }
 
 impl Folders {
-    pub fn new(hub: Arc<Hub>, logger: Arc<Logger>, mime: Arc<MimeDb>) -> Self {
+    pub fn new(hub: Arc<Hub>, logger: Arc<Logger>, mime: Arc<Mime>) -> Self {
         Self { hub, logger, mime, views: Arc::new(Mutex::new(Some(HashMap::new()))) }
     }
 
@@ -173,7 +173,7 @@ struct Worker {
     watcher: Inotify,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
-    mime: Arc<MimeDb>,
+    mime: Arc<Mime>,
     views: Views,
 }
 
@@ -232,7 +232,8 @@ impl Worker {
     /// Reads the whole folder and sends it from the start. False once the
     /// view is closed.
     fn send_all(&self) -> bool {
-        let read = folder::read_folder(&self.view.path, self.view.hidden, &self.mime, || !self.view.is_open());
+        let read =
+            folder::read_folder(&self.view.path, self.view.hidden, &self.mime.current(), || !self.view.is_open());
         let entries = match read {
             Ok(Some(entries)) => entries,
             Ok(None) => return false,
@@ -301,9 +302,10 @@ impl Worker {
     /// Reads the entries `names` again and sends what changed. False once
     /// the view is closed.
     fn send_changes(&self, names: BTreeSet<OsString>) -> bool {
+        let mime = self.mime.current();
         let now: Vec<_> = names
             .into_iter()
-            .map(|name| (folder::read_entry(&self.view.path, &name, &self.mime), name.to_string_lossy().into_owned()))
+            .map(|name| (folder::read_entry(&self.view.path, &name, &mime), name.to_string_lossy().into_owned()))
             .collect();
         let mut state = lock(&self.view.state);
         if !state.open {
@@ -396,12 +398,14 @@ mod tests {
             let logs = TempDir::new(&format!("{name}-logs"));
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&logs.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
-            let (mime, problems) = MimeDb::load(&[crate::mime::tests::data_dir(&format!("{name}-mime")).to_path_buf()]);
-            assert!(problems.is_empty(), "{problems:?}");
+            let mime = Mime::follow(
+                vec![crate::mime::tests::data_dir(&format!("{name}-mime")).to_path_buf()],
+                Arc::clone(&logger),
+            );
             let (socket, ours) = UnixStream::pair().unwrap();
             let (queue, events) = ClientQueue::new(&ours).unwrap();
             let client = hub.register(queue);
-            let folders = Folders::new(hub, logger, Arc::new(mime));
+            let folders = Folders::new(hub, logger, mime);
             Self { logs, folders, client, events, _socket: socket, shown: Vec::new() }
         }
 
@@ -676,7 +680,7 @@ mod tests {
             state: Mutex::new(State { open: false, listing: None }),
             stopper: Inotify::new(WATCHED).unwrap().stopper(),
         });
-        let read = folder::read_folder(&view.path, true, &fixture.folders.mime, || !view.is_open());
+        let read = folder::read_folder(&view.path, true, &fixture.folders.mime.current(), || !view.is_open());
         assert!(read.unwrap().is_none());
     }
 

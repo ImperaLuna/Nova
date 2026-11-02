@@ -3,8 +3,8 @@
 //! others can (`associations`), starting one with the file (`launch`), and
 //! making an app the new default for that type.
 //!
-//! The MIME database is the one its owner read (Nova Files shares it with
-//! its folder listing). The
+//! The MIME database is its owner's, kept up to date (Nova Files shares it
+//! with its folder listing). The
 //! `mimeapps.list` files are read on every request, so a default another
 //! app or the user changed counts at once, without watching them; they're
 //! a few kilobytes.
@@ -14,7 +14,7 @@ use super::associations::{self, Associations, Places};
 use super::desktop_entry::Entry;
 use super::launch::{self, Runner};
 use crate::logger::Logger;
-use crate::mime::MimeDb;
+use crate::mime::Mime;
 use nova_protocol::OpenWith;
 use std::path::{Component, Path};
 use std::sync::{Arc, Mutex};
@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 const LOG_SOURCE: &str = "files";
 
 pub struct Opener {
-    mime: Arc<MimeDb>,
+    mime: Arc<Mime>,
     places: Places,
     apps: Arc<AppIndex>,
     runner: Runner,
@@ -36,7 +36,7 @@ pub struct Opener {
 impl Opener {
     /// Types files with `mime`; the lists are in `places`.
     pub fn new(
-        mime: Arc<MimeDb>,
+        mime: Arc<Mime>,
         places: Places,
         runner: Runner,
         apps: Arc<AppIndex>,
@@ -113,8 +113,9 @@ impl Opener {
         if !Path::new(path).is_absolute() || !Path::new(path).components().all(plain) {
             return Err(format!("{path} isn't an absolute path"));
         }
-        let mime = self.mime.type_of(Path::new(path)).map_err(|e| format!("can't open {path}: {e}"))?;
-        Ok(self.mime.with_parents(&mime))
+        let db = self.mime.current();
+        let mime = db.type_of(Path::new(path)).map_err(|e| format!("can't open {path}: {e}"))?;
+        Ok(db.with_parents(&mime))
     }
 
     fn launch(&self, entry: &Entry, path: &str) -> Result<(), String> {
@@ -156,9 +157,8 @@ mod tests {
         let index = AppIndex::of(Some(&share), &logger);
         wait_until(WAIT, "the apps to be read", || index.read().scanned());
         let places = Places::new(Some(dir.join("config")), &[], std::slice::from_ref(&share), &["niri".into()]);
-        let (mime, problems) = MimeDb::load(std::slice::from_ref(&share));
-        assert!(problems.is_empty(), "{problems:?}");
-        let opener = Opener::new(Arc::new(mime), places, Runner::Direct, Arc::clone(&index), "", logger);
+        let mime = Mime::follow(vec![share.clone()], Arc::clone(&logger));
+        let opener = Opener::new(mime, places, Runner::Direct, Arc::clone(&index), "", logger);
         std::fs::create_dir_all(dir.join("files")).unwrap();
         for (file, bytes) in [("photo.png", &b"\x89PNG"[..]), ("notes.md", b"# hi\n"), ("script.py", b"print()\n")] {
             std::fs::write(dir.join("files").join(file), bytes).unwrap();

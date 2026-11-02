@@ -22,8 +22,6 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, mpsc};
 use std::time::Duration;
 
 const LOG_SOURCE: &str = "apps";
-/// Installing a package writes many entries; they're read once it pauses.
-const SETTLE: Duration = Duration::from_millis(500);
 /// How long a lookup made while novad starts (`app_once_scanned`) waits
 /// for the apps to be read the first time.
 const FIRST_SCAN_WAIT: Duration = Duration::from_secs(2);
@@ -242,7 +240,7 @@ impl AppIndex {
         // Watched first, so an app installed meanwhile isn't missed.
         self.rescan(stopped);
         while changes.recv().is_ok() {
-            while changes.recv_timeout(SETTLE).is_ok() {}
+            while changes.recv_timeout(watch_points::SETTLE).is_ok() {}
             if stopped.load(Ordering::SeqCst) {
                 return;
             }
