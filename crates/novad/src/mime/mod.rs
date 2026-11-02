@@ -1,15 +1,20 @@
 //! What type of file something is, from the freedesktop.org shared MIME
 //! database (`mime/` in each XDG data folder, the files
-//! `update-mime-database` writes): its name's patterns (`globs`), the old
-//! names of types (`aliases`) and the types each is a kind of
-//! (`subclasses`).
+//! `update-mime-database` writes): its name's patterns (`globs`), its
+//! first bytes (`magic`), the old names of types (`aliases`) and the types
+//! each is a kind of (`subclasses`).
 //!
-//! [`MimeDb::type_by_name`] only looks at a name and the file's metadata,
-//! for listing big folders.
+//! Two lookups: [`MimeDb::type_by_name`] only looks at a name and the
+//! file's metadata, for listing big folders, and [`MimeDb::type_of`] also
+//! reads the file's first bytes when the name doesn't settle it, the way
+//! the spec orders them: the name first, contents for a name that matches
+//! no pattern or several, then "text or binary".
 
 mod globs;
+mod magic;
 
 use globs::Globs;
+use magic::Magic;
 use std::collections::HashMap;
 use std::fs::Metadata;
 use std::io::Read;
@@ -24,6 +29,9 @@ pub const EMPTY: &str = "application/x-zerosize";
 pub const TEXT: &str = "text/plain";
 /// Any bytes, which every type that isn't `inode/*` is a kind of.
 pub const BINARY: &str = "application/octet-stream";
+/// How much of a file with no type from its name or contents is checked
+/// for being text.
+const TEXT_SNIFF: usize = 512;
 /// What a database file may weigh at most; the real ones are well under.
 const MAX_DB_FILE: u64 = 16 * 1024 * 1024;
 
@@ -31,6 +39,7 @@ const MAX_DB_FILE: u64 = 16 * 1024 * 1024;
 #[derive(Debug, Default)]
 pub struct MimeDb {
     globs: Globs,
+    magic: Magic,
     /// Old names to the type's own.
     aliases: HashMap<String, String>,
     /// Each type's direct parents.
@@ -48,6 +57,11 @@ impl MimeDb {
         for dir in data_dirs.iter().rev().map(|dir| dir.join("mime")) {
             if let Some(text) = read_text(&dir.join("globs2"), &mut problems) {
                 db.globs.add(&text);
+            }
+            if let Some(bytes) = read(&dir.join("magic"), &mut problems)
+                && let Err(e) = db.magic.add(&bytes)
+            {
+                problems.push(format!("{}: {e}", dir.join("magic").display()));
             }
             for (alias, canonical) in read_text(&dir.join("aliases"), &mut problems).iter().flat_map(|text| pairs(text))
             {
@@ -75,6 +89,37 @@ impl MimeDb {
             return EMPTY;
         }
         self.globs.find(name).types.first().copied().unwrap_or(BINARY)
+    }
+
+    /// The type of the file at `path`, reading its first bytes when its
+    /// name matches no pattern or several. Follows links, like opening it.
+    pub fn type_of(&self, path: &Path) -> std::io::Result<String> {
+        let metadata = std::fs::metadata(path)?;
+        if let Some(special) = special_type(&metadata) {
+            return Ok(special.to_string());
+        }
+        let name = path.file_name().map(|name| name.to_string_lossy()).unwrap_or_default();
+        let by_name = self.globs.find(&name).types;
+        if let [only] = by_name.as_slice() {
+            return Ok(self.canonical(only).to_string());
+        }
+        if metadata.len() == 0 {
+            return Ok(EMPTY.to_string());
+        }
+        let mut start = Vec::new();
+        std::fs::File::open(path)?.take(self.magic.extent().max(TEXT_SNIFF) as u64).read_to_end(&mut start)?;
+        // A tie between names is settled by contents among those types.
+        let among = |mime: &str| by_name.iter().any(|named| self.is_a(mime, named) || self.is_a(named, mime));
+        let only: Option<&dyn Fn(&str) -> bool> = if by_name.is_empty() { None } else { Some(&among) };
+        let found = match self.magic.find(&start, only) {
+            Some((mime, _)) => Some(mime),
+            None => by_name.first().copied(),
+        };
+        Ok(match found {
+            Some(mime) => self.canonical(mime).to_string(),
+            None if looks_like_text(&start) => TEXT.to_string(),
+            None => BINARY.to_string(),
+        })
     }
 
     /// The type's own name, for one known by an old one.
@@ -133,6 +178,19 @@ fn special_type(metadata: &Metadata) -> Option<&'static str> {
     }
 }
 
+/// Text when it's UTF-8 (cut anywhere at the end) without control
+/// characters other than whitespace.
+fn looks_like_text(start: &[u8]) -> bool {
+    let start = &start[..start.len().min(TEXT_SNIFF)];
+    let valid = match std::str::from_utf8(start) {
+        Ok(text) => text,
+        // Only an incomplete character at the very end is forgiven.
+        Err(e) if e.error_len().is_none() => std::str::from_utf8(&start[..e.valid_up_to()]).unwrap_or_default(),
+        Err(_) => return false,
+    };
+    !valid.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t' | '\x0c'))
+}
+
 /// `a b` lines.
 fn pairs(text: &str) -> impl Iterator<Item = (&str, &str)> {
     text.lines().filter(|line| !line.starts_with('#')).filter_map(|line| line.split_once(' '))
@@ -166,8 +224,8 @@ pub mod tests {
     use super::*;
     use nova_test_support::TempDir;
 
-    /// A data folder with a small MIME database: names, an alias and
-    /// parents, like the real one's.
+    /// A data folder with a small MIME database: names, magic, an alias
+    /// and parents, like the real one's.
     pub fn data_dir(name: &str) -> TempDir {
         let dir = TempDir::new(name);
         let mime = dir.join("mime");
@@ -178,6 +236,13 @@ pub mod tests {
              50:video/mp4:*.mp4\n50:audio/mp4:*.mp4\n50:application/zip:*.zip\n",
         )
         .unwrap();
+        let magic = magic::tests::magic_file(&[
+            (50, "image/png", &[(0, 0, b"\x89PNG", None, 1)]),
+            (50, "application/pdf", &[(0, 0, b"%PDF-", None, 1)]),
+            (50, "audio/mp4", &[(0, 4, b"ftypM4A", None, 1)]),
+            (50, "video/mp4", &[(0, 4, b"ftypisom", None, 1)]),
+        ]);
+        std::fs::write(mime.join("magic"), magic).unwrap();
         std::fs::write(mime.join("aliases"), "application/x-pdf application/pdf\n").unwrap();
         std::fs::write(mime.join("subclasses"), "text/x-python text/x-script\ntext/markdown text/plain\n").unwrap();
         dir
@@ -187,6 +252,27 @@ pub mod tests {
         let (db, problems) = MimeDb::load(&[dir.to_path_buf()]);
         assert!(problems.is_empty(), "{problems:?}");
         db
+    }
+
+    #[test]
+    fn names_settle_most_files_and_contents_the_rest() {
+        let dir = data_dir("mime-type-of");
+        let db = db(&dir);
+        let files = dir.join("files");
+        std::fs::create_dir_all(&files).unwrap();
+        let write = |name: &str, bytes: &[u8]| {
+            std::fs::write(files.join(name), bytes).unwrap();
+            db.type_of(&files.join(name)).unwrap()
+        };
+        assert_eq!(write("photo.png", b"not even a png"), "image/png", "a single name match decides");
+        assert_eq!(write("photo", b"\x89PNG...."), "image/png", "no name match: contents");
+        assert_eq!(write("song.mp4", b"....ftypM4A "), "audio/mp4", "a tie between names: contents");
+        assert_eq!(write("clip.mp4", b"????????????"), "video/mp4", "a tie no contents settle: the first");
+        assert_eq!(write("notes", b"just words\n"), TEXT);
+        assert_eq!(write("blob", b"\x00\x01\x02"), BINARY);
+        assert_eq!(write("empty", b""), EMPTY);
+        assert_eq!(db.type_of(&files).unwrap(), DIRECTORY);
+        assert!(db.type_of(&files.join("missing")).is_err());
     }
 
     #[test]
@@ -226,5 +312,6 @@ pub mod tests {
         let metadata = std::fs::metadata("/usr/share/mime/globs2").unwrap();
         assert_eq!(db.type_by_name("photo.JPG", &metadata), "image/jpeg");
         assert_eq!(db.type_by_name("archive.tar.gz", &metadata), "application/x-compressed-tar");
+        assert_eq!(db.type_of(Path::new("/usr/share/mime/magic")).unwrap(), BINARY);
     }
 }
