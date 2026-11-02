@@ -133,5 +133,10 @@ QtObject {
         function onTrashChanged() {
             trash.refresh();
         }
+        // Changes made while novad was away sent no trashChanged.
+        function onConnectedChanged() {
+            if (trash.service.connected)
+                trash.refresh();
+        }
     }
 }
