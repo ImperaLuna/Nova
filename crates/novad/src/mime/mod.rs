@@ -128,8 +128,8 @@ impl MimeDb {
     }
 
     /// `mime` and every type it's a kind of, the nearest first: its
-    /// parents in the database, then plain text for `text/*`, then binary
-    /// for anything that isn't `inode/*`.
+    /// parents in the database, then plain text when it or one of them is
+    /// `text/*`, then binary for anything that isn't `inode/*`.
     pub fn with_parents(&self, mime: &str) -> Vec<String> {
         let mut found = vec![self.canonical(mime).to_string()];
         let mut next = 0;
@@ -143,7 +143,8 @@ impl MimeDb {
                 }
             }
         }
-        let implicit = [(found[0].starts_with("text/"), TEXT), (!found[0].starts_with("inode/"), BINARY)];
+        let is_text = found.iter().any(|known| known.starts_with("text/"));
+        let implicit = [(is_text, TEXT), (!found[0].starts_with("inode/"), BINARY)];
         for (applies, parent) in implicit {
             if applies && !found.iter().any(|known| known == parent) {
                 found.push(parent.to_string());
@@ -244,7 +245,11 @@ pub mod tests {
         ]);
         std::fs::write(mime.join("magic"), magic).unwrap();
         std::fs::write(mime.join("aliases"), "application/x-pdf application/pdf\n").unwrap();
-        std::fs::write(mime.join("subclasses"), "text/x-python text/x-script\ntext/markdown text/plain\n").unwrap();
+        std::fs::write(
+            mime.join("subclasses"),
+            "text/x-python text/x-script\ntext/markdown text/plain\napplication/x-user text/x-script\n",
+        )
+        .unwrap();
         dir
     }
 
@@ -297,6 +302,7 @@ pub mod tests {
         assert_eq!(db.with_parents("text/markdown"), ["text/markdown", TEXT, BINARY]);
         assert_eq!(db.with_parents("application/x-pdf"), ["application/pdf", BINARY]);
         assert_eq!(db.with_parents(DIRECTORY), [DIRECTORY]);
+        assert!(db.is_a("application/x-user", TEXT), "a kind of a text type is text too");
         assert!(db.is_a("text/x-python", TEXT));
         assert!(!db.is_a(TEXT, "text/x-python"));
     }

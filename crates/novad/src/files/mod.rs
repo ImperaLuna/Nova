@@ -32,6 +32,9 @@ use std::sync::{Arc, Mutex, Weak};
 
 pub const FEATURE_ID: &str = "files";
 const LOG_SOURCE: &str = "files";
+/// More windows than anyone asks for before Nova Files starts; past it,
+/// more are refused rather than kept.
+const MAX_WAITING: usize = 64;
 
 /// Where Nova Files runs from.
 #[derive(Clone)]
@@ -90,8 +93,7 @@ impl Files {
     /// Opens a window on `folder` with `select` selected, once both check
     /// out ([`target::window`]).
     pub fn show(&self, folder: &str, select: &[String]) -> Result<(), String> {
-        self.shared.open(target::window(folder, select)?);
-        Ok(())
+        self.shared.open(target::window(folder, select)?)
     }
 
     /// Client `client`, the Nova Files process, can open windows
@@ -136,20 +138,24 @@ impl Files {
 
 impl Shared {
     /// Sends `window` to the Nova Files process, or keeps it for the next
-    /// one to attach, starting one.
-    fn open(&self, window: FilesWindow) {
+    /// one to attach, starting one, unless [`MAX_WAITING`] already wait.
+    fn open(&self, window: FilesWindow) -> Result<(), String> {
         let mut delivery = lock(&self.delivery);
         if let Some(client) = delivery.attached {
             if self.send(client, &window) {
-                return;
+                return Ok(());
             }
             delivery.attached = None;
+        }
+        if delivery.waiting.len() >= MAX_WAITING {
+            return Err(format!("{MAX_WAITING} windows already wait for Nova Files to start"));
         }
         self.logger.info(LOG_SOURCE, &format!("{} waits for Nova Files to start", window.folder));
         delivery.waiting.push(window);
         if let Some(process) = &self.process {
             process.ensure_running();
         }
+        Ok(())
     }
 
     fn send(&self, client: ClientId, window: &FilesWindow) -> bool {
@@ -261,6 +267,15 @@ mod tests {
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
         assert!(watcher.try_recv().is_err(), "windows go only to Nova Files");
+    }
+
+    #[test]
+    fn windows_past_the_limit_are_refused_while_none_attaches() {
+        let fixture = Fixture::new("limit");
+        for _ in 0..MAX_WAITING {
+            fixture.files.show(&fixture.downloads(), &[]).unwrap();
+        }
+        assert!(fixture.files.show(&fixture.downloads(), &[]).unwrap_err().contains("already wait"));
     }
 
     #[test]
