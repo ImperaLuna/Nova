@@ -14,12 +14,16 @@ ListView {
     id: tree
 
     required property Navigator navigator
-    // Rows created since the last update, to stagger their slide in.
+    // While an update adds rows, the rows created slide in, staggered by
+    // how many came before them; rows created by scrolling just show.
+    property bool arriving: false
     property int arrivals: 0
 
     function update() {
         arrivals = 0;
+        arriving = true;
         Navigation.sync(rows, navigator.treeRows);
+        arriving = false;
         for (let i = 0; i < rows.count; i++) {
             if (rows.get(i).path === navigator.folder) {
                 positionViewAtIndex(i, ListView.Contain);
@@ -83,6 +87,11 @@ ListView {
             y: -Tokens.filesTreeRise
         }
         Component.onCompleted: {
+            if (!tree.arriving) {
+                opacity = 1;
+                rise.y = 0;
+                return;
+            }
             wait.duration = tree.arrivals++ * Tokens.filesTreeStagger;
             arrive.start();
         }

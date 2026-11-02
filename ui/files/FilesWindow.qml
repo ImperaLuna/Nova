@@ -70,6 +70,7 @@ FloatingWindow {
         anchors.top: parent.top
         navigator: window.navigator
         solid: FilesService.frameSolid
+        onAddressClosed: list.forceActiveFocus()
     }
     CommandRow {
         id: commands

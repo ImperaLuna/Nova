@@ -22,6 +22,9 @@ Rectangle {
     property bool editing: false
     property bool wrong: false
 
+    // Typing a path ended: the keyboard goes back to the file list.
+    signal addressClosed
+
     // Turns the address bar into a text field with the path selected.
     function editAddress() {
         field.text = navigator.folder;
@@ -37,6 +40,11 @@ Rectangle {
                 row.editing = false;
             row.wrong = !ok;
         });
+    }
+
+    onEditingChanged: {
+        if (!editing)
+            addressClosed();
     }
 
     implicitHeight: Tokens.filesFieldHeight + 2 * Tokens.filesRowPadY

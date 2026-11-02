@@ -145,7 +145,9 @@ impl Tree {
         {
             names.push(next);
         }
-        names.sort_by(|a, b| folder::natural(a, b));
+        // Raw names break natural ties (`a` and `A`), so the order is the same
+        // every time.
+        names.sort_by(|a, b| folder::natural(a, b).then_with(|| a.cmp(b)));
         names
     }
 
@@ -204,6 +206,7 @@ mod tests {
             "Pictures",
             "Projects 10",
             "Projects 2",
+            "pictures",
             ".local/share/Steam/steamapps/common/Crimson Desert",
             ".cache/fonts",
         ] {
@@ -259,6 +262,7 @@ mod tests {
                 "5 common- h".into(),
                 "1 Documents-".into(),
                 "1 Pictures".into(),
+                "1 pictures".into(),
                 "1 Projects 2".into(),
                 "1 Projects 10".into(),
             ],

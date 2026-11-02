@@ -103,6 +103,9 @@ TestCase {
             paths.push(model.get(i).path);
         compare(paths, ["/a", "/b", "/b/x", "/b/y"]);
         compare(model.get(1).open, true);
+        Navigation.sync(model, ["/a", "/b/x", "/b"].map(row));
+        compare(model.count, 3, "a row that moved isn't added twice");
+        compare(model.get(1).path, "/b/x");
         Navigation.sync(model, []);
         compare(model.count, 0);
     }
