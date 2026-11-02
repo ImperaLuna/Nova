@@ -278,7 +278,10 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             audio_wait: bluetooth::AUDIO_WAIT,
         },
         x11_tray: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
-        files: crate::files::Sources,
+        files: crate::files::Sources {
+            bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+            ui: None,
+        },
         session_lock: dir.to_owned(),
         screenshots: dir.to_owned(),
         recordings: (),

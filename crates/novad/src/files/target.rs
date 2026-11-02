@@ -2,6 +2,10 @@
 //! an absolute path with no `..` in it that is a folder now, and every item
 //! to select is a path straight inside it. Paths come from the socket and
 //! the session bus, so nothing else is trusted about them.
+//!
+//! Also turns the `file://` URIs apps give `org.freedesktop.FileManager1`
+//! into windows: a folder to show, or items grouped by the folder holding
+//! them, one window per folder.
 
 use nova_protocol::FilesWindow;
 use std::path::{Component, Path, PathBuf};
@@ -24,6 +28,38 @@ pub fn window(folder: &str, select: &[String]) -> Result<FilesWindow, String> {
         })
         .collect::<Result<_, _>>()?;
     Ok(FilesWindow { folder: text(&folder)?, select })
+}
+
+/// A window on each folder `uris` name (`ShowFolders`).
+pub fn folders(uris: &[String]) -> Result<Vec<FilesWindow>, String> {
+    uris.iter().map(|uri| window(&text(&path(uri)?)?, &[])).collect()
+}
+
+/// A window on each folder holding items `uris` name, with them selected
+/// (`ShowItems`), in the order the folders first come.
+pub fn items(uris: &[String]) -> Result<Vec<FilesWindow>, String> {
+    let mut windows: Vec<(PathBuf, Vec<String>)> = Vec::new();
+    for uri in uris {
+        let item = path(uri)?;
+        let folder = item.parent().ok_or_else(|| format!("{uri} has no folder"))?.to_path_buf();
+        let item = text(&item)?;
+        match windows.iter_mut().find(|(known, _)| *known == folder) {
+            Some((_, select)) => select.push(item),
+            None => windows.push((folder, vec![item])),
+        }
+    }
+    windows.iter().map(|(folder, select)| window(&text(folder)?, select)).collect()
+}
+
+/// The path a `file://` URI names. Only local files: no other scheme, and
+/// no host but `localhost`.
+fn path(uri: &str) -> Result<PathBuf, String> {
+    let local = uri.strip_prefix("file://localhost/").map(|rest| format!("file:///{rest}"));
+    let uri_or_local = local.as_deref().unwrap_or(uri);
+    if !uri_or_local.starts_with("file:///") {
+        return Err(format!("{uri} isn't a local file"));
+    }
+    crate::notifications::image::file(uri_or_local).ok_or_else(|| format!("{uri} isn't a file path"))
 }
 
 /// `path` as given, once it's absolute and has no `.` or `..` in it.
@@ -81,5 +117,38 @@ mod tests {
         assert!(window(&music, &[elsewhere]).unwrap_err().contains("isn't in"));
         let deeper = display(&dir.join("Music/Albums/a.flac"));
         assert!(window(&music, &[deeper]).unwrap_err().contains("isn't in"), "only straight inside");
+    }
+
+    #[test]
+    fn show_folders_opens_a_window_per_folder() {
+        let dir = dir("folders");
+        let uri = format!("file://{}", display(&dir.join("Music")));
+        let shown = folders(&[uri.clone(), format!("{uri}/Albums")]).unwrap();
+        let folders: Vec<_> = shown.iter().map(|window| window.folder.clone()).collect();
+        assert_eq!(folders, [display(&dir.join("Music")), display(&dir.join("Music/Albums"))]);
+    }
+
+    #[test]
+    fn show_items_groups_items_by_their_folder() {
+        let dir = dir("items");
+        let music = dir.join("Music");
+        let song = format!("file://{}/song%20one.flac", display(&music));
+        let album = format!("file://localhost{}/Albums", display(&music));
+        let other = format!("file://{}", display(&dir.join("Music")));
+        let shown = items(&[song, album, other]).unwrap();
+        assert_eq!(shown.len(), 2);
+        assert_eq!(shown[0].folder, display(&music));
+        assert_eq!(shown[0].select, [display(&music.join("song one.flac")), display(&music.join("Albums"))]);
+        assert_eq!(shown[1].folder, display(&dir));
+        assert_eq!(shown[1].select, [display(&music)]);
+    }
+
+    #[test]
+    fn only_local_file_uris_are_shown() {
+        assert!(path("https://example.com/a").is_err());
+        assert!(path("file://server/share/a").is_err());
+        assert!(path("/tmp/a").is_err(), "a URI, not a path");
+        assert!(path("file:///tmp/%zz").is_err());
+        assert_eq!(path("file:///tmp/a%20b").unwrap(), PathBuf::from("/tmp/a b"));
     }
 }
