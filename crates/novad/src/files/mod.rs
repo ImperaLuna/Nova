@@ -14,7 +14,9 @@
 //! - Opening files in apps is the shared `crate::apps::opening`, over the
 //!   module's one copy of the MIME database.
 //! - `views.rs`: the folders a window shows (`files_open`), read in pages
-//!   and followed with inotify while open, one thread per view.
+//!   and followed while open, one thread per view.
+//! - `watcher.rs`: the one inotify instance every view follows its folder
+//!   through, and the folders above it, so a renamed parent is seen.
 //! - `folder.rs`: a folder's entries, their types from the shared MIME
 //!   database (`crate::mime`, loaded once as the module starts), and the
 //!   view's order.
@@ -30,6 +32,7 @@ mod file_manager1;
 mod folder;
 mod target;
 mod views;
+mod watcher;
 mod window;
 
 use crate::apps::AppIndex;

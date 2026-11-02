@@ -145,7 +145,19 @@ impl Hub {
     /// Sends `event` to one client, whatever it subscribed to. Returns
     /// whether it was queued: not for a client that's gone.
     pub fn send_to(&self, id: ClientId, event: &Event) -> bool {
-        let Some(line) = encode_event(event) else { return false };
+        Self::encode(event).is_some_and(|line| self.send_line_to(id, line))
+    }
+
+    /// `event` as the line [`Hub::send_line_to`] sends, so a big event can
+    /// be encoded before taking a lock it's sent under. `None` when it
+    /// can't be (reported).
+    pub fn encode(event: &Event) -> Option<String> {
+        encode_event(event)
+    }
+
+    /// Sends a line from [`Hub::encode`] to one client, like
+    /// [`Hub::send_to`].
+    pub fn send_line_to(&self, id: ClientId, line: String) -> bool {
         lock(&self.clients)
             .list
             .iter()
