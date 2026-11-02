@@ -31,8 +31,8 @@ use nova_protocol::{Drive, EjectOutcome, Event, LogLevel};
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::future::poll_fn;
-use std::os::unix::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
 use std::task::Poll;
@@ -286,10 +286,10 @@ impl Shared {
     }
 }
 
-/// How big the filesystem mounted at `mount` is and how much of it is
+/// How big the filesystem mounted at `mount` (wire text) is and how much of it is
 /// used, in bytes.
 fn usage(mount: &str) -> Option<(u64, u64)> {
-    let path = CString::new(Path::new(mount).as_os_str().as_bytes()).ok()?;
+    let path = CString::new(nova_protocol::wire_path(mount).into_os_string().into_vec()).ok()?;
     let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
     // SAFETY: `path` is a valid C string and `stats` is written in full
     // when the call succeeds.
@@ -529,8 +529,8 @@ fn flag(properties: &HashMap<String, OwnedVariant>, name: &str) -> bool {
     properties.get(name).and_then(|value| bool::try_from(value).ok()).unwrap_or(false)
 }
 
-/// `MountPoints`: byte strings ending in a NUL. One that isn't UTF-8 is
-/// left out, since the UI couldn't open it by name.
+/// `MountPoints`: byte strings ending in a NUL, as wire text
+/// ([`nova_protocol::wire_text`]), so one that isn't UTF-8 still opens.
 fn mount_points(filesystem: &HashMap<String, OwnedVariant>) -> Vec<String> {
     let points: Vec<Vec<u8>> = filesystem
         .get("MountPoints")
@@ -539,11 +539,11 @@ fn mount_points(filesystem: &HashMap<String, OwnedVariant>) -> Vec<String> {
         .unwrap_or_default();
     points
         .into_iter()
-        .filter_map(|mut point| {
+        .map(|mut point| {
             if point.last() == Some(&0) {
                 point.pop();
             }
-            String::from_utf8(point).ok()
+            nova_protocol::wire_text(std::ffi::OsStr::from_bytes(&point))
         })
         .collect()
 }

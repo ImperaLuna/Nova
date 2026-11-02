@@ -27,6 +27,9 @@ var FILES_MAX_VIEWS = 16;
 // novad refuses longer files_open paths.
 var FILES_PATH_MAX_BYTES = 4096;
 
+// Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.
+var RAW_BYTE_BASE = 63232;
+
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 
@@ -102,6 +105,12 @@ var CMD_FILES_OPEN_WITH = "files_open_with";
 var CMD_FILES_SET_DEFAULT = "files_set_default";
 var CMD_FILES_OPEN = "files_open";
 var CMD_FILES_CLOSE = "files_close";
+var CMD_FILES_TRASH = "files_trash";
+var CMD_FILES_DELETE = "files_delete";
+var CMD_FILES_TRASH_LIST = "files_trash_list";
+var CMD_FILES_RESTORE = "files_restore";
+var CMD_FILES_TRASH_DELETE = "files_trash_delete";
+var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
 var CMD_FILES_MOUNT = "files_mount";
 var CMD_FILES_EJECT = "files_eject";
 
@@ -136,6 +145,7 @@ var EVENT_FILES_WINDOW = "files_window";
 var EVENT_FILES_PAGE = "files_page";
 var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
+var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
 var EVENT_FILES_DRIVES = "files_drives";
 
 // Event topics a client subscribes to (Topic).

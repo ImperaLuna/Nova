@@ -150,6 +150,10 @@ pub enum Event {
     /// says why, for the window. Sent only to the client that opened the
     /// view; topic [`Topic::Files`].
     FilesClosed { view: u32, error: String },
+    /// Something in the trash changed, in Nova Files or any other app
+    /// (feature `files`): ask `files_trash_list` again. Topic
+    /// [`Topic::Files`].
+    FilesTrashChanged,
     /// The drives Nova Files' sidebar lists (feature `files`): every
     /// filesystem udisks2 knows that a person would open, as it is now.
     /// Topic [`Topic::Files`], sent right after subscribing and whenever a
@@ -210,7 +214,9 @@ impl Event {
             Event::Network(_) | Event::NetworkTraffic(_) => Some(Topic::Network),
             Event::Bluetooth(_) => Some(Topic::Bluetooth),
             Event::FilesWindow(_) => Some(Topic::Files),
-            Event::FilesPage(_) | Event::FilesChanged { .. } | Event::FilesClosed { .. } => Some(Topic::Files),
+            Event::FilesPage(_) | Event::FilesChanged { .. } | Event::FilesClosed { .. } | Event::FilesTrashChanged => {
+                Some(Topic::Files)
+            }
             Event::FilesDrives { .. } => Some(Topic::Files),
         }
     }
@@ -1174,6 +1180,71 @@ pub const FILES_MAX_VIEWS: usize = 16;
 /// The longest `files_open` path, in bytes: Linux's own limit.
 pub const FILES_PATH_MAX_BYTES: usize = 4096;
 
+/// The longest wire text a path of [`FILES_PATH_MAX_BYTES`] can be: each
+/// byte is at most a three-byte character ([`path_to_wire`]).
+pub const FILES_PATH_MAX_WIRE_BYTES: usize = 3 * FILES_PATH_MAX_BYTES;
+
+/// Where the characters that stand for raw bytes start (feature `files`,
+/// [`path_to_wire`]): byte `b` (0x80 to 0xFF) is `RAW_BYTE_BASE + b`, in
+/// the Private Use Area.
+pub const RAW_BYTE_BASE: u32 = 0xF700;
+
+/// A file name or path as wire text, losslessly (feature `files`). Linux
+/// names are bytes and needn't be UTF-8 (old archives, Windows drives), but
+/// JSON strings must be. Valid UTF-8 is sent as it is; every other byte,
+/// and each byte of a character that would read as one of these, becomes
+/// the character [`RAW_BYTE_BASE`] + byte. [`path_from_wire`] undoes it, so
+/// a name the listing sent names the same file when it comes back, and
+/// names that look alike stay apart. `/` and every ASCII byte are kept, so
+/// the UI joins paths and names as plain strings. Every path and name in
+/// Nova Files' commands and events (`show_folder`, `files_*`) is wire text.
+pub fn path_to_wire(bytes: &[u8]) -> String {
+    let mut text = String::with_capacity(bytes.len());
+    let raw = |text: &mut String, bytes: &[u8]| {
+        text.extend(bytes.iter().filter_map(|&byte| char::from_u32(RAW_BYTE_BASE + u32::from(byte))));
+    };
+    for chunk in bytes.utf8_chunks() {
+        for character in chunk.valid().chars() {
+            if raw_byte(character).is_some() {
+                raw(&mut text, character.encode_utf8(&mut [0; 4]).as_bytes());
+            } else {
+                text.push(character);
+            }
+        }
+        raw(&mut text, chunk.invalid());
+    }
+    text
+}
+
+/// The bytes of a name or path [`path_to_wire`] sent.
+pub fn path_from_wire(text: &str) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(text.len());
+    for character in text.chars() {
+        match raw_byte(character) {
+            Some(byte) => bytes.push(byte),
+            None => bytes.extend_from_slice(character.encode_utf8(&mut [0; 4]).as_bytes()),
+        }
+    }
+    bytes
+}
+
+/// A path or name as wire text ([`path_to_wire`]).
+pub fn wire_text(path: impl AsRef<std::ffi::OsStr>) -> String {
+    use std::os::unix::ffi::OsStrExt;
+    path_to_wire(path.as_ref().as_bytes())
+}
+
+/// The path wire text names ([`path_from_wire`]).
+pub fn wire_path(text: &str) -> std::path::PathBuf {
+    use std::os::unix::ffi::OsStringExt;
+    std::ffi::OsString::from_vec(path_from_wire(text)).into()
+}
+
+/// The byte `character` stands for on the wire, if it stands for one.
+fn raw_byte(character: char) -> Option<u8> {
+    u8::try_from(u32::from(character).checked_sub(RAW_BYTE_BASE)?).ok().filter(|byte| *byte >= 0x80)
+}
+
 /// The longest each of an `app_icon` request's names may be, in
 /// characters.
 pub const APP_ICON_MAX_CHARS: usize = 512;
@@ -1843,6 +1914,32 @@ pub enum Command {
     FilesClose {
         view: u32,
     },
+    /// Moves the items at `paths` (absolute) to the trash (feature
+    /// `files`), each to its own drive's, as the freedesktop Trash spec
+    /// says, so other apps see them. All are tried; the error names those
+    /// that weren't moved.
+    FilesTrash {
+        paths: Vec<String>,
+    },
+    /// Deletes the items at `paths` (absolute) for good, folders with all
+    /// they hold (feature `files`, Shift+Delete).
+    FilesDelete {
+        paths: Vec<String>,
+    },
+    /// What the trash holds (feature `files`), answered with
+    /// [`TrashItem`]s, the last trashed first.
+    FilesTrashList,
+    /// Puts the trashed items `ids` back where they came from (feature
+    /// `files`). One whose place is taken stays in the trash.
+    FilesRestore {
+        ids: Vec<String>,
+    },
+    /// Deletes the trashed items `ids` for good (feature `files`).
+    FilesTrashDelete {
+        ids: Vec<String>,
+    },
+    /// Deletes everything in the trash for good (feature `files`).
+    FilesEmptyTrash,
     /// Mounts the drive `drive` (a [`Drive::id`], feature `files`), if it
     /// isn't, and answers with the folder it's mounted at.
     FilesMount {
@@ -1868,7 +1965,8 @@ pub struct Drive {
     pub name: String,
     /// It can be unplugged: a USB stick or card, which can be ejected.
     pub removable: bool,
-    /// The folder it's mounted at; none while it isn't.
+    /// The folder it's mounted at, as wire text ([`wire_text`]); none
+    /// while it isn't.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mount: Option<String>,
     /// Its size, in bytes.
@@ -1886,6 +1984,23 @@ pub enum EjectOutcome {
     Ejected,
     /// Something still has files open on it: it stays mounted.
     Busy,
+}
+
+/// An item in the trash (feature `files`, [`Command::FilesTrashList`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrashItem {
+    /// Names it to `files_restore` and `files_trash_delete`.
+    pub id: String,
+    /// The folder it was trashed from, which it goes back to, as wire text
+    /// ([`wire_text`]).
+    pub folder: String,
+    /// When it was trashed, in milliseconds since 1970, when the trash
+    /// says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_ms: Option<i64>,
+    /// The item, under the name it had.
+    pub entry: FileEntry,
 }
 
 /// The order of a folder view (`files_open`). Folders always come before
@@ -1926,6 +2041,8 @@ pub struct FolderPage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileEntry {
+    /// As wire text ([`path_to_wire`]): joined to the view's path, it names
+    /// the entry in every files request.
     pub name: String,
     /// A folder, or a link to one.
     pub dir: bool,
@@ -3468,5 +3585,30 @@ mod tests {
             let back: Envelope<Response> = serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();
             assert_eq!(back, msg);
         }
+    }
+
+    #[test]
+    fn utf8_paths_go_on_the_wire_as_they_are() {
+        for path in ["/home/me/Documents/notes.md", "/tmp/café/ü 1.png", "/", ""] {
+            assert_eq!(path_to_wire(path.as_bytes()), path);
+            assert_eq!(path_from_wire(path), path.as_bytes());
+        }
+    }
+
+    /// Latin-1 names, and real characters from the range raw bytes use,
+    /// come back as the bytes they were, and names that look alike stay
+    /// apart.
+    #[test]
+    fn other_names_come_back_byte_for_byte() {
+        let pua = format!("/x/{}.txt", char::from_u32(RAW_BYTE_BASE + 0xE9).unwrap());
+        let names: [&[u8]; 5] = [b"/x/caf\xe9.md", b"/x/caf\xe8.md", b"\xff\xfe/\x80", pua.as_bytes(), b"/x/\xe2\x82"];
+        let wire: Vec<String> = names.iter().map(|name| path_to_wire(name)).collect();
+        for (name, text) in names.iter().zip(&wire) {
+            assert_eq!(path_from_wire(text), *name, "{text:?}");
+            assert!(text.starts_with("/x/") == name.starts_with(b"/x/"), "ASCII is kept: {text:?}");
+        }
+        assert_eq!(wire[0], "/x/caf\u{f7e9}.md");
+        let unique: std::collections::HashSet<_> = wire.iter().collect();
+        assert_eq!(unique.len(), names.len());
     }
 }

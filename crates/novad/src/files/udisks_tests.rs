@@ -11,6 +11,7 @@ use crate::session_bus::TestBus;
 use nova_protocol::Topic;
 use nova_test_support::TempDir;
 use serde_json::Value;
+use std::path::Path;
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::net::UnixStream;
 use std::sync::mpsc::Receiver;

@@ -128,9 +128,9 @@ fn is_boot_partition(kind: &str) -> bool {
     BOOT_PARTITION_TYPES.iter().any(|boot| boot.eq_ignore_ascii_case(kind))
 }
 
-/// Whether `mount` is somewhere people browse.
+/// Whether `mount` (wire text) is somewhere people browse.
 fn browsed(mount: &str, home: Option<&Path>) -> bool {
-    let mount = Path::new(mount);
+    let mount = &nova_protocol::wire_path(mount);
     mount == Path::new("/")
         || BROWSED_MOUNTS.iter().any(|place| mount.starts_with(place))
         || home.is_some_and(|home| mount.starts_with(home))
