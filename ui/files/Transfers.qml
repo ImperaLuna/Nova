@@ -46,8 +46,9 @@ Item {
     property var mine: ({})
 
     Component.onDestruction: {
-        for (const job of jobs)
-            FilesService.cancelTransfer(job.job);
+        // Every job it started, including those novad hasn't reported yet.
+        for (const job of Object.keys(mine))
+            FilesService.cancelTransfer(Number(job));
     }
 
     Connections {

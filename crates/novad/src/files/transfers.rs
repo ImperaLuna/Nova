@@ -32,6 +32,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::{self, Metadata};
 use std::io;
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -472,8 +473,11 @@ impl Run {
             self.copying_moved = true;
             let placed = self.copy(source, meta, target);
             self.copying_moved = false;
-            if placed? {
-                copying::remove_moved(source).map_err(|e| failed(source, &e))?;
+            // Once all of it is copied the move has happened: what can't
+            // be deleted after that stays at the source too, and nothing
+            // placed is undone.
+            if placed? && let Err(e) = copying::remove_moved(source) {
+                self.logger.warn(LOG_SOURCE, &format!("moved {}, but can't delete all of it: {e}", source.display()));
             }
             return Ok(());
         }
@@ -502,7 +506,9 @@ impl Run {
         } else if file_type.is_symlink() {
             copying::copy_link(source, target).map_err(|e| failed(target, &e))?;
         } else if file_type.is_dir() {
-            fs::create_dir(target).map_err(|e| failed(target, &e))?;
+            // Private while it fills, so what the source folder kept from
+            // other users isn't open to them meanwhile; its own mode after.
+            fs::DirBuilder::new().mode(0o700).create(target).map_err(|e| failed(target, &e))?;
             self.place_children(source, target)?;
             // Best effort, after its entries are in: a read-only folder
             // would refuse them.
