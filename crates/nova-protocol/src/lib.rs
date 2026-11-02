@@ -130,9 +130,9 @@ pub enum Event {
     /// after subscribing and whenever any of it changes.
     Bluetooth(Bluetooth),
     /// A Nova Files window to open (feature `files`), as `nova files` or an
-    /// app's "Show in folder" asked. Topic [`Topic::Files`], which only the
-    /// Nova Files process subscribes to; one asked for before it subscribed
-    /// is sent right after it does.
+    /// app's "Show in folder" asked. Sent only to the Nova Files process,
+    /// once it has attached (`attach_files`); one asked for before then is
+    /// sent right after. Topic [`Topic::Files`].
     FilesWindow(FilesWindow),
     /// One page of a folder's entries in view `view` (feature `files`), in
     /// the view's order: entries `start..start + entries.len()` of `total`.
@@ -1002,6 +1002,21 @@ pub struct FilesWindow {
     pub select: Vec<String>,
 }
 
+/// The apps that can open a file (feature `files`), for its "Open with"
+/// menu: the answer to [`Command::FilesOpenWith`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenWith {
+    /// The file's type, like `image/png`.
+    pub mime: String,
+    /// The id of the app that opens it by default, when one does: the
+    /// first of `apps`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+    /// The apps that can open it, the default first.
+    pub apps: Vec<App>,
+}
+
 /// Bluetooth as the quick settings page shows it (feature `bluetooth`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1775,6 +1790,33 @@ pub enum Command {
         folder: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         select: Vec<String>,
+    },
+    /// Sent by the Nova Files process (feature `files`): `true` once it can
+    /// open windows, which novad then sends it ([`Event::FilesWindow`]),
+    /// waiting ones first; `false` as it quits after its last window
+    /// closes, so the next window starts a new one. A connection that
+    /// closes is detached.
+    AttachFiles {
+        attached: bool,
+    },
+    /// Opens the file at `path`, an absolute path, in the app `app` (its
+    /// desktop file id) or, without one, in its type's default app
+    /// (feature `files`: a double-click, Enter, or a pick from "Open with").
+    FilesLaunch {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app: Option<String>,
+    },
+    /// The apps that can open the file at `path` (feature `files`),
+    /// answered with an [`OpenWith`].
+    FilesOpenWith {
+        path: String,
+    },
+    /// Makes the app `app` the default for files of the type of the one at
+    /// `path` (feature `files`).
+    FilesSetDefault {
+        path: String,
+        app: String,
     },
     /// Shows the folder at the absolute `path` in this connection's view
     /// `view` (feature `files`), in `sort` order, with hidden entries (a
@@ -2584,6 +2626,41 @@ mod tests {
             encode(Request {
                 id: Some(66),
                 command: Command::BluetoothAnswer { id: 4, answer: PairingAnswer::Code("0000".into()) },
+            }),
+            encode(Request {
+                id: Some(70),
+                command: Command::FilesLaunch { path: "/home/me/photo.png".into(), app: None },
+            }),
+            encode(Request {
+                id: Some(71),
+                command: Command::FilesLaunch {
+                    path: "/home/me/photo.png".into(),
+                    app: Some("org.gnome.Loupe.desktop".into()),
+                },
+            }),
+            encode(Request { id: Some(72), command: Command::FilesOpenWith { path: "/home/me/photo.png".into() } }),
+            encode(Response {
+                id: 72,
+                outcome: Outcome::Result(
+                    serde_json::to_value(OpenWith {
+                        mime: "image/png".into(),
+                        default: Some("org.gnome.Loupe.desktop".into()),
+                        apps: vec![App {
+                            id: "org.gnome.Loupe.desktop".into(),
+                            name: "Image Viewer".into(),
+                            description: None,
+                            icon: Some("/icons/loupe.svg".into()),
+                        }],
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Request {
+                id: Some(73),
+                command: Command::FilesSetDefault {
+                    path: "/home/me/photo.png".into(),
+                    app: "org.gnome.Loupe.desktop".into(),
+                },
             }),
             encode(Request {
                 id: Some(74),

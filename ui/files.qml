@@ -11,14 +11,24 @@ import "daemon/protocol.js" as Protocol
 
 // Nova Files' own Quickshell process, apart from the shell's: novad's
 // files module starts it (as NovaFiles) when a window is asked for and
-// none runs. It opens a window for each one novad sends, and quits when
-// its last window closes. It subscribes only to what its windows need.
+// none runs. Once connected it attaches, opens a window for each one novad
+// sends, and quits when its last window closes. It subscribes only to what its windows need.
 ShellRoot {
     id: root
 
     property int windows: 0
 
     Component.onCompleted: Daemon.topics = [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_FILES]
+
+    // Quits once novad sends no more windows, unless one came meanwhile.
+    function quit() {
+        FilesService.detach(() => {
+            if (windows === 0)
+                Qt.quit();
+            else
+                FilesService.attach();
+        });
+    }
 
     Component {
         id: windowComponent
@@ -37,7 +47,7 @@ ShellRoot {
             shown.closed.connect(() => {
                 shown.destroy();
                 if (--root.windows === 0)
-                    Qt.quit();
+                    root.quit();
             });
         }
     }

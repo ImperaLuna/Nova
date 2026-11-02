@@ -121,6 +121,11 @@ expression: all
 {"v":2,"id":64,"cmd":"bluetooth_forget","args":{"address":"00:1B:66:AA:BB:CC"}}
 {"v":2,"id":65,"cmd":"bluetooth_answer","args":{"id":3,"answer":"accept"}}
 {"v":2,"id":66,"cmd":"bluetooth_answer","args":{"id":4,"answer":{"code":"0000"}}}
+{"v":2,"id":70,"cmd":"files_launch","args":{"path":"/home/me/photo.png"}}
+{"v":2,"id":71,"cmd":"files_launch","args":{"path":"/home/me/photo.png","app":"org.gnome.Loupe.desktop"}}
+{"v":2,"id":72,"cmd":"files_open_with","args":{"path":"/home/me/photo.png"}}
+{"v":2,"id":72,"result":{"apps":[{"icon":"/icons/loupe.svg","id":"org.gnome.Loupe.desktop","name":"Image Viewer"}],"default":"org.gnome.Loupe.desktop","mime":"image/png"}}
+{"v":2,"id":73,"cmd":"files_set_default","args":{"path":"/home/me/photo.png","app":"org.gnome.Loupe.desktop"}}
 {"v":2,"id":74,"cmd":"files_open","args":{"view":1,"path":"/home/user/Pictures","sort":{"key":"modified","descending":true},"hidden":false}}
 {"v":2,"id":75,"cmd":"files_close","args":{"view":1}}
 {"v":2,"event":"files_page","data":{"view":1,"path":"/home/user/Pictures","start":0,"total":2,"entries":[{"name":"Screenshots","dir":true,"link":false,"hidden":false,"mime":"inode/directory","modified_ms":1793000000000},{"name":"cover.png","dir":false,"link":false,"hidden":false,"mime":"image/png","size":48213,"modified_ms":1792900000000}]}}

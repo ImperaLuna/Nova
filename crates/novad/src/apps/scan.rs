@@ -15,9 +15,19 @@ const MAX_DEPTH: usize = 8;
 /// A desktop entry is a few kilobytes; anything far bigger isn't one.
 const MAX_ENTRY_BYTES: u64 = 1024 * 1024;
 
-/// Every app in `data_dirs`, by id, and the problems with entries that
-/// aren't valid, for the log.
-pub fn scan(data_dirs: &[PathBuf], context: &Context) -> (BTreeMap<String, Entry>, Vec<String>) {
+/// What a look at the apps found.
+pub struct Found {
+    /// The apps the launcher lists, by id.
+    pub apps: BTreeMap<String, Entry>,
+    /// Apps it doesn't list (`NoDisplay`) that open some type of file, by
+    /// id: one may still be a type's default.
+    pub unlisted: BTreeMap<String, Entry>,
+    /// The problems with entries that aren't valid, for the log.
+    pub problems: Vec<String>,
+}
+
+/// Every app in `data_dirs`.
+pub fn scan(data_dirs: &[PathBuf], context: &Context) -> Found {
     let mut apps = BTreeMap::new();
     // Ids already decided, shown or not: later folders can't bring them back.
     let mut decided = BTreeSet::new();
@@ -46,7 +56,10 @@ pub fn scan(data_dirs: &[PathBuf], context: &Context) -> (BTreeMap<String, Entry
             }
         }
     }
-    (without_copies(apps), problems)
+    let (apps, unlisted): (BTreeMap<String, Entry>, BTreeMap<String, Entry>) =
+        apps.into_iter().partition(|(_, entry)| entry.listed);
+    let unlisted = unlisted.into_iter().filter(|(_, entry)| entry.opens_types()).collect();
+    Found { apps: without_copies(apps), unlisted, problems }
 }
 
 /// `apps` with one of each set of entries that show the same name and run
@@ -58,7 +71,7 @@ fn without_copies(apps: BTreeMap<String, Entry>) -> BTreeMap<String, Entry> {
     for entry in apps.into_values() {
         let key = (entry.name.clone(), entry.exec.clone(), entry.terminal);
         match kept.get(&key) {
-            Some(other) if other.opens_types || !entry.opens_types => {}
+            Some(other) if other.opens_types() || !entry.opens_types() => {}
             _ => {
                 kept.insert(key, entry);
             }
@@ -224,7 +237,7 @@ mod tests {
     fn names(dirs: &[PathBuf]) -> BTreeMap<String, String> {
         let locale = Locale::default();
         let context = Context { locale: &locale, desktops: &[], path_var: "", autostart: false };
-        scan(dirs, &context).0.into_iter().map(|(id, entry)| (id, entry.name)).collect()
+        scan(dirs, &context).apps.into_iter().map(|(id, entry)| (id, entry.name)).collect()
     }
 
     #[test]
@@ -242,6 +255,19 @@ mod tests {
         assert_eq!(found.get("kde-dolphin.desktop").map(String::as_str), Some("Dolphin"));
         assert!(!found.contains_key("firefox.desktop"), "the user deleted it");
         assert_eq!(found.len(), 2);
+    }
+
+    #[test]
+    fn unlisted_apps_are_kept_only_when_they_open_files() {
+        let root = temp("unlisted");
+        let share = root.join("share");
+        write_app(&share, "viewer.desktop", "Viewer", "NoDisplay=true\nMimeType=image/png;\n");
+        write_app(&share, "helper.desktop", "Helper", "NoDisplay=true\n");
+        let locale = Locale::default();
+        let context = Context { locale: &locale, desktops: &[], path_var: "", autostart: false };
+        let found = scan(std::slice::from_ref(&share), &context);
+        assert!(found.apps.is_empty());
+        assert_eq!(found.unlisted.keys().collect::<Vec<_>>(), ["viewer.desktop"]);
     }
 
     #[test]
