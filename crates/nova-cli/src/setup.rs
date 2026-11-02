@@ -592,6 +592,30 @@ mod tests {
         assert_eq!(argv, &words(&["paru", "-S", "--needed", "quickshell"]));
     }
 
+    /// Quickshell (and Fedora's COPR for it) only while a feature that draws
+    /// is on: wallpaper-engine alone has no UI.
+    #[test]
+    fn quickshell_is_installed_only_for_a_ui() {
+        let all = manifests();
+        let only = |id: &str| Selection {
+            enabled: vec![id.into()],
+            disabled: all.iter().filter(|m| m.id != id).map(|m| m.id.clone()).collect(),
+        };
+        let run_lines = |selection: Selection| {
+            let facts = Facts { selection, ..facts(Distro::Fedora, vec![], false) };
+            let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
+            steps
+                .iter()
+                .filter(|step| matches!(step, Step::Run { .. }))
+                .map(|step| step.to_string())
+                .collect::<String>()
+        };
+        let headless = run_lines(only("wallpaper-engine"));
+        assert!(!headless.contains("quickshell"), "{headless}");
+        let bar = run_lines(only("bar"));
+        assert!(bar.contains(FEDORA_QUICKSHELL_COPR) && bar.contains("dnf install quickshell"), "{bar}");
+    }
+
     #[test]
     fn yes_answers_the_package_manager_too() {
         let facts = Facts { yes: true, ..facts(Distro::Debian, vec![], false) };
