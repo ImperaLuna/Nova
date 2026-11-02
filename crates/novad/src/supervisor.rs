@@ -61,6 +61,9 @@ const MAX_RETRY: Duration = Duration::from_secs(30);
 const HEALTHY_AFTER: Duration = Duration::from_secs(60);
 /// A UI that dies this quickly most likely failed to load.
 const EARLY_EXIT: Duration = Duration::from_secs(5);
+/// How often novad checks the compositor is still there while no UI runs
+/// (a UI's exit is the check otherwise).
+const SESSION_CHECK: Duration = Duration::from_secs(5);
 /// How long `quickshell --version` may take; novad's start waits for it.
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -99,6 +102,9 @@ pub struct Supervisor {
 struct Record {
     /// Some feature with a UI is on, so the UI should run.
     wanted: bool,
+    /// The running UI was told to stop because it's no longer wanted, so
+    /// its exit isn't a crash even if it's wanted again by then.
+    stopping: bool,
     pid: Option<u32>,
     restarts: u32,
     last_crash: Option<Crash>,
@@ -169,6 +175,7 @@ impl Supervisor {
             logger.info(LOG_SOURCE, "a feature with a UI is on: starting the UI");
         } else {
             logger.info(LOG_SOURCE, NOT_NEEDED);
+            record.stopping = record.pid.is_some();
             terminate(&record);
         }
         self.changed.notify_all();
@@ -177,12 +184,19 @@ impl Supervisor {
     fn run(&self, settings: &UiSettings, logger: &Arc<Logger>) {
         let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
         loop {
-            {
+            loop {
                 let record = lock(&self.record);
-                let _waited = self
+                let (record, _timeout) = self
                     .changed
-                    .wait_while(record, |record| !record.wanted && !self.quitting.load(Ordering::SeqCst))
+                    .wait_timeout_while(record, SESSION_CHECK, |record| {
+                        !record.wanted && !self.quitting.load(Ordering::SeqCst)
+                    })
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if record.wanted || self.quitting.load(Ordering::SeqCst) {
+                    break;
+                }
+                drop(record);
+                exit_if_session_over(settings, logger);
             }
             if self.quitting.load(Ordering::SeqCst) {
                 return;
@@ -192,15 +206,12 @@ impl Supervisor {
             if self.quitting.load(Ordering::SeqCst) {
                 return;
             }
-            if !lock(&self.record).wanted {
+            if std::mem::take(&mut lock(&self.record).stopping) {
                 // Stopped on purpose: no crash, and a fresh backoff.
                 retry.reset();
                 continue;
             }
-            if settings.wayland_socket.as_ref().is_some_and(|socket| !socket.exists()) {
-                logger.info(LOG_SOURCE, "the compositor is gone, so the session is over: exiting");
-                std::process::exit(0);
-            }
+            exit_if_session_over(settings, logger);
             let ran_for = started.elapsed();
             self.record_crash(&exit, ran_for, logger);
             if ran_for > HEALTHY_AFTER {
@@ -282,6 +293,14 @@ impl Supervisor {
 /// `run_once` clears the pid under it before reaping, so the pid is still
 /// the UI's (at worst a zombie) and can't have been reused by another
 /// process.
+/// Exits novad once the compositor's socket is gone: the session is over.
+fn exit_if_session_over(settings: &UiSettings, logger: &Logger) {
+    if settings.wayland_socket.as_ref().is_some_and(|socket| !socket.exists()) {
+        logger.info(LOG_SOURCE, "the compositor is gone, so the session is over: exiting");
+        std::process::exit(0);
+    }
+}
+
 fn terminate(record: &Record) {
     if let Some(pid) = record.pid
         && let Ok(pid) = libc::pid_t::try_from(pid)

@@ -94,7 +94,7 @@ TestCase {
     }
 
     function test_views_map_ids_to_files() {
-        verify(Views.url("media.pill").toString().endsWith("/ui/media/NowPlayingSlot.qml"));
+        verify(Views.url("media.pill").toString().endsWith("/media/NowPlayingSlot.qml"));
         compare(Views.url("nowhere.pill").toString(), "");
     }
 }

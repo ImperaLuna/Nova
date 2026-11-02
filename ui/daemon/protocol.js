@@ -156,12 +156,7 @@ var FEATURE_NETWORK = "network";
 var FEATURE_BLUETOOTH = "bluetooth";
 var FEATURE_WALLPAPER = "wallpaper";
 var FEATURE_BAR = "bar";
-var FEATURE_WORKSPACES = "workspaces";
-var FEATURE_CLOCK = "clock";
-var FEATURE_VOLUME_OSD = "volume-osd";
-var FEATURE_SOUND = "sound";
 var FEATURE_KEEP_AWAKE = "keep-awake";
-var FEATURE_MICROPHONE = "microphone";
 
 // Launcher providers (launcher.providers views in features/*/feature.toml).
 var PROVIDER_APPS = "apps";

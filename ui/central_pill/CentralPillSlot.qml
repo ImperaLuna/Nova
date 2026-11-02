@@ -41,8 +41,8 @@ BarSlot {
         width: implicitWidth
         height: implicitHeight
         visible: !empty
-        workspaces: slot.parts.includes("workspaces.list") && Compositor.has(Protocol.CAPABILITY_WORKSPACES) ? Protocol.barWorkspaces(output) : []
-        showClock: slot.parts.includes("clock.time")
+        workspaces: slot.parts.includes(Slots.PART_WORKSPACES) && Compositor.has(Protocol.CAPABILITY_WORKSPACES) ? Protocol.barWorkspaces(output) : []
+        showClock: slot.parts.includes(Slots.PART_CLOCK)
         outputFocused: output?.focused ?? false
         canFocus: Compositor.has(Protocol.CAPABILITY_FOCUS_WORKSPACE)
         canSearch: LauncherService.ready

@@ -265,21 +265,28 @@ fn features_lines(features: &Result<Vec<FeatureState>, String>, distro: &Distro)
             )
         })
     });
-    let unhosted = features.iter().filter(|feature| nova_features::has_no_host(feature, features)).map(|feature| {
-        let mut owners: Vec<&str> = feature
-            .slots
-            .iter()
-            .filter_map(|slot| nova_features::host(&slot.host))
-            .filter_map(|host| host.owner)
-            .collect();
-        owners.sort_unstable();
-        owners.dedup();
-        let why = match owners.is_empty() {
-            true => "none of its slot hosts exist".to_owned(),
-            false => format!("{} is off", owners.join(" and ")),
-        };
-        Line::new(Level::Warn, "features", format!("{} is on but has nowhere to show: {why}", feature.id))
-    });
+    // Features whose hosts are all unknown are warned about above.
+    let unhosted =
+        features.iter().filter(|feature| nova_features::has_no_host(feature, features)).filter_map(|feature| {
+            let mut owners: Vec<&FeatureState> = feature
+                .slots
+                .iter()
+                .filter_map(|slot| nova_features::host(&slot.host))
+                .filter_map(|host| host.owner)
+                .filter_map(|owner| features.iter().find(|other| other.id == owner))
+                .collect();
+            owners.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+            owners.dedup_by(|a, b| a.id == b.id);
+            if owners.is_empty() {
+                return None;
+            }
+            let ids: Vec<&str> = owners.iter().map(|owner| owner.id.as_str()).collect();
+            let why = match owners.iter().all(|owner| owner.status == FeatureStatus::Off) {
+                true => format!("{} is off", ids.join(" and ")),
+                false => format!("{} isn't ready", ids.join(" and ")),
+            };
+            Some(Line::new(Level::Warn, "features", format!("{} is on but has nowhere to show: {why}", feature.id)))
+        });
     let problems: Vec<Line> = missing.into_iter().chain(unknown).chain(unhosted).collect();
     if !problems.is_empty() {
         return problems;
@@ -470,6 +477,22 @@ mod tests {
             text.contains("clock puts clock.big in bar.middle, a slot host Nova doesn't have, so it never shows"),
             "{text}"
         );
+
+        // Only an unknown host: one line, not a second "nowhere to show".
+        let stray = FeatureState {
+            slots: vec![slot("bar.middle", "stray.pill")],
+            ..feature("stray", FeatureStatus::Ready, &[])
+        };
+        let text = rendered(&Facts { features: Ok(vec![stray]), ..healthy() });
+        assert!(!text.contains("nowhere to show"), "{text}");
+        // A host's feature that's on but missing something isn't "off".
+        let sound = FeatureState {
+            slots: vec![slot("quick-settings.sliders", "sound.slider")],
+            ..feature("sound", FeatureStatus::Ready, &[])
+        };
+        let qs = feature("quick-settings", FeatureStatus::MissingDeps, &[]);
+        let text = rendered(&Facts { features: Ok(vec![qs, sound]), ..healthy() });
+        assert!(text.contains("sound is on but has nowhere to show: quick-settings isn't ready"), "{text}");
 
         let all_off = Facts { features: Ok(vec![feature("bar", FeatureStatus::Off, &[])]), ..healthy() };
         assert!(rendered(&all_off).contains("ok    features    all off, so novad runs without a UI"));
