@@ -102,6 +102,9 @@ fn start(
     let home = nova_paths::home();
     // A folder that isn't there would fail the start.
     let dir = entry.path.clone().into_iter().chain(home).find(|dir| dir.is_dir()).unwrap_or_else(|| "/".into());
+    // systemd-run hands the command to systemd over D-Bus, whose strings
+    // must be UTF-8: a file named otherwise starts directly instead.
+    let runner = if argv.iter().all(|arg| arg.to_str().is_some()) { runner } else { &Runner::Direct };
     let mut command = match runner {
         Runner::Service(systemd_run) => {
             let mut command = Command::new(systemd_run);
@@ -297,6 +300,12 @@ mod tests {
         assert!(error.contains("didn't start"), "{error}");
         let started = find_program("true", &path_var).unwrap();
         assert_eq!(launch(&entry, &Runner::Service(started), &path_var, &logger), Ok(()));
+        // A file named in Latin-1 can't go through systemd's D-Bus, so the
+        // failing systemd-run is never asked.
+        let latin1 = Path::new(OsStr::from_bytes(b"/tmp/caf\xe9.md"));
+        let failing = find_program("false", &path_var).unwrap();
+        let opens = Entry { file_arg: crate::apps::desktop_entry::FileArg { index: 1, within: None }, ..entry };
+        assert_eq!(launch_with_file(&opens, latin1, &Runner::Service(failing), &path_var, &logger), Ok(()));
     }
 
     #[test]

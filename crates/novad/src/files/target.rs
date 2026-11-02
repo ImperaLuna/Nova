@@ -63,7 +63,9 @@ fn path(uri: &str) -> Result<PathBuf, String> {
     if !uri_or_local.starts_with("file:///") {
         return Err(format!("{uri} isn't a local file"));
     }
-    let bytes = uri_or_local.strip_prefix("file://").and_then(crate::notifications::image::percent_decoded);
+    // Each byte is at most a `%XX` escape.
+    let escaped = uri_or_local.strip_prefix("file://").filter(|escaped| escaped.len() <= 3 * FILES_PATH_MAX_BYTES);
+    let bytes = escaped.and_then(crate::notifications::image::percent_decoded);
     let path = bytes.map(|bytes| PathBuf::from(OsString::from_vec(bytes)));
     path.filter(|path| path.as_os_str().len() <= FILES_PATH_MAX_BYTES).ok_or_else(|| format!("{uri} isn't a file path"))
 }

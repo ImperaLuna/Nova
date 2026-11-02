@@ -27,7 +27,7 @@ use crate::inotify::{self, Inotify, Stopper};
 use crate::lock;
 use crate::logger::Logger;
 use crate::mime::MimeDb;
-use nova_protocol::{Event, FILES_MAX_VIEWS, FILES_PATH_MAX_BYTES, FileSort, FolderPage};
+use nova_protocol::{Event, FILES_MAX_VIEWS, FILES_PATH_MAX_BYTES, FILES_PATH_MAX_WIRE_BYTES, FileSort, FolderPage};
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsString;
 use std::path::{Component, PathBuf};
@@ -303,7 +303,7 @@ impl Worker {
     fn send_changes(&self, names: BTreeSet<OsString>) -> bool {
         let now: Vec<_> = names
             .into_iter()
-            .map(|name| (folder::read_entry(&self.view.path, &name, &self.mime), folder::entry_name(&name)))
+            .map(|name| (folder::read_entry(&self.view.path, &name, &self.mime), nova_protocol::wire_text(&name)))
             .collect();
         let mut state = lock(&self.view.state);
         if !state.open {
@@ -348,6 +348,9 @@ enum Gathered {
 
 /// `path` from the socket (wire text), if it's a usable absolute path.
 fn checked_path(path: &str) -> Result<PathBuf, String> {
+    if path.len() > FILES_PATH_MAX_WIRE_BYTES {
+        return Err("Not a path".into());
+    }
     let path = nova_protocol::wire_path(path);
     if path.as_os_str().len() > FILES_PATH_MAX_BYTES || path.as_os_str().as_encoded_bytes().contains(&0) {
         return Err("Not a path".into());
@@ -572,7 +575,11 @@ mod tests {
         std::fs::remove_file(dir.join(e_grave)).unwrap();
         fixture.until_shown(&["caf\u{f7e9}.md"]);
         // The listed name, joined to the path, names the file.
-        let named = nova_protocol::wire_path(&format!("{}/{}", nova_protocol::wire_text(&dir), fixture.shown[0].name));
+        let named = nova_protocol::wire_path(&format!(
+            "{}/{}",
+            nova_protocol::wire_text(dir.as_os_str()),
+            fixture.shown[0].name
+        ));
         assert_eq!(std::fs::read(named).unwrap(), b"written");
     }
 

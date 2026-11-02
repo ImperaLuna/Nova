@@ -24,10 +24,10 @@ const BROKEN_LINK_MIME: &str = "inode/symlink";
 
 /// The entry `name` in `folder` as it is now, or `None` once it's gone.
 /// A link reports what it points to, when that exists. The name is wire
-/// text ([`entry_name`]), so one that isn't UTF-8 still names its file.
+/// text (`nova_protocol::wire_text`), so one that isn't UTF-8 still names its file.
 pub fn read_entry(folder: &Path, name: &OsStr, mime: &MimeDb) -> Option<FileEntry> {
     let path = folder.join(name);
-    let wire = entry_name(name);
+    let wire = nova_protocol::wire_text(name);
     let own = std::fs::symlink_metadata(&path).ok()?;
     let link = own.file_type().is_symlink();
     let target = if link { std::fs::metadata(&path).ok() } else { Some(own) };
@@ -80,11 +80,6 @@ pub fn read_folder(
         }
     }
     Ok((!stopped()).then_some(entries))
-}
-
-/// `name` as an entry's name on the wire, which names it losslessly.
-pub fn entry_name(name: &OsStr) -> String {
-    nova_protocol::path_to_wire(name.as_encoded_bytes())
 }
 
 /// A dot file, hidden by default as on every Linux desktop.

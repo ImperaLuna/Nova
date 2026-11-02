@@ -1168,6 +1168,10 @@ pub const FILES_MAX_VIEWS: usize = 16;
 /// The longest `files_open` path, in bytes: Linux's own limit.
 pub const FILES_PATH_MAX_BYTES: usize = 4096;
 
+/// The longest wire text a path of [`FILES_PATH_MAX_BYTES`] can be: each
+/// byte is at most a three-byte character ([`path_to_wire`]).
+pub const FILES_PATH_MAX_WIRE_BYTES: usize = 3 * FILES_PATH_MAX_BYTES;
+
 /// Where the characters that stand for raw bytes start (feature `files`,
 /// [`path_to_wire`]): byte `b` (0x80 to 0xFF) is `RAW_BYTE_BASE + b`, in
 /// the Private Use Area.
@@ -1189,7 +1193,7 @@ pub fn path_to_wire(bytes: &[u8]) -> String {
     };
     for chunk in bytes.utf8_chunks() {
         for character in chunk.valid().chars() {
-            if is_raw_byte(character) {
+            if raw_byte(character).is_some() {
                 raw(&mut text, character.encode_utf8(&mut [0; 4]).as_bytes());
             } else {
                 text.push(character);
@@ -1212,10 +1216,10 @@ pub fn path_from_wire(text: &str) -> Vec<u8> {
     bytes
 }
 
-/// A path as wire text ([`path_to_wire`]).
-pub fn wire_text(path: &std::path::Path) -> String {
+/// A path or name as wire text ([`path_to_wire`]).
+pub fn wire_text(path: impl AsRef<std::ffi::OsStr>) -> String {
     use std::os::unix::ffi::OsStrExt;
-    path_to_wire(path.as_os_str().as_bytes())
+    path_to_wire(path.as_ref().as_bytes())
 }
 
 /// The path wire text names ([`path_from_wire`]).
@@ -1227,10 +1231,6 @@ pub fn wire_path(text: &str) -> std::path::PathBuf {
 /// The byte `character` stands for on the wire, if it stands for one.
 fn raw_byte(character: char) -> Option<u8> {
     u8::try_from(u32::from(character).checked_sub(RAW_BYTE_BASE)?).ok().filter(|byte| *byte >= 0x80)
-}
-
-fn is_raw_byte(character: char) -> bool {
-    raw_byte(character).is_some()
 }
 
 /// The longest each of an `app_icon` request's names may be, in
