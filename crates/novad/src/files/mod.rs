@@ -12,10 +12,12 @@
 //! - `window.rs`: the Nova Files process (`ui/files.qml`), started when a
 //!   window is asked for and none runs.
 //!
-//! Its events go on [`Topic::Files`], which only the Nova Files process
-//! subscribes to. A window asked for while no client is subscribed waits
-//! until one subscribes, which then gets it ([`Files::send_state`]); asking
-//! and subscribing take the same lock, so none is lost or sent twice.
+//! Windows go only to the Nova Files process, once it has attached
+//! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
+//! takes them. One asked for while none is attached waits, and starts one,
+//! and goes to it when it attaches. Asking, attaching and detaching take
+//! the same lock, so none is lost or sent twice. A process that detached as
+//! it quit, with windows asked for since, is followed by a new one.
 
 mod file_manager1;
 mod target;
@@ -26,7 +28,7 @@ use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
 use nova_protocol::{Event, FeatureState, FilesWindow, Topic};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 pub const FEATURE_ID: &str = "files";
 const LOG_SOURCE: &str = "files";
@@ -52,15 +54,34 @@ struct Shared {
     sources: Sources,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
-    /// Windows asked for that no Nova Files process has been sent yet.
-    waiting: Mutex<Vec<FilesWindow>>,
+    delivery: Mutex<Delivery>,
     process: Option<window::Process>,
+}
+
+/// Where windows go, under one lock.
+#[derive(Default)]
+struct Delivery {
+    /// The Nova Files process's connection, while it's attached.
+    attached: Option<ClientId>,
+    /// Windows asked for that no Nova Files process has been sent yet.
+    waiting: Vec<FilesWindow>,
+    /// The process detached to quit; once it exits, windows still waiting
+    /// start the next one.
+    quitting: bool,
 }
 
 impl Files {
     pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
-        let process = sources.ui.clone().map(|ui| window::Process::new(ui, Arc::clone(&logger)));
-        let shared = Arc::new(Shared { sources, hub, logger, waiting: Mutex::new(Vec::new()), process });
+        let shared = Arc::new_cyclic(|shared: &Weak<Shared>| {
+            let shared = Weak::clone(shared);
+            let exited = move || {
+                if let Some(shared) = shared.upgrade() {
+                    shared.exited();
+                }
+            };
+            let process = sources.ui.clone().map(|ui| window::Process::new(ui, Arc::clone(&logger), exited));
+            Shared { sources, hub, logger, delivery: Mutex::default(), process }
+        });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
         Arc::new(Self { shared, stop })
@@ -73,10 +94,32 @@ impl Files {
         Ok(())
     }
 
-    /// Sends client `client`, which just subscribed, the windows waiting.
-    pub fn send_state(&self, client: ClientId) {
-        for window in lock(&self.shared.waiting).drain(..) {
-            self.shared.hub.send_to(client, &Event::FilesWindow(window));
+    /// Client `client`, the Nova Files process, can open windows
+    /// (`attached`), and is sent those waiting; or it's quitting, and gets
+    /// no more.
+    pub fn attach(&self, client: ClientId, attached: bool) {
+        let mut delivery = lock(&self.shared.delivery);
+        if attached {
+            delivery.attached = Some(client);
+            delivery.quitting = false;
+            let waiting = std::mem::take(&mut delivery.waiting);
+            let mut unsent = waiting.into_iter().skip_while(|window| self.shared.send(client, window));
+            if let Some(window) = unsent.next() {
+                // It hung up already.
+                delivery.attached = None;
+                delivery.waiting = std::iter::once(window).chain(unsent).collect();
+            }
+        } else if delivery.attached == Some(client) {
+            delivery.attached = None;
+            delivery.quitting = true;
+        }
+    }
+
+    /// Client `client` hung up: windows aren't sent to it any more.
+    pub fn client_gone(&self, client: ClientId) {
+        let mut delivery = lock(&self.shared.delivery);
+        if delivery.attached == Some(client) {
+            delivery.attached = None;
         }
     }
 
@@ -87,21 +130,41 @@ impl Files {
         if let Some(process) = &self.shared.process {
             process.stop();
         }
-        lock(&self.shared.waiting).clear();
+        *lock(&self.shared.delivery) = Delivery::default();
     }
 }
 
 impl Shared {
     /// Sends `window` to the Nova Files process, or keeps it for the next
-    /// one to subscribe, starting one.
+    /// one to attach, starting one.
     fn open(&self, window: FilesWindow) {
-        let mut waiting = lock(&self.waiting);
-        if self.hub.publish(&Event::FilesWindow(window.clone())) > 0 {
-            return;
+        let mut delivery = lock(&self.delivery);
+        if let Some(client) = delivery.attached {
+            if self.send(client, &window) {
+                return;
+            }
+            delivery.attached = None;
         }
         self.logger.info(LOG_SOURCE, &format!("{} waits for Nova Files to start", window.folder));
-        waiting.push(window);
+        delivery.waiting.push(window);
         if let Some(process) = &self.process {
+            process.ensure_running();
+        }
+    }
+
+    fn send(&self, client: ClientId, window: &FilesWindow) -> bool {
+        self.hub.send_to(client, &Event::FilesWindow(window.clone()))
+    }
+
+    /// The Nova Files process exited. One that quit while windows were asked
+    /// for is followed by a new one; one that crashed isn't, until the next
+    /// window is asked for.
+    fn exited(&self) {
+        let mut delivery = lock(&self.delivery);
+        if std::mem::take(&mut delivery.quitting)
+            && !delivery.waiting.is_empty()
+            && let Some(process) = &self.process
+        {
             process.ensure_running();
         }
     }
@@ -124,8 +187,8 @@ impl crate::modules::Module for Files {
         Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
     }
 
-    fn send_state(&self, client: ClientId) {
-        Self::send_state(self, client);
+    fn client_gone(&self, client: ClientId) {
+        Self::client_gone(self, client);
     }
 
     fn stop(&self) {

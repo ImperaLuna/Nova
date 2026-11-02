@@ -26,19 +26,32 @@ pub const ENTRY: &str = "files.qml";
 pub struct Process {
     /// Asks the starter thread to start it; dropped to end that thread.
     starts: Mutex<Option<Sender<()>>>,
-    /// Its pid while it runs. Forgotten under this lock before it's
-    /// reaped, and only signalled under it, so no other process that gets
-    /// the pid later is ever signalled.
-    pid: Arc<Mutex<Option<u32>>>,
+    pid: Arc<Mutex<Running>>,
 }
 
+/// Under one lock: no other process that gets the pid later is ever
+/// signalled, and none starts once stopped.
+#[derive(Default)]
+struct Running {
+    /// Its pid while it runs. Forgotten before it's reaped, and only
+    /// signalled under the lock.
+    pid: Option<u32>,
+    /// Stopped: start requests still queued are dropped.
+    stopped: bool,
+}
+
+/// Told when the process exits, after its pid is forgotten.
+type Exited = Arc<dyn Fn() + Send + Sync>;
+
 impl Process {
-    /// Ready to start Nova Files with `settings` when asked to.
-    pub fn new(settings: UiSettings, logger: Arc<Logger>) -> Self {
+    /// Ready to start Nova Files with `settings` when asked to, calling
+    /// `exited` each time it exits.
+    pub fn new(settings: UiSettings, logger: Arc<Logger>, exited: impl Fn() + Send + Sync + 'static) -> Self {
         let (starts, asked) = mpsc::channel();
-        let pid = Arc::new(Mutex::new(None));
+        let pid = Arc::new(Mutex::new(Running::default()));
         let running = Arc::clone(&pid);
-        std::thread::spawn(move || run(&settings, &asked, &running, &logger));
+        let exited: Exited = Arc::new(exited);
+        std::thread::spawn(move || run(&settings, &asked, &running, &logger, &exited));
         Self { starts: Mutex::new(Some(starts)), pid }
     }
 
@@ -52,7 +65,9 @@ impl Process {
     /// Ends it, and starts no more.
     pub fn stop(&self) {
         lock(&self.starts).take();
-        if let Some(pid) = *lock(&self.pid) {
+        let mut running = lock(&self.pid);
+        running.stopped = true;
+        if let Some(pid) = running.pid {
             child::terminate(pid);
         }
     }
@@ -60,18 +75,18 @@ impl Process {
 
 /// Starts the process each time it's asked to while none runs, until the
 /// asking ends. Its children get SIGTERM when this thread ends.
-fn run(settings: &UiSettings, asked: &Receiver<()>, pid: &Arc<Mutex<Option<u32>>>, logger: &Arc<Logger>) {
+fn run(settings: &UiSettings, asked: &Receiver<()>, pid: &Arc<Mutex<Running>>, logger: &Arc<Logger>, exited: &Exited) {
     for () in asked {
         let mut running = lock(pid);
-        if running.is_none() {
-            *running = start(settings, pid, logger);
+        if running.pid.is_none() && !running.stopped {
+            running.pid = start(settings, pid, logger, exited);
         }
     }
 }
 
 /// Starts it, logging its output, and forgets its pid once it exits.
 /// Returns its pid, or `None` when it couldn't start (logged).
-fn start(settings: &UiSettings, pid: &Arc<Mutex<Option<u32>>>, logger: &Arc<Logger>) -> Option<u32> {
+fn start(settings: &UiSettings, pid: &Arc<Mutex<Running>>, logger: &Arc<Logger>, exited: &Exited) -> Option<u32> {
     let mut command = supervisor::quickshell_command(settings, &settings.ui_dir.join(ENTRY), PROCESS_NAME);
     command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     child::die_with_novad(&mut command, libc::SIGTERM);
@@ -92,10 +107,11 @@ fn start(settings: &UiSettings, pid: &Arc<Mutex<Option<u32>>>, logger: &Arc<Logg
     }
     let forget = Arc::clone(pid);
     let logger = Arc::clone(logger);
+    let exited = Arc::clone(exited);
     std::thread::spawn(move || {
         // Waited for without reaping, so the pid is forgotten first.
         let waited = child::wait_for_exit(started);
-        lock(&forget).take();
+        lock(&forget).pid = None;
         let ended = match waited.and_then(|()| process.wait()) {
             Ok(status) => status.to_string(),
             Err(e) => {
@@ -104,6 +120,7 @@ fn start(settings: &UiSettings, pid: &Arc<Mutex<Option<u32>>>, logger: &Arc<Logg
             }
         };
         logger.info(super::LOG_SOURCE, &format!("Nova Files exited: {ended}"));
+        exited();
     });
     Some(started)
 }
