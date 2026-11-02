@@ -1,6 +1,7 @@
 .pragma library
 .import "../daemon/protocol.js" as Protocol
 .import "../text/bytes.js" as Bytes
+.import "paths.js" as Paths
 
 // Nova Files' copies and moves as its window shows them: the jobs it keeps
 // from novad's files_transfer events, the progress card's words, and the
@@ -59,7 +60,7 @@ function asking(jobs) {
 
 // What a job is copying: its one item's name, or how many.
 function label(transfer) {
-    return transfer.items === 1 ? transfer.name : qsTr("%1 items").arg(transfer.items);
+    return transfer.items === 1 ? Paths.shown(transfer.name) : qsTr("%1 items").arg(transfer.items);
 }
 
 // How far along a job is, 0 to 1.
@@ -73,7 +74,7 @@ function percent(transfer) {
 
 // The clash dialog's title.
 function clashTitle(clash) {
-    return qsTr("“%1” already exists in this location").arg(clash.name);
+    return qsTr("“%1” already exists in this location").arg(Paths.shown(clash.name));
 }
 
 // The line under it: what the default answer does.

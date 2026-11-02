@@ -27,6 +27,9 @@ var FILES_MAX_VIEWS = 16;
 // novad refuses longer files_open paths.
 var FILES_PATH_MAX_BYTES = 4096;
 
+// Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.
+var RAW_BYTE_BASE = 63232;
+
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 

@@ -4,7 +4,6 @@ import QtQuick
 import "../theme"
 import "service"
 import "../daemon/protocol.js" as Protocol
-import "paths.js" as Paths
 import "transfers.js" as Transfers
 
 // A Nova Files window's copies and moves, over everything else in it: the
@@ -28,7 +27,7 @@ Item {
                 mode: mode,
                 state: Protocol.TRANSFER_FAILED,
                 items: sources.length,
-                name: Paths.folderName(sources[0]),
+                name: sources[0].split("/").pop(),
                 done_bytes: 0,
                 total_bytes: 0,
                 error: error

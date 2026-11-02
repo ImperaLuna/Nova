@@ -122,7 +122,7 @@ fn groups(features: &Path) -> Vec<Group> {
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 7] {
+fn limits() -> [(&'static str, u64, &'static str); 8] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
@@ -131,6 +131,11 @@ fn limits() -> [(&'static str, u64, &'static str); 7] {
         ("WPA_PASSWORD_MIN_BYTES", size(WPA_PASSWORD_MIN_BYTES), "novad refuses shorter WPA passwords."),
         ("FILES_MAX_VIEWS", size(FILES_MAX_VIEWS), "novad refuses more open folder views per connection."),
         ("FILES_PATH_MAX_BYTES", size(FILES_PATH_MAX_BYTES), "novad refuses longer files_open paths."),
+        (
+            "RAW_BYTE_BASE",
+            u64::from(RAW_BYTE_BASE),
+            "Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.",
+        ),
         (
             "NETWORK_TRAFFIC_HISTORY_SECS",
             NETWORK_TRAFFIC_HISTORY_SECS,
