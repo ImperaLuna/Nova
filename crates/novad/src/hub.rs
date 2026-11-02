@@ -142,12 +142,15 @@ impl Hub {
             .count()
     }
 
-    /// Sends `event` to one client, whatever it subscribed to.
-    pub fn send_to(&self, id: ClientId, event: &Event) {
-        let Some(line) = encode_event(event) else { return };
-        if let Some(client) = lock(&self.clients).list.iter().find(|client| client.id == id) {
-            client.queue.push(Outgoing::Line(line));
-        }
+    /// Sends `event` to one client, whatever it subscribed to. Returns
+    /// whether it was queued: not for a client that's gone.
+    pub fn send_to(&self, id: ClientId, event: &Event) -> bool {
+        let Some(line) = encode_event(event) else { return false };
+        lock(&self.clients)
+            .list
+            .iter()
+            .find(|client| client.id == id)
+            .is_some_and(|client| client.queue.push(Outgoing::Line(line)))
     }
 }
 

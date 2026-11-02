@@ -130,9 +130,9 @@ pub enum Event {
     /// after subscribing and whenever any of it changes.
     Bluetooth(Bluetooth),
     /// A Nova Files window to open (feature `files`), as `nova files` or an
-    /// app's "Show in folder" asked. Topic [`Topic::Files`], which only the
-    /// Nova Files process subscribes to; one asked for before it subscribed
-    /// is sent right after it does.
+    /// app's "Show in folder" asked. Sent only to the Nova Files process,
+    /// once it has attached (`attach_files`); one asked for before then is
+    /// sent right after. Topic [`Topic::Files`].
     FilesWindow(FilesWindow),
 }
 
@@ -1751,6 +1751,14 @@ pub enum Command {
         folder: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         select: Vec<String>,
+    },
+    /// Sent by the Nova Files process (feature `files`): `true` once it can
+    /// open windows, which novad then sends it ([`Event::FilesWindow`]),
+    /// waiting ones first; `false` as it quits after its last window
+    /// closes, so the next window starts a new one. A connection that
+    /// closes is detached.
+    AttachFiles {
+        attached: bool,
     },
 }
 
