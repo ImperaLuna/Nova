@@ -1,7 +1,8 @@
-//! Starting an app from its desktop entry. Apps must outlive novad, and
-//! some ask the kernel to kill them when their parent goes (bubblewrap's
-//! `--die-with-parent`, which Claude Desktop's wrapper uses): an app is
-//! never novad's child, nor a child of the thread that started it.
+//! Starting an app from its desktop entry, alone or with a file to open.
+//! Apps must outlive novad, and some ask the kernel to kill them when their
+//! parent goes (bubblewrap's `--die-with-parent`, which Claude Desktop's
+//! wrapper uses): an app is never novad's child, nor a child of the thread
+//! that started it.
 //!
 //! With a systemd user manager each app runs as a service of its own
 //! (`app-nova-<id>-<n>.service`, the freedesktop.org naming) that the
@@ -63,7 +64,32 @@ impl Runner {
 
 /// Starts `entry`'s app.
 pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logger>) -> Result<(), String> {
-    let mut argv = entry.exec.clone();
+    start(entry, entry.exec.clone(), runner, path_var, logger)
+}
+
+/// Starts `entry`'s app to open `file`, an absolute path.
+pub fn launch_with_file(
+    entry: &Entry,
+    file: &str,
+    runner: &Runner,
+    path_var: &str,
+    logger: &Arc<Logger>,
+) -> Result<(), String> {
+    // A relative one could pass for an option (`-rf`).
+    if !file.starts_with('/') {
+        return Err(format!("{file} isn't an absolute path"));
+    }
+    start(entry, entry.exec_with(file), runner, path_var, logger)
+}
+
+/// Starts `entry`'s app as `argv`.
+fn start(
+    entry: &Entry,
+    mut argv: Vec<String>,
+    runner: &Runner,
+    path_var: &str,
+    logger: &Arc<Logger>,
+) -> Result<(), String> {
     if entry.terminal {
         argv.splice(0..0, terminal(path_var)?);
     }

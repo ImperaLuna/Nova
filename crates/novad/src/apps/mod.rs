@@ -9,6 +9,7 @@ pub mod associations;
 pub mod desktop_entry;
 mod index;
 pub mod launch;
+pub mod opening;
 mod program;
 pub mod scan;
 
