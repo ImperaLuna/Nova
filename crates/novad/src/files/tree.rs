@@ -135,7 +135,7 @@ impl Tree {
             .into_iter()
             .flatten()
             .flatten()
-            .filter(|entry| is_folder(entry))
+            .filter(is_folder)
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .filter(|name| self.shows(path, name))
             .collect();
