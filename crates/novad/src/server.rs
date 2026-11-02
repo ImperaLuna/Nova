@@ -15,7 +15,7 @@ use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 /// Any local process can connect: longer request lines close the connection.
-pub const MAX_REQUEST_BYTES: u64 = 64 * 1024;
+pub const MAX_REQUEST_BYTES: u64 = nova_protocol::REQUEST_MAX_BYTES;
 /// How long a write may make no progress before the client counts as stalled
 /// and is disconnected. Only a client that stops reading with its socket
 /// buffer full gets there; the UI reconnects on its own.

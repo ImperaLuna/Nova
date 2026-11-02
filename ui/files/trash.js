@@ -91,3 +91,25 @@ function details(item) {
         lines.push(qsTr("Date modified: %1").arg(Qt.formatDateTime(new Date(item.modified), Transfers.MODIFIED_FORMAT)));
     return lines;
 }
+
+// Room in a request for all but the list: its id, command and the rest.
+var REQUEST_ROOM = 1024;
+
+// `items` (strings) split into lists that each fit in a request of at most
+// `limit` bytes, counting each as JSON at its longest in UTF-8 (3 bytes for
+// each UTF-16 unit). Never empty: no items still make one empty list.
+function batches(items, limit) {
+    const most = limit - REQUEST_ROOM;
+    const lists = [[]];
+    let size = 0;
+    for (const item of items) {
+        const bytes = 3 * JSON.stringify(item).length + 1;
+        if (size + bytes > most && lists[lists.length - 1].length > 0) {
+            lists.push([]);
+            size = 0;
+        }
+        lists[lists.length - 1].push(item);
+        size += bytes;
+    }
+    return lists;
+}

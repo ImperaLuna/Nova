@@ -65,6 +65,10 @@ const PRIVATE_DIR_MODE: u32 = 0o700;
 const PRIVATE_FILE_MODE: u32 = 0o600;
 /// Names tried for one item before giving up: `name`, `name.2`, and on.
 const MOST_NAME_TRIES: u32 = 10_000;
+/// The longest name a folder entry takes on Linux's filesystems.
+const NAME_MAX_BYTES: usize = 255;
+/// Room for the `.N` a taken name gets, up to `.10000`.
+const NAME_TRY_ROOM: usize = 6;
 /// Bytes kept as they are in an info file's path; the rest are escaped.
 const PATH_SAFE: &[u8] = b"-_.~/";
 /// Drives whose trash is looked for: local disks and sticks. Network and
@@ -234,13 +238,18 @@ impl Trash {
         dir.symlink_metadata().is_ok_and(|meta| meta.is_dir() && meta.uid() == self.uid)
     }
 
-    fn trash_one(&self, path: &Path) -> Result<(), String> {
-        let meta = path.symlink_metadata().map_err(|e| failed("move to the trash", path, &e))?;
+    fn trash_one(&self, asked: &Path) -> Result<(), String> {
+        let meta = asked.symlink_metadata().map_err(|e| failed("move to the trash", asked, &e))?;
+        // Its folder as the mount table spells it (`~/Stick` may be a link
+        // to `/run/media/…`), so its drive's top is found; the item itself
+        // stays as named, so a link goes to the trash, not what it points to.
+        let name = asked.file_name().ok_or_else(|| format!("{} can't be moved to the trash", asked.display()))?;
+        let folder = asked.parent().unwrap_or(asked);
+        let path = &folder.canonicalize().map_err(|e| failed("move to the trash", asked, &e))?.join(name);
         let root = self.root_for(path, meta.dev())?;
         if root.dir.starts_with(path) || path.starts_with(&root.dir) {
             return Err(format!("{} holds the trash", path.display()));
         }
-        let name = path.file_name().ok_or_else(|| format!("{} can't be moved to the trash", path.display()))?;
         let original = match &root.top {
             Some(top) => path.strip_prefix(top).unwrap_or(path),
             None => path,
@@ -358,7 +367,9 @@ fn follow(trash: &Trash, watcher: Inotify, hub: &Hub) {
         // Trashes that came or went since (a drive plugged in, a drive's
         // first trashed item): follow them, and say so, since their items
         // come or go from the list.
-        let infos: Vec<PathBuf> = trash.roots().iter().map(Root::info).collect();
+        // Info files and items both, as another app may move an item in
+        // well after its info file.
+        let infos: Vec<PathBuf> = trash.roots().iter().flat_map(|root| [root.info(), root.files()]).collect();
         let mut changed = false;
         for gone in watched.iter().filter(|dir| !infos.contains(dir)) {
             watcher.unwatch(gone);
@@ -437,9 +448,27 @@ fn make_trash(dir: &Path) -> std::io::Result<()> {
 
 /// A name in `root` for an item named `name`, claimed by writing its info
 /// file with `contents`: the name and the info file's path.
+/// `name`, cut short (at a character, when it's UTF-8) so its info file's
+/// name, with a `.N` for a taken name, still fits in a folder entry. The
+/// full name is kept in the info file's `Path`.
+fn stored_name(name: &OsStr) -> OsString {
+    let most = NAME_MAX_BYTES - INFO_SUFFIX.len() - NAME_TRY_ROOM;
+    let bytes = name.as_bytes();
+    if bytes.len() <= most {
+        return name.to_owned();
+    }
+    let mut end = most;
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+    }
+    OsStr::from_bytes(&bytes[..end]).to_owned()
+}
+
 fn claim(root: &Root, name: &OsStr, contents: &str) -> std::io::Result<(OsString, PathBuf)> {
     for attempt in 1..=MOST_NAME_TRIES {
-        let mut stored = name.to_owned();
+        let mut stored = stored_name(name);
         if attempt > 1 {
             stored.push(format!(".{attempt}"));
         }
@@ -648,6 +677,31 @@ mod tests {
             std::fs::write(self.path(name), name).unwrap();
             self.text(name)
         }
+    }
+
+    #[test]
+    fn a_name_too_long_for_its_info_file_is_cut_short_in_the_trash() {
+        let fixture = Fixture::new("long");
+        let long = "é".repeat(123);
+        let file = fixture.write(&format!("home/Documents/{long}"));
+        fixture.trash.trash(std::slice::from_ref(&file)).unwrap();
+        let items = fixture.trash.list();
+        assert_eq!(items[0].entry.name, long, "the full name comes from the info file");
+        fixture.trash.restore(std::slice::from_ref(&items[0].id)).unwrap();
+        assert!(Path::new(&file).exists());
+    }
+
+    #[test]
+    fn an_item_in_a_linked_folder_goes_to_the_trash_itself() {
+        let fixture = Fixture::new("linked");
+        std::os::unix::fs::symlink(fixture.path("home/Documents"), fixture.path("home/Linked")).unwrap();
+        fixture.write("home/Documents/a.txt");
+        let through_link = fixture.text("home/Linked/a.txt");
+        fixture.trash.trash(std::slice::from_ref(&through_link)).unwrap();
+        assert!(!fixture.path("home/Documents/a.txt").exists());
+        assert!(fixture.path("home/Linked").exists(), "the link stays");
+        fixture.trash.restore(&[fixture.trash.list()[0].id.clone()]).unwrap();
+        assert!(fixture.path("home/Documents/a.txt").exists());
     }
 
     #[test]

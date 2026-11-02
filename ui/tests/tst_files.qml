@@ -578,6 +578,21 @@ Item {
             TrashModel {}
         }
 
+        function test_long_lists_go_to_novad_in_requests_it_reads() {
+            compare(Trash.batches([], 4096), [[]]);
+            compare(Trash.batches(["/a", "/b"], 4096), [["/a", "/b"]]);
+            const paths = [];
+            for (let index = 0; index < 2000; index++)
+                paths.push(`/home/ana/Documents/photo-${index}.png`);
+            const lists = Trash.batches(paths, Protocol.REQUEST_MAX_BYTES);
+            verify(lists.length > 1, "2000 paths don't fit in one request");
+            compare([].concat(...lists), paths, "every path goes, in order");
+            for (const list of lists)
+                verify(JSON.stringify({
+                    paths: list
+                }).length < Protocol.REQUEST_MAX_BYTES - Trash.REQUEST_ROOM, "each request fits");
+        }
+
         function test_a_copied_row_stays_as_it_was() {
             const rows = createTemporaryQmlObject("import QtQuick; ListModel {}", stage);
             rows.append(Listing.row({

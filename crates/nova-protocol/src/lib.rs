@@ -1201,6 +1201,9 @@ pub const FILES_PATH_MAX_BYTES: usize = 4096;
 
 /// Most folders a `files_tree` may name as `opened` or as `closed`, each.
 pub const FILES_TREE_MAX_FOLDERS: usize = 256;
+/// The longest request line novad reads: a longer one closes the
+/// connection, so a client splits a long list across requests.
+pub const REQUEST_MAX_BYTES: u64 = 64 * 1024;
 /// Most copy or move jobs one connection may run at once
 /// (`files_transfer`).
 pub const FILES_MAX_TRANSFERS: usize = 16;

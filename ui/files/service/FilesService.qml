@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
+import "../trash.js" as Trash
 
 // Nova Files' link to novad: the windows it asks for, the folders they
 // show (folder views: each FolderModel opens one under its own number and
@@ -203,16 +204,12 @@ Singleton {
     // Moves `paths` (absolute) to the trash. `done(error)` gets novad's
     // answer: null, or which ones didn't go.
     function trash(paths: var, done: var) {
-        Daemon.call(Protocol.CMD_FILES_TRASH, {
-            paths: paths
-        }, error => root._answered("moving to the trash", error, done));
+        _inBatches(Protocol.CMD_FILES_TRASH, "paths", paths, "moving to the trash", done);
     }
 
     // Deletes `paths` (absolute) for good.
     function deleteForGood(paths: var, done: var) {
-        Daemon.call(Protocol.CMD_FILES_DELETE, {
-            paths: paths
-        }, error => root._answered("deleting", error, done));
+        _inBatches(Protocol.CMD_FILES_DELETE, "paths", paths, "deleting", done);
     }
 
     // `done(items)` gets what the trash holds, the last trashed first, each
@@ -234,14 +231,34 @@ Singleton {
 
     // Deletes the trashed items `ids` for good.
     function eraseFromTrash(ids: var, done: var) {
-        Daemon.call(Protocol.CMD_FILES_TRASH_DELETE, {
-            ids: ids
-        }, error => root._answered("deleting from the trash", error, done));
+        _inBatches(Protocol.CMD_FILES_TRASH_DELETE, "ids", ids, "deleting from the trash", done);
     }
 
     // Deletes everything in the trash for good.
     function emptyTrash(done: var) {
         Daemon.call(Protocol.CMD_FILES_EMPTY_TRASH, undefined, error => root._answered("emptying the trash", error, done));
+    }
+
+    // Sends `cmd` with `items` under `key`, in as many requests as keep each
+    // under novad's limit (Trash.batches), one after another. `done(error)`
+    // gets every request's errors at once, or null.
+    function _inBatches(cmd: string, key: string, items: var, doing: string, done: var) {
+        const batches = Trash.batches(items, Protocol.REQUEST_MAX_BYTES);
+        const errors = [];
+        const next = index => {
+            if (index === batches.length) {
+                root._answered(doing, errors.length > 0 ? errors.join("\n") : null, done);
+                return;
+            }
+            const args = {};
+            args[key] = batches[index];
+            Daemon.call(cmd, args, error => {
+                if (error)
+                    errors.push(error);
+                next(index + 1);
+            });
+        };
+        next(0);
     }
 
     function _answered(doing: string, error: var, done: var) {
