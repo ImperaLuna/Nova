@@ -154,6 +154,16 @@ impl Inotify {
         Ok(())
     }
 
+    /// Stops watching `dir` and every folder watched below it.
+    pub fn unwatch_tree(&mut self, dir: &Path) {
+        let watched: Vec<i32> = self.dirs.iter().filter(|(_, path)| path.starts_with(dir)).map(|(wd, _)| *wd).collect();
+        for wd in watched {
+            // SAFETY: no pointers; a stale `wd` only fails with EINVAL.
+            unsafe { libc::inotify_rm_watch(self.file.as_raw_fd(), wd) };
+            self.dirs.remove(&wd);
+        }
+    }
+
     /// Stops watching `dir`, whatever it pointed to when it was watched.
     pub fn unwatch(&mut self, dir: &Path) {
         let watched: Vec<i32> = self.dirs.iter().filter(|(_, path)| *path == dir).map(|(wd, _)| *wd).collect();

@@ -13,6 +13,8 @@ use nova_protocol::TextMark;
 /// A parsed search: its words, lowercased, each once.
 pub struct Query {
     words: Vec<String>,
+    /// The words with one space between, which a whole name equals.
+    whole: String,
     /// Every word is ASCII, so a name that isn't can still match, but an
     /// ASCII name can only match one that is.
     ascii: bool,
@@ -36,13 +38,14 @@ impl Query {
     /// The words of `text`; `None` when it has none.
     pub fn parse(text: &str) -> Option<Self> {
         let mut words: Vec<String> = Vec::new();
-        for word in text.split_whitespace().map(str::to_lowercase) {
+        for word in text.split_whitespace().map(fold) {
             if !words.contains(&word) {
                 words.push(word);
             }
         }
         let ascii = words.iter().all(|word| word.is_ascii());
-        (!words.is_empty()).then_some(Self { words, ascii })
+        let whole = words.join(" ");
+        (!words.is_empty()).then_some(Self { words, whole, ascii })
     }
 
     /// How well `name` fits, or `None` when it lacks a word. `ascii` says
@@ -56,14 +59,14 @@ impl Query {
             if !self.words[1..].iter().all(|word| ascii_find(name.as_bytes(), word.as_bytes()).is_some()) {
                 return None;
             }
-            return Some(self.rank(name, first));
+            return Some(self.rank(name, first, || name.eq_ignore_ascii_case(&self.whole)));
         }
         let folded = Folded::of(name);
         let first = folded.find(&self.words[0])?;
         if !self.words[1..].iter().all(|word| folded.find(word).is_some()) {
             return None;
         }
-        Some(self.rank(name, first.0))
+        Some(self.rank(name, first.0, || folded.lower == self.whole))
     }
 
     /// Where each word first is in `name`, in UTF-16 code units (what QML's
@@ -86,12 +89,10 @@ impl Query {
         marks
     }
 
-    /// The fit of a name holding every word, the first at byte `first`.
-    fn rank(&self, name: &str, first: usize) -> Fit {
-        let query_len: usize = self.words.iter().map(String::len).sum::<usize>() + self.words.len() - 1;
-        if self.words.len() == 1 && first == 0 && name.len() == query_len {
-            // The same length, so the same name (when a fold changes a
-            // name's length, it ranks as a start instead).
+    /// The fit of a name holding every word, the first at byte `first`;
+    /// `whole` says whether the name is the query.
+    fn rank(&self, name: &str, first: usize, whole: impl FnOnce() -> bool) -> Fit {
+        if first == 0 && whole() {
             Fit::Exact
         } else if first == 0 {
             Fit::Start
@@ -101,6 +102,12 @@ impl Query {
             Fit::Inside
         }
     }
+}
+
+/// `text` lowercased a character at a time, the same way names are
+/// ([`Folded`]), so a final sigma folds like any other.
+fn fold(text: &str) -> String {
+    text.chars().flat_map(char::to_lowercase).collect()
 }
 
 /// Whether the character at byte `at` of `name` starts a word: it follows
@@ -177,6 +184,8 @@ mod tests {
     #[test]
     fn the_fit_ranks_whole_names_then_starts_then_words() {
         assert_eq!(fit("steam", "Steam"), Some(Fit::Exact));
+        assert_eq!(fit("crimson  DESERT", "Crimson Desert"), Some(Fit::Exact));
+        assert_eq!(fit("crimson desert", "Crimson Desert notes.txt"), Some(Fit::Start));
         assert_eq!(fit("steam", "steamapps"), Some(Fit::Start));
         assert_eq!(fit("desert", "crimson_desert.exe"), Some(Fit::WordStart));
         assert_eq!(fit("desert", "CrimsonDesert.exe"), Some(Fit::WordStart));
@@ -189,6 +198,8 @@ mod tests {
         assert_eq!(fit("öl", "Ölgemälde.png"), Some(Fit::Start));
         assert_eq!(fit("GEMÄLDE", "Ölgemälde.png"), Some(Fit::Inside));
         assert_eq!(fit("ölgemälde", "ÖLGEMÄLDE"), Some(Fit::Exact));
+        // A final sigma folds the same in the query and the name.
+        assert_eq!(fit("ΚΟΣΜΟΣ", "ΚΟΣΜΟΣ.txt"), Some(Fit::Start));
         // An ASCII name holds no other letters.
         assert_eq!(fit("ö", "Oil.png"), None);
     }

@@ -298,6 +298,7 @@ impl Keeper {
                     // have been replaced since.
                     if let Some(old) = index.child(parent, &name) {
                         index.remove(old);
+                        walk.forget(&path);
                     }
                     let id = index.add_new(parent, &name, dir);
                     if dir && walk.follows(&path) && !walk.read(index, id, path) {
@@ -305,6 +306,7 @@ impl Keeper {
                     }
                 }
                 None => {
+                    walk.forget(&path);
                     if let Some(id) = index.child(parent, &name) {
                         index.remove(id);
                     }
@@ -429,6 +431,22 @@ mod tests {
         fixture.finds("manual", &["Docs/inner/manual.pdf", "Docs/inner/manual 2.pdf"]);
         std::fs::remove_dir_all(home.join(".local/share/Steam")).unwrap();
         fixture.finds("crimson", &["crimson notes.txt"]);
+    }
+
+    #[test]
+    fn a_folder_that_leaves_takes_its_watches_with_it() {
+        let fixture =
+            Fixture::new("unwatch", |home| std::fs::create_dir_all(home.join("Projects/app/src/deep")).unwrap());
+        let home = fixture.home();
+        let outside = fixture.dir.join("outside");
+        std::fs::rename(home.join("Projects/app"), &outside).unwrap();
+        fixture.finds("deep", &[]);
+        // Something written in the old tree now isn't reported under its old path.
+        std::fs::create_dir(home.join("Projects/app")).unwrap();
+        std::fs::write(outside.join("src/deep/stray.txt"), b"").unwrap();
+        std::fs::write(home.join("Projects/app/fresh.txt"), b"").unwrap();
+        fixture.finds("fresh", &["Projects/app/fresh.txt"]);
+        assert!(fixture.paths("stray").is_empty());
     }
 
     #[test]

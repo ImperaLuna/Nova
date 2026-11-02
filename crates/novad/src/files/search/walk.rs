@@ -70,9 +70,9 @@ impl Walk<'_> {
         true
     }
 
-    /// Stops watching `folder`, which left the index.
+    /// Stops watching `folder` and the folders in it, which left the index.
     pub fn forget(&mut self, folder: &Path) {
-        self.watcher.unwatch(folder);
+        self.watcher.unwatch_tree(folder);
     }
 
     /// Whether the walk goes into the folder `path`.
