@@ -57,7 +57,6 @@ Item {
             compare(Paths.folderName(`/mnt/M${eAcute}sik`), "M\uFFFDsik");
         }
 
-
         function test_the_title_is_the_folder_name() {
             compare(Paths.folderName("/home/ana/Music"), "Music");
             compare(Paths.folderName("/"), "/");
