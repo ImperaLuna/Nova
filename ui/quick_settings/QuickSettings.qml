@@ -13,6 +13,7 @@ import "../tray/service"
 import "../daemon"
 import "../daemon/protocol.js" as Protocol
 import "../slots/slots.js" as Slots
+import "../slots"
 import "quick_settings.js" as QuickSettings
 import "../util/numbers.js" as Numbers
 import "../icons"
@@ -24,12 +25,13 @@ import "../icons"
 // were, and its sections fade in one after another. A click outside
 // closes it.
 //
-// Pages slide in from the right (sound, network, Bluetooth, resources,
-// notification settings) and back out to the first page. Reading and acting
-// go through QuickSettingsService, NetworkService, BluetoothService,
-// VolumeService, SoundService and
-// NotificationsService; the pages themselves only get
-// properties, so ui/tests can drive them.
+// What's in it comes from feature manifests: the first page (MainPage)
+// hosts the quick-settings.tiles, .sliders, .cards, .fill and .foot slots,
+// and every quick-settings.pages slot is a page that slides in from the
+// right and back out to the first page. Each slot's view is a thin adapter
+// (slots/) that reads its feature's service and gets `qs` (QsContext) for
+// what the sidebar shares; the views it draws only take properties, so
+// ui/tests can drive them.
 StagePanel {
     id: panel
 
@@ -46,8 +48,46 @@ StagePanel {
     name: Protocol.FEATURE_QUICK_SETTINGS
     placement: "right"
 
-    // "main", "sound", "network", "bluetooth", "resources" or "notifications".
-    property string page: "main"
+    // The page it shows: QuickSettings.PAGE_MAIN, or a page's view id.
+    property string page: QuickSettings.PAGE_MAIN
+
+    // What features put in it, from their manifests: each host's slots
+    // (slots.js forHost) that have a view. Hosts keep their views in step
+    // with these (Slots.sync), so a view that stays isn't loaded again.
+    function slotsOf(host: string): var {
+        return Slots.forHost(Daemon.features, host).filter(slot => Views.url(slot.view).toString() !== "");
+    }
+    readonly property var tileSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_TILES)
+    readonly property var sliderSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_SLIDERS)
+    readonly property var cardSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_CARDS)
+    readonly property var fillSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_FILL)
+    readonly property var footSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_FOOT)
+    readonly property var pageSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_PAGES)
+    onPageSlotsChanged: {
+        Slots.sync(pageModel, pageSlots);
+        // Its page went with its feature: back to the first.
+        if (!pageSlots.some(slot => slot.view === page))
+            page = QuickSettings.PAGE_MAIN;
+    }
+    Component.onCompleted: Slots.sync(pageModel, pageSlots)
+    ListModel {
+        id: pageModel
+    }
+
+    // What every slot gets: where the sidebar is, and its requests.
+    QsContext {
+        id: context
+        open: panel.open
+        page: panel.page
+        fill: panel.fill
+        now: panel.now
+        outputName: panel.output.name
+        headerInset: pages.headerInset
+        menuArea: pages
+        onPageRequested: page => panel.page = page
+        onCloseRequested: panel.open = false
+        onTrayMenuRequested: (entry, at) => trayMenu.show(entry, at)
+    }
 
     readonly property Morph morph: Morph {
         open: panel.open
@@ -81,24 +121,11 @@ StagePanel {
         if (!open)
             trayMenu.entry = null;
     }
-    // Resources show on the first page (its card) and their own page: novad
-    // reads them only while one of those is open.
-    readonly property bool resourcesShown: open && (page === "main" || page === "resources")
-    onResourcesShownChanged: QuickSettingsService.watching = resourcesShown
-    // The list is on the first page: another page hides it.
-    readonly property bool listShown: open && page === "main"
-    onListShownChanged: NotificationsService.showList(output.name, listShown)
-    // The Bluetooth page looks for devices, and asks pairing questions in
-    // place of the pop-up, while it shows.
-    readonly property bool bluetoothShown: open && page === "bluetooth"
-    onBluetoothShownChanged: BluetoothService.watching = bluetoothShown
     // Back to the first page once it has closed, so it opens there.
     onMovingChanged: {
         if (!moving && !open)
-            page = "main";
+            page = QuickSettings.PAGE_MAIN;
     }
-
-    readonly property string outputName: VolumeService.sink ? (VolumeService.sink.nickname || VolumeService.sink.description || VolumeService.sink.name) : ""
 
     // The header's uptime, a minute at a time while it's open, on the
     // minute.
@@ -108,15 +135,8 @@ StagePanel {
         precision: SystemClock.Minutes
     }
     readonly property date now: clock.date
-    // Gone while open (its screen went away): nothing reads resources now.
-    Component.onDestruction: {
-        VolumeService.showElsewhere(output.name, false);
-        NotificationsService.showList(output.name, false);
-        if (resourcesShown)
-            QuickSettingsService.watching = false;
-        if (bluetoothShown)
-            BluetoothService.watching = false;
-    }
+    // Gone while open (its screen went away). Slots undo their own watching.
+    Component.onDestruction: VolumeService.showElsewhere(output.name, false)
     Glass {
         anchors.fill: parent
         radius: panel.radius
@@ -133,11 +153,19 @@ StagePanel {
         // What the top row leaves for the pill's buttons.
         readonly property real headerInset: panel.output.width - Tokens.quickSettingsPad - (panel.buttonsX - Tokens.pillButtonInset) + Tokens.gap
 
-        readonly property bool sliding: [mainSlot, soundSlot, networkSlot, bluetoothSlot, resourcesSlot, notificationsSlot].some(slot => slot.sliding)
+        readonly property bool sliding: {
+            // itemAt doesn't notify: reading the revision re-evaluates this
+            // for new delegates.
+            pageRepeater.revision;
+            let any = mainSlot.sliding;
+            for (let i = 0; i < pageRepeater.count; i++)
+                any = any || ((pageRepeater.itemAt(i) as PageSlot)?.sliding ?? false);
+            return any;
+        }
 
         PageSlot {
             id: mainSlot
-            key: "main"
+            key: QuickSettings.PAGE_MAIN
 
             // Only while it's open or moving: closed, it keeps no tiles,
             // tray or notification list on any screen (IMP-157).
@@ -152,187 +180,45 @@ StagePanel {
                     // From false once loaded, so its sections fade in one after
                     // another as it opens.
                     shown: panel.open && mainPage.status === Loader.Ready
-                    fill: panel.fill
+                    qs: context
                     logo: QuickSettings.logo(QuickSettingsService.host?.os, Qt.resolvedUrl("logos"), path => AppIcons.source(path))
                     host: QuickSettingsService.host
-                    now: panel.now
-                    networkShown: NetworkService.ready
-                    network: NetworkService.network
-                    keepAwake: QuickSettingsService.keepAwake
-                    micAvailable: SoundService.sourceReady
-                    micMuted: SoundService.sourceMuted
-                    bluetoothShown: BluetoothService.ready
-                    bluetooth: BluetoothService.state
-                    onBluetoothPowered: on => BluetoothService.setPower(on)
-                    outputAvailable: VolumeService.ready
-                    outputName: panel.outputName
-                    outputKind: VolumeService.output
-                    volume: VolumeService.volume
-                    muted: VolumeService.muted
-                    recorders: SoundService.recorders
-                    micVolume: SoundService.sourceVolume
-                    reading: QuickSettingsService.resources
-                    devices: QuickSettingsService.devices
-                    trayApps: TrayService.all
-                    trayIconSource: entry => TrayService.iconSource(entry)
-                    onTrayActivated: entry => {
-                        if (TrayService.opensMenu(entry)) {
-                            trayMenu.show(entry, null);
-                        } else {
-                            TrayService.activate(entry);
-                            panel.open = false;
-                        }
+                    viewUrl: view => Views.url(view)
+                    tiles: panel.tileSlots
+                    sliders: panel.sliderSlots
+                    cards: panel.cardSlots
+                    fill: panel.fillSlots[0]?.view ?? ""
+                    foot: panel.footSlots[0]?.view ?? ""
+                }
+            }
+        }
+
+        // The other pages, from quick-settings.pages slots, each keyed by its
+        // view id and loaded only while it shows or slides.
+        Repeater {
+            id: pageRepeater
+            model: pageModel
+            property int revision: 0
+            onItemAdded: revision++
+
+            PageSlot {
+                id: pageSlot
+                required property string view
+                key: view
+
+                Loader {
+                    readonly property bool live: pageSlot.live
+                    anchors.fill: parent
+                    onLiveChanged: load()
+                    Component.onCompleted: load()
+                    function load() {
+                        if (live)
+                            setSource(Views.url(pageSlot.key), {
+                                qs: context
+                            });
+                        else
+                            setSource("");
                     }
-                    onTrayMenuRequested: (entry, at) => trayMenu.show(entry, at)
-                    onTraySecondaryActivated: entry => entry.item.secondaryActivate()
-                    notificationsShown: NotificationsService.ready
-                    doNotDisturb: NotificationsService.doNotDisturb
-                    iconSource: name => AppIcons.source(name)
-                    // Opening one takes you to its app.
-                    onNotificationOpened: notification => {
-                        NotificationsService.open(notification, panel.output.name);
-                        panel.open = false;
-                    }
-                    onNotificationDismissed: id => NotificationsService.dismiss(id)
-                    onNotificationsCleared: app => NotificationsService.clear(app)
-                    onNotificationAppMuted: app => NotificationsService.mute(app, true)
-                    onDoNotDisturbToggled: NotificationsService.setDoNotDisturb(!NotificationsService.doNotDisturb)
-                    onKeepAwakeToggled: QuickSettingsService.keepAwake = !QuickSettingsService.keepAwake
-                    onMicMuteToggled: SoundService.toggleSourceMute()
-                    onVolumeMoved: value => VolumeService.slide(value)
-                    onMuteToggled: VolumeService.toggleMute()
-                    onMicVolumeMoved: value => SoundService.setSourceVolume(value)
-                    onPageRequested: page => panel.page = page
-                    notifications: NotificationsService.items
-                }
-            }
-        }
-
-        PageSlot {
-            id: soundSlot
-            key: "sound"
-
-            Loader {
-                active: soundSlot.live
-                onStatusChanged: SoundService.listing = status === Loader.Ready
-                sourceComponent: SoundPage {
-                    width: pages.width
-                    height: pages.height
-                    headerInset: pages.headerInset
-                    outputAvailable: VolumeService.ready
-                    outputName: panel.outputName
-                    outputKind: VolumeService.output
-                    volume: VolumeService.volume
-                    muted: VolumeService.muted
-                    inputAvailable: SoundService.sourceReady
-                    inputName: SoundService.sourceName
-                    inputVolume: SoundService.sourceVolume
-                    inputMuted: SoundService.sourceMuted
-                    onInputVolumeMoved: value => SoundService.setSourceVolume(value)
-                    onInputMuteToggled: SoundService.toggleSourceMute()
-                    outputs: SoundService.outputs
-                    inputs: SoundService.inputs
-                    apps: SoundService.apps
-                    onBack: panel.page = "main"
-                    onVolumeMoved: value => VolumeService.slide(value)
-                    onMuteToggled: VolumeService.toggleMute()
-                    onOutputPicked: id => SoundService.useOutput(id)
-                    onInputPicked: id => SoundService.useInput(id)
-                    onAppVolumeMoved: (ids, value) => SoundService.setVolumes(ids, value)
-                    onAppMuteToggled: (ids, muted) => SoundService.setMuted(ids, muted)
-                    iconSource: name => AppIcons.source(name)
-                }
-            }
-        }
-
-        PageSlot {
-            id: networkSlot
-            key: "network"
-
-            // Open, it scans and watches traffic every second.
-            Loader {
-                active: networkSlot.live
-                onStatusChanged: {
-                    NetworkService.watching = status === Loader.Ready;
-                    if (status === Loader.Ready)
-                        NetworkService.scan();
-                }
-                // Gone while open (its screen went away).
-                Component.onDestruction: {
-                    if (status === Loader.Ready)
-                        NetworkService.watching = false;
-                }
-                sourceComponent: NetworkPage {
-                    width: pages.width
-                    height: pages.height
-                    headerInset: pages.headerInset
-                    network: NetworkService.network
-                    traffic: NetworkService.traffic
-                    onBack: panel.page = "main"
-                    onWifiToggled: enabled => NetworkService.setWifi(enabled)
-                    onConnectRequested: (ssid, password) => NetworkService.connect(ssid, password)
-                    onDisconnectRequested: NetworkService.disconnect()
-                    onForgetRequested: ssid => NetworkService.forget(ssid)
-                    onPreferPicked: kind => NetworkService.prefer(kind)
-                }
-            }
-        }
-
-        PageSlot {
-            id: bluetoothSlot
-            key: "bluetooth"
-
-            Loader {
-                active: bluetoothSlot.live
-                sourceComponent: BluetoothPage {
-                    width: pages.width
-                    height: pages.height
-                    headerInset: pages.headerInset
-                    bluetooth: BluetoothService.state
-                    onBack: panel.page = "main"
-                    onPowerToggled: on => BluetoothService.setPower(on)
-                    onConnectRequested: address => BluetoothService.connectDevice(address)
-                    onDisconnectRequested: address => BluetoothService.disconnectDevice(address)
-                    onForgetRequested: address => BluetoothService.forget(address)
-                    onAnswered: (id, answer) => BluetoothService.answer(id, answer)
-                }
-            }
-        }
-
-        PageSlot {
-            id: resourcesSlot
-            key: "resources"
-
-            Loader {
-                active: resourcesSlot.live
-                sourceComponent: ResourcesPage {
-                    width: pages.width
-                    height: pages.height
-                    headerInset: pages.headerInset
-                    reading: QuickSettingsService.resources
-                    onBack: panel.page = "main"
-                    onEndRequested: key => QuickSettingsService.endApp(key)
-                }
-            }
-        }
-
-        PageSlot {
-            id: notificationsSlot
-            key: "notifications"
-
-            Loader {
-                active: notificationsSlot.live
-                sourceComponent: NotificationSettingsPage {
-                    width: pages.width
-                    height: pages.height
-                    headerInset: pages.headerInset
-                    doNotDisturb: NotificationsService.doNotDisturb
-                    apps: NotificationsService.apps
-                    muted: NotificationsService.muted
-                    iconSource: name => AppIcons.source(name)
-                    onBack: panel.page = "main"
-                    onDoNotDisturbToggled: NotificationsService.setDoNotDisturb(!NotificationsService.doNotDisturb)
-                    onMuteToggled: (app, muted) => NotificationsService.mute(app, muted)
                 }
             }
         }

@@ -1,6 +1,6 @@
-//! The Quickshell versions Nova is tested with, from
-//! `packaging/quickshell.toml` (compiled in, so a binary always checks
-//! against the range it was built and tested for).
+//! The Quickshell versions Nova is tested with, and the distro packages
+//! that hold it, from `packaging/quickshell.toml` (compiled in, so a binary
+//! always checks against the range it was built and tested for).
 //!
 //! Nova doesn't pin one exact Quickshell everywhere: distros ship their own,
 //! built against their own Qt. Instead it checks the one it finds against a
@@ -8,6 +8,7 @@
 
 use serde::Deserialize;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::fmt;
 
 const RANGE_FILE: &str = include_str!("../../../packaging/quickshell.toml");
@@ -42,6 +43,9 @@ impl Version {
 struct RangeFile {
     min: String,
     max: String,
+    /// Distro name to package names, like a feature variant's.
+    #[serde(default)]
+    packages: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug)]
@@ -66,6 +70,12 @@ impl Range {
             return Err(format!("min {} is above max {}", file.min, file.max));
         }
         Ok(Self { file, min, max })
+    }
+
+    /// The packages that install Quickshell on `distro` (a key of
+    /// `nova_features::DISTROS`); none on Nix, whose flake brings it.
+    pub fn packages(&self, distro: &str) -> &[String] {
+        self.file.packages.get(distro).map(Vec::as_slice).unwrap_or(&[])
     }
 
     /// Why `version` (as `quickshell --version` prints it, `0.3.2`) isn't
@@ -101,7 +111,9 @@ mod tests {
 
     #[test]
     fn the_shipped_range_parses() {
-        Range::parse(RANGE_FILE).unwrap();
+        let shipped = Range::parse(RANGE_FILE).unwrap();
+        assert_eq!(shipped.packages("arch"), ["quickshell"]);
+        assert!(shipped.packages("nix").is_empty());
     }
 
     #[test]

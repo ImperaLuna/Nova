@@ -4,8 +4,9 @@
 // Slots: the places a feature's UI goes, from the `[[slot]]` entries of its
 // manifest (features/<id>/feature.toml), which novad sends with each
 // feature's state. A host (the bar's rows, the right pill's buttons, the
-// stage's panels) shows the views of its slots, sorted by `order`, for the
-// features that are ready. The views themselves are in Views.qml.
+// stage's panels, quick settings' sections and pages) shows the views of
+// its slots, sorted by `order`, for the features that are ready. The views
+// themselves are in Views.qml.
 
 // Every host, as nova_features::HOSTS names them (a Rust test checks the
 // two lists match).
@@ -13,7 +14,20 @@ var HOST_BAR_LEFT = "bar.left";
 var HOST_BAR_CENTER = "bar.center";
 var HOST_BAR_RIGHT = "bar.right";
 var HOST_RIGHT_PILL_BUTTONS = "right-pill.buttons";
+var HOST_CENTRAL_PILL_PARTS = "central-pill.parts";
 var HOST_STAGE_PANELS = "stage.panels";
+var HOST_SHELL_OVERLAYS = "shell.overlays";
+var HOST_QUICK_SETTINGS_TILES = "quick-settings.tiles";
+var HOST_QUICK_SETTINGS_SLIDERS = "quick-settings.sliders";
+var HOST_QUICK_SETTINGS_CARDS = "quick-settings.cards";
+var HOST_QUICK_SETTINGS_FILL = "quick-settings.fill";
+var HOST_QUICK_SETTINGS_FOOT = "quick-settings.foot";
+var HOST_QUICK_SETTINGS_PAGES = "quick-settings.pages";
+
+// The central pill's parts: the views its central-pill.parts slots name,
+// which it draws itself (ui/central_pill/CentralPillSlot.qml).
+var PART_WORKSPACES = "workspaces.list";
+var PART_CLOCK = "clock.time";
 
 // The slots in `host` of the ready features in `features` (the features
 // event's list), as {feature, view, order}: lowest order first, ties by

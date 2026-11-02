@@ -155,6 +155,8 @@ var FEATURE_PERIPHERALS = "peripherals";
 var FEATURE_NETWORK = "network";
 var FEATURE_BLUETOOTH = "bluetooth";
 var FEATURE_WALLPAPER = "wallpaper";
+var FEATURE_BAR = "bar";
+var FEATURE_KEEP_AWAKE = "keep-awake";
 
 // Power menu actions (PowerAction in nova-protocol).
 var POWER_LOCK = "lock";

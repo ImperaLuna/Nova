@@ -1,0 +1,9 @@
+id = "workspaces"
+name = "Workspaces"
+description = "Each screen's workspaces in the central pill: click one to go there."
+default = true
+
+[[slot]]
+host = "central-pill.parts"
+view = "workspaces.list"
+order = 10

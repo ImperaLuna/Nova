@@ -1,4 +1,4 @@
-//! What the machine is busy with (feature `quick-settings`): CPU, memory,
+//! What the machine is busy with (feature `resources`): CPU, memory,
 //! GPU, the CPU's temperature and the apps using the most memory, for the quick
 //! settings sidebar's resources card and page.
 //!
@@ -27,7 +27,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use usage::{CpuTimes, ProcessTicks};
 
-pub const FEATURE_ID: &str = "quick-settings";
+pub const FEATURE_ID: &str = "resources";
 const LOG_SOURCE: &str = "resources";
 
 /// How often a watched look is taken and published.

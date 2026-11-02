@@ -9,6 +9,7 @@ FrameOut 1.0 FrameOut.qml
 GiveWay 1.0 GiveWay.qml
 Morph 1.0 Morph.qml
 MorphReveal 1.0 MorphReveal.qml
+OverlaySlots 1.0 OverlaySlots.qml
 PanelSlots 1.0 PanelSlots.qml
 PanelSurface 1.0 PanelSurface.qml
 ShapeRegion 1.0 ShapeRegion.qml

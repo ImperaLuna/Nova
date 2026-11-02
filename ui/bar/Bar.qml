@@ -30,6 +30,10 @@ import "../slots/slots.js" as Slots
 // input mask, blur and keyboard grab from `panels` and `fixedShapes`, so
 // panels can grow out of the pills without a window of their own. Each
 // row collects them from its views (BarSlot).
+//
+// With the bar feature off its rows are empty (every bar.* host is the
+// bar's), and it keeps no space and has no reveal strip: windows get the
+// whole height, and panels still open from their keys and `nova toggle`.
 Item {
     id: root
 
@@ -41,14 +45,18 @@ Item {
     // The monitor's height: the bar itself is only as tall as the stage.
     property real screenHeight: 0
 
+    // The bar feature is on.
+    readonly property bool shown: Daemon.readyFeatures.includes(Protocol.FEATURE_BAR)
+
     // The space kept free for the bar at the top of the screen: the same gap
     // above and below the pills, none while it steps aside for a fullscreen
-    // window. The compositor's own top gap is meant to be off, so it doesn't
-    // add to the one below.
-    readonly property int reservedHeight: spaceKept ? Tokens.barGap + Tokens.barHeight + Tokens.barGap : 0
+    // window or with the bar off. The compositor's own top gap is meant to
+    // be off, so it doesn't add to the one below.
+    readonly property int reservedHeight: shown && spaceKept ? Tokens.barGap + Tokens.barHeight + Tokens.barGap : 0
 
-    // The shown workspace has a window over the whole screen.
-    readonly property bool fullscreenBelow: Compositor.has(Protocol.CAPABILITY_FULLSCREEN) && Protocol.fullscreenShown(Compositor.output(screenName))
+    // The shown workspace has a window over the whole screen, so the bar
+    // steps aside (it has none to step aside with the bar off).
+    readonly property bool fullscreenBelow: shown && Compositor.has(Protocol.CAPABILITY_FULLSCREEN) && Protocol.fullscreenShown(Compositor.output(screenName))
     // One of the bar's panels is open, so the pills stay. The stage sets it.
     property bool held: false
     // Brought back over a fullscreen window by the pointer at the top edge.
@@ -172,6 +180,7 @@ Item {
             id: left
             anchors.fill: parent
             host: Slots.HOST_BAR_LEFT
+            shown: root.shown
             bar: root
             stage: root.stage
         }
@@ -179,6 +188,7 @@ Item {
             id: center
             anchors.fill: parent
             host: Slots.HOST_BAR_CENTER
+            shown: root.shown
             bar: root
             stage: root.stage
         }
@@ -186,6 +196,7 @@ Item {
             id: right
             anchors.fill: parent
             host: Slots.HOST_BAR_RIGHT
+            shown: root.shown
             bar: root
             stage: root.stage
         }

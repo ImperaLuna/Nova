@@ -85,7 +85,7 @@ pub enum Event {
     /// The machine and its user, for the quick settings header. Topic
     /// [`Topic::Host`], sent right after subscribing.
     Host(Host),
-    /// What the machine is busy with (feature `quick-settings`). Topic
+    /// What the machine is busy with (feature `resources`). Topic
     /// [`Topic::Resources`], sent every few seconds while some client
     /// watches them (`watch_resources`), and right when one starts to.
     Resources(Resources),
@@ -1480,7 +1480,7 @@ pub enum Command {
     /// after a recording didn't start).
     OpenLog,
     /// Starts or stops this connection watching the machine's resources
-    /// (feature `quick-settings`): while any connection watches, novad
+    /// (feature `resources`): while any connection watches, novad
     /// samples them every few seconds and sends `resources` events. A
     /// connection that closes stops watching.
     WatchResources {
@@ -1488,7 +1488,7 @@ pub enum Command {
     },
     /// Asks every process of an app in the latest `resources` event to
     /// close (SIGTERM), by its [`AppUsage::key`] (feature
-    /// `quick-settings`). Only the user's own processes, and never a
+    /// `resources`). Only the user's own processes, and never a
     /// [`AppUsage::protected`] app.
     EndApp {
         key: String,
@@ -1905,6 +1905,8 @@ pub enum UiState {
     Restarting,
     /// novad was started with `--no-ui`.
     Disabled,
+    /// No feature with a UI is on, so novad doesn't run Quickshell.
+    NotNeeded,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2073,7 +2075,7 @@ mod tests {
             encode(Event::Features {
                 features: vec![
                     FeatureState {
-                        id: "core".into(),
+                        id: "bar".into(),
                         status: FeatureStatus::Ready,
                         missing: vec![],
                         slots: vec![Slot { host: "bar.center".into(), view: "central-pill".into(), order: 10 }],
@@ -2910,7 +2912,7 @@ mod tests {
                 }),
             },
             features: vec![FeatureState {
-                id: "core".into(),
+                id: "bar".into(),
                 status: FeatureStatus::Ready,
                 missing: vec![],
                 slots: vec![],
