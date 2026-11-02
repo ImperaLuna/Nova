@@ -18,6 +18,8 @@
 //! - `folder.rs`: a folder's entries, their types from the shared MIME
 //!   database (`crate::mime`, loaded once as the module starts), and the
 //!   view's order.
+//! - `search/`: finding files by name (`files_search`) from an index of
+//!   every name under Home and the drives, kept up to date with inotify.
 //!
 //! Windows go only to the Nova Files process, once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
@@ -28,6 +30,7 @@
 
 mod file_manager1;
 mod folder;
+pub mod search;
 mod target;
 mod views;
 mod window;
@@ -64,6 +67,8 @@ pub struct Sources {
     /// How the Nova Files process runs; none for a novad without its UI,
     /// where windows only wait.
     pub ui: Option<crate::supervisor::UiSettings>,
+    /// What the search index covers.
+    pub search: search::Sources,
 }
 
 pub struct Files {
@@ -74,6 +79,8 @@ pub struct Files {
     stop: Arc<Stop>,
     /// The folders the windows show.
     folders: views::Folders,
+    /// The index of file names.
+    search: search::Search,
 }
 
 /// What the module's services share.
@@ -112,6 +119,7 @@ impl Files {
         }
         let mime = Arc::new(mime);
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
+        let search = search::Search::start(sources.search.clone(), Arc::clone(&logger), Arc::clone(&mime));
         let opener = Opener::new(
             mime,
             sources.associations.clone(),
@@ -132,12 +140,17 @@ impl Files {
         });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, opener: Arc::new(opener), stop, folders })
+        Arc::new(Self { shared, opener: Arc::new(opener), stop, folders, search })
     }
 
     /// What opens files in apps.
     pub fn opener(&self) -> Arc<Opener> {
         Arc::clone(&self.opener)
+    }
+
+    /// What finds files by name (`files_search`).
+    pub fn searcher(&self) -> search::Searcher {
+        self.search.searcher()
     }
 
     /// Shows the folder `path` in client `client`'s view `view`
@@ -188,11 +201,12 @@ impl Files {
     }
 
     /// Stops it: it publishes nothing more, gives up FileManager1, closes
-    /// Nova Files' windows and folder views, and drops windows still
-    /// waiting.
+    /// Nova Files' windows and folder views, stops keeping the search
+    /// index, and drops windows still waiting.
     pub fn stop(&self) {
         self.stop.stop();
         self.folders.stop();
+        self.search.stop();
         if let Some(process) = &self.shared.process {
             process.stop();
         }
@@ -253,7 +267,8 @@ impl crate::modules::Module for Files {
         let data_dirs = crate::data_dirs();
         let associations = Places::system(&data_dirs);
         let runner = Runner::detect(env.path_var);
-        Sources { bus: Bus::Session, data_dirs, associations, runner, ui: env.ui.cloned() }
+        let search = search::Sources::system(env.home.clone());
+        Sources { bus: Bus::Session, data_dirs, associations, runner, ui: env.ui.cloned(), search }
     }
 
     fn config(_: &crate::config::Config) {}
@@ -309,6 +324,7 @@ mod tests {
                 associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
                 runner: crate::apps::launch::Runner::Direct,
                 ui: None,
+                search: search::Sources::under(&dir),
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");

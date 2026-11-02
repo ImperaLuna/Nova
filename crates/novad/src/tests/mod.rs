@@ -303,6 +303,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             ),
             runner: launcher::Runner::Direct,
             ui: None,
+            search: crate::files::search::Sources::under(dir),
         },
         session_lock: dir.to_owned(),
         screenshots: dir.to_owned(),

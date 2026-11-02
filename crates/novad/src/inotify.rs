@@ -43,16 +43,18 @@ pub struct Changes {
     /// Watched folders that were deleted, moved or unmounted, for a watch
     /// with [`ITSELF`].
     pub gone: Vec<PathBuf>,
+    /// The file given to [`Inotify::wake_on`] is ready.
+    pub woken: bool,
 }
 
 impl Changes {
     /// Nothing seen.
     pub fn none() -> Self {
-        Self { found: Vec::new(), overflowed: false, gone: Vec::new() }
+        Self { found: Vec::new(), overflowed: false, gone: Vec::new(), woken: false }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.found.is_empty() && !self.overflowed && self.gone.is_empty()
+        self.found.is_empty() && !self.overflowed && self.gone.is_empty() && !self.woken
     }
 }
 
@@ -61,6 +63,8 @@ pub struct Inotify {
     mask: u32,
     dirs: HashMap<i32, PathBuf>,
     stop: Stopper,
+    /// Another file whose poll events in `.1` end a wait too.
+    also: Option<(Arc<std::fs::File>, i16)>,
 }
 
 /// Ends a blocked or future `Inotify::read` (or any wait that polls its
@@ -102,7 +106,19 @@ impl Inotify {
     pub fn new(mask: u32) -> std::io::Result<Self> {
         // SAFETY: no pointers; returns a new descriptor or -1.
         let file = owned(unsafe { libc::inotify_init1(libc::IN_CLOEXEC) })?;
-        Ok(Self { file: file.into(), mask, dirs: HashMap::new(), stop: Stopper::new()? })
+        Ok(Self { file: file.into(), mask, dirs: HashMap::new(), stop: Stopper::new()?, also: None })
+    }
+
+    /// Makes `read` also return, with [`Changes::woken`], when `file` has
+    /// one of the poll `events` (like `POLLPRI` on `/proc/self/mountinfo`,
+    /// which the kernel raises when mounts change).
+    pub fn wake_on(&mut self, file: Arc<std::fs::File>, events: i16) {
+        self.also = Some((file, events));
+    }
+
+    /// How many folders are watched.
+    pub fn watched(&self) -> usize {
+        self.dirs.len()
     }
 
     /// A handle that makes `read` return `None`.
@@ -159,6 +175,7 @@ impl Inotify {
         match self.wait(deadline)? {
             Woke::Stopped => return Ok(None),
             Woke::TimedOut => return Ok(Some(Changes::none())),
+            Woke::Also => return Ok(Some(Changes { woken: true, ..Changes::none() })),
             Woke::Changed => {}
         }
         let mut buffer = vec![0u8; BUFFER_BYTES];
@@ -200,11 +217,14 @@ impl Inotify {
 
     /// Waits for changes, a stop, or `deadline`.
     fn wait(&self, deadline: Option<Instant>) -> std::io::Result<Woke> {
-        let mut fds = [self.file.as_raw_fd(), self.stop.0.as_raw_fd()].map(|fd| libc::pollfd {
-            fd,
-            events: libc::POLLIN,
-            revents: 0,
-        });
+        let pollfd = |fd, events| libc::pollfd { fd, events, revents: 0 };
+        // Without another file, its slot is a negative fd, which poll skips.
+        let (also, also_events) = self.also.as_ref().map_or((-1, 0), |(file, events)| (file.as_raw_fd(), *events));
+        let mut fds = [
+            pollfd(self.file.as_raw_fd(), libc::POLLIN),
+            pollfd(self.stop.0.as_raw_fd(), libc::POLLIN),
+            pollfd(also, also_events),
+        ];
         loop {
             // Rounded up, so a wait never ends just before its deadline.
             let timeout = deadline.map_or(-1, |deadline| {
@@ -217,7 +237,13 @@ impl Inotify {
                 return Ok(Woke::TimedOut);
             }
             if ready != -1 {
-                return Ok(if fds[1].revents == 0 { Woke::Changed } else { Woke::Stopped });
+                return Ok(if fds[1].revents != 0 {
+                    Woke::Stopped
+                } else if fds[0].revents != 0 {
+                    Woke::Changed
+                } else {
+                    Woke::Also
+                });
             }
             let error = std::io::Error::last_os_error();
             if error.kind() != std::io::ErrorKind::Interrupted {
@@ -232,6 +258,8 @@ enum Woke {
     Changed,
     Stopped,
     TimedOut,
+    /// The file given to [`Inotify::wake_on`].
+    Also,
 }
 
 fn owned(fd: libc::c_int) -> std::io::Result<OwnedFd> {
