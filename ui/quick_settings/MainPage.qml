@@ -3,15 +3,16 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../theme"
 import "quick_settings.js" as QuickSettings
+import "../slots/slots.js" as Slots
 import "../text/duration.js" as Duration
 
 // The sidebar's first page: the header, then the slots features fill from
 // their manifests (features/<id>/feature.toml): toggle tiles two to a row
 // (`quick-settings.tiles`), sliders (`.sliders`), cards (`.cards`), one
 // view in the room left below them (`.fill`) and one pinned at the foot
-// (`.foot`). Each host gets the QML files of its views in slot order and
-// loads them with `qs`; a view it can't show now (`present` false) leaves
-// no gap. Sections fade in one after another as it opens.
+// (`.foot`). Each host gets its slots in order and loads their views with
+// `qs`, keeping the ones that stay when the slots change; a view it can't
+// show now (`present` false) leaves no gap. Sections fade in one after another as it opens.
 Item {
     id: page
 
@@ -26,12 +27,34 @@ Item {
     // Room the top row leaves on its right (the pill's buttons).
     property real headerInset: 0
 
-    // Each host's views, as QML file URLs in slot order.
+    // Each host's slots in slot order ({view, ...}, slots.js forHost), the
+    // fill's and foot's view ids, and the QML file of a view (Views.url).
     property var tiles: []
     property var sliders: []
     property var cards: []
-    property url fill: ""
-    property url foot: ""
+    property string fill: ""
+    property string foot: ""
+    property var viewUrl: view => ""
+
+    // The views each Repeater shows, kept in step with the slots so a view
+    // that stays isn't loaded again.
+    ListModel {
+        id: tileModel
+    }
+    ListModel {
+        id: sliderModel
+    }
+    ListModel {
+        id: cardModel
+    }
+    onTilesChanged: Slots.sync(tileModel, tiles)
+    onSlidersChanged: Slots.sync(sliderModel, sliders)
+    onCardsChanged: Slots.sync(cardModel, cards)
+    Component.onCompleted: {
+        Slots.sync(tileModel, tiles);
+        Slots.sync(sliderModel, sliders);
+        Slots.sync(cardModel, cards);
+    }
 
     readonly property bool revealing: [header, tileSection, sliderSection, notes, footSection].some(section => section.running) || cardSections.busy
 
@@ -69,12 +92,10 @@ Item {
                 readonly property real cell: (width - spacing) / columns
 
                 Repeater {
-                    model: page.tiles
+                    model: tileModel
 
                     SlotLoader {
-                        required property url modelData
                         width: grid.cell
-                        view: modelData
                     }
                 }
             }
@@ -92,12 +113,10 @@ Item {
                 spacing: Tokens.gap
 
                 Repeater {
-                    model: page.sliders
+                    model: sliderModel
 
                     SlotLoader {
-                        required property url modelData
                         width: sliderColumn.width
-                        view: modelData
                     }
                 }
             }
@@ -106,7 +125,7 @@ Item {
         // One section each, fading in after the sliders in slot order.
         Repeater {
             id: cardSections
-            model: page.cards
+            model: cardModel
             property int revision: 0
             onItemAdded: revision++
             // A card's section is still fading in, or the card settling.
@@ -133,7 +152,7 @@ Item {
         height: footSection.y - y - Tokens.quickSettingsGap
         visible: fillSlot.present
         shown: page.shown
-        order: 3 + page.cards.length
+        order: 3 + cardModel.count
 
         SlotLoader {
             id: fillSlot
@@ -147,7 +166,7 @@ Item {
         anchors.bottom: parent.bottom
         width: parent.width
         shown: page.shown
-        order: 4 + page.cards.length
+        order: 4 + cardModel.count
 
         SlotLoader {
             width: parent.width
@@ -158,7 +177,7 @@ Item {
     component CardSection: Reveal {
         id: section
 
-        required property url modelData
+        required property string view
         required property int index
         readonly property bool busy: running || card.running
 
@@ -170,15 +189,16 @@ Item {
         SlotLoader {
             id: card
             width: parent.width
-            view: section.modelData
+            view: section.view
         }
     }
 
-    // Loads one slot's view with `qs`; nothing when `view` is empty.
+    // Loads one slot's view (an id, `viewUrl` finds its file) with `qs`;
+    // nothing when there's no such view.
     component SlotLoader: Loader {
         id: loader
 
-        property url view
+        required property string view
         readonly property QsSlot slot: item as QsSlot
         readonly property bool present: slot?.present ?? false
         readonly property bool running: slot?.running ?? false
@@ -187,10 +207,11 @@ Item {
         onViewChanged: load()
         Component.onCompleted: load()
         function load() {
-            if (view.toString() === "")
+            const url = page.viewUrl(view);
+            if (url.toString() === "")
                 setSource("");
             else
-                setSource(view, {
+                setSource(url, {
                     qs: page.qs
                 });
         }

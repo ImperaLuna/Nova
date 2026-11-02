@@ -363,8 +363,15 @@ Item {
             return found;
         }
 
-        function stub(name) {
-            return Qt.resolvedUrl(`data/slots/${name}.qml`);
+        // Slots of stub views (data/slots/<name>.qml), and their files.
+        function stubs(...names) {
+            return names.map(name => ({
+                        view: name,
+                        order: 0
+                    }));
+        }
+        function stubUrl(view) {
+            return Qt.resolvedUrl(`data/slots/${view.replace(/#.*/, "")}.qml`);
         }
 
         function test_main_page_lays_out_its_slots() {
@@ -378,11 +385,12 @@ Item {
                         name: "NixOS"
                     }
                 },
-                tiles: [stub("StubTile"), stub("StubAbsent"), stub("StubTile"), stub("StubTile")],
-                sliders: [stub("StubAbsent")],
-                cards: [stub("StubCard"), stub("StubAbsent"), stub("StubCard")],
-                fill: stub("StubFill"),
-                foot: stub("StubCard")
+                viewUrl: stubUrl,
+                tiles: stubs("StubTile#1", "StubAbsent", "StubTile#2", "StubTile#3"),
+                sliders: stubs("StubAbsent"),
+                cards: stubs("StubCard#1", "StubAbsent", "StubCard#2"),
+                fill: "StubFill",
+                foot: "StubCard#foot"
             });
             tryVerify(() => !page.revealing);
             shot(page, "main");
@@ -407,6 +415,18 @@ Item {
             spy.target = page.qs;
             mouseClick(page, page.width / 2, page.height - 40);
             compare(spy.count, 1, "a slot's requests reach the sidebar");
+        }
+
+        function test_a_view_that_stays_is_not_loaded_again() {
+            const page = createTemporaryObject(mainComponent, stage, {
+                viewUrl: stubUrl,
+                tiles: stubs("StubTile#1")
+            });
+            const first = findAll(page, "stubTile")[0];
+            page.tiles = stubs("StubTile#0", "StubTile#1");
+            const tiles = findAll(page, "stubTile");
+            compare(tiles.length, 2);
+            verify(tiles.includes(first), "the tile that stayed is the same one");
         }
 
         function test_slots_without_views_leave_their_hosts_empty() {

@@ -13,7 +13,7 @@ import "../tray/service"
 import "../daemon"
 import "../daemon/protocol.js" as Protocol
 import "../slots/slots.js" as Slots
-import "../slots/views.js" as Views
+import "../slots"
 import "quick_settings.js" as QuickSettings
 import "../util/numbers.js" as Numbers
 import "../icons"
@@ -52,42 +52,26 @@ StagePanel {
     property string page: QuickSettings.PAGE_MAIN
 
     // What features put in it, from their manifests: each host's slots
-    // (slots.js forHost) with a view, kept as they are when a features event
-    // changes nothing for that host, so its views aren't loaded again.
-    property var tileSlots: []
-    property var sliderSlots: []
-    property var cardSlots: []
-    property var fillSlots: []
-    property var footSlots: []
-    property var pageSlots: []
-    function slotsOf(host: string, previous: var): var {
-        const next = Slots.forHost(Daemon.features, host).filter(slot => Views.path(slot.view) !== "");
-        return Slots.same(previous, next) ? previous : next;
+    // (slots.js forHost) that have a view. Hosts keep their views in step
+    // with these (Slots.sync), so a view that stays isn't loaded again.
+    function slotsOf(host: string): var {
+        return Slots.forHost(Daemon.features, host).filter(slot => Views.url(slot.view).toString() !== "");
     }
-    function updateSlots() {
-        tileSlots = slotsOf(Slots.HOST_QUICK_SETTINGS_TILES, tileSlots);
-        sliderSlots = slotsOf(Slots.HOST_QUICK_SETTINGS_SLIDERS, sliderSlots);
-        cardSlots = slotsOf(Slots.HOST_QUICK_SETTINGS_CARDS, cardSlots);
-        fillSlots = slotsOf(Slots.HOST_QUICK_SETTINGS_FILL, fillSlots);
-        footSlots = slotsOf(Slots.HOST_QUICK_SETTINGS_FOOT, footSlots);
-        pageSlots = slotsOf(Slots.HOST_QUICK_SETTINGS_PAGES, pageSlots);
+    readonly property var tileSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_TILES)
+    readonly property var sliderSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_SLIDERS)
+    readonly property var cardSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_CARDS)
+    readonly property var fillSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_FILL)
+    readonly property var footSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_FOOT)
+    readonly property var pageSlots: slotsOf(Slots.HOST_QUICK_SETTINGS_PAGES)
+    onPageSlotsChanged: {
+        Slots.sync(pageModel, pageSlots);
         // Its page went with its feature: back to the first.
         if (!pageSlots.some(slot => slot.view === page))
             page = QuickSettings.PAGE_MAIN;
     }
-    Connections {
-        target: Daemon
-        function onFeaturesChanged() {
-            panel.updateSlots();
-        }
-    }
-    Component.onCompleted: updateSlots()
-    // A view's QML file.
-    function viewUrl(view: string): url {
-        return Qt.resolvedUrl("../" + Views.path(view));
-    }
-    function viewUrls(slots: var): var {
-        return slots.map(slot => viewUrl(slot.view));
+    Component.onCompleted: Slots.sync(pageModel, pageSlots)
+    ListModel {
+        id: pageModel
     }
 
     // What every slot gets: where the sidebar is, and its requests.
@@ -199,11 +183,12 @@ StagePanel {
                     qs: context
                     logo: QuickSettings.logo(QuickSettingsService.host?.os, Qt.resolvedUrl("logos"), path => AppIcons.source(path))
                     host: QuickSettingsService.host
-                    tiles: panel.viewUrls(panel.tileSlots)
-                    sliders: panel.viewUrls(panel.sliderSlots)
-                    cards: panel.viewUrls(panel.cardSlots)
-                    fill: panel.viewUrls(panel.fillSlots)[0] ?? ""
-                    foot: panel.viewUrls(panel.footSlots)[0] ?? ""
+                    viewUrl: view => Views.url(view)
+                    tiles: panel.tileSlots
+                    sliders: panel.sliderSlots
+                    cards: panel.cardSlots
+                    fill: panel.fillSlots[0]?.view ?? ""
+                    foot: panel.footSlots[0]?.view ?? ""
                 }
             }
         }
@@ -212,14 +197,14 @@ StagePanel {
         // view id and loaded only while it shows or slides.
         Repeater {
             id: pageRepeater
-            model: panel.pageSlots
+            model: pageModel
             property int revision: 0
             onItemAdded: revision++
 
             PageSlot {
                 id: pageSlot
-                required property var modelData
-                key: modelData.view
+                required property string view
+                key: view
 
                 Loader {
                     readonly property bool live: pageSlot.live
@@ -228,7 +213,7 @@ StagePanel {
                     Component.onCompleted: load()
                     function load() {
                         if (live)
-                            setSource(panel.viewUrl(pageSlot.key), {
+                            setSource(Views.url(pageSlot.key), {
                                 qs: context
                             });
                         else
