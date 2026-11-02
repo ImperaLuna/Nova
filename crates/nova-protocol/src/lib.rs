@@ -134,6 +134,11 @@ pub enum Event {
     /// Nova Files process subscribes to; one asked for before it subscribed
     /// is sent right after it does.
     FilesWindow(FilesWindow),
+    /// One page of a folder's entries in view `view` (feature `files`), in
+    /// the view's order: entries `start..start + entries.len()` of `total`.
+    /// A page with `start: 0` replaces everything the view held. Sent only to the client that opened the
+    /// view, whatever it subscribed to; topic [`Topic::Files`].
+    FilesPage(FolderPage),
 }
 
 /// Groups of events a client can subscribe to.
@@ -189,6 +194,7 @@ impl Event {
             Event::Network(_) | Event::NetworkTraffic(_) => Some(Topic::Network),
             Event::Bluetooth(_) => Some(Topic::Bluetooth),
             Event::FilesWindow(_) => Some(Topic::Files),
+            Event::FilesPage(_) => Some(Topic::Files),
         }
     }
 }
@@ -1129,6 +1135,13 @@ pub struct App {
 /// socket is capped, and nobody types more.
 pub const LAUNCHER_SEARCH_MAX_CHARS: usize = 200;
 
+/// Most folder views one connection may have open (`files_open`): each
+/// holds its folder's entries in novad.
+pub const FILES_MAX_VIEWS: usize = 16;
+
+/// The longest `files_open` path, in bytes: Linux's own limit.
+pub const FILES_PATH_MAX_BYTES: usize = 4096;
+
 /// The longest each of an `app_icon` request's names may be, in
 /// characters.
 pub const APP_ICON_MAX_CHARS: usize = 512;
@@ -1752,6 +1765,80 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         select: Vec<String>,
     },
+    /// Shows the folder at the absolute `path` in this connection's view
+    /// `view` (feature `files`), in `sort` order, with hidden entries (a
+    /// name starting with a dot) only when `hidden`. Whatever the view
+    /// showed is replaced. Answered once the folder can be read; its
+    /// entries come as [`Event::FilesPage`]s (the first may come before
+    /// the answer).
+    FilesOpen {
+        view: u32,
+        path: String,
+        sort: FileSort,
+        hidden: bool,
+    },
+    /// Closes this connection's view `view`. A view closes by itself when
+    /// its connection does.
+    FilesClose {
+        view: u32,
+    },
+}
+
+/// The order of a folder view (`files_open`). Folders always come before
+/// files; within each, entries are ordered by `key`, then by name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileSort {
+    pub key: FileSortKey,
+    pub descending: bool,
+}
+
+/// What a folder view is ordered by. Names compare the way people read
+/// them: case aside, and numbers by their value ("file 2" before "file 10").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSortKey {
+    Name,
+    /// The MIME type.
+    Kind,
+    Size,
+    Modified,
+}
+
+/// One page of a folder view ([`Event::FilesPage`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FolderPage {
+    pub view: u32,
+    /// The folder, as `files_open` named it.
+    pub path: String,
+    pub start: u32,
+    /// How many entries the view holds once every page is in.
+    pub total: u32,
+    pub entries: Vec<FileEntry>,
+}
+
+/// An entry of a folder view.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileEntry {
+    pub name: String,
+    /// A folder, or a link to one.
+    pub dir: bool,
+    /// A symbolic link; `dir`, `mime`, `size` and `modified_ms` describe
+    /// what it points to, when that exists.
+    pub link: bool,
+    /// Its name starts with a dot.
+    pub hidden: bool,
+    /// Its type in the shared MIME database, from its name (`inode/directory`
+    /// for a folder).
+    pub mime: String,
+    /// In bytes; none for a folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// Last modified, in milliseconds since 1970.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified_ms: Option<i64>,
 }
 
 /// Whether a `set_wallpaper` path is a Steam Workshop ID: only digits.
@@ -2164,6 +2251,7 @@ mod tests {
                         Topic::Peripherals,
                         Topic::Network,
                         Topic::Bluetooth,
+                        Topic::Files,
                     ],
                 },
             }),
@@ -2472,6 +2560,42 @@ mod tests {
                 id: Some(66),
                 command: Command::BluetoothAnswer { id: 4, answer: PairingAnswer::Code("0000".into()) },
             }),
+            encode(Request {
+                id: Some(74),
+                command: Command::FilesOpen {
+                    view: 1,
+                    path: "/home/user/Pictures".into(),
+                    sort: FileSort { key: FileSortKey::Modified, descending: true },
+                    hidden: false,
+                },
+            }),
+            encode(Request { id: Some(75), command: Command::FilesClose { view: 1 } }),
+            encode(Event::FilesPage(FolderPage {
+                view: 1,
+                path: "/home/user/Pictures".into(),
+                start: 0,
+                total: 2,
+                entries: vec![
+                    FileEntry {
+                        name: "Screenshots".into(),
+                        dir: true,
+                        link: false,
+                        hidden: false,
+                        mime: "inode/directory".into(),
+                        size: None,
+                        modified_ms: Some(1_793_000_000_000),
+                    },
+                    FileEntry {
+                        name: "cover.png".into(),
+                        dir: false,
+                        link: false,
+                        hidden: false,
+                        mime: "image/png".into(),
+                        size: Some(48_213),
+                        modified_ms: Some(1_792_900_000_000),
+                    },
+                ],
+            })),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();

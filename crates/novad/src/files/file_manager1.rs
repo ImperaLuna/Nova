@@ -121,8 +121,8 @@ mod tests {
             let bus = TestBus::start(&dir.join("bus"));
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
-            let sources = Sources { bus: Bus::Address(bus.address.clone()), ui: None };
-            let files = Files::start(sources, Arc::clone(&hub), logger);
+            let sources = Sources { bus: Bus::Address(bus.address.clone()), ui: None, data_dirs: Vec::new() };
+            let files = Files::start(sources, Arc::clone(&hub), logger, Arc::default());
             Self { dir, bus, hub, files }
         }
 

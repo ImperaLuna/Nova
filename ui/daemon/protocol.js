@@ -21,6 +21,12 @@ var WIFI_PASSWORD_MAX_BYTES = 128;
 // novad refuses shorter WPA passwords.
 var WPA_PASSWORD_MIN_BYTES = 8;
 
+// novad refuses more open folder views per connection.
+var FILES_MAX_VIEWS = 16;
+
+// novad refuses longer files_open paths.
+var FILES_PATH_MAX_BYTES = 4096;
+
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 
@@ -90,6 +96,8 @@ var CMD_BLUETOOTH_DISCONNECT = "bluetooth_disconnect";
 var CMD_BLUETOOTH_FORGET = "bluetooth_forget";
 var CMD_BLUETOOTH_ANSWER = "bluetooth_answer";
 var CMD_SHOW_FOLDER = "show_folder";
+var CMD_FILES_OPEN = "files_open";
+var CMD_FILES_CLOSE = "files_close";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -119,6 +127,7 @@ var EVENT_NETWORK = "network";
 var EVENT_NETWORK_TRAFFIC = "network_traffic";
 var EVENT_BLUETOOTH = "bluetooth";
 var EVENT_FILES_WINDOW = "files_window";
+var EVENT_FILES_PAGE = "files_page";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
@@ -229,6 +238,12 @@ var MEDIA_PREVIOUS = "previous";
 var PLAYBACK_PLAYING = "playing";
 var PLAYBACK_PAUSED = "paused";
 var PLAYBACK_STOPPED = "stopped";
+
+// What a folder view is ordered by (FileSortKey).
+var FILE_SORT_NAME = "name";
+var FILE_SORT_KIND = "kind";
+var FILE_SORT_SIZE = "size";
+var FILE_SORT_MODIFIED = "modified";
 
 // END GENERATED
 

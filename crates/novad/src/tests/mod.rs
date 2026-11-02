@@ -281,6 +281,9 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
         files: crate::files::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
             ui: None,
+            // Its MIME database from the test's own data folder, empty
+            // unless a test writes one there.
+            data_dirs: vec![dir.join("files/share")],
         },
         session_lock: dir.to_owned(),
         screenshots: dir.to_owned(),

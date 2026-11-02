@@ -11,6 +11,11 @@
 //!   folder" opens Nova Files.
 //! - `window.rs`: the Nova Files process (`ui/files.qml`), started when a
 //!   window is asked for and none runs.
+//! - `views.rs`: the folders a window shows (`files_open`), read and
+//!   sent in pages.
+//! - `folder.rs`: a folder's entries, their types from the shared MIME
+//!   database (`crate::mime`, loaded once as the module starts), and the
+//!   view's order.
 //!
 //! Its events go on [`Topic::Files`], which only the Nova Files process
 //! subscribes to. A window asked for while no client is subscribed waits
@@ -18,14 +23,18 @@
 //! and subscribing take the same lock, so none is lost or sent twice.
 
 mod file_manager1;
+mod folder;
 mod target;
+mod views;
 mod window;
 
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
+use crate::mime::MimeDb;
 use crate::session_bus::{Bus, Stop};
-use nova_protocol::{Event, FeatureState, FilesWindow, Topic};
+use nova_protocol::{Event, FeatureState, FileSort, FilesWindow, Topic};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub const FEATURE_ID: &str = "files";
@@ -39,12 +48,16 @@ pub struct Sources {
     /// How the Nova Files process runs; none for a novad without its UI,
     /// where windows only wait.
     pub ui: Option<crate::supervisor::UiSettings>,
+    /// The XDG data folders the MIME database is read from.
+    pub data_dirs: Vec<PathBuf>,
 }
 
 pub struct Files {
     shared: Arc<Shared>,
     /// Ends the FileManager1 service.
     stop: Arc<Stop>,
+    /// The folders the windows show.
+    folders: views::Folders,
 }
 
 /// What the module's services share.
@@ -58,12 +71,25 @@ struct Shared {
 }
 
 impl Files {
-    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+    /// Starts it over the MIME database `mime`.
+    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>, mime: Arc<MimeDb>) -> Arc<Self> {
+        let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), mime);
         let process = sources.ui.clone().map(|ui| window::Process::new(ui, Arc::clone(&logger)));
         let shared = Arc::new(Shared { sources, hub, logger, waiting: Mutex::new(Vec::new()), process });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, stop })
+        Arc::new(Self { shared, stop, folders })
+    }
+
+    /// Shows the folder `path` in client `client`'s view `view`
+    /// (`files_open`, [`views::Folders::open`]).
+    pub fn open(&self, client: ClientId, view: u32, path: &str, sort: FileSort, hidden: bool) -> Result<(), String> {
+        self.folders.open(client, view, path, sort, hidden)
+    }
+
+    /// Closes client `client`'s view `view` (`files_close`).
+    pub fn close(&self, client: ClientId, view: u32) {
+        self.folders.close(client, view);
     }
 
     /// Opens a window on `folder` with `select` selected, once both check
@@ -81,9 +107,11 @@ impl Files {
     }
 
     /// Stops it: it publishes nothing more, gives up FileManager1, closes
-    /// Nova Files' windows, and drops those still waiting.
+    /// Nova Files' windows and folder views, and drops windows still
+    /// waiting.
     pub fn stop(&self) {
         self.stop.stop();
+        self.folders.stop();
         if let Some(process) = &self.shared.process {
             process.stop();
         }
@@ -115,17 +143,25 @@ impl crate::modules::Module for Files {
     type Config = ();
 
     fn sources(env: &crate::modules::Env) -> Sources {
-        Sources { bus: Bus::Session, ui: env.ui.cloned() }
+        Sources { bus: Bus::Session, ui: env.ui.cloned(), data_dirs: crate::data_dirs() }
     }
 
     fn config(_: &crate::config::Config) {}
 
     fn start(ctx: &crate::modules::Context, sources: &Sources, (): &(), _: &[FeatureState]) -> Arc<Self> {
-        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+        let (mime, problems) = MimeDb::load(&sources.data_dirs);
+        for problem in problems {
+            ctx.logger.warn(LOG_SOURCE, &problem);
+        }
+        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger), Arc::new(mime))
     }
 
     fn send_state(&self, client: ClientId) {
         Self::send_state(self, client);
+    }
+
+    fn client_gone(&self, client: ClientId) {
+        self.folders.client_gone(client);
     }
 
     fn stop(&self) {
