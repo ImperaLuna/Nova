@@ -21,9 +21,21 @@
 //!
 //! [check]
 //! binaries = ["gpu-screen-recorder|wf-recorder"]
+//!
+//! [[slot]]
+//! host = "bar.right"
+//! view = "recording.pill"
+//! order = 10
 //! ```
+//!
+//! Each `[[slot]]` is a place its UI goes: a view (an id the UI maps to its
+//! component in ui/slots/views.js) in one of the [`HOSTS`], sorted there by
+//! `order`. novad sends them with the feature's state, so a new feature
+//! plugs into the bar from its own manifest instead of the shell's files.
 
 pub mod gpus;
+
+pub use nova_protocol::Slot;
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -32,6 +44,36 @@ use std::path::{Path, PathBuf};
 
 /// Package sets a variant may list. `nix` holds nixpkgs attribute names.
 pub const DISTROS: &[&str] = &["nix", "arch", "fedora", "debian"];
+
+/// A place in the UI that slots fill, and the feature that draws it. The
+/// UI's names for them are the `HOST_*` constants in ui/slots/slots.js.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Host {
+    pub name: &'static str,
+    /// The feature whose UI draws the host: its slots have nowhere to show
+    /// while that feature isn't ready.
+    pub owner: &'static str,
+}
+
+/// Every host a slot may name. A slot naming another host is never filled.
+pub const HOSTS: &[Host] = &[
+    // The bar's rows of pills: left from the left edge, center around the
+    // middle, right from the right edge.
+    Host { name: "bar.left", owner: "core" },
+    Host { name: "bar.center", owner: "core" },
+    Host { name: "bar.right", owner: "core" },
+    // The buttons at the right pill's end (and on quick settings, in the
+    // same place).
+    Host { name: "right-pill.buttons", owner: "core" },
+    // Panels drawn on the stage or its panel surfaces that aren't a pill
+    // of their own, like the launcher.
+    Host { name: "stage.panels", owner: "core" },
+];
+
+/// The host named `name`, if there is one.
+pub fn host(name: &str) -> Option<&'static Host> {
+    HOSTS.iter().find(|host| host.name == name)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -60,6 +102,9 @@ pub struct Manifest {
     pub variants: BTreeMap<String, Variant>,
     #[serde(default)]
     pub check: Check,
+    /// Where its UI goes (`[[slot]]`).
+    #[serde(default, rename = "slot")]
+    pub slots: Vec<Slot>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -164,6 +209,15 @@ impl Manifest {
                     "[variants.{name}] lists unknown distro \"{bad}\" (known: {})",
                     DISTROS.join(", ")
                 ));
+            }
+        }
+        for (index, slot) in self.slots.iter().enumerate() {
+            let well_formed = slot.view.split('.').all(kebab);
+            if !well_formed {
+                return Err(format!("[[slot]] view \"{}\" must be dot-separated kebab-case", slot.view));
+            }
+            if self.slots[..index].iter().any(|other| other.host == slot.host && other.view == slot.view) {
+                return Err(format!("[[slot]] {} in {} is listed twice", slot.view, slot.host));
             }
         }
         Ok(())
@@ -317,6 +371,16 @@ mod tests {
                 "a",
                 "needs a `when`",
             ),
+            (
+                "id = \"a\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"bar.left\"\nview = \"a/pill\"",
+                "a",
+                "kebab-case",
+            ),
+            (
+                "id = \"a\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"bar.left\"\nview = \"a.pill\"\n[[slot]]\nhost = \"bar.left\"\nview = \"a.pill\"",
+                "a",
+                "twice",
+            ),
         ];
         for (text, dir, expected) in cases {
             let err = manifest(text).validate(dir).unwrap_err();
@@ -334,5 +398,60 @@ mod tests {
         let sel = Selection::parse("enabled = [\"recording\"]\ndisabled = [\"core\"]").unwrap();
         assert!(sel.is_on(&core), "required features can't be disabled");
         assert!(sel.is_on(&rec));
+    }
+
+    #[test]
+    fn slots_parse_with_their_order() {
+        let m = manifest(
+            "id = \"a\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"bar.left\"\nview = \"a.pill\"\norder = 15\n[[slot]]\nhost = \"stage.panels\"\nview = \"a.panel\"",
+        );
+        let expected = [
+            Slot { host: "bar.left".into(), view: "a.pill".into(), order: 15 },
+            Slot { host: "stage.panels".into(), view: "a.panel".into(), order: 0 },
+        ];
+        assert_eq!(m.slots, expected);
+        let unknown = "id = \"a\"\nname = \"x\"\ndescription = \"x\"\n[[slot]]\nhost = \"bar.left\"\nview = \"a.pill\"\nwhere = 1";
+        assert!(toml::from_str::<Manifest>(unknown).is_err(), "unknown slot fields are rejected");
+    }
+
+    /// The quoted strings of `prefix` lines in a UI JavaScript file, like
+    /// `var HOST_BAR_LEFT = "bar.left";` or `"media.pill": "media/x.qml",`.
+    fn js_strings(file: &str, prefix: &str) -> Vec<Vec<String>> {
+        let text = std::fs::read_to_string(repo_features().join("../ui").join(file)).unwrap();
+        text.lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with(prefix))
+            .map(|line| line.split('"').skip(1).step_by(2).map(String::from).collect())
+            .collect()
+    }
+
+    #[test]
+    fn the_ui_names_the_same_hosts() {
+        let mut ui: Vec<String> = js_strings("slots/slots.js", "var HOST_").into_iter().flatten().collect();
+        let mut known: Vec<String> = HOSTS.iter().map(|host| host.name.to_string()).collect();
+        ui.sort();
+        known.sort();
+        assert_eq!(ui, known, "ui/slots/slots.js and HOSTS differ");
+        let ids: Vec<String> = load_all(&repo_features()).unwrap().into_iter().map(|m| m.id).collect();
+        for host in HOSTS {
+            assert!(ids.iter().any(|id| id == host.owner), "{} is owned by unknown feature {}", host.name, host.owner);
+        }
+    }
+
+    #[test]
+    fn every_slot_names_a_known_host_and_a_registered_view() {
+        let views = js_strings("slots/views.js", "\"");
+        let ui = repo_features().join("../ui");
+        for manifest in load_all(&repo_features()).unwrap() {
+            for slot in &manifest.slots {
+                assert!(host(&slot.host).is_some(), "{}: unknown host {}", manifest.id, slot.host);
+                let file = views
+                    .iter()
+                    .find(|entry| entry.first() == Some(&slot.view))
+                    .and_then(|entry| entry.get(1))
+                    .unwrap_or_else(|| panic!("{}: view {} isn't in ui/slots/views.js", manifest.id, slot.view));
+                assert!(ui.join(file).is_file(), "{}: ui/{file} doesn't exist", slot.view);
+            }
+        }
     }
 }

@@ -10,3 +10,14 @@ required = true
 arch = ["quickshell"]
 fedora = ["quickshell"]
 debian = ["quickshell"]
+
+[[slot]]
+host = "bar.center"
+view = "central-pill"
+order = 10
+
+# At the right edge, with the tray and the right-pill.buttons host.
+[[slot]]
+host = "bar.right"
+view = "right-pill"
+order = 20

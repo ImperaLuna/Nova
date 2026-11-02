@@ -3,3 +3,13 @@ name = "Power menu"
 description = "Lock, suspend, log out, restart and shut down from the right edge."
 default = true
 daemon = "power"
+
+[[slot]]
+host = "right-pill.buttons"
+view = "power.button"
+order = 20
+
+[[slot]]
+host = "stage.panels"
+view = "power.menu"
+order = 10

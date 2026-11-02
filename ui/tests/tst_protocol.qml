@@ -75,6 +75,10 @@ TestCase {
             {
                 id: "weather",
                 status: "off"
+            },
+            {
+                id: "tray",
+                status: "no_host"
             }
         ]);
         compare(ready, ["core"]);

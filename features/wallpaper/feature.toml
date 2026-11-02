@@ -13,3 +13,8 @@ arch = ["awww"]
 
 [check]
 binaries = ["awww", "awww-daemon"]
+
+[[slot]]
+host = "stage.panels"
+view = "wallpaper.carousel"
+order = 40
