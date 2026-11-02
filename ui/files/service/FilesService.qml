@@ -8,7 +8,7 @@ import "../../daemon/protocol.js" as Protocol
 // Nova Files' link to novad: the windows it asks for, the sidebar's tree
 // and places, opening files in apps (the default one on a double-click or
 // Enter, or one from "Open with", which can also become the new default),
-// and copy and move jobs. The Nova Files
+// copy and move jobs, and the trash. The Nova Files
 // process (../../files.qml) and its windows get these here and never talk
 // to Daemon themselves.
 Singleton {
@@ -19,6 +19,8 @@ Singleton {
     signal windowRequested(var window)
     // How a copy or move job is going (see Daemon.filesTransferChanged).
     signal transferChanged(var transfer)
+    // Something in the trash changed: ask trashList again.
+    signal trashChanged
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
@@ -144,6 +146,56 @@ Singleton {
         });
     }
 
+    // Moves `paths` (absolute) to the trash. `done(error)` gets novad's
+    // answer: null, or which ones didn't go.
+    function trash(paths: var, done: var) {
+        Daemon.call(Protocol.CMD_FILES_TRASH, {
+            paths: paths
+        }, error => root._answered("moving to the trash", error, done));
+    }
+
+    // Deletes `paths` (absolute) for good.
+    function deleteForGood(paths: var, done: var) {
+        Daemon.call(Protocol.CMD_FILES_DELETE, {
+            paths: paths
+        }, error => root._answered("deleting", error, done));
+    }
+
+    // `done(items)` gets what the trash holds, the last trashed first, each
+    // {id, folder, deleted_ms, entry}; none when novad couldn't tell.
+    function trashList(done: var) {
+        Daemon.call(Protocol.CMD_FILES_TRASH_LIST, undefined, (error, result) => {
+            if (error)
+                console.warn(`nova: the trash: ${error}`);
+            done(error ? [] : result);
+        });
+    }
+
+    // Puts the trashed items `ids` back where they came from.
+    function restore(ids: var, done: var) {
+        Daemon.call(Protocol.CMD_FILES_RESTORE, {
+            ids: ids
+        }, error => root._answered("restoring", error, done));
+    }
+
+    // Deletes the trashed items `ids` for good.
+    function eraseFromTrash(ids: var, done: var) {
+        Daemon.call(Protocol.CMD_FILES_TRASH_DELETE, {
+            ids: ids
+        }, error => root._answered("deleting from the trash", error, done));
+    }
+
+    // Deletes everything in the trash for good.
+    function emptyTrash(done: var) {
+        Daemon.call(Protocol.CMD_FILES_EMPTY_TRASH, undefined, error => root._answered("emptying the trash", error, done));
+    }
+
+    function _answered(doing: string, error: var, done: var) {
+        if (error)
+            console.warn(`nova: ${doing}: ${error}`);
+        done?.(error ?? null);
+    }
+
     Connections {
         target: Daemon
         function onFilesWindowRequested(window: var) {
@@ -151,6 +203,9 @@ Singleton {
         }
         function onFilesTransferChanged(transfer: var) {
             root.transferChanged(transfer);
+        }
+        function onFilesTrashChanged() {
+            root.trashChanged();
         }
         function onConnectedChanged() {
             if (Daemon.connected)

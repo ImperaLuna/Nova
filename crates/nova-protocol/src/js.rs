@@ -150,6 +150,11 @@ fn limits() -> [(&'static str, u64, &'static str); 9] {
     ]
 }
 
+/// Fixed wire strings the UI compares with, as `(name, value, comment)`.
+fn texts() -> [(&'static str, &'static str, &'static str); 1] {
+    [("FILES_TRASH_PLACE", FILES_TRASH_PLACE, "The trash place's path in files_places: the trash, not a folder.")]
+}
+
 /// `"focus_workspace"` -> `FOCUS_WORKSPACE`, `"ai-usage"` -> `AI_USAGE`.
 fn constant_name(name: &str) -> String {
     name.to_uppercase().replace(['-', '.'], "_")
@@ -170,6 +175,11 @@ pub fn generated(features: &Path) -> String {
         line(String::new());
         line(format!("// {comment}"));
         line(format!("var {name} = {value};"));
+    }
+    for (name, value, comment) in texts() {
+        line(String::new());
+        line(format!("// {comment}"));
+        line(format!("var {name} = \"{value}\";"));
     }
     for group in groups(features) {
         line(String::new());

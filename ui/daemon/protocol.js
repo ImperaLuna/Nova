@@ -36,6 +36,9 @@ var FILES_TREE_MAX_FOLDERS = 256;
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 
+// The trash place's path in files_places: the trash, not a folder.
+var FILES_TRASH_PLACE = "trash:///";
+
 // Commands a client sends (Command).
 var CMD_PING = "ping";
 var CMD_LIST_FEATURES = "list_features";
@@ -298,6 +301,7 @@ var PLACE_DESKTOP = "desktop";
 var PLACE_DOCUMENTS = "documents";
 var PLACE_DOWNLOADS = "downloads";
 var PLACE_PICTURES = "pictures";
+var PLACE_TRASH = "trash";
 
 // END GENERATED
 

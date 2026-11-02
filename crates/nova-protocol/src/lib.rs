@@ -2037,8 +2037,8 @@ pub struct FilePlace {
     pub path: String,
 }
 
-/// Which place a [`FilePlace`] is: Home, or one of the user's folders from
-/// `user-dirs.dirs`.
+/// Which place a [`FilePlace`] is: Home, one of the user's folders from
+/// `user-dirs.dirs`, or the trash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaceKind {
@@ -2047,7 +2047,14 @@ pub enum PlaceKind {
     Documents,
     Downloads,
     Pictures,
+    /// The trash, at [`FILES_TRASH_PLACE`]: not a folder, listed with
+    /// `files_trash_list`.
+    Trash,
 }
+
+/// The trash place's path ([`PlaceKind::Trash`]): a window there shows the
+/// trash instead of a folder.
+pub const FILES_TRASH_PLACE: &str = "trash:///";
 
 /// An item in the trash (feature `files`, [`Command::FilesTrashList`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -19,7 +19,9 @@
 //! chevron.
 
 use super::folder;
-use nova_protocol::{FILES_PATH_MAX_BYTES, FILES_TREE_MAX_FOLDERS, FilePlace, FolderTree, PlaceKind, TreeRow};
+use nova_protocol::{
+    FILES_PATH_MAX_BYTES, FILES_TRASH_PLACE, FILES_TREE_MAX_FOLDERS, FilePlace, FolderTree, PlaceKind, TreeRow,
+};
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
@@ -63,7 +65,7 @@ pub fn tree(request: &Request, home: &Path) -> Result<FolderTree, String> {
 }
 
 /// The places that exist, in the sidebar's order: Home, then the user's
-/// folders from `user-dirs.dirs`.
+/// folders from `user-dirs.dirs`, then the trash, which is always there.
 pub fn places(home: &Path, user_dir: impl Fn(&str, &str) -> PathBuf) -> Vec<FilePlace> {
     let folders = [
         (PlaceKind::Desktop, "DESKTOP", "Desktop"),
@@ -75,6 +77,7 @@ pub fn places(home: &Path, user_dir: impl Fn(&str, &str) -> PathBuf) -> Vec<File
         .chain(folders.into_iter().map(|(kind, key, fallback)| (kind, user_dir(key, fallback))))
         .filter(|(_, path)| path.is_dir())
         .filter_map(|(kind, path)| Some(FilePlace { kind, path: path.to_str()?.to_owned() }))
+        .chain(std::iter::once(FilePlace { kind: PlaceKind::Trash, path: FILES_TRASH_PLACE.into() }))
         .collect()
 }
 
@@ -317,7 +320,7 @@ mod tests {
         let home = home("places");
         let places = places(&home, |_, fallback| home.join(fallback));
         let kinds: Vec<_> = places.iter().map(|place| place.kind).collect();
-        assert_eq!(kinds, [PlaceKind::Home, PlaceKind::Documents, PlaceKind::Pictures]);
+        assert_eq!(kinds, [PlaceKind::Home, PlaceKind::Documents, PlaceKind::Pictures, PlaceKind::Trash]);
         assert_eq!(places[1].path, request(&home.join("Documents")));
     }
 }
