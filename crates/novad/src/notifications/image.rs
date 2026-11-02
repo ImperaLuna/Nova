@@ -82,8 +82,15 @@ pub fn file(reference: &str) -> Option<PathBuf> {
 /// A URI's path with its `%XX` escapes decoded; `None` when one is broken
 /// or the result isn't UTF-8 (the UI loads it by URL).
 fn decode_percents(uri: &str) -> Option<String> {
-    let mut bytes = Vec::with_capacity(uri.len());
-    let mut rest = uri.as_bytes();
+    String::from_utf8(decode_percent_bytes(uri)?).ok()
+}
+
+/// `text` with its `%XX` escapes decoded to the bytes they stand for;
+/// `None` when one is broken. Paths in URIs and trash info files are bytes,
+/// not always UTF-8.
+pub(crate) fn decode_percent_bytes(text: &str) -> Option<Vec<u8>> {
+    let mut bytes = Vec::with_capacity(text.len());
+    let mut rest = text.as_bytes();
     while let Some((&byte, after)) = rest.split_first() {
         if byte == b'%' {
             let hex = std::str::from_utf8(after.get(..2)?).ok()?;
@@ -94,7 +101,7 @@ fn decode_percents(uri: &str) -> Option<String> {
             rest = after;
         }
     }
-    String::from_utf8(bytes).ok()
+    Some(bytes)
 }
 
 #[cfg(test)]

@@ -301,6 +301,24 @@ impl<'a> Connection<'a> {
                 let (path, app) = (path.clone(), app.clone());
                 return self.opener_later(move |opener| opener.set_default(&path, &app));
             }
+            Command::FilesTrash { paths } => {
+                let paths = paths.clone();
+                return self.trash_later(move |trash| trash.trash(&paths));
+            }
+            Command::FilesDelete { paths } => {
+                let paths = paths.clone();
+                return self.trash_later(move |_| crate::files::Trash::delete(&paths));
+            }
+            Command::FilesTrashList => return self.trash_later(|trash| Ok(trash.list())),
+            Command::FilesRestore { ids } => {
+                let ids = ids.clone();
+                return self.trash_later(move |trash| trash.restore(&ids));
+            }
+            Command::FilesTrashDelete { ids } => {
+                let ids = ids.clone();
+                return self.trash_later(move |trash| trash.erase(&ids));
+            }
+            Command::FilesEmptyTrash => return self.trash_later(crate::files::Trash::empty),
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -641,6 +659,21 @@ impl<'a> Connection<'a> {
         }
     }
 
+    /// Runs `work` with the trash on its own thread: moving, deleting and
+    /// reading a big trash take time.
+    fn trash_later<T: serde::Serialize>(
+        &self,
+        work: impl FnOnce(&crate::files::Trash) -> Result<T, String> + Send + 'static,
+    ) -> Answer {
+        match self.files() {
+            Ok(files) => {
+                let trash = files.trash();
+                Answer::later(move || value(work(&trash)))
+            }
+            Err(e) => Answer::Now(Outcome::Error(e)),
+        }
+    }
+
     fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
         match self.media() {
             Ok(media) => Answer::later(move || work(&media)),
@@ -872,7 +905,13 @@ impl<'a> Connection<'a> {
             | Command::AttachFiles { .. }
             | Command::FilesLaunch { .. }
             | Command::FilesOpenWith { .. }
-            | Command::FilesSetDefault { .. } => {}
+            | Command::FilesSetDefault { .. }
+            | Command::FilesTrash { .. }
+            | Command::FilesDelete { .. }
+            | Command::FilesTrashList
+            | Command::FilesRestore { .. }
+            | Command::FilesTrashDelete { .. }
+            | Command::FilesEmptyTrash => {}
         }
     }
 

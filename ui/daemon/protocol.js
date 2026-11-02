@@ -102,6 +102,12 @@ var CMD_FILES_OPEN_WITH = "files_open_with";
 var CMD_FILES_SET_DEFAULT = "files_set_default";
 var CMD_FILES_OPEN = "files_open";
 var CMD_FILES_CLOSE = "files_close";
+var CMD_FILES_TRASH = "files_trash";
+var CMD_FILES_DELETE = "files_delete";
+var CMD_FILES_TRASH_LIST = "files_trash_list";
+var CMD_FILES_RESTORE = "files_restore";
+var CMD_FILES_TRASH_DELETE = "files_trash_delete";
+var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -134,6 +140,7 @@ var EVENT_FILES_WINDOW = "files_window";
 var EVENT_FILES_PAGE = "files_page";
 var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
+var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
