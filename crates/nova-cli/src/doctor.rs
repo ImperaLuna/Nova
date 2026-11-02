@@ -457,10 +457,8 @@ mod tests {
     #[test]
     fn slots_with_nowhere_to_show_warn() {
         let slot = |host: &str, view: &str| nova_features::Slot { host: host.into(), view: view.into(), order: 0 };
-        let media = FeatureState {
-            slots: vec![slot("bar.left", "media.pill")],
-            ..feature("media", FeatureStatus::Ready, &[])
-        };
+        let media =
+            FeatureState { slots: vec![slot("bar.left", "media.pill")], ..feature("media", FeatureStatus::Ready, &[]) };
         let typo = FeatureState {
             slots: vec![slot("bar.middle", "clock.big"), slot("shell.overlays", "clock.overlay")],
             ..feature("clock", FeatureStatus::Ready, &[])
