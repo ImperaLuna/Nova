@@ -107,8 +107,13 @@ Item {
         Repeater {
             id: cardSections
             model: page.cards
+            property int revision: 0
+            onItemAdded: revision++
             // A card's section is still fading in, or the card settling.
             readonly property bool busy: {
+                // itemAt doesn't notify: reading the revision re-evaluates
+                // this for new delegates.
+                revision;
                 let any = false;
                 for (let i = 0; i < count; i++) {
                     const section = itemAt(i) as CardSection;
