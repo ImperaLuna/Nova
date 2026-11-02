@@ -39,6 +39,8 @@ const BUFFER_BYTES: usize = 64 * 1024;
 pub struct Change {
     pub path: PathBuf,
     pub is_dir: bool,
+    /// What happened, as inotify's `IN_*` bits.
+    pub mask: u32,
 }
 
 /// What one `Inotify::read` saw.
@@ -228,7 +230,7 @@ impl Inotify {
             let name = name.split(|byte| *byte == 0).next().unwrap_or_default();
             if !name.is_empty() {
                 let is_dir = mask & libc::IN_ISDIR != 0;
-                let found = paths.iter().map(|dir| Change { path: dir.join(OsStr::from_bytes(name)), is_dir });
+                let found = paths.iter().map(|dir| Change { path: dir.join(OsStr::from_bytes(name)), is_dir, mask });
                 changes.found.extend(found);
             }
         }

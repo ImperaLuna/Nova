@@ -18,8 +18,8 @@
 //!
 //! Every event of a view is sent while holding its state, after checking
 //! the view is still open, so nothing arrives after `files_close` or after
-//! another `files_open` replaced it. Pages are encoded before the state is
-//! taken, so a big folder doesn't hold up closing it.
+//! another `files_open` replaced it. Each page is encoded before the state
+//! is taken, so a big folder doesn't hold up closing it.
 
 use crate::files::folder::{self, Listing};
 use crate::files::watcher::{Following, Notice, Wait, Watcher};
@@ -27,10 +27,10 @@ use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::mime::Mime;
-use nova_protocol::{Event, FILES_MAX_VIEWS, FILES_PATH_MAX_BYTES, FileSort, FolderPage};
+use nova_protocol::{Event, FILES_MAX_VIEWS, FILES_PATH_MAX_BYTES, FILES_PATH_MAX_WIRE_BYTES, FileSort, FolderPage};
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsString;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -159,7 +159,7 @@ impl Folders {
     /// The shared watcher, started now if no view needed it yet.
     fn watcher(&self) -> Result<Arc<Watcher>, String> {
         let mut watcher = lock(&self.watcher);
-        if let Some(running) = watcher.as_ref() {
+        if let Some(running) = watcher.as_ref().filter(|running| running.is_reading()) {
             return Ok(Arc::clone(running));
         }
         let started = Watcher::start().map_err(|e| format!("Can't watch folders: {e}"))?;
@@ -254,21 +254,23 @@ impl Worker {
         let total = u32::try_from(all.len()).unwrap_or(u32::MAX);
         // An empty folder still gets its one page.
         let pages = all.chunks(PAGE_ENTRIES).map(<[_]>::to_vec).chain(all.is_empty().then(Vec::new));
-        let mut lines = Vec::new();
         for (number, entries) in pages.enumerate() {
-            if !self.view.is_open() {
-                return false;
-            }
             let start = u32::try_from(number * PAGE_ENTRIES).unwrap_or(u32::MAX);
             let page = FolderPage { view, path: self.view.named.clone(), start, total, entries };
-            lines.extend(Hub::encode(&Event::FilesPage(page)));
+            let line = Hub::encode(&Event::FilesPage(page));
+            // Only this thread sends the view's events, so pages can't
+            // interleave with its changes.
+            let state = lock(&self.view.state);
+            if !state.open {
+                return false;
+            }
+            if let Some(line) = line {
+                self.hub.send_line_to(client, line);
+            }
         }
         let mut state = lock(&self.view.state);
         if !state.open {
             return false;
-        }
-        for line in lines {
-            self.hub.send_line_to(client, line);
         }
         state.listing = Some(listing);
         true
@@ -308,7 +310,7 @@ impl Worker {
         let mime = self.mime.current();
         let now: Vec<_> = names
             .into_iter()
-            .map(|name| (folder::read_entry(&self.view.path, &name, &mime), name.to_string_lossy().into_owned()))
+            .map(|name| (folder::read_entry(&self.view.path, &name, &mime), nova_protocol::wire_text(&name)))
             .collect();
         let mut state = lock(&self.view.state);
         if !state.open {
@@ -351,12 +353,15 @@ enum Gathered {
     Moved,
 }
 
-/// `path` from the socket, if it's a usable absolute path.
+/// `path` from the socket (wire text), if it's a usable absolute path.
 fn checked_path(path: &str) -> Result<PathBuf, String> {
-    if path.len() > FILES_PATH_MAX_BYTES || path.contains('\0') {
+    if path.len() > FILES_PATH_MAX_WIRE_BYTES {
         return Err("Not a path".into());
     }
-    let path = Path::new(path);
+    let path = nova_protocol::wire_path(path);
+    if path.as_os_str().len() > FILES_PATH_MAX_BYTES || path.as_os_str().as_encoded_bytes().contains(&0) {
+        return Err("Not a path".into());
+    }
     if !path.is_absolute() {
         return Err("The path must be absolute".into());
     }
@@ -381,6 +386,7 @@ mod tests {
     use nova_protocol::{FileEntry, FileSortKey, FolderChange, LogLevel};
     use nova_test_support::TempDir;
     use std::os::unix::net::UnixStream;
+    use std::path::Path;
     use std::sync::mpsc::Receiver;
 
     const WAIT: Duration = Duration::from_secs(5);
@@ -413,7 +419,7 @@ mod tests {
         }
 
         fn open(&self, folder: &Path) -> Result<(), String> {
-            self.folders.open(self.client, 1, folder.to_str().unwrap(), BY_NAME, false)
+            self.folders.open(self.client, 1, &nova_protocol::wire_text(folder), BY_NAME, false)
         }
 
         /// Takes the next event and applies it to `shown` as the UI would.
@@ -559,15 +565,50 @@ mod tests {
         writer.join().unwrap();
     }
 
-    /// Names from old archives or Windows drives needn't be UTF-8.
+    /// Names from old archives or Windows drives needn't be UTF-8. Two
+    /// that look alike are two entries, and each change finds its own.
     #[test]
-    fn a_name_that_isnt_utf8_is_listed() {
-        use std::os::unix::ffi::OsStrExt;
+    fn names_that_arent_utf8_are_listed_apart() {
         let mut fixture = Fixture::new("files-latin1");
         let dir = TempDir::new("files-latin1-folder");
-        std::fs::write(dir.join(std::ffi::OsStr::from_bytes(b"caf\xe9.md")), b"").unwrap();
+        let (e_acute, e_grave) = (latin1(b"caf\xe9.md"), latin1(b"caf\xe8.md"));
+        std::fs::write(dir.join(e_acute), b"").unwrap();
+        std::fs::write(dir.join(e_grave), b"").unwrap();
         fixture.open(&dir).unwrap();
-        fixture.until_shown(&["caf\u{fffd}.md"]);
+        fixture.until_shown(&["caf\u{f7e8}.md", "caf\u{f7e9}.md"]);
+        std::fs::write(dir.join(e_acute), b"written").unwrap();
+        while fixture.shown[1].size != Some(7) {
+            fixture.next();
+        }
+        assert_eq!(fixture.shown[0].size, Some(0), "the other keeps its own entry");
+        std::fs::remove_file(dir.join(e_grave)).unwrap();
+        fixture.until_shown(&["caf\u{f7e9}.md"]);
+        // The listed name, joined to the path, names the file.
+        let named = nova_protocol::wire_path(&format!(
+            "{}/{}",
+            nova_protocol::wire_text(dir.as_os_str()),
+            fixture.shown[0].name
+        ));
+        assert_eq!(std::fs::read(named).unwrap(), b"written");
+    }
+
+    /// A folder whose own name isn't UTF-8 opens, under the path it was
+    /// opened as.
+    #[test]
+    fn a_folder_named_in_latin1_opens() {
+        let mut fixture = Fixture::new("files-latin1-folder-open");
+        let dir = TempDir::new("files-latin1-parent");
+        let folder = dir.join(latin1(b"M\xfcsik"));
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(folder.join("song.flac"), b"").unwrap();
+        fixture.open(&folder).unwrap();
+        let page = fixture.next();
+        assert_eq!(page["data"]["path"], nova_protocol::wire_text(&folder));
+        fixture.until_shown(&["song.flac"]);
+    }
+
+    fn latin1(bytes: &[u8]) -> &std::ffi::OsStr {
+        std::os::unix::ffi::OsStrExt::from_bytes(bytes)
     }
 
     #[test]
