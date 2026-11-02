@@ -669,6 +669,11 @@ QtObject {
     // A card whose image is still loading.
     readonly property color carouselLoading: alpha(fg, 0.07)
 
+    // Nova Files: an app window with square edges (the compositor rounds
+    // windows), and its size when it opens.
+    readonly property int filesWindowWidth: 880
+    readonly property int filesWindowHeight: 700
+
     // Type
     readonly property string fontSans: "Inter"
     readonly property string fontMono: "JetBrains Mono"

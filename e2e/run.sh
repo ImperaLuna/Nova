@@ -7,6 +7,8 @@
 #   - the UI connects to novad,
 #   - a media player playing slides the now-playing pill out (with
 #     nova-test-player, e2e/player.nix, and dbus-daemon),
+#   - `nova files` opens a Nova Files window in a process of its own
+#     (NovaFiles), without QML errors,
 #   - memory (Pss) is within the budget: NOVA_PSS_BUDGET_MB per monitor
 #     (default 250, so 500 MB for the default two monitors),
 # and saves a screenshot to e2e/out/screenshot.png.
@@ -104,7 +106,10 @@ SWAYSOCK=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock | head -n1)
 export SWAYSOCK
 
 # Its own settings and AI usage files, so the run starts like a new user's,
-# never touches the user's files and never asks Anthropic.
+# never touches the user's files and never asks Anthropic. Nova Files is
+# off by default; it's turned on to check its window.
+mkdir -p "$out/config"
+echo 'enabled = ["files"]' >"$out/config/features.toml"
 "$nova" daemon --ui ui --log-dir "$out/state" --state-dir "$out/state" --codex-home "$out/codex" \
   --claude-credentials "$out/claude/.credentials.json" \
   --claude-desktop-config "$out/claude-desktop/config.json" \
@@ -161,6 +166,17 @@ tr '\0' '\n' <"/proc/$ui/environ" | grep -qx QT_WAYLAND_FRAME_CALLBACK_TIMEOUT=0
 tr '\0' '\n' <"/proc/$ui/environ" | grep -qx QSG_USE_SIMPLE_ANIMATION_DRIVER=1 ||
   fail "the UI doesn't have QSG_USE_SIMPLE_ANIMATION_DRIVER=1"
 [[ $(<"/proc/$(jq -r .pid "$out/status.json")/comm") == Nova ]] || fail "the daemon's process name isn't Nova"
+
+# Nova Files: its own process, started for the window, named NovaFiles.
+"$nova" files "$out" || fail "nova files failed"
+wait_for 10 "a Nova Files window" grep -qF 'files: qml: nova: files window shown' "$out/state/nova.log"
+grep ' files: ' "$out/state/nova.log" >"$out/files.log" || true
+files_ui=$(sed -n 's/.*Nova Files started (pid \([0-9]*\)).*/\1/p' "$out/files.log" | tail -n1)
+[[ -n $files_ui ]] || fail "novad didn't say it started Nova Files"
+if grep -E 'ERROR|TypeError|ReferenceError|is not a type|is not installed|Failed to load' "$out/files.log"; then
+  fail "QML errors in Nova Files' log"
+fi
+[[ $(tr '\0' '\n' <"/proc/$files_ui/cmdline" | head -n1) == NovaFiles ]] || fail "Nova Files' argv[0] isn't NovaFiles"
 
 grim "$out/screenshot.png" || fail "screenshot failed"
 
