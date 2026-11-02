@@ -180,6 +180,7 @@ Item {
             id: left
             anchors.fill: parent
             host: Slots.HOST_BAR_LEFT
+            shown: root.shown
             bar: root
             stage: root.stage
         }
@@ -187,6 +188,7 @@ Item {
             id: center
             anchors.fill: parent
             host: Slots.HOST_BAR_CENTER
+            shown: root.shown
             bar: root
             stage: root.stage
         }
@@ -194,6 +196,7 @@ Item {
             id: right
             anchors.fill: parent
             host: Slots.HOST_BAR_RIGHT
+            shown: root.shown
             bar: root
             stage: root.stage
         }
