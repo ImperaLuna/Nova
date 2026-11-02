@@ -1,8 +1,7 @@
 id = "quick-settings"
 name = "Quick settings"
-description = "The right pill's sidebar: sound, keep awake, microphone and what the machine is busy with."
+description = "The right pill's sidebar, with a greeting and what other features put in it: tiles, sliders, cards and pages."
 default = true
-daemon = "quick-settings"
 
 [[slot]]
 host = "right-pill.buttons"
