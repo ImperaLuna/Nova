@@ -308,7 +308,7 @@ impl Trash {
             .flatten()
             .filter_map(|entry| {
                 let info = entry.path();
-                let name = info.file_name()?.as_bytes().strip_suffix(INFO_SUFFIX.as_bytes())?;
+                let name = stored_of(info.file_name()?)?;
                 let (original, deleted_ms) = read_info(&info, root).ok()?;
                 let mut entry = folder::read_entry(&files, OsStr::from_bytes(name), &mime)?;
                 let shown = original.file_name().unwrap_or(original.as_os_str());
@@ -454,6 +454,14 @@ fn make_trash(dir: &Path) -> std::io::Result<()> {
 
 /// A name in `root` for an item named `name`, claimed by writing its info
 /// file with `contents`: the name and the info file's path.
+/// The stored item an info file named `info_name` stands for: never empty,
+/// `.` or `..`, which would name the trash's `files` folder or the trash
+/// itself (a crafted drive's `...trashinfo`).
+fn stored_of(info_name: &OsStr) -> Option<&[u8]> {
+    let name = info_name.as_bytes().strip_suffix(INFO_SUFFIX.as_bytes())?;
+    (!matches!(name, b"" | b"." | b"..")).then_some(name)
+}
+
 /// `name`, cut short (at a character, when it's UTF-8) so its info file's
 /// name, with a `.N` for a taken name, still fits in a folder entry. The
 /// full name is kept in the info file's `Path`.
@@ -599,9 +607,8 @@ fn find(roots: &[Root], id: &str) -> Result<Found, String> {
     let gone = || "That item is no longer in the trash".to_string();
     let info = PathBuf::from(OsString::from_vec(percent_decoded(id).ok_or_else(gone)?));
     let root = roots.iter().find(|root| info.parent() == Some(root.info().as_path())).ok_or_else(gone)?;
-    let name =
-        info.file_name().and_then(|name| name.as_bytes().strip_suffix(INFO_SUFFIX.as_bytes())).ok_or_else(gone)?;
-    if name.is_empty() || !info.is_file() {
+    let name = info.file_name().and_then(stored_of).ok_or_else(gone)?;
+    if !info.is_file() {
         return Err(gone());
     }
     Ok(Found { root: root.clone(), name: OsStr::from_bytes(name).to_owned(), info })
@@ -895,5 +902,22 @@ mod tests {
         assert!(fixture.trash.list().is_empty());
         fixture.trash.empty().unwrap();
         assert!(elsewhere.join("keep.txt").exists(), "emptying never follows the link");
+    }
+
+    #[test]
+    fn info_files_for_dot_names_are_never_items() {
+        let fixture = Fixture::new("dots");
+        let trash = fixture.path("home/.local/share/Trash");
+        make_trash(&trash).unwrap();
+        std::fs::write(trash.join("files/kept.txt"), b"").unwrap();
+        std::fs::write(trash.join("info/kept.txt.trashinfo"), "[Trash Info]\nPath=/tmp/kept.txt\n").unwrap();
+        for dots in ["..", "."] {
+            std::fs::write(trash.join(format!("info/{dots}.trashinfo")), "[Trash Info]\nPath=/tmp/x\n").unwrap();
+        }
+        let items = fixture.trash.list();
+        assert_eq!(items.len(), 1, "only kept.txt");
+        let dots = escape(trash.join("info/...trashinfo").as_os_str());
+        assert!(fixture.trash.erase(&[dots]).unwrap_err().contains("no longer"));
+        assert!(trash.join("files/kept.txt").exists());
     }
 }
