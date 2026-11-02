@@ -66,6 +66,12 @@ impl Entry {
         !self.mime_types.is_empty()
     }
 
+    /// Whether `other` is it, or a copy of it under another id: the same
+    /// name running the same command.
+    pub fn same_app(&self, other: &Entry) -> bool {
+        self.id == other.id || (self.name == other.name && self.exec == other.exec && self.terminal == other.terminal)
+    }
+
     /// Its program and arguments with `file` to open.
     #[allow(dead_code, reason = "Nova Files opens files with it (IMP-289)")]
     pub fn exec_with(&self, file: &str) -> Vec<String> {
