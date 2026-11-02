@@ -78,6 +78,8 @@ struct Following {
 /// The apps as last read.
 pub struct State {
     apps: BTreeMap<String, Entry>,
+    /// Apps the launcher doesn't list that open some type of file.
+    unlisted: BTreeMap<String, Entry>,
     /// The apps have been read at least once.
     scanned: bool,
     /// The apps' icon files, by app id, for those that have one.
@@ -88,7 +90,7 @@ impl AppIndex {
     /// An index that knows no apps until it follows them.
     pub fn new(sources: Sources, path_var: &str, logger: Arc<Logger>) -> Arc<Self> {
         Arc::new(Self {
-            state: Mutex::new(State { apps: BTreeMap::new(), scanned: false, icons: BTreeMap::new() }),
+            state: Mutex::new(State { apps: BTreeMap::new(), unlisted: BTreeMap::new(), scanned: false, icons: BTreeMap::new() }),
             scanned: Condvar::new(),
             logger,
             sources,
@@ -124,7 +126,7 @@ impl AppIndex {
             let mut state = lock(&self.state);
             run.stopped.store(true, Ordering::SeqCst);
             self.active.store(false, Ordering::SeqCst);
-            *state = State { apps: BTreeMap::new(), scanned: false, icons: BTreeMap::new() };
+            *state = State { apps: BTreeMap::new(), unlisted: BTreeMap::new(), scanned: false, icons: BTreeMap::new() };
             self.scanned.notify_all();
         }
         if let Some(watch) = watch.take() {
@@ -289,12 +291,13 @@ impl AppIndex {
         }
         let context =
             Context { locale: &self.locale, desktops: &self.desktops, path_var: &self.path_var, autostart: false };
-        let (apps, problems) = scan::scan(&self.sources.data_dirs, &context);
+        let scan::Found { apps, unlisted, problems } = scan::scan(&self.sources.data_dirs, &context);
         // Apps bring their icons, so any answer kept may be out of date.
         let icons = &self.sources.icons;
         icons.forget();
         let found = apps
             .values()
+            .chain(unlisted.values())
             .filter_map(|entry| Some((entry.id.clone(), icons.entry_icon(entry.icon.as_deref()?)?)))
             .collect();
         let mut state = lock(&self.state);
@@ -311,6 +314,7 @@ impl AppIndex {
             }
         }
         state.apps = apps;
+        state.unlisted = unlisted;
         state.icons = found;
         state.scanned = true;
         self.scanned.notify_all();
@@ -337,6 +341,17 @@ impl State {
     /// Every installed app, by its id.
     pub fn entries(&self) -> &BTreeMap<String, Entry> {
         &self.apps
+    }
+
+    /// Every installed app that opens some type of file, listed in the
+    /// launcher or not.
+    pub fn openers(&self) -> impl Iterator<Item = &Entry> {
+        self.apps.values().chain(self.unlisted.values()).filter(|entry| entry.opens_types())
+    }
+
+    /// The installed app `id`, listed in the launcher or not.
+    pub fn any_entry(&self, id: &str) -> Option<&Entry> {
+        self.apps.get(id).or_else(|| self.unlisted.get(id))
     }
 
     /// The installed app `id`, as the UI sees it.

@@ -182,7 +182,9 @@ pub fn open(target: &Path, path_var: &str, logger: &Arc<Logger>) -> Result<(), S
         exec: vec![OPENER.into(), target.display().to_string()],
         terminal: false,
         path: None,
-        opens_types: false,
+        file_arg: Default::default(),
+        mime_types: vec![],
+        listed: true,
         window_class: None,
         categories: vec![],
     };
@@ -242,7 +244,9 @@ mod tests {
             exec: vec!["true".into()],
             terminal: false,
             path: None,
-            opens_types: false,
+            file_arg: Default::default(),
+            mime_types: vec![],
+            listed: true,
             window_class: None,
             categories: vec![],
         };
