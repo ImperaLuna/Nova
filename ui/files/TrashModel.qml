@@ -1,5 +1,4 @@
 import QtQuick
-import "service"
 import "trash.js" as Trash
 
 // The trash as a window shows it: `rows` holds every trashed item
@@ -8,9 +7,14 @@ import "trash.js" as Trash
 // lives here, by id, so it stays on the same items as others come and go;
 // `revision` moves on each change of it, for delegates to bind to. Only
 // read while `active`, so a window that never shows the trash never asks.
+// It reads through `service` (FilesService, given by the window), so tests
+// can make one without novad.
 QtObject {
     id: trash
 
+    // What it asks novad through: trashList(done) and a trashChanged
+    // signal.
+    property var service: null
     property bool active: false
     readonly property ListModel rows: ListModel {}
     property bool loaded: false
@@ -22,6 +26,11 @@ QtObject {
 
     // Selected ids as keys of a map without a prototype.
     property var _selected: Object.create(null)
+    // The anchor's item, so Shift keeps selecting from it as rows move.
+    property string _anchorId: ""
+    // The rows as plain objects, in the list's order: what selectedRows and
+    // allRows hand out, which stay as they are when `rows` is read again.
+    property var _items: []
     // Which read the rows show, so a late answer to an earlier one is
     // dropped.
     property int _reading: 0
@@ -42,6 +51,7 @@ QtObject {
                 _selected[id] = true;
         }
         anchor = plan.anchor;
+        _anchorId = anchor >= 0 && anchor < rows.count ? rows.get(anchor).trashId : "";
         _changed();
     }
 
@@ -58,50 +68,50 @@ QtObject {
     function clearSelection() {
         _selected = Object.create(null);
         anchor = -1;
+        _anchorId = "";
         _changed();
     }
 
     // The selected rows, in the list's order.
     function selectedRows(): var {
-        const picked = [];
-        for (let index = 0; index < rows.count; index++) {
-            const row = rows.get(index);
-            if (isSelected(row.trashId))
-                picked.push(row);
-        }
-        return picked;
+        return _items.filter(row => isSelected(row.trashId));
     }
 
     // Every row, in the list's order.
     function allRows(): var {
-        const all = [];
-        for (let index = 0; index < rows.count; index++)
-            all.push(rows.get(index));
-        return all;
+        return _items.slice();
     }
 
     function refresh() {
-        if (!active)
+        if (!active || !service)
             return;
         const reading = ++_reading;
-        FilesService.trashList(items => {
+        service.trashList(items => {
             if (reading !== trash._reading)
                 return;
-            trash._fill(items);
+            // A failed read keeps what's shown.
+            if (items !== null)
+                trash._fill(items);
         });
     }
 
     function _fill(items: var) {
         const kept = Object.create(null);
+        const shown = items.map(item => Trash.row(item));
         rows.clear();
-        for (const item of items) {
-            rows.append(Trash.row(item));
-            if (isSelected(item.id))
-                kept[item.id] = true;
+        let found = -1;
+        for (const row of shown) {
+            if (row.trashId === _anchorId)
+                found = rows.count;
+            rows.append(row);
+            if (isSelected(row.trashId))
+                kept[row.trashId] = true;
         }
+        _items = shown;
         _selected = kept;
-        if (anchor >= rows.count)
-            anchor = -1;
+        anchor = found;
+        if (found < 0)
+            _anchorId = "";
         loaded = true;
         _changed();
     }
@@ -119,9 +129,14 @@ QtObject {
     }
 
     readonly property Connections _novad: Connections {
-        target: FilesService
+        target: trash.service
         function onTrashChanged() {
             trash.refresh();
+        }
+        // Changes made while novad was away sent no trashChanged.
+        function onConnectedChanged() {
+            if (trash.service.connected)
+                trash.refresh();
         }
     }
 }

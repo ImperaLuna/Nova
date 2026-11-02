@@ -64,6 +64,7 @@ mod theme;
 mod tray;
 mod wallpaper;
 mod wallpaper_folder;
+mod watch_points;
 mod x11_tray;
 
 use hub::Hub;
@@ -443,6 +444,15 @@ pub(crate) fn session_path() -> String {
     std::env::join_paths(dirs)
         .map(|joined| joined.to_string_lossy().into_owned())
         .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+}
+
+/// Makes the app `app` (a desktop file id) the default for `mime` in this
+/// user's own `mimeapps.list` under `config_home`, keeping the rest of it,
+/// as Nova Files' "Open with" does. For `nova setup`. Returns the file
+/// written.
+pub fn set_default_app(config_home: &Path, mime: &str, app: &str) -> Result<PathBuf, String> {
+    let places = apps::associations::Places::new(Some(config_home.to_owned()), &[], &[], &apps::current_desktops());
+    apps::associations::set_default(&places, mime, app)
 }
 
 /// The spec's default for an unset `XDG_DATA_DIRS`.

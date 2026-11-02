@@ -58,7 +58,8 @@ function asking(jobs) {
     }) ?? null;
 }
 
-// What a job is copying: its one item's name, or how many.
+// What a job is copying: its one item's name (wire text, shown as
+// Paths.shown does), or how many.
 function label(transfer) {
     return transfer.items === 1 ? Paths.shown(transfer.name) : qsTr("%1 items").arg(transfer.items);
 }

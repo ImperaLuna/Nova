@@ -14,13 +14,17 @@
 //! - Opening files in apps is the shared `crate::apps::opening`, over the
 //!   module's one copy of the MIME database.
 //! - `views.rs`: the folders a window shows (`files_open`), read in pages
-//!   and followed with inotify while open, one thread per view.
+//!   and followed while open, one thread per view.
+//! - `watcher.rs`: the one inotify instance every view follows its folder
+//!   through, and the folders above it, so a renamed parent is seen.
 //! - `trash.rs`: the trash, shared with other apps (freedesktop Trash
 //!   spec): moving to it, restoring, deleting for good, and following it
 //!   so windows hear when it changes.
 //! - `folder.rs`: a folder's entries, their types from the shared MIME
-//!   database (`crate::mime`, loaded once as the module starts), and the
-//!   view's order.
+//!   database (`crate::mime`, read as the module starts and again when a
+//!   package brings new types), and the view's order.
+//! - `tree.rs`: the sidebar's folder tree that follows the window
+//!   (`files_tree`) and its places (`files_places`).
 //! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
 //!   and ejecting them; `drives.rs`: which filesystems are listed and
 //!   what they're called.
@@ -28,8 +32,10 @@
 //!   each, asking the window about name clashes.
 //! - `copying.rs`: the file system side of those: measuring, numbered
 //!   names, and copying a file in chunks.
-//! - `tree.rs`: the sidebar's folder tree that follows the window
-//!   (`files_tree`) and its places (`files_places`).
+//!
+//! How solid the windows are (`[files]` in config.toml) is applied in place
+//! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
+//! windows follow an edit at once.
 //!
 //! Windows go only to the Nova Files process, once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
@@ -48,6 +54,7 @@ mod trash;
 pub mod tree;
 mod udisks;
 mod views;
+mod watcher;
 mod window;
 
 use crate::apps::AppIndex;
@@ -60,7 +67,8 @@ use crate::logger::Logger;
 use crate::notifications::Notifications;
 use crate::session_bus::{Bus, Stop};
 use nova_protocol::{
-    ClashAnswer, EjectOutcome, Event, FeatureState, FilePlace, FileSort, FilesWindow, FolderTree, Topic, TransferMode,
+    ClashAnswer, EjectOutcome, Event, FeatureState, FilePlace, FileSort, FilesLook, FilesWindow, FolderTree, Topic,
+    TransferMode,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
@@ -105,10 +113,14 @@ pub struct Files {
     shared: Arc<Shared>,
     /// Opens files in apps.
     opener: Arc<Opener>,
+    /// The MIME database, followed while the module runs.
+    mime: Arc<crate::mime::Mime>,
     /// Ends the FileManager1 service.
     stop: Arc<Stop>,
     /// The folders the windows show.
     folders: views::Folders,
+    /// How solid the windows are, as last published.
+    look: Mutex<FilesLook>,
     /// The copies and moves they run.
     transfers: transfers::Transfers,
     trash: Arc<Trash>,
@@ -148,17 +160,13 @@ impl Files {
         apps: Arc<AppIndex>,
         path_var: &str,
     ) -> Arc<Self> {
-        let (mime, problems) = crate::mime::MimeDb::load(&sources.data_dirs);
-        for problem in problems {
-            logger.warn(LOG_SOURCE, &problem);
-        }
-        let mime = Arc::new(mime);
+        let mime = crate::mime::Mime::follow(sources.data_dirs.clone(), Arc::clone(&logger));
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
         let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
         let trash = Arc::new(Trash::new(sources.trash.clone(), sources.mounts.clone(), Arc::clone(&mime)));
         let trash_watch = trash::Watch::start(Arc::clone(&trash), Arc::clone(&hub), Arc::clone(&logger));
         let opener = Opener::new(
-            mime,
+            Arc::clone(&mime),
             sources.associations.clone(),
             sources.runner.clone(),
             apps,
@@ -184,7 +192,18 @@ impl Files {
         );
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, opener: Arc::new(opener), stop, folders, transfers, trash, trash_watch, drives })
+        Arc::new(Self {
+            shared,
+            opener: Arc::new(opener),
+            mime,
+            stop,
+            folders,
+            look: Mutex::default(),
+            transfers,
+            trash,
+            trash_watch,
+            drives,
+        })
     }
 
     /// What opens files in apps.
@@ -294,6 +313,23 @@ impl Files {
         }
     }
 
+    /// Makes the windows as solid as `look` says, telling them when that's
+    /// a change. Starts from all glass, which the windows assume too.
+    pub fn set_look(&self, look: FilesLook) {
+        let mut current = lock(&self.look);
+        if *current != look {
+            *current = look;
+            self.shared.hub.publish(&Event::FilesLook(look));
+        }
+    }
+
+    /// Sends client `client`, which just subscribed, how solid the windows are.
+    pub fn send_state(&self, client: ClientId) {
+        let look = *lock(&self.look);
+        self.shared.hub.send_to(client, &Event::FilesLook(look));
+        self.drives.send_state(client);
+    }
+
     /// Client `client` hung up: windows aren't sent to it any more.
     pub fn client_gone(&self, client: ClientId) {
         self.folders.client_gone(client);
@@ -305,10 +341,11 @@ impl Files {
     }
 
     /// Stops it: it publishes nothing more, gives up FileManager1, closes
-    /// Nova Files' windows and folder views, stops copies, and drops
-    /// windows still waiting.
+    /// Nova Files' windows and folder views, stops copies and following the MIME
+    /// database, and drops windows still waiting.
     pub fn stop(&self) {
         self.stop.stop();
+        self.mime.stop();
         self.folders.stop();
         self.drives.stop();
         self.transfers.stop();
@@ -362,14 +399,14 @@ impl Shared {
     }
 }
 
-/// No options yet.
+/// Its options are how solid the windows are, applied in place.
 impl crate::modules::Module for Files {
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<Topic> = Some(Topic::Files);
     /// Files open in apps.
     const NEEDS_APPS: bool = true;
     type Sources = Sources;
-    type Config = ();
+    type Config = FilesLook;
 
     fn sources(env: &crate::modules::Env) -> Sources {
         let data_dirs = crate::data_dirs();
@@ -390,25 +427,33 @@ impl crate::modules::Module for Files {
         }
     }
 
-    fn config(_: &crate::config::Config) {}
+    fn config(config: &crate::config::Config) -> FilesLook {
+        config.files.look
+    }
 
-    fn start(ctx: &crate::modules::Context, sources: &Sources, (): &(), _: &[FeatureState]) -> Arc<Self> {
-        Self::start(
+    fn start(ctx: &crate::modules::Context, sources: &Sources, look: &FilesLook, _: &[FeatureState]) -> Arc<Self> {
+        let files = Self::start(
             sources.clone(),
             Arc::clone(&ctx.hub),
             Arc::clone(&ctx.logger),
             Arc::clone(&ctx.apps),
             &ctx.path_var,
-        )
+        );
+        files.set_look(*look);
+        files
+    }
+
+    fn reconfigure(&self, _: &FilesLook, look: &FilesLook, _: &[FeatureState]) -> crate::modules::Reconfigure {
+        self.set_look(*look);
+        crate::modules::Reconfigure::InPlace
+    }
+
+    fn send_state(&self, client: ClientId) {
+        Self::send_state(self, client);
     }
 
     fn client_gone(&self, client: ClientId) {
         Self::client_gone(self, client);
-    }
-
-    /// The drives, to a new subscriber.
-    fn send_state(&self, client: ClientId) {
-        self.drives.send_state(client);
     }
 
     /// "Safe To Remove Hardware" goes to the notifications, while they're on.
@@ -497,6 +542,23 @@ mod tests {
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
         assert!(watcher.try_recv().is_err(), "windows go only to Nova Files");
+    }
+
+    #[test]
+    fn subscribers_hear_how_solid_the_windows_are() {
+        let fixture = Fixture::new("look");
+        let (client, events, _stream) = fixture.client();
+        fixture.files.send_state(client);
+        assert_eq!(next_named(&events, "files_look", WAIT), json!({"frame": 0, "list": 0}));
+        fixture.files.set_look(FilesLook { frame: 0, list: 100 });
+        assert_eq!(next_named(&events, "files_look", WAIT), json!({"frame": 0, "list": 100}));
+        // The same look again tells nobody.
+        fixture.files.set_look(FilesLook { frame: 0, list: 100 });
+        fixture.files.send_state(client);
+        assert_eq!(next_named(&events, "files_look", WAIT), json!({"frame": 0, "list": 100}));
+        let more_looks =
+            events.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_look")));
+        assert!(!more_looks, "one event per change, one per subscriber");
     }
 
     #[test]

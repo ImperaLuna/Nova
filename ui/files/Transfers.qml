@@ -4,12 +4,15 @@ import QtQuick
 import "../theme"
 import "service"
 import "../daemon/protocol.js" as Protocol
+import "paths.js" as Paths
 import "transfers.js" as Transfers
 
 // A Nova Files window's copies and moves, over everything else in it: the
 // jobs it started, each as a card stacked at the bottom right, and the name
 // clash dialog in the middle while one of them asks. Clashes come one at a
 // time, oldest job first; the window behind takes no clicks meanwhile.
+// Closing the window cancels its jobs; novad stops them all when the
+// connection drops, so they're dropped here too.
 Item {
     id: transfers
 
@@ -21,27 +24,39 @@ Item {
     // Copies or moves (a Protocol.TRANSFER_* mode) `sources` (absolute
     // paths) into the folder `folder`.
     function start(mode: string, sources: var, folder: string) {
-        const job = FilesService.transfer(mode, sources, folder, error => {
+        // The job's number comes with its failure too: novad's refusal can
+        // arrive before transfer() returns, when it isn't connected.
+        const started = FilesService.transfer(mode, sources, folder, (job, error) => {
             jobs = Transfers.apply(jobs, {
                 job: job,
                 mode: mode,
                 state: Protocol.TRANSFER_FAILED,
                 items: sources.length,
-                name: sources[0].split("/").pop(),
+                name: Paths.folderName(sources[0]),
                 done_bytes: 0,
                 total_bytes: 0,
                 error: error
             });
         });
-        mine[job] = true;
+        mine[started] = true;
     }
 
     // The numbers of the jobs this window started; others are other
     // windows'.
     property var mine: ({})
 
+    Component.onDestruction: {
+        // Every job it started, including those novad hasn't reported yet.
+        for (const job of Object.keys(mine))
+            FilesService.cancelTransfer(Number(job));
+    }
+
     Connections {
         target: FilesService
+        function onTransfersLost() {
+            transfers.jobs = [];
+            transfers.mine = {};
+        }
         function onTransferChanged(transfer: var) {
             if (!transfers.mine[transfer.job])
                 return;

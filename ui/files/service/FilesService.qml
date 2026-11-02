@@ -4,16 +4,24 @@ import QtQuick
 import Quickshell
 import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
+import "../trash.js" as Trash
 
-// Nova Files' link to novad: the windows it asks for, the sidebar's tree
-// and places, the drives (and mounting and ejecting them), opening files
-// in apps (the default one on a double-click or Enter, or one from "Open
+// Nova Files' link to novad: the windows it asks for, the folders they
+// show (folder views: each FolderModel opens one under its own number and
+// gets its pages, changes and closing here), the sidebar's tree and
+// places, the drives (and mounting and ejecting them), opening files in
+// apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, and
 // the trash. The Nova Files process (../../files.qml) and its windows get
-// these here and never talk to Daemon themselves.
+// these here and never talk to Daemon themselves. Also how solid the
+// windows are, from config.toml's [files].
 Singleton {
     id: root
 
+    // How solid the window frame and the file list are, each 0 (glass,
+    // also until novad says) to 1 (the theme's solid surfaces).
+    readonly property real frameSolid: (Daemon.filesLook?.frame ?? 0) / Protocol.FILES_SOLID_MAX
+    readonly property real listSolid: (Daemon.filesLook?.list ?? 0) / Protocol.FILES_SOLID_MAX
     // The drives for the sidebar, in its order: {id, name, removable,
     // mount (absent while it isn't mounted), size, used (bytes, while
     // mounted)}.
@@ -22,8 +30,54 @@ Singleton {
     // A window to open on `window.folder`, with `window.select` (absolute
     // paths in it, maybe none) selected.
     signal windowRequested(var window)
+    // A folder view's page of entries, its changes and novad closing it,
+    // for every view: each FolderModel picks its own by `view`.
+    signal page(var page)
+    signal changed(var changed)
+    signal viewClosed(var closed)
+
+    // novad drops a connection's views when it goes: views open again on
+    // the next connection.
+    readonly property bool connected: Daemon.connected
+
+    property int _nextView: 1
+
+    // A number for a new folder view, never handed out twice.
+    function newView(): int {
+        return _nextView++;
+    }
+
+    // Shows the folder at `path` (absolute) in view `view`, ordered by
+    // `sortKey` (a Protocol.FILE_SORT_*), with dot files when `hidden`.
+    // Whatever the view showed is replaced; its entries come as `page`s.
+    // `done(error)` gets novad's answer.
+    function open(view: int, path: string, sortKey: string, descending: bool, hidden: bool, done: var) {
+        Daemon.call(Protocol.CMD_FILES_OPEN, {
+            view: view,
+            path: path,
+            sort: {
+                key: sortKey,
+                descending: descending
+            },
+            hidden: hidden
+        }, error => {
+            if (error)
+                console.warn(`nova: opening the folder ${path}: ${error}`);
+            done?.(error ?? null);
+        });
+    }
+
+    // Closes view `view`; nothing more comes for it.
+    function close(view: int) {
+        Daemon.call(Protocol.CMD_FILES_CLOSE, {
+            view: view
+        });
+    }
     // How a copy or move job is going (see Daemon.filesTransferChanged).
     signal transferChanged(var transfer)
+    // The connection to novad dropped, and novad stopped every job with it.
+    signal transfersLost
+
     // Something in the trash changed: ask trashList again.
     signal trashChanged
 
@@ -89,6 +143,30 @@ Singleton {
         });
     }
 
+    // `done(error, tree)` gets the sidebar's tree for a window on `folder`
+    // (absolute, or from `~`): {folder, rows}, with `folder` absolute. The
+    // tree is open down to `folder` but at the folders in `closed`, and at
+    // those in `opened`; hidden folders show off the way only when `hidden`.
+    // An error means `folder` isn't a folder.
+    function tree(folder: string, opened: var, closed: var, hidden: bool, done: var) {
+        Daemon.call(Protocol.CMD_FILES_TREE, {
+            folder: folder,
+            opened: opened,
+            closed: closed,
+            hidden: hidden
+        }, (error, result) => done(error ?? null, result ?? null));
+    }
+
+    // `done(places)` gets the sidebar's places that exist, in order, each
+    // {kind, path}; none when novad couldn't tell.
+    function places(done: var) {
+        Daemon.call(Protocol.CMD_FILES_PLACES, undefined, (error, result) => {
+            if (error)
+                console.warn(`nova: sidebar places: ${error}`);
+            done(error ? [] : result);
+        });
+    }
+
     // Mounts the drive `id` unless it is; `done(folder)` gets where it's
     // mounted, or null when it couldn't be.
     function mount(id: string, done: var) {
@@ -116,8 +194,8 @@ Singleton {
 
     // Copies or moves (`mode`, a Protocol.TRANSFER_* mode) `sources`
     // (absolute paths) into the folder `folder`. Returns the job's number,
-    // which its transferChanged events carry; `failed(error)` gets novad's
-    // refusal, when it doesn't start.
+    // which its transferChanged events carry; `failed(job, error)` gets
+    // novad's refusal when it doesn't start, maybe before this returns.
     function transfer(mode: string, sources: var, folder: string, failed: var): int {
         const job = _nextJob++;
         Daemon.call(Protocol.CMD_FILES_TRANSFER, {
@@ -128,7 +206,7 @@ Singleton {
         }, error => {
             if (error) {
                 console.warn(`nova: copying into ${folder}: ${error}`);
-                failed?.(error);
+                failed?.(job, error);
             }
         });
         return job;
@@ -152,43 +230,15 @@ Singleton {
         });
     }
 
-    // `done(error, tree)` gets the sidebar's tree for a window on `folder`
-    // (absolute, or from `~`): {folder, rows}, with `folder` absolute. The
-    // tree is open down to `folder` but at the folders in `closed`, and at
-    // those in `opened`; hidden folders show off the way only when `hidden`.
-    // An error means `folder` isn't a folder.
-    function tree(folder: string, opened: var, closed: var, hidden: bool, done: var) {
-        Daemon.call(Protocol.CMD_FILES_TREE, {
-            folder: folder,
-            opened: opened,
-            closed: closed,
-            hidden: hidden
-        }, (error, result) => done(error ?? null, result ?? null));
-    }
-
-    // `done(places)` gets the sidebar's places that exist, in order, each
-    // {kind, path}; none when novad couldn't tell.
-    function places(done: var) {
-        Daemon.call(Protocol.CMD_FILES_PLACES, undefined, (error, result) => {
-            if (error)
-                console.warn(`nova: sidebar places: ${error}`);
-            done(error ? [] : result);
-        });
-    }
-
     // Moves `paths` (absolute) to the trash. `done(error)` gets novad's
     // answer: null, or which ones didn't go.
     function trash(paths: var, done: var) {
-        Daemon.call(Protocol.CMD_FILES_TRASH, {
-            paths: paths
-        }, error => root._answered("moving to the trash", error, done));
+        _inBatches(Protocol.CMD_FILES_TRASH, "paths", paths, "moving to the trash", done);
     }
 
     // Deletes `paths` (absolute) for good.
     function deleteForGood(paths: var, done: var) {
-        Daemon.call(Protocol.CMD_FILES_DELETE, {
-            paths: paths
-        }, error => root._answered("deleting", error, done));
+        _inBatches(Protocol.CMD_FILES_DELETE, "paths", paths, "deleting", done);
     }
 
     // `done(items)` gets what the trash holds, the last trashed first, each
@@ -197,7 +247,7 @@ Singleton {
         Daemon.call(Protocol.CMD_FILES_TRASH_LIST, undefined, (error, result) => {
             if (error)
                 console.warn(`nova: the trash: ${error}`);
-            done(error ? [] : result);
+            done(error ? null : result);
         });
     }
 
@@ -210,14 +260,34 @@ Singleton {
 
     // Deletes the trashed items `ids` for good.
     function eraseFromTrash(ids: var, done: var) {
-        Daemon.call(Protocol.CMD_FILES_TRASH_DELETE, {
-            ids: ids
-        }, error => root._answered("deleting from the trash", error, done));
+        _inBatches(Protocol.CMD_FILES_TRASH_DELETE, "ids", ids, "deleting from the trash", done);
     }
 
     // Deletes everything in the trash for good.
     function emptyTrash(done: var) {
         Daemon.call(Protocol.CMD_FILES_EMPTY_TRASH, undefined, error => root._answered("emptying the trash", error, done));
+    }
+
+    // Sends `cmd` with `items` under `key`, in as many requests as keep each
+    // under novad's limit (Trash.batches), one after another. `done(error)`
+    // gets every request's errors at once, or null.
+    function _inBatches(cmd: string, key: string, items: var, doing: string, done: var) {
+        const batches = Trash.batches(items, Protocol.REQUEST_MAX_BYTES);
+        const errors = [];
+        const next = index => {
+            if (index === batches.length) {
+                root._answered(doing, errors.length > 0 ? errors.join("\n") : null, done);
+                return;
+            }
+            const args = {};
+            args[key] = batches[index];
+            Daemon.call(cmd, args, error => {
+                if (error)
+                    errors.push(error);
+                next(index + 1);
+            });
+        };
+        next(0);
     }
 
     function _answered(doing: string, error: var, done: var) {
@@ -231,6 +301,15 @@ Singleton {
         function onFilesWindowRequested(window: var) {
             root.windowRequested(window);
         }
+        function onFilesPage(page: var) {
+            root.page(page);
+        }
+        function onFilesChanged(changed: var) {
+            root.changed(changed);
+        }
+        function onFilesClosed(closed: var) {
+            root.viewClosed(closed);
+        }
         function onFilesTransferChanged(transfer: var) {
             root.transferChanged(transfer);
         }
@@ -240,6 +319,8 @@ Singleton {
         function onConnectedChanged() {
             if (Daemon.connected)
                 root.attach();
+            else
+                root.transfersLost();
         }
     }
 }

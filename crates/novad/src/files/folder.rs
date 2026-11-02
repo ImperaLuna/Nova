@@ -99,15 +99,66 @@ pub struct Listing {
     hidden: bool,
     /// In the view's order.
     entries: Vec<FileEntry>,
-    /// The same entries by name (wire text, so two names that look alike
-    /// are two keys), to find an entry's place before it changed.
-    by_name: HashMap<String, FileEntry>,
+    /// What each entry's place depends on, by name (wire text, so two names
+    /// that look alike are two keys), to find it again once it changed.
+    /// Only the sort fields, so an entry isn't kept twice.
+    by_name: HashMap<String, Place>,
+}
+
+/// What an entry's place in the order depends on, besides its name.
+#[derive(Clone, PartialEq, Eq)]
+struct Place<S = Box<str>> {
+    dir: bool,
+    by: SortValue<S>,
+}
+
+/// An entry's value for the sort key; the name for `Name`.
+#[derive(Clone, PartialEq, Eq)]
+enum SortValue<S> {
+    Name,
+    Kind(S),
+    Size(Option<u64>),
+    Modified(Option<i64>),
+}
+
+impl<'a> Place<&'a str> {
+    fn of(sort: FileSort, entry: &'a FileEntry) -> Self {
+        let by = match sort.key {
+            FileSortKey::Name => SortValue::Name,
+            FileSortKey::Kind => SortValue::Kind(entry.mime.as_str()),
+            FileSortKey::Size => SortValue::Size(entry.size),
+            FileSortKey::Modified => SortValue::Modified(entry.modified_ms),
+        };
+        Self { dir: entry.dir, by }
+    }
+
+    fn owned(&self) -> Place {
+        let by = match self.by {
+            SortValue::Name => SortValue::Name,
+            SortValue::Kind(mime) => SortValue::Kind(mime.into()),
+            SortValue::Size(size) => SortValue::Size(size),
+            SortValue::Modified(modified) => SortValue::Modified(modified),
+        };
+        Place { dir: self.dir, by }
+    }
+}
+
+impl Place {
+    fn borrowed(&self) -> Place<&str> {
+        let by = match &self.by {
+            SortValue::Name => SortValue::Name,
+            SortValue::Kind(mime) => SortValue::Kind(&**mime),
+            SortValue::Size(size) => SortValue::Size(*size),
+            SortValue::Modified(modified) => SortValue::Modified(*modified),
+        };
+        Place { dir: self.dir, by }
+    }
 }
 
 impl Listing {
     pub fn new(sort: FileSort, hidden: bool, mut entries: Vec<FileEntry>) -> Self {
         entries.sort_by(|a, b| order(sort, a, b));
-        let by_name = entries.iter().map(|entry| (entry.name.clone(), entry.clone())).collect();
+        let by_name = entries.iter().map(|entry| (entry.name.clone(), Place::of(sort, entry).owned())).collect();
         Self { sort, hidden, entries, by_name }
     }
 
@@ -119,7 +170,7 @@ impl Listing {
     /// that take the view's list there, none when it looks the same.
     pub fn apply(&mut self, name: &str, now: Option<FileEntry>) -> Vec<FolderChange> {
         let now = now.filter(|entry| self.hidden || !entry.hidden);
-        let before = self.by_name.get(name).map(|entry| self.place(entry));
+        let before = self.by_name.get(name).map(|place| self.place(name, place.borrowed()));
         match (before, now) {
             (None, None) => Vec::new(),
             (Some(index), None) => {
@@ -130,8 +181,8 @@ impl Listing {
             (None, Some(entry)) => vec![self.insert(entry)],
             (Some(index), Some(entry)) if self.entries[index] == entry => Vec::new(),
             (Some(index), Some(entry)) if self.keeps_place(index, &entry) => {
+                self.by_name.insert(entry.name.clone(), Place::of(self.sort, &entry).owned());
                 self.entries[index] = entry.clone();
-                self.by_name.insert(entry.name.clone(), entry.clone());
                 vec![FolderChange::Update { index: wire_index(index), entry }]
             }
             (Some(index), Some(entry)) => {
@@ -141,15 +192,18 @@ impl Listing {
         }
     }
 
-    /// Where `entry`, which is in the list, sits.
-    fn place(&self, entry: &FileEntry) -> usize {
-        self.entries.binary_search_by(|probe| order(self.sort, probe, entry)).unwrap_or_else(|index| index)
+    /// Where the entry `name`, which is in the list at `place`, sits.
+    fn place(&self, name: &str, place: Place<&str>) -> usize {
+        let found = self.entries.binary_search_by(|probe| {
+            compare(self.sort, (&probe.name, Place::of(self.sort, probe)), (name, place.clone()))
+        });
+        found.unwrap_or_else(|index| index)
     }
 
     fn insert(&mut self, entry: FileEntry) -> FolderChange {
         let index = self.entries.partition_point(|probe| order(self.sort, probe, &entry) == Ordering::Less);
         self.entries.insert(index, entry.clone());
-        self.by_name.insert(entry.name.clone(), entry.clone());
+        self.by_name.insert(entry.name.clone(), Place::of(self.sort, &entry).owned());
         FolderChange::Insert { index: wire_index(index), entry }
     }
 
@@ -170,14 +224,20 @@ fn wire_index(index: usize) -> u32 {
 }
 
 /// The view's order between two entries.
-pub fn order(sort: FileSort, a: &FileEntry, b: &FileEntry) -> Ordering {
-    let by_key = match sort.key {
-        FileSortKey::Name => Ordering::Equal,
-        FileSortKey::Kind => a.mime.cmp(&b.mime),
-        FileSortKey::Size => a.size.cmp(&b.size),
-        FileSortKey::Modified => a.modified_ms.cmp(&b.modified_ms),
+fn order(sort: FileSort, a: &FileEntry, b: &FileEntry) -> Ordering {
+    compare(sort, (&a.name, Place::of(sort, a)), (&b.name, Place::of(sort, b)))
+}
+
+/// The view's order between two entries, named and placed.
+fn compare(sort: FileSort, (a_name, a): (&str, Place<&str>), (b_name, b): (&str, Place<&str>)) -> Ordering {
+    let by_key = match (a.by, b.by) {
+        (SortValue::Kind(x), SortValue::Kind(y)) => x.cmp(y),
+        (SortValue::Size(x), SortValue::Size(y)) => x.cmp(&y),
+        (SortValue::Modified(x), SortValue::Modified(y)) => x.cmp(&y),
+        // Names, or values from different sorts, which a listing never holds.
+        _ => Ordering::Equal,
     };
-    let by_name = natural(&a.name, &b.name);
+    let by_name = natural(a_name, b_name);
     // Descending reverses the key; names break ties A to Z, unless the
     // names are the key.
     let within = match (sort.descending, sort.key) {
@@ -185,7 +245,7 @@ pub fn order(sort: FileSort, a: &FileEntry, b: &FileEntry) -> Ordering {
         (true, _) => by_key.reverse().then(by_name),
         (false, _) => by_key.then(by_name),
     };
-    b.dir.cmp(&a.dir).then(within).then_with(|| a.name.cmp(&b.name))
+    b.dir.cmp(&a.dir).then(within).then_with(|| a_name.cmp(b_name))
 }
 
 /// Names the way people read them: case aside, and runs of digits by their

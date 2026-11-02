@@ -2,8 +2,8 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import "../theme"
-import "listing.js" as Listing
 import "paths.js" as Paths
+import "listing.js" as Listing
 import "trash.js" as Trash
 
 // A row of the trash's list: the item's icon and the name it had, then

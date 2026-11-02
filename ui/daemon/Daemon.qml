@@ -38,6 +38,10 @@ Singleton {
     // arrives, which only happens with the media feature on. Read it through
     // the MediaService singleton.
     property var media: null
+    // The latest files_look event's data ({frame, list}); null until one
+    // arrives, which only happens with the files feature on. Read it
+    // through the FilesService singleton.
+    property var filesLook: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
     // novad's word on whether the session is locked. Read it through the
     // LockService singleton, which also hears lockRequested.
@@ -93,6 +97,12 @@ Singleton {
     // A Nova Files window to open: {folder, select}. Only the Nova Files
     // process subscribes to its topic.
     signal filesWindowRequested(var window)
+    // A folder view's page of entries ({view, path, start, total,
+    // entries}), its changes ({view, changes}), and novad closing it
+    // ({view, error}). Only the client that opened the view gets these.
+    signal filesPage(var page)
+    signal filesChanged(var changed)
+    signal filesClosed(var closed)
     // The drives Nova Files' sidebar lists ({id, name, removable, mount,
     // size, used} each), from the latest files_drives event. Read it
     // through FilesService.
@@ -198,6 +208,14 @@ Singleton {
             media = msg.data;
         } else if (msg.event === Protocol.EVENT_FILES_WINDOW) {
             filesWindowRequested(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_PAGE) {
+            filesPage(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_CHANGED) {
+            filesChanged(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_CLOSED) {
+            filesClosed(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_LOOK) {
+            filesLook = msg.data;
         } else if (msg.event === Protocol.EVENT_FILES_DRIVES) {
             filesDrives = msg.data.drives;
         } else if (msg.event === Protocol.EVENT_FILES_TRANSFER) {

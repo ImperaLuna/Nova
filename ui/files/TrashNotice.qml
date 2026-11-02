@@ -1,8 +1,8 @@
 import QtQuick
 import "../theme"
+import "paths.js" as Paths
 import "../theme/icons.js" as Icons
 import "listing.js" as Listing
-import "paths.js" as Paths
 
 // The notice at the bottom right of a Nova Files window when a trashed
 // item can't go back (its place is taken) or the trash refused something:

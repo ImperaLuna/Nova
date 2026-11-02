@@ -23,6 +23,9 @@ Rectangle {
     property bool editing: false
     property bool wrong: false
 
+    // Typing a path ended: the keyboard goes back to the file list.
+    signal addressClosed
+
     // Turns the address bar into a text field with the path selected.
     function editAddress() {
         field.text = navigator.folder;
@@ -40,8 +43,16 @@ Rectangle {
         });
     }
 
+    onEditingChanged: {
+        if (!editing)
+            addressClosed();
+    }
+
     implicitHeight: Tokens.filesFieldHeight + 2 * Tokens.filesRowPadY
-    color: Tokens.surfaceRaised
+    // How solid the window frame is (0..1): the row fades into it.
+    property real solid: 0
+
+    color: Tokens.alpha(Tokens.surfaceRaised, Tokens.raisedOpacity * (1 - solid))
 
     Row {
         id: buttons

@@ -4,6 +4,7 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 import "navigation.js" as Navigation
+import "paths.js" as Paths
 
 // The sidebar's folder tree, as novad lays it out for the window
 // (files_tree): open down to the window's folder, which is marked and
@@ -14,12 +15,16 @@ ListView {
     id: tree
 
     required property Navigator navigator
-    // Rows created since the last update, to stagger their slide in.
+    // While an update adds rows, the rows created slide in, staggered by
+    // how many came before them; rows created by scrolling just show.
+    property bool arriving: false
     property int arrivals: 0
 
     function update() {
         arrivals = 0;
+        arriving = true;
         Navigation.sync(rows, navigator.treeRows);
+        arriving = false;
         for (let i = 0; i < rows.count; i++) {
             if (rows.get(i).path === navigator.folder) {
                 positionViewAtIndex(i, ListView.Contain);
@@ -83,6 +88,11 @@ ListView {
             y: -Tokens.filesTreeRise
         }
         Component.onCompleted: {
+            if (!tree.arriving) {
+                opacity = 1;
+                rise.y = 0;
+                return;
+            }
             wait.duration = tree.arrivals++ * Tokens.filesTreeStagger;
             arrive.start();
         }
@@ -152,7 +162,7 @@ ListView {
                 font.weight: item.current ? Tokens.weightLabel : Tokens.weightBody
                 color: item.hidden ? Tokens.filesFaint : Tokens.fg
                 textFormat: Text.PlainText
-                text: item.home ? qsTr("Home") : item.name
+                text: item.home ? qsTr("Home") : Paths.shown(item.name)
             }
         }
 

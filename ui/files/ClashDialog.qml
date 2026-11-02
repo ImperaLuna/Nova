@@ -42,7 +42,7 @@ Item {
         spacing: Tokens.pad
 
         LineIcon {
-            path: dialog.clash.folder ? Icons.FOLDER : Icons.DOCUMENT
+            path: side.item.items !== undefined ? Icons.FOLDER : Icons.DOCUMENT
             size: Tokens.filesClashIconSize
             color: Tokens.fgDim
         }
