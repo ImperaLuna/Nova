@@ -10,7 +10,8 @@ import "launcher.js" as LauncherLogic
 // The launcher: a glass deck near the top of the middle of the screen that
 // fades in where it stands (the central pill stays). A search field, the
 // pinned apps as tiles, and a list: the recent apps (every app before the
-// first launch), or what a search matches. Up and Down move through the
+// first launch), or what a search's providers find (apps first: the
+// launcher.providers slot order). Up and Down move through the
 // list, Enter launches (focusing an open app's window where it is;
 // Shift+Enter opens another), Esc or a click outside closes. Opened by
 // `nova toggle launcher` (Super+Space) or the central pill's search button.
@@ -31,12 +32,13 @@ StagePanel {
 
     // Typed: novad's matches go to showMatches().
     signal searchRequested(string query)
-    // An app to start, or to focus where it is when it's open already unless
-    // `newWindow` (Shift+Enter): the answer goes to launched().
-    signal launchRequested(string id, bool newWindow)
+    // What `provider` found as `id` to run: an app starts, or is focused
+    // where it is when it's open already unless `newWindow` (Shift+Enter).
+    // The answer goes to launched().
+    signal runRequested(string provider, string id, bool newWindow)
     signal pinRequested(string id, bool pinned)
 
-    // What's typed, and the matches novad sent for it.
+    // What's typed, and what novad's providers found for it (LauncherItems).
     property string query: ""
     property var matches: []
     // The query `matches` answer; until novad answers the latest, they're
@@ -47,8 +49,9 @@ StagePanel {
     property var enterPending: null
     // The selected row of the list.
     property int selected: 0
-    // The app starting right now: its row turns the accent until it has.
-    property string launching: ""
+    // The row running right now ({provider, id}, or null): it turns the
+    // accent until it has.
+    property var launching: null
     // Why the last launch failed, over the list.
     property string problem: ""
 
@@ -113,7 +116,7 @@ StagePanel {
         matchesFor = "";
         enterPending = null;
         selected = 0;
-        launching = "";
+        launching = null;
         problem = "";
         field.forceActiveFocus();
     }
@@ -144,24 +147,32 @@ StagePanel {
         const pending = enterPending;
         enterPending = null;
         if (pending && rows.length > 0)
-            launch(rows[0].id, pending.newWindow);
+            launch(rows[0], pending.newWindow);
     }
 
-    // Starts the app `id` (see launchRequested), unless one is starting
-    // already.
-    function launch(id: string, newWindow: bool) {
-        if (launching !== "")
+    // Runs the row `row` ({provider, id}; see runRequested), unless one is
+    // running already.
+    function launch(row: var, newWindow: bool) {
+        if (launching !== null)
             return;
         problem = "";
-        launching = id;
-        launchRequested(id, newWindow);
+        launching = {
+            provider: row.provider,
+            id: row.id
+        };
+        runRequested(row.provider, row.id, newWindow);
     }
 
-    // novad's answer to launchRequested: closes once the app has started.
+    // Whether `row` is the one running.
+    function isLaunching(row: var): bool {
+        return launching !== null && launching.provider === row.provider && launching.id === row.id;
+    }
+
+    // novad's answer to runRequested: closes once it has run.
     function launched(error: var) {
         if (error) {
             problem = error;
-            launching = "";
+            launching = null;
             return;
         }
         closing.start();
@@ -183,7 +194,7 @@ StagePanel {
                     newWindow: newWindow
                 };
             else if (rows.length > 0)
-                launch(rows[selected].id, newWindow);
+                launch(rows[selected], newWindow);
             return true;
         case Qt.Key_Escape:
             open = false;
@@ -246,7 +257,7 @@ StagePanel {
                     selectionColor: Tokens.primary
                     selectedTextColor: Tokens.onAccent
                     clip: true
-                    maximumLength: Protocol.SEARCH_APPS_MAX_CHARS
+                    maximumLength: Protocol.LAUNCHER_SEARCH_MAX_CHARS
                     // Typing reaches it only once the compositor has given
                     // the deck the keyboard, a moment after it opens.
                     onActiveFocusChanged: {
@@ -311,7 +322,10 @@ StagePanel {
                         appId: modelData.id
                         name: modelData.name
                         iconSource: launcher.iconSource(modelData.icon ?? "")
-                        onClicked: launcher.launch(appId, false)
+                        onClicked: launcher.launch({
+                            provider: Protocol.PROVIDER_APPS,
+                            id: appId
+                        }, false)
                     }
                 }
             }
@@ -356,7 +370,7 @@ StagePanel {
                             easing.bezierCurve: Tokens.easing
                         }
                     }
-                    color: launcher.launching !== "" ? Tokens.alpha(Tokens.primary, Tokens.accentFillOpacity) : Tokens.selected
+                    color: launcher.launching !== null ? Tokens.alpha(Tokens.primary, Tokens.accentFillOpacity) : Tokens.selected
                     Behavior on color {
                         ColorAnimation {
                             duration: Tokens.durationFast
@@ -405,14 +419,16 @@ StagePanel {
         }
 
         LauncherRow {
+            objectName: "row"
             width: item.width
             app: item.modelData
             iconSource: launcher.iconSource(item.modelData.icon)
             selected: item.index === launcher.selected
-            pinned: launcher.pinned.includes(item.modelData.id)
-            launching: launcher.launching === item.modelData.id
+            pinnable: item.modelData.provider === Protocol.PROVIDER_APPS
+            pinned: pinnable && launcher.pinned.includes(item.modelData.id)
+            launching: launcher.isLaunching(item.modelData)
             onHovered: at => launcher.pointed(item.index, at)
-            onClicked: launcher.launch(item.modelData.id, false)
+            onClicked: launcher.launch(item.modelData, false)
             onPinClicked: launcher.pinRequested(item.modelData.id, !pinned)
         }
     }

@@ -23,6 +23,7 @@ var HOST_QUICK_SETTINGS_CARDS = "quick-settings.cards";
 var HOST_QUICK_SETTINGS_FILL = "quick-settings.fill";
 var HOST_QUICK_SETTINGS_FOOT = "quick-settings.foot";
 var HOST_QUICK_SETTINGS_PAGES = "quick-settings.pages";
+var HOST_LAUNCHER_PROVIDERS = "launcher.providers";
 
 // The slots in `host` of the ready features in `features` (the features
 // event's list), as {feature, view, order}: lowest order first, ties by

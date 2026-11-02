@@ -7,8 +7,8 @@ import "../theme"
 import "../launcher/launcher.js" as LauncherLogic
 
 // The launcher with apps in the shape novad sends: what its list shows
-// before and while searching, typing, the keys, launching and its
-// failures. The root is an Item: a TestCase root gets no key events.
+// before and while searching, what other providers find, typing, the
+// keys, launching and its failures. The root is an Item: a TestCase root gets no key events.
 Item {
     id: stage
     width: 1280
@@ -55,7 +55,7 @@ Item {
 
         SignalSpy {
             id: launches
-            signalName: "launchRequested"
+            signalName: "runRequested"
         }
 
         function make(props) {
@@ -185,7 +185,7 @@ Item {
             compare(launches.count, 0, "foot was the previous query's");
             launcher.showMatches("fi", files);
             compare(launches.count, 1);
-            compare(Array.from(launches.signalArguments[0]), ["org.gnome.Nautilus.desktop", true]);
+            compare(Array.from(launches.signalArguments[0]), ["apps", "org.gnome.Nautilus.desktop", true]);
         }
 
         function test_closing_drops_the_waiting_launch() {
@@ -224,6 +224,43 @@ Item {
             compare(launches.count, 0);
         }
 
+        function test_another_providers_items_show_unpinnable_and_run_through_it() {
+            const launcher = make();
+            keyClick("=");
+            launcher.showMatches("=", [
+                {
+                    provider: "calculator",
+                    id: "2",
+                    name: [
+                        {
+                            text: "2"
+                        }
+                    ],
+                    description: "1 + 1"
+                },
+                {
+                    provider: "apps",
+                    id: "foot.desktop",
+                    name: [
+                        {
+                            text: "Foot"
+                        }
+                    ]
+                }
+            ]);
+            compare(launcher.rows.map(row => row.provider), ["calculator", "apps"]);
+            compare(launcher.rows[0].name, "2");
+            compare(launcher.rows[0].description, "1 + 1");
+            const list = findChild(launcher, "list");
+            tryVerify(() => list.itemAtIndex(1) !== null);
+            verify(!findChild(list.itemAtIndex(0), "row").pinnable, "only apps can be pinned");
+            verify(findChild(list.itemAtIndex(1), "row").pinnable);
+            keyClick(Qt.Key_Return);
+            compare(Array.from(launches.signalArguments[0]), ["calculator", "2", false]);
+            verify(launcher.isLaunching(launcher.rows[0]));
+            verify(!launcher.isLaunching(launcher.rows[1]));
+        }
+
         function test_nothing_matching_says_so() {
             const launcher = make();
             keyClick("q");
@@ -241,8 +278,11 @@ Item {
             compare(launcher.selected, 1);
             keyClick(Qt.Key_Return);
             compare(launches.count, 1);
-            compare(Array.from(launches.signalArguments[0]), ["firefox.desktop", false]);
-            compare(launcher.launching, "firefox.desktop");
+            compare(Array.from(launches.signalArguments[0]), ["apps", "firefox.desktop", false]);
+            compare(launcher.launching, {
+                provider: "apps",
+                id: "firefox.desktop"
+            });
             keyClick(Qt.Key_Return);
             compare(launches.count, 1, "one launch at a time");
             launcher.launched(null);
@@ -263,7 +303,7 @@ Item {
         function test_shift_enter_asks_for_a_new_window() {
             make();
             keyClick(Qt.Key_Return, Qt.ShiftModifier);
-            compare(Array.from(launches.signalArguments[0]), ["org.gnome.Nautilus.desktop", true]);
+            compare(Array.from(launches.signalArguments[0]), ["apps", "org.gnome.Nautilus.desktop", true]);
         }
 
         function test_a_failed_launch_says_why_and_stays_open() {
@@ -271,7 +311,7 @@ Item {
             keyClick(Qt.Key_Return);
             launcher.launched("dolphin isn't installed");
             compare(launcher.problem, "dolphin isn't installed");
-            compare(launcher.launching, "");
+            compare(launcher.launching, null);
             verify(launcher.open);
             keyClick("x");
             compare(launcher.problem, "", "typing clears it");

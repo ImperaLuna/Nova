@@ -8,3 +8,8 @@ daemon = "launcher"
 host = "stage.panels"
 view = "launcher.panel"
 order = 30
+
+[[slot]]
+host = "launcher.providers"
+view = "apps"
+order = 10
