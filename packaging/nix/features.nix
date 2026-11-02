@@ -75,6 +75,18 @@ in
   usesGpuScreenRecorder =
     gpu: ids: lib.any (id: lib.elem "gpu-screen-recorder" (nixNames manifests.${id} gpu)) ids;
 
+  # Nova Files' desktop entry (features/files), running `package`'s nova,
+  # for the systems where the `files` feature is on: Nova Files is then
+  # listed with the apps, and can be the default for folders.
+  filesDesktop =
+    pkgs: package:
+    pkgs.runCommand "nova-files-desktop" { } ''
+      install -Dm644 ${package}/share/nova/features/files/nova-files.desktop \
+        $out/share/applications/nova-files.desktop
+      substituteInPlace $out/share/applications/nova-files.desktop \
+        --replace-fail "Exec=nova " "Exec=${lib.getExe package} "
+    '';
+
   # A features.toml for `on` (the ids that are on): what differs from each
   # feature's default.
   selectionFile =

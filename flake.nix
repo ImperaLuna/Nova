@@ -389,6 +389,7 @@
                   selection = builtins.fromTOML config.environment.etc."xdg/nova/features.toml".text;
                 in
                 assert pkgs.lib.all (features.isOn selection) (builtins.attrValues features.manifests);
+                assert config.xdg.mime.defaultApplications."inode/directory" == "nova-files.desktop";
                 pkgs.lib.concatLines (map (package: package.name) config.environment.systemPackages);
             in
             pkgs.writeText "nova-nix-modules" (
