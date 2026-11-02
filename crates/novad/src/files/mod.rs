@@ -13,6 +13,11 @@
 //!   window is asked for and none runs.
 //! - Opening files in apps is the shared `crate::apps::opening`, over the
 //!   module's one copy of the MIME database.
+//! - `views.rs`: the folders a window shows (`files_open`), read and
+//!   sent in pages.
+//! - `folder.rs`: a folder's entries, their types from the shared MIME
+//!   database (`crate::mime`, loaded once as the module starts), and the
+//!   view's order.
 //!
 //! Windows go only to the Nova Files process, once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
@@ -22,7 +27,9 @@
 //! it quit, with windows asked for since, is followed by a new one.
 
 mod file_manager1;
+mod folder;
 mod target;
+mod views;
 mod window;
 
 use crate::apps::AppIndex;
@@ -33,7 +40,7 @@ use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
-use nova_protocol::{Event, FeatureState, FilesWindow, Topic};
+use nova_protocol::{Event, FeatureState, FileSort, FilesWindow, Topic};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 
@@ -65,6 +72,8 @@ pub struct Files {
     opener: Arc<Opener>,
     /// Ends the FileManager1 service.
     stop: Arc<Stop>,
+    /// The folders the windows show.
+    folders: views::Folders,
 }
 
 /// What the module's services share.
@@ -101,8 +110,10 @@ impl Files {
         for problem in problems {
             logger.warn(LOG_SOURCE, &problem);
         }
+        let mime = Arc::new(mime);
+        let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
         let opener = Opener::new(
-            Arc::new(mime),
+            mime,
             sources.associations.clone(),
             sources.runner.clone(),
             apps,
@@ -121,12 +132,23 @@ impl Files {
         });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, opener: Arc::new(opener), stop })
+        Arc::new(Self { shared, opener: Arc::new(opener), stop, folders })
     }
 
     /// What opens files in apps.
     pub fn opener(&self) -> Arc<Opener> {
         Arc::clone(&self.opener)
+    }
+
+    /// Shows the folder `path` in client `client`'s view `view`
+    /// (`files_open`, [`views::Folders::open`]).
+    pub fn open(&self, client: ClientId, view: u32, path: &str, sort: FileSort, hidden: bool) -> Result<(), String> {
+        self.folders.open(client, view, path, sort, hidden)
+    }
+
+    /// Closes client `client`'s view `view` (`files_close`).
+    pub fn close(&self, client: ClientId, view: u32) {
+        self.folders.close(client, view);
     }
 
     /// Opens a window on `folder` with `select` selected, once both check
@@ -158,6 +180,7 @@ impl Files {
 
     /// Client `client` hung up: windows aren't sent to it any more.
     pub fn client_gone(&self, client: ClientId) {
+        self.folders.client_gone(client);
         let mut delivery = lock(&self.shared.delivery);
         if delivery.attached == Some(client) {
             delivery.attached = None;
@@ -165,9 +188,11 @@ impl Files {
     }
 
     /// Stops it: it publishes nothing more, gives up FileManager1, closes
-    /// Nova Files' windows, and drops those still waiting.
+    /// Nova Files' windows and folder views, and drops windows still
+    /// waiting.
     pub fn stop(&self) {
         self.stop.stop();
+        self.folders.stop();
         if let Some(process) = &self.shared.process {
             process.stop();
         }

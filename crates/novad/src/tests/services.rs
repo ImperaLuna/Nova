@@ -1,4 +1,4 @@
-//! Screenshots, recording, host, tray, notifications, media, resources and peripherals over the socket.
+//! Screenshots, recording, host, tray, notifications, media, resources, peripherals and folder views over the socket.
 
 use super::*;
 
@@ -151,4 +151,41 @@ fn subscribing_to_peripherals_sends_the_devices() {
     let mut client = novad.connect();
     client.request(1, "subscribe", Some(json!({"topics": ["peripherals"]})));
     assert_eq!(client.next_event("peripherals"), json!({"devices": []}));
+}
+
+/// Nova Files' views over the socket: a folder comes in a page. Its own
+/// tests cover paging and order.
+#[test]
+fn a_folder_view_is_listed_over_the_socket() {
+    let novad = TestDaemon::open("files", None, |dir| {
+        std::fs::write(dir.join("config/features.toml"), "enabled = [\"files\"]\n").unwrap()
+    });
+    let folder = nova_test_support::TempDir::new("files-socket-folder");
+    std::fs::write(folder.join("notes.txt"), b"hi").unwrap();
+    let mut client = novad.connect();
+    let sort = json!({"key": "name", "descending": false});
+    let open = json!({"view": 1, "path": folder.to_str().unwrap(), "sort": sort, "hidden": false});
+    assert_eq!(client.request(1, "files_open", Some(open))["result"], Value::Null);
+    let page = client.next_event("files_page");
+    assert_eq!((page["view"].clone(), page["start"].clone(), page["total"].clone()), (json!(1), json!(0), json!(1)));
+    assert_eq!(page["entries"][0]["name"], "notes.txt");
+    assert_eq!(page["entries"][0]["size"], 2);
+
+    assert_eq!(client.request(2, "files_close", Some(json!({"view": 1})))["result"], Value::Null);
+    let relative = json!({"view": 2, "path": "Documents", "sort": sort, "hidden": false});
+    assert!(client.request(3, "files_open", Some(relative))["error"].as_str().unwrap().contains("absolute"));
+    let missing = json!({"view": 3, "path": folder.join("missing").to_str().unwrap(), "sort": sort, "hidden": false});
+    assert_eq!(client.request(4, "files_open", Some(missing))["result"], Value::Null);
+    let closed = client.next_event("files_closed");
+    assert_eq!(closed["view"], 3);
+    assert!(closed["error"].as_str().unwrap().contains("doesn't exist"), "{closed}");
+}
+
+#[test]
+fn folder_views_need_their_feature() {
+    let novad = TestDaemon::start("files-off", None);
+    let mut client = novad.connect();
+    let open = json!({"view": 1, "path": "/", "sort": {"key": "name", "descending": false}, "hidden": false});
+    let reply = client.request(1, "files_open", Some(open));
+    assert!(reply["error"].as_str().unwrap().contains("files feature isn't ready"), "{reply}");
 }

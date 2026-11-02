@@ -279,6 +279,12 @@ impl<'a> Connection<'a> {
                 return self.bluetooth_later(move |bluetooth| bluetooth.forget(&address));
             }
             Command::ShowFolder { folder, select } => done(self.files().and_then(|files| files.show(folder, select))),
+            // Answered here, in order with the connection's other requests,
+            // so a close or a hang-up never overtakes the open it follows.
+            Command::FilesOpen { view, path, sort, hidden } => {
+                done(self.files().and_then(|files| files.open(self.id, *view, path, *sort, *hidden)))
+            }
+            Command::FilesClose { view } => done(self.files().map(|files| files.close(self.id, *view))),
             Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
             Command::FilesLaunch { path, app } => {
                 let (path, app) = (path.clone(), app.clone());
@@ -861,6 +867,8 @@ impl<'a> Connection<'a> {
             | Command::BluetoothForget { .. }
             | Command::BluetoothAnswer { .. }
             | Command::ShowFolder { .. }
+            | Command::FilesOpen { .. }
+            | Command::FilesClose { .. }
             | Command::AttachFiles { .. }
             | Command::FilesLaunch { .. }
             | Command::FilesOpenWith { .. }
