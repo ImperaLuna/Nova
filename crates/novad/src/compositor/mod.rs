@@ -8,6 +8,8 @@
 //! novad picks the backend from the variables the compositor sets.
 
 mod hyprland;
+#[cfg(test)]
+pub(crate) use hyprland::LUA_PROBE as HYPRLAND_LUA_PROBE;
 mod niri;
 
 use crate::backoff::Backoff;

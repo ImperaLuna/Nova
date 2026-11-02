@@ -51,6 +51,74 @@ fn hyprland_reaches_subscribers_and_takes_workspace_actions() {
 }
 
 #[test]
+fn hyprland_with_a_lua_config_gets_lua_dispatchers() {
+    // Hyprland 0.57 only reads `hyprland.lua`, where the old dispatchers
+    // fail; log out in the power menu showed its error.
+    let mut fake = None;
+    let novad = TestDaemon::with_compositor("hyprland-lua", |dir| {
+        let (compositor, backend) = FakeCompositor::hyprland_lua(dir);
+        fake = Some(compositor);
+        backend
+    });
+    let fake = fake.unwrap();
+    let (mut client, desktop) = follow_to_the_end(&novad);
+
+    let first = workspace_id(&desktop, "1");
+    assert_eq!(client.request(2, "focus_workspace", Some(json!({"id": first})))["result"], Value::Null);
+    let magic = workspace_id(&desktop, "magic");
+    assert_eq!(client.request(3, "focus_workspace", Some(json!({"id": magic})))["result"], Value::Null);
+    assert_eq!(
+        fake.actions(),
+        [
+            format!(r#"dispatch hl.dsp.focus({{ workspace = "{first}" }})"#),
+            r#"dispatch hl.dsp.workspace.toggle_special("magic")"#.into()
+        ]
+    );
+    assert_eq!(fake.sent(compositor::HYPRLAND_LUA_PROBE), 1, "asked once which dispatchers it takes");
+}
+
+#[test]
+fn hyprland_logs_out_in_its_config_language() {
+    let dir = nova_test_support::TempDir::new("log-out-hyprland");
+    let (old, backend) = FakeCompositor::hyprland(&dir.path().join("hyprlang"));
+    backend.log_out().unwrap();
+    assert_eq!(old.actions(), ["dispatch exit"]);
+
+    let (lua, backend) = FakeCompositor::hyprland_lua(&dir.path().join("lua"));
+    backend.log_out().unwrap();
+    assert_eq!(lua.actions(), ["dispatch hl.dsp.exit()"]);
+}
+
+#[test]
+fn hyprland_lua_dispatchers_quote_what_they_name() {
+    // A named workspace goes by its name, which the user chose.
+    let dir = nova_test_support::TempDir::new("lua-quoting-hyprland");
+    let (fake, backend) = FakeCompositor::hyprland_lua(dir.path());
+    let named = nova_protocol::Workspace {
+        id: -1337,
+        name: "my \"web\" \\ 2\n".into(),
+        active: false,
+        focused: false,
+        urgent: false,
+        empty: true,
+        fullscreen: false,
+        special: false,
+        shown_elsewhere: false,
+        active_window: None,
+    };
+    backend.focus_workspace(&named).unwrap();
+    let output = nova_protocol::Output { name: "DP-2".into(), focused: false, workspaces: Vec::new(), layout: 0 };
+    backend.focus_output(&output).unwrap();
+    assert_eq!(
+        fake.actions(),
+        [
+            r#"dispatch hl.dsp.focus({ workspace = "name:my \"web\" \\ 2\010" })"#,
+            r#"dispatch hl.dsp.focus({ monitor = "DP-2" })"#
+        ]
+    );
+}
+
+#[test]
 fn hyprland_focuses_an_output_without_its_workspaces() {
     // A special workspace may show there, which focusing by workspace would
     // hide (or, by the one under it, cover the new window with).
