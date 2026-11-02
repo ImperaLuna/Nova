@@ -20,12 +20,15 @@
 mod file_manager1;
 mod target;
 
+use crate::apps::associations::Places;
+use crate::apps::launch::Runner;
 use crate::apps::opening::Opener;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
 use nova_protocol::{Event, FeatureState, FilesWindow, Topic};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub const FEATURE_ID: &str = "files";
@@ -36,11 +39,19 @@ const LOG_SOURCE: &str = "files";
 pub struct Sources {
     /// Where `org.freedesktop.FileManager1` is served.
     pub bus: Bus,
+    /// The data folders the MIME database is read from.
+    pub data_dirs: Vec<PathBuf>,
+    /// Where the `mimeapps.list` files are.
+    pub associations: Places,
+    /// How apps opening files are started.
+    pub runner: Runner,
 }
 
 impl Sources {
-    pub fn system() -> Self {
-        Self { bus: Bus::Session }
+    pub fn system(path_var: &str) -> Self {
+        let data_dirs = crate::data_dirs();
+        let associations = Places::system(&data_dirs);
+        Self { bus: Bus::Session, data_dirs, associations, runner: Runner::detect(path_var) }
     }
 }
 
@@ -117,20 +128,25 @@ impl crate::modules::Module for Files {
     type Sources = Sources;
     type Config = ();
 
-    fn sources(_: &crate::modules::Env) -> Sources {
-        Sources::system()
+    fn sources(env: &crate::modules::Env) -> Sources {
+        Sources::system(env.path_var)
     }
 
     fn config(_: &crate::config::Config) {}
 
     fn start(ctx: &crate::modules::Context, sources: &Sources, (): &(), _: &[FeatureState]) -> Arc<Self> {
-        let data_dirs = crate::data_dirs();
-        let (mime, problems) = crate::mime::MimeDb::load(&data_dirs);
+        let (mime, problems) = crate::mime::MimeDb::load(&sources.data_dirs);
         for problem in problems {
             ctx.logger.warn(LOG_SOURCE, &problem);
         }
-        let places = crate::apps::associations::Places::system(&data_dirs);
-        let opener = Opener::new(Arc::new(mime), places, Arc::clone(&ctx.apps), &ctx.path_var, Arc::clone(&ctx.logger));
+        let opener = Opener::new(
+            Arc::new(mime),
+            sources.associations.clone(),
+            sources.runner.clone(),
+            Arc::clone(&ctx.apps),
+            &ctx.path_var,
+            Arc::clone(&ctx.logger),
+        );
         Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger), opener)
     }
 

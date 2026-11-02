@@ -32,8 +32,15 @@ pub struct Opener {
 
 impl Opener {
     /// Types files with `mime`; the lists are in `places`.
-    pub fn new(mime: Arc<MimeDb>, places: Places, apps: Arc<AppIndex>, path_var: &str, logger: Arc<Logger>) -> Self {
-        Self { mime, places, apps, runner: Runner::detect(path_var), path_var: path_var.to_string(), logger }
+    pub fn new(
+        mime: Arc<MimeDb>,
+        places: Places,
+        runner: Runner,
+        apps: Arc<AppIndex>,
+        path_var: &str,
+        logger: Arc<Logger>,
+    ) -> Self {
+        Self { mime, places, apps, runner, path_var: path_var.to_string(), logger }
     }
 
     /// Opens `path` in its type's default app.
@@ -147,7 +154,7 @@ mod tests {
         let places = Places::new(Some(dir.join("config")), &[], std::slice::from_ref(&share), &["niri".into()]);
         let (mime, problems) = MimeDb::load(std::slice::from_ref(&share));
         assert!(problems.is_empty(), "{problems:?}");
-        let opener = Opener::new(Arc::new(mime), places, Arc::clone(&index), "", logger);
+        let opener = Opener::new(Arc::new(mime), places, Runner::Direct, Arc::clone(&index), "", logger);
         std::fs::create_dir_all(dir.join("files")).unwrap();
         for (file, bytes) in [("photo.png", &b"\x89PNG"[..]), ("notes.md", b"# hi\n"), ("script.py", b"print()\n")] {
             std::fs::write(dir.join("files").join(file), bytes).unwrap();
@@ -246,8 +253,8 @@ mod tests {
         app(&machine.dir, "record.desktop", &program.to_string_lossy(), "MimeType=image/png;\n");
         // The index sees the new app by itself.
         wait_until(WAIT, "the new app", || machine.apps.read().any_entry("record.desktop").is_some());
-        let opener = Opener { runner: Runner::Direct, ..machine.opener };
         let file = machine.dir.join("files/photo.png").to_string_lossy().into_owned();
+        let opener = machine.opener;
         opener.open(&file).unwrap();
         wait_until(WAIT, "the app to get the file", || std::fs::read_to_string(&opened).is_ok_and(|got| got == file));
         assert!(opener.open("relative/photo.png").is_err());

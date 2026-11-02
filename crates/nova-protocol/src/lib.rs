@@ -1770,7 +1770,7 @@ pub enum Command {
     /// Opens the file at `path`, an absolute path, in the app `app` (its
     /// desktop file id) or, without one, in its type's default app
     /// (feature `files`: a double-click, Enter, or a pick from "Open with").
-    FilesOpen {
+    FilesLaunch {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         app: Option<String>,
@@ -2508,11 +2508,11 @@ mod tests {
             }),
             encode(Request {
                 id: Some(70),
-                command: Command::FilesOpen { path: "/home/me/photo.png".into(), app: None },
+                command: Command::FilesLaunch { path: "/home/me/photo.png".into(), app: None },
             }),
             encode(Request {
                 id: Some(71),
-                command: Command::FilesOpen {
+                command: Command::FilesLaunch {
                     path: "/home/me/photo.png".into(),
                     app: Some("org.gnome.Loupe.desktop".into()),
                 },

@@ -90,7 +90,7 @@ var CMD_BLUETOOTH_DISCONNECT = "bluetooth_disconnect";
 var CMD_BLUETOOTH_FORGET = "bluetooth_forget";
 var CMD_BLUETOOTH_ANSWER = "bluetooth_answer";
 var CMD_SHOW_FOLDER = "show_folder";
-var CMD_FILES_OPEN = "files_open";
+var CMD_FILES_LAUNCH = "files_launch";
 var CMD_FILES_OPEN_WITH = "files_open_with";
 var CMD_FILES_SET_DEFAULT = "files_set_default";
 
