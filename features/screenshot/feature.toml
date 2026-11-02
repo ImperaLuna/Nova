@@ -15,3 +15,9 @@ debian = ["grim", "wl-clipboard", "xdg-utils"]
 
 [check]
 binaries = ["grim", "wl-copy", "xdg-open"]
+
+# The region picker, a recording's marks and the card a capture lands in,
+# shared by screenshots and recordings (shown once while either is on).
+[[slot]]
+host = "shell.overlays"
+view = "capture.overlay"

@@ -7,5 +7,14 @@
 # Raise `max` once Nova has been tested on a newer release: the "Newest
 # Quickshell" workflow (scripts/newest-quickshell.sh) runs Nova's qmllint and
 # VM tests on the newest one and says when it passes outside this range.
+#
+# `[packages]` is what `nova setup` installs on other distros while any
+# feature with a UI is on (Nix's flake brings Quickshell itself). Fedora's
+# comes from a COPR until it reaches a release, which `nova setup` enables.
 min = "0.3.2"
 max = "0.3.x"
+
+[packages]
+arch = ["quickshell"]
+fedora = ["quickshell"]
+debian = ["quickshell"]

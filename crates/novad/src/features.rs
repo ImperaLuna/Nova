@@ -84,7 +84,7 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         let manifests = nova_features::load_all(&root).unwrap();
         let states = states(&manifests, &Selection::default(), "/nonexistent");
-        let core = states.iter().find(|s| s.id == "core").unwrap();
-        assert_eq!(core.slots, manifests.iter().find(|m| m.id == "core").unwrap().slots);
+        let bar = states.iter().find(|s| s.id == "bar").unwrap();
+        assert_eq!(bar.slots, manifests.iter().find(|m| m.id == "bar").unwrap().slots);
     }
 }

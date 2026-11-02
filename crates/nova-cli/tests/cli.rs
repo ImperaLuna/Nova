@@ -84,7 +84,7 @@ fn status_json_is_novads_answer() {
     let novad = Novad::start("status-json");
     let status: Status = serde_json::from_str(&stdout(&novad.run(&["status", "--json"]))).unwrap();
     assert_eq!(status.ui.state, UiState::Disabled);
-    assert!(status.features.iter().any(|f| f.id == "core"));
+    assert!(status.features.iter().any(|f| f.id == "bar"));
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn nova_shows_status_when_already_running() {
     assert!(text.starts_with("Nova is already running. To restart it, run `nova restart`."), "{text}");
     assert!(text.contains("daemon     running"), "{text}");
     let features = text.lines().find(|line| line.starts_with("features")).unwrap_or_default();
-    assert!(features.contains("core on"), "{text}");
+    assert!(features.contains("bar on"), "{text}");
 }
 
 #[test]

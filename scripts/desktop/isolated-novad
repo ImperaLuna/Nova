@@ -4,7 +4,7 @@
 # this desktop (devices, the compositor...) without touching the bar,
 # nova.service or the live novad's socket.
 #
-# Only the features named run (and `core`, which always does): the rest
+# Only the features named run: the rest
 # would act on the desktop too, like a second wallpaper daemon drawing over
 # the live one's or a second sleep inhibitor. It has its own runtime dir
 # (its socket, covers, frames), feature choices, state and logs, all in a
@@ -19,7 +19,7 @@
 #
 # Usage: scripts/desktop/isolated-novad <branch> <feature,...> [topic...]
 #   e.g. scripts/desktop/isolated-novad claude/my-branch peripherals peripherals logs
-#   (the feature list may be empty, "", for core alone)
+#   (the feature list may be empty, "", for none at all)
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
 source "$(dirname "$0")/lib.sh"

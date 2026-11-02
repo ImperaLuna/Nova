@@ -1905,6 +1905,8 @@ pub enum UiState {
     Restarting,
     /// novad was started with `--no-ui`.
     Disabled,
+    /// No feature with a UI is on, so novad doesn't run Quickshell.
+    NotNeeded,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2073,7 +2075,7 @@ mod tests {
             encode(Event::Features {
                 features: vec![
                     FeatureState {
-                        id: "core".into(),
+                        id: "bar".into(),
                         status: FeatureStatus::Ready,
                         missing: vec![],
                         slots: vec![Slot { host: "bar.center".into(), view: "central-pill".into(), order: 10 }],
@@ -2910,7 +2912,7 @@ mod tests {
                 }),
             },
             features: vec![FeatureState {
-                id: "core".into(),
+                id: "bar".into(),
                 status: FeatureStatus::Ready,
                 missing: vec![],
                 slots: vec![],
