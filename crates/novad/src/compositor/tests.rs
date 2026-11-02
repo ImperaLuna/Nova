@@ -2,7 +2,8 @@
 //! by `e2e/vm/record.py` (`just record`): `recorded/<compositor>/events.txt`
 //! is the event stream, `steps.json` says how far into it each step of the
 //! script had got, and `<step>/` holds the compositor's answers to its
-//! queries at that point.
+//! queries at that point. `recorded/hyprland-<version>/` holds one set of
+//! answers from a newer Hyprland, taken on a real desktop.
 
 use super::*;
 use nova_protocol::{FocusedWindow, Output};
@@ -252,6 +253,23 @@ fn hyprland_events_add_up_to_what_hyprland_reports() {
     }
     check_the_script(&followed);
     check_the_special_workspace(&followed);
+}
+
+#[test]
+fn hyprland_0_57_without_a_special_workspace_id_still_loads() {
+    // Answers from a real Hyprland 0.57 desktop with two outputs, kept in
+    // `recorded/hyprland-0.57/`: its monitors leave out the special
+    // workspace's `id` when none shows.
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/compositor/recorded/hyprland-0.57");
+    let mut ask = |request: &str| {
+        let query = request.strip_prefix("j/").unwrap();
+        Ok(std::fs::read_to_string(dir.join(format!("{query}.json"))).unwrap())
+    };
+    let desktop = hyprland::State::load(&mut ask).unwrap().desktop();
+    let names: Vec<&str> = desktop.outputs.iter().map(|output| output.name.as_str()).collect();
+    assert_eq!(names, ["DP-1", "DP-2"]);
+    assert!(special(&desktop).is_empty(), "{desktop:#?}");
+    assert_eq!(focused_workspace(&desktop).name, "1");
 }
 
 #[test]

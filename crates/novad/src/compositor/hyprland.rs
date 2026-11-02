@@ -187,11 +187,19 @@ struct Monitor {
     active_workspace: WorkspaceRef,
     /// The special workspace showing over it; id 0 when none.
     #[serde(rename = "specialWorkspace", default)]
-    special_workspace: WorkspaceRef,
+    special_workspace: SpecialWorkspaceRef,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct WorkspaceRef {
+    id: WorkspaceId,
+}
+
+/// A monitor's special workspace. Hyprland 0.57 leaves out `id` when none
+/// shows; older releases write 0.
+#[derive(Debug, Default, Deserialize)]
+struct SpecialWorkspaceRef {
+    #[serde(default)]
     id: WorkspaceId,
 }
 

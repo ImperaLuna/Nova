@@ -1,0 +1,14 @@
+{
+    "address": "1",
+    "id": 1,
+    "type": "normal",
+    "name": "1",
+    "monitor": "DP-1",
+    "monitorID": 0,
+    "windows": 1,
+    "hasfullscreen": false,
+    "lastwindow": "0x6330813dc150",
+    "lastwindowtitle": "Claude",
+    "ispersistent": false,
+    "tiledLayout": "master"
+}

@@ -1,0 +1,27 @@
+[{
+    "address": "1",
+    "id": 1,
+    "type": "normal",
+    "name": "1",
+    "monitor": "DP-1",
+    "monitorID": 0,
+    "windows": 1,
+    "hasfullscreen": false,
+    "lastwindow": "0x6330813dc150",
+    "lastwindowtitle": "Claude",
+    "ispersistent": false,
+    "tiledLayout": "master"
+},{
+    "address": "2",
+    "id": 2,
+    "type": "normal",
+    "name": "2",
+    "monitor": "DP-2",
+    "monitorID": 1,
+    "windows": 0,
+    "hasfullscreen": false,
+    "lastwindow": "0x0",
+    "lastwindowtitle": "",
+    "ispersistent": false,
+    "tiledLayout": "master"
+}]
