@@ -239,34 +239,61 @@ pub fn copy_link(source: &Path, target: &Path) -> io::Result<()> {
 /// didn't, so a failed or cancelled replace loses nothing.
 pub struct Aside {
     path: PathBuf,
-    held: PathBuf,
+    /// A folder of its own holding it: made with `mkdir`, which no other
+    /// job can also win, so two jobs never set aside under one name.
+    holder: PathBuf,
 }
 
 impl Aside {
+    /// The name it has inside its holder.
+    const HELD: &str = "held";
+
     pub fn new(path: &Path) -> io::Result<Self> {
         let folder = path.parent().unwrap_or(Path::new("/"));
         for attempt in 0..MOST_NUMBERED {
-            let held = folder.join(format!("{ASIDE_PREFIX}{attempt}"));
-            match fs::symlink_metadata(&held) {
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                    fs::rename(path, &held)?;
-                    return Ok(Self { path: path.to_owned(), held });
-                }
+            let holder = folder.join(format!("{ASIDE_PREFIX}{attempt}"));
+            match fs::create_dir(&holder) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(e),
-                Ok(_) => {}
             }
+            if let Err(e) = fs::rename(path, holder.join(Self::HELD)) {
+                let _ = fs::remove_dir(&holder);
+                return Err(e);
+            }
+            return Ok(Self { path: path.to_owned(), holder });
         }
         Err(io::Error::other("no free name to set it aside"))
     }
 
     pub fn discard(self) -> io::Result<()> {
-        remove(&self.held)
+        fs::remove_dir_all(&self.holder)
     }
 
     /// Puts it back, over whatever was half placed at its name.
     pub fn restore(self) -> io::Result<()> {
         remove(&self.path)?;
-        fs::rename(&self.held, &self.path)
+        fs::rename(self.holder.join(Self::HELD), &self.path)?;
+        fs::remove_dir(&self.holder)
+    }
+}
+
+/// Removes what a move copied from the folder `source`: its files, links
+/// and folders. What was left out (a socket, a pipe) stays, and so do the
+/// folders holding it.
+pub fn remove_moved(source: &Path) -> io::Result<()> {
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            remove_moved(&entry.path())?;
+        } else if file_type.is_file() || file_type.is_symlink() {
+            fs::remove_file(entry.path())?;
+        }
+    }
+    match fs::remove_dir(source) {
+        Err(e) if e.kind() != io::ErrorKind::DirectoryNotEmpty => Err(e),
+        _ => Ok(()),
     }
 }
 
@@ -339,5 +366,36 @@ mod tests {
         assert_eq!(chunks, 1);
         let left: Vec<_> = fs::read_dir(&*dir).unwrap().map(|entry| entry.unwrap().file_name()).collect();
         assert_eq!(left, [OsString::from("big.bin")]);
+    }
+
+    #[test]
+    fn each_aside_gets_a_holder_of_its_own() {
+        let dir = TempDir::new("aside");
+        fs::write(dir.join("a"), "a").unwrap();
+        fs::create_dir(dir.join("b")).unwrap();
+        fs::write(dir.join("b/inner"), "b").unwrap();
+        let (a, b) = (Aside::new(&dir.join("a")).unwrap(), Aside::new(&dir.join("b")).unwrap());
+        assert_ne!(a.holder, b.holder);
+        fs::write(dir.join("a"), "half placed").unwrap();
+        a.restore().unwrap();
+        b.discard().unwrap();
+        assert_eq!(fs::read_to_string(dir.join("a")).unwrap(), "a");
+        let left: Vec<_> = fs::read_dir(&*dir).unwrap().map(|entry| entry.unwrap().file_name()).collect();
+        assert_eq!(left, [OsString::from("a")], "both holders gone");
+    }
+
+    #[test]
+    fn removing_a_moved_folder_keeps_what_was_left_out() {
+        let dir = TempDir::new("moved");
+        let source = dir.join("Photos");
+        fs::create_dir_all(source.join("2025")).unwrap();
+        fs::create_dir_all(source.join("sockets")).unwrap();
+        fs::write(source.join("2025/a.png"), "a").unwrap();
+        std::os::unix::fs::symlink("2025/a.png", source.join("latest")).unwrap();
+        let _socket = std::os::unix::net::UnixListener::bind(source.join("sockets/s")).unwrap();
+        remove_moved(&source).unwrap();
+        assert!(!source.join("2025").exists());
+        assert!(fs::symlink_metadata(source.join("latest")).is_err());
+        assert!(fs::symlink_metadata(source.join("sockets/s")).is_ok(), "a socket wasn't copied, so it stays");
     }
 }

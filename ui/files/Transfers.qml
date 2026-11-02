@@ -24,7 +24,9 @@ Item {
     // Copies or moves (a Protocol.TRANSFER_* mode) `sources` (absolute
     // paths) into the folder `folder`.
     function start(mode: string, sources: var, folder: string) {
-        const job = FilesService.transfer(mode, sources, folder, error => {
+        // The job's number comes with its failure too: novad's refusal can
+        // arrive before transfer() returns, when it isn't connected.
+        const started = FilesService.transfer(mode, sources, folder, (job, error) => {
             jobs = Transfers.apply(jobs, {
                 job: job,
                 mode: mode,
@@ -36,7 +38,7 @@ Item {
                 error: error
             });
         });
-        mine[job] = true;
+        mine[started] = true;
     }
 
     // The numbers of the jobs this window started; others are other

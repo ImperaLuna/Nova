@@ -161,8 +161,8 @@ Singleton {
 
     // Copies or moves (`mode`, a Protocol.TRANSFER_* mode) `sources`
     // (absolute paths) into the folder `folder`. Returns the job's number,
-    // which its transferChanged events carry; `failed(error)` gets novad's
-    // refusal, when it doesn't start.
+    // which its transferChanged events carry; `failed(job, error)` gets
+    // novad's refusal when it doesn't start, maybe before this returns.
     function transfer(mode: string, sources: var, folder: string, failed: var): int {
         const job = _nextJob++;
         Daemon.call(Protocol.CMD_FILES_TRANSFER, {
@@ -173,7 +173,7 @@ Singleton {
         }, error => {
             if (error) {
                 console.warn(`nova: copying into ${folder}: ${error}`);
-                failed?.(error);
+                failed?.(job, error);
             }
         });
         return job;

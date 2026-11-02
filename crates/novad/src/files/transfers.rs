@@ -123,6 +123,7 @@ impl Transfers {
             remembered: [None; 2],
             next_clash: 0,
             last_report: Instant::now(),
+            copying_moved: false,
         };
         let spawned = std::thread::Builder::new().name("novad-files-copy".into()).spawn(move || run.run());
         spawned.map(drop).map_err(|e| {
@@ -229,6 +230,10 @@ struct Run {
     remembered: [Option<ClashAnswer>; 2],
     next_clash: u32,
     last_report: Instant,
+    /// Set while a folder moved to another file system is copied: its
+    /// entries stay in place until all of it is, so a stop halfway (which
+    /// may put back what it replaced) loses none of them.
+    copying_moved: bool,
 }
 
 impl Run {
@@ -450,7 +455,8 @@ impl Run {
 
     /// Puts `source` at `target`, where only a file can be.
     fn put_free(&mut self, source: &Path, meta: &Metadata, target: &Path, bytes: Option<u64>) -> Step {
-        if self.job.mode == TransferMode::Move {
+        let moving = self.job.mode == TransferMode::Move && !self.copying_moved;
+        if moving {
             match fs::rename(source, target) {
                 Ok(()) => {
                     let bytes = bytes.unwrap_or_else(|| moved_bytes(target, meta));
@@ -462,15 +468,18 @@ impl Run {
                 Err(e) => return Err(failed(source, &e)),
             }
         }
-        let placed = self.copy(source, meta, target)?;
-        if placed && self.job.mode == TransferMode::Move {
-            let removed = if meta.is_dir() { fs::remove_dir(source) } else { fs::remove_file(source) };
-            match removed {
-                Ok(()) => {}
-                // What couldn't be copied (a socket, a pipe) stays behind.
-                Err(e) if meta.is_dir() && e.kind() == io::ErrorKind::DirectoryNotEmpty => {}
-                Err(e) => return Err(failed(source, &e)),
+        if moving && meta.is_dir() {
+            self.copying_moved = true;
+            let placed = self.copy(source, meta, target);
+            self.copying_moved = false;
+            if placed? {
+                copying::remove_moved(source).map_err(|e| failed(source, &e))?;
             }
+            return Ok(());
+        }
+        let placed = self.copy(source, meta, target)?;
+        if placed && moving {
+            fs::remove_file(source).map_err(|e| failed(source, &e))?;
         }
         Ok(())
     }
