@@ -148,6 +148,14 @@ impl Inotify {
         }
     }
 
+    /// Stops watching everything, to watch afresh what's there now.
+    pub fn unwatch_all(&mut self) {
+        for wd in std::mem::take(&mut self.dirs).into_keys() {
+            // SAFETY: no pointers; a stale `wd` only fails with EINVAL.
+            unsafe { libc::inotify_rm_watch(self.file.as_raw_fd(), wd) };
+        }
+    }
+
     /// Blocks until something changes, or `None` once stopped.
     pub fn read(&mut self) -> std::io::Result<Option<Changes>> {
         self.read_until(None)

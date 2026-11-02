@@ -14,6 +14,7 @@ use crate::inotify::{self, Inotify};
 use crate::lock;
 use crate::logger::Logger;
 use crate::watch_points::{self, Reporting, WatchPoints};
+use nova_protocol::LogLevel;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 
@@ -47,21 +48,22 @@ impl Mime {
             }
         };
         // Watched first, so types installed meanwhile aren't missed.
-        let mime = Arc::new(Self { current: Mutex::new(Arc::new(load(&data_dirs, &logger))), stopper });
+        let mime = Arc::new(Self { current: Mutex::new(Arc::new(load(&data_dirs, &logger, LogLevel::Warn))), stopper });
         let following = Arc::downgrade(&mime);
         std::thread::spawn(move || {
             // Ends once the watching does: it holds the only sender.
-            while changes.recv().is_ok() {
-                while changes.recv_timeout(watch_points::SETTLE).is_ok() {}
+            while watch_points::settled(&changes) {
                 let Some(mime) = following.upgrade() else { return };
                 if mime.stopped() {
                     return;
                 }
-                let db = load(&data_dirs, &logger);
+                let db = load(&data_dirs, &logger, LogLevel::Debug);
                 if mime.stopped() {
                     return;
                 }
-                *lock(&mime.current) = Arc::new(db);
+                // The old copy is freed after the lock, not under it.
+                let old = std::mem::replace(&mut *lock(&mime.current), Arc::new(db));
+                drop(old);
                 logger.info(LOG_SOURCE, "read the MIME database again");
             }
         });
@@ -100,10 +102,12 @@ fn watch_points(data_dirs: &[PathBuf]) -> WatchPoints {
     points
 }
 
-fn load(data_dirs: &[PathBuf], logger: &Logger) -> MimeDb {
+/// Reads the database, logging its problems at `level`: warnings the
+/// first time, so a reload doesn't repeat them.
+fn load(data_dirs: &[PathBuf], logger: &Logger, level: LogLevel) -> MimeDb {
     let (db, problems) = MimeDb::load(data_dirs);
     for problem in problems {
-        logger.warn(LOG_SOURCE, &problem);
+        logger.log(level, LOG_SOURCE, &problem);
     }
     db
 }
@@ -111,7 +115,6 @@ fn load(data_dirs: &[PathBuf], logger: &Logger) -> MimeDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nova_protocol::LogLevel;
     use nova_test_support::{TempDir, wait_until};
     use std::time::Duration;
 

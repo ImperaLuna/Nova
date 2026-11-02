@@ -20,7 +20,7 @@ use std::time::Duration;
 /// Links followed when looking for what to watch, like the kernel's limit.
 const MAX_LINKS: usize = 40;
 /// Installing a package writes many files; whoever follows them looks
-/// again once it pauses this long.
+/// again once it pauses this long ([`settled`]).
 pub const SETTLE: Duration = Duration::from_millis(500);
 
 /// What to watch so a change to some folders is seen, and the paths whose
@@ -189,11 +189,25 @@ pub fn follow(
             if !found.overflowed && !found.found.iter().any(|change| watched.counts(&change.path)) {
                 continue;
             }
-            // A folder or link may have come or gone: look again at what to watch.
+            // A folder or link may have come or gone: look again at what to
+            // watch, dropping the old watches so a rebuild's leftover store
+            // folders don't pile up. Whatever changes meanwhile is read by
+            // the look this change starts.
+            watcher.unwatch_all();
             watched = watch_all(&mut watcher, &logger);
             if changed.send(()).is_err() {
                 return;
             }
         }
     });
+}
+
+/// Waits for a change from [`follow`], then until they pause for
+/// [`SETTLE`]. False once the following ended.
+pub fn settled(changes: &mpsc::Receiver<()>) -> bool {
+    if changes.recv().is_err() {
+        return false;
+    }
+    while changes.recv_timeout(SETTLE).is_ok() {}
+    true
 }

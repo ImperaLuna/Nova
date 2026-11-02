@@ -239,8 +239,7 @@ impl AppIndex {
         }
         // Watched first, so an app installed meanwhile isn't missed.
         self.rescan(stopped);
-        while changes.recv().is_ok() {
-            while changes.recv_timeout(watch_points::SETTLE).is_ok() {}
+        while watch_points::settled(&changes) {
             if stopped.load(Ordering::SeqCst) {
                 return;
             }
