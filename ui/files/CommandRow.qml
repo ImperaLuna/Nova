@@ -8,7 +8,10 @@ Rectangle {
     id: row
 
     implicitHeight: actions.implicitHeight + Tokens.filesCommandPadTop + Tokens.gap
-    color: Tokens.surfaceRaised
+    // How solid the window frame is (0..1): the row fades into it.
+    property real solid: 0
+
+    color: Tokens.alpha(Tokens.surfaceRaised, Tokens.raisedOpacity * (1 - solid))
 
     component Separator: Rectangle {
         anchors.verticalCenter: parent?.verticalCenter

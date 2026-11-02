@@ -40,7 +40,10 @@ Rectangle {
     }
 
     implicitHeight: Tokens.filesFieldHeight + 2 * Tokens.filesRowPadY
-    color: Tokens.surfaceRaised
+    // How solid the window frame is (0..1): the row fades into it.
+    property real solid: 0
+
+    color: Tokens.alpha(Tokens.surfaceRaised, Tokens.raisedOpacity * (1 - solid))
 
     Row {
         id: buttons
