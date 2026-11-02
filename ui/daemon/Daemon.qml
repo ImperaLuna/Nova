@@ -93,6 +93,12 @@ Singleton {
     // A Nova Files window to open: {folder, select}. Only the Nova Files
     // process subscribes to its topic.
     signal filesWindowRequested(var window)
+    // A folder view's page of entries ({view, path, start, total,
+    // entries}), its changes ({view, changes}), and novad closing it
+    // ({view, error}). Only the client that opened the view gets these.
+    signal filesPage(var page)
+    signal filesChanged(var changed)
+    signal filesClosed(var closed)
 
     // The topics this process subscribes to on every connection: the
     // shell's, unless its root sets its own as it's created (Nova Files,
@@ -189,6 +195,12 @@ Singleton {
             media = msg.data;
         } else if (msg.event === Protocol.EVENT_FILES_WINDOW) {
             filesWindowRequested(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_PAGE) {
+            filesPage(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_CHANGED) {
+            filesChanged(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_CLOSED) {
+            filesClosed(msg.data);
         }
     }
 

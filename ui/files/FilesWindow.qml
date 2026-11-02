@@ -5,15 +5,17 @@ import "paths.js" as Paths
 
 // A Nova Files window: an app window the compositor tiles and rounds,
 // glass all through, showing `folder` with `select` selected. The
-// navigation row, the command row, then the sidebar beside the file list.
-// `folder` follows the window's Navigator as it moves (Alt+Left,
-// Alt+Right, Alt+Up and the mouse's back and forward buttons too).
+// navigation row, the command row, then the sidebar beside the file list;
+// opening a folder in the list shows it in the same window. `folder`
+// follows the window's Navigator as it moves (Alt+Left, Alt+Right, Alt+Up
+// and the mouse's back and forward buttons too).
 FloatingWindow {
     id: window
 
     required property string folder
     property var select: []
     readonly property Navigator navigator: Navigator {
+        hidden: list.showHidden
         onFolderChanged: window.folder = folder
     }
 
@@ -67,9 +69,14 @@ FloatingWindow {
         navigator: window.navigator
     }
     FileList {
+        id: list
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.top: commands.bottom
         anchors.bottom: parent.bottom
+        folder: window.folder
+        select: window.select
+        focus: true
+        onFolderOpened: path => window.navigator.visit(path, null)
     }
 }

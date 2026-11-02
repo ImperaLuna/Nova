@@ -1,6 +1,7 @@
 .pragma library
 
-// Nova Files' path helpers, kept apart so ui/tests can check them.
+// Nova Files' path helpers, kept apart so ui/tests can check them: the
+// address bar's parts, the window title, and an entry's path.
 
 // The address bar's parts for `folder` (absolute): one per folder from the
 // root down, each {name, path, hidden}, starting at "Home" for a folder in
@@ -40,4 +41,9 @@ function parent(folder) {
         return "";
     const cut = folder.lastIndexOf("/");
     return cut <= 0 ? "/" : folder.slice(0, cut);
+}
+
+// The path of the entry `name` in `folder` (absolute).
+function child(folder, name) {
+    return (folder === "/" ? "" : folder) + "/" + name;
 }
