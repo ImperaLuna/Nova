@@ -985,6 +985,21 @@ pub struct FilesWindow {
     pub select: Vec<String>,
 }
 
+/// The apps that can open a file (feature `files`), for its "Open with"
+/// menu: the answer to [`Command::FilesOpenWith`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenWith {
+    /// The file's type, like `image/png`.
+    pub mime: String,
+    /// The id of the app that opens it by default, when one does: the
+    /// first of `apps`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+    /// The apps that can open it, the default first.
+    pub apps: Vec<App>,
+}
+
 /// Bluetooth as the quick settings page shows it (feature `bluetooth`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1752,6 +1767,25 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         select: Vec<String>,
     },
+    /// Opens the file at `path`, an absolute path, in the app `app` (its
+    /// desktop file id) or, without one, in its type's default app
+    /// (feature `files`: a double-click, Enter, or a pick from "Open with").
+    FilesOpen {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app: Option<String>,
+    },
+    /// The apps that can open the file at `path` (feature `files`),
+    /// answered with an [`OpenWith`].
+    FilesOpenWith {
+        path: String,
+    },
+    /// Makes the app `app` the default for files of the type of the one at
+    /// `path` (feature `files`).
+    FilesSetDefault {
+        path: String,
+        app: String,
+    },
 }
 
 /// Whether a `set_wallpaper` path is a Steam Workshop ID: only digits.
@@ -2471,6 +2505,41 @@ mod tests {
             encode(Request {
                 id: Some(66),
                 command: Command::BluetoothAnswer { id: 4, answer: PairingAnswer::Code("0000".into()) },
+            }),
+            encode(Request {
+                id: Some(70),
+                command: Command::FilesOpen { path: "/home/me/photo.png".into(), app: None },
+            }),
+            encode(Request {
+                id: Some(71),
+                command: Command::FilesOpen {
+                    path: "/home/me/photo.png".into(),
+                    app: Some("org.gnome.Loupe.desktop".into()),
+                },
+            }),
+            encode(Request { id: Some(72), command: Command::FilesOpenWith { path: "/home/me/photo.png".into() } }),
+            encode(Response {
+                id: 72,
+                outcome: Outcome::Result(
+                    serde_json::to_value(OpenWith {
+                        mime: "image/png".into(),
+                        default: Some("org.gnome.Loupe.desktop".into()),
+                        apps: vec![App {
+                            id: "org.gnome.Loupe.desktop".into(),
+                            name: "Image Viewer".into(),
+                            description: None,
+                            icon: Some("/icons/loupe.svg".into()),
+                        }],
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Request {
+                id: Some(73),
+                command: Command::FilesSetDefault {
+                    path: "/home/me/photo.png".into(),
+                    app: "org.gnome.Loupe.desktop".into(),
+                },
             }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];

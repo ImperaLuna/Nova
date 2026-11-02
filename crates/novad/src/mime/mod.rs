@@ -81,6 +81,7 @@ impl MimeDb {
     /// The type of the file `name` whose metadata is `metadata`, from its
     /// name alone: never opens the file. A name several types claim gets
     /// the first; one no type claims is binary.
+    #[cfg_attr(not(test), expect(dead_code, reason = "IMP-280's folder listing is its first caller"))]
     pub fn type_by_name<'a>(&'a self, name: &str, metadata: &Metadata) -> &'a str {
         if let Some(special) = special_type(metadata) {
             return special;

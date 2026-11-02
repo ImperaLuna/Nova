@@ -3,7 +3,8 @@
 //! others can (`associations`), starting one with the file (`launch`), and
 //! making an app the new default for that type.
 //!
-//! The MIME database is read once, when the opener is made. The
+//! The MIME database is the one its owner read (Nova Files shares it with
+//! its folder listing). The
 //! `mimeapps.list` files are read on every request, so a default another
 //! app or the user changed counts at once, without watching them; they're
 //! a few kilobytes.
@@ -14,26 +15,14 @@ use super::desktop_entry::Entry;
 use super::launch::{self, Runner};
 use crate::logger::Logger;
 use crate::mime::MimeDb;
-use nova_protocol::App;
-use std::path::{Path, PathBuf};
+use nova_protocol::OpenWith;
+use std::path::{Component, Path};
 use std::sync::Arc;
 
 const LOG_SOURCE: &str = "files";
 
-/// What can open a file: the "Open with" menu.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Choices {
-    /// The file's type, like `image/png`.
-    pub mime: String,
-    /// The app that opens it by default, when there's one.
-    pub default: Option<String>,
-    /// The apps that can open it, the default first. Apps the launcher
-    /// doesn't list only show when they're the default.
-    pub apps: Vec<App>,
-}
-
 pub struct Opener {
-    mime: MimeDb,
+    mime: Arc<MimeDb>,
     places: Places,
     apps: Arc<AppIndex>,
     runner: Runner,
@@ -42,18 +31,8 @@ pub struct Opener {
 }
 
 impl Opener {
-    /// Reads the MIME database in `data_dirs`; the lists are in `places`.
-    pub fn new(
-        data_dirs: &[PathBuf],
-        places: Places,
-        apps: Arc<AppIndex>,
-        path_var: &str,
-        logger: Arc<Logger>,
-    ) -> Self {
-        let (mime, problems) = MimeDb::load(data_dirs);
-        for problem in problems {
-            logger.warn(LOG_SOURCE, &problem);
-        }
+    /// Types files with `mime`; the lists are in `places`.
+    pub fn new(mime: Arc<MimeDb>, places: Places, apps: Arc<AppIndex>, path_var: &str, logger: Arc<Logger>) -> Self {
         Self { mime, places, apps, runner: Runner::detect(path_var), path_var: path_var.to_string(), logger }
     }
 
@@ -77,8 +56,9 @@ impl Opener {
         self.launch(&entry, path)
     }
 
-    /// The apps that can open `path`.
-    pub fn choices(&self, path: &str) -> Result<Choices, String> {
+    /// The apps that can open `path`, the default first. Apps the launcher
+    /// doesn't list only show when they're the default.
+    pub fn choices(&self, path: &str) -> Result<OpenWith, String> {
         let types = self.types_of(path)?;
         let associations = Associations::load(&self.places);
         let state = self.apps.read();
@@ -86,7 +66,7 @@ impl Opener {
         let others = associations.apps_for(&types, &state).into_iter().filter(|entry| entry.listed);
         let mut apps: Vec<&Entry> = default.into_iter().collect();
         apps.extend(others.filter(|entry| default.is_none_or(|default| default.id != entry.id)));
-        Ok(Choices {
+        Ok(OpenWith {
             mime: types[0].clone(),
             default: default.map(|entry| entry.id.clone()),
             apps: apps.into_iter().map(|entry| state.app_of(entry)).collect(),
@@ -115,9 +95,11 @@ impl Opener {
         Ok(())
     }
 
-    /// `path`'s type and those it's a kind of, the nearest first.
+    /// `path`'s type and those it's a kind of, the nearest first. The
+    /// path comes from the socket: it must be absolute, without `..`.
     fn types_of(&self, path: &str) -> Result<Vec<String>, String> {
-        if !Path::new(path).is_absolute() {
+        let plain = |part: Component| matches!(part, Component::RootDir | Component::Normal(_));
+        if !Path::new(path).is_absolute() || !Path::new(path).components().all(plain) {
             return Err(format!("{path} isn't an absolute path"));
         }
         let mime = self.mime.type_of(Path::new(path)).map_err(|e| format!("can't open {path}: {e}"))?;
@@ -163,7 +145,9 @@ mod tests {
         let index = AppIndex::of(Some(&share), &logger);
         wait_until(WAIT, "the apps to be read", || index.read().scanned());
         let places = Places::new(Some(dir.join("config")), &[], std::slice::from_ref(&share), &["niri".into()]);
-        let opener = Opener::new(std::slice::from_ref(&share), places, Arc::clone(&index), "", logger);
+        let (mime, problems) = MimeDb::load(std::slice::from_ref(&share));
+        assert!(problems.is_empty(), "{problems:?}");
+        let opener = Opener::new(Arc::new(mime), places, Arc::clone(&index), "", logger);
         std::fs::create_dir_all(dir.join("files")).unwrap();
         for (file, bytes) in [("photo.png", &b"\x89PNG"[..]), ("notes.md", b"# hi\n"), ("script.py", b"print()\n")] {
             std::fs::write(dir.join("files").join(file), bytes).unwrap();
@@ -267,6 +251,7 @@ mod tests {
         opener.open(&file).unwrap();
         wait_until(WAIT, "the app to get the file", || std::fs::read_to_string(&opened).is_ok_and(|got| got == file));
         assert!(opener.open("relative/photo.png").is_err());
+        assert!(opener.open(&format!("{}/../files/photo.png", machine.dir.join("files").display())).is_err());
         assert!(opener.open(&machine.dir.join("files/missing.png").to_string_lossy()).is_err());
         assert!(opener.open_with(&file, "missing.desktop").is_err());
     }

@@ -9,6 +9,8 @@
 //!   exists, and items in it to select.
 //! - `file_manager1.rs`: `org.freedesktop.FileManager1`, so apps' "Show in
 //!   folder" opens Nova Files.
+//! - Opening files in apps is the shared `crate::apps::opening`, over the
+//!   module's one copy of the MIME database.
 //!
 //! Its events go on [`Topic::Files`], which only the Nova Files process
 //! subscribes to. A window asked for while no client is subscribed waits
@@ -18,6 +20,7 @@
 mod file_manager1;
 mod target;
 
+use crate::apps::opening::Opener;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
@@ -43,6 +46,8 @@ impl Sources {
 
 pub struct Files {
     shared: Arc<Shared>,
+    /// Opens files in apps.
+    opener: Arc<Opener>,
     /// Ends the FileManager1 service.
     stop: Arc<Stop>,
 }
@@ -57,11 +62,16 @@ struct Shared {
 }
 
 impl Files {
-    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>, opener: Opener) -> Arc<Self> {
         let shared = Arc::new(Shared { sources, hub, logger, waiting: Mutex::new(Vec::new()) });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, stop })
+        Arc::new(Self { shared, opener: Arc::new(opener), stop })
+    }
+
+    /// What opens files in apps.
+    pub fn opener(&self) -> Arc<Opener> {
+        Arc::clone(&self.opener)
     }
 
     /// Opens a window on `folder` with `select` selected, once both check
@@ -102,6 +112,8 @@ impl Shared {
 impl crate::modules::Module for Files {
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<Topic> = Some(Topic::Files);
+    /// Files open in apps.
+    const NEEDS_APPS: bool = true;
     type Sources = Sources;
     type Config = ();
 
@@ -112,7 +124,14 @@ impl crate::modules::Module for Files {
     fn config(_: &crate::config::Config) {}
 
     fn start(ctx: &crate::modules::Context, sources: &Sources, (): &(), _: &[FeatureState]) -> Arc<Self> {
-        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+        let data_dirs = crate::data_dirs();
+        let (mime, problems) = crate::mime::MimeDb::load(&data_dirs);
+        for problem in problems {
+            ctx.logger.warn(LOG_SOURCE, &problem);
+        }
+        let places = crate::apps::associations::Places::system(&data_dirs);
+        let opener = Opener::new(Arc::new(mime), places, Arc::clone(&ctx.apps), &ctx.path_var, Arc::clone(&ctx.logger));
+        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger), opener)
     }
 
     fn send_state(&self, client: ClientId) {

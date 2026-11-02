@@ -46,7 +46,7 @@ impl Magic {
             self.sections.push(section);
         }
         // Stable: within a priority, the order the folders gave.
-        self.sections.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.sections.sort_by_key(|section| std::cmp::Reverse(section.priority));
         Ok(())
     }
 
@@ -202,9 +202,11 @@ fn number(bytes: &[u8], at: &mut usize) -> Option<usize> {
 pub(super) mod tests {
     use super::*;
 
-    /// A magic file's bytes, from sections of `(priority, type, rules)`,
-    /// each rule `(indent, offset, value, mask, range)`.
-    pub fn magic_file(sections: &[(u32, &str, &[(u32, usize, &[u8], Option<&[u8]>, usize)])]) -> Vec<u8> {
+    /// A rule: `(indent, offset, value, mask, range)`.
+    pub type TestRule<'a> = (u32, usize, &'a [u8], Option<&'a [u8]>, usize);
+
+    /// A magic file's bytes, from sections of `(priority, type, rules)`.
+    pub fn magic_file(sections: &[(u32, &str, &[TestRule])]) -> Vec<u8> {
         let mut bytes = HEADER.to_vec();
         for (priority, mime, rules) in sections {
             bytes.extend(format!("[{priority}:{mime}]\n").as_bytes());
