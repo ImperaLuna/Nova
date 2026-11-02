@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtTest
-import "../bar"
 import "../capture"
 import "../capture/capture.js" as Capture
 import "../daemon/protocol.js" as Protocol

@@ -1,6 +1,5 @@
 import QtQuick
 import QtTest
-import "../bar"
 import "../notifications"
 import "../quick_settings"
 import "../theme"
@@ -43,10 +42,7 @@ Item {
         }
         Component {
             id: buttonsComponent
-            PillButtons {
-                quickSettings: true
-                power: true
-            }
+            QuickSettingsButton {}
         }
 
         SignalSpy {
@@ -560,9 +556,9 @@ Item {
             buttons.unread = 3;
             verify(badge.shown);
             buttons.unread = 12;
-            buttons.quickSettingsOpen = true;
+            buttons.open = true;
             verify(!badge.shown, "none while quick settings is open");
-            buttons.quickSettingsOpen = false;
+            buttons.open = false;
             buttons.unread = 0;
             buttons.doNotDisturb = true;
             verify(badge.shown);

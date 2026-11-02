@@ -10,8 +10,8 @@ import "../daemon/protocol.js" as Protocol
 import "../util/numbers.js" as Numbers
 
 // The right pill: the tray's chevron while some app sits in the tray, then
-// the quick settings button and the orange power button (PillButtons),
-// each shown while its feature is on. Glass, like the other pills. The
+// its `buttons` (on the bar, the right-pill.buttons host: PillButtons).
+// Glass, like the other pills. The
 // chevron opens the tray in place: the pill grows to the left and the
 // apps' icons pop in, at most Tokens.trayVisible of them, the rest a wheel
 // scroll away with a "+N" for those out of sight. Opening the tray is
@@ -23,28 +23,21 @@ StagePanel {
 
     name: Protocol.FEATURE_TRAY
 
-    property bool quickSettings: false
-    property bool power: false
-    // Its panel is open on this screen: the button shows it's picked.
-    property bool quickSettingsOpen: false
+    // The buttons at its right end, like quick settings' and power's.
+    property alias buttons: buttonRow.data
     // The tray's apps for the bar (TrayService.shown), and whether any asks
     // for attention.
     property var trayApps: []
     property bool trayAttention: false
     // What an Image shows for an app (TrayService.iconSource).
     property var iconSource: entry => ""
-    property int unread: 0
-    property bool doNotDisturb: false
-
-    signal quickSettingsClicked
-    signal powerClicked
     // An app's icon was clicked; `at` is its middle, in this pill.
     signal trayActivated(var entry, point at)
     signal trayMenuRequested(var entry, point at)
     signal traySecondaryActivated(var entry)
 
     readonly property bool hasTray: trayApps.length > 0
-    readonly property bool hasButtons: quickSettings || power
+    readonly property bool hasButtons: buttonRow.implicitWidth > 0
     // Never open with nothing to show.
     onHasTrayChanged: {
         if (!hasTray)
@@ -71,7 +64,7 @@ StagePanel {
     // With a divider before the buttons, when there are any.
     readonly property real chevronWidth: hasTray ? Tokens.pillButtonSize + (hasButtons ? 2 * Tokens.pillButtonGap + Tokens.dividerWidth : 0) : 0
 
-    implicitWidth: 2 * Tokens.pillButtonInset + morph.lerp(0, trayOpenWidth) + chevronWidth + buttons.implicitWidth
+    implicitWidth: 2 * Tokens.pillButtonInset + morph.lerp(0, trayOpenWidth) + chevronWidth + buttonRow.implicitWidth
     implicitHeight: Tokens.barHeight
 
     GlassShadow {
@@ -228,7 +221,7 @@ StagePanel {
             id: chevron
             objectName: "chevron"
             visible: pill.hasTray
-            x: (pill.hasButtons ? divider.x - Tokens.pillButtonGap : buttons.x) - width
+            x: (pill.hasButtons ? divider.x - Tokens.pillButtonGap : buttonRow.x) - width
             anchors.verticalCenter: parent.verticalCenter
             width: Tokens.pillButtonSize
             height: Tokens.pillButtonSize
@@ -280,24 +273,17 @@ StagePanel {
         Rectangle {
             id: divider
             visible: pill.hasTray && pill.hasButtons
-            x: buttons.x - Tokens.pillButtonGap - width
+            x: buttonRow.x - Tokens.pillButtonGap - width
             anchors.verticalCenter: parent.verticalCenter
             width: Tokens.dividerWidth
             height: Tokens.dividerHeight
             color: Tokens.glassRim
         }
 
-        PillButtons {
-            id: buttons
+        Row {
+            id: buttonRow
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            quickSettings: pill.quickSettings
-            power: pill.power
-            quickSettingsOpen: pill.quickSettingsOpen
-            unread: pill.unread
-            doNotDisturb: pill.doNotDisturb
-            onQuickSettingsClicked: pill.quickSettingsClicked()
-            onPowerClicked: pill.powerClicked()
         }
     }
 }
