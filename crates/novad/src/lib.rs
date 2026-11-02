@@ -42,6 +42,8 @@ mod launcher;
 mod logger;
 mod logind;
 mod media;
+#[cfg_attr(not(test), allow(dead_code, reason = "Nova Files lists and opens files with it (IMP-280, IMP-289)"))]
+mod mime;
 mod modules;
 mod network;
 mod notifications;
