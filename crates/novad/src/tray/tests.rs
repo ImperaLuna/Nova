@@ -3,8 +3,8 @@
 //! connection) and libayatana (a bus name of its own) do.
 
 use super::*;
+use crate::apps::AppIndex;
 use crate::hub::{ClientQueue, Outgoing};
-use crate::launcher;
 use crate::session_bus::TestBus;
 use nova_protocol::Topic;
 use nova_test_support::{TempDir, eventually, wait_until};
@@ -41,9 +41,15 @@ impl Fixture {
         Self { dir, bus, hub, logger, ui, _ui_stream: ui_stream }
     }
 
-    fn tray(&self, launcher: Option<Arc<Launcher>>) -> Arc<Tray> {
-        let sources = Sources { bus: Bus::Address(self.bus.address.clone()), state_file: self.dir.join("tray.json") };
-        Tray::start(sources, self.dir.join("proc"), launcher, Arc::clone(&self.hub), Arc::clone(&self.logger))
+    /// A tray naming apps from `apps`, or none.
+    fn tray(&self, apps: Option<Arc<AppIndex>>) -> Arc<Tray> {
+        let sources = Sources {
+            bus: Bus::Address(self.bus.address.clone()),
+            state_file: self.dir.join("tray.json"),
+            proc_root: self.dir.join("proc"),
+        };
+        let apps = apps.unwrap_or_else(|| AppIndex::of(None, &self.logger));
+        Tray::start(sources, apps, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
     fn connect(&self) -> Connection {
@@ -151,17 +157,11 @@ fn an_electron_item_shows_with_its_app_and_goes_with_it() {
     std::fs::create_dir_all(&apps).unwrap();
     std::fs::write(apps.join("discord.desktop"), "[Desktop Entry]\nType=Application\nName=Discord\nExec=true\n")
         .unwrap();
-    let paths = launcher::Paths {
-        data_dirs: vec![fixture.dir.join("share")],
-        state_file: fixture.dir.join("launcher.json"),
-        runner: launcher::Runner::Direct,
-        icons: Arc::new(crate::icons::Icons::new(crate::icons::HICOLOR.into(), &[fixture.dir.join("share")], None)),
-    };
-    let launcher = Launcher::start(paths, "", Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
-    wait_until(WAIT, "the launcher to find discord.desktop", || launcher.find_app(&["discord".into()]).is_some());
+    let apps = AppIndex::of(Some(&fixture.dir.join("share")), &fixture.logger);
+    wait_until(WAIT, "the index to find discord.desktop", || apps.find_app(&["discord".into()]).is_some());
     // Electron's own id doesn't name the app; the unit it runs in does.
     fixture.run_in_unit("app-discord-375306.scope");
-    let tray = fixture.tray(Some(Arc::clone(&launcher)));
+    let tray = fixture.tray(Some(Arc::clone(&apps)));
 
     let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let item_id = "chrome_status_icon_1";
@@ -184,7 +184,7 @@ fn an_electron_item_shows_with_its_app_and_goes_with_it() {
     assert_eq!(fixture.next_items(), json!([]));
     assert!(watcher_property::<Vec<String>>(&host, "RegisteredStatusNotifierItems").is_empty());
     tray.stop();
-    launcher.stop();
+    apps.forget();
 }
 
 #[test]
@@ -296,16 +296,10 @@ fn an_item_with_only_a_menu_is_never_activated() {
     std::fs::create_dir_all(&apps).unwrap();
     std::fs::write(apps.join("spotify.desktop"), "[Desktop Entry]\nType=Application\nName=Spotify\nExec=true\n")
         .unwrap();
-    let paths = launcher::Paths {
-        data_dirs: vec![fixture.dir.join("share")],
-        state_file: fixture.dir.join("launcher.json"),
-        runner: launcher::Runner::Direct,
-        icons: Arc::new(crate::icons::Icons::new(crate::icons::HICOLOR.into(), &[fixture.dir.join("share")], None)),
-    };
-    let launcher = Launcher::start(paths, "", Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
-    wait_until(WAIT, "the launcher to find spotify.desktop", || launcher.find_app(&["spotify".into()]).is_some());
+    let apps = AppIndex::of(Some(&fixture.dir.join("share")), &fixture.logger);
+    wait_until(WAIT, "the index to find spotify.desktop", || apps.find_app(&["spotify".into()]).is_some());
     fixture.run_in_unit("app-spotify-277486.scope");
-    let tray = fixture.tray(Some(launcher));
+    let tray = fixture.tray(Some(apps));
 
     let path = "/org/ayatana/NotificationItem/spotify_client";
     let app = fixture.connect();

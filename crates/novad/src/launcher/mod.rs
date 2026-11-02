@@ -1,35 +1,30 @@
-//! The launcher (feature `launcher`): the apps installed, read from their
-//! desktop entries and read again when apps are installed or removed,
-//! searching them, starting them, and the user's pinned and recent ones,
-//! which survive restarts. Each app's icon is looked up as a file when the
-//! apps are read (`crate::icons`), so the UI only loads images.
+//! The launcher (feature `launcher`): searching the installed apps (from
+//! the shared app index, `crate::apps`), starting them, and the user's
+//! pinned and recent ones, which survive restarts. It publishes the apps
+//! again each time the index reads them.
 
 pub mod autostart;
 mod launch;
 mod rank;
 
-use crate::apps::desktop_entry::{Context, Entry, Locale};
-use crate::apps::{program_name, scan};
+use crate::apps::AppIndex;
+use crate::apps::desktop_entry::Entry;
 use crate::compositor::Compositor;
 use crate::hub::Hub;
-use crate::icons::Icons;
-use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
 use crate::tray::Tray;
 use crate::{lock, state_file};
 pub use launch::{Runner, open};
-use nova_protocol::{APP_ICON_MAX_CHARS, App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};
+use nova_protocol::{App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex, mpsc};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub const FEATURE_ID: &str = "launcher";
 const LOG_SOURCE: &str = "launcher";
-/// Installing a package writes many entries; they're read once it pauses.
-const SETTLE: Duration = Duration::from_millis(500);
 /// Matches a search returns at most.
 const MAX_MATCHES: usize = 50;
 /// Apps that can be pinned at once.
@@ -48,63 +43,34 @@ const TRAY_WINDOW_RETRY: Duration = Duration::from_millis(100);
 /// again: the new process first starts up, then hands over to the running
 /// one.
 pub const STARTED_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_secs(2) } else { Duration::from_secs(10) };
-/// How long a lookup made while novad starts (`app_once_scanned`) waits
-/// for the apps to be read the first time.
-const FIRST_SCAN_WAIT: Duration = Duration::from_secs(2);
-/// The desktop entry category of web browsers.
-const BROWSER: &str = "WebBrowser";
 
-/// Where the module reads and keeps things, and how it starts apps.
+/// Where the module keeps things, and how it starts apps.
 #[derive(Clone)]
 pub struct Paths {
-    /// The XDG data folders apps are found in, in order.
-    pub data_dirs: Vec<PathBuf>,
     /// Pinned apps and launch counts.
     pub state_file: PathBuf,
     pub runner: Runner,
-    /// Where apps' icons are found.
-    pub icons: Arc<Icons>,
 }
 
 impl Paths {
-    pub fn new(state_dir: &Path, path_var: &str, icons: Arc<Icons>) -> Self {
-        Self {
-            data_dirs: crate::data_dirs(),
-            state_file: state_dir.join("launcher.json"),
-            runner: Runner::detect(path_var),
-            icons,
-        }
+    pub fn new(state_dir: &Path, path_var: &str) -> Self {
+        Self { state_file: state_dir.join("launcher.json"), runner: Runner::detect(path_var) }
     }
 }
 
 pub struct Launcher {
     state: Mutex<State>,
-    /// Wakes lookups waiting for the first look at the apps.
-    scanned: Condvar,
+    apps: Arc<AppIndex>,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     paths: Paths,
     /// Where programs are looked for, and the `PATH` apps get.
     path_var: String,
-    locale: Locale,
-    /// `XDG_CURRENT_DESKTOP`'s names, for `OnlyShowIn` and `NotShowIn`.
-    desktops: Vec<String>,
-    /// Set by `stop`; the scanning thread checks it when it wakes.
+    /// Set by `stop`.
     stopped: AtomicBool,
-    /// Ends the watching thread; `None` until it starts.
-    watch: Mutex<Option<inotify::Stopper>>,
-    /// Called after each look at the apps, outside the lock (see `on_rescan`).
-    rescanned: Mutex<Option<Rescanned>>,
 }
 
-type Rescanned = Box<dyn Fn() + Send + Sync>;
-
 struct State {
-    apps: BTreeMap<String, Entry>,
-    /// The apps have been read at least once.
-    scanned: bool,
-    /// The apps' icon files, by app id, for those that have one.
-    icons: BTreeMap<String, String>,
     saved: Saved,
     /// The last event published, so an unchanged list isn't sent again.
     sent: Option<nova_protocol::Launcher>,
@@ -128,9 +94,9 @@ struct Launches {
 }
 
 impl Launcher {
-    /// Loads the saved state, then finds the apps and follows changes to
-    /// them on a thread of its own.
-    pub fn start(paths: Paths, path_var: &str, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+    /// Loads the saved state, and publishes the apps whenever `apps` reads
+    /// them (now, if it already has).
+    pub fn start(paths: Paths, apps: Arc<AppIndex>, path_var: &str, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let saved = match std::fs::read_to_string(&paths.state_file) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
                 logger.warn(LOG_SOURCE, &format!("ignoring {}: {e}", paths.state_file.display()));
@@ -138,59 +104,43 @@ impl Launcher {
             }),
             Err(_) => Saved::default(),
         };
-        let desktops = crate::apps::current_desktops();
         let launcher = Arc::new(Self {
-            scanned: Condvar::new(),
-            state: Mutex::new(State {
-                apps: BTreeMap::new(),
-                scanned: false,
-                icons: BTreeMap::new(),
-                saved,
-                sent: None,
-            }),
+            state: Mutex::new(State { saved, sent: None }),
+            apps,
             hub,
             logger,
             paths,
             path_var: path_var.to_string(),
-            locale: Locale::from_env(),
-            desktops,
             stopped: AtomicBool::new(false),
-            watch: Mutex::new(None),
-            rescanned: Mutex::new(None),
         });
-        let worker = Arc::clone(&launcher);
-        std::thread::spawn(move || worker.run());
+        launcher.apps.on_change(&launcher, Self::apps_changed);
+        launcher.apps_changed();
         launcher
     }
 
-    /// Stops following the apps and publishes nothing more.
+    /// Publishes nothing more.
     pub fn stop(&self) {
-        let mut watch = lock(&self.watch);
-        {
-            let _state = lock(&self.state);
-            self.stopped.store(true, Ordering::SeqCst);
-            self.scanned.notify_all();
-        }
-        if let Some(watch) = watch.take() {
-            watch.stop();
-        }
-    }
-
-    /// Calls `rescanned` after each look at the apps from now on, for what
-    /// depends on them (the tray's apps). It may call back into the launcher.
-    pub fn on_rescan(&self, rescanned: impl Fn() + Send + Sync + 'static) {
-        *lock(&self.rescanned) = Some(Box::new(rescanned));
+        let _state = lock(&self.state);
+        self.stopped.store(true, Ordering::SeqCst);
     }
 
     fn stopped(&self) -> bool {
         self.stopped.load(Ordering::SeqCst)
     }
 
+    /// Publishes the apps once the index has read them.
+    fn apps_changed(&self) {
+        let mut state = lock(&self.state);
+        if !self.stopped() && self.apps.read().scanned() {
+            self.publish(&mut state);
+        }
+    }
+
     /// Sends a new subscriber, client `id`, the apps as they are, under the lock that publishing
     /// takes, so a newer state published meanwhile can't arrive before it.
     pub fn send_state(&self, id: crate::hub::ClientId) {
         let state = lock(&self.state);
-        self.hub.send_to(id, &Event::Launcher(snapshot(&state)));
+        self.hub.send_to(id, &Event::Launcher(snapshot(&state, &self.apps.read())));
     }
 
     /// The apps matching `query`, best first.
@@ -203,8 +153,9 @@ impl Launcher {
             return Ok(Vec::new());
         }
         let state = lock(&self.state);
-        let mut found: Vec<(u32, &Entry, Vec<nova_protocol::TextRun>)> = state
-            .apps
+        let apps = self.apps.read();
+        let mut found: Vec<(u32, &Entry, Vec<nova_protocol::TextRun>)> = apps
+            .entries()
             .values()
             .filter_map(|entry| {
                 let launches = state.saved.launches.get(&entry.id).map_or(0, |launches| launches.count);
@@ -261,7 +212,7 @@ impl Launcher {
     /// Starts the app `id`, without counting it as launched (`launch`
     /// does that).
     pub fn start_app(&self, id: &str) -> Result<(), String> {
-        let entry = lock(&self.state).apps.get(id).cloned().ok_or_else(|| format!("no app {id:?}"))?;
+        let entry = self.apps.entry(id).ok_or_else(|| format!("no app {id:?}"))?;
         if self.stopped() {
             return Err(crate::features::not_ready(FEATURE_ID));
         }
@@ -269,83 +220,15 @@ impl Launcher {
             .inspect_err(|e| self.logger.warn(LOG_SOURCE, &format!("can't launch {id}: {e}")))
     }
 
-    /// The installed app `id` (its desktop file id), as the launcher lists
-    /// it. Right after the launcher starts, it first waits (a while at most)
-    /// for the apps to be read, so an app isn't taken for missing meanwhile.
-    pub fn app_once_scanned(&self, id: &str) -> Option<App> {
-        let state = lock(&self.state);
-        let (state, _) = self
-            .scanned
-            .wait_timeout_while(state, FIRST_SCAN_WAIT, |state| !state.scanned && !self.stopped())
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        state.apps.get(id).map(|entry| app(entry, &state.icons))
-    }
-
-    /// The installed app whose windows may have one of `ids` (lower case,
-    /// the likeliest first), like a tray icon's process names: the first id
-    /// that any app matches decides. Of the apps it matches, one it names
-    /// (window class or desktop id) beats one that only runs that program:
-    /// `steam` is Steam, not a game shortcut whose Exec is `steam`.
-    pub fn find_app(&self, ids: &[String]) -> Option<App> {
-        let state = lock(&self.state);
-        ids.iter().find_map(|id| {
-            let matching: Vec<&Entry> = state.apps.values().filter(|entry| entry.window_ids().contains(id)).collect();
-            matching.iter().find(|entry| entry.is_named(id)).or(matching.first()).map(|entry| app(entry, &state.icons))
-        })
-    }
-
-    /// Whether the installed app `id` is a web browser (`WebBrowser` among
-    /// its categories).
-    pub fn is_browser(&self, id: &str) -> bool {
-        lock(&self.state).apps.get(id).is_some_and(|entry| entry.categories.iter().any(|category| category == BROWSER))
-    }
-
     /// The app ids the windows of the installed app `id` may have; `None`
     /// when no such app is installed.
     pub fn window_ids(&self, id: &str) -> Option<Vec<String>> {
-        lock(&self.state).apps.get(id).map(Entry::window_ids)
-    }
-
-    /// The icon file for an app stream (`Command::AppIcon`): the installed
-    /// app's it belongs to, by its icon name, program and name (`find_app`,
-    /// else loosely by the first word of an app's name: Zen plays as `zen`,
-    /// its entry is "Zen Browser" in `zen-beta.desktop`), else the icon
-    /// theme's for its icon name or program. Without the launcher (the
-    /// feature off), only that last part.
-    pub fn app_icon(
-        launcher: Option<&Self>,
-        icons: &Icons,
-        icon_name: &str,
-        program: &str,
-        name: &str,
-    ) -> Result<Option<String>, String> {
-        if [icon_name, program, name].iter().any(|value| value.chars().count() > APP_ICON_MAX_CHARS) {
-            return Err(format!("names are at most {APP_ICON_MAX_CHARS} characters"));
-        }
-        let icon_name = Some(icon_name.to_string()).filter(|icon_name| !icon_name.is_empty());
-        let program = program_name(program);
-        let ids: Vec<String> = [icon_name.as_deref(), program.as_deref(), Some(name)]
-            .into_iter()
-            .flatten()
-            .map(str::to_lowercase)
-            .filter(|id| !id.is_empty())
-            .collect();
-        let found = launcher.and_then(|launcher| {
-            launcher.find_app(&ids).or_else(|| {
-                let state = lock(&launcher.state);
-                ids.iter().find_map(|id| {
-                    state.apps.values().find(|entry| entry.first_word_is(id)).map(|entry| app(entry, &state.icons))
-                })
-            })
-        });
-        Ok(found
-            .and_then(|app| app.icon)
-            .or_else(|| [icon_name, program].into_iter().flatten().find_map(|name| icons.find(&name))))
+        self.apps.window_ids(id)
     }
 
     /// Pins the app `id` at the end, or unpins it.
     pub fn pin(&self, id: &str, pinned: bool) -> Result<(), String> {
-        if pinned && !lock(&self.state).apps.contains_key(id) {
+        if pinned && !self.apps.read().entries().contains_key(id) {
             return Err(format!("no app {id:?}"));
         }
         self.update(|saved| {
@@ -387,150 +270,32 @@ impl Launcher {
     }
 
     fn publish(&self, state: &mut State) {
-        let event = snapshot(state);
+        let event = snapshot(state, &self.apps.read());
         if state.sent.as_ref() != Some(&event) {
             self.hub.publish(&Event::Launcher(event.clone()));
             state.sent = Some(event);
         }
     }
-
-    /// Reads the apps, then again whenever they change.
-    fn run(self: Arc<Self>) {
-        let (changed, changes) = mpsc::channel();
-        match Inotify::new(inotify::REPLACEMENTS) {
-            Ok(watcher) => self.follow(watcher, changed),
-            Err(e) => {
-                self.logger
-                    .warn(LOG_SOURCE, &format!("can't watch for new apps ({e}); they show after `nova restart`"));
-                drop(changed);
-            }
-        }
-        // Watched first, so an app installed meanwhile isn't missed.
-        self.rescan();
-        while changes.recv().is_ok() {
-            while changes.recv_timeout(SETTLE).is_ok() {}
-            if self.stopped() {
-                return;
-            }
-            self.rescan();
-        }
-    }
-
-    /// Watches the app folders on a thread that sends `changed` for each
-    /// change that may change the apps.
-    fn follow(&self, mut watcher: Inotify, changed: mpsc::Sender<()>) {
-        {
-            let mut watch = lock(&self.watch);
-            if self.stopped() {
-                return;
-            }
-            *watch = Some(watcher.stopper());
-        }
-        let data_dirs = self.paths.data_dirs.clone();
-        let logger = Arc::clone(&self.logger);
-        let mut points = watch_all(&mut watcher, &data_dirs, &logger);
-        std::thread::spawn(move || {
-            loop {
-                let found = match watcher.read() {
-                    Ok(Some(found)) => found,
-                    Ok(None) => return,
-                    Err(e) => {
-                        logger.warn(LOG_SOURCE, &format!("stopped watching for new apps: {e}"));
-                        return;
-                    }
-                };
-                if !found.overflowed && !found.found.iter().any(|change| points.counts(&change.path)) {
-                    continue;
-                }
-                // A folder or link may have come or gone: look again at what to watch.
-                points = watch_all(&mut watcher, &data_dirs, &logger);
-                if changed.send(()).is_err() {
-                    return;
-                }
-            }
-        });
-    }
-
-    fn rescan(&self) {
-        let context =
-            Context { locale: &self.locale, desktops: &self.desktops, path_var: &self.path_var, autostart: false };
-        let (apps, problems) = scan::scan(&self.paths.data_dirs, &context);
-        // Apps bring their icons, so any answer kept may be out of date.
-        let icons = &self.paths.icons;
-        icons.forget();
-        let found = apps
-            .values()
-            .filter_map(|entry| Some((entry.id.clone(), icons.entry_icon(entry.icon.as_deref()?)?)))
-            .collect();
-        let mut state = lock(&self.state);
-        if self.stopped() {
-            return;
-        }
-        if state.sent.is_none() || state.apps.len() != apps.len() {
-            self.logger.info(LOG_SOURCE, &format!("found {} apps", apps.len()));
-        }
-        // Each problem once, not on every rescan.
-        if state.sent.is_none() {
-            for problem in problems {
-                self.logger.log(nova_protocol::LogLevel::Debug, LOG_SOURCE, &problem);
-            }
-        }
-        state.apps = apps;
-        state.icons = found;
-        state.scanned = true;
-        self.scanned.notify_all();
-        self.publish(&mut state);
-        drop(state);
-        if let Some(rescanned) = &*lock(&self.rescanned) {
-            rescanned();
-        }
-    }
 }
 
-/// Watches what `scan::watch_points` says for `data_dirs`.
-fn watch_all(watcher: &mut Inotify, data_dirs: &[PathBuf], logger: &Logger) -> scan::WatchPoints {
-    let points = scan::watch_points(data_dirs);
-    // The parents first: a folder that's both gets the trees' wider mask.
-    for parent in &points.parents {
-        if let Err(e) = watcher.watch_for(parent, inotify::ENTRIES) {
-            logger.warn(LOG_SOURCE, &format!("can't watch {} for new apps: {e}", parent.display()));
-        }
-    }
-    for tree in &points.trees {
-        if let Err(e) = watcher.watch_tree(tree) {
-            logger.warn(LOG_SOURCE, &format!("can't watch {} for new apps: {e}", tree.display()));
-        }
-    }
-    points
-}
-
-/// How the UI sees `entry`, whose icon may be among `icons`.
-fn app(entry: &Entry, icons: &BTreeMap<String, String>) -> App {
-    App {
-        id: entry.id.clone(),
-        name: entry.name.clone(),
-        description: entry.generic_name.clone().or_else(|| entry.comment.clone()),
-        icon: icons.get(&entry.id).cloned(),
-    }
-}
-
-/// The event for `state`: apps by name, and the pinned and recent ones
-/// that are installed (recent leaves the pinned ones out).
-fn snapshot(state: &State) -> nova_protocol::Launcher {
-    let mut apps: Vec<App> = state.apps.values().map(|entry| app(entry, &state.icons)).collect();
-    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
-    let installed = |id: &&String| state.apps.contains_key(*id);
-    let pinned = state.saved.pinned.iter().filter(installed).cloned().collect();
+/// The event for `state` and `apps`: apps by name, and the pinned and
+/// recent ones that are installed (recent leaves the pinned ones out).
+fn snapshot(state: &State, apps: &crate::apps::State) -> nova_protocol::Launcher {
+    let installed = apps.entries();
+    let mut listed: Vec<App> = installed.values().map(|entry| apps.app_of(entry)).collect();
+    listed.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
+    let is_installed = |id: &&String| installed.contains_key(*id);
+    let pinned = state.saved.pinned.iter().filter(is_installed).cloned().collect();
     // A pinned app already shows among the pins.
     let mut launched: Vec<(&String, &Launches)> = state
         .saved
         .launches
         .iter()
-        .filter(|(id, _)| state.apps.contains_key(*id) && !state.saved.pinned.contains(id))
+        .filter(|(id, _)| installed.contains_key(*id) && !state.saved.pinned.contains(id))
         .collect();
     launched.sort_by(|a, b| b.1.last.cmp(&a.1.last).then_with(|| a.0.cmp(b.0)));
     let recent = launched.into_iter().take(MAX_RECENT).map(|(id, _)| id.clone()).collect();
-    nova_protocol::Launcher { apps, pinned, recent }
+    nova_protocol::Launcher { apps: listed, pinned, recent }
 }
 /// The focus step of [`Launcher::launch`] for app `id`, whose windows may
 /// have the app ids `ids` (none, and no `tray`, when a new window is asked
@@ -606,5 +371,32 @@ pub fn focus_shown(
                 return true;
             }
         }
+    }
+}
+
+/// It has no options: it only starts and stops with its feature.
+impl crate::modules::Module for Launcher {
+    const ID: &'static str = FEATURE_ID;
+    const NEEDS_APPS: bool = true;
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Launcher);
+    type Sources = Paths;
+    type Config = ();
+
+    fn sources(env: &crate::modules::Env) -> Paths {
+        Paths::new(&env.args.state_dir, env.path_var)
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(ctx: &crate::modules::Context, paths: &Paths, (): &(), _: &[nova_protocol::FeatureState]) -> Arc<Self> {
+        Self::start(paths.clone(), Arc::clone(&ctx.apps), &ctx.path_var, Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+    }
+
+    fn send_state(&self, client: crate::hub::ClientId) {
+        Self::send_state(self, client);
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
     }
 }

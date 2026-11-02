@@ -25,9 +25,9 @@ pub(crate) mod image;
 mod tests;
 mod text;
 
+use crate::apps::AppIndex;
 use crate::hub::{ClientId, Hub};
 use crate::icons::Icons;
-use crate::launcher::Launcher;
 use crate::logger::Logger;
 use crate::session_bus::{self, Bus, Stop};
 use crate::{lock, state_file};
@@ -148,8 +148,8 @@ struct Shared {
     logger: Arc<Logger>,
     sources: Sources,
     /// The installed apps, whose names and icons a notification naming its
-    /// desktop entry shows; `None` while the launcher is off.
-    launcher: Mutex<Option<Arc<Launcher>>>,
+    /// desktop entry shows.
+    apps: Arc<AppIndex>,
     /// The server's connection, once it's up, to tell apps about clicks.
     connection: Mutex<Option<Connection>>,
     /// The next picture's revision (`image::save`).
@@ -206,7 +206,7 @@ impl Notifications {
     /// Claims the server's name on the bus and serves it on a thread of its
     /// own. Returns once the name is claimed, queued behind another server,
     /// or connecting failed (logged).
-    pub fn start(sources: Sources, launcher: Option<Arc<Launcher>>, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+    pub fn start(sources: Sources, apps: Arc<AppIndex>, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         let saved = load(&sources, &logger);
         let shared = Arc::new(Shared {
             state: Mutex::new(State { written: Some(saved.clone()), saved, ..State::default() }),
@@ -214,7 +214,7 @@ impl Notifications {
             hub,
             logger,
             sources,
-            launcher: Mutex::new(launcher),
+            apps,
             connection: Mutex::new(None),
             // From the clock, so a revision is never one an earlier run used.
             revision: AtomicU64::new(jiff::Timestamp::now().as_millisecond().unsigned_abs()),
@@ -233,12 +233,6 @@ impl Notifications {
         // Waits as long as connecting may take; a timed-out call fails sooner.
         let _ = started.recv_timeout(2 * CALL_TIMEOUT);
         Arc::new(Self { shared })
-    }
-
-    /// Finds apps with `launcher` from now on (`None` while the launcher is
-    /// off), for notifications sent after this.
-    pub fn set_launcher(&self, launcher: Option<Arc<Launcher>>) {
-        *lock(&self.shared.launcher) = launcher;
     }
 
     /// Shows a notification of Nova's own, as if an app sent it, and
@@ -510,10 +504,8 @@ impl Shared {
         // there), and what the sender calls itself only when none is. Right
         // after novad starts, it waits for the apps to be read, or a muted
         // app would get past its mute under the sender's name.
-        let installed = desktop_entry.as_deref().and_then(|entry| {
-            let launcher = lock(&self.launcher).clone()?;
-            launcher.app_once_scanned(&format!("{entry}.desktop"))
-        });
+        let installed =
+            desktop_entry.as_deref().and_then(|entry| self.apps.app_once_scanned(&format!("{entry}.desktop")));
         let (installed_name, installed_icon) = installed.map_or((None, None), |app| (Some(app.name), app.icon));
         let app = [installed_name.as_deref(), Some(sent.app_name.as_str()), desktop_entry.as_deref()]
             .into_iter()
@@ -939,4 +931,37 @@ impl Server {
 
     #[zbus(signal)]
     async fn action_invoked(emitter: &SignalEmitter<'_>, id: u32, action_key: &str) -> zbus::Result<()>;
+}
+
+/// Started before the UI, which settings start ahead of, so notifications
+/// sent while it starts are kept. No options.
+impl crate::modules::Module for Notifications {
+    const ID: &'static str = FEATURE_ID;
+    const NEEDS_APPS: bool = true;
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Notifications);
+    type Sources = Sources;
+    type Config = ();
+
+    fn sources(env: &crate::modules::Env) -> Sources {
+        Sources::new(&env.args.state_dir, Arc::clone(env.icons))
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(
+        ctx: &crate::modules::Context,
+        sources: &Sources,
+        (): &(),
+        _: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        Self::start(sources.clone(), Arc::clone(&ctx.apps), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+    }
+
+    fn send_state(&self, client: ClientId) {
+        Self::send_state(self, client);
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
+    }
 }

@@ -126,6 +126,27 @@ fn already_running(bus: Bus) -> zbus::Result<bool> {
     })
 }
 
+/// No options. Its icons reach whatever tray is up, on the tray's bus.
+impl crate::modules::Module for X11Tray {
+    const ID: &'static str = FEATURE_ID;
+    type Sources = Bus;
+    type Config = ();
+
+    fn sources(env: &crate::modules::Env) -> Bus {
+        crate::tray::Sources::new(&env.args.state_dir).bus
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(ctx: &crate::modules::Context, bus: &Bus, (): &(), _: &[nova_protocol::FeatureState]) -> Arc<Self> {
+        Self::start(bus.clone(), &ctx.path_var, Arc::clone(&ctx.logger))
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

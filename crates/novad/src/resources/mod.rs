@@ -321,6 +321,36 @@ fn page_size() -> u64 {
     u64::try_from(size).unwrap_or(4096)
 }
 
+/// It has no options: it only starts and stops with its feature.
+impl crate::modules::Module for Resources {
+    const ID: &'static str = FEATURE_ID;
+    type Sources = Sources;
+    type Config = ();
+
+    fn sources(env: &crate::modules::Env) -> Sources {
+        Sources::system(env.path_var)
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(
+        ctx: &crate::modules::Context,
+        sources: &Sources,
+        (): &(),
+        _: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+    }
+
+    fn client_gone(&self, client: ClientId) {
+        self.watch(client, false);
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

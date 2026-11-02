@@ -1,12 +1,15 @@
 //! The apps installed, as their desktop entries describe them: reading the
 //! entries (`desktop_entry`), finding them in the XDG data folders (`scan`),
-//! and telling which app a running program is (`program`). The launcher,
-//! tray, notifications and media all name apps from here.
+//! the index of them all that follows installs (`index`), and telling which
+//! app a running program is (`program`). The launcher, tray, notifications
+//! and media all name apps from the index.
 
 pub mod desktop_entry;
+mod index;
 mod program;
 pub mod scan;
 
+pub use index::{AppIndex, Sources, State};
 pub use program::program_name;
 
 /// `XDG_CURRENT_DESKTOP`'s names, like `niri`, which entries show in or not.

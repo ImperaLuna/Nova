@@ -30,6 +30,8 @@ pub struct SessionLock {
     state: Mutex<State>,
     covered: Condvar,
     file: PathBuf,
+    /// For new subscribers' state ([`crate::modules::Module::send_state`]).
+    hub: Arc<Hub>,
     logger: Arc<Logger>,
 }
 
@@ -43,7 +45,7 @@ struct State {
 impl SessionLock {
     /// Locked if the last novad of this session was, as its file in
     /// `runtime_dir` (the socket's folder) says.
-    pub fn open(runtime_dir: &Path, logger: &Arc<Logger>) -> Self {
+    pub fn open(runtime_dir: &Path, hub: Arc<Hub>, logger: &Arc<Logger>) -> Self {
         let file = runtime_dir.join(LOCKED_FILE);
         let locked = file.exists();
         if locked {
@@ -53,6 +55,7 @@ impl SessionLock {
             state: Mutex::new(State { locked, secured: false }),
             covered: Condvar::new(),
             file,
+            hub,
             logger: Arc::clone(logger),
         }
     }
@@ -140,6 +143,35 @@ impl SessionLock {
     }
 }
 
+/// Kept for novad's life: the screen stays locked while the feature is off.
+impl crate::modules::Module for SessionLock {
+    const ID: &'static str = FEATURE_ID;
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Lock);
+    type Sources = PathBuf;
+    type Config = ();
+
+    fn sources(env: &crate::modules::Env) -> PathBuf {
+        env.runtime_dir.to_owned()
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(
+        ctx: &crate::modules::Context,
+        runtime_dir: &PathBuf,
+        (): &(),
+        _: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        Arc::new(Self::open(runtime_dir, Arc::clone(&ctx.hub), &ctx.logger))
+    }
+
+    fn send_state(&self, client: ClientId) {
+        Self::send_state(self, &self.hub, client);
+    }
+
+    fn stop(&self) {}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,12 +182,12 @@ mod tests {
         let dir = nova_test_support::TempDir::new("session-lock");
         let hub = Arc::new(Hub::default());
         let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Info, false, Arc::clone(&hub)).unwrap());
-        assert!(!lock(&SessionLock::open(&dir, &logger).state).locked);
+        assert!(!lock(&SessionLock::open(&dir, Arc::new(Hub::default()), &logger).state).locked);
 
         std::fs::write(dir.join(LOCKED_FILE), "").unwrap();
-        let restarted = SessionLock::open(&dir, &logger);
+        let restarted = SessionLock::open(&dir, Arc::new(Hub::default()), &logger);
         assert!(lock(&restarted.state).locked);
         restarted.unlocked(&hub);
-        assert!(!SessionLock::open(&dir, &logger).state.lock().unwrap().locked);
+        assert!(!SessionLock::open(&dir, Arc::new(Hub::default()), &logger).state.lock().unwrap().locked);
     }
 }

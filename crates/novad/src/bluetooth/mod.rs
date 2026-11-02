@@ -905,3 +905,38 @@ async fn name_owner(connection: &Connection) -> Option<String> {
         connection.call_method(Some(DBUS_NAME), DBUS_PATH, Some(DBUS_NAME), "GetNameOwner", &(BLUEZ,)).await.ok()?;
     reply.body().deserialize().ok()
 }
+
+/// No options.
+impl crate::modules::Module for Bluetooth {
+    const ID: &'static str = FEATURE_ID;
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Bluetooth);
+    type Sources = Sources;
+    type Config = ();
+
+    fn sources(_: &crate::modules::Env) -> Sources {
+        Sources::system()
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(
+        ctx: &crate::modules::Context,
+        sources: &Sources,
+        (): &(),
+        _: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+    }
+
+    fn send_state(&self, client: ClientId) {
+        Self::send_state(self, client);
+    }
+
+    fn client_gone(&self, client: ClientId) {
+        self.watch(client, false);
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
+    }
+}

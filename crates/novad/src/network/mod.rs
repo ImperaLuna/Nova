@@ -688,3 +688,38 @@ fn load_prefer(path: &Path, logger: &Logger) -> Option<LinkKind> {
         }
     }
 }
+
+/// No options.
+impl crate::modules::Module for Network {
+    const ID: &'static str = FEATURE_ID;
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Network);
+    type Sources = Sources;
+    type Config = ();
+
+    fn sources(env: &crate::modules::Env) -> Sources {
+        Sources::system(&env.args.state_dir)
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(
+        ctx: &crate::modules::Context,
+        sources: &Sources,
+        (): &(),
+        _: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+    }
+
+    fn send_state(&self, client: ClientId) {
+        Self::send_state(self, client);
+    }
+
+    fn client_gone(&self, client: ClientId) {
+        self.watch_traffic(client, false);
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
+    }
+}

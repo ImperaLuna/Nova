@@ -457,6 +457,36 @@ fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Kept for novad's life, so a reload can't strand the region picker.
+impl crate::modules::Module for Screenshots {
+    const ID: &'static str = FEATURE_ID;
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Screenshot);
+    type Sources = PathBuf;
+    type Config = ();
+
+    fn sources(env: &crate::modules::Env) -> PathBuf {
+        env.runtime_dir.to_owned()
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(
+        ctx: &crate::modules::Context,
+        runtime_dir: &PathBuf,
+        (): &(),
+        _: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        Arc::new(Self::new(runtime_dir, ctx.path_var.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger)))
+    }
+
+    /// A restarted UI picks up a region picker that was open.
+    fn send_state(&self, client: crate::hub::ClientId) {
+        Self::send_state(self, &self.hub, client);
+    }
+
+    fn stop(&self) {}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

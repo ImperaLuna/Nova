@@ -232,7 +232,7 @@ fn lock_for(daemon: &Daemon, why: &str) -> bool {
         return false;
     }
     daemon.logger.info(LOG_SOURCE, &format!("{why}: locking the screen"));
-    match daemon.session_lock.request(&daemon.hub) {
+    match daemon.session_lock().request(&daemon.hub) {
         Ok(()) => true,
         Err(e) => {
             daemon.logger.warn(LOG_SOURCE, &format!("couldn't lock the screen: {e}"));
@@ -248,7 +248,7 @@ fn release_once_locked(daemon: &Daemon, inhibitor: OwnedFd) {
     if !lock_for(daemon, "the machine is going to sleep") {
         return drop(inhibitor);
     }
-    let session_lock = Arc::clone(&daemon.session_lock);
+    let session_lock = daemon.session_lock();
     let logger = Arc::clone(&daemon.logger);
     std::thread::spawn(move || {
         if let Err(e) = session_lock.wait_covered() {

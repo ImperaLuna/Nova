@@ -1109,6 +1109,71 @@ fn awww(path_var: &str) -> Command {
     command
 }
 
+/// Where the wallpaper service keeps its state, and the home its paths start from.
+#[derive(Clone)]
+pub struct Sources {
+    pub state_dir: PathBuf,
+    pub home: Option<PathBuf>,
+}
+
+/// Kept for novad's life, told which wallpaper features are ready and what
+/// `[wallpaper]` says on every change, and about the outputs whenever they
+/// change.
+impl crate::modules::Module for Wallpaper {
+    const ID: &'static str = FEATURE_ID;
+    type Sources = Sources;
+    type Config = WallpaperConfig;
+
+    fn sources(env: &crate::modules::Env) -> Sources {
+        Sources { state_dir: env.args.state_dir.clone(), home: env.home.clone() }
+    }
+
+    fn config(config: &crate::config::Config) -> WallpaperConfig {
+        config.wallpaper.clone()
+    }
+
+    fn start(
+        ctx: &crate::modules::Context,
+        sources: &Sources,
+        config: &WallpaperConfig,
+        features: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        let compositor = ctx.compositor.as_ref();
+        let wallpaper = Self::start(
+            &sources.state_dir,
+            sources.home.clone(),
+            ctx.path_var.clone(),
+            compositor.is_some(),
+            Arc::clone(&ctx.logger),
+        );
+        if let Some(compositor) = compositor {
+            let told = Arc::downgrade(&wallpaper);
+            compositor.on_outputs(move |names| {
+                if let Some(wallpaper) = told.upgrade() {
+                    wallpaper.outputs(names);
+                }
+            });
+        }
+        crate::modules::Module::reconfigure(&*wallpaper, config, config, features);
+        wallpaper
+    }
+
+    fn reconfigure(
+        &self,
+        _: &WallpaperConfig,
+        config: &WallpaperConfig,
+        features: &[nova_protocol::FeatureState],
+    ) -> crate::modules::Reconfigure {
+        let ready = |id| crate::features::is_ready(features, id);
+        self.configure(ready(FEATURE_ID), ready(ENGINE_FEATURE_ID), config);
+        crate::modules::Reconfigure::InPlace
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

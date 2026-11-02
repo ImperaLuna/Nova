@@ -458,3 +458,39 @@ fn name(text: &str) -> Option<String> {
     let trimmed = text.trim();
     (!trimmed.is_empty()).then(|| trimmed.chars().filter(|c| !c.is_control()).take(MAX_NAME_CHARS).collect())
 }
+
+/// No options. Its low battery alerts go to whatever notification server
+/// is up.
+impl crate::modules::Module for Peripherals {
+    const ID: &'static str = FEATURE_ID;
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Peripherals);
+    type Sources = Sources;
+    type Config = ();
+
+    fn sources(env: &crate::modules::Env) -> Sources {
+        Sources::system(env.path_var)
+    }
+
+    fn config(_: &crate::config::Config) {}
+
+    fn start(
+        ctx: &crate::modules::Context,
+        sources: &Sources,
+        (): &(),
+        _: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+    }
+
+    fn linked(&self, running: &crate::modules::Running) {
+        self.set_notifications(running.get::<Notifications>().as_ref());
+    }
+
+    fn send_state(&self, client: ClientId) {
+        Self::send_state(self, client);
+    }
+
+    fn stop(&self) {
+        Self::stop(self);
+    }
+}
