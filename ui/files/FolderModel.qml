@@ -48,6 +48,9 @@ QtObject {
     // Ctrl+A was the last selection: entries still to come are selected
     // as they come.
     property bool _selectingAll: false
+    // A selected entry wasn't on the first page: the list moves to it when
+    // its page comes.
+    property bool _seeking: false
     // Which files_open the view shows, so a late answer to an earlier one
     // can't mark this one failed.
     property int _opening: 0
@@ -146,12 +149,13 @@ QtObject {
         if (view === 0 || page.view !== view || page.path !== path)
             return;
         const fresh = page.start === 0;
-        let current = -1;
+        const found = page.entries.findIndex(entry => isSelected(entry.name));
         if (fresh) {
-            current = page.entries.findIndex(entry => isSelected(entry.name));
-            filling(current);
+            filling(found);
             rows.clear();
             anchor = -1;
+            error = "";
+            _seeking = found < 0 && selectedCount > 0;
         } else if (page.start < rows.count) {
             rows.remove(page.start, rows.count - page.start);
         }
@@ -167,24 +171,29 @@ QtObject {
             selectedCount = Object.keys(_selected).length;
         if (fresh) {
             loaded = true;
-            reset(current);
+            reset(found);
+        } else if (_seeking && found >= 0) {
+            _seeking = false;
+            reset(page.start + found);
         }
     }
 
+    // A files_changed event: an entry that moves (removed, then inserted
+    // again under the same name, as a new size or time reorders it) stays
+    // selected; one that goes for good leaves the selection.
     function _changed(changed: var) {
         if (changed.view !== view)
             return;
+        const moving = Object.create(null);
         for (const change of changed.changes) {
             if (change.op === Protocol.FOLDER_INSERT) {
                 rows.insert(change.index, Listing.row(change.entry));
+                delete moving[change.entry.name];
                 total++;
             } else if (change.op === Protocol.FOLDER_REMOVE) {
                 const name = rows.get(change.index).name;
-                if (isSelected(name)) {
-                    delete _selected[name];
-                    selectedCount--;
-                    revision++;
-                }
+                if (isSelected(name))
+                    moving[name] = true;
                 rows.remove(change.index);
                 total--;
             } else if (change.op === Protocol.FOLDER_UPDATE) {
@@ -192,6 +201,13 @@ QtObject {
             }
             anchor = Math.min(Listing.shifted(anchor, change), rows.count - 1);
         }
+        const gone = Object.keys(moving);
+        if (gone.length === 0)
+            return;
+        for (const name of gone)
+            delete _selected[name];
+        selectedCount -= gone.length;
+        revision++;
     }
 
     function _closed(closed: var) {

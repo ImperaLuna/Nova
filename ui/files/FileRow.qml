@@ -1,6 +1,7 @@
 import QtQuick
 import "../theme"
 import "listing.js" as Listing
+import "paths.js" as Paths
 
 // A row of Nova Files' Details list: the entry's icon and name, then its
 // Modified, Type and Size at the header's column widths. Hovered rows
@@ -63,7 +64,7 @@ Rectangle {
             Cell {
                 width: parent.width - icon.width - parent.spacing
                 color: entry.hidden ? Tokens.filesFaint : Tokens.fg
-                text: entry.name
+                text: Paths.shown(entry.name)
             }
         }
         Cell {

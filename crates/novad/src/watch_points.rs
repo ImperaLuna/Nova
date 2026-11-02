@@ -46,6 +46,11 @@ impl WatchPoints {
             || path.parent().is_some_and(|parent| self.folders.contains(parent))
     }
 
+    /// Whether `dir` is one of the folders to watch, or below a tree.
+    pub fn watches(&self, dir: &Path) -> bool {
+        self.parents.contains(dir) || self.folders.contains(dir) || self.trees.iter().any(|tree| dir.starts_with(tree))
+    }
+
     /// Adds `folder` and what's below it, links down to `max_depth` folders
     /// deep included, the links on the way to it, or where it would appear.
     pub fn add_tree(&mut self, folder: &Path, max_depth: usize) {
@@ -190,11 +195,11 @@ pub fn follow(
                 continue;
             }
             // A folder or link may have come or gone: look again at what to
-            // watch, dropping the old watches so a rebuild's leftover store
-            // folders don't pile up. Whatever changes meanwhile is read by
-            // the look this change starts.
-            watcher.unwatch_all();
+            // watch. The new watches go on before the old ones come off, so
+            // nothing goes unwatched meanwhile; dropping those no longer
+            // needed keeps a rebuild's leftover store folders from piling up.
             watched = watch_all(&watcher, &logger);
+            watcher.unwatch_unless(|dir| watched.watches(dir));
             if changed.send(()).is_err() {
                 return;
             }

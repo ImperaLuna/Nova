@@ -13,13 +13,18 @@
 //! user closed stays closed until the window moves on (the window keeps
 //! both lists and sends them each time).
 //!
+//! Paths and names go both ways as wire text (`nova_protocol::wire_text`),
+//! so a folder whose name isn't UTF-8 shows and opens like any other.
+//!
 //! It's read anew on every request, off the connection's thread: only the
 //! open folders are listed, and a closed one is read only until its first
 //! subfolder (at most [`SCAN_LIMIT`] entries), to tell whether it gets a
 //! chevron.
 
 use super::folder;
-use nova_protocol::{FILES_PATH_MAX_BYTES, FILES_TREE_MAX_FOLDERS, FilePlace, FolderTree, PlaceKind, TreeRow};
+use nova_protocol::{
+    FILES_PATH_MAX_WIRE_BYTES, FILES_TREE_MAX_FOLDERS, FilePlace, FolderTree, PlaceKind, TreeRow, wire_path, wire_text,
+};
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
@@ -52,14 +57,14 @@ pub fn tree(request: &Request, home: &Path) -> Result<FolderTree, String> {
     let tree = Tree {
         way: folder.ancestors().filter(|ancestor| ancestor.starts_with(&root)).map(Path::to_path_buf).collect(),
         folder: folder.clone(),
-        opened: request.opened.iter().map(PathBuf::from).collect(),
-        closed: request.closed.iter().map(PathBuf::from).collect(),
+        opened: request.opened.iter().map(|path| wire_path(path)).collect(),
+        closed: request.closed.iter().map(|path| wire_path(path)).collect(),
         hidden: request.hidden,
     };
     let mut rows = Vec::new();
-    let name = root.file_name().map_or_else(|| "/".into(), |name| name.to_string_lossy().into_owned());
+    let name = root.file_name().map_or_else(|| "/".into(), wire_text);
     tree.add(&root, name, 0, false, &mut rows);
-    Ok(FolderTree { folder: text(&folder)?, rows })
+    Ok(FolderTree { folder: wire_text(&folder), rows })
 }
 
 /// The places that exist, in the sidebar's order: Home, then the user's
@@ -74,20 +79,20 @@ pub fn places(home: &Path, user_dir: impl Fn(&str, &str) -> PathBuf) -> Vec<File
     std::iter::once((PlaceKind::Home, home.to_path_buf()))
         .chain(folders.into_iter().map(|(kind, key, fallback)| (kind, user_dir(key, fallback))))
         .filter(|(_, path)| path.is_dir())
-        .filter_map(|(kind, path)| Some(FilePlace { kind, path: path.to_str()?.to_owned() }))
+        .map(|(kind, path)| FilePlace { kind, path: wire_text(path) })
         .collect()
 }
 
 /// A typed or sent folder as an absolute path: `~` is Home, a trailing
 /// slash is dropped, and `.` or `..` are refused, as for a window.
 fn resolve(folder: &str, home: &Path) -> Result<PathBuf, String> {
-    if folder.len() > FILES_PATH_MAX_BYTES {
-        return Err(format!("a path longer than {FILES_PATH_MAX_BYTES} bytes"));
+    if folder.len() > FILES_PATH_MAX_WIRE_BYTES {
+        return Err(format!("a path longer than {FILES_PATH_MAX_WIRE_BYTES} bytes"));
     }
     let path = match folder.strip_prefix('~') {
         Some("") => home.to_path_buf(),
-        Some(rest) if rest.starts_with('/') => home.join(rest.trim_start_matches('/')),
-        _ => PathBuf::from(folder),
+        Some(rest) if rest.starts_with('/') => home.join(wire_path(rest.trim_start_matches('/'))),
+        _ => wire_path(folder),
     };
     if !path.is_absolute() {
         return Err(format!("{folder} isn't an absolute path"));
@@ -109,14 +114,14 @@ struct Tree {
 
 impl Tree {
     /// Adds the row for `path` and, while it's open, its subfolders' rows.
+    /// `name` is wire text.
     fn add(&self, path: &Path, name: String, depth: u32, in_hidden: bool, rows: &mut Vec<TreeRow>) {
         let hidden = in_hidden || folder::is_hidden(&name);
         // The top is open too, so a window on Home shows what's in it.
         let leads_on = depth == 0 || (self.way.contains(path) && path != self.folder);
         let open = (leads_on && !self.closed.contains(path)) || self.opened.contains(path);
         let index = rows.len();
-        let Some(wire_path) = path.to_str() else { return };
-        rows.push(TreeRow { name, path: wire_path.to_owned(), depth, open, leaf: false, hidden });
+        rows.push(TreeRow { name, path: wire_text(path), depth, open, leaf: false, hidden });
         if !open {
             rows[index].leaf = !self.has_subfolders(path);
             return;
@@ -124,20 +129,21 @@ impl Tree {
         let children = self.subfolders(path);
         rows[index].leaf = children.is_empty();
         for child in children {
-            self.add(&path.join(&child), child, depth + 1, hidden, rows);
+            self.add(&path.join(wire_path(&child)), child, depth + 1, hidden, rows);
         }
     }
 
-    /// The subfolders of `path` the tree shows, in name order: the hidden
-    /// ones only when they're on the way or hidden files show.
+    /// The subfolders of `path` the tree shows, as wire text in name order:
+    /// the hidden ones only when they're on the way or hidden files show.
     fn subfolders(&self, path: &Path) -> Vec<String> {
         let mut names: Vec<String> = std::fs::read_dir(path)
             .into_iter()
             .flatten()
             .flatten()
             .filter(is_folder)
-            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .map(|entry| entry.file_name())
             .filter(|name| self.shows(path, name))
+            .map(wire_text)
             .collect();
         // The way on shows even when its folder can't be listed.
         if let Some(next) = self.next_on_way(path)
@@ -159,15 +165,15 @@ impl Tree {
             if read == SCAN_LIMIT {
                 return true;
             }
-            if is_folder(&entry) && self.shows(path, &entry.file_name().to_string_lossy()) {
+            if is_folder(&entry) && self.shows(path, &entry.file_name()) {
                 return true;
             }
         }
         false
     }
 
-    fn shows(&self, parent: &Path, name: &str) -> bool {
-        self.hidden || !folder::is_hidden(name) || self.way.contains(&parent.join(name))
+    fn shows(&self, parent: &Path, name: &std::ffi::OsStr) -> bool {
+        self.hidden || !name.as_encoded_bytes().starts_with(b".") || self.way.contains(&parent.join(name))
     }
 
     /// The name of the folder after `path` on the way to the window's
@@ -175,7 +181,7 @@ impl Tree {
     fn next_on_way(&self, path: &Path) -> Option<String> {
         let rest = self.folder.strip_prefix(path).ok()?;
         let next = rest.components().next()?;
-        Some(next.as_os_str().to_string_lossy().into_owned())
+        Some(wire_text(next.as_os_str()))
     }
 }
 
@@ -186,11 +192,6 @@ fn is_folder(entry: &std::fs::DirEntry) -> bool {
         Ok(kind) => kind.is_dir(),
         Err(_) => false,
     }
-}
-
-/// `path` as wire text: it must be UTF-8, which every path the UI can show is.
-fn text(path: &Path) -> Result<String, String> {
-    path.to_str().map(str::to_string).ok_or_else(|| format!("{} isn't UTF-8", path.display()))
 }
 
 #[cfg(test)]
@@ -314,6 +315,20 @@ mod tests {
         assert!(ask(&home, "~/Missing", &[], &[], false).unwrap_err().contains("isn't a folder"));
         let many = vec![&*home; FILES_TREE_MAX_FOLDERS + 1];
         assert!(ask(&home, "~", &many, &[], false).is_err());
+    }
+
+    #[test]
+    fn a_folder_whose_name_isnt_utf8_shows_and_opens() {
+        use std::os::unix::ffi::OsStrExt;
+        let home = home("raw");
+        let raw = home.join(std::ffi::OsStr::from_bytes(b"caf\xe9"));
+        std::fs::create_dir_all(raw.join("inside")).unwrap();
+        let tree = ask(&home, &request(&home), &[], &[], false).unwrap();
+        let row = tree.rows.iter().find(|row| row.name == wire_text(raw.file_name().unwrap())).unwrap();
+        assert!(!row.leaf);
+        let inside = ask(&home, &row.path, &[], &[], false).unwrap();
+        assert_eq!(inside.folder, wire_text(&raw));
+        assert!(inside.rows.iter().any(|row| row.path == wire_text(&raw) && !row.leaf), "inside is seen");
     }
 
     #[test]
