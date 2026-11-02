@@ -1,7 +1,7 @@
 //! Which app a running program is, from its file: Nix wraps programs as
 //! `.<name>-wrapped`, and shared runtimes (Electron, Python) say nothing
 //! about the app they run. The tray and app streams' icons look apps up by
-//! these names (`Launcher::find_app`).
+//! these names (`AppIndex::find_app`).
 
 /// Program names that say nothing about the app: shared runtimes and
 /// sandbox helpers that run many apps, and the bridge for old X11 tray

@@ -560,6 +560,54 @@ fn millis(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
+/// Kept for novad's life, so a reload can't leave a recording running:
+/// turning the feature off stops it.
+impl crate::modules::Module for Recordings {
+    const ID: &'static str = FEATURE_ID;
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Recording);
+    type Sources = ();
+    type Config = crate::config::RecordingConfig;
+
+    fn sources(_: &crate::modules::Env) {}
+
+    fn config(config: &crate::config::Config) -> crate::config::RecordingConfig {
+        config.recording.clone()
+    }
+
+    /// Saves what an earlier novad left in the folder, when the feature is
+    /// ready. Allowed to record once told the settings (`reconfigure`).
+    fn start(
+        ctx: &crate::modules::Context,
+        (): &(),
+        config: &crate::config::RecordingConfig,
+        features: &[nova_protocol::FeatureState],
+    ) -> Arc<Self> {
+        let recordings = Arc::new(Self::new(ctx.path_var.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger)));
+        if crate::features::is_ready(features, FEATURE_ID)
+            && let Ok(folder) = config.folder()
+        {
+            recordings.recover(&folder);
+        }
+        recordings
+    }
+
+    fn reconfigure(
+        &self,
+        _: &crate::config::RecordingConfig,
+        _: &crate::config::RecordingConfig,
+        features: &[nova_protocol::FeatureState],
+    ) -> crate::modules::Reconfigure {
+        self.allow(crate::features::is_ready(features, FEATURE_ID));
+        crate::modules::Reconfigure::InPlace
+    }
+
+    fn send_state(&self, client: crate::hub::ClientId) {
+        Self::send_state(self, &self.hub, client);
+    }
+
+    fn stop(&self) {}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

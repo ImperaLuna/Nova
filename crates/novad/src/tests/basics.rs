@@ -209,19 +209,3 @@ fn wait_for_status(client: &mut Client, done: impl Fn(&Status) -> bool) -> Statu
     }
     panic!("status never got there");
 }
-
-#[test]
-fn manifest_daemon_names_match_cargo_features() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let cargo: toml::Table = std::fs::read_to_string(root.join("Cargo.toml")).unwrap().parse().unwrap();
-    let mut cargo_features: Vec<String> = cargo
-        .get("features")
-        .and_then(|f| f.as_table())
-        .map(|t| t.keys().filter(|k| *k != "default").cloned().collect())
-        .unwrap_or_default();
-    let mut declared: Vec<String> =
-        nova_features::load_all(&root.join("../../features")).unwrap().into_iter().filter_map(|m| m.daemon).collect();
-    cargo_features.sort();
-    declared.sort();
-    assert_eq!(cargo_features, declared, "novad [features] and manifest `daemon` fields differ");
-}

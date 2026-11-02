@@ -8,15 +8,14 @@
 //! Adding a feature with its own daemon service and event topic touches, end
 //! to end (`ai_usage` is the worked example):
 //! - `features/<id>/feature.toml`: the feature, its dependencies, `daemon = "<id>"`.
+//! - Its own module folder, with an `impl Module` (`modules`): how it
+//!   starts, what its options are, what a new subscriber gets, how it stops.
+//! - `modules/mod.rs`: one line in the `modules!` registry.
 //! - `nova-protocol`: the `Topic`, the `Event` and any `Command`s, plus the
 //!   wire format snapshot.
 //! - `config.rs`: its `[<id>]` options in config.toml, if any.
-//! - `settings.rs`: one `reconcile` call that starts the service when the
-//!   feature is ready, stops it when it isn't and restarts it when its
-//!   options change (its type goes in the `services!` list).
-//! - `server.rs`: its commands (through a getter like `Connection::launcher`
-//!   that answers when the feature isn't ready) and the snapshot sent on
-//!   subscribe.
+//! - `server.rs`: its commands (through `Daemon::module`, which answers
+//!   when the feature isn't ready) and its topic among the modules'.
 //! - `ui/daemon/protocol.js` (`CMD_`/`EVENT_`/`TOPIC_`/`FEATURE_` names, checked
 //!   against nova-protocol) and `Daemon.qml` (subscribe, keep the event's data).
 //! - A QML service singleton beside the feature's components
@@ -25,6 +24,7 @@
 //!   commands, and the component that loads when the feature is ready.
 
 mod ai_usage;
+mod apps;
 mod backoff;
 mod bluetooth;
 pub mod checks;
@@ -41,6 +41,7 @@ mod launcher;
 mod logger;
 mod logind;
 mod media;
+mod modules;
 mod network;
 mod notifications;
 mod notify;
@@ -153,10 +154,9 @@ pub struct Daemon {
     settings: Mutex<Settings>,
     /// Following the compositor, when it's one novad knows.
     compositor: Option<Arc<compositor::Compositor>>,
-    session_lock: Arc<session_lock::SessionLock>,
-    screenshots: Arc<screenshot::Screenshots>,
-    recordings: Arc<recording::Recordings>,
-    wallpaper: Arc<wallpaper::Wallpaper>,
+    /// The modules kept for novad's life, reached without the settings
+    /// lock: a reload holds it while modules start, which may take seconds.
+    kept: modules::Kept,
 }
 
 impl Daemon {
@@ -183,17 +183,21 @@ impl Daemon {
     /// Reads the settings files again and applies what changed.
     fn reload(&self) {
         lock(&self.settings).reload(&self.sources, &self.hub, &self.logger);
-        self.apply_services();
     }
 
-    /// Tells the services novad keeps whatever the settings (they hold state
-    /// across a feature turning off and on) what the settings are now.
-    fn apply_services(&self) {
-        self.recordings.allow(self.feature_ready(recording::FEATURE_ID));
-        let settings = lock(&self.settings);
-        let ready = |id| features::is_ready(&settings.features, id);
-        let (images, engine) = (ready(wallpaper::FEATURE_ID), ready(wallpaper::ENGINE_FEATURE_ID));
-        self.wallpaper.configure(images, engine, settings.wallpaper_config());
+    /// The lock screen, kept whatever the settings.
+    fn session_lock(&self) -> Arc<session_lock::SessionLock> {
+        Arc::clone(&self.kept.session_lock)
+    }
+
+    /// The module `M`, or the error that its feature isn't ready. Taken out
+    /// of the settings lock: acting may take a while, and a reload may stop
+    /// it meanwhile (it then says its feature isn't ready).
+    fn module<M: modules::Module>(&self) -> Result<Arc<M>, String>
+    where
+        modules::Running: modules::Has<M>,
+    {
+        lock(&self.settings).modules.get::<M>().ok_or_else(|| features::not_ready(M::ID))
     }
 
     /// Starts watching the settings files, reloading when they change.
@@ -285,8 +289,7 @@ impl Drop for InProcess {
         if let Some(ui) = &self.daemon.ui {
             ui.stop();
         }
-        lock(&self.daemon.settings).stop_services();
-        self.daemon.wallpaper.stop();
+        lock(&self.daemon.settings).stop_modules();
     }
 }
 
@@ -306,29 +309,35 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     let runtime_dir = socket.parent().unwrap_or(Path::new(".")).to_path_buf();
     let icons = Arc::new(icons::Icons::for_session());
     logger.info(LOG_SOURCE, &format!("icons from the {} icon theme", icons.theme()));
+    let env = modules::Env {
+        args: &args,
+        runtime_dir: &runtime_dir,
+        path_var: &path_var,
+        icons: &icons,
+        home: nova_paths::home(),
+    };
+    let modules = modules::Sources::system(&env);
     let sources = Sources {
-        config: args.config,
-        selection: args.selection.map_or_else(|| nova_paths::config_files("features.toml"), |path| vec![path]),
-        themes_dir: args.themes_dir,
+        config: args.config.clone(),
+        selection: args.selection.clone().map_or_else(|| nova_paths::config_files("features.toml"), |path| vec![path]),
+        themes_dir: args.themes_dir.clone(),
         manifests: nova_features::load_all(&args.features_dir)?,
         path_var: path_var.clone(),
-        ai_usage: ai_usage::Paths::new(
-            &args.state_dir,
-            args.codex_home,
-            args.claude_credentials,
-            args.claude_desktop_config,
-        ),
-        resources: resources::Sources::system(&path_var),
-        launcher: launcher::Paths::new(&args.state_dir, &path_var, Arc::clone(&icons)),
-        tray: tray::Sources::new(&args.state_dir),
-        notifications: notifications::Sources::new(&args.state_dir, Arc::clone(&icons)),
-        media: media::Sources::new(&runtime_dir),
-        peripherals: peripherals::Sources::system(&path_var),
-        network: network::Sources::system(&args.state_dir),
-        bluetooth: bluetooth::Sources::system(),
+        modules,
         icons,
     };
-    let settings = Settings::load(&sources, &hub, &logger);
+    // Before the modules: the wallpaper follows its outputs.
+    let compositor = match compositor::detect(|name| std::env::var_os(name)) {
+        Some(backend) => Some(compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger))),
+        None => {
+            logger.warn(
+                LOG_SOURCE,
+                "neither NIRI_SOCKET nor HYPRLAND_INSTANCE_SIGNATURE is set, so no workspaces will show",
+            );
+            None
+        }
+    };
+    let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
     if args.autostart {
         launcher::autostart::start(&socket.with_file_name(autostart_marker()), path_var.clone(), Arc::clone(&logger));
     }
@@ -357,28 +366,6 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         Supervisor::start(settings, Arc::clone(&logger))
     });
 
-    let compositor = match compositor::detect(|name| std::env::var_os(name)) {
-        Some(backend) => Some(compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger))),
-        None => {
-            logger.warn(
-                LOG_SOURCE,
-                "neither NIRI_SOCKET nor HYPRLAND_INSTANCE_SIGNATURE is set, so no workspaces will show",
-            );
-            None
-        }
-    };
-
-    let session_lock = Arc::new(session_lock::SessionLock::open(&runtime_dir, &logger));
-    let screenshots = Arc::new(screenshot::Screenshots::new(
-        &runtime_dir,
-        sources.path_var.clone(),
-        Arc::clone(&hub),
-        Arc::clone(&logger),
-    ));
-    let recordings =
-        Arc::new(recording::Recordings::new(sources.path_var.clone(), Arc::clone(&hub), Arc::clone(&logger)));
-    let wallpaper =
-        start_wallpaper(&args.state_dir, nova_paths::home(), &sources.path_var, compositor.as_ref(), &logger);
     let daemon = Arc::new(Daemon {
         started: Instant::now(),
         hub,
@@ -386,19 +373,10 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         ui,
         socket,
         sources,
+        kept: settings.modules.kept(),
         settings: Mutex::new(settings),
         compositor,
-        session_lock,
-        screenshots,
-        recordings,
-        wallpaper,
     });
-    daemon.apply_services();
-    if daemon.feature_ready(recording::FEATURE_ID)
-        && let Ok(folder) = lock(&daemon.settings).recording_folder()
-    {
-        daemon.recordings.recover(&folder);
-    }
     // Watched for as long as novad runs.
     let watching = daemon.watch_settings();
     // Not for a daemon without its UI (tests, a UI run by hand): logind's
@@ -407,27 +385,6 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         logind::follow(&daemon);
     }
     Ok((listener, daemon, watching))
-}
-
-/// The wallpaper service, told about the outputs whenever they change.
-fn start_wallpaper(
-    state_dir: &Path,
-    home: Option<PathBuf>,
-    path_var: &str,
-    compositor: Option<&Arc<compositor::Compositor>>,
-    logger: &Arc<Logger>,
-) -> Arc<wallpaper::Wallpaper> {
-    let wallpaper =
-        wallpaper::Wallpaper::start(state_dir, home, path_var.to_owned(), compositor.is_some(), Arc::clone(logger));
-    if let Some(compositor) = compositor {
-        let told = Arc::downgrade(&wallpaper);
-        compositor.on_outputs(move |names| {
-            if let Some(wallpaper) = told.upgrade() {
-                wallpaper.outputs(names);
-            }
-        });
-    }
-    wallpaper
 }
 
 fn log_level() -> LogLevel {

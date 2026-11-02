@@ -52,15 +52,16 @@ impl Fixture {
         self.server_with(None)
     }
 
-    /// A server naming apps as `launcher` finds them.
-    fn server_with(&self, launcher: Option<Arc<Launcher>>) -> Arc<Notifications> {
+    /// A server naming apps from `apps`, or none.
+    fn server_with(&self, apps: Option<Arc<AppIndex>>) -> Arc<Notifications> {
         let sources = Sources {
             bus: Bus::Address(self.bus.address.clone()),
             state_file: self.dir.join("notifications.json"),
             images: self.dir.join("images"),
             icons: Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[self.dir.join("share")], None)),
         };
-        Notifications::start(sources, launcher, Arc::clone(&self.hub), Arc::clone(&self.logger))
+        let apps = apps.unwrap_or_else(|| AppIndex::of(None, &self.logger));
+        Notifications::start(sources, apps, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
     fn app(&self) -> App {
@@ -83,9 +84,9 @@ impl Fixture {
         App { connection, signals }
     }
 
-    /// A launcher finding the apps installed under `share/applications`
+    /// An index of the apps installed under `share/applications`
     /// (`entries`: file name and contents); lookups wait for its first read.
-    fn launcher(&self, entries: &[(&str, &str)]) -> Arc<Launcher> {
+    fn apps(&self, entries: &[(&str, &str)]) -> Arc<AppIndex> {
         let share = self.dir.join("share");
         std::fs::create_dir_all(share.join("applications")).unwrap();
         for (file, entry) in entries {
@@ -95,13 +96,7 @@ impl Fixture {
             )
             .unwrap();
         }
-        let paths = crate::launcher::Paths {
-            data_dirs: vec![share.clone()],
-            state_file: self.dir.join("launcher.json"),
-            runner: crate::launcher::Runner::Direct,
-            icons: Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[share], None)),
-        };
-        Launcher::start(paths, "", Arc::clone(&self.hub), Arc::clone(&self.logger))
+        AppIndex::of(Some(&share), &self.logger)
     }
 
     /// The next event called `name`, skipping others.
@@ -516,8 +511,8 @@ fn an_installed_desktop_entry_names_the_app_before_the_sender_does() {
     let fixture = Fixture::new("desktop-entry-name");
     let patched = fixture.install_icon("discord-patched");
     let theme = fixture.install_icon("vesktop");
-    let launcher = fixture.launcher(&[("discord.desktop", "Name=Discord\nIcon=discord-patched\nExec=true\n")]);
-    let _server = fixture.server_with(Some(launcher));
+    let apps = fixture.apps(&[("discord.desktop", "Name=Discord\nIcon=discord-patched\nExec=true\n")]);
+    let _server = fixture.server_with(Some(apps));
     let app = fixture.app();
 
     // The entry the sender names is installed: its name and icon win over

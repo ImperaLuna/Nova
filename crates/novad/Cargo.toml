@@ -33,22 +33,3 @@ nova-test-support.workspace = true
 
 [lints]
 workspace = true
-
-# One cargo feature per feature manifest that declares `daemon = "<name>"`.
-# A test checks the two lists stay in sync.
-[features]
-ai-usage = []
-bluetooth = []
-launcher = []
-media = []
-network = []
-notifications = []
-peripherals = []
-power = []
-quick-settings = []
-recording = []
-screenshot = []
-tray = []
-wallpaper = []
-wallpaper-engine = []
-x11-tray = []

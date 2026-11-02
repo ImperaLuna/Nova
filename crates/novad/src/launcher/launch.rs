@@ -9,7 +9,7 @@
 //! shows it by name. Without one it's forked twice, so it ends up a child of
 //! init, in a session of its own. Either way nothing it prints reaches novad.
 
-use super::desktop_entry::Entry;
+use crate::apps::desktop_entry::Entry;
 use crate::child;
 use crate::logger::Logger;
 use nova_paths::find_program;

@@ -53,7 +53,7 @@ pub struct Manifest {
     /// Can't be turned off (the bar, launcher, notifications).
     #[serde(default)]
     pub required: bool,
-    /// Cargo feature of `novad` that holds this feature's daemon side.
+    /// Names the feature's daemon side in novad (`novad::modules`).
     #[serde(default)]
     pub daemon: Option<String>,
     #[serde(default)]

@@ -43,7 +43,7 @@ impl Fixture {
     }
 
     fn media(&self) -> Arc<Media> {
-        Media::start(self.sources(), None, Arc::clone(&self.hub), Arc::clone(&self.logger))
+        Media::start(self.sources(), AppIndex::of(None, &self.logger), Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 
     fn sources(&self) -> Sources {
@@ -375,15 +375,9 @@ fn a_player_is_found_by_its_process_when_its_desktop_entry_is_wrong() {
     std::fs::write(process.join("comm"), ".zen-beta-wrappe\n").unwrap();
     // Started from a terminal: its unit is the terminal's.
     std::fs::write(process.join("cgroup"), "0::/user.slice/app.slice/app-kitty-4242.scope\n").unwrap();
-    let paths = crate::launcher::Paths {
-        data_dirs: vec![share.clone()],
-        state_file: fixture.dir.join("launcher.json"),
-        runner: crate::launcher::Runner::Direct,
-        icons: Arc::new(crate::icons::Icons::new(crate::icons::HICOLOR.into(), &[share], None)),
-    };
-    let launcher = Launcher::start(paths, "", Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
-    wait_until(WAIT, "the launcher to find zen-beta.desktop", || launcher.find_app(&["zen-beta".into()]).is_some());
-    let media = Media::start(fixture.sources(), Some(launcher), Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
+    let apps = AppIndex::of(Some(&share), &fixture.logger);
+    wait_until(WAIT, "the index to find zen-beta.desktop", || apps.find_app(&["zen-beta".into()]).is_some());
+    let media = Media::start(fixture.sources(), apps, Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
 
     let _zen = fixture.play(FIREFOX, Track { desktop_entry: "zen", ..Track::playing("A video") });
     let event = fixture.until(|event| event["shown"] == FIREFOX);

@@ -341,18 +341,9 @@ fn pins_keep_their_order_and_survive_a_restart() {
     install_app(&novad, "c.desktop", "Name=c\nExec=true\n");
     client.launcher_until(|event| ids(&event["pinned"]) == ["c.desktop", "b.desktop"]);
 
-    let again = launcher::Launcher::start(
-        launcher_paths(&novad.dir, test_icons(&novad.dir)),
-        "",
-        Arc::new(Hub::default()),
-        Arc::clone(&novad.daemon.logger),
-    );
-    let saved: Value = serde_json::from_str(
-        &std::fs::read_to_string(launcher_paths(&novad.dir, test_icons(&novad.dir)).state_file).unwrap(),
-    )
-    .unwrap();
+    let saved: Value =
+        serde_json::from_str(&std::fs::read_to_string(novad.dir.join("launcher/launcher.json")).unwrap()).unwrap();
     assert_eq!(saved["pinned"], json!(["c.desktop", "b.desktop"]));
-    again.stop();
 }
 
 #[test]
@@ -361,17 +352,11 @@ fn an_app_is_found_by_its_own_id_before_a_shortcut_running_it() {
     // Steam's game shortcuts run `steam`, and sort before it.
     install_app(&novad, "Abiotic Factor.desktop", "Name=Abiotic Factor\nExec=steam steam://rungameid/427410\n");
     install_app(&novad, "steam.desktop", "Name=Steam\nExec=steam %U\n");
-    let launcher = launcher::Launcher::start(
-        launcher_paths(&novad.dir, test_icons(&novad.dir)),
-        "",
-        Arc::new(Hub::default()),
-        Arc::clone(&novad.daemon.logger),
-    );
-    wait_until(Duration::from_secs(5), "the launcher to find both apps", || {
-        launcher.find_app(&["abiotic factor".into()]).is_some() && launcher.find_app(&["steam".into()]).is_some()
+    let apps = Arc::clone(&lock(&novad.daemon.settings).context.apps);
+    wait_until(Duration::from_secs(5), "the index to find both apps", || {
+        apps.find_app(&["abiotic factor".into()]).is_some() && apps.find_app(&["steam".into()]).is_some()
     });
-    assert_eq!(launcher.find_app(&["steam".into()]).unwrap().id, "steam.desktop");
-    launcher.stop();
+    assert_eq!(apps.find_app(&["steam".into()]).unwrap().id, "steam.desktop");
 }
 
 #[test]
@@ -745,4 +730,31 @@ fn a_notification_click_focuses_the_window_its_app_shows_or_opens_an_app_that_ha
     let click = client.request(5, "open_notification", Some(json!({"id": dead, "output": output})));
     assert_eq!(click["result"], Value::Null, "{click}");
     assert!(ran(&fourth), "an app that can't hear of the click is opened instead");
+}
+
+/// The app index serves whatever names apps, not only the launcher: with
+/// the launcher off, an app stream still gets its app's icon while the
+/// tray, notifications or media run, and the apps are forgotten once none
+/// of them does.
+#[test]
+fn apps_are_named_with_the_launcher_off() {
+    let novad = TestDaemon::start("apps-without-launcher", None);
+    // The icon's name isn't the program's, so only the app's entry finds it.
+    let claude = install_icon(&novad, "claude-logo");
+    install_app(&novad, "claude.desktop", "Name=Claude\nExec=claude-desktop\nIcon=claude-logo\n");
+    let mut client = novad.connect();
+    let mut id = 0;
+    let mut icon = |client: &mut Client| {
+        id += 1;
+        let args = json!({"icon_name": "", "program": "/usr/bin/claude-desktop", "name": "Claude"});
+        client.request(id, "app_icon", Some(args))["result"].clone()
+    };
+    wait_until(Duration::from_secs(5), "the app's icon without the launcher", || icon(&mut client) == json!(claude));
+
+    std::fs::write(
+        novad.features_file(),
+        "disabled = [\"ai-usage\", \"launcher\", \"tray\", \"notifications\", \"media\"]\n",
+    )
+    .unwrap();
+    wait_until(Duration::from_secs(5), "the apps to be forgotten", || icon(&mut client) == json!(null));
 }
