@@ -86,6 +86,9 @@ pub enum Reconfigure {
 /// What modules find their sources from, on this machine.
 pub struct Env<'a> {
     pub args: &'a crate::Args,
+    /// How Quickshell runs, for a module with windows of its own; none for
+    /// a novad without its UI (tests, a UI run by hand).
+    pub ui: Option<&'a crate::supervisor::UiSettings>,
     /// novad's runtime folder, its socket's.
     pub runtime_dir: &'a Path,
     pub path_var: &'a str,

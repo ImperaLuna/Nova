@@ -319,7 +319,19 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     let runtime_dir = socket.parent().unwrap_or(Path::new(".")).to_path_buf();
     let icons = Arc::new(icons::Icons::for_session());
     logger.info(LOG_SOURCE, &format!("icons from the {} icon theme", icons.theme()));
+    // How Quickshell runs, for the UI and for modules with windows of their own.
+    let ui_settings = UiSettings {
+        quickshell: args.quickshell.clone().unwrap_or_else(|| supervisor::default_quickshell(&path_var)),
+        ui_dir: args.ui.clone(),
+        socket: socket.clone(),
+        path_var: path_var.clone(),
+        wayland_socket: wayland_socket(),
+        egl_vendor: egl::nvidia_only_vendor(Path::new("/"), |name| std::env::var_os(name)),
+        render_loop: render_loop::for_ui(|name| std::env::var_os(name)),
+        icon_theme: icons.theme().to_string(),
+    };
     let env = modules::Env {
+        ui: (!args.no_ui).then_some(&ui_settings),
         args: &args,
         runtime_dir: &runtime_dir,
         path_var: &path_var,
@@ -355,24 +367,13 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     logger.info(LOG_SOURCE, &format!("listening on {}", socket.display()));
 
     let ui = (!args.no_ui).then(|| {
-        let wayland_socket = wayland_socket();
-        if wayland_socket.is_none() {
+        if ui_settings.wayland_socket.is_none() {
             logger.warn(
                 LOG_SOURCE,
                 "WAYLAND_DISPLAY isn't set, so the UI can't open a window. If systemd started novad, \
                  run `nova` from your compositor's autostart so it can pass the session on.",
             );
         }
-        let ui_settings = UiSettings {
-            quickshell: args.quickshell.clone().unwrap_or_else(|| supervisor::default_quickshell(&path_var)),
-            ui_dir: args.ui.clone(),
-            socket: socket.clone(),
-            path_var,
-            wayland_socket,
-            egl_vendor: egl::nvidia_only_vendor(Path::new("/"), |name| std::env::var_os(name)),
-            render_loop: render_loop::for_ui(|name| std::env::var_os(name)),
-            icon_theme: sources.icons.theme().to_string(),
-        };
         let wanted = features::needs_ui(&sources.manifests, &settings.features);
         Supervisor::start(ui_settings, wanted, Arc::clone(&logger))
     });

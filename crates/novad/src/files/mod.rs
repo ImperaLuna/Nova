@@ -7,20 +7,28 @@
 //!   [`Files::show`]) that the Nova Files process hasn't been sent yet.
 //! - `target.rs`: what a window shows, checked: an absolute folder that
 //!   exists, and items in it to select.
+//! - `file_manager1.rs`: `org.freedesktop.FileManager1`, so apps' "Show in
+//!   folder" opens Nova Files.
+//! - `window.rs`: the Nova Files process (`ui/files.qml`), started when a
+//!   window is asked for and none runs.
 //!
 //! Windows go only to the Nova Files process, once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
-//! takes them. One asked for while none is attached waits, and goes to it
-//! when it attaches. Asking, attaching and detaching take the same lock,
-//! so none is lost or sent twice.
+//! takes them. One asked for while none is attached waits, and starts one,
+//! and goes to it when it attaches. Asking, attaching and detaching take
+//! the same lock, so none is lost or sent twice. A process that detached as
+//! it quit, with windows asked for since, is followed by a new one.
 
+mod file_manager1;
 mod target;
+mod window;
 
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
+use crate::session_bus::{Bus, Stop};
 use nova_protocol::{Event, FeatureState, FilesWindow, Topic};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 pub const FEATURE_ID: &str = "files";
 const LOG_SOURCE: &str = "files";
@@ -28,19 +36,29 @@ const LOG_SOURCE: &str = "files";
 /// more are refused rather than kept.
 const MAX_WAITING: usize = 64;
 
-/// Where Nova Files runs from; nothing yet.
+/// Where Nova Files runs from.
 #[derive(Clone)]
-pub struct Sources;
+pub struct Sources {
+    /// Where `org.freedesktop.FileManager1` is served.
+    pub bus: Bus,
+    /// How the Nova Files process runs; none for a novad without its UI,
+    /// where windows only wait.
+    pub ui: Option<crate::supervisor::UiSettings>,
+}
 
 pub struct Files {
     shared: Arc<Shared>,
+    /// Ends the FileManager1 service.
+    stop: Arc<Stop>,
 }
 
 /// What the module's services share.
 struct Shared {
+    sources: Sources,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     delivery: Mutex<Delivery>,
+    process: Option<window::Process>,
 }
 
 /// Where windows go, under one lock.
@@ -50,11 +68,26 @@ struct Delivery {
     attached: Option<ClientId>,
     /// Windows asked for that no Nova Files process has been sent yet.
     waiting: Vec<FilesWindow>,
+    /// The process detached to quit; once it exits, windows still waiting
+    /// start the next one.
+    quitting: bool,
 }
 
 impl Files {
-    pub fn start(hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
-        Arc::new(Self { shared: Arc::new(Shared { hub, logger, delivery: Mutex::default() }) })
+    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
+        let shared = Arc::new_cyclic(|shared: &Weak<Shared>| {
+            let shared = Weak::clone(shared);
+            let exited = move || {
+                if let Some(shared) = shared.upgrade() {
+                    shared.exited();
+                }
+            };
+            let process = sources.ui.clone().map(|ui| window::Process::new(ui, Arc::clone(&logger), exited));
+            Shared { sources, hub, logger, delivery: Mutex::default(), process }
+        });
+        let stop = Arc::new(Stop::default());
+        file_manager1::start(&shared, &stop);
+        Arc::new(Self { shared, stop })
     }
 
     /// Opens a window on `folder` with `select` selected, once both check
@@ -70,6 +103,7 @@ impl Files {
         let mut delivery = lock(&self.shared.delivery);
         if attached {
             delivery.attached = Some(client);
+            delivery.quitting = false;
             let waiting = std::mem::take(&mut delivery.waiting);
             let mut unsent = waiting.into_iter().skip_while(|window| self.shared.send(client, window));
             if let Some(window) = unsent.next() {
@@ -79,6 +113,7 @@ impl Files {
             }
         } else if delivery.attached == Some(client) {
             delivery.attached = None;
+            delivery.quitting = true;
         }
     }
 
@@ -90,15 +125,20 @@ impl Files {
         }
     }
 
-    /// Stops it: it sends nothing more, and drops the windows waiting.
+    /// Stops it: it publishes nothing more, gives up FileManager1, closes
+    /// Nova Files' windows, and drops those still waiting.
     pub fn stop(&self) {
+        self.stop.stop();
+        if let Some(process) = &self.shared.process {
+            process.stop();
+        }
         *lock(&self.shared.delivery) = Delivery::default();
     }
 }
 
 impl Shared {
     /// Sends `window` to the Nova Files process, or keeps it for the next
-    /// one to attach, unless [`MAX_WAITING`] already wait.
+    /// one to attach, starting one, unless [`MAX_WAITING`] already wait.
     fn open(&self, window: FilesWindow) -> Result<(), String> {
         let mut delivery = lock(&self.delivery);
         if let Some(client) = delivery.attached {
@@ -112,11 +152,27 @@ impl Shared {
         }
         self.logger.info(LOG_SOURCE, &format!("{} waits for Nova Files to start", window.folder));
         delivery.waiting.push(window);
+        if let Some(process) = &self.process {
+            process.ensure_running();
+        }
         Ok(())
     }
 
     fn send(&self, client: ClientId, window: &FilesWindow) -> bool {
         self.hub.send_to(client, &Event::FilesWindow(window.clone()))
+    }
+
+    /// The Nova Files process exited. One that quit while windows were asked
+    /// for is followed by a new one; one that crashed isn't, until the next
+    /// window is asked for.
+    fn exited(&self) {
+        let mut delivery = lock(&self.delivery);
+        if std::mem::take(&mut delivery.quitting)
+            && !delivery.waiting.is_empty()
+            && let Some(process) = &self.process
+        {
+            process.ensure_running();
+        }
     }
 }
 
@@ -127,14 +183,14 @@ impl crate::modules::Module for Files {
     type Sources = Sources;
     type Config = ();
 
-    fn sources(_: &crate::modules::Env) -> Sources {
-        Sources
+    fn sources(env: &crate::modules::Env) -> Sources {
+        Sources { bus: Bus::Session, ui: env.ui.cloned() }
     }
 
     fn config(_: &crate::config::Config) {}
 
-    fn start(ctx: &crate::modules::Context, _: &Sources, (): &(), _: &[FeatureState]) -> Arc<Self> {
-        Self::start(Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
+    fn start(ctx: &crate::modules::Context, sources: &Sources, (): &(), _: &[FeatureState]) -> Arc<Self> {
+        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
     }
 
     fn client_gone(&self, client: ClientId) {
@@ -159,7 +215,7 @@ mod tests {
 
     const WAIT: Duration = Duration::from_secs(5);
 
-    /// Files, and a folder to show.
+    /// Files with no UI to start, and a folder to show.
     struct Fixture {
         dir: TempDir,
         hub: Arc<Hub>,
@@ -172,7 +228,9 @@ mod tests {
             std::fs::create_dir_all(dir.join("Downloads")).unwrap();
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
-            let files = Files::start(Arc::clone(&hub), logger);
+            let sources =
+                Sources { bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())), ui: None };
+            let files = Files::start(sources, Arc::clone(&hub), logger);
             Self { dir, hub, files }
         }
 
