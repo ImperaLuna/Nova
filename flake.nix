@@ -376,7 +376,7 @@
                       services.xserver = { inherit videoDrivers; };
                       programs.nova = {
                         enable = true;
-                        features = pkgs.lib.mapAttrs (_: _: { enable = true; }) features.optional;
+                        features = pkgs.lib.mapAttrs (_: _: { enable = true; }) features.manifests;
                       };
                     }
                   ];

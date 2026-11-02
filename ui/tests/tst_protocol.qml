@@ -64,7 +64,7 @@ TestCase {
     function test_only_ready_features_load() {
         const ready = Protocol.readyFeatures([
             {
-                id: "core",
+                id: "bar",
                 status: "ready"
             },
             {
@@ -77,7 +77,7 @@ TestCase {
                 status: "off"
             }
         ]);
-        compare(ready, ["core"]);
+        compare(ready, ["bar"]);
     }
 
     // The compositor event in nova-protocol's wire format snapshot.

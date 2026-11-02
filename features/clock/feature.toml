@@ -1,0 +1,4 @@
+id = "clock"
+name = "Clock"
+description = "The day and the time in the middle of the central pill."
+default = true

@@ -306,7 +306,7 @@ mod tests {
             config: Ok(vec![]),
             features: Ok(vec![
                 feature("ai-usage", FeatureStatus::Ready, &[]),
-                feature("core", FeatureStatus::Ready, &[]),
+                feature("bar", FeatureStatus::Ready, &[]),
                 feature("recording", FeatureStatus::Off, &[]),
             ]),
             startup: vec![],
@@ -354,7 +354,7 @@ mod tests {
                  ok    quickshell  0.3.2 (tested: {range})\n\
                  ok    novad       running {version}\n\
                  ok    config      config.toml reads fine\n\
-                 ok    features    ai-usage, core on, nothing missing\n"
+                 ok    features    ai-usage, bar on, nothing missing\n"
             )
         );
     }
@@ -401,7 +401,7 @@ mod tests {
     fn missing_binaries_fail_per_feature() {
         let facts = Facts {
             features: Ok(vec![
-                feature("core", FeatureStatus::Ready, &[]),
+                feature("bar", FeatureStatus::Ready, &[]),
                 feature("recording", FeatureStatus::MissingDeps, &["gpu-screen-recorder|wf-recorder"]),
             ]),
             ..healthy()

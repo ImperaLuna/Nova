@@ -2,8 +2,8 @@
 source: crates/nova-cli/src/setup.rs
 expression: "shown(&facts(Distro::Debian, vec![Gpu::Intel], false))"
 ---
-install packages for bluetooth, core, peripherals, recording, screenshot:
-    sudo apt-get install bluez quickshell upower wf-recorder grim wl-clipboard xdg-utils
+install Quickshell for the UI, and packages for bluetooth, peripherals, recording, screenshot:
+    sudo apt-get install quickshell bluez upower wf-recorder grim wl-clipboard xdg-utils
 create /home/me/.config/nova/config.toml
 create /home/me/.config/nova/features.toml
 write /home/me/.config/systemd/user/nova.service

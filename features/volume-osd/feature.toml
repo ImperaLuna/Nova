@@ -1,0 +1,4 @@
+id = "volume-osd"
+name = "Volume capsule"
+description = "The capsule that shows the volume while the volume keys change it."
+default = true

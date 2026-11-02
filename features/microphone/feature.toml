@@ -1,0 +1,4 @@
+id = "microphone"
+name = "Microphone"
+description = "A quick settings tile that mutes the mic, and its slider while an app is recording."
+default = true

@@ -1,0 +1,4 @@
+id = "keep-awake"
+name = "Keep awake"
+description = "A quick settings tile that keeps the screen from dimming, locking or sleeping while it's on."
+default = true

@@ -191,6 +191,9 @@ impl Daemon {
     fn apply_services(&self) {
         self.recordings.allow(self.feature_ready(recording::FEATURE_ID));
         let settings = lock(&self.settings);
+        if let Some(ui) = &self.ui {
+            ui.want(features::needs_ui(&self.sources.manifests, &settings.features), &self.logger);
+        }
         let ready = |id| features::is_ready(&settings.features, id);
         let (images, engine) = (ready(wallpaper::FEATURE_ID), ready(wallpaper::ENGINE_FEATURE_ID));
         self.wallpaper.configure(images, engine, settings.wallpaper_config());
@@ -344,7 +347,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
                  run `nova` from your compositor's autostart so it can pass the session on.",
             );
         }
-        let settings = UiSettings {
+        let ui_settings = UiSettings {
             quickshell: args.quickshell.clone().unwrap_or_else(|| supervisor::default_quickshell(&path_var)),
             ui_dir: args.ui.clone(),
             socket: socket.clone(),
@@ -354,7 +357,8 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
             render_loop: render_loop::for_ui(|name| std::env::var_os(name)),
             icon_theme: sources.icons.theme().to_string(),
         };
-        Supervisor::start(settings, Arc::clone(&logger))
+        let wanted = features::needs_ui(&sources.manifests, &settings.features);
+        Supervisor::start(ui_settings, wanted, Arc::clone(&logger))
     });
 
     let compositor = match compositor::detect(|name| std::env::var_os(name)) {

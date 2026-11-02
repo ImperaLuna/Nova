@@ -1885,6 +1885,8 @@ pub enum UiState {
     Restarting,
     /// novad was started with `--no-ui`.
     Disabled,
+    /// No feature with a UI is on, so novad doesn't run Quickshell.
+    NotNeeded,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2052,7 +2054,7 @@ mod tests {
             encode(Event::Hello { daemon: "0.1.0".into() }),
             encode(Event::Features {
                 features: vec![
-                    FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] },
+                    FeatureState { id: "bar".into(), status: FeatureStatus::Ready, missing: vec![] },
                     FeatureState {
                         id: "recording".into(),
                         status: FeatureStatus::MissingDeps,
@@ -2883,7 +2885,7 @@ mod tests {
                     log: "/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log".into(),
                 }),
             },
-            features: vec![FeatureState { id: "core".into(), status: FeatureStatus::Ready, missing: vec![] }],
+            features: vec![FeatureState { id: "bar".into(), status: FeatureStatus::Ready, missing: vec![] }],
             log_dir: "/home/me/.local/state/nova".into(),
             desktop: None,
         }

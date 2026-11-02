@@ -1,0 +1,4 @@
+id = "sound"
+name = "Sound"
+description = "The volume slider in quick settings and its page of outputs, inputs and apps; the volume keys change the volume through it."
+default = true

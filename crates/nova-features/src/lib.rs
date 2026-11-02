@@ -47,12 +47,10 @@ pub struct Manifest {
     pub id: String,
     pub name: String,
     pub description: String,
-    /// Turned on when the user hasn't said otherwise.
+    /// Turned on when the user hasn't said otherwise. Every feature can be
+    /// turned off, the bar too.
     #[serde(default)]
     pub default: bool,
-    /// Can't be turned off (the bar, launcher, notifications).
-    #[serde(default)]
-    pub required: bool,
     /// Cargo feature of `novad` that holds this feature's daemon side.
     #[serde(default)]
     pub daemon: Option<String>,
@@ -123,6 +121,13 @@ impl Manifest {
             .unwrap_or(&[])
     }
 
+    /// Whether the feature draws anything, so the UI (Quickshell) has to run
+    /// while it's on: it fills at least one slot.
+    pub fn has_ui(&self) -> bool {
+        // REBASE(IMP-269): `!self.slots.is_empty()` once slots exist.
+        !matches!(self.id.as_str(), "wallpaper-engine" | "x11-tray")
+    }
+
     /// Entries of `check.binaries` with no match on `PATH`.
     pub fn missing_binaries(&self, path_var: &str) -> Vec<String> {
         self.check
@@ -145,9 +150,6 @@ impl Manifest {
         };
         if !kebab(&self.id) {
             return Err(format!("id \"{}\" must be lowercase kebab-case", self.id));
-        }
-        if self.required && !self.default {
-            return Err("a required feature must also be default = true".into());
         }
         if !self.variants.is_empty() && !self.variants.contains_key("default") {
             return Err("variants need a [variants.default] fallback".into());
@@ -222,9 +224,6 @@ impl Selection {
     }
 
     pub fn is_on(&self, manifest: &Manifest) -> bool {
-        if manifest.required {
-            return true;
-        }
         if self.disabled.contains(&manifest.id) {
             return false;
         }
@@ -260,7 +259,7 @@ mod tests {
     #[test]
     fn every_manifest_in_the_repo_is_valid() {
         let all = load_all(&repo_features()).unwrap_or_else(|e| panic!("{e}"));
-        assert!(all.iter().any(|m| m.id == "core" && m.required));
+        assert!(all.iter().any(|m| m.id == "bar"));
     }
 
     #[test]
@@ -301,7 +300,6 @@ mod tests {
         let cases = [
             ("id = \"Rec\"\nname = \"x\"\ndescription = \"x\"", "Rec", "kebab-case"),
             ("id = \"a\"\nname = \"x\"\ndescription = \"x\"", "b", "must match"),
-            ("id = \"a\"\nname = \"x\"\ndescription = \"x\"\nrequired = true", "a", "default = true"),
             (
                 "id = \"a\"\nname = \"x\"\ndescription = \"x\"\n[variants.nvidia]\nwhen = { gpu = \"nvidia\" }",
                 "a",
@@ -325,14 +323,14 @@ mod tests {
     }
 
     #[test]
-    fn selection_respects_required_default_and_choices() {
-        let core = manifest("id = \"core\"\nname = \"x\"\ndescription = \"x\"\ndefault = true\nrequired = true");
+    fn selection_respects_default_and_choices() {
+        let bar = manifest("id = \"bar\"\nname = \"x\"\ndescription = \"x\"\ndefault = true");
         let rec = manifest(RECORDING);
         let none = Selection::default();
-        assert!(none.is_on(&core) && !none.is_on(&rec));
+        assert!(none.is_on(&bar) && !none.is_on(&rec));
 
-        let sel = Selection::parse("enabled = [\"recording\"]\ndisabled = [\"core\"]").unwrap();
-        assert!(sel.is_on(&core), "required features can't be disabled");
+        let sel = Selection::parse("enabled = [\"recording\"]\ndisabled = [\"bar\"]").unwrap();
+        assert!(!sel.is_on(&bar), "every feature can be turned off, the bar too");
         assert!(sel.is_on(&rec));
     }
 }
