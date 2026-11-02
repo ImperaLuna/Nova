@@ -171,12 +171,17 @@ impl Inotify {
         });
     }
 
-    /// Stops watching everything, to watch afresh what's there now.
-    pub fn unwatch_all(&self) {
-        for wd in std::mem::take(&mut *lock(&self.dirs)).into_keys() {
-            // SAFETY: no pointers; a stale `wd` only fails with EINVAL.
-            unsafe { libc::inotify_rm_watch(self.file.as_raw_fd(), wd) };
-        }
+    /// Stops watching the folders `keep` says no to, like ones a swapped
+    /// link no longer leads to.
+    pub fn unwatch_unless(&self, keep: impl Fn(&Path) -> bool) {
+        lock(&self.dirs).retain(|wd, paths| {
+            paths.retain(|path| keep(path));
+            if paths.is_empty() {
+                // SAFETY: no pointers; a stale `wd` only fails with EINVAL.
+                unsafe { libc::inotify_rm_watch(self.file.as_raw_fd(), *wd) };
+            }
+            !paths.is_empty()
+        });
     }
 
     /// Blocks until something changes, or `None` once stopped.

@@ -389,6 +389,8 @@ mod tests {
     /// The views of one client, and what the UI would hold for its view 1.
     struct Fixture {
         logs: TempDir,
+        /// The MIME database the views follow, kept for the whole test.
+        _mime: TempDir,
         folders: Folders,
         client: ClientId,
         events: Receiver<Outgoing>,
@@ -401,15 +403,13 @@ mod tests {
             let logs = TempDir::new(&format!("{name}-logs"));
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&logs.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
-            let mime = Mime::follow(
-                vec![crate::mime::tests::data_dir(&format!("{name}-mime")).to_path_buf()],
-                Arc::clone(&logger),
-            );
+            let mime_dir = crate::mime::tests::data_dir(&format!("{name}-mime"));
+            let mime = Mime::follow(vec![mime_dir.to_path_buf()], Arc::clone(&logger));
             let (socket, ours) = UnixStream::pair().unwrap();
             let (queue, events) = ClientQueue::new(&ours).unwrap();
             let client = hub.register(queue);
             let folders = Folders::new(hub, logger, mime);
-            Self { logs, folders, client, events, _socket: socket, shown: Vec::new() }
+            Self { logs, _mime: mime_dir, folders, client, events, _socket: socket, shown: Vec::new() }
         }
 
         fn open(&self, folder: &Path) -> Result<(), String> {
