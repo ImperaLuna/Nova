@@ -12,10 +12,13 @@ import "../bar" as Bar
 import "../capture" as Capture
 import "../central_pill" as CentralPill
 import "../launcher" as Launcher
+import "../lock" as Lock
 import "../media" as Media
+import "../notifications" as Notifications
 import "../power" as Power
 import "../quick_settings" as QuickSettings
 import "../quick_settings/slots" as QuickSettingsSlots
+import "../volume" as Volume
 import "../wallpaper" as Wallpaper
 
 // qmllint enable unused-imports
@@ -58,7 +61,16 @@ QtObject {
             "network.page": "../quick_settings/slots/NetworkPageSlot.qml",
             "bluetooth.page": "../quick_settings/slots/BluetoothPageSlot.qml",
             "resources.page": "../quick_settings/slots/ResourcesPageSlot.qml",
-            "notifications.page": "../quick_settings/slots/NotificationSettingsPageSlot.qml"
+            "notifications.page": "../quick_settings/slots/NotificationSettingsPageSlot.qml",
+            // The central pill draws its parts itself, the ones whose slots
+            // are filled (central-pill.parts).
+            "workspaces.list": "../central_pill/CentralPill.qml",
+            "clock.time": "../central_pill/CentralPill.qml",
+            "volume-osd.capsule": "../volume/VolumeOsd.qml",
+            "lock.screen": "../lock/LockScreenSlot.qml",
+            "notifications.popups": "../notifications/NotificationPopups.qml",
+            "bluetooth.pairing": "../quick_settings/PairingPopup.qml",
+            "capture.overlay": "../capture/CaptureSlot.qml"
         })
 
     // The URL of view `view`'s file, or "" for a view there isn't.
