@@ -85,19 +85,25 @@ impl FakeCompositor {
         )
     }
 
-    /// Hyprland on a `hyprland.lua` (all of 0.57): `dispatch <x>` runs the Lua
-    /// `hl.dispatch(<x>)`, so an old dispatcher gets the error from the
-    /// user's screenshot.
+    /// Hyprland on a `hyprland.lua` (all of 0.57), answering as the real one
+    /// in `recorded/hyprland-0.57/dispatch.json` did: `dispatched` is what it
+    /// said to a dispatcher it ran, `built` what building one said
+    /// (`scripts/record-hyprland-dispatch.py`): a dispatcher is `userdata`.
+    /// One that built runs and gets the answer `hl.dsp.no_op()` got; one that
+    /// didn't gets its error.
     pub(super) fn hyprland_lua(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
-        Self::hyprland_on(dir, |dispatcher| {
-            if dispatcher.starts_with("hl.dsp.") {
-                "ok".into()
+        let recorded: Value = serde_json::from_str(&Self::recorded("hyprland-0.57", "dispatch.json")).unwrap();
+        Self::hyprland_on(dir, move |dispatcher| {
+            if let Some(answer) = recorded["dispatched"][dispatcher].as_str() {
+                return answer.to_owned();
+            }
+            let Some(built) = recorded["built"][dispatcher].as_str() else {
+                panic!("record {dispatcher:?} in hyprland-0.57/dispatch.json with scripts/record-hyprland-dispatch.py")
+            };
+            if built.trim() == "userdata" {
+                recorded["dispatched"]["hl.dsp.no_op()"].as_str().unwrap().to_owned()
             } else {
-                format!(
-                    "error: [string \"return hl.dispatch({dispatcher})\"]:1: hl.dispatch: expected a dispatcher \
-                     (e.g. hl.dsp.window.close()) or a lua function\n\n → Note: dispatch in lua is a shorthand \
-                     for hl.dispatch(...), your syntax might need to be updated."
-                )
+                built.to_owned()
             }
         })
     }

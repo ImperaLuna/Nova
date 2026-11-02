@@ -1,0 +1,16 @@
+{
+  "version": "v0.57.0",
+  "dispatched": {
+    "hl.dsp.no_op()": "ok"
+  },
+  "built": {
+    "hl.dsp.focus({ workspace = \"1\" })": "userdata",
+    "hl.dsp.workspace.toggle_special(\"magic\")": "userdata",
+    "hl.dsp.focus({ window = \"address:0x56ba8fd9b880\" })": "userdata",
+    "hl.dsp.focus({ monitor = \"DP-2\" })": "userdata",
+    "hl.dsp.focus({ workspace = \"name:my \\\"web\\\" \\\\ 2\\010\" })": "userdata",
+    "hl.dsp.exit()": "userdata",
+    "hl.dsp.focus({ workspace = 1 + })": "error: 3 [string \"return type(hl.dsp.focus({ workspace = 1 + })...\"]:1: unexpected symbol near '}'",
+    "hl.dsp.no_such_thing()": "error: [string \"return type(hl.dsp.no_such_thing())\"]:1: attempt to call a nil value (field 'no_such_thing')"
+  }
+}
