@@ -34,7 +34,9 @@ pub fn run(args: &FilesArgs, socket: &Path) -> Result<(), String> {
 /// its folder.
 fn show(path: &Path) -> Result<Command, String> {
     let path = absolute(path).map_err(|e| format!("can't open {}: {e}", path.display()))?;
-    let (folder, select) = if path.metadata().map_err(|e| format!("can't open {}: {e}", path.display()))?.is_dir() {
+    // The entry must exist; a link whose target is gone is still selected.
+    path.symlink_metadata().map_err(|e| format!("can't open {}: {e}", path.display()))?;
+    let (folder, select) = if path.is_dir() {
         (path, Vec::new())
     } else {
         let folder = path.parent().ok_or_else(|| format!("{} has no folder", path.display()))?.to_path_buf();
@@ -78,6 +80,11 @@ mod tests {
         assert_eq!(
             show(&dir.join("Music/Albums/../.")).unwrap(),
             Command::ShowFolder { folder: music.clone(), select: vec![] }
+        );
+        std::os::unix::fs::symlink(dir.join("Gone"), dir.join("Music/dangling")).unwrap();
+        assert_eq!(
+            show(&dir.join("Music/dangling")).unwrap(),
+            Command::ShowFolder { folder: music.clone(), select: vec![format!("{music}/dangling")] }
         );
         let linked = dir.join("Linked").display().to_string();
         assert_eq!(show(&dir.join("Linked")).unwrap(), Command::ShowFolder { folder: linked, select: vec![] });
