@@ -28,9 +28,12 @@ Item {
     required property string host
     required property Item bar
     required property var stage
+    // The bar feature is on. Every bar.* host is the bar's, so with it off
+    // the row is empty even while the features in it stay ready.
+    property bool shown: true
 
     // Its slots, in order.
-    readonly property var wanted: Slots.forHost(Daemon.features, host)
+    readonly property var wanted: shown ? Slots.forHost(Daemon.features, host) : []
     // The same as a model that changes only where they do, so the pills
     // that stay (and their open panels) are kept.
     ListModel {

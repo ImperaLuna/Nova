@@ -7,6 +7,7 @@ import "../bar"
 import "../demo"
 import "../quick_settings/service"
 import "../daemon"
+import "../daemon/protocol.js" as Protocol
 import "../theme"
 
 // One per screen: a transparent layer across the top of the screen that the
@@ -242,11 +243,12 @@ Scope {
             underPanels: drawn.underPanels
         }
 
-        // Keep awake (quick settings): the compositor doesn't idle while a
-        // shown surface holds an inhibitor, and the stage always shows.
+        // Keep awake (its quick settings tile): the compositor doesn't idle
+        // while a shown surface holds an inhibitor, and the stage always
+        // shows, with the bar off too. Turning the feature off lets go.
         IdleInhibitor {
             window: stage
-            enabled: QuickSettingsService.keepAwake
+            enabled: QuickSettingsService.keepAwake && Daemon.readyFeatures.includes(Protocol.FEATURE_KEEP_AWAKE)
         }
 
         FrameLog {

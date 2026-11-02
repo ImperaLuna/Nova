@@ -15,11 +15,7 @@ let
         ) (builtins.readDir dir)
       );
 
-  isRequired = manifest: manifest.required or false;
   isDefault = manifest: manifest.default or false;
-
-  # The features the user can turn on or off (all but required ones).
-  optional = lib.filterAttrs (_: manifest: !isRequired manifest) manifests;
 
   # The variant for `gpu` (null when unknown): the first one by name whose
   # `when.gpu` is that GPU, else `default` (Manifest::variant_for).
@@ -46,14 +42,11 @@ let
     lib.findFirst (list: list != null) [ ] lists;
 in
 {
-  inherit manifests optional;
+  inherit manifests;
 
-  # The ids of the features that are on: the required ones, and those whose
-  # programs.nova.features.<id>.enable is set.
-  onIds =
-    switches:
-    lib.attrNames (lib.filterAttrs (_: isRequired) manifests)
-    ++ lib.attrNames (lib.filterAttrs (_: feature: feature.enable) switches);
+  # The ids of the features whose programs.nova.features.<id>.enable is set.
+  # Every feature can be turned off, the bar too.
+  onIds = switches: lib.attrNames (lib.filterAttrs (_: feature: feature.enable) switches);
 
   # The GPU a NixOS configuration drives, as far as features care: only
   # NVIDIA's driver changes what they install.
@@ -64,11 +57,8 @@ in
   # `manifest` on (Selection::is_on).
   isOn =
     selection: manifest:
-    isRequired manifest
-    || (
-      !(lib.elem manifest.id (selection.disabled or [ ]))
-      && (isDefault manifest || lib.elem manifest.id (selection.enabled or [ ]))
-    );
+    !(lib.elem manifest.id (selection.disabled or [ ]))
+    && (isDefault manifest || lib.elem manifest.id (selection.enabled or [ ]));
 
   # The packages of the features in `ids`, from `pkgs`. A name like
   # `kdePackages.plasma-workspace` is an attribute path.
@@ -90,8 +80,8 @@ in
   selectionFile =
     on:
     let
-      enabled = lib.attrNames (lib.filterAttrs (id: m: !isDefault m && lib.elem id on) optional);
-      disabled = lib.attrNames (lib.filterAttrs (id: m: isDefault m && !lib.elem id on) optional);
+      enabled = lib.attrNames (lib.filterAttrs (id: m: !isDefault m && lib.elem id on) manifests);
+      disabled = lib.attrNames (lib.filterAttrs (id: m: isDefault m && !lib.elem id on) manifests);
     in
     ''
       # Written by Nova's Nix module from programs.nova.features (or

@@ -3,8 +3,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import "../compositor"
-import "../daemon"
-import "../daemon/protocol.js" as Protocol
 import "../stage"
 import "../theme"
 import "service"
@@ -99,22 +97,12 @@ Scope {
         }
     }
 
-    // `nova volume up|down|mute`, from a volume key bound to Nova. Shows the
-    // capsule even when nothing changes (at either end, or without an
-    // output, which it then says).
+    // `nova volume up|down|mute`, from a volume key bound to Nova
+    // (VolumeService acts on it). Shows the capsule even when nothing
+    // changes (at either end, or without an output, which it then says).
     Connections {
-        target: Daemon
-        function onVolumeRequested(key: string) {
-            if (key === Protocol.VOLUME_UP)
-                VolumeService.step(1);
-            else if (key === Protocol.VOLUME_DOWN)
-                VolumeService.step(-1);
-            else if (key === Protocol.VOLUME_MUTE)
-                VolumeService.toggleMute();
-            else {
-                console.warn(`nova: unknown volume key ${key}`);
-                return;
-            }
+        target: VolumeService
+        function onKeyPressed() {
             osd.reveal();
         }
     }

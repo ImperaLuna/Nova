@@ -4,8 +4,8 @@ expression: "shown(&facts(Distro::Fedora, vec![Gpu::Amd], false))"
 ---
 add the Quickshell package repository:
     sudo dnf copr enable -y errornointernet/quickshell
-install packages for bluetooth, core, peripherals, recording, screenshot:
-    sudo dnf install bluez quickshell upower wf-recorder grim wl-clipboard xdg-utils
+install Quickshell for the UI, and packages for bluetooth, peripherals, recording, screenshot:
+    sudo dnf install quickshell bluez upower wf-recorder grim wl-clipboard xdg-utils
 create /home/me/.config/nova/config.toml
 create /home/me/.config/nova/features.toml
 write /home/me/.config/systemd/user/nova.service
