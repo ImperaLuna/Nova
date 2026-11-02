@@ -21,3 +21,28 @@ order = 10
 host = "bar.right"
 view = "right-pill"
 order = 20
+
+# Quick settings' sound and microphone controls and keep awake.
+[[slot]]
+host = "quick-settings.tiles"
+view = "keep-awake.tile"
+order = 30
+
+[[slot]]
+host = "quick-settings.tiles"
+view = "microphone.tile"
+order = 40
+
+[[slot]]
+host = "quick-settings.sliders"
+view = "sound.slider"
+order = 10
+
+[[slot]]
+host = "quick-settings.sliders"
+view = "microphone.slider"
+order = 20
+
+[[slot]]
+host = "quick-settings.pages"
+view = "sound.page"

@@ -26,6 +26,8 @@ Singleton {
     // "none", "headphones", "bluetooth", "display" or "speakers" (volume.js
     // outputKind).
     readonly property string output: Volume.outputKind(available, ready ? sink.properties : null)
+    // The default output's name as people know it, or "" without one.
+    readonly property string outputName: sink ? (sink.nickname || sink.description || sink.name) : ""
 
     // Screens (by name) showing the volume somewhere else right now, like
     // open quick settings: the capsule stays in there, since it would only

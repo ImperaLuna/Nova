@@ -40,6 +40,19 @@ Item {
         }
 
         Component {
+            id: resourcesCardComponent
+            ResourcesCard {
+                width: 328
+            }
+        }
+        Component {
+            id: trayComponent
+            TrayCard {
+                width: 328
+            }
+        }
+
+        Component {
             id: devicesComponent
             DevicesCard {
                 width: 328
@@ -339,7 +352,22 @@ Item {
             compare(QuickSettings.graphPath([50], 100, 50, 3, true), "M100.0 25.0L100 50L100.0 50Z");
         }
 
-        function test_main_page_shows_and_acts() {
+        // Every item under `item` named `name`, in tree order.
+        function findAll(item, name) {
+            const found = [];
+            for (const child of item.children) {
+                if (child.objectName === name)
+                    found.push(child);
+                found.push(...findAll(child, name));
+            }
+            return found;
+        }
+
+        function stub(name) {
+            return Qt.resolvedUrl(`data/slots/${name}.qml`);
+        }
+
+        function test_main_page_lays_out_its_slots() {
             const page = createTemporaryObject(mainComponent, stage, {
                 host: {
                     host: "RyzenShine",
@@ -350,31 +378,45 @@ Item {
                         name: "NixOS"
                     }
                 },
-                outputAvailable: true,
-                outputName: "Arctis Nova 5",
-                outputKind: "headphones",
-                volume: 0.64,
-                micAvailable: true,
-                recorders: ["Discord"],
-                micVolume: 0.8,
-                reading: reading()
+                tiles: [stub("StubTile"), stub("StubAbsent"), stub("StubTile"), stub("StubTile")],
+                sliders: [stub("StubAbsent")],
+                cards: [stub("StubCard"), stub("StubAbsent"), stub("StubCard")],
+                fill: stub("StubFill"),
+                foot: stub("StubCard")
             });
-            waitForRendering(page);
+            tryVerify(() => !page.revealing);
             shot(page, "main");
+            const at = item => item.mapToItem(page, 0, 0);
 
-            spy.signalName = "keepAwakeToggled";
-            spy.target = page;
-            mouseClick(page, 60, 80);
-            compare(spy.count, 1, "the first tile is keep awake");
+            const tiles = findAll(page, "stubTile");
+            compare(tiles.length, 3);
+            compare(at(tiles[1]).y, at(tiles[0]).y, "two tiles to a row");
+            verify(at(tiles[1]).x > at(tiles[0]).x);
+            verify(at(tiles[2]).y > at(tiles[0]).y, "an absent tile leaves no gap");
+            compare(at(tiles[2]).x, at(tiles[0]).x);
+
+            const cards = findAll(page, "stubCard");
+            compare(cards.length, 3);
+            const fill = findChild(page, "stubFill");
+            compare(at(cards[1]).y, at(cards[0]).y + cards[0].height + Tokens.quickSettingsGap, "an absent card leaves no gap");
+            compare(at(fill).y, at(cards[1]).y + cards[1].height + Tokens.quickSettingsGap, "the fill comes after the cards");
+            compare(at(cards[2]).y + cards[2].height, page.height, "the foot is at the bottom");
+            compare(at(fill).y + fill.height, at(cards[2]).y - Tokens.quickSettingsGap, "the fill takes the room left");
 
             spy.signalName = "pageRequested";
-            spy.clear();
+            spy.target = page.qs;
             mouseClick(page, page.width / 2, page.height - 40);
-            compare(spy.count, 1);
-            compare(spy.signalArguments[0][0], "resources");
+            compare(spy.count, 1, "a slot's requests reach the sidebar");
         }
 
-        function test_a_long_tray_scrolls_above_the_resources_card() {
+        function test_slots_without_views_leave_their_hosts_empty() {
+            const page = createTemporaryObject(mainComponent, stage);
+            waitForRendering(page);
+            compare(findAll(page, "stubTile").length, 0);
+            verify(!findChild(page, "stubFill"));
+        }
+
+        function test_a_long_tray_scrolls() {
             const apps = [];
             for (let i = 0; i < 64; i++)
                 apps.push({
@@ -385,13 +427,23 @@ Item {
                     attention: false,
                     hidden: false
                 });
-            const page = createTemporaryObject(mainComponent, stage, {
-                trayApps: apps,
-                reading: reading()
+            const card = createTemporaryObject(trayComponent, stage, {
+                apps: apps
             });
-            const scroll = findChild(page, "trayScroll");
+            const scroll = findChild(card, "trayScroll");
             compare(scroll.height, Tokens.trayGridMaxRows * (Tokens.trayGridCell + Tokens.trayGridGap) - Tokens.trayGridGap);
             verify(scroll.contentHeight > scroll.height, "the rest scrolls");
+        }
+
+        function test_resources_card_opens_its_page() {
+            const card = createTemporaryObject(resourcesCardComponent, stage, {
+                reading: reading()
+            });
+            waitForRendering(card);
+            spy.signalName = "opened";
+            spy.target = card;
+            mouseClick(card, card.width / 2, card.height / 2);
+            compare(spy.count, 1);
         }
 
         // The headset is the real capture's (novad's peripherals event for
@@ -445,35 +497,14 @@ Item {
             compare(Devices.icon("pen"), Devices.icon("tablet"), "kinds without their own icon share one");
         }
 
-        function test_devices_card_lists_connected_devices_above_the_tray() {
-            const page = createTemporaryObject(mainComponent, stage, {
-                devices: peripherals(),
-                trayApps: [
-                    {
-                        key: "discord.desktop",
-                        name: "Discord",
-                        icon: "",
-                        appIcon: "",
-                        attention: false,
-                        hidden: false
-                    }
-                ],
-                reading: reading()
+        function test_devices_card_lists_connected_devices() {
+            const card = createTemporaryObject(devicesComponent, stage, {
+                devices: peripherals()
             });
-            waitForRendering(page);
-            shot(page, "devices");
-            const rows = findChild(page, "deviceRows");
-            verify(rows.visible);
-            compare(amounts(page), ["30%", "High"]);
-            verify(rows.mapToItem(page, 0, 0).y < findChild(page, "trayScroll").mapToItem(page, 0, 0).y);
-        }
-
-        function test_no_connected_device_hides_the_card() {
-            const page = createTemporaryObject(mainComponent, stage, {
-                devices: [],
-                reading: reading()
-            });
-            verify(!findChild(page, "deviceRows").visible);
+            waitForRendering(card);
+            shot(card, "devices");
+            verify(findChild(card, "deviceRows").visible);
+            compare(amounts(card), ["30%", "High"]);
         }
 
         function test_a_new_reading_keeps_the_rows_and_a_device_that_goes_leaves() {
