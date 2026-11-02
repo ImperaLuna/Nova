@@ -75,7 +75,7 @@ impl Opener {
         let default = associations.default_app(&types, &state);
         let others = associations.apps_for(&types, &state).into_iter().filter(|entry| entry.listed);
         let mut apps: Vec<&Entry> = default.into_iter().collect();
-        apps.extend(others.filter(|entry| default.is_none_or(|default| default.id != entry.id)));
+        apps.extend(others.filter(|entry| default.is_none_or(|default| !default.same_app(entry))));
         Ok(OpenWith {
             mime: types[0].clone(),
             default: default.map(|entry| entry.id.clone()),
@@ -229,6 +229,9 @@ mod tests {
             "[Added Associations]\nimage/png=terminal.desktop;\n[Removed Associations]\nimage/png=terminal.desktop;\n",
         );
         assert_eq!(machine.ids("photo.png"), ["viewer.desktop", "gimp.desktop"]);
+        // A default a list with more say removed from the type is skipped.
+        machine.list("niri-mimeapps.list", "[Removed Associations]\nimage/png=viewer.desktop;\n");
+        assert_eq!(machine.default("photo.png").as_deref(), Some("gimp.desktop"));
         drop(machine.apps);
     }
 
