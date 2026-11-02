@@ -17,6 +17,9 @@
 //!   and followed while open, one thread per view.
 //! - `watcher.rs`: the one inotify instance every view follows its folder
 //!   through, and the folders above it, so a renamed parent is seen.
+//! - `trash.rs`: the trash, shared with other apps (freedesktop Trash
+//!   spec): moving to it, restoring, deleting for good, and following it
+//!   so windows hear when it changes.
 //! - `folder.rs`: a folder's entries, their types from the shared MIME
 //!   database (`crate::mime`, read as the module starts and again when a
 //!   package brings new types), and the view's order.
@@ -43,6 +46,7 @@ mod file_manager1;
 mod folder;
 mod target;
 mod transfers;
+mod trash;
 pub mod tree;
 mod views;
 mod watcher;
@@ -62,11 +66,17 @@ use nova_protocol::{
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 
+pub use trash::Trash;
+
 pub const FEATURE_ID: &str = "files";
 const LOG_SOURCE: &str = "files";
 /// More windows than anyone asks for before Nova Files starts; past it,
 /// more are refused rather than kept.
 const MAX_WAITING: usize = 64;
+/// The home trash, in the data folder.
+const TRASH_DIR: &str = "Trash";
+/// This process's mount table.
+const MOUNT_TABLE: &str = "/proc/self/mountinfo";
 
 /// Where Nova Files runs from.
 #[derive(Clone)]
@@ -84,6 +94,10 @@ pub struct Sources {
     /// How the Nova Files process runs; none for a novad without its UI,
     /// where windows only wait.
     pub ui: Option<crate::supervisor::UiSettings>,
+    /// The home trash (`$XDG_DATA_HOME/Trash`); none without a home.
+    pub trash: Option<PathBuf>,
+    /// The mount table, where drives' trashes are looked for.
+    pub mounts: PathBuf,
 }
 
 pub struct Files {
@@ -100,6 +114,9 @@ pub struct Files {
     look: Mutex<FilesLook>,
     /// The copies and moves they run.
     transfers: transfers::Transfers,
+    trash: Arc<Trash>,
+    /// Tells windows when the trash changes; none when it can't be followed.
+    trash_watch: Option<trash::Watch>,
 }
 
 /// What the module's services share.
@@ -135,6 +152,8 @@ impl Files {
         let mime = crate::mime::Mime::follow(sources.data_dirs.clone(), Arc::clone(&logger));
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
         let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
+        let trash = Arc::new(Trash::new(sources.trash.clone(), sources.mounts.clone(), Arc::clone(&mime)));
+        let trash_watch = trash::Watch::start(Arc::clone(&trash), Arc::clone(&hub), Arc::clone(&logger));
         let opener = Opener::new(
             Arc::clone(&mime),
             sources.associations.clone(),
@@ -155,12 +174,27 @@ impl Files {
         });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, opener: Arc::new(opener), mime, stop, folders, look: Mutex::default(), transfers })
+        Arc::new(Self {
+            shared,
+            opener: Arc::new(opener),
+            mime,
+            stop,
+            folders,
+            look: Mutex::default(),
+            transfers,
+            trash,
+            trash_watch,
+        })
     }
 
     /// What opens files in apps.
     pub fn opener(&self) -> Arc<Opener> {
         Arc::clone(&self.opener)
+    }
+
+    /// The trash.
+    pub fn trash(&self) -> Arc<Trash> {
+        Arc::clone(&self.trash)
     }
 
     /// Shows the folder `path` in client `client`'s view `view`
@@ -278,6 +312,9 @@ impl Files {
         self.mime.stop();
         self.folders.stop();
         self.transfers.stop();
+        if let Some(watch) = &self.trash_watch {
+            watch.stop();
+        }
         if let Some(process) = &self.shared.process {
             process.stop();
         }
@@ -339,7 +376,17 @@ impl crate::modules::Module for Files {
         let associations = Places::system(&data_dirs);
         let runner = Runner::detect(env.path_var);
         let home = nova_paths::home().unwrap_or_else(|| PathBuf::from("/"));
-        Sources { bus: Bus::Session, data_dirs, associations, runner, home, ui: env.ui.cloned() }
+        let trash = nova_paths::data_home().map(|data| data.join(TRASH_DIR));
+        Sources {
+            bus: Bus::Session,
+            data_dirs,
+            associations,
+            runner,
+            home,
+            ui: env.ui.cloned(),
+            trash,
+            mounts: MOUNT_TABLE.into(),
+        }
     }
 
     fn config(config: &crate::config::Config) -> FilesLook {
@@ -409,6 +456,8 @@ mod tests {
                 runner: crate::apps::launch::Runner::Direct,
                 home: dir.to_path_buf(),
                 ui: None,
+                trash: Some(dir.join("Trash")),
+                mounts: dir.join("no-mountinfo"),
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");

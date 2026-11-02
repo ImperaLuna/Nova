@@ -72,43 +72,6 @@ Item {
         }
     }
 
-    // A round answer button: quiet, raised, or the accent for the default.
-    component Answer: Rectangle {
-        id: answer
-
-        required property string text
-        property bool quiet: false
-        property bool accent: false
-        signal clicked
-
-        width: label.implicitWidth + 2 * Tokens.pad
-        height: Tokens.filesClashButtonHeight
-        radius: height / 2
-        color: accent ? Tokens.primary : hover.hovered ? Tokens.selected : quiet ? "transparent" : Tokens.surfaceRaised
-
-        Behavior on color {
-            ColorAnimation {
-                duration: Tokens.durationFast
-            }
-        }
-
-        Text {
-            id: label
-            anchors.centerIn: parent
-            text: answer.text
-            font.family: Tokens.fontSans
-            font.pixelSize: Tokens.fontSize
-            font.weight: answer.accent ? Tokens.weightTitle : Tokens.weightBody
-            color: answer.accent ? Tokens.onAccent : answer.quiet ? Tokens.fgDim : Tokens.fg
-        }
-        HoverHandler {
-            id: hover
-        }
-        TapHandler {
-            onTapped: answer.clicked()
-        }
-    }
-
     GlassShadow {
         glass: surface
     }
@@ -188,7 +151,7 @@ Item {
             width: parent.width
             height: Tokens.filesClashButtonHeight
 
-            Answer {
+            DialogButton {
                 anchors.left: parent.left
                 text: qsTr("Cancel")
                 quiet: true
@@ -198,11 +161,11 @@ Item {
                 anchors.right: parent.right
                 spacing: Tokens.gap
 
-                Answer {
+                DialogButton {
                     text: qsTr("Skip")
                     onClicked: dialog.answered(Protocol.CLASH_SKIP, dialog.all)
                 }
-                Answer {
+                DialogButton {
                     text: Transfers.defaultLabel(dialog.clash)
                     accent: true
                     onClicked: dialog.answered(Transfers.defaultAnswer(dialog.clash), dialog.all)

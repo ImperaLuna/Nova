@@ -709,6 +709,14 @@ QtObject {
     // The small chevron beside New, Sort and View.
     readonly property int iconSizeMini: 12
     readonly property real filesChevronOpacity: 0.6
+    // The trash: its columns after the name (Original location, Date
+    // deleted, Size), the dialog asking before deleting for good (Yes and
+    // No at least this wide, the one item it names with a big icon), and
+    // the notice at the bottom right when an item can't go back.
+    readonly property list<int> filesTrashColumns: [190, 120, 70]
+    readonly property int filesConfirmWidth: 400
+    readonly property int filesDialogButtonMinWidth: 72
+    readonly property int filesNoticeWidth: 330
     // The address bar: each folder's part, washed on hover, and the ring
     // while a path is typed (in the error color for one that isn't a folder).
     readonly property int filesCrumbPadY: 4

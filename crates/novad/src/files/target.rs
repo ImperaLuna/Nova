@@ -72,7 +72,7 @@ fn path(uri: &str) -> Result<PathBuf, String> {
 
 /// The path wire text `path` names, once it's absolute and has no `.` or
 /// `..` in it.
-fn clean(path: &str) -> Result<PathBuf, String> {
+pub(super) fn clean(path: &str) -> Result<PathBuf, String> {
     let path = wire_path(path);
     if !path.is_absolute() {
         return Err(format!("{} isn't an absolute path", path.display()));

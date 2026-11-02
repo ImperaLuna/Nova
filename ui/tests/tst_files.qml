@@ -6,6 +6,7 @@ import "../files"
 import "../files/listing.js" as Listing
 import "../files/paths.js" as Paths
 import "../files/navigation.js" as Navigation
+import "../files/trash.js" as Trash
 import "../daemon/protocol.js" as Protocol
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
@@ -15,7 +16,8 @@ import "../files/transfers.js" as Transfers
 // how an entry reads in the columns, sorting by a header, what clicks and
 // keys select, and what opening the selection does, and the copy and move
 // jobs a window keeps and how their card and name clash dialog read and
-// answer. The root is an Item: a TestCase root gets no mouse events.
+// answer, and the trash: its rows, its selection, and the dialog that asks
+// before deleting for good. The root is an Item: a TestCase root gets no mouse events.
 Item {
     id: stage
     width: 880
@@ -488,6 +490,196 @@ Item {
             verify(findText(card, "No space left for /run/media/ana/SANDISK/cover.png"));
             verify(!findText(card, "0%"));
             mouseClick(card, card.width - 20, card.height / 2);
+            compare(dismissals.count, 1);
+        }
+
+        // A trashed item as novad lists it.
+        function trashed(id, name, folder, extra) {
+            return {
+                id: id,
+                folder: folder,
+                deleted_ms: Date.UTC(2026, 9, 30, 9, 0),
+                entry: Object.assign({
+                    name: name,
+                    dir: false,
+                    link: false,
+                    hidden: false,
+                    mime: "text/plain",
+                    size: 4096,
+                    modified_ms: Date.UTC(2026, 9, 31, 9, 12)
+                }, extra ?? {})
+            };
+        }
+
+        function test_the_trash_is_a_place_with_one_part() {
+            verify(Trash.isTrash(Protocol.FILES_TRASH_PLACE));
+            verify(!Trash.isTrash("/home/ana"));
+            compare(names(Trash.crumbs()), ["Trash"]);
+        }
+
+        function test_a_trashed_row_says_where_it_came_from() {
+            const row = Trash.row(trashed("i1", "notes.txt", "/home/ana/Documents"));
+            compare([row.trashId, row.name, row.folder, row.size], ["i1", "notes.txt", "/home/ana/Documents", 4096]);
+            compare(row.deleted, Date.UTC(2026, 9, 30, 9, 0));
+            compare(Trash.row(Object.assign(trashed("i2", "x", "/"), {
+                deleted_ms: undefined
+            })).deleted, -1, "no date in the trash");
+            compare(Trash.location("/home/ana/Documents", "/home/ana"), "~/Documents");
+            compare(Trash.location("/home/ana", "/home/ana"), "~");
+            compare(Trash.location("/home/anabel", "/home/ana"), "/home/anabel");
+            compare(Trash.location("/run/media/ana/SANDISK", ""), "/run/media/ana/SANDISK");
+        }
+
+        function test_restore_and_the_footer_follow_the_picked_items() {
+            compare(Trash.restoreLabel(0), "Restore all");
+            compare(Trash.restoreLabel(2), "Restore");
+            compare(Trash.footer(0, 7), "7 items");
+            compare(Trash.footer(2, 7), "2 of 7 selected");
+            compare(Trash.paths("/home/ana", [
+                {
+                    name: "a"
+                },
+                {
+                    name: "b c"
+                }
+            ]), ["/home/ana/a", "/home/ana/b c"]);
+            compare(Trash.paths("/", [
+                {
+                    name: "tmp"
+                }
+            ]), ["/tmp"]);
+        }
+
+        function test_deleting_for_good_asks_in_windows_words() {
+            const file = Trash.row(trashed("i1", "invoice.pdf", "/home/ana", {
+                mime: "application/pdf",
+                size: 245760
+            }));
+            const one = Trash.confirm([file]);
+            compare([one.title, one.question], ["Delete file", "Are you sure you want to permanently delete this file?"]);
+            compare(one.item, file);
+            const details = Trash.details(file);
+            compare(details.slice(0, 2), ["Type: PDF", "Size: 240 KB"]);
+            verify(details[2].startsWith("Date modified: Oct 31, 2026"), details[2]);
+            const folder = Trash.row(trashed("i2", "old-builds", "/home/ana", {
+                dir: true,
+                mime: "inode/directory",
+                size: undefined
+            }));
+            compare(Trash.confirm([folder]).title, "Delete folder");
+            compare(Trash.details(folder)[0], "Type: Folder");
+            verify(!Trash.details(folder).some(line => line.startsWith("Size")), "no size for a folder");
+            const many = Trash.confirm([file, folder, file]);
+            compare([many.title, many.question, many.item], ["Delete multiple items", "Are you sure you want to permanently delete these 3 items?", null]);
+        }
+
+        Component {
+            id: trashModelComponent
+            TrashModel {}
+        }
+
+        function test_a_copied_row_stays_as_it_was() {
+            const rows = createTemporaryQmlObject("import QtQuick; ListModel {}", stage);
+            rows.append(Listing.row({
+                name: "a.txt",
+                dir: false,
+                link: false,
+                hidden: false,
+                mime: "text/plain",
+                size: 3,
+                modified_ms: 5
+            }));
+            const copied = Listing.copy(rows.get(0));
+            rows.clear();
+            compare([copied.name, copied.mime, copied.size, copied.modified], ["a.txt", "text/plain", 3, 5]);
+        }
+
+        function test_the_selection_stays_on_items_still_in_the_trash() {
+            const model = createTemporaryObject(trashModelComponent, stage);
+            model._fill([trashed("a", "a", "/x"), trashed("b", "b", "/x"), trashed("c", "c", "/x")]);
+            model.select({
+                clear: true,
+                from: 1,
+                to: 2,
+                toggle: false,
+                anchor: 1
+            });
+            compare(model.selectedRows().map(row => row.trashId), ["b", "c"]);
+            model._fill([trashed("c", "c", "/x"), trashed("a", "a", "/x")]);
+            compare(model.selectedCount, 1, "b left the trash");
+            compare(model.selectedRows().map(row => row.trashId), ["c"]);
+            compare(model.allRows().length, 2);
+            compare(model.anchor, -1, "the anchor's item, b, is gone");
+            model.select({
+                clear: true,
+                from: 1,
+                to: 1,
+                toggle: false,
+                anchor: 1
+            });
+            const kept = model.selectedRows();
+            model._fill([trashed("b", "b", "/x"), trashed("c", "c", "/x"), trashed("a", "a", "/x")]);
+            compare(model.anchor, 2, "the anchor follows a as it moves");
+            compare(kept[0].trashId, "a", "rows handed out stay as they were");
+            model.clearSelection();
+            compare(model.selectedCount, 0);
+        }
+
+        Component {
+            id: confirmComponent
+            ConfirmDialog {}
+        }
+
+        SignalSpy {
+            id: accepts
+            signalName: "accepted"
+        }
+
+        SignalSpy {
+            id: declines
+            signalName: "declined"
+        }
+
+        function test_the_confirm_dialog_says_yes_or_no() {
+            const file = Trash.row(trashed("i1", "invoice.pdf", "/home/ana"));
+            const dialog = createTemporaryObject(confirmComponent, stage, {
+                asking: Trash.confirm([file])
+            });
+            accepts.target = dialog;
+            declines.target = dialog;
+            accepts.clear();
+            declines.clear();
+            verify(findText(dialog, "Delete file"));
+            verify(findText(dialog, "invoice.pdf"));
+            verify(findText(dialog, "Type: Text"));
+            mouseClick(findText(dialog, "Yes"));
+            mouseClick(findText(dialog, "No"));
+            dialog.forceActiveFocus();
+            keyClick(Qt.Key_Return);
+            keyClick(Qt.Key_Escape);
+            compare([accepts.count, declines.count], [2, 2]);
+            dialog.asking = Trash.confirm([file, file]);
+            verify(!findText(dialog, "invoice.pdf"), "several items name none");
+        }
+
+        Component {
+            id: noticeComponent
+            TrashNotice {}
+        }
+
+        function test_a_notice_names_the_item_and_dismisses() {
+            const notice = createTemporaryObject(noticeComponent, stage, {
+                problem: {
+                    row: Trash.row(trashed("i1", "notes.txt", "/home/ana/Documents")),
+                    error: "A file with this name already exists in Documents."
+                }
+            });
+            dismissals.target = notice;
+            dismissals.clear();
+            verify(findText(notice, "notes.txt"));
+            verify(findText(notice, "A file with this name already exists in Documents."));
+            waitForRendering(notice);
+            mouseClick(notice, notice.width - 20, notice.height / 2);
             compare(dismissals.count, 1);
         }
 

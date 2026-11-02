@@ -322,6 +322,24 @@ impl<'a> Connection<'a> {
                 });
             }
             Command::FilesPlaces => return self.files_later(|files| Ok(files.places())),
+            Command::FilesTrash { paths } => {
+                let paths = paths.clone();
+                return self.files_later(move |files| files.trash().trash(&paths));
+            }
+            Command::FilesDelete { paths } => {
+                let paths = paths.clone();
+                return self.files_later(move |_| crate::files::Trash::delete(&paths));
+            }
+            Command::FilesTrashList => return self.files_later(|files| Ok(files.trash().list())),
+            Command::FilesRestore { ids } => {
+                let ids = ids.clone();
+                return self.files_later(move |files| files.trash().restore(&ids));
+            }
+            Command::FilesTrashDelete { ids } => {
+                let ids = ids.clone();
+                return self.files_later(move |files| files.trash().erase(&ids));
+            }
+            Command::FilesEmptyTrash => return self.files_later(|files| files.trash().empty()),
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -662,7 +680,8 @@ impl<'a> Connection<'a> {
         }
     }
 
-    /// Runs `work` with Nova Files on its own thread: it reads folders.
+    /// Runs `work` with Nova Files on its own thread: it reads folders and
+    /// moves or deletes files.
     fn files_later<T: serde::Serialize>(
         &self,
         work: impl FnOnce(&crate::files::Files) -> Result<T, String> + Send + 'static,
@@ -908,6 +927,12 @@ impl<'a> Connection<'a> {
             | Command::FilesLaunch { .. }
             | Command::FilesOpenWith { .. }
             | Command::FilesSetDefault { .. }
+            | Command::FilesTrash { .. }
+            | Command::FilesDelete { .. }
+            | Command::FilesTrashList
+            | Command::FilesRestore { .. }
+            | Command::FilesTrashDelete { .. }
+            | Command::FilesEmptyTrash
             | Command::FilesTree { .. }
             | Command::FilesPlaces => {}
         }

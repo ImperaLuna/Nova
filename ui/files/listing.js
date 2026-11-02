@@ -23,6 +23,20 @@ function row(entry) {
     };
 }
 
+// A row of the list's model as a plain object, which stays as it is when
+// the model changes under it: what a dialog or a late answer holds on to.
+function copy(row) {
+    return {
+        name: row.name,
+        dir: row.dir,
+        link: row.link,
+        hidden: row.hidden,
+        mime: row.mime,
+        size: row.size,
+        modified: row.modified
+    };
+}
+
 // The line icon for a row: a folder, a picture, a video, music, a document
 // with text, or a plain file.
 function icon(row) {
