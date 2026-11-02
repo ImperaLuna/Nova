@@ -302,6 +302,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
                 &[],
             ),
             runner: launcher::Runner::Direct,
+            home: dir.join("home"),
             ui: None,
         },
         session_lock: dir.to_owned(),
@@ -338,6 +339,7 @@ mod apps;
 mod basics;
 mod desktop;
 mod fake_compositor;
+mod folder_tree;
 mod live_config;
 mod opening;
 mod services;

@@ -27,6 +27,9 @@ var FILES_MAX_VIEWS = 16;
 // novad refuses longer files_open paths.
 var FILES_PATH_MAX_BYTES = 4096;
 
+// novad refuses a files_tree with more opened or closed folders.
+var FILES_TREE_MAX_FOLDERS = 256;
+
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 
@@ -102,6 +105,8 @@ var CMD_FILES_OPEN_WITH = "files_open_with";
 var CMD_FILES_SET_DEFAULT = "files_set_default";
 var CMD_FILES_OPEN = "files_open";
 var CMD_FILES_CLOSE = "files_close";
+var CMD_FILES_TREE = "files_tree";
+var CMD_FILES_PLACES = "files_places";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -255,6 +260,13 @@ var FILE_SORT_MODIFIED = "modified";
 var FOLDER_INSERT = "insert";
 var FOLDER_REMOVE = "remove";
 var FOLDER_UPDATE = "update";
+
+// The places on top of Nova Files' sidebar (PlaceKind).
+var PLACE_HOME = "home";
+var PLACE_DESKTOP = "desktop";
+var PLACE_DOCUMENTS = "documents";
+var PLACE_DOWNLOADS = "downloads";
+var PLACE_PICTURES = "pictures";
 
 // END GENERATED
 
