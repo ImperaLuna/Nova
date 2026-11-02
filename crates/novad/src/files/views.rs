@@ -2,28 +2,28 @@
 //! kept up to date while they're open.
 //!
 //! Opening a view only records it, so neither a big folder nor a stalled
-//! mount holds up the connection. Each view has its own thread. It watches
-//! the folder with inotify first and reads it after, so nothing written in
-//! between is missed, then sends
-//! the entries in pages of [`PAGE_ENTRIES`]. From then on it gathers the
-//! names inotify reports until the folder has been quiet for [`QUIET`]
-//! (or [`MOST_DELAY`] has passed, so a long copy still shows), reads those
-//! entries again and sends what changed as index operations
-//! ([`super::folder::Listing::apply`]). A full inotify queue means lost
-//! events, so the folder is read and sent again from the start. The
-//! folder's own entry is watched in its parent too: when it's replaced (a
-//! symlink pointed elsewhere, another folder renamed over it) the view
-//! follows the path to what it names now. When the folder can't be read
-//! or goes, the view closes with `files_closed`.
-//! Reading stops as soon as the view closes.
+//! mount holds up the connection. Each view has its own thread, and all
+//! share one inotify instance ([`super::watcher`]). A view watches its
+//! folder first and reads it after, so nothing written in between is
+//! missed, then sends the entries in pages of [`PAGE_ENTRIES`]. From then
+//! on it gathers the names that changed until the folder has been quiet
+//! for [`QUIET`] (or [`MOST_DELAY`] has passed, so a long copy still
+//! shows), reads those entries again and sends what changed as index
+//! operations ([`super::folder::Listing::apply`]). Lost events mean the
+//! folder is read and sent again from the start. When the folder, or any
+//! folder above it, is moved, deleted or replaced (a symlink pointed
+//! elsewhere, another folder renamed over it), the view follows the path
+//! to what it names now. When the folder can't be read or goes, the view
+//! closes with `files_closed`. Reading stops as soon as the view closes.
 //!
 //! Every event of a view is sent while holding its state, after checking
 //! the view is still open, so nothing arrives after `files_close` or after
-//! another `files_open` replaced it.
+//! another `files_open` replaced it. Pages are encoded before the state is
+//! taken, so a big folder doesn't hold up closing it.
 
 use crate::files::folder::{self, Listing};
+use crate::files::watcher::{Following, Notice, Wait, Watcher};
 use crate::hub::{ClientId, Hub};
-use crate::inotify::{self, Inotify, Stopper};
 use crate::lock;
 use crate::logger::Logger;
 use crate::mime::Mime;
@@ -41,15 +41,6 @@ pub const PAGE_ENTRIES: usize = 500;
 const QUIET: Duration = Duration::from_millis(50);
 /// The longest changes wait while a folder keeps changing.
 const MOST_DELAY: Duration = Duration::from_millis(250);
-/// What the watch reports: entries coming, going, written or touched, and
-/// the folder itself going.
-const WATCHED: u32 = inotify::ENTRIES
-    | libc::IN_MODIFY
-    | libc::IN_CLOSE_WRITE
-    | libc::IN_ATTRIB
-    | inotify::ITSELF
-    | libc::IN_ONLYDIR
-    | libc::IN_EXCL_UNLINK;
 
 /// A view, named by its client and the client's number for it.
 type Key = (ClientId, u32);
@@ -64,6 +55,8 @@ pub struct Folders {
     logger: Arc<Logger>,
     mime: Arc<Mime>,
     views: Views,
+    /// Started with the first view, stopped with the module.
+    watcher: Mutex<Option<Arc<Watcher>>>,
 }
 
 struct View {
@@ -74,7 +67,9 @@ struct View {
     sort: FileSort,
     hidden: bool,
     state: Mutex<State>,
-    stopper: Stopper,
+    watcher: Arc<Watcher>,
+    /// Its route in `watcher`.
+    route: u64,
 }
 
 struct State {
@@ -84,7 +79,7 @@ struct State {
 
 impl Folders {
     pub fn new(hub: Arc<Hub>, logger: Arc<Logger>, mime: Arc<Mime>) -> Self {
-        Self { hub, logger, mime, views: Arc::new(Mutex::new(Some(HashMap::new()))) }
+        Self { hub, logger, mime, views: Arc::new(Mutex::new(Some(HashMap::new()))), watcher: Mutex::default() }
     }
 
     /// Opens `path` in `client`'s view `view`, replacing what it showed.
@@ -93,15 +88,17 @@ impl Folders {
     pub fn open(&self, client: ClientId, view: u32, path: &str, sort: FileSort, hidden: bool) -> Result<(), String> {
         let folder = checked_path(path)?;
         let key = (client, view);
-        let watcher = Inotify::new(WATCHED).map_err(|e| format!("Can't watch folders: {e}"))?;
         let mut views = lock(&self.views);
         let Some(open) = views.as_mut() else { return Err("Nova Files is off".into()) };
+        // Not after stop, which took `views` first.
+        let watcher = self.watcher()?;
         if !open.contains_key(&key) && open.keys().filter(|(owner, _)| *owner == client).count() >= FILES_MAX_VIEWS {
             return Err(format!("At most {FILES_MAX_VIEWS} folders can be open at once"));
         }
         if let Some(old) = open.remove(&key) {
             old.close();
         }
+        let following = watcher.follow(&folder);
         let opened = Arc::new(View {
             key,
             path: folder,
@@ -109,13 +106,14 @@ impl Folders {
             sort,
             hidden,
             state: Mutex::new(State { open: true, listing: None }),
-            stopper: watcher.stopper(),
+            route: following.id(),
+            watcher,
         });
         open.insert(key, Arc::clone(&opened));
         drop(views);
         let worker = Worker {
             view: opened,
-            watcher,
+            following,
             hub: Arc::clone(&self.hub),
             logger: Arc::clone(&self.logger),
             mime: Arc::clone(&self.mime),
@@ -153,13 +151,26 @@ impl Folders {
         for (_, view) in lock(&self.views).take().into_iter().flatten() {
             view.close();
         }
+        if let Some(watcher) = lock(&self.watcher).take() {
+            watcher.stop();
+        }
+    }
+
+    /// The shared watcher, started now if no view needed it yet.
+    fn watcher(&self) -> Result<Arc<Watcher>, String> {
+        let mut watcher = lock(&self.watcher);
+        if let Some(running) = watcher.as_ref() {
+            return Ok(Arc::clone(running));
+        }
+        let started = Watcher::start().map_err(|e| format!("Can't watch folders: {e}"))?;
+        Ok(Arc::clone(watcher.insert(started)))
     }
 }
 
 impl View {
     fn close(&self) {
         lock(&self.state).open = false;
-        self.stopper.stop();
+        self.watcher.unfollow(self.route);
     }
 
     fn is_open(&self) -> bool {
@@ -170,7 +181,7 @@ impl View {
 /// The thread that reads and follows one view's folder.
 struct Worker {
     view: Arc<View>,
-    watcher: Inotify,
+    following: Following,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     mime: Arc<Mime>,
@@ -179,12 +190,7 @@ struct Worker {
 
 impl Worker {
     fn run(mut self) {
-        // Best effort: a parent that can't be listed still lets the folder
-        // be followed, only not replaced.
-        if let Some(parent) = self.view.path.parent() {
-            let _ = self.watcher.watch_for(parent, inotify::ENTRIES);
-        }
-        if let Err(e) = self.watcher.watch(&self.view.path) {
+        if let Err(e) = self.following.watch() {
             return self.closed(unreadable(&self.view.named, &e));
         }
         if !self.send_all() {
@@ -215,8 +221,7 @@ impl Worker {
     /// Watches what the path names now and sends it from the start, or
     /// closes the view when nothing is there. False once the view is closed.
     fn reattach(&mut self) -> bool {
-        self.watcher.unwatch(&self.view.path);
-        match self.watcher.watch(&self.view.path) {
+        match self.following.watch() {
             Ok(()) => self.send_all(),
             Err(e) => {
                 let error = match e.kind() {
@@ -244,19 +249,26 @@ impl Worker {
             }
         };
         let listing = Listing::new(self.view.sort, self.view.hidden, entries);
-        let mut state = lock(&self.view.state);
-        if !state.open {
-            return false;
-        }
         let (client, view) = self.view.key;
         let all = listing.entries();
         let total = u32::try_from(all.len()).unwrap_or(u32::MAX);
         // An empty folder still gets its one page.
         let pages = all.chunks(PAGE_ENTRIES).map(<[_]>::to_vec).chain(all.is_empty().then(Vec::new));
+        let mut lines = Vec::new();
         for (number, entries) in pages.enumerate() {
+            if !self.view.is_open() {
+                return false;
+            }
             let start = u32::try_from(number * PAGE_ENTRIES).unwrap_or(u32::MAX);
             let page = FolderPage { view, path: self.view.named.clone(), start, total, entries };
-            self.hub.send_to(client, &Event::FilesPage(page));
+            lines.extend(Hub::encode(&Event::FilesPage(page)));
+        }
+        let mut state = lock(&self.view.state);
+        if !state.open {
+            return false;
+        }
+        for line in lines {
+            self.hub.send_line_to(client, line);
         }
         state.listing = Some(listing);
         true
@@ -264,38 +276,29 @@ impl Worker {
 
     /// Waits for changes and gathers them until the folder is quiet.
     /// `None` once the view is closed.
-    fn gather(&mut self) -> std::io::Result<Option<Gathered>> {
-        let Some(first) = self.watcher.read()? else { return Ok(None) };
+    fn gather(&self) -> Result<Option<Gathered>, String> {
         let mut names = BTreeSet::new();
-        let mut changes = first;
-        let most = Instant::now() + MOST_DELAY;
+        // Set by the first change.
+        let mut most = None;
         loop {
-            // The folder went, or its entry in the parent changed.
-            if !changes.gone.is_empty() || changes.found.iter().any(|change| change.path == self.view.path) {
+            let deadline = most.map(|most: Instant| (Instant::now() + QUIET).min(most));
+            let seen = match self.following.wait(deadline) {
+                Wait::Notice(Notice::Seen(seen)) => seen,
+                Wait::Notice(Notice::Failed(e)) => return Err(e),
+                Wait::Quiet => return Ok(Some(Gathered::Names(names))),
+                Wait::Stopped => return Ok(None),
+            };
+            if seen.moved {
                 return Ok(Some(Gathered::Moved));
             }
-            if changes.overflowed {
+            if seen.lost {
                 return Ok(Some(Gathered::Lost));
             }
-            // The parent's other entries don't matter.
-            for change in changes.found {
-                if change.path.parent() == Some(&self.view.path)
-                    && let Some(name) = change.path.file_name()
-                {
-                    names.insert(name.to_owned());
-                }
-            }
+            names.extend(seen.names);
             // A folder that never goes quiet still shows its changes.
-            if Instant::now() >= most {
+            if Instant::now() >= *most.get_or_insert_with(|| Instant::now() + MOST_DELAY) {
                 return Ok(Some(Gathered::Names(names)));
             }
-            let deadline = (Instant::now() + QUIET).min(most);
-            let Some(next) = self.watcher.read_until(Some(deadline))? else { return Ok(None) };
-            // Empty at the deadline, or only events about the folder itself.
-            if next.is_empty() && Instant::now() >= deadline {
-                return Ok(Some(Gathered::Names(names)));
-            }
-            changes = next;
         }
     }
 
@@ -605,6 +608,120 @@ mod tests {
         fixture.nothing_more();
     }
 
+    /// Renamed from a terminal: the path no longer names a folder.
+    #[test]
+    fn a_renamed_parent_closes_the_view() {
+        let mut fixture = Fixture::new("files-parent-moved");
+        let dir = TempDir::new("files-parent-moved-folder");
+        let folder = dir.join("parent/child");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("a.md"), b"").unwrap();
+        fixture.open(&folder).unwrap();
+        fixture.until_shown(&["a.md"]);
+        std::fs::rename(dir.join("parent"), dir.join("renamed")).unwrap();
+        let closed = loop {
+            let event = fixture.next();
+            if event["event"] == "files_closed" {
+                break event;
+            }
+        };
+        assert!(closed["data"]["error"].as_str().unwrap().contains("deleted or moved"), "{closed}");
+        // Nothing comes from the folder at its new place.
+        std::fs::write(dir.join("renamed/child/b.md"), b"").unwrap();
+        fixture.nothing_more();
+    }
+
+    /// A link above the folder pointed elsewhere: the path now names
+    /// another folder, which the view shows and follows.
+    #[test]
+    fn a_replaced_parent_is_followed() {
+        let mut fixture = Fixture::new("files-parent-relink");
+        let dir = TempDir::new("files-parent-relink-folder");
+        for (side, file) in [("old", "a.md"), ("new", "b.md")] {
+            std::fs::create_dir_all(dir.join(side).join("child")).unwrap();
+            std::fs::write(dir.join(side).join("child").join(file), b"").unwrap();
+        }
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(dir.join("old"), &link).unwrap();
+        fixture.open(&link.join("child")).unwrap();
+        fixture.until_shown(&["a.md"]);
+        std::os::unix::fs::symlink(dir.join("new"), dir.join("link.new")).unwrap();
+        std::fs::rename(dir.join("link.new"), &link).unwrap();
+        fixture.until_shown(&["b.md"]);
+        std::fs::write(dir.join("new/child/c.md"), b"").unwrap();
+        fixture.until_shown(&["b.md", "c.md"]);
+        std::fs::write(dir.join("old/child/x.md"), b"").unwrap();
+        fixture.nothing_more();
+    }
+
+    /// The ticket's bar: many windows and tabs take one inotify instance,
+    /// and each still sees its folder change.
+    #[test]
+    fn fifty_views_share_one_inotify_instance() {
+        use std::os::unix::fs::MetadataExt;
+        let fixture = Fixture::new("files-fifty");
+        let dir = TempDir::new("files-fifty-folder");
+        let views: usize = 50;
+        let clients: Vec<_> = (0..views.div_ceil(FILES_MAX_VIEWS))
+            .map(|_| {
+                let (socket, ours) = UnixStream::pair().unwrap();
+                let (queue, events) = ClientQueue::new(&ours).unwrap();
+                (fixture.folders.hub.register(queue), events, socket)
+            })
+            .collect();
+        let folders: Vec<_> = (0..views).map(|number| dir.join(number.to_string())).collect();
+        for (number, folder) in folders.iter().enumerate() {
+            std::fs::create_dir(folder).unwrap();
+            let (client, ..) = &clients[number / FILES_MAX_VIEWS];
+            let view = u32::try_from(number).unwrap();
+            fixture.folders.open(*client, view, folder.to_str().unwrap(), BY_NAME, false).unwrap();
+        }
+        for (_, events, _) in &clients {
+            while let Ok(Outgoing::Line(_)) = events.recv_timeout(MOST_DELAY * 2) {}
+        }
+        for folder in &folders {
+            std::fs::write(folder.join("new.md"), b"").unwrap();
+        }
+        let mut changed = BTreeSet::new();
+        for (number, (_, events, _)) in clients.iter().enumerate() {
+            let own = FILES_MAX_VIEWS.min(views - number * FILES_MAX_VIEWS);
+            let before = changed.len();
+            while changed.len() - before < own {
+                let Ok(Outgoing::Line(line)) = events.recv_timeout(WAIT) else { break };
+                let event: serde_json::Value = serde_json::from_str(&line).unwrap();
+                if event["event"] == "files_changed" {
+                    changed.insert(event["data"]["view"].as_u64().unwrap());
+                }
+            }
+        }
+        assert_eq!(changed.len(), views, "every view saw its new file");
+        let inodes: Vec<String> =
+            folders.iter().map(|folder| format!("ino:{:x} ", std::fs::metadata(folder).unwrap().ino())).collect();
+        let watching = std::fs::read_dir("/proc/self/fdinfo")
+            .unwrap()
+            .filter_map(|fd| std::fs::read_to_string(fd.unwrap().path()).ok())
+            .filter(|info| info.lines().any(|line| inodes.iter().any(|inode| line.contains(inode.as_str()))))
+            .count();
+        assert_eq!(watching, 1, "inotify instances watching the views' folders");
+    }
+
+    /// Two windows on one folder: closing one leaves the other following it.
+    #[test]
+    fn views_of_one_folder_share_its_watch() {
+        let mut fixture = Fixture::new("files-shared");
+        let dir = TempDir::new("files-shared-folder");
+        fixture.open(&dir).unwrap();
+        fixture.next();
+        let path = dir.to_str().unwrap();
+        fixture.folders.open(fixture.client, 2, path, BY_NAME, false).unwrap();
+        fixture.next();
+        fixture.folders.close(fixture.client, 2);
+        // Its thread lets go of the watch.
+        std::thread::sleep(MOST_DELAY);
+        std::fs::write(dir.join("a.md"), b"").unwrap();
+        fixture.until_shown(&["a.md"]);
+    }
+
     #[test]
     fn nothing_comes_after_a_view_closes() {
         let mut fixture = Fixture::new("files-closed");
@@ -678,7 +795,8 @@ mod tests {
             sort: BY_NAME,
             hidden: false,
             state: Mutex::new(State { open: false, listing: None }),
-            stopper: Inotify::new(WATCHED).unwrap().stopper(),
+            watcher: fixture.folders.watcher().unwrap(),
+            route: 0,
         });
         let read = folder::read_folder(&view.path, true, &fixture.folders.mime.current(), || !view.is_open());
         assert!(read.unwrap().is_none());

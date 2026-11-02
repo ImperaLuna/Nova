@@ -91,7 +91,7 @@ impl WatchPoints {
 
     /// Watches them all with `watcher`, telling `logger` what can't be
     /// watched, as `source`, for `what` ("new apps").
-    pub fn watch(&self, watcher: &mut Inotify, logger: &Logger, source: &str, what: &str) {
+    pub fn watch(&self, watcher: &Inotify, logger: &Logger, source: &str, what: &str) {
         // The parents first: a folder that's both gets the trees' wider mask.
         for parent in &self.parents {
             if let Err(e) = watcher.watch_for(parent, inotify::ENTRIES) {
@@ -164,18 +164,18 @@ pub struct Reporting {
 /// `changed` for each change that counts, looking again at what to watch
 /// after each, until `watcher` is stopped or `changed`'s receiver is gone.
 pub fn follow(
-    mut watcher: Inotify,
+    watcher: Inotify,
     points: impl Fn() -> WatchPoints + Send + 'static,
     changed: mpsc::Sender<()>,
     reporting: Reporting,
 ) {
     let Reporting { logger, source, what } = reporting;
-    let watch_all = move |watcher: &mut Inotify, logger: &Logger| {
+    let watch_all = move |watcher: &Inotify, logger: &Logger| {
         let found = points();
         found.watch(watcher, logger, source, what);
         found
     };
-    let mut watched = watch_all(&mut watcher, &logger);
+    let mut watched = watch_all(&watcher, &logger);
     std::thread::spawn(move || {
         loop {
             let found = match watcher.read() {
@@ -194,7 +194,7 @@ pub fn follow(
             // folders don't pile up. Whatever changes meanwhile is read by
             // the look this change starts.
             watcher.unwatch_all();
-            watched = watch_all(&mut watcher, &logger);
+            watched = watch_all(&watcher, &logger);
             if changed.send(()).is_err() {
                 return;
             }

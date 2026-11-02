@@ -41,7 +41,7 @@ fn follow(
     failed: impl FnOnce(std::io::Error) + Send + 'static,
 ) -> std::io::Result<inotify::Stopper> {
     let tree = prefix.is_none();
-    let mut watcher = Inotify::new(inotify::ENTRIES)?;
+    let watcher = Inotify::new(inotify::ENTRIES)?;
     if tree {
         watcher.watch_tree(dir)?;
     } else {
