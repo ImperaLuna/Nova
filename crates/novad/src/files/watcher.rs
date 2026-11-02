@@ -8,7 +8,9 @@
 //! itself or any folder above it deleted, moved or renamed over, seen from
 //! a watch on each of them. Watches are counted by path, so views on the
 //! same folder, or on folders inside each other, share them, and a watch
-//! goes when the last view that needs it closes. A folder watched as one
+//! goes when the last view that needs it closes. A view that falls
+//! [`BACKLOG`] reads behind drops the rest and reads its folder again, as
+//! after a full kernel queue. A folder watched as one
 //! view's folder and another's ancestor keeps the folder's wider events
 //! until neither needs it.
 
@@ -18,7 +20,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -32,6 +34,10 @@ const FOLDER: u32 = inotify::ENTRIES
     | libc::IN_ONLYDIR
     | libc::IN_EXCL_UNLINK
     | libc::IN_MASK_ADD;
+/// Read batches a view can fall behind by before the rest are dropped and
+/// it reads its folder again, so a busy folder can't grow novad's memory
+/// while its view is still listing.
+const BACKLOG: usize = 64;
 /// What the folders above it are watched for: their entries coming and
 /// going (one on the path renamed or replaced), and themselves going.
 const ANCESTOR: u32 = inotify::ENTRIES | inotify::ITSELF | libc::IN_ONLYDIR | libc::IN_MASK_ADD;
@@ -62,7 +68,9 @@ impl Need {
 /// Where one view's notices go.
 struct Route {
     folder: PathBuf,
-    notices: Sender<Notice>,
+    notices: SyncSender<Notice>,
+    /// Notices were dropped for a full backlog.
+    dropped: Arc<AtomicBool>,
 }
 
 /// What the watcher tells a view.
@@ -129,9 +137,10 @@ impl Watcher {
     /// [`Following::watch`].
     pub fn follow(self: &Arc<Self>, folder: &Path) -> Following {
         let id = self.next_route.fetch_add(1, Ordering::Relaxed);
-        let (notices, receiver) = std::sync::mpsc::channel();
-        lock(&self.routes).insert(id, Route { folder: folder.to_owned(), notices });
-        Following { watcher: Arc::clone(self), id, folder: folder.to_owned(), receiver, held: false }
+        let (notices, receiver) = std::sync::mpsc::sync_channel(BACKLOG);
+        let dropped = Arc::new(AtomicBool::new(false));
+        lock(&self.routes).insert(id, Route { folder: folder.to_owned(), notices, dropped: Arc::clone(&dropped) });
+        Following { watcher: Arc::clone(self), id, folder: folder.to_owned(), receiver, dropped, held: false }
     }
 
     /// Ends the view `id`'s notices: its wait returns `Wait::Stopped`.
@@ -152,7 +161,7 @@ impl Watcher {
                 Err(e) => {
                     let error = format!("Can't watch folders: {e}");
                     for route in lock(&self.routes).drain().map(|(_, route)| route) {
-                        let _ = route.notices.send(Notice::Failed(error.clone()));
+                        route.send(Notice::Failed(error.clone()));
                     }
                     return;
                 }
@@ -160,8 +169,7 @@ impl Watcher {
             for route in lock(&self.routes).values() {
                 let seen = route.seen(&changes);
                 if !seen.is_empty() {
-                    // A view that's closing has dropped its end.
-                    let _ = route.notices.send(Notice::Seen(seen));
+                    route.send(Notice::Seen(seen));
                 }
             }
         }
@@ -171,27 +179,44 @@ impl Watcher {
     /// Each is watched again even when counted, in case its watch went
     /// (the folder deleted) before the views counting it closed.
     fn hold(&self, folder: &Path) -> std::io::Result<()> {
-        let mut needs = lock(&self.needs);
-        self.inotify.watch_for(folder, FOLDER)?;
-        needs.entry(folder.to_owned()).or_default().folders += 1;
-        for ancestor in folder.ancestors().skip(1) {
-            // Best effort: one that can't be listed only isn't followed.
-            let _ = self.inotify.watch_for(ancestor, needs.get(ancestor).map_or(ANCESTOR, Need::mask));
-            needs.entry(ancestor.to_owned()).or_default().ancestors += 1;
+        {
+            // Counted first, so a view releasing them meanwhile keeps them.
+            let mut needs = lock(&self.needs);
+            needs.entry(folder.to_owned()).or_default().folders += 1;
+            for ancestor in folder.ancestors().skip(1) {
+                needs.entry(ancestor.to_owned()).or_default().ancestors += 1;
+            }
         }
-        Ok(())
+        self.watch_down(folder).inspect_err(|_| self.release(folder))
     }
 
     /// Watches what `folder` and the folders above it name now, after one
-    /// of them moved. Fails when `folder` can't be watched any more.
+    /// of them moved. Fails when `folder` can't be watched any more; a
+    /// watch that fails keeps the one before, which other views may share.
     fn refresh(&self, folder: &Path) -> std::io::Result<()> {
-        let needs = lock(&self.needs);
-        let mask = |path: &Path| needs.get(path).map_or(FOLDER, Need::mask);
-        for ancestor in folder.ancestors().skip(1) {
-            let _ = self.inotify.watch_for(ancestor, mask(ancestor));
+        self.watch_down(folder)
+    }
+
+    /// Watches the folders above `folder` from the top down, then `folder`,
+    /// so one replaced while it's being watched is still seen. The lock
+    /// isn't held meanwhile: a stalled mount can block resolving a path,
+    /// and mustn't hold up other folders.
+    fn watch_down(&self, folder: &Path) -> std::io::Result<()> {
+        let masks: Vec<(PathBuf, u32)> = {
+            let needs = lock(&self.needs);
+            let mut masks: Vec<_> = folder
+                .ancestors()
+                .map(|path| (path.to_owned(), needs.get(path).map_or(ANCESTOR, Need::mask)))
+                .collect();
+            masks.reverse();
+            masks
+        };
+        let Some(((folder, _), above)) = masks.split_last() else { return Ok(()) };
+        for (ancestor, mask) in above {
+            // Best effort: one that can't be listed only isn't followed.
+            let _ = self.inotify.watch_for(ancestor, *mask);
         }
-        // A watch that fails keeps the one before: other views may share it.
-        self.inotify.watch_for(folder, mask(folder))
+        self.inotify.watch_for(folder, FOLDER)
     }
 
     /// Undoes [`Watcher::hold`].
@@ -211,6 +236,14 @@ impl Watcher {
 }
 
 impl Route {
+    /// Queues `notice`, or marks it dropped when the view is that far
+    /// behind. A view that's closing has dropped its end.
+    fn send(&self, notice: Notice) {
+        if let Err(TrySendError::Full(_)) = self.notices.try_send(notice) {
+            self.dropped.store(true, Ordering::Release);
+        }
+    }
+
     /// What `changes` mean for this view's folder.
     fn seen(&self, changes: &inotify::Changes) -> Seen {
         let mut seen = Seen { lost: changes.overflowed, ..Seen::default() };
@@ -234,6 +267,8 @@ pub struct Following {
     id: u64,
     folder: PathBuf,
     receiver: Receiver<Notice>,
+    /// Shared with its route.
+    dropped: Arc<AtomicBool>,
     held: bool,
 }
 
@@ -261,6 +296,12 @@ impl Following {
             Some(deadline) => self.receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())),
         };
         match received {
+            // A full backlog always has one more to take, which carries
+            // the loss.
+            Ok(Notice::Seen(mut seen)) => {
+                seen.lost |= self.dropped.swap(false, Ordering::AcqRel);
+                Wait::Notice(Notice::Seen(seen))
+            }
             Ok(notice) => Wait::Notice(notice),
             Err(RecvTimeoutError::Timeout) => Wait::Quiet,
             Err(RecvTimeoutError::Disconnected) => Wait::Stopped,
