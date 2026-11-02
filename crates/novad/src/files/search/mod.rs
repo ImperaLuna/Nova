@@ -35,7 +35,7 @@ use crate::logger::Logger;
 use crate::mime::MimeDb;
 use index::Index;
 use matching::Query;
-use nova_protocol::{FILES_SEARCH_MAX_CHARS, FILES_SEARCH_MAX_RESULTS, FileSearch, FoundFile};
+use nova_protocol::{FILES_SEARCH_MAX_CHARS, FILES_SEARCH_MAX_RESULTS, FileSearch, FoundFile, wire_path, wire_text};
 use roots::Mounts;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -140,9 +140,10 @@ impl Searcher {
         let results = hits
             .into_iter()
             .filter_map(|hit| {
-                let entry = read_entry(&hit.folder, std::ffi::OsStr::new(&hit.name), &self.0.mime)?;
+                let name = wire_path(&hit.name);
+                let entry = read_entry(&wire_path(&hit.folder), name.as_os_str(), &self.0.mime)?;
                 Some(FoundFile {
-                    folder: hit.folder.to_string_lossy().into_owned(),
+                    folder: hit.folder,
                     marks: query.marks(&entry.name),
                     entry,
                     in_hidden_folder: hit.in_hidden_folder,
@@ -290,7 +291,7 @@ impl Keeper {
                 walk.forget(folder);
                 continue;
             };
-            let name = name.to_string_lossy();
+            let name = wire_text(name);
             match dir {
                 Some(dir) => {
                     // Read afresh: what was there by this name before may
@@ -442,6 +443,20 @@ mod tests {
         std::fs::remove_dir_all(home.join("dist")).unwrap();
         std::fs::rename(home.join("dist-new"), home.join("dist")).unwrap();
         fixture.finds("bundle", &["dist/new-bundle.js"]);
+    }
+
+    #[test]
+    fn a_name_that_is_not_utf8_is_found_and_names_its_file() {
+        use std::os::unix::ffi::OsStrExt;
+        let latin1 = std::ffi::OsStr::from_bytes(b"Caf\xe9");
+        let fixture = Fixture::new("latin1", |home| {
+            std::fs::create_dir_all(home.join(latin1)).unwrap();
+            std::fs::write(home.join(latin1).join("menu.pdf"), b"").unwrap();
+        });
+        let found = fixture.find("menu");
+        assert_eq!(found.results.len(), 1, "the folder was walked");
+        assert_eq!(wire_path(&found.results[0].folder), fixture.home().join(latin1));
+        assert_eq!(fixture.find("caf").results[0].entry.name, wire_text(latin1));
     }
 
     #[test]

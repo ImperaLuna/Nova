@@ -294,6 +294,8 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
         // `mimeapps.list` files under `<dir>/config`.
         files: crate::files::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+            udisks: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+            home: None,
             data_dirs: vec![dir.join("launcher/share")],
             associations: crate::apps::associations::Places::new(
                 Some(dir.join("config")),
@@ -304,6 +306,9 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             runner: launcher::Runner::Direct,
             ui: None,
             search: crate::files::search::Sources::under(dir),
+            // A home trash under `<dir>/trash`, and no drives.
+            trash: Some(dir.join("trash")),
+            mounts: dir.join("no-mountinfo"),
         },
         session_lock: dir.to_owned(),
         screenshots: dir.to_owned(),

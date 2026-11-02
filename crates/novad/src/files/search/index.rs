@@ -9,12 +9,16 @@
 //! is reused; the rescan that rebuilds the index ([`super::walk`]) drops
 //! both.
 //!
+//! Names and paths are kept as wire text (`nova_protocol::wire_text`), so
+//! a name that isn't UTF-8 is searched and still names its file.
+//!
 //! A search ([`Index::search`]) checks every name and keeps the best
 //! [`Index::search`]'s `limit` in a heap, ranked by how well the name fits
 //! ([`Fit`]), then names outside hidden folders first, then shorter names,
 //! then the order they were found in.
 
 use super::matching::{Fit, Query};
+use nova_protocol::{wire_path, wire_text};
 use std::collections::BinaryHeap;
 use std::path::{Path, PathBuf};
 
@@ -44,9 +48,9 @@ struct Node {
     flags: u8,
 }
 
-/// A name found, before its file is looked at.
+/// A name found, before its file is looked at; both wire text.
 pub struct Hit {
-    pub folder: PathBuf,
+    pub folder: String,
     pub name: String,
     /// A folder it's in is hidden.
     pub in_hidden_folder: bool,
@@ -82,12 +86,12 @@ impl Index {
     /// Adds the folder `path` to search from; its entries are added with
     /// [`Index::add`].
     pub fn add_root(&mut self, path: &Path) -> Id {
-        let id = self.push(NONE, &path.to_string_lossy(), DIR | ROOT);
+        let id = self.push(NONE, &wire_text(path), DIR | ROOT);
         self.roots.push(id);
         id
     }
 
-    /// Adds `name`, a folder when `dir`, in the folder `parent`, unless
+    /// Adds `name` (wire text), a folder when `dir`, in the folder `parent`, unless
     /// it's there already. Returns its id either way.
     pub fn add(&mut self, parent: Id, name: &str, dir: bool) -> Id {
         if let Some(existing) = self.child(parent, name) {
@@ -119,7 +123,7 @@ impl Index {
         self.push(parent, name, flags)
     }
 
-    /// The entry `name` in the folder `parent`.
+    /// The entry `name` (wire text) in the folder `parent`.
     pub fn child(&self, parent: Id, name: &str) -> Option<Id> {
         let mut at = self.nodes.get(parent as usize)?.first_child;
         while at != NONE {
@@ -135,8 +139,8 @@ impl Index {
     /// something below one.
     pub fn find(&self, path: &Path) -> Option<Id> {
         self.roots.iter().find_map(|&root| {
-            let below = path.strip_prefix(self.name(root)).ok()?;
-            below.iter().try_fold(root, |folder, part| self.child(folder, &part.to_string_lossy()))
+            let below = path.strip_prefix(wire_path(self.name(root))).ok()?;
+            below.iter().try_fold(root, |folder, part| self.child(folder, &wire_text(part)))
         })
     }
 
@@ -190,7 +194,8 @@ impl Index {
             folders.push(self.name(at));
             at = self.nodes[at as usize].parent;
         }
-        let folder = folders.iter().rev().collect();
+        let folder: PathBuf = folders.iter().rev().collect();
+        let folder = folder.to_string_lossy().into_owned();
         Hit { folder, name: self.name(id).to_owned(), in_hidden_folder }
     }
 
@@ -257,7 +262,7 @@ mod tests {
 
     fn found(index: &Index, query: &str) -> Vec<String> {
         let (hits, _) = index.search(&Query::parse(query).unwrap(), 10);
-        hits.iter().map(|hit| hit.folder.join(&hit.name).display().to_string()).collect()
+        hits.iter().map(|hit| format!("{}/{}", hit.folder, hit.name)).collect()
     }
 
     /// `/home/me` with a game in Steam's hidden folder, and a wallpaper.

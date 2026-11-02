@@ -5,13 +5,18 @@ import Quickshell
 import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
 
-// Nova Files' link to novad: the windows it asks for, and opening files in
-// apps (the default one on a double-click or Enter, or one from "Open
-// with", which can also become the new default). The Nova Files
-// process (../../files.qml) and its windows get these here and never talk
-// to Daemon themselves.
+// Nova Files' link to novad: the windows it asks for, the drives (and
+// mounting and ejecting them), and opening files in apps (the default one
+// on a double-click or Enter, or one from "Open with", which can also
+// become the new default). The Nova Files process (../../files.qml) and
+// its windows get these here and never talk to Daemon themselves.
 Singleton {
     id: root
+
+    // The drives for the sidebar, in its order: {id, name, removable,
+    // mount (absent while it isn't mounted), size, used (bytes, while
+    // mounted)}.
+    readonly property var drives: Daemon.filesDrives
 
     // A window to open on `window.folder`, with `window.select` (absolute
     // paths in it, maybe none) selected.
@@ -73,6 +78,31 @@ Singleton {
             if (error)
                 console.warn(`nova: default for ${path}: ${error}`);
             done?.(error ?? null);
+        });
+    }
+
+    // Mounts the drive `id` unless it is; `done(folder)` gets where it's
+    // mounted, or null when it couldn't be.
+    function mount(id: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_MOUNT, {
+            drive: id
+        }, (error, folder) => {
+            if (error)
+                console.warn(`nova: mounting ${id}: ${error}`);
+            done(error ? null : folder);
+        });
+    }
+
+    // Ejects the removable drive `id`. `done(outcome)` gets
+    // Protocol.EJECT_EJECTED, Protocol.EJECT_BUSY (something still uses it),
+    // or null when it failed otherwise.
+    function eject(id: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_EJECT, {
+            drive: id
+        }, (error, outcome) => {
+            if (error)
+                console.warn(`nova: ejecting ${id}: ${error}`);
+            done(error ? null : outcome);
         });
     }
 

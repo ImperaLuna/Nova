@@ -27,10 +27,10 @@ use crate::inotify::{self, Inotify, Stopper};
 use crate::lock;
 use crate::logger::Logger;
 use crate::mime::MimeDb;
-use nova_protocol::{Event, FILES_MAX_VIEWS, FILES_PATH_MAX_BYTES, FileSort, FolderPage};
+use nova_protocol::{Event, FILES_MAX_VIEWS, FILES_PATH_MAX_BYTES, FILES_PATH_MAX_WIRE_BYTES, FileSort, FolderPage};
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsString;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -303,7 +303,7 @@ impl Worker {
     fn send_changes(&self, names: BTreeSet<OsString>) -> bool {
         let now: Vec<_> = names
             .into_iter()
-            .map(|name| (folder::read_entry(&self.view.path, &name, &self.mime), name.to_string_lossy().into_owned()))
+            .map(|name| (folder::read_entry(&self.view.path, &name, &self.mime), nova_protocol::wire_text(&name)))
             .collect();
         let mut state = lock(&self.view.state);
         if !state.open {
@@ -346,12 +346,15 @@ enum Gathered {
     Moved,
 }
 
-/// `path` from the socket, if it's a usable absolute path.
+/// `path` from the socket (wire text), if it's a usable absolute path.
 fn checked_path(path: &str) -> Result<PathBuf, String> {
-    if path.len() > FILES_PATH_MAX_BYTES || path.contains('\0') {
+    if path.len() > FILES_PATH_MAX_WIRE_BYTES {
         return Err("Not a path".into());
     }
-    let path = Path::new(path);
+    let path = nova_protocol::wire_path(path);
+    if path.as_os_str().len() > FILES_PATH_MAX_BYTES || path.as_os_str().as_encoded_bytes().contains(&0) {
+        return Err("Not a path".into());
+    }
     if !path.is_absolute() {
         return Err("The path must be absolute".into());
     }
@@ -376,6 +379,7 @@ mod tests {
     use nova_protocol::{FileEntry, FileSortKey, FolderChange, LogLevel};
     use nova_test_support::TempDir;
     use std::os::unix::net::UnixStream;
+    use std::path::Path;
     use std::sync::mpsc::Receiver;
 
     const WAIT: Duration = Duration::from_secs(5);
@@ -406,7 +410,7 @@ mod tests {
         }
 
         fn open(&self, folder: &Path) -> Result<(), String> {
-            self.folders.open(self.client, 1, folder.to_str().unwrap(), BY_NAME, false)
+            self.folders.open(self.client, 1, &nova_protocol::wire_text(folder), BY_NAME, false)
         }
 
         /// Takes the next event and applies it to `shown` as the UI would.
@@ -552,15 +556,50 @@ mod tests {
         writer.join().unwrap();
     }
 
-    /// Names from old archives or Windows drives needn't be UTF-8.
+    /// Names from old archives or Windows drives needn't be UTF-8. Two
+    /// that look alike are two entries, and each change finds its own.
     #[test]
-    fn a_name_that_isnt_utf8_is_listed() {
-        use std::os::unix::ffi::OsStrExt;
+    fn names_that_arent_utf8_are_listed_apart() {
         let mut fixture = Fixture::new("files-latin1");
         let dir = TempDir::new("files-latin1-folder");
-        std::fs::write(dir.join(std::ffi::OsStr::from_bytes(b"caf\xe9.md")), b"").unwrap();
+        let (e_acute, e_grave) = (latin1(b"caf\xe9.md"), latin1(b"caf\xe8.md"));
+        std::fs::write(dir.join(e_acute), b"").unwrap();
+        std::fs::write(dir.join(e_grave), b"").unwrap();
         fixture.open(&dir).unwrap();
-        fixture.until_shown(&["caf\u{fffd}.md"]);
+        fixture.until_shown(&["caf\u{f7e8}.md", "caf\u{f7e9}.md"]);
+        std::fs::write(dir.join(e_acute), b"written").unwrap();
+        while fixture.shown[1].size != Some(7) {
+            fixture.next();
+        }
+        assert_eq!(fixture.shown[0].size, Some(0), "the other keeps its own entry");
+        std::fs::remove_file(dir.join(e_grave)).unwrap();
+        fixture.until_shown(&["caf\u{f7e9}.md"]);
+        // The listed name, joined to the path, names the file.
+        let named = nova_protocol::wire_path(&format!(
+            "{}/{}",
+            nova_protocol::wire_text(dir.as_os_str()),
+            fixture.shown[0].name
+        ));
+        assert_eq!(std::fs::read(named).unwrap(), b"written");
+    }
+
+    /// A folder whose own name isn't UTF-8 opens, under the path it was
+    /// opened as.
+    #[test]
+    fn a_folder_named_in_latin1_opens() {
+        let mut fixture = Fixture::new("files-latin1-folder-open");
+        let dir = TempDir::new("files-latin1-parent");
+        let folder = dir.join(latin1(b"M\xfcsik"));
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(folder.join("song.flac"), b"").unwrap();
+        fixture.open(&folder).unwrap();
+        let page = fixture.next();
+        assert_eq!(page["data"]["path"], nova_protocol::wire_text(&folder));
+        fixture.until_shown(&["song.flac"]);
+    }
+
+    fn latin1(bytes: &[u8]) -> &std::ffi::OsStr {
+        std::os::unix::ffi::OsStrExt::from_bytes(bytes)
     }
 
     #[test]

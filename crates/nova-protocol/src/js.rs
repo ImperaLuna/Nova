@@ -115,11 +115,12 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("What a media player is doing (PlaybackStatus).", "PLAYBACK", names_of::<PlaybackStatus>()),
         Group::new("What a folder view is ordered by (FileSortKey).", "FILE_SORT", names_of::<FileSortKey>()),
         Group::new("The ops of a files_changed event (FolderChange).", "FOLDER", tagged_names_of::<FolderChange>("op")),
+        Group::new("How files_eject went (EjectOutcome).", "EJECT", names_of::<EjectOutcome>()),
     ]
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 9] {
+fn limits() -> [(&'static str, u64, &'static str); 10] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
@@ -130,6 +131,11 @@ fn limits() -> [(&'static str, u64, &'static str); 9] {
         ("FILES_PATH_MAX_BYTES", size(FILES_PATH_MAX_BYTES), "novad refuses longer files_open paths."),
         ("FILES_SEARCH_MAX_CHARS", size(FILES_SEARCH_MAX_CHARS), "novad refuses longer files_search queries."),
         ("FILES_SEARCH_MAX_RESULTS", size(FILES_SEARCH_MAX_RESULTS), "Most results a files_search answers with."),
+        (
+            "RAW_BYTE_BASE",
+            u64::from(RAW_BYTE_BASE),
+            "Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.",
+        ),
         (
             "NETWORK_TRAFFIC_HISTORY_SECS",
             NETWORK_TRAFFIC_HISTORY_SECS,

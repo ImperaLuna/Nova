@@ -57,8 +57,7 @@ impl Walk<'_> {
             let Ok(entries) = std::fs::read_dir(&folder) else { continue };
             let fresh = index.is_empty_folder(id);
             for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
+                let name = nova_protocol::wire_text(entry.file_name());
                 let dir = entry.file_type().is_ok_and(|kind| kind.is_dir());
                 let child = if fresh { index.add_new(id, &name, dir) } else { index.add(id, &name, dir) };
                 // The real name, which may not be UTF-8, so the folder opens.

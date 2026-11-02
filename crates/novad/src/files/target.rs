@@ -1,14 +1,18 @@
 //! What a Nova Files window shows, checked before it opens: the folder is
 //! an absolute path with no `..` in it that is a folder now, and every item
-//! to select is a path straight inside it. Paths come from the socket and
-//! the session bus, so nothing else is trusted about them.
+//! to select is a path straight inside it. Paths come from the socket (as
+//! wire text, `nova_protocol::path_to_wire`) and the session bus, so
+//! nothing else is trusted about them; they go out as wire text too, so a
+//! name that isn't UTF-8 opens like any other.
 //!
 //! Also turns the `file://` URIs apps give `org.freedesktop.FileManager1`
 //! into windows: a folder to show, or items grouped by the folder holding
 //! them, one window per folder.
 
-use nova_protocol::FilesWindow;
-use std::path::{Component, Path, PathBuf};
+use nova_protocol::{FILES_PATH_MAX_BYTES, FilesWindow, wire_path, wire_text};
+use std::ffi::OsString;
+use std::os::unix::ffi::OsStringExt;
+use std::path::{Component, PathBuf};
 
 /// A window on `folder` with `select` selected, once both check out.
 pub fn window(folder: &str, select: &[String]) -> Result<FilesWindow, String> {
@@ -24,15 +28,15 @@ pub fn window(folder: &str, select: &[String]) -> Result<FilesWindow, String> {
                 return Err(format!("{item} isn't in {}", folder.display()));
             }
             // Spelled as the folder's listing spells it.
-            text(&cleaned)
+            Ok(wire_text(&cleaned))
         })
         .collect::<Result<_, _>>()?;
-    Ok(FilesWindow { folder: text(&folder)?, select })
+    Ok(FilesWindow { folder: wire_text(&folder), select })
 }
 
 /// A window on each folder `uris` name (`ShowFolders`).
 pub fn folders(uris: &[String]) -> Result<Vec<FilesWindow>, String> {
-    uris.iter().map(|uri| window(&text(&path(uri)?)?, &[])).collect()
+    uris.iter().map(|uri| window(&wire_text(&path(uri)?), &[])).collect()
 }
 
 /// A window on each folder holding items `uris` name, with them selected
@@ -42,13 +46,13 @@ pub fn items(uris: &[String]) -> Result<Vec<FilesWindow>, String> {
     for uri in uris {
         let item = path(uri)?;
         let folder = item.parent().ok_or_else(|| format!("{uri} has no folder"))?.to_path_buf();
-        let item = text(&item)?;
+        let item = wire_text(&item);
         match windows.iter_mut().find(|(known, _)| *known == folder) {
             Some((_, select)) => select.push(item),
             None => windows.push((folder, vec![item])),
         }
     }
-    windows.iter().map(|(folder, select)| window(&text(folder)?, select)).collect()
+    windows.iter().map(|(folder, select)| window(&wire_text(folder), select)).collect()
 }
 
 /// The path a `file://` URI names. Only local files: no other scheme, and
@@ -59,12 +63,17 @@ fn path(uri: &str) -> Result<PathBuf, String> {
     if !uri_or_local.starts_with("file:///") {
         return Err(format!("{uri} isn't a local file"));
     }
-    crate::notifications::image::file(uri_or_local).ok_or_else(|| format!("{uri} isn't a file path"))
+    // Each byte is at most a `%XX` escape.
+    let escaped = uri_or_local.strip_prefix("file://").filter(|escaped| escaped.len() <= 3 * FILES_PATH_MAX_BYTES);
+    let bytes = escaped.and_then(crate::notifications::image::percent_decoded);
+    let path = bytes.map(|bytes| PathBuf::from(OsString::from_vec(bytes)));
+    path.filter(|path| path.as_os_str().len() <= FILES_PATH_MAX_BYTES).ok_or_else(|| format!("{uri} isn't a file path"))
 }
 
-/// `path` as given, once it's absolute and has no `.` or `..` in it.
-fn clean(path: &str) -> Result<PathBuf, String> {
-    let path = Path::new(path);
+/// The path wire text `path` names, once it's absolute and has no `.` or
+/// `..` in it.
+pub(super) fn clean(path: &str) -> Result<PathBuf, String> {
+    let path = wire_path(path);
     if !path.is_absolute() {
         return Err(format!("{} isn't an absolute path", path.display()));
     }
@@ -75,14 +84,10 @@ fn clean(path: &str) -> Result<PathBuf, String> {
     Ok(path.components().collect())
 }
 
-/// `path` as wire text: it must be UTF-8, which every path the UI can show is.
-fn text(path: &Path) -> Result<String, String> {
-    path.to_str().map(str::to_string).ok_or_else(|| format!("{} isn't UTF-8", path.display()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     fn dir(name: &str) -> nova_test_support::TempDir {
         let dir = nova_test_support::TempDir::new(&format!("files-target-{name}"));
@@ -141,6 +146,20 @@ mod tests {
         assert_eq!(shown[0].select, [display(&music.join("song one.flac")), display(&music.join("Albums"))]);
         assert_eq!(shown[1].folder, display(&dir));
         assert_eq!(shown[1].select, [display(&music)]);
+    }
+
+    /// "Show in folder" on a file whose name isn't UTF-8 selects it, by a
+    /// name that comes back to the same file.
+    #[test]
+    fn an_item_named_in_latin1_is_shown() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = dir("latin1");
+        let item = dir.join("Music").join(std::ffi::OsStr::from_bytes(b"caf\xe9.flac"));
+        std::fs::write(&item, b"").unwrap();
+        let uri = format!("file://{}/caf%E9.flac", display(&dir.join("Music")));
+        let shown = items(&[uri]).unwrap();
+        assert_eq!(shown[0].select, [wire_text(&item)]);
+        assert_eq!(wire_path(&shown[0].select[0]), item);
     }
 
     #[test]
