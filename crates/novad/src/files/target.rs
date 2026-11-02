@@ -16,12 +16,18 @@ pub fn window(folder: &str, select: &[String]) -> Result<FilesWindow, String> {
     if !folder.is_dir() {
         return Err(format!("{} isn't a folder", folder.display()));
     }
-    for item in select {
-        if clean(item)?.parent() != Some(folder.as_path()) {
-            return Err(format!("{item} isn't in {}", folder.display()));
-        }
-    }
-    Ok(FilesWindow { folder: text(&folder)?, select: select.to_vec() })
+    let select = select
+        .iter()
+        .map(|item| {
+            let cleaned = clean(item)?;
+            if cleaned.parent() != Some(folder.as_path()) {
+                return Err(format!("{item} isn't in {}", folder.display()));
+            }
+            // Spelled as the folder's listing spells it.
+            text(&cleaned)
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(FilesWindow { folder: text(&folder)?, select })
 }
 
 /// A window on each folder `uris` name (`ShowFolders`).
@@ -94,7 +100,7 @@ mod tests {
         let dir = dir("window");
         let music = display(&dir.join("Music"));
         let song = display(&dir.join("Music/song one.flac"));
-        let shown = window(&format!("{music}/"), std::slice::from_ref(&song)).unwrap();
+        let shown = window(&format!("{music}/"), &[format!("{music}//song one.flac")]).unwrap();
         assert_eq!(shown, FilesWindow { folder: music.clone(), select: vec![song] });
         assert_eq!(window(&music, &[]).unwrap().select, Vec::<String>::new());
     }
