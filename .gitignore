@@ -6,4 +6,4 @@
 .qmlls.ini
 __pycache__/
 /.scratch/
-/.worktrees/
+/.claude/worktrees/

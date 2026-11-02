@@ -8,7 +8,7 @@
 github_repo=ImperaLuna/Nova
 main_checkout=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --path-format=absolute --git-common-dir)
 main_checkout=${main_checkout%/.git}
-worktrees=$main_checkout/.worktrees
+worktrees=$main_checkout/.claude/worktrees
 
 die() {
   echo "$(basename "$0"): $*" >&2
