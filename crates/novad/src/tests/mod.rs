@@ -128,6 +128,7 @@ impl TestDaemon {
             ui,
             socket: socket.clone(),
             sources,
+            kept: settings.modules.kept(),
             settings: Mutex::new(settings),
             compositor,
         });

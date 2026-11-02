@@ -318,15 +318,15 @@ impl<'a> Connection<'a> {
     }
 
     fn screenshots(&self) -> Arc<crate::screenshot::Screenshots> {
-        lock(&self.daemon.settings).modules.screenshots()
+        Arc::clone(&self.daemon.kept.screenshots)
     }
 
     fn recordings(&self) -> Arc<crate::recording::Recordings> {
-        lock(&self.daemon.settings).modules.recordings()
+        Arc::clone(&self.daemon.kept.recordings)
     }
 
     fn wallpaper(&self) -> Arc<crate::wallpaper::Wallpaper> {
-        lock(&self.daemon.settings).modules.wallpaper()
+        Arc::clone(&self.daemon.kept.wallpaper)
     }
 
     /// Runs `work` on its own thread: NetworkManager may take a while.

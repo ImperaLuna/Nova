@@ -63,8 +63,9 @@ pub struct AppIndex {
     listeners: Mutex<Vec<Listener>>,
 }
 
-/// Told the apps changed; `false` once whoever listened is gone.
-type Listener = Box<dyn Fn() -> bool + Send + Sync>;
+/// Told the apps changed when called with `true`; `false` once whoever
+/// listened is gone.
+type Listener = Box<dyn Fn(bool) -> bool + Send + Sync>;
 
 /// One run of following the apps, from `follow` to `forget`.
 struct Following {
@@ -136,9 +137,14 @@ impl AppIndex {
     /// index.
     pub fn on_change<T: Send + Sync + 'static>(&self, listener: &Arc<T>, changed: fn(&T)) {
         let listener = Arc::downgrade(listener);
-        lock(&self.listeners).push(Box::new(move || {
+        let mut listeners = lock(&self.listeners);
+        // Those gone go now, so starting and stopping modules piles none up.
+        listeners.retain(|alive| alive(false));
+        listeners.push(Box::new(move |tell| {
             let Some(listener) = listener.upgrade() else { return false };
-            changed(&listener);
+            if tell {
+                changed(&listener);
+            }
             true
         }));
     }
@@ -164,12 +170,6 @@ impl AppIndex {
     /// [`State::find_app`]).
     pub fn find_app(&self, ids: &[String]) -> Option<App> {
         lock(&self.state).find_app(ids)
-    }
-
-    /// Whether the installed app `id` is a web browser (`WebBrowser` among
-    /// its categories).
-    pub fn is_browser(&self, id: &str) -> bool {
-        lock(&self.state).apps.get(id).is_some_and(|entry| entry.categories.iter().any(|category| category == BROWSER))
     }
 
     /// The app ids the windows of the installed app `id` may have; `None`
@@ -284,6 +284,9 @@ impl AppIndex {
     }
 
     fn rescan(&self, stopped: &AtomicBool) {
+        if stopped.load(Ordering::SeqCst) {
+            return;
+        }
         let context =
             Context { locale: &self.locale, desktops: &self.desktops, path_var: &self.path_var, autostart: false };
         let (apps, problems) = scan::scan(&self.sources.data_dirs, &context);
@@ -314,7 +317,7 @@ impl AppIndex {
         drop(state);
         // Taken out first, so a listener may add another meanwhile.
         let listeners = std::mem::take(&mut *lock(&self.listeners));
-        let kept: Vec<Listener> = listeners.into_iter().filter(|changed| changed()).collect();
+        let kept: Vec<Listener> = listeners.into_iter().filter(|changed| changed(true)).collect();
         lock(&self.listeners).splice(0..0, kept);
     }
 }
@@ -323,6 +326,12 @@ impl State {
     /// Whether the apps have been read at least once.
     pub fn scanned(&self) -> bool {
         self.scanned
+    }
+
+    /// Whether the installed app `id` is a web browser (`WebBrowser` among
+    /// its categories).
+    pub fn is_browser(&self, id: &str) -> bool {
+        self.apps.get(id).is_some_and(|entry| entry.categories.iter().any(|category| category == BROWSER))
     }
 
     /// Every installed app, by its id.

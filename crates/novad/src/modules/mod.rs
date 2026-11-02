@@ -8,7 +8,9 @@
 //! unless they apply them in place. The few that hold state across their
 //! feature turning off and on (a recording to stop, the lock screen, the
 //! region picker, the wallpaper) are kept for novad's whole life and only
-//! told what the settings are now.
+//! told what the settings are now, right after they start and on every
+//! change. They never restart, so the daemon holds them ([`Kept`]) and
+//! reaches them without the settings lock.
 //!
 //! The [`Context`] is what modules share: the hub, the logger, the
 //! compositor, and the app index, which follows the apps while any module
@@ -51,7 +53,8 @@ pub trait Module: Send + Sync + Sized + 'static {
     fn start(ctx: &Context, sources: &Self::Sources, config: &Self::Config, features: &[FeatureState]) -> Arc<Self>;
     /// The settings changed while it runs, from options `before` to
     /// `config`: applies them in place, or asks to be stopped and started
-    /// again (the default when its options changed).
+    /// again (the default when its options changed). A kept module is told
+    /// right after it starts too, and always applies them in place.
     fn reconfigure(&self, before: &Self::Config, config: &Self::Config, features: &[FeatureState]) -> Reconfigure {
         let _ = features;
         if before == config { Reconfigure::InPlace } else { Reconfigure::Restart }
@@ -182,7 +185,7 @@ macro_rules! modules {
                     ctx.apps.follow();
                 }
                 $(reconcile(&mut self.$field, ctx, &sources.$field, config, features);)*
-                $(keep(&mut self.$kept, ctx, &sources.$kept, config, features);)*
+                $(keep(&mut self.$kept, config, features);)*
                 if !apps_needed {
                     ctx.apps.forget();
                 }
@@ -219,13 +222,18 @@ macro_rules! modules {
                 self.$field.as_ref().map(|slot| &slot.module)
             }
         })*
+        /// The modules kept for novad's life.
+        #[derive(Clone)]
+        pub struct Kept {
+            $(pub $kept: Arc<$kept_module>,)*
+        }
+
         impl Running {
-            $(
-                /// A module kept for novad's life.
-                pub fn $kept(&self) -> Arc<$kept_module> {
-                    Arc::clone(&self.$kept.module)
-                }
-            )*
+            /// The modules kept for novad's life, for reaching them without
+            /// the settings lock.
+            pub fn kept(&self) -> Kept {
+                Kept { $($kept: Arc::clone(&self.$kept.module),)* }
+            }
         }
 
         $(impl Has<$kept_module> for Running {
@@ -289,37 +297,31 @@ fn reconcile<M: Module>(
     }
 }
 
-/// A module kept for novad's life after a change: told the settings, or
-/// started again if it asks to be.
-fn keep<M: Module>(
-    slot: &mut Slot<M>,
-    ctx: &Context,
-    sources: &M::Sources,
-    config: &Config,
-    features: &[FeatureState],
-) {
+/// A module kept for novad's life after a change: told the settings,
+/// which it applies in place.
+fn keep<M: Module>(slot: &mut Slot<M>, config: &Config, features: &[FeatureState]) {
     let options = M::config(config);
-    match slot.module.reconfigure(&slot.config, &options, features) {
-        Reconfigure::InPlace => slot.config = options,
-        Reconfigure::Restart => {
-            slot.module.stop();
-            *slot = start(ctx, sources, config, features);
-        }
-    }
+    let applied = slot.module.reconfigure(&slot.config, &options, features);
+    debug_assert_eq!(applied, Reconfigure::InPlace, "{} is kept, so it can't restart", M::ID);
+    slot.config = options;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Each module is a feature with a daemon side.
+    /// Each module is a feature whose daemon side names it.
     #[test]
     fn every_module_is_a_daemon_feature() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
         let manifests = nova_features::load_all(&root).unwrap();
         for id in Running::IDS {
             let manifest = manifests.iter().find(|manifest| manifest.id == *id);
-            assert!(manifest.is_some_and(|manifest| manifest.daemon.is_some()), "{id} has no feature with `daemon`");
+            assert_eq!(
+                manifest.and_then(|manifest| manifest.daemon.as_deref()),
+                Some(*id),
+                "{id} has no feature whose `daemon` names it"
+            );
         }
     }
 }

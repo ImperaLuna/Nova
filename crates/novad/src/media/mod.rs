@@ -155,7 +155,10 @@ impl Media {
         // Waits as long as connecting may take; a timed-out call fails sooner.
         let _ = started.recv_timeout(2 * CALL_TIMEOUT);
         let media = Arc::new(Self { shared });
+        // Looked up again too, for a read of the apps that ended while it
+        // connected, before it listened.
         media.shared.apps.on_change(&media, Self::apps_changed);
+        media.apps_changed();
         media
     }
 
@@ -303,12 +306,13 @@ fn find<'a>(state: &'a State, id: &str) -> Result<&'a Player, String> {
 
 impl Shared {
     fn event(&self, state: &State) -> MediaEvent {
+        let apps = self.apps.read();
         let players = state
             .players
             .iter()
             .filter_map(|player| {
                 let read = player.read.as_ref()?;
-                let app = self.apps.find_app(&names(player)).map(|app| (self.apps.is_browser(&app.id), app));
+                let app = apps.find_app(&names(player)).map(|app| (apps.is_browser(&app.id), app));
                 let identity = if read.identity.is_empty() { &player.id[PREFIX.len()..] } else { &read.identity };
                 Some(MediaPlayer {
                     id: player.id.clone(),

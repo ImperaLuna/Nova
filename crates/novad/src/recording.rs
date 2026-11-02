@@ -574,7 +574,8 @@ impl crate::modules::Module for Recordings {
         config.recording.clone()
     }
 
-    /// Saves what an earlier novad left in the folder, when the feature is ready.
+    /// Saves what an earlier novad left in the folder, when the feature is
+    /// ready. Allowed to record once told the settings (`reconfigure`).
     fn start(
         ctx: &crate::modules::Context,
         (): &(),
@@ -582,9 +583,9 @@ impl crate::modules::Module for Recordings {
         features: &[nova_protocol::FeatureState],
     ) -> Arc<Self> {
         let recordings = Arc::new(Self::new(ctx.path_var.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger)));
-        let ready = crate::features::is_ready(features, FEATURE_ID);
-        recordings.allow(ready);
-        if ready && let Ok(folder) = config.folder() {
+        if crate::features::is_ready(features, FEATURE_ID)
+            && let Ok(folder) = config.folder()
+        {
             recordings.recover(&folder);
         }
         recordings

@@ -1135,8 +1135,8 @@ impl crate::modules::Module for Wallpaper {
     fn start(
         ctx: &crate::modules::Context,
         sources: &Sources,
-        config: &WallpaperConfig,
-        features: &[nova_protocol::FeatureState],
+        _: &WallpaperConfig,
+        _: &[nova_protocol::FeatureState],
     ) -> Arc<Self> {
         let compositor = ctx.compositor.as_ref();
         let wallpaper = Self::start(
@@ -1154,7 +1154,6 @@ impl crate::modules::Module for Wallpaper {
                 }
             });
         }
-        crate::modules::Module::reconfigure(&*wallpaper, config, config, features);
         wallpaper
     }
 

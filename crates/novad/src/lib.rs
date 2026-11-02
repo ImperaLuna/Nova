@@ -154,6 +154,9 @@ pub struct Daemon {
     settings: Mutex<Settings>,
     /// Following the compositor, when it's one novad knows.
     compositor: Option<Arc<compositor::Compositor>>,
+    /// The modules kept for novad's life, reached without the settings
+    /// lock: a reload holds it while modules start, which may take seconds.
+    kept: modules::Kept,
 }
 
 impl Daemon {
@@ -184,7 +187,7 @@ impl Daemon {
 
     /// The lock screen, kept whatever the settings.
     fn session_lock(&self) -> Arc<session_lock::SessionLock> {
-        lock(&self.settings).modules.session_lock()
+        Arc::clone(&self.kept.session_lock)
     }
 
     /// The module `M`, or the error that its feature isn't ready. Taken out
@@ -370,6 +373,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         ui,
         socket,
         sources,
+        kept: settings.modules.kept(),
         settings: Mutex::new(settings),
         compositor,
     });

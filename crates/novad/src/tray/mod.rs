@@ -192,7 +192,10 @@ impl Tray {
         // Waits as long as connecting may take; a timed-out call fails sooner.
         let _ = started.recv_timeout(2 * CALL_TIMEOUT);
         let tray = Arc::new(Self { shared });
+        // Looked up again too, for a read of the apps that ended while it
+        // connected, before it listened.
         tray.shared.apps.on_change(&tray, Self::apps_changed);
+        tray.apps_changed();
         tray
     }
 
@@ -204,7 +207,11 @@ impl Tray {
 
     /// Looks the items' apps up again, after the installed apps changed.
     fn apps_changed(&self) {
-        self.shared.publish(&mut lock(&self.shared.state));
+        let mut state = lock(&self.shared.state);
+        // Before its first event the tray has no names to change.
+        if state.sent.is_some() {
+            self.shared.publish(&mut state);
+        }
     }
 
     /// Hides the app `id` (an item's app id, or its own id without one)

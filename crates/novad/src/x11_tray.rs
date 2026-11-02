@@ -132,8 +132,8 @@ impl crate::modules::Module for X11Tray {
     type Sources = Bus;
     type Config = ();
 
-    fn sources(env: &crate::modules::Env) -> Bus {
-        crate::tray::Sources::new(&env.args.state_dir).bus
+    fn sources(_: &crate::modules::Env) -> Bus {
+        Bus::Session
     }
 
     fn config(_: &crate::config::Config) {}
