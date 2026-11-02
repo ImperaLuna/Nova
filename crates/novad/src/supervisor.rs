@@ -12,7 +12,7 @@
 use crate::backoff::Backoff;
 use crate::logger::Logger;
 use crate::{child, lock};
-use nova_protocol::{Crash, UiState, UiStatus};
+use nova_protocol::{Crash, UI_LOG_SOURCE, UiState, UiStatus};
 use std::io::{BufRead, BufReader, Read};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -67,6 +67,7 @@ const SESSION_CHECK: Duration = Duration::from_secs(5);
 /// How long `quickshell --version` may take; novad's start waits for it.
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[derive(Clone)]
 pub struct UiSettings {
     /// The Quickshell binary.
     pub quickshell: PathBuf,
@@ -248,8 +249,8 @@ impl Supervisor {
         };
         logger.info(LOG_SOURCE, &format!("UI started (pid {}) from {}", child.id(), settings.ui_dir.display()));
         let readers = [
-            child.stdout.take().map(|out| forward_lines(out, Arc::clone(logger))),
-            child.stderr.take().map(|err| forward_lines(err, Arc::clone(logger))),
+            child.stdout.take().map(|out| forward_lines(out, Arc::clone(logger), UI_LOG_SOURCE)),
+            child.stderr.take().map(|err| forward_lines(err, Arc::clone(logger), UI_LOG_SOURCE)),
         ];
         // The pid is forgotten between the exit and the reap, so `stop` and
         // `status` never act on a pid the kernel may have handed out again.
@@ -329,30 +330,37 @@ pub fn default_quickshell(path_var: &str) -> PathBuf {
     PACKAGED_UI_LAUNCHER.map(PathBuf::from).or_else(on_path).unwrap_or_else(|| PathBuf::from(QUICKSHELL))
 }
 
-fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
+/// Quickshell running the shell at `path` (a folder holding `shell.qml`, or
+/// a `.qml` file whose folder is the root its imports resolve in) as
+/// `process_name`, connected to novad, with the session's settings. The
+/// caller picks its input and output, and ties it to novad's life.
+pub fn quickshell_command(settings: &UiSettings, path: &Path, process_name: &str) -> Command {
     let mut command = Command::new(&settings.quickshell);
     command
-        .arg0(UI_PROCESS_NAME)
+        .arg0(process_name)
         // Plain lines: novad reads the level from them and logs them itself.
         .arg("--no-color")
         .arg("--path")
-        .arg(&settings.ui_dir)
+        .arg(path)
         .env("NOVA_SOCKET", &settings.socket)
         .env("PATH", &settings.path_var)
         .env(FRAME_CALLBACK_TIMEOUT.0, FRAME_CALLBACK_TIMEOUT.1)
         .env(SIMPLE_ANIMATION_DRIVER.0, SIMPLE_ANIMATION_DRIVER.1)
-        .env(crate::icons::QUICKSHELL_VAR, &settings.icon_theme)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(port) = qml_debug_port(|name| std::env::var(name).ok()) {
-        command.arg("--debug").arg(port.to_string());
-    }
+        .env(crate::icons::QUICKSHELL_VAR, &settings.icon_theme);
     if let Some(vendor) = &settings.egl_vendor {
         command.env(crate::egl::VENDOR_FILES_VAR, vendor);
     }
     if let Some(render_loop) = settings.render_loop {
         command.env(crate::render_loop::VAR, render_loop);
+    }
+    command
+}
+
+fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
+    let mut command = quickshell_command(settings, &settings.ui_dir, UI_PROCESS_NAME);
+    command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(port) = qml_debug_port(|name| std::env::var(name).ok()) {
+        command.arg("--debug").arg(port.to_string());
     }
     // A crashed novad never leaves an orphaned bar behind. This runs on the
     // supervisor thread, which lives as long as novad.
@@ -360,13 +368,14 @@ fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
     command.spawn()
 }
 
-/// Logs each line from `stream` as the UI's until it closes.
-fn forward_lines(stream: impl Read + Send + 'static, logger: Arc<Logger>) -> JoinHandle<()> {
+/// Logs each line a Quickshell process writes to `stream`, as from
+/// `source`, until it closes.
+pub fn forward_lines(stream: impl Read + Send + 'static, logger: Arc<Logger>, source: &'static str) -> JoinHandle<()> {
     std::thread::spawn(move || {
         let mut reader = BufReader::new(stream);
         let mut line = Vec::new();
         while reader.read_until(b'\n', &mut line).is_ok_and(|read| read > 0) {
-            logger.ui_line(&String::from_utf8_lossy(&line));
+            logger.ui_line(source, &String::from_utf8_lossy(&line));
             line.clear();
         }
     })
