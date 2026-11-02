@@ -24,6 +24,11 @@ var HOST_QUICK_SETTINGS_FILL = "quick-settings.fill";
 var HOST_QUICK_SETTINGS_FOOT = "quick-settings.foot";
 var HOST_QUICK_SETTINGS_PAGES = "quick-settings.pages";
 
+// The central pill's parts: the views its central-pill.parts slots name,
+// which it draws itself (ui/central_pill/CentralPillSlot.qml).
+var PART_WORKSPACES = "workspaces.list";
+var PART_CLOCK = "clock.time";
+
 // The slots in `host` of the ready features in `features` (the features
 // event's list), as {feature, view, order}: lowest order first, ties by
 // feature id.
