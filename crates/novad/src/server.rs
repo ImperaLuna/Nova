@@ -279,6 +279,7 @@ impl<'a> Connection<'a> {
                 return self.bluetooth_later(move |bluetooth| bluetooth.forget(&address));
             }
             Command::ShowFolder { folder, select } => done(self.files().and_then(|files| files.show(folder, select))),
+            Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
             Command::FilesLaunch { path, app } => {
                 let (path, app) = (path.clone(), app.clone());
                 return self.opener_later(move |opener| match app {
@@ -860,6 +861,7 @@ impl<'a> Connection<'a> {
             | Command::BluetoothForget { .. }
             | Command::BluetoothAnswer { .. }
             | Command::ShowFolder { .. }
+            | Command::AttachFiles { .. }
             | Command::FilesLaunch { .. }
             | Command::FilesOpenWith { .. }
             | Command::FilesSetDefault { .. } => {}

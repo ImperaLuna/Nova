@@ -17,6 +17,22 @@ Singleton {
     // paths in it, maybe none) selected.
     signal windowRequested(var window)
 
+    // Tells novad this process opens Nova Files' windows; done again on
+    // every connection.
+    function attach() {
+        Daemon.call(Protocol.CMD_ATTACH_FILES, {
+            attached: true
+        });
+    }
+
+    // Tells novad to send no more windows, then calls `done`, even when
+    // novad isn't there.
+    function detach(done) {
+        Daemon.call(Protocol.CMD_ATTACH_FILES, {
+            attached: false
+        }, () => done());
+    }
+
     // Opens the file at `path` (absolute) in the app `app` (a desktop file
     // id) or, when `app` is empty, in its type's default app: a double-click
     // or Enter on a file. `done(error)`, when given, gets novad's answer.
@@ -64,6 +80,10 @@ Singleton {
         target: Daemon
         function onFilesWindowRequested(window: var) {
             root.windowRequested(window);
+        }
+        function onConnectedChanged() {
+            if (Daemon.connected)
+                root.attach();
         }
     }
 }
