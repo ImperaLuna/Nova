@@ -1,0 +1,13 @@
+id = "resources"
+name = "Resources"
+description = "What the machine is busy with, in quick settings: CPU, memory, GPU and temperature rings, and a page of the busiest apps to end."
+default = true
+daemon = "resources"
+
+[[slot]]
+host = "quick-settings.foot"
+view = "resources.card"
+
+[[slot]]
+host = "quick-settings.pages"
+view = "resources.page"
