@@ -278,6 +278,7 @@ impl<'a> Connection<'a> {
                 let address = address.clone();
                 return self.bluetooth_later(move |bluetooth| bluetooth.forget(&address));
             }
+            Command::ShowFolder { folder, select } => done(self.files().and_then(|files| files.show(folder, select))),
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -312,6 +313,10 @@ impl<'a> Connection<'a> {
     }
 
     fn network(&self) -> Result<Arc<crate::network::Network>, String> {
+        self.daemon.module()
+    }
+
+    fn files(&self) -> Result<Arc<crate::files::Files>, String> {
         self.daemon.module()
     }
 
@@ -751,7 +756,8 @@ impl<'a> Connection<'a> {
                         | Topic::Media
                         | Topic::Peripherals
                         | Topic::Network
-                        | Topic::Bluetooth => settings.modules.send_state(topic, self.id),
+                        | Topic::Bluetooth
+                        | Topic::Files => settings.modules.send_state(topic, self.id),
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -822,7 +828,8 @@ impl<'a> Connection<'a> {
             | Command::BluetoothConnect { .. }
             | Command::BluetoothDisconnect { .. }
             | Command::BluetoothForget { .. }
-            | Command::BluetoothAnswer { .. } => {}
+            | Command::BluetoothAnswer { .. }
+            | Command::ShowFolder { .. } => {}
         }
     }
 

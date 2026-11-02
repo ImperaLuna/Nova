@@ -129,6 +129,11 @@ pub enum Event {
     /// user (feature `bluetooth`). Topic [`Topic::Bluetooth`], sent right
     /// after subscribing and whenever any of it changes.
     Bluetooth(Bluetooth),
+    /// A Nova Files window to open (feature `files`), as `nova files` or an
+    /// app's "Show in folder" asked. Topic [`Topic::Files`], which only the
+    /// Nova Files process subscribes to; one asked for before it subscribed
+    /// is sent right after it does.
+    FilesWindow(FilesWindow),
 }
 
 /// Groups of events a client can subscribe to.
@@ -154,6 +159,8 @@ pub enum Topic {
     Peripherals,
     Network,
     Bluetooth,
+    /// Nova Files' own (feature `files`), for the Nova Files process.
+    Files,
 }
 
 impl Event {
@@ -181,6 +188,7 @@ impl Event {
             Event::Peripherals(_) => Some(Topic::Peripherals),
             Event::Network(_) | Event::NetworkTraffic(_) => Some(Topic::Network),
             Event::Bluetooth(_) => Some(Topic::Bluetooth),
+            Event::FilesWindow(_) => Some(Topic::Files),
         }
     }
 }
@@ -967,6 +975,16 @@ pub const WIFI_PASSWORD_MAX_BYTES: usize = 128;
 /// a shorter one is never a WPA2 key, and networks offering both are common).
 pub const WPA_PASSWORD_MIN_BYTES: usize = 8;
 
+/// A Nova Files window to open (feature `files`): the folder it shows, an
+/// absolute path, and the items in it to select, by absolute path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilesWindow {
+    pub folder: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub select: Vec<String>,
+}
+
 /// Bluetooth as the quick settings page shows it (feature `bluetooth`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1724,6 +1742,15 @@ pub enum Command {
     BluetoothAnswer {
         id: u64,
         answer: PairingAnswer,
+    },
+    /// Opens a Nova Files window on `folder`, an absolute path, with
+    /// `select` (absolute paths of items in it) selected (`nova files`,
+    /// feature `files`). Starts the Nova Files process when it isn't
+    /// running.
+    ShowFolder {
+        folder: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        select: Vec<String>,
     },
 }
 

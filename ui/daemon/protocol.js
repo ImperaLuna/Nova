@@ -89,6 +89,7 @@ var CMD_BLUETOOTH_CONNECT = "bluetooth_connect";
 var CMD_BLUETOOTH_DISCONNECT = "bluetooth_disconnect";
 var CMD_BLUETOOTH_FORGET = "bluetooth_forget";
 var CMD_BLUETOOTH_ANSWER = "bluetooth_answer";
+var CMD_SHOW_FOLDER = "show_folder";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -117,6 +118,7 @@ var EVENT_PERIPHERALS = "peripherals";
 var EVENT_NETWORK = "network";
 var EVENT_NETWORK_TRAFFIC = "network_traffic";
 var EVENT_BLUETOOTH = "bluetooth";
+var EVENT_FILES_WINDOW = "files_window";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
@@ -138,6 +140,7 @@ var TOPIC_MEDIA = "media";
 var TOPIC_PERIPHERALS = "peripherals";
 var TOPIC_NETWORK = "network";
 var TOPIC_BLUETOOTH = "bluetooth";
+var TOPIC_FILES = "files";
 
 // What a compositor can report or do (Capability).
 var CAPABILITY_WORKSPACES = "workspaces";
@@ -171,6 +174,7 @@ var FEATURE_AI_USAGE = "ai-usage";
 var FEATURE_BAR = "bar";
 var FEATURE_BLUETOOTH = "bluetooth";
 var FEATURE_CLOCK = "clock";
+var FEATURE_FILES = "files";
 var FEATURE_KEEP_AWAKE = "keep-awake";
 var FEATURE_LAUNCHER = "launcher";
 var FEATURE_LOCK = "lock";

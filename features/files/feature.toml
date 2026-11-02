@@ -1,0 +1,4 @@
+id = "files"
+name = "Nova Files"
+description = "A file manager in Nova's look, opened for every folder and every app's \"Show in folder\"."
+daemon = "files"
