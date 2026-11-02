@@ -75,9 +75,9 @@ in
   usesGpuScreenRecorder =
     gpu: ids: lib.any (id: lib.elem "gpu-screen-recorder" (nixNames manifests.${id} gpu)) ids;
 
-  # Nova Files' desktop entry (features/files), running `package`'s nova,
-  # for the systems where the `files` feature is on: Nova Files is then
-  # listed with the apps, and can be the default for folders.
+  # Nova Files' desktop entry and its hicolor icon (features/files), running
+  # `package`'s nova, for the systems where the `files` feature is on: Nova
+  # Files is then listed with the apps, and can be the default for folders.
   filesDesktop =
     pkgs: package:
     pkgs.runCommand "nova-files-desktop" { } ''
@@ -85,6 +85,8 @@ in
         $out/share/applications/nova-files.desktop
       substituteInPlace $out/share/applications/nova-files.desktop \
         --replace-fail "Exec=nova " "Exec=${lib.getExe package} "
+      install -Dm644 ${package}/share/nova/features/files/nova-files.svg \
+        $out/share/icons/hicolor/scalable/apps/nova-files.svg
     '';
 
   # A features.toml for `on` (the ids that are on): what differs from each
