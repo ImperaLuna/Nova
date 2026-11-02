@@ -64,7 +64,7 @@ impl Server {
     fn show(&self, windows: Result<Vec<nova_protocol::FilesWindow>, String>) -> zbus::fdo::Result<()> {
         let windows = windows.map_err(zbus::fdo::Error::InvalidArgs)?;
         for window in windows {
-            self.shared.open(window);
+            self.shared.open(window).map_err(zbus::fdo::Error::LimitsExceeded)?;
         }
         Ok(())
     }
