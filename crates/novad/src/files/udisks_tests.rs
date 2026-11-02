@@ -87,6 +87,9 @@ struct Model {
     objects: HashMap<String, Interfaces>,
     /// Unmounts fail with `DeviceBusy` while set.
     busy: bool,
+    /// Powering off fails with `DeviceBusy` while set, as when another
+    /// filesystem on the drive is mounted.
+    busy_power: bool,
     /// Where a mount goes.
     media: PathBuf,
     powered_off: Vec<String>,
@@ -322,9 +325,12 @@ impl DriveObject {
         &self,
         _options: HashMap<String, OwnedVariant>,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) {
+    ) -> Result<(), UDisksError> {
         let gone: Vec<(String, Vec<String>)> = {
             let mut model = lock(&self.model);
+            if model.busy_power {
+                return Err(UDisksError::DeviceBusy("Cannot power off drive: device is in use".into()));
+            }
             model.powered_off.push(self.path.clone());
             let drive = self.path.clone();
             let on_it: Vec<String> = model
@@ -354,6 +360,7 @@ impl DriveObject {
                 .await
                 .unwrap();
         }
+        Ok(())
     }
 }
 
@@ -413,6 +420,33 @@ fn a_busy_stick_stays_mounted() {
     assert_eq!(drives.eject("sdb1").unwrap(), EjectOutcome::Busy);
     assert!(lock(&fixture.model).powered_off.is_empty());
     assert!(lock(&drives.shared.state).listed.iter().any(|drive| drive.id == "sdb1" && drive.mount.is_some()));
+}
+
+#[test]
+fn a_stick_that_cant_power_off_isnt_called_safe() {
+    let fixture = Fixture::new("busy-power");
+    fixture.plug();
+    let drives = fixture.start();
+    let server = fixture.notifications(&drives);
+    fixture.next();
+    drives.mount("sdb1").unwrap();
+    fixture.next_where(|drives| drives[2].get("mount").is_some());
+    lock(&fixture.model).busy_power = true;
+    assert_eq!(drives.eject("sdb1").unwrap(), EjectOutcome::Busy);
+    assert!(lock(&fixture.model).powered_off.is_empty());
+    nova_test_support::wait_until(WAIT, "the stick is mounted again", || {
+        lock(&drives.shared.state).listed.iter().any(|drive| drive.id == "sdb1" && drive.mount.is_some())
+    });
+    let sent: Vec<String> = fixture
+        .ui
+        .try_iter()
+        .filter_map(|sent| match sent {
+            Outgoing::Line(line) => Some(line),
+            Outgoing::Flushed(_) => None,
+        })
+        .collect();
+    assert!(sent.iter().all(|line| !line.contains("notification_popup")), "no Safe To Remove");
+    drop(server);
 }
 
 #[test]
