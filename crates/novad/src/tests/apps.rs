@@ -313,6 +313,9 @@ fn launching_an_open_app_on_hyprland_focuses_its_window_where_it_is() {
     let address = second["address"].as_str().unwrap();
     assert_eq!(actions, [format!("dispatch focuswindow address:{address}")], "the window stays on its workspace");
     assert!(ran, "asked for a new window, the app runs");
+
+    let (actions, _, _) = focus_the_recorded_window("launcher-focus-hyprland-lua", FakeCompositor::hyprland_lua);
+    assert_eq!(actions, [format!(r#"dispatch hl.dsp.focus({{ window = "address:{address}" }})"#)], "Lua config");
 }
 
 #[test]

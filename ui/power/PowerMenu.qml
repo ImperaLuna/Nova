@@ -9,7 +9,7 @@ import "../daemon/protocol.js" as Protocol
 import "../text/duration.js" as Duration
 
 // The power menu: a glass tab that grows out of the right screen edge,
-// halfway down, with lock, suspend, log out, restart and shut down. Opened
+// halfway down, with lock, log out, suspend, restart and shut down. Opened
 // by the right pill's power button or `nova toggle power`; it holds the
 // keyboard while open (PowerChoice has the keys). Its body runs one radius
 // past the screen edge, so only its left corners show rounded and the blur

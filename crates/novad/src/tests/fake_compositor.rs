@@ -74,7 +74,45 @@ impl FakeCompositor {
         (fake, backend)
     }
 
+    /// Hyprland on a `hyprland.conf`, as the recording's was: it knows no
+    /// Lua dispatchers.
     pub(super) fn hyprland(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
+        Self::hyprland_on(
+            dir,
+            |dispatcher| {
+                if dispatcher.starts_with("hl.") { "Invalid dispatcher".into() } else { "ok".into() }
+            },
+        )
+    }
+
+    /// Hyprland on a `hyprland.lua` (all of 0.57), answering as the real one
+    /// in `recorded/hyprland-0.57/dispatch.json` did: `dispatched` is what it
+    /// said to a dispatcher it ran, `built` what building one said
+    /// (`scripts/record-hyprland-dispatch.py`): a dispatcher is `userdata`.
+    /// One that built runs and gets the answer `hl.dsp.no_op()` got; one that
+    /// didn't gets its error.
+    pub(super) fn hyprland_lua(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
+        let recorded: Value = serde_json::from_str(&Self::recorded("hyprland-0.57", "dispatch.json")).unwrap();
+        Self::hyprland_on(dir, move |dispatcher| {
+            if let Some(answer) = recorded["dispatched"][dispatcher].as_str() {
+                return answer.to_owned();
+            }
+            let Some(built) = recorded["built"][dispatcher].as_str() else {
+                panic!("record {dispatcher:?} in hyprland-0.57/dispatch.json with scripts/record-hyprland-dispatch.py")
+            };
+            if built.trim() == "userdata" {
+                recorded["dispatched"]["hl.dsp.no_op()"].as_str().unwrap().to_owned()
+            } else {
+                built.to_owned()
+            }
+        })
+    }
+
+    /// The recorded Hyprland, answering each dispatcher with `dispatched`.
+    fn hyprland_on(
+        dir: &Path,
+        dispatched: impl Fn(&str) -> String + Send + Sync + 'static,
+    ) -> (Self, Box<dyn compositor::Backend>) {
         const INSTANCE: &str = "recorded";
         let fake = Self { requests: Arc::default(), windows: Arc::default() };
         let instance = dir.join("hypr").join(INSTANCE);
@@ -83,9 +121,11 @@ impl FakeCompositor {
         let last = format!("{:02}", steps.len() - 1);
         let events = Self::recorded("hyprland", "events.txt");
         Self::stream(&instance.join(".socket2.sock"), events);
-        fake.answer(&instance.join(".socket.sock"), move |request| match request.strip_prefix("j/") {
-            Some(query) => Self::recorded("hyprland", &format!("{last}/{query}.json")),
-            None => "ok".into(),
+        fake.answer(&instance.join(".socket.sock"), move |request| {
+            if let Some(query) = request.strip_prefix("j/") {
+                return Self::recorded("hyprland", &format!("{last}/{query}.json"));
+            }
+            request.strip_prefix("dispatch ").map_or_else(|| "ok".into(), &dispatched)
         });
         let runtime_dir = dir.to_owned();
         let backend = compositor::detect(|name| match name {
@@ -107,12 +147,17 @@ impl FakeCompositor {
 
     /// The requests that weren't queries or the event stream.
     pub(super) fn actions(&self) -> Vec<String> {
-        let queries = [r#""EventStream""#, r#""Windows""#, r#""Outputs""#];
+        let queries = [r#""EventStream""#, r#""Windows""#, r#""Outputs""#, compositor::HYPRLAND_LUA_PROBE];
         lock(&self.requests)
             .iter()
             .filter(|r| !r.starts_with("j/") && !queries.contains(&r.as_str()))
             .cloned()
             .collect()
+    }
+
+    /// How many requests were exactly `request`.
+    pub(super) fn sent(&self, request: &str) -> usize {
+        lock(&self.requests).iter().filter(|r| *r == request).count()
     }
 }
 

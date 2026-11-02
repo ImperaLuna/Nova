@@ -24,20 +24,20 @@ QtObject {
             leaves: false
         },
         {
-            action: Protocol.POWER_SUSPEND,
-            label: qsTr("Suspend"),
-            doing: qsTr("Suspending"),
-            key: "s",
-            confirm: false,
-            leaves: false
-        },
-        {
             action: Protocol.POWER_LOG_OUT,
             label: qsTr("Log out"),
             doing: qsTr("Logging out"),
             key: "o",
             confirm: true,
             leaves: true
+        },
+        {
+            action: Protocol.POWER_SUSPEND,
+            label: qsTr("Suspend"),
+            doing: qsTr("Suspending"),
+            key: "s",
+            confirm: false,
+            leaves: false
         },
         {
             action: Protocol.POWER_REBOOT,

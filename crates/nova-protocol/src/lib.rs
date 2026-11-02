@@ -1721,15 +1721,15 @@ pub const WALLPAPER_FOLDER_MAX_IMAGES: usize = 1000;
 #[serde(rename_all = "snake_case")]
 pub enum PowerAction {
     Lock,
-    Suspend,
     LogOut,
+    Suspend,
     Reboot,
     PowerOff,
 }
 
 impl PowerAction {
     pub const ALL: [PowerAction; 5] =
-        [PowerAction::Lock, PowerAction::Suspend, PowerAction::LogOut, PowerAction::Reboot, PowerAction::PowerOff];
+        [PowerAction::Lock, PowerAction::LogOut, PowerAction::Suspend, PowerAction::Reboot, PowerAction::PowerOff];
 }
 
 /// Whether a power action can run now, and why not when it can't.

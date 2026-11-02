@@ -128,6 +128,10 @@ TestCase {
         });
         choice.key(Qt.Key_Down, "", false);
         compare(choice.selected, Protocol.POWER_LOG_OUT);
+        choice.key(Qt.Key_Down, "", false);
+        compare(choice.selected, Protocol.POWER_REBOOT);
+        choice.key(Qt.Key_Up, "", false);
+        compare(choice.selected, Protocol.POWER_LOG_OUT);
         choice.key(Qt.Key_Up, "", false);
         compare(choice.selected, Protocol.POWER_LOCK);
         choice.key(Qt.Key_Up, "", false);

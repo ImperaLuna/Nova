@@ -10,6 +10,12 @@
 //! a layout switch asks for the keyboards (the main keyboard changes when
 //! one is unplugged). Titles, focus and urgency come from the events alone.
 //! Events that arrive together are answered with one round of questions.
+//!
+//! Actions go out as dispatchers, in one of two languages: Hyprland with a
+//! Lua config (all of 0.57, and 0.56 set up with `hyprland.lua`) runs
+//! `dispatch <x>` as the Lua `return hl.dispatch(<x>)`, so it takes
+//! `hl.dsp.exit()` where older setups take `exit`. novad asks once which
+//! one this Hyprland speaks ([`Dialect`]).
 
 use super::Backend;
 use nova_protocol::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
@@ -19,6 +25,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 
 pub const INSTANCE_VAR: &str = "HYPRLAND_INSTANCE_SIGNATURE";
@@ -54,6 +61,12 @@ const CLIENTS: &str = "j/clients";
 const ACTIVE_WINDOW: &str = "j/activewindow";
 const DEVICES: &str = "j/devices";
 
+/// A Lua dispatcher that does nothing: only a Hyprland that speaks Lua
+/// answers it with `ok` (others say "Invalid dispatcher").
+pub(crate) const LUA_PROBE: &str = "dispatch hl.dsp.no_op()";
+/// Hyprland's answer to a dispatcher that ran.
+const DISPATCHED: &str = "ok";
+
 /// The instance folder of the Hyprland that set `instance`.
 pub fn socket_dir(runtime_dir: &Path, instance: &std::ffi::OsStr) -> PathBuf {
     runtime_dir.join("hypr").join(instance)
@@ -61,11 +74,14 @@ pub fn socket_dir(runtime_dir: &Path, instance: &std::ffi::OsStr) -> PathBuf {
 
 pub struct Hyprland {
     dir: PathBuf,
+    /// Which dispatchers it takes, once asked. A Hyprland keeps its config
+    /// language until it quits, and a new one comes with a new instance.
+    dialect: Mutex<Option<Dialect>>,
 }
 
 impl Hyprland {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir }
+        Self { dir, dialect: Mutex::new(None) }
     }
 
     /// Sends one request on its own connection and returns the answer.
@@ -100,13 +116,88 @@ impl Hyprland {
         Ok(matching.into_iter().next())
     }
 
-    /// Runs one of Hyprland's dispatchers.
-    fn dispatch(&self, dispatcher: &str) -> Result<(), String> {
+    /// The dispatcher language this Hyprland takes, asked the first time.
+    fn dialect(&self) -> Result<Dialect, String> {
+        let mut known = self.dialect.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(dialect) = *known {
+            return Ok(dialect);
+        }
+        let dialect = if self.request(LUA_PROBE)?.trim() == DISPATCHED { Dialect::Lua } else { Dialect::Hyprlang };
+        *known = Some(dialect);
+        Ok(dialect)
+    }
+
+    /// Runs `action` as one of Hyprland's dispatchers.
+    fn dispatch(&self, action: &Action) -> Result<(), String> {
+        let dispatcher = action.dispatcher(self.dialect()?);
         match self.request(&format!("dispatch {dispatcher}"))?.trim() {
-            "ok" => Ok(()),
+            DISPATCHED => Ok(()),
             error => Err(format!("Hyprland: {error}")),
         }
     }
+}
+
+/// The language of Hyprland's dispatchers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Dialect {
+    /// `exit`, `workspace 3`: Hyprland before Lua configs, or one still on
+    /// `hyprland.conf`.
+    Hyprlang,
+    /// `hl.dsp.exit()`, `hl.dsp.focus({ workspace = "3" })`.
+    Lua,
+}
+
+/// What novad asks Hyprland to do. Workspaces, monitors and windows are
+/// named by the same selectors (`name:web`, `address:0x…`) in both dialects.
+#[derive(Debug)]
+enum Action {
+    FocusWorkspace(String),
+    /// Shows or hides the special workspace of this name (without `special:`).
+    ToggleSpecial(String),
+    FocusMonitor(String),
+    FocusWindow(String),
+    Exit,
+}
+
+impl Action {
+    fn dispatcher(&self, dialect: Dialect) -> String {
+        match dialect {
+            Dialect::Hyprlang => match self {
+                Self::FocusWorkspace(workspace) => format!("workspace {workspace}"),
+                Self::ToggleSpecial(name) => format!("togglespecialworkspace {name}"),
+                Self::FocusMonitor(monitor) => format!("focusmonitor {monitor}"),
+                Self::FocusWindow(window) => format!("focuswindow {window}"),
+                Self::Exit => "exit".into(),
+            },
+            Dialect::Lua => match self {
+                Self::FocusWorkspace(workspace) => format!("hl.dsp.focus({{ workspace = {} }})", lua_string(workspace)),
+                Self::ToggleSpecial(name) => format!("hl.dsp.workspace.toggle_special({})", lua_string(name)),
+                Self::FocusMonitor(monitor) => format!("hl.dsp.focus({{ monitor = {} }})", lua_string(monitor)),
+                Self::FocusWindow(window) => format!("hl.dsp.focus({{ window = {} }})", lua_string(window)),
+                Self::Exit => "hl.dsp.exit()".into(),
+            },
+        }
+    }
+}
+
+/// `text` as a quoted Lua string. Workspace names are the user's, so quotes,
+/// backslashes and control characters are escaped (`\ddd` takes three digits,
+/// so a digit after it stays a digit).
+fn lua_string(text: &str) -> String {
+    let mut quoted = String::with_capacity(text.len() + 2);
+    quoted.push('"');
+    for c in text.chars() {
+        match c {
+            '"' | '\\' => {
+                quoted.push('\\');
+                quoted.push(c);
+            }
+            c if c.is_ascii_control() => quoted.push_str(&format!("\\{:03}", c as u8)),
+            c => quoted.push(c),
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 /// How dispatchers name `workspace`: a bare number is an id; named
@@ -149,21 +240,21 @@ impl Backend for Hyprland {
 
     fn focus_workspace(&self, workspace: &NovaWorkspace) -> Result<(), String> {
         if workspace.special {
-            return self.dispatch(&format!("togglespecialworkspace {}", workspace.name));
+            return self.dispatch(&Action::ToggleSpecial(workspace.name.clone()));
         }
-        self.dispatch(&format!("workspace {}", workspace_target(workspace)))
+        self.dispatch(&Action::FocusWorkspace(workspace_target(workspace)))
     }
 
     fn focus_output(&self, output: &Output) -> Result<(), String> {
         // Not by workspace: the one under a special workspace shown there
         // isn't active, and showing the special one again hides it.
-        self.dispatch(&format!("focusmonitor {}", output.name))
+        self.dispatch(&Action::FocusMonitor(output.name.clone()))
     }
 
     fn focus_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<bool, String> {
         let Some(client) = self.app_window(app_ids, here)? else { return Ok(false) };
         // Hyprland shows the window's workspace and monitor for it.
-        self.dispatch(&format!("focuswindow address:{}", client.address))?;
+        self.dispatch(&Action::FocusWindow(format!("address:{}", client.address)))?;
         Ok(true)
     }
 
@@ -172,10 +263,7 @@ impl Backend for Hyprland {
     }
 
     fn log_out(&self) -> Result<(), String> {
-        match self.request("dispatch exit")?.trim() {
-            "ok" => Ok(()),
-            error => Err(format!("Hyprland: {error}")),
-        }
+        self.dispatch(&Action::Exit)
     }
 }
 
