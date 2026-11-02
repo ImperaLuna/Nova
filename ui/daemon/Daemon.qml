@@ -93,6 +93,9 @@ Singleton {
     // A Nova Files window to open: {folder, select}. Only the Nova Files
     // process subscribes to its topic.
     signal filesWindowRequested(var window)
+    // How one of this process's copy or move jobs is going: {job, mode,
+    // state, items, name, done_bytes, total_bytes, clash, error}.
+    signal filesTransferChanged(var transfer)
 
     // The topics this process subscribes to on every connection: the
     // shell's, unless its root sets its own as it's created (Nova Files,
@@ -189,6 +192,8 @@ Singleton {
             media = msg.data;
         } else if (msg.event === Protocol.EVENT_FILES_WINDOW) {
             filesWindowRequested(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_TRANSFER) {
+            filesTransferChanged(msg.data);
         }
     }
 

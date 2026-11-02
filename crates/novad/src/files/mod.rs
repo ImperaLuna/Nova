@@ -21,6 +21,12 @@
 //! - `folder.rs`: a folder's entries, their types from the shared MIME
 //!   database (`crate::mime`, loaded once as the module starts), and the
 //!   view's order.
+//! - `transfers.rs`: copy and move jobs (`files_transfer`), one thread
+//!   each, asking the window about name clashes.
+//! - `copying.rs`: the file system side of those: measuring, numbered
+//!   names, and copying a file in chunks.
+//! - `tree.rs`: the sidebar's folder tree that follows the window
+//!   (`files_tree`) and its places (`files_places`).
 //!
 //! Windows go only to the Nova Files process, once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
@@ -29,10 +35,13 @@
 //! the same lock, so none is lost or sent twice. A process that detached as
 //! it quit, with windows asked for since, is followed by a new one.
 
+mod copying;
 mod file_manager1;
 mod folder;
 mod target;
+mod transfers;
 mod trash;
+pub mod tree;
 mod views;
 mod window;
 
@@ -44,7 +53,9 @@ use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
-use nova_protocol::{Event, FeatureState, FileSort, FilesWindow, Topic};
+use nova_protocol::{
+    ClashAnswer, Event, FeatureState, FilePlace, FileSort, FilesWindow, FolderTree, Topic, TransferMode,
+};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 
@@ -71,6 +82,8 @@ pub struct Sources {
     pub associations: Places,
     /// How apps opening files are started.
     pub runner: Runner,
+    /// The user's Home, where the sidebar's tree starts.
+    pub home: PathBuf,
     /// How the Nova Files process runs; none for a novad without its UI,
     /// where windows only wait.
     pub ui: Option<crate::supervisor::UiSettings>,
@@ -88,6 +101,8 @@ pub struct Files {
     stop: Arc<Stop>,
     /// The folders the windows show.
     folders: views::Folders,
+    /// The copies and moves they run.
+    transfers: transfers::Transfers,
     trash: Arc<Trash>,
     /// Tells windows when the trash changes; none when it can't be followed.
     trash_watch: Option<trash::Watch>,
@@ -129,6 +144,7 @@ impl Files {
         }
         let mime = Arc::new(mime);
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
+        let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
         let trash = Arc::new(Trash::new(sources.trash.clone(), sources.mounts.clone(), Arc::clone(&mime)));
         let trash_watch = trash::Watch::start(Arc::clone(&trash), Arc::clone(&hub), Arc::clone(&logger));
         let opener = Opener::new(
@@ -151,7 +167,7 @@ impl Files {
         });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, opener: Arc::new(opener), stop, folders, trash, trash_watch })
+        Arc::new(Self { shared, opener: Arc::new(opener), stop, folders, transfers, trash, trash_watch })
     }
 
     /// What opens files in apps.
@@ -170,9 +186,52 @@ impl Files {
         self.folders.open(client, view, path, sort, hidden)
     }
 
+    /// The sidebar's tree for a window on `request.folder` (`files_tree`,
+    /// [`tree::tree`]). It reads folders, so it's called off the
+    /// connection's thread.
+    pub fn tree(&self, request: &tree::Request) -> Result<FolderTree, String> {
+        tree::tree(request, &self.shared.sources.home)
+    }
+
+    /// The sidebar's places that exist (`files_places`).
+    pub fn places(&self) -> Vec<FilePlace> {
+        tree::places(&self.shared.sources.home, nova_paths::user_dir)
+    }
+
     /// Closes client `client`'s view `view` (`files_close`).
     pub fn close(&self, client: ClientId, view: u32) {
         self.folders.close(client, view);
+    }
+
+    /// Starts client `client`'s job `job`, copying or moving `sources` into
+    /// `folder` (`files_transfer`, [`transfers::Transfers::start`]).
+    pub fn transfer(
+        &self,
+        client: ClientId,
+        job: u32,
+        mode: TransferMode,
+        sources: &[String],
+        folder: &str,
+    ) -> Result<(), String> {
+        self.transfers.start(client, job, mode, sources, folder)
+    }
+
+    /// Stops client `client`'s job `job` (`files_transfer_cancel`).
+    pub fn cancel_transfer(&self, client: ClientId, job: u32) {
+        self.transfers.cancel(client, job);
+    }
+
+    /// Answers a name clash of client `client`'s job `job`
+    /// (`files_transfer_answer`).
+    pub fn answer_clash(
+        &self,
+        client: ClientId,
+        job: u32,
+        clash: u32,
+        answer: ClashAnswer,
+        all: bool,
+    ) -> Result<(), String> {
+        self.transfers.answer(client, job, clash, answer, all)
     }
 
     /// Opens a window on `folder` with `select` selected, once both check
@@ -205,6 +264,7 @@ impl Files {
     /// Client `client` hung up: windows aren't sent to it any more.
     pub fn client_gone(&self, client: ClientId) {
         self.folders.client_gone(client);
+        self.transfers.client_gone(client);
         let mut delivery = lock(&self.shared.delivery);
         if delivery.attached == Some(client) {
             delivery.attached = None;
@@ -212,11 +272,12 @@ impl Files {
     }
 
     /// Stops it: it publishes nothing more, gives up FileManager1, closes
-    /// Nova Files' windows and folder views, and drops windows still
-    /// waiting.
+    /// Nova Files' windows and folder views, stops copies, and drops
+    /// windows still waiting.
     pub fn stop(&self) {
         self.stop.stop();
         self.folders.stop();
+        self.transfers.stop();
         if let Some(watch) = &self.trash_watch {
             watch.stop();
         }
@@ -280,12 +341,14 @@ impl crate::modules::Module for Files {
         let data_dirs = crate::data_dirs();
         let associations = Places::system(&data_dirs);
         let runner = Runner::detect(env.path_var);
+        let home = nova_paths::home().unwrap_or_else(|| PathBuf::from("/"));
         let trash = nova_paths::data_home().map(|data| data.join(TRASH_DIR));
         Sources {
             bus: Bus::Session,
             data_dirs,
             associations,
             runner,
+            home,
             ui: env.ui.cloned(),
             trash,
             mounts: MOUNT_TABLE.into(),
@@ -344,6 +407,7 @@ mod tests {
                 data_dirs: vec![],
                 associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
                 runner: crate::apps::launch::Runner::Direct,
+                home: dir.to_path_buf(),
                 ui: None,
                 trash: Some(dir.join("Trash")),
                 mounts: dir.join("no-mountinfo"),

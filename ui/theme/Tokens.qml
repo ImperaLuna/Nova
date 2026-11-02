@@ -692,6 +692,32 @@ QtObject {
     // The small chevron beside New, Sort and View.
     readonly property int iconSizeMini: 12
     readonly property real filesChevronOpacity: 0.6
+    // Copies and moves: each running job's card stacked at the window's
+    // bottom right, and the name clash dialog in its middle, its two sides
+    // with a big icon each and its answers as round buttons.
+    readonly property int filesJobWidth: 290
+    readonly property int filesOverlayInset: 16
+    readonly property int filesClashWidth: 440
+    readonly property int filesClashIconSize: 40
+    readonly property int filesClashButtonHeight: 34
+    // The scale the dialog pops in from and shrinks back to.
+    readonly property real filesClashEnterScale: 0.97
+    // The address bar: each folder's part, washed on hover, and the ring
+    // while a path is typed (in the error color for one that isn't a folder).
+    readonly property int filesCrumbPadY: 4
+    readonly property int filesCrumbRadius: 8
+    readonly property real filesFocusRing: strokeThin
+    // The sidebar: the line between places, tree and drives, and the tree,
+    // its rows the height of a place, each level this far in, with its
+    // chevron (turning as it opens) and folder icon. New rows slide in from
+    // just above, one after another, this much apart.
+    readonly property color filesRule: glassRim
+    readonly property int filesRuleInset: 6
+    readonly property int filesTreeIndent: 14
+    readonly property int filesTreeChevron: 14
+    readonly property int filesTreeGap: 4
+    readonly property int filesTreeRise: 4
+    readonly property int filesTreeStagger: 30
 
     // Type
     readonly property string fontSans: "Inter"

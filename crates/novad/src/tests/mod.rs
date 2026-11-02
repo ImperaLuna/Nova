@@ -302,6 +302,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
                 &[],
             ),
             runner: launcher::Runner::Direct,
+            home: dir.join("home"),
             ui: None,
             // A home trash under `<dir>/trash`, and no drives.
             trash: Some(dir.join("trash")),
@@ -341,6 +342,7 @@ mod apps;
 mod basics;
 mod desktop;
 mod fake_compositor;
+mod folder_tree;
 mod live_config;
 mod opening;
 mod services;

@@ -1,5 +1,5 @@
 .pragma library
-.import "quick_settings.js" as QuickSettings
+.import "../text/bytes.js" as Bytes
 .import "../daemon/protocol.js" as Protocol
 .import "../theme/icons.js" as Icons
 
@@ -224,7 +224,7 @@ function passwordFits(text) {
 
 // Bytes per second as "3.5 MB/s", "114 KB/s".
 function speed(bytesPerSecond) {
-    return QuickSettings.bytes(bytesPerSecond) + "/s";
+    return Bytes.bytes(bytesPerSecond) + "/s";
 }
 
 // A traffic history as 0-100 for the graph, against `peak`.
