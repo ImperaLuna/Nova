@@ -34,8 +34,10 @@ Scope {
     // and not held.
     function sync(): void {
         const shown = Object.assign({}, views);
+        // A view that failed to load stays null, so it isn't tried (and
+        // warned about) again on every features event.
         for (const view of wanted) {
-            if (!shown[view])
+            if (!(view in shown))
                 shown[view] = create(view);
         }
         for (const view of Object.keys(shown)) {

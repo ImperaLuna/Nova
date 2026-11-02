@@ -241,7 +241,17 @@ fn the_ui_runs_only_while_a_feature_with_a_ui_is_on() {
     std::fs::write(novad.features_file(), &all_off).unwrap();
     let status = wait_for_status(&mut client, |status| status.ui.state == UiState::NotNeeded);
     assert_eq!((status.ui.pid, status.ui.restarts, status.ui.last_crash), (None, 0, None));
-    novad.daemon.ui.as_ref().unwrap().stop();
+
+    // Off and straight back on, before the stopped UI has exited: a restart,
+    // not a crash.
+    let ui = novad.daemon.ui.as_ref().unwrap();
+    ui.want(true, &novad.daemon.logger);
+    let first = wait_for_status(&mut client, |status| status.ui.pid.is_some()).ui.pid;
+    ui.want(false, &novad.daemon.logger);
+    ui.want(true, &novad.daemon.logger);
+    let status = wait_for_status(&mut client, |status| status.ui.pid.is_some_and(|pid| Some(pid) != first));
+    assert_eq!((status.ui.restarts, status.ui.last_crash), (0, None));
+    ui.stop();
 }
 
 fn wait_for_status(client: &mut Client, done: impl Fn(&Status) -> bool) -> Status {
