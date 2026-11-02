@@ -25,6 +25,9 @@ struct Glob {
     /// The pattern's characters, for matching it as a shell glob.
     chars: Vec<char>,
     case_sensitive: bool,
+    /// Which `add` gave it, counting up: a later folder outranks an
+    /// earlier one where their patterns tie.
+    folder: u32,
 }
 
 /// The patterns of every data folder.
@@ -37,6 +40,8 @@ pub struct Globs {
     extensions: HashMap<String, Vec<Glob>>,
     /// Every other pattern (`*~`, `*.so.[0-9]*`, `sconscript.*`).
     others: Vec<Glob>,
+    /// How many folders were added.
+    folders: u32,
 }
 
 /// What a name matched: the best weight's types, the longest pattern first.
@@ -49,6 +54,8 @@ impl Globs {
     /// important to the most, so a folder's `__NOGLOBS__` drops what came
     /// before it.
     pub fn add(&mut self, text: &str) {
+        self.folders += 1;
+        let folder = self.folders;
         let mut cleared = HashSet::new();
         for line in text.lines() {
             if line.starts_with('#') || line.trim().is_empty() {
@@ -67,7 +74,14 @@ impl Globs {
             }
             let case_sensitive = fields.next().is_some_and(|flags| flags.split(',').any(|flag| flag == CASE_SENSITIVE));
             let chars = pattern.chars().collect();
-            self.insert(Glob { weight, mime: mime.to_string(), pattern: pattern.to_string(), chars, case_sensitive });
+            self.insert(Glob {
+                weight,
+                mime: mime.to_string(),
+                pattern: pattern.to_string(),
+                chars,
+                case_sensitive,
+                folder,
+            });
         }
     }
 
@@ -122,13 +136,17 @@ fn lookup<'a>(map: &'a HashMap<String, Vec<Glob>>, key: &str) -> Option<&'a Vec<
     if key.bytes().any(|byte| byte.is_ascii_uppercase()) { map.get(&key.to_ascii_lowercase()) } else { map.get(key) }
 }
 
-/// The types of the best weight, then the longest pattern.
+/// The types of the best weight, then the longest pattern; among those,
+/// a more important folder's first.
 fn best(found: Vec<&Glob>) -> Matches<'_> {
     let Some(weight) = found.iter().map(|glob| glob.weight).max() else { return Matches { types: vec![] } };
     let heaviest = found.iter().filter(|glob| glob.weight == weight);
     let longest = heaviest.clone().map(|glob| glob.pattern.len()).max().unwrap_or(0);
+    let mut tied: Vec<&Glob> = heaviest.filter(|glob| glob.pattern.len() == longest).copied().collect();
+    // Stable: within a folder, the order it listed them.
+    tied.sort_by_key(|glob| std::cmp::Reverse(glob.folder));
     let mut types: Vec<&str> = Vec::new();
-    for glob in heaviest.filter(|glob| glob.pattern.len() == longest) {
+    for glob in tied {
         if !types.contains(&glob.mime.as_str()) {
             types.push(&glob.mime);
         }
@@ -270,6 +288,13 @@ mod tests {
         assert!(find(&globs, "a.old").is_empty());
         assert_eq!(find(&globs, "a.older"), ["text/x-old"]);
         assert_eq!(find(&globs, "a.txt"), ["text/plain"]);
+    }
+
+    #[test]
+    fn a_more_important_folder_wins_a_tie() {
+        let mut globs = globs("50:application/x-system:*.foo\n");
+        globs.add("50:application/x-user:*.foo\n");
+        assert_eq!(find(&globs, "a.foo"), ["application/x-user", "application/x-system"]);
     }
 
     fn matches(pattern: &str, name: &str, case_sensitive: bool) -> bool {
