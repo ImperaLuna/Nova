@@ -6,6 +6,9 @@
 //! rule looks.
 
 const HEADER: &[u8] = b"MIME-Magic\0\n";
+/// The line a folder lists for a type to drop the rules earlier folders
+/// gave it (`magic-deleteall`).
+const NO_MAGIC: &[u8] = b">0=__NOMAGIC__\n";
 /// Rules never need more of a file than this, even an ISO image's (32 KiB in).
 pub const MAX_READ: usize = 64 * 1024;
 
@@ -25,6 +28,11 @@ struct Section {
     priority: u32,
     mime: String,
     rules: Vec<Rule>,
+    /// Which `add` gave it, counting up: a later folder outranks an
+    /// earlier one at the same priority.
+    folder: u32,
+    /// `__NOMAGIC__`: the type's rules from earlier folders are dropped.
+    drops_earlier: bool,
 }
 
 /// Every data folder's rules, the highest priority first.
@@ -33,6 +41,8 @@ pub struct Magic {
     sections: Vec<Section>,
     /// How much of a file the rules look at.
     extent: usize,
+    /// How many folders were added.
+    folders: u32,
 }
 
 impl Magic {
@@ -46,12 +56,19 @@ impl Magic {
             (section, rest) = parse_section(rest)?;
             sections.push(section);
         }
-        for section in sections {
+        self.folders += 1;
+        for section in &mut sections {
+            section.folder = self.folders;
+            if section.drops_earlier {
+                self.sections.retain(|earlier| earlier.mime != section.mime);
+            }
+        }
+        for section in sections.into_iter().filter(|section| !section.rules.is_empty()) {
             self.extent = self.extent.max(section.rules.iter().map(Rule::extent).max().unwrap_or(0)).min(MAX_READ);
             self.sections.push(section);
         }
-        // Stable: within a priority, the order the folders gave.
-        self.sections.sort_by_key(|section| std::cmp::Reverse(section.priority));
+        // Stable: within a priority and folder, the order the folder gave.
+        self.sections.sort_by_key(|section| std::cmp::Reverse((section.priority, section.folder)));
         Ok(())
     }
 
@@ -78,7 +95,10 @@ impl Rule {
     }
 
     fn matches(&self, data: &[u8]) -> bool {
-        (self.offset..self.offset.saturating_add(self.range)).any(|start| {
+        // Only where the whole value fits in `data`, however wide the range.
+        let Some(last) = data.len().checked_sub(self.value.len()) else { return false };
+        let end = self.offset.saturating_add(self.range).min(last.saturating_add(1));
+        (self.offset..end).any(|start| {
             let Some(window) = data.get(start..start + self.value.len()) else { return false };
             match &self.mask {
                 None => window == self.value,
@@ -118,9 +138,14 @@ fn parse_section(bytes: &[u8]) -> Result<(Section, &[u8]), String> {
         .and_then(|header| header.split_once(':'))
         .ok_or_else(|| format!("a bad section header {header:?}"))?;
     let priority = priority.parse().map_err(|_| format!("a bad priority in {header:?}"))?;
-    let mut section = Section { priority, mime: mime.to_string(), rules: Vec::new() };
+    let mut section = Section { priority, mime: mime.to_string(), rules: Vec::new(), folder: 0, drops_earlier: false };
     let mut rest = &bytes[header_end + 1..];
     while !rest.is_empty() && rest[0] != b'[' {
+        if let Some(after) = rest.strip_prefix(NO_MAGIC) {
+            section.drops_earlier = true;
+            rest = after;
+            continue;
+        }
         match parse_rule(rest) {
             Ok((rule, after)) => {
                 section.rules.push(rule);
@@ -290,5 +315,29 @@ pub(super) mod tests {
         let mut kept = Magic::default();
         assert!(kept.add(&half).is_err());
         assert_eq!(kept.find(b"G", None), None, "a bad file adds nothing, not even its good sections");
+    }
+
+    #[test]
+    fn a_later_folder_wins_a_tie_and_can_drop_a_types_rules() {
+        let mut magic = magic(&magic_file(&[
+            (50, "application/x-system", &[(0, 0, b"S", None, 1)]),
+            (50, "application/x-old", &[(0, 0, b"O", None, 1)]),
+        ]));
+        let mut user = magic_file(&[(50, "application/x-user", &[(0, 0, b"S", None, 1)])]);
+        user.extend(b"[50:application/x-old]\n>0=__NOMAGIC__\n");
+        user.extend(&magic_file(&[(50, "application/pdf", &[(0, 0, b"%PDF-", None, 1)])])[HEADER.len()..]);
+        magic.add(&user).unwrap();
+        assert_eq!(magic.find(b"S", None), Some(("application/x-user", 50)));
+        assert_eq!(magic.find(b"O", None), None, "the user's folder dropped it");
+        assert_eq!(magic.find(b"%PDF-1.7", None), Some(("application/pdf", 50)), "what follows is still read");
+    }
+
+    #[test]
+    fn a_huge_range_looks_only_where_the_value_fits() {
+        let mut bytes = HEADER.to_vec();
+        bytes.extend(b"[50:application/x-wide]\n>0=\x00\x01W+18446744073709551614\n");
+        let magic = magic(&bytes);
+        assert_eq!(magic.find(b"x", None), None);
+        assert_eq!(magic.find(b"xxW", None), Some(("application/x-wide", 50)));
     }
 }

@@ -5,8 +5,9 @@
 //! types each app's entry says it opens (`MimeType=`).
 //!
 //! A type's default is the first installed app a `[Default Applications]`
-//! line names for it or, failing that, for a type it's a kind of; with
-//! none named, the first app that opens it. The apps that open a type are
+//! line names for it or, failing that, for a type it's a kind of (as GLib
+//! does), skipping one a list with as much say removed from that type;
+//! with none named, the first app that opens it. The apps that open a type are
 //! those `[Added Associations]` add, then those whose entries list it,
 //! less those `[Removed Associations]` takes away in the same file or one
 //! with more say; a type's parents add theirs after its own.
@@ -100,7 +101,13 @@ impl Associations {
     /// kind of, the nearest first) by default.
     pub fn default_app<'a>(&self, types: &[String], apps: &'a State) -> Option<&'a Entry> {
         let named = types.iter().find_map(|mime| {
-            self.lists.iter().find_map(|list| list.defaults.get(mime)?.iter().find_map(|id| apps.any_entry(id)))
+            // A list's removals count for its own defaults and those below.
+            let mut removed = BTreeSet::new();
+            self.lists.iter().find_map(|list| {
+                removed.extend(list.removed.get(mime).into_iter().flatten());
+                let ids = list.defaults.get(mime)?;
+                ids.iter().filter(|id| !removed.contains(id)).find_map(|id| apps.any_entry(id))
+            })
         });
         named.or_else(|| self.apps_for(types, apps).into_iter().next())
     }
@@ -116,7 +123,7 @@ impl Associations {
                 for id in list.added.get(mime).into_iter().flatten() {
                     if !removed.contains(id)
                         && let Some(entry) = apps.any_entry(id)
-                        && !found.iter().any(|known| known.id == entry.id)
+                        && !found.iter().any(|known| known.same_app(entry))
                     {
                         found.push(entry);
                     }
@@ -125,7 +132,7 @@ impl Associations {
             for entry in apps.openers() {
                 if entry.mime_types.iter().any(|opens| opens == mime)
                     && !removed.contains(&entry.id)
-                    && !found.iter().any(|known| known.id == entry.id)
+                    && !found.iter().any(|known| known.same_app(entry))
                 {
                     found.push(entry);
                 }
