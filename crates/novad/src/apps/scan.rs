@@ -19,8 +19,9 @@ const MAX_ENTRY_BYTES: u64 = 1024 * 1024;
 pub struct Found {
     /// The apps the launcher lists, by id.
     pub apps: BTreeMap<String, Entry>,
-    /// Apps it doesn't list (`NoDisplay`) that open some type of file, by
-    /// id: one may still be a type's default.
+    /// Apps it doesn't list, by id, that a type's default may still name:
+    /// `NoDisplay` ones that open some type of file, and copies of a
+    /// listed app under another id.
     pub unlisted: BTreeMap<String, Entry>,
     /// The problems with entries that aren't valid, for the log.
     pub problems: Vec<String>,
@@ -58,26 +59,27 @@ pub fn scan(data_dirs: &[PathBuf], context: &Context) -> Found {
     }
     let (apps, unlisted): (BTreeMap<String, Entry>, BTreeMap<String, Entry>) =
         apps.into_iter().partition(|(_, entry)| entry.listed);
-    let unlisted = unlisted.into_iter().filter(|(_, entry)| entry.opens_types()).collect();
-    Found { apps: without_copies(apps), unlisted, problems }
+    let mut unlisted: BTreeMap<String, Entry> = unlisted.into_iter().filter(|(_, entry)| entry.opens_types()).collect();
+    let (apps, copies) = without_copies(apps);
+    unlisted.extend(copies.into_iter().map(|entry| (entry.id.clone(), entry)));
+    Found { apps, unlisted, problems }
 }
 
 /// `apps` with one of each set of entries that show the same name and run
 /// the same command, like a package's entry and a copy the user's config
 /// adds under another id: the one that opens file or link types, else the
-/// first by id.
-fn without_copies(apps: BTreeMap<String, Entry>) -> BTreeMap<String, Entry> {
+/// first by id. The others come back apart.
+fn without_copies(apps: BTreeMap<String, Entry>) -> (BTreeMap<String, Entry>, Vec<Entry>) {
     let mut kept: BTreeMap<(String, Vec<String>, bool), Entry> = BTreeMap::new();
+    let mut copies = Vec::new();
     for entry in apps.into_values() {
         let key = (entry.name.clone(), entry.exec.clone(), entry.terminal);
         match kept.get(&key) {
-            Some(other) if other.opens_types() || !entry.opens_types() => {}
-            _ => {
-                kept.insert(key, entry);
-            }
+            Some(other) if other.opens_types() || !entry.opens_types() => copies.push(entry),
+            _ => copies.extend(kept.insert(key, entry)),
         }
     }
-    kept.into_values().map(|entry| (entry.id.clone(), entry)).collect()
+    (kept.into_values().map(|entry| (entry.id.clone(), entry)).collect(), copies)
 }
 
 pub(crate) fn read_entry(file: &Path) -> std::io::Result<String> {
@@ -282,6 +284,11 @@ mod tests {
         write_app(&share, "other.desktop", "Other", "");
         let found = names(std::slice::from_ref(&share));
         assert_eq!(found.keys().collect::<Vec<_>>(), ["md.obsidian.Obsidian.desktop", "other.desktop"]);
+        // The copy is still there for a mimeapps.list that names it.
+        let locale = Locale::default();
+        let context = Context { locale: &locale, desktops: &[], path_var: "", autostart: false };
+        let unlisted = scan(std::slice::from_ref(&share), &context).unlisted;
+        assert_eq!(unlisted.keys().collect::<Vec<_>>(), ["obsidian.desktop"]);
     }
 
     #[test]
