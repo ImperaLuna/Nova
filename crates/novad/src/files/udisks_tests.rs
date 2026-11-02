@@ -437,3 +437,16 @@ fn without_udisks_no_drives_are_listed() {
     });
     assert!(lock(&drives.shared.state).listed.is_empty());
 }
+
+#[test]
+fn a_stopped_module_ejects_nothing() {
+    let fixture = Fixture::new("stopped");
+    fixture.plug();
+    let drives = fixture.start();
+    fixture.next_where(|drives| drives.len() == 3);
+    drives.mount("sdb1").unwrap();
+    fixture.next_where(|drives| drives[2].get("mount").is_some());
+    drives.stop();
+    assert!(drives.eject("sdb1").unwrap_err().contains("stopped"));
+    assert!(lock(&fixture.model).powered_off.is_empty());
+}

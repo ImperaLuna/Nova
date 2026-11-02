@@ -32,6 +32,16 @@ Column {
                 best = drive;
         return best;
     }
+    // Mounts drive `id` and opens it. Here, not in its row: rows are made
+    // again when the list changes (as the mount does), and a callback of a
+    // row gone would never run.
+    function open(id: string) {
+        FilesService.mount(id, mounted => {
+            if (mounted !== null)
+                drives.opened(mounted);
+        });
+    }
+
     // Where the drive the folder is on was mounted, before the latest list.
     property string heldMount: ""
 
@@ -60,10 +70,7 @@ Column {
             current: modelData.id === (drives.current?.id ?? "")
             arrived: drives.listed && !(modelData.id in drives.seen)
             Component.onCompleted: drives.seen[modelData.id] = true
-            onOpened: FilesService.mount(modelData.id, mounted => {
-                if (mounted !== null)
-                    drives.opened(mounted);
-            })
+            onOpened: drives.open(modelData.id)
             onMenuRequested: at => drives.menuRequested(modelData, at)
         }
     }
