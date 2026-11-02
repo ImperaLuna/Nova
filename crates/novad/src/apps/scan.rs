@@ -67,7 +67,7 @@ fn without_copies(apps: BTreeMap<String, Entry>) -> BTreeMap<String, Entry> {
     kept.into_values().map(|entry| (entry.id.clone(), entry)).collect()
 }
 
-pub(super) fn read_entry(file: &Path) -> std::io::Result<String> {
+pub(crate) fn read_entry(file: &Path) -> std::io::Result<String> {
     use std::io::Read;
     let mut text = String::new();
     std::fs::File::open(file)?.take(MAX_ENTRY_BYTES).read_to_string(&mut text)?;
@@ -208,7 +208,7 @@ fn links_on_the_way(path: &Path, points: &mut WatchPoints) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::launcher::desktop_entry::Locale;
+    use crate::apps::desktop_entry::Locale;
     use std::os::unix::fs::symlink;
 
     fn temp(name: &str) -> nova_test_support::TempDir {

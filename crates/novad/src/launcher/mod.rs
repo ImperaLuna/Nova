@@ -5,12 +5,11 @@
 //! apps are read (`crate::icons`), so the UI only loads images.
 
 pub mod autostart;
-mod desktop_entry;
 mod launch;
-mod program;
 mod rank;
-mod scan;
 
+use crate::apps::desktop_entry::{Context, Entry, Locale};
+use crate::apps::{program_name, scan};
 use crate::compositor::Compositor;
 use crate::hub::Hub;
 use crate::icons::Icons;
@@ -18,10 +17,8 @@ use crate::inotify::{self, Inotify};
 use crate::logger::Logger;
 use crate::tray::Tray;
 use crate::{lock, state_file};
-use desktop_entry::{Context, Entry, Locale};
 pub use launch::{Runner, open};
 use nova_protocol::{APP_ICON_MAX_CHARS, App, AppMatch, Event, SEARCH_APPS_MAX_CHARS};
-pub use program::program_name;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -141,7 +138,7 @@ impl Launcher {
             }),
             Err(_) => Saved::default(),
         };
-        let desktops = current_desktops();
+        let desktops = crate::apps::current_desktops();
         let launcher = Arc::new(Self {
             scanned: Condvar::new(),
             state: Mutex::new(State {
@@ -491,16 +488,6 @@ impl Launcher {
 }
 
 /// Watches what `scan::watch_points` says for `data_dirs`.
-/// `XDG_CURRENT_DESKTOP`'s names, like `niri`, which entries show in or not.
-fn current_desktops() -> Vec<String> {
-    std::env::var("XDG_CURRENT_DESKTOP")
-        .unwrap_or_default()
-        .split(':')
-        .filter(|name| !name.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
 fn watch_all(watcher: &mut Inotify, data_dirs: &[PathBuf], logger: &Logger) -> scan::WatchPoints {
     let points = scan::watch_points(data_dirs);
     // The parents first: a folder that's both gets the trees' wider mask.

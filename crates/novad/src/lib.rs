@@ -25,6 +25,7 @@
 //!   commands, and the component that loads when the feature is ready.
 
 mod ai_usage;
+mod apps;
 mod backoff;
 mod bluetooth;
 pub mod checks;
