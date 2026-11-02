@@ -94,10 +94,10 @@ impl Server {
 mod tests {
     use super::*;
     use crate::files::{Files, Sources};
-    use crate::hub::{ClientId, ClientQueue, Hub, Outgoing, next_named};
+    use crate::hub::{ClientQueue, Hub, Outgoing, next_named};
     use crate::logger::Logger;
     use crate::session_bus::{Bus, TestBus};
-    use nova_protocol::{LogLevel, Topic};
+    use nova_protocol::LogLevel;
     use nova_test_support::{TempDir, wait_until};
     use serde_json::json;
     use std::os::unix::net::UnixStream;
@@ -126,21 +126,12 @@ mod tests {
             Self { dir, bus, hub, files }
         }
 
-        /// A connection subscribed to the files topic, as `nova ipc
-        /// subscribe files` is.
-        fn client(&self) -> (ClientId, Receiver<Outgoing>, UnixStream) {
+        /// The Nova Files process's connection, attached.
+        fn nova_files(&self) -> (Receiver<Outgoing>, UnixStream) {
             let (stream, ours) = UnixStream::pair().unwrap();
             let (queue, outgoing) = ClientQueue::new(&ours).unwrap();
-            let client = self.hub.register(queue);
-            self.hub.subscribe(client, Topic::Files);
-            (client, outgoing, stream)
-        }
-
-        /// The Nova Files process's connection, attached.
-        fn nova_files(&self) -> (ClientId, Receiver<Outgoing>, UnixStream) {
-            let connection = self.client();
-            self.files.attach(connection.0, true);
-            connection
+            self.files.attach(self.hub.register(queue), true);
+            (outgoing, stream)
         }
 
         /// An app calling `method` with `uris`, as Firefox's "Show in folder" does.
@@ -157,7 +148,7 @@ mod tests {
     #[test]
     fn show_items_opens_the_folder_with_the_item_selected() {
         let fixture = Fixture::new("items");
-        let (_, nova_files, _stream) = fixture.nova_files();
+        let (nova_files, _stream) = fixture.nova_files();
         let report = format!("file://{}/report%20one.pdf", fixture.path("Downloads"));
         fixture.call("ShowItems", &[report]).unwrap();
         let window = next_named(&nova_files, "files_window", WAIT);
@@ -169,7 +160,7 @@ mod tests {
     #[test]
     fn show_folders_opens_each_folder() {
         let fixture = Fixture::new("folders");
-        let (_, nova_files, _stream) = fixture.nova_files();
+        let (nova_files, _stream) = fixture.nova_files();
         fixture.call("ShowFolders", &[format!("file://{}", fixture.path("Downloads"))]).unwrap();
         assert_eq!(next_named(&nova_files, "files_window", WAIT), json!({"folder": fixture.path("Downloads")}));
     }
@@ -184,44 +175,6 @@ mod tests {
         assert!(
             fixture.call("ShowItems", &vec![String::new(); MAX_URIS + 1]).unwrap_err().to_string().contains("URIs")
         );
-    }
-
-    #[test]
-    fn a_window_waits_until_nova_files_attaches() {
-        let fixture = Fixture::new("waits");
-        let downloads = fixture.path("Downloads");
-        fixture.files.show(&downloads, &[]).unwrap();
-        // Another subscriber to the topic takes nothing.
-        let (_, watcher, _watcher_stream) = fixture.client();
-        let (_, nova_files, _stream) = fixture.nova_files();
-        assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(downloads));
-        fixture.files.show(&downloads, &[]).unwrap();
-        assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(downloads));
-        assert!(watcher.try_recv().is_err(), "windows go only to Nova Files");
-    }
-
-    #[test]
-    fn a_window_asked_for_as_nova_files_quits_waits_for_the_next() {
-        let fixture = Fixture::new("quits");
-        let downloads = fixture.path("Downloads");
-        let (client, quitting, _stream) = fixture.nova_files();
-        fixture.files.attach(client, false);
-        fixture.files.show(&downloads, &[]).unwrap();
-        let (_, next, _next_stream) = fixture.nova_files();
-        assert_eq!(next_named(&next, "files_window", WAIT)["folder"], json!(downloads));
-        assert!(quitting.try_recv().is_err(), "nothing for the one quitting");
-    }
-
-    #[test]
-    fn a_window_for_nova_files_that_hung_up_waits_for_the_next() {
-        let fixture = Fixture::new("hung-up");
-        let downloads = fixture.path("Downloads");
-        let (client, _, stream) = fixture.nova_files();
-        fixture.hub.unregister(client);
-        drop(stream);
-        fixture.files.show(&downloads, &[]).unwrap();
-        let (_, next, _next_stream) = fixture.nova_files();
-        assert_eq!(next_named(&next, "files_window", WAIT)["folder"], json!(downloads));
     }
 
     #[test]
