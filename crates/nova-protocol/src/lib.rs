@@ -134,6 +134,22 @@ pub enum Event {
     /// once it has attached (`attach_files`); one asked for before then is
     /// sent right after. Topic [`Topic::Files`].
     FilesWindow(FilesWindow),
+    /// One page of a folder's entries in view `view` (feature `files`), in
+    /// the view's order: entries `start..start + entries.len()` of `total`.
+    /// A page with `start: 0` replaces everything the view held, after
+    /// `files_open` and again when novad had to read the folder anew (it
+    /// lost track of changes). Sent only to the client that opened the
+    /// view, whatever it subscribed to; topic [`Topic::Files`].
+    FilesPage(FolderPage),
+    /// The folder in view `view` changed: apply `changes` in order, each
+    /// index counting in the list as the changes before it left it. Sent
+    /// only to the client that opened the view; topic [`Topic::Files`].
+    FilesChanged { view: u32, changes: Vec<FolderChange> },
+    /// novad closed view `view` (feature `files`) by itself: its folder
+    /// couldn't be read, or was deleted, moved away or unmounted. `error`
+    /// says why, for the window. Sent only to the client that opened the
+    /// view; topic [`Topic::Files`].
+    FilesClosed { view: u32, error: String },
 }
 
 /// Groups of events a client can subscribe to.
@@ -189,6 +205,7 @@ impl Event {
             Event::Network(_) | Event::NetworkTraffic(_) => Some(Topic::Network),
             Event::Bluetooth(_) => Some(Topic::Bluetooth),
             Event::FilesWindow(_) => Some(Topic::Files),
+            Event::FilesPage(_) | Event::FilesChanged { .. } | Event::FilesClosed { .. } => Some(Topic::Files),
         }
     }
 }
@@ -985,6 +1002,21 @@ pub struct FilesWindow {
     pub select: Vec<String>,
 }
 
+/// The apps that can open a file (feature `files`), for its "Open with"
+/// menu: the answer to [`Command::FilesOpenWith`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenWith {
+    /// The file's type, like `image/png`.
+    pub mime: String,
+    /// The id of the app that opens it by default, when one does: the
+    /// first of `apps`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+    /// The apps that can open it, the default first.
+    pub apps: Vec<App>,
+}
+
 /// Bluetooth as the quick settings page shows it (feature `bluetooth`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1128,6 +1160,13 @@ pub struct App {
 /// The longest `launcher_search` query, in characters: anything on the
 /// socket is capped, and nobody types more.
 pub const LAUNCHER_SEARCH_MAX_CHARS: usize = 200;
+
+/// Most folder views one connection may have open (`files_open`): each
+/// holds its folder's entries in novad.
+pub const FILES_MAX_VIEWS: usize = 16;
+
+/// The longest `files_open` path, in bytes: Linux's own limit.
+pub const FILES_PATH_MAX_BYTES: usize = 4096;
 
 /// The longest each of an `app_icon` request's names may be, in
 /// characters.
@@ -1760,6 +1799,113 @@ pub enum Command {
     AttachFiles {
         attached: bool,
     },
+    /// Opens the file at `path`, an absolute path, in the app `app` (its
+    /// desktop file id) or, without one, in its type's default app
+    /// (feature `files`: a double-click, Enter, or a pick from "Open with").
+    FilesLaunch {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        app: Option<String>,
+    },
+    /// The apps that can open the file at `path` (feature `files`),
+    /// answered with an [`OpenWith`].
+    FilesOpenWith {
+        path: String,
+    },
+    /// Makes the app `app` the default for files of the type of the one at
+    /// `path` (feature `files`).
+    FilesSetDefault {
+        path: String,
+        app: String,
+    },
+    /// Shows the folder at the absolute `path` in this connection's view
+    /// `view` (feature `files`), in `sort` order, with hidden entries (a
+    /// name starting with a dot) only when `hidden`. Whatever the view
+    /// showed is replaced. Answered once the view is open, without
+    /// touching the disk, so a stalled mount holds up only this view; its
+    /// entries follow as [`Event::FilesPage`]s and its changes as
+    /// [`Event::FilesChanged`] until `files_close`, or an
+    /// [`Event::FilesClosed`] when the folder can't be read or goes.
+    FilesOpen {
+        view: u32,
+        path: String,
+        sort: FileSort,
+        hidden: bool,
+    },
+    /// Closes this connection's view `view`. A view closes by itself when
+    /// its connection does.
+    FilesClose {
+        view: u32,
+    },
+}
+
+/// The order of a folder view (`files_open`). Folders always come before
+/// files; within each, entries are ordered by `key`, then by name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileSort {
+    pub key: FileSortKey,
+    pub descending: bool,
+}
+
+/// What a folder view is ordered by. Names compare the way people read
+/// them: case aside, and numbers by their value ("file 2" before "file 10").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSortKey {
+    Name,
+    /// The MIME type.
+    Kind,
+    Size,
+    Modified,
+}
+
+/// One page of a folder view ([`Event::FilesPage`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FolderPage {
+    pub view: u32,
+    /// The folder, as `files_open` named it.
+    pub path: String,
+    pub start: u32,
+    /// How many entries the view holds once every page is in.
+    pub total: u32,
+    pub entries: Vec<FileEntry>,
+}
+
+/// An entry of a folder view.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileEntry {
+    pub name: String,
+    /// A folder, or a link to one.
+    pub dir: bool,
+    /// A symbolic link; `dir`, `mime`, `size` and `modified_ms` describe
+    /// what it points to, when that exists.
+    pub link: bool,
+    /// Its name starts with a dot.
+    pub hidden: bool,
+    /// Its type in the shared MIME database, from its name (`inode/directory`
+    /// for a folder).
+    pub mime: String,
+    /// In bytes; none for a folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// Last modified, in milliseconds since 1970.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified_ms: Option<i64>,
+}
+
+/// One change to a folder view ([`Event::FilesChanged`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+pub enum FolderChange {
+    /// `entry` is new, at `index`.
+    Insert { index: u32, entry: FileEntry },
+    /// The entry at `index` is gone.
+    Remove { index: u32 },
+    /// The entry at `index` changed and keeps its place.
+    Update { index: u32, entry: FileEntry },
 }
 
 /// Whether a `set_wallpaper` path is a Steam Workshop ID: only digits.
@@ -2172,6 +2318,7 @@ mod tests {
                         Topic::Peripherals,
                         Topic::Network,
                         Topic::Bluetooth,
+                        Topic::Files,
                     ],
                 },
             }),
@@ -2480,6 +2627,108 @@ mod tests {
                 id: Some(66),
                 command: Command::BluetoothAnswer { id: 4, answer: PairingAnswer::Code("0000".into()) },
             }),
+            encode(Request {
+                id: Some(70),
+                command: Command::FilesLaunch { path: "/home/me/photo.png".into(), app: None },
+            }),
+            encode(Request {
+                id: Some(71),
+                command: Command::FilesLaunch {
+                    path: "/home/me/photo.png".into(),
+                    app: Some("org.gnome.Loupe.desktop".into()),
+                },
+            }),
+            encode(Request { id: Some(72), command: Command::FilesOpenWith { path: "/home/me/photo.png".into() } }),
+            encode(Response {
+                id: 72,
+                outcome: Outcome::Result(
+                    serde_json::to_value(OpenWith {
+                        mime: "image/png".into(),
+                        default: Some("org.gnome.Loupe.desktop".into()),
+                        apps: vec![App {
+                            id: "org.gnome.Loupe.desktop".into(),
+                            name: "Image Viewer".into(),
+                            description: None,
+                            icon: Some("/icons/loupe.svg".into()),
+                        }],
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Request {
+                id: Some(73),
+                command: Command::FilesSetDefault {
+                    path: "/home/me/photo.png".into(),
+                    app: "org.gnome.Loupe.desktop".into(),
+                },
+            }),
+            encode(Request {
+                id: Some(74),
+                command: Command::FilesOpen {
+                    view: 1,
+                    path: "/home/user/Pictures".into(),
+                    sort: FileSort { key: FileSortKey::Modified, descending: true },
+                    hidden: false,
+                },
+            }),
+            encode(Request { id: Some(75), command: Command::FilesClose { view: 1 } }),
+            encode(Event::FilesPage(FolderPage {
+                view: 1,
+                path: "/home/user/Pictures".into(),
+                start: 0,
+                total: 2,
+                entries: vec![
+                    FileEntry {
+                        name: "Screenshots".into(),
+                        dir: true,
+                        link: false,
+                        hidden: false,
+                        mime: "inode/directory".into(),
+                        size: None,
+                        modified_ms: Some(1_793_000_000_000),
+                    },
+                    FileEntry {
+                        name: "cover.png".into(),
+                        dir: false,
+                        link: false,
+                        hidden: false,
+                        mime: "image/png".into(),
+                        size: Some(48_213),
+                        modified_ms: Some(1_792_900_000_000),
+                    },
+                ],
+            })),
+            encode(Event::FilesChanged {
+                view: 1,
+                changes: vec![
+                    FolderChange::Remove { index: 1 },
+                    FolderChange::Insert {
+                        index: 1,
+                        entry: FileEntry {
+                            name: "cover (2).png".into(),
+                            dir: false,
+                            link: false,
+                            hidden: false,
+                            mime: "image/png".into(),
+                            size: Some(48_213),
+                            modified_ms: Some(1_793_000_100_000),
+                        },
+                    },
+                    FolderChange::Update {
+                        index: 0,
+                        entry: FileEntry {
+                            name: "Screenshots".into(),
+                            dir: true,
+                            link: true,
+                            hidden: false,
+                            mime: "inode/directory".into(),
+                            size: None,
+                            modified_ms: None,
+                        },
+                    },
+                ],
+            }),
+            encode(Event::FilesClosed { view: 1, error: "/home/user/Pictures doesn't exist".into() }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();

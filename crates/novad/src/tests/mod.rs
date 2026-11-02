@@ -29,9 +29,11 @@ struct TestDaemon {
 /// `features.toml` with features off. The features with a watcher of their own, off unless a test is about
 /// them: each watcher is an inotify instance, and the tests running at once
 /// would pass the usual limit of 128.
-const WATCHERS_OFF: &str = "disabled = [\"ai-usage\", \"launcher\"]\n";
-const LAUNCHER_OFF: &str = "disabled = [\"launcher\"]\n";
-const AI_USAGE_OFF: &str = "disabled = [\"ai-usage\"]\n";
+const WATCHERS_OFF: &str = "disabled = [\"ai-usage\", \"launcher\", \"files\"]\n";
+const LAUNCHER_OFF: &str = "disabled = [\"launcher\", \"files\"]\n";
+const AI_USAGE_OFF: &str = "disabled = [\"ai-usage\", \"files\"]\n";
+/// Nova Files follows the apps too, so it's on only where a test asks.
+const FILES_ON: &str = "enabled = [\"files\"]\ndisabled = [\"ai-usage\", \"launcher\"]\n";
 
 impl TestDaemon {
     /// With the `ai-usage` and `launcher` features off.
@@ -52,6 +54,16 @@ impl TestDaemon {
     /// `<dir>/launcher/share`, and `ai-usage` off.
     fn with_launcher(name: &str) -> Self {
         Self::open(name, None, |dir| std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap())
+    }
+
+    /// With the `files` feature on, its apps and MIME database under
+    /// `<dir>/launcher/share` (`prepare` gets that), and `ai-usage` and
+    /// `launcher` off.
+    fn with_files(name: &str, prepare: impl FnOnce(&Path)) -> Self {
+        Self::open(name, None, |dir| {
+            std::fs::write(dir.join("config/features.toml"), FILES_ON).unwrap();
+            prepare(&dir.join("launcher/share"));
+        })
     }
 
     /// Like [`TestDaemon::with_launcher`], following the compositor `connect`
@@ -278,8 +290,18 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             audio_wait: bluetooth::AUDIO_WAIT,
         },
         x11_tray: session_bus::Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+        // The MIME database and apps under `<dir>/launcher/share`, the
+        // `mimeapps.list` files under `<dir>/config`.
         files: crate::files::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
+            data_dirs: vec![dir.join("launcher/share")],
+            associations: crate::apps::associations::Places::new(
+                Some(dir.join("config")),
+                &[],
+                &[dir.join("launcher/share")],
+                &[],
+            ),
+            runner: launcher::Runner::Direct,
             ui: None,
         },
         session_lock: dir.to_owned(),
@@ -317,6 +339,7 @@ mod basics;
 mod desktop;
 mod fake_compositor;
 mod live_config;
+mod opening;
 mod services;
 mod usage;
 

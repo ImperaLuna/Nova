@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use nova_paths::find_program;
 
 const GROUP: &str = "[Desktop Entry]";
-/// Field codes that stand for files or URLs to open; the launcher opens none.
+/// Field codes that stand for files or URLs to open; the launcher opens
+/// none, and opening a file puts it where the first one is ([`FileArg`]).
 const FILE_CODES: [char; 4] = ['f', 'F', 'u', 'U'];
 /// Field codes the spec deprecates, dropped like it says.
 const DEPRECATED_CODES: [char; 6] = ['d', 'D', 'n', 'N', 'v', 'm'];
@@ -33,16 +34,55 @@ pub struct Entry {
     pub terminal: bool,
     /// The folder to run it in.
     pub path: Option<PathBuf>,
-    /// Opens files or links of some type (`MimeType=`): the entry the
-    /// system's defaults point at, when two start the same program.
-    pub opens_types: bool,
+    /// Where a file to open goes in `exec`.
+    pub file_arg: FileArg,
+    /// The file and link types it opens (`MimeType=`).
+    pub mime_types: Vec<String>,
+    /// Listed in the launcher: not `NoDisplay`. An unlisted app may still
+    /// be the one that opens some type of file.
+    pub listed: bool,
     /// The app id its windows get (`StartupWMClass=`), when it says.
     pub window_class: Option<String>,
     /// What kind of app it is (`Categories=`), like `AudioVideo` or `WebBrowser`.
     pub categories: Vec<String>,
 }
 
+/// Where the file an app opens goes in its `exec`: at the first file field
+/// code (`%f`, `%F`, `%u` or `%U`), else at the end, as GLib and KIO do. A
+/// local path stands for a URL too, which the spec allows.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FileArg {
+    /// The argument it goes before, or the one it's part of.
+    pub index: usize,
+    /// For a code inside an argument (`--file=%f`), the text either side of
+    /// it: that argument is replaced by both with the file between.
+    pub within: Option<(String, String)>,
+}
+
 impl Entry {
+    /// Whether it opens files or links of some type: the entry the
+    /// system's defaults point at, when two start the same program.
+    pub fn opens_types(&self) -> bool {
+        !self.mime_types.is_empty()
+    }
+
+    /// Whether `other` is it, or a copy of it under another id: the same
+    /// name running the same command.
+    pub fn same_app(&self, other: &Entry) -> bool {
+        self.id == other.id || (self.name == other.name && self.exec == other.exec && self.terminal == other.terminal)
+    }
+
+    /// Its program and arguments with `file` to open.
+    pub fn exec_with(&self, file: &str) -> Vec<String> {
+        let mut argv = self.exec.clone();
+        let index = self.file_arg.index.min(argv.len());
+        match &self.file_arg.within {
+            Some((before, after)) if index < argv.len() => argv[index] = format!("{before}{file}{after}"),
+            _ => argv.insert(index, file.to_string()),
+        }
+        argv
+    }
+
     /// The app ids (lower case) a window of this app may have: the one it
     /// names, its desktop file id, its program and its name. None for an
     /// app in a terminal, whose window is the terminal's.
@@ -197,7 +237,10 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
     if flag("Hidden") || (context.autostart && raw(AUTOSTART_ENABLED).map(str::trim) == Some("false")) {
         return Err(Skipped::Hidden);
     }
-    if raw("Type").map(str::trim) != Some("Application") || (flag("NoDisplay") && !context.autostart) {
+    // Kept unlisted only to open files; one that opens none is skipped
+    // before the work below.
+    let opens_none = raw("MimeType").is_none_or(|types| types.trim().is_empty());
+    if raw("Type").map(str::trim) != Some("Application") || (flag("NoDisplay") && !context.autostart && opens_none) {
         return Err(Skipped::NotShown);
     }
     let shown_here = |key: &str| {
@@ -215,7 +258,7 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
     let name = localized("Name").ok_or_else(|| Skipped::Invalid("no Name".into()))?;
     let icon = raw("Icon").map(unescape).filter(|icon| !icon.is_empty());
     let exec = raw("Exec").ok_or_else(|| Skipped::Invalid("no Exec".into()))?;
-    let exec = exec_argv(&unescape(exec), &name, icon.as_deref(), file).map_err(Skipped::Invalid)?;
+    let (exec, file_arg) = exec_argv(&unescape(exec), &name, icon.as_deref(), file).map_err(Skipped::Invalid)?;
     if exec.is_empty() {
         return Err(Skipped::Invalid("an empty Exec".into()));
     }
@@ -237,7 +280,9 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
         exec,
         terminal: flag("Terminal"),
         path: raw("Path").map(unescape).filter(|path| !path.is_empty()).map(PathBuf::from),
-        opens_types: raw("MimeType").is_some_and(|types| !types.trim().is_empty()),
+        file_arg,
+        mime_types: raw("MimeType").map(list).unwrap_or_default(),
+        listed: context.autostart || !flag("NoDisplay"),
         window_class: raw("StartupWMClass").map(unescape).filter(|class| !class.is_empty()),
         categories: raw("Categories").map(list).unwrap_or_default(),
     })
@@ -296,8 +341,9 @@ fn list(value: &str) -> Vec<String> {
 /// arguments: split at spaces outside double quotes, with `\"`, `` \` ``,
 /// `\$` and `\\` inside them, and field codes expanded. `%i` is the icon,
 /// `%c` the name and `%k` the file; file and URL codes are dropped, since the
-/// launcher opens the app without any.
-fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<Vec<String>, String> {
+/// launcher opens the app without any, and the first one's place is kept
+/// for opening a file.
+fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<(Vec<String>, FileArg), String> {
     // Each argument, and whether it was quoted: field codes don't apply there.
     let mut words: Vec<(String, bool)> = Vec::new();
     let mut chars = line.chars();
@@ -331,6 +377,7 @@ fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<
     words.extend(word);
 
     let mut argv = Vec::new();
+    let mut file_arg: Option<FileArg> = None;
     for (word, quoted) in words {
         if quoted {
             argv.push(word.replace("%%", "%"));
@@ -347,11 +394,16 @@ fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<
                 && code.starts_with('%')
                 && code[1..].chars().all(|c| FILE_CODES.contains(&c) || DEPRECATED_CODES.contains(&c)) =>
             {
+                if file_arg.is_none() && code[1..].chars().all(|c| FILE_CODES.contains(&c)) {
+                    file_arg = Some(FileArg { index: argv.len(), within: None });
+                }
                 continue;
             }
             _ => {}
         }
         let mut expanded = String::with_capacity(word.len());
+        // Where in it the first file code was.
+        let mut file_at = None;
         let mut chars = word.chars();
         while let Some(c) = chars.next() {
             if c != '%' {
@@ -363,14 +415,24 @@ fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<
                 Some('c') => expanded.push_str(name),
                 Some('k') => expanded.push_str(&file.to_string_lossy()),
                 // Inside a word: dropped, like a code on its own.
-                Some(code) if FILE_CODES.contains(&code) || DEPRECATED_CODES.contains(&code) || code == 'i' => {}
+                Some(code) if FILE_CODES.contains(&code) => {
+                    file_at.get_or_insert(expanded.len());
+                }
+                Some(code) if DEPRECATED_CODES.contains(&code) || code == 'i' => {}
                 Some(code) => return Err(format!("unknown field code %{code} in Exec")),
                 None => return Err("a lone % at the end of Exec".into()),
             }
         }
+        if let Some(at) = file_at
+            && file_arg.is_none()
+        {
+            let within = Some((expanded[..at].to_string(), expanded[at..].to_string()));
+            file_arg = Some(FileArg { index: argv.len(), within });
+        }
         argv.push(expanded);
     }
-    Ok(argv)
+    let file_arg = file_arg.unwrap_or(FileArg { index: argv.len(), within: None });
+    Ok((argv, file_arg))
 }
 
 #[cfg(test)]
@@ -387,7 +449,13 @@ mod tests {
     }
 
     fn exec(line: &str) -> Result<Vec<String>, String> {
-        exec_argv(&unescape(line), "My App", Some("my-icon"), Path::new("/apps/my app.desktop"))
+        exec_argv(&unescape(line), "My App", Some("my-icon"), Path::new("/apps/my app.desktop")).map(|(argv, _)| argv)
+    }
+
+    fn opening(line: &str, file: &str) -> Vec<String> {
+        let mut found = entry(&format!("[Desktop Entry]\nType=Application\nName=X\nExec={line}\n")).unwrap();
+        found.mime_types = vec!["text/plain".into()];
+        found.exec_with(file)
     }
 
     #[test]
@@ -429,7 +497,6 @@ mod tests {
         let base = "[Desktop Entry]\nType=Application\nName=X\nExec=x\n";
         assert_eq!(entry(&format!("{base}Hidden=true\n")), Err(Skipped::Hidden));
         for extra in [
-            "NoDisplay=true\n",
             "OnlyShowIn=GNOME;KDE;\n",
             "NotShowIn=niri;\n",
             "TryExec=/nonexistent/program\n",
@@ -438,6 +505,10 @@ mod tests {
             assert_eq!(entry(&format!("{base}{extra}")), Err(Skipped::NotShown), "{extra}");
         }
         assert!(entry(&format!("{base}OnlyShowIn=niri;\nTryExec=sh\n")).is_ok());
+        // Kept unlisted when it opens files, else skipped.
+        assert_eq!(entry(&format!("{base}NoDisplay=true\n")), Err(Skipped::NotShown));
+        assert!(!entry(&format!("{base}NoDisplay=true\nMimeType=text/plain;\n")).unwrap().listed);
+        assert!(entry(base).unwrap().listed);
         assert_eq!(entry("[Desktop Entry]\nType=Link\nName=X\nURL=https://example.com\n"), Err(Skipped::NotShown));
         assert!(matches!(entry("[Desktop Entry]\nType=Application\nName=X\n"), Err(Skipped::Invalid(_))));
         assert!(matches!(entry("[Desktop Entry]\nType=Application\nExec=x\n"), Err(Skipped::Invalid(_))));
@@ -459,12 +530,33 @@ mod tests {
         assert_eq!(exec("app 100%%").unwrap(), ["app", "100%"]);
         assert_eq!(exec("app \"%U\"").unwrap(), ["app", "%U"], "no field codes inside quotes");
         assert_eq!(exec("app --file=%f").unwrap(), ["app", "--file="]);
-        assert_eq!(exec_argv("app %i", "X", None, Path::new("/x")).unwrap(), ["app"]);
+        assert_eq!(exec_argv("app %i", "X", None, Path::new("/x")).unwrap().0, ["app"]);
         assert!(exec("app \"unclosed").is_err());
         assert!(exec("app %z").is_err());
         assert!(exec("app %").is_err());
         // Shell syntax is just text: nothing runs it.
         assert_eq!(exec("app ; rm -rf ~ && $(boom) `boom` | x > y").unwrap().len(), 12);
+    }
+
+    #[test]
+    fn a_file_to_open_goes_where_the_entry_says() {
+        let file = "/home/me/a b.txt";
+        assert_eq!(opening("viewer %f", file), ["viewer", file]);
+        assert_eq!(opening("viewer --new %U --flag", file), ["viewer", "--new", file, "--flag"]);
+        assert_eq!(opening("viewer %u %f", file), ["viewer", file], "only the first code's place");
+        assert_eq!(opening("viewer --file=%f", file), ["viewer", "--file=/home/me/a b.txt"]);
+        assert_eq!(opening("viewer", file), ["viewer", file], "no code: at the end");
+        assert_eq!(opening("viewer %i", file), ["viewer", file]);
+        assert_eq!(opening("viewer \"%f\"", file), ["viewer", "%f", file], "quoted codes are text");
+    }
+
+    #[test]
+    fn reads_the_types_an_app_opens() {
+        let found =
+            entry("[Desktop Entry]\nType=Application\nName=X\nExec=x %F\nMimeType=image/png;image/jpeg;\n").unwrap();
+        assert_eq!(found.mime_types, ["image/png", "image/jpeg"]);
+        assert!(found.opens_types());
+        assert!(!entry("[Desktop Entry]\nType=Application\nName=X\nExec=x\n").unwrap().opens_types());
     }
 
     #[test]
