@@ -348,7 +348,7 @@ impl Recordings {
 
     /// Opens nova.log (the card's Open log, after a recording didn't start).
     pub fn open_log(&self) -> Result<(), String> {
-        crate::launcher::open(&nova_paths::log_file(&self.logger.dir()), &self.path_var, &self.logger)
+        crate::apps::open(&nova_paths::log_file(&self.logger.dir()), &self.path_var, &self.logger)
     }
 
     /// Opens a saved recording, its folder, or deletes it.

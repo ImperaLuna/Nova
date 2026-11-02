@@ -64,7 +64,7 @@ impl Server {
     fn show(&self, windows: Result<Vec<nova_protocol::FilesWindow>, String>) -> zbus::fdo::Result<()> {
         let windows = windows.map_err(zbus::fdo::Error::InvalidArgs)?;
         for window in windows {
-            self.shared.open(window);
+            self.shared.open(window).map_err(zbus::fdo::Error::LimitsExceeded)?;
         }
         Ok(())
     }
@@ -94,10 +94,10 @@ impl Server {
 mod tests {
     use super::*;
     use crate::files::{Files, Sources};
-    use crate::hub::{ClientId, ClientQueue, Hub, Outgoing, next_named};
+    use crate::hub::{ClientQueue, Hub, Outgoing, next_named};
     use crate::logger::Logger;
     use crate::session_bus::{Bus, TestBus};
-    use nova_protocol::{LogLevel, Topic};
+    use nova_protocol::LogLevel;
     use nova_test_support::{TempDir, wait_until};
     use serde_json::json;
     use std::os::unix::net::UnixStream;
@@ -121,18 +121,24 @@ mod tests {
             let bus = TestBus::start(&dir.join("bus"));
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
-            let sources = Sources { bus: Bus::Address(bus.address.clone()), ui: None, data_dirs: Vec::new() };
-            let files = Files::start(sources, Arc::clone(&hub), logger, Arc::default());
+            let sources = Sources {
+                bus: Bus::Address(bus.address.clone()),
+                data_dirs: vec![],
+                associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
+                runner: crate::apps::launch::Runner::Direct,
+                ui: None,
+            };
+            let apps = crate::apps::AppIndex::of(None, &logger);
+            let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");
             Self { dir, bus, hub, files }
         }
 
-        /// The Nova Files process's connection, subscribed to its topic.
-        fn nova_files(&self) -> (ClientId, Receiver<Outgoing>, UnixStream) {
+        /// The Nova Files process's connection, attached.
+        fn nova_files(&self) -> (Receiver<Outgoing>, UnixStream) {
             let (stream, ours) = UnixStream::pair().unwrap();
             let (queue, outgoing) = ClientQueue::new(&ours).unwrap();
-            let client = self.hub.register(queue);
-            self.hub.subscribe(client, Topic::Files);
-            (client, outgoing, stream)
+            self.files.attach(self.hub.register(queue), true);
+            (outgoing, stream)
         }
 
         /// An app calling `method` with `uris`, as Firefox's "Show in folder" does.
@@ -149,7 +155,7 @@ mod tests {
     #[test]
     fn show_items_opens_the_folder_with_the_item_selected() {
         let fixture = Fixture::new("items");
-        let (_, nova_files, _stream) = fixture.nova_files();
+        let (nova_files, _stream) = fixture.nova_files();
         let report = format!("file://{}/report%20one.pdf", fixture.path("Downloads"));
         fixture.call("ShowItems", &[report]).unwrap();
         let window = next_named(&nova_files, "files_window", WAIT);
@@ -161,7 +167,7 @@ mod tests {
     #[test]
     fn show_folders_opens_each_folder() {
         let fixture = Fixture::new("folders");
-        let (_, nova_files, _stream) = fixture.nova_files();
+        let (nova_files, _stream) = fixture.nova_files();
         fixture.call("ShowFolders", &[format!("file://{}", fixture.path("Downloads"))]).unwrap();
         assert_eq!(next_named(&nova_files, "files_window", WAIT), json!({"folder": fixture.path("Downloads")}));
     }
@@ -176,21 +182,6 @@ mod tests {
         assert!(
             fixture.call("ShowItems", &vec![String::new(); MAX_URIS + 1]).unwrap_err().to_string().contains("URIs")
         );
-    }
-
-    #[test]
-    fn a_window_waits_until_nova_files_subscribes() {
-        let fixture = Fixture::new("waits");
-        fixture.files.show(&fixture.path("Downloads"), &[]).unwrap();
-        let (client, nova_files, _stream) = fixture.nova_files();
-        fixture.files.send_state(client);
-        assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.path("Downloads")));
-        // Sent once: a second subscriber gets nothing waiting.
-        let (second, others, _second_stream) = fixture.nova_files();
-        fixture.files.send_state(second);
-        fixture.files.show(&fixture.path("Downloads"), &[]).unwrap();
-        assert_eq!(next_named(&others, "files_window", WAIT)["folder"], json!(fixture.path("Downloads")));
-        assert!(others.try_recv().is_err(), "only the window asked for since");
     }
 
     #[test]

@@ -291,8 +291,8 @@ pub fn act_on(
     log_source: &str,
 ) -> Result<(), String> {
     match action {
-        ScreenshotAction::Open => crate::launcher::open(path, path_var, logger),
-        ScreenshotAction::Folder => crate::launcher::open(path.parent().unwrap_or(Path::new("/")), path_var, logger),
+        ScreenshotAction::Open => crate::apps::open(path, path_var, logger),
+        ScreenshotAction::Folder => crate::apps::open(path.parent().unwrap_or(Path::new("/")), path_var, logger),
         ScreenshotAction::Delete => {
             match std::fs::remove_file(path) {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => {

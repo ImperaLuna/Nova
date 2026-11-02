@@ -3,12 +3,14 @@
 //! and no path opens the home folder. It's what Nova Files' desktop entry
 //! runs, so it's the default file manager's command too.
 //!
-//! Paths are made absolute and resolved here, against this command's
-//! folder, since novad's is not the caller's; novad checks them again.
+//! Paths are made absolute here, against this command's folder, since
+//! novad's is not the caller's; novad checks them again. Symlinks stay as
+//! typed, like the shell's `cd`: a linked file is shown where its link is,
+//! and a linked home folder still reads as home.
 
 use crate::client::Client;
 use nova_protocol::Command;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(clap::Args)]
 pub struct FilesArgs {
@@ -31,7 +33,9 @@ pub fn run(args: &FilesArgs, socket: &Path) -> Result<(), String> {
 /// The window that shows `path`: the folder itself, or a file selected in
 /// its folder.
 fn show(path: &Path) -> Result<Command, String> {
-    let path = path.canonicalize().map_err(|e| format!("can't open {}: {e}", path.display()))?;
+    let path = absolute(path).map_err(|e| format!("can't open {}: {e}", path.display()))?;
+    // The entry must exist; a link whose target is gone is still selected.
+    path.symlink_metadata().map_err(|e| format!("can't open {}: {e}", path.display()))?;
     let (folder, select) = if path.is_dir() {
         (path, Vec::new())
     } else {
@@ -39,6 +43,21 @@ fn show(path: &Path) -> Result<Command, String> {
         (folder, vec![text(&path)?])
     };
     Ok(Command::ShowFolder { folder: text(&folder)?, select })
+}
+
+/// `path` made absolute, with `.` and `..` worked out from the text alone.
+fn absolute(path: &Path) -> std::io::Result<PathBuf> {
+    let mut absolute = PathBuf::new();
+    for component in std::path::absolute(path)?.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                absolute.pop();
+            }
+            other => absolute.push(other),
+        }
+    }
+    Ok(absolute)
 }
 
 fn text(path: &Path) -> Result<String, String> {
@@ -56,8 +75,19 @@ mod tests {
         let dir = nova_test_support::TempDir::new("cli-files");
         std::fs::create_dir_all(dir.join("Music")).unwrap();
         std::fs::write(dir.join("Music/song.flac"), b"").unwrap();
-        let music = dir.join("Music").canonicalize().unwrap().display().to_string();
-        assert_eq!(show(&dir.join("Music/.")).unwrap(), Command::ShowFolder { folder: music.clone(), select: vec![] });
+        std::os::unix::fs::symlink(dir.join("Music"), dir.join("Linked")).unwrap();
+        let music = dir.join("Music").display().to_string();
+        assert_eq!(
+            show(&dir.join("Music/Albums/../.")).unwrap(),
+            Command::ShowFolder { folder: music.clone(), select: vec![] }
+        );
+        std::os::unix::fs::symlink(dir.join("Gone"), dir.join("Music/dangling")).unwrap();
+        assert_eq!(
+            show(&dir.join("Music/dangling")).unwrap(),
+            Command::ShowFolder { folder: music.clone(), select: vec![format!("{music}/dangling")] }
+        );
+        let linked = dir.join("Linked").display().to_string();
+        assert_eq!(show(&dir.join("Linked")).unwrap(), Command::ShowFolder { folder: linked, select: vec![] });
         assert_eq!(
             show(&dir.join("Music/song.flac")).unwrap(),
             Command::ShowFolder { folder: music.clone(), select: vec![format!("{music}/song.flac")] }
