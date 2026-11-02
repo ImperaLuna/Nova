@@ -112,7 +112,9 @@ impl MimeDb {
         let among = |mime: &str| by_name.iter().any(|named| self.is_a(mime, named) || self.is_a(named, mime));
         let only: Option<&dyn Fn(&str) -> bool> = if by_name.is_empty() { None } else { Some(&among) };
         let found = match self.magic.find(&start, only) {
-            Some((mime, _)) => Some(mime),
+            // A name's type that's a kind of what the contents say is the
+            // more exact: a Word file's name over the contents' OLE storage.
+            Some((mime, _)) => Some(by_name.iter().copied().find(|named| self.is_a(named, mime)).unwrap_or(mime)),
             None => by_name.first().copied(),
         };
         Ok(match found {
@@ -234,7 +236,8 @@ pub mod tests {
         std::fs::write(
             mime.join("globs2"),
             "50:image/png:*.png\n50:application/pdf:*.pdf\n50:text/x-python:*.py\n50:text/markdown:*.md\n\
-             50:video/mp4:*.mp4\n50:audio/mp4:*.mp4\n50:application/zip:*.zip\n",
+             50:video/mp4:*.mp4\n50:audio/mp4:*.mp4\n50:application/zip:*.zip\n\
+             50:application/msword:*.doc\n50:text/plain:*.doc\n",
         )
         .unwrap();
         let magic = magic::tests::magic_file(&[
@@ -242,12 +245,14 @@ pub mod tests {
             (50, "application/pdf", &[(0, 0, b"%PDF-", None, 1)]),
             (50, "audio/mp4", &[(0, 4, b"ftypM4A", None, 1)]),
             (50, "video/mp4", &[(0, 4, b"ftypisom", None, 1)]),
+            (50, "application/x-ole-storage", &[(0, 0, b"\xd0\xcf\x11\xe0", None, 1)]),
         ]);
         std::fs::write(mime.join("magic"), magic).unwrap();
         std::fs::write(mime.join("aliases"), "application/x-pdf application/pdf\n").unwrap();
         std::fs::write(
             mime.join("subclasses"),
-            "text/x-python text/x-script\ntext/markdown text/plain\napplication/x-user text/x-script\n",
+            "text/x-python text/x-script\ntext/markdown text/plain\napplication/x-user text/x-script\n\
+             application/msword application/x-ole-storage\n",
         )
         .unwrap();
         dir
@@ -273,6 +278,11 @@ pub mod tests {
         assert_eq!(write("photo", b"\x89PNG...."), "image/png", "no name match: contents");
         assert_eq!(write("song.mp4", b"....ftypM4A "), "audio/mp4", "a tie between names: contents");
         assert_eq!(write("clip.mp4", b"????????????"), "video/mp4", "a tie no contents settle: the first");
+        assert_eq!(
+            write("report.doc", b"\xd0\xcf\x11\xe0...."),
+            "application/msword",
+            "the name's kind of what's in it"
+        );
         assert_eq!(write("notes", b"just words\n"), TEXT);
         assert_eq!(write("blob", b"\x00\x01\x02"), BINARY);
         assert_eq!(write("empty", b""), EMPTY);
