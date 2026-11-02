@@ -82,6 +82,12 @@ pub fn file(reference: &str) -> Option<PathBuf> {
 /// A URI's path with its `%XX` escapes decoded; `None` when one is broken
 /// or the result isn't UTF-8 (the UI loads it by URL).
 fn decode_percents(uri: &str) -> Option<String> {
+    String::from_utf8(percent_decoded(uri)?).ok()
+}
+
+/// The bytes a URI's path names, its `%XX` escapes decoded; `None` when
+/// one is broken.
+pub fn percent_decoded(uri: &str) -> Option<Vec<u8>> {
     let mut bytes = Vec::with_capacity(uri.len());
     let mut rest = uri.as_bytes();
     while let Some((&byte, after)) = rest.split_first() {
@@ -94,7 +100,7 @@ fn decode_percents(uri: &str) -> Option<String> {
             rest = after;
         }
     }
-    String::from_utf8(bytes).ok()
+    Some(bytes)
 }
 
 #[cfg(test)]
