@@ -761,9 +761,9 @@ QtObject {
     // far in and apart, under their headings.
     readonly property int filesHomePad: 20
     readonly property int filesHomeSectionGap: 18
-    readonly property int filesTileWidth: 200
-    readonly property int filesTileHeight: 58
-    readonly property int filesTileIconSize: 26
+    readonly property int filesHomeTileWidth: 200
+    readonly property int filesHomeTileHeight: 58
+    readonly property int filesHomeTileIconSize: 26
     readonly property list<int> filesRecentColumns: [130, 220]
     // The most of the sidebar's height its places and drives take before
     // they scroll, so the folder tree keeps room under many pins.
