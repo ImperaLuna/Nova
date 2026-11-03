@@ -145,6 +145,12 @@ expression: all
 {"v":2,"id":77,"cmd":"files_transfer_cancel","args":{"job":2}}
 {"v":2,"id":78,"cmd":"files_transfer_answer","args":{"job":2,"clash":1,"answer":"replace","all":true}}
 {"v":2,"event":"files_transfer","data":{"job":2,"mode":"copy","state":"asking","items":6,"name":"cover.png","done_bytes":1800000,"total_bytes":4700000,"clash":{"id":1,"name":"cover.png","folder":false,"original":{"size":1800000,"modified_ms":1791800000000},"replacement":{"size":2400000,"modified_ms":1793640000000},"others":2}}}
+{"v":2,"id":102,"cmd":"files_trash","args":{"paths":["/home/user/Pictures/cover.png"],"continues":true}}
+{"v":2,"id":103,"cmd":"files_undo","args":{"job":3}}
+{"v":2,"id":103,"result":true}
+{"v":2,"id":104,"cmd":"files_redo","args":{"job":4}}
+{"v":2,"event":"files_history","data":{"undo":"move","redo":"trash"}}
+{"v":2,"event":"files_history","data":{"undo":"copy"}}
 {"v":2,"id":82,"cmd":"files_preview","args":{"path":"/home/user/Documents/notes.md"}}
 {"v":2,"id":82,"result":{"cut":false,"kind":"text","text":"# Notes\nBuy milk"}}
 {"v":2,"id":83,"result":{"kind":"image","path":"/home/user/.cache/nova/previews/00c0ffee00c0ffee.png"}}

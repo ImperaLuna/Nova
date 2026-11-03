@@ -17,8 +17,8 @@ import "shortcuts.js" as Shortcuts
 // Ctrl adds or drops one, Shift selects a run. Its keys are the table's
 // LIST entries (shortcuts.js): the arrows, Page Up/Down, Home and End move
 // the selection (Shift extends it), Ctrl+A selects all, Ctrl+H shows or
-// hides dot files, Backspace goes back (`backRequested`), and typing a
-// name goes to it (NameTyping). A double-click or Enter opens: a folder is
+// hides dot files, Backspace goes back and Ctrl+Z and Ctrl+Y undo and redo
+// (`actionRequested`), and typing a name goes to it (NameTyping). A double-click or Enter opens: a folder is
 // gone into (`folderOpened`), files open in their default app. Delete
 // asks to move the selection to the trash (`trashRequested`),
 // Shift+Delete to delete it for good (`deleteRequested`), Alt+Enter asks
@@ -50,8 +50,10 @@ FocusScope {
     // (Listing.copy), in the list's order.
     signal trashRequested(var rows)
     signal deleteRequested(var rows)
-    signal backRequested
     signal propertiesRequested(var rows)
+    // A table action that is the window's (Backspace's "back", Ctrl+Z's
+    // "undo", Ctrl+Y's "redo").
+    signal actionRequested(string action)
     // A drop asks for `action` (Drops.decide) on `sources` into `folder`.
     signal dropRequested(string action, var sources, string folder)
 
@@ -302,17 +304,10 @@ FocusScope {
             id: typing
         }
 
-        // The rows' names, in the list's order: what typing a name searches.
-        function names(): var {
-            const names = [];
-            for (let index = 0; index < count; index++)
-                names.push(list.model.rows.get(index).name);
-            return names;
-        }
-
         Keys.onPressed: event => {
             const picked = () => list.model.selectedRows().map(row => Listing.copy(row));
-            switch (Shortcuts.action(Shortcuts.LIST, event.key, event.modifiers)) {
+            const action = Shortcuts.action(Shortcuts.LIST, event.key, event.modifiers);
+            switch (action) {
             case "hidden":
                 list.showHidden = !list.showHidden;
                 return;
@@ -323,7 +318,9 @@ FocusScope {
                 list.open(list.model.selectedRows());
                 return;
             case "back":
-                list.backRequested();
+            case "undo":
+            case "redo":
+                list.actionRequested(action);
                 return;
             case "properties":
                 list.propertiesRequested(picked());
@@ -341,7 +338,7 @@ FocusScope {
                     entryList.go(Listing.moved(event.key, entryList.currentIndex, entryList.count, entryList.page), (event.modifiers & Qt.ShiftModifier) !== 0);
                 return;
             }
-            event.accepted = typing.press(event.text, event.modifiers, entryList.names(), entryList.currentIndex, index => entryList.go(index, false));
+            event.accepted = typing.press(event.text, event.modifiers, list.model.rows, entryList.currentIndex, index => entryList.go(index, false));
         }
     }
 

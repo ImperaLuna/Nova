@@ -236,3 +236,27 @@ fn a_member_listed_twice_ends_as_the_later_one_even_read_only() {
     assert_eq!(fs::read_to_string(open_copy(&inside, &dir.join("opened")).unwrap()).unwrap(), "new");
     assert_eq!(folder_name(OsStr::new("..zip")), "..zip", "never a folder named '.'");
 }
+
+#[test]
+fn a_file_listed_after_a_hard_link_of_its_name_wins() {
+    let dir = TempDir::new("archive-hardlink");
+    let mut tar = tar::Builder::new(Vec::new());
+    let mut file = |name: &str, contents: &str| {
+        let mut header = tar::Header::new_gnu();
+        header.set_mode(0o644);
+        header.set_size(contents.len() as u64);
+        tar.append_data(&mut header, name, contents.as_bytes()).unwrap();
+    };
+    file("original.txt", "original");
+    let mut link = tar::Header::new_gnu();
+    link.set_entry_type(tar::EntryType::Link);
+    link.set_size(0);
+    tar.append_link(&mut link, "alias.txt", "original.txt").unwrap();
+    let mut header = tar::Header::new_gnu();
+    header.set_mode(0o644);
+    header.set_size(7);
+    tar.append_data(&mut header, "alias.txt", &b"updated"[..]).unwrap();
+    fs::write(dir.join("links.tar"), tar.into_inner().unwrap()).unwrap();
+    unpacked(&dir.join("links.tar"), &dir.join("out"));
+    assert_eq!(fs::read_to_string(dir.join("out/alias.txt")).unwrap(), "updated");
+}

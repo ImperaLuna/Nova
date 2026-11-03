@@ -45,6 +45,9 @@ Rectangle {
 
     // Puts the keyboard in the search field with what's there selected.
     function editSearch() {
+        // Closed first: closing it gives the keyboard to the list, which
+        // would otherwise take it back from the search field.
+        editing = false;
         searchField.selectAll();
         searchField.forceActiveFocus();
     }

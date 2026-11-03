@@ -12,7 +12,8 @@ import "../daemon/protocol.js" as Protocol
 // going, stops counting. Only answers to the latest subject count, so a
 // late one for an item shown before is dropped. While a change to who may
 // open it is on its way (`changing`), no other is sent, so each starts
-// from what the last one left.
+// from what the last one left. A batch novad won't count is skipped, and
+// the size stays dimmed as incomplete.
 QtObject {
     id: model
 
@@ -30,6 +31,7 @@ QtObject {
     property var _jobs: []
     property var _counts: ({})
     property var _batches: []
+    property bool _incomplete: false
     property int _asked: 0
 
     function show(shown: var) {
@@ -48,6 +50,7 @@ QtObject {
         _jobs = [];
         _counts = {};
         _batches = [];
+        _incomplete = false;
         subject = null;
         properties = null;
         counted = null;
@@ -86,28 +89,53 @@ QtObject {
     function _next() {
         const batch = _batches[0];
         _batches = _batches.slice(1);
-        _jobs = _jobs.concat([FilesService.measure(batch)]);
+        _jobs = _jobs.concat([FilesService.measure(batch, job => model._refused(job, false))]);
         _sum();
+    }
+
+    // novad wouldn't count job `job`: it counts as done, with nothing. A
+    // refusal can come before the job is listed (no connection), so it's
+    // looked at again once, after this turn.
+    function _refused(job: int, again: bool) {
+        if (!_jobs.includes(job)) {
+            if (!again)
+                Qt.callLater(() => model._refused(job, true));
+            return;
+        }
+        _incomplete = true;
+        _take({
+            job: job,
+            files: 0,
+            folders: 0,
+            bytes: 0,
+            disk_bytes: 0,
+            done: true
+        });
+    }
+
+    // A job's latest counts; once one is done, the next batch starts.
+    function _take(measured: var) {
+        if (!_jobs.includes(measured.job))
+            return;
+        const counts = Object.assign({}, _counts);
+        counts[measured.job] = measured;
+        _counts = counts;
+        if (measured.done && _batches.length > 0)
+            _next();
+        else
+            _sum();
     }
 
     function _sum() {
         const total = Props.total(_counts, _jobs);
-        total.done = total.done && _batches.length === 0;
+        total.done = total.done && _batches.length === 0 && !_incomplete;
         counted = total;
     }
 
     readonly property Connections _measured: Connections {
         target: FilesService
         function onMeasured(measured: var) {
-            if (!model._jobs.includes(measured.job))
-                return;
-            const counts = Object.assign({}, model._counts);
-            counts[measured.job] = measured;
-            model._counts = counts;
-            if (measured.done && model._batches.length > 0)
-                model._next();
-            else
-                model._sum();
+            model._take(measured);
         }
     }
 

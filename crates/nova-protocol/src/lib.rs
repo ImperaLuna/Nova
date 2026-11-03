@@ -173,6 +173,17 @@ pub enum Event {
     /// with `done` when it's finished. Sent only to the client that started
     /// the job; topic [`Topic::Files`].
     FilesMeasured(Measured),
+    /// What Ctrl+Z and Ctrl+Y would do now in any Nova Files window
+    /// (feature `files`): the kind of step each would undo or redo, none
+    /// when there's nothing. novad keeps one history for the session.
+    /// Topic [`Topic::Files`], sent right after subscribing and whenever
+    /// either changes.
+    FilesHistory {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        undo: Option<FileStep>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        redo: Option<FileStep>,
+    },
 }
 
 /// Groups of events a client can subscribe to.
@@ -234,7 +245,8 @@ impl Event {
             | Event::FilesTrashChanged
             | Event::FilesTransfer(_)
             | Event::FilesMeasured(_)
-            | Event::FilesDrives { .. } => Some(Topic::Files),
+            | Event::FilesDrives { .. }
+            | Event::FilesHistory { .. } => Some(Topic::Files),
             Event::FilesLook(_) => Some(Topic::Files),
         }
     }
@@ -2033,9 +2045,26 @@ pub enum Command {
     /// Moves the items at `paths` (absolute) to the trash (feature
     /// `files`), each to its own drive's, as the freedesktop Trash spec
     /// says, so other apps see them. All are tried; the error names those
-    /// that weren't moved.
+    /// that weren't moved. One trashing is one step to undo; with
+    /// `continues`, these paths join the step the previous `files_trash`
+    /// started (a selection too big for one request).
     FilesTrash {
         paths: Vec<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        continues: bool,
+    },
+    /// Undoes the last copy, move or trashing done in Nova Files this
+    /// session (feature `files`, Ctrl+Z), answered with whether it started
+    /// a move as this connection's job `job`, which then reports like a
+    /// `files_transfer`. Anything else is undone before the answer; with
+    /// nothing to undo, nothing happens. See [`Event::FilesHistory`].
+    FilesUndo {
+        job: u32,
+    },
+    /// Does the last undone step again (feature `files`, Ctrl+Y), answered
+    /// like [`Command::FilesUndo`].
+    FilesRedo {
+        job: u32,
     },
     /// Deletes the items at `paths` (absolute) for good, folders with all
     /// they hold (feature `files`, Shift+Delete).
@@ -2435,6 +2464,18 @@ pub enum FolderChange {
     Remove { index: u32 },
     /// The entry at `index` changed and keeps its place.
     Update { index: u32, entry: FileEntry },
+}
+
+/// A kind of step Nova Files can undo and redo ([`Event::FilesHistory`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileStep {
+    /// Copies made; undone, they go to the trash.
+    Copy,
+    /// Items moved; undone, they move back.
+    Move,
+    /// Items moved to the trash; undone, they're restored.
+    Trash,
 }
 
 /// What a `files_transfer` job does with its items.
@@ -3473,6 +3514,15 @@ mod tests {
                 }),
                 error: None,
             })),
+            encode(Request {
+                id: Some(102),
+                command: Command::FilesTrash { paths: vec!["/home/user/Pictures/cover.png".into()], continues: true },
+            }),
+            encode(Request { id: Some(103), command: Command::FilesUndo { job: 3 } }),
+            encode(Response { id: 103, outcome: Outcome::Result(json!(true)) }),
+            encode(Request { id: Some(104), command: Command::FilesRedo { job: 4 } }),
+            encode(Event::FilesHistory { undo: Some(FileStep::Move), redo: Some(FileStep::Trash) }),
+            encode(Event::FilesHistory { undo: Some(FileStep::Copy), redo: None }),
             encode(Request {
                 id: Some(82),
                 command: Command::FilesPreview { path: "/home/user/Documents/notes.md".into() },
