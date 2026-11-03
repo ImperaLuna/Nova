@@ -22,6 +22,9 @@ Singleton {
     // also until novad says) to 1 (the theme's solid surfaces).
     readonly property real frameSolid: (Daemon.filesLook?.frame ?? 0) / Protocol.FILES_SOLID_MAX
     readonly property real listSolid: (Daemon.filesLook?.list ?? 0) / Protocol.FILES_SOLID_MAX
+    // What Ctrl+Z and Ctrl+Y would undo and redo now, in any window: {undo,
+    // redo}, each a Protocol.FILE_STEP_* or absent when there's nothing.
+    readonly property var history: Daemon.filesHistory ?? ({})
     // The drives for the sidebar, in its order: {id, name, removable,
     // mount (absent while it isn't mounted), size, used (bytes, while
     // mounted)}.
@@ -83,6 +86,11 @@ Singleton {
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
+
+    // A number for a new copy or move job, never handed out twice.
+    function newJob(): int {
+        return _nextJob++;
+    }
 
     // Tells novad this process opens Nova Files' windows; done again on
     // every connection.
@@ -208,7 +216,7 @@ Singleton {
     // which its transferChanged events carry; `failed(job, error)` gets
     // novad's refusal when it doesn't start, maybe before this returns.
     function transfer(mode: string, sources: var, folder: string, failed: var): int {
-        const job = _nextJob++;
+        const job = newJob();
         Daemon.call(Protocol.CMD_FILES_TRANSFER, {
             job: job,
             mode: mode,
@@ -255,10 +263,25 @@ Singleton {
         });
     }
 
-    // Moves `paths` (absolute) to the trash. `done(error)` gets novad's
-    // answer: null, or which ones didn't go.
+    // Moves `paths` (absolute) to the trash, one step to undo however many
+    // requests it takes. `done(error)` gets novad's answer: null, or which
+    // ones didn't go.
     function trash(paths: var, done: var) {
-        _inBatches(Protocol.CMD_FILES_TRASH, "paths", paths, "moving to the trash", done);
+        _inBatches(Protocol.CMD_FILES_TRASH, "paths", paths, "moving to the trash", done, true);
+    }
+
+    // Undoes the last copy, move or trashing done in any window (Ctrl+Z),
+    // or with `redo` does the last one undone again (Ctrl+Y). A move back
+    // runs as job `job` (newJob()), which reports like a transfer's;
+    // `done(error, started)` gets novad's answer and whether that job
+    // started.
+    function undo(redo: bool, job: int, done: var) {
+        Daemon.call(redo ? Protocol.CMD_FILES_REDO : Protocol.CMD_FILES_UNDO, {
+            job: job
+        }, (error, started) => {
+            root._answered(redo ? "redoing" : "undoing", error, null);
+            done(error ?? null, started === true);
+        });
     }
 
     // Deletes `paths` (absolute) for good.
@@ -295,8 +318,9 @@ Singleton {
 
     // Sends `cmd` with `items` under `key`, in as many requests as keep each
     // under novad's limit (Trash.batches), one after another. `done(error)`
-    // gets every request's errors at once, or null.
-    function _inBatches(cmd: string, key: string, items: var, doing: string, done: var) {
+    // gets every request's errors at once, or null. With `oneStep`, the
+    // batches after the first continue the first's step to undo.
+    function _inBatches(cmd: string, key: string, items: var, doing: string, done: var, oneStep: bool) {
         const batches = Trash.batches(items, Protocol.REQUEST_MAX_BYTES);
         const errors = [];
         const next = index => {
@@ -306,6 +330,8 @@ Singleton {
             }
             const args = {};
             args[key] = batches[index];
+            if (oneStep && index > 0)
+                args.continues = true;
             Daemon.call(cmd, args, error => {
                 if (error)
                     errors.push(error);

@@ -130,6 +130,8 @@ var CMD_FILES_SAME_DRIVE = "files_same_drive";
 var CMD_FILES_TRANSFER_CANCEL = "files_transfer_cancel";
 var CMD_FILES_TRANSFER_ANSWER = "files_transfer_answer";
 var CMD_FILES_TRASH = "files_trash";
+var CMD_FILES_UNDO = "files_undo";
+var CMD_FILES_REDO = "files_redo";
 var CMD_FILES_DELETE = "files_delete";
 var CMD_FILES_TRASH_LIST = "files_trash_list";
 var CMD_FILES_RESTORE = "files_restore";
@@ -174,6 +176,7 @@ var EVENT_FILES_LOOK = "files_look";
 var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
 var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
+var EVENT_FILES_HISTORY = "files_history";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
@@ -324,6 +327,11 @@ var TRANSFER_FAILED = "failed";
 var CLASH_REPLACE = "replace";
 var CLASH_MERGE = "merge";
 var CLASH_SKIP = "skip";
+
+// What files_undo and files_redo undo and redo (FileStep).
+var FILE_STEP_COPY = "copy";
+var FILE_STEP_MOVE = "move";
+var FILE_STEP_TRASH = "trash";
 
 // END GENERATED
 
