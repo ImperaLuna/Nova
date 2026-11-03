@@ -11,7 +11,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -190,6 +190,33 @@ impl Part {
                 return Ok(false);
             }
         }
+    }
+
+    /// The file it fills, for a writer of its own (a zip).
+    pub fn file(&mut self) -> io::Result<&mut File> {
+        self.file.as_mut().ok_or_else(|| io::Error::other("already finished"))
+    }
+
+    /// Makes it a new file with permissions `mode` named `name` in its
+    /// folder, or the next free numbered name ([`numbered`]) when that's
+    /// taken, never replacing anything; answers the name it got.
+    pub fn keep(mut self, name: &OsStr, mode: u32) -> io::Result<OsString> {
+        if let Some(file) = &self.file {
+            let _ = file.set_permissions(fs::Permissions::from_mode(mode));
+        }
+        let folder = self.path.parent().unwrap_or(Path::new("/")).to_owned();
+        let mut name = name.to_owned();
+        for _ in 0..MOST_NUMBERED {
+            match super::trash::rename_new(&self.path, &folder.join(&name)) {
+                Ok(()) => {
+                    self.file = None;
+                    return Ok(name);
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => name = numbered(&folder, &name, false)?,
+                Err(e) => return Err(e),
+            }
+        }
+        Err(io::Error::other("no free name"))
     }
 
     /// Gives it `meta`'s permissions and modified time where the drive
