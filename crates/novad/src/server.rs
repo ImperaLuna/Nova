@@ -357,6 +357,19 @@ impl<'a> Connection<'a> {
                 return self.files_later(move |files| files.trash().erase(&ids));
             }
             Command::FilesEmptyTrash => return self.files_later(|files| files.trash().empty()),
+            Command::FilesProperties { path } => {
+                let path = path.clone();
+                return self.files_later(move |files| files.properties(&path));
+            }
+            Command::FilesSetAccess { path, access } => {
+                let (path, access) = (path.clone(), *access);
+                return self.files_later(move |files| files.set_access(&path, access));
+            }
+            // Answered here, in order with a cancel that follows it.
+            Command::FilesMeasure { job, paths } => {
+                done(self.files().and_then(|files| files.measure(self.id, *job, paths)))
+            }
+            Command::FilesMeasureCancel { job } => done(self.files().map(|files| files.cancel_measure(self.id, *job))),
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -952,7 +965,11 @@ impl<'a> Connection<'a> {
             | Command::FilesTrashDelete { .. }
             | Command::FilesEmptyTrash
             | Command::FilesMount { .. }
-            | Command::FilesEject { .. } => {}
+            | Command::FilesEject { .. }
+            | Command::FilesProperties { .. }
+            | Command::FilesMeasure { .. }
+            | Command::FilesMeasureCancel { .. }
+            | Command::FilesSetAccess { .. } => {}
             Command::FilesTree { .. } | Command::FilesPlaces => {}
         }
     }

@@ -71,28 +71,7 @@ fn unquote(value: &str) -> String {
 
 /// The user's login name, else `$USER`.
 fn user_name() -> String {
-    login_name().or_else(|| std::env::var("USER").ok()).unwrap_or_default()
-}
-
-/// This process's user's login name, from the user database (which may be
-/// LDAP or systemd-userdb, not just /etc/passwd).
-fn login_name() -> Option<String> {
-    // Big enough for any real entry; getpwuid_r says ERANGE otherwise.
-    let mut buffer = vec![0u8; 16 * 1024];
-    // SAFETY: zeroed is a valid passwd (null pointers, zero ids); it's only
-    // read after getpwuid_r fills it.
-    let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
-    let mut found: *mut libc::passwd = std::ptr::null_mut();
-    // SAFETY: every pointer is valid for the sizes passed, and `entry`'s
-    // strings point into `buffer`, which outlives their use below.
-    let status =
-        unsafe { libc::getpwuid_r(libc::getuid(), &mut entry, buffer.as_mut_ptr().cast(), buffer.len(), &mut found) };
-    if status != 0 || found.is_null() || entry.pw_name.is_null() {
-        return None;
-    }
-    // SAFETY: getpwuid_r set it to a NUL-terminated string in `buffer`.
-    let name = unsafe { std::ffi::CStr::from_ptr(entry.pw_name) }.to_string_lossy().into_owned();
-    Some(name).filter(|name| !name.is_empty())
+    crate::users::user_name(crate::users::current_uid()).or_else(|| std::env::var("USER").ok()).unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -62,6 +62,7 @@ mod state_file;
 mod supervisor;
 mod theme;
 mod tray;
+mod users;
 mod wallpaper;
 mod wallpaper_folder;
 mod watch_points;
