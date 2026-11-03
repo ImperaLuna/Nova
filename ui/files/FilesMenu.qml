@@ -228,6 +228,10 @@ FocusScope {
                         }
                         TapHandler {
                             enabled: !row.modelData.separator && row.usable
+                            // Takes the press for itself, so the click that
+                            // picks an item never also reaches what's under
+                            // the menu (a tree row going to its folder).
+                            gesturePolicy: TapHandler.ReleaseWithinBounds
                             onTapped: {
                                 if (row.modelData.items)
                                     card.subRequested();
