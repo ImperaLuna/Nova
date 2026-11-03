@@ -137,6 +137,8 @@ FloatingWindow {
     }
 
     Component.onCompleted: navigator.begin(folder)
+    // A game's menu doesn't outlive the games.
+    onInGamesChanged: gameMenu.close()
     onConfirmingChanged: {
         if (confirming)
             confirmDialog.shown = confirming.asking;

@@ -90,9 +90,8 @@ Item {
                     TapHandler {
                         enabled: action.available
                         onTapped: {
-                            const folder = action.modelData.folder;
+                            menu.chosen(action.modelData.folder);
                             menu.close();
-                            menu.chosen(folder);
                         }
                     }
                 }

@@ -62,6 +62,8 @@ QtObject {
         else
             picked = -1;
     }
+    // A window that opens at the games is active from the start.
+    Component.onCompleted: refresh()
 
     readonly property Connections _novad: Connections {
         target: games.service

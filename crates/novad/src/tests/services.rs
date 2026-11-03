@@ -209,9 +209,8 @@ fn files_are_found_by_name_over_the_socket() {
     assert_eq!(found["results"][0]["marks"], json!([{"start": 0, "length": 7}]));
 }
 
-/// The trash over the socket: an item trashed, listed, restored, and the
-/// trash emptied, with `files_trash_changed` each time it changes. The
-/// trash's own tests cover the spec.
+/// The Games place over the socket: in the places once Steam is there, and
+/// its game listed. The Steam reader's own tests cover its files.
 #[test]
 fn installed_games_are_a_place_and_a_list_over_the_socket() {
     let novad = TestDaemon::open("files-games", None, |dir| {
@@ -231,6 +230,9 @@ fn installed_games_are_a_place_and_a_list_over_the_socket() {
     assert!(games[0].get("size").is_none(), "no size when Steam doesn't say");
 }
 
+/// The trash over the socket: an item trashed, listed, restored, and the
+/// trash emptied, with `files_trash_changed` each time it changes. The
+/// trash's own tests cover the spec.
 #[test]
 fn the_trash_is_used_and_followed_over_the_socket() {
     let novad = TestDaemon::open("files-trash", None, |dir| {
