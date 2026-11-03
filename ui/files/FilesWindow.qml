@@ -231,6 +231,11 @@ FloatingWindow {
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
         solid: FilesService.listSolid
+        // Back from a page (Home, the trash): keys go to the list at once.
+        onVisibleChanged: {
+            if (visible)
+                forceActiveFocus();
+        }
     }
     HomePage {
         id: homePage
