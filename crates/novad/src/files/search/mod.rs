@@ -176,19 +176,21 @@ impl Search {
     /// one goes.
     pub fn set_used(&self, client: ClientId, what: Use, used: bool) {
         let mut demand = lock(&self.shared.demand);
+        let was_used = !demand.users.is_empty();
         if used {
             demand.users.insert((client, what));
         } else {
             demand.users.remove(&(client, what));
         }
-        self.shared.used(&mut demand);
+        self.shared.used(&mut demand, was_used);
     }
 
     /// The client `client` hung up: it uses nothing any more.
     pub fn client_gone(&self, client: ClientId) {
         let mut demand = lock(&self.shared.demand);
+        let was_used = !demand.users.is_empty();
         demand.users.retain(|(user, _)| *user != client);
-        self.shared.used(&mut demand);
+        self.shared.used(&mut demand, was_used);
     }
 
     /// Stops keeping the index for good; searches find what it held.
@@ -209,11 +211,13 @@ impl Search {
 }
 
 impl Shared {
-    /// Who uses the index changed: it's built if anyone does, and set to
-    /// be dropped if nobody does.
-    fn used(self: &Arc<Self>, demand: &mut Demand) {
+    /// Who uses the index may have changed: it's built if anyone does,
+    /// and set to be dropped once the last user goes. With nobody using it
+    /// before either, the time it's dropped stays, so connections that
+    /// never used it don't keep it by hanging up.
+    fn used(self: &Arc<Self>, demand: &mut Demand, was_used: bool) {
         if demand.users.is_empty() {
-            if demand.keeper.is_some() {
+            if was_used && demand.keeper.is_some() {
                 demand.drop_at = Some(Instant::now() + KEPT_UNUSED);
             }
         } else {
@@ -702,6 +706,19 @@ mod tests {
         // The UI hanging up closes its launchers.
         fixture.search.client_gone(UI);
         fixture.wait_built(false);
+    }
+
+    #[test]
+    fn connections_that_never_used_it_do_not_keep_it_by_hanging_up() {
+        let fixture = Fixture::new("others", steam_game);
+        fixture.search.set_used(FILES, Use::Files, false);
+        // Short-lived clients, like `nova` commands, come and go.
+        let other: ClientId = 100;
+        wait_until(WAIT, "the index is dropped", || {
+            fixture.search.client_gone(other);
+            std::thread::sleep(KEPT_UNUSED / 10);
+            !fixture.search.built()
+        });
     }
 
     #[test]
