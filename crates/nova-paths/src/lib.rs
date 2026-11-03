@@ -52,6 +52,11 @@ pub fn data_home() -> Option<PathBuf> {
     xdg_home("XDG_DATA_HOME", ".local/share")
 }
 
+/// `$XDG_CACHE_HOME`, else `~/.cache`.
+pub fn cache_home() -> Option<PathBuf> {
+    xdg_home("XDG_CACHE_HOME", ".cache")
+}
+
 /// The path (or `:`-separated path list) in the environment variable
 /// `name`, unless it's unset or empty (an empty XDG variable counts as
 /// unset, per the spec).
