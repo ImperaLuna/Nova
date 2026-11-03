@@ -14,7 +14,8 @@ Column {
 
     property string folder: ""
 
-    signal opened(string folder)
+    // The drive `id` was clicked: open it (Navigator.openDrive).
+    signal opened(string id)
     signal menuRequested(var drive, point at)
     signal driveGone
 
@@ -32,16 +33,6 @@ Column {
                 best = drive;
         return best;
     }
-    // Mounts drive `id` and opens it. Here, not in its row: rows are made
-    // again when the list changes (as the mount does), and a callback of a
-    // row gone would never run.
-    function open(id: string) {
-        FilesService.mount(id, mounted => {
-            if (mounted !== null)
-                drives.opened(mounted);
-        });
-    }
-
     // Where the drive the folder is on was mounted, before the latest list.
     property string heldMount: ""
 
@@ -70,7 +61,7 @@ Column {
             current: modelData.id === (drives.current?.id ?? "")
             arrived: drives.listed && !(modelData.id in drives.seen)
             Component.onCompleted: drives.seen[modelData.id] = true
-            onOpened: drives.open(modelData.id)
+            onOpened: drives.opened(modelData.id)
             onMenuRequested: at => drives.menuRequested(modelData, at)
         }
     }

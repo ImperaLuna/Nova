@@ -70,7 +70,7 @@ Rectangle {
             width: Tokens.filesTrashColumns[0]
             // The folder's own name stays in view; the start gives way.
             elide: Text.ElideLeft
-            text: Paths.location(item.folder, item.home)
+            text: Paths.located(item.folder, item.home)
         }
         Cell {
             width: Tokens.filesTrashColumns[1]

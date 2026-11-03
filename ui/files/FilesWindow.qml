@@ -7,18 +7,20 @@ import "service"
 import "paths.js" as Paths
 import "games.js" as Games
 import "trash.js" as Trash
-import "places.js" as Places
+import "home.js" as Home
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
 // showing `folder` with `select` selected. The navigation row, the command
 // row, then the sidebar beside the file list, with its copies and moves
 // over them all; opening a folder in the list shows it in the same window.
-// At the trash, the trash's command row and list take the place of the
-// folder's, and anything deleted for good is asked about first
-// (ConfirmDialog). At the games, theirs do, and a game's menu goes to its
-// install or save folder. A drive's menu and the dialog when one can't be ejected
-// lie over it all.
+// On the Home page (Home.isHome, where `nova files` without a path opens)
+// the Home page takes the file list's place. At the trash, the trash's
+// command row and list take the place of the folder's, and anything
+// deleted for good is asked about first (ConfirmDialog). At the games,
+// theirs do, and a game's menu goes to its install or save folder. A
+// drive's menu and the dialog when one can't be ejected, a folder's pin
+// menu and a game's menu lie over it all.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -36,16 +38,17 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    readonly property bool inHome: Home.isHome(folder)
     readonly property bool inGames: Games.isGames(folder)
-    readonly property bool inFolder: Places.isFolder(folder)
-    // The command row shown: the folder's, the trash's or the games'.
-    readonly property Item commandRow: inFolder ? commands : inTrash ? trashCommands : gamesCommands
+    readonly property bool inFolder: !Home.isPage(folder)
+    // The command row shown: the trash's, the games' or the folder's.
+    readonly property Item commandRow: inTrash ? trashCommands : inGames ? gamesCommands : commands
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
     property var problems: []
 
-    title: Places.isFolder(folder) ? Paths.folderName(folder) : Places.name(folder)
+    title: inFolder ? Paths.folderName(folder) : Home.pageName(folder)
     implicitWidth: Tokens.filesWindowWidth
     implicitHeight: Tokens.filesWindowHeight
     color: "transparent"
@@ -123,6 +126,8 @@ FloatingWindow {
             trashList.focusList();
         else if (inGames)
             gamesList.focusList();
+        else if (inHome)
+            homePage.forceActiveFocus();
         else
             list.forceActiveFocus();
     }
@@ -198,7 +203,7 @@ FloatingWindow {
         anchors.right: parent.right
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
-        visible: window.inFolder
+        visible: !window.inTrash && !window.inGames
     }
     TrashCommandRow {
         id: trashCommands
@@ -230,6 +235,7 @@ FloatingWindow {
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
         onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
+        onPinMenuRequested: (path, at) => pinMenu.open(path, at)
     }
     FileList {
         id: list
@@ -238,13 +244,36 @@ FloatingWindow {
         anchors.top: commands.bottom
         visible: window.inFolder
         anchors.bottom: parent.bottom
-        folder: window.folder
+        // Nothing to read while a page shows.
+        folder: Home.isPage(window.folder) ? "" : window.folder
         select: window.select
         focus: true
         onFolderOpened: path => window.navigator.visit(path, null)
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
         solid: FilesService.listSolid
+        // Back from a page (Home, the games, the trash): keys go to the
+        // list at once.
+        onVisibleChanged: {
+            if (visible)
+                forceActiveFocus();
+        }
+    }
+    HomePage {
+        id: homePage
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: commands.bottom
+        anchors.bottom: parent.bottom
+        visible: window.inHome
+        navigator: window.navigator
+        solid: FilesService.listSolid
+        onPinMenuRequested: (path, at) => pinMenu.open(path, at)
+        onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
+        onVisibleChanged: {
+            if (visible)
+                forceActiveFocus();
+        }
     }
     TrashModel {
         id: trash
@@ -366,5 +395,9 @@ FloatingWindow {
         id: gameMenu
         anchors.fill: parent
         onChosen: folder => window.navigator.visit(folder, null)
+    }
+    PinMenu {
+        id: pinMenu
+        anchors.fill: parent
     }
 }

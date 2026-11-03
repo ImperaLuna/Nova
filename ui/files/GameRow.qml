@@ -65,7 +65,7 @@ Rectangle {
             width: Tokens.filesGamesColumns[0]
             // The game's own folder stays in view; the start gives way.
             elide: Text.ElideLeft
-            text: Paths.location(item.folder, item.home)
+            text: Paths.located(item.folder, item.home)
         }
         Cell {
             width: Tokens.filesGamesColumns[1] - Tokens.rowInset

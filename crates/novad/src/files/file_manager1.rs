@@ -132,6 +132,9 @@ mod tests {
                 search: crate::files::search::Sources::under(&dir),
                 trash: None,
                 mounts: dir.join("no-mountinfo"),
+                bookmarks: None,
+                user_folders: Vec::new(),
+                recent: None,
                 games: crate::files::games::Sources { steam: vec![] },
             };
             let apps = crate::apps::AppIndex::of(None, &logger);

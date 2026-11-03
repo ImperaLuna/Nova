@@ -3,144 +3,144 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
-import "../daemon/protocol.js" as Protocol
 import "service"
-import "games.js" as Games
-import "places.js" as Places
-import "trash.js" as Trash
+import "home.js" as Home
 
-// Nova Files' sidebar: the places that exist first (a click goes there),
-// the games (while a launcher is installed) and the trash last among them
-// and marked while the window shows them, then
-// the drives (Drives.qml) under a line of their own, a line, then the
-// folder tree that follows the window. A drive opened goes through the
-// navigator like a place; when the drive the window is on goes away, it
-// goes home.
+// Nova Files' sidebar: the places first (a click goes there): the Home
+// page, the folders pinned to Quick access, each with a pin at its end,
+// and the trash; the Home page and the trash are marked while the window
+// shows them. Then the drives (Drives.qml) under a line of their own, a
+// line, then the folder tree that follows the window. A right-click on a
+// pinned folder or a tree row asks for the menu that pins or unpins it.
+// A drive opened goes through the navigator like a place; when the drive
+// the window is on goes away, it goes to the home folder.
 Item {
     id: sidebar
 
     required property Navigator navigator
-    // The places novad found ({kind, path}), in order.
-    property var places: []
 
     // A drive's menu was asked for at `at` (in the window).
     signal driveMenuRequested(var drive, point at)
+    // The pin menu of the folder `path` was asked for at `at` (in the
+    // window).
+    signal pinMenuRequested(string path, point at)
 
-    readonly property var looks: ({
-            [Protocol.PLACE_HOME]: {
-                name: qsTr("Home"),
-                icon: Icons.HOME
-            },
-            [Protocol.PLACE_DESKTOP]: {
-                name: qsTr("Desktop"),
-                icon: Icons.DESKTOP
-            },
-            [Protocol.PLACE_DOCUMENTS]: {
-                name: qsTr("Documents"),
-                icon: Icons.DOCUMENT
-            },
-            [Protocol.PLACE_DOWNLOADS]: {
-                name: qsTr("Downloads"),
-                icon: Icons.DOWNLOAD
-            },
-            [Protocol.PLACE_PICTURES]: {
-                name: qsTr("Pictures"),
-                icon: Icons.PICTURE
-            },
-            [Protocol.PLACE_GAMES]: {
-                name: Games.name(),
-                icon: Icons.GAMEPAD
-            },
-            [Protocol.PLACE_TRASH]: {
-                name: Trash.name(),
-                icon: Icons.TRASH
-            }
-        })
-
-    Component.onCompleted: FilesService.places(found => sidebar.places = found)
-
-    Column {
-        id: placeList
+    // The places and drives scroll once they'd take more than their share
+    // of the sidebar (many pins), so the tree under them keeps its room.
+    Flickable {
+        id: placeScroll
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: Tokens.gap
-        spacing: Tokens.dividerWidth
+        height: Math.min(placeList.implicitHeight, sidebar.height * Tokens.filesPlacesMaxShare)
+        contentHeight: placeList.implicitHeight
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
 
-        Repeater {
-            model: sidebar.places
+        Column {
+            id: placeList
+            width: placeScroll.width
+            spacing: Tokens.dividerWidth
 
-            Rectangle {
-                id: place
+            Repeater {
+                model: FilesService.places
 
-                required property var modelData
-                readonly property var look: sidebar.looks[modelData.kind]
-                // The tree marks folders; only the places that aren't
-                // folders, which aren't in it, are marked here.
-                readonly property bool current: !Places.isFolder(modelData.path) && sidebar.navigator.folder === modelData.path
+                Rectangle {
+                    id: place
 
-                width: parent.width
-                height: Tokens.filesPlaceHeight
-                radius: Tokens.menuRowRadius
-                color: current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
+                    required property var modelData
+                    readonly property var look: Home.look(modelData)
+                    readonly property bool pinned: Home.isPinned(modelData)
+                    // The tree marks folders; only the pages, which aren't in
+                    // it, are marked here.
+                    readonly property bool current: Home.isPage(modelData.path) && sidebar.navigator.folder === modelData.path
 
-                Behavior on color {
-                    ColorAnimation {
-                        duration: Tokens.durationFast
+                    width: parent.width
+                    height: Tokens.filesPlaceHeight
+                    radius: Tokens.menuRowRadius
+                    color: current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: Tokens.durationFast
+                        }
                     }
-                }
 
-                Row {
-                    anchors.left: parent.left
-                    anchors.leftMargin: Tokens.gap
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Tokens.rowInset
+                    Row {
+                        id: placeRow
+                        anchors.left: parent.left
+                        anchors.right: pin.left
+                        anchors.leftMargin: Tokens.gap
+                        anchors.rightMargin: Tokens.gap
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: Tokens.rowInset
 
+                        LineIcon {
+                            id: placeIcon
+                            anchors.verticalCenter: parent.verticalCenter
+                            path: place.look.icon
+                            color: place.current ? Tokens.primary : Tokens.fg
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: placeRow.width - placeIcon.width - placeRow.spacing
+                            font.family: Tokens.fontSans
+                            font.pixelSize: Tokens.fontSize
+                            font.weight: place.current ? Tokens.weightLabel : Tokens.weightBody
+                            color: Tokens.fg
+                            elide: Text.ElideRight
+                            textFormat: Text.PlainText
+                            text: place.look.name
+                        }
+                    }
                     LineIcon {
+                        id: pin
+                        anchors.right: parent.right
+                        anchors.rightMargin: Tokens.gap
                         anchors.verticalCenter: parent.verticalCenter
-                        path: place.look.icon
-                        color: place.current ? Tokens.primary : Tokens.fg
+                        visible: place.pinned
+                        size: Tokens.iconSizeMini
+                        color: Tokens.filesFaint
+                        path: Icons.PIN
                     }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSize
-                        font.weight: place.current ? Tokens.weightLabel : Tokens.weightBody
-                        color: Tokens.fg
-                        text: place.look.name
-                    }
-                }
 
-                HoverHandler {
-                    id: hover
-                }
-                TapHandler {
-                    onTapped: sidebar.navigator.visit(place.modelData.path, null)
+                    HoverHandler {
+                        id: hover
+                    }
+                    TapHandler {
+                        onTapped: sidebar.navigator.visit(place.modelData.path, null)
+                    }
+                    TapHandler {
+                        acceptedButtons: Qt.RightButton
+                        enabled: place.pinned
+                        onTapped: point => sidebar.pinMenuRequested(place.modelData.path, place.mapToItem(null, point.position))
+                    }
                 }
             }
-        }
 
-        Item {
-            visible: FilesService.drives.length > 0
-            width: parent.width
-            height: Tokens.filesRuleInset * 2 + Tokens.dividerWidth
+            Item {
+                visible: FilesService.drives.length > 0
+                width: parent.width
+                height: Tokens.filesRuleInset * 2 + Tokens.dividerWidth
 
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: Tokens.filesRuleInset
-                anchors.rightMargin: Tokens.filesRuleInset
-                height: Tokens.dividerWidth
-                color: Tokens.filesRule
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: Tokens.filesRuleInset
+                    anchors.rightMargin: Tokens.filesRuleInset
+                    height: Tokens.dividerWidth
+                    color: Tokens.filesRule
+                }
             }
-        }
-        Drives {
-            width: parent.width
-            folder: sidebar.navigator.folder
-            onOpened: folder => sidebar.navigator.visit(folder, null)
-            onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
-            onDriveGone: sidebar.navigator.visit("~", null)
+            Drives {
+                width: parent.width
+                folder: sidebar.navigator.folder
+                onOpened: id => sidebar.navigator.openDrive(id)
+                onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
+                onDriveGone: sidebar.navigator.visit("~", null)
+            }
         }
     }
 
@@ -148,7 +148,7 @@ Item {
         id: rule
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: placeList.bottom
+        anchors.top: placeScroll.bottom
         anchors.leftMargin: Tokens.gap + Tokens.filesRuleInset
         anchors.rightMargin: Tokens.gap + Tokens.filesRuleInset
         anchors.topMargin: Tokens.filesRuleInset
@@ -166,5 +166,6 @@ Item {
         anchors.topMargin: Tokens.filesRuleInset
         anchors.bottomMargin: Tokens.gap
         navigator: sidebar.navigator
+        onMenuRequested: (path, at) => sidebar.pinMenuRequested(path, at)
     }
 }
