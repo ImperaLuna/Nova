@@ -4,7 +4,6 @@ import QtQuick
 import "../theme"
 import "paths.js" as Paths
 import "listing.js" as Listing
-import "trash.js" as Trash
 
 // A row of the trash's list: the item's icon and the name it had, then
 // where it came from, when it was trashed and its size, at the header's
@@ -71,7 +70,7 @@ Rectangle {
             width: Tokens.filesTrashColumns[0]
             // The folder's own name stays in view; the start gives way.
             elide: Text.ElideLeft
-            text: Trash.location(item.folder, item.home)
+            text: Paths.location(item.folder, item.home)
         }
         Cell {
             width: Tokens.filesTrashColumns[1]

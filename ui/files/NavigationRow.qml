@@ -5,7 +5,7 @@ import Quickshell
 import "../theme"
 import "../theme/icons.js" as Icons
 import "paths.js" as Paths
-import "trash.js" as Trash
+import "places.js" as Places
 
 // Nova Files' top row: back, forward and up, the address bar showing
 // where the window is (a part per folder from Home or the root, hidden
@@ -19,7 +19,7 @@ Rectangle {
     id: row
 
     required property Navigator navigator
-    readonly property var parts: Trash.isTrash(navigator.folder) ? Trash.crumbs() : Paths.crumbs(navigator.folder, Quickshell.env("HOME") ?? "", qsTr("Home"))
+    readonly property var parts: !Places.isFolder(navigator.folder) ? Places.crumbs(navigator.folder) : Paths.crumbs(navigator.folder, Quickshell.env("HOME") ?? "", qsTr("Home"))
     property bool editing: false
     property bool wrong: false
 

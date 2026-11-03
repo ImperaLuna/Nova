@@ -66,6 +66,13 @@ function inside(path, folder) {
     return folder !== "" && (path === folder || path.startsWith(folder.endsWith("/") ? folder : folder + "/"));
 }
 
+// `folder` (absolute) for a column of folders: from `~` when it's in
+// `home`.
+function location(folder, home) {
+    const inHome = home !== "" && (folder === home || folder.startsWith(home + "/"));
+    return shown(inHome ? "~" + folder.slice(home.length) : folder);
+}
+
 // The folder holding `folder`, or "" for the root.
 function parent(folder) {
     if (folder === "/")

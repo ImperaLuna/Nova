@@ -7,6 +7,7 @@ import "../files/listing.js" as Listing
 import "../files/paths.js" as Paths
 import "../files/navigation.js" as Navigation
 import "../files/trash.js" as Trash
+import "../files/places.js" as Places
 import "../daemon/protocol.js" as Protocol
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
@@ -522,7 +523,9 @@ Item {
         function test_the_trash_is_a_place_with_one_part() {
             verify(Trash.isTrash(Protocol.FILES_TRASH_PLACE));
             verify(!Trash.isTrash("/home/ana"));
-            compare(names(Trash.crumbs()), ["Trash"]);
+            compare(names(Places.crumbs(Protocol.FILES_TRASH_PLACE)), ["Trash"]);
+            verify(!Places.isFolder(Protocol.FILES_TRASH_PLACE));
+            verify(Places.isFolder("/home/ana"));
         }
 
         function test_a_trashed_row_says_where_it_came_from() {
@@ -532,10 +535,10 @@ Item {
             compare(Trash.row(Object.assign(trashed("i2", "x", "/"), {
                 deleted_ms: undefined
             })).deleted, -1, "no date in the trash");
-            compare(Trash.location("/home/ana/Documents", "/home/ana"), "~/Documents");
-            compare(Trash.location("/home/ana", "/home/ana"), "~");
-            compare(Trash.location("/home/anabel", "/home/ana"), "/home/anabel");
-            compare(Trash.location("/run/media/ana/SANDISK", ""), "/run/media/ana/SANDISK");
+            compare(Paths.location("/home/ana/Documents", "/home/ana"), "~/Documents");
+            compare(Paths.location("/home/ana", "/home/ana"), "~");
+            compare(Paths.location("/home/anabel", "/home/ana"), "/home/anabel");
+            compare(Paths.location("/run/media/ana/SANDISK", ""), "/run/media/ana/SANDISK");
         }
 
         function test_restore_and_the_footer_follow_the_picked_items() {

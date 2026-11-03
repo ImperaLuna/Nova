@@ -6,6 +6,7 @@ import "../theme"
 import "service"
 import "paths.js" as Paths
 import "trash.js" as Trash
+import "places.js" as Places
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
@@ -38,7 +39,7 @@ FloatingWindow {
     // Notices of what the trash couldn't do, oldest first: {row, error}.
     property var problems: []
 
-    title: inTrash ? Trash.name() : Paths.folderName(folder)
+    title: Places.isFolder(folder) ? Paths.folderName(folder) : Places.name(folder)
     implicitWidth: Tokens.filesWindowWidth
     implicitHeight: Tokens.filesWindowHeight
     color: "transparent"
