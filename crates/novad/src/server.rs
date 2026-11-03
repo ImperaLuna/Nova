@@ -342,9 +342,17 @@ impl<'a> Connection<'a> {
                 });
             }
             Command::FilesPlaces => return self.files_later(|files| Ok(files.places())),
-            Command::FilesTrash { paths } => {
-                let paths = paths.clone();
-                return self.files_later(move |files| files.trash().trash(&paths));
+            Command::FilesTrash { paths, continues } => {
+                let (paths, continues) = (paths.clone(), *continues);
+                return self.files_later(move |files| files.move_to_trash(&paths, continues));
+            }
+            Command::FilesUndo { job } => {
+                let (client, job) = (self.id, *job);
+                return self.files_later(move |files| files.undo(client, job));
+            }
+            Command::FilesRedo { job } => {
+                let (client, job) = (self.id, *job);
+                return self.files_later(move |files| files.redo(client, job));
             }
             Command::FilesDelete { paths } => {
                 let paths = paths.clone();
@@ -949,6 +957,8 @@ impl<'a> Connection<'a> {
             | Command::FilesSetDefault { .. }
             | Command::FilesSearch { .. }
             | Command::FilesTrash { .. }
+            | Command::FilesUndo { .. }
+            | Command::FilesRedo { .. }
             | Command::FilesDelete { .. }
             | Command::FilesTrashList
             | Command::FilesRestore { .. }
