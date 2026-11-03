@@ -89,7 +89,9 @@ fn access(mode: u32) -> Access {
 
 fn mode_bits(access: Access) -> u32 {
     let bits = |rights: Rights, shift: u32| {
-        (u32::from(rights.read) * READ_BIT | u32::from(rights.write) * WRITE_BIT | u32::from(rights.run) * RUN_BIT)
+        ((u32::from(rights.read) * READ_BIT)
+            | (u32::from(rights.write) * WRITE_BIT)
+            | (u32::from(rights.run) * RUN_BIT))
             << shift
     };
     bits(access.owner, OWNER_SHIFT) | bits(access.group, GROUP_SHIFT) | bits(access.others, OTHERS_SHIFT)
