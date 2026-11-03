@@ -735,14 +735,12 @@ QtObject {
     readonly property int filesCrumbRadius: 8
     readonly property real filesFocusRing: strokeThin
     // Search: the field widens while it's in use and the address bar fades
-    // back; typing settles this long before novad is asked, and while its
-    // index is still being built it's asked again this often. Results show
+    // back; typing settles this long before novad is asked. Results show
     // where each lives in a column this wide, the matched words in the
     // accent, and the scope (this folder or everywhere) as round chips.
     readonly property int filesSearchWidthOpen: 300
     readonly property real filesSearchCrumbsOpacity: 0.45
     readonly property int filesSearchSettle: 60
-    readonly property int filesSearchRetry: 1000
     readonly property int filesSearchLocationWidth: 260
     readonly property int filesScopeHeight: 26
     readonly property int filesScopeGap: 4

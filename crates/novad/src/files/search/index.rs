@@ -164,10 +164,9 @@ impl Index {
     }
 
     /// The names that fit `query`, at most `limit` of them, best first,
-    /// and how many fit in all. With `within` (an absolute path, wire
-    /// text), only names below that folder count, and hidden means hidden
+    /// and how many fit in all. With `within` (an absolute path), only names below that folder count, and hidden means hidden
     /// below it: inside a dot folder, every result isn't dimmer.
-    pub fn search(&self, query: &Query, within: Option<&str>, limit: usize) -> (Vec<Hit>, usize) {
+    pub fn search(&self, query: &Query, within: Option<&Path>, limit: usize) -> (Vec<Hit>, usize) {
         let mut best = Best { query, limit, heap: BinaryHeap::with_capacity(limit + 1), total: 0 };
         match within {
             None => {
@@ -182,11 +181,8 @@ impl Index {
             Some(folder) => {
                 // Each sibling run waiting, with whether a folder above it,
                 // below `within`, is hidden.
-                let mut runs: Vec<(Id, bool)> = self
-                    .scope(&wire_path(folder))
-                    .into_iter()
-                    .map(|id| (self.nodes[id as usize].first_child, false))
-                    .collect();
+                let mut runs: Vec<(Id, bool)> =
+                    self.scope(folder).into_iter().map(|id| (self.nodes[id as usize].first_child, false)).collect();
                 while let Some((mut at, in_hidden_folder)) = runs.pop() {
                     while at != NONE {
                         let node = &self.nodes[at as usize];
@@ -208,6 +204,11 @@ impl Index {
             .map(|(.., id, in_hidden_folder)| self.hit(id, in_hidden_folder))
             .collect();
         (hits, best.total)
+    }
+
+    /// Whether anything indexed is below `folder`.
+    pub fn covers(&self, folder: &Path) -> bool {
+        !self.scope(folder).is_empty()
     }
 
     /// The folders whose entries are below `folder`: the indexed folder
@@ -388,7 +389,7 @@ mod tests {
     }
 
     fn found_within(index: &Index, query: &str, within: &str) -> Vec<(String, bool)> {
-        let (hits, total) = index.search(&Query::parse(query).unwrap(), Some(within), 10);
+        let (hits, total) = index.search(&Query::parse(query).unwrap(), Some(Path::new(within)), 10);
         assert_eq!(total, hits.len());
         hits.iter().map(|hit| (format!("{}/{}", hit.folder, hit.name), hit.in_hidden_folder)).collect()
     }

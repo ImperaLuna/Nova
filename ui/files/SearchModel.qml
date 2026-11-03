@@ -5,20 +5,21 @@ import "search.js" as Search
 // A Nova Files window's search: what's typed (`query`) asked of novad's
 // name index as it changes, below the folder `within` or everywhere when
 // that's "". Typing settles for Tokens.filesSearchSettle before novad is
-// asked, and an answer to anything but the latest ask is dropped. While
-// the index is still being built, or novad couldn't search, it asks again
-// every Tokens.filesSearchRetry, so results come in once it can.
+// asked, and an answer to anything but the latest ask is dropped, so is
+// one that comes while new typing settles. A search asked while the index
+// was still being built is asked again when novad says it's built
+// (`searchReady`), and one novad couldn't answer when it's connected
+// again.
 QtObject {
     id: search
 
     property string query: ""
     property string within: ""
-    // What asks novad: FilesService, or a stand-in in tests.
+    // What asks novad: FilesService, or a stand-in in tests (`search()`,
+    // `connected`, `searchReady`).
     property var service: null
-    // How long typing settles first, and how often to ask again while the
-    // index is built; properties so tests can shorten them.
+    // How long typing settles first; a property so tests can shorten it.
     property int settle: Tokens.filesSearchSettle
-    property int retry: Tokens.filesSearchRetry
 
     // Search.row of each result, best first.
     property var rows: []
@@ -34,36 +35,37 @@ QtObject {
     function _ask() {
         // Not `active`: in a change handler, it may not have caught up yet.
         if (query.trim() === "") {
-            _asks++;
             rows = [];
             total = 0;
-            answered = false;
-            _waiting.running = false;
             return;
         }
         const ask = ++_asks;
         service.search(query.trim(), within, found => {
             if (ask !== _asks)
                 return;
-            // novad couldn't search (it's gone, say): no count, and it's
-            // asked again.
+            // novad couldn't search (it's gone, say): no count.
             answered = found !== null;
             ready = found?.ready ?? ready;
             rows = (found?.results ?? []).map(Search.row);
             total = found?.total ?? 0;
-            _waiting.running = !answered || !ready;
         });
     }
 
-    onQueryChanged: {
+    // What was asked changed: answers on their way are for something else.
+    function _changed() {
+        _asks++;
         answered = false;
+    }
+
+    onQueryChanged: {
+        _changed();
         if (query.trim() !== "")
             _settling.restart();
         else
             _ask();
     }
     onWithinChanged: {
-        answered = false;
+        _changed();
         _ask();
     }
 
@@ -71,8 +73,15 @@ QtObject {
         interval: search.settle
         onTriggered: search._ask()
     }
-    readonly property Timer _waiting: Timer {
-        interval: search.retry
-        onTriggered: search._ask()
+    readonly property Connections _service: Connections {
+        target: search.service
+        function onSearchReady() {
+            if (search.active && !search.ready)
+                search._ask();
+        }
+        function onConnectedChanged() {
+            if (search.service.connected && search.active && !search.answered)
+                search._ask();
+        }
     }
 }

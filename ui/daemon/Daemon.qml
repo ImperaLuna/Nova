@@ -112,6 +112,8 @@ Singleton {
     signal filesTransferChanged(var transfer)
     // Something in the trash changed, in Nova Files or another app.
     signal filesTrashChanged
+    // novad's index of file names is built: searches can be asked again.
+    signal filesSearchReady
 
     // The topics this process subscribes to on every connection: the
     // shell's, unless its root sets its own as it's created (Nova Files,
@@ -222,6 +224,8 @@ Singleton {
             filesTransferChanged(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_TRASH_CHANGED) {
             filesTrashChanged();
+        } else if (msg.event === Protocol.EVENT_FILES_SEARCH_READY) {
+            filesSearchReady();
         }
     }
 

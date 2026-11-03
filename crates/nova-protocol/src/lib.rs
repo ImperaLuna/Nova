@@ -158,6 +158,10 @@ pub enum Event {
     /// (feature `files`): ask `files_trash_list` again. Topic
     /// [`Topic::Files`].
     FilesTrashChanged,
+    /// novad's index of file names is built (feature `files`), so a
+    /// `files_search` that answered `ready: false` can be asked again.
+    /// Topic [`Topic::Files`].
+    FilesSearchReady,
     /// The drives Nova Files' sidebar lists (feature `files`): every
     /// filesystem udisks2 knows that a person would open, as it is now.
     /// Topic [`Topic::Files`], sent right after subscribing and whenever a
@@ -227,6 +231,7 @@ impl Event {
             | Event::FilesChanged { .. }
             | Event::FilesClosed { .. }
             | Event::FilesTrashChanged
+            | Event::FilesSearchReady
             | Event::FilesTransfer(_)
             | Event::FilesDrives { .. } => Some(Topic::Files),
             Event::FilesLook(_) => Some(Topic::Files),
@@ -3237,6 +3242,7 @@ mod tests {
                 ],
             }),
             encode(Event::FilesClosed { view: 1, error: "/home/user/Pictures doesn't exist".into() }),
+            encode(Event::FilesSearchReady),
             encode(Event::FilesLook(FilesLook { frame: 0, list: 100 })),
             encode(Event::FilesDrives {
                 drives: vec![

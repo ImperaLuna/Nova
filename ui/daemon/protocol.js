@@ -171,6 +171,7 @@ var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
 var EVENT_FILES_LOOK = "files_look";
 var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
+var EVENT_FILES_SEARCH_READY = "files_search_ready";
 var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
 

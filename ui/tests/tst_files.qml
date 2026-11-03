@@ -795,7 +795,6 @@ Item {
             id: searchModelComponent
             SearchModel {
                 settle: 0
-                retry: 0
             }
         }
 
@@ -805,6 +804,8 @@ Item {
             id: askedSearchesComponent
             QtObject {
                 property var asked: []
+                property bool connected: true
+                signal searchReady
                 function search(query: string, within: string, done: var) {
                     asked = asked.concat([
                         {
@@ -852,7 +853,7 @@ Item {
             compare(service.asked.length, 3, "and nothing asked");
         }
 
-        function test_while_the_index_is_built_it_asks_again() {
+        function test_once_the_index_is_built_it_asks_again() {
             const service = askedSearches();
             const model = createTemporaryObject(searchModelComponent, stage, {
                 service: service
@@ -865,7 +866,10 @@ Item {
                 results: []
             });
             verify(!model.ready);
-            tryVerify(() => service.asked.length === 2);
+            wait(10);
+            compare(service.asked.length, 1, "nothing is asked until novad says");
+            service.searchReady();
+            compare(service.asked.length, 2);
             service.asked[1].done({
                 ready: true,
                 total: 1,
@@ -873,13 +877,39 @@ Item {
             });
             verify(model.ready);
             compare(model.rows.length, 1);
-            wait(10);
-            compare(service.asked.length, 2, "it stops asking once the index is built");
+            service.searchReady();
+            compare(service.asked.length, 2, "a ready index isn't asked again");
+        }
+
+        function test_a_search_novad_could_not_answer_is_asked_on_reconnecting() {
+            const service = askedSearches();
+            const model = createTemporaryObject(searchModelComponent, stage, {
+                service: service
+            });
             model.query = "desert";
-            tryVerify(() => service.asked.length === 3);
-            service.asked[2].done(null);
-            verify(!model.answered, "novad couldn't search: no count");
-            tryVerify(() => service.asked.length === 4, 1000, "and it's asked again");
+            tryVerify(() => service.asked.length === 1);
+            service.asked[0].done(null);
+            verify(!model.answered, "no count");
+            service.connected = false;
+            service.connected = true;
+            compare(service.asked.length, 2);
+        }
+
+        function test_an_answer_coming_while_typing_settles_is_dropped() {
+            const service = askedSearches();
+            const model = createTemporaryObject(searchModelComponent, stage, {
+                service: service,
+                settle: 1000
+            });
+            model.query = "crim";
+            tryVerify(() => service.asked.length === 1, 2000);
+            model.query = "crimson";
+            service.asked[0].done({
+                ready: true,
+                total: 1,
+                results: [foundGame()]
+            });
+            compare([model.answered, model.rows.length], [false, 0], "it was for what was typed before");
         }
     }
 }

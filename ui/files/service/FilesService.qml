@@ -81,6 +81,9 @@ Singleton {
 
     // Something in the trash changed: ask trashList again.
     signal trashChanged
+    // novad's index of file names is built: a search that found nothing
+    // because it wasn't can be asked again.
+    signal searchReady
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
@@ -331,6 +334,9 @@ Singleton {
         }
         function onFilesTransferChanged(transfer: var) {
             root.transferChanged(transfer);
+        }
+        function onFilesSearchReady() {
+            root.searchReady();
         }
         function onFilesTrashChanged() {
             root.trashChanged();
