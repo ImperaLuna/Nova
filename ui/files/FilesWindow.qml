@@ -130,6 +130,7 @@ FloatingWindow {
     // trash's selection.
     function snapshot(): var {
         return {
+            folder: folder,
             list: list.view(),
             trash: trash.selectedIds()
         };
@@ -144,13 +145,15 @@ FloatingWindow {
     }
 
     // Shows `next` as it was; its folder first, which clears the lists'
-    // selections, then its view.
+    // selections, then its view. A tab that moved on while at the back (a
+    // move it asked for before) keeps its order but selects nothing.
     function front(next: FilesTab) {
         next.navigator.hidden = list.showHidden;
         tab = next;
         folder = next.navigator.folder;
-        list.show(next.view?.list ?? null);
-        trash.selectIds(next.view?.trash ?? []);
+        const kept = next.view?.folder === folder ? next.view : null;
+        list.show(next.view?.list ?? null, kept?.list.selected ?? []);
+        trash.selectIds(kept?.trash ?? []);
     }
 
     function cycleTabs(steps: int) {

@@ -95,12 +95,14 @@ FocusScope {
         };
     }
 
-    // Shows a tab's view() again once its folder is set; a tab that has
-    // none yet keeps the order and selects nothing.
-    function show(kept: var) {
+    // Shows a tab's view() (its order; null keeps this one) once its folder
+    // is set, with `selected` (names) selected. Shift starts from nothing,
+    // not from the last tab's anchor.
+    function show(kept: var, selected: var) {
         if (kept && (kept.sort.key !== model.sort.key || kept.sort.descending !== model.sort.descending))
             model.sort = kept.sort;
-        model.selectNames(kept?.selected ?? []);
+        model.selectNames(selected);
+        model.anchor = -1;
     }
 
     Component.onCompleted: {

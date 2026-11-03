@@ -8,13 +8,16 @@ import "paths.js" as Paths
 // while the window is open (a stick plugged in) arrives with an animation.
 // `folder` is the window's, so the drive it's on shows as current; when
 // that drive goes away (ejected from any window, or pulled), `driveGone` says
-// the window should go elsewhere.
+// the window should go elsewhere. A drive clicked opens once it's mounted,
+// in the tab (`asker`, the window's Navigator then) it was clicked in.
 Column {
     id: drives
 
     property string folder: ""
+    // Who's asking when a drive is clicked: handed back with `opened`.
+    property var asker: null
 
-    signal opened(string folder)
+    signal opened(string folder, var asker)
     signal menuRequested(var drive, point at)
     signal driveGone
 
@@ -36,9 +39,10 @@ Column {
     // again when the list changes (as the mount does), and a callback of a
     // row gone would never run.
     function open(id: string) {
+        const asking = asker;
         FilesService.mount(id, mounted => {
             if (mounted !== null)
-                drives.opened(mounted);
+                drives.opened(mounted, asking);
         });
     }
 

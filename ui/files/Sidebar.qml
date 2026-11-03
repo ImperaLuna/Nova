@@ -137,7 +137,10 @@ Item {
         Drives {
             width: parent.width
             folder: sidebar.navigator.folder
-            onOpened: folder => sidebar.navigator.visit(folder, null)
+            asker: sidebar.navigator
+            // Mounting can take a while (a password); a tab closed
+            // meanwhile is gone and goes nowhere.
+            onOpened: (folder, asker) => (asker as Navigator)?.visit(folder, null)
             onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
             onDriveGone: sidebar.navigator.visit("~", null)
         }
