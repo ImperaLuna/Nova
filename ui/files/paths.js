@@ -55,6 +55,13 @@ function crumbs(folder, home, homeName) {
     return parts;
 }
 
+// Where `folder` is, for people: from `~` when it's in `home`, as the
+// trash's Original location and the Home page's locations show it.
+function located(folder, home) {
+    const inHome = home !== "" && (folder === home || folder.startsWith(home + "/"));
+    return shown(inHome ? "~" + folder.slice(home.length) : folder);
+}
+
 // The last part of `folder`'s path, for the window title; "/" for the root.
 function folderName(folder) {
     const name = folder.slice(folder.lastIndexOf("/") + 1);

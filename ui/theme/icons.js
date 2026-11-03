@@ -52,6 +52,8 @@ var REGION = "M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 
 var OPEN = "M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4";
 var FOLDER = "M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z";
 var TRASH = "M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3";
+// A game's saves: a floppy disk (the Games place's Open save folder).
+var SAVE = "M6 4h10l4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 4v4h7V4M8 20v-6h8v6";
 // Back where it was: an arrow coming round (the trash's Restore).
 var RESTORE = "M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4";
 var CAMERA = "M4 8h3l2-3h6l2 3h3v11H4zM8.5 13a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0";
@@ -133,6 +135,8 @@ var VIEW = "M4 6h16M4 12h16M4 18h16";
 var PREVIEW_PANE = "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM15 4v16";
 // The file list's Icons view (Details is VIEW).
 var GRID = "M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z";
+// What uses space: bars from longest to shortest.
+var SIZES = "M4 6h16M4 12h11M4 18h6";
 // Nova Files' drives: a disk inside the machine, a USB stick, and Eject.
 var DISK = "M5.5 7h13a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zM7 12h.01M10 12h7";
 var USB = "M8 9.5h8V20H8zM9.5 4h5v5.5h-5zM11 6.5h.01M13 6.5h.01";

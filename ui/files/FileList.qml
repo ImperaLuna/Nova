@@ -8,6 +8,7 @@ import "../daemon/protocol.js" as Protocol
 import "arrival.js" as Arrival
 import "listing.js" as Listing
 import "paths.js" as Paths
+import "space.js" as Space
 
 // Nova Files' file list: the folder's entries from novad (FolderModel) in
 // one of two views (`view`, a Listing view), and the item count under
@@ -25,6 +26,9 @@ import "paths.js" as Paths
 // (`propertiesRequested`). A middle click on a folder asks for it in a new
 // tab (`tabRequested`). view() and show() hand its order and selection to
 // the window's tabs and back.
+// As "What uses space" (`spaceView`) it lists folders and files together,
+// biggest first, each with a bar against the biggest, under the drive the
+// folder is on and how full it is; the header no longer sorts.
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
 FocusScope {
@@ -38,6 +42,15 @@ FocusScope {
     property bool showHidden: false
     property string view: Listing.DETAILS
     readonly property bool details: view === Listing.DETAILS
+    property bool spaceView: false
+    // The order a header click last asked for, kept while What uses space
+    // shows its own.
+    property var chosenSort: ({
+            key: Protocol.FILE_SORT_NAME,
+            descending: false
+        })
+    // The mounted drive the folder is on, or null.
+    readonly property var drive: Space.driveOf(FilesService.drives, folder)
 
     signal folderOpened(string path)
     signal tabRequested(string path)
@@ -47,8 +60,21 @@ FocusScope {
     signal deleteRequested(var rows)
     signal propertiesRequested(var rows)
 
-    readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
-    readonly property var columns: [
+    readonly property var columnWidths: spaceView ? [Tokens.filesSpaceBarWidth, Tokens.filesColumns[2]] : Tokens.filesColumns
+    readonly property real nameWidth: headerRow.width - columnWidths.reduce((sum, column) => sum + column + headerRow.spacing, 0)
+    // The bar's column has no header, and none of them sort.
+    readonly property var spaceColumns: [
+        {
+            label: "",
+            key: ""
+        },
+        {
+            label: qsTr("Size"),
+            key: ""
+        }
+    ]
+    readonly property var columns: spaceView ? spaceColumns : detailColumns
+    readonly property var detailColumns: [
         {
             label: qsTr("Modified"),
             key: Protocol.FILE_SORT_MODIFIED
@@ -79,6 +105,7 @@ FocusScope {
     readonly property FolderModel model: FolderModel {
         path: list.folder
         hidden: list.showHidden
+        sort: list.spaceView ? Space.BIGGEST_FIRST : list.chosenSort
         onFilling: (current, total) => {
             list.now = Date.now();
             list.riseFrom = Math.max(current, 0);
@@ -149,7 +176,7 @@ FocusScope {
         required property string label
         required property string key
         property bool alignRight: false
-        readonly property bool sorted: list.model.sort.key === key
+        readonly property bool sorted: !list.spaceView && list.model.sort.key === key
 
         height: headerRow.height
 
@@ -186,8 +213,18 @@ FocusScope {
             id: press
             anchors.fill: parent
             hoverEnabled: true
-            onClicked: list.model.sort = Listing.sorted(list.model.sort, cell.key)
+            enabled: cell.key !== ""
+            onClicked: list.chosenSort = Listing.sorted(list.chosenSort, cell.key)
         }
+    }
+
+    SpaceHeader {
+        id: spaceHeader
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        drive: list.drive
+        shown: list.spaceView && list.drive !== null
     }
 
     Row {
@@ -195,7 +232,7 @@ FocusScope {
         visible: list.details
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.top: spaceHeader.bottom
         anchors.margins: Tokens.rowInset
         anchors.topMargin: Tokens.filesRowPadY
         height: Tokens.filesHeaderHeight
@@ -213,7 +250,7 @@ FocusScope {
                 required property var modelData
                 required property int index
 
-                width: Tokens.filesColumns[index]
+                width: list.columnWidths[index]
                 label: modelData.label
                 key: modelData.key
                 alignRight: index === list.columns.length - 1
@@ -294,6 +331,8 @@ FocusScope {
 
                 width: entryGrid.width
                 nameWidth: list.nameWidth
+                columnWidths: list.columnWidths
+                bar: list.spaceView ? Space.share(row.size, list.model.firstSize) : -1
                 selected: list.model.revision >= 0 && list.model.isSelected(name)
                 riseWait: entryGrid.riseWait(index)
                 now: list.now

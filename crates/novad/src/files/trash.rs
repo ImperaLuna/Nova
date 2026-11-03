@@ -588,8 +588,9 @@ fn deletion_ms(value: &str) -> Option<i64> {
     Some(local.to_zoned(jiff::tz::TimeZone::system()).ok()?.timestamp().as_millisecond())
 }
 
-/// `bytes` percent-escaped as a URI path: an info file's `Path`.
-fn escape(bytes: &OsStr) -> String {
+/// `bytes` percent-escaped as a URI path: an info file's `Path`, or a
+/// bookmark's `file://` URI after its scheme.
+pub(super) fn escape(bytes: &OsStr) -> String {
     crate::notifications::image::percent_encoded(bytes.as_bytes(), PATH_SAFE)
 }
 

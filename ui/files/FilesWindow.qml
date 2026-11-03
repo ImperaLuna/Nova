@@ -10,6 +10,8 @@ import "trash.js" as Trash
 import "properties.js" as Props
 import "listing.js" as Listing
 import "../theme/icons.js" as Icons
+import "games.js" as Games
+import "home.js" as Home
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
@@ -17,14 +19,20 @@ import "../daemon/protocol.js" as Protocol
 // row, the command row, then the sidebar beside the file list, with its
 // copies and moves over them all; opening a folder in the list shows it in
 // the same window.
+// On the Home page (Home.isHome, where `nova files` without a path opens)
+// the Home page takes the file list's place.
 // Inside an archive (a zip or tar, opened like a folder) nothing can be
 // changed: its command row offers "Extract all" instead.
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
-// (ConfirmDialog). The Properties dialog (Alt+Enter, a drive's menu), a
-// drive's menu and the dialog when one can't be ejected lie over it all.
+// (ConfirmDialog). At the games, theirs do, and a game's menu goes to its
+// install or save folder. The Properties dialog (Alt+Enter, a drive's
+// menu), a drive's menu, the dialog when one can't be ejected, a folder's
+// pin menu and a game's menu lie over it all.
 // The preview pane (Alt+P, or the command row's button) sits at the file
-// list's right, loaded only while it shows.
+// list's right, loaded only while it shows. What uses space (the command
+// row's button, or opening a drive) stays on as the window moves, until
+// the button turns it off.
 // Each tab (FilesTab) has its own Navigator; the rows, the sidebar and the
 // one file list follow the shown tab's, and the list's order and
 // selection are kept with a tab as it goes to the back (Ctrl+T, Ctrl+W,
@@ -65,6 +73,12 @@ FloatingWindow {
         const picked = list.model.revision >= 0 && list.model.selectedCount === 1 ? list.model.selectedRows()[0] : null;
         return picked?.archive ? Paths.child(folder, picked.name) : "";
     }
+    readonly property bool inHome: Home.isHome(folder)
+    readonly property bool inGames: Games.isGames(folder)
+    readonly property bool inFolder: !Home.isPage(folder)
+    // The command row shown: the trash's, the games' or the folder's.
+    readonly property Item commandRow: inTrash ? trashCommands : inGames ? gamesCommands : commands
+    property bool spaceView: false
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -216,6 +230,12 @@ FloatingWindow {
         closeTab(torn);
     }
 
+    // Opens the drive `id`, showing what uses space on it.
+    function openDrive(id: string) {
+        spaceView = true;
+        navigator.openDrive(id);
+    }
+
     function confirm(rows: var, act: var) {
         confirming = {
             asking: Trash.confirm(rows),
@@ -236,6 +256,10 @@ FloatingWindow {
     function focusContent() {
         if (inTrash)
             trashList.focusList();
+        else if (inGames)
+            gamesList.focusList();
+        else if (inHome)
+            homePage.forceActiveFocus();
         else
             list.forceActiveFocus();
     }
@@ -274,6 +298,8 @@ FloatingWindow {
             navigator.begin(folder);
         }
     }
+    // A game's menu doesn't outlive the games.
+    onInGamesChanged: gameMenu.close()
     onConfirmingChanged: {
         if (confirming)
             confirmDialog.shown = confirming.asking;
@@ -356,7 +382,7 @@ FloatingWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.bottom: window.inTrash ? trashCommands.bottom : commands.bottom
+        anchors.bottom: window.commandRow.bottom
         color: window.frameColor
     }
     Rectangle {
@@ -403,7 +429,7 @@ FloatingWindow {
         anchors.top: tabRow.bottom
         navigator: window.navigator
         solid: FilesService.frameSolid
-        onAddressClosed: list.forceActiveFocus()
+        onAddressClosed: window.focusContent()
     }
     CommandRow {
         id: commands
@@ -411,7 +437,7 @@ FloatingWindow {
         anchors.right: parent.right
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
-        visible: !window.inTrash
+        visible: !window.inTrash && !window.inGames
         extractable: window.extractable !== ""
         compressible: window.archive === "" && list.model.revision >= 0 && list.model.selectedCount > 0
         onExtractAllRequested: window.extract(window.extractable, false)
@@ -420,6 +446,8 @@ FloatingWindow {
         onPreviewToggled: window.previewShown = !window.previewShown
         view: list.view
         onViewMenuRequested: at => viewMenu.open(commands.mapToItem(viewMenu, at))
+        spaceView: window.spaceView
+        onSpaceToggled: window.spaceView = !window.spaceView
     }
     TrashCommandRow {
         id: trashCommands
@@ -433,24 +461,37 @@ FloatingWindow {
         onRestoreRequested: window.restore()
         onEraseRequested: window.erase()
     }
+    GamesCommandRow {
+        id: gamesCommands
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: navigation.bottom
+        visible: window.inGames
+        model: games
+        solid: FilesService.frameSolid
+        onChosen: folder => window.navigator.visit(folder, null)
+    }
     Sidebar {
         id: sidebar
         anchors.left: parent.left
-        anchors.top: window.inTrash ? trashCommands.bottom : commands.bottom
+        anchors.top: window.commandRow.bottom
         anchors.bottom: parent.bottom
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
         onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
         onTabRequested: path => window.openTab(path, false)
+        onPinMenuRequested: (path, at) => pinMenu.open(path, at)
+        onDriveOpened: id => window.openDrive(id)
     }
     FileList {
         id: list
         anchors.left: sidebar.right
         anchors.right: preview.active ? preview.left : parent.right
         anchors.top: commands.bottom
-        visible: !window.inTrash
+        visible: window.inFolder
         anchors.bottom: parent.bottom
-        folder: window.folder
+        // Nothing to read while a page shows.
+        folder: Home.isPage(window.folder) ? "" : window.folder
         select: window.select
         focus: true
         onFolderOpened: path => window.navigator.visit(path, null)
@@ -459,6 +500,30 @@ FloatingWindow {
         onDeleteRequested: rows => window.deleteForGood(rows)
         onPropertiesRequested: rows => window.showProperties(rows, null)
         solid: FilesService.listSolid
+        spaceView: window.spaceView
+        // Back from a page (Home, the games, the trash): keys go to the
+        // list at once.
+        onVisibleChanged: {
+            if (visible)
+                forceActiveFocus();
+        }
+    }
+    HomePage {
+        id: homePage
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: commands.bottom
+        anchors.bottom: parent.bottom
+        visible: window.inHome
+        navigator: window.navigator
+        solid: FilesService.listSolid
+        onPinMenuRequested: (path, at) => pinMenu.open(path, at)
+        onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
+        onVisibleChanged: {
+            if (visible)
+                forceActiveFocus();
+        }
+        onDriveOpened: id => window.openDrive(id)
     }
     Loader {
         id: preview
@@ -488,6 +553,31 @@ FloatingWindow {
         model: trash
         solid: FilesService.listSolid
         onEraseRequested: window.erase()
+        onVisibleChanged: {
+            if (visible)
+                focusList();
+        }
+    }
+    GamesModel {
+        id: games
+        service: FilesService
+        active: window.inGames
+    }
+    GamesList {
+        id: gamesList
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: gamesCommands.bottom
+        anchors.bottom: parent.bottom
+        visible: window.inGames
+        model: games
+        home: Quickshell.env("HOME") ?? ""
+        solid: FilesService.listSolid
+        onOpened: index => window.navigator.visit(games.rows.get(index).folder, null)
+        onMenuRequested: (index, at) => {
+            games.pick(index);
+            gameMenu.open(games.pickedRow, at);
+        }
         onVisibleChanged: {
             if (visible)
                 focusList();
@@ -618,6 +708,15 @@ FloatingWindow {
     }
     EjectProblem {
         id: ejectProblem
+        anchors.fill: parent
+    }
+    GameMenu {
+        id: gameMenu
+        anchors.fill: parent
+        onChosen: folder => window.navigator.visit(folder, null)
+    }
+    PinMenu {
+        id: pinMenu
         anchors.fill: parent
     }
 }

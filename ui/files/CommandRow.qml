@@ -8,7 +8,8 @@ import "listing.js" as Listing
 // at its right end the preview pane's button, raised while the pane shows
 // (Alt+P too). Inside an archive, or with one archive picked, "Extract
 // all" comes after New, as in Explorer. View shows the file list's view
-// (`view`, a Listing view) and asks for its menu under it.
+// (`view`, a Listing view) and asks for its menu under it. What uses space
+// stays lit while the list shows it (`spaceView`).
 Rectangle {
     id: row
 
@@ -30,6 +31,10 @@ Rectangle {
 
     // View was clicked: its menu goes at `at`, in the row's coordinates.
     signal viewMenuRequested(point at)
+
+    property bool spaceView: false
+
+    signal spaceToggled
 
     color: Tokens.alpha(Tokens.surfaceRaised, Tokens.raisedOpacity * (1 - solid))
 
@@ -100,6 +105,13 @@ Rectangle {
             label: qsTr("View")
             menu: true
             onClicked: row.viewMenuRequested(viewButton.mapToItem(row, 0, viewButton.height + Tokens.labelNudge * 2))
+        }
+        Separator {}
+        ToolButton {
+            icon: Icons.SIZES
+            label: qsTr("What uses space")
+            checked: row.spaceView
+            onClicked: row.spaceToggled()
         }
     }
     ToolButton {
