@@ -327,14 +327,24 @@ impl Files {
         self.shared.open(target::window(folder, select)?)
     }
 
-    /// Answers the file picker `picker` with `paths` (`files_pick`).
-    pub fn pick(&self, picker: u32, paths: &[String], filter: Option<u32>, replace: bool) -> Result<(), String> {
-        self.shared.pickers.pick(picker, paths, filter, replace)
+    /// Client `client`'s window answers the file picker `picker` with
+    /// `paths` (`files_pick`). It checks the disk, so it's called off the
+    /// connection's thread.
+    pub fn pick(
+        &self,
+        client: ClientId,
+        picker: u32,
+        paths: &[String],
+        filter: Option<u32>,
+        replace: bool,
+    ) -> Result<(), String> {
+        self.shared.pickers.pick(client, picker, paths, filter, replace)
     }
 
-    /// The file picker `picker` closed without picking (`files_pick_cancel`).
-    pub fn cancel_pick(&self, picker: u32) {
-        self.shared.pickers.end(picker, picker::Answer::Cancelled);
+    /// Client `client`'s file picker `picker` closed without picking
+    /// (`files_pick_cancel`).
+    pub fn cancel_pick(&self, client: ClientId, picker: u32) {
+        self.shared.pickers.cancel(client, picker);
     }
 
     /// Client `client`, the Nova Files process, can open windows
@@ -379,12 +389,12 @@ impl Files {
     pub fn client_gone(&self, client: ClientId) {
         self.folders.client_gone(client);
         self.transfers.client_gone(client);
+        // Its picker windows went with it; those still waiting for a
+        // process stay.
+        self.shared.pickers.end_shown_to(client);
         let mut delivery = lock(&self.shared.delivery);
         if delivery.attached == Some(client) {
             delivery.attached = None;
-            // Its picker windows went with it; those still waiting for a
-            // process stay.
-            self.shared.pickers.end_all(|id| delivery.waiting.iter().any(|window| picker_of(window) == Some(id)));
         }
     }
 
@@ -407,15 +417,21 @@ impl Files {
             process.stop();
         }
         *lock(&self.shared.delivery) = Delivery::default();
-        self.shared.pickers.end_all(|_| false);
+        self.shared.pickers.end_all();
     }
 }
 
 impl Shared {
     /// Sends `window` to the Nova Files process, or keeps it for the next
-    /// one to attach, starting one, unless [`MAX_WAITING`] already wait.
+    /// one to attach, starting one, unless [`MAX_WAITING`] already wait. A
+    /// file picker's window whose app stopped asking is dropped: under the
+    /// delivery lock, so [`Shared::end_picker`] either sees it or it's
+    /// never sent.
     fn open(&self, window: FilesWindow) -> Result<(), String> {
         let mut delivery = lock(&self.delivery);
+        if picker_of(&window).is_some_and(|id| !self.pickers.is_waiting(id)) {
+            return Ok(());
+        }
         if let Some(client) = delivery.attached {
             if self.send(client, &window) {
                 return Ok(());
@@ -436,7 +452,7 @@ impl Shared {
     /// Ends the file picker `picker` for its app (it gave up asking):
     /// drops its window if it still waits for Nova Files, else closes it.
     fn end_picker(&self, picker: u32) {
-        if !self.pickers.end(picker, picker::Answer::Ended) {
+        if !self.pickers.end(picker) {
             return;
         }
         let mut delivery = lock(&self.delivery);
@@ -449,8 +465,14 @@ impl Shared {
         }
     }
 
+    /// Sends `window` to `client`; a picker's is then answered only from
+    /// there.
     fn send(&self, client: ClientId, window: &FilesWindow) -> bool {
-        self.hub.send_to(client, &Event::FilesWindow(window.clone()))
+        let sent = self.hub.send_to(client, &Event::FilesWindow(window.clone()));
+        if sent && let Some(id) = picker_of(window) {
+            self.pickers.shown(id, client);
+        }
+        sent
     }
 
     /// The Nova Files process exited. One that quit while windows were asked

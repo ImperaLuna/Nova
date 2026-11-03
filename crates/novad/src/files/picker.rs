@@ -8,6 +8,7 @@
 //! picker opens there, as Explorer does.
 
 use super::target;
+use crate::hub::ClientId;
 use crate::lock;
 use crate::reply_slot::Slot;
 use nova_protocol::{FILES_PICK_EXISTS, FilePicker, PickMode};
@@ -53,6 +54,9 @@ struct Asked {
     /// The names `save_files` writes into the picked folder.
     files: Vec<OsString>,
     slot: Arc<AnswerSlot>,
+    /// The Nova Files connection its window went to, the only one that
+    /// may answer it.
+    shown_to: Option<ClientId>,
 }
 
 impl Pickers {
@@ -71,9 +75,22 @@ impl Pickers {
         state.next = state.next.wrapping_add(1).max(1);
         picker.id = state.next;
         let slot = Arc::new(AnswerSlot::default());
-        let asked = Asked { picker: picker.clone(), app: app.to_owned(), files, slot: Arc::clone(&slot) };
+        let asked =
+            Asked { picker: picker.clone(), app: app.to_owned(), files, slot: Arc::clone(&slot), shown_to: None };
         state.open.insert(picker.id, asked);
         Some((picker, slot))
+    }
+
+    /// Whether picker `id` still waits for an answer.
+    pub fn is_waiting(&self, id: u32) -> bool {
+        lock(&self.state).open.contains_key(&id)
+    }
+
+    /// Picker `id`'s window went to the Nova Files connection `client`.
+    pub fn shown(&self, id: u32, client: ClientId) {
+        if let Some(asked) = lock(&self.state).open.get_mut(&id) {
+            asked.shown_to = Some(client);
+        }
     }
 
     /// The folder the app `app` last picked in, while it's still a folder.
@@ -81,16 +98,30 @@ impl Pickers {
         lock(&self.state).last_folders.get(app).filter(|folder| folder.is_dir()).cloned()
     }
 
-    /// Answers picker `id` with `paths` (wire text) once they fit it, and
-    /// the filter `filter` shown; a save over a file only when `replace`.
-    pub fn pick(&self, id: u32, paths: &[String], filter: Option<u32>, replace: bool) -> Result<(), String> {
-        let mut state = lock(&self.state);
-        let asked = state.open.get(&id).ok_or_else(|| format!("no file picker {id} is waiting"))?;
-        if filter.is_some_and(|filter| filter as usize >= asked.picker.filters.len()) {
+    /// Answers picker `id`, shown to `client`, with `paths` (wire text) once
+    /// they fit it, and the filter `filter` shown; a save over a file only
+    /// when `replace`. The paths are checked on the disk without holding
+    /// the pickers, so a stalled mount holds up only this answer.
+    pub fn pick(
+        &self,
+        client: ClientId,
+        id: u32,
+        paths: &[String],
+        filter: Option<u32>,
+        replace: bool,
+    ) -> Result<(), String> {
+        let (picker, files) = {
+            let state = lock(&self.state);
+            let asked = state.open.get(&id).filter(|asked| asked.shown_to == Some(client));
+            let asked = asked.ok_or_else(|| format!("no file picker {id} waits for this window"))?;
+            (asked.picker.clone(), asked.files.clone())
+        };
+        if filter.is_some_and(|filter| filter as usize >= picker.filters.len()) {
             return Err("no such filter".into());
         }
-        let paths = checked(&asked.picker, &asked.files, paths, replace)?;
-        let asked = state.open.remove(&id).expect("found above");
+        let paths = checked(&picker, &files, paths, replace)?;
+        let mut state = lock(&self.state);
+        let asked = state.open.remove(&id).ok_or_else(|| format!("file picker {id} ended meanwhile"))?;
         // The folder holding what was picked (for save_files, the folder
         // picked: each path is a name in it).
         if let Some(folder) = paths.first().and_then(|path| path.parent()) {
@@ -103,20 +134,37 @@ impl Pickers {
         Ok(())
     }
 
-    /// Ends picker `id` with `answer`. False when it wasn't waiting.
-    pub fn end(&self, id: u32, answer: Answer) -> bool {
-        let asked = lock(&self.state).open.remove(&id);
-        asked.map(|asked| asked.slot.resolve(answer)).is_some()
+    /// Picker `id`'s window, shown to `client`, closed without picking.
+    pub fn cancel(&self, client: ClientId, id: u32) {
+        let mut state = lock(&self.state);
+        if state.open.get(&id).is_some_and(|asked| asked.shown_to == Some(client))
+            && let Some(asked) = state.open.remove(&id)
+        {
+            asked.slot.resolve(Answer::Cancelled);
+        }
     }
 
-    /// Ends every waiting picker but those `keep` names.
-    pub fn end_all(&self, keep: impl Fn(u32) -> bool) {
-        let mut state = lock(&self.state);
-        let ended: Vec<u32> = state.open.keys().copied().filter(|id| !keep(*id)).collect();
-        for id in ended {
-            if let Some(asked) = state.open.remove(&id) {
+    /// Ends picker `id` without the user. False when it wasn't waiting.
+    pub fn end(&self, id: u32) -> bool {
+        let asked = lock(&self.state).open.remove(&id);
+        asked.map(|asked| asked.slot.resolve(Answer::Ended)).is_some()
+    }
+
+    /// Ends the pickers whose windows went to `client`, which hung up.
+    pub fn end_shown_to(&self, client: ClientId) {
+        lock(&self.state).open.retain(|_, asked| {
+            let gone = asked.shown_to == Some(client);
+            if gone {
                 asked.slot.resolve(Answer::Ended);
             }
+            !gone
+        });
+    }
+
+    /// Ends every waiting picker.
+    pub fn end_all(&self) {
+        for (_, asked) in lock(&self.state).open.drain() {
+            asked.slot.resolve(Answer::Ended);
         }
     }
 }
@@ -127,7 +175,7 @@ impl Pickers {
 /// - `save`: one file, in a folder that's there, not itself a folder, and
 ///   not there yet unless `replace` ([`FILES_PICK_EXISTS`]).
 /// - `save_files`: one folder that's there; the app gets each of `files`
-///   in it.
+///   in it, none of them there yet unless `replace`.
 fn checked(picker: &FilePicker, files: &[OsString], paths: &[String], replace: bool) -> Result<Vec<PathBuf>, String> {
     let most = if picker.mode == PickMode::Open && picker.multiple { usize::MAX } else { 1 };
     if paths.is_empty() || paths.len() > most {
@@ -164,7 +212,11 @@ fn checked(picker: &FilePicker, files: &[OsString], paths: &[String], replace: b
             if !folder.is_dir() {
                 return Err(format!("{} isn't a folder", folder.display()));
             }
-            Ok(files.iter().map(|name| folder.join(name)).collect())
+            let paths: Vec<PathBuf> = files.iter().map(|name| folder.join(name)).collect();
+            if !replace && paths.iter().any(|path| std::fs::symlink_metadata(path).is_ok()) {
+                return Err(FILES_PICK_EXISTS.into());
+            }
+            Ok(paths)
         }
     }
 }
@@ -240,35 +292,47 @@ mod tests {
             [dir.join("Music/a.txt"), dir.join("Music/b.txt")]
         );
         assert!(checked(&save, &names, &[wire(&dir, "Music/song.flac")], false).is_err());
+        let taken = [OsString::from("song.flac")];
+        assert_eq!(checked(&save, &taken, &[wire(&dir, "Music")], false).unwrap_err(), FILES_PICK_EXISTS);
+        assert!(checked(&save, &taken, &[wire(&dir, "Music")], true).is_ok());
     }
 
     #[test]
     fn a_picked_folder_is_where_the_app_starts_next() {
         let dir = dir();
         let pickers = Pickers::default();
+        let window: ClientId = 7;
         let (asked, slot) = pickers.ask("org.mozilla.firefox", picker(PickMode::Open, false, false), vec![]).unwrap();
-        assert!(pickers.pick(asked.id, &[wire(&dir, "Music")], None, false).is_err(), "a folder isn't a file");
-        assert!(
-            pickers.pick(asked.id, &[wire(&dir, "Music/song.flac")], Some(0), false).unwrap_err().contains("filter")
-        );
-        pickers.pick(asked.id, &[wire(&dir, "Music/song.flac")], None, false).unwrap();
+        let song = [wire(&dir, "Music/song.flac")];
+        assert!(pickers.pick(window, asked.id, &song, None, false).is_err(), "not shown yet");
+        pickers.shown(asked.id, window);
+        assert!(pickers.pick(window, asked.id, &[wire(&dir, "Music")], None, false).is_err(), "a folder isn't a file");
+        assert!(pickers.pick(window, asked.id, &song, Some(0), false).unwrap_err().contains("filter"));
+        pickers.pick(window, asked.id, &song, None, false).unwrap();
         let answer = zbus::block_on(slot.wait());
         assert_eq!(answer, Answer::Picked { paths: vec![dir.join("Music/song.flac")], filter: None });
         assert_eq!(pickers.last_folder("org.mozilla.firefox"), Some(dir.join("Music")));
         assert_eq!(pickers.last_folder("code"), None);
-        assert!(pickers.pick(asked.id, &[wire(&dir, "Music/song.flac")], None, false).is_err(), "answered once");
+        assert!(pickers.pick(window, asked.id, &song, None, false).is_err(), "answered once");
     }
 
     #[test]
     fn ending_answers_the_app_once() {
         let pickers = Pickers::default();
+        let window: ClientId = 7;
         let (first, first_slot) = pickers.ask("a", picker(PickMode::Save, false, false), vec![]).unwrap();
         let (second, second_slot) = pickers.ask("b", picker(PickMode::Save, false, false), vec![]).unwrap();
+        let (third, third_slot) = pickers.ask("c", picker(PickMode::Save, false, false), vec![]).unwrap();
         assert_ne!(first.id, second.id);
-        assert!(pickers.end(first.id, Answer::Cancelled));
-        assert!(!pickers.end(first.id, Answer::Ended));
+        pickers.shown(first.id, window);
+        pickers.shown(second.id, window);
+        pickers.cancel(window, first.id);
+        assert!(!pickers.end(first.id));
         assert_eq!(zbus::block_on(first_slot.wait()), Answer::Cancelled);
-        pickers.end_all(|_| false);
+        pickers.end_shown_to(window);
         assert_eq!(zbus::block_on(second_slot.wait()), Answer::Ended);
+        assert!(pickers.is_waiting(third.id), "one not shown yet waits for the next window");
+        pickers.end_all();
+        assert_eq!(zbus::block_on(third_slot.wait()), Answer::Ended);
     }
 }

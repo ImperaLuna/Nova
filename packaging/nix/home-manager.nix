@@ -38,32 +38,34 @@ in
     ]
     ++ features.packagesFor pkgs cfg.gpu on
     ++ lib.optional filesOn (features.filesDesktop pkgs cfg.package);
-    # Nova Files opens folders. home-manager writes mimeapps.list only with
-    # xdg.mimeApps.enable, which is left to the user: it replaces the file.
-    xdg.mimeApps.defaultApplications = lib.mkIf filesOn {
-      "inode/directory" = lib.mkDefault [ "nova-files.desktop" ];
-    };
+    xdg = {
+      # Nova Files opens folders. home-manager writes mimeapps.list only with
+      # xdg.mimeApps.enable, which is left to the user: it replaces the file.
+      mimeApps.defaultApplications = lib.mkIf filesOn {
+        "inode/directory" = lib.mkDefault [ "nova-files.desktop" ];
+      };
 
-    # Apps' Open and Save dialogs, when home-manager runs the portal config
-    # (xdg.portal.enable is left to the user, or to the NixOS module).
-    xdg.portal = lib.mkIf (filesOn && config.xdg.portal.enable) {
-      extraPortals = [ (features.filesPortal pkgs cfg.package) ];
-      config = features.portalConfig;
-    };
+      # Apps' Open and Save dialogs, when home-manager runs the portal config
+      # (xdg.portal.enable is left to the user, or to the NixOS module).
+      portal = lib.mkIf (filesOn && config.xdg.portal.enable) {
+        extraPortals = [ (features.filesPortal pkgs cfg.package) ];
+        config = features.portalConfig;
+      };
 
-    xdg.configFile = {
-      "nova/features.toml".text = features.selectionFile on;
-      # The package's own unit, linked where systemd looks, and wanted by
-      # graphical-session.target (which niri, and Hyprland through uwsm,
-      # start).
-      "systemd/user/nova.service".source = unit;
-      "systemd/user/graphical-session.target.wants/nova.service".source = unit;
-      # Orders login apps (XDG autostart) after Nova, so they find its tray.
-      "systemd/user/app-.service.d/nova.conf".source =
-        "${cfg.package}/lib/systemd/user/app-.service.d/nova.conf";
-      # The same files `nova setup` writes on other distros.
-      "nova/niri.kdl".source = ../compositor/niri.kdl;
-      "nova/hyprland.conf".source = ../compositor/hyprland.conf;
+      configFile = {
+        "nova/features.toml".text = features.selectionFile on;
+        # The package's own unit, linked where systemd looks, and wanted by
+        # graphical-session.target (which niri, and Hyprland through uwsm,
+        # start).
+        "systemd/user/nova.service".source = unit;
+        "systemd/user/graphical-session.target.wants/nova.service".source = unit;
+        # Orders login apps (XDG autostart) after Nova, so they find its tray.
+        "systemd/user/app-.service.d/nova.conf".source =
+          "${cfg.package}/lib/systemd/user/app-.service.d/nova.conf";
+        # The same files `nova setup` writes on other distros.
+        "nova/niri.kdl".source = ../compositor/niri.kdl;
+        "nova/hyprland.conf".source = ../compositor/hyprland.conf;
+      };
     };
     # Sourced first, so the user's own rules win.
     wayland.windowManager.hyprland.settings.source =

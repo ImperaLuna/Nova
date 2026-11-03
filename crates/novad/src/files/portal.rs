@@ -125,16 +125,17 @@ impl FileChooser {
             return (RESPONSE_ENDED, Results::default());
         };
         let id = picker.id;
-        let window = FilesWindow { folder: wire_text(&asked.folder), select: asked.select, picker: Some(picker) };
-        if let Err(e) = self.shared.open(window) {
-            self.shared.logger.warn(super::LOG_SOURCE, &format!("couldn't show a file picker: {e}"));
-            self.shared.pickers.end(id, Answer::Ended);
-        }
-        // Served once the window is asked for, so a close always finds it.
+        // Served before the window opens, so a close always finds it; one
+        // that comes first drops the window (Shared::open).
         let request = Request { shared: Arc::clone(&self.shared), picker: id };
         let served = connection.object_server().at(&handle, request).await;
         if let Err(e) = &served {
             self.shared.logger.warn(super::LOG_SOURCE, &format!("the app can't close its file picker: {e}"));
+        }
+        let window = FilesWindow { folder: wire_text(&asked.folder), select: asked.select, picker: Some(picker) };
+        if let Err(e) = self.shared.open(window) {
+            self.shared.logger.warn(super::LOG_SOURCE, &format!("couldn't show a file picker: {e}"));
+            self.shared.pickers.end(id);
         }
         let answer = slot.wait().await;
         if served.is_ok() {
@@ -154,7 +155,6 @@ impl FileChooser {
 
 #[interface(name = "org.freedesktop.impl.portal.FileChooser")]
 impl FileChooser {
-    #[allow(clippy::too_many_arguments)]
     async fn open_file(
         &self,
         #[zbus(connection)] connection: &Connection,
@@ -167,7 +167,6 @@ impl FileChooser {
         self.choose(connection, handle, &app_id, title, PickMode::Open, options).await
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn save_file(
         &self,
         #[zbus(connection)] connection: &Connection,
@@ -180,7 +179,6 @@ impl FileChooser {
         self.choose(connection, handle, &app_id, title, PickMode::Save, options).await
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn save_files(
         &self,
         #[zbus(connection)] connection: &Connection,
@@ -223,7 +221,8 @@ struct Asked {
     select: Vec<String>,
     /// The names `SaveFiles` writes.
     files: Vec<OsString>,
-    /// The app's filters, as kept, for the answer's `current_filter`.
+    /// The app's filters as it sent them, for the answer's
+    /// `current_filter`, one for each of the picker's.
     filters: Vec<PortalFilter>,
 }
 
@@ -248,6 +247,7 @@ impl Asked {
         let select =
             current_file.filter(|file| file.parent() == Some(folder.as_path())).map(wire_text).into_iter().collect();
         let (filters, filter) = kept_filters(options.filters.unwrap_or_default(), options.current_filter);
+        let nova_filters = filters.iter().map(nova_filter).collect();
         let files = match mode {
             PickMode::SaveFiles => {
                 options.files.unwrap_or_default().into_iter().take(MAX_SAVE_FILES).filter_map(file_name).collect()
@@ -262,25 +262,18 @@ impl Asked {
             multiple: mode == PickMode::Open && options.multiple.unwrap_or(false),
             folders: mode == PickMode::Open && options.directory.unwrap_or(false),
             name: capped(name),
-            filters: filters.iter().map(nova_filter).collect(),
+            filters: nova_filters,
             filter,
         };
         Self { picker, folder, select, files, filters }
     }
 }
 
-/// The app's filters Nova keeps (at most [`FILES_PICKER_MAX_FILTERS`], each
-/// with its patterns that fit), and the one to show first: the app's
-/// current one, which is added when it isn't among them.
+/// The app's filters Nova keeps (at most [`FILES_PICKER_MAX_FILTERS`]), as
+/// the app sent them, and the one to show first: the app's current one,
+/// which is added when it isn't among them.
 fn kept_filters(filters: Vec<PortalFilter>, current: Option<PortalFilter>) -> (Vec<PortalFilter>, u32) {
-    let fits = |(kind, pattern): &(u32, String)| {
-        matches!(*kind, GLOB | MIME) && pattern.chars().count() <= FILES_PICKER_MAX_CHARS
-    };
-    let trim = |(name, patterns): PortalFilter| -> PortalFilter {
-        (capped(name), patterns.into_iter().filter(fits).take(FILES_FILTER_MAX_PATTERNS).collect())
-    };
-    let mut kept: Vec<PortalFilter> = filters.into_iter().take(FILES_PICKER_MAX_FILTERS).map(trim).collect();
-    let current = current.map(trim);
+    let mut kept: Vec<PortalFilter> = filters.into_iter().take(FILES_PICKER_MAX_FILTERS).collect();
     let index = match current {
         Some(current) => match kept.iter().position(|filter| *filter == current) {
             Some(index) => index,
@@ -295,10 +288,16 @@ fn kept_filters(filters: Vec<PortalFilter>, current: Option<PortalFilter>) -> (V
     (kept, u32::try_from(index).unwrap_or(0))
 }
 
+/// The app's filter as Nova's: its name cut to fit, and its globs and
+/// types that fit, up to [`FILES_FILTER_MAX_PATTERNS`].
 fn nova_filter((name, patterns): &PortalFilter) -> FileFilter {
+    let fits = |(kind, pattern): &&(u32, String)| {
+        matches!(*kind, GLOB | MIME) && pattern.chars().count() <= FILES_PICKER_MAX_CHARS
+    };
+    let kept: Vec<&(u32, String)> = patterns.iter().filter(fits).take(FILES_FILTER_MAX_PATTERNS).collect();
     let of =
-        |wanted: u32| patterns.iter().filter(|(kind, _)| *kind == wanted).map(|(_, pattern)| pattern.clone()).collect();
-    FileFilter { name: name.clone(), globs: of(GLOB), mimes: of(MIME) }
+        |wanted: u32| kept.iter().filter(|(kind, _)| *kind == wanted).map(|(_, pattern)| pattern.clone()).collect();
+    FileFilter { name: capped(name.clone()), globs: of(GLOB), mimes: of(MIME) }
 }
 
 /// A path the portal sent as NUL-terminated bytes, when it's absolute and
@@ -374,7 +373,7 @@ mod tests {
     #[test]
     fn open_file_shows_a_picker_and_answers_with_the_picked_uris() {
         let fixture = Fixture::new("portal-open");
-        let (nova_files, _stream) = fixture.nova_files();
+        let (client, nova_files, _stream) = fixture.nova_files_client();
         let images: PortalFilter = ("Images".into(), vec![(GLOB, "*.png".into()), (MIME, "image/jpeg".into())]);
         let options = HashMap::from([
             ("multiple", Variant::from(true)),
@@ -395,7 +394,7 @@ mod tests {
             serde_json::json!({"name": "Images", "globs": ["*.png"], "mimes": ["image/jpeg"]})
         );
         let report = nova_protocol::wire_text(fixture.dir.join("Downloads/report one.pdf"));
-        fixture.files.pick(picker_id(&window), &[report], Some(1), false).unwrap();
+        fixture.files.pick(client, picker_id(&window), &[report], Some(1), false).unwrap();
         let reply = replies.recv_timeout(WAIT).unwrap();
         assert_eq!(reply.0, RESPONSE_PICKED);
         assert_eq!(uris(&reply), [format!("file://{}/report%20one.pdf", fixture.path("Downloads"))]);
@@ -406,13 +405,13 @@ mod tests {
     #[test]
     fn save_file_starts_from_the_apps_name_and_the_last_folder() {
         let fixture = Fixture::new("portal-save");
-        let (nova_files, _stream) = fixture.nova_files();
+        let (client, nova_files, _stream) = fixture.nova_files_client();
         // Firefox picked in Downloads before, so its save opens there.
         let replies = ask(&fixture, "OpenFile", HashMap::new());
         let window = next_named(&nova_files, "files_window", WAIT);
         assert_eq!(window["folder"], nova_protocol::wire_text(&*fixture.dir), "a first picker opens at home");
         let report = nova_protocol::wire_text(fixture.dir.join("Downloads/report one.pdf"));
-        fixture.files.pick(picker_id(&window), &[report], None, false).unwrap();
+        fixture.files.pick(client, picker_id(&window), &[report], None, false).unwrap();
         replies.recv_timeout(WAIT).unwrap();
 
         let replies = ask(&fixture, "SaveFile", HashMap::from([("current_name", Variant::from("cover.png"))]));
@@ -423,10 +422,10 @@ mod tests {
         let id = picker_id(&window);
         let folder = nova_protocol::wire_text(fixture.dir.join("Downloads"));
         assert!(
-            fixture.files.pick(id, std::slice::from_ref(&folder), None, false).is_err(),
+            fixture.files.pick(client, id, std::slice::from_ref(&folder), None, false).is_err(),
             "a folder isn't a file to save"
         );
-        fixture.files.pick(id, &[format!("{folder}/cover.png")], None, false).unwrap();
+        fixture.files.pick(client, id, &[format!("{folder}/cover.png")], None, false).unwrap();
         let reply = replies.recv_timeout(WAIT).unwrap();
         assert_eq!(uris(&reply), [format!("file://{}/cover.png", fixture.path("Downloads"))]);
     }
@@ -434,13 +433,13 @@ mod tests {
     #[test]
     fn save_files_writes_each_name_into_the_picked_folder() {
         let fixture = Fixture::new("portal-save-files");
-        let (nova_files, _stream) = fixture.nova_files();
+        let (client, nova_files, _stream) = fixture.nova_files_client();
         let names = vec![b"a.txt\0".to_vec(), b"../b.txt\0".to_vec()];
         let replies = ask(&fixture, "SaveFiles", HashMap::from([("files", Variant::from(names))]));
         let window = next_named(&nova_files, "files_window", WAIT);
         assert_eq!(window["picker"]["mode"], "save_files");
         let folder = nova_protocol::wire_text(fixture.dir.join("Downloads"));
-        fixture.files.pick(picker_id(&window), &[folder], None, false).unwrap();
+        fixture.files.pick(client, picker_id(&window), &[folder], None, false).unwrap();
         let reply = replies.recv_timeout(WAIT).unwrap();
         let downloads = fixture.path("Downloads");
         assert_eq!(uris(&reply), [format!("file://{downloads}/a.txt"), format!("file://{downloads}/b.txt")]);
@@ -449,10 +448,10 @@ mod tests {
     #[test]
     fn cancelling_or_the_app_closing_ends_the_call() {
         let fixture = Fixture::new("portal-cancel");
-        let (nova_files, _stream) = fixture.nova_files();
+        let (client, nova_files, _stream) = fixture.nova_files_client();
         let replies = ask(&fixture, "OpenFile", HashMap::new());
         let window = next_named(&nova_files, "files_window", WAIT);
-        fixture.files.cancel_pick(picker_id(&window));
+        fixture.files.cancel_pick(client, picker_id(&window));
         assert_eq!(replies.recv_timeout(WAIT).unwrap().0, RESPONSE_CANCELLED);
 
         let replies = ask(&fixture, "OpenFile", HashMap::new());
@@ -491,8 +490,9 @@ mod tests {
         let (kept, index) = kept_filters(many, None);
         assert_eq!((kept.len(), index), (FILES_PICKER_MAX_FILTERS, 0));
         let odd: PortalFilter = ("Odd".into(), vec![(7, "x".into()), (GLOB, "*.odd".into())]);
-        let (kept, index) = kept_filters(vec![], Some(odd));
-        assert_eq!(kept, [("Odd".to_string(), vec![(GLOB, "*.odd".to_string())])]);
-        assert_eq!(index, 0);
+        let (kept, index) = kept_filters(vec![], Some(odd.clone()));
+        assert_eq!((kept, index), (vec![odd.clone()], 0), "kept as the app sent it, for the answer");
+        let nova = nova_filter(&odd);
+        assert_eq!((nova.globs, nova.mimes), (vec!["*.odd".to_string()], vec![]), "an unknown kind is left out");
     }
 }
