@@ -31,7 +31,8 @@
 //!   and ejecting them; `drives.rs`: which filesystems are listed and
 //!   what they're called.
 //! - `transfers.rs`: copy and move jobs (`files_transfer`), one thread
-//!   each, asking the window about name clashes.
+//!   each, asking the window about name clashes, and whether a drop is on
+//!   the same drive (`files_same_drive`), so it moves rather than copies.
 //! - `copying.rs`: the file system side of those: measuring, numbered
 //!   names, and copying a file in chunks.
 //!
@@ -76,6 +77,7 @@ use nova_protocol::{
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 
+pub use transfers::same_drive;
 pub use trash::Trash;
 
 pub const FEATURE_ID: &str = "files";
