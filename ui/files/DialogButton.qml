@@ -28,6 +28,7 @@ Rectangle {
         id: label
         anchors.centerIn: parent
         text: answer.text
+        textFormat: Text.PlainText
         font.family: Tokens.fontSans
         font.pixelSize: Tokens.fontSize
         font.weight: answer.accent ? Tokens.weightTitle : Tokens.weightBody

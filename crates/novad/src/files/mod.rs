@@ -390,9 +390,10 @@ impl Files {
         self.folders.client_gone(client);
         self.transfers.client_gone(client);
         // Its picker windows went with it; those still waiting for a
-        // process stay.
-        self.shared.pickers.end_shown_to(client);
+        // process stay. Under the delivery lock, so a window being sent to
+        // it is either marked shown first, and ends here, or never sent.
         let mut delivery = lock(&self.shared.delivery);
+        self.shared.pickers.end_shown_to(client);
         if delivery.attached == Some(client) {
             delivery.attached = None;
         }

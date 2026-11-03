@@ -301,8 +301,14 @@ Singleton {
     // being the index of the filter shown (or -1), over a file that's
     // there only when `replace`. `done(error)` gets novad's answer: null,
     // Protocol.FILES_PICK_EXISTS for a save that would replace a file, or
-    // why the paths don't fit the picker.
+    // why the paths don't fit the picker. A selection too long for one
+    // request isn't sent: novad would close the connection, and with it
+    // every picker it shows.
     function pick(picker: int, paths: var, filter: int, replace: bool, done: var) {
+        if (Trash.batches(paths, Protocol.REQUEST_MAX_BYTES).length > 1) {
+            done(qsTr("Too many items are selected to answer at once. Select fewer."));
+            return;
+        }
         const args = {
             picker: picker,
             paths: paths,

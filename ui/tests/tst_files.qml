@@ -766,6 +766,7 @@ Item {
             });
             compare(Picker.choice(selectFolder, "/", [folder("srv")], "", null).paths, ["/srv"]);
             compare(Picker.choice(selectFolder, "/home/ana", [], "", null).paths, ["/home/ana"], "nothing selected picks the folder shown");
+            compare(Picker.choice(selectFolder, "/srv", [folder("a"), folder("b")], "", null).paths, ["/srv/a", "/srv/b"], "every selected folder");
             const save = picker(Protocol.PICK_SAVE);
             compare(Picker.choice(save, "/home/ana", [], " cover.png ", null).paths, ["/home/ana/cover.png"]);
             compare(Picker.choice(save, "/home/ana", [], "Pics", folder("Pics")).action, "enter");

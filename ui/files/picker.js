@@ -81,8 +81,8 @@ function choice(picker, folder, selected, name, typedRow) {
         return pick([Paths.child(folder, typed)]);
     }
     if (picksFolder(picker)) {
-        if (folders.length === 1 && files.length === 0)
-            return pick([Paths.child(folder, folders[0].name)]);
+        if (folders.length > 0 && files.length === 0)
+            return pick(folders.map(row => Paths.child(folder, row.name)));
         return pick([folder]);
     }
     if (files.length > 0)
