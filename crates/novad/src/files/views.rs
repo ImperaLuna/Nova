@@ -245,6 +245,13 @@ impl Worker {
     /// Reads the whole folder and sends it from the start. False once the
     /// view is closed.
     fn send_all(&self) -> bool {
+        self.send_all_settling(false)
+    }
+
+    /// [`Self::send_all`]; while `settling`, an archive that doesn't read
+    /// (another program is still writing it) is read again on its next
+    /// change rather than closing the view.
+    fn send_all_settling(&self, settling: bool) -> bool {
         let mime = self.mime.current();
         let stopped = || !self.view.is_open();
         let read = match &self.view.inside {
@@ -254,6 +261,10 @@ impl Worker {
         let entries = match read {
             Ok(Some(entries)) => entries,
             Ok(None) => return false,
+            Err(e) if settling && e.kind() != std::io::ErrorKind::NotFound => {
+                self.logger.info(LOG_SOURCE, &format!("{} doesn't read yet: {e}", self.view.path.display()));
+                return true;
+            }
             Err(e) => {
                 self.logger.warn(LOG_SOURCE, &format!("can't read {}: {e}", self.view.path.display()));
                 self.closed(unreadable(&self.view.named, &e));
@@ -324,7 +335,7 @@ impl Worker {
         // its folder shows.
         if let Some(inside) = &self.view.inside {
             let archive = inside.archive.file_name().unwrap_or_default();
-            return !names.iter().any(|name| name == archive) || self.send_all();
+            return !names.iter().any(|name| name == archive) || self.send_all_settling(true);
         }
         let mime = self.mime.current();
         let now: Vec<_> = names

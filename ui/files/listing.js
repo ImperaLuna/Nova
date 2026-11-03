@@ -76,6 +76,19 @@ function kind(row) {
     return subtype.charAt(0).toUpperCase() + subtype.slice(1);
 }
 
+// How many of the columns after Name (widths `columns`, `spacing` apart)
+// fit in a row `width` wide with Name at least `nameMin` wide: the last
+// ones go first when the list narrows, as when the preview pane opens.
+function columnsShown(width, columns, spacing, nameMin) {
+    let room = width - nameMin;
+    let shown = 0;
+    while (shown < columns.length && room >= columns[shown] + spacing) {
+        room -= columns[shown] + spacing;
+        shown++;
+    }
+    return shown;
+}
+
 // Subtypes this short are abbreviations (PDF, JPEG), read in capitals.
 var SHORT_KIND = 4;
 
@@ -151,9 +164,6 @@ function pick(anchor, index, ctrl, shift) {
         anchor: index
     };
 }
-
-// The keys that move through the rows.
-var MOVES = [Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End];
 
 // The row a navigation key moves to from `current` among `count` rows,
 // `page` rows to a screen; `current` itself for any other key.

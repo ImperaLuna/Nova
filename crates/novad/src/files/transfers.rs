@@ -33,7 +33,7 @@ use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, Metadata};
 use std::io;
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -414,7 +414,10 @@ impl Run {
         let skipped = copying::measure(source, folders.then_some(target), &|| job.stopped())
             .map_err(|e| failed(source, &e))?
             .ok_or(Halt::Stopped)?;
-        self.total.bytes = self.total.bytes.saturating_sub(skipped.bytes);
+        // Extracted bytes all count, placed or not.
+        if !self.placing_extracted {
+            self.total.bytes = self.total.bytes.saturating_sub(skipped.bytes);
+        }
         // Measured with what it clashed with, a skipped folder counts the
         // clashes a merge would have met; anything else counts as itself.
         let (files, folders) = match clashing {
@@ -632,8 +635,14 @@ impl Run {
     /// Packs the sources into a new zip in the folder, named after the
     /// first ("report.pdf" gives "report.zip").
     fn compress(&mut self) -> Step {
+        let folder = fs::canonicalize(&self.folder).map_err(|e| failed(&self.folder, &e))?;
         let sources = self.sources.clone();
         for source in &sources {
+            // A zip made inside a folder it packs would pack itself.
+            if fs::canonicalize(source).is_ok_and(|source| folder.starts_with(source)) {
+                let name = source.file_name().unwrap_or_default().to_string_lossy();
+                return Err(Halt::Failed(format!("Can't compress {name} into itself")));
+            }
             let job = Arc::clone(&self.job);
             let measured = copying::measure(source, None, &|| job.stopped())
                 .map_err(|e| failed(source, &e))?
@@ -713,16 +722,42 @@ fn unreadable(path: &Path, error: &io::Error) -> Halt {
     })
 }
 
+/// Whether every item at `sources` is on the same drive (file system) as
+/// `folder` (`files_same_drive`), so a drop there moves rather than copies.
+/// An item is looked at itself, not through a link, and a drive mounted on
+/// a folder counts as its own: dragging a mount point copies it.
+pub fn same_drive(sources: &[String], folder: &str) -> Result<bool, String> {
+    if sources.len() > FILES_TRANSFER_MAX_SOURCES {
+        return Err(format!("At most {FILES_TRANSFER_MAX_SOURCES} items can be copied at once"));
+    }
+    let device =
+        |path: &Path, meta: io::Result<Metadata>| meta.map(|meta| meta.dev()).map_err(|e| why_failed(path, &e));
+    let folder = checked_path(folder)?;
+    let drive = device(&folder, fs::metadata(&folder))?;
+    for source in sources {
+        let source = checked_path(source)?;
+        if device(&source, fs::symlink_metadata(&source))? != drive {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Why `path` couldn't be copied or moved, for the window.
 fn failed(path: &Path, error: &io::Error) -> Halt {
+    Halt::Failed(why_failed(path, error))
+}
+
+/// Why `path` couldn't be read, copied or moved, in words.
+fn why_failed(path: &Path, error: &io::Error) -> String {
     let path = path.display();
-    Halt::Failed(match error.kind() {
+    match error.kind() {
         io::ErrorKind::NotFound => format!("{path} doesn't exist"),
         io::ErrorKind::PermissionDenied => format!("No permission for {path}"),
         io::ErrorKind::StorageFull => format!("No space left for {path}"),
         io::ErrorKind::ReadOnlyFilesystem => format!("{path} is on a read-only drive"),
         _ => format!("Can't copy {path}: {error}"),
-    })
+    }
 }
 
 #[cfg(test)]
@@ -807,6 +842,23 @@ mod tests {
             names.sort();
             names
         }
+    }
+
+    #[test]
+    fn a_drop_on_the_same_drive_moves_and_on_another_copies() {
+        let fixture = Fixture::new("same-drive");
+        fixture.write("from/Photos/a.png", "1");
+        let path = |name: &str| fixture.dir.join(name).display().to_string();
+        let sources = [path("from/Photos"), path("from/Photos/a.png")];
+        assert_eq!(same_drive(&sources, &path("to")), Ok(true));
+        assert_eq!(same_drive(&sources, "/proc"), Ok(false), "/proc is a file system of its own");
+        assert_eq!(
+            same_drive(&[path("from/Photos"), "/proc/self".into()], &path("to")),
+            Ok(false),
+            "one away is enough"
+        );
+        assert!(same_drive(&[path("from/gone.txt")], &path("to")).unwrap_err().contains("doesn't exist"));
+        assert!(same_drive(&sources, "relative").is_err(), "paths are checked");
     }
 
     #[test]
@@ -1025,5 +1077,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fs::read_to_string(copy).unwrap(), "png");
+    }
+
+    #[test]
+    fn a_skipped_extracted_file_still_counts_and_a_zip_cant_go_into_what_it_packs() {
+        let fixture = Fixture::new("extract-skip");
+        crate::files::archive::tests::write_zip(&fixture.dir.join("from/docs.zip"), &[("a.txt", "new")]);
+        fixture.write("to/a.txt", "old");
+        fixture.start(TransferMode::ExtractHere, &["from/docs.zip"], "to");
+        let clash = fixture.until(TransferState::Asking).clash.unwrap();
+        fixture.answer(&clash, ClashAnswer::Skip, false);
+        let done = fixture.until(TransferState::Done);
+        assert_eq!((done.done_bytes, done.total_bytes), (3, 3));
+        assert_eq!(fixture.names("to"), ["a.txt"]);
+        fixture.write("from/Photos/2025/a.png", "png");
+        fixture.start(TransferMode::Compress, &["from/Photos"], "from/Photos/2025");
+        assert!(fixture.until(TransferState::Failed).error.unwrap().contains("into itself"));
+        assert_eq!(fixture.names("from/Photos/2025"), ["a.png"]);
     }
 }

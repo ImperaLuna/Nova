@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
+import "drops.js" as Drops
 import "navigation.js" as Navigation
 import "paths.js" as Paths
 
@@ -10,18 +11,34 @@ import "paths.js" as Paths
 // (files_tree): open down to the window's folder, which is marked and
 // kept in view, with hidden folders dimmer. A row's chevron opens or
 // closes it; a click elsewhere on the row goes there, a middle click asks
-// for it in a new tab (`tabRequested`). Rows that come slide in one
-// after another, the others move to make room.
+// for it in a new tab (`tabRequested`). Rows that come slide in one after
+// another, the others move to make room. A folder below the top
+// drags out (`dragRequested`); while a drag is over the tree, the folder a
+// drop would go into (`dropFolder`) washes in the accent, and `placeAt`
+// says which it is, opening when the pointer rests on it.
 ListView {
     id: tree
 
     required property Navigator navigator
+    // The folder a drag over the tree would drop into, or "".
+    property string dropFolder: ""
 
+    signal dragRequested(string path)
     signal tabRequested(string path)
     // While an update adds rows, the rows created slide in, staggered by
     // how many came before them; rows created by scrolling just show.
     property bool arriving: false
     property int arrivals: 0
+
+    // The place under (x, y) in the tree's own coordinates, for a
+    // DropTarget: a closed folder with folders in it opens by resting on it.
+    function placeAt(x: real, y: real): var {
+        const index = indexAt(x + contentX, y + contentY);
+        if (index < 0)
+            return Drops.NOWHERE;
+        const row = rows.get(index);
+        return Drops.place(row.path, !row.open && !row.leaf);
+    }
 
     function update() {
         arrivals = 0;
@@ -78,7 +95,7 @@ ListView {
         width: ListView.view.width
         height: Tokens.filesPlaceHeight
         radius: Tokens.menuRowRadius
-        color: current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
+        color: tree.dropFolder === path ? Tokens.filesDropTarget : current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
 
         Behavior on color {
             ColorAnimation {
@@ -173,6 +190,17 @@ ListView {
 
         HoverHandler {
             id: hover
+        }
+        // Home (or the root) stays put; folders under it drag.
+        DragHandler {
+            target: null
+            enabled: item.depth > 0
+            // The tree doesn't scroll by dragging; the wheel scrolls it.
+            grabPermissions: PointerHandler.CanTakeOverFromAnything
+            onActiveChanged: {
+                if (active)
+                    tree.dragRequested(item.path);
+            }
         }
         // One handler for the row, so a click on the chevron doesn't also
         // go to the folder: up to the chevron's far edge it opens or closes.

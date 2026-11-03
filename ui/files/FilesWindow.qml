@@ -6,8 +6,10 @@ import "../theme"
 import "service"
 import "paths.js" as Paths
 import "tabs.js" as Tabs
+import "drops.js" as Drops
 import "trash.js" as Trash
 import "properties.js" as Props
+import "shortcuts.js" as Shortcuts
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
@@ -21,17 +23,21 @@ import "../daemon/protocol.js" as Protocol
 // folder's, and anything deleted for good is asked about first
 // (ConfirmDialog). The Properties dialog (Alt+Enter, a drive's menu), a
 // drive's menu and the dialog when one can't be ejected lie over it all.
+// Files dropped on the list or the sidebar are copied, moved or trashed
+// here, as the drop decided (drops.js).
 // The preview pane (Alt+P, or the command row's button) sits at the file
 // list's right, loaded only while it shows.
 // Each tab (FilesTab) has its own Navigator; the rows, the sidebar and the
 // one file list follow the shown tab's, and the list's order and
-// selection are kept with a tab as it goes to the back (Ctrl+T, Ctrl+W,
-// Ctrl+Tab, Ctrl+Shift+Tab; a middle click on a folder opens it in a tab
+// selection are kept with a tab as it goes to the back (the table's tab
+// keys; a middle click on a folder opens it in a tab
 // behind). Closing the last tab closes the window; a tab torn out of the
 // row asks for a window of its own (`windowRequested`), carrying its
 // history, order and selection.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
-// Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
+// Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
+// window's keys are the table's WINDOW entries (shortcuts.js), done by
+// act(); the lists answer their own. Its
 // frame and its file list each go from glass to solid as config.toml's
 // [files] says, live. Each draws its own background, so one never shows
 // through the other.
@@ -61,6 +67,8 @@ FloatingWindow {
         const picked = list.model.revision >= 0 && list.model.selectedCount === 1 ? list.model.selectedRows()[0] : null;
         return picked?.archive ? Paths.child(folder, picked.name) : "";
     }
+    // A dialog is up (confirm, Properties): the window's keys wait.
+    readonly property bool asking: confirming !== null || propertiesModel.subject !== null
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -182,6 +190,9 @@ FloatingWindow {
 
     function closeTab(closing: FilesTab) {
         const at = tabs.indexOf(closing);
+        // The last tab takes the window with it. Hiding a window from QML
+        // doesn't say `closed` (only the compositor closing it does), which
+        // files.qml waits for.
         if (tabs.length === 1) {
             window.closed();
             return;
@@ -225,10 +236,7 @@ FloatingWindow {
         confirming = null;
         if (yes)
             act?.();
-        if (inTrash)
-            trashList.focusList();
-        else
-            list.forceActiveFocus();
+        focusList();
     }
 
     // Shows the Properties of `rows` (the file list's) in the folder shown,
@@ -240,7 +248,7 @@ FloatingWindow {
 
     function closeProperties() {
         propertiesModel.close();
-        list.forceActiveFocus();
+        focusList();
     }
 
     function notice(row: var, error: string) {
@@ -287,43 +295,78 @@ FloatingWindow {
         }
     }
 
-    Shortcut {
-        sequence: "Ctrl+T"
-        onActivated: window.newTab()
+    // Does a shortcut table action (Shortcuts.TABLE) that is the window's.
+    function act(action: string) {
+        switch (action) {
+        case "back":
+            navigator.step(-1);
+            break;
+        case "forward":
+            navigator.step(1);
+            break;
+        case "up":
+            navigator.up();
+            break;
+        case "address":
+            navigation.editAddress();
+            break;
+        case "search":
+            navigation.editSearch();
+            break;
+        case "refresh":
+            if (inTrash)
+                trash.refresh();
+            else
+                list.refresh();
+            break;
+        case "newWindow":
+            // From the trash, on the folder its tree is on.
+            FilesService.showFolder(inTrash ? navigator.treeFolder : folder);
+            break;
+        case "newTab":
+            newTab();
+            break;
+        case "closeTab":
+            closeTab(tab);
+            break;
+        case "nextTab":
+            cycleTabs(1);
+            break;
+        case "previousTab":
+            cycleTabs(-1);
+            break;
+        case "preview":
+            // The trash has no preview pane.
+            if (!inTrash)
+                previewShown = !previewShown;
+            break;
+        default:
+            console.warn(`nova: files: no window action ${action}`);
+        }
     }
-    Shortcut {
-        sequence: "Ctrl+W"
-        onActivated: window.closeTab(window.tab)
+
+    // The quiet keyboard focus after a text field or a dialog lets go.
+    function focusList() {
+        if (inTrash)
+            trashList.focusList();
+        else
+            list.forceActiveFocus();
     }
-    Shortcut {
-        sequence: "Ctrl+Tab"
-        onActivated: window.cycleTabs(1)
-    }
-    Shortcut {
-        // Shift+Tab comes as Backtab.
-        sequences: ["Ctrl+Shift+Tab", "Ctrl+Backtab", "Ctrl+Shift+Backtab"]
-        onActivated: window.cycleTabs(-1)
-    }
-    Shortcut {
-        sequence: "Alt+Left"
-        onActivated: window.navigator.step(-1)
-    }
-    Shortcut {
-        sequence: "Alt+Right"
-        onActivated: window.navigator.step(1)
-    }
-    Shortcut {
-        sequence: "Alt+Up"
-        onActivated: window.navigator.up()
-    }
-    Shortcut {
-        sequences: ["Ctrl+L", "Alt+D"]
-        onActivated: navigation.editAddress()
-    }
-    Shortcut {
-        sequence: "Alt+P"
-        enabled: !window.inTrash
-        onActivated: window.previewShown = !window.previewShown
+
+    Repeater {
+        model: Shortcuts.entries(Shortcuts.WINDOW)
+
+        Item {
+            id: entry
+
+            required property var modelData
+
+            Shortcut {
+                sequences: entry.modelData.keys
+                enabled: !window.asking || entry.modelData.asking === true
+                onActivated: window.act(entry.modelData.action)
+            }
+        }
     }
     TapHandler {
         acceptedButtons: Qt.BackButton | Qt.ForwardButton
@@ -375,6 +418,21 @@ FloatingWindow {
             transfer(Protocol.TRANSFER_COMPRESS, paths, folder);
     }
 
+    // Does what a drop decided: `action` (Drops.decide) on `sources`
+    // (absolute paths) into `folder`.
+    function drop(action: string, sources: var, folder: string) {
+        // Nothing goes into or out of an archive by dragging (IMP-337).
+        if (archive !== "" && (Paths.inside(folder, archive) || sources.some(source => Paths.inside(source, archive))))
+            return;
+        if (action === Drops.TRASH)
+            FilesService.trash(sources, error => {
+                if (error)
+                    window.notice(null, error);
+            });
+        else
+            transfer(action, sources, folder);
+    }
+
     NavigationRow {
         id: navigation
         anchors.left: parent.left
@@ -382,7 +440,8 @@ FloatingWindow {
         anchors.top: tabRow.bottom
         navigator: window.navigator
         solid: FilesService.frameSolid
-        onAddressClosed: list.forceActiveFocus()
+        onAddressClosed: window.focusList()
+        onSearchClosed: window.focusList()
     }
     CommandRow {
         id: commands
@@ -419,6 +478,7 @@ FloatingWindow {
         navigator: window.navigator
         onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
         onTabRequested: path => window.openTab(path, false)
+        onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
     }
     FileList {
         id: list
@@ -433,8 +493,10 @@ FloatingWindow {
         onFolderOpened: path => window.navigator.visit(path, null)
         onTabRequested: path => window.openTab(path, false)
         onTrashRequested: rows => window.moveToTrash(rows)
+        onBackRequested: window.navigator.step(-1)
         onDeleteRequested: rows => window.deleteForGood(rows)
         onPropertiesRequested: rows => window.showProperties(rows, null)
+        onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
         solid: FilesService.listSolid
     }
     Loader {
@@ -463,12 +525,22 @@ FloatingWindow {
         anchors.bottom: parent.bottom
         visible: window.inTrash
         model: trash
+        home: Quickshell.env("HOME") ?? ""
         solid: FilesService.listSolid
         onEraseRequested: window.erase()
+        onBackRequested: window.navigator.step(-1)
         onVisibleChanged: {
             if (visible)
                 focusList();
         }
+    }
+    // Files dropped on the trash's list go to the trash.
+    DropTarget {
+        anchors.fill: trashList
+        enabled: window.inTrash
+        service: FilesService
+        folderAt: () => Drops.place(Protocol.FILES_TRASH_PLACE, false)
+        onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
     }
     Transfers {
         id: transfers
@@ -547,6 +619,7 @@ FloatingWindow {
         subject: propertiesModel.subject ?? Props.subject(window.folder, [], null)
         properties: propertiesModel.properties
         counted: propertiesModel.counted
+        changing: propertiesModel.changing
         apps: propertiesModel.openWith.apps
         defaultApp: propertiesModel.openWith.defaultApp
         onCloseRequested: window.closeProperties()

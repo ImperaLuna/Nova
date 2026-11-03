@@ -129,6 +129,7 @@ var CMD_FILES_CLOSE = "files_close";
 var CMD_FILES_TREE = "files_tree";
 var CMD_FILES_PLACES = "files_places";
 var CMD_FILES_TRANSFER = "files_transfer";
+var CMD_FILES_SAME_DRIVE = "files_same_drive";
 var CMD_FILES_TRANSFER_CANCEL = "files_transfer_cancel";
 var CMD_FILES_TRANSFER_ANSWER = "files_transfer_answer";
 var CMD_FILES_TRASH = "files_trash";

@@ -121,6 +121,12 @@ QtObject {
         return picked;
     }
 
+    // Reads the folder again (F5): novad sends its entries afresh, and the
+    // selection stays on the names still there.
+    function refresh() {
+        _open();
+    }
+
     function _open() {
         if (!_wanted || !FilesService.connected)
             return;

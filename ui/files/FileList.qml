@@ -5,23 +5,33 @@ import "service"
 import "../theme"
 import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
+import "drops.js" as Drops
 import "listing.js" as Listing
 import "paths.js" as Paths
+import "shortcuts.js" as Shortcuts
 
 // Nova Files' file list in Details: the column header (Name, then
 // Modified, Type and Size at their widths; a click sorts by that column,
 // again turns the order round) over the folder's rows from novad
 // (FolderModel), and the item count under them. A click selects a row,
-// Ctrl adds or drops one, Shift selects a run; the arrows, Page Up/Down,
-// Home and End move the selection (Shift extends it), Ctrl+A selects all,
-// Ctrl+H shows or hides dot files. A double-click or Enter opens: a
-// folder is gone into (`folderOpened`), files open in their default app.
-// Delete asks to move the selection to the trash (`trashRequested`),
-// Shift+Delete to delete it for good (`deleteRequested`); Alt+Enter asks
+// Ctrl adds or drops one, Shift selects a run. Its keys are the table's
+// LIST entries (shortcuts.js): the arrows, Page Up/Down, Home and End move
+// the selection (Shift extends it), Ctrl+A selects all, Ctrl+H shows or
+// hides dot files, Backspace goes back (`backRequested`), and typing a
+// name goes to it (NameTyping). A double-click or Enter opens: a folder is
+// gone into (`folderOpened`), files open in their default app. Delete
+// asks to move the selection to the trash (`trashRequested`),
+// Shift+Delete to delete it for good (`deleteRequested`), Alt+Enter asks
 // for its Properties, or the folder's with nothing selected
-// (`propertiesRequested`). A middle click on a folder asks for it in a new
-// tab (`tabRequested`). view() and show() hand its order and selection to
-// the window's tabs and back.
+// (`propertiesRequested`). F5 (the
+// window's) reads the folder again (`refresh`). A middle click on a folder
+// asks for it in a new tab (`tabRequested`). view() and show() hand its
+// order and selection to the window's tabs and back.
+// Rows drag out (the selection, FileDrag) and files dragged in drop on the
+// folder row under the pointer, or else the folder shown
+// (`dropRequested`); resting on a folder row opens it. Pressing a
+// selected row keeps the selection until the release, so a selection
+// drags whole.
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
 FocusScope {
@@ -40,9 +50,14 @@ FocusScope {
     // (Listing.copy), in the list's order.
     signal trashRequested(var rows)
     signal deleteRequested(var rows)
+    signal backRequested
     signal propertiesRequested(var rows)
+    // A drop asks for `action` (Drops.decide) on `sources` into `folder`.
+    signal dropRequested(string action, var sources, string folder)
 
-    readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
+    // The columns after Name that fit (Listing.columnsShown), and Name's width.
+    readonly property int shownColumns: Listing.columnsShown(headerRow.width, Tokens.filesColumns, headerRow.spacing, Tokens.filesNameMinWidth)
+    readonly property real nameWidth: headerRow.width - Tokens.filesColumns.slice(0, shownColumns).reduce((sum, column) => sum + column + headerRow.spacing, 0)
     readonly property var columns: [
         {
             label: qsTr("Modified"),
@@ -106,6 +121,11 @@ FocusScope {
             model.sort = kept.sort;
         model.selectNames(selected);
         model.anchor = -1;
+    }
+
+    // Reads the folder again, keeping the selection.
+    function refresh() {
+        model.refresh();
     }
 
     Component.onCompleted: {
@@ -193,7 +213,7 @@ FocusScope {
             key: Protocol.FILE_SORT_NAME
         }
         Repeater {
-            model: list.columns
+            model: list.columns.slice(0, list.shownColumns)
 
             HeaderCell {
                 required property var modelData
@@ -247,14 +267,29 @@ FocusScope {
 
             width: entryList.width
             nameWidth: list.nameWidth
+            columns: list.shownColumns
             selected: list.model.revision >= 0 && list.model.isSelected(name)
             riseOrder: list.riseFrom >= 0 ? Math.min(Math.abs(index - list.riseFrom), entryList.page) : -1
             now: list.now
 
+            dropTarget: row.dir && drops.action !== Drops.NONE && drops.hovered?.folder === Paths.child(list.folder, row.name)
+
             onPressed: modifiers => {
                 entryList.forceActiveFocus();
                 entryList.currentIndex = row.index;
-                list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
+                const plain = (modifiers & (Qt.ControlModifier | Qt.ShiftModifier)) === 0;
+                // A selected row pressed plainly may start dragging the
+                // whole selection: the click (below) narrows it.
+                if (!(plain && row.selected))
+                    list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
+            }
+            onClicked: modifiers => {
+                if ((modifiers & (Qt.ControlModifier | Qt.ShiftModifier)) === 0)
+                    list.model.select(Listing.pick(list.model.anchor, row.index, false, false));
+            }
+            onDragRequested: {
+                const grabbed = list.model.rows.get(row.index);
+                fileDrag.start(list.model.selectedRows().map(picked => Paths.child(list.folder, picked.name)), Listing.icon(grabbed), grabbed.dir ? Tokens.filesFolder : Tokens.fgDim);
             }
             onOpened: list.open([list.model.rows.get(row.index)])
             onMiddleClicked: {
@@ -263,27 +298,67 @@ FocusScope {
             }
         }
 
-        Keys.onPressed: event => {
-            const ctrl = (event.modifiers & Qt.ControlModifier) !== 0;
-            if (event.key === Qt.Key_H && ctrl)
-                list.showHidden = !list.showHidden;
-            else if (event.key === Qt.Key_A && ctrl)
-                list.model.selectAll();
-            else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.AltModifier) !== 0)
-                list.propertiesRequested(list.model.selectedRows().map(row => Listing.copy(row)));
-            else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
-                list.open(list.model.selectedRows());
-            else if (event.key === Qt.Key_Delete && list.model.selectedCount > 0) {
-                const rows = list.model.selectedRows().map(row => Listing.copy(row));
-                if ((event.modifiers & Qt.ShiftModifier) !== 0)
-                    list.deleteRequested(rows);
-                else
-                    list.trashRequested(rows);
-            } else if (Listing.MOVES.includes(event.key) && entryList.count > 0)
-                entryList.go(Listing.moved(event.key, entryList.currentIndex, entryList.count, entryList.page), (event.modifiers & Qt.ShiftModifier) !== 0);
-            else
-                event.accepted = false;
+        NameTyping {
+            id: typing
         }
+
+        // The rows' names, in the list's order: what typing a name searches.
+        function names(): var {
+            const names = [];
+            for (let index = 0; index < count; index++)
+                names.push(list.model.rows.get(index).name);
+            return names;
+        }
+
+        Keys.onPressed: event => {
+            const picked = () => list.model.selectedRows().map(row => Listing.copy(row));
+            switch (Shortcuts.action(Shortcuts.LIST, event.key, event.modifiers)) {
+            case "hidden":
+                list.showHidden = !list.showHidden;
+                return;
+            case "selectAll":
+                list.model.selectAll();
+                return;
+            case "open":
+                list.open(list.model.selectedRows());
+                return;
+            case "back":
+                list.backRequested();
+                return;
+            case "properties":
+                list.propertiesRequested(picked());
+                return;
+            case "trash":
+                if (list.model.selectedCount > 0)
+                    list.trashRequested(picked());
+                return;
+            case "deleteForGood":
+                if (list.model.selectedCount > 0)
+                    list.deleteRequested(picked());
+                return;
+            case "move":
+                if (entryList.count > 0)
+                    entryList.go(Listing.moved(event.key, entryList.currentIndex, entryList.count, entryList.page), (event.modifiers & Qt.ShiftModifier) !== 0);
+                return;
+            }
+            event.accepted = typing.press(event.text, event.modifiers, entryList.names(), entryList.currentIndex, index => entryList.go(index, false));
+        }
+    }
+
+    DropTarget {
+        id: drops
+        anchors.fill: entryList
+        service: FilesService
+        folderAt: (x, y) => {
+            const index = entryList.indexAt(x + entryList.contentX, y + entryList.contentY);
+            const row = index >= 0 ? list.model.rows.get(index) : null;
+            return row?.dir ? Drops.place(Paths.child(list.folder, row.name), true) : Drops.place(list.folder, false);
+        }
+        onDropRequested: (action, sources, folder) => list.dropRequested(action, sources, folder)
+        onSpringOpened: folder => list.folderOpened(folder)
+    }
+    FileDrag {
+        id: fileDrag
     }
 
     Text {
