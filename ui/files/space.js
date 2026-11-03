@@ -4,8 +4,8 @@
 .import "../daemon/protocol.js" as Protocol
 
 // What uses space in Nova Files, kept apart so ui/tests can check it: how
-// full a drive is and how that reads ("212 GB free of 1 TB", Explorer's
-// wording), which drive a folder is on, the order "What uses space" lists
+// full a drive is and how that reads ("197 GB free of 931 GB", Explorer's
+// wording and its 1024-based units, like every size in Nova), which drive a folder is on, the order "What uses space" lists
 // a folder in, and how long each row's bar is. Drives are novad's
 // ({id, name, removable, mount, size, used}).
 
@@ -35,12 +35,12 @@ function low(drive) {
     return measured(drive) && (drive.size - drive.used) / drive.size < LOW_FREE;
 }
 
-// "212 GB free of 1 TB"; empty while it isn't measured.
+// "197 GB free of 931 GB"; empty while it isn't measured.
 function freeOf(drive) {
     if (!measured(drive))
         return "";
     const free = Math.max(0, drive.size - drive.used);
-    return qsTr("%1 free of %2").arg(Bytes.storage(free)).arg(Bytes.storage(drive.size));
+    return qsTr("%1 free of %2").arg(Bytes.bytes(free)).arg(Bytes.bytes(drive.size));
 }
 
 // The mounted drive `folder` is on: the one with the longest mount that
