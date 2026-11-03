@@ -14,12 +14,18 @@ import "commands.js" as Commands
 // nothing for them to do. View waits for the views to choose from. At
 // its right end the preview pane's button, raised while the pane shows
 // (Alt+P too).
+// What uses space, after Sort and View, stays lit while the list shows it
+// (`spaceView`).
 Rectangle {
     id: row
 
     implicitHeight: actions.implicitHeight + Tokens.filesCommandPadTop + Tokens.gap
     // How solid the window frame is (0..1): the row fades into it.
     property real solid: 0
+    property bool spaceView: false
+
+    signal spaceToggled
+
     // How many items are picked, and whether a paste would bring any.
     property int picked: 0
     property bool canPaste: false
@@ -119,6 +125,13 @@ Rectangle {
             label: qsTr("View")
             menu: true
             enabled: false
+        }
+        Separator {}
+        ToolButton {
+            icon: Icons.SIZES
+            label: qsTr("What uses space")
+            checked: row.spaceView
+            onClicked: row.spaceToggled()
         }
     }
     Command {

@@ -45,6 +45,8 @@ import "../daemon/protocol.js" as Protocol
 // tab behind). Closing the last tab closes the window; a tab torn out of
 // the row asks for a window of its own (`windowRequested`), carrying its
 // history, order and selection.
+// What uses space (the command row's button, or opening a drive) stays
+// on as the window moves, until the button turns it off.
 // While something is typed in the search field, the search results take
 // the file list's place (SearchResults); moving to another folder empties
 // the field.
@@ -89,6 +91,7 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    property bool spaceView: false
     readonly property bool searching: search.active && !inTrash
     readonly property SearchModel search: SearchModel {
         service: FilesService
@@ -738,6 +741,8 @@ FloatingWindow {
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
         visible: !window.inTrash
+        spaceView: window.spaceView
+        onSpaceToggled: window.spaceView = !window.spaceView
         picked: list.model.selectedCount
         canPaste: FilesClipboard.hasFiles
         onCommandRequested: command => window.act(command, list.selection(), null)
@@ -769,6 +774,14 @@ FloatingWindow {
         onDriveMenuRequested: (drive, at) => window.openMenu(Menus.forDrive(drive, window.act), window.contentItem, at)
         onTabRequested: path => window.openTab(path, false)
         onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
+        onDriveOpened: (folder, asker) => {
+            const navigator = asker as Navigator;
+            if (!navigator)
+                return;
+            if (navigator === window.navigator)
+                window.spaceView = true;
+            navigator.visit(folder, null);
+        }
     }
     FileList {
         id: list
@@ -799,6 +812,7 @@ FloatingWindow {
             window.openMenu(items, list, at);
         }
         solid: FilesService.listSolid
+        spaceView: window.spaceView
     }
     SearchResults {
         id: results
