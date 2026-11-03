@@ -35,7 +35,7 @@ Item {
         function test_the_whole_table() {
             const moves = ["Up", "Down", "PgUp", "PgDown", "Home", "End"];
             const moving = where => moves.concat(moves.map(key => `Shift+${key}`)).map(key => `${where}: ${key} = move`);
-            const expected = ["window: Alt+Left = back", "window: Alt+Right = forward", "window: Alt+Up = up", "window: Ctrl+L = address", "window: Alt+D = address", "window: Ctrl+F = search", "window: F3 = search", "window: F5 = refresh", "window: Ctrl+N = newWindow", "window: Ctrl+W = closeWindow", "window: Alt+P = preview", "list: Backspace = back", "list: Ctrl+H = hidden", "list: Ctrl+A = selectAll", "list: Return = open", "list: Enter = open", "list: Alt+Return = properties", "list: Alt+Enter = properties", "list: Del = trash", "list: Shift+Del = deleteForGood", "trash: Backspace = back", "trash: Ctrl+A = selectAll", "trash: Del = deleteForGood", "trash: Shift+Del = deleteForGood"].concat(moving("list"), moving("trash"));
+            const expected = ["window: Alt+Left = back", "window: Alt+Right = forward", "window: Alt+Up = up", "window: Ctrl+L = address", "window: Alt+D = address", "window: Ctrl+F = search", "window: F3 = search", "window: F5 = refresh", "window: Ctrl+N = newWindow", "window: Ctrl+W = closeWindow", "window: Alt+P = preview", "list: Backspace = back", "list: Ctrl+H = hidden", "list: Ctrl+A = selectAll", "list: Return = open", "list: Enter = open", "list: Alt+Return = properties", "list: Alt+Enter = properties", "list: Del = trash", "list: Shift+Del = deleteForGood", "list: Ctrl+Z = undo", "list: Ctrl+Y = redo", "list: Ctrl+Shift+Z = redo", "trash: Ctrl+Z = undo", "trash: Ctrl+Y = redo", "trash: Ctrl+Shift+Z = redo", "trash: Backspace = back", "trash: Ctrl+A = selectAll", "trash: Del = deleteForGood", "trash: Shift+Del = deleteForGood"].concat(moving("list"), moving("trash"));
             compare(lines(), expected.sort());
         }
 
@@ -84,6 +84,8 @@ Item {
             compare(Shortcuts.action(Shortcuts.TRASH, Qt.Key_Return, Qt.NoModifier), "", "a trashed item doesn't open");
             compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_H, Qt.ControlModifier | Qt.ShiftModifier), "", "held keys count");
             compare(Shortcuts.action(Shortcuts.WINDOW, Qt.Key_F, Qt.ControlModifier), "search");
+            compare(Shortcuts.action(Shortcuts.TRASH, Qt.Key_Z, Qt.ControlModifier | Qt.ShiftModifier), "redo");
+            compare(Shortcuts.action(Shortcuts.WINDOW, Qt.Key_Z, Qt.ControlModifier), "", "a text field keeps Ctrl+Z");
         }
 
         function test_only_printable_text_without_ctrl_or_alt_types() {
@@ -116,7 +118,11 @@ Item {
 
         function test_a_pause_starts_a_new_name() {
             const typing = createTemporaryObject(typingComponent, stage);
-            const names = ["alpha", "beta", "bravo"];
+            const names = createTemporaryQmlObject("import QtQuick; ListModel {}", stage);
+            for (const name of ["alpha", "beta", "bravo"])
+                names.append({
+                    name: name
+                });
             const went = [];
             const go = index => went.push(index);
             verify(typing.press("b", Qt.NoModifier, names, 0, go));
@@ -162,8 +168,8 @@ Item {
         }
 
         SignalSpy {
-            id: backs
-            signalName: "backRequested"
+            id: actions
+            signalName: "actionRequested"
         }
 
         SignalSpy {
@@ -177,9 +183,9 @@ Item {
             const list = createTemporaryObject(trashListComponent, stage, {
                 model: model
             });
-            backs.target = list;
+            actions.target = list;
             erases.target = list;
-            backs.clear();
+            actions.clear();
             erases.clear();
             list.focusList();
             keyClick(Qt.Key_Delete);
@@ -193,11 +199,14 @@ Item {
             keyClick(Qt.Key_Delete, Qt.ShiftModifier);
             compare(erases.count, 1);
             keyClick(Qt.Key_Backspace);
-            compare(backs.count, 1);
+            compare(actions.signalArguments.map(args => args[0]), ["back"]);
             keyClick(Qt.Key_Down);
             compare(model.selectedCount, 1);
             keyClick(Qt.Key_A, Qt.ControlModifier);
             compare(model.selectedCount, 3);
+            // The list goes before its model, as in a window.
+            list.destroy();
+            wait(0);
         }
     }
 }
