@@ -2181,6 +2181,10 @@ pub struct FileSearch {
     /// each, names that aren't hidden (themselves or by a folder they're
     /// in) first, then shorter names.
     pub results: Vec<FoundFile>,
+    /// `within` was a folder the index holds nothing below (`/etc`), so
+    /// everywhere was searched instead.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub everywhere: bool,
 }
 
 /// A file a search found ([`FileSearch`]).
@@ -3312,6 +3316,7 @@ mod tests {
                 outcome: Outcome::Result(
                     serde_json::to_value(FileSearch {
                         ready: true,
+                        everywhere: false,
                         total: 1,
                         results: vec![FoundFile {
                             folder: "/home/user/.local/share/Steam/steamapps/common".into(),

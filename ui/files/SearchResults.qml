@@ -22,8 +22,6 @@ FocusScope {
     // The folder shown, the first scope.
     required property string folder
     property bool everywhere: false
-    // The folder shown can be searched; elsewhere only Everywhere shows.
-    property bool folderIndexed: true
     // Home, which result locations are shown from.
     property string home: ""
     property real solid: 0
@@ -107,14 +105,15 @@ FocusScope {
         ScopeChip {
             icon: Icons.FOLDER
             label: Paths.folderName(results.folder)
-            visible: results.folderIndexed
+            // novad indexes nothing below it (`/etc`): it searched everywhere.
+            visible: !results.model.everywhere
             picked: !results.everywhere
             onChosen: results.everywhere = false
         }
         ScopeChip {
             icon: Icons.SEARCH
             label: qsTr("Everywhere")
-            picked: results.everywhere || !results.folderIndexed
+            picked: results.everywhere || results.model.everywhere
             onChosen: results.everywhere = true
         }
     }

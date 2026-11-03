@@ -773,16 +773,6 @@ Item {
             ], "#fff"), '<b><font color="#fff">caf</font></b>\uFFFD', "a raw byte shows as a replacement character");
         }
 
-        function test_only_folders_novad_indexes_are_searched_alone() {
-            const mounts = ["/run/media/user/SANDISK"];
-            verify(Search.indexed("/home/user/Pictures", "/home/user", mounts));
-            verify(Search.indexed("/run/media/user/SANDISK/Photos", "/home/user", mounts));
-            verify(Search.indexed("/", "/home/user", mounts), "the root holds Home");
-            verify(Search.indexed("/run/media", "/home/user", mounts), "and the drives");
-            verify(!Search.indexed("/etc", "/home/user", mounts));
-            verify(!Search.indexed("/home/username", "/home/user", []));
-        }
-
         function test_the_count_says_how_many_were_found() {
             compare(Search.count(false, 0, 0), "Indexing");
             compare(Search.count(true, 0, 0), "No results");
@@ -844,6 +834,7 @@ Item {
                 results: []
             });
             compare(model.rows.map(row => row.name), ["Crimson Desert"], "the older answer came late and is dropped");
+            verify(!model.everywhere);
             verify(model.answered);
             model.within = "";
             tryVerify(() => service.asked.length === 3);
@@ -879,6 +870,14 @@ Item {
             compare(model.rows.length, 1);
             service.searchReady();
             compare(service.asked.length, 2, "a ready index isn't asked again");
+            model.query = "desert";
+            tryVerify(() => service.asked.length === 3);
+            service.asked[2].done({
+                ready: false,
+                total: 0,
+                results: []
+            });
+            compare(service.asked.length, 4, "an answer from before novad said it's built is asked again");
         }
 
         function test_a_search_novad_could_not_answer_is_asked_on_reconnecting() {

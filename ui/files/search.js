@@ -35,13 +35,6 @@ function location(folder, home) {
     return Paths.shown(folder);
 }
 
-// Whether a search from `folder` can find anything: novad indexes Home
-// and the drives mounted at `mounts`, so the folder is in one of them or
-// holds one (like `/`). Elsewhere (`/etc`) only Everywhere searches.
-function indexed(folder, home, mounts) {
-    return [home].concat(mounts).some(root => root !== "" && (Paths.inside(folder, root) || Paths.inside(root, folder)));
-}
-
 // `name` (wire text) as styled text with each of `marks` in bold in
 // `color`. Everything else is escaped, so a `<` in a name stays a `<`.
 function marked(name, marks, color) {

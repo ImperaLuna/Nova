@@ -133,7 +133,8 @@ impl Searcher {
     /// The files whose names hold every word of `text`, below the folder
     /// `within` (absolute, wire text) when it's given. A folder the index
     /// doesn't hold as itself (a link to a folder, say `~/Downloads` to a
-    /// drive) is searched where it leads.
+    /// drive) is searched where it leads; one it holds nothing below at
+    /// all, everywhere.
     pub fn search(&self, text: &str, within: Option<&str>) -> Result<FileSearch, String> {
         if text.chars().count() > FILES_SEARCH_MAX_CHARS {
             return Err(format!("Searches are at most {FILES_SEARCH_MAX_CHARS} characters"));
@@ -144,12 +145,13 @@ impl Searcher {
         let held = self.0.index.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let ready = held.is_some();
         let (Some(index), Some(query)) = (held.as_ref(), Query::parse(text)) else {
-            return Ok(FileSearch { ready, total: 0, results: Vec::new() });
+            return Ok(FileSearch { ready, total: 0, results: Vec::new(), everywhere: false });
         };
-        let scope = match (within.as_deref(), leads_to.as_deref()) {
-            (Some(folder), Some(target)) if !index.covers(folder) => Some(target),
-            (folder, _) => folder,
-        };
+        // A folder nothing indexed is below (`/etc`) searches everywhere.
+        let scope = within.as_deref().and_then(|folder| {
+            if index.covers(folder) { Some(folder) } else { leads_to.as_deref().filter(|target| index.covers(target)) }
+        });
+        let everywhere = within.is_some() && scope.is_none();
         let (hits, total) = index.search(&query, scope, FILES_SEARCH_MAX_RESULTS);
         drop(held);
         let mime = self.0.mime.current();
@@ -166,7 +168,7 @@ impl Searcher {
                 })
             })
             .collect();
-        Ok(FileSearch { ready, total: u32::try_from(total).unwrap_or(u32::MAX), results })
+        Ok(FileSearch { ready, total: u32::try_from(total).unwrap_or(u32::MAX), results, everywhere })
     }
 }
 
@@ -430,6 +432,10 @@ mod tests {
         let found = fixture.search.searcher().search("setup", Some(link.to_str().unwrap())).unwrap();
         assert_eq!(found.results.iter().map(|file| file.entry.name.as_str()).collect::<Vec<_>>(), ["setup.sh"]);
         assert_eq!(found.results[0].folder, fixture.home().join("data/downloads").to_str().unwrap());
+        assert!(!found.everywhere);
+        let elsewhere = fixture.search.searcher().search("setup", Some("/etc")).unwrap();
+        assert!(elsewhere.everywhere, "nothing indexed is below /etc");
+        assert_eq!(elsewhere.total, 1);
     }
 
     #[test]

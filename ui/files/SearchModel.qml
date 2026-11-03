@@ -28,9 +28,14 @@ QtObject {
     property bool ready: true
     // An answer came for what's asked now.
     property bool answered: false
+    // novad searched everywhere: `within` holds nothing it indexes.
+    property bool everywhere: false
     readonly property bool active: query.trim() !== ""
 
     property int _asks: 0
+    // novad said its index is built: an answer saying it isn't was sent
+    // before that, and is asked again.
+    property bool _built: false
 
     function _ask() {
         // Not `active`: in a change handler, it may not have caught up yet.
@@ -46,8 +51,11 @@ QtObject {
             // novad couldn't search (it's gone, say): no count.
             answered = found !== null;
             ready = found?.ready ?? ready;
+            everywhere = found?.everywhere ?? false;
             rows = (found?.results ?? []).map(Search.row);
             total = found?.total ?? 0;
+            if (!ready && _built)
+                _ask();
         });
     }
 
@@ -76,10 +84,14 @@ QtObject {
     readonly property Connections _service: Connections {
         target: search.service
         function onSearchReady() {
+            search._built = true;
             if (search.active && !search.ready)
                 search._ask();
         }
         function onConnectedChanged() {
+            // A novad started again builds its index again.
+            if (!search.service.connected)
+                search._built = false;
             if (search.service.connected && search.active && !search.answered)
                 search._ask();
         }
