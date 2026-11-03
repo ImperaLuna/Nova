@@ -8,6 +8,7 @@ import "../files/paths.js" as Paths
 import "../files/navigation.js" as Navigation
 import "../files/trash.js" as Trash
 import "../daemon/protocol.js" as Protocol
+import "../theme"
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
 
@@ -17,7 +18,8 @@ import "../files/transfers.js" as Transfers
 // keys select, and what opening the selection does, and the copy and move
 // jobs a window keeps and how their card and name clash dialog read and
 // answer, and the trash: its rows, its selection, and the dialog that asks
-// before deleting for good. The root is an Item: a TestCase root gets no mouse events.
+// before deleting for good, and the Icons view's tiles and the View
+// menu. The root is an Item: a TestCase root gets no mouse events.
 Item {
     id: stage
     width: 880
@@ -320,6 +322,40 @@ Item {
             compare(Listing.moved(Qt.Key_End, 0, 10, 4), 9);
             verify(Listing.MOVES.includes(Qt.Key_End));
             verify(!Listing.MOVES.includes(Qt.Key_Return));
+            verify(!Listing.MOVES.includes(Qt.Key_Left), "Details rows don't go sideways");
+        }
+
+        function test_keys_move_through_the_tiles_like_a_grid() {
+            // 10 tiles, 4 to a line: 0-3, 4-7, then 8 and 9.
+            compare(Listing.moved(Qt.Key_Right, 2, 10, 8, 4), 3);
+            compare(Listing.moved(Qt.Key_Right, 3, 10, 8, 4), 4, "Right wraps to the next line");
+            compare(Listing.moved(Qt.Key_Left, 4, 10, 8, 4), 3);
+            compare(Listing.moved(Qt.Key_Left, 0, 10, 8, 4), 0);
+            compare(Listing.moved(Qt.Key_Right, 9, 10, 8, 4), 9);
+            compare(Listing.moved(Qt.Key_Down, 1, 10, 8, 4), 5);
+            compare(Listing.moved(Qt.Key_Down, 6, 10, 8, 4), 9, "nothing below: the last tile");
+            compare(Listing.moved(Qt.Key_Down, 9, 10, 8, 4), 9, "last line stays put");
+            compare(Listing.moved(Qt.Key_Up, 6, 10, 8, 4), 2);
+            compare(Listing.moved(Qt.Key_Up, 2, 10, 8, 4), 2, "first line stays put");
+            compare(Listing.moved(Qt.Key_PageDown, 1, 10, 8, 4), 9);
+            compare(Listing.moved(Qt.Key_Left, -1, 10, 8, 4), 0, "nothing current: the first tile");
+            verify(Listing.GRID_MOVES.includes(Qt.Key_Left));
+            verify(Listing.GRID_MOVES.includes(Qt.Key_End));
+        }
+
+        function test_tiles_ease_in_rippling_out_from_where_the_list_opened() {
+            compare(Listing.gridDistance(5, 5, 4), 0);
+            compare(Listing.gridDistance(0, 5, 4), 1, "a diagonal is one step");
+            compare(Listing.gridDistance(7, 5, 4), 2);
+            compare(Listing.gridDistance(13, 5, 4), 2, "two lines down");
+            compare(Listing.gridDistance(3, 0, 1), 3, "one column is a list");
+        }
+
+        function test_explorer_view_shortcuts() {
+            compare(Listing.viewForNumber(2), Listing.ICONS);
+            compare(Listing.viewForNumber(4), Listing.ICONS);
+            compare(Listing.viewForNumber(6), Listing.DETAILS);
+            compare(Listing.viewForNumber(5), "", "List isn't a Nova view");
         }
 
         function test_opening_goes_into_one_folder_or_opens_files() {
@@ -704,6 +740,107 @@ Item {
             waitForRendering(notice);
             mouseClick(notice, notice.width - 20, notice.height / 2);
             compare(dismissals.count, 1);
+        }
+
+        Component {
+            id: tileComponent
+            IconTile {
+                index: 0
+                dir: false
+                hidden: false
+                mime: "text/plain"
+                selected: false
+                riseOrder: -1
+            }
+        }
+
+        SignalSpy {
+            id: tilePresses
+            signalName: "pressed"
+        }
+
+        SignalSpy {
+            id: tileOpens
+            signalName: "opened"
+        }
+
+        function test_a_tile_shows_its_name_in_two_lines_at_most() {
+            const tile = createTemporaryObject(tileComponent, stage, {
+                name: "a_really_long_file_name_without_any_spaces_that_goes_on_and_on.bin"
+            });
+            const label = findText(tile, tile.name);
+            verify(label);
+            compare(label.lineCount, Tokens.filesTileNameLines);
+            verify(label.truncated, "the rest is cut short");
+            verify(label.y + label.height <= tile.height, "the name stays inside the tile");
+            tile.name = "notes.md";
+            compare(findText(tile, "notes.md").lineCount, 1);
+        }
+
+        function test_a_tile_selects_on_a_press_and_opens_on_a_double_click() {
+            const tile = createTemporaryObject(tileComponent, stage, {
+                name: "notes.md"
+            });
+            tilePresses.target = tile;
+            tileOpens.target = tile;
+            tilePresses.clear();
+            tileOpens.clear();
+            waitForRendering(tile);
+            mouseClick(tile, tile.width / 2, tile.height / 2, Qt.LeftButton, Qt.ControlModifier);
+            compare(tilePresses.count, 1);
+            compare(tilePresses.signalArguments[0][0] & Qt.ControlModifier, Qt.ControlModifier);
+            mouseDoubleClickSequence(tile, tile.width / 2, tile.height / 2);
+            compare(tileOpens.count, 1);
+        }
+
+        function test_a_dot_file_tile_reads_fainter() {
+            const tile = createTemporaryObject(tileComponent, stage, {
+                name: ".bashrc",
+                hidden: true
+            });
+            compare(findText(tile, ".bashrc").color.toString(), Tokens.filesFaint.toString());
+        }
+
+        Component {
+            id: viewMenuComponent
+            PopupMenu {
+                id: menu
+                property string view: Listing.DETAILS
+                width: 400
+                height: 300
+                shown: true
+                MenuRow {
+                    icon: Icons.GRID
+                    label: "Icons"
+                    checked: menu.view === Listing.ICONS
+                    onChosen: menu.view = Listing.ICONS
+                }
+                MenuRow {
+                    icon: Icons.VIEW
+                    label: "Details"
+                    checked: menu.view === Listing.DETAILS
+                    onChosen: menu.view = Listing.DETAILS
+                }
+            }
+        }
+
+        SignalSpy {
+            id: menuDismissals
+            signalName: "dismissed"
+        }
+
+        function test_a_menu_row_picks_and_a_click_beside_the_menu_dismisses_it() {
+            const menu = createTemporaryObject(viewMenuComponent, stage);
+            menuDismissals.target = menu;
+            menuDismissals.clear();
+            menu.place(Qt.point(390, 10));
+            waitForRendering(menu);
+            const icons = findText(menu, "Icons");
+            verify(icons.mapToItem(menu, icons.width, 0).x <= menu.width, "kept inside the window");
+            mouseClick(icons);
+            compare(menu.view, Listing.ICONS);
+            mouseClick(menu, 5, menu.height - 5);
+            compare(menuDismissals.count, 1);
         }
 
         function findText(item, text) {

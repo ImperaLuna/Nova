@@ -6,6 +6,8 @@ import "../theme"
 import "service"
 import "paths.js" as Paths
 import "trash.js" as Trash
+import "listing.js" as Listing
+import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
@@ -15,7 +17,9 @@ import "../daemon/protocol.js" as Protocol
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
 // (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
-// lie over it all.
+// lie over it all. The View menu (and Explorer's Ctrl+Shift+1 to 4 and 6)
+// switch the file list between Icons and Details for the window, in every
+// folder it shows.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -144,6 +148,17 @@ FloatingWindow {
         sequences: ["Ctrl+L", "Alt+D"]
         onActivated: navigation.editAddress()
     }
+    Instantiator {
+        model: [1, 2, 3, 4, 6]
+
+        Shortcut {
+            required property int modelData
+
+            sequence: "Ctrl+Shift+" + modelData
+            enabled: !window.inTrash
+            onActivated: list.view = Listing.viewForNumber(modelData)
+        }
+    }
     TapHandler {
         acceptedButtons: Qt.BackButton | Qt.ForwardButton
         onTapped: (point, button) => window.navigator.step(button === Qt.BackButton ? -1 : 1)
@@ -183,6 +198,8 @@ FloatingWindow {
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
         visible: !window.inTrash
+        view: list.view
+        onViewMenuRequested: at => viewMenu.open(commands.mapToItem(viewMenu, at))
     }
     TrashCommandRow {
         id: trashCommands
@@ -297,6 +314,35 @@ FloatingWindow {
                 easing.type: Easing.BezierSpline
                 easing.bezierCurve: Tokens.easing
             }
+        }
+    }
+    PopupMenu {
+        id: viewMenu
+        anchors.fill: parent
+
+        function choose(view: string) {
+            list.view = view;
+            shown = false;
+            list.forceActiveFocus();
+        }
+
+        function open(at: point) {
+            place(at);
+            shown = true;
+        }
+        onDismissed: shown = false
+
+        MenuRow {
+            icon: Icons.GRID
+            label: qsTr("Icons")
+            checked: list.view === Listing.ICONS
+            onChosen: viewMenu.choose(Listing.ICONS)
+        }
+        MenuRow {
+            icon: Icons.VIEW
+            label: qsTr("Details")
+            checked: list.details
+            onChosen: viewMenu.choose(Listing.DETAILS)
         }
     }
     DriveMenu {
