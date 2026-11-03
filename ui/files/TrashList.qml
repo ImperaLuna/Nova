@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../theme"
 import "listing.js" as Listing
+import "commands.js" as Commands
 import "shortcuts.js" as Shortcuts
 import "trash.js" as Trash
 
@@ -13,7 +14,7 @@ import "trash.js" as Trash
 // items; its keys are the table's TRASH entries (shortcuts.js): the arrow
 // keys move, Ctrl+A picks all, Delete asks to delete the picked ones for
 // good, Backspace goes back and Ctrl+Z and Ctrl+Y undo and redo
-// (`actionRequested`), and typing a name goes to it (NameTyping). A trashed item doesn't open. Like the file list,
+// (`commandRequested`), and typing a name goes to it (NameTyping). A trashed item doesn't open. Like the file list,
 // it sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
 Item {
@@ -30,9 +31,9 @@ Item {
 
     // Delete was pressed with items picked.
     signal eraseRequested
-    // A table action that is the window's (Backspace's "back", Ctrl+Z's
-    // "undo", Ctrl+Y's "redo").
-    signal actionRequested(string action)
+    // A command that is the window's (Backspace's Commands.BACK, Ctrl+Z's
+    // UNDO, Ctrl+Y's REDO).
+    signal commandRequested(string command)
 
     function focusList() {
         rows.forceActiveFocus();
@@ -147,19 +148,19 @@ Item {
         Keys.onPressed: event => {
             const action = Shortcuts.action(Shortcuts.TRASH, event.key, event.modifiers);
             switch (action) {
-            case "selectAll":
+            case Commands.SELECT_ALL:
                 list.model.selectAll();
                 return;
-            case "back":
-            case "undo":
-            case "redo":
-                list.actionRequested(action);
+            case Commands.BACK:
+            case Commands.UNDO:
+            case Commands.REDO:
+                list.commandRequested(action);
                 return;
-            case "deleteForGood":
+            case Commands.DELETE_FOR_GOOD:
                 if (list.model.selectedCount > 0)
                     list.eraseRequested();
                 return;
-            case "move":
+            case Commands.MOVE:
                 if (rows.count > 0)
                     rows.go(Listing.moved(event.key, rows.currentIndex, rows.count, rows.page), (event.modifiers & Qt.ShiftModifier) !== 0);
                 return;

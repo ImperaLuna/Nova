@@ -24,6 +24,9 @@ var WPA_PASSWORD_MIN_BYTES = 8;
 // novad refuses more open folder views per connection.
 var FILES_MAX_VIEWS = 16;
 
+// novad refuses a longer files_rename name, in UTF-8 bytes.
+var FILES_NAME_MAX_BYTES = 255;
+
 // novad refuses longer files_open paths.
 var FILES_PATH_MAX_BYTES = 4096;
 
@@ -140,6 +143,9 @@ var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
 var CMD_FILES_MOUNT = "files_mount";
 var CMD_FILES_EJECT = "files_eject";
 var CMD_FILES_SEARCH = "files_search";
+var CMD_FILES_NEW_FOLDER = "files_new_folder";
+var CMD_FILES_RENAME = "files_rename";
+var CMD_FILES_DETAILS = "files_details";
 var CMD_FILES_PROPERTIES = "files_properties";
 var CMD_FILES_MEASURE = "files_measure";
 var CMD_FILES_MEASURE_CANCEL = "files_measure_cancel";
@@ -337,6 +343,8 @@ var CLASH_SKIP = "skip";
 var FILE_STEP_COPY = "copy";
 var FILE_STEP_MOVE = "move";
 var FILE_STEP_TRASH = "trash";
+var FILE_STEP_RENAME = "rename";
+var FILE_STEP_NEW_FOLDER = "new_folder";
 
 // END GENERATED
 

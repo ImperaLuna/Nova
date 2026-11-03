@@ -96,14 +96,18 @@ pub fn disk_bytes(metadata: &Metadata) -> u64 {
 }
 
 /// A time in milliseconds since 1970, when it's after then.
-pub fn millis(time: std::time::SystemTime) -> Option<i64> {
+pub fn system_time_millis(time: std::time::SystemTime) -> Option<i64> {
     let since = time.duration_since(std::time::SystemTime::UNIX_EPOCH).ok()?;
     i64::try_from(since.as_millis()).ok()
 }
 
 fn modified_ms(metadata: &Metadata) -> Option<i64> {
-    let seconds = metadata.mtime().checked_mul(1000)?;
-    seconds.checked_add(metadata.mtime_nsec() / 1_000_000)
+    millis(metadata.mtime(), metadata.mtime_nsec())
+}
+
+/// A file time (seconds and nanoseconds since 1970) in milliseconds.
+pub fn millis(seconds: i64, nanoseconds: i64) -> Option<i64> {
+    seconds.checked_mul(1000)?.checked_add(nanoseconds / 1_000_000)
 }
 
 /// A folder's entries in a view's order, and where each one is.

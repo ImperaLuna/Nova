@@ -23,6 +23,7 @@ QtObject {
     property var counted: null
     property bool changing: false
     readonly property OpenWithModel openWith: OpenWithModel {
+        service: FilesService
         path: model.subject && !model.subject.drive && model.subject.rows.length === 1 && !model.subject.rows[0].dir ? model.subject.paths[0] : ""
     }
 
