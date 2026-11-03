@@ -345,7 +345,7 @@ Item {
                 nameWidth: 300
                 columnWidths: Tokens.filesColumns
                 selected: true
-                riseOrder: -1
+                riseWait: -1
                 bar: -1
                 now: 5
             }
