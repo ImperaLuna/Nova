@@ -165,9 +165,6 @@ function pick(anchor, index, ctrl, shift) {
     };
 }
 
-// The keys that move through the rows.
-var MOVES = [Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End];
-
 // The row a navigation key moves to from `current` among `count` rows,
 // `page` rows to a screen; `current` itself for any other key.
 function moved(key, current, count, page) {

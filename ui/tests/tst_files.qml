@@ -320,8 +320,6 @@ Item {
             compare(Listing.moved(Qt.Key_PageUp, 6, 10, 4), 2);
             compare(Listing.moved(Qt.Key_Home, 6, 10, 4), 0);
             compare(Listing.moved(Qt.Key_End, 0, 10, 4), 9);
-            verify(Listing.MOVES.includes(Qt.Key_End));
-            verify(!Listing.MOVES.includes(Qt.Key_Return));
         }
 
         function test_opening_goes_into_one_folder_or_opens_files() {

@@ -715,6 +715,9 @@ QtObject {
     readonly property int durationRowIn: 220
     // How often the Modified column looks at the clock, so "Today" moves on.
     readonly property int filesClockTick: 60000
+    // A pause this long in typing a name in a file list starts a new name,
+    // as in Explorer.
+    readonly property int filesTypingPause: 1000
     // Solid Nova Files ([files] in config.toml) ends at the theme's soft
     // greys: the frame a step above bg, the file list at bg. On the way the
     // raised rows fade into the frame.
@@ -758,6 +761,16 @@ QtObject {
     readonly property int filesClashButtonHeight: 34
     // The scale the dialog pops in from and shrinks back to.
     readonly property real filesClashEnterScale: 0.97
+    // Drag and drop: how far a press moves before it drags, the tile under
+    // the pointer (the item's icon, and the count in an accent bubble at its
+    // corner for more than one), the wash on the folder a drop would go
+    // into, and how long the pointer rests on a folder before it opens.
+    readonly property int filesDragStart: 6
+    readonly property int filesDragTile: 52
+    readonly property int filesDragIcon: 28
+    readonly property int filesDragCount: 20
+    readonly property color filesDropTarget: alpha(primary, 0.24)
+    readonly property int durationFilesSpring: 800
     // The Properties dialog (Alt+Enter): this wide, its labels in a column
     // this wide, its rows this tall, the drive's fill bar this thick, and
     // the access grid's check columns this wide. A check box that can't be

@@ -187,6 +187,7 @@ Item {
             }, null);
             compare(labels(groups)[1], ["Size", "Size on disk", "Contains"]);
             compare(factValue(groups, "Contains"), "120 files, 14 folders");
+            verify(groups[1].every(row => row.counting), "still counting");
             compare(factValue(groups, "Type"), "Folder");
         }
 
@@ -203,6 +204,7 @@ Item {
             compare(factValue(groups, "Type"), "Multiple types");
             compare(factValue(groups, "Location"), "All in /home/ana/Pictures");
             compare(factValue(groups, "Contains"), "6 files, 2 folders", "the selected items count too");
+            verify(!groups[1].some(row => row.counting), "counted");
             const pngs = Props.subject("/home/ana/Pictures", rows.slice(0, 2), null);
             compare(factValue(Props.groups(pngs, null, null, null), "Type"), "All PNG");
             compare(Props.icon(subject, null), Icons.COPY);

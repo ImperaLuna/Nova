@@ -633,7 +633,7 @@ fn remove(path: &Path) -> std::io::Result<()> {
 
 /// Renames `from` to `to`, failing with EEXIST when `to` is there, even
 /// if it came after a check.
-fn rename_new(from_path: &Path, to_path: &Path) -> std::io::Result<()> {
+pub(super) fn rename_new(from_path: &Path, to_path: &Path) -> std::io::Result<()> {
     let from = std::ffi::CString::new(from_path.as_os_str().as_bytes())?;
     let to = std::ffi::CString::new(to_path.as_os_str().as_bytes())?;
     // SAFETY: both paths are NUL-terminated C strings that outlive the call.

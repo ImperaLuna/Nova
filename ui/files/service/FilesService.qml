@@ -101,6 +101,17 @@ Singleton {
         }, () => done());
     }
 
+    // Opens another Nova Files window on `folder` (absolute): Ctrl+N. novad
+    // sends it back as a window like any other.
+    function showFolder(folder: string) {
+        Daemon.call(Protocol.CMD_SHOW_FOLDER, {
+            folder: folder
+        }, error => {
+            if (error)
+                console.warn(`nova: files: a window on ${folder}: ${error}`);
+        });
+    }
+
     // Opens the file at `path` (absolute) in the app `app` (a desktop file
     // id) or, when `app` is empty, in its type's default app: a double-click
     // or Enter on a file. `done(error)`, when given, gets novad's answer.
@@ -228,6 +239,20 @@ Singleton {
         return job;
     }
 
+    // Whether every item at `sources` (absolute paths) is on the same
+    // drive as the folder `folder`: a drop there moves them, elsewhere it
+    // copies. `done(same)` gets the answer, or null when novad can't tell.
+    function sameDrive(sources: var, folder: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_SAME_DRIVE, {
+            sources: sources,
+            folder: folder
+        }, (error, same) => {
+            if (error)
+                console.warn(`nova: checking the drive of ${folder}: ${error}`);
+            done(error ? null : same);
+        });
+    }
+
     // Stops job `job`; it then reports it was cancelled.
     function cancelTransfer(job: int) {
         Daemon.call(Protocol.CMD_FILES_TRANSFER_CANCEL, {
@@ -262,21 +287,18 @@ Singleton {
         });
     }
 
-    // Counts what `paths` (absolute) hold, in as many jobs as keep each
-    // request under novad's limit. Returns the jobs' numbers, whose
-    // `measured` events carry them.
-    function measure(paths: var): var {
-        return Trash.batches(paths, Protocol.REQUEST_MAX_BYTES).map(batch => {
-            const job = _nextJob++;
-            Daemon.call(Protocol.CMD_FILES_MEASURE, {
-                job: job,
-                paths: batch
-            }, error => {
-                if (error)
-                    console.warn(`nova: counting sizes: ${error}`);
-            });
-            return job;
+    // Counts what `paths` (absolute, fitting one request) hold. Returns
+    // the job's number, which its `measured` events carry.
+    function measure(paths: var): int {
+        const job = _nextJob++;
+        Daemon.call(Protocol.CMD_FILES_MEASURE, {
+            job: job,
+            paths: paths
+        }, error => {
+            if (error)
+                console.warn(`nova: counting sizes: ${error}`);
         });
+        return job;
     }
 
     // Stops measuring job `job`; it sends nothing more.

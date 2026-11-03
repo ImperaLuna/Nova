@@ -75,7 +75,10 @@ fn ending(name: &OsStr) -> Option<(usize, Kind)> {
 /// `name` without its ending ("photos.tar.gz" gives "photos").
 pub fn folder_name(name: &OsStr) -> OsString {
     let cut = ending(name).map_or(name.len(), |(at, _)| at);
-    OsStr::from_bytes(&name.as_bytes()[..cut]).to_owned()
+    let stem = &name.as_bytes()[..cut];
+    // "..zip" keeps its whole name: "." isn't a folder of its own.
+    let named = if stem.iter().all(|byte| *byte == b'.') { name.as_bytes() } else { stem };
+    OsStr::from_bytes(named).to_owned()
 }
 
 /// A folder inside an archive.
