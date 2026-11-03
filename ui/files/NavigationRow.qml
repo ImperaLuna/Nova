@@ -6,10 +6,12 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "paths.js" as Paths
 import "trash.js" as Trash
+import "home.js" as Home
 
 // Nova Files' top row: back, forward and up, the address bar showing
-// where the window is (a part per folder from Home or the root, hidden
-// folders dimmer, the current one bold), and the search field.
+// where the window is (a part per folder from the home folder or the
+// root, hidden folders dimmer, the current one bold; one part on the Home
+// page or the trash), and the search field.
 //
 // A click on a part goes there. A click on the bar's empty end (or Ctrl+L,
 // Alt+D) turns it into a text field holding the folder's path: Enter goes
@@ -19,7 +21,10 @@ Rectangle {
     id: row
 
     required property Navigator navigator
-    readonly property var parts: Trash.isTrash(navigator.folder) ? Trash.crumbs() : Paths.crumbs(navigator.folder, Quickshell.env("HOME") ?? "", qsTr("Home"))
+    // The home folder reads as its own name, as in the tree: "Home" is the
+    // Home page.
+    readonly property string home: Quickshell.env("HOME") ?? ""
+    readonly property var parts: Trash.isTrash(navigator.folder) ? Trash.crumbs() : Home.isHome(navigator.folder) ? Home.crumbs() : Paths.crumbs(navigator.folder, home, Paths.folderName(home))
     property bool editing: false
     property bool wrong: false
 

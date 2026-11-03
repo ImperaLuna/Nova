@@ -6,16 +6,18 @@ import "../theme"
 import "service"
 import "paths.js" as Paths
 import "trash.js" as Trash
+import "home.js" as Home
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
 // showing `folder` with `select` selected. The navigation row, the command
 // row, then the sidebar beside the file list, with its copies and moves
 // over them all; opening a folder in the list shows it in the same window.
-// At the trash, the trash's command row and list take the place of the
-// folder's, and anything deleted for good is asked about first
+// On the Home page (Home.isHome, where `nova files` without a path opens)
+// the Home page takes the file list's place. At the trash, the trash's
+// command row and list take the place of the folder's, and anything deleted for good is asked about first
 // (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
-// lie over it all.
+// and a folder's pin menu lie over it all.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -33,12 +35,13 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    readonly property bool inHome: Home.isHome(folder)
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
     property var problems: []
 
-    title: inTrash ? Trash.name() : Paths.folderName(folder)
+    title: inTrash ? Trash.name() : inHome ? Home.name() : Paths.folderName(folder)
     implicitWidth: Tokens.filesWindowWidth
     implicitHeight: Tokens.filesWindowHeight
     color: "transparent"
@@ -109,6 +112,8 @@ FloatingWindow {
             act?.();
         if (inTrash)
             trashList.focusList();
+        else if (inHome)
+            homePage.forceActiveFocus();
         else
             list.forceActiveFocus();
     }
@@ -174,7 +179,12 @@ FloatingWindow {
         anchors.top: parent.top
         navigator: window.navigator
         solid: FilesService.frameSolid
-        onAddressClosed: list.forceActiveFocus()
+        onAddressClosed: {
+            if (window.inHome)
+                homePage.forceActiveFocus();
+            else
+                list.forceActiveFocus();
+        }
     }
     CommandRow {
         id: commands
@@ -204,21 +214,39 @@ FloatingWindow {
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
         onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
+        onPinMenuRequested: (path, at) => pinMenu.open(path, at)
     }
     FileList {
         id: list
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.top: commands.bottom
-        visible: !window.inTrash
+        visible: !window.inTrash && !window.inHome
         anchors.bottom: parent.bottom
-        folder: window.folder
+        // Nothing to read while a page shows.
+        folder: Home.isPage(window.folder) ? "" : window.folder
         select: window.select
         focus: true
         onFolderOpened: path => window.navigator.visit(path, null)
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
         solid: FilesService.listSolid
+    }
+    HomePage {
+        id: homePage
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: commands.bottom
+        anchors.bottom: parent.bottom
+        visible: window.inHome
+        navigator: window.navigator
+        solid: FilesService.listSolid
+        onPinMenuRequested: (path, at) => pinMenu.open(path, at)
+        onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
+        onVisibleChanged: {
+            if (visible)
+                forceActiveFocus();
+        }
     }
     TrashModel {
         id: trash
@@ -309,6 +337,10 @@ FloatingWindow {
     }
     EjectProblem {
         id: ejectProblem
+        anchors.fill: parent
+    }
+    PinMenu {
+        id: pinMenu
         anchors.fill: parent
     }
 }

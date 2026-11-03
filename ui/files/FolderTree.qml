@@ -8,9 +8,11 @@ import "paths.js" as Paths
 
 // The sidebar's folder tree, as novad lays it out for the window
 // (files_tree): open down to the window's folder, which is marked and
-// kept in view, with hidden folders dimmer. A row's chevron opens or
-// closes it; a click elsewhere on the row goes there. Rows that come slide in one
-// after another, the others move to make room.
+// kept in view, with hidden folders dimmer. The top is the home folder,
+// by its own name (Home is the Home page). A row's chevron opens or
+// closes it; a click elsewhere on the row goes there, and a right-click
+// asks for its menu (pinning it to Quick access). Rows that come slide in
+// one after another, the others move to make room.
 ListView {
     id: tree
 
@@ -19,6 +21,9 @@ ListView {
     // how many came before them; rows created by scrolling just show.
     property bool arriving: false
     property int arrivals: 0
+
+    // The menu of the folder `path` was asked for at `at` (in the window).
+    signal menuRequested(string path, point at)
 
     function update() {
         arrivals = 0;
@@ -162,7 +167,7 @@ ListView {
                 font.weight: item.current ? Tokens.weightLabel : Tokens.weightBody
                 color: item.hidden ? Tokens.filesFaint : Tokens.fg
                 textFormat: Text.PlainText
-                text: item.home ? qsTr("Home") : Paths.shown(item.name)
+                text: Paths.shown(item.name)
             }
         }
 
@@ -178,6 +183,10 @@ ListView {
                 else
                     tree.navigator.visit(item.path, null);
             }
+        }
+        TapHandler {
+            acceptedButtons: Qt.RightButton
+            onTapped: point => tree.menuRequested(item.path, item.mapToItem(null, point.position))
         }
     }
 }

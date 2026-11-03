@@ -46,13 +46,6 @@ function row(item) {
     return shown;
 }
 
-// The Original location column: the folder an item came from, from `~`
-// when it's in `home`.
-function location(folder, home) {
-    const inHome = home !== "" && (folder === home || folder.startsWith(home + "/"));
-    return Paths.shown(inHome ? "~" + folder.slice(home.length) : folder);
-}
-
 // The command row's Restore: the picked items, or everything.
 function restoreLabel(selected) {
     return selected > 0 ? qsTr("Restore") : qsTr("Restore all");

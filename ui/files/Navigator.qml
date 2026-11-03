@@ -2,7 +2,7 @@ import QtQml
 import "../daemon/protocol.js" as Protocol
 import "navigation.js" as Navigation
 import "paths.js" as Paths
-import "trash.js" as Trash
+import "home.js" as Home
 import "service"
 
 // Where a Nova Files window is and how it moves: go to a folder (a click
@@ -11,9 +11,10 @@ import "service"
 // move asks novad for the tree on the new folder first (files_tree) and
 // moves only once that answers, so a folder that's gone or a mistyped
 // path leaves the window where it was. An answer to an older move than
-// the latest is dropped. The trash (Protocol.FILES_TRASH_PLACE) is a place
-// in the history like a folder, with nothing above it; while the window is
-// there the tree stays on the last folder it showed.
+// the latest is dropped. The Home page and the trash (Home.isPage) are
+// places in the history like folders, with nothing above them; while the
+// window is on one, the tree stays on the last folder it showed, or Home's
+// folder for a window that opened on one.
 QtObject {
     id: navigator
 
@@ -24,7 +25,7 @@ QtObject {
     property var history: Navigation.start("")
     readonly property bool canGoBack: history.at > 0
     readonly property bool canGoForward: history.at < history.entries.length - 1
-    readonly property bool canGoUp: folder !== "" && !Trash.isTrash(folder) && Paths.parent(folder) !== ""
+    readonly property bool canGoUp: folder !== "" && !Home.isPage(folder) && Paths.parent(folder) !== ""
     // The tree's rows (files_tree), and the folders the user opened or
     // closed in it.
     property var treeRows: []
@@ -72,14 +73,14 @@ QtObject {
     function go(path: string, how: string, steps: int, done: var) {
         const move = ++moves;
         const leaving = how !== "stay";
-        const trash = Trash.isTrash(path);
-        if (trash && leaving) {
+        const page = Home.isPage(path);
+        if (page && leaving) {
             arrive(how, steps, path, treeRows);
             done?.(true);
             return;
         }
-        // In the trash only the tree changes, on its last folder.
-        const asked = trash ? treeFolder : path;
+        // On a page only the tree changes, on its last folder.
+        const asked = page ? (treeFolder !== "" ? treeFolder : "~") : path;
         FilesService.tree(asked, treeKept.opened, leaving ? [] : treeKept.closed, hidden, (error, tree) => {
             if (move !== moves)
                 return;
@@ -89,12 +90,12 @@ QtObject {
                 return;
             }
             treeFolder = tree.folder;
-            arrive(how, steps, trash ? path : tree.folder, tree.rows);
+            arrive(how, steps, page ? path : tree.folder, tree.rows);
             done?.(true);
         });
     }
 
-    // Shows `place` (a folder, or the trash) with the tree's `rows`.
+    // Shows `place` (a folder or a page) with the tree's `rows`.
     function arrive(how: string, steps: int, place: string, rows: var) {
         if (how === "visit")
             history = Navigation.visit(history, place);

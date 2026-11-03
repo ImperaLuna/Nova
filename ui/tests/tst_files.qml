@@ -7,6 +7,7 @@ import "../files/listing.js" as Listing
 import "../files/paths.js" as Paths
 import "../files/navigation.js" as Navigation
 import "../files/trash.js" as Trash
+import "../files/home.js" as Home
 import "../daemon/protocol.js" as Protocol
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
@@ -519,6 +520,92 @@ Item {
             };
         }
 
+        function test_the_home_page_is_a_page_with_one_part() {
+            verify(Home.isHome(Protocol.FILES_HOME_PLACE));
+            verify(Home.isPage(Protocol.FILES_HOME_PLACE) && Home.isPage(Protocol.FILES_TRASH_PLACE));
+            verify(!Home.isPage("/home/ana"), "a folder isn't a page");
+            compare(names(Home.crumbs()), ["Home"]);
+        }
+
+        function test_places_read_by_kind_and_pins_by_their_name() {
+            const places = [
+                {
+                    kind: Protocol.PLACE_HOME,
+                    path: Protocol.FILES_HOME_PLACE
+                },
+                {
+                    kind: Protocol.PLACE_DOWNLOADS,
+                    path: "/home/ana/Downloads",
+                    name: "Downloads"
+                },
+                {
+                    kind: Protocol.PLACE_FOLDER,
+                    path: "/home/ana/Projects/Nova",
+                    name: "Work"
+                },
+                {
+                    kind: Protocol.PLACE_TRASH,
+                    path: Protocol.FILES_TRASH_PLACE
+                }
+            ];
+            compare(places.map(place => Home.look(place).name), ["Home", "Downloads", "Work", "Trash"]);
+            compare(places.map(place => Home.look(place).icon), [Icons.HOME, Icons.DOWNLOAD, Icons.FOLDER, Icons.TRASH]);
+            compare(Home.pinned(places).map(place => place.path), ["/home/ana/Downloads", "/home/ana/Projects/Nova"]);
+            verify(Home.pinnedIn(places, "/home/ana/Projects/Nova"));
+            verify(!Home.pinnedIn(places, "/home/ana"), "Home's folder isn't pinned");
+            verify(!Home.pinnedIn(places, Protocol.FILES_TRASH_PLACE), "the trash is no pin");
+        }
+
+        function test_a_drive_says_how_much_is_free() {
+            const gigabyte = 1024 * 1024 * 1024;
+            const drive = {
+                id: "sdb1",
+                name: "SANDISK",
+                removable: true,
+                mount: "/run/media/ana/SANDISK",
+                size: 64 * gigabyte,
+                used: 16 * gigabyte
+            };
+            verify(Home.measured(drive));
+            compare(Home.fill(drive), 0.25);
+            compare(Home.free(drive), "48 GB free of 64 GB");
+            const unmounted = {
+                id: "sdc1",
+                name: "Backup",
+                removable: true,
+                size: 1e12
+            };
+            verify(!Home.measured(unmounted));
+            compare([Home.fill(unmounted), Home.free(unmounted)], [0, ""], "nothing to say while it isn't mounted");
+        }
+
+        function test_a_recent_file_is_a_row_with_where_and_when() {
+            const row = Home.recentRow({
+                folder: "/home/ana/Documents",
+                used_ms: Date.UTC(2026, 10, 2, 8, 30),
+                entry: {
+                    name: "plan.md",
+                    dir: false,
+                    link: false,
+                    hidden: false,
+                    mime: "text/markdown",
+                    size: 2048,
+                    modified_ms: Date.UTC(2026, 10, 1, 9)
+                }
+            });
+            compare([row.name, row.folder, row.used, row.size], ["plan.md", "/home/ana/Documents", Date.UTC(2026, 10, 2, 8, 30), 2048]);
+            compare(Home.recentRow({
+                folder: "/",
+                entry: {
+                    name: "x",
+                    dir: false,
+                    link: false,
+                    hidden: false,
+                    mime: "text/plain"
+                }
+            }).used, -1, "no time in the list");
+        }
+
         function test_the_trash_is_a_place_with_one_part() {
             verify(Trash.isTrash(Protocol.FILES_TRASH_PLACE));
             verify(!Trash.isTrash("/home/ana"));
@@ -532,10 +619,10 @@ Item {
             compare(Trash.row(Object.assign(trashed("i2", "x", "/"), {
                 deleted_ms: undefined
             })).deleted, -1, "no date in the trash");
-            compare(Trash.location("/home/ana/Documents", "/home/ana"), "~/Documents");
-            compare(Trash.location("/home/ana", "/home/ana"), "~");
-            compare(Trash.location("/home/anabel", "/home/ana"), "/home/anabel");
-            compare(Trash.location("/run/media/ana/SANDISK", ""), "/run/media/ana/SANDISK");
+            compare(Paths.located("/home/ana/Documents", "/home/ana"), "~/Documents");
+            compare(Paths.located("/home/ana", "/home/ana"), "~");
+            compare(Paths.located("/home/anabel", "/home/ana"), "/home/anabel");
+            compare(Paths.located("/run/media/ana/SANDISK", ""), "/run/media/ana/SANDISK");
         }
 
         function test_restore_and_the_footer_follow_the_picked_items() {
