@@ -312,12 +312,12 @@ impl<'a> Connection<'a> {
             }
             // Answered off the connection's thread: the files found are
             // looked at, and a slow drive must not hold up its other requests.
-            Command::FilesSearch { query } => {
-                let query = query.clone();
+            Command::FilesSearch { query, within } => {
+                let (query, within) = (query.clone(), within.clone());
                 return match self.files() {
                     Ok(files) => {
                         let searcher = files.searcher();
-                        Answer::later(move || value(searcher.search(&query)))
+                        Answer::later(move || value(searcher.search(&query, within.as_deref())))
                     }
                     Err(e) => Answer::Now(Outcome::Error(e)),
                 };

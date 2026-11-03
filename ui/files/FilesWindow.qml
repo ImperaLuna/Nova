@@ -9,6 +9,7 @@ import "paths.js" as Paths
 import "tabs.js" as Tabs
 import "drops.js" as Drops
 import "trash.js" as Trash
+import "search.js" as Search
 import "commands.js" as Commands
 import "properties.js" as Props
 import "shortcuts.js" as Shortcuts
@@ -43,6 +44,9 @@ import "../daemon/protocol.js" as Protocol
 // tab behind). Closing the last tab closes the window; a tab torn out of
 // the row asks for a window of its own (`windowRequested`), carrying its
 // history, order and selection.
+// While something is typed in the search field, the search results take
+// the file list's place (SearchResults); moving to another folder empties
+// the field.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
 // window's keys are the table's WINDOW entries (shortcuts.js), and every
@@ -67,6 +71,12 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    readonly property bool searching: search.active && !inTrash
+    readonly property SearchModel search: SearchModel {
+        service: FilesService
+        query: navigation.query
+        within: results.everywhere ? "" : window.folder
+    }
     // The archive the folder is inside, or empty.
     readonly property string archive: list.model.archive
     // The archive "Extract all" extracts: the one the window is in, or the
@@ -156,7 +166,9 @@ FloatingWindow {
             navigation.editAddress();
             break;
         case Commands.SEARCH:
-            navigation.editSearch();
+            // The trash isn't searched.
+            if (!inTrash)
+                navigation.focusSearch();
             break;
         case Commands.REFRESH:
             if (inTrash)
@@ -468,6 +480,28 @@ FloatingWindow {
         ]);
     }
 
+    // Opens a search result (a Search.row): a folder is gone into, a file
+    // opens in its default app.
+    function openResult(row: var) {
+        if (row.dir)
+            navigator.visit(Search.path(row), ok => {
+                if (ok)
+                    list.forceActiveFocus();
+            });
+        else
+            FilesService.launch(Search.path(row), "", null);
+    }
+
+    // Shows a search result in its folder, selected.
+    function showResult(row: var) {
+        navigator.visit(row.folder, ok => {
+            if (!ok)
+                return;
+            navigation.clearSearch();
+            list.reveal(row.name);
+        });
+    }
+
     Component.onCompleted: {
         askForBlur();
         if (carried) {
@@ -482,7 +516,10 @@ FloatingWindow {
             navigator.begin(folder);
         }
     }
-    onFolderChanged: detailsPath = ""
+    onFolderChanged: {
+        navigation.clearSearch();
+        detailsPath = "";
+    }
     onConfirmingChanged: {
         if (confirming)
             confirmDialog.shown = confirming.asking;
@@ -599,8 +636,14 @@ FloatingWindow {
         anchors.top: tabRow.bottom
         navigator: window.navigator
         solid: FilesService.frameSolid
+        canSearch: !window.inTrash
         onAddressClosed: window.focusList()
-        onSearchClosed: window.focusList()
+        onSearchLeft: {
+            if (window.searching)
+                results.focusResults();
+            else
+                window.focusList();
+        }
     }
     CommandRow {
         id: commands
@@ -647,7 +690,7 @@ FloatingWindow {
         anchors.right: details.visible ? details.left : preview.active ? preview.left : parent.right
         compact: details.visible || preview.active
         anchors.top: commands.bottom
-        visible: !window.inTrash
+        visible: !window.inTrash && !window.searching
         anchors.bottom: parent.bottom
         folder: window.folder
         select: window.select
@@ -666,6 +709,24 @@ FloatingWindow {
             window.openMenu(items, list, at);
         }
         solid: FilesService.listSolid
+    }
+    SearchResults {
+        id: results
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: commands.bottom
+        anchors.bottom: parent.bottom
+        visible: window.searching
+        model: window.search
+        folder: window.folder
+        home: window.home
+        solid: FilesService.listSolid
+        onOpened: row => window.openResult(row)
+        onLocationOpened: row => window.showResult(row)
+        onClosed: {
+            navigation.clearSearch();
+            list.forceActiveFocus();
+        }
     }
     Loader {
         id: preview

@@ -60,7 +60,7 @@ impl Files {
         // Searches run off the connection's thread, so one typed while the
         // index is still being built waits for it rather than finding nothing.
         searcher.wait_ready(INDEX_WAIT);
-        let found = searcher.search_up_to(query, MAX_MATCHES)?;
+        let found = searcher.search_up_to(query, None, MAX_MATCHES)?;
         Ok(found
             .results
             .into_iter()

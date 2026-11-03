@@ -137,6 +137,7 @@ expression: all
 {"v":2,"event":"files_page","data":{"view":1,"path":"/home/user/Pictures","start":0,"total":2,"entries":[{"name":"Screenshots","dir":true,"link":false,"hidden":false,"mime":"inode/directory","modified_ms":1793000000000},{"name":"cover.png","dir":false,"link":false,"hidden":false,"mime":"image/png","size":48213,"modified_ms":1792900000000}]}}
 {"v":2,"event":"files_changed","data":{"view":1,"changes":[{"op":"remove","index":1},{"op":"insert","index":1,"entry":{"name":"cover (2).png","dir":false,"link":false,"hidden":false,"mime":"image/png","size":48213,"modified_ms":1793000100000}},{"op":"update","index":0,"entry":{"name":"Screenshots","dir":true,"link":true,"hidden":false,"mime":"inode/directory"}}]}}
 {"v":2,"event":"files_closed","data":{"view":1,"error":"/home/user/Pictures doesn't exist"}}
+{"v":2,"event":"files_search_ready"}
 {"v":2,"event":"files_look","data":{"frame":0,"list":100}}
 {"v":2,"event":"files_drives","data":{"drives":[{"id":"nvme0n1p2","name":"System","removable":false,"mount":"/","size":1000000000000,"used":580000000000},{"id":"sdb1","name":"SANDISK","removable":true,"size":32000000000}]}}
 {"v":2,"id":79,"cmd":"files_mount","args":{"drive":"sdb1"}}
@@ -158,8 +159,8 @@ expression: all
 {"v":2,"id":89,"result":{"cut":false,"kind":"text","text":"# Notes\nBuy milk"}}
 {"v":2,"id":90,"result":{"kind":"image","path":"/home/user/.cache/nova/previews/00c0ffee00c0ffee.png"}}
 {"v":2,"id":91,"result":{"kind":"none"}}
-{"v":2,"id":81,"cmd":"files_search","args":{"query":"crimson"}}
-{"v":2,"id":81,"result":{"ready":true,"results":[{"entry":{"dir":true,"hidden":false,"link":false,"mime":"inode/directory","modified_ms":1793000000000,"name":"Crimson Desert"},"folder":"/home/user/.local/share/Steam/steamapps/common","in_hidden_folder":true,"marks":[{"length":7,"start":0}]}],"total":1}}
+{"v":2,"id":81,"cmd":"files_search","args":{"query":"crimson","within":"/home/user/.local/share/Steam"}}
+{"v":2,"id":81,"result":{"ready":true,"results":[{"entry":{"dir":true,"hidden":false,"link":false,"mime":"inode/directory","modified_ms":1793000000000,"name":"Crimson Desert"},"folder":"/home/user/.local/share/Steam/steamapps/common","in_hidden_folder":false,"marks":[{"length":7,"start":0}]}],"total":1}}
 {"v":2,"id":82,"cmd":"files_new_folder","args":{"folder":"/home/user/Pictures"}}
 {"v":2,"id":82,"result":"New folder (2)"}
 {"v":2,"id":83,"cmd":"files_rename","args":{"path":"/home/user/Pictures/New folder","name":"Trips"}}

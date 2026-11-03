@@ -158,6 +158,10 @@ pub enum Event {
     /// (feature `files`): ask `files_trash_list` again. Topic
     /// [`Topic::Files`].
     FilesTrashChanged,
+    /// novad's index of file names is built (feature `files`), so a
+    /// `files_search` that answered `ready: false` can be asked again.
+    /// Topic [`Topic::Files`].
+    FilesSearchReady,
     /// The drives Nova Files' sidebar lists (feature `files`): every
     /// filesystem udisks2 knows that a person would open, as it is now.
     /// Topic [`Topic::Files`], sent right after subscribing and whenever a
@@ -243,6 +247,7 @@ impl Event {
             | Event::FilesChanged { .. }
             | Event::FilesClosed { .. }
             | Event::FilesTrashChanged
+            | Event::FilesSearchReady
             | Event::FilesTransfer(_)
             | Event::FilesMeasured(_)
             | Event::FilesDrives { .. }
@@ -2137,10 +2142,13 @@ pub enum Command {
     },
     /// Finds files by name (feature `files`): every name under Home and
     /// the drives holding each word of `query`, case aside, hidden folders
-    /// included. Answered with a [`FileSearch`] from novad's index, without
-    /// reading folders.
+    /// included; only those below the folder `within` (absolute, wire
+    /// text) when it's given. Answered with a [`FileSearch`] from novad's
+    /// index, without reading folders.
     FilesSearch {
         query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        within: Option<String>,
     },
     /// Makes a folder in the folder `folder` (absolute, feature `files`),
     /// called "New folder", or "New folder (2)" and on when that's taken,
@@ -2445,6 +2453,10 @@ pub struct FileSearch {
     /// each, names that aren't hidden (themselves or by a folder they're
     /// in) first, then shorter names.
     pub results: Vec<FoundFile>,
+    /// `within` was a folder the index holds nothing below (`/etc`), so
+    /// everywhere was searched instead.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub everywhere: bool,
 }
 
 /// A file a search found ([`FileSearch`]).
@@ -2454,7 +2466,8 @@ pub struct FoundFile {
     /// The folder it's in, an absolute path, as wire text ([`wire_text`]).
     pub folder: String,
     pub entry: FileEntry,
-    /// A folder it's in is hidden (its own name is `entry.hidden`).
+    /// A folder it's in is hidden (its own name is `entry.hidden`); with
+    /// `within`, only folders below that one count.
     pub in_hidden_folder: bool,
     /// Where the query's words are in its name, in order.
     pub marks: Vec<TextMark>,
@@ -3570,6 +3583,7 @@ mod tests {
                 ],
             }),
             encode(Event::FilesClosed { view: 1, error: "/home/user/Pictures doesn't exist".into() }),
+            encode(Event::FilesSearchReady),
             encode(Event::FilesLook(FilesLook { frame: 0, list: 100 })),
             encode(Event::FilesDrives {
                 drives: vec![
@@ -3657,12 +3671,19 @@ mod tests {
                 ),
             }),
             encode(Response { id: 91, outcome: Outcome::Result(serde_json::to_value(FilePreview::None).unwrap()) }),
-            encode(Request { id: Some(81), command: Command::FilesSearch { query: "crimson".into() } }),
+            encode(Request {
+                id: Some(81),
+                command: Command::FilesSearch {
+                    query: "crimson".into(),
+                    within: Some("/home/user/.local/share/Steam".into()),
+                },
+            }),
             encode(Response {
                 id: 81,
                 outcome: Outcome::Result(
                     serde_json::to_value(FileSearch {
                         ready: true,
+                        everywhere: false,
                         total: 1,
                         results: vec![FoundFile {
                             folder: "/home/user/.local/share/Steam/steamapps/common".into(),
@@ -3676,7 +3697,7 @@ mod tests {
                                 size: None,
                                 modified_ms: Some(1_793_000_000_000),
                             },
-                            in_hidden_folder: true,
+                            in_hidden_folder: false,
                             marks: vec![TextMark { start: 0, length: 7 }],
                         }],
                     })

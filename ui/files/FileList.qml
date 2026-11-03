@@ -229,6 +229,27 @@ FocusScope {
         renaming = "";
         typing.text = "";
     }
+
+    // Selects the entry `name` and moves to it: one search result shown
+    // in its folder. A dot file shows hidden files first, so it's listed.
+    function reveal(name: string) {
+        if (name.startsWith("."))
+            showHidden = true;
+        model.selectNames([name]);
+        let found = false;
+        for (let index = 0; index < model.rows.count && !found; index++) {
+            found = model.rows.get(index).name === name;
+            if (found) {
+                entryList.currentIndex = index;
+                entryList.positionViewAtIndex(index, ListView.Contain);
+            }
+        }
+        // On a page still to come: the list moves to it when it comes.
+        if (!found && model.loaded)
+            model._seeking = true;
+        entryList.forceActiveFocus();
+    }
+
     Component.onCompleted: {
         const prefix = Paths.child(folder, "");
         model.selectNames(select.filter(path => path.startsWith(prefix) && !path.slice(prefix.length).includes("/")).map(path => path.slice(prefix.length)));

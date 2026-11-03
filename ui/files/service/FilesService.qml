@@ -12,7 +12,7 @@ import "../trash.js" as Trash
 // places, the drives (and mounting and ejecting them), opening files in
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, the
-// trash, new folders, renaming, an item's details, the Properties
+// trash, finding files by name, new folders, renaming, an item's details, the Properties
 // window's facts, sizes and access, and the preview pane's previews. The
 // Nova Files process (../../files.qml) and its windows get these here and
 // never talk to Daemon themselves. Also how solid the windows are, from
@@ -85,6 +85,9 @@ Singleton {
 
     // Something in the trash changed: ask trashList again.
     signal trashChanged
+    // novad's index of file names is built: a search that found nothing
+    // because it wasn't can be asked again.
+    signal searchReady
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
@@ -189,6 +192,24 @@ Singleton {
             if (error)
                 console.warn(`nova: sidebar places: ${error}`);
             done(error ? [] : result);
+        });
+    }
+
+    // Finds files by name: `done(found)` gets novad's answer ({ready,
+    // total, results}, see Protocol's FileSearch) for `query`, below the
+    // folder `within` (absolute) or everywhere when it's "", or null when
+    // novad couldn't search.
+    function search(query: string, within: string, done: var) {
+        const args = within !== "" ? {
+            query: query,
+            within: within
+        } : {
+            query: query
+        };
+        Daemon.call(Protocol.CMD_FILES_SEARCH, args, (error, result) => {
+            if (error)
+                console.warn(`nova: searching for ${query}: ${error}`);
+            done(error ? null : result);
         });
     }
 
@@ -459,6 +480,9 @@ Singleton {
         }
         function onFilesTransferChanged(transfer: var) {
             root.transferChanged(transfer);
+        }
+        function onFilesSearchReady() {
+            root.searchReady();
         }
         function onFilesMeasured(measured: var) {
             root.measured(measured);
