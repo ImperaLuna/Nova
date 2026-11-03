@@ -620,7 +620,10 @@ FloatingWindow {
     }
     // A game's menu doesn't outlive the games.
     onInGamesChanged: gameMenu.close()
-    onFolderChanged: navigation.clearSearch()
+    onFolderChanged: {
+        navigation.clearSearch();
+        detailsPath = "";
+    }
     onClosed: {
         if (picking && !answered)
             FilesService.cancelPick(picker.id);
@@ -649,7 +652,6 @@ FloatingWindow {
         enabled: window.picking && !window.confirming && !navigation.editing
         onActivated: window.closed()
     }
-    onFolderChanged: detailsPath = ""
     onConfirmingChanged: {
         if (confirming)
             confirmDialog.shown = confirming.asking;
