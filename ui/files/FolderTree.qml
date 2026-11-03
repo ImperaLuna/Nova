@@ -42,9 +42,6 @@ ListView {
     // The menu of the folder `path` was asked for at `at` (in the window).
     signal menuRequested(string path, point at)
 
-    // The menu of the folder `path` was asked for at `at` (in the window).
-    signal menuRequested(string path, point at)
-
     // The place under (x, y) in the tree's own coordinates, for a
     // DropTarget: a closed folder with folders in it opens by resting on it.
     function placeAt(x: real, y: real): var {
