@@ -42,6 +42,10 @@ Singleton {
     // arrives, which only happens with the files feature on. Read it
     // through the FilesService singleton.
     property var filesLook: null
+    // The latest files_history event's data ({undo, redo}, each a
+    // Protocol.FILE_STEP_* or absent); null until one arrives. Read it
+    // through the FilesService singleton.
+    property var filesHistory: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
     // novad's word on whether the session is locked. Read it through the
     // LockService singleton, which also hears lockRequested.
@@ -228,6 +232,8 @@ Singleton {
             filesClosed(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_LOOK) {
             filesLook = msg.data;
+        } else if (msg.event === Protocol.EVENT_FILES_HISTORY) {
+            filesHistory = msg.data;
         } else if (msg.event === Protocol.EVENT_FILES_DRIVES) {
             filesDrives = msg.data.drives;
         } else if (msg.event === Protocol.EVENT_FILES_TRANSFER) {

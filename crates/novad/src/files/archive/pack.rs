@@ -4,7 +4,7 @@
 //! plain zip is written as zip64. Devices and pipes are left out.
 
 use std::fs::{self, File, Metadata};
-use std::io::{self, Read, Seek, Write};
+use std::io::{self, BufWriter, Read, Seek, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use zip::write::SimpleFileOptions;
@@ -18,14 +18,15 @@ const ZIP64_BYTES: u64 = u32::MAX as u64;
 /// Writes a zip of `sources` to `out`. `progress` hears each chunk's
 /// bytes, and answers false to stop; then this answers false.
 pub fn pack<W: Write + Seek>(sources: &[&Path], out: W, progress: &mut dyn FnMut(u64) -> bool) -> io::Result<bool> {
-    let mut zip = ZipWriter::new(out);
+    // Headers and deflate's output come in small writes.
+    let mut zip = ZipWriter::new(BufWriter::new(out));
     for source in sources {
         let Some(name) = source.file_name() else { continue };
-        if !add(&mut zip, source, &name.to_string_lossy(), progress)? {
+        if !add(&mut zip, source, utf8(name)?, progress)? {
             return Ok(false);
         }
     }
-    zip.finish().map_err(io::Error::other)?;
+    zip.finish().map_err(io::Error::other)?.flush()?;
     Ok(true)
 }
 
@@ -36,12 +37,16 @@ fn add<W: Write + Seek>(
     name: &str,
     progress: &mut dyn FnMut(u64) -> bool,
 ) -> io::Result<bool> {
+    // Checked before each item, so a tree of empty files stops too.
+    if !progress(0) {
+        return Ok(false);
+    }
     let meta = fs::symlink_metadata(path)?;
     let options = options(&meta);
     let kind = meta.file_type();
     if kind.is_symlink() {
         let target = fs::read_link(path)?;
-        zip.add_symlink(name, target.to_string_lossy(), options).map_err(io::Error::other)?;
+        zip.add_symlink(name, utf8(target.as_os_str())?, options).map_err(io::Error::other)?;
     } else if kind.is_dir() {
         zip.add_directory(format!("{name}/"), options).map_err(io::Error::other)?;
         let mut children: Vec<_> =
@@ -49,7 +54,7 @@ fn add<W: Write + Seek>(
         // The same zip from the same folder.
         children.sort();
         for child in children {
-            let inner = format!("{name}/{}", child.to_string_lossy());
+            let inner = format!("{name}/{}", utf8(&child)?);
             if !add(zip, &path.join(&child), &inner, progress)? {
                 return Ok(false);
             }
@@ -72,6 +77,14 @@ fn add<W: Write + Seek>(
         }
     }
     Ok(true)
+}
+
+/// `name` as the UTF-8 a zip stores; a name that isn't is refused rather
+/// than packed under another one.
+fn utf8(name: &std::ffi::OsStr) -> io::Result<&str> {
+    name.to_str().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidData, format!("{} has a name a zip can't keep", name.to_string_lossy()))
+    })
 }
 
 /// How an item with `meta` is stored: deflated, with its permissions and

@@ -299,6 +299,35 @@ fn the_trash_is_used_and_followed_over_the_socket() {
     assert!(client.request(9, "files_delete", Some(missing))["error"].as_str().unwrap().contains("doesn't exist"));
 }
 
+/// Undo and redo over the socket: a trashing undone and redone, with
+/// `files_history` saying what Ctrl+Z and Ctrl+Y would do. The history's
+/// own tests cover copies and moves.
+#[test]
+fn a_trashing_is_undone_and_redone_over_the_socket() {
+    let novad = TestDaemon::open("files-undo", None, |dir| {
+        std::fs::write(dir.join("config/features.toml"), "enabled = [\"files\"]\n").unwrap()
+    });
+    let folder = nova_test_support::TempDir::new("files-socket-undo");
+    let notes = folder.join("notes.txt");
+    std::fs::write(&notes, b"hi").unwrap();
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["files"]})));
+    assert_eq!(client.next_event("files_history"), json!({}));
+
+    let paths = json!({"paths": [notes.to_str().unwrap()]});
+    assert_eq!(client.request(2, "files_trash", Some(paths))["result"], Value::Null);
+    assert_eq!(client.next_event("files_history"), json!({"undo": "trash"}));
+    assert_eq!(client.request(3, "files_undo", Some(json!({"job": 1})))["result"], json!(false));
+    assert!(notes.exists());
+    // While a step runs it's on neither stack.
+    assert_eq!(client.next_event("files_history"), json!({}));
+    assert_eq!(client.next_event("files_history"), json!({"redo": "trash"}));
+    assert_eq!(client.request(4, "files_redo", Some(json!({"job": 2})))["result"], json!(false));
+    assert!(!notes.exists());
+    assert_eq!(client.next_event("files_history"), json!({}));
+    assert_eq!(client.next_event("files_history"), json!({"undo": "trash"}));
+}
+
 #[test]
 fn folder_views_need_their_feature() {
     let novad = TestDaemon::start("files-off", None);

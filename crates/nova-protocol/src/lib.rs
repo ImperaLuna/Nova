@@ -200,6 +200,17 @@ pub enum Event {
     /// turned off. Its window closes. Sent only to the Nova Files process;
     /// topic [`Topic::Files`].
     FilesPickerClosed { picker: u32 },
+    /// What Ctrl+Z and Ctrl+Y would do now in any Nova Files window
+    /// (feature `files`): the kind of step each would undo or redo, none
+    /// when there's nothing. novad keeps one history for the session.
+    /// Topic [`Topic::Files`], sent right after subscribing and whenever
+    /// either changes.
+    FilesHistory {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        undo: Option<FileStep>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        redo: Option<FileStep>,
+    },
 }
 
 /// Groups of events a client can subscribe to.
@@ -264,7 +275,8 @@ impl Event {
             | Event::FilesTransfer(_)
             | Event::FilesMeasured(_)
             | Event::FilesDrives { .. }
-            | Event::FilesThumbnail { .. } => Some(Topic::Files),
+            | Event::FilesThumbnail { .. }
+            | Event::FilesHistory { .. } => Some(Topic::Files),
             Event::FilesLook(_) | Event::FilesPickerClosed { .. } => Some(Topic::Files),
         }
     }
@@ -2170,6 +2182,18 @@ pub enum Command {
         sources: Vec<String>,
         folder: String,
     },
+    /// What dropping `sources` (absolute paths, wire text) on the folder
+    /// `folder` does (feature `files`), answered with a [`TransferMode`],
+    /// or null when nothing can be dropped there, as Explorer decides: on
+    /// the folder's drive it moves, onto another it copies, and `copy`
+    /// (Ctrl) copies anyway. A folder never goes into itself or one of its
+    /// own folders, and a move into the folder the items are in does
+    /// nothing. Nothing is touched: `files_transfer` does the drop.
+    FilesDrop {
+        sources: Vec<String>,
+        folder: String,
+        copy: bool,
+    },
     /// Stops this connection's job `job`. What it already copied or moved
     /// stays; a file it was halfway through is removed.
     FilesTransferCancel {
@@ -2187,9 +2211,26 @@ pub enum Command {
     /// Moves the items at `paths` (absolute) to the trash (feature
     /// `files`), each to its own drive's, as the freedesktop Trash spec
     /// says, so other apps see them. All are tried; the error names those
-    /// that weren't moved.
+    /// that weren't moved. One trashing is one step to undo; with
+    /// `continues`, these paths join the step the previous `files_trash`
+    /// started (a selection too big for one request).
     FilesTrash {
         paths: Vec<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        continues: bool,
+    },
+    /// Undoes the last copy, move or trashing done in Nova Files this
+    /// session (feature `files`, Ctrl+Z), answered with whether it started
+    /// a move as this connection's job `job`, which then reports like a
+    /// `files_transfer`. Anything else is undone before the answer; with
+    /// nothing to undo, nothing happens. See [`Event::FilesHistory`].
+    FilesUndo {
+        job: u32,
+    },
+    /// Does the last undone step again (feature `files`, Ctrl+Y), answered
+    /// like [`Command::FilesUndo`].
+    FilesRedo {
+        job: u32,
     },
     /// Deletes the items at `paths` (absolute) for good, folders with all
     /// they hold (feature `files`, Shift+Delete).
@@ -2236,6 +2277,24 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         within: Option<String>,
     },
+    /// Makes a folder in the folder `folder` (absolute, feature `files`),
+    /// called "New folder", or "New folder (2)" and on when that's taken,
+    /// and answers with its name as wire text.
+    FilesNewFolder {
+        folder: String,
+    },
+    /// Renames the item at `path` (absolute) to `name`, in the same folder
+    /// (feature `files`), and answers with the new name as wire text. A
+    /// name taken by another item is refused, never replaced.
+    FilesRename {
+        path: String,
+        name: String,
+    },
+    /// What the details pane shows about the item at `path` (absolute,
+    /// feature `files`), answered with a [`FileDetails`].
+    FilesDetails {
+        path: String,
+    },
     /// What the preview pane shows for the file at `path` (absolute, wire
     /// text; feature `files`), answered with a [`FilePreview`]. Pictures of
     /// a PDF's first page or a video's frame are drawn into novad's cache
@@ -2254,7 +2313,8 @@ pub enum Command {
     /// this connection's job `job` (feature `files`): the Properties
     /// window's size. Answered once the job is started, without touching
     /// the disk; the counts follow as [`Event::FilesMeasured`]s. Links
-    /// aren't followed, and folders that can't be read are skipped. A job
+    /// aren't followed, other drives mounted inside an item aren't
+    /// counted, and folders that can't be read are skipped. A job
     /// ends by itself when its connection closes.
     FilesMeasure {
         job: u32,
@@ -2573,6 +2633,33 @@ pub struct TrashItem {
     pub entry: FileEntry,
 }
 
+/// The answer to [`Command::FilesDetails`]: one item, as the details
+/// pane shows it. Times are in milliseconds since 1970, when the file
+/// system keeps them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileDetails {
+    pub entry: FileEntry,
+    /// How many items a folder holds; none for a file, or a folder that
+    /// can't be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accessed_ms: Option<i64>,
+    /// Its owner's and group's names, or their numbers when the user
+    /// database has no name for them.
+    pub owner: String,
+    pub group: String,
+    /// Its permission bits (`0o755`): owner, group, others.
+    pub mode: u32,
+}
+
+/// The longest name `files_rename` takes, in bytes: Linux file systems'
+/// `NAME_MAX`.
+pub const FILES_NAME_MAX_BYTES: usize = 255;
+
 /// The answer to [`Command::FilesSearch`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2699,6 +2786,22 @@ pub enum FolderChange {
     Remove { index: u32 },
     /// The entry at `index` changed and keeps its place.
     Update { index: u32, entry: FileEntry },
+}
+
+/// A kind of step Nova Files can undo and redo ([`Event::FilesHistory`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileStep {
+    /// Copies made; undone, they go to the trash.
+    Copy,
+    /// Items moved; undone, they move back.
+    Move,
+    /// Items moved to the trash; undone, they're restored.
+    Trash,
+    /// An item renamed; undone, it gets its old name back.
+    Rename,
+    /// A new folder; undone, it goes to the trash.
+    NewFolder,
 }
 
 /// What a `files_transfer` job does with its items.
@@ -3775,17 +3878,27 @@ mod tests {
                 error: None,
             })),
             encode(Request {
-                id: Some(82),
+                id: Some(102),
+                command: Command::FilesTrash { paths: vec!["/home/user/Pictures/cover.png".into()], continues: true },
+            }),
+            encode(Request { id: Some(103), command: Command::FilesUndo { job: 3 } }),
+            encode(Response { id: 103, outcome: Outcome::Result(json!(true)) }),
+            encode(Request { id: Some(104), command: Command::FilesRedo { job: 4 } }),
+            encode(Event::FilesHistory { undo: Some(FileStep::Move), redo: Some(FileStep::Trash) }),
+            encode(Event::FilesHistory { undo: Some(FileStep::Copy), redo: None }),
+            encode(Event::FilesHistory { undo: Some(FileStep::Rename), redo: Some(FileStep::NewFolder) }),
+            encode(Request {
+                id: Some(89),
                 command: Command::FilesPreview { path: "/home/user/Documents/notes.md".into() },
             }),
             encode(Response {
-                id: 82,
+                id: 89,
                 outcome: Outcome::Result(
                     serde_json::to_value(FilePreview::Text { text: "# Notes\nBuy milk".into(), cut: false }).unwrap(),
                 ),
             }),
             encode(Response {
-                id: 83,
+                id: 90,
                 outcome: Outcome::Result(
                     serde_json::to_value(FilePreview::Image {
                         path: "/home/user/.cache/nova/previews/00c0ffee00c0ffee.png".into(),
@@ -3827,9 +3940,43 @@ mod tests {
                     .unwrap(),
                 ),
             }),
-            encode(Request { id: Some(82), command: Command::FilesProperties { path: "/home/user/notes.txt".into() } }),
+            encode(Request { id: Some(82), command: Command::FilesNewFolder { folder: "/home/user/Pictures".into() } }),
+            encode(Response { id: 82, outcome: Outcome::Result(json!("New folder (2)")) }),
+            encode(Request {
+                id: Some(83),
+                command: Command::FilesRename { path: "/home/user/Pictures/New folder".into(), name: "Trips".into() },
+            }),
+            encode(Request {
+                id: Some(84),
+                command: Command::FilesDetails { path: "/home/user/Pictures/Trips".into() },
+            }),
             encode(Response {
-                id: 82,
+                id: 84,
+                outcome: Outcome::Result(
+                    serde_json::to_value(FileDetails {
+                        entry: FileEntry {
+                            name: "Trips".into(),
+                            dir: true,
+                            link: false,
+                            hidden: false,
+                            archive: false,
+                            mime: "inode/directory".into(),
+                            size: None,
+                            modified_ms: Some(1_793_000_000_000),
+                        },
+                        items: Some(12),
+                        created_ms: Some(1_792_000_000_000),
+                        accessed_ms: Some(1_793_600_000_000),
+                        owner: "user".into(),
+                        group: "users".into(),
+                        mode: 0o755,
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Request { id: Some(85), command: Command::FilesProperties { path: "/home/user/notes.txt".into() } }),
+            encode(Response {
+                id: 85,
                 outcome: Outcome::Result(
                     serde_json::to_value(FileProperties {
                         folder: "/home/user".into(),
@@ -3861,10 +4008,10 @@ mod tests {
                 ),
             }),
             encode(Request {
-                id: Some(83),
+                id: Some(86),
                 command: Command::FilesMeasure { job: 4, paths: vec!["/home/user/Pictures".into()] },
             }),
-            encode(Request { id: Some(84), command: Command::FilesMeasureCancel { job: 4 } }),
+            encode(Request { id: Some(87), command: Command::FilesMeasureCancel { job: 4 } }),
             encode(Event::FilesMeasured(Measured {
                 job: 4,
                 files: 120,
@@ -3874,7 +4021,7 @@ mod tests {
                 done: false,
             })),
             encode(Request {
-                id: Some(85),
+                id: Some(88),
                 command: Command::FilesSetAccess { path: "/home/user/run.sh".into(), access: Access::default() },
             }),
             encode(Request {

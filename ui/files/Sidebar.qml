@@ -4,6 +4,7 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 import "service"
+import "drops.js" as Drops
 import "home.js" as Home
 
 // Nova Files' sidebar: the places first (a click goes there): the Home
@@ -14,9 +15,10 @@ import "home.js" as Home
 // pinned folder or a tree row asks for the menu that pins or unpins it.
 // A drive clicked is opened by the window (`driveOpened`), showing what
 // uses space on it; when the drive the window is on goes away, it goes to
-// the home folder.
-// A middle click on a place or a tree folder asks for it in a new tab
-// (`tabRequested`).
+// the home folder. Files dragged onto a place, a mounted drive or a folder
+// in the tree drop there (onto the trash, into the trash), and a tree
+// folder drags out; the places themselves stay put. A middle click on a
+// place or a tree folder asks for it in a new tab (`tabRequested`).
 Item {
     id: sidebar
 
@@ -30,6 +32,8 @@ Item {
     signal pinMenuRequested(string path, point at)
     // The drive `id` was clicked: the window opens it.
     signal driveOpened(string id)
+    // A drop asks for `action` (a Protocol.TRANSFER_* mode or Drops.TRASH) on `sources` into `folder`.
+    signal dropRequested(string action, var sources, string folder)
 
     // The places and drives scroll once they'd take more than their share
     // of the sidebar (many pins), so the tree under them keeps its room.
@@ -65,7 +69,7 @@ Item {
                     width: parent.width
                     height: Tokens.filesPlaceHeight
                     radius: Tokens.menuRowRadius
-                    color: current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
+                    color: placeDrops.action !== Drops.NONE ? Tokens.filesDropTarget : current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
 
                     Behavior on color {
                         ColorAnimation {
@@ -126,6 +130,13 @@ Item {
                         acceptedButtons: Qt.MiddleButton
                         onTapped: sidebar.tabRequested(place.modelData.path)
                     }
+                    DropTarget {
+                        id: placeDrops
+                        anchors.fill: parent
+                        service: FilesService
+                        folderAt: () => Drops.place(place.modelData.path, false)
+                        onDropRequested: (action, sources, folder) => sidebar.dropRequested(action, sources, folder)
+                    }
                 }
             }
 
@@ -150,6 +161,7 @@ Item {
                 onOpened: id => sidebar.driveOpened(id)
                 onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
                 onDriveGone: sidebar.navigator.visit("~", null)
+                onDropRequested: (action, sources, folder) => sidebar.dropRequested(action, sources, folder)
             }
         }
     }
@@ -167,6 +179,7 @@ Item {
     }
 
     FolderTree {
+        id: tree
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: rule.bottom
@@ -178,5 +191,18 @@ Item {
         navigator: sidebar.navigator
         onTabRequested: path => sidebar.tabRequested(path)
         onMenuRequested: (path, at) => sidebar.pinMenuRequested(path, at)
+        dropFolder: treeDrops.action !== Drops.NONE ? treeDrops.hovered.folder : ""
+        onDragRequested: path => treeDrag.start([path], Icons.FOLDER, Tokens.filesFolder)
+    }
+    DropTarget {
+        id: treeDrops
+        anchors.fill: tree
+        service: FilesService
+        folderAt: (x, y) => tree.placeAt(x, y)
+        onDropRequested: (action, sources, folder) => sidebar.dropRequested(action, sources, folder)
+        onSpringOpened: folder => sidebar.navigator.toggle(folder, false)
+    }
+    FileDrag {
+        id: treeDrag
     }
 }

@@ -539,6 +539,12 @@ Item {
                 }
             })
 
+        function test_a_file_url_keeps_raw_bytes_and_escapes_the_rest() {
+            const eAcute = String.fromCodePoint(Protocol.RAW_BYTE_BASE + 0xE9);
+            compare(Paths.fileUrl(`/mnt/old/caf${eAcute}.png`), "file:///mnt/old/caf%E9.png");
+            compare(Paths.fileUrl("/home/ana/#1 café.png"), "file:///home/ana/%231%20caf%C3%A9.png");
+        }
+
         function test_the_preview_pane_previews_one_selected_file() {
             const photo = entry("a.png", {
                 mime: "image/png"

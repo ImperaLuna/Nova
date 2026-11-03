@@ -54,6 +54,9 @@ Rectangle {
     // Puts the keyboard in the search field with what's typed selected:
     // Ctrl+F and F3.
     function focusSearch() {
+        // Closed first: closing the address field gives the keyboard to the
+        // list, which would otherwise take it back from the search field.
+        editing = false;
         searchField.selectAll();
         searchField.forceActiveFocus();
     }
@@ -258,6 +261,10 @@ Rectangle {
                 easing.bezierCurve: Tokens.easing
             }
         }
+
+        border.width: searchField.activeFocus ? Tokens.filesFocusRing : 0
+        border.color: Tokens.primary
+        clip: true
 
         LineIcon {
             id: searchIcon

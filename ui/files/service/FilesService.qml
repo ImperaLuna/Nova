@@ -15,9 +15,10 @@ import "../thumbnails.js" as Thumbnails
 // drives (and mounting and ejecting them), opening files in
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, the
-// trash, the Properties window's facts, sizes and access, the preview
-// pane's previews, thumbnails for the Icons view, finding files by name,
-// and answering the file pickers apps ask for (Open and Save dialogs). The
+// trash, new folders, renaming, an item's details, the Properties
+// window's facts, sizes and access, the preview pane's previews,
+// thumbnails for the Icons view, finding files by name, and answering the
+// file pickers apps ask for (Open and Save dialogs). The
 // Nova Files process (../../files.qml) and its windows get these here and
 // never talk to Daemon themselves. Also how solid the windows are, from
 // config.toml's [files].
@@ -28,6 +29,9 @@ Singleton {
     // also until novad says) to 1 (the theme's solid surfaces).
     readonly property real frameSolid: (Daemon.filesLook?.frame ?? 0) / Protocol.FILES_SOLID_MAX
     readonly property real listSolid: (Daemon.filesLook?.list ?? 0) / Protocol.FILES_SOLID_MAX
+    // What Ctrl+Z and Ctrl+Y would undo and redo now, in any window: {undo,
+    // redo}, each a Protocol.FILE_STEP_* or absent when there's nothing.
+    readonly property var history: Daemon.filesHistory ?? ({})
     // The drives for the sidebar, in its order: {id, name, removable,
     // mount (absent while it isn't mounted), size, used (bytes, while
     // mounted)}.
@@ -113,6 +117,11 @@ Singleton {
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
+
+    // A number for a new copy or move job, never handed out twice.
+    function newJob(): int {
+        return _nextJob++;
+    }
 
     // Tells novad this process opens Nova Files' windows; done again on
     // every connection.
@@ -286,7 +295,7 @@ Singleton {
     // which its transferChanged events carry; `failed(job, error)` gets
     // novad's refusal when it doesn't start, maybe before this returns.
     function transfer(mode: string, sources: var, folder: string, failed: var): int {
-        const job = _nextJob++;
+        const job = newJob();
         Daemon.call(Protocol.CMD_FILES_TRANSFER, {
             job: job,
             mode: mode,
@@ -299,6 +308,21 @@ Singleton {
             }
         });
         return job;
+    }
+
+    // What dropping `sources` (absolute paths) on the folder `folder`
+    // does, Ctrl held when `copy`: `done(mode)` gets a Protocol.TRANSFER_*
+    // mode, or null when nothing can be dropped there (or novad can't tell).
+    function drop(sources: var, folder: string, copy: bool, done: var) {
+        Daemon.call(Protocol.CMD_FILES_DROP, {
+            sources: sources,
+            folder: folder,
+            copy: copy
+        }, (error, mode) => {
+            if (error)
+                console.warn(`nova: dropping into ${folder}: ${error}`);
+            done(error ? null : mode ?? null);
+        });
     }
 
     // Stops job `job`; it then reports it was cancelled.
@@ -319,6 +343,36 @@ Singleton {
         });
     }
 
+    // Makes a new folder in `folder` (absolute). `done(error, name)` gets
+    // novad's answer: the folder's name ("New folder", or numbered).
+    function newFolder(folder: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_NEW_FOLDER, {
+            folder: folder
+        }, (error, name) => root._answered("making a folder", error, error => done?.(error, name ?? "")));
+    }
+
+    // Renames the item at `path` (absolute) to `name`. `done(error, name)`
+    // gets novad's answer: the name it now has.
+    function rename(path: string, name: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_RENAME, {
+            path: path,
+            name: name
+        }, (error, renamed) => root._answered("renaming", error, error => done?.(error, renamed ?? "")));
+    }
+
+    // `done(details)` gets what the details pane shows about the item at
+    // `path` (absolute): {entry, items, created_ms, accessed_ms, owner,
+    // group, mode}, or null when novad couldn't tell.
+    function details(path: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_DETAILS, {
+            path: path
+        }, (error, result) => {
+            if (error)
+                console.warn(`nova: details of ${path}: ${error}`);
+            done(error ? null : result);
+        });
+    }
+
     // How far a measuring job got (see Daemon.filesMeasured).
     signal measured(var measured)
 
@@ -335,21 +389,31 @@ Singleton {
         });
     }
 
-    // Counts what `paths` (absolute) hold, in as many jobs as keep each
-    // request under novad's limit. Returns the jobs' numbers, whose
-    // `measured` events carry them.
-    function measure(paths: var): var {
-        return Trash.batches(paths, Protocol.REQUEST_MAX_BYTES).map(batch => {
-            const job = _nextJob++;
-            Daemon.call(Protocol.CMD_FILES_MEASURE, {
-                job: job,
-                paths: batch
-            }, error => {
-                if (error)
-                    console.warn(`nova: counting sizes: ${error}`);
-            });
-            return job;
+    // Opens another Nova Files window on `folder` (absolute).
+    function openWindow(folder: string) {
+        Daemon.call(Protocol.CMD_SHOW_FOLDER, {
+            folder: folder
+        }, error => {
+            if (error)
+                console.warn(`nova: a window on ${folder}: ${error}`);
         });
+    }
+
+    // Counts what `paths` (absolute, fitting one request) hold. Returns
+    // the job's number, which its `measured` events carry;
+    // `failed(job)` hears when novad refuses to start it.
+    function measure(paths: var, failed: var): int {
+        const job = newJob();
+        Daemon.call(Protocol.CMD_FILES_MEASURE, {
+            job: job,
+            paths: paths
+        }, error => {
+            if (error) {
+                console.warn(`nova: counting sizes: ${error}`);
+                failed?.(job);
+            }
+        });
+        return job;
     }
 
     // Stops measuring job `job`; it sends nothing more.
@@ -368,10 +432,25 @@ Singleton {
         }, error => root._answered("changing access", error, done));
     }
 
-    // Moves `paths` (absolute) to the trash. `done(error)` gets novad's
-    // answer: null, or which ones didn't go.
+    // Moves `paths` (absolute) to the trash, one step to undo however many
+    // requests it takes. `done(error)` gets novad's answer: null, or which
+    // ones didn't go.
     function trash(paths: var, done: var) {
-        _inBatches(Protocol.CMD_FILES_TRASH, "paths", paths, "moving to the trash", done);
+        _inBatches(Protocol.CMD_FILES_TRASH, "paths", paths, "moving to the trash", done, true);
+    }
+
+    // Undoes the last copy, move or trashing done in any window (Ctrl+Z),
+    // or with `redo` does the last one undone again (Ctrl+Y). A move back
+    // runs as job `job` (newJob()), which reports like a transfer's;
+    // `done(error, started)` gets novad's answer and whether that job
+    // started.
+    function undo(redo: bool, job: int, done: var) {
+        Daemon.call(redo ? Protocol.CMD_FILES_REDO : Protocol.CMD_FILES_UNDO, {
+            job: job
+        }, (error, started) => {
+            root._answered(redo ? "redoing" : "undoing", error, null);
+            done(error ?? null, started === true);
+        });
     }
 
     // Deletes `paths` (absolute) for good.
@@ -489,8 +568,9 @@ Singleton {
 
     // Sends `cmd` with `items` under `key`, in as many requests as keep each
     // under novad's limit (Trash.batches), one after another. `done(error)`
-    // gets every request's errors at once, or null.
-    function _inBatches(cmd: string, key: string, items: var, doing: string, done: var) {
+    // gets every request's errors at once, or null. With `oneStep`, the
+    // batches after the first continue the first's step to undo.
+    function _inBatches(cmd: string, key: string, items: var, doing: string, done: var, oneStep: bool) {
         const batches = Trash.batches(items, Protocol.REQUEST_MAX_BYTES);
         const errors = [];
         const next = index => {
@@ -500,6 +580,8 @@ Singleton {
             }
             const args = {};
             args[key] = batches[index];
+            if (oneStep && index > 0)
+                args.continues = true;
             Daemon.call(cmd, args, error => {
                 if (error)
                     errors.push(error);

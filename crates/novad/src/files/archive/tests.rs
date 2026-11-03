@@ -218,3 +218,45 @@ fn a_file_opened_from_a_zip_is_a_read_only_copy() {
     assert!(open_copy(&missing, &dir.join("opened")).is_err());
     assert_eq!(fs::read_dir(dir.join("opened")).unwrap().count(), 2, "a failed copy leaves no folder");
 }
+
+#[test]
+fn a_member_listed_twice_ends_as_the_later_one_even_read_only() {
+    let dir = TempDir::new("archive-twice");
+    let mut tar = tar::Builder::new(Vec::new());
+    for contents in ["old", "new"] {
+        let mut header = tar::Header::new_gnu();
+        header.set_mode(0o444);
+        header.set_size(3);
+        tar.append_data(&mut header, "notes.txt", contents.as_bytes()).unwrap();
+    }
+    fs::write(dir.join("twice.tar"), tar.into_inner().unwrap()).unwrap();
+    unpacked(&dir.join("twice.tar"), &dir.join("out"));
+    assert_eq!(fs::read_to_string(dir.join("out/notes.txt")).unwrap(), "new");
+    let inside = Inside::of(&dir.join("twice.tar/notes.txt")).unwrap();
+    assert_eq!(fs::read_to_string(open_copy(&inside, &dir.join("opened")).unwrap()).unwrap(), "new");
+    assert_eq!(folder_name(OsStr::new("..zip")), "..zip", "never a folder named '.'");
+}
+
+#[test]
+fn a_file_listed_after_a_hard_link_of_its_name_wins() {
+    let dir = TempDir::new("archive-hardlink");
+    let mut tar = tar::Builder::new(Vec::new());
+    let mut file = |name: &str, contents: &str| {
+        let mut header = tar::Header::new_gnu();
+        header.set_mode(0o644);
+        header.set_size(contents.len() as u64);
+        tar.append_data(&mut header, name, contents.as_bytes()).unwrap();
+    };
+    file("original.txt", "original");
+    let mut link = tar::Header::new_gnu();
+    link.set_entry_type(tar::EntryType::Link);
+    link.set_size(0);
+    tar.append_link(&mut link, "alias.txt", "original.txt").unwrap();
+    let mut header = tar::Header::new_gnu();
+    header.set_mode(0o644);
+    header.set_size(7);
+    tar.append_data(&mut header, "alias.txt", &b"updated"[..]).unwrap();
+    fs::write(dir.join("links.tar"), tar.into_inner().unwrap()).unwrap();
+    unpacked(&dir.join("links.tar"), &dir.join("out"));
+    assert_eq!(fs::read_to_string(dir.join("out/alias.txt")).unwrap(), "updated");
+}

@@ -24,6 +24,9 @@ var WPA_PASSWORD_MIN_BYTES = 8;
 // novad refuses more open folder views per connection.
 var FILES_MAX_VIEWS = 16;
 
+// novad refuses a longer files_rename name, in UTF-8 bytes.
+var FILES_NAME_MAX_BYTES = 255;
+
 // novad refuses longer files_open paths.
 var FILES_PATH_MAX_BYTES = 4096;
 
@@ -143,9 +146,12 @@ var CMD_FILES_PLACES = "files_places";
 var CMD_FILES_PIN = "files_pin";
 var CMD_FILES_RECENT = "files_recent";
 var CMD_FILES_TRANSFER = "files_transfer";
+var CMD_FILES_DROP = "files_drop";
 var CMD_FILES_TRANSFER_CANCEL = "files_transfer_cancel";
 var CMD_FILES_TRANSFER_ANSWER = "files_transfer_answer";
 var CMD_FILES_TRASH = "files_trash";
+var CMD_FILES_UNDO = "files_undo";
+var CMD_FILES_REDO = "files_redo";
 var CMD_FILES_DELETE = "files_delete";
 var CMD_FILES_TRASH_LIST = "files_trash_list";
 var CMD_FILES_GAMES_LIST = "files_games_list";
@@ -155,6 +161,9 @@ var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
 var CMD_FILES_MOUNT = "files_mount";
 var CMD_FILES_EJECT = "files_eject";
 var CMD_FILES_SEARCH = "files_search";
+var CMD_FILES_NEW_FOLDER = "files_new_folder";
+var CMD_FILES_RENAME = "files_rename";
+var CMD_FILES_DETAILS = "files_details";
 var CMD_FILES_PREVIEW = "files_preview";
 var CMD_FILES_PROPERTIES = "files_properties";
 var CMD_FILES_MEASURE = "files_measure";
@@ -205,6 +214,7 @@ var EVENT_FILES_TRANSFER = "files_transfer";
 var EVENT_FILES_MEASURED = "files_measured";
 var EVENT_FILES_THUMBNAIL = "files_thumbnail";
 var EVENT_FILES_PICKER_CLOSED = "files_picker_closed";
+var EVENT_FILES_HISTORY = "files_history";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
@@ -363,6 +373,13 @@ var TRANSFER_FAILED = "failed";
 var CLASH_REPLACE = "replace";
 var CLASH_MERGE = "merge";
 var CLASH_SKIP = "skip";
+
+// What files_undo and files_redo undo and redo (FileStep).
+var FILE_STEP_COPY = "copy";
+var FILE_STEP_MOVE = "move";
+var FILE_STEP_TRASH = "trash";
+var FILE_STEP_RENAME = "rename";
+var FILE_STEP_NEW_FOLDER = "new_folder";
 
 // What the preview pane shows (FilePreview).
 var PREVIEW_IMAGE = "image";

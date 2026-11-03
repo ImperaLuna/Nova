@@ -120,13 +120,14 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("What a files_transfer job does (TransferMode).", "TRANSFER", names_of::<TransferMode>()),
         Group::new("How a files_transfer job is going (TransferState).", "TRANSFER", names_of::<TransferState>()),
         Group::new("Answers to a name clash (ClashAnswer).", "CLASH", names_of::<ClashAnswer>()),
+        Group::new("What files_undo and files_redo undo and redo (FileStep).", "FILE_STEP", names_of::<FileStep>()),
         Group::new("What the preview pane shows (FilePreview).", "PREVIEW", tagged_names_of::<FilePreview>("kind")),
         Group::new("What a file picker picks (PickMode).", "PICK", names_of::<PickMode>()),
     ]
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 15] {
+fn limits() -> [(&'static str, u64, &'static str); 16] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
@@ -134,6 +135,11 @@ fn limits() -> [(&'static str, u64, &'static str); 15] {
         ("WIFI_PASSWORD_MAX_BYTES", size(WIFI_PASSWORD_MAX_BYTES), "novad refuses longer Wi-Fi passwords."),
         ("WPA_PASSWORD_MIN_BYTES", size(WPA_PASSWORD_MIN_BYTES), "novad refuses shorter WPA passwords."),
         ("FILES_MAX_VIEWS", size(FILES_MAX_VIEWS), "novad refuses more open folder views per connection."),
+        (
+            "FILES_NAME_MAX_BYTES",
+            size(FILES_NAME_MAX_BYTES),
+            "novad refuses a longer files_rename name, in UTF-8 bytes.",
+        ),
         ("FILES_PATH_MAX_BYTES", size(FILES_PATH_MAX_BYTES), "novad refuses longer files_open paths."),
         ("FILES_SEARCH_MAX_CHARS", size(FILES_SEARCH_MAX_CHARS), "novad refuses longer files_search queries."),
         ("FILES_SEARCH_MAX_RESULTS", size(FILES_SEARCH_MAX_RESULTS), "Most results a files_search answers with."),

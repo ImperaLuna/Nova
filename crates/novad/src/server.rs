@@ -372,9 +372,21 @@ impl<'a> Connection<'a> {
                 return self.files_later(move |files| files.pin(&path, pinned));
             }
             Command::FilesRecent => return self.files_later(|files| files.recent()),
-            Command::FilesTrash { paths } => {
-                let paths = paths.clone();
-                return self.files_later(move |files| files.trash().trash(&paths));
+            Command::FilesDrop { sources, folder, copy } => {
+                let (sources, folder, copy) = (sources.clone(), folder.clone(), *copy);
+                return self.files_later(move |_| crate::files::drop_mode(&sources, &folder, copy));
+            }
+            Command::FilesTrash { paths, continues } => {
+                let (paths, continues) = (paths.clone(), *continues);
+                return self.files_later(move |files| files.move_to_trash(&paths, continues));
+            }
+            Command::FilesUndo { job } => {
+                let (client, job) = (self.id, *job);
+                return self.files_later(move |files| files.undo(client, job));
+            }
+            Command::FilesRedo { job } => {
+                let (client, job) = (self.id, *job);
+                return self.files_later(move |files| files.redo(client, job));
             }
             Command::FilesDelete { paths } => {
                 let paths = paths.clone();
@@ -391,6 +403,18 @@ impl<'a> Connection<'a> {
                 return self.files_later(move |files| files.trash().erase(&ids));
             }
             Command::FilesEmptyTrash => return self.files_later(|files| files.trash().empty()),
+            Command::FilesNewFolder { folder } => {
+                let folder = folder.clone();
+                return self.files_later(move |files| files.new_folder(&folder));
+            }
+            Command::FilesRename { path, name } => {
+                let (path, name) = (path.clone(), name.clone());
+                return self.files_later(move |files| files.rename(&path, &name));
+            }
+            Command::FilesDetails { path } => {
+                let path = path.clone();
+                return self.files_later(move |files| files.details(&path));
+            }
             Command::FilesProperties { path } => {
                 let path = path.clone();
                 return self.files_later(move |files| files.properties(&path));
@@ -985,6 +1009,7 @@ impl<'a> Connection<'a> {
             | Command::FilesOpen { .. }
             | Command::FilesClose { .. }
             | Command::FilesTransfer { .. }
+            | Command::FilesDrop { .. }
             | Command::FilesTransferCancel { .. }
             | Command::FilesTransferAnswer { .. }
             | Command::AttachFiles { .. }
@@ -996,6 +1021,8 @@ impl<'a> Connection<'a> {
             | Command::FilesSearch { .. }
             | Command::FilesPreview { .. }
             | Command::FilesTrash { .. }
+            | Command::FilesUndo { .. }
+            | Command::FilesRedo { .. }
             | Command::FilesDelete { .. }
             | Command::FilesTrashList
             | Command::FilesGamesList
@@ -1009,7 +1036,10 @@ impl<'a> Connection<'a> {
             | Command::FilesMeasureCancel { .. }
             | Command::FilesSetAccess { .. }
             | Command::FilesThumbnail { .. }
-            | Command::FilesThumbnailCancel { .. } => {}
+            | Command::FilesThumbnailCancel { .. }
+            | Command::FilesNewFolder { .. }
+            | Command::FilesRename { .. }
+            | Command::FilesDetails { .. } => {}
             Command::FilesTree { .. } | Command::FilesPlaces | Command::FilesPin { .. } | Command::FilesRecent => {}
         }
     }

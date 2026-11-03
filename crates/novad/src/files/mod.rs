@@ -50,7 +50,8 @@
 //! - `sizes.rs`: folder sizes, counted under each view's subfolders on a
 //!   thread of its own at the disk's idle priority.
 //! - `transfers.rs`: copy and move jobs (`files_transfer`), one thread
-//!   each, asking the window about name clashes.
+//!   each, asking the window about name clashes, and what a drag and drop
+//!   onto a folder does (`files_drop`).
 //! - `copying.rs`: the file system side of those: measuring, numbered
 //!   names, and copying a file in chunks.
 //! - `archive/`: zips and tars, opened like read-only folders by the
@@ -64,6 +65,10 @@
 //! - `thumbnails/`: pictures of images and videos for the Icons view
 //!   (`files_thumbnail`), from the shared freedesktop cache or made by the
 //!   system's thumbnailers off the connection's thread.
+//! - `editing.rs`: new folders, renaming in place, and what the details
+//!   pane shows about an item.
+//! - `history.rs`: undo and redo of copies, moves, trashing, renaming and
+//!   new folders, one history for the session that every window shares.
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
@@ -81,9 +86,11 @@ mod archive;
 mod bus_fixture;
 mod copying;
 mod drives;
+mod editing;
 mod file_manager1;
 mod filter;
 mod folder;
+mod history;
 mod measures;
 mod preview;
 mod properties;
@@ -114,6 +121,7 @@ use crate::lock;
 use crate::logger::Logger;
 use crate::notifications::Notifications;
 use crate::session_bus::{Bus, Stop};
+use history::{History, Way};
 use nova_protocol::{
     ClashAnswer, EjectOutcome, Event, FeatureState, FileFilter, FilePlace, FileSort, FilesLook, FilesWindow,
     FolderTree, Game, PlaceKind, RecentFile, Topic, TransferMode,
@@ -121,6 +129,7 @@ use nova_protocol::{
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 
+pub use transfers::drop_mode;
 pub use trash::Trash;
 
 pub const FEATURE_ID: &str = "files";
@@ -200,6 +209,8 @@ pub struct Files {
     /// The sizes the Properties window counts.
     measures: measures::Measures,
     trash: Arc<Trash>,
+    /// What Ctrl+Z and Ctrl+Y undo and redo.
+    history: Arc<History>,
     /// Tells windows when the trash changes; none when it can't be followed.
     trash_watch: Option<trash::Watch>,
     /// The drives in the sidebar.
@@ -248,8 +259,9 @@ impl Files {
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
         let search =
             search::Search::start(sources.search.clone(), Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
-        let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
         let measures = measures::Measures::new(Arc::clone(&hub));
+        let history = Arc::new(History::new(Arc::clone(&hub)));
+        let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&history));
         let thumbnails = thumbnails::Thumbnails::start(
             sources.thumbnails.clone(),
             Arc::clone(&hub),
@@ -305,6 +317,7 @@ impl Files {
             transfers,
             measures,
             trash,
+            history,
             trash_watch,
             drives,
             search,
@@ -353,6 +366,25 @@ impl Files {
         Arc::clone(&self.previews)
     }
 
+    /// Moves `paths` to the trash (`files_trash`): one step to undo, or
+    /// part of the last one when it `continues` it.
+    pub fn move_to_trash(&self, paths: &[String], continues: bool) -> Result<(), String> {
+        let (ids, problems) = history::split(self.trash.trash_each(paths));
+        self.history.trashed(ids, continues);
+        problems
+    }
+
+    /// Undoes the last step (`files_undo`) for client `client`, a move
+    /// back as its job `job`; answers whether that job started.
+    pub fn undo(&self, client: ClientId, job: u32) -> Result<bool, String> {
+        self.history.run(Way::Undo, &self.trash, &self.transfers, client, job)
+    }
+
+    /// Redoes the last undone step (`files_redo`), as [`Files::undo`].
+    pub fn redo(&self, client: ClientId, job: u32) -> Result<bool, String> {
+        self.history.run(Way::Redo, &self.trash, &self.transfers, client, job)
+    }
+
     /// What finds files by name (`files_search`).
     pub fn searcher(&self) -> search::Searcher {
         self.search.searcher()
@@ -380,6 +412,30 @@ impl Files {
     /// udisks2, so it runs off the connection's thread.
     pub fn mount(&self, drive: &str) -> Result<String, String> {
         self.drives.mount(drive)
+    }
+
+    /// Makes a new folder in `folder` (`files_new_folder`); touches the
+    /// disk, so it runs off the connection's thread.
+    /// It's a step to undo.
+    pub fn new_folder(&self, folder: &str) -> Result<String, String> {
+        let name = editing::new_folder(folder)?;
+        self.history.made_folder(&nova_protocol::wire_path(folder).join(nova_protocol::wire_path(&name)));
+        Ok(name)
+    }
+
+    /// Renames the item at `path` to `name` (`files_rename`): a step to
+    /// undo.
+    pub fn rename(&self, path: &str, name: &str) -> Result<String, String> {
+        let renamed = editing::rename(path, name)?;
+        let from = nova_protocol::wire_path(path);
+        let to = from.with_file_name(nova_protocol::wire_path(&renamed));
+        self.history.renamed(from, to);
+        Ok(renamed)
+    }
+
+    /// What the details pane shows about the item at `path` (`files_details`).
+    pub fn details(&self, path: &str) -> Result<nova_protocol::FileDetails, String> {
+        editing::details(path, &self.mime.current())
     }
 
     /// Ejects drive `drive` (`files_eject`). Waits on udisks2 writing what's
@@ -562,6 +618,7 @@ impl Files {
         let look = *lock(&self.look);
         self.shared.hub.send_to(client, &Event::FilesLook(look));
         self.drives.send_state(client);
+        self.history.send_state(client);
     }
 
     /// Client `client` hung up: windows aren't sent to it any more.

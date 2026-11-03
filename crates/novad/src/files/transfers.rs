@@ -13,6 +13,11 @@
 //! A move is a rename when it stays on one file system, and a copy and
 //! delete when it doesn't.
 //!
+//! A job may have several legs, each items going into one folder: an undone
+//! move puts items back in the folders they came from. As it ends, the job
+//! tells the history ([`History::moved`]) each item it placed at the top
+//! (not what's inside a folder it copied), so the step can be undone.
+//!
 //! The job checks for a cancel before each item and between chunks of a
 //! file. Every event is sent while the job is still registered, checked
 //! under the jobs lock, so nothing arrives after it ended, was cancelled
@@ -21,6 +26,7 @@
 
 use crate::files::archive;
 use crate::files::copying::{self, Aside, Clashing, Measure, Part};
+use crate::files::history::{History, Origin};
 use crate::files::views::checked_path;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
@@ -33,14 +39,15 @@ use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, Metadata};
 use std::io;
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 const LOG_SOURCE: &str = "files";
 const PROGRESS_EVERY: Duration = Duration::from_millis(FILES_TRANSFER_PROGRESS_MS);
-/// A new zip's permissions, as an app saving a file would give it.
+/// A new zip's permissions, as an app saving a file would give it, kept
+/// to what its items allow: a zip of private files stays private.
 const ZIP_MODE: u32 = 0o644;
 
 /// A job, named by its client and the client's number for it.
@@ -54,7 +61,14 @@ type Jobs = Arc<Mutex<Option<HashMap<Key, Arc<Job>>>>>;
 pub struct Transfers {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
+    history: Arc<History>,
     jobs: Jobs,
+}
+
+/// Items going into one folder.
+pub struct Leg {
+    pub sources: Vec<PathBuf>,
+    pub folder: PathBuf,
 }
 
 struct Job {
@@ -79,12 +93,13 @@ struct Control {
 }
 
 impl Transfers {
-    pub fn new(hub: Arc<Hub>, logger: Arc<Logger>) -> Self {
-        Self { hub, logger, jobs: Arc::new(Mutex::new(Some(HashMap::new()))) }
+    pub fn new(hub: Arc<Hub>, logger: Arc<Logger>, history: Arc<History>) -> Self {
+        Self { hub, logger, history, jobs: Arc::new(Mutex::new(Some(HashMap::new()))) }
     }
 
     /// Starts `client`'s job `job`, copying or moving `sources` into
-    /// `folder`. Doesn't touch the disk: how it goes follows as events.
+    /// `folder`: a new step in the history. Doesn't touch the disk: how it
+    /// goes follows as events.
     pub fn start(
         &self,
         client: ClientId,
@@ -93,15 +108,30 @@ impl Transfers {
         sources: &[String],
         folder: &str,
     ) -> Result<(), String> {
-        if sources.is_empty() {
-            return Err("Nothing to copy".into());
-        }
+        let sources = sources.iter().map(|source| checked_path(source)).collect::<Result<Vec<_>, _>>()?;
         if sources.len() > FILES_TRANSFER_MAX_SOURCES {
             return Err(format!("At most {FILES_TRANSFER_MAX_SOURCES} items can be copied at once"));
         }
-        let sources = sources.iter().map(|source| checked_path(source)).collect::<Result<Vec<_>, _>>()?;
-        let folder = checked_path(folder)?;
-        let name = sources[0].file_name().map_or_else(|| "/".into(), nova_protocol::wire_text);
+        let leg = Leg { sources, folder: checked_path(folder)? };
+        self.start_legs(client, job, mode, vec![leg], Origin::New)
+    }
+
+    /// Starts `client`'s job `job` over `legs`, whose paths are checked,
+    /// for `origin`. A step's move isn't held to the request's limit on
+    /// items: undoing a merge moves back each item it placed.
+    pub fn start_legs(
+        &self,
+        client: ClientId,
+        job: u32,
+        mode: TransferMode,
+        legs: Vec<Leg>,
+        origin: Origin,
+    ) -> Result<(), String> {
+        let count: usize = legs.iter().map(|leg| leg.sources.len()).sum();
+        let Some(first) = legs.iter().find_map(|leg| leg.sources.first()) else {
+            return Err("Nothing to copy".into());
+        };
+        let name = first.file_name().map_or_else(|| "/".into(), nova_protocol::wire_text);
         let key = (client, job);
         let mut jobs = lock(&self.jobs);
         let Some(running) = jobs.as_mut() else { return Err("Nova Files is off".into()) };
@@ -111,7 +141,7 @@ impl Transfers {
         if running.keys().filter(|(owner, _)| *owner == client).count() >= FILES_MAX_TRANSFERS {
             return Err(format!("At most {FILES_MAX_TRANSFERS} copies can run at once"));
         }
-        let items = u32::try_from(sources.len()).unwrap_or(u32::MAX);
+        let items = u32::try_from(count).unwrap_or(u32::MAX);
         let started = Arc::new(Job { key, mode, items, name, control: Mutex::default(), changed: Condvar::new() });
         running.insert(key, Arc::clone(&started));
         drop(jobs);
@@ -120,8 +150,11 @@ impl Transfers {
             hub: Arc::clone(&self.hub),
             logger: Arc::clone(&self.logger),
             jobs: Arc::clone(&self.jobs),
-            sources,
-            folder,
+            history: Arc::clone(&self.history),
+            origin,
+            legs,
+            placed: Vec::new(),
+            inside_copy: 0,
             done_bytes: 0,
             total: Measure::default(),
             remembered: [None; 2],
@@ -212,6 +245,8 @@ type Step = Result<(), Halt>;
 /// An item to place, checked.
 struct Item {
     source: PathBuf,
+    /// The folder it goes into.
+    folder: PathBuf,
     name: OsString,
     meta: Metadata,
     /// Its bytes, as measured.
@@ -226,8 +261,14 @@ struct Run {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     jobs: Jobs,
-    sources: Vec<PathBuf>,
-    folder: PathBuf,
+    history: Arc<History>,
+    origin: Origin,
+    legs: Vec<Leg>,
+    /// Each item placed at the top, (from, to): what the history keeps.
+    placed: Vec<(PathBuf, PathBuf)>,
+    /// How deep in folders being copied it is; what's placed there isn't
+    /// at the top.
+    inside_copy: u32,
     done_bytes: u64,
     /// The bytes to copy and the clashes still ahead, kept as items are
     /// placed or skipped.
@@ -259,6 +300,7 @@ impl Run {
                 items.into_iter().try_for_each(|item| self.place_item(item))
             })
         };
+        self.record();
         if let Some(staging) = self.staging.take()
             && let Err(e) = fs::remove_dir_all(&staging)
         {
@@ -274,14 +316,32 @@ impl Run {
         }
     }
 
+    /// Tells the history what the job placed; a step's move tells it
+    /// even when nothing moved, so the next step can run.
+    fn record(&self) {
+        if !self.placed.is_empty() || self.origin != Origin::New {
+            self.history.moved(self.origin, self.job.mode, &self.placed);
+        }
+    }
+
     /// Checks the job's items and measures them.
     fn prepare(&mut self) -> Result<Vec<Item>, Halt> {
-        let folder = fs::canonicalize(&self.folder).map_err(|e| failed(&self.folder, &e))?;
-        if !folder.is_dir() {
-            return Err(Halt::Failed(format!("{} isn't a folder", self.folder.display())));
+        let mut items = Vec::new();
+        for leg in 0..self.legs.len() {
+            self.prepare_leg(leg, &mut items)?;
         }
-        let sources = if self.extracts() { self.unpack(&folder)? } else { self.sources.clone() };
-        let mut items = Vec::with_capacity(sources.len());
+        Ok(items)
+    }
+
+    /// Checks leg `leg`'s items and measures them, into `items`; an
+    /// archive is extracted first and what it holds is placed instead.
+    fn prepare_leg(&mut self, leg: usize, items: &mut Vec<Item>) -> Step {
+        let asked = self.legs[leg].folder.clone();
+        let folder = fs::canonicalize(&asked).map_err(|e| failed(&asked, &e))?;
+        if !folder.is_dir() {
+            return Err(Halt::Failed(format!("{} isn't a folder", asked.display())));
+        }
+        let sources = if self.extracts() { self.unpack(leg, &folder)? } else { self.legs[leg].sources.clone() };
         for source in &sources {
             let meta = fs::symlink_metadata(source).map_err(|e| failed(source, &e))?;
             let (Some(parent), Some(name)) = (source.parent(), source.file_name()) else {
@@ -295,7 +355,7 @@ impl Run {
             if in_place && self.moves() {
                 continue;
             }
-            let target = (!in_place).then(|| self.folder.join(name));
+            let target = (!in_place).then(|| asked.join(name));
             let job = Arc::clone(&self.job);
             let measured = copying::measure(source, target.as_deref(), &|| job.stopped())
                 .map_err(|e| failed(source, &e))?
@@ -303,20 +363,20 @@ impl Run {
             // Extracted bytes were counted as they were extracted.
             let bytes = if self.placing_extracted { 0 } else { measured.bytes };
             self.total.add(Measure { bytes, ..measured });
-            items.push(Item { source: source.clone(), name: name.to_owned(), meta, bytes, renamed: in_place });
+            let (source, folder, name) = (source.clone(), asked.clone(), name.to_owned());
+            items.push(Item { source, folder, name, meta, bytes, renamed: in_place });
         }
-        Ok(items)
+        Ok(())
     }
 
     fn place_item(&mut self, item: Item) -> Step {
         if !item.renamed {
-            let folder = self.folder.clone();
-            return self.place(&item.source, &folder, &item.name, Some(item.bytes));
+            return self.place(&item.source, &item.folder, &item.name, Some(item.bytes));
         }
         self.check()?;
         let name =
-            copying::numbered(&self.folder, &item.name, item.meta.is_dir()).map_err(|e| failed(&item.source, &e))?;
-        self.put(&item.source, &item.meta, &self.folder.join(name), None, Some(item.bytes))
+            copying::numbered(&item.folder, &item.name, item.meta.is_dir()).map_err(|e| failed(&item.source, &e))?;
+        self.put(&item.source, &item.meta, &item.folder.join(name), None, Some(item.bytes))
     }
 
     /// Copies or moves `source` into the folder `into` as `name`, asking
@@ -414,7 +474,10 @@ impl Run {
         let skipped = copying::measure(source, folders.then_some(target), &|| job.stopped())
             .map_err(|e| failed(source, &e))?
             .ok_or(Halt::Stopped)?;
-        self.total.bytes = self.total.bytes.saturating_sub(skipped.bytes);
+        // Extracted bytes all count, placed or not.
+        if !self.placing_extracted {
+            self.total.bytes = self.total.bytes.saturating_sub(skipped.bytes);
+        }
         // Measured with what it clashed with, a skipped folder counts the
         // clashes a merge would have met; anything else counts as itself.
         let (files, folders) = match clashing {
@@ -468,23 +531,37 @@ impl Run {
             _ => None,
         };
         let placed = self.put_free(source, meta, target, bytes);
-        let Some(aside) = aside else { return placed };
-        let settled = if placed.is_ok() { aside.discard() } else { aside.restore() };
-        if let Err(e) = settled {
-            self.logger.warn(LOG_SOURCE, &format!("can't tidy up after replacing {}: {e}", target.display()));
+        let put = matches!(placed, Ok(true));
+        // A folder copy stopped halfway leaves what it copied, which can
+        // be undone too.
+        let partly = placed.is_err()
+            && aside.is_none()
+            && meta.is_dir()
+            && self.job.mode == TransferMode::Copy
+            && target.symlink_metadata().is_ok();
+        if (put || partly) && self.inside_copy == 0 {
+            self.placed.push((source.to_owned(), target.to_owned()));
         }
-        placed
+        if let Some(aside) = aside {
+            // What was left out (a device, a socket) replaced nothing.
+            let settled = if put { aside.discard() } else { aside.restore() };
+            if let Err(e) = settled {
+                self.logger.warn(LOG_SOURCE, &format!("can't tidy up after replacing {}: {e}", target.display()));
+            }
+        }
+        placed.map(drop)
     }
 
-    /// Puts `source` at `target`, where only a file can be.
-    fn put_free(&mut self, source: &Path, meta: &Metadata, target: &Path, bytes: Option<u64>) -> Step {
+    /// Puts `source` at `target`, where only a file can be. False for what
+    /// can't be copied, which is left out.
+    fn put_free(&mut self, source: &Path, meta: &Metadata, target: &Path, bytes: Option<u64>) -> Result<bool, Halt> {
         let moving = self.moves() && !self.copying_moved;
         if moving {
             match fs::rename(source, target) {
                 Ok(()) => {
                     let bytes = bytes.unwrap_or_else(|| moved_bytes(target, meta));
                     self.copied(bytes);
-                    return Ok(());
+                    return Ok(true);
                 }
                 // Another file system: copied, then deleted.
                 Err(e) if e.raw_os_error() == Some(libc::EXDEV) => {}
@@ -498,16 +575,17 @@ impl Run {
             // Once all of it is copied the move has happened: what can't
             // be deleted after that stays at the source too, and nothing
             // placed is undone.
-            if placed? && let Err(e) = copying::remove_moved(source) {
+            let placed = placed?;
+            if placed && let Err(e) = copying::remove_moved(source) {
                 self.logger.warn(LOG_SOURCE, &format!("moved {}, but can't delete all of it: {e}", source.display()));
             }
-            return Ok(());
+            return Ok(placed);
         }
         let placed = self.copy(source, meta, target)?;
         if placed && moving {
             fs::remove_file(source).map_err(|e| failed(source, &e))?;
         }
-        Ok(())
+        Ok(placed)
     }
 
     /// Copies `source` to the free `target`. False for what can't be
@@ -531,7 +609,10 @@ impl Run {
             // Private while it fills, so what the source folder kept from
             // other users isn't open to them meanwhile; its own mode after.
             fs::DirBuilder::new().mode(0o700).create(target).map_err(|e| failed(target, &e))?;
-            self.place_children(source, target)?;
+            self.inside_copy += 1;
+            let children = self.place_children(source, target);
+            self.inside_copy -= 1;
+            children?;
             // Best effort, after its entries are in: a read-only folder
             // would refuse them.
             let _ = fs::set_permissions(target, meta.permissions());
@@ -582,9 +663,10 @@ impl Run {
     /// hidden one in `folder`, measuring the progress by it, and answers
     /// what to place in `folder`: each archive's folder ("Extract all"),
     /// or what's in it ("Extract here").
-    fn unpack(&mut self, folder: &Path) -> Result<Vec<PathBuf>, Halt> {
-        let mut archives = Vec::with_capacity(self.sources.len());
-        for source in &self.sources {
+    fn unpack(&mut self, leg: usize, folder: &Path) -> Result<Vec<PathBuf>, Halt> {
+        let sources = self.legs[leg].sources.clone();
+        let mut archives = Vec::with_capacity(sources.len());
+        for source in &sources {
             let kind = source.file_name().and_then(archive::Kind::of_name);
             let Some(kind) = kind.filter(|_| fs::metadata(source).is_ok_and(|meta| meta.is_file())) else {
                 return Err(Halt::Failed(format!("{} isn't an archive Nova can open", source.display())));
@@ -632,8 +714,16 @@ impl Run {
     /// Packs the sources into a new zip in the folder, named after the
     /// first ("report.pdf" gives "report.zip").
     fn compress(&mut self) -> Step {
-        let sources = self.sources.clone();
+        // Compressing is started with one leg.
+        let Leg { sources, folder: asked } = &self.legs[0];
+        let (sources, asked) = (sources.clone(), asked.clone());
+        let folder = fs::canonicalize(&asked).map_err(|e| failed(&asked, &e))?;
         for source in &sources {
+            // A zip made inside a folder it packs would pack itself.
+            if fs::canonicalize(source).is_ok_and(|source| folder.starts_with(source)) {
+                let name = source.file_name().unwrap_or_default().to_string_lossy();
+                return Err(Halt::Failed(format!("Can't compress {name} into itself")));
+            }
             let job = Arc::clone(&self.job);
             let measured = copying::measure(source, None, &|| job.stopped())
                 .map_err(|e| failed(source, &e))?
@@ -646,18 +736,24 @@ impl Run {
         let mut name = stem.unwrap_or(OsStr::new("Archive")).to_owned();
         name.push(".zip");
         self.report(TransferState::Running, None, None);
-        let mut part = Part::create(&self.folder).map_err(|e| failed(&self.folder, &e))?;
-        let file = part.file().map_err(|e| failed(&self.folder, &e))?;
+        let mut part = Part::create(&asked).map_err(|e| failed(&asked, &e))?;
+        let file = part.file().map_err(|e| failed(&asked, &e))?;
         let sources: Vec<&Path> = sources.iter().map(PathBuf::as_path).collect();
         let job = Arc::clone(&self.job);
         let packed = archive::pack(&sources, file, &mut |bytes| {
             self.copied(bytes);
             !job.stopped()
         });
-        if !packed.map_err(|e| failed(&self.folder.join(&name), &e))? {
+        if !packed.map_err(|e| failed(&asked.join(&name), &e))? {
             return Err(Halt::Stopped);
         }
-        part.keep(&name, ZIP_MODE).map_err(|e| failed(&self.folder.join(&name), &e))?;
+        self.check()?;
+        let mode = sources
+            .iter()
+            .fold(ZIP_MODE, |mode, source| fs::metadata(source).map_or(mode, |meta| mode & (meta.mode() | 0o600)));
+        let kept = part.keep(&name, mode).map_err(|e| failed(&asked.join(&name), &e))?;
+        // Undone like a copy: the zip goes to the trash.
+        self.placed.push((asked.join(&name), asked.join(kept)));
         Ok(())
     }
 
@@ -713,16 +809,56 @@ fn unreadable(path: &Path, error: &io::Error) -> Halt {
     })
 }
 
+/// What dropping `sources` on `folder` does (`files_drop`): a move on the
+/// folder's drive, a copy onto another or when `copy` (Ctrl) asks, or
+/// `None` when nothing can be dropped there: a folder into itself or one of
+/// its own folders (links followed, so no way round), or a move into the
+/// folder the items are already in. An item is looked at itself, not
+/// through a link, and a drive mounted on a folder counts as its own, so
+/// dragging a mount point copies it.
+pub fn drop_mode(sources: &[String], folder: &str, copy: bool) -> Result<Option<TransferMode>, String> {
+    if sources.is_empty() {
+        return Ok(None);
+    }
+    if sources.len() > FILES_TRANSFER_MAX_SOURCES {
+        return Err(format!("At most {FILES_TRANSFER_MAX_SOURCES} items can be copied at once"));
+    }
+    let folder = checked_path(folder)?;
+    let target = fs::canonicalize(&folder).map_err(|e| why_failed(&folder, &e))?;
+    let drive = fs::metadata(&target).map_err(|e| why_failed(&folder, &e))?.dev();
+    let (mut same_drive, mut all_here) = (true, true);
+    for source in sources {
+        let source = checked_path(source)?;
+        let meta = fs::symlink_metadata(&source).map_err(|e| why_failed(&source, &e))?;
+        if meta.is_dir() && target.starts_with(fs::canonicalize(&source).map_err(|e| why_failed(&source, &e))?) {
+            return Ok(None);
+        }
+        same_drive &= meta.dev() == drive;
+        let holder = source.parent().map(fs::canonicalize).transpose().map_err(|e| why_failed(&source, &e))?;
+        all_here &= holder.as_deref() == Some(target.as_path());
+    }
+    Ok(match (copy || !same_drive, all_here) {
+        (true, _) => Some(TransferMode::Copy),
+        (false, true) => None,
+        (false, false) => Some(TransferMode::Move),
+    })
+}
+
 /// Why `path` couldn't be copied or moved, for the window.
 fn failed(path: &Path, error: &io::Error) -> Halt {
+    Halt::Failed(why_failed(path, error))
+}
+
+/// Why `path` couldn't be read, copied or moved, in words.
+fn why_failed(path: &Path, error: &io::Error) -> String {
     let path = path.display();
-    Halt::Failed(match error.kind() {
+    match error.kind() {
         io::ErrorKind::NotFound => format!("{path} doesn't exist"),
         io::ErrorKind::PermissionDenied => format!("No permission for {path}"),
         io::ErrorKind::StorageFull => format!("No space left for {path}"),
         io::ErrorKind::ReadOnlyFilesystem => format!("{path} is on a read-only drive"),
         _ => format!("Can't copy {path}: {error}"),
-    })
+    }
 }
 
 #[cfg(test)]
@@ -731,6 +867,7 @@ mod tests {
     use crate::hub::{ClientQueue, Outgoing, next_named};
     use nova_protocol::LogLevel;
     use nova_test_support::TempDir;
+    use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::UnixStream;
     use std::sync::mpsc::Receiver;
 
@@ -755,7 +892,8 @@ mod tests {
             let (socket, ours) = UnixStream::pair().unwrap();
             let (queue, events) = ClientQueue::new(&ours).unwrap();
             let client = hub.register(queue);
-            Self { transfers: Transfers::new(hub, logger), dir, client, events, _socket: socket }
+            let history = Arc::new(History::new(Arc::clone(&hub)));
+            Self { transfers: Transfers::new(hub, logger, history), dir, client, events, _socket: socket }
         }
 
         fn write(&self, path: &str, content: &str) {
@@ -807,6 +945,60 @@ mod tests {
             names.sort();
             names
         }
+    }
+
+    #[test]
+    fn a_drop_moves_on_one_drive_and_copies_onto_another() {
+        let fixture = Fixture::new("drop-drive");
+        fixture.write("from/Photos/a.png", "1");
+        let path = |name: &str| fixture.dir.join(name).display().to_string();
+        let sources = [path("from/Photos"), path("from/Photos/a.png")];
+        assert_eq!(drop_mode(&sources, &path("to"), false), Ok(Some(TransferMode::Move)));
+        assert_eq!(drop_mode(&sources, &path("to"), true), Ok(Some(TransferMode::Copy)), "Ctrl copies");
+        let tmpfs = Path::new("/dev/shm");
+        if tmpfs.is_dir() && fs::metadata(tmpfs).unwrap().dev() != fs::metadata(fixture.dir.join("to")).unwrap().dev() {
+            assert_eq!(drop_mode(&sources, "/dev/shm", false), Ok(Some(TransferMode::Copy)), "another drive copies");
+        }
+        assert!(drop_mode(&[path("from/gone.txt")], &path("to"), false).unwrap_err().contains("doesn't exist"));
+        assert!(drop_mode(&sources, "relative", false).is_err(), "paths are checked");
+        assert_eq!(drop_mode(&[], &path("to"), false), Ok(None));
+    }
+
+    #[test]
+    fn a_folder_never_drops_into_itself() {
+        let fixture = Fixture::new("drop-itself");
+        fixture.write("from/Photos/2025/May/a.png", "1");
+        let path = |name: &str| fixture.dir.join(name).display().to_string();
+        let photos = [path("from/Photos")];
+        assert_eq!(drop_mode(&photos, &path("from/Photos"), false), Ok(None));
+        assert_eq!(drop_mode(&photos, &path("from/Photos/2025/May"), true), Ok(None), "not even as a copy");
+        std::os::unix::fs::symlink(fixture.dir.join("from/Photos/2025"), fixture.dir.join("to/shortcut")).unwrap();
+        assert_eq!(drop_mode(&photos, &path("to/shortcut"), false), Ok(None), "nor through a link");
+        fs::create_dir_all(fixture.dir.join("from/Photos 2")).unwrap();
+        assert_eq!(
+            drop_mode(&photos, &path("from/Photos 2"), false),
+            Ok(Some(TransferMode::Move)),
+            "a name it starts is elsewhere"
+        );
+    }
+
+    #[test]
+    fn a_move_where_the_items_are_does_nothing() {
+        let fixture = Fixture::new("drop-here");
+        fixture.write("from/a.txt", "1");
+        fixture.write("to/b.txt", "1");
+        let path = |name: &str| fixture.dir.join(name).display().to_string();
+        assert_eq!(drop_mode(&[path("from/a.txt")], &path("from"), false), Ok(None));
+        assert_eq!(
+            drop_mode(&[path("from/a.txt")], &path("from"), true),
+            Ok(Some(TransferMode::Copy)),
+            "Ctrl makes a numbered copy"
+        );
+        assert_eq!(
+            drop_mode(&[path("from/a.txt"), path("to/b.txt")], &path("from"), false),
+            Ok(Some(TransferMode::Move)),
+            "one from elsewhere comes"
+        );
     }
 
     #[test]
@@ -1018,6 +1210,22 @@ mod tests {
         let done = fixture.until(TransferState::Done);
         assert_eq!((done.done_bytes, done.total_bytes), (6, 6));
         assert_eq!(fixture.names("from"), ["Photos", "report (2).zip", "report.pdf", "report.zip"]);
+        let mode = fs::metadata(fixture.dir.join("from/report (2).zip")).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644);
+        fs::set_permissions(fixture.dir.join("from/report.pdf"), fs::Permissions::from_mode(0o600)).unwrap();
+        fixture
+            .transfers
+            .start(
+                fixture.client,
+                2,
+                TransferMode::Compress,
+                &[fixture.dir.join("from/report.pdf").display().to_string()],
+                &fixture.dir.join("from").display().to_string(),
+            )
+            .unwrap();
+        fixture.until(TransferState::Done);
+        let private = fs::metadata(fixture.dir.join("from/report (3).zip")).unwrap().permissions().mode() & 0o777;
+        assert_eq!(private, 0o600, "a zip of a private file stays private");
         let inside = crate::files::archive::Inside::of(&fixture.dir.join("from/report (2).zip/Photos")).unwrap();
         let copy = crate::files::archive::open_copy(
             &crate::files::archive::Inside { inner: "Photos/a.png".into(), ..inside },
@@ -1025,5 +1233,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fs::read_to_string(copy).unwrap(), "png");
+    }
+
+    #[test]
+    fn a_skipped_extracted_file_still_counts_and_a_zip_cant_go_into_what_it_packs() {
+        let fixture = Fixture::new("extract-skip");
+        crate::files::archive::tests::write_zip(&fixture.dir.join("from/docs.zip"), &[("a.txt", "new")]);
+        fixture.write("to/a.txt", "old");
+        fixture.start(TransferMode::ExtractHere, &["from/docs.zip"], "to");
+        let clash = fixture.until(TransferState::Asking).clash.unwrap();
+        fixture.answer(&clash, ClashAnswer::Skip, false);
+        let done = fixture.until(TransferState::Done);
+        assert_eq!((done.done_bytes, done.total_bytes), (3, 3));
+        assert_eq!(fixture.names("to"), ["a.txt"]);
+        fixture.write("from/Photos/2025/a.png", "png");
+        fixture.start(TransferMode::Compress, &["from/Photos"], "from/Photos/2025");
+        assert!(fixture.until(TransferState::Failed).error.unwrap().contains("into itself"));
+        assert_eq!(fixture.names("from/Photos/2025"), ["a.png"]);
     }
 }

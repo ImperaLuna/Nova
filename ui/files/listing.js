@@ -6,8 +6,9 @@
 // Nova Files' file list logic, kept apart so ui/tests can check it: how an
 // entry of novad's folder view reads in the Details columns (icon, Modified,
 // Type, Size), the order a column header click asks for, what a click or a
-// key selects, and what opening the selection does. Rows are novad's
-// entries flattened for a ListModel (`row`).
+// key selects, what opening the selection does, and how much of a name the
+// rename field picks. Rows are novad's entries flattened for a ListModel
+// (`row`).
 
 // What a row holds: novad's entry with its optional size and modified time
 // as -1 when it has none, since a ListModel's rows all need every role.
@@ -208,4 +209,11 @@ function opening(rows) {
         folder: "",
         files: rows.filter(row => !row.dir).map(row => row.name)
     };
+}
+
+// How much of a name the rename field picks at first: a file's name up to
+// its extension, as in Explorer; a folder's, or a dot file's, whole.
+function stemLength(name, dir) {
+    const dot = name.lastIndexOf(".");
+    return dir || dot <= 0 ? name.length : dot;
 }

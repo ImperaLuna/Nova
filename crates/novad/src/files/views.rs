@@ -76,6 +76,9 @@ struct View {
     key: Key,
     /// Where the folder is inside an archive, when it is.
     inside: Option<Inside>,
+    /// The archive file the view follows: through any link, so a change
+    /// to the file itself shows.
+    archive_file: Option<PathBuf>,
     path: PathBuf,
     /// The path as `files_open` named it, for the pages.
     named: String,
@@ -134,11 +137,15 @@ impl Folders {
             old.close();
         }
         // An archive's view follows the folder the archive is in.
-        let followed = inside.as_ref().map_or(folder.as_path(), |inside| inside.archive.parent().unwrap_or(&folder));
+        let archive_file = inside
+            .as_ref()
+            .map(|inside| std::fs::canonicalize(&inside.archive).unwrap_or_else(|_| inside.archive.clone()));
+        let followed = archive_file.as_ref().map_or(folder.as_path(), |file| file.parent().unwrap_or(&folder));
         let following = watcher.follow(followed);
         let opened = Arc::new(View {
             key,
             inside,
+            archive_file,
             path: folder,
             named: path.into(),
             sort,
@@ -291,6 +298,13 @@ impl Worker {
     /// `why` its subfolders are counted: `Changed` when what the path
     /// names may have changed.
     fn send_all(&self, why: Why) -> bool {
+        self.send_all_settling(why, false)
+    }
+
+    /// [`Self::send_all`]; while `settling`, an archive that doesn't read
+    /// (another program is still writing it) is read again on its next
+    /// change rather than closing the view.
+    fn send_all_settling(&self, why: Why, settling: bool) -> bool {
         // No size is sent against the old list while the new one's pages go.
         lock(&self.view.state).listing = None;
         let mime = self.mime.current();
@@ -305,6 +319,10 @@ impl Worker {
                 entries
             }
             Ok(None) => return false,
+            Err(e) if settling && e.kind() != std::io::ErrorKind::NotFound => {
+                self.logger.info(LOG_SOURCE, &format!("{} doesn't read yet: {e}", self.view.path.display()));
+                return true;
+            }
             Err(e) => {
                 self.logger.warn(LOG_SOURCE, &format!("can't read {}: {e}", self.view.path.display()));
                 self.closed(unreadable(&self.view.named, &e));
@@ -415,9 +433,9 @@ impl Worker {
     fn send_changes(&self, names: BTreeSet<OsString>) -> bool {
         // An archive is read again whole when it changes; nothing else in
         // its folder shows.
-        if let Some(inside) = &self.view.inside {
-            let archive = inside.archive.file_name().unwrap_or_default();
-            return !names.iter().any(|name| name == archive) || self.send_all(Why::Changed);
+        if let Some(file) = &self.view.archive_file {
+            let archive = file.file_name().unwrap_or_default();
+            return !names.iter().any(|name| name == archive) || self.send_all_settling(Why::Changed, true);
         }
         let mime = self.mime.current();
         let mut recount = Vec::new();
@@ -1030,6 +1048,7 @@ mod tests {
         let view = Arc::new(View {
             key: (fixture.client, 1),
             inside: None,
+            archive_file: None,
             path: PathBuf::from("/"),
             named: "/".into(),
             sort: BY_NAME,

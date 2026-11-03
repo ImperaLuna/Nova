@@ -19,6 +19,9 @@ Column {
     signal opened(string id)
     signal menuRequested(var drive, point at)
     signal driveGone
+    // Files dropped on a drive: `action` (a Protocol.TRANSFER_* mode or Drops.TRASH) on `sources` into
+    // `folder`.
+    signal dropRequested(string action, var sources, string folder)
 
     // The ids listed so far, and whether the first list is in: rows are
     // made again on every change, and only a new one animates.
@@ -57,6 +60,7 @@ Column {
             Component.onCompleted: drives.seen[modelData.id] = true
             onOpened: drives.opened(modelData.id)
             onMenuRequested: at => drives.menuRequested(modelData, at)
+            onDropRequested: (action, sources, folder) => drives.dropRequested(action, sources, folder)
         }
     }
 
