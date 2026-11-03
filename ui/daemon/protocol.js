@@ -137,6 +137,8 @@ var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
 var CMD_FILES_MOUNT = "files_mount";
 var CMD_FILES_EJECT = "files_eject";
 var CMD_FILES_SEARCH = "files_search";
+var CMD_FILES_PICK = "files_pick";
+var CMD_FILES_PICK_CANCEL = "files_pick_cancel";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -173,6 +175,7 @@ var EVENT_FILES_LOOK = "files_look";
 var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
 var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
+var EVENT_FILES_PICKER_CLOSED = "files_picker_closed";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
@@ -323,6 +326,11 @@ var TRANSFER_FAILED = "failed";
 var CLASH_REPLACE = "replace";
 var CLASH_MERGE = "merge";
 var CLASH_SKIP = "skip";
+
+// What a file picker picks (PickMode).
+var PICK_OPEN = "open";
+var PICK_SAVE = "save";
+var PICK_SAVE_FILES = "save_files";
 
 // END GENERATED
 

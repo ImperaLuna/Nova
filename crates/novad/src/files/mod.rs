@@ -9,6 +9,11 @@
 //!   exists, and items in it to select.
 //! - `file_manager1.rs`: `org.freedesktop.FileManager1`, so apps' "Show in
 //!   folder" opens Nova Files.
+//! - `portal.rs`: `org.freedesktop.impl.portal.FileChooser`, so apps'
+//!   Open and Save dialogs are Nova Files windows in picker mode;
+//!   `picker.rs`: the pickers waiting for their window's answer, and the
+//!   checks an answer passes; `filter.rs`: their file type filters, which
+//!   folder views apply.
 //! - `window.rs`: the Nova Files process (`ui/files.qml`), started when a
 //!   window is asked for and none runs.
 //! - Opening files in apps is the shared `crate::apps::opening`, over the
@@ -46,10 +51,15 @@
 //! the same lock, so none is lost or sent twice. A process that detached as
 //! it quit, with windows asked for since, is followed by a new one.
 
+#[cfg(test)]
+mod bus_fixture;
 mod copying;
 mod drives;
 mod file_manager1;
+mod filter;
 mod folder;
+mod picker;
+mod portal;
 pub mod search;
 mod target;
 mod transfers;
@@ -70,8 +80,8 @@ use crate::logger::Logger;
 use crate::notifications::Notifications;
 use crate::session_bus::{Bus, Stop};
 use nova_protocol::{
-    ClashAnswer, EjectOutcome, Event, FeatureState, FilePlace, FileSort, FilesLook, FilesWindow, FolderTree, Topic,
-    TransferMode,
+    ClashAnswer, EjectOutcome, Event, FeatureState, FileFilter, FilePlace, FileSort, FilesLook, FilesWindow,
+    FolderTree, Topic, TransferMode,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
@@ -144,6 +154,8 @@ struct Shared {
     logger: Arc<Logger>,
     delivery: Mutex<Delivery>,
     process: Option<window::Process>,
+    /// The file pickers apps wait on.
+    pickers: picker::Pickers,
 }
 
 /// Where windows go, under one lock.
@@ -189,7 +201,7 @@ impl Files {
                 }
             };
             let process = sources.ui.clone().map(|ui| window::Process::new(ui, Arc::clone(&logger), exited));
-            Shared { sources, hub, logger, delivery: Mutex::default(), process }
+            Shared { sources, hub, logger, delivery: Mutex::default(), process, pickers: picker::Pickers::default() }
         });
         let drives = udisks::Drives::start(
             shared.sources.udisks.clone(),
@@ -200,6 +212,7 @@ impl Files {
         );
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
+        portal::start(&shared, &stop);
         Arc::new(Self {
             shared,
             opener: Arc::new(opener),
@@ -234,8 +247,16 @@ impl Files {
     /// (`files_open`, [`views::Folders::open`]).
     /// How full the drives are is read again too, since a window going
     /// somewhere is when it's looked at.
-    pub fn open(&self, client: ClientId, view: u32, path: &str, sort: FileSort, hidden: bool) -> Result<(), String> {
-        self.folders.open(client, view, path, sort, hidden)?;
+    pub fn open(
+        &self,
+        client: ClientId,
+        view: u32,
+        path: &str,
+        sort: FileSort,
+        hidden: bool,
+        filter: Option<&FileFilter>,
+    ) -> Result<(), String> {
+        self.folders.open(client, view, path, sort, hidden, filter)?;
         self.drives.refresh();
         Ok(())
     }
@@ -306,6 +327,16 @@ impl Files {
         self.shared.open(target::window(folder, select)?)
     }
 
+    /// Answers the file picker `picker` with `paths` (`files_pick`).
+    pub fn pick(&self, picker: u32, paths: &[String], filter: Option<u32>) -> Result<(), String> {
+        self.shared.pickers.pick(picker, paths, filter)
+    }
+
+    /// The file picker `picker` closed without picking (`files_pick_cancel`).
+    pub fn cancel_pick(&self, picker: u32) {
+        self.shared.pickers.end(picker, picker::Answer::Cancelled);
+    }
+
     /// Client `client`, the Nova Files process, can open windows
     /// (`attached`), and is sent those waiting; or it's quitting, and gets
     /// no more.
@@ -351,10 +382,14 @@ impl Files {
         let mut delivery = lock(&self.shared.delivery);
         if delivery.attached == Some(client) {
             delivery.attached = None;
+            // Its picker windows went with it; those still waiting for a
+            // process stay.
+            self.shared.pickers.end_all(|id| delivery.waiting.iter().any(|window| picker_of(window) == Some(id)));
         }
     }
 
-    /// Stops it: it publishes nothing more, gives up FileManager1, closes
+    /// Stops it: it publishes nothing more, gives up FileManager1 and the
+    /// file chooser (its pickers end), closes
     /// Nova Files' windows and folder views, stops copies, following the
     /// MIME database and keeping the search index, and drops windows still
     /// waiting.
@@ -372,6 +407,7 @@ impl Files {
             process.stop();
         }
         *lock(&self.shared.delivery) = Delivery::default();
+        self.shared.pickers.end_all(|_| false);
     }
 }
 
@@ -397,6 +433,22 @@ impl Shared {
         Ok(())
     }
 
+    /// Ends the file picker `picker` for its app (it gave up asking):
+    /// drops its window if it still waits for Nova Files, else closes it.
+    fn end_picker(&self, picker: u32) {
+        if !self.pickers.end(picker, picker::Answer::Ended) {
+            return;
+        }
+        let mut delivery = lock(&self.delivery);
+        let waited = delivery.waiting.len();
+        delivery.waiting.retain(|window| picker_of(window) != Some(picker));
+        if delivery.waiting.len() == waited
+            && let Some(client) = delivery.attached
+        {
+            self.hub.send_to(client, &Event::FilesPickerClosed { picker });
+        }
+    }
+
     fn send(&self, client: ClientId, window: &FilesWindow) -> bool {
         self.hub.send_to(client, &Event::FilesWindow(window.clone()))
     }
@@ -413,6 +465,11 @@ impl Shared {
             process.ensure_running();
         }
     }
+}
+
+/// The file picker a window is, if it's one.
+fn picker_of(window: &FilesWindow) -> Option<u32> {
+    window.picker.as_ref().map(|picker| picker.id)
 }
 
 /// Its options are how solid the windows are, applied in place.

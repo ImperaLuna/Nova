@@ -281,8 +281,8 @@ impl<'a> Connection<'a> {
             Command::ShowFolder { folder, select } => done(self.files().and_then(|files| files.show(folder, select))),
             // Answered here, in order with the connection's other requests,
             // so a close or a hang-up never overtakes the open it follows.
-            Command::FilesOpen { view, path, sort, hidden } => {
-                done(self.files().and_then(|files| files.open(self.id, *view, path, *sort, *hidden)))
+            Command::FilesOpen { view, path, sort, hidden, filter } => {
+                done(self.files().and_then(|files| files.open(self.id, *view, path, *sort, *hidden, filter.as_ref())))
             }
             Command::FilesClose { view } => done(self.files().map(|files| files.close(self.id, *view))),
             Command::FilesTransfer { job, mode, sources, folder } => {
@@ -294,6 +294,10 @@ impl<'a> Connection<'a> {
             Command::FilesTransferAnswer { job, clash, answer, all } => {
                 done(self.files().and_then(|files| files.answer_clash(self.id, *job, *clash, *answer, *all)))
             }
+            Command::FilesPick { picker, paths, filter } => {
+                done(self.files().and_then(|files| files.pick(*picker, paths, *filter)))
+            }
+            Command::FilesPickCancel { picker } => done(self.files().map(|files| files.cancel_pick(*picker))),
             Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
             Command::FilesLaunch { path, app } => {
                 let (path, app) = (path.clone(), app.clone());
@@ -944,6 +948,8 @@ impl<'a> Connection<'a> {
             | Command::FilesTransferCancel { .. }
             | Command::FilesTransferAnswer { .. }
             | Command::AttachFiles { .. }
+            | Command::FilesPick { .. }
+            | Command::FilesPickCancel { .. }
             | Command::FilesLaunch { .. }
             | Command::FilesOpenWith { .. }
             | Command::FilesSetDefault { .. }
