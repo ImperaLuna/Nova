@@ -47,6 +47,8 @@ pub fn unpack(archive: &Path, kind: Kind, into: &Path, progress: &mut dyn FnMut(
         let target = into.join(&member.path);
         match member.kind {
             MemberKind::File => {
+                // A link listed earlier under this name is replaced by it.
+                later.links.retain(|(link, _)| *link != target);
                 if let Some(parent) = target.parent() {
                     fs::DirBuilder::new().recursive(true).mode(DIR_MODE).create(parent)?;
                 }

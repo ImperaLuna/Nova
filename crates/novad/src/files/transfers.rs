@@ -666,6 +666,7 @@ impl Run {
         if !packed.map_err(|e| failed(&self.folder.join(&name), &e))? {
             return Err(Halt::Stopped);
         }
+        self.check()?;
         part.keep(&name, ZIP_MODE).map_err(|e| failed(&self.folder.join(&name), &e))?;
         Ok(())
     }
