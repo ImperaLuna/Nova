@@ -24,7 +24,7 @@ import "space.js" as Space
 // Shift+Delete to delete it for good (`deleteRequested`); Alt+Enter asks
 // for its Properties, or the folder's with nothing selected
 // (`propertiesRequested`). A middle click on a folder asks for it in a new
-// tab (`tabRequested`). view() and show() hand its order and selection to
+// tab (`tabRequested`). tabView() and show() hand its order and selection to
 // the window's tabs and back.
 // As "What uses space" (`spaceView`) it lists folders and files together,
 // biggest first, each with a bar against the biggest, under the drive the
@@ -146,14 +146,14 @@ FocusScope {
     }
 
     // The order and the selected names, for a tab going to the back.
-    function view(): var {
+    function tabView(): var {
         return {
             sort: model.sort,
             selected: model.selectedNames()
         };
     }
 
-    // Shows a tab's view() (its order; null keeps this one) once its folder
+    // Shows a tab's tabView() (its order; null keeps this one) once its folder
     // is set, with `selected` (names) selected. Shift starts from nothing,
     // not from the last tab's anchor.
     function show(kept: var, selected: var) {

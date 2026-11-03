@@ -215,7 +215,7 @@ FloatingWindow {
     function snapshot(): var {
         return {
             folder: folder,
-            list: list.view(),
+            list: list.tabView(),
             trash: trash.selectedIds()
         };
     }
