@@ -20,7 +20,9 @@ import "../daemon/protocol.js" as Protocol
 // deleted for good is asked about first (ConfirmDialog). At the games,
 // theirs do, and a game's menu goes to its install or save folder. A
 // drive's menu and the dialog when one can't be ejected, a folder's pin
-// menu and a game's menu lie over it all.
+// menu and a game's menu lie over it all. What uses space (the command
+// row's button, or opening a drive) stays on as the window moves, until
+// the button turns it off.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -43,6 +45,7 @@ FloatingWindow {
     readonly property bool inFolder: !Home.isPage(folder)
     // The command row shown: the trash's, the games' or the folder's.
     readonly property Item commandRow: inTrash ? trashCommands : inGames ? gamesCommands : commands
+    property bool spaceView: false
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -102,6 +105,12 @@ FloatingWindow {
                     if (error)
                         window.notice(null, error);
                 }));
+    }
+
+    // Opens the drive `id`, showing what uses space on it.
+    function openDrive(id: string) {
+        spaceView = true;
+        navigator.openDrive(id);
     }
 
     function confirm(rows: var, act: var) {
@@ -204,6 +213,8 @@ FloatingWindow {
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
         visible: !window.inTrash && !window.inGames
+        spaceView: window.spaceView
+        onSpaceToggled: window.spaceView = !window.spaceView
     }
     TrashCommandRow {
         id: trashCommands
@@ -236,6 +247,7 @@ FloatingWindow {
         navigator: window.navigator
         onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
         onPinMenuRequested: (path, at) => pinMenu.open(path, at)
+        onDriveOpened: id => window.openDrive(id)
     }
     FileList {
         id: list
@@ -252,6 +264,7 @@ FloatingWindow {
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
         solid: FilesService.listSolid
+        spaceView: window.spaceView
         // Back from a page (Home, the games, the trash): keys go to the
         // list at once.
         onVisibleChanged: {
@@ -274,6 +287,7 @@ FloatingWindow {
             if (visible)
                 forceActiveFocus();
         }
+        onDriveOpened: id => window.openDrive(id)
     }
     TrashModel {
         id: trash

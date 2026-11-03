@@ -128,6 +128,8 @@ var PASTE = "M9 4.5h6v3H9zM15 6h2.5v14h-11V6H9";
 var RENAME = "M4 20h4L19 9l-4-4L4 16zM13 7l4 4";
 var SORT = "M7 5v14M4 16l3 3 3-3M17 19V5M14 8l3-3 3 3";
 var VIEW = "M4 6h16M4 12h16M4 18h16";
+// What uses space: bars from longest to shortest.
+var SIZES = "M4 6h16M4 12h11M4 18h6";
 // Nova Files' drives: a disk inside the machine, a USB stick, and Eject.
 var DISK = "M5.5 7h13a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zM7 12h.01M10 12h7";
 var USB = "M8 9.5h8V20H8zM9.5 4h5v5.5h-5zM11 6.5h.01M13 6.5h.01";

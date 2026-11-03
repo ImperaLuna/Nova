@@ -3,13 +3,17 @@ import "../theme"
 import "../theme/icons.js" as Icons
 
 // Nova Files' command row, under the navigation row: New first, then cut,
-// copy, paste, rename and delete, then Sort and View.
+// copy, paste, rename and delete, then Sort and View, then What uses
+// space, which stays lit while the list shows it (`spaceView`).
 Rectangle {
     id: row
 
     implicitHeight: actions.implicitHeight + Tokens.filesCommandPadTop + Tokens.gap
     // How solid the window frame is (0..1): the row fades into it.
     property real solid: 0
+    property bool spaceView: false
+
+    signal spaceToggled
 
     color: Tokens.alpha(Tokens.surfaceRaised, Tokens.raisedOpacity * (1 - solid))
 
@@ -68,6 +72,13 @@ Rectangle {
             label: qsTr("View")
             menu: true
             enabled: false
+        }
+        Separator {}
+        ToolButton {
+            icon: Icons.SIZES
+            label: qsTr("What uses space")
+            checked: row.spaceView
+            onClicked: row.spaceToggled()
         }
     }
 }
