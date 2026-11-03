@@ -62,6 +62,7 @@ var FILES_TRASH_PLACE = "trash:///";
 
 // The Home page's path in files_places: Quick access and Recent, not a folder.
 var FILES_HOME_PLACE = "home:///";
+
 // files_pick's error for a save over a file that's there.
 var FILES_PICK_EXISTS = "exists";
 
@@ -367,6 +368,7 @@ var CLASH_SKIP = "skip";
 var PREVIEW_IMAGE = "image";
 var PREVIEW_TEXT = "text";
 var PREVIEW_NONE = "none";
+
 // What a file picker picks (PickMode).
 var PICK_OPEN = "open";
 var PICK_SAVE = "save";
