@@ -34,6 +34,10 @@
 //!   each, asking the window about name clashes.
 //! - `copying.rs`: the file system side of those: measuring, numbered
 //!   names, and copying a file in chunks.
+//! - `archive/`: zips and tars, opened like read-only folders by the
+//!   views, extracted and packed by the copy jobs. A file opened from
+//!   inside one is extracted first, to its own folder under the cache's
+//!   `opened` folder, which is emptied as the module starts.
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
@@ -46,6 +50,7 @@
 //! the same lock, so none is lost or sent twice. A process that detached as
 //! it quit, with windows asked for since, is followed by a new one.
 
+mod archive;
 mod copying;
 mod drives;
 mod file_manager1;
@@ -87,6 +92,8 @@ const MAX_WAITING: usize = 64;
 const TRASH_DIR: &str = "Trash";
 /// This process's mount table.
 const MOUNT_TABLE: &str = "/proc/self/mountinfo";
+/// Where files opened from inside archives are extracted, in Nova's cache.
+const OPENED_DIR: &str = "nova/opened";
 
 /// Where Nova Files runs from.
 #[derive(Clone)]
@@ -112,6 +119,9 @@ pub struct Sources {
     pub trash: Option<PathBuf>,
     /// The mount table, where drives' trashes are looked for.
     pub mounts: PathBuf,
+    /// Where files opened from inside archives are extracted; none without
+    /// a home.
+    pub opened: Option<PathBuf>,
 }
 
 pub struct Files {
@@ -200,6 +210,12 @@ impl Files {
         );
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
+        // Copies opened from archives in an earlier run.
+        if let Some(opened) = &shared.sources.opened
+            && let Err(e) = copying::remove(opened)
+        {
+            shared.logger.warn(LOG_SOURCE, &format!("can't empty {}: {e}", opened.display()));
+        }
         Arc::new(Self {
             shared,
             opener: Arc::new(opener),
@@ -218,6 +234,30 @@ impl Files {
     /// What opens files in apps.
     pub fn opener(&self) -> Arc<Opener> {
         Arc::clone(&self.opener)
+    }
+
+    /// Opens the file at `path` in the app `app`, or its default app
+    /// (`files_launch`). One inside an archive is extracted first, and the
+    /// app opens that copy. It reads the archive, so it's called off the
+    /// connection's thread.
+    pub fn launch(&self, path: &str, app: Option<&str>) -> Result<(), String> {
+        let path = self.openable(path)?;
+        match app {
+            Some(app) => self.opener.open_with(&path, app),
+            None => self.opener.open(&path),
+        }
+    }
+
+    /// `path`, or the copy of it extracted when it's in an archive.
+    fn openable(&self, path: &str) -> Result<String, String> {
+        let checked = views::checked_path(path)?;
+        let Some(inside) = archive::Inside::of(&checked).filter(|inside| !inside.inner.as_os_str().is_empty()) else {
+            return Ok(path.to_owned());
+        };
+        let opened = self.shared.sources.opened.as_ref().ok_or("Nowhere to extract it to")?;
+        let name = inside.inner.file_name().map(nova_protocol::wire_text).unwrap_or_default();
+        let copy = archive::open_copy(&inside, opened).map_err(|e| format!("Can't extract {name}: {e}"))?;
+        Ok(nova_protocol::wire_text(copy))
     }
 
     /// The trash.
@@ -442,6 +482,7 @@ impl crate::modules::Module for Files {
             trash,
             mounts: MOUNT_TABLE.into(),
             search,
+            opened: nova_paths::cache_home().map(|cache| cache.join(OPENED_DIR)),
         }
     }
 
@@ -522,6 +563,7 @@ mod tests {
                 search: search::Sources::under(&dir),
                 trash: Some(dir.join("Trash")),
                 mounts: dir.join("no-mountinfo"),
+                opened: Some(dir.join("opened")),
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");

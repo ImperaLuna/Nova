@@ -11,7 +11,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -192,6 +192,33 @@ impl Part {
         }
     }
 
+    /// The file it fills, for a writer of its own (a zip).
+    pub fn file(&mut self) -> io::Result<&mut File> {
+        self.file.as_mut().ok_or_else(|| io::Error::other("already finished"))
+    }
+
+    /// Makes it a new file with permissions `mode` named `name` in its
+    /// folder, or the next free numbered name ([`numbered`]) when that's
+    /// taken, never replacing anything; answers the name it got.
+    pub fn keep(mut self, name: &OsStr, mode: u32) -> io::Result<OsString> {
+        if let Some(file) = &self.file {
+            let _ = file.set_permissions(fs::Permissions::from_mode(mode));
+        }
+        let folder = self.path.parent().unwrap_or(Path::new("/")).to_owned();
+        let mut name = name.to_owned();
+        for _ in 0..MOST_NUMBERED {
+            match rename_new(&self.path, &folder.join(&name)) {
+                Ok(()) => {
+                    self.file = None;
+                    return Ok(name);
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => name = numbered(&folder, &name, false)?,
+                Err(e) => return Err(e),
+            }
+        }
+        Err(io::Error::other("no free name"))
+    }
+
     /// Gives it `meta`'s permissions and modified time where the drive
     /// keeps them (a FAT stick refuses permissions) and puts it at
     /// `target`, over anything there; it's removed if that fails. Not
@@ -305,6 +332,18 @@ pub fn remove(path: &Path) -> io::Result<()> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e),
     }
+}
+
+/// Renames `from` to `to` unless something is already there.
+fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
+    use std::ffi::CString;
+    let from = CString::new(from.as_os_str().as_bytes()).map_err(io::Error::other)?;
+    let to = CString::new(to.as_os_str().as_bytes()).map_err(io::Error::other)?;
+    // SAFETY: both are NUL-terminated paths that live through the call.
+    let renamed = unsafe {
+        libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE)
+    };
+    if renamed == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }
 
 #[cfg(test)]

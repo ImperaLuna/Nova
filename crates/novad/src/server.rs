@@ -297,10 +297,7 @@ impl<'a> Connection<'a> {
             Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
             Command::FilesLaunch { path, app } => {
                 let (path, app) = (path.clone(), app.clone());
-                return self.opener_later(move |opener| match app {
-                    Some(app) => opener.open_with(&path, &app),
-                    None => opener.open(&path),
-                });
+                return self.files_later(move |files| files.launch(&path, app.as_deref()));
             }
             // Answered off the connection's thread: the files found are
             // looked at, and a slow drive must not hold up its other requests.

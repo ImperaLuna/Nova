@@ -2229,6 +2229,10 @@ pub struct FolderPage {
     /// How many entries the view holds once every page is in.
     pub total: u32,
     pub entries: Vec<FileEntry>,
+    /// The archive the folder is in, when it's inside one (wire text):
+    /// it's read-only, and extracting it is what can be done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive: Option<String>,
 }
 
 /// An entry of a folder view.
@@ -2245,6 +2249,10 @@ pub struct FileEntry {
     pub link: bool,
     /// Its name starts with a dot.
     pub hidden: bool,
+    /// An archive Nova Files opens like a folder (zip, tar): `files_open`
+    /// shows what's in it, read-only.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub archive: bool,
     /// Its type in the shared MIME database, from its name (`inode/directory`
     /// for a folder).
     pub mime: String,
@@ -2274,6 +2282,15 @@ pub enum FolderChange {
 pub enum TransferMode {
     Copy,
     Move,
+    /// Extracts each archive among `sources` into a new folder named after
+    /// it ("photos.zip" into "photos") in `folder`, merging with one already
+    /// there ("Extract all").
+    Extract,
+    /// Extracts each archive's contents straight into `folder`.
+    ExtractHere,
+    /// Packs `sources` into one new zip in `folder`, named after the first
+    /// ("Compress to ZIP"); a taken name gets a number.
+    Compress,
 }
 
 /// How a copy or move job is going ([`Event::FilesTransfer`]).
@@ -3179,6 +3196,7 @@ mod tests {
             encode(Event::FilesPage(FolderPage {
                 view: 1,
                 path: "/home/user/Pictures".into(),
+                archive: None,
                 start: 0,
                 total: 2,
                 entries: vec![
@@ -3187,6 +3205,7 @@ mod tests {
                         dir: true,
                         link: false,
                         hidden: false,
+                        archive: false,
                         mime: "inode/directory".into(),
                         size: None,
                         modified_ms: Some(1_793_000_000_000),
@@ -3196,6 +3215,7 @@ mod tests {
                         dir: false,
                         link: false,
                         hidden: false,
+                        archive: false,
                         mime: "image/png".into(),
                         size: Some(48_213),
                         modified_ms: Some(1_792_900_000_000),
@@ -3213,6 +3233,7 @@ mod tests {
                             dir: false,
                             link: false,
                             hidden: false,
+                            archive: false,
                             mime: "image/png".into(),
                             size: Some(48_213),
                             modified_ms: Some(1_793_000_100_000),
@@ -3225,6 +3246,7 @@ mod tests {
                             dir: true,
                             link: true,
                             hidden: false,
+                            archive: false,
                             mime: "inode/directory".into(),
                             size: None,
                             modified_ms: None,
@@ -3304,6 +3326,7 @@ mod tests {
                                 dir: true,
                                 link: false,
                                 hidden: false,
+                                archive: false,
                                 mime: "inode/directory".into(),
                                 size: None,
                                 modified_ms: Some(1_793_000_000_000),

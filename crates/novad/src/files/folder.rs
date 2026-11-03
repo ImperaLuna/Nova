@@ -10,6 +10,7 @@
 //! ([`natural`]). It's a total order (raw names break the last ties), so
 //! every entry has exactly one place and a binary search finds it.
 
+use crate::files::archive;
 use crate::mime::MimeDb;
 use nova_protocol::{FileEntry, FileSort, FileSortKey, FolderChange};
 use std::cmp::Ordering;
@@ -38,6 +39,7 @@ pub fn read_entry(folder: &Path, name: &OsStr, mime: &MimeDb) -> Option<FileEntr
             dir: false,
             link,
             hidden,
+            archive: false,
             mime: BROKEN_LINK_MIME.into(),
             size: None,
             modified_ms: None,
@@ -46,6 +48,7 @@ pub fn read_entry(folder: &Path, name: &OsStr, mime: &MimeDb) -> Option<FileEntr
     let dir = target.is_dir();
     Some(FileEntry {
         mime: mime.type_by_name(&name.to_string_lossy(), &target).to_owned(),
+        archive: !dir && archive::Kind::of_name(name).is_some(),
         name: wire,
         dir,
         link,
@@ -296,6 +299,7 @@ mod tests {
             dir: false,
             link: false,
             hidden: is_hidden(name),
+            archive: false,
             mime: "text/plain".into(),
             size: Some(size),
             modified_ms: Some(0),

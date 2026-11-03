@@ -308,6 +308,8 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             search: crate::files::search::Sources::under(dir),
             // A home trash under `<dir>/trash`, and no drives.
             trash: Some(dir.join("trash")),
+            // Files opened from archives under `<dir>/opened`.
+            opened: Some(dir.join("opened")),
             mounts: dir.join("no-mountinfo"),
         },
         session_lock: dir.to_owned(),
