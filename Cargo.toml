@@ -34,11 +34,11 @@ cbc = { version = "0.2", features = ["alloc", "block-padding"] }
 pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
 sha1 = { version = "0.11", default-features = false }
 base64 = "0.23"
-# Nova Files' archives (IMP-323), pure Rust for the static musl build: zip with deflate through zlib-rs,
-# tar, gzip through flate2, zstd decoding through ruzstd, xz through lzma-rust2.
-zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs", "deflate64", "lzma", "xz", "jiff-02"] }
+# Nova Files' archives (IMP-323), pure Rust for the static musl build: zip, tar, deflate and gzip
+# through flate2's miniz_oxide (png's already), zstd decoding through ruzstd, xz through lzma-rust2.
+zip = { version = "9", default-features = false, features = ["deflate-flate2", "deflate64", "lzma", "xz", "jiff-02"] }
 tar = { version = "0.4", default-features = false }
-flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 ruzstd = "0.9"
 lzma-rust2 = { version = "0.23", default-features = false, features = ["std", "xz"] }
 nova-protocol = { path = "crates/nova-protocol" }
