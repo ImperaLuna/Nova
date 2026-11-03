@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Shapes
 
 // A line icon from an SVG path on a 24-unit grid (icons.js has Nova's),
-// stroked in `color` and scaled to `size`. `fill` is drawn solid
+// stroked in `color` and scaled to `size`; `stroke` is the line's width on
+// that grid, so a big icon can keep its lines fine. `fill` is drawn solid
 // underneath, for the few icons with a solid part.
 Item {
     id: icon
@@ -11,6 +12,7 @@ Item {
     property string fill: ""
     property color color: Tokens.fg
     property int size: Tokens.iconSize
+    property real stroke: Tokens.iconStroke
 
     implicitWidth: size
     implicitHeight: size
@@ -34,7 +36,7 @@ Item {
         ShapePath {
             fillColor: "transparent"
             strokeColor: icon.color
-            strokeWidth: Tokens.iconStroke
+            strokeWidth: icon.stroke
             capStyle: ShapePath.RoundCap
             joinStyle: ShapePath.RoundJoin
             PathSvg {

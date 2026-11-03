@@ -1,6 +1,7 @@
 id = "files"
 name = "Nova Files"
 description = "A file manager in Nova's look, opened for every folder and every app's \"Show in folder\"."
+default = true
 daemon = "files"
 
 # The drives in the sidebar come from udisks2 (udisksd) on the system bus,

@@ -148,19 +148,45 @@ function pick(anchor, index, ctrl, shift) {
     };
 }
 
-// The keys that move through the rows.
-var MOVES = [Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End];
+// The file list's views: Details' rows under their column headers, or
+// Icons' tiles.
+var DETAILS = "details";
+var ICONS = "icons";
 
-// The row a navigation key moves to from `current` among `count` rows,
-// `page` rows to a screen; `current` itself for any other key.
-function moved(key, current, count, page) {
+// How many steps tile `index` is from tile `from` in a grid `columns`
+// wide, counting a diagonal step as one: the order tiles ease in, rippling
+// out from where the list opened.
+function gridDistance(index, from, columns) {
+    const lines = Math.abs(Math.floor(index / columns) - Math.floor(from / columns));
+    return Math.max(lines, Math.abs(index % columns - from % columns));
+}
+
+// The keys that move through the rows, and through the tiles of the
+// Icons view, which go sideways too.
+var MOVES = [Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End];
+var GRID_MOVES = MOVES.concat([Qt.Key_Left, Qt.Key_Right]);
+
+// The entry a navigation key moves to from `current` among `count`
+// entries laid out `columns` to a line (1 for Details' rows), `page`
+// entries to a screen; `current` itself for any other key. Up and Down
+// go a line; Down on the line above a short last line lands on the last
+// entry, and Up, Down, Left or Right with nowhere to go stays put.
+function moved(key, current, count, page, columns = 1) {
     const last = count - 1;
     const from = Math.max(current, 0);
+    if (current < 0 && key !== Qt.Key_End && key !== Qt.Key_PageDown)
+        return 0;
     switch (key) {
     case Qt.Key_Up:
-        return current < 0 ? 0 : Math.max(from - 1, 0);
+        return from - columns >= 0 ? from - columns : from;
     case Qt.Key_Down:
-        return current < 0 ? 0 : Math.min(from + 1, last);
+        if (from + columns <= last)
+            return from + columns;
+        return Math.floor(from / columns) < Math.floor(last / columns) ? last : from;
+    case Qt.Key_Left:
+        return Math.max(from - 1, 0);
+    case Qt.Key_Right:
+        return Math.min(from + 1, last);
     case Qt.Key_PageUp:
         return Math.max(from - page, 0);
     case Qt.Key_PageDown:

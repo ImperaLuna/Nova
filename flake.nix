@@ -439,6 +439,25 @@
                 touch $out
               '';
 
+          # The stack keeper's script (scripts/stack.sh): shellcheck, and its
+          # tests on a throwaway stack with a local remote.
+          stack-script =
+            pkgs.runCommand "nova-stack-script"
+              {
+                nativeBuildInputs = [
+                  pkgs.shellcheck
+                  pkgs.git
+                  pkgs.jq
+                ];
+              }
+              ''
+                cp ${./scripts/stack.sh} stack.sh && cp ${./scripts/test-stack.sh} test-stack.sh
+                shellcheck stack.sh test-stack.sh
+                patchShebangs stack.sh test-stack.sh
+                ./test-stack.sh
+                touch $out
+              '';
+
           # The blur rules `nova setup` writes for niri, against this niri.
           niri-rules = pkgs.runCommand "nova-niri-rules" { nativeBuildInputs = [ pkgs.niri ]; } ''
             niri validate -c ${./packaging/compositor/niri.kdl}
