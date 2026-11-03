@@ -2007,6 +2007,15 @@ pub enum Command {
         sources: Vec<String>,
         folder: String,
     },
+    /// Whether every item at `sources` (absolute paths, wire text) is on
+    /// the same drive (file system) as the folder `folder` (feature
+    /// `files`), answered with a bool. Nova Files moves what's dragged onto
+    /// a folder on the same drive and copies it to another, as Explorer
+    /// does.
+    FilesSameDrive {
+        sources: Vec<String>,
+        folder: String,
+    },
     /// Stops this connection's job `job`. What it already copied or moved
     /// stays; a file it was halfway through is removed.
     FilesTransferCancel {
@@ -2078,7 +2087,8 @@ pub enum Command {
     /// this connection's job `job` (feature `files`): the Properties
     /// window's size. Answered once the job is started, without touching
     /// the disk; the counts follow as [`Event::FilesMeasured`]s. Links
-    /// aren't followed, and folders that can't be read are skipped. A job
+    /// aren't followed, other drives mounted inside an item aren't
+    /// counted, and folders that can't be read are skipped. A job
     /// ends by itself when its connection closes.
     FilesMeasure {
         job: u32,

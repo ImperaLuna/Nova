@@ -5,6 +5,7 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 import "service"
+import "drops.js" as Drops
 import "trash.js" as Trash
 
 // Nova Files' sidebar: the places that exist first (a click goes there),
@@ -12,7 +13,9 @@ import "trash.js" as Trash
 // the drives (Drives.qml) under a line of their own, a line, then the
 // folder tree that follows the window. A drive opened goes through the
 // navigator like a place; when the drive the window is on goes away, it
-// goes home.
+// goes home. Files dragged onto a place, a mounted drive or a folder in
+// the tree drop there (onto the trash, into the trash), and a tree folder
+// drags out; the places themselves stay put.
 Item {
     id: sidebar
 
@@ -22,6 +25,8 @@ Item {
 
     // A drive's menu was asked for at `at` (in the window).
     signal driveMenuRequested(var drive, point at)
+    // A drop asks for `action` (Drops.decide) on `sources` into `folder`.
+    signal dropRequested(string action, var sources, string folder)
 
     readonly property var looks: ({
             [Protocol.PLACE_HOME]: {
@@ -75,7 +80,7 @@ Item {
                 width: parent.width
                 height: Tokens.filesPlaceHeight
                 radius: Tokens.menuRowRadius
-                color: current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
+                color: placeDrops.action !== Drops.NONE ? Tokens.filesDropTarget : current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
 
                 Behavior on color {
                     ColorAnimation {
@@ -110,6 +115,13 @@ Item {
                 TapHandler {
                     onTapped: sidebar.navigator.visit(place.modelData.path, null)
                 }
+                DropTarget {
+                    id: placeDrops
+                    anchors.fill: parent
+                    service: FilesService
+                    folderAt: () => Drops.place(place.modelData.path, false)
+                    onDropRequested: (action, sources, folder) => sidebar.dropRequested(action, sources, folder)
+                }
             }
         }
 
@@ -134,6 +146,7 @@ Item {
             onOpened: folder => sidebar.navigator.visit(folder, null)
             onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
             onDriveGone: sidebar.navigator.visit("~", null)
+            onDropRequested: (action, sources, folder) => sidebar.dropRequested(action, sources, folder)
         }
     }
 
@@ -150,6 +163,7 @@ Item {
     }
 
     FolderTree {
+        id: tree
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: rule.bottom
@@ -159,5 +173,18 @@ Item {
         anchors.topMargin: Tokens.filesRuleInset
         anchors.bottomMargin: Tokens.gap
         navigator: sidebar.navigator
+        dropFolder: treeDrops.action !== Drops.NONE ? treeDrops.hovered.folder : ""
+        onDragRequested: path => treeDrag.start([path], Icons.FOLDER, Tokens.filesFolder)
+    }
+    DropTarget {
+        id: treeDrops
+        anchors.fill: tree
+        service: FilesService
+        folderAt: (x, y) => tree.placeAt(x, y)
+        onDropRequested: (action, sources, folder) => sidebar.dropRequested(action, sources, folder)
+        onSpringOpened: folder => sidebar.navigator.toggle(folder, false)
+    }
+    FileDrag {
+        id: treeDrag
     }
 }

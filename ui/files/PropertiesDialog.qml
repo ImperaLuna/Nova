@@ -11,7 +11,7 @@ import "properties.js" as Props
 // a drive's fill bar, and for one item who may read, change and run it,
 // which its owner can tick. "Change" beside "Opens with" lists the other
 // apps; picking one makes it the default. The size counts up as novad
-// measures. Close (the default), Enter and Escape close it.
+// measures, dimmed until it's complete. Close (the default), Enter and Escape close it.
 // It only shows what it's given; PropertiesModel asks novad.
 Item {
     id: dialog
@@ -22,6 +22,8 @@ Item {
     property var properties: null
     // The size measured so far (Props.total), or null.
     property var counted: null
+    // A change to who may open it is on its way: no other is taken.
+    property bool changing: false
     // The apps that open the one file ({id, name}), the default first, and
     // the default's id ("" for none).
     property var apps: []
@@ -153,7 +155,8 @@ Item {
                                     elide: Text.ElideRight
                                     font.family: Tokens.fontSans
                                     font.pixelSize: Tokens.fontSize
-                                    color: Tokens.fg
+                                    // Still counting: dim until the count is complete.
+                                    color: fact.modelData.counting === true ? Tokens.fgDim : Tokens.fg
 
                                     FontMetrics {
                                         id: fontMetrics
@@ -308,7 +311,7 @@ Item {
                                         checked: person.modelData.rights[rightCell.modelData.key]
                                     }
                                     TapHandler {
-                                        enabled: dialog.properties?.yours ?? false
+                                        enabled: (dialog.properties?.yours ?? false) && !dialog.changing
                                         onTapped: dialog.accessFlipped(person.modelData.key, rightCell.modelData.key)
                                     }
                                 }

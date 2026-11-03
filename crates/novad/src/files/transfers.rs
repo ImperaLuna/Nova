@@ -33,7 +33,7 @@ use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, Metadata};
 use std::io;
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -722,16 +722,42 @@ fn unreadable(path: &Path, error: &io::Error) -> Halt {
     })
 }
 
+/// Whether every item at `sources` is on the same drive (file system) as
+/// `folder` (`files_same_drive`), so a drop there moves rather than copies.
+/// An item is looked at itself, not through a link, and a drive mounted on
+/// a folder counts as its own: dragging a mount point copies it.
+pub fn same_drive(sources: &[String], folder: &str) -> Result<bool, String> {
+    if sources.len() > FILES_TRANSFER_MAX_SOURCES {
+        return Err(format!("At most {FILES_TRANSFER_MAX_SOURCES} items can be copied at once"));
+    }
+    let device =
+        |path: &Path, meta: io::Result<Metadata>| meta.map(|meta| meta.dev()).map_err(|e| why_failed(path, &e));
+    let folder = checked_path(folder)?;
+    let drive = device(&folder, fs::metadata(&folder))?;
+    for source in sources {
+        let source = checked_path(source)?;
+        if device(&source, fs::symlink_metadata(&source))? != drive {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Why `path` couldn't be copied or moved, for the window.
 fn failed(path: &Path, error: &io::Error) -> Halt {
+    Halt::Failed(why_failed(path, error))
+}
+
+/// Why `path` couldn't be read, copied or moved, in words.
+fn why_failed(path: &Path, error: &io::Error) -> String {
     let path = path.display();
-    Halt::Failed(match error.kind() {
+    match error.kind() {
         io::ErrorKind::NotFound => format!("{path} doesn't exist"),
         io::ErrorKind::PermissionDenied => format!("No permission for {path}"),
         io::ErrorKind::StorageFull => format!("No space left for {path}"),
         io::ErrorKind::ReadOnlyFilesystem => format!("{path} is on a read-only drive"),
         _ => format!("Can't copy {path}: {error}"),
-    })
+    }
 }
 
 #[cfg(test)]
@@ -816,6 +842,23 @@ mod tests {
             names.sort();
             names
         }
+    }
+
+    #[test]
+    fn a_drop_on_the_same_drive_moves_and_on_another_copies() {
+        let fixture = Fixture::new("same-drive");
+        fixture.write("from/Photos/a.png", "1");
+        let path = |name: &str| fixture.dir.join(name).display().to_string();
+        let sources = [path("from/Photos"), path("from/Photos/a.png")];
+        assert_eq!(same_drive(&sources, &path("to")), Ok(true));
+        assert_eq!(same_drive(&sources, "/proc"), Ok(false), "/proc is a file system of its own");
+        assert_eq!(
+            same_drive(&[path("from/Photos"), "/proc/self".into()], &path("to")),
+            Ok(false),
+            "one away is enough"
+        );
+        assert!(same_drive(&[path("from/gone.txt")], &path("to")).unwrap_err().contains("doesn't exist"));
+        assert!(same_drive(&sources, "relative").is_err(), "paths are checked");
     }
 
     #[test]

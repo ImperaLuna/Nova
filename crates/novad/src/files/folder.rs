@@ -90,6 +90,20 @@ pub fn is_hidden(name: &str) -> bool {
     name.starts_with('.')
 }
 
+/// `st_blocks` counts in these, whatever the file system's block size.
+const STAT_BLOCK: u64 = 512;
+
+/// What an item takes on its drive, in bytes.
+pub fn disk_bytes(metadata: &Metadata) -> u64 {
+    metadata.blocks().saturating_mul(STAT_BLOCK)
+}
+
+/// A time in milliseconds since 1970, when it's after then.
+pub fn millis(time: std::time::SystemTime) -> Option<i64> {
+    let since = time.duration_since(std::time::SystemTime::UNIX_EPOCH).ok()?;
+    i64::try_from(since.as_millis()).ok()
+}
+
 fn modified_ms(metadata: &Metadata) -> Option<i64> {
     let seconds = metadata.mtime().checked_mul(1000)?;
     seconds.checked_add(metadata.mtime_nsec() / 1_000_000)

@@ -117,7 +117,8 @@ function total(counts, jobs) {
 }
 
 // The label and value rows, in groups (a rule between each): [[{label,
-// value, change}]], `change` on "Opens with", which offers other apps. `properties` is novad's answer for one item (null for a
+// value, change, counting}]], `change` on "Opens with", which offers
+// other apps, `counting` on sizes still being counted. `properties` is novad's answer for one item (null for a
 // selection or while it's on its way), `counted` the measure's total
 // (null when not measured), `openWith` the app that opens it ({name}, or
 // null).
@@ -142,6 +143,8 @@ function groups(subject, properties, counted, openWith) {
         sizes.push(pair(qsTr("Size"), size(counted.bytes)), pair(qsTr("Size on disk"), size(counted.disk_bytes)));
         if (dir)
             sizes.push(pair(qsTr("Contains"), contains(counted.files, counted.folders)));
+        for (const row of sizes)
+            row.counting = !counted.done;
     } else if (entry && entry.size !== undefined) {
         sizes.push(pair(qsTr("Size"), size(entry.size)));
         if (properties.disk_bytes !== undefined)
@@ -187,6 +190,8 @@ function selectionGroups(subject, counted) {
             label: qsTr("Contains"),
             value: contains(rows.length - folders + counted.files, folders + counted.folders)
         });
+    for (const row of sizes)
+        row.counting = !counted.done;
     return sizes.length > 0 ? [facts, sizes] : [facts];
 }
 
