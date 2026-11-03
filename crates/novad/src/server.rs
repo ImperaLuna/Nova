@@ -371,6 +371,11 @@ impl<'a> Connection<'a> {
                 });
             }
             Command::FilesPlaces => return self.files_later(|files| Ok(files.places())),
+            Command::FilesPin { path, pinned } => {
+                let (path, pinned) = (path.clone(), *pinned);
+                return self.files_later(move |files| files.pin(&path, pinned));
+            }
+            Command::FilesRecent => return self.files_later(|files| files.recent()),
             Command::FilesDrop { sources, folder, copy } => {
                 let (sources, folder, copy) = (sources.clone(), folder.clone(), *copy);
                 return self.files_later(move |_| crate::files::drop_mode(&sources, &folder, copy));
@@ -392,6 +397,7 @@ impl<'a> Connection<'a> {
                 return self.files_later(move |_| crate::files::Trash::delete(&paths));
             }
             Command::FilesTrashList => return self.files_later(|files| Ok(files.trash().list())),
+            Command::FilesGamesList => return self.files_later(|files| Ok(files.games())),
             Command::FilesRestore { ids } => {
                 let ids = ids.clone();
                 return self.files_later(move |files| files.trash().restore(&ids));
@@ -1038,6 +1044,7 @@ impl<'a> Connection<'a> {
             | Command::FilesRedo { .. }
             | Command::FilesDelete { .. }
             | Command::FilesTrashList
+            | Command::FilesGamesList
             | Command::FilesRestore { .. }
             | Command::FilesTrashDelete { .. }
             | Command::FilesEmptyTrash
@@ -1050,7 +1057,7 @@ impl<'a> Connection<'a> {
             | Command::FilesNewFolder { .. }
             | Command::FilesRename { .. }
             | Command::FilesDetails { .. } => {}
-            Command::FilesTree { .. } | Command::FilesPlaces => {}
+            Command::FilesTree { .. } | Command::FilesPlaces | Command::FilesPin { .. } | Command::FilesRecent => {}
         }
     }
 

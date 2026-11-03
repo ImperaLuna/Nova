@@ -1,6 +1,7 @@
 import QtQml
 import "paths.js" as Paths
 import "trash.js" as Trash
+import "home.js" as Home
 
 // One tab of a Nova Files window: where it is and has been (its own
 // Navigator, so back and forward stay with the tab), and how its file list
@@ -16,5 +17,5 @@ QtObject {
     property var view: null
     readonly property bool trash: Trash.isTrash(navigator.folder)
     // The tab's name: the folder's, or the trash's.
-    readonly property string title: trash ? Trash.name() : Paths.folderName(navigator.folder)
+    readonly property string title: trash ? Trash.name() : Home.isPage(navigator.folder) ? Home.pageName(navigator.folder) : Paths.folderName(navigator.folder)
 }

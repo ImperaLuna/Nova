@@ -54,8 +54,14 @@ var REQUEST_MAX_BYTES = 65536;
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 
+// The games place's path in files_places: the games, not a folder.
+var FILES_GAMES_PLACE = "games:///";
+
 // The trash place's path in files_places: the trash, not a folder.
 var FILES_TRASH_PLACE = "trash:///";
+
+// The Home page's path in files_places: Quick access and Recent, not a folder.
+var FILES_HOME_PLACE = "home:///";
 
 // files_pick's error for a save over a file that's there.
 var FILES_PICK_EXISTS = "exists";
@@ -135,6 +141,8 @@ var CMD_FILES_OPEN = "files_open";
 var CMD_FILES_CLOSE = "files_close";
 var CMD_FILES_TREE = "files_tree";
 var CMD_FILES_PLACES = "files_places";
+var CMD_FILES_PIN = "files_pin";
+var CMD_FILES_RECENT = "files_recent";
 var CMD_FILES_TRANSFER = "files_transfer";
 var CMD_FILES_DROP = "files_drop";
 var CMD_FILES_TRANSFER_CANCEL = "files_transfer_cancel";
@@ -144,6 +152,7 @@ var CMD_FILES_UNDO = "files_undo";
 var CMD_FILES_REDO = "files_redo";
 var CMD_FILES_DELETE = "files_delete";
 var CMD_FILES_TRASH_LIST = "files_trash_list";
+var CMD_FILES_GAMES_LIST = "files_games_list";
 var CMD_FILES_RESTORE = "files_restore";
 var CMD_FILES_TRASH_DELETE = "files_trash_delete";
 var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
@@ -194,6 +203,7 @@ var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
 var EVENT_FILES_LOOK = "files_look";
 var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
+var EVENT_FILES_PLACES_CHANGED = "files_places_changed";
 var EVENT_FILES_SEARCH_READY = "files_search_ready";
 var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
@@ -329,6 +339,10 @@ var PLACE_DESKTOP = "desktop";
 var PLACE_DOCUMENTS = "documents";
 var PLACE_DOWNLOADS = "downloads";
 var PLACE_PICTURES = "pictures";
+var PLACE_MUSIC = "music";
+var PLACE_VIDEOS = "videos";
+var PLACE_FOLDER = "folder";
+var PLACE_GAMES = "games";
 var PLACE_TRASH = "trash";
 
 // How files_eject went (EjectOutcome).

@@ -134,7 +134,7 @@ expression: all
 {"v":2,"id":76,"cmd":"files_tree","args":{"folder":"~/.local/share","opened":["/home/user/Projects"],"hidden":false}}
 {"v":2,"id":76,"result":{"folder":"/home/user/.local/share","rows":[{"depth":0,"hidden":false,"leaf":false,"name":"user","open":true,"path":"/home/user"},{"depth":1,"hidden":true,"leaf":false,"name":".local","open":true,"path":"/home/user/.local"},{"depth":2,"hidden":true,"leaf":false,"name":"share","open":false,"path":"/home/user/.local/share"}]}}
 {"v":2,"id":77,"cmd":"files_places"}
-{"v":2,"id":77,"result":[{"kind":"home","path":"/home/user"}]}
+{"v":2,"id":77,"result":[{"kind":"home","path":"home:///"},{"kind":"folder","name":"Projects","path":"/home/user/Projects"}]}
 {"v":2,"event":"files_page","data":{"view":1,"path":"/home/user/Pictures","start":0,"total":2,"entries":[{"name":"Screenshots","dir":true,"link":false,"hidden":false,"mime":"inode/directory","modified_ms":1793000000000},{"name":"cover.png","dir":false,"link":false,"hidden":false,"mime":"image/png","size":48213,"modified_ms":1792900000000}]}}
 {"v":2,"event":"files_changed","data":{"view":1,"changes":[{"op":"remove","index":1},{"op":"insert","index":1,"entry":{"name":"cover (2).png","dir":false,"link":false,"hidden":false,"mime":"image/png","size":48213,"modified_ms":1793000100000}},{"op":"update","index":0,"entry":{"name":"Screenshots","dir":true,"link":true,"hidden":false,"mime":"inode/directory"}}]}}
 {"v":2,"event":"files_closed","data":{"view":1,"error":"/home/user/Pictures doesn't exist"}}
@@ -177,4 +177,8 @@ expression: all
 {"v":2,"id":82,"cmd":"files_pick","args":{"picker":3,"paths":["/home/user/Downloads/cover.png"],"filter":0,"replace":true}}
 {"v":2,"id":83,"cmd":"files_pick_cancel","args":{"picker":3}}
 {"v":2,"event":"files_picker_closed","data":{"picker":3}}
+{"v":2,"id":82,"cmd":"files_pin","args":{"path":"/home/user/Projects","pinned":true}}
+{"v":2,"event":"files_places_changed"}
+{"v":2,"id":83,"cmd":"files_recent"}
+{"v":2,"id":83,"result":[{"entry":{"dir":false,"hidden":false,"link":false,"mime":"text/markdown","modified_ms":1792000000000,"name":"plan.md","size":2048},"folder":"/home/user/Documents","used_ms":1793000000000}]}
 {"v":2,"id":8,"error":"bad request"}

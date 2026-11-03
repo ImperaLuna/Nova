@@ -3,159 +3,166 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
-import "../daemon/protocol.js" as Protocol
 import "service"
 import "drops.js" as Drops
-import "trash.js" as Trash
+import "home.js" as Home
 
-// Nova Files' sidebar: the places that exist first (a click goes there),
-// the trash last among them and marked while the window shows it, then
-// the drives (Drives.qml) under a line of their own, a line, then the
-// folder tree that follows the window. A drive opened goes through the
-// navigator like a place; when the drive the window is on goes away, it
-// goes home. Files dragged onto a place, a mounted drive or a folder in
-// the tree drop there (onto the trash, into the trash), and a tree folder
-// drags out; the places themselves stay put. A middle click on a place or
-// a tree folder asks for it in a new tab (`tabRequested`).
+// Nova Files' sidebar: the places first (a click goes there): the Home
+// page, the folders pinned to Quick access, each with a pin at its end,
+// and the trash; the Home page and the trash are marked while the window
+// shows them. Then the drives (Drives.qml) under a line of their own, a
+// line, then the folder tree that follows the window. A right-click on a
+// pinned folder or a tree row asks for the menu that pins or unpins it.
+// A drive clicked is opened by the window (`driveOpened`), showing what
+// uses space on it; when the drive the window is on goes away, it goes to
+// the home folder. Files dragged onto a place, a mounted drive or a folder
+// in the tree drop there (onto the trash, into the trash), and a tree
+// folder drags out; the places themselves stay put. A middle click on a
+// place or a tree folder asks for it in a new tab (`tabRequested`).
 Item {
     id: sidebar
 
     required property Navigator navigator
-    // The places novad found ({kind, path}), in order.
-    property var places: []
 
     // A drive's menu was asked for at `at` (in the window).
     signal driveMenuRequested(var drive, point at)
     signal tabRequested(string path)
+    // The pin menu of the folder `path` was asked for at `at` (in the
+    // window).
+    signal pinMenuRequested(string path, point at)
+    // The drive `id` was clicked: the window opens it.
+    signal driveOpened(string id)
     // A drop asks for `action` (a Protocol.TRANSFER_* mode or Drops.TRASH) on `sources` into `folder`.
     signal dropRequested(string action, var sources, string folder)
 
-    readonly property var looks: ({
-            [Protocol.PLACE_HOME]: {
-                name: qsTr("Home"),
-                icon: Icons.HOME
-            },
-            [Protocol.PLACE_DESKTOP]: {
-                name: qsTr("Desktop"),
-                icon: Icons.DESKTOP
-            },
-            [Protocol.PLACE_DOCUMENTS]: {
-                name: qsTr("Documents"),
-                icon: Icons.DOCUMENT
-            },
-            [Protocol.PLACE_DOWNLOADS]: {
-                name: qsTr("Downloads"),
-                icon: Icons.DOWNLOAD
-            },
-            [Protocol.PLACE_PICTURES]: {
-                name: qsTr("Pictures"),
-                icon: Icons.PICTURE
-            },
-            [Protocol.PLACE_TRASH]: {
-                name: Trash.name(),
-                icon: Icons.TRASH
-            }
-        })
-
-    Component.onCompleted: FilesService.places(found => sidebar.places = found)
-
-    Column {
-        id: placeList
+    // The places and drives scroll once they'd take more than their share
+    // of the sidebar (many pins), so the tree under them keeps its room.
+    Flickable {
+        id: placeScroll
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: Tokens.gap
-        spacing: Tokens.dividerWidth
+        height: Math.min(placeList.implicitHeight, sidebar.height * Tokens.filesPlacesMaxShare)
+        contentHeight: placeList.implicitHeight
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
 
-        Repeater {
-            model: sidebar.places
+        Column {
+            id: placeList
+            width: placeScroll.width
+            spacing: Tokens.dividerWidth
 
-            Rectangle {
-                id: place
+            Repeater {
+                model: FilesService.places
 
-                required property var modelData
-                readonly property var look: sidebar.looks[modelData.kind]
-                // The tree marks folders; only the trash, which isn't in
-                // it, is marked here.
-                readonly property bool current: Trash.isTrash(modelData.path) && sidebar.navigator.folder === modelData.path
+                Rectangle {
+                    id: place
 
-                width: parent.width
-                height: Tokens.filesPlaceHeight
-                radius: Tokens.menuRowRadius
-                color: placeDrops.action !== Drops.NONE ? Tokens.filesDropTarget : current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
+                    required property var modelData
+                    readonly property var look: Home.look(modelData)
+                    readonly property bool pinned: Home.isPinned(modelData)
+                    // The tree marks folders; only the pages, which aren't in
+                    // it, are marked here.
+                    readonly property bool current: Home.isPage(modelData.path) && sidebar.navigator.folder === modelData.path
 
-                Behavior on color {
-                    ColorAnimation {
-                        duration: Tokens.durationFast
+                    width: parent.width
+                    height: Tokens.filesPlaceHeight
+                    radius: Tokens.menuRowRadius
+                    color: placeDrops.action !== Drops.NONE ? Tokens.filesDropTarget : current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: Tokens.durationFast
+                        }
                     }
-                }
 
-                Row {
-                    anchors.left: parent.left
-                    anchors.leftMargin: Tokens.gap
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Tokens.rowInset
+                    Row {
+                        id: placeRow
+                        anchors.left: parent.left
+                        anchors.right: pin.left
+                        anchors.leftMargin: Tokens.gap
+                        anchors.rightMargin: Tokens.gap
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: Tokens.rowInset
 
+                        LineIcon {
+                            id: placeIcon
+                            anchors.verticalCenter: parent.verticalCenter
+                            path: place.look.icon
+                            color: place.current ? Tokens.primary : Tokens.fg
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: placeRow.width - placeIcon.width - placeRow.spacing
+                            font.family: Tokens.fontSans
+                            font.pixelSize: Tokens.fontSize
+                            font.weight: place.current ? Tokens.weightLabel : Tokens.weightBody
+                            color: Tokens.fg
+                            elide: Text.ElideRight
+                            textFormat: Text.PlainText
+                            text: place.look.name
+                        }
+                    }
                     LineIcon {
+                        id: pin
+                        anchors.right: parent.right
+                        anchors.rightMargin: Tokens.gap
                         anchors.verticalCenter: parent.verticalCenter
-                        path: place.look.icon
-                        color: place.current ? Tokens.primary : Tokens.fg
+                        visible: place.pinned
+                        size: Tokens.iconSizeMini
+                        color: Tokens.filesFaint
+                        path: Icons.PIN
                     }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSize
-                        font.weight: place.current ? Tokens.weightLabel : Tokens.weightBody
-                        color: Tokens.fg
-                        text: place.look.name
-                    }
-                }
 
-                HoverHandler {
-                    id: hover
-                }
-                TapHandler {
-                    onTapped: sidebar.navigator.visit(place.modelData.path, null)
-                }
-                TapHandler {
-                    acceptedButtons: Qt.MiddleButton
-                    onTapped: sidebar.tabRequested(place.modelData.path)
-                }
-                DropTarget {
-                    id: placeDrops
-                    anchors.fill: parent
-                    service: FilesService
-                    folderAt: () => Drops.place(place.modelData.path, false)
-                    onDropRequested: (action, sources, folder) => sidebar.dropRequested(action, sources, folder)
+                    HoverHandler {
+                        id: hover
+                    }
+                    TapHandler {
+                        onTapped: sidebar.navigator.visit(place.modelData.path, null)
+                    }
+                    TapHandler {
+                        acceptedButtons: Qt.RightButton
+                        enabled: place.pinned
+                        onTapped: point => sidebar.pinMenuRequested(place.modelData.path, place.mapToItem(null, point.position))
+                    }
+                    TapHandler {
+                        acceptedButtons: Qt.MiddleButton
+                        onTapped: sidebar.tabRequested(place.modelData.path)
+                    }
+                    DropTarget {
+                        id: placeDrops
+                        anchors.fill: parent
+                        service: FilesService
+                        folderAt: () => Drops.place(place.modelData.path, false)
+                        onDropRequested: (action, sources, folder) => sidebar.dropRequested(action, sources, folder)
+                    }
                 }
             }
-        }
 
-        Item {
-            visible: FilesService.drives.length > 0
-            width: parent.width
-            height: Tokens.filesRuleInset * 2 + Tokens.dividerWidth
+            Item {
+                visible: FilesService.drives.length > 0
+                width: parent.width
+                height: Tokens.filesRuleInset * 2 + Tokens.dividerWidth
 
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: Tokens.filesRuleInset
-                anchors.rightMargin: Tokens.filesRuleInset
-                height: Tokens.dividerWidth
-                color: Tokens.filesRule
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: Tokens.filesRuleInset
+                    anchors.rightMargin: Tokens.filesRuleInset
+                    height: Tokens.dividerWidth
+                    color: Tokens.filesRule
+                }
             }
-        }
-        Drives {
-            width: parent.width
-            folder: sidebar.navigator.folder
-            asker: sidebar.navigator
-            // Mounting can take a while (a password); a tab closed
-            // meanwhile is gone and goes nowhere.
-            onOpened: (folder, asker) => (asker as Navigator)?.visit(folder, null)
-            onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
-            onDriveGone: sidebar.navigator.visit("~", null)
-            onDropRequested: (action, sources, folder) => sidebar.dropRequested(action, sources, folder)
+            Drives {
+                width: parent.width
+                folder: sidebar.navigator.folder
+                onOpened: id => sidebar.driveOpened(id)
+                onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
+                onDriveGone: sidebar.navigator.visit("~", null)
+                onDropRequested: (action, sources, folder) => sidebar.dropRequested(action, sources, folder)
+            }
         }
     }
 
@@ -163,7 +170,7 @@ Item {
         id: rule
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: placeList.bottom
+        anchors.top: placeScroll.bottom
         anchors.leftMargin: Tokens.gap + Tokens.filesRuleInset
         anchors.rightMargin: Tokens.gap + Tokens.filesRuleInset
         anchors.topMargin: Tokens.filesRuleInset
@@ -183,6 +190,7 @@ Item {
         anchors.bottomMargin: Tokens.gap
         navigator: sidebar.navigator
         onTabRequested: path => sidebar.tabRequested(path)
+        onMenuRequested: (path, at) => sidebar.pinMenuRequested(path, at)
         dropFolder: treeDrops.action !== Drops.NONE ? treeDrops.hovered.folder : ""
         onDragRequested: path => treeDrag.start([path], Icons.FOLDER, Tokens.filesFolder)
     }

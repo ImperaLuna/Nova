@@ -158,6 +158,9 @@ pub enum Event {
     /// (feature `files`): ask `files_trash_list` again. Topic
     /// [`Topic::Files`].
     FilesTrashChanged,
+    /// A folder was pinned to Quick access or unpinned (feature `files`):
+    /// ask `files_places` again. Topic [`Topic::Files`].
+    FilesPlacesChanged,
     /// novad's index of file names is built (feature `files`), so a
     /// `files_search` that answered `ready: false` can be asked again.
     /// Topic [`Topic::Files`].
@@ -252,6 +255,7 @@ impl Event {
             | Event::FilesChanged { .. }
             | Event::FilesClosed { .. }
             | Event::FilesTrashChanged
+            | Event::FilesPlacesChanged
             | Event::FilesSearchReady
             | Event::FilesTransfer(_)
             | Event::FilesMeasured(_)
@@ -2054,7 +2058,8 @@ pub enum Command {
         id: u64,
         answer: PairingAnswer,
     },
-    /// Opens a Nova Files window on `folder`, an absolute path, with
+    /// Opens a Nova Files window on `folder`, an absolute path (or the
+    /// Home page, [`FILES_HOME_PLACE`], with nothing selected), with
     /// `select` (absolute paths of items in it) selected (`nova files`,
     /// feature `files`). Starts the Nova Files process when it isn't
     /// running.
@@ -2134,8 +2139,22 @@ pub enum Command {
         hidden: bool,
     },
     /// The places on top of Nova Files' sidebar (feature `files`),
-    /// answered with the [`FilePlace`]s that exist, in order.
+    /// answered with the [`FilePlace`]s that exist, in order: the Home
+    /// page, the folders pinned to Quick access, then the trash.
     FilesPlaces,
+    /// Pins the folder at the absolute `path` to Quick access, or unpins
+    /// it (feature `files`). Quick access is the GTK bookmarks file, shared
+    /// with other apps; a change is published as
+    /// [`Event::FilesPlacesChanged`].
+    FilesPin {
+        path: String,
+        pinned: bool,
+    },
+    /// The files used most recently, by any app (feature `files`, the Home
+    /// page's Recent), answered with at most [`FILES_RECENT_MAX`]
+    /// [`RecentFile`]s, the latest first. Read from `recently-used.xbel`,
+    /// which other apps write too; only local files that still exist.
+    FilesRecent,
     /// Copies or moves `sources` (absolute paths, wire text) into the folder `folder`
     /// as this connection's job `job` (feature `files`). Answered once the
     /// job is started, without touching the disk; how it goes follows as
@@ -2207,6 +2226,9 @@ pub enum Command {
     /// What the trash holds (feature `files`), answered with
     /// [`TrashItem`]s, the last trashed first.
     FilesTrashList,
+    /// The games installed (feature `files`), answered with [`Game`]s in
+    /// name order: every Steam library's, on every drive.
+    FilesGamesList,
     /// Puts the trashed items `ids` back where they came from (feature
     /// `files`). One whose place is taken stays in the trash.
     FilesRestore {
@@ -2483,20 +2505,38 @@ pub struct TreeRow {
 #[serde(deny_unknown_fields)]
 pub struct FilePlace {
     pub kind: PlaceKind,
-    /// Absolute.
+    /// An absolute folder (wire text, [`wire_text`]), or the Home page's
+    /// or the trash's place.
     pub path: String,
+    /// A pinned folder's name in the sidebar (wire text): its bookmark's
+    /// label, else the folder's own name. Empty for the Home page and the
+    /// trash, which the UI names.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
 }
 
-/// Which place a [`FilePlace`] is: Home, one of the user's folders from
-/// `user-dirs.dirs`, or the trash.
+/// Which place a [`FilePlace`] is: the Home page, a folder pinned to Quick
+/// access (one of the user's folders from `user-dirs.dirs`, which picks its
+/// icon, or any other), the games, or the trash. Every kind but `Home`,
+/// `Games` and `Trash` is a pinned folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaceKind {
+    /// The Home page, at [`FILES_HOME_PLACE`]: Quick access, the drives and
+    /// recent files, not a folder.
     Home,
     Desktop,
     Documents,
     Downloads,
     Pictures,
+    Music,
+    Videos,
+    /// A pinned folder that isn't one of the user's folders above.
+    Folder,
+    /// The installed games, at [`FILES_GAMES_PLACE`]: not a folder,
+    /// listed with `files_games_list`. There while a game launcher's
+    /// library is.
+    Games,
     /// The trash, at [`FILES_TRASH_PLACE`]: not a folder, listed with
     /// `files_trash_list`.
     Trash,
@@ -2505,6 +2545,48 @@ pub enum PlaceKind {
 /// The trash place's path ([`PlaceKind::Trash`]): a window there shows the
 /// trash instead of a folder.
 pub const FILES_TRASH_PLACE: &str = "trash:///";
+
+/// The games place's path ([`PlaceKind::Games`]): a window there shows the
+/// installed games instead of a folder.
+pub const FILES_GAMES_PLACE: &str = "games:///";
+
+/// An installed game (feature `files`, [`Command::FilesGamesList`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Game {
+    /// What its launcher calls it.
+    pub name: String,
+    /// Where it's installed, absolute, as wire text ([`wire_text`]).
+    pub folder: String,
+    /// How much room it takes, in bytes, when its launcher says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// The folder its saves are under, absolute, as wire text, when one is
+    /// found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saves: Option<String>,
+}
+
+/// The Home page's path ([`PlaceKind::Home`]): a window there shows Quick
+/// access, the drives and recent files instead of a folder. `nova files`
+/// without a path opens it.
+pub const FILES_HOME_PLACE: &str = "home:///";
+
+/// The most files `files_recent` answers with.
+pub const FILES_RECENT_MAX: usize = 20;
+
+/// A recently used file (feature `files`, [`Command::FilesRecent`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecentFile {
+    /// The folder holding it, as wire text ([`wire_text`]).
+    pub folder: String,
+    /// When an app last used it, in milliseconds since 1970, when the list
+    /// says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used_ms: Option<i64>,
+    pub entry: FileEntry,
+}
 
 /// An item in the trash (feature `files`, [`Command::FilesTrashList`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2593,13 +2675,17 @@ pub struct TextMark {
     pub length: u32,
 }
 
-/// The order of a folder view (`files_open`). Folders always come before
-/// files; within each, entries are ordered by `key`, then by name.
+/// The order of a folder view (`files_open`). Folders come before files,
+/// unless `mixed`; within each, entries are ordered by `key`, then by name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileSort {
     pub key: FileSortKey,
     pub descending: bool,
+    /// Folders and files in one order, as "What uses space" lists them
+    /// (by size, biggest first).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mixed: bool,
 }
 
 /// What a folder view is ordered by. Names compare the way people read
@@ -2652,7 +2738,9 @@ pub struct FileEntry {
     /// Its type in the shared MIME database, from its name (`inode/directory`
     /// for a folder).
     pub mime: String,
-    /// In bytes; none for a folder.
+    /// In bytes. For a folder, everything in it on the same drive, once
+    /// novad has counted it (`files_changed` brings it); none until then,
+    /// and for a link to a folder or a folder that is another drive.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
     /// Last modified, in milliseconds since 1970.
@@ -3577,7 +3665,7 @@ mod tests {
                 command: Command::FilesOpen {
                     view: 1,
                     path: "/home/user/Pictures".into(),
-                    sort: FileSort { key: FileSortKey::Modified, descending: true },
+                    sort: FileSort { key: FileSortKey::Modified, descending: true, mixed: false },
                     hidden: false,
                     filter: None,
                 },
@@ -3631,7 +3719,15 @@ mod tests {
             encode(Response {
                 id: 77,
                 outcome: Outcome::Result(
-                    serde_json::to_value(vec![FilePlace { kind: PlaceKind::Home, path: "/home/user".into() }]).unwrap(),
+                    serde_json::to_value(vec![
+                        FilePlace { kind: PlaceKind::Home, path: FILES_HOME_PLACE.into(), name: String::new() },
+                        FilePlace {
+                            kind: PlaceKind::Folder,
+                            path: "/home/user/Projects".into(),
+                            name: "Projects".into(),
+                        },
+                    ])
+                    .unwrap(),
                 ),
             }),
             encode(Event::FilesPage(FolderPage {
@@ -3931,6 +4027,32 @@ mod tests {
             }),
             encode(Request { id: Some(83), command: Command::FilesPickCancel { picker: 3 } }),
             encode(Event::FilesPickerClosed { picker: 3 }),
+            encode(Request {
+                id: Some(82),
+                command: Command::FilesPin { path: "/home/user/Projects".into(), pinned: true },
+            }),
+            encode(Event::FilesPlacesChanged),
+            encode(Request { id: Some(83), command: Command::FilesRecent }),
+            encode(Response {
+                id: 83,
+                outcome: Outcome::Result(
+                    serde_json::to_value(vec![RecentFile {
+                        folder: "/home/user/Documents".into(),
+                        used_ms: Some(1_793_000_000_000),
+                        entry: FileEntry {
+                            name: "plan.md".into(),
+                            dir: false,
+                            link: false,
+                            hidden: false,
+                            archive: false,
+                            mime: "text/markdown".into(),
+                            size: Some(2048),
+                            modified_ms: Some(1_792_000_000_000),
+                        },
+                    }])
+                    .unwrap(),
+                ),
+            }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();

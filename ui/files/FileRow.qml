@@ -4,7 +4,8 @@ import "listing.js" as Listing
 import "paths.js" as Paths
 
 // A row of Nova Files' Details list: the entry's icon and name, then its
-// Modified, Type and Size at the header's column widths. Hovered rows
+// Modified, Type and Size at the header's column widths; in What uses
+// space (`bar` 0..1) a bar for its share of the biggest, then its Size. Hovered rows
 // lighten, selected ones fill, a folder a drag would drop into washes in
 // the accent; dot files read fainter, and cut ones faded until they're
 // pasted. A press that moves far enough asks to drag (`dragRequested`);
@@ -28,6 +29,8 @@ Rectangle {
     required property real nameWidth
     // Modified, Type and Size's widths; one 0 wide isn't shown.
     required property var columnWidths
+    // Its bar's length in What uses space, or -1 outside it.
+    required property real bar
     required property bool selected
     // A drag over the list would drop into this folder.
     property bool dropTarget: false
@@ -139,16 +142,39 @@ Rectangle {
         }
         Cell {
             width: entry.columnWidths[0]
-            visible: width > 0
+            visible: entry.bar < 0 && width > 0
             text: Listing.modified(entry.modified, entry.now)
         }
         Cell {
             width: entry.columnWidths[1]
-            visible: width > 0
+            visible: entry.bar < 0 && width > 0
             text: Listing.kind(entry)
         }
+        Rectangle {
+            visible: entry.bar >= 0
+            anchors.verticalCenter: parent.verticalCenter
+            width: entry.columnWidths[0]
+            height: Tokens.filesSpaceRowBarHeight
+            radius: height / 2
+            color: Tokens.track
+
+            Rectangle {
+                width: parent.width * Math.max(entry.bar, 0)
+                height: parent.height
+                radius: parent.radius
+                color: Tokens.meter
+
+                Behavior on width {
+                    NumberAnimation {
+                        duration: Tokens.durationFill
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: Tokens.easing
+                    }
+                }
+            }
+        }
         Cell {
-            width: entry.columnWidths[2] - Tokens.rowInset
+            width: entry.columnWidths[entry.columnWidths.length - 1] - Tokens.rowInset
             visible: width > 0
             horizontalAlignment: Text.AlignRight
             text: Listing.size(entry)

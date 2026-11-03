@@ -698,11 +698,18 @@ QtObject {
     readonly property list<int> filesColumnsCompact: [90, 0, 70]
     readonly property color filesFaint: alpha(fg, 0.45)
     // A drive in the sidebar: a taller row with how full it is under its
-    // name. A stick that's plugged in slides in, then glows in the accent
-    // and fades back. Problems with one show in a dialog this wide.
-    readonly property int filesDriveHeight: 38
+    // name, bar then free space. A stick that's plugged in slides in, then
+    // glows in the accent and fades back. Problems with one show in a
+    // dialog this wide.
+    readonly property int filesDriveHeight: 54
     readonly property int filesDriveBarHeight: 4
     readonly property int filesDriveBarGap: 4
+    // What uses space: the drive's bar over the list, thicker, and each
+    // row's bar in the column Modified and Type leave.
+    readonly property int filesSpaceBarHeight: 8
+    readonly property int filesSpaceRowBarHeight: 6
+    readonly property int filesSpacePad: 10
+    readonly property int filesSpaceBarWidth: 220
     readonly property int durationDriveArrive: 420
     readonly property int durationDriveGlow: 1600
     readonly property real filesDriveGlow: 0.22
@@ -736,6 +743,8 @@ QtObject {
     // No at least this wide, the one item it names with a big icon), and
     // the notice at the bottom right when an item can't go back.
     readonly property list<int> filesTrashColumns: [190, 120, 70]
+    // The Games place's columns after the name (Location, Size).
+    readonly property list<int> filesGamesColumns: [300, 90]
     readonly property int filesConfirmWidth: 400
     readonly property int filesDialogButtonMinWidth: 72
     readonly property int filesNoticeWidth: 330
@@ -765,6 +774,20 @@ QtObject {
     readonly property int filesTreeGap: 4
     readonly property int filesTreeRise: 4
     readonly property int filesTreeStagger: 30
+    // The Home page: Quick access and the drives as tiles in rows, a big
+    // icon beside a name and a fainter line (where the folder is, a drive's
+    // free space under its bar), then Recent as a list with its own
+    // columns after the name (Date used, Location). The sections sit this
+    // far in and apart, under their headings.
+    readonly property int filesHomePad: 20
+    readonly property int filesHomeSectionGap: 18
+    readonly property int filesHomeTileWidth: 200
+    readonly property int filesHomeTileHeight: 58
+    readonly property int filesHomeTileIconSize: 26
+    readonly property list<int> filesRecentColumns: [130, 220]
+    // The most of the sidebar's height its places and drives take before
+    // they scroll, so the folder tree keeps room under many pins.
+    readonly property real filesPlacesMaxShare: 0.5
 
     // Copies and moves: each running job's card stacked at the window's
     // bottom right, and the name clash dialog in its middle, its two sides

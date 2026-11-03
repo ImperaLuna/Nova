@@ -8,9 +8,12 @@ import "../files/listing.js" as Listing
 import "../files/paths.js" as Paths
 import "../files/navigation.js" as Navigation
 import "../files/trash.js" as Trash
+import "../files/home.js" as Home
+import "../files/games.js" as Games
 import "../daemon/protocol.js" as Protocol
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
+import "../files/space.js" as Space
 import "../files/search.js" as Search
 import "../files/tabs.js" as Tabs
 import "../files/preview.js" as Preview
@@ -24,10 +27,12 @@ import "../files/picker.js" as Picker
 // answer, and the trash: its rows, its selection, and the dialog that asks
 // before deleting for good, search: how results read and when novad
 // is asked, a window as an app's Open or Save dialog: its title and
-// accept label, what accepting picks, and its bar, what the preview pane shows, and the window's
+// accept label, what accepting picks, and its bar, what the preview pane
+// shows, the window's
 // tabs: which one Ctrl+Tab and closing land on, their widths, dragging one
-// along or out of the row, and the row's clicks. The root is an Item: a
-// TestCase root gets no mouse events.
+// along or out of the row, and the row's clicks, and the games: their
+// rows, menu and list. The root is an Item: a TestCase root gets no mouse
+// events.
 Item {
     id: stage
     width: 880
@@ -233,9 +238,77 @@ Item {
             compare(Listing.size(entry("Music", {
                 dir: true,
                 mime: "inode/directory"
-            })), "");
+            })), "", "not counted yet");
+            compare(Listing.size(entry("Music", {
+                dir: true,
+                mime: "inode/directory",
+                size: 3 * 1024 * 1024
+            })), "3.0 MB", "counted by novad");
             compare(Listing.items(1), "1 item");
             compare(Listing.items(5), "5 items");
+        }
+
+        // Explorer's "197 GB free of 931 GB": 1024-based, like every size in
+        // Nova, one decimal under 10.
+        function test_a_drive_reads_what_is_free_of_its_size() {
+            const drive = (size, used) => ({
+                        id: "d",
+                        name: "Games SSD",
+                        removable: false,
+                        mount: "/mnt/games",
+                        size: size,
+                        used: used
+                    });
+            compare(Space.freeOf(drive(1e12, 788e9)), "197 GB free of 931 GB");
+            compare(Space.freeOf(drive(64e9, 54.5e9)), "8.8 GB free of 60 GB");
+            compare(Space.freeOf(drive(2e12, 2e12)), "0 B free of 1.8 TB");
+            compare(Space.freeOf({
+                id: "u",
+                name: "Stick",
+                removable: true,
+                size: 32e9
+            }), "", "not mounted");
+            compare(Space.fill(drive(1e12, 250e9)), 0.25);
+        }
+
+        function test_a_drive_almost_full_is_low() {
+            const drive = used => ({
+                        mount: "/",
+                        size: 100,
+                        used: used
+                    });
+            verify(Space.low(drive(91)));
+            verify(!Space.low(drive(90)), "a tenth free is enough");
+            verify(!Space.low({
+                size: 100,
+                used: 99
+            }), "not mounted, not measured");
+        }
+
+        function test_a_folder_is_on_the_innermost_drive_holding_it() {
+            const drives = [
+                {
+                    id: "root",
+                    mount: "/"
+                },
+                {
+                    id: "games",
+                    mount: "/mnt/games"
+                },
+                {
+                    id: "stick"
+                }
+            ];
+            compare(Space.driveOf(drives, "/mnt/games/steam").id, "games");
+            compare(Space.driveOf(drives, "/mnt/gamesaves").id, "root");
+            compare(Space.driveOf([drives[2]], "/home"), null);
+        }
+
+        function test_a_rows_bar_is_its_share_of_the_biggest() {
+            compare(Space.share(50, 200), 0.25);
+            compare(Space.share(-1, 200), 0, "a folder not counted yet");
+            compare(Space.share(10, -1), 0);
+            verify(Space.BIGGEST_FIRST.mixed && Space.BIGGEST_FIRST.descending);
         }
 
         function test_a_header_click_sorts_by_its_column() {
@@ -598,10 +671,75 @@ Item {
             };
         }
 
+        function test_the_home_page_is_a_page_with_one_part() {
+            verify(Home.isHome(Protocol.FILES_HOME_PLACE));
+            verify(Home.isPage(Protocol.FILES_HOME_PLACE) && Home.isPage(Protocol.FILES_TRASH_PLACE));
+            verify(!Home.isPage("/home/ana"), "a folder isn't a page");
+            compare(names(Home.crumbs(Protocol.FILES_HOME_PLACE)), ["Home"]);
+        }
+
+        function test_places_read_by_kind_and_pins_by_their_name() {
+            const places = [
+                {
+                    kind: Protocol.PLACE_HOME,
+                    path: Protocol.FILES_HOME_PLACE
+                },
+                {
+                    kind: Protocol.PLACE_DOWNLOADS,
+                    path: "/home/ana/Downloads",
+                    name: "Downloads"
+                },
+                {
+                    kind: Protocol.PLACE_FOLDER,
+                    path: "/home/ana/Projects/Nova",
+                    name: "Work"
+                },
+                {
+                    kind: Protocol.PLACE_TRASH,
+                    path: Protocol.FILES_TRASH_PLACE
+                }
+            ];
+            compare(places.map(place => Home.look(place).name), ["Home", "Downloads", "Work", "Trash"]);
+            compare(places.map(place => Home.look(place).icon), [Icons.HOME, Icons.DOWNLOAD, Icons.FOLDER, Icons.TRASH]);
+            compare(Home.pinned(places).map(place => place.path), ["/home/ana/Downloads", "/home/ana/Projects/Nova"]);
+            verify(Home.pinnedIn(places, "/home/ana/Projects/Nova"));
+            verify(!Home.pinnedIn(places, "/home/ana"), "Home's folder isn't pinned");
+            verify(!Home.pinnedIn(places, Protocol.FILES_TRASH_PLACE), "the trash is no pin");
+        }
+
+        function test_a_recent_file_is_a_row_with_where_and_when() {
+            const row = Home.recentRow({
+                folder: "/home/ana/Documents",
+                used_ms: Date.UTC(2026, 10, 2, 8, 30),
+                entry: {
+                    name: "plan.md",
+                    dir: false,
+                    link: false,
+                    hidden: false,
+                    mime: "text/markdown",
+                    size: 2048,
+                    modified_ms: Date.UTC(2026, 10, 1, 9)
+                }
+            });
+            compare([row.name, row.folder, row.used, row.size], ["plan.md", "/home/ana/Documents", Date.UTC(2026, 10, 2, 8, 30), 2048]);
+            compare(Home.recentRow({
+                folder: "/",
+                entry: {
+                    name: "x",
+                    dir: false,
+                    link: false,
+                    hidden: false,
+                    mime: "text/plain"
+                }
+            }).used, -1, "no time in the list");
+        }
+
         function test_the_trash_is_a_place_with_one_part() {
             verify(Trash.isTrash(Protocol.FILES_TRASH_PLACE));
             verify(!Trash.isTrash("/home/ana"));
-            compare(names(Trash.crumbs()), ["Trash"]);
+            compare(names(Home.crumbs(Protocol.FILES_TRASH_PLACE)), ["Trash"]);
+            verify(Home.isPage(Protocol.FILES_TRASH_PLACE));
+            verify(!Home.isPage("/home/ana"));
         }
 
         function test_a_trashed_row_says_where_it_came_from() {
@@ -611,10 +749,10 @@ Item {
             compare(Trash.row(Object.assign(trashed("i2", "x", "/"), {
                 deleted_ms: undefined
             })).deleted, -1, "no date in the trash");
-            compare(Trash.location("/home/ana/Documents", "/home/ana"), "~/Documents");
-            compare(Trash.location("/home/ana", "/home/ana"), "~");
-            compare(Trash.location("/home/anabel", "/home/ana"), "/home/anabel");
-            compare(Trash.location("/run/media/ana/SANDISK", ""), "/run/media/ana/SANDISK");
+            compare(Paths.located("/home/ana/Documents", "/home/ana"), "~/Documents");
+            compare(Paths.located("/home/ana", "/home/ana"), "~");
+            compare(Paths.located("/home/anabel", "/home/ana"), "/home/anabel");
+            compare(Paths.located("/run/media/ana/SANDISK", ""), "/run/media/ana/SANDISK");
         }
 
         function test_restore_and_the_footer_follow_the_picked_items() {
@@ -725,6 +863,86 @@ Item {
             compare(kept[0].trashId, "a", "rows handed out stay as they were");
             model.clearSelection();
             compare(model.selectedCount, 0);
+        }
+
+        function game(name, folder, extra) {
+            return Object.assign({
+                name: name,
+                folder: folder
+            }, extra ?? {});
+        }
+
+        function test_the_games_are_a_place_with_one_part() {
+            verify(Games.isGames(Protocol.FILES_GAMES_PLACE));
+            verify(Home.isPage(Protocol.FILES_GAMES_PLACE));
+            compare(names(Home.crumbs(Protocol.FILES_GAMES_PLACE)), ["Games"]);
+            compare(Home.pageName(Protocol.FILES_GAMES_PLACE), "Games");
+            const games = {
+                kind: Protocol.PLACE_GAMES,
+                path: Protocol.FILES_GAMES_PLACE
+            };
+            compare(Home.look(games).name, "Games");
+            verify(!Home.isPinned(games), "the games aren't a pinned folder");
+        }
+
+        function test_a_game_row_has_every_role_and_its_folders() {
+            const bare = Games.row(game("Crimson Desert", "/mnt/games/SteamLibrary/steamapps/common/Crimson Desert"));
+            compare([bare.size, bare.saves], [-1, ""], "no size or saves found");
+            compare(Games.size(bare), "");
+            const saved = Games.row(game("ELDEN RING", "/home/ana/.local/share/Steam/steamapps/common/ELDEN RING", {
+                size: 52813463184,
+                saves: "/home/ana/.local/share/Steam/steamapps/compatdata/1245620/pfx/drive_c/users/steamuser"
+            }));
+            verify(Games.size(saved) !== "");
+            compare(Games.actions(saved).map(action => action.label), ["Open install folder", "Open save folder"]);
+            compare(Games.actions(saved).map(action => action.folder), [saved.folder, saved.saves]);
+            compare(Games.actions(bare)[1].folder, "", "nowhere to go without saves");
+            compare(Games.actions(null).map(action => action.folder), ["", ""], "nothing picked");
+        }
+
+        Component {
+            id: gamesModelComponent
+            GamesModel {}
+        }
+        Component {
+            id: fakeGamesService
+            QtObject {
+                property bool connected: true
+                property var asked: []
+                function gamesList(done) {
+                    asked.push(done);
+                }
+            }
+        }
+
+        function test_the_games_are_read_when_shown_and_keep_the_pick() {
+            const service = createTemporaryObject(fakeGamesService, stage);
+            const model = createTemporaryObject(gamesModelComponent, stage, {
+                service: service
+            });
+            compare(service.asked.length, 0, "not read until shown");
+            model.active = true;
+            compare(service.asked.length, 1);
+            service.asked[0]([game("A", "/g/A"), game("B", "/g/B", {
+                    saves: "/s/B"
+                })]);
+            verify(model.loaded);
+            model.pick(1);
+            compare(model.pickedRow.saves, "/s/B");
+            model.refresh();
+            service.asked[1]([game("0", "/g/0"), game("A", "/g/A"), game("B", "/g/B")]);
+            compare(model.picked, 2, "the pick follows its game");
+            model.refresh();
+            service.asked[2](null);
+            compare(model.rows.count, 3, "a failed read keeps what's shown");
+            model.refresh();
+            model.refresh();
+            service.asked[4]([game("C", "/g/C")]);
+            service.asked[3]([game("late", "/g/late")]);
+            compare(model.rows.get(0).name, "C", "a late answer to an older read is dropped");
+            compare(model.picked, -1, "the picked game is gone");
+            model.active = false;
+            compare(model.pickedRow, null);
         }
 
         Component {
