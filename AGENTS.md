@@ -174,7 +174,7 @@ that needs a bus starts its own (`session_bus::TestBus`).
 Run `just` inside `nix develop` to list the recipes. CI runs the flake checks:
 what `just check` runs plus the headless e2e on every push, and the VM tests on
 niri and Hyprland only once a PR is out of draft (so mark a PR ready, or open
-it ready, to get VM results). Locally, `just check` and `just e2e` cover most of it; the VM
+it ready, to get VM results) and has no PR stacked on it. Locally, `just check` and `just e2e` cover most of it; the VM
 tests need KVM. Without KVM (cloud sessions), approve goldens with the "Approve
 goldens" workflow from main on the PR branch instead of `just e2e-approve`.
 `just run` logs to `~/.local/state/nova-dev`.
@@ -187,6 +187,11 @@ PR as a repeat and says so on the PR: a repeat gets a fix ticket instead of
 another re-run.
 
 Every change goes through a pull request; `main` is protected.
+
+A stack of PRs is one chain: the bottom PR targets main, each one above
+targets the branch below, and a branch merges only its own base. Its top PR
+runs the VM tests for all of it. `scripts/stack.sh status|restack` checks the
+chain and merges each base upward; its header says more.
 
 Everything a session makes for Nova on the desktop stays inside `~/Projects/Nova`;
 never create a folder elsewhere in `~`, such as `~/Projects/nova-imp121`, even
