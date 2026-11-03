@@ -789,7 +789,14 @@ mod tests {
         let (_, nova_files, _stream) = fixture.nova_files();
         let logger =
             Logger::open(&fixture.dir.join("run-logs"), LogLevel::Debug, false, Arc::clone(&fixture.hub)).unwrap();
-        let how = |new_window| Run { output: None, new_window, compositor: None, tray: None, logger: &logger };
+        let how = |new_window| Run {
+            output: None,
+            new_window,
+            compositor: None,
+            tray: None,
+            logger: &logger,
+            underway: &|| {},
+        };
         // Shift+Enter: its folder, with it selected.
         fixture.files.run(&path, &how(true)).unwrap();
         let window = next_named(&nova_files, "files_window", WAIT);

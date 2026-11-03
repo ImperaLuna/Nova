@@ -584,7 +584,10 @@ impl<'a> Connection<'a> {
     }
 
     /// Runs what the launcher's provider `provider` found as `id`, like an
-    /// app it focuses or starts (see `launcher::providers`).
+    /// app it focuses or starts (see `launcher::providers`). Answers once it
+    /// is underway: the launcher waits for the answer to close, and an app
+    /// in the tray may take seconds to show its window. A failure after
+    /// that is only logged.
     fn launcher_run(&self, provider: &str, id: &str, output: Option<String>, new_window: bool) -> Answer {
         let provider = match self.launcher_providers().and_then(|providers| providers.provider(provider)) {
             Ok(provider) => provider,
@@ -595,14 +598,25 @@ impl<'a> Connection<'a> {
         let logger = Arc::clone(&self.daemon.logger);
         let id = id.to_owned();
         Answer::later(move || {
-            let how = crate::launcher::providers::Run {
-                output: output.as_deref(),
-                new_window,
-                compositor: compositor.as_deref(),
-                tray: tray.as_deref(),
-                logger: &logger,
-            };
-            done(provider.run(&id, &how))
+            let (answer, answered) = mpsc::channel();
+            std::thread::spawn(move || {
+                let early = answer.clone();
+                let underway = move || {
+                    let _ = early.send(Ok(()));
+                };
+                let how = crate::launcher::providers::Run {
+                    output: output.as_deref(),
+                    new_window,
+                    compositor: compositor.as_deref(),
+                    tray: tray.as_deref(),
+                    logger: &logger,
+                    underway: &underway,
+                };
+                // Unheard once it was underway; starting the app logs its
+                // own failures.
+                let _ = answer.send(provider.run(&id, &how));
+            });
+            done(answered.recv().unwrap_or_else(|_| Err("the launch stopped without an answer".into())))
         })
     }
 
