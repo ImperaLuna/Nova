@@ -232,6 +232,9 @@ function sequence(key, modifiers) {
         held += "Alt+";
     if (modifiers & Qt.ShiftModifier)
         held += "Shift+";
+    // No entry holds Super, so a key with it held does nothing here.
+    if (modifiers & Qt.MetaModifier)
+        held += "Meta+";
     return held + name;
 }
 
