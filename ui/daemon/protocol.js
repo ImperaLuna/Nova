@@ -137,6 +137,10 @@ var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
 var CMD_FILES_MOUNT = "files_mount";
 var CMD_FILES_EJECT = "files_eject";
 var CMD_FILES_SEARCH = "files_search";
+var CMD_FILES_PROPERTIES = "files_properties";
+var CMD_FILES_MEASURE = "files_measure";
+var CMD_FILES_MEASURE_CANCEL = "files_measure_cancel";
+var CMD_FILES_SET_ACCESS = "files_set_access";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -173,6 +177,7 @@ var EVENT_FILES_LOOK = "files_look";
 var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
 var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
+var EVENT_FILES_MEASURED = "files_measured";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";

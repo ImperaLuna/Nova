@@ -34,6 +34,10 @@
 //!   each, asking the window about name clashes.
 //! - `copying.rs`: the file system side of those: measuring, numbered
 //!   names, and copying a file in chunks.
+//! - `properties.rs`: the Properties window's facts about an item
+//!   (`files_properties`) and changing who may open it
+//!   (`files_set_access`); `measures.rs`: counting a folder's or a
+//!   selection's size in the background (`files_measure`).
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
@@ -50,6 +54,8 @@ mod copying;
 mod drives;
 mod file_manager1;
 mod folder;
+mod measures;
+mod properties;
 pub mod search;
 mod target;
 mod transfers;
@@ -130,6 +136,8 @@ pub struct Files {
     look: Mutex<FilesLook>,
     /// The copies and moves they run.
     transfers: transfers::Transfers,
+    /// The sizes the Properties window counts.
+    measures: measures::Measures,
     trash: Arc<Trash>,
     /// Tells windows when the trash changes; none when it can't be followed.
     trash_watch: Option<trash::Watch>,
@@ -171,6 +179,7 @@ impl Files {
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
         let search = search::Search::start(sources.search.clone(), Arc::clone(&logger), Arc::clone(&mime));
         let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
+        let measures = measures::Measures::new(Arc::clone(&hub));
         let trash = Arc::new(Trash::new(sources.trash.clone(), sources.mounts.clone(), Arc::clone(&mime)));
         let trash_watch = trash::Watch::start(Arc::clone(&trash), Arc::clone(&hub), Arc::clone(&logger));
         let opener = Opener::new(
@@ -208,6 +217,7 @@ impl Files {
             folders,
             look: Mutex::default(),
             transfers,
+            measures,
             trash,
             trash_watch,
             drives,
@@ -300,6 +310,29 @@ impl Files {
         self.transfers.answer(client, job, clash, answer, all)
     }
 
+    /// What the Properties window shows about the item at `path`
+    /// (`files_properties`). It reads the file, so it's called off the
+    /// connection's thread.
+    pub fn properties(&self, path: &str) -> Result<nova_protocol::FileProperties, String> {
+        properties::read(path, &self.mime.current())
+    }
+
+    /// Sets who may open the item at `path` (`files_set_access`).
+    pub fn set_access(&self, path: &str, access: nova_protocol::Access) -> Result<(), String> {
+        properties::set_access(path, access)
+    }
+
+    /// Starts client `client`'s job `job`, counting what `paths` hold
+    /// (`files_measure`, [`measures::Measures::start`]).
+    pub fn measure(&self, client: ClientId, job: u32, paths: &[String]) -> Result<(), String> {
+        self.measures.start(client, job, paths)
+    }
+
+    /// Stops client `client`'s measuring job `job` (`files_measure_cancel`).
+    pub fn cancel_measure(&self, client: ClientId, job: u32) {
+        self.measures.cancel(client, job);
+    }
+
     /// Opens a window on `folder` with `select` selected, once both check
     /// out ([`target::window`]).
     pub fn show(&self, folder: &str, select: &[String]) -> Result<(), String> {
@@ -348,6 +381,7 @@ impl Files {
     pub fn client_gone(&self, client: ClientId) {
         self.folders.client_gone(client);
         self.transfers.client_gone(client);
+        self.measures.client_gone(client);
         let mut delivery = lock(&self.shared.delivery);
         if delivery.attached == Some(client) {
             delivery.attached = None;
@@ -365,6 +399,7 @@ impl Files {
         self.search.stop();
         self.drives.stop();
         self.transfers.stop();
+        self.measures.stop();
         if let Some(watch) = &self.trash_watch {
             watch.stop();
         }
