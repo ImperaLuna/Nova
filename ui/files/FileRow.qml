@@ -91,7 +91,7 @@ Rectangle {
     }
 
     transform: Translate {
-        id: lift
+        id: rowLift
     }
 
     Component.onCompleted: {
@@ -99,38 +99,10 @@ Rectangle {
             riseIn.start();
     }
 
-    SequentialAnimation {
+    RiseIn {
         id: riseIn
-        PropertyAction {
-            target: entry
-            property: "opacity"
-            value: 0
-        }
-        PropertyAction {
-            target: lift
-            property: "y"
-            value: Tokens.filesRowRise
-        }
-        PauseAnimation {
-            duration: Math.max(entry.riseOrder, 0) * Tokens.filesRowStagger
-        }
-        ParallelAnimation {
-            NumberAnimation {
-                target: entry
-                property: "opacity"
-                to: 1
-                duration: Tokens.durationRowIn
-                easing.type: Easing.BezierSpline
-                easing.bezierCurve: Tokens.easing
-            }
-            NumberAnimation {
-                target: lift
-                property: "y"
-                to: 0
-                duration: Tokens.durationRowIn
-                easing.type: Easing.BezierSpline
-                easing.bezierCurve: Tokens.easing
-            }
-        }
+        item: entry
+        lift: rowLift
+        order: entry.riseOrder
     }
 }
