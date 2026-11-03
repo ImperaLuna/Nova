@@ -731,6 +731,16 @@ QtObject {
     readonly property int filesRowWave: durationPanel
     readonly property int filesRowWaveMost: 40
     readonly property int durationRowIn: 220
+    // The Icons view: each entry a tile this big, a gap apart, its icon
+    // this size (its lines kept fine) over its name, centered, in up to
+    // this many lines.
+    readonly property int filesTileWidth: 96
+    readonly property int filesTileHeight: 100
+    readonly property int filesTileGap: 4
+    readonly property int filesTilePad: 8
+    readonly property int filesTileIconSize: 44
+    readonly property real filesTileIconStroke: 1.1
+    readonly property int filesTileNameLines: 2
     // How often the Modified column looks at the clock, so "Today" moves on.
     readonly property int filesClockTick: 60000
     // A pause this long in typing a name in a file list starts a new name,

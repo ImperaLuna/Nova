@@ -19,13 +19,15 @@ function wait(order, places, coming, pace) {
     return Math.round(order * Math.min(pace.stagger, pace.wave / (places - 1)));
 }
 
-// A file list row's place in the wave rippling out from row `from`, with
-// `page` rows on screen, or -1 for a row that takes no part: no wave
-// running (`from` -1), or a row past the screen, which shows at once
-// (rows below the fold, and pages that come in later).
-function order(index, from, page) {
+// A file list entry's place in the wave rippling out from entry `from`,
+// laid out `columns` to a line (1 for Details' rows; a diagonal step
+// counts as one), or -1 for an entry that takes no part: no wave running
+// (`from` -1), or one more than `page` steps away, past the screen, which
+// shows at once (entries below the fold, and pages that come in later).
+function order(index, from, page, columns = 1) {
     if (from < 0)
         return -1;
-    const distance = Math.abs(index - from);
+    const lines = Math.abs(Math.floor(index / columns) - Math.floor(from / columns));
+    const distance = Math.max(lines, Math.abs(index % columns - from % columns));
     return distance <= page ? distance : -1;
 }
