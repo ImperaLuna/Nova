@@ -89,8 +89,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ github.head_ref || github.ref_name }}
+          # Empty on a run started by hand.
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
-          above=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&base=$BRANCH" --jq length)
+          # A fork's branch name means nothing here (a fork's `main` would
+          # count every PR into main): a fork PR is never under a stack.
+          if [[ -n $HEAD_REPO && $HEAD_REPO != "$GITHUB_REPOSITORY" ]]; then
+            above=0
+          else
+            above=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&base=$BRANCH" --jq length)
+          fi
           echo "PRs stacked on $BRANCH: $above"
           echo "above=$above" >>"$GITHUB_OUTPUT"
 
