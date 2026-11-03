@@ -756,6 +756,18 @@ QtObject {
     readonly property int filesClashButtonHeight: 34
     // The scale the dialog pops in from and shrinks back to.
     readonly property real filesClashEnterScale: 0.97
+    // Tabs along the window's top, as in Windows 11's Explorer: each shares
+    // the room between these widths, the shown one rounded on top and raised
+    // into the navigation row under it. A tab dragged this far below the
+    // row comes out as a window of its own.
+    readonly property int filesTabHeight: 32
+    readonly property int filesTabPadTop: 6
+    readonly property int filesTabGap: 2
+    readonly property int filesTabMinWidth: 96
+    readonly property int filesTabMaxWidth: 220
+    readonly property int filesTabRadius: menuRowRadius
+    readonly property int filesTabCloseSize: 20
+    readonly property int filesTabTearDistance: 40
 
     // Type
     readonly property string fontSans: "Inter"

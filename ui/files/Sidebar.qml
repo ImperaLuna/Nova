@@ -12,7 +12,8 @@ import "trash.js" as Trash
 // the drives (Drives.qml) under a line of their own, a line, then the
 // folder tree that follows the window. A drive opened goes through the
 // navigator like a place; when the drive the window is on goes away, it
-// goes home.
+// goes home. A middle click on a place or a tree folder asks for it in a
+// new tab (`tabRequested`).
 Item {
     id: sidebar
 
@@ -22,6 +23,7 @@ Item {
 
     // A drive's menu was asked for at `at` (in the window).
     signal driveMenuRequested(var drive, point at)
+    signal tabRequested(string path)
 
     readonly property var looks: ({
             [Protocol.PLACE_HOME]: {
@@ -110,6 +112,10 @@ Item {
                 TapHandler {
                     onTapped: sidebar.navigator.visit(place.modelData.path, null)
                 }
+                TapHandler {
+                    acceptedButtons: Qt.MiddleButton
+                    onTapped: sidebar.tabRequested(place.modelData.path)
+                }
             }
         }
 
@@ -159,5 +165,6 @@ Item {
         anchors.topMargin: Tokens.filesRuleInset
         anchors.bottomMargin: Tokens.gap
         navigator: sidebar.navigator
+        onTabRequested: path => sidebar.tabRequested(path)
     }
 }

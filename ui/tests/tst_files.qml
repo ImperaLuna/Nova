@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtTest
 import "../files"
+import "../theme"
 import "../files/listing.js" as Listing
 import "../files/paths.js" as Paths
 import "../files/navigation.js" as Navigation
@@ -10,6 +11,7 @@ import "../files/trash.js" as Trash
 import "../daemon/protocol.js" as Protocol
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
+import "../files/tabs.js" as Tabs
 
 // Nova Files' address bar parts, window title and entry paths, its
 // history and the sidebar tree's kept folders and rows, its file list:
@@ -17,7 +19,9 @@ import "../files/transfers.js" as Transfers
 // keys select, and what opening the selection does, and the copy and move
 // jobs a window keeps and how their card and name clash dialog read and
 // answer, and the trash: its rows, its selection, and the dialog that asks
-// before deleting for good. The root is an Item: a TestCase root gets no mouse events.
+// before deleting for good, and the window's tabs: which one Ctrl+Tab and
+// closing land on, their widths, dragging one along or out of the row, and
+// the row's clicks. The root is an Item: a TestCase root gets no mouse events.
 Item {
     id: stage
     width: 880
@@ -704,6 +708,96 @@ Item {
             waitForRendering(notice);
             mouseClick(notice, notice.width - 20, notice.height / 2);
             compare(dismissals.count, 1);
+        }
+
+        function test_ctrl_tab_goes_round_the_tabs() {
+            compare(Tabs.cycled(0, 3, 1), 1);
+            compare(Tabs.cycled(2, 3, 1), 0, "from the last to the first");
+            compare(Tabs.cycled(0, 3, -1), 2, "Ctrl+Shift+Tab from the first to the last");
+            compare(Tabs.cycled(0, 1, 1), 0);
+        }
+
+        function test_closing_the_shown_tab_shows_the_next_one() {
+            compare(Tabs.neighbour(1, 3), 2);
+            compare(Tabs.neighbour(2, 3), 1, "the last one's goes back one");
+            compare(Tabs.neighbour(0, 2), 1);
+        }
+
+        function test_tabs_share_the_row_between_their_widths() {
+            compare(Tabs.width(1000, 2, 2, 96, 220), 220, "room to spare: widest");
+            compare(Tabs.width(500, 4, 2, 96, 220), 123);
+            compare(Tabs.width(300, 8, 2, 96, 220), 96, "crowded: narrowest");
+        }
+
+        function test_a_dragged_tab_moves_along_or_comes_out() {
+            verify(Tabs.tornOut(60, 40, 2));
+            verify(Tabs.tornOut(-60, 40, 2), "above the row too");
+            verify(!Tabs.tornOut(20, 40, 2), "near the row it stays");
+            verify(!Tabs.tornOut(200, 40, 1), "the only tab stays");
+            compare(Tabs.dropped(0, 230, 222, 3), 1);
+            compare(Tabs.dropped(2, -1000, 222, 3), 0);
+            compare(Tabs.dropped(1, 1000, 222, 3), 2);
+            compare(Tabs.dropped(1, 50, 222, 3), 1, "less than half a tab stays");
+            compare(Tabs.reordered(["a", "b", "c"], 0, 2), ["b", "c", "a"]);
+            compare(Tabs.reordered(["a", "b", "c"], 2, 0), ["c", "a", "b"]);
+        }
+
+        // A stand-in for FilesTab, whose Navigator needs novad.
+        Component {
+            id: tabComponent
+            QtObject {
+                property string title
+                property bool trash
+            }
+        }
+        Component {
+            id: tabRowComponent
+            TabRow {
+                width: 880
+                raised: "#202020"
+            }
+        }
+        SignalSpy {
+            id: tabsPicked
+            signalName: "picked"
+        }
+        SignalSpy {
+            id: tabsClosed
+            signalName: "closeRequested"
+        }
+
+        function test_the_tab_row_shows_closes_and_names_its_tabs() {
+            const music = createTemporaryObject(tabComponent, stage, {
+                title: "Music"
+            });
+            const trash = createTemporaryObject(tabComponent, stage, {
+                title: Trash.name(),
+                trash: true
+            });
+            const row = createTemporaryObject(tabRowComponent, stage, {
+                tabs: [music, trash],
+                current: music
+            });
+            tabsPicked.target = row;
+            tabsClosed.target = row;
+            tabsPicked.clear();
+            tabsClosed.clear();
+            waitForRendering(row);
+            compare(row.tabWidth, Tokens.filesTabMaxWidth);
+            verify(findText(row, "Music"));
+            const trashTitle = findText(row, Trash.name());
+            verify(trashTitle);
+            mouseClick(trashTitle);
+            compare(tabsPicked.count, 1);
+            compare(tabsPicked.signalArguments[0][0], trash);
+            // The shown tab's × is at its right end.
+            const musicTitle = findText(row, "Music");
+            mouseClick(musicTitle.parent, musicTitle.parent.width - Tokens.filesTabHeight / 2, musicTitle.parent.height / 2);
+            compare(tabsClosed.count, 1);
+            compare(tabsClosed.signalArguments[0][0], music);
+            compare(tabsPicked.count, 1, "the × doesn't also show it");
+            mouseClick(trashTitle, 1, 1, Qt.MiddleButton);
+            compare(tabsClosed.count, 2, "a middle click closes");
         }
 
         function findText(item, text) {

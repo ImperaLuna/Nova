@@ -9,12 +9,15 @@ import "paths.js" as Paths
 // The sidebar's folder tree, as novad lays it out for the window
 // (files_tree): open down to the window's folder, which is marked and
 // kept in view, with hidden folders dimmer. A row's chevron opens or
-// closes it; a click elsewhere on the row goes there. Rows that come slide in one
+// closes it; a click elsewhere on the row goes there, a middle click asks
+// for it in a new tab (`tabRequested`). Rows that come slide in one
 // after another, the others move to make room.
 ListView {
     id: tree
 
     required property Navigator navigator
+
+    signal tabRequested(string path)
     // While an update adds rows, the rows created slide in, staggered by
     // how many came before them; rows created by scrolling just show.
     property bool arriving: false
@@ -47,6 +50,8 @@ ListView {
         }
     }
     Component.onCompleted: update()
+    // Another tab came to the front.
+    onNavigatorChanged: update()
 
     displaced: Transition {
         NumberAnimation {
@@ -178,6 +183,10 @@ ListView {
                 else
                     tree.navigator.visit(item.path, null);
             }
+        }
+        TapHandler {
+            acceptedButtons: Qt.MiddleButton
+            onTapped: tree.tabRequested(item.path)
         }
     }
 }

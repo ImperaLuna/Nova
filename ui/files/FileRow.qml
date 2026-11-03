@@ -7,7 +7,8 @@ import "paths.js" as Paths
 // Modified, Type and Size at the header's column widths. Hovered rows
 // lighten, selected ones fill; dot files read fainter. When a folder's
 // entries have just come in (`riseOrder`), it eases up into place after
-// the rows nearer where the list opened.
+// the rows nearer where the list opened. A middle click is its own signal
+// (`middleClicked`) and selects nothing.
 Rectangle {
     id: entry
 
@@ -29,6 +30,7 @@ Rectangle {
 
     signal pressed(int modifiers)
     signal opened
+    signal middleClicked
 
     height: Tokens.filesRowHeight
     radius: Tokens.menuRowRadius
@@ -86,8 +88,19 @@ Rectangle {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true
-        onPressed: press => entry.pressed(press.modifiers)
-        onDoubleClicked: entry.opened()
+        acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+        onPressed: press => {
+            if (press.button === Qt.LeftButton)
+                entry.pressed(press.modifiers);
+        }
+        onClicked: click => {
+            if (click.button === Qt.MiddleButton)
+                entry.middleClicked();
+        }
+        onDoubleClicked: click => {
+            if (click.button === Qt.LeftButton)
+                entry.opened();
+        }
     }
 
     transform: Translate {
