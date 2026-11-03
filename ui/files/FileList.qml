@@ -5,6 +5,7 @@ import "service"
 import "../theme"
 import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
+import "drops.js" as Drops
 import "listing.js" as Listing
 import "paths.js" as Paths
 
@@ -18,6 +19,11 @@ import "paths.js" as Paths
 // folder is gone into (`folderOpened`), files open in their default app.
 // Delete asks to move the selection to the trash (`trashRequested`),
 // Shift+Delete to delete it for good (`deleteRequested`).
+// Rows drag out (the selection, FileDrag) and files dragged in drop on the
+// folder row under the pointer, or else the folder shown
+// (`dropRequested`); resting on a folder row opens it. Pressing a
+// selected row keeps the selection until the release, so a selection
+// drags whole.
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
 FocusScope {
@@ -35,6 +41,8 @@ FocusScope {
     // (Listing.copy), in the list's order.
     signal trashRequested(var rows)
     signal deleteRequested(var rows)
+    // A drop asks for `action` (Drops.decide) on `sources` into `folder`.
+    signal dropRequested(string action, var sources, string folder)
 
     readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
     readonly property var columns: [
@@ -227,10 +235,24 @@ FocusScope {
             riseOrder: list.riseFrom >= 0 ? Math.min(Math.abs(index - list.riseFrom), entryList.page) : -1
             now: list.now
 
+            dropTarget: row.dir && drops.action !== Drops.NONE && drops.hovered?.folder === Paths.child(list.folder, row.name)
+
             onPressed: modifiers => {
                 entryList.forceActiveFocus();
                 entryList.currentIndex = row.index;
-                list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
+                const plain = (modifiers & (Qt.ControlModifier | Qt.ShiftModifier)) === 0;
+                // A selected row pressed plainly may start dragging the
+                // whole selection: the click (below) narrows it.
+                if (!(plain && row.selected))
+                    list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
+            }
+            onClicked: modifiers => {
+                if ((modifiers & (Qt.ControlModifier | Qt.ShiftModifier)) === 0)
+                    list.model.select(Listing.pick(list.model.anchor, row.index, false, false));
+            }
+            onDragRequested: {
+                const grabbed = list.model.rows.get(row.index);
+                fileDrag.start(list.model.selectedRows().map(picked => Paths.child(list.folder, picked.name)), Listing.icon(grabbed), grabbed.dir ? Tokens.filesFolder : Tokens.fgDim);
             }
             onOpened: list.open([list.model.rows.get(row.index)])
         }
@@ -254,6 +276,22 @@ FocusScope {
             else
                 event.accepted = false;
         }
+    }
+
+    DropTarget {
+        id: drops
+        anchors.fill: entryList
+        service: FilesService
+        folderAt: (x, y) => {
+            const index = entryList.indexAt(x + entryList.contentX, y + entryList.contentY);
+            const row = index >= 0 ? list.model.rows.get(index) : null;
+            return row?.dir ? Drops.place(Paths.child(list.folder, row.name), true) : Drops.place(list.folder, false);
+        }
+        onDropRequested: (action, sources, folder) => list.dropRequested(action, sources, folder)
+        onSpringOpened: folder => list.folderOpened(folder)
+    }
+    FileDrag {
+        id: fileDrag
     }
 
     Text {

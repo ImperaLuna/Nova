@@ -1,12 +1,15 @@
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
+import "service"
+import "drops.js" as Drops
 
 // A drive in Nova Files' sidebar: its icon (a USB stick or a disk), its
 // name, and under it how full it is while it's mounted (and novad could
 // tell). `arrived` slides
 // it in and glows it once, for a stick just plugged in. A click opens it,
-// a right-click asks for its menu at the pointer (in the window).
+// a right-click asks for its menu at the pointer (in the window). Files
+// dragged onto a mounted one drop into it (`dropRequested`).
 Rectangle {
     id: row
 
@@ -16,6 +19,7 @@ Rectangle {
 
     signal opened
     signal menuRequested(point at)
+    signal dropRequested(string action, var sources, string folder)
 
     readonly property bool mounted: drive.mount !== undefined
     readonly property bool measured: mounted && drive.used !== undefined && drive.size > 0
@@ -23,7 +27,7 @@ Rectangle {
 
     height: Tokens.filesDriveHeight
     radius: Tokens.menuRowRadius
-    color: current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
+    color: drops.action !== Drops.NONE ? Tokens.filesDropTarget : current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
 
     Behavior on color {
         ColorAnimation {
@@ -102,6 +106,13 @@ Rectangle {
     TapHandler {
         acceptedButtons: Qt.RightButton
         onTapped: eventPoint => row.menuRequested(row.mapToItem(null, eventPoint.position))
+    }
+    DropTarget {
+        id: drops
+        anchors.fill: parent
+        service: FilesService
+        folderAt: () => row.mounted ? Drops.place(row.drive.mount, false) : Drops.NOWHERE
+        onDropRequested: (action, sources, folder) => row.dropRequested(action, sources, folder)
     }
 
     // Slides in from the left, then glows in the accent and fades back.

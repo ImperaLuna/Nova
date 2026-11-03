@@ -5,6 +5,7 @@ import Quickshell
 import "../theme"
 import "service"
 import "paths.js" as Paths
+import "drops.js" as Drops
 import "trash.js" as Trash
 import "../daemon/protocol.js" as Protocol
 
@@ -15,7 +16,8 @@ import "../daemon/protocol.js" as Protocol
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
 // (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
-// lie over it all.
+// lie over it all. Files dropped on the list or the sidebar are copied,
+// moved or trashed here, as the drop decided (drops.js).
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -167,6 +169,18 @@ FloatingWindow {
         transfers.start(mode, sources, folder);
     }
 
+    // Does what a drop decided: `action` (Drops.decide) on `sources`
+    // (absolute paths) into `folder`.
+    function drop(action: string, sources: var, folder: string) {
+        if (action === Drops.TRASH)
+            FilesService.trash(sources, error => {
+                if (error)
+                    window.notice(null, error);
+            });
+        else
+            transfer(action, sources, folder);
+    }
+
     NavigationRow {
         id: navigation
         anchors.left: parent.left
@@ -204,6 +218,7 @@ FloatingWindow {
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
         onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
+        onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
     }
     FileList {
         id: list
@@ -218,6 +233,7 @@ FloatingWindow {
         onFolderOpened: path => window.navigator.visit(path, null)
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
+        onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
         solid: FilesService.listSolid
     }
     TrashModel {
@@ -239,6 +255,14 @@ FloatingWindow {
             if (visible)
                 focusList();
         }
+    }
+    // Files dropped on the trash's list go to the trash.
+    DropTarget {
+        anchors.fill: trashList
+        enabled: window.inTrash
+        service: FilesService
+        folderAt: () => Drops.place(Protocol.FILES_TRASH_PLACE, false)
+        onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
     }
     Transfers {
         id: transfers

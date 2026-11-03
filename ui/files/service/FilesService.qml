@@ -212,6 +212,20 @@ Singleton {
         return job;
     }
 
+    // Whether every item at `sources` (absolute paths) is on the same
+    // drive as the folder `folder`: a drop there moves them, elsewhere it
+    // copies. `done(same)` gets the answer, or null when novad can't tell.
+    function sameDrive(sources: var, folder: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_SAME_DRIVE, {
+            sources: sources,
+            folder: folder
+        }, (error, same) => {
+            if (error)
+                console.warn(`nova: checking the drive of ${folder}: ${error}`);
+            done(error ? null : same);
+        });
+    }
+
     // Stops job `job`; it then reports it was cancelled.
     function cancelTransfer(job: int) {
         Daemon.call(Protocol.CMD_FILES_TRANSFER_CANCEL, {
