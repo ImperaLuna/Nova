@@ -756,6 +756,9 @@ QtObject {
     readonly property int filesTileHeight: 58
     readonly property int filesTileIconSize: 26
     readonly property list<int> filesRecentColumns: [130, 220]
+    // The most of the sidebar's height its places and drives take before
+    // they scroll, so the folder tree keeps room under many pins.
+    readonly property real filesPlacesMaxShare: 0.5
 
     // Copies and moves: each running job's card stacked at the window's
     // bottom right, and the name clash dialog in its middle, its two sides

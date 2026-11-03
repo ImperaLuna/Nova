@@ -32,6 +32,9 @@ Singleton {
     // page, the folders pinned to Quick access, the trash. Empty until
     // novad answers.
     property var places: []
+    // Which read `places` shows, so a late answer to an earlier one is
+    // dropped.
+    property int _readingPlaces: 0
 
     // A window to open on `window.folder`, with `window.select` (absolute
     // paths in it, maybe none) selected.
@@ -165,7 +168,11 @@ Singleton {
 
     // Reads `places` again; a failed read keeps what's there.
     function refreshPlaces() {
+        const reading = ++_readingPlaces;
         Daemon.call(Protocol.CMD_FILES_PLACES, undefined, (error, result) => {
+            // An answer to an earlier read, finishing late, is dropped.
+            if (reading !== root._readingPlaces)
+                return;
             if (error)
                 console.warn(`nova: sidebar places: ${error}`);
             else

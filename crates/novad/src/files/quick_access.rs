@@ -18,11 +18,15 @@
 use super::target;
 use super::trash::escape;
 use nova_protocol::{FILES_HOME_PLACE, FILES_TRASH_PLACE, FilePlace, PlaceKind, wire_text};
+use std::io::Write as _;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 /// The bookmarks file, in the config folder.
 pub const BOOKMARKS_FILE: &str = "gtk-3.0/bookmarks";
+/// The new file's permissions until the old one's are copied.
+const PRIVATE: u32 = 0o600;
 /// A local folder's URI scheme in the bookmarks file.
 const FILE_SCHEME: &str = "file://";
 
@@ -166,7 +170,11 @@ fn write(file: &Path, lines: &[Line]) -> std::io::Result<()> {
     let mut new_name = target.as_os_str().to_owned();
     new_name.push(".nova-new");
     let new = PathBuf::from(new_name);
-    std::fs::write(&new, text)?;
+    // Private from the start: the old file may be, and its permissions
+    // come only after the text is in.
+    let mut out = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(PRIVATE).open(&new)?;
+    out.write_all(text.as_bytes())?;
+    drop(out);
     if let Ok(old) = std::fs::metadata(&target) {
         std::fs::set_permissions(&new, old.permissions())?;
     }
