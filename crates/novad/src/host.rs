@@ -77,8 +77,13 @@ fn user_name() -> String {
 /// This process's user's login name, from the user database (which may be
 /// LDAP or systemd-userdb, not just /etc/passwd).
 fn login_name() -> Option<String> {
+    user_name_of(current_uid())
+}
+
+/// The user this process runs as.
+pub(crate) fn current_uid() -> libc::uid_t {
     // SAFETY: getuid can't fail.
-    user_name_of(unsafe { libc::getuid() })
+    unsafe { libc::getuid() }
 }
 
 /// Big enough for any real user or group entry; the lookups say ERANGE

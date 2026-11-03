@@ -114,6 +114,9 @@ Singleton {
     // How one of this process's copy or move jobs is going: {job, mode,
     // state, items, name, done_bytes, total_bytes, clash, error}.
     signal filesTransferChanged(var transfer)
+    // How far one of this process's measuring jobs got: {job, files,
+    // folders, bytes, disk_bytes, done}.
+    signal filesMeasured(var measured)
     // Something in the trash changed, in Nova Files or another app.
     signal filesTrashChanged
 
@@ -226,6 +229,8 @@ Singleton {
             filesDrives = msg.data.drives;
         } else if (msg.event === Protocol.EVENT_FILES_TRANSFER) {
             filesTransferChanged(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_MEASURED) {
+            filesMeasured(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_TRASH_CHANGED) {
             filesTrashChanged();
         }

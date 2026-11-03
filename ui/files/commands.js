@@ -17,6 +17,8 @@ var COPY_PATH = "copy_path";
 var PASTE = "paste";
 var NEW_FOLDER = "new_folder";
 var DETAILS = "details";
+// The Properties dialog: on the items picked, the folder, or a drive.
+var PROPERTIES = "properties";
 var TRASH = "trash";
 var DELETE_FOR_GOOD = "delete_for_good";
 var SELECT_ALL = "select_all";

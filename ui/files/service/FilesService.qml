@@ -12,9 +12,10 @@ import "../trash.js" as Trash
 // places, the drives (and mounting and ejecting them), opening files in
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, the
-// trash, new folders, renaming and an item's details. The Nova Files
-// process (../../files.qml) and its windows get these here and never talk
-// to Daemon themselves. Also how solid the windows are, from config.toml's
+// trash, new folders, renaming, an item's details, and the Properties
+// window's facts, sizes and access. The Nova Files process
+// (../../files.qml) and its windows get these here and never talk to
+// Daemon themselves. Also how solid the windows are, from config.toml's
 // [files].
 Singleton {
     id: root
@@ -284,6 +285,22 @@ Singleton {
         });
     }
 
+    // How far a measuring job got (see Daemon.filesMeasured).
+    signal measured(var measured)
+
+    // `done(properties)` gets what the Properties window shows about the
+    // item at `path` (absolute): novad's files_properties answer, or null
+    // when it couldn't be read.
+    function properties(path: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_PROPERTIES, {
+            path: path
+        }, (error, result) => {
+            if (error)
+                console.warn(`nova: properties of ${path}: ${error}`);
+            done(error ? null : result);
+        });
+    }
+
     // Opens another Nova Files window on `folder` (absolute).
     function openWindow(folder: string) {
         Daemon.call(Protocol.CMD_SHOW_FOLDER, {
@@ -292,6 +309,39 @@ Singleton {
             if (error)
                 console.warn(`nova: a window on ${folder}: ${error}`);
         });
+    }
+
+    // Counts what `paths` (absolute, fitting one request) hold. Returns
+    // the job's number, which its `measured` events carry;
+    // `failed(job)` hears when novad refuses to start it.
+    function measure(paths: var, failed: var): int {
+        const job = newJob();
+        Daemon.call(Protocol.CMD_FILES_MEASURE, {
+            job: job,
+            paths: paths
+        }, error => {
+            if (error) {
+                console.warn(`nova: counting sizes: ${error}`);
+                failed?.(job);
+            }
+        });
+        return job;
+    }
+
+    // Stops measuring job `job`; it sends nothing more.
+    function cancelMeasure(job: int) {
+        Daemon.call(Protocol.CMD_FILES_MEASURE_CANCEL, {
+            job: job
+        });
+    }
+
+    // Sets who may read, change and run the item at `path` ({owner, group,
+    // others}, each {read, write, run}). `done(error)` gets novad's answer.
+    function setAccess(path: string, access: var, done: var) {
+        Daemon.call(Protocol.CMD_FILES_SET_ACCESS, {
+            path: path,
+            access: access
+        }, error => root._answered("changing access", error, done));
     }
 
     // Moves `paths` (absolute) to the trash, one step to undo however many
@@ -394,6 +444,9 @@ Singleton {
         }
         function onFilesTransferChanged(transfer: var) {
             root.transferChanged(transfer);
+        }
+        function onFilesMeasured(measured: var) {
+            root.measured(measured);
         }
         function onFilesTrashChanged() {
             root.trashChanged();

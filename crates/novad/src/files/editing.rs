@@ -21,7 +21,6 @@ use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
 /// What a new folder is called before it's renamed, as in Explorer.
 const NEW_FOLDER: &str = "New folder";
@@ -88,11 +87,7 @@ pub fn details(path: &str, mime: &MimeDb) -> Result<FileDetails, String> {
     Ok(FileDetails {
         entry,
         items,
-        created_ms: meta
-            .created()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .and_then(|since| i64::try_from(since.as_millis()).ok()),
+        created_ms: meta.created().ok().and_then(folder::system_time_millis),
         accessed_ms: folder::millis(meta.atime(), meta.atime_nsec()),
         owner: crate::host::user_name_of(meta.uid()).unwrap_or_else(|| meta.uid().to_string()),
         group: crate::host::group_name_of(meta.gid()).unwrap_or_else(|| meta.gid().to_string()),

@@ -50,7 +50,7 @@ function forItems(rows, apps, defaultApp, act) {
     menu.push(_item(qsTr("Cut"), Icons.CUT, Commands.CUT, act, rows), _item(qsTr("Copy"), Icons.COPY, Commands.COPY, act, rows), _item(qsTr("Copy path"), "", Commands.COPY_PATH, act, rows));
     if (single)
         menu.push(SEPARATOR, _item(qsTr("Show details…"), Icons.INFO, Commands.DETAILS, act, rows));
-    menu.push(SEPARATOR, _item(qsTr("Move to trash"), Icons.TRASH, Commands.TRASH, act, rows));
+    menu.push(SEPARATOR, _item(qsTr("Move to trash"), Icons.TRASH, Commands.TRASH, act, rows), SEPARATOR, _properties(act, rows));
     return menu;
 }
 
@@ -79,7 +79,7 @@ function forFolder(canPaste, hidden, history, act) {
         menu.push(_item(_undoLabel(false, history.undo), Icons.UNDO, Commands.UNDO, act, []));
     if (history.redo)
         menu.push(_item(_undoLabel(true, history.redo), Icons.REDO, Commands.REDO, act, []));
-    return menu.concat([SEPARATOR, _item(qsTr("Select all"), "", Commands.SELECT_ALL, act, []), showHidden, SEPARATOR, _item(qsTr("Show details…"), Icons.INFO, Commands.DETAILS, act, [])]);
+    return menu.concat([SEPARATOR, _item(qsTr("Select all"), "", Commands.SELECT_ALL, act, []), showHidden, SEPARATOR, _item(qsTr("Show details…"), Icons.INFO, Commands.DETAILS, act, []), _properties(act, [])]);
 }
 
 // The command row's New.
@@ -87,12 +87,20 @@ function forNew(act) {
     return [_item(qsTr("Folder"), Icons.FOLDER, Commands.NEW_FOLDER, act, [])];
 }
 
-// A drive's menu: Eject only for one that can be unplugged.
+// A drive's menu: Eject only for one that can be unplugged, Properties
+// (how full it is) only while it's mounted.
 function forDrive(drive, act) {
     const menu = [_item(qsTr("Open in new window"), "", Commands.NEW_WINDOW, act, [], drive), _item(qsTr("Show details…"), Icons.INFO, Commands.DETAILS, act, [], drive)];
     if (drive.removable)
         menu.push(SEPARATOR, _item(qsTr("Eject"), Icons.EJECT, Commands.EJECT, act, [], drive));
+    if (drive.mount !== undefined)
+        menu.push(SEPARATOR, _properties(act, [], drive));
     return menu;
+}
+
+// Properties, last in a menu as in Explorer.
+function _properties(act, rows, drive) {
+    return _item(qsTr("Properties"), "", Commands.PROPERTIES, act, rows, drive);
 }
 
 // The command row's Sort: the four columns, then the direction, the

@@ -131,6 +131,12 @@ var TABLE = [
         keys: ["Return", "Enter"],
         where: [LIST]
     },
+    // The selection's Properties, or the folder's with nothing selected.
+    {
+        action: Commands.PROPERTIES,
+        keys: ["Alt+Return", "Alt+Enter"],
+        where: [LIST]
+    },
     {
         action: Commands.TRASH,
         keys: ["Del"],

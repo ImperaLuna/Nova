@@ -8,6 +8,7 @@ import "paths.js" as Paths
 import "drops.js" as Drops
 import "trash.js" as Trash
 import "commands.js" as Commands
+import "properties.js" as Props
 import "shortcuts.js" as Shortcuts
 import "menus.js" as Menus
 import "../daemon/protocol.js" as Protocol
@@ -19,9 +20,10 @@ import "../daemon/protocol.js" as Protocol
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
 // (ConfirmDialog). Right-click menus (menus.js: on items, on the empty
-// list, on a drive, and the command row's New and Sort) and the dialog
-// when a drive can't be ejected lie over it all. Show details opens the
-// details pane on the right of the list, on the picked item or the folder.
+// list, on a drive, and the command row's New and Sort), the Properties
+// dialog (Properties in a menu, Alt+Enter) and the dialog when a drive
+// can't be ejected lie over it all. Show details opens the details pane
+// on the right of the list, on the picked item or the folder.
 // Cut, copy and paste go through the system clipboard (FilesClipboard);
 // pasting copies or moves into the folder shown, like dropping there.
 // Files dropped on the list or the sidebar are copied, moved or trashed
@@ -48,8 +50,8 @@ FloatingWindow {
     readonly property bool inTrash: Trash.isTrash(folder)
     readonly property string home: Quickshell.env("HOME") ?? ""
     // A dialog or menu has the window's attention: the confirm dialog, a
-    // name clash, a menu or a drive's eject problem.
-    readonly property bool asking: confirming !== null || transfers.asking !== null || menu.shown || ejectProblem.visible
+    // name clash, a menu, the Properties dialog or a drive's eject problem.
+    readonly property bool asking: confirming !== null || transfers.asking !== null || menu.shown || propertiesModel.subject !== null || ejectProblem.visible
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -147,6 +149,9 @@ FloatingWindow {
                 window.onDrive(extra, mount => window.showDetails(mount));
             else
                 window.showDetails("");
+            break;
+        case Commands.PROPERTIES:
+            window.showProperties(rows, extra);
             break;
         case Commands.EJECT:
             FilesService.eject(extra.id, outcome => {
@@ -267,6 +272,18 @@ FloatingWindow {
         confirming = null;
         if (yes)
             act?.();
+        focusList();
+    }
+
+    // Shows the Properties of `rows` (the file list's) in the folder shown,
+    // of the folder itself when there are none, or of `drive`.
+    function showProperties(rows: var, drive: var) {
+        propertiesModel.show(Props.subject(folder, rows, drive));
+        propertiesDialog.forceActiveFocus();
+    }
+
+    function closeProperties() {
+        propertiesModel.close();
         focusList();
     }
 
@@ -532,6 +549,34 @@ FloatingWindow {
         id: menu
         anchors.fill: parent
         onClosed: list.forceActiveFocus()
+    }
+    PropertiesModel {
+        id: propertiesModel
+    }
+    // A click beside the Properties dialog closes it.
+    MouseArea {
+        anchors.fill: parent
+        visible: propertiesModel.subject !== null
+        acceptedButtons: Qt.AllButtons
+        onClicked: window.closeProperties()
+        onWheel: wheel => wheel.accepted = true
+    }
+    PropertiesDialog {
+        id: propertiesDialog
+        anchors.centerIn: parent
+        visible: propertiesModel.subject !== null
+        width: Math.min(implicitWidth, window.width - 2 * Tokens.filesOverlayInset)
+        height: implicitHeight
+        maxHeight: window.height - 2 * Tokens.filesOverlayInset
+        subject: propertiesModel.subject ?? Props.subject(window.folder, [], null)
+        properties: propertiesModel.properties
+        counted: propertiesModel.counted
+        changing: propertiesModel.changing
+        apps: propertiesModel.openWith.apps
+        defaultApp: propertiesModel.openWith.defaultApp
+        onCloseRequested: window.closeProperties()
+        onAccessFlipped: (who, right) => propertiesModel.flipAccess(who, right)
+        onDefaultChosen: app => propertiesModel.openWith.makeDefault(app)
     }
     EjectProblem {
         id: ejectProblem

@@ -57,9 +57,9 @@ Item {
         function test_the_item_menu_follows_what_is_picked() {
             const act = () => {};
             const one = Menus.forItems([file("a.txt")], () => [], () => "", act);
-            compare(labels(one), ["Open", "Open with…", "-", "Rename…", "Cut", "Copy", "Copy path", "-", "Show details…", "-", "Move to trash"]);
+            compare(labels(one), ["Open", "Open with…", "-", "Rename…", "Cut", "Copy", "Copy path", "-", "Show details…", "-", "Move to trash", "-", "Properties"]);
             const two = Menus.forItems([file("a.txt"), folder("b")], () => [], () => "", act);
-            compare(labels(two), ["Open", "-", "Cut", "Copy", "Copy path", "-", "Move to trash"], "nothing for one item only, no new window for a file");
+            compare(labels(two), ["Open", "-", "Cut", "Copy", "Copy path", "-", "Move to trash", "-", "Properties"], "nothing for one item only, no new window for a file");
             const folders = Menus.forItems([folder("a"), folder("b")], () => [], () => "", act);
             verify(labels(folders).includes("Open in new window"));
             compare(one.find(item => item.label === "Cut").shortcut, "Ctrl + X");
@@ -90,7 +90,7 @@ Item {
         function test_the_folder_drive_and_sort_menus() {
             const act = () => {};
             const empty = Menus.forFolder(false, true, {}, act);
-            compare(labels(empty), ["New folder", "Paste", "-", "Select all", "Show hidden files", "-", "Show details…"]);
+            compare(labels(empty), ["New folder", "Paste", "-", "Select all", "Show hidden files", "-", "Show details…", "Properties"]);
             compare(empty[1].enabled, false, "nothing to paste");
             compare(empty[4].checked, true);
             verify(Menus.forFolder(true, false, {}, act)[1].enabled);
@@ -107,6 +107,12 @@ Item {
             verify(labels(Menus.forDrive({
                 removable: true
             }, act)).includes("Eject"));
+            const mounted = Menus.forDrive({
+                removable: false,
+                mount: "/"
+            }, act);
+            compare(labels(mounted), ["Open in new window", "Show details…", "-", "Properties"], "how full it is, once mounted");
+            compare(mounted[3].shortcut, "Alt + Enter");
             const picked = [];
             const sort = Menus.forSort({
                 key: Protocol.FILE_SORT_SIZE,
