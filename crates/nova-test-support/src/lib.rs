@@ -58,10 +58,14 @@ impl Drop for TempDir {
 /// The program itself is written by a `sh` child, never through a file this
 /// process opens: another test thread forking meanwhile would inherit that
 /// write handle, and running the program while the fork still holds it fails
-/// with "Text file busy" (ETXTBSY). Only the source text goes through ours.
+/// with "Text file busy" (ETXTBSY). Only the source text goes through ours,
+/// in its own temporary file outside `dir`, so a test watching `dir` never
+/// sees it.
 pub fn write_program(dir: &Path, name: &str, body: &str) -> PathBuf {
+    static COUNT: AtomicU64 = AtomicU64::new(0);
     let path = dir.join(name);
-    let source = dir.join(format!(".{name}.source"));
+    let count = COUNT.fetch_add(1, Ordering::Relaxed);
+    let source = std::env::temp_dir().join(format!("nova-test-program-{}-{count}", std::process::id()));
     std::fs::write(&source, format!("#!/bin/sh\n{body}\n")).unwrap_or_else(|e| panic!("can't write {name}: {e}"));
     let copied = std::process::Command::new("/bin/sh")
         .args(["-c", "cat \"$1\" >\"$2\" && chmod 755 \"$2\"", "sh"])

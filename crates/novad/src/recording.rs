@@ -845,7 +845,9 @@ mod tests {
         let error = fixture.start(None, RecordAudio::default()).unwrap_err();
         assert!(error.contains("didn't start") && error.contains("no capture permission"), "{error}");
         assert!(fixture.files().is_empty());
-        assert_eq!(crate::hub::count_named(&fixture.ui, "recording"), 0, "nothing was announced");
+        for announcement in ["recording", "recording_saved"] {
+            assert_eq!(crate::hub::count_named(&fixture.ui, announcement), 0, "no {announcement} was announced");
+        }
     }
 
     #[test]

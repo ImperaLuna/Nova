@@ -20,7 +20,7 @@ test:
 # The Rust tests in CI's Nix sandbox (no network, no setuid, no host tools):
 # run before opening a PR, since some tests only fail there
 test-sandbox:
-    nix build -L --no-link .#checks.x86_64-linux.tests
+    nix build -L --no-link ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).tests"
 
 # Test and script patterns that flaked before (scripts/lint-traps.sh)
 lint-traps:

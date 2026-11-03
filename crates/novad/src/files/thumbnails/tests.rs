@@ -178,7 +178,10 @@ fn what_scrolled_away_is_not_made_and_the_latest_goes_first() {
     let mut answered: Vec<String> = (0..4).map(|_| answer(&events)["path"].as_str().unwrap().to_string()).collect();
     answered.sort();
     assert_eq!(answered, [&photos[0], &photos[1], &photos[2], &photos[4]].map(String::clone));
-    assert!(named_within(&events, "files_thumbnail", Duration::from_millis(300)).is_none(), "the cancelled one never comes");
+    assert!(
+        named_within(&events, "files_thumbnail", Duration::from_millis(300)).is_none(),
+        "the cancelled one never comes"
+    );
     let runs = std::fs::read_to_string(fixture.dir.join("runs")).unwrap();
     let started: Vec<&str> = runs.lines().skip(2).collect();
     assert_eq!(started, [photos[4].as_str(), photos[2].as_str()], "the latest asked for starts first");
