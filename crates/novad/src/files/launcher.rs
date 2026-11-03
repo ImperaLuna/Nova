@@ -14,7 +14,7 @@ use super::folder::{is_hidden, natural, read_entry};
 use crate::launcher::MAX_MATCHES;
 use crate::launcher::providers::{Provider, Run};
 use nova_protocol::{FileEntry, LauncherFile, LauncherItem, TextMark, TextRun, wire_path, wire_text};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// How a typed path names Home.
 const HOME_PREFIX: char = '~';
@@ -87,8 +87,12 @@ impl<'a> TypedPath<'a> {
     }
 
     /// The entries of the folder whose names start with `start`, folders
-    /// first, then by name; none when the folder can't be read.
+    /// first, then by name; none when the folder can't be read, or is named
+    /// with a `..`, which Nova Files wouldn't open.
     fn complete(&self, mime: &crate::mime::MimeDb) -> Result<Vec<LauncherItem>, String> {
+        if self.folder.components().any(|part| part == Component::ParentDir) {
+            return Ok(Vec::new());
+        }
         let Ok(entries) = std::fs::read_dir(&self.folder) else { return Ok(Vec::new()) };
         let start = self.start.to_lowercase();
         let mut names: Vec<(bool, String)> = entries
@@ -96,8 +100,13 @@ impl<'a> TypedPath<'a> {
             .filter_map(|entry| {
                 let name = wire_text(entry.file_name());
                 let shows = name.to_lowercase().starts_with(&start) && (!is_hidden(&name) || is_hidden(&start));
-                // A link to a folder counts as one, as in its listing.
-                shows.then(|| (std::fs::metadata(entry.path()).is_ok_and(|meta| meta.is_dir()), name))
+                // A link to a folder counts as one, as in its listing; only
+                // links cost a look at the file, so a huge folder stays quick.
+                let dir = |kind: std::fs::FileType| {
+                    kind.is_dir()
+                        || (kind.is_symlink() && std::fs::metadata(entry.path()).is_ok_and(|meta| meta.is_dir()))
+                };
+                shows.then(|| (entry.file_type().is_ok_and(dir), name))
             })
             .collect();
         names.sort_by(|(a_dir, a), (b_dir, b)| b_dir.cmp(a_dir).then_with(|| natural(a, b)).then_with(|| a.cmp(b)));
@@ -236,6 +245,17 @@ mod tests {
     }
 
     #[test]
+    fn a_link_to_a_folder_lists_as_a_folder() {
+        let home = home("links");
+        std::os::unix::fs::symlink(home.join("Documents"), home.join("zz docs")).unwrap();
+        let found = TypedPath::parse("~/", Some(&home)).unwrap().complete(&mime()).unwrap();
+        let link = found.iter().position(|item| item.name[0].text == "zz docs").unwrap();
+        let file = found.iter().position(|item| item.name[0].text == "dotfile.txt").unwrap();
+        assert!(link < file, "folders first");
+        assert_eq!(found[link].file.as_ref().unwrap().completion, "~/zz docs/");
+    }
+
+    #[test]
     fn dot_entries_show_once_a_dot_is_typed_and_stay_dim() {
         let home = home("dots");
         let complete = |query| TypedPath::parse(query, Some(&home)).unwrap().complete(&mime()).unwrap();
@@ -257,6 +277,8 @@ mod tests {
         assert_eq!(parse("report"), None);
         assert_eq!(parse("~me"), None);
         assert!(TypedPath::parse("~/Doc", None).is_none(), "no home, no ~");
+        let up = TypedPath::parse("~/../", Some(&home)).unwrap();
+        assert!(up.complete(&mime()).unwrap().is_empty(), "Nova Files opens no path with a ..");
         // A folder that can't be read finds nothing.
         let missing = TypedPath::parse("/no/such/folder/x", None).unwrap();
         assert!(missing.complete(&mime()).unwrap().is_empty());
