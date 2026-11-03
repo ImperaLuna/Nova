@@ -230,6 +230,10 @@ Item {
             const drag = dragOf(["/run/media/ana/STICK/a.png"], 10, 50);
             list.enter(drag);
             compare(list.action, Drops.NONE, "nothing until novad says");
+            verify(drag.accepted, "but the drag stays droppable");
+            compare(drag.action, Qt.MoveAction, "as it proposes");
+            list.follow(drag);
+            verify(drag.accepted, "also when it moves on");
             const letGo = dragOf([], 10, 50);
             list.release(letGo);
             verify(letGo.accepted);

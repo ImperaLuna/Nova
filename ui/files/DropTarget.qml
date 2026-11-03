@@ -10,11 +10,11 @@ import "drops.js" as Drops
 // `hovered` and `action` say what a drop there would do, as novad answers
 // (files_drop, asked once per folder and Ctrl state; onto the trash it's
 // Drops.TRASH), and the pointer shows it, or that nothing can be dropped
-// there, also while novad hasn't answered. Ctrl is read again at every
-// move and at the drop. A drop goes where it's let go, asks novad first
-// if it hasn't answered for there, and then asks the window to do it
-// (`dropRequested`); a place that springs opens after the pointer rests
-// on it (`springOpened`).
+// there; until novad answers, it shows what the drag proposes. Ctrl is
+// read again at every move and at the drop. A drop goes where it's let
+// go, asks novad first if it hasn't answered for there, and then asks the
+// window to do it (`dropRequested`); a place that springs opens after the
+// pointer rests on it (`springOpened`).
 DropArea {
     id: target
 
@@ -74,11 +74,15 @@ DropArea {
             hovered = place;
             spring.restart();
         }
-        if (place !== null && !place.trash && !(answerKey(place.folder, copy) in answers))
+        // While novad hasn't answered, the drag stays droppable here (the
+        // drop asks again): Wayland drops nothing after a refused move.
+        const unknown = () => place !== null && !place.trash && !(answerKey(place.folder, copy) in answers);
+        if (unknown())
             ask(place.folder, copy, null);
-        drag.accepted = action !== Drops.NONE;
+        const pending = unknown();
+        drag.accepted = pending || action !== Drops.NONE;
         if (drag.accepted)
-            drag.action = Drops.dragAction(action);
+            drag.action = pending ? drag.proposedAction : Drops.dragAction(action);
     }
 
     function leave() {
@@ -97,9 +101,10 @@ DropArea {
         }
         follow(drag);
         // A refused place still follows the pointer to the next one.
-        drag.accepted = true;
-        if (action === Drops.NONE)
+        if (!drag.accepted) {
+            drag.accepted = true;
             drag.action = Qt.IgnoreAction;
+        }
     }
 
     // The drag was let go: `drop` is the DragEvent, or anything with its x,
