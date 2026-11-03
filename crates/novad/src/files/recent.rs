@@ -7,7 +7,7 @@
 //! Only those start tags are read, with their attributes' XML escapes
 //! undone; nothing else in the file matters here. A file is used last at
 //! the latest of its three times. Only local files that still exist are
-//! listed, the latest first, at most [`FILES_RECENT_MAX`]; each is read
+//! listed, each once, the latest first, at most [`FILES_RECENT_MAX`]; each is read
 //! like a folder's entry, so it shows as the file list shows it.
 
 use super::{folder, target};
@@ -32,8 +32,12 @@ pub fn recent(file: &Path, mime: &MimeDb) -> Result<Vec<RecentFile>, String> {
     };
     let mut used = bookmarks(&text);
     used.sort_by_key(|(_, used_ms)| std::cmp::Reverse(*used_ms));
+    let mut seen = std::collections::HashSet::new();
     let recent = used
         .into_iter()
+        // The latest of a file named twice (`file://localhost/`, a trailing
+        // slash); a link whose file is gone isn't there.
+        .filter(|(path, _)| seen.insert(path.clone()) && path.exists())
         .filter_map(|(path, used_ms)| {
             let (folder, name) = (path.parent()?, path.file_name()?);
             let entry = folder::read_entry(folder, name, mime)?;
@@ -50,7 +54,7 @@ fn bookmarks(text: &str) -> Vec<(PathBuf, Option<i64>)> {
         .skip(1)
         .filter_map(|rest| {
             let tag = &rest[..rest.find('>')?];
-            let path = target::path(&attribute(tag, "href")?).ok()?;
+            let path = target::path(&attribute(tag, "href")?).ok()?.components().collect();
             let used_ms = TIMES.iter().filter_map(|name| attribute(tag, name).and_then(|time| millis(&time))).max();
             Some((path, used_ms))
         })
@@ -149,6 +153,7 @@ mod tests {
         std::fs::create_dir_all(dir.join("Documents")).unwrap();
         std::fs::write(dir.join("Documents/plan & notes.md"), b"# plan").unwrap();
         std::fs::write(dir.join("photo one.png"), b"").unwrap();
+        std::os::unix::fs::symlink(dir.join("missing"), dir.join("link.txt")).unwrap();
         let file = list(
             &dir,
             &[
@@ -158,6 +163,12 @@ mod tests {
                     "2026-11-02T08:30:00.123456Z",
                 ),
                 bookmark(&format!("file://{}/gone.txt", dir.display()), "2026-11-03T00:00:00Z", "2026-11-03T00:00:00Z"),
+                bookmark(&format!("file://{}/link.txt", dir.display()), "2026-11-03T00:00:00Z", "2026-11-03T00:00:00Z"),
+                bookmark(
+                    &format!("file://localhost{}/photo%20one.png", dir.display()),
+                    "2026-11-01T00:00:00Z",
+                    "2026-11-01T00:00:00Z",
+                ),
                 bookmark("https://example.com/page", "2026-11-03T00:00:00Z", "2026-11-03T00:00:00Z"),
                 bookmark(
                     &format!("file://{}/photo%20one.png", dir.display()),

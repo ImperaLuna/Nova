@@ -57,6 +57,15 @@ QtObject {
             go(Navigation.current(moved), "step", steps, null);
     }
 
+    // Mounts the drive `id` unless it is, then goes there; stays put when
+    // it can't be mounted.
+    function openDrive(id: string) {
+        FilesService.mount(id, mounted => {
+            if (mounted !== null)
+                navigator.visit(mounted, null);
+        });
+    }
+
     function up() {
         if (canGoUp)
             visit(Paths.parent(folder), null);

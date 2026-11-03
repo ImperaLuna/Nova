@@ -10,7 +10,8 @@
 //! the first pin or unpin writes them out.
 //!
 //! It's read anew on every request, off the connection's thread, so a
-//! change another app makes shows the next time a window asks. Pinning
+//! change another app makes shows the next time a window asks (each time
+//! the Home page shows). A line naming a folder twice is one pin. Pinning
 //! writes a new file next to the old one and renames it over, under one
 //! lock, so two windows pinning at once both land.
 
@@ -56,11 +57,11 @@ enum Line {
 impl Line {
     fn parse(text: &str) -> Self {
         let (uri, label) = text.split_once(' ').unwrap_or((text, ""));
-        match target::path(uri) {
-            Ok(path) if uri.starts_with(FILE_SCHEME) => {
-                Line::Pin { path: path.components().collect(), label: label.to_owned(), text: text.to_owned() }
-            }
-            _ => Line::Other(text.to_owned()),
+        // A path with `.` or `..` in it is no pin: one couldn't unpin it.
+        let path = target::path(uri).and_then(|path| target::clean(&wire_text(&path)));
+        match path {
+            Ok(path) => Line::Pin { path, label: label.to_owned(), text: text.to_owned() },
+            Err(_) => Line::Other(text.to_owned()),
         }
     }
 
@@ -83,11 +84,12 @@ impl QuickAccess {
         Self { file, user_folders, writing: Mutex::default() }
     }
 
-    /// The pinned folders that exist, in their order.
+    /// The pinned folders that exist, in their order, each once.
     pub fn pins(&self) -> Result<Vec<FilePlace>, String> {
         let lines = self.read()?;
+        let mut seen = std::collections::HashSet::new();
         let pins = lines.iter().filter_map(|line| match line {
-            Line::Pin { path, label, .. } if path.is_dir() => Some(self.pin_place(path, label)),
+            Line::Pin { path, label, .. } if path.is_dir() && seen.insert(path) => Some(self.pin_place(path, label)),
             _ => None,
         });
         Ok(pins.collect())
@@ -151,18 +153,24 @@ pub fn places(pins: Vec<FilePlace>) -> Vec<FilePlace> {
 }
 
 /// Writes `lines` as `file`'s new contents: a new file renamed over it, so
-/// a reader never sees half of it.
+/// a reader never sees half of it. A link is followed, so the file it
+/// points to changes (or the write fails, for one in a read-only place like
+/// a home-manager link), and the file keeps its permissions.
 fn write(file: &Path, lines: &[Line]) -> std::io::Result<()> {
-    if let Some(folder) = file.parent() {
+    let target = std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    if let Some(folder) = target.parent() {
         std::fs::create_dir_all(folder)?;
     }
     // With no lines left, the empty file still says nothing is pinned.
     let text: String = lines.iter().map(|line| format!("{}\n", line.text())).collect();
-    let mut new_name = file.as_os_str().to_owned();
+    let mut new_name = target.as_os_str().to_owned();
     new_name.push(".nova-new");
     let new = PathBuf::from(new_name);
     std::fs::write(&new, text)?;
-    std::fs::rename(&new, file)
+    if let Ok(old) = std::fs::metadata(&target) {
+        std::fs::set_permissions(&new, old.permissions())?;
+    }
+    std::fs::rename(&new, &target)
 }
 
 #[cfg(test)]
@@ -261,6 +269,36 @@ mod tests {
         assert!(text.contains("caf%E9%20bar"), "{text}");
         let pinned = places(quick.pins().unwrap()).into_iter().find(|place| place.kind == PlaceKind::Folder).unwrap();
         assert_eq!(pinned.path, wire_text(&raw));
+    }
+
+    #[test]
+    fn a_folder_twice_is_one_pin_and_dot_dot_is_none() {
+        let home = home("twice");
+        let file = home.join(".config").join(BOOKMARKS_FILE);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        let old = escape(home.join("Old").as_os_str());
+        std::fs::write(&file, format!("file://{old}\nfile://{old}/ Again\nfile://{old}/../Projects\n")).unwrap();
+        let quick = quick_access(&home);
+        assert_eq!(kinds(&places(quick.pins().unwrap())), [PlaceKind::Home, PlaceKind::Folder, PlaceKind::Trash]);
+        assert!(quick.pin(&wire_text(home.join("Old")), false).unwrap());
+        assert!(quick.pins().unwrap().is_empty(), "unpinning drops every line naming it");
+    }
+
+    #[test]
+    fn a_linked_bookmarks_file_is_written_through_its_link_with_its_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = home("linked");
+        let real = home.join("dotfiles/bookmarks");
+        std::fs::create_dir_all(real.parent().unwrap()).unwrap();
+        std::fs::write(&real, "").unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let file = home.join(".config").join(BOOKMARKS_FILE);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&real, &file).unwrap();
+        quick_access(&home).pin(&wire_text(home.join("Old")), true).unwrap();
+        assert!(file.symlink_metadata().unwrap().file_type().is_symlink(), "the link stays");
+        assert!(std::fs::read_to_string(&real).unwrap().contains("/Old"));
+        assert_eq!(std::fs::metadata(&real).unwrap().permissions().mode() & 0o777, 0o600);
     }
 
     #[test]

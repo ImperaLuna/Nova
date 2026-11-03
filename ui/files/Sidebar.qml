@@ -127,7 +127,7 @@ Item {
         Drives {
             width: parent.width
             folder: sidebar.navigator.folder
-            onOpened: folder => sidebar.navigator.visit(folder, null)
+            onOpened: id => sidebar.navigator.openDrive(id)
             onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
             onDriveGone: sidebar.navigator.visit("~", null)
         }

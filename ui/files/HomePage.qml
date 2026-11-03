@@ -53,13 +53,7 @@ FocusScope {
         if (kind === "pin") {
             navigator.visit(value, null);
         } else if (kind === "drive") {
-            // Here, not in its tile: tiles are made again when the drives
-            // change (as the mount does), and a callback of a tile gone
-            // would never run.
-            FilesService.mount(value, mounted => {
-                if (mounted !== null)
-                    page.navigator.visit(mounted, null);
-            });
+            navigator.openDrive(value);
         } else if (kind === "recent") {
             const file = recent.find(row => Paths.child(row.folder, row.name) === value);
             if (file?.dir)
@@ -69,10 +63,12 @@ FocusScope {
         }
     }
 
+    // Quick access is read again too: another app may have pinned since.
     onVisibleChanged: {
         if (visible) {
             selected = "";
             refresh();
+            FilesService.refreshPlaces();
         }
     }
     Component.onCompleted: {
@@ -82,13 +78,11 @@ FocusScope {
         }
     }
 
-    Keys.onReturnPressed: {
-        if (selected !== "")
+    Keys.onPressed: event => {
+        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && selected !== "") {
             open(selected);
-    }
-    Keys.onEnterPressed: {
-        if (selected !== "")
-            open(selected);
+            event.accepted = true;
+        }
     }
     Keys.onEscapePressed: selected = ""
 
@@ -158,10 +152,11 @@ FocusScope {
                     HomeTile {
                         required property var modelData
                         readonly property string key: "pin:" + modelData.path
+                        readonly property var look: Home.look(modelData)
 
-                        icon: Home.look(modelData).icon
+                        icon: look.icon
                         iconColor: Tokens.filesFolder
-                        title: Home.look(modelData).name
+                        title: look.name
                         detail: Paths.located(Paths.parent(modelData.path), page.home)
                         selected: page.selected === key
                         onPicked: {
