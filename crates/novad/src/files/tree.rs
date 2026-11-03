@@ -50,10 +50,18 @@ pub fn tree(request: &Request, home: &Path) -> Result<FolderTree, String> {
             return Err(format!("more than {FILES_TREE_MAX_FOLDERS} folders opened or closed"));
         }
     }
-    let folder = resolve(request.folder, home)?;
-    if !folder.is_dir() {
-        return Err(format!("{} isn't a folder", folder.display()));
-    }
+    let asked = resolve(request.folder, home)?;
+    // A folder inside an archive shows in the tree as the folder holding
+    // the archive; the window still goes where it asked.
+    let folder = if asked.is_dir() {
+        asked.clone()
+    } else if let Some(parent) =
+        super::archive::Inside::of(&asked).and_then(|inside| inside.archive.parent().map(Path::to_path_buf))
+    {
+        parent
+    } else {
+        return Err(format!("{} isn't a folder", asked.display()));
+    };
     let root = if folder.starts_with(home) { home.to_path_buf() } else { PathBuf::from("/") };
     let tree = Tree {
         way: folder.ancestors().filter(|ancestor| ancestor.starts_with(&root)).map(Path::to_path_buf).collect(),
@@ -65,7 +73,7 @@ pub fn tree(request: &Request, home: &Path) -> Result<FolderTree, String> {
     let mut rows = Vec::new();
     let name = root.file_name().map_or_else(|| "/".into(), wire_text);
     tree.add(&root, name, 0, false, &mut rows);
-    Ok(FolderTree { folder: wire_text(&folder), rows })
+    Ok(FolderTree { folder: wire_text(&asked), rows })
 }
 
 /// The places that exist, in the sidebar's order: Home, then the user's
@@ -284,6 +292,17 @@ mod tests {
         let closed = ask(&home, &request(&notes), &[], &[&home.join("Documents")], false).unwrap();
         assert!(shape(&closed).contains(&"1 Documents-".to_string()));
         assert!(!shape(&closed).contains(&"2 Notes".to_string()));
+    }
+
+    #[test]
+    fn a_folder_in_a_zip_goes_there_with_the_zips_folder_marked() {
+        let home = home("zip");
+        let zip = home.join("Documents/photos.zip");
+        crate::files::archive::tests::write_zip(&zip, &[("2025/a.png", "png")]);
+        let tree = ask(&home, &request(&zip.join("2025")), &[], &[], false).unwrap();
+        assert_eq!(tree.folder, zip.join("2025").to_str().unwrap());
+        assert!(shape(&tree).contains(&"1 Documents-".to_string()), "the tree goes to the zip's folder");
+        assert!(ask(&home, &request(&home.join("Documents/missing.zip")), &[], &[], false).is_err());
     }
 
     #[test]
