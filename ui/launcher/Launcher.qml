@@ -41,6 +41,11 @@ StagePanel {
     // The mode: Protocol.PROVIDER_APPS, or PROVIDER_FILES.
     property string mode: Protocol.PROVIDER_APPS
     readonly property bool inFiles: mode === Protocol.PROVIDER_FILES
+    // Nova Files stopping takes its mode with it.
+    onFilesModeChanged: {
+        if (!filesMode)
+            setMode(Protocol.PROVIDER_APPS);
+    }
 
     // Typed, in `mode`: novad's matches go to showMatches().
     signal searchRequested(string query, string mode)
@@ -70,7 +75,10 @@ StagePanel {
     readonly property var known: LauncherLogic.byId(apps)
     readonly property var rows: LauncherLogic.rows(query, matches, recent, apps, known, inFiles)
     // What Tab adds to the query: the selected file's path, past what's typed.
-    readonly property string completion: inFiles ? LauncherLogic.completion(query, rows[selected]) : ""
+    // Only once novad has answered what's typed: older rows complete an older query.
+    readonly property string completion: inFiles && matchesFor === query ? LauncherLogic.completion(query, rows[selected]) : ""
+    // Typing a path switched to the Files mode, which clearing the field undoes.
+    property bool pathSwitched: false
     readonly property real contentWidth: Tokens.launcherWidth - 2 * Tokens.launcherPad
     // As many tiles as fit on one row, spread to fill it.
     readonly property int tilesPerRow: Math.floor((contentWidth + Tokens.gap) / (Tokens.launcherTileSize + Tokens.gap))
@@ -167,6 +175,7 @@ StagePanel {
 
     // Switches to the mode `next` (see `mode`), searching what's typed in it.
     function setMode(next: string) {
+        pathSwitched = false;
         if (next === mode || (next === Protocol.PROVIDER_FILES && !filesMode))
             return;
         mode = next;
@@ -318,8 +327,12 @@ StagePanel {
                     }
                     onTextChanged: {
                         // A path is typed: the Files mode completes it.
-                        if (LauncherLogic.typesPath(text) && launcher.filesMode)
-                            launcher.mode = Protocol.PROVIDER_FILES;
+                        if (LauncherLogic.typesPath(text) && !launcher.inFiles) {
+                            launcher.setMode(Protocol.PROVIDER_FILES);
+                            launcher.pathSwitched = launcher.inFiles;
+                        } else if (text === "" && launcher.pathSwitched) {
+                            launcher.setMode(Protocol.PROVIDER_APPS);
+                        }
                         launcher.query = text;
                         launcher.enterPending = null;
                         launcher.selected = 0;

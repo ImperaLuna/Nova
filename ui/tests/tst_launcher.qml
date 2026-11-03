@@ -436,6 +436,29 @@ Item {
             compare(Array.from(launches.signalArguments[0]), ["files", "/home/me/Documents", false]);
         }
 
+        function test_clearing_a_typed_path_goes_back_to_apps_and_stale_rows_complete_nothing() {
+            const launcher = make({
+                filesMode: true
+            });
+            keyClick("~");
+            keyClick("/");
+            launcher.showMatches("~/", [documents], "files");
+            compare(launcher.completion, "Documents/");
+            keyClick("D");
+            compare(launcher.completion, "", "the rows are the previous query's");
+            keyClick(Qt.Key_Tab);
+            compare(launcher.query, "~/D");
+            for (let i = 0; i < 3; i++)
+                keyClick(Qt.Key_Backspace);
+            compare(launcher.mode, "apps", "the path switched to Files, so clearing it switches back");
+            keyClick(Qt.Key_Tab, Qt.ControlModifier);
+            keyClick("x");
+            keyClick(Qt.Key_Backspace);
+            compare(launcher.mode, "files", "a mode picked by hand stays");
+            launcher.filesMode = false;
+            compare(launcher.mode, "apps", "Nova Files stopping takes its mode");
+        }
+
         function test_a_file_row_shows_its_folder_and_shows_in_it_on_shift_enter() {
             const launcher = make({
                 filesMode: true

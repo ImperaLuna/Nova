@@ -195,13 +195,17 @@ impl<'a> Connection<'a> {
             Command::OpenLog => {
                 done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().open_log()))
             }
-            // Answered off the connection's thread: a provider may read the
-            // disk (files), and a slow drive must not hold up other requests.
+            // A provider's own mode (files) may read the disk, so it's
+            // answered off the connection's thread: a slow drive must not
+            // hold up other requests. The mixed providers answer from memory.
             Command::LauncherSearch { query, mode } => {
                 let providers = match self.launcher_providers() {
                     Ok(providers) => providers,
                     Err(e) => return Answer::Now(Outcome::Error(e)),
                 };
+                if mode.is_none() {
+                    return Answer::Now(value(providers.search(query, None, &self.daemon.logger)));
+                }
                 let (query, mode, logger) = (query.clone(), mode.clone(), Arc::clone(&self.daemon.logger));
                 return Answer::later(move || value(providers.search(&query, mode.as_deref(), &logger)));
             }

@@ -34,12 +34,13 @@ impl Provider for Files {
     }
 
     fn run(&self, id: &str, how: &Run) -> Result<(), String> {
-        let path = wire_path(id);
+        let path = super::target::clean(id)?;
         let folder = path.parent().ok_or_else(|| format!("{id} has no folder"))?;
         if how.new_window {
-            return self.show(&wire_text(folder), &[id.to_string()]);
+            return self.show(&wire_text(folder), &[wire_text(&path)]);
         }
-        if path.is_dir() { self.show(id, &[]) } else { self.opener.open(id) }
+        let id = wire_text(&path);
+        if path.is_dir() { self.show(&id, &[]) } else { self.opener.open(&id) }
     }
 }
 
@@ -70,6 +71,8 @@ struct TypedPath<'a> {
     folder: PathBuf,
     /// What's typed after the folder's last `/`.
     start: &'a str,
+    /// Home, when the path was typed from `~`: the paths found are spelled
+    /// from it too, so they complete what's typed.
     home: Option<&'a Path>,
 }
 
@@ -77,10 +80,10 @@ impl<'a> TypedPath<'a> {
     /// `query` as a path: `~`, `~/…` (with a home) or `/…`; `None` for
     /// anything else, which is a name search.
     fn parse(query: &'a str, home: Option<&'a Path>) -> Option<Self> {
-        let (base, rest) = match query.strip_prefix(HOME_PREFIX) {
-            Some("") => (home?.to_path_buf(), ""),
-            Some(rest) => (home?.to_path_buf(), rest.strip_prefix(SEPARATOR)?),
-            None => (PathBuf::from("/"), query.strip_prefix(SEPARATOR)?),
+        let (base, rest, home) = match query.strip_prefix(HOME_PREFIX) {
+            Some("") => (home?.to_path_buf(), "", home),
+            Some(rest) => (home?.to_path_buf(), rest.strip_prefix(SEPARATOR)?, home),
+            None => (PathBuf::from("/"), query.strip_prefix(SEPARATOR)?, None),
         };
         let (inside, start) = rest.rsplit_once(SEPARATOR).unwrap_or(("", rest));
         Some(Self { folder: base.join(wire_path(inside)), start, home })
@@ -111,7 +114,9 @@ impl<'a> TypedPath<'a> {
             .collect();
         names.sort_by(|(a_dir, a), (b_dir, b)| b_dir.cmp(a_dir).then_with(|| natural(a, b)).then_with(|| a.cmp(b)));
         let typed = self.start.chars().count();
-        let hidden_folder = self.folder.iter().any(|part| is_hidden(&part.to_string_lossy()));
+        // Only folders below Home count: a Home inside a dot folder hides nothing.
+        let below_home = self.home.and_then(|home| self.folder.strip_prefix(home).ok()).unwrap_or(&self.folder);
+        let hidden_folder = below_home.iter().any(|part| is_hidden(&part.to_string_lossy()));
         Ok(names
             .into_iter()
             .take(MAX_MATCHES)
@@ -242,6 +247,10 @@ mod tests {
         let report = &complete("~/Documents/report 2")[0];
         assert_eq!(report.file.as_ref().unwrap().completion, "~/Documents/report 2.pdf");
         assert_eq!(report.description.as_deref(), Some("~/Documents"));
+        // Typed from `/`, it completes from `/`.
+        let absolute = format!("{}/Doc", home.display());
+        let docs = TypedPath::parse(&absolute, Some(&home)).unwrap().complete(&mime()).unwrap();
+        assert_eq!(docs[0].file.as_ref().unwrap().completion, format!("{}/Documents/", home.display()));
     }
 
     #[test]
