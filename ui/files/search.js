@@ -29,9 +29,17 @@ function path(row) {
 // Where a result lives, for people: from `~` inside `home`, else the
 // absolute path.
 function location(folder, home) {
-    if (home !== "" && Paths.inside(folder, home))
-        return Paths.shown("~" + folder.slice(home.length));
+    const trimmed = home.length > 1 ? home.replace(/\/+$/, "") : home;
+    if (trimmed !== "" && trimmed !== "/" && Paths.inside(folder, trimmed))
+        return Paths.shown("~" + folder.slice(trimmed.length));
     return Paths.shown(folder);
+}
+
+// Whether a search from `folder` can find anything: novad indexes Home
+// and the drives mounted at `mounts`, so the folder is in one of them or
+// holds one (like `/`). Elsewhere (`/etc`) only Everywhere searches.
+function indexed(folder, home, mounts) {
+    return [home].concat(mounts).some(root => root !== "" && (Paths.inside(folder, root) || Paths.inside(root, folder)));
 }
 
 // `name` (wire text) as styled text with each of `marks` in bold in

@@ -40,8 +40,11 @@ FloatingWindow {
     readonly property SearchModel search: SearchModel {
         service: FilesService
         query: navigation.query
-        within: results.everywhere ? "" : window.folder
+        within: results.everywhere || !window.folderIndexed ? "" : window.folder
     }
+    readonly property string home: Quickshell.env("HOME") ?? ""
+    // A search from the folder shown can find something there.
+    readonly property bool folderIndexed: Search.indexed(folder, home, (FilesService.drives ?? []).map(drive => drive.mount ?? "").filter(mount => mount !== ""))
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -142,10 +145,11 @@ FloatingWindow {
 
     // Shows a search result in its folder, selected.
     function showResult(row: var) {
-        navigation.clearSearch();
         navigator.visit(row.folder, ok => {
-            if (ok)
-                list.reveal(row.name);
+            if (!ok)
+                return;
+            navigation.clearSearch();
+            list.reveal(row.name);
         });
     }
 
@@ -269,7 +273,8 @@ FloatingWindow {
         visible: window.searching
         model: window.search
         folder: window.folder
-        home: Quickshell.env("HOME") ?? ""
+        folderIndexed: window.folderIndexed
+        home: window.home
         solid: FilesService.listSolid
         onOpened: row => window.openResult(row)
         onLocationOpened: row => window.showResult(row)

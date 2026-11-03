@@ -173,7 +173,8 @@ impl Index {
             None => {
                 for (id, node) in (0..).zip(&self.nodes) {
                     if node.flags & (ROOT | FREE) == 0 {
-                        let in_hidden_folder = self.nodes[node.parent as usize].flags & HIDDEN != 0;
+                        // Its folder is looked at only for a name that fits.
+                        let in_hidden_folder = || self.nodes[node.parent as usize].flags & HIDDEN != 0;
                         best.consider(self.name(id), id, node, node.flags & HIDDEN != 0, in_hidden_folder);
                     }
                 }
@@ -191,7 +192,7 @@ impl Index {
                         let node = &self.nodes[at as usize];
                         let name = self.name(at);
                         let hidden = in_hidden_folder || name.starts_with('.');
-                        best.consider(name, at, node, hidden, in_hidden_folder);
+                        best.consider(name, at, node, hidden, || in_hidden_folder);
                         if node.first_child != NONE {
                             runs.push((node.first_child, hidden));
                         }
@@ -299,10 +300,10 @@ struct Best<'q> {
 }
 
 impl Best<'_> {
-    fn consider(&mut self, name: &str, id: Id, node: &Node, hidden: bool, in_hidden_folder: bool) {
+    fn consider(&mut self, name: &str, id: Id, node: &Node, hidden: bool, in_hidden_folder: impl FnOnce() -> bool) {
         let Some(fit) = self.query.fit(name, node.flags & ASCII != 0) else { return };
         self.total += 1;
-        let key = (fit, hidden, node.name_len, id, in_hidden_folder);
+        let key = (fit, hidden, node.name_len, id, in_hidden_folder());
         if self.heap.len() < self.limit {
             self.heap.push(key);
         } else if self.heap.peek().is_some_and(|worst| key < *worst) {

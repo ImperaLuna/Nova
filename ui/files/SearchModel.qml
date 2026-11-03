@@ -6,8 +6,8 @@ import "search.js" as Search
 // name index as it changes, below the folder `within` or everywhere when
 // that's "". Typing settles for Tokens.filesSearchSettle before novad is
 // asked, and an answer to anything but the latest ask is dropped. While
-// the index is still being built it asks again every
-// Tokens.filesSearchRetry, so results come in once it is.
+// the index is still being built, or novad couldn't search, it asks again
+// every Tokens.filesSearchRetry, so results come in once it can.
 QtObject {
     id: search
 
@@ -45,11 +45,13 @@ QtObject {
         service.search(query.trim(), within, found => {
             if (ask !== _asks)
                 return;
-            answered = true;
-            ready = found?.ready ?? true;
+            // novad couldn't search (it's gone, say): no count, and it's
+            // asked again.
+            answered = found !== null;
+            ready = found?.ready ?? ready;
             rows = (found?.results ?? []).map(Search.row);
             total = found?.total ?? 0;
-            _waiting.running = !ready;
+            _waiting.running = !answered || !ready;
         });
     }
 

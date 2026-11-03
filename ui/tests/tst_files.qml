@@ -748,6 +748,7 @@ Item {
             compare(Search.location(row.folder, "/home/user"), "~/.local/share/Steam/steamapps/common");
             compare(Search.location("/run/media/user/SANDISK", "/home/user"), "/run/media/user/SANDISK");
             compare(Search.location("/home/username", "/home/user"), "/home/username", "only Home itself, not a name it starts");
+            compare(Search.location("/home/user/Pictures", "/home/user/"), "~/Pictures", "Home with a slash at its end");
             compare(Search.marked(row.name, row.marks, "#fd7014"), '<b><font color="#fd7014">Crimson</font></b> Desert');
         }
 
@@ -770,6 +771,16 @@ Item {
                     length: 3
                 }
             ], "#fff"), '<b><font color="#fff">caf</font></b>\uFFFD', "a raw byte shows as a replacement character");
+        }
+
+        function test_only_folders_novad_indexes_are_searched_alone() {
+            const mounts = ["/run/media/user/SANDISK"];
+            verify(Search.indexed("/home/user/Pictures", "/home/user", mounts));
+            verify(Search.indexed("/run/media/user/SANDISK/Photos", "/home/user", mounts));
+            verify(Search.indexed("/", "/home/user", mounts), "the root holds Home");
+            verify(Search.indexed("/run/media", "/home/user", mounts), "and the drives");
+            verify(!Search.indexed("/etc", "/home/user", mounts));
+            verify(!Search.indexed("/home/username", "/home/user", []));
         }
 
         function test_the_count_says_how_many_were_found() {
@@ -864,6 +875,11 @@ Item {
             compare(model.rows.length, 1);
             wait(10);
             compare(service.asked.length, 2, "it stops asking once the index is built");
+            model.query = "desert";
+            tryVerify(() => service.asked.length === 3);
+            service.asked[2].done(null);
+            verify(!model.answered, "novad couldn't search: no count");
+            tryVerify(() => service.asked.length === 4, 1000, "and it's asked again");
         }
     }
 }

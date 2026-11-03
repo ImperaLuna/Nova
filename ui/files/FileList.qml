@@ -90,13 +90,17 @@ FocusScope {
         if (name.startsWith("."))
             showHidden = true;
         model.selectNames([name]);
-        for (let index = 0; index < model.rows.count; index++) {
-            if (model.rows.get(index).name === name) {
+        let found = false;
+        for (let index = 0; index < model.rows.count && !found; index++) {
+            found = model.rows.get(index).name === name;
+            if (found) {
                 entryList.currentIndex = index;
                 entryList.positionViewAtIndex(index, ListView.Contain);
-                break;
             }
         }
+        // On a page still to come: the list moves to it when it comes.
+        if (!found && model.loaded)
+            model._seeking = true;
         entryList.forceActiveFocus();
     }
 
