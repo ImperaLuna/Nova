@@ -902,7 +902,10 @@ mod tests {
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         let (_, next, _next_stream) = fixture.nova_files();
         assert_eq!(next_named(&next, "files_window", WAIT)["folder"], json!(fixture.downloads()));
-        assert!(quitting.try_recv().is_err(), "nothing for the one quitting");
+        // Other events (the trash's watch starting) may reach it; no window does.
+        let windows =
+            quitting.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_window")));
+        assert!(!windows, "no window for the one quitting");
     }
 
     #[test]
