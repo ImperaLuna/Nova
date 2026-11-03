@@ -13,6 +13,7 @@ import "listing.js" as Listing
 import "../theme/icons.js" as Icons
 import "games.js" as Games
 import "home.js" as Home
+import "search.js" as Search
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
@@ -43,6 +44,9 @@ import "../daemon/protocol.js" as Protocol
 // history, order and selection.
 // The View menu (and Explorer's Ctrl+Shift+1 to 4 and 6) switch the file
 // list between Icons and Details for the window, in every folder it shows.
+// While something is typed in the search field, the search results take
+// the file list's place (SearchResults); moving to another folder empties
+// the field.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -80,6 +84,13 @@ FloatingWindow {
     // The command row shown: the trash's, the games' or the folder's.
     readonly property Item commandRow: inTrash ? trashCommands : inGames ? gamesCommands : commands
     property bool spaceView: false
+    readonly property bool searching: search.active && !inTrash
+    readonly property SearchModel search: SearchModel {
+        service: FilesService
+        query: navigation.query
+        within: results.everywhere ? "" : window.folder
+    }
+    readonly property string home: Quickshell.env("HOME") ?? ""
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -302,6 +313,28 @@ FloatingWindow {
         ]);
     }
 
+    // Opens a search result (a Search.row): a folder is gone into, a file
+    // opens in its default app.
+    function openResult(row: var) {
+        if (row.dir)
+            navigator.visit(Search.path(row), ok => {
+                if (ok)
+                    list.forceActiveFocus();
+            });
+        else
+            FilesService.launch(Search.path(row), "", null);
+    }
+
+    // Shows a search result in its folder, selected.
+    function showResult(row: var) {
+        navigator.visit(row.folder, ok => {
+            if (!ok)
+                return;
+            navigation.clearSearch();
+            list.reveal(row.name);
+        });
+    }
+
     Component.onCompleted: {
         askForBlur();
         if (carried) {
@@ -318,6 +351,7 @@ FloatingWindow {
     }
     // A game's menu doesn't outlive the games.
     onInGamesChanged: gameMenu.close()
+    onFolderChanged: navigation.clearSearch()
     onConfirmingChanged: {
         if (confirming)
             confirmDialog.shown = confirming.asking;
@@ -390,6 +424,11 @@ FloatingWindow {
         enabled: list.activeFocus
         onActivated: list.view = Listing.DETAILS
     }
+    Shortcut {
+        sequences: ["Ctrl+F", "F3"]
+        enabled: !window.inTrash
+        onActivated: navigation.focusSearch()
+    }
     TapHandler {
         acceptedButtons: Qt.BackButton | Qt.ForwardButton
         onTapped: (point, button) => window.navigator.step(button === Qt.BackButton ? -1 : 1)
@@ -447,7 +486,14 @@ FloatingWindow {
         anchors.top: tabRow.bottom
         navigator: window.navigator
         solid: FilesService.frameSolid
+        canSearch: !window.inTrash
         onAddressClosed: window.focusContent()
+        onSearchLeft: {
+            if (window.searching)
+                results.focusResults();
+            else
+                list.forceActiveFocus();
+        }
     }
     CommandRow {
         id: commands
@@ -506,7 +552,7 @@ FloatingWindow {
         anchors.left: sidebar.right
         anchors.right: preview.active ? preview.left : parent.right
         anchors.top: commands.bottom
-        visible: window.inFolder
+        visible: window.inFolder && !window.searching
         anchors.bottom: parent.bottom
         // Nothing to read while a page shows.
         folder: Home.isPage(window.folder) ? "" : window.folder
@@ -554,6 +600,24 @@ FloatingWindow {
             folder: window.folder
             model: list.model
             solid: FilesService.listSolid
+        }
+    }
+    SearchResults {
+        id: results
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: commands.bottom
+        anchors.bottom: parent.bottom
+        visible: window.searching
+        model: window.search
+        folder: window.folder
+        home: window.home
+        solid: FilesService.listSolid
+        onOpened: row => window.openResult(row)
+        onLocationOpened: row => window.showResult(row)
+        onClosed: {
+            navigation.clearSearch();
+            list.forceActiveFocus();
         }
     }
     TrashModel {

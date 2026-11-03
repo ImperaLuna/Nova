@@ -218,17 +218,30 @@ fn files_are_found_by_name_over_the_socket() {
         std::fs::create_dir_all(dir.join("home/.local/share/Steam/Crimson Desert")).unwrap();
     });
     let mut client = novad.connect();
-    let mut id = 0;
+    client.request(1, "subscribe", Some(json!({"topics": ["files"]})));
+    let first = client.request(2, "files_search", Some(json!({"query": "crimson"})))["result"].clone();
+    if first["ready"] == false {
+        client.next_event("files_search_ready");
+    }
+    let mut id = 2;
     let mut search = |query: &str| {
         id += 1;
         client.request(id, "files_search", Some(json!({"query": query})))["result"].clone()
     };
-    nova_test_support::wait_until(Duration::from_secs(5), "the index is built", || search("crimson")["ready"] == true);
     let found = search("crimson");
+    assert_eq!(found["ready"], true, "built by the time files_search_ready comes");
     assert_eq!(found["total"], 1);
     assert_eq!(found["results"][0]["entry"]["name"], "Crimson Desert");
     assert_eq!(found["results"][0]["in_hidden_folder"], true);
     assert_eq!(found["results"][0]["marks"], json!([{"start": 0, "length": 7}]));
+
+    let steam = novad.dir.join("home/.local/share/Steam");
+    let within = |folder: &Path| json!({"query": "crimson", "within": folder.to_str().unwrap()});
+    let inside = client.request(100, "files_search", Some(within(&steam)))["result"].clone();
+    assert_eq!(inside["total"], 1);
+    assert_eq!(inside["results"][0]["in_hidden_folder"], false, "hidden is counted below the folder searched");
+    let below_it = client.request(101, "files_search", Some(within(&steam.join("Crimson Desert"))))["result"].clone();
+    assert_eq!(below_it["total"], 0);
 }
 
 /// The Games place over the socket: in the places once Steam is there, and

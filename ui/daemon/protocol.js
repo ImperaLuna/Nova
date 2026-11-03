@@ -194,6 +194,7 @@ var EVENT_FILES_CLOSED = "files_closed";
 var EVENT_FILES_LOOK = "files_look";
 var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
 var EVENT_FILES_PLACES_CHANGED = "files_places_changed";
+var EVENT_FILES_SEARCH_READY = "files_search_ready";
 var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
 var EVENT_FILES_MEASURED = "files_measured";

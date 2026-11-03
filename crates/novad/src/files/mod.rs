@@ -231,7 +231,8 @@ impl Files {
     ) -> Arc<Self> {
         let mime = crate::mime::Mime::follow(sources.data_dirs.clone(), Arc::clone(&logger));
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
-        let search = search::Search::start(sources.search.clone(), Arc::clone(&logger), Arc::clone(&mime));
+        let search =
+            search::Search::start(sources.search.clone(), Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
         let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
         let measures = measures::Measures::new(Arc::clone(&hub));
         let thumbnails = thumbnails::Thumbnails::start(

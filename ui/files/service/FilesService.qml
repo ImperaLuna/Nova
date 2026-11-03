@@ -16,10 +16,10 @@ import "../thumbnails.js" as Thumbnails
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, the
 // trash, the Properties window's facts, sizes and access, the preview
-// pane's previews, and thumbnails for the Icons view. The Nova Files
-// process (../../files.qml) and its windows get these here and never talk
-// to Daemon themselves. Also how solid the windows are, from config.toml's
-// [files].
+// pane's previews, thumbnails for the Icons view, and finding files by
+// name. The Nova Files process (../../files.qml) and its windows get these
+// here and never talk to Daemon themselves. Also how solid the windows
+// are, from config.toml's [files].
 Singleton {
     id: root
 
@@ -95,6 +95,9 @@ Singleton {
 
     // Something in the trash changed: ask trashList again.
     signal trashChanged
+    // novad's index of file names is built: a search that found nothing
+    // because it wasn't can be asked again.
+    signal searchReady
 
     // Paths whose thumbnails were asked for, each to the callbacks waiting
     // for it; a map without a prototype, so any path is a key.
@@ -223,6 +226,24 @@ Singleton {
         Daemon.call(Protocol.CMD_FILES_RECENT, undefined, (error, result) => {
             if (error)
                 console.warn(`nova: recent files: ${error}`);
+            done(error ? null : result);
+        });
+    }
+
+    // Finds files by name: `done(found)` gets novad's answer ({ready,
+    // total, results}, see Protocol's FileSearch) for `query`, below the
+    // folder `within` (absolute) or everywhere when it's "", or null when
+    // novad couldn't search.
+    function search(query: string, within: string, done: var) {
+        const args = within !== "" ? {
+            query: query,
+            within: within
+        } : {
+            query: query
+        };
+        Daemon.call(Protocol.CMD_FILES_SEARCH, args, (error, result) => {
+            if (error)
+                console.warn(`nova: searching for ${query}: ${error}`);
             done(error ? null : result);
         });
     }
@@ -505,6 +526,9 @@ Singleton {
         }
         function onFilesMeasured(measured: var) {
             root.measured(measured);
+        }
+        function onFilesSearchReady() {
+            root.searchReady();
         }
         function onFilesTrashChanged() {
             root.trashChanged();
