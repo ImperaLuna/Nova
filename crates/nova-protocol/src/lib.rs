@@ -1089,6 +1089,10 @@ pub struct FileFilter {
     pub mimes: Vec<String>,
 }
 
+/// The error `files_pick` answers a `save` over a file that's there with,
+/// unless it says to replace it.
+pub const FILES_PICK_EXISTS: &str = "exists";
+
 /// Most filters a [`FilePicker`] keeps from an app.
 pub const FILES_PICKER_MAX_FILTERS: usize = 64;
 /// Most globs and types one [`FileFilter`] holds, together.
@@ -2134,12 +2138,16 @@ pub enum Command {
     /// file to write (`save`) or the folder to write into (`save_files`).
     /// `filter` is the filter shown, an index into the picker's. Refused
     /// when the paths don't fit the picker (a folder for a file, a file
-    /// that isn't there to open); the picker then still waits.
+    /// that isn't there to open); the picker then still waits. A `save`
+    /// over a file that's there is refused with [`FILES_PICK_EXISTS`]
+    /// unless `replace`, so the window asks first.
     FilesPick {
         picker: u32,
         paths: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filter: Option<u32>,
+        #[serde(default)]
+        replace: bool,
     },
     /// The file picker `picker` was closed without picking.
     FilesPickCancel {
@@ -3432,6 +3440,7 @@ mod tests {
                     picker: 3,
                     paths: vec!["/home/user/Downloads/cover.png".into()],
                     filter: Some(0),
+                    replace: true,
                 },
             }),
             encode(Request { id: Some(83), command: Command::FilesPickCancel { picker: 3 } }),

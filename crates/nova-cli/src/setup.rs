@@ -25,7 +25,10 @@
 //!   Hyprland blurs what Quickshell asks for without a rule.
 //! - While the `files` feature is on: Nova Files' desktop entry and icon in
 //!   the user's data folder, and Nova Files as their default for folders
-//!   (the Nix modules do the same).
+//!   (the Nix modules do the same); and Nova's Open and Save dialogs: the
+//!   portal backend file (`features/files/nova.portal`) in the user's data
+//!   folder and, for niri and Hyprland, the portal's config choosing it
+//!   (`novad::prefer_nova_file_chooser`), then the portal restarted.
 
 use crate::host::{Distro, Host};
 use nova_features::{Gpu, Manifest, Selection};
@@ -56,6 +59,14 @@ const FILES_EXEC: &str = "Exec=nova ";
 const FILES_ICON: &str = include_str!("../../../features/files/nova-files.svg");
 const FILES_ICON_PATH: &str = "icons/hicolor/scalable/apps/nova-files.svg";
 const FOLDER_MIME: &str = "inode/directory";
+/// Nova's file chooser backend for xdg-desktop-portal, where the portal
+/// looks for backends in the user's data folder.
+const FILES_PORTAL: &str = include_str!("../../../features/files/nova.portal");
+const FILES_PORTAL_PATH: &str = "xdg-desktop-portal/portals/nova.portal";
+/// The portal's names for the desktops setup knows (`XDG_CURRENT_DESKTOP`).
+const NIRI_DESKTOP: &str = "niri";
+const HYPRLAND_DESKTOP: &str = "hyprland";
+const PORTAL_SERVICE: &str = "xdg-desktop-portal.service";
 /// Fedora's Quickshell, until a Fedora release ships it.
 const FEDORA_QUICKSHELL_COPR: &str = "errornointernet/quickshell";
 /// AUR helpers, in the order setup prefers them. They install repo packages
@@ -168,6 +179,9 @@ pub enum Step {
     /// Makes `app` the default for `mime` in the user's `mimeapps.list`
     /// under `config_home`.
     SetDefault { config_home: PathBuf, mime: String, app: String },
+    /// Makes Nova the portal's file chooser on `desktop`, in the user's
+    /// portal config under `config_home`.
+    PreferPortal { config_home: PathBuf, desktop: String },
 }
 
 impl fmt::Display for Step {
@@ -179,6 +193,7 @@ impl fmt::Display for Step {
             Self::AppendLine { path, line } => write!(f, "add to {}:\n    {line}", path.display()),
             Self::LinkQuickshell { link } => write!(f, "link {} to quickshell", link.display()),
             Self::SetDefault { mime, app, .. } => write!(f, "make {app} the default for {mime}"),
+            Self::PreferPortal { desktop, .. } => write!(f, "use Nova's Open and Save dialogs on {desktop}"),
         }
     }
 }
@@ -236,6 +251,7 @@ pub fn plan(facts: &Facts) -> Result<Plan, String> {
     }
     if facts.manifests.iter().any(|manifest| manifest.id == FILES_FEATURE && facts.selection.is_on(manifest)) {
         steps.extend(files_steps(paths));
+        steps.extend(portal_steps(paths));
     }
     Ok(Plan::Steps(steps))
 }
@@ -256,6 +272,24 @@ fn files_steps(paths: &Paths) -> Vec<Step> {
             app: FILES_DESKTOP_ID.into(),
         },
     ]
+}
+
+/// Nova's file chooser backend, chosen on the compositors this user
+/// configures, and the portal restarted so apps' next dialog is Nova's.
+fn portal_steps(paths: &Paths) -> Vec<Step> {
+    let desktops = [(NIRI_DESKTOP, &paths.niri_config), (HYPRLAND_DESKTOP, &paths.hyprland_config)];
+    let mut steps =
+        vec![Step::Replace { path: paths.data_home.join(FILES_PORTAL_PATH), contents: FILES_PORTAL.into() }];
+    for (desktop, config) in desktops {
+        if config.is_some() {
+            steps.push(Step::PreferPortal { config_home: paths.config_home.clone(), desktop: desktop.into() });
+        }
+    }
+    steps.push(Step::Run {
+        why: "restart the desktop portal, if it runs, so it reads that".into(),
+        argv: words(&["systemctl", "--user", "try-restart", PORTAL_SERVICE]),
+    });
+    steps
 }
 
 /// `path` as one argument of a desktop entry's `Exec=`, as the Desktop Entry
@@ -528,6 +562,9 @@ pub fn execute(step: &Step, path_var: &str) -> Result<(), String> {
         }
         Step::SetDefault { config_home, mime, app } => {
             novad::set_default_app(config_home, mime, app)?;
+        }
+        Step::PreferPortal { config_home, desktop } => {
+            novad::prefer_nova_file_chooser(config_home, desktop)?;
         }
     }
     Ok(())
@@ -805,8 +842,8 @@ mod tests {
         let facts =
             Facts { selection: Selection::default(), paths: paths.clone(), ..facts(Distro::Arch, vec![], false) };
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
-        let files = &steps[steps.len() - 3..];
-        assert!(matches!(files[2], Step::SetDefault { .. }), "{steps:?}");
+        let at = steps.iter().position(|step| matches!(step, Step::SetDefault { .. })).unwrap();
+        let files = &steps[at - 2..=at];
         let mut lists = Vec::new();
         for _ in 0..2 {
             for step in files {
@@ -830,7 +867,29 @@ mod tests {
         let selection = Selection { enabled: vec![], disabled: vec![FILES_FEATURE.into()] };
         let facts = Facts { selection, ..facts(Distro::Debian, vec![], false) };
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
-        assert!(!steps.iter().any(|step| matches!(step, Step::SetDefault { .. })), "{steps:?}");
+        let files = |step: &Step| matches!(step, Step::SetDefault { .. } | Step::PreferPortal { .. });
+        assert!(!steps.iter().any(files), "{steps:?}");
+    }
+
+    /// The portal finds Nova's backend and, on the compositors this user
+    /// configures, chooses it for files.
+    #[test]
+    fn nova_becomes_the_portals_file_chooser_on_niri() {
+        let home = Home::new("nova-portal");
+        let mut paths = paths(&home.0);
+        paths.niri_config = Some(paths.config_home.join("niri/config.kdl"));
+        let facts =
+            Facts { selection: Selection::default(), paths: paths.clone(), ..facts(Distro::Arch, vec![], false) };
+        let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
+        let chosen: Vec<_> = steps.iter().filter(|step| matches!(step, Step::PreferPortal { .. })).collect();
+        assert_eq!(chosen, [&Step::PreferPortal { config_home: paths.config_home.clone(), desktop: "niri".into() }]);
+        for step in steps.iter().filter(|step| matches!(step, Step::PreferPortal { .. } | Step::Replace { .. })) {
+            execute(step, &facts.path_var).unwrap();
+        }
+        let backend = std::fs::read_to_string(paths.data_home.join(FILES_PORTAL_PATH)).unwrap();
+        assert!(backend.contains("org.freedesktop.impl.portal.FileChooser"), "{backend}");
+        let config = std::fs::read_to_string(paths.config_home.join("xdg-desktop-portal/niri-portals.conf")).unwrap();
+        assert!(config.contains("\norg.freedesktop.impl.portal.FileChooser=nova;"), "{config}");
     }
 
     #[test]

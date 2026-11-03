@@ -395,7 +395,7 @@ mod tests {
             serde_json::json!({"name": "Images", "globs": ["*.png"], "mimes": ["image/jpeg"]})
         );
         let report = nova_protocol::wire_text(fixture.dir.join("Downloads/report one.pdf"));
-        fixture.files.pick(picker_id(&window), &[report], Some(1)).unwrap();
+        fixture.files.pick(picker_id(&window), &[report], Some(1), false).unwrap();
         let reply = replies.recv_timeout(WAIT).unwrap();
         assert_eq!(reply.0, RESPONSE_PICKED);
         assert_eq!(uris(&reply), [format!("file://{}/report%20one.pdf", fixture.path("Downloads"))]);
@@ -412,7 +412,7 @@ mod tests {
         let window = next_named(&nova_files, "files_window", WAIT);
         assert_eq!(window["folder"], nova_protocol::wire_text(&*fixture.dir), "a first picker opens at home");
         let report = nova_protocol::wire_text(fixture.dir.join("Downloads/report one.pdf"));
-        fixture.files.pick(picker_id(&window), &[report], None).unwrap();
+        fixture.files.pick(picker_id(&window), &[report], None, false).unwrap();
         replies.recv_timeout(WAIT).unwrap();
 
         let replies = ask(&fixture, "SaveFile", HashMap::from([("current_name", Variant::from("cover.png"))]));
@@ -422,8 +422,11 @@ mod tests {
         assert_eq!(window["picker"]["name"], "cover.png");
         let id = picker_id(&window);
         let folder = nova_protocol::wire_text(fixture.dir.join("Downloads"));
-        assert!(fixture.files.pick(id, std::slice::from_ref(&folder), None).is_err(), "a folder isn't a file to save");
-        fixture.files.pick(id, &[format!("{folder}/cover.png")], None).unwrap();
+        assert!(
+            fixture.files.pick(id, std::slice::from_ref(&folder), None, false).is_err(),
+            "a folder isn't a file to save"
+        );
+        fixture.files.pick(id, &[format!("{folder}/cover.png")], None, false).unwrap();
         let reply = replies.recv_timeout(WAIT).unwrap();
         assert_eq!(uris(&reply), [format!("file://{}/cover.png", fixture.path("Downloads"))]);
     }
@@ -437,7 +440,7 @@ mod tests {
         let window = next_named(&nova_files, "files_window", WAIT);
         assert_eq!(window["picker"]["mode"], "save_files");
         let folder = nova_protocol::wire_text(fixture.dir.join("Downloads"));
-        fixture.files.pick(picker_id(&window), &[folder], None).unwrap();
+        fixture.files.pick(picker_id(&window), &[folder], None, false).unwrap();
         let reply = replies.recv_timeout(WAIT).unwrap();
         let downloads = fixture.path("Downloads");
         assert_eq!(uris(&reply), [format!("file://{downloads}/a.txt"), format!("file://{downloads}/b.txt")]);

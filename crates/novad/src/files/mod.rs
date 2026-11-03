@@ -328,8 +328,8 @@ impl Files {
     }
 
     /// Answers the file picker `picker` with `paths` (`files_pick`).
-    pub fn pick(&self, picker: u32, paths: &[String], filter: Option<u32>) -> Result<(), String> {
-        self.shared.pickers.pick(picker, paths, filter)
+    pub fn pick(&self, picker: u32, paths: &[String], filter: Option<u32>, replace: bool) -> Result<(), String> {
+        self.shared.pickers.pick(picker, paths, filter, replace)
     }
 
     /// The file picker `picker` closed without picking (`files_pick_cancel`).

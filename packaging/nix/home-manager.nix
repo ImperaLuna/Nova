@@ -1,7 +1,8 @@
 # Nova's home-manager module (homeManagerModules.default): Nova, the
 # packages of the features that are on, its systemd user unit started with
 # graphical-session.target, the features.toml novad reads, Nova Files as
-# the default for folders while the `files` feature is on, and Nova's
+# the default for folders while the `files` feature is on (and, with
+# home-manager's xdg.portal on, apps' Open and Save dialogs), and Nova's
 # compositor rules (blur, Nova Files' corners) in ~/.config/nova: include
 # niri.kdl from niri's config; home-manager's own Hyprland config sources
 # hyprland.conf by itself.
@@ -41,6 +42,13 @@ in
     # xdg.mimeApps.enable, which is left to the user: it replaces the file.
     xdg.mimeApps.defaultApplications = lib.mkIf filesOn {
       "inode/directory" = lib.mkDefault [ "nova-files.desktop" ];
+    };
+
+    # Apps' Open and Save dialogs, when home-manager runs the portal config
+    # (xdg.portal.enable is left to the user, or to the NixOS module).
+    xdg.portal = lib.mkIf (filesOn && config.xdg.portal.enable) {
+      extraPortals = [ (features.filesPortal pkgs cfg.package) ];
+      config = features.portalConfig;
     };
 
     xdg.configFile = {

@@ -51,6 +51,9 @@ var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 // The trash place's path in files_places: the trash, not a folder.
 var FILES_TRASH_PLACE = "trash:///";
 
+// files_pick's error for a save over a file that's there.
+var FILES_PICK_EXISTS = "exists";
+
 // Commands a client sends (Command).
 var CMD_PING = "ping";
 var CMD_LIST_FEATURES = "list_features";

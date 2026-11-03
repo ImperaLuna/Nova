@@ -294,8 +294,8 @@ impl<'a> Connection<'a> {
             Command::FilesTransferAnswer { job, clash, answer, all } => {
                 done(self.files().and_then(|files| files.answer_clash(self.id, *job, *clash, *answer, *all)))
             }
-            Command::FilesPick { picker, paths, filter } => {
-                done(self.files().and_then(|files| files.pick(*picker, paths, *filter)))
+            Command::FilesPick { picker, paths, filter, replace } => {
+                done(self.files().and_then(|files| files.pick(*picker, paths, *filter, *replace)))
             }
             Command::FilesPickCancel { picker } => done(self.files().map(|files| files.cancel_pick(*picker))),
             Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),

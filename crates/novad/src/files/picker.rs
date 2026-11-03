@@ -10,7 +10,7 @@
 use super::target;
 use crate::lock;
 use crate::reply_slot::Slot;
-use nova_protocol::{FilePicker, PickMode};
+use nova_protocol::{FILES_PICK_EXISTS, FilePicker, PickMode};
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -82,14 +82,14 @@ impl Pickers {
     }
 
     /// Answers picker `id` with `paths` (wire text) once they fit it, and
-    /// the filter `filter` shown.
-    pub fn pick(&self, id: u32, paths: &[String], filter: Option<u32>) -> Result<(), String> {
+    /// the filter `filter` shown; a save over a file only when `replace`.
+    pub fn pick(&self, id: u32, paths: &[String], filter: Option<u32>, replace: bool) -> Result<(), String> {
         let mut state = lock(&self.state);
         let asked = state.open.get(&id).ok_or_else(|| format!("no file picker {id} is waiting"))?;
         if filter.is_some_and(|filter| filter as usize >= asked.picker.filters.len()) {
             return Err("no such filter".into());
         }
-        let paths = checked(&asked.picker, &asked.files, paths)?;
+        let paths = checked(&asked.picker, &asked.files, paths, replace)?;
         let asked = state.open.remove(&id).expect("found above");
         // The folder holding what was picked (for save_files, the folder
         // picked: each path is a name in it).
@@ -124,10 +124,11 @@ impl Pickers {
 /// The paths `paths` (wire text) a picker gives its app, once they fit it:
 /// - `open`: one, or more when `multiple`; each there now, a folder when it
 ///   picks folders and a file otherwise.
-/// - `save`: one file, in a folder that's there, not itself a folder.
+/// - `save`: one file, in a folder that's there, not itself a folder, and
+///   not there yet unless `replace` ([`FILES_PICK_EXISTS`]).
 /// - `save_files`: one folder that's there; the app gets each of `files`
 ///   in it.
-fn checked(picker: &FilePicker, files: &[OsString], paths: &[String]) -> Result<Vec<PathBuf>, String> {
+fn checked(picker: &FilePicker, files: &[OsString], paths: &[String], replace: bool) -> Result<Vec<PathBuf>, String> {
     let most = if picker.mode == PickMode::Open && picker.multiple { usize::MAX } else { 1 };
     if paths.is_empty() || paths.len() > most {
         return Err(if most == 1 { "pick one item".into() } else { "pick at least one item".into() });
@@ -152,6 +153,9 @@ fn checked(picker: &FilePicker, files: &[OsString], paths: &[String]) -> Result<
             }
             if path.is_dir() {
                 return Err(format!("{} is a folder", path.display()));
+            }
+            if !replace && std::fs::symlink_metadata(path).is_ok() {
+                return Err(FILES_PICK_EXISTS.into());
             }
             Ok(cleaned)
         }
@@ -201,27 +205,29 @@ mod tests {
         let dir = dir();
         let (song, other) = (wire(&dir, "Music/song.flac"), wire(&dir, "Music/other.flac"));
         let single = picker(PickMode::Open, false, false);
-        assert_eq!(checked(&single, &[], std::slice::from_ref(&song)).unwrap(), [dir.join("Music/song.flac")]);
-        assert!(checked(&single, &[], &[song.clone(), other.clone()]).is_err());
-        assert!(checked(&single, &[], &[wire(&dir, "Music")]).unwrap_err().contains("is a folder"));
-        assert!(checked(&single, &[], &[wire(&dir, "Music/gone.flac")]).is_err());
-        assert!(checked(&single, &[], &[]).is_err());
-        assert!(checked(&single, &[], &["Music/song.flac".into()]).unwrap_err().contains("absolute"));
+        assert_eq!(checked(&single, &[], std::slice::from_ref(&song), false).unwrap(), [dir.join("Music/song.flac")]);
+        assert!(checked(&single, &[], &[song.clone(), other.clone()], false).is_err());
+        assert!(checked(&single, &[], &[wire(&dir, "Music")], false).unwrap_err().contains("is a folder"));
+        assert!(checked(&single, &[], &[wire(&dir, "Music/gone.flac")], false).is_err());
+        assert!(checked(&single, &[], &[], false).is_err());
+        assert!(checked(&single, &[], &["Music/song.flac".into()], false).unwrap_err().contains("absolute"));
         let several = picker(PickMode::Open, true, false);
-        assert_eq!(checked(&several, &[], &[song.clone(), other]).unwrap().len(), 2);
+        assert_eq!(checked(&several, &[], &[song.clone(), other], false).unwrap().len(), 2);
         let folders = picker(PickMode::Open, false, true);
-        assert!(checked(&folders, &[], &[wire(&dir, "Music")]).is_ok());
-        assert!(checked(&folders, &[], &[song]).unwrap_err().contains("isn't a folder"));
+        assert!(checked(&folders, &[], &[wire(&dir, "Music")], false).is_ok());
+        assert!(checked(&folders, &[], &[song], false).unwrap_err().contains("isn't a folder"));
     }
 
     #[test]
     fn save_takes_a_new_or_existing_file_in_a_folder() {
         let dir = dir();
         let save = picker(PickMode::Save, false, false);
-        assert!(checked(&save, &[], &[wire(&dir, "Music/new.flac")]).is_ok());
-        assert!(checked(&save, &[], &[wire(&dir, "Music/song.flac")]).is_ok(), "replacing was asked about");
-        assert!(checked(&save, &[], &[wire(&dir, "Music")]).unwrap_err().contains("is a folder"));
-        assert!(checked(&save, &[], &[wire(&dir, "Missing/new.flac")]).is_err());
+        assert!(checked(&save, &[], &[wire(&dir, "Music/new.flac")], false).is_ok());
+        let song = [wire(&dir, "Music/song.flac")];
+        assert_eq!(checked(&save, &[], &song, false).unwrap_err(), FILES_PICK_EXISTS);
+        assert!(checked(&save, &[], &song, true).is_ok(), "replacing was asked about");
+        assert!(checked(&save, &[], &[wire(&dir, "Music")], false).unwrap_err().contains("is a folder"));
+        assert!(checked(&save, &[], &[wire(&dir, "Missing/new.flac")], false).is_err());
     }
 
     #[test]
@@ -230,10 +236,10 @@ mod tests {
         let names = [OsString::from("a.txt"), OsString::from("b.txt")];
         let save = picker(PickMode::SaveFiles, false, false);
         assert_eq!(
-            checked(&save, &names, &[wire(&dir, "Music")]).unwrap(),
+            checked(&save, &names, &[wire(&dir, "Music")], false).unwrap(),
             [dir.join("Music/a.txt"), dir.join("Music/b.txt")]
         );
-        assert!(checked(&save, &names, &[wire(&dir, "Music/song.flac")]).is_err());
+        assert!(checked(&save, &names, &[wire(&dir, "Music/song.flac")], false).is_err());
     }
 
     #[test]
@@ -241,14 +247,16 @@ mod tests {
         let dir = dir();
         let pickers = Pickers::default();
         let (asked, slot) = pickers.ask("org.mozilla.firefox", picker(PickMode::Open, false, false), vec![]).unwrap();
-        assert!(pickers.pick(asked.id, &[wire(&dir, "Music")], None).is_err(), "a folder isn't a file");
-        assert!(pickers.pick(asked.id, &[wire(&dir, "Music/song.flac")], Some(0)).unwrap_err().contains("filter"));
-        pickers.pick(asked.id, &[wire(&dir, "Music/song.flac")], None).unwrap();
+        assert!(pickers.pick(asked.id, &[wire(&dir, "Music")], None, false).is_err(), "a folder isn't a file");
+        assert!(
+            pickers.pick(asked.id, &[wire(&dir, "Music/song.flac")], Some(0), false).unwrap_err().contains("filter")
+        );
+        pickers.pick(asked.id, &[wire(&dir, "Music/song.flac")], None, false).unwrap();
         let answer = zbus::block_on(slot.wait());
         assert_eq!(answer, Answer::Picked { paths: vec![dir.join("Music/song.flac")], filter: None });
         assert_eq!(pickers.last_folder("org.mozilla.firefox"), Some(dir.join("Music")));
         assert_eq!(pickers.last_folder("code"), None);
-        assert!(pickers.pick(asked.id, &[wire(&dir, "Music/song.flac")], None).is_err(), "answered once");
+        assert!(pickers.pick(asked.id, &[wire(&dir, "Music/song.flac")], None, false).is_err(), "answered once");
     }
 
     #[test]
