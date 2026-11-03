@@ -49,6 +49,9 @@ in
     );
 
     services = {
+      # Nova Files lists and ejects drives through udisksd.
+      udisks2.enable = lib.mkIf filesOn (lib.mkDefault true);
+
       # Device batteries: novad reads upowerd on the system bus,
       # HeadsetControl needs its udev rules to open headsets without root,
       # and Nova's own rules let novad open Logitech's and Keychron's hidraw

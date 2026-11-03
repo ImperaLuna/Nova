@@ -136,6 +136,11 @@ expression: all
 {"v":2,"event":"files_changed","data":{"view":1,"changes":[{"op":"remove","index":1},{"op":"insert","index":1,"entry":{"name":"cover (2).png","dir":false,"link":false,"hidden":false,"mime":"image/png","size":48213,"modified_ms":1793000100000}},{"op":"update","index":0,"entry":{"name":"Screenshots","dir":true,"link":true,"hidden":false,"mime":"inode/directory"}}]}}
 {"v":2,"event":"files_closed","data":{"view":1,"error":"/home/user/Pictures doesn't exist"}}
 {"v":2,"event":"files_look","data":{"frame":0,"list":100}}
+{"v":2,"event":"files_drives","data":{"drives":[{"id":"nvme0n1p2","name":"System","removable":false,"mount":"/","size":1000000000000,"used":580000000000},{"id":"sdb1","name":"SANDISK","removable":true,"size":32000000000}]}}
+{"v":2,"id":79,"cmd":"files_mount","args":{"drive":"sdb1"}}
+{"v":2,"id":79,"result":"/run/media/user/SANDISK"}
+{"v":2,"id":80,"cmd":"files_eject","args":{"drive":"sdb1"}}
+{"v":2,"id":80,"result":"busy"}
 {"v":2,"id":76,"cmd":"files_transfer","args":{"job":2,"mode":"copy","sources":["/home/user/Pictures/cover.png"],"folder":"/run/media/user/SANDISK"}}
 {"v":2,"id":77,"cmd":"files_transfer_cancel","args":{"job":2}}
 {"v":2,"id":78,"cmd":"files_transfer_answer","args":{"job":2,"clash":1,"answer":"replace","all":true}}

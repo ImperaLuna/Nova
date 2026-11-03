@@ -25,6 +25,9 @@
 //!   package brings new types), and the view's order.
 //! - `tree.rs`: the sidebar's folder tree that follows the window
 //!   (`files_tree`) and its places (`files_places`).
+//! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
+//!   and ejecting them; `drives.rs`: which filesystems are listed and
+//!   what they're called.
 //! - `transfers.rs`: copy and move jobs (`files_transfer`), one thread
 //!   each, asking the window about name clashes.
 //! - `copying.rs`: the file system side of those: measuring, numbered
@@ -42,12 +45,14 @@
 //! it quit, with windows asked for since, is followed by a new one.
 
 mod copying;
+mod drives;
 mod file_manager1;
 mod folder;
 mod target;
 mod transfers;
 mod trash;
 pub mod tree;
+mod udisks;
 mod views;
 mod watcher;
 mod window;
@@ -59,11 +64,13 @@ use crate::apps::opening::Opener;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
+use crate::notifications::Notifications;
 use crate::session_bus::{Bus, Stop};
 use nova_protocol::{
-    ClashAnswer, Event, FeatureState, FilePlace, FileSort, FilesLook, FilesWindow, FolderTree, Topic, TransferMode,
+    ClashAnswer, EjectOutcome, Event, FeatureState, FilePlace, FileSort, FilesLook, FilesWindow, FolderTree, Topic,
+    TransferMode,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 
 pub use trash::Trash;
@@ -83,6 +90,8 @@ const MOUNT_TABLE: &str = "/proc/self/mountinfo";
 pub struct Sources {
     /// Where `org.freedesktop.FileManager1` is served.
     pub bus: Bus,
+    /// Where udisks2 is: the system bus.
+    pub udisks: Bus,
     /// The data folders the MIME database is read from.
     pub data_dirs: Vec<PathBuf>,
     /// Where the `mimeapps.list` files are.
@@ -117,6 +126,8 @@ pub struct Files {
     trash: Arc<Trash>,
     /// Tells windows when the trash changes; none when it can't be followed.
     trash_watch: Option<trash::Watch>,
+    /// The drives in the sidebar.
+    drives: udisks::Drives,
 }
 
 /// What the module's services share.
@@ -172,6 +183,13 @@ impl Files {
             let process = sources.ui.clone().map(|ui| window::Process::new(ui, Arc::clone(&logger), exited));
             Shared { sources, hub, logger, delivery: Mutex::default(), process }
         });
+        let drives = udisks::Drives::start(
+            shared.sources.udisks.clone(),
+            // Mounts in the home folder are listed too; "/" is no home.
+            Some(shared.sources.home.clone()).filter(|home| home.as_path() != Path::new("/")),
+            Arc::clone(&shared.hub),
+            Arc::clone(&shared.logger),
+        );
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
         Arc::new(Self {
@@ -184,6 +202,7 @@ impl Files {
             transfers,
             trash,
             trash_watch,
+            drives,
         })
     }
 
@@ -199,8 +218,24 @@ impl Files {
 
     /// Shows the folder `path` in client `client`'s view `view`
     /// (`files_open`, [`views::Folders::open`]).
+    /// How full the drives are is read again too, since a window going
+    /// somewhere is when it's looked at.
     pub fn open(&self, client: ClientId, view: u32, path: &str, sort: FileSort, hidden: bool) -> Result<(), String> {
-        self.folders.open(client, view, path, sort, hidden)
+        self.folders.open(client, view, path, sort, hidden)?;
+        self.drives.refresh();
+        Ok(())
+    }
+
+    /// Mounts drive `drive` (`files_mount`) and answers where. Waits on
+    /// udisks2, so it runs off the connection's thread.
+    pub fn mount(&self, drive: &str) -> Result<String, String> {
+        self.drives.mount(drive)
+    }
+
+    /// Ejects drive `drive` (`files_eject`). Waits on udisks2 writing what's
+    /// left, so it runs off the connection's thread.
+    pub fn eject(&self, drive: &str) -> Result<EjectOutcome, String> {
+        self.drives.eject(drive)
     }
 
     /// The sidebar's tree for a window on `request.folder` (`files_tree`,
@@ -290,8 +325,9 @@ impl Files {
 
     /// Sends client `client`, which just subscribed, how solid the windows are.
     pub fn send_state(&self, client: ClientId) {
-        let look = lock(&self.look);
-        self.shared.hub.send_to(client, &Event::FilesLook(*look));
+        let look = *lock(&self.look);
+        self.shared.hub.send_to(client, &Event::FilesLook(look));
+        self.drives.send_state(client);
     }
 
     /// Client `client` hung up: windows aren't sent to it any more.
@@ -311,6 +347,7 @@ impl Files {
         self.stop.stop();
         self.mime.stop();
         self.folders.stop();
+        self.drives.stop();
         self.transfers.stop();
         if let Some(watch) = &self.trash_watch {
             watch.stop();
@@ -379,6 +416,7 @@ impl crate::modules::Module for Files {
         let trash = nova_paths::data_home().map(|data| data.join(TRASH_DIR));
         Sources {
             bus: Bus::Session,
+            udisks: Bus::System,
             data_dirs,
             associations,
             runner,
@@ -418,6 +456,11 @@ impl crate::modules::Module for Files {
         Self::client_gone(self, client);
     }
 
+    /// "Safe To Remove Hardware" goes to the notifications, while they're on.
+    fn linked(&self, running: &crate::modules::Running) {
+        self.drives.set_notifications(running.get::<Notifications>().as_ref());
+    }
+
     fn stop(&self) {
         Self::stop(self);
     }
@@ -449,8 +492,10 @@ mod tests {
             std::fs::create_dir_all(dir.join("Downloads")).unwrap();
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
+            let no_bus = Bus::Address(format!("unix:path={}", dir.join("no-bus").display()));
             let sources = Sources {
-                bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+                bus: no_bus.clone(),
+                udisks: no_bus,
                 data_dirs: vec![],
                 associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
                 runner: crate::apps::launch::Runner::Direct,
@@ -511,7 +556,9 @@ mod tests {
         fixture.files.set_look(FilesLook { frame: 0, list: 100 });
         fixture.files.send_state(client);
         assert_eq!(next_named(&events, "files_look", WAIT), json!({"frame": 0, "list": 100}));
-        assert!(events.try_recv().is_err(), "one event per change, one per subscriber");
+        let more_looks =
+            events.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_look")));
+        assert!(!more_looks, "one event per change, one per subscriber");
     }
 
     #[test]

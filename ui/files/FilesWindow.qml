@@ -6,6 +6,7 @@ import "../theme"
 import "service"
 import "paths.js" as Paths
 import "trash.js" as Trash
+import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
 // showing `folder` with `select` selected. The navigation row, the command
@@ -13,7 +14,8 @@ import "trash.js" as Trash
 // over them all; opening a folder in the list shows it in the same window.
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
-// (ConfirmDialog).
+// (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
+// lie over it all.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -201,6 +203,7 @@ FloatingWindow {
         anchors.bottom: parent.bottom
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
+        onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
     }
     FileList {
         id: list
@@ -295,5 +298,17 @@ FloatingWindow {
                 easing.bezierCurve: Tokens.easing
             }
         }
+    }
+    DriveMenu {
+        id: driveMenu
+        anchors.fill: parent
+        onEjectChosen: drive => FilesService.eject(drive.id, outcome => {
+                if (outcome === Protocol.EJECT_BUSY)
+                    ejectProblem.show(drive.name);
+            })
+    }
+    EjectProblem {
+        id: ejectProblem
+        anchors.fill: parent
     }
 }

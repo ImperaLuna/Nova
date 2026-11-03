@@ -158,6 +158,11 @@ pub enum Event {
     /// (feature `files`): ask `files_trash_list` again. Topic
     /// [`Topic::Files`].
     FilesTrashChanged,
+    /// The drives Nova Files' sidebar lists (feature `files`): every
+    /// filesystem udisks2 knows that a person would open, as it is now.
+    /// Topic [`Topic::Files`], sent right after subscribing and whenever a
+    /// drive comes, goes, mounts, unmounts or fills up.
+    FilesDrives { drives: Vec<Drive> },
     /// How copy or move job `job` is going (feature `files`): as it
     /// starts, every [`FILES_TRANSFER_PROGRESS_MS`] while it runs, when it
     /// asks about a name clash and when it ends. Sent only to the client
@@ -222,7 +227,8 @@ impl Event {
             | Event::FilesChanged { .. }
             | Event::FilesClosed { .. }
             | Event::FilesTrashChanged
-            | Event::FilesTransfer(_) => Some(Topic::Files),
+            | Event::FilesTransfer(_)
+            | Event::FilesDrives { .. } => Some(Topic::Files),
             Event::FilesLook(_) => Some(Topic::Files),
         }
     }
@@ -2020,6 +2026,50 @@ pub enum Command {
     },
     /// Deletes everything in the trash for good (feature `files`).
     FilesEmptyTrash,
+    /// Mounts the drive `drive` (a [`Drive::id`], feature `files`), if it
+    /// isn't, and answers with the folder it's mounted at.
+    FilesMount {
+        drive: String,
+    },
+    /// Ejects the drive `drive` (a [`Drive::id`] of a removable one,
+    /// feature `files`): unmounts every filesystem on its device, writing
+    /// what's left first, then powers it off. Answered with an
+    /// [`EjectOutcome`]; once ejected, a "Safe To Remove Hardware"
+    /// notification says so.
+    FilesEject {
+        drive: String,
+    },
+}
+
+/// A drive in Nova Files' sidebar ([`Event::FilesDrives`]): one
+/// filesystem, on a disk inside the machine or a USB stick.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Drive {
+    /// What `files_mount` and `files_eject` name it by.
+    pub id: String,
+    pub name: String,
+    /// It can be unplugged: a USB stick or card, which can be ejected.
+    pub removable: bool,
+    /// The folder it's mounted at, as wire text ([`wire_text`]); none
+    /// while it isn't.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount: Option<String>,
+    /// Its size, in bytes.
+    pub size: u64,
+    /// How much of it is used, in bytes, while it's mounted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used: Option<u64>,
+}
+
+/// How `files_eject` went, when it didn't fail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EjectOutcome {
+    /// Safe to unplug.
+    Ejected,
+    /// Something still has files open on it: it stays mounted.
+    Busy,
 }
 
 /// The answer to [`Command::FilesTree`]: the folder as an absolute path,
@@ -3131,6 +3181,30 @@ mod tests {
             }),
             encode(Event::FilesClosed { view: 1, error: "/home/user/Pictures doesn't exist".into() }),
             encode(Event::FilesLook(FilesLook { frame: 0, list: 100 })),
+            encode(Event::FilesDrives {
+                drives: vec![
+                    Drive {
+                        id: "nvme0n1p2".into(),
+                        name: "System".into(),
+                        removable: false,
+                        mount: Some("/".into()),
+                        size: 1_000_000_000_000,
+                        used: Some(580_000_000_000),
+                    },
+                    Drive {
+                        id: "sdb1".into(),
+                        name: "SANDISK".into(),
+                        removable: true,
+                        mount: None,
+                        size: 32_000_000_000,
+                        used: None,
+                    },
+                ],
+            }),
+            encode(Request { id: Some(79), command: Command::FilesMount { drive: "sdb1".into() } }),
+            encode(Response { id: 79, outcome: Outcome::Result(json!("/run/media/user/SANDISK")) }),
+            encode(Request { id: Some(80), command: Command::FilesEject { drive: "sdb1".into() } }),
+            encode(Response { id: 80, outcome: Outcome::Result(serde_json::to_value(EjectOutcome::Busy).unwrap()) }),
             encode(Request {
                 id: Some(76),
                 command: Command::FilesTransfer {

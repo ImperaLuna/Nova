@@ -128,6 +128,8 @@ var CMD_FILES_TRASH_LIST = "files_trash_list";
 var CMD_FILES_RESTORE = "files_restore";
 var CMD_FILES_TRASH_DELETE = "files_trash_delete";
 var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
+var CMD_FILES_MOUNT = "files_mount";
+var CMD_FILES_EJECT = "files_eject";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -162,6 +164,7 @@ var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
 var EVENT_FILES_LOOK = "files_look";
 var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
+var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
 
 // Event topics a client subscribes to (Topic).
@@ -292,6 +295,10 @@ var PLACE_DOCUMENTS = "documents";
 var PLACE_DOWNLOADS = "downloads";
 var PLACE_PICTURES = "pictures";
 var PLACE_TRASH = "trash";
+
+// How files_eject went (EjectOutcome).
+var EJECT_EJECTED = "ejected";
+var EJECT_BUSY = "busy";
 
 // What a files_transfer job does (TransferMode).
 var TRANSFER_COPY = "copy";

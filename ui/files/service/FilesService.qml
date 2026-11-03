@@ -9,12 +9,12 @@ import "../trash.js" as Trash
 // Nova Files' link to novad: the windows it asks for, the folders they
 // show (folder views: each FolderModel opens one under its own number and
 // gets its pages, changes and closing here), the sidebar's tree and
-// places, opening files in apps (the default one on a double-click or
-// Enter, or one from "Open with", which can also become the new
-// default), copy and move jobs, and the trash. The Nova Files
-// process (../../files.qml) and its windows get these here and never talk
-// to Daemon themselves. Also how solid the windows are, from
-// config.toml's [files].
+// places, the drives (and mounting and ejecting them), opening files in
+// apps (the default one on a double-click or Enter, or one from "Open
+// with", which can also become the new default), copy and move jobs, and
+// the trash. The Nova Files process (../../files.qml) and its windows get
+// these here and never talk to Daemon themselves. Also how solid the
+// windows are, from config.toml's [files].
 Singleton {
     id: root
 
@@ -22,6 +22,10 @@ Singleton {
     // also until novad says) to 1 (the theme's solid surfaces).
     readonly property real frameSolid: (Daemon.filesLook?.frame ?? 0) / Protocol.FILES_SOLID_MAX
     readonly property real listSolid: (Daemon.filesLook?.list ?? 0) / Protocol.FILES_SOLID_MAX
+    // The drives for the sidebar, in its order: {id, name, removable,
+    // mount (absent while it isn't mounted), size, used (bytes, while
+    // mounted)}.
+    readonly property var drives: Daemon.filesDrives
 
     // A window to open on `window.folder`, with `window.select` (absolute
     // paths in it, maybe none) selected.
@@ -160,6 +164,31 @@ Singleton {
             if (error)
                 console.warn(`nova: sidebar places: ${error}`);
             done(error ? [] : result);
+        });
+    }
+
+    // Mounts the drive `id` unless it is; `done(folder)` gets where it's
+    // mounted, or null when it couldn't be.
+    function mount(id: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_MOUNT, {
+            drive: id
+        }, (error, folder) => {
+            if (error)
+                console.warn(`nova: mounting ${id}: ${error}`);
+            done(error ? null : folder);
+        });
+    }
+
+    // Ejects the removable drive `id`. `done(outcome)` gets
+    // Protocol.EJECT_EJECTED, Protocol.EJECT_BUSY (something still uses it),
+    // or null when it failed otherwise.
+    function eject(id: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_EJECT, {
+            drive: id
+        }, (error, outcome) => {
+            if (error)
+                console.warn(`nova: ejecting ${id}: ${error}`);
+            done(error ? null : outcome);
         });
     }
 

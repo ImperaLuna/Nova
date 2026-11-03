@@ -123,6 +123,7 @@ mod tests {
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
             let sources = Sources {
                 bus: Bus::Address(bus.address.clone()),
+                udisks: Bus::Address(bus.address.clone()),
                 data_dirs: vec![],
                 associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
                 runner: crate::apps::launch::Runner::Direct,

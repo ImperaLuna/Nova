@@ -39,6 +39,14 @@ Item {
             compare(names(Paths.crumbs("/home/ana", "/home/ana", "Home")), ["Home"]);
         }
 
+        function test_a_folder_is_inside_a_mount_but_not_a_lookalike() {
+            verify(Paths.inside("/run/media/ana/SANDISK/Photos", "/run/media/ana/SANDISK"));
+            verify(Paths.inside("/run/media/ana/SANDISK", "/run/media/ana/SANDISK"));
+            verify(!Paths.inside("/run/media/ana/SANDISK2", "/run/media/ana/SANDISK"), "a name it starts isn't inside");
+            verify(Paths.inside("/home/ana", "/"), "everything is on the root");
+            verify(!Paths.inside("/home/ana", ""), "an unmounted drive holds nothing");
+        }
+
         function test_a_folder_outside_home_starts_at_the_root() {
             compare(names(Paths.crumbs("/home/anabel/Music", "/home/ana", "Home")), ["/", "home", "anabel", "Music"], "only home itself, not a name it starts");
             compare(names(Paths.crumbs("/mnt/usb", "", "Home")), ["/", "mnt", "usb"]);

@@ -310,6 +310,14 @@ impl<'a> Connection<'a> {
                 let (path, app) = (path.clone(), app.clone());
                 return self.opener_later(move |opener| opener.set_default(&path, &app));
             }
+            Command::FilesMount { drive } => {
+                let drive = drive.clone();
+                return self.files_later(move |files| files.mount(&drive));
+            }
+            Command::FilesEject { drive } => {
+                let drive = drive.clone();
+                return self.files_later(move |files| files.eject(&drive));
+            }
             Command::FilesTree { folder, opened, closed, hidden } => {
                 let (folder, opened, closed, hidden) = (folder.clone(), opened.clone(), closed.clone(), *hidden);
                 return self.files_later(move |files| {
@@ -933,8 +941,9 @@ impl<'a> Connection<'a> {
             | Command::FilesRestore { .. }
             | Command::FilesTrashDelete { .. }
             | Command::FilesEmptyTrash
-            | Command::FilesTree { .. }
-            | Command::FilesPlaces => {}
+            | Command::FilesMount { .. }
+            | Command::FilesEject { .. } => {}
+            Command::FilesTree { .. } | Command::FilesPlaces => {}
         }
     }
 

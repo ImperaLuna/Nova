@@ -103,6 +103,10 @@ Singleton {
     signal filesPage(var page)
     signal filesChanged(var changed)
     signal filesClosed(var closed)
+    // The drives Nova Files' sidebar lists ({id, name, removable, mount,
+    // size, used} each), from the latest files_drives event. Read it
+    // through FilesService.
+    property var filesDrives: []
     // How one of this process's copy or move jobs is going: {job, mode,
     // state, items, name, done_bytes, total_bytes, clash, error}.
     signal filesTransferChanged(var transfer)
@@ -212,6 +216,8 @@ Singleton {
             filesClosed(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_LOOK) {
             filesLook = msg.data;
+        } else if (msg.event === Protocol.EVENT_FILES_DRIVES) {
+            filesDrives = msg.data.drives;
         } else if (msg.event === Protocol.EVENT_FILES_TRANSFER) {
             filesTransferChanged(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_TRASH_CHANGED) {

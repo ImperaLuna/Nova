@@ -8,15 +8,20 @@ import "service"
 import "trash.js" as Trash
 
 // Nova Files' sidebar: the places that exist first (a click goes there),
-// the trash last among them and marked while the window shows it, a line,
-// then the folder tree that follows the window. The drives come
-// under it.
+// the trash last among them and marked while the window shows it, then
+// the drives (Drives.qml) under a line of their own, a line, then the
+// folder tree that follows the window. A drive opened goes through the
+// navigator like a place; when the drive the window is on goes away, it
+// goes home.
 Item {
     id: sidebar
 
     required property Navigator navigator
     // The places novad found ({kind, path}), in order.
     property var places: []
+
+    // A drive's menu was asked for at `at` (in the window).
+    signal driveMenuRequested(var drive, point at)
 
     readonly property var looks: ({
             [Protocol.PLACE_HOME]: {
@@ -106,6 +111,29 @@ Item {
                     onTapped: sidebar.navigator.visit(place.modelData.path, null)
                 }
             }
+        }
+
+        Item {
+            visible: FilesService.drives.length > 0
+            width: parent.width
+            height: Tokens.filesRuleInset * 2 + Tokens.dividerWidth
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: Tokens.filesRuleInset
+                anchors.rightMargin: Tokens.filesRuleInset
+                height: Tokens.dividerWidth
+                color: Tokens.filesRule
+            }
+        }
+        Drives {
+            width: parent.width
+            folder: sidebar.navigator.folder
+            onOpened: folder => sidebar.navigator.visit(folder, null)
+            onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
+            onDriveGone: sidebar.navigator.visit("~", null)
         }
     }
 

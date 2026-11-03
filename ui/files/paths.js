@@ -61,6 +61,11 @@ function folderName(folder) {
     return name === "" ? "/" : shown(name);
 }
 
+// Whether `path` is `folder` or inside it; nothing is inside "".
+function inside(path, folder) {
+    return folder !== "" && (path === folder || path.startsWith(folder.endsWith("/") ? folder : folder + "/"));
+}
+
 // The folder holding `folder`, or "" for the root.
 function parent(folder) {
     if (folder === "/")

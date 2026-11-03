@@ -690,6 +690,18 @@ QtObject {
     readonly property int filesHeaderHeight: 30
     readonly property list<int> filesColumns: [150, 110, 80]
     readonly property color filesFaint: alpha(fg, 0.45)
+    // A drive in the sidebar: a taller row with how full it is under its
+    // name. A stick that's plugged in slides in, then glows in the accent
+    // and fades back. Problems with one show in a dialog this wide.
+    readonly property int filesDriveHeight: 38
+    readonly property int filesDriveBarHeight: 4
+    readonly property int filesDriveBarGap: 4
+    readonly property int durationDriveArrive: 420
+    readonly property int durationDriveGlow: 1600
+    readonly property real filesDriveGlow: 0.22
+    readonly property int filesDialogWidth: 400
+    readonly property int filesDialogPad: 22
+    readonly property int filesDialogButtonPad: 16
     // The file list's rows: a folder's icon in its own warm color (dimmer
     // for a dot folder), and rows easing up into place one after another
     // when a folder's entries come in.
