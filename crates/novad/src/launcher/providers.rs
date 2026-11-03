@@ -43,6 +43,10 @@ pub struct Run<'a> {
     pub compositor: Option<&'a Compositor>,
     pub tray: Option<&'a Tray>,
     pub logger: &'a Logger,
+    /// Says the item is underway when what's left only waits on it (an app
+    /// asked to show or to start, its window still to focus), so the
+    /// launcher closes then instead of when `run` returns.
+    pub underway: &'a dyn Fn(),
 }
 
 /// The running module that answers a provider view, while its feature runs.
@@ -158,7 +162,7 @@ impl Provider for Launcher {
             // A new window is asked for: no open one, nor the tray's.
             let (ids, tray) = if how.new_window { (&[][..], None) } else { (ids, how.tray) };
             let start = || self.start_app(id);
-            super::focus_open(id, ids, how.compositor, tray, how.output, start, how.logger)
+            super::focus_open(id, ids, how.compositor, tray, how.output, start, how.underway, how.logger)
         })
     }
 }
@@ -266,7 +270,8 @@ mod tests {
         let dir = TempDir::new("providers-fail");
         let logger = logger(&dir);
         assert_eq!(found(&host.search("fail", &logger).unwrap()), []);
-        let how = Run { output: None, new_window: false, compositor: None, tray: None, logger: &logger };
+        let how =
+            Run { output: None, new_window: false, compositor: None, tray: None, logger: &logger, underway: &|| {} };
         host.provider("calc").unwrap().run("1+2", &how).unwrap();
         assert_eq!(*calc.ran.lock().unwrap(), ["1+2"]);
         assert!(host.provider("nothing").is_err());

@@ -56,7 +56,15 @@ StagePanel {
     property string problem: ""
 
     readonly property var known: LauncherLogic.byId(apps)
-    readonly property var rows: LauncherLogic.rows(query, matches, recent, apps, known)
+    // The recent apps the list shows: novad's latest, held while a launch
+    // runs and while the deck is closed, so a launched app's move to the top
+    // shows the next time it opens, not as the deck fades out.
+    property var shownRecent: []
+    onRecentChanged: {
+        if (open && launching === null)
+            shownRecent = recent;
+    }
+    readonly property var rows: LauncherLogic.rows(query, matches, shownRecent, apps, known)
     readonly property real contentWidth: Tokens.launcherWidth - 2 * Tokens.launcherPad
     // As many tiles as fit on one row, spread to fill it.
     readonly property int tilesPerRow: Math.floor((contentWidth + Tokens.gap) / (Tokens.launcherTileSize + Tokens.gap))
@@ -111,6 +119,7 @@ StagePanel {
         enterPending = null;
         if (!open)
             return;
+        shownRecent = recent;
         field.text = "";
         matches = [];
         matchesFor = "";
@@ -168,11 +177,16 @@ StagePanel {
         return launching !== null && launching.provider === row.provider && launching.id === row.id;
     }
 
+    // Whether the list's selected row is the one running: a pinned tile's
+    // launch leaves the list as it is.
+    readonly property bool launchingSelected: launching !== null && selected < rows.length && isLaunching(rows[selected])
+
     // novad's answer to runRequested: closes once it has run.
     function launched(error: var) {
         if (error) {
             problem = error;
             launching = null;
+            shownRecent = recent;
             return;
         }
         closing.start();
@@ -330,6 +344,10 @@ StagePanel {
                         appId: modelData.id
                         name: modelData.name
                         iconSource: launcher.iconSource(modelData.icon ?? "")
+                        launching: launcher.isLaunching({
+                            provider: Protocol.PROVIDER_APPS,
+                            id: appId
+                        })
                         onClicked: launcher.launch({
                             provider: Protocol.PROVIDER_APPS,
                             id: appId
@@ -378,7 +396,7 @@ StagePanel {
                             easing.bezierCurve: Tokens.easing
                         }
                     }
-                    color: launcher.launching !== null ? Tokens.alpha(Tokens.primary, Tokens.accentFillOpacity) : Tokens.selected
+                    color: launcher.launchingSelected ? Tokens.alpha(Tokens.primary, Tokens.accentFillOpacity) : Tokens.selected
                     Behavior on color {
                         ColorAnimation {
                             duration: Tokens.durationFast
@@ -434,9 +452,14 @@ StagePanel {
             selected: item.index === launcher.selected
             pinnable: item.modelData.provider === Protocol.PROVIDER_APPS
             pinned: pinnable && launcher.pinned.includes(item.modelData.id)
-            launching: launcher.isLaunching(item.modelData)
+            launching: selected && launcher.launchingSelected
             onHovered: at => launcher.pointed(item.index, at)
-            onClicked: launcher.launch(item.modelData, false)
+            onClicked: {
+                if (launcher.launching !== null)
+                    return;
+                launcher.selected = item.index;
+                launcher.launch(item.modelData, false);
+            }
             onPinClicked: launcher.pinRequested(item.modelData.id, !pinned)
         }
     }
