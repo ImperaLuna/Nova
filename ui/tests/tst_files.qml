@@ -3,6 +3,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtTest
 import "../files"
+import "../theme"
+import "../files/arrival.js" as Arrival
 import "../files/listing.js" as Listing
 import "../files/paths.js" as Paths
 import "../files/navigation.js" as Navigation
@@ -14,8 +16,8 @@ import "../files/transfers.js" as Transfers
 // Nova Files' address bar parts, window title and entry paths, its
 // history and the sidebar tree's kept folders and rows, its file list:
 // how an entry reads in the columns, sorting by a header, what clicks and
-// keys select, and what opening the selection does, and the copy and move
-// jobs a window keeps and how their card and name clash dialog read and
+// keys select, what opening the selection does and how new rows arrive,
+// and the copy and move jobs a window keeps and how their card and name clash dialog read and
 // answer, and the trash: its rows, its selection, and the dialog that asks
 // before deleting for good. The root is an Item: a TestCase root gets no mouse events.
 Item {
@@ -225,6 +227,39 @@ Item {
             })), "");
             compare(Listing.items(1), "1 item");
             compare(Listing.items(5), "5 items");
+        }
+
+        readonly property var pace: ({
+                stagger: Tokens.filesRowStagger,
+                wave: Tokens.filesRowWave,
+                most: Tokens.filesRowWaveMost
+            })
+
+        function test_a_small_folder_rises_one_row_after_another() {
+            const waits = [0, 1, 2, 3, 4, 5].map(order => Arrival.wait(order, 6, 6, pace));
+            compare(waits, [0, 1, 2, 3, 4, 5].map(order => order * Tokens.filesRowStagger));
+        }
+
+        function test_the_wave_fits_its_time_however_many_rows_take_part() {
+            const page = 30;
+            const coming = Tokens.filesRowWaveMost;
+            const last = Arrival.wait(page, page + 1, coming, pace);
+            verify(last <= Tokens.filesRowWave, `the last row waits ${last} ms`);
+            verify(Arrival.wait(1, page + 1, coming, pace) < Tokens.filesRowStagger, "the step shrinks");
+        }
+
+        function test_a_big_folder_comes_in_as_one_piece() {
+            for (const order of [0, 1, 10, 30])
+                compare(Arrival.wait(order, 31, 2000, pace), 0);
+        }
+
+        function test_rows_off_screen_or_without_a_wave_just_show() {
+            compare(Arrival.order(12, 10, 20), 2, "rows ripple out from where the list opened");
+            compare(Arrival.order(8, 10, 20), 2);
+            compare(Arrival.order(31, 10, 20), -1, "past the screen");
+            compare(Arrival.order(600, 0, 20), -1, "a later page");
+            compare(Arrival.order(3, -1, 20), -1, "no wave running");
+            compare(Arrival.wait(-1, 21, 21, pace), -1);
         }
 
         function test_a_header_click_sorts_by_its_column() {

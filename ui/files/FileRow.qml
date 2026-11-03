@@ -6,7 +6,7 @@ import "paths.js" as Paths
 // A row of Nova Files' Details list: the entry's icon and name, then its
 // Modified, Type and Size at the header's column widths. Hovered rows
 // lighten, selected ones fill; dot files read fainter. When a folder's
-// entries have just come in (`riseOrder`), it eases up into place after
+// entries have just come in (`riseWait`), it eases up into place after
 // the rows nearer where the list opened.
 Rectangle {
     id: entry
@@ -21,9 +21,9 @@ Rectangle {
 
     required property real nameWidth
     required property bool selected
-    // Rows from where the list opened, while a folder's entries have just
-    // come in, or -1: read once, as the row is made.
-    required property int riseOrder
+    // How long it waits before easing in, in ms, while a folder's entries
+    // have just come in, or -1 to just show: read once, as the row is made.
+    required property int riseWait
     // When the Modified column was worked out, so "Today" moves on.
     required property real now
 
@@ -95,7 +95,7 @@ Rectangle {
     }
 
     Component.onCompleted: {
-        if (riseOrder >= 0)
+        if (riseWait >= 0)
             riseIn.start();
     }
 
@@ -112,7 +112,7 @@ Rectangle {
             value: Tokens.filesRowRise
         }
         PauseAnimation {
-            duration: Math.max(entry.riseOrder, 0) * Tokens.filesRowStagger
+            duration: Math.max(entry.riseWait, 0)
         }
         ParallelAnimation {
             NumberAnimation {

@@ -5,6 +5,7 @@ import "service"
 import "../theme"
 import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
+import "arrival.js" as Arrival
 import "listing.js" as Listing
 import "paths.js" as Paths
 
@@ -53,17 +54,25 @@ FocusScope {
     ]
 
     // The row the list opens at while the rows ease in after a folder's
-    // entries came in (they ripple out from it), or -1 once they have.
+    // entries came in (they ripple out from it, Arrival), or -1 once they
+    // have; and how many came in.
     property int riseFrom: -1
+    property int riseCount: 0
+    readonly property var risePace: ({
+            stagger: Tokens.filesRowStagger,
+            wave: Tokens.filesRowWave,
+            most: Tokens.filesRowWaveMost
+        })
     // The time the Modified column reads against, kept to the minute.
     property real now: Date.now()
 
     readonly property FolderModel model: FolderModel {
         path: list.folder
         hidden: list.showHidden
-        onFilling: current => {
+        onFilling: (current, total) => {
             list.now = Date.now();
             list.riseFrom = Math.max(current, 0);
+            list.riseCount = total;
             settle.restart();
         }
         onReset: current => {
@@ -102,7 +111,7 @@ FocusScope {
     }
     Timer {
         id: settle
-        interval: Tokens.durationRowIn + Tokens.durationPanel
+        interval: Tokens.filesRowWave + Tokens.durationRowIn
         onTriggered: list.riseFrom = -1
     }
 
@@ -224,7 +233,7 @@ FocusScope {
             width: entryList.width
             nameWidth: list.nameWidth
             selected: list.model.revision >= 0 && list.model.isSelected(name)
-            riseOrder: list.riseFrom >= 0 ? Math.min(Math.abs(index - list.riseFrom), entryList.page) : -1
+            riseWait: Arrival.wait(Arrival.order(index, list.riseFrom, entryList.page), Math.min(list.riseCount, entryList.page + 1), list.riseCount, list.risePace)
             now: list.now
 
             onPressed: modifiers => {
