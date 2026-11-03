@@ -217,6 +217,36 @@ Item {
             signalName: "closed"
         }
 
+        // What lies under the menu, like the sidebar's tree rows.
+        Component {
+            id: underComponent
+            Item {
+                property int taps: 0
+                width: stage.width
+                height: stage.height
+                TapHandler {
+                    onTapped: parent.taps++
+                }
+            }
+        }
+
+        function test_picking_an_item_never_clicks_what_is_under_it() {
+            const under = createTemporaryObject(underComponent, stage);
+            const menu = createTemporaryObject(menuComponent, stage);
+            const picked = [];
+            menu.open([
+                {
+                    label: "Properties",
+                    act: () => picked.push("properties")
+                }
+            ], Qt.point(50, 50));
+            waitForRendering(menu);
+            const row = findText(menu, "Properties");
+            mouseClick(row);
+            compare(picked, ["properties"]);
+            compare(under.taps, 0);
+        }
+
         function test_the_menu_picks_with_the_mouse_and_the_keys() {
             const menu = createTemporaryObject(menuComponent, stage);
             closes.target = menu;
