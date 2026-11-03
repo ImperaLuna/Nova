@@ -100,6 +100,7 @@ var CMD_OPEN_LOG = "open_log";
 var CMD_WATCH_RESOURCES = "watch_resources";
 var CMD_END_APP = "end_app";
 var CMD_LAUNCHER_SEARCH = "launcher_search";
+var CMD_LAUNCHER_SHOWN = "launcher_shown";
 var CMD_APP_ICON = "app_icon";
 var CMD_LAUNCHER_RUN = "launcher_run";
 var CMD_PIN_APP = "pin_app";

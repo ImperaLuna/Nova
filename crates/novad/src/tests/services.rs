@@ -210,7 +210,8 @@ fn a_thumbnail_is_asked_for_and_answered_over_the_socket() {
 }
 
 /// Searching over the socket: names under Home, hidden folders included.
-/// The search's own tests cover ranking and following changes.
+/// The search's own tests cover ranking, following changes, and when the
+/// index is kept.
 #[test]
 fn files_are_found_by_name_over_the_socket() {
     let novad = TestDaemon::open("files-search", None, |dir| {
@@ -218,7 +219,9 @@ fn files_are_found_by_name_over_the_socket() {
         std::fs::create_dir_all(dir.join("home/.local/share/Steam/Crimson Desert")).unwrap();
     });
     let mut client = novad.connect();
-    client.request(1, "subscribe", Some(json!({"topics": ["files"]})));
+    // A launcher opening has the index built before the first search.
+    assert_eq!(client.request(1, "launcher_shown", Some(json!({"shown": true})))["result"], Value::Null);
+    client.request(50, "subscribe", Some(json!({"topics": ["files"]})));
     let first = client.request(2, "files_search", Some(json!({"query": "crimson"})))["result"].clone();
     if first["ready"] == false {
         client.next_event("files_search_ready");

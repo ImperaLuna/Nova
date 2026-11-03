@@ -1868,6 +1868,13 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mode: Option<String>,
     },
+    /// The client's launcher opened (`shown: true`) or closed. While one
+    /// is open, novad keeps the index of file names its searches may
+    /// read (feature `files`; nothing without it). A connection that
+    /// closes counts as closed.
+    LauncherShown {
+        shown: bool,
+    },
     /// Replies with an icon (an absolute path to an image) for an app
     /// stream, as PipeWire names it (each may be ""): its installed app's
     /// when one matches (feature `launcher`, matched like a tray icon's app,
@@ -3446,6 +3453,7 @@ mod tests {
             encode(Request { id: Some(23), command: Command::EndApp { key: "/usr/lib/firefox/firefox".into() } }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::QuickSettings } }),
             encode(Event::Launcher(launcher())),
+            encode(Request { id: None, command: Command::LauncherShown { shown: true } }),
             encode(Request { id: Some(24), command: Command::LauncherSearch { query: "fi".into(), mode: None } }),
             encode(Response {
                 id: 24,

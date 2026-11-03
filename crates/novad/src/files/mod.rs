@@ -43,7 +43,8 @@
 //!   (`files_preview`): an image, the first lines of text, or a PDF's
 //!   first page or a video's still drawn into the cache.
 //! - `search/`: finding files by name (`files_search`) from an index of
-//!   every name under Home and the drives, kept up to date with inotify.
+//!   every name under Home and the drives, kept up to date with inotify
+//!   while Nova Files runs or a launcher is open, and a while after.
 //! - `launcher.rs`: the launcher's Files mode, a launcher provider that
 //!   searches that index or completes a typed path.
 //! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
@@ -428,6 +429,12 @@ impl Files {
         self.search.searcher()
     }
 
+    /// Client `client`'s launcher opened or closed (`launcher_shown`): it
+    /// may search files, so the index is built while it's open.
+    pub fn launcher_shown(&self, client: ClientId, shown: bool) {
+        self.search.set_used(client, search::Use::Launcher, shown);
+    }
+
     /// Shows the folder `path` in client `client`'s view `view`
     /// (`files_open`, [`views::Folders::open`]).
     /// How full the drives are is read again too, since a window going
@@ -624,6 +631,8 @@ impl Files {
     /// when `pickers`), can open windows (`attached`), and is sent those
     /// waiting; or it's quitting, and gets no more.
     pub fn attach(&self, client: ClientId, attached: bool, pickers: bool) {
+        // Its windows search, so the index is kept while it runs.
+        self.search.set_used(client, search::Use::Files, attached);
         let mut delivery = lock(&self.shared.lane(pickers).delivery);
         if attached {
             delivery.attached = Some(client);
@@ -661,6 +670,7 @@ impl Files {
 
     /// Client `client` hung up: windows aren't sent to it any more.
     pub fn client_gone(&self, client: ClientId) {
+        self.search.client_gone(client);
         self.folders.client_gone(client);
         self.transfers.client_gone(client);
         self.thumbnails.client_gone(client);
@@ -1005,7 +1015,8 @@ mod tests {
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         let (_, next, _next_stream) = fixture.nova_files();
         assert_eq!(next_named(&next, "files_window", WAIT)["folder"], json!(fixture.downloads()));
-        // Other events (the trash's watch starting) may reach it; no window does.
+        // Other events (the trash's watch starting, the search index built)
+        // may reach it; no window does.
         let windows =
             quitting.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_window")));
         assert!(!windows, "no window for the one quitting");

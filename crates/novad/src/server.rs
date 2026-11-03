@@ -209,6 +209,14 @@ impl<'a> Connection<'a> {
                 let (query, mode, logger) = (query.clone(), mode.clone(), Arc::clone(&self.daemon.logger));
                 return Answer::later(move || value(providers.search(&query, mode.as_deref(), &logger)));
             }
+            // Only Nova Files cares, by building its index of file names;
+            // without it there's nothing to do.
+            Command::LauncherShown { shown } => {
+                if let Ok(files) = self.files() {
+                    files.launcher_shown(self.id, *shown);
+                }
+                done(Ok(()))
+            }
             Command::AppIcon { icon_name, program, name } => {
                 let apps = Arc::clone(&lock(&self.daemon.settings).context.apps);
                 value(apps.app_icon(&self.daemon.sources.icons, icon_name, program, name))
@@ -990,6 +998,7 @@ impl<'a> Connection<'a> {
             | Command::WatchResources { .. }
             | Command::EndApp { .. }
             | Command::LauncherSearch { .. }
+            | Command::LauncherShown { .. }
             | Command::AppIcon { .. }
             | Command::LauncherRun { .. }
             | Command::PinApp { .. }
