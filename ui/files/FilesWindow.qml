@@ -30,6 +30,8 @@ import "../daemon/protocol.js" as Protocol
 // pasting copies or moves into the folder shown, like dropping there.
 // Files dropped on the list or the sidebar are copied, moved or trashed
 // here, as novad answered for the drop (DropTarget).
+// The preview pane (Alt+P, or the command row's button) takes the
+// details pane's place at the list's right, loaded only while it shows.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
 // window's keys are the table's WINDOW entries (shortcuts.js), and every
@@ -68,6 +70,8 @@ FloatingWindow {
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
     property var problems: []
+    // The preview pane is out (Alt+P); it and the details pane take turns.
+    property bool previewShown: false
     // The details pane is out, on `detailsPath` when it's a drive's, or else
     // on the one picked item, or the folder.
     property bool detailsShown: false
@@ -171,6 +175,13 @@ FloatingWindow {
             else
                 window.showDetails("");
             break;
+        case Commands.PREVIEW:
+            // The trash has no preview pane.
+            if (!inTrash) {
+                previewShown = !previewShown;
+                detailsShown = false;
+            }
+            break;
         case Commands.PROPERTIES:
             window.showProperties(rows, extra);
             break;
@@ -204,6 +215,7 @@ FloatingWindow {
     function showDetails(path: string) {
         detailsPath = path;
         detailsShown = true;
+        previewShown = false;
     }
 
     // Calls `then(folder)` with where drive `drive` is mounted, mounting it
@@ -425,6 +437,7 @@ FloatingWindow {
         onSortRequested: at => window.openMenu(Menus.forSort(list.model.sort, window.act), commands, at)
         extractable: window.extractable !== ""
         compressible: window.archive === "" && list.model.selectedCount > 0
+        previewShown: window.previewShown
     }
     TrashCommandRow {
         id: trashCommands
@@ -451,8 +464,8 @@ FloatingWindow {
     FileList {
         id: list
         anchors.left: sidebar.right
-        anchors.right: details.visible ? details.left : parent.right
-        compact: details.visible
+        anchors.right: details.visible ? details.left : preview.active ? preview.left : parent.right
+        compact: details.visible || preview.active
         anchors.top: commands.bottom
         visible: !window.inTrash
         anchors.bottom: parent.bottom
@@ -472,6 +485,19 @@ FloatingWindow {
             window.openMenu(items, list, at);
         }
         solid: FilesService.listSolid
+    }
+    Loader {
+        id: preview
+        anchors.right: parent.right
+        anchors.top: commands.bottom
+        anchors.bottom: parent.bottom
+        width: Tokens.filesPreviewWidth
+        active: window.previewShown && !window.inTrash
+        sourceComponent: PreviewPane {
+            folder: window.folder
+            model: list.model
+            solid: FilesService.listSolid
+        }
     }
     // The apps for the item menu's Open with.
     OpenWithModel {

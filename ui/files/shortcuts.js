@@ -80,6 +80,11 @@ var TABLE = [
         where: [WINDOW]
     },
     {
+        action: Commands.PREVIEW,
+        keys: ["Alt+P"],
+        where: [WINDOW]
+    },
+    {
         action: Commands.NEW_FOLDER,
         keys: ["Ctrl+Shift+N"],
         where: [LIST]

@@ -121,11 +121,12 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("How a files_transfer job is going (TransferState).", "TRANSFER", names_of::<TransferState>()),
         Group::new("Answers to a name clash (ClashAnswer).", "CLASH", names_of::<ClashAnswer>()),
         Group::new("What files_undo and files_redo undo and redo (FileStep).", "FILE_STEP", names_of::<FileStep>()),
+        Group::new("What the preview pane shows (FilePreview).", "PREVIEW", tagged_names_of::<FilePreview>("kind")),
     ]
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 14] {
+fn limits() -> [(&'static str, u64, &'static str); 15] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
@@ -142,6 +143,11 @@ fn limits() -> [(&'static str, u64, &'static str); 14] {
         ("FILES_SEARCH_MAX_CHARS", size(FILES_SEARCH_MAX_CHARS), "novad refuses longer files_search queries."),
         ("FILES_SEARCH_MAX_RESULTS", size(FILES_SEARCH_MAX_RESULTS), "Most results a files_search answers with."),
         ("FILES_SOLID_MAX", u64::from(FILES_SOLID_MAX), "A files_look part this high is fully solid; 0 is glass."),
+        (
+            "FILES_PREVIEW_PICTURE_PX",
+            u64::from(FILES_PREVIEW_PICTURE_PX),
+            "How wide and tall, at most, preview pictures are drawn and decoded.",
+        ),
         (
             "FILES_TREE_MAX_FOLDERS",
             size(FILES_TREE_MAX_FOLDERS),

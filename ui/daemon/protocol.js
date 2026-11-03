@@ -39,6 +39,9 @@ var FILES_SEARCH_MAX_RESULTS = 200;
 // A files_look part this high is fully solid; 0 is glass.
 var FILES_SOLID_MAX = 100;
 
+// How wide and tall, at most, preview pictures are drawn and decoded.
+var FILES_PREVIEW_PICTURE_PX = 600;
+
 // novad refuses a files_tree with more opened or closed folders.
 var FILES_TREE_MAX_FOLDERS = 256;
 
@@ -146,6 +149,7 @@ var CMD_FILES_SEARCH = "files_search";
 var CMD_FILES_NEW_FOLDER = "files_new_folder";
 var CMD_FILES_RENAME = "files_rename";
 var CMD_FILES_DETAILS = "files_details";
+var CMD_FILES_PREVIEW = "files_preview";
 var CMD_FILES_PROPERTIES = "files_properties";
 var CMD_FILES_MEASURE = "files_measure";
 var CMD_FILES_MEASURE_CANCEL = "files_measure_cancel";
@@ -348,6 +352,11 @@ var FILE_STEP_MOVE = "move";
 var FILE_STEP_TRASH = "trash";
 var FILE_STEP_RENAME = "rename";
 var FILE_STEP_NEW_FOLDER = "new_folder";
+
+// What the preview pane shows (FilePreview).
+var PREVIEW_IMAGE = "image";
+var PREVIEW_TEXT = "text";
+var PREVIEW_NONE = "none";
 
 // END GENERATED
 

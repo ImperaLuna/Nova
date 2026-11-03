@@ -311,6 +311,12 @@ impl<'a> Connection<'a> {
                     Err(e) => Answer::Now(Outcome::Error(e)),
                 };
             }
+            // Off the connection's thread too: it reads the file, and may
+            // draw it.
+            Command::FilesPreview { path } => {
+                let path = path.clone();
+                return self.files_later(move |files| files.previews().preview(&path));
+            }
             Command::FilesOpenWith { path } => {
                 let path = path.clone();
                 return self.opener_later(move |opener| opener.choices(&path));
@@ -983,6 +989,7 @@ impl<'a> Connection<'a> {
             | Command::FilesOpenWith { .. }
             | Command::FilesSetDefault { .. }
             | Command::FilesSearch { .. }
+            | Command::FilesPreview { .. }
             | Command::FilesTrash { .. }
             | Command::FilesUndo { .. }
             | Command::FilesRedo { .. }

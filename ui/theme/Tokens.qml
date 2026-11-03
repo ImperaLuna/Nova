@@ -689,7 +689,7 @@ QtObject {
     readonly property int filesPlaceHeight: 26
     readonly property int filesHeaderHeight: 30
     readonly property list<int> filesColumns: [150, 110, 80]
-    // The same beside the details pane: Type (0) gives way so names fit.
+    // The same beside the details or preview pane: Type (0) gives way so names fit.
     readonly property list<int> filesColumnsCompact: [90, 0, 70]
     readonly property color filesFaint: alpha(fg, 0.45)
     // A drive in the sidebar: a taller row with how full it is under its
@@ -794,6 +794,19 @@ QtObject {
     readonly property int filesPropertiesBarHeight: 6
     readonly property int filesPropertiesCheckColumn: 64
     readonly property real filesCheckDisabledOpacity: 0.45
+    // The preview pane (Alt+P) at the file list's right: this wide, its
+    // picture or text this far in (pictures are decoded at
+    // Protocol.FILES_PREVIEW_PICTURE_PX, its width at twice the scale, the
+    // same for every window size), and the big icon and name (in at most this many lines) for a
+    // file it can't show. It previews a selection that has rested this
+    // long, so arrowing through a folder never asks for every file on the
+    // way, and shows a spinner once an answer has been this long in coming.
+    readonly property int filesPreviewWidth: 300
+    readonly property int filesPreviewPad: 16
+    readonly property int filesPreviewIconSize: 64
+    readonly property int filesPreviewNameLines: 3
+    readonly property int filesPreviewDelay: 120
+    readonly property int filesPreviewSlow: 400
 
     // Type
     readonly property string fontSans: "Inter"

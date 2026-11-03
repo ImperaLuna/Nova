@@ -2126,6 +2126,13 @@ pub enum Command {
     FilesDetails {
         path: String,
     },
+    /// What the preview pane shows for the file at `path` (absolute, wire
+    /// text; feature `files`), answered with a [`FilePreview`]. Pictures of
+    /// a PDF's first page or a video's frame are drawn into novad's cache
+    /// once and kept, so asking again is quick.
+    FilesPreview {
+        path: String,
+    },
     /// What the Properties window shows about the item at `path` (an
     /// absolute path, feature `files`), answered with [`FileProperties`].
     /// A link is described by what it points to, as in its folder's
@@ -2233,6 +2240,32 @@ pub struct Measured {
     /// The last event of the job: the counts are complete.
     pub done: bool,
 }
+
+/// The answer to [`Command::FilesPreview`]: what the preview pane shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum FilePreview {
+    /// A picture at `path` (absolute, wire text): the file itself for an
+    /// image, else a PNG in novad's cache of a PDF's first page or a still
+    /// from a video.
+    Image { path: String },
+    /// The file's first lines, at most [`FILES_PREVIEW_MAX_LINES`] of them
+    /// and [`FILES_PREVIEW_MAX_BYTES`]; `cut` when it goes on.
+    Text { text: String, cut: bool },
+    /// Nothing to show of it: the pane shows what it is instead.
+    None,
+}
+
+/// Most lines a [`FilePreview::Text`] holds: more than the pane shows.
+pub const FILES_PREVIEW_MAX_LINES: usize = 200;
+
+/// Most bytes of a file a [`FilePreview::Text`] holds.
+pub const FILES_PREVIEW_MAX_BYTES: usize = 16 * 1024;
+
+/// How wide and tall, at most, the pictures novad draws for the preview
+/// pane are, and the UI decodes them at, in pixels: its 300-wide pane at
+/// twice the scale.
+pub const FILES_PREVIEW_PICTURE_PX: u32 = 600;
 
 /// A drive in Nova Files' sidebar ([`Event::FilesDrives`]): one
 /// filesystem, on a disk inside the machine or a USB stick.
@@ -3543,6 +3576,26 @@ mod tests {
             encode(Event::FilesHistory { undo: Some(FileStep::Move), redo: Some(FileStep::Trash) }),
             encode(Event::FilesHistory { undo: Some(FileStep::Copy), redo: None }),
             encode(Event::FilesHistory { undo: Some(FileStep::Rename), redo: Some(FileStep::NewFolder) }),
+            encode(Request {
+                id: Some(89),
+                command: Command::FilesPreview { path: "/home/user/Documents/notes.md".into() },
+            }),
+            encode(Response {
+                id: 89,
+                outcome: Outcome::Result(
+                    serde_json::to_value(FilePreview::Text { text: "# Notes\nBuy milk".into(), cut: false }).unwrap(),
+                ),
+            }),
+            encode(Response {
+                id: 90,
+                outcome: Outcome::Result(
+                    serde_json::to_value(FilePreview::Image {
+                        path: "/home/user/.cache/nova/previews/00c0ffee00c0ffee.png".into(),
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Response { id: 91, outcome: Outcome::Result(serde_json::to_value(FilePreview::None).unwrap()) }),
             encode(Request { id: Some(81), command: Command::FilesSearch { query: "crimson".into() } }),
             encode(Response {
                 id: 81,

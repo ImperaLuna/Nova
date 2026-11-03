@@ -138,7 +138,7 @@ FocusScope {
             commandRequested(command, rows);
     }
 
-    // Narrow beside the details pane: fewer, smaller columns.
+    // Narrow beside the details or preview pane: fewer, smaller columns.
     property bool compact: false
     // Modified, Type and Size's widths; a column 0 wide isn't shown.
     readonly property var columnWidths: compact ? Tokens.filesColumnsCompact : Tokens.filesColumns

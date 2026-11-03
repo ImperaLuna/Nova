@@ -152,6 +152,10 @@ expression: all
 {"v":2,"event":"files_history","data":{"undo":"move","redo":"trash"}}
 {"v":2,"event":"files_history","data":{"undo":"copy"}}
 {"v":2,"event":"files_history","data":{"undo":"rename","redo":"new_folder"}}
+{"v":2,"id":89,"cmd":"files_preview","args":{"path":"/home/user/Documents/notes.md"}}
+{"v":2,"id":89,"result":{"cut":false,"kind":"text","text":"# Notes\nBuy milk"}}
+{"v":2,"id":90,"result":{"kind":"image","path":"/home/user/.cache/nova/previews/00c0ffee00c0ffee.png"}}
+{"v":2,"id":91,"result":{"kind":"none"}}
 {"v":2,"id":81,"cmd":"files_search","args":{"query":"crimson"}}
 {"v":2,"id":81,"result":{"ready":true,"results":[{"entry":{"dir":true,"hidden":false,"link":false,"mime":"inode/directory","modified_ms":1793000000000,"name":"Crimson Desert"},"folder":"/home/user/.local/share/Steam/steamapps/common","in_hidden_folder":true,"marks":[{"length":7,"start":0}]}],"total":1}}
 {"v":2,"id":82,"cmd":"files_new_folder","args":{"folder":"/home/user/Pictures"}}

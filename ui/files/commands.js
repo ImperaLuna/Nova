@@ -17,6 +17,8 @@ var COPY_PATH = "copy_path";
 var PASTE = "paste";
 var NEW_FOLDER = "new_folder";
 var DETAILS = "details";
+// Shows or hides the preview pane, which takes the details pane's place.
+var PREVIEW = "preview";
 // The Properties dialog: on the items picked, the folder, or a drive.
 var PROPERTIES = "properties";
 var TRASH = "trash";

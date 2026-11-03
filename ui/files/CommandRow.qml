@@ -11,7 +11,9 @@ import "commands.js" as Commands
 // picked, "Extract all" comes after New, as in Explorer. Each asks the
 // window (`commandRequested`, a Commands name), or for a menu under its
 // button (`newRequested`, `sortRequested`); buttons dim while there's
-// nothing for them to do. View waits for the views to choose from.
+// nothing for them to do. View waits for the views to choose from. At
+// its right end the preview pane's button, raised while the pane shows
+// (Alt+P too).
 Rectangle {
     id: row
 
@@ -21,6 +23,8 @@ Rectangle {
     // How many items are picked, and whether a paste would bring any.
     property int picked: 0
     property bool canPaste: false
+    // The preview pane shows: its button is raised.
+    property bool previewShown: false
 
     // `at` is the menu's corner, under the button, in the row.
     signal newRequested(point at)
@@ -116,5 +120,15 @@ Rectangle {
             menu: true
             enabled: false
         }
+    }
+    Command {
+        anchors.right: parent.right
+        anchors.rightMargin: Tokens.rowInset
+        anchors.top: parent.top
+        anchors.topMargin: Tokens.filesCommandPadTop
+        icon: Icons.PREVIEW_PANE
+        label: qsTr("Preview")
+        command: Commands.PREVIEW
+        raised: row.previewShown
     }
 }
