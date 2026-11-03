@@ -10,7 +10,7 @@ import "paths.js" as Paths
 // the accent; dot files read fainter, and cut ones faded until they're
 // pasted. A press that moves far enough asks to drag (`dragRequested`);
 // one that doesn't is a click. When a folder's entries have just come in
-// (`riseOrder`), it eases up into place after the rows nearer where the
+// (`riseWait`), it eases up into place after the rows nearer where the
 // list opened. While `renaming`, its name is a field with the name picked
 // up to its extension, as in Explorer: Enter or leaving it renames, Esc
 // keeps the name. A middle click is its own signal (`middleClicked`) and
@@ -36,9 +36,9 @@ Rectangle {
     property bool dropTarget: false
     property bool cut: false
     property bool renaming: false
-    // Rows from where the list opened, while a folder's entries have just
-    // come in, or -1: read once, as the row is made.
-    required property int riseOrder
+    // How long it waits before easing in, in ms, while a folder's entries
+    // have just come in, or -1 to just show: read once, as the row is made.
+    required property int riseWait
     // When the Modified column was worked out, so "Today" moves on.
     required property real now
 
@@ -234,7 +234,7 @@ Rectangle {
     Component.onCompleted: {
         if (renaming)
             renamingChanged();
-        if (riseOrder >= 0)
+        if (riseWait >= 0)
             riseIn.start();
     }
 
@@ -255,7 +255,7 @@ Rectangle {
             value: Tokens.filesRowRise
         }
         PauseAnimation {
-            duration: Math.max(entry.riseOrder, 0) * Tokens.filesRowStagger
+            duration: Math.max(entry.riseWait, 0)
         }
         ParallelAnimation {
             NumberAnimation {
