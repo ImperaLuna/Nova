@@ -7,7 +7,7 @@ default:
     @just --list
 
 # Everything CI runs, except e2e
-check: fmt-check lint lint-nix deny test lint-qml test-qml test-install test-vm-failures test-stack shaders-check
+check: fmt-check lint lint-nix lint-traps deny test lint-qml test-qml test-install test-vm-failures test-stack shaders-check
 
 # What scripts/stack.sh restack runs on each branch of a stack before pushing it:
 # `check` without the slow advisory fetch and the script tests
@@ -16,6 +16,15 @@ check-branch: fmt-check lint lint-nix test lint-qml test-qml shaders-check
 # Rust unit tests
 test:
     cargo test --workspace
+
+# The Rust tests in CI's Nix sandbox (no network, no setuid, no host tools):
+# run before opening a PR, since some tests only fail there
+test-sandbox:
+    nix build -L --no-link .#checks.x86_64-linux.tests
+
+# Test and script patterns that flaked before (scripts/lint-traps.sh)
+lint-traps:
+    scripts/lint-traps.sh
 
 # Clippy with warnings as errors
 lint:
