@@ -13,10 +13,15 @@ name: CI
 #   - vm: the NixOS VM tests on niri and Hyprland, only on PRs that aren't
 #     drafts (and when a draft is marked ready), in parallel with fast.
 # A draft's `checks` passes without the VM tests; marking it ready runs them
-# (IMP-228).
+# (IMP-228). So does a PR with another PR stacked on it: the stack's top PR
+# holds every commit below it, so its VM run covers the whole stack (IMP-326).
+#
+# `closed` starts a run with every job skipped, only so the concurrency group
+# below cancels the branch's queued or running run once its PR merges or
+# closes, rather than spend a runner on code that has landed (IMP-326).
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, closed]
   workflow_dispatch:
 
 # PR code runs here; it gets a token that can only read.
@@ -33,6 +38,7 @@ concurrency:
 jobs:
   fast:
     name: fast checks
+    if: github.event.action != 'closed'
     runs-on: [self-hosted, nova]
     timeout-minutes: 30
     steps:
@@ -67,9 +73,35 @@ jobs:
           path: e2e/out
           if-no-files-found: ignore
 
+  # How many open PRs are stacked on this one (use its branch as their base).
+  # On GitHub's runners, so it never waits behind the self-hosted queue.
+  stack:
+    name: stacked PRs
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      above: ${{ steps.count.outputs.above }}
+    steps:
+      - id: count
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          above=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&base=$BRANCH" --jq length)
+          echo "PRs stacked on $BRANCH: $above"
+          echo "above=$above" >>"$GITHUB_OUTPUT"
+
   vm:
     name: VM tests
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    needs: stack
+    # Not on a draft, and not under another PR of a stack; a run started by
+    # hand always tests.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (!github.event.pull_request.draft && needs.stack.outputs.above == '0')
     runs-on: [self-hosted, nova]
     timeout-minutes: 45
     steps:
@@ -123,12 +155,13 @@ jobs:
           if-no-files-found: ignore
 
   # The status the ruleset requires. Green when fast passed and the VM tests
-  # passed, or were skipped on a draft.
+  # passed, or were skipped on a draft or under a stacked PR.
   checks:
     name: checks
-    needs: [fast, vm]
-    # Not on a run a newer push cancelled: that head no longer matters.
-    if: ${{ !cancelled() }}
+    needs: [fast, stack, vm]
+    # Not on a run a newer push cancelled (that head no longer matters), nor
+    # on a closed PR.
+    if: ${{ !cancelled() && github.event.action != 'closed' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -137,12 +170,19 @@ jobs:
           FAST: ${{ needs.fast.result }}
           VM: ${{ needs.vm.result }}
           DRAFT: ${{ github.event.pull_request.draft == true }}
+          STACK: ${{ needs.stack.result }}
+          ABOVE: ${{ needs.stack.outputs.above }}
         run: |
-          echo "fast checks: $FAST, VM tests: $VM"
+          echo "fast checks: $FAST, VM tests: $VM, PRs stacked on this one: $ABOVE"
           [[ $FAST == success ]] || exit 1
           [[ $VM == success ]] && exit 0
-          if [[ $VM == skipped && $DRAFT == true ]]; then
+          [[ $VM == skipped ]] || exit 1
+          if [[ $DRAFT == true ]]; then
             echo "::notice::Draft PR: VM tests run once it's marked ready."
+            exit 0
+          fi
+          if [[ $STACK == success && $ABOVE != 0 ]]; then
+            echo "::notice::$ABOVE PR(s) stacked on this one: the VM tests run on the stack's top PR."
             exit 0
           fi
           exit 1
