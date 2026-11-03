@@ -24,7 +24,12 @@
 //!   database (`crate::mime`, read as the module starts and again when a
 //!   package brings new types), and the view's order.
 //! - `tree.rs`: the sidebar's folder tree that follows the window
-//!   (`files_tree`) and its places (`files_places`).
+//!   (`files_tree`).
+//! - `quick_access.rs`: the folders pinned to Quick access (`files_pin`),
+//!   shared with other apps as GTK bookmarks, and the sidebar's places
+//!   around them (`files_places`).
+//! - `recent.rs`: the files any app used last (`files_recent`), for the
+//!   Home page.
 //! - `search/`: finding files by name (`files_search`) from an index of
 //!   every name under Home and the drives, kept up to date with inotify.
 //! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
@@ -50,6 +55,8 @@ mod copying;
 mod drives;
 mod file_manager1;
 mod folder;
+mod quick_access;
+mod recent;
 pub mod search;
 mod target;
 mod transfers;
@@ -70,8 +77,8 @@ use crate::logger::Logger;
 use crate::notifications::Notifications;
 use crate::session_bus::{Bus, Stop};
 use nova_protocol::{
-    ClashAnswer, EjectOutcome, Event, FeatureState, FilePlace, FileSort, FilesLook, FilesWindow, FolderTree, Topic,
-    TransferMode,
+    ClashAnswer, EjectOutcome, Event, FeatureState, FilePlace, FileSort, FilesLook, FilesWindow, FolderTree, PlaceKind,
+    RecentFile, Topic, TransferMode,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
@@ -112,6 +119,14 @@ pub struct Sources {
     pub trash: Option<PathBuf>,
     /// The mount table, where drives' trashes are looked for.
     pub mounts: PathBuf,
+    /// The GTK bookmarks file, where Quick access is pinned; none without
+    /// a config folder.
+    pub bookmarks: Option<PathBuf>,
+    /// The user's folders (`user-dirs.dirs`), pinned while there's no
+    /// bookmarks file.
+    pub user_folders: Vec<(PlaceKind, PathBuf)>,
+    /// `recently-used.xbel`; none without a data folder.
+    pub recent: Option<PathBuf>,
 }
 
 pub struct Files {
@@ -135,6 +150,8 @@ pub struct Files {
     trash_watch: Option<trash::Watch>,
     /// The drives in the sidebar.
     drives: udisks::Drives,
+    /// The folders pinned to Quick access.
+    quick_access: quick_access::QuickAccess,
 }
 
 /// What the module's services share.
@@ -198,6 +215,8 @@ impl Files {
             Arc::clone(&shared.hub),
             Arc::clone(&shared.logger),
         );
+        let quick_access =
+            quick_access::QuickAccess::new(shared.sources.bookmarks.clone(), shared.sources.user_folders.clone());
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
         Arc::new(Self {
@@ -212,6 +231,7 @@ impl Files {
             trash_watch,
             drives,
             search,
+            quick_access,
         })
     }
 
@@ -259,9 +279,27 @@ impl Files {
         tree::tree(request, &self.shared.sources.home)
     }
 
-    /// The sidebar's places that exist (`files_places`).
+    /// The sidebar's places that exist (`files_places`): the Home page,
+    /// Quick access, the trash.
     pub fn places(&self) -> Vec<FilePlace> {
-        tree::places(&self.shared.sources.home, nova_paths::user_dir)
+        self.quick_access.places()
+    }
+
+    /// Pins the folder `folder` to Quick access, or unpins it
+    /// (`files_pin`), telling every window when that's a change. It writes
+    /// a file, so it's called off the connection's thread.
+    pub fn pin(&self, folder: &str, pinned: bool) -> Result<(), String> {
+        if self.quick_access.pin(folder, pinned)? {
+            self.shared.hub.publish(&Event::FilesPlacesChanged);
+        }
+        Ok(())
+    }
+
+    /// The files used last, by any app (`files_recent`). It reads files, so
+    /// it's called off the connection's thread.
+    pub fn recent(&self) -> Vec<RecentFile> {
+        let Some(file) = &self.shared.sources.recent else { return Vec::new() };
+        recent::recent(file, &self.mime.current())
     }
 
     /// Closes client `client`'s view `view` (`files_close`).
@@ -431,6 +469,10 @@ impl crate::modules::Module for Files {
         let home = nova_paths::home().unwrap_or_else(|| PathBuf::from("/"));
         let trash = nova_paths::data_home().map(|data| data.join(TRASH_DIR));
         let search = search::Sources::system(env.home.clone());
+        let user_folders = quick_access::USER_FOLDERS
+            .iter()
+            .map(|(kind, key, fallback)| (*kind, nova_paths::user_dir(key, fallback)))
+            .collect();
         Sources {
             bus: Bus::Session,
             udisks: Bus::System,
@@ -442,6 +484,9 @@ impl crate::modules::Module for Files {
             trash,
             mounts: MOUNT_TABLE.into(),
             search,
+            bookmarks: nova_paths::config_home().map(|config| config.join(quick_access::BOOKMARKS_FILE)),
+            user_folders,
+            recent: nova_paths::data_home().map(|data| data.join(recent::RECENT_FILE)),
         }
     }
 
@@ -522,6 +567,9 @@ mod tests {
                 search: search::Sources::under(&dir),
                 trash: Some(dir.join("Trash")),
                 mounts: dir.join("no-mountinfo"),
+                bookmarks: Some(dir.join("bookmarks")),
+                user_folders: vec![(PlaceKind::Downloads, dir.join("Downloads"))],
+                recent: Some(dir.join("recently-used.xbel")),
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");
@@ -578,6 +626,21 @@ mod tests {
         let more_looks =
             events.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_look")));
         assert!(!more_looks, "one event per change, one per subscriber");
+    }
+
+    #[test]
+    fn pinning_tells_every_window_and_the_places_follow() {
+        let fixture = Fixture::new("pin");
+        let (_, events, _stream) = fixture.client();
+        let pinned = |places: Vec<FilePlace>| places.into_iter().map(|place| place.kind).collect::<Vec<_>>();
+        assert_eq!(pinned(fixture.files.places()), [PlaceKind::Home, PlaceKind::Downloads, PlaceKind::Trash]);
+        fixture.files.pin(&fixture.downloads(), false).unwrap();
+        next_named(&events, "files_places_changed", WAIT);
+        assert_eq!(pinned(fixture.files.places()), [PlaceKind::Home, PlaceKind::Trash]);
+        // Unpinning what isn't pinned tells nobody.
+        fixture.files.pin(&fixture.downloads(), false).unwrap();
+        let more = events.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_places")));
+        assert!(!more, "no change, no event");
     }
 
     #[test]

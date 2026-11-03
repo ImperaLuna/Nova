@@ -51,6 +51,9 @@ var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 // The trash place's path in files_places: the trash, not a folder.
 var FILES_TRASH_PLACE = "trash:///";
 
+// The Home page's path in files_places: Quick access and Recent, not a folder.
+var FILES_HOME_PLACE = "home:///";
+
 // Commands a client sends (Command).
 var CMD_PING = "ping";
 var CMD_LIST_FEATURES = "list_features";
@@ -125,6 +128,8 @@ var CMD_FILES_OPEN = "files_open";
 var CMD_FILES_CLOSE = "files_close";
 var CMD_FILES_TREE = "files_tree";
 var CMD_FILES_PLACES = "files_places";
+var CMD_FILES_PIN = "files_pin";
+var CMD_FILES_RECENT = "files_recent";
 var CMD_FILES_TRANSFER = "files_transfer";
 var CMD_FILES_TRANSFER_CANCEL = "files_transfer_cancel";
 var CMD_FILES_TRANSFER_ANSWER = "files_transfer_answer";
@@ -171,6 +176,7 @@ var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
 var EVENT_FILES_LOOK = "files_look";
 var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
+var EVENT_FILES_PLACES_CHANGED = "files_places_changed";
 var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
 
@@ -301,6 +307,9 @@ var PLACE_DESKTOP = "desktop";
 var PLACE_DOCUMENTS = "documents";
 var PLACE_DOWNLOADS = "downloads";
 var PLACE_PICTURES = "pictures";
+var PLACE_MUSIC = "music";
+var PLACE_VIDEOS = "videos";
+var PLACE_FOLDER = "folder";
 var PLACE_TRASH = "trash";
 
 // How files_eject went (EjectOutcome).

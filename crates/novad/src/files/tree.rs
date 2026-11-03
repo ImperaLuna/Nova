@@ -1,6 +1,5 @@
-//! The sidebar's folder tree (`files_tree`) and its places
-//! (`files_places`): the folders a window's sidebar shows, worked out here
-//! so the window only draws rows.
+//! The sidebar's folder tree (`files_tree`): the folders a window's
+//! sidebar shows, worked out here so the window only draws rows.
 //!
 //! The tree follows the window: it starts at Home (or at `/` for a folder
 //! outside Home, like the address bar) and is open down to the window's
@@ -22,10 +21,7 @@
 //! chevron.
 
 use super::folder;
-use nova_protocol::{
-    FILES_PATH_MAX_WIRE_BYTES, FILES_TRASH_PLACE, FILES_TREE_MAX_FOLDERS, FilePlace, FolderTree, PlaceKind, TreeRow,
-    wire_path, wire_text,
-};
+use nova_protocol::{FILES_PATH_MAX_WIRE_BYTES, FILES_TREE_MAX_FOLDERS, FolderTree, TreeRow, wire_path, wire_text};
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
@@ -66,23 +62,6 @@ pub fn tree(request: &Request, home: &Path) -> Result<FolderTree, String> {
     let name = root.file_name().map_or_else(|| "/".into(), wire_text);
     tree.add(&root, name, 0, false, &mut rows);
     Ok(FolderTree { folder: wire_text(&folder), rows })
-}
-
-/// The places that exist, in the sidebar's order: Home, then the user's
-/// folders from `user-dirs.dirs`, then the trash, which is always there.
-pub fn places(home: &Path, user_dir: impl Fn(&str, &str) -> PathBuf) -> Vec<FilePlace> {
-    let folders = [
-        (PlaceKind::Desktop, "DESKTOP", "Desktop"),
-        (PlaceKind::Documents, "DOCUMENTS", "Documents"),
-        (PlaceKind::Downloads, "DOWNLOAD", "Downloads"),
-        (PlaceKind::Pictures, "PICTURES", "Pictures"),
-    ];
-    std::iter::once((PlaceKind::Home, home.to_path_buf()))
-        .chain(folders.into_iter().map(|(kind, key, fallback)| (kind, user_dir(key, fallback))))
-        .filter(|(_, path)| path.is_dir())
-        .map(|(kind, path)| FilePlace { kind, path: wire_text(path) })
-        .chain(std::iter::once(FilePlace { kind: PlaceKind::Trash, path: FILES_TRASH_PLACE.into() }))
-        .collect()
 }
 
 /// A typed or sent folder as an absolute path: `~` is Home, a trailing
@@ -331,14 +310,5 @@ mod tests {
         let inside = ask(&home, &row.path, &[], &[], false).unwrap();
         assert_eq!(inside.folder, wire_text(&raw));
         assert!(inside.rows.iter().any(|row| row.path == wire_text(&raw) && !row.leaf), "inside is seen");
-    }
-
-    #[test]
-    fn places_are_the_folders_that_exist() {
-        let home = home("places");
-        let places = places(&home, |_, fallback| home.join(fallback));
-        let kinds: Vec<_> = places.iter().map(|place| place.kind).collect();
-        assert_eq!(kinds, [PlaceKind::Home, PlaceKind::Documents, PlaceKind::Pictures, PlaceKind::Trash]);
-        assert_eq!(places[1].path, request(&home.join("Documents")));
     }
 }

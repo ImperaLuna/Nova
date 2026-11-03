@@ -1,6 +1,7 @@
-//! What a Nova Files window shows, checked before it opens: the folder is
-//! an absolute path with no `..` in it that is a folder now, and every item
-//! to select is a path straight inside it. Paths come from the socket (as
+//! What a Nova Files window shows, checked before it opens: the Home page
+//! ([`FILES_HOME_PLACE`]) with nothing selected, or a folder that is an
+//! absolute path with no `..` in it and a folder now, with every item to
+//! select a path straight inside it. Paths come from the socket (as
 //! wire text, `nova_protocol::path_to_wire`) and the session bus, so
 //! nothing else is trusted about them; they go out as wire text too, so a
 //! name that isn't UTF-8 opens like any other.
@@ -9,13 +10,16 @@
 //! into windows: a folder to show, or items grouped by the folder holding
 //! them, one window per folder.
 
-use nova_protocol::{FILES_PATH_MAX_BYTES, FilesWindow, wire_path, wire_text};
+use nova_protocol::{FILES_HOME_PLACE, FILES_PATH_MAX_BYTES, FilesWindow, wire_path, wire_text};
 use std::ffi::OsString;
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Component, PathBuf};
 
 /// A window on `folder` with `select` selected, once both check out.
 pub fn window(folder: &str, select: &[String]) -> Result<FilesWindow, String> {
+    if folder == FILES_HOME_PLACE && select.is_empty() {
+        return Ok(FilesWindow { folder: folder.into(), select: Vec::new() });
+    }
     let folder = clean(folder)?;
     if !folder.is_dir() {
         return Err(format!("{} isn't a folder", folder.display()));
@@ -57,7 +61,7 @@ pub fn items(uris: &[String]) -> Result<Vec<FilesWindow>, String> {
 
 /// The path a `file://` URI names. Only local files: no other scheme, and
 /// no host but `localhost`.
-fn path(uri: &str) -> Result<PathBuf, String> {
+pub(super) fn path(uri: &str) -> Result<PathBuf, String> {
     let local = uri.strip_prefix("file://localhost/").map(|rest| format!("file:///{rest}"));
     let uri_or_local = local.as_deref().unwrap_or(uri);
     if !uri_or_local.starts_with("file:///") {
@@ -106,8 +110,10 @@ mod tests {
         let music = display(&dir.join("Music"));
         let song = display(&dir.join("Music/song one.flac"));
         let shown = window(&format!("{music}/"), &[format!("{music}//song one.flac")]).unwrap();
-        assert_eq!(shown, FilesWindow { folder: music.clone(), select: vec![song] });
+        assert_eq!(shown, FilesWindow { folder: music.clone(), select: vec![song.clone()] });
         assert_eq!(window(&music, &[]).unwrap().select, Vec::<String>::new());
+        assert_eq!(window(FILES_HOME_PLACE, &[]).unwrap().folder, FILES_HOME_PLACE);
+        assert!(window(FILES_HOME_PLACE, &[song]).is_err(), "nothing to select on the Home page");
     }
 
     #[test]

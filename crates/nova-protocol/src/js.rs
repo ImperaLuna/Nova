@@ -156,8 +156,15 @@ fn limits() -> [(&'static str, u64, &'static str); 13] {
 }
 
 /// Fixed wire strings the UI compares with, as `(name, value, comment)`.
-fn texts() -> [(&'static str, &'static str, &'static str); 1] {
-    [("FILES_TRASH_PLACE", FILES_TRASH_PLACE, "The trash place's path in files_places: the trash, not a folder.")]
+fn texts() -> [(&'static str, &'static str, &'static str); 2] {
+    [
+        ("FILES_TRASH_PLACE", FILES_TRASH_PLACE, "The trash place's path in files_places: the trash, not a folder."),
+        (
+            "FILES_HOME_PLACE",
+            FILES_HOME_PLACE,
+            "The Home page's path in files_places: Quick access and Recent, not a folder.",
+        ),
+    ]
 }
 
 /// `"focus_workspace"` -> `FOCUS_WORKSPACE`, `"ai-usage"` -> `AI_USAGE`.

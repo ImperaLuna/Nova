@@ -342,6 +342,11 @@ impl<'a> Connection<'a> {
                 });
             }
             Command::FilesPlaces => return self.files_later(|files| Ok(files.places())),
+            Command::FilesPin { path, pinned } => {
+                let (path, pinned) = (path.clone(), *pinned);
+                return self.files_later(move |files| files.pin(&path, pinned));
+            }
+            Command::FilesRecent => return self.files_later(|files| Ok(files.recent())),
             Command::FilesTrash { paths } => {
                 let paths = paths.clone();
                 return self.files_later(move |files| files.trash().trash(&paths));
@@ -956,7 +961,7 @@ impl<'a> Connection<'a> {
             | Command::FilesEmptyTrash
             | Command::FilesMount { .. }
             | Command::FilesEject { .. } => {}
-            Command::FilesTree { .. } | Command::FilesPlaces => {}
+            Command::FilesTree { .. } | Command::FilesPlaces | Command::FilesPin { .. } | Command::FilesRecent => {}
         }
     }
 
