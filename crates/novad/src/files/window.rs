@@ -26,12 +26,14 @@ pub struct Entry {
     pub file: &'static str,
     /// Its process name in ps and btop.
     pub name: &'static str,
+    /// What novad's log calls it (e2e/run.sh reads "Nova Files started").
+    pub shown: &'static str,
 }
 
 /// The one for Nova Files' own windows.
-pub const WINDOWS: Entry = Entry { file: "files.qml", name: "NovaFiles" };
+pub const WINDOWS: Entry = Entry { file: "files.qml", name: "NovaFiles", shown: "Nova Files" };
 /// The one for apps' Open and Save dialogs.
-pub const PICKERS: Entry = Entry { file: "files-picker.qml", name: "NovaFilesPicker" };
+pub const PICKERS: Entry = Entry { file: "files-picker.qml", name: "NovaFilesPicker", shown: "Nova Files' dialogs" };
 
 /// The process, while it runs.
 pub struct Process {
@@ -127,7 +129,7 @@ fn start(
         }
     };
     let started = process.id();
-    logger.info(super::LOG_SOURCE, &format!("{} started (pid {started})", entry.name));
+    logger.info(super::LOG_SOURCE, &format!("{} started (pid {started})", entry.shown));
     if let Some(out) = process.stdout.take() {
         supervisor::forward_lines(out, Arc::clone(logger), super::LOG_SOURCE);
     }
@@ -137,7 +139,7 @@ fn start(
     let forget = Arc::clone(pid);
     let logger = Arc::clone(logger);
     let exited = Arc::clone(exited);
-    let name = entry.name;
+    let name = entry.shown;
     std::thread::spawn(move || {
         // Waited for without reaping, so the pid is forgotten first.
         let waited = child::wait_for_exit(started);
