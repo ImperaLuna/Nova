@@ -20,7 +20,8 @@ import "shortcuts.js" as Shortcuts
 // name goes to it (NameTyping). A double-click or Enter opens: a folder is
 // gone into (`folderOpened`), files open in their default app. Delete
 // asks to move the selection to the trash (`trashRequested`),
-// Shift+Delete to delete it for good (`deleteRequested`). F5 (the
+// Shift+Delete to delete it for good (`deleteRequested`). Ctrl+Z and
+// Ctrl+Y ask to undo and redo (`undoRequested`, `redoRequested`). F5 (the
 // window's) reads the folder again (`refresh`).
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
@@ -40,6 +41,9 @@ FocusScope {
     signal trashRequested(var rows)
     signal deleteRequested(var rows)
     signal backRequested
+    // Ctrl+Z, and Ctrl+Y or Ctrl+Shift+Z.
+    signal undoRequested
+    signal redoRequested
 
     readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
     readonly property var columns: [
@@ -271,6 +275,12 @@ FocusScope {
                 return;
             case "back":
                 list.backRequested();
+                return;
+            case "undo":
+                list.undoRequested();
+                return;
+            case "redo":
+                list.redoRequested();
                 return;
             case "trash":
                 if (list.model.selectedCount > 0)

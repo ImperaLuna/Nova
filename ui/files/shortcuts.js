@@ -102,6 +102,18 @@ var TABLE = [
         keys: ["Del", "Shift+Del"],
         where: [TRASH]
     },
+    // Undo and redo the last copy, move or trashing, from any window. A
+    // text field keeps them for its own text, so they're the lists'.
+    {
+        action: "undo",
+        keys: ["Ctrl+Z"],
+        where: [LIST, TRASH]
+    },
+    {
+        action: "redo",
+        keys: ["Ctrl+Y", "Ctrl+Shift+Z"],
+        where: [LIST, TRASH]
+    },
     // The moves: with Shift each extends the selection from its anchor.
     {
         action: "move",

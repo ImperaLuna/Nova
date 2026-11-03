@@ -20,7 +20,8 @@ import "../daemon/protocol.js" as Protocol
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
 // window's keys are the table's WINDOW entries (shortcuts.js), done by
-// act(); the lists answer their own. Its
+// act(); the lists answer their own, and ask the window to undo and redo
+// (Ctrl+Z, Ctrl+Y), which novad does for every window alike. Its
 // frame and its file list each go from glass to solid as config.toml's
 // [files] says, live. Each draws its own background, so one never shows
 // through the other.
@@ -111,6 +112,12 @@ FloatingWindow {
         if (yes)
             act?.();
         focusList();
+    }
+
+    // Undoes the last step taken in any window, or redoes the last one
+    // undone (`redo`); what can't be done gets a notice.
+    function undo(redo: bool) {
+        transfers.undo(redo, error => window.notice(null, error));
     }
 
     function notice(row: var, error: string) {
@@ -264,6 +271,8 @@ FloatingWindow {
         onFolderOpened: path => window.navigator.visit(path, null)
         onTrashRequested: rows => window.moveToTrash(rows)
         onBackRequested: window.navigator.step(-1)
+        onUndoRequested: window.undo(false)
+        onRedoRequested: window.undo(true)
         onDeleteRequested: rows => window.deleteForGood(rows)
         solid: FilesService.listSolid
     }
@@ -284,6 +293,8 @@ FloatingWindow {
         solid: FilesService.listSolid
         onEraseRequested: window.erase()
         onBackRequested: window.navigator.step(-1)
+        onUndoRequested: window.undo(false)
+        onRedoRequested: window.undo(true)
         onVisibleChanged: {
             if (visible)
                 focusList();

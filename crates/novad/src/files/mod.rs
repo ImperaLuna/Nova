@@ -236,10 +236,9 @@ impl Files {
     /// Moves `paths` to the trash (`files_trash`): one step to undo, or
     /// part of the last one when it `continues` it.
     pub fn move_to_trash(&self, paths: &[String], continues: bool) -> Result<(), String> {
-        let (ids, problems): (Vec<_>, Vec<_>) = self.trash.trash_each(paths).into_iter().partition(Result::is_ok);
-        self.history.trashed(ids.into_iter().filter_map(Result::ok).collect(), continues);
-        let problems: Vec<String> = problems.into_iter().filter_map(Result::err).collect();
-        if problems.is_empty() { Ok(()) } else { Err(problems.join("\n")) }
+        let (ids, problems) = history::split(self.trash.trash_each(paths));
+        self.history.trashed(ids, continues);
+        problems
     }
 
     /// Undoes the last step (`files_undo`) for client `client`, a move

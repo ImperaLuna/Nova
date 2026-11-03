@@ -294,21 +294,10 @@ impl Run {
         }
     }
 
-    /// Tells the history what the job placed, and for a step's move, what
-    /// it left where it was.
+    /// Tells the history what the job placed.
     fn record(&self) {
-        let left = match self.origin {
-            Origin::New => Vec::new(),
-            Origin::Step(_) => self
-                .legs
-                .iter()
-                .flat_map(|leg| leg.sources.iter().map(|source| (source, &leg.folder)))
-                .filter(|(source, _)| source.symlink_metadata().is_ok())
-                .filter_map(|(source, folder)| Some((source.clone(), folder.join(source.file_name()?))))
-                .collect(),
-        };
-        if !self.placed.is_empty() || !left.is_empty() {
-            self.history.moved(self.origin, self.job.mode, &self.placed, left);
+        if !self.placed.is_empty() {
+            self.history.moved(self.origin, self.job.mode, &self.placed);
         }
     }
 

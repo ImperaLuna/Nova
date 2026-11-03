@@ -5,8 +5,10 @@
 //! Each step is kept as what undoing it does ([`Op`]): copies go to the
 //! trash, trashed items are restored, moved items move back. Running an
 //! op answers its inverse, which goes on the other stack, so undo and redo
-//! are the same code. What an op couldn't do stays on its own stack, to be
-//! tried again. Trashing and restoring run before the request is answered;
+//! are the same code. What an op couldn't do is dropped, as in Explorer,
+//! so one item that can't go back never blocks the steps before it; the
+//! answer says what it was. Trashing and restoring run before the request
+//! is answered;
 //! a move back is a `files_transfer` job of the asking connection, with its
 //! progress card and name clashes, and the job tells the history what it
 //! moved when it ends ([`History::moved`]).
@@ -116,10 +118,8 @@ impl Stacks {
         Self::pushed(&mut self.undo, step);
     }
 
-    /// A step ran `way`: `done` is the inverse of what it did, `left` what
-    /// it couldn't do.
-    fn ran(&mut self, way: Way, kind: FileStep, done: Op, left: Op) {
-        Self::pushed(self.from(way), Step { kind, op: left });
+    /// A step ran `way`: `done` is the inverse of what it did.
+    fn ran(&mut self, way: Way, kind: FileStep, done: Op) {
         Self::pushed(self.to(way), Step { kind, op: done });
     }
 }
@@ -154,15 +154,8 @@ impl History {
     }
 
     /// A copy or move job from `origin` ended, having placed each item
-    /// (from, to): a new step, or the inverse of a step run. `left` is what
-    /// a step's move didn't move, back on its stack.
-    pub fn moved(
-        &self,
-        origin: Origin,
-        mode: TransferMode,
-        placed: &[(PathBuf, PathBuf)],
-        left: Vec<(PathBuf, PathBuf)>,
-    ) {
+    /// (from, to): a new step, or the inverse of a step run.
+    pub fn moved(&self, origin: Origin, mode: TransferMode, placed: &[(PathBuf, PathBuf)]) {
         let back = || Op::Move(placed.iter().map(|(from, to)| (to.clone(), from.clone())).collect());
         self.change(|stacks| match (origin, mode) {
             (Origin::New, TransferMode::Copy) => {
@@ -170,13 +163,13 @@ impl History {
                 stacks.took(Step { kind: FileStep::Copy, op: Op::Trash(copies) });
             }
             (Origin::New, TransferMode::Move) => stacks.took(Step { kind: FileStep::Move, op: back() }),
-            (Origin::Step(way), _) => stacks.ran(way, FileStep::Move, back(), Op::Move(left)),
+            (Origin::Step(way), _) => stacks.ran(way, FileStep::Move, back()),
         });
     }
 
     /// Undoes or redoes the last step, `way`. Answers whether that started
     /// client `client`'s move job `job`; anything else is done by then.
-    /// The error names what couldn't be done, which stays on its stack.
+    /// The error says what couldn't be done.
     pub fn run(
         &self,
         way: Way,
@@ -188,20 +181,19 @@ impl History {
         let Some(Step { kind, op }) = self.change(|stacks| stacks.from(way).pop()) else { return Ok(false) };
         match op {
             Op::Trash(paths) => {
-                let outcomes = trash.trash_each(&paths);
-                let (done, left, problems) = split(&paths, outcomes);
-                self.change(|stacks| stacks.ran(way, kind, Op::Restore(done), Op::Trash(left)));
+                let (done, problems) = split(trash.trash_each(&paths));
+                self.change(|stacks| stacks.ran(way, kind, Op::Restore(done)));
                 problems.map(|()| false)
             }
             Op::Restore(ids) => {
-                let outcomes = trash.restore_each(&ids);
-                let (done, left, problems) = split(&ids, outcomes);
+                let (done, problems) = split(trash.restore_each(&ids));
                 let done = done.iter().map(|path| wire_text(path.as_os_str())).collect();
-                self.change(|stacks| stacks.ran(way, kind, Op::Trash(done), Op::Restore(left)));
+                self.change(|stacks| stacks.ran(way, kind, Op::Trash(done)));
                 problems.map(|()| false)
             }
             Op::Move(items) => {
                 let started = transfers.start_legs(client, job, TransferMode::Move, legs(&items)?, Origin::Step(way));
+                // Not started (too many jobs running): it's still to do.
                 if let Err(e) = started {
                     self.change(|stacks| Stacks::pushed(stacks.from(way), Step { kind, op: Op::Move(items) }));
                     return Err(e);
@@ -225,22 +217,17 @@ impl History {
     }
 }
 
-/// `items` split by `outcomes`, one each: what each that worked gave, the
-/// items that didn't, and why not.
-fn split<T>(items: &[String], outcomes: Vec<Result<T, String>>) -> (Vec<T>, Vec<String>, Result<(), String>) {
+/// What each of `outcomes` that worked gave, and why the others didn't.
+pub(super) fn split<T>(outcomes: Vec<Result<T, String>>) -> (Vec<T>, Result<(), String>) {
     let mut done = Vec::new();
-    let mut left = Vec::new();
     let mut problems = Vec::new();
-    for (item, outcome) in items.iter().zip(outcomes) {
+    for outcome in outcomes {
         match outcome {
             Ok(value) => done.push(value),
-            Err(e) => {
-                left.push(item.clone());
-                problems.push(e);
-            }
+            Err(e) => problems.push(e),
         }
     }
-    (done, left, if problems.is_empty() { Ok(()) } else { Err(problems.join("\n")) })
+    (done, if problems.is_empty() { Ok(()) } else { Err(problems.join("\n")) })
 }
 
 /// A move's items as one leg per folder they go to, each made again if
@@ -464,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn what_cant_be_undone_stays_to_try_again() {
+    fn what_cant_be_undone_is_dropped() {
         let fixture = Fixture::new("left");
         fixture.write("from/a.txt");
         fixture.write("from/b.txt");
@@ -475,10 +462,11 @@ mod tests {
         let error = fixture.run(Way::Undo).unwrap_err();
         assert!(error.contains("already exists"), "{error}");
         assert!(fixture.exists("from/b.txt"));
-        assert_eq!(fixture.shown(), json!({"undo": "trash", "redo": "trash"}));
-        std::fs::remove_file(fixture.dir.join("from/a.txt")).unwrap();
+        assert_eq!(fixture.shown(), json!({"redo": "trash"}));
+        assert_eq!(fixture.run(Way::Redo), Ok(false));
+        assert_eq!(fixture.trashed(), 2, "only b.txt went again");
         assert_eq!(fixture.run(Way::Undo), Ok(false));
-        assert_eq!(fixture.trashed(), 0);
+        assert_eq!(fixture.trashed(), 1, "a.txt's own stays in the trash");
     }
 
     #[test]
