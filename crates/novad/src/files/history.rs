@@ -17,6 +17,9 @@
 //! aren't known: an op then fails on the item it can't find, as Explorer's
 //! does. Deleting for good is no step: it can't be undone.
 //!
+//! While a step's move runs, Ctrl+Z and Ctrl+Y do nothing: the step under
+//! it may need what that move is still putting back.
+//!
 //! The stacks and the [`Event::FilesHistory`] last published change under
 //! one lock, so windows never see an older state after a newer one.
 
@@ -81,6 +84,8 @@ struct Stacks {
     redo: Vec<Step>,
     /// What was last published: the kinds on top of each stack.
     shown: (Option<FileStep>, Option<FileStep>),
+    /// A step's move is running.
+    moving: bool,
 }
 
 impl Stacks {
@@ -163,7 +168,10 @@ impl History {
                 stacks.took(Step { kind: FileStep::Copy, op: Op::Trash(copies) });
             }
             (Origin::New, TransferMode::Move) => stacks.took(Step { kind: FileStep::Move, op: back() }),
-            (Origin::Step(way), _) => stacks.ran(way, FileStep::Move, back()),
+            (Origin::Step(way), _) => {
+                stacks.moving = false;
+                stacks.ran(way, FileStep::Move, back());
+            }
         });
     }
 
@@ -178,7 +186,16 @@ impl History {
         client: ClientId,
         job: u32,
     ) -> Result<bool, String> {
-        let Some(Step { kind, op }) = self.change(|stacks| stacks.from(way).pop()) else { return Ok(false) };
+        let popped = self.change(|stacks| {
+            if stacks.moving {
+                return None;
+            }
+            let step = stacks.from(way).pop()?;
+            // Set before its job starts, which may end at once.
+            stacks.moving = matches!(step.op, Op::Move(_));
+            Some(step)
+        });
+        let Some(Step { kind, op }) = popped else { return Ok(false) };
         match op {
             Op::Trash(paths) => {
                 let (done, problems) = split(trash.trash_each(&paths));
@@ -192,10 +209,14 @@ impl History {
                 problems.map(|()| false)
             }
             Op::Move(items) => {
-                let started = transfers.start_legs(client, job, TransferMode::Move, legs(&items)?, Origin::Step(way));
-                // Not started (too many jobs running): it's still to do.
+                let legs = legs(&items).inspect_err(|_| self.change(|stacks| stacks.moving = false))?;
+                let started = transfers.start_legs(client, job, TransferMode::Move, legs, Origin::Step(way));
                 if let Err(e) = started {
-                    self.change(|stacks| Stacks::pushed(stacks.from(way), Step { kind, op: Op::Move(items) }));
+                    self.change(|stacks| {
+                        stacks.moving = false;
+                        // Not started (too many jobs running): it's still to do.
+                        Stacks::pushed(stacks.from(way), Step { kind, op: Op::Move(items) });
+                    });
                     return Err(e);
                 }
                 Ok(true)
@@ -432,6 +453,32 @@ mod tests {
         assert!(fixture.exists("to/Photos/a.png") && fixture.exists("to/notes.txt"));
         assert_eq!(fixture.run(Way::Undo), Ok(true));
         assert!(fixture.exists("from/Photos/a.png") && !fixture.exists("to/notes.txt"));
+    }
+
+    #[test]
+    fn nothing_runs_while_a_step_s_move_does() {
+        let fixture = Fixture::new("one-at-a-time");
+        fixture.write("from/a.txt");
+        fixture.transfer(TransferMode::Copy, &["from/a.txt"], "to");
+        fixture.transfer(TransferMode::Move, &["to/a.txt"], "from/..");
+        // Something took its old place: moving it back asks.
+        fixture.write("to/a.txt");
+        let started = fixture.history.run(Way::Undo, &fixture.trash, &fixture.transfers, fixture.client, 9);
+        assert_eq!(started, Ok(true));
+        let asking = loop {
+            let transfer = fixture.next_transfer();
+            if transfer.state == TransferState::Asking {
+                break transfer;
+            }
+        };
+        assert_eq!(fixture.run(Way::Undo), Ok(false), "the copy waits for the move");
+        assert!(fixture.exists("to/a.txt") && fixture.exists("a.txt"));
+        let clash = asking.clash.unwrap();
+        fixture.transfers.answer(fixture.client, 9, clash.id, nova_protocol::ClashAnswer::Skip, false).unwrap();
+        fixture.ended(TransferState::Done);
+        // Skipped, it stays where it was moved; the copy is next.
+        assert_eq!(fixture.run(Way::Undo), Ok(false));
+        assert!(!fixture.exists("to/a.txt"), "the copy went to the trash");
     }
 
     #[test]

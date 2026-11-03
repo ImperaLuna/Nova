@@ -105,12 +105,16 @@ impl Transfers {
         folder: &str,
     ) -> Result<(), String> {
         let sources = sources.iter().map(|source| checked_path(source)).collect::<Result<Vec<_>, _>>()?;
+        if sources.len() > FILES_TRANSFER_MAX_SOURCES {
+            return Err(format!("At most {FILES_TRANSFER_MAX_SOURCES} items can be copied at once"));
+        }
         let leg = Leg { sources, folder: checked_path(folder)? };
         self.start_legs(client, job, mode, vec![leg], Origin::New)
     }
 
     /// Starts `client`'s job `job` over `legs`, whose paths are checked,
-    /// for `origin`.
+    /// for `origin`. A step's move isn't held to the request's limit on
+    /// items: undoing a merge moves back each item it placed.
     pub fn start_legs(
         &self,
         client: ClientId,
@@ -123,9 +127,6 @@ impl Transfers {
         let Some(first) = legs.iter().find_map(|leg| leg.sources.first()) else {
             return Err("Nothing to copy".into());
         };
-        if count > FILES_TRANSFER_MAX_SOURCES {
-            return Err(format!("At most {FILES_TRANSFER_MAX_SOURCES} items can be copied at once"));
-        }
         let name = first.file_name().map_or_else(|| "/".into(), nova_protocol::wire_text);
         let key = (client, job);
         let mut jobs = lock(&self.jobs);
@@ -294,9 +295,10 @@ impl Run {
         }
     }
 
-    /// Tells the history what the job placed.
+    /// Tells the history what the job placed; a step's move tells it
+    /// even when nothing moved, so the next step can run.
     fn record(&self) {
-        if !self.placed.is_empty() {
+        if !self.placed.is_empty() || self.origin != Origin::New {
             self.history.moved(self.origin, self.job.mode, &self.placed);
         }
     }
@@ -502,26 +504,30 @@ impl Run {
             _ => None,
         };
         let placed = self.put_free(source, meta, target, bytes);
-        if placed.is_ok() && self.inside_copy == 0 {
+        let put = matches!(placed, Ok(true));
+        if put && self.inside_copy == 0 {
             self.placed.push((source.to_owned(), target.to_owned()));
         }
-        let Some(aside) = aside else { return placed };
-        let settled = if placed.is_ok() { aside.discard() } else { aside.restore() };
-        if let Err(e) = settled {
-            self.logger.warn(LOG_SOURCE, &format!("can't tidy up after replacing {}: {e}", target.display()));
+        if let Some(aside) = aside {
+            // What was left out (a device, a socket) replaced nothing.
+            let settled = if put { aside.discard() } else { aside.restore() };
+            if let Err(e) = settled {
+                self.logger.warn(LOG_SOURCE, &format!("can't tidy up after replacing {}: {e}", target.display()));
+            }
         }
-        placed
+        placed.map(drop)
     }
 
-    /// Puts `source` at `target`, where only a file can be.
-    fn put_free(&mut self, source: &Path, meta: &Metadata, target: &Path, bytes: Option<u64>) -> Step {
+    /// Puts `source` at `target`, where only a file can be. False for what
+    /// can't be copied, which is left out.
+    fn put_free(&mut self, source: &Path, meta: &Metadata, target: &Path, bytes: Option<u64>) -> Result<bool, Halt> {
         let moving = self.job.mode == TransferMode::Move && !self.copying_moved;
         if moving {
             match fs::rename(source, target) {
                 Ok(()) => {
                     let bytes = bytes.unwrap_or_else(|| moved_bytes(target, meta));
                     self.copied(bytes);
-                    return Ok(());
+                    return Ok(true);
                 }
                 // Another file system: copied, then deleted.
                 Err(e) if e.raw_os_error() == Some(libc::EXDEV) => {}
@@ -535,16 +541,17 @@ impl Run {
             // Once all of it is copied the move has happened: what can't
             // be deleted after that stays at the source too, and nothing
             // placed is undone.
-            if placed? && let Err(e) = copying::remove_moved(source) {
+            let placed = placed?;
+            if placed && let Err(e) = copying::remove_moved(source) {
                 self.logger.warn(LOG_SOURCE, &format!("moved {}, but can't delete all of it: {e}", source.display()));
             }
-            return Ok(());
+            return Ok(placed);
         }
         let placed = self.copy(source, meta, target)?;
         if placed && moving {
             fs::remove_file(source).map_err(|e| failed(source, &e))?;
         }
-        Ok(())
+        Ok(placed)
     }
 
     /// Copies `source` to the free `target`. False for what can't be
