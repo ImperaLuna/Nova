@@ -172,10 +172,14 @@ pub enum Event {
     /// `path` (feature `files`): a PNG at most [`FILES_THUMBNAIL_PIXELS`]
     /// on its longer side in the shared freedesktop thumbnail cache, or
     /// none when the file has none (no thumbnailer for its type, or making
-    /// one failed). Sent only to the client that asked; topic
-    /// [`Topic::Files`].
+    /// one failed). `modified_ms` is when the file it shows last changed,
+    /// as a listing has it ([`FileEntry::modified_ms`]), so an answer for
+    /// the file as it was can be told apart; absent when the file is gone.
+    /// Sent only to the client that asked; topic [`Topic::Files`].
     FilesThumbnail {
         path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        modified_ms: Option<i64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thumbnail: Option<String>,
     },
@@ -3361,9 +3365,14 @@ mod tests {
             }),
             encode(Event::FilesThumbnail {
                 path: "/home/user/Pictures/cover.png".into(),
+                modified_ms: Some(1_793_000_000_000),
                 thumbnail: Some("/home/user/.cache/thumbnails/large/7c5e3f0c3d1d1c4f8b1c5b9e5f1a2b3c.png".into()),
             }),
-            encode(Event::FilesThumbnail { path: "/home/user/Documents/notes.txt".into(), thumbnail: None }),
+            encode(Event::FilesThumbnail {
+                path: "/home/user/Documents/notes.txt".into(),
+                modified_ms: Some(1_793_000_000_000),
+                thumbnail: None,
+            }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();

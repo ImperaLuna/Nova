@@ -198,9 +198,10 @@ fn group(text: &str) -> HashMap<&str, &str> {
     keys_of(text, GROUP)
 }
 
-/// The keys of the group headed `header` (like `[Desktop Entry]`), when
-/// it's the file's first: `key` or `key[locale]` to its raw value. Other
-/// files in the same format (thumbnailers) read theirs with it too.
+/// The keys of the first group headed `header` (like `[Desktop Entry]`):
+/// `key` or `key[locale]` to its raw value; reading stops at the group
+/// after it. Other files in the same format (thumbnailers) read theirs
+/// with it too.
 pub(crate) fn keys_of<'a>(text: &'a str, header: &str) -> HashMap<&'a str, &'a str> {
     let mut keys = HashMap::new();
     let mut inside = false;

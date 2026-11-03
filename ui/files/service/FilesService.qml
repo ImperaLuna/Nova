@@ -5,6 +5,7 @@ import Quickshell
 import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
 import "../trash.js" as Trash
+import "../thumbnails.js" as Thumbnails
 
 // Nova Files' link to novad: the windows it asks for, the folders they
 // show (folder views: each FolderModel opens one under its own number and
@@ -273,15 +274,22 @@ Singleton {
     }
 
     // `done(file)` gets the path of a PNG thumbnail of the file at `path`
-    // (absolute), or "" when it has none. Asking for a path already asked
-    // for waits for the same answer.
-    function thumbnail(path: string, done: var) {
+    // (absolute) as it was at `modified` (its listing's time, ms), or ""
+    // when it has none. Asking for a path already asked for waits for the
+    // same answer; an answer for another version of the file asks once
+    // more for this one.
+    function thumbnail(path: string, modified: real, done: var) {
+        const wanted = {
+            modified: modified,
+            done: done,
+            again: false
+        };
         const waiting = _thumbnailsWaiting[path];
         if (waiting) {
-            waiting.push(done);
+            waiting.push(wanted);
             return;
         }
-        _thumbnailsWaiting[path] = [done];
+        _thumbnailsWaiting[path] = [wanted];
         _askThumbnail(path);
     }
 
@@ -291,7 +299,7 @@ Singleton {
         const waiting = _thumbnailsWaiting[path];
         if (!waiting)
             return;
-        const left = waiting.filter(callback => callback !== done);
+        const left = waiting.filter(wanted => wanted.done !== done);
         if (left.length > 0) {
             _thumbnailsWaiting[path] = left;
             return;
@@ -313,13 +321,27 @@ Singleton {
         });
     }
 
+    // novad's answer ({path, modified_ms, thumbnail}) goes to those who
+    // wanted that version of the file; the others ask once more
+    // (Thumbnails.split).
     function _thumbnailAnswered(answer: var) {
         const waiting = _thumbnailsWaiting[answer.path];
         if (!waiting)
             return;
-        delete _thumbnailsWaiting[answer.path];
-        for (const done of waiting)
-            done(answer.thumbnail ?? "");
+        const {
+            answered,
+            again
+        } = Thumbnails.split(waiting, answer);
+        if (again.length > 0) {
+            for (const wanted of again)
+                wanted.again = true;
+            _thumbnailsWaiting[answer.path] = again;
+            _askThumbnail(answer.path);
+        } else {
+            delete _thumbnailsWaiting[answer.path];
+        }
+        for (const wanted of answered)
+            wanted.done(answer.thumbnail ?? "");
     }
 
     // Sends `cmd` with `items` under `key`, in as many requests as keep each

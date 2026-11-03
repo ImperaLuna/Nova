@@ -149,6 +149,6 @@ expression: all
 {"v":2,"id":81,"result":{"ready":true,"results":[{"entry":{"dir":true,"hidden":false,"link":false,"mime":"inode/directory","modified_ms":1793000000000,"name":"Crimson Desert"},"folder":"/home/user/.local/share/Steam/steamapps/common","in_hidden_folder":true,"marks":[{"length":7,"start":0}]}],"total":1}}
 {"v":2,"id":82,"cmd":"files_thumbnail","args":{"path":"/home/user/Pictures/cover.png"}}
 {"v":2,"id":83,"cmd":"files_thumbnail_cancel","args":{"path":"/home/user/Pictures/cover.png"}}
-{"v":2,"event":"files_thumbnail","data":{"path":"/home/user/Pictures/cover.png","thumbnail":"/home/user/.cache/thumbnails/large/7c5e3f0c3d1d1c4f8b1c5b9e5f1a2b3c.png"}}
-{"v":2,"event":"files_thumbnail","data":{"path":"/home/user/Documents/notes.txt"}}
+{"v":2,"event":"files_thumbnail","data":{"path":"/home/user/Pictures/cover.png","modified_ms":1793000000000,"thumbnail":"/home/user/.cache/thumbnails/large/7c5e3f0c3d1d1c4f8b1c5b9e5f1a2b3c.png"}}
+{"v":2,"event":"files_thumbnail","data":{"path":"/home/user/Documents/notes.txt","modified_ms":1793000000000}}
 {"v":2,"id":8,"error":"bad request"}

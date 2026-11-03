@@ -9,9 +9,16 @@
 //! no thumbnailer takes, or passing it on; [`MAKERS`] threads run the
 //! thumbnailers for the rest, one file at a time each, so a big video
 //! never holds up a thumbnail that's already cached. A file asked for while
-//! it's being made gets the same answer. Each client waits for at most
+//! it's being made, as it is now, gets the same answer; one that changed
+//! meanwhile is made again after. Each answer says which version of the
+//! file it's for. Each client waits for at most
 //! [`FILES_THUMBNAILS_MAX_WAITING`]; past that its longest waiting is
 //! answered with none.
+//!
+//! A file is marked failed in the cache only when its thumbnailer ran and
+//! failed on it; a thumbnailer that can't start, runs past
+//! [`MAKE_TIMEOUT`] or a cache that can't be written is only logged, so the
+//! file is tried again next time.
 //!
 //! The thumbnailers are read as the module starts and again whenever the
 //! MIME database is (a package came or went), so one installed later is
@@ -24,7 +31,7 @@ use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::mime::{Mime, MimeDb};
-use cache::{Cache, Original};
+use cache::{Cache, Failed, Original};
 use nova_protocol::{Event, FILES_THUMBNAIL_PIXELS, FILES_THUMBNAILS_MAX_WAITING, wire_text};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -118,6 +125,22 @@ struct Make {
     thumbnailer: Thumbnailer,
 }
 
+/// What an ask is answered with.
+#[derive(Clone, Default)]
+struct Answer {
+    thumbnail: Option<PathBuf>,
+    /// When the file it's for last changed; none when it's gone.
+    modified_ms: Option<i64>,
+}
+
+/// A file being made.
+struct Making {
+    /// The version being made.
+    mtime: i64,
+    /// Who it's for, the ask that started it first.
+    waiting: Vec<Ask>,
+}
+
 #[derive(Default)]
 struct Queues {
     /// To look up in the cache, the latest last.
@@ -126,8 +149,8 @@ struct Queues {
     to_make: VecDeque<Make>,
     /// The ask being looked up, while it's still wanted.
     looking: Option<Ask>,
-    /// Files being made, and who else asked for them meanwhile.
-    making: HashMap<PathBuf, Vec<Ask>>,
+    /// Files being made.
+    making: HashMap<PathBuf, Making>,
     /// The next ask's number.
     next_number: u64,
     stopped: bool,
@@ -141,8 +164,8 @@ impl Queues {
         if self.looking.as_ref().is_some_and(|ask| ask.client == client && matches(&ask.path)) {
             self.looking = None;
         }
-        for waiting in self.making.values_mut() {
-            waiting.retain(|ask| ask.client != client || !matches(&ask.path));
+        for making in self.making.values_mut() {
+            making.waiting.retain(|ask| ask.client != client || !matches(&ask.path));
         }
     }
 
@@ -164,10 +187,27 @@ impl Queues {
         self.looking.take()
     }
 
-    /// Queues `make` to be made, in the order it was asked for.
+    /// Queues `make` to be made, in the order it was asked for, or has it
+    /// wait for the same version of the file being made already.
     fn queue_to_make(&mut self, make: Make) {
+        if let Some(making) = self.making.get_mut(&make.ask.path)
+            && making.mtime == make.original.mtime
+        {
+            making.waiting.push(make.ask);
+            return;
+        }
         let at = self.to_make.partition_point(|queued| queued.ask.number < make.ask.number);
         self.to_make.insert(at, make);
+    }
+
+    /// The latest queued file that isn't being made already, marked as
+    /// being made.
+    fn take_to_make(&mut self) -> Option<Make> {
+        let at = self.to_make.iter().rposition(|make| !self.making.contains_key(&make.ask.path))?;
+        let make = self.to_make.remove(at)?;
+        let making = Making { mtime: make.original.mtime, waiting: vec![make.ask.clone()] };
+        self.making.insert(make.ask.path.clone(), making);
+        Some(make)
     }
 }
 
@@ -218,7 +258,7 @@ impl Thumbnails {
         };
         self.shared.queued.notify_all();
         if let Some(dropped) = dropped {
-            self.shared.answer(&dropped, None);
+            self.shared.answer(&dropped, &Answer::default());
         }
         Ok(())
     }
@@ -261,7 +301,7 @@ impl Shared {
             match looked_up {
                 Ok(found) => {
                     drop(queues);
-                    self.answer(&ask, found);
+                    self.answer(&ask, &found);
                 }
                 Err(make) => {
                     queues.queue_to_make(*make);
@@ -274,28 +314,13 @@ impl Shared {
 
     /// A maker thread, `worker`.
     fn make(&self, worker: usize) {
-        while let Some(make) = self.next(|queues| {
-            let at = queues.to_make.iter().rposition(|make| !queues.making.contains_key(&make.ask.path));
-            match at.and_then(|at| queues.to_make.remove(at)) {
-                Some(make) => {
-                    queues.making.insert(make.ask.path.clone(), Vec::new());
-                    Some(make)
-                }
-                // Each one waiting is being made: it's answered with that.
-                None => {
-                    while let Some(make) = queues.to_make.pop_back() {
-                        if let Some(waiting) = queues.making.get_mut(&make.ask.path) {
-                            waiting.push(make.ask);
-                        }
-                    }
-                    None
-                }
-            }
-        }) {
-            let made = self.made(&make, worker);
-            let others = lock(&self.queues).making.remove(&make.ask.path).unwrap_or_default();
-            for ask in std::iter::once(&make.ask).chain(&others) {
-                self.answer(ask, made.clone());
+        while let Some(make) = self.next(Queues::take_to_make) {
+            let answer = Answer { thumbnail: self.made(&make, worker), modified_ms: make.original.modified_ms };
+            let waiting = lock(&self.queues).making.remove(&make.ask.path).map(|making| making.waiting);
+            // A newer version of it may wait for this one to be done.
+            self.queued.notify_all();
+            for ask in waiting.iter().flatten() {
+                self.answer(ask, &answer);
             }
         }
     }
@@ -315,27 +340,28 @@ impl Shared {
         }
     }
 
-    /// `ask`'s thumbnail from the cache, or none when it can't have one;
-    /// else what to make.
-    fn looked_up(&self, ask: &Ask) -> Result<Option<PathBuf>, Box<Make>> {
-        let Some(cache) = &self.cache else { return Ok(None) };
-        let Ok(metadata) = std::fs::metadata(&ask.path) else { return Ok(None) };
-        if !metadata.is_file() || cache.holds(&ask.path) {
-            return Ok(None);
-        }
+    /// `ask`'s answer from the cache, or none when it can't have a
+    /// thumbnail; else what to make.
+    fn looked_up(&self, ask: &Ask) -> Result<Answer, Box<Make>> {
+        let Ok(metadata) = std::fs::metadata(&ask.path) else { return Ok(Answer::default()) };
         let original = Original::new(&ask.path, &metadata);
+        let none = Answer { thumbnail: None, modified_ms: original.modified_ms };
+        let Some(cache) = &self.cache else { return Ok(none) };
+        if !metadata.is_file() || cache.holds(&ask.path) {
+            return Ok(none);
+        }
         if let Some(found) = cache.found(&original) {
-            return Ok(Some(found));
+            return Ok(Answer { thumbnail: Some(found), ..none });
         }
         if cache.failed(&original) {
-            return Ok(None);
+            return Ok(none);
         }
-        let Some(name) = ask.path.file_name().and_then(|name| name.to_str()) else { return Ok(None) };
         let db = self.mime.current();
-        let mime = db.type_by_name(name, &metadata).to_string();
+        // From its name, else its first bytes (a camera's `IMG_0001`).
+        let Ok(mime) = db.type_of(&ask.path) else { return Ok(none) };
         match self.thumbnailer(&db, &mime) {
             Some(thumbnailer) => Err(Box::new(Make { ask: ask.clone(), original, thumbnailer })),
-            None => Ok(None),
+            None => Ok(none),
         }
     }
 
@@ -359,10 +385,14 @@ impl Shared {
     }
 
     /// Runs `make`'s thumbnailer as maker `worker` and stores what it made;
-    /// none when it failed, which is marked so it isn't tried again.
+    /// none when it failed, which is marked when the file is why.
     fn made(&self, make: &Make, worker: usize) -> Option<PathBuf> {
         let cache = self.cache.as_ref()?;
         let original = &make.original;
+        // Made while it waited, for an ask that came in between.
+        if let Some(found) = cache.found(original) {
+            return Some(found);
+        }
         let scratch = match cache.scratch_path(original, worker) {
             Ok(scratch) => scratch,
             Err(e) => {
@@ -381,30 +411,40 @@ impl Shared {
         crate::child::die_with_novad(&mut command, libc::SIGKILL);
         let stored = match crate::child::output_within(command, MAKE_TIMEOUT) {
             Ok(output) if output.status.success() => cache.store(original, &scratch),
-            Ok(output) => Err(format!("{}: {}", output.status, String::from_utf8_lossy(&output.stderr).trim())),
-            Err(e) => Err(e.to_string()),
+            Ok(output) => {
+                Err(Failed::File(format!("{}: {}", output.status, String::from_utf8_lossy(&output.stderr).trim())))
+            }
+            // Couldn't start, or ran too long on a busy machine: not the
+            // file's fault, so it's tried again.
+            Err(e) => Err(Failed::Here(e.to_string())),
         };
         let _ = std::fs::remove_file(&scratch);
+        let name = &make.thumbnailer.name;
+        let failed = |e: &str| format!("no thumbnail of {} from {name}: {e}", original.path.display());
         match stored {
             Ok(stored) => Some(stored),
-            Err(e) => {
-                let name = &make.thumbnailer.name;
-                self.logger.info(LOG_SOURCE, &format!("no thumbnail of {} from {name}: {e}", original.path.display()));
+            Err(Failed::File(e)) => {
+                self.logger.info(LOG_SOURCE, &failed(&e));
                 if let Err(e) = cache.mark_failed(original) {
                     self.logger.warn(LOG_SOURCE, &format!("thumbnails: {e}"));
                 }
                 None
             }
+            Err(Failed::Here(e)) => {
+                self.logger.warn(LOG_SOURCE, &failed(&e));
+                None
+            }
         }
     }
 
-    /// Tells `ask`'s client about its thumbnail, unless stopped.
-    fn answer(&self, ask: &Ask, thumbnail: Option<PathBuf>) {
+    /// Tells `ask`'s client `answer`, unless stopped.
+    fn answer(&self, ask: &Ask, answer: &Answer) {
         if lock(&self.queues).stopped {
             return;
         }
-        let thumbnail = thumbnail.map(wire_text);
-        self.hub.send_to(ask.client, &Event::FilesThumbnail { path: ask.wire.clone(), thumbnail });
+        let thumbnail = answer.thumbnail.as_ref().map(wire_text);
+        let event = Event::FilesThumbnail { path: ask.wire.clone(), modified_ms: answer.modified_ms, thumbnail };
+        self.hub.send_to(ask.client, &event);
     }
 }
 

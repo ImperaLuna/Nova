@@ -87,7 +87,9 @@ pub fn is_hidden(name: &str) -> bool {
     name.starts_with('.')
 }
 
-fn modified_ms(metadata: &Metadata) -> Option<i64> {
+/// When `metadata`'s file last changed, in milliseconds since 1970: the
+/// time a listing shows.
+pub(super) fn modified_ms(metadata: &Metadata) -> Option<i64> {
     let seconds = metadata.mtime().checked_mul(1000)?;
     seconds.checked_add(metadata.mtime_nsec() / 1_000_000)
 }

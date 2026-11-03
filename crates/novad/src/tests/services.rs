@@ -199,7 +199,10 @@ fn a_thumbnail_is_asked_for_and_answered_over_the_socket() {
     let notes = folder.join("notes.txt").display().to_string();
     let mut client = novad.connect();
     assert_eq!(client.request(1, "files_thumbnail", Some(json!({"path": notes})))["result"], Value::Null);
-    assert_eq!(client.next_event("files_thumbnail"), json!({"path": notes}), "no thumbnailer takes text");
+    let answer = client.next_event("files_thumbnail");
+    assert_eq!(answer["path"], json!(notes));
+    assert!(answer["modified_ms"].is_i64(), "{answer}");
+    assert!(answer.get("thumbnail").is_none(), "no thumbnailer takes text");
     let relative = json!({"path": "notes.txt"});
     assert!(client.request(2, "files_thumbnail", Some(relative))["error"].as_str().unwrap().contains("absolute"));
     let cancel = json!({"path": notes});

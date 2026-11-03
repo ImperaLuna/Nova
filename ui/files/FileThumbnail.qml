@@ -45,7 +45,7 @@ Item {
             thumbnail._file = file;
         };
         _waiting = asked;
-        thumbnails.thumbnail(path, asked.done);
+        thumbnails.thumbnail(path, modified, asked.done);
     }
 
     function _cancel() {

@@ -11,6 +11,7 @@ import "../daemon/protocol.js" as Protocol
 import "../theme"
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
+import "../files/thumbnails.js" as Thumbnails
 
 // Nova Files' address bar parts, window title and entry paths, its
 // history and the sidebar tree's kept folders and rows, its file list:
@@ -758,7 +759,7 @@ Item {
             property var asked: []
             property var cancelled: []
 
-            function thumbnail(path, done) {
+            function thumbnail(path, modified, done) {
                 asked = asked.concat([
                     {
                         path: path,
@@ -860,6 +861,32 @@ Item {
             });
             compare(thumbnailAnswers.asked.length, 0, "folders aren't asked for");
             verify(findIcon(folder).visible);
+        }
+
+        function test_a_thumbnail_answer_goes_to_those_who_wanted_that_version() {
+            const old = {
+                modified: 1000,
+                again: false
+            };
+            const edited = {
+                modified: 2000,
+                again: false
+            };
+            const split = Thumbnails.split([old, edited], {
+                path: "/p.png",
+                modified_ms: 2000,
+                thumbnail: "/t.png"
+            });
+            compare(split.answered, [edited]);
+            compare(split.again, [old], "it asks once more for the file as it is");
+            old.again = true;
+            compare(Thumbnails.split([old], {
+                path: "/p.png",
+                modified_ms: 2000
+            }).answered, [old], "but only once");
+            compare(Thumbnails.split([edited], {
+                path: "/gone.png"
+            }).answered, [edited], "a file that's gone answers everyone");
         }
 
         function findIcon(item) {

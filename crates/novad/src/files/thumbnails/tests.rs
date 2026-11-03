@@ -88,6 +88,11 @@ fn answer(events: &Receiver<Outgoing>) -> Value {
     next_named(events, "files_thumbnail", WAIT)
 }
 
+/// When the file at `path` last changed, as a listing shows it.
+fn modified_ms(path: &str) -> Value {
+    json!(crate::files::folder::modified_ms(&std::fs::metadata(path).unwrap()))
+}
+
 #[test]
 fn a_photo_gets_a_thumbnail_made_once_and_then_found_in_the_cache() {
     let fixture = Fixture::new("made", "");
@@ -96,12 +101,13 @@ fn a_photo_gets_a_thumbnail_made_once_and_then_found_in_the_cache() {
     fixture.thumbnails.request(client, &photo).unwrap();
     let made = answer(&events);
     assert_eq!(made["path"], json!(photo));
+    assert_eq!(made["modified_ms"], modified_ms(&photo), "it says which version of the file it shows");
     let thumbnail = made["thumbnail"].as_str().expect("a thumbnail").to_string();
     assert!(thumbnail.starts_with(&fixture.dir.join("cache/thumbnails/large/").display().to_string()));
     assert!(Path::new(&thumbnail).is_file());
 
     fixture.thumbnails.request(client, &photo).unwrap();
-    assert_eq!(answer(&events), json!({"path": photo, "thumbnail": thumbnail}));
+    assert_eq!(answer(&events), json!({"path": photo, "modified_ms": modified_ms(&photo), "thumbnail": thumbnail}));
     assert_eq!(fixture.runs(), 1, "the second came from the cache");
     let leftovers = std::fs::read_dir(fixture.dir.join("cache/thumbnails/large")).unwrap().count();
     assert_eq!(leftovers, 1, "the thumbnailer's own file is cleaned up");
@@ -115,7 +121,7 @@ fn a_file_no_thumbnailer_takes_has_none() {
     std::fs::write(&notes, "shopping").unwrap();
     let notes = notes.display().to_string();
     fixture.thumbnails.request(client, &notes).unwrap();
-    assert_eq!(answer(&events), json!({"path": notes}));
+    assert_eq!(answer(&events), json!({"path": notes, "modified_ms": modified_ms(&notes)}));
     let missing = fixture.dir.join("Pictures/gone.png").display().to_string();
     fixture.thumbnails.request(client, &missing).unwrap();
     assert_eq!(answer(&events), json!({"path": missing}));
@@ -129,15 +135,15 @@ fn a_file_the_thumbnailer_fails_on_is_not_tried_again_until_it_changes() {
     let (client, events, _stream) = fixture.client();
     let photo = fixture.photo("broken.png");
     fixture.thumbnails.request(client, &photo).unwrap();
-    assert_eq!(answer(&events), json!({"path": photo}));
+    assert_eq!(answer(&events), json!({"path": photo, "modified_ms": modified_ms(&photo)}));
     fixture.thumbnails.request(client, &photo).unwrap();
-    assert_eq!(answer(&events), json!({"path": photo}));
+    assert_eq!(answer(&events), json!({"path": photo, "modified_ms": modified_ms(&photo)}));
     assert_eq!(fixture.runs(), 1, "the failure was remembered");
 
     let file = std::fs::File::options().write(true).open(&photo).unwrap();
     file.set_modified(std::time::SystemTime::now() + Duration::from_secs(120)).unwrap();
     fixture.thumbnails.request(client, &photo).unwrap();
-    assert_eq!(answer(&events), json!({"path": photo}));
+    assert_eq!(answer(&events), json!({"path": photo, "modified_ms": modified_ms(&photo)}));
     assert_eq!(fixture.runs(), 2, "a changed file is tried again");
 }
 
@@ -205,4 +211,46 @@ fn next_named_within(events: &Receiver<Outgoing>, wait: Duration) -> Option<Valu
         }
     }
     None
+}
+
+#[test]
+fn a_thumbnailer_that_cant_start_leaves_the_file_to_try_again() {
+    let fixture = Fixture::new("cant-start", "");
+    let (client, events, _stream) = fixture.client();
+    let program = fixture.dir.join("prefix/bin/png-thumbnailer");
+    let kept = std::fs::read(&program).unwrap();
+    let photo = fixture.photo("later.png");
+    // Read as the first ask comes, then gone, as when a package is removed.
+    let notes = fixture.dir.join("Pictures/first.txt");
+    std::fs::write(&notes, "x").unwrap();
+    fixture.thumbnails.request(client, &notes.display().to_string()).unwrap();
+    answer(&events);
+    std::fs::remove_file(&program).unwrap();
+    fixture.thumbnails.request(client, &photo).unwrap();
+    assert_eq!(answer(&events)["thumbnail"], Value::Null);
+
+    // Back, executable, with the script it had.
+    write_program(&fixture.dir.join("prefix/bin"), "png-thumbnailer", "");
+    std::fs::write(&program, kept).unwrap();
+    fixture.thumbnails.request(client, &photo).unwrap();
+    assert!(answer(&events)["thumbnail"].is_string(), "not marked failed, so it's made now");
+}
+
+#[test]
+fn a_file_changed_while_its_thumbnail_is_made_is_made_again() {
+    let fixture = Fixture::new("changed", "while [ ! -e \"$(dirname \"$2\")/../../go\" ]; do sleep 0.02; done");
+    let (client, events, _stream) = fixture.client();
+    let photo = fixture.photo("edited.png");
+    fixture.thumbnails.request(client, &photo).unwrap();
+    nova_test_support::wait_until(WAIT, "it's being made", || fixture.runs() == 1);
+    let file = std::fs::File::options().write(true).open(&photo).unwrap();
+    file.set_modified(std::time::SystemTime::now() + Duration::from_secs(120)).unwrap();
+    fixture.thumbnails.request(client, &photo).unwrap();
+    nova_test_support::wait_until(WAIT, "looked up", || lock(&fixture.thumbnails.shared.queues).to_make.len() == 1);
+    std::fs::write(fixture.dir.join("cache/go"), "").unwrap();
+    let made = answer(&events);
+    assert_eq!(made["modified_ms"], modified_ms(&photo), "only the edited version's answer comes");
+    assert!(made["thumbnail"].is_string());
+    assert!(next_named_within(&events, Duration::from_millis(300)).is_none());
+    assert_eq!(fixture.runs(), 2);
 }

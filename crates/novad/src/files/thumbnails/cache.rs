@@ -44,16 +44,34 @@ const MAX_DECODE_BYTES: usize = 4096 * 4096 * 8;
 pub struct Original {
     pub path: PathBuf,
     pub uri: String,
-    /// Its modification time, in whole seconds since 1970.
+    /// Its modification time, in whole seconds since 1970, as the cache
+    /// keeps it.
     pub mtime: i64,
+    /// The same in milliseconds, as a folder's listing shows it.
+    pub modified_ms: Option<i64>,
     pub size: u64,
 }
 
 impl Original {
     /// The file at `path` (absolute), as its metadata says.
     pub fn new(path: &Path, metadata: &std::fs::Metadata) -> Self {
-        Self { path: path.to_owned(), uri: uri(path), mtime: metadata.mtime(), size: metadata.size() }
+        Self {
+            path: path.to_owned(),
+            uri: uri(path),
+            mtime: metadata.mtime(),
+            modified_ms: super::super::folder::modified_ms(metadata),
+            size: metadata.size(),
+        }
     }
+}
+
+/// Why no thumbnail was stored.
+#[derive(Debug)]
+pub enum Failed {
+    /// The file, or what its thumbnailer made of it: it's marked failed.
+    File(String),
+    /// Something here (the cache can't be written): it's tried again.
+    Here(String),
 }
 
 /// `path` (absolute) as GLib's `g_filename_to_uri` writes it.
@@ -94,11 +112,12 @@ impl Cache {
     /// Stores the picture a thumbnailer wrote at `made` (a PNG) as
     /// `original`'s thumbnail, scaled down to [`FILES_THUMBNAIL_PIXELS`] if
     /// it's bigger, and returns where.
-    pub fn store(&self, original: &Original, made: &Path) -> Result<PathBuf, String> {
-        let picture = read_png(made)?;
+    pub fn store(&self, original: &Original, made: &Path) -> Result<PathBuf, Failed> {
+        let picture = read_png(made).map_err(Failed::File)?;
         let picture = picture.fit_within(FILES_THUMBNAIL_PIXELS);
         let path = self.thumbnail_path(original);
-        self.write(&path, &encode(&picture, original)?)?;
+        let png = encode(&picture, original).map_err(Failed::Here)?;
+        self.write(&path, &png).map_err(Failed::Here)?;
         Ok(path)
     }
 
@@ -231,8 +250,8 @@ fn read_png(path: &Path) -> Result<Rgba, String> {
     buffer.truncate(frame.buffer_size());
     let pixels = match frame.color_type {
         png::ColorType::Rgba => buffer,
-        png::ColorType::Rgb => buffer.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], u8::MAX]).collect(),
-        png::ColorType::GrayscaleAlpha => buffer.chunks_exact(2).flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
+        png::ColorType::Rgb => buffer.as_chunks::<3>().0.iter().flat_map(|&[r, g, b]| [r, g, b, u8::MAX]).collect(),
+        png::ColorType::GrayscaleAlpha => buffer.as_chunks::<2>().0.iter().flat_map(|&[g, a]| [g, g, g, a]).collect(),
         png::ColorType::Grayscale => buffer.iter().flat_map(|&g| [g, g, g, u8::MAX]).collect(),
         png::ColorType::Indexed => return Err("what it made has a palette left after expanding it".into()),
     };

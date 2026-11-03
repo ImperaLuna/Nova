@@ -40,7 +40,7 @@ pub struct Thumbnailer {
 #[derive(Debug, Clone, PartialEq)]
 enum Arg {
     Text(String),
-    /// An unquoted word with field codes in it.
+    /// A word with field codes in it, quoted or not, as GNOME fills them.
     Codes(String),
 }
 
@@ -127,10 +127,11 @@ pub fn load(data_dirs: &[PathBuf], path_var: &str) -> (Vec<Thumbnailer>, Vec<Str
 /// The thumbnailer for files of type `mime`, if one takes them.
 pub fn for_type<'a>(thumbnailers: &'a [Thumbnailer], mime: &str, db: &MimeDb) -> Option<&'a Thumbnailer> {
     let mime = db.canonical(mime);
+    let kinds = db.with_parents(mime);
     let takes = |thumbnailer: &&Thumbnailer, exact: bool| {
         thumbnailer.mime_types.iter().any(|taken| {
             let taken = db.canonical(taken);
-            if exact { taken == mime } else { db.is_a(mime, taken) }
+            if exact { taken == mime } else { kinds.iter().any(|kind| kind == taken) }
         })
     };
     thumbnailers
@@ -166,9 +167,7 @@ fn read(name: &str, path: &Path, path_var: &str) -> Result<Option<Thumbnailer>, 
         return Ok(None);
     }
     let Some(program) = nova_paths::find_program(&program, &search) else { return Ok(None) };
-    let args = words
-        .map(|(word, quoted)| if quoted || !word.contains('%') { Arg::Text(word) } else { Arg::Codes(word) })
-        .collect();
+    let args = words.map(|(word, _)| if word.contains('%') { Arg::Codes(word) } else { Arg::Text(word) }).collect();
     let mime_types = keys.get("MimeType").map(|types| list(types)).unwrap_or_default();
     Ok(Some(Thumbnailer { name: name.to_string(), program, args, mime_types }))
 }
@@ -224,6 +223,22 @@ mod tests {
         let (program, args) = found[0].command(&job);
         assert_eq!(program, dir.join("prefix/bin/gdk-pixbuf-thumbnailer"));
         assert_eq!(args, ["-s", "256", "file:///home/me/a%20b.png", "/tmp/out.png"].map(OsString::from));
+    }
+
+    #[test]
+    fn field_codes_in_quotes_are_filled_in_too() {
+        let dir = TempDir::new("thumbnailers-quoted");
+        let quoted =
+            "[Thumbnailer Entry]\nExec=quoted-thumbnailer -s %s \"%i\" \"--out=%o\" \"100%%\"\nMimeType=image/png;\n";
+        let share = installed(&dir, &[("quoted", quoted)], &["quoted-thumbnailer"]);
+        let (found, _) = load(&[share], "/nonexistent");
+        let (_, args) = found[0].command(&Job {
+            input: Path::new("/p/a b.png"),
+            uri: "file:///p/a%20b.png",
+            output: Path::new("/o.png"),
+            size: 256,
+        });
+        assert_eq!(args, ["-s", "256", "/p/a b.png", "--out=/o.png", "100%"].map(OsString::from));
     }
 
     #[test]
