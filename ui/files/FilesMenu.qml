@@ -69,22 +69,27 @@ FocusScope {
         signal backRequested
         signal subRequested
 
-        // Row `index`'s top, for the submenu to line up with it.
+        // Row `index`'s top in the card, for the submenu to line up with it.
         function rowTop(index: int): real {
-            return (rowRepeater.itemAt(index)?.y ?? 0) + column.y;
+            return (rowRepeater.itemAt(index)?.y ?? 0) - scroller.contentY + scroller.y;
         }
 
         function step(by: int) {
+            // From nothing picked, Up starts at the bottom.
+            let at = current < 0 && by < 0 ? entries.length : current;
             for (let tries = 0; tries < entries.length; tries++) {
-                current = (current + by + entries.length) % entries.length;
-                const entry = entries[current];
-                if (!entry.separator && entry.enabled !== false)
+                at = (at + by + entries.length) % entries.length;
+                const entry = entries[at];
+                if (!entry.separator && entry.enabled !== false) {
+                    current = at;
                     return;
+                }
             }
         }
 
         width: Tokens.filesMenuWidth
-        height: column.implicitHeight + 2 * Tokens.menuPad
+        // A long menu (many apps to open with) scrolls within the window.
+        height: Math.min(column.implicitHeight + 2 * Tokens.menuPad, menu.height)
         radius: Tokens.radiusCard
         color: Tokens.bg
         border.width: Tokens.dividerWidth
@@ -117,101 +122,118 @@ FocusScope {
             acceptedButtons: Qt.AllButtons
         }
 
-        Column {
-            id: column
+        // Keeps the row picked from the keyboard in view.
+        onCurrentChanged: {
+            const row = rowRepeater.itemAt(current);
+            if (row)
+                scroller.contentY = Math.max(Math.min(scroller.contentY, row.y), row.y + row.height - scroller.height);
+        }
+
+        Flickable {
+            id: scroller
             x: Tokens.menuPad
             y: Tokens.menuPad
             width: parent.width - 2 * x
+            height: parent.height - 2 * y
+            contentHeight: column.implicitHeight
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            clip: true
 
-            Repeater {
-                id: rowRepeater
-                model: card.entries
+            Column {
+                id: column
+                width: scroller.width
 
-                Item {
-                    id: row
+                Repeater {
+                    id: rowRepeater
+                    model: card.entries
 
-                    required property var modelData
-                    required property int index
-                    readonly property bool usable: modelData.enabled !== false
+                    Item {
+                        id: row
 
-                    width: column.width
-                    height: modelData.separator ? 2 * Tokens.filesMenuSeparatorGap + Tokens.dividerWidth : Tokens.filesMenuRowHeight
+                        required property var modelData
+                        required property int index
+                        readonly property bool usable: modelData.enabled !== false
 
-                    Rectangle {
-                        visible: row.modelData.separator === true
-                        anchors.verticalCenter: parent.verticalCenter
-                        x: Tokens.menuSeparatorInset
-                        width: parent.width - 2 * x
-                        height: Tokens.dividerWidth
-                        color: Tokens.glassRim
-                    }
-                    Rectangle {
-                        visible: !row.modelData.separator
-                        anchors.fill: parent
-                        radius: Tokens.menuRowRadius
-                        opacity: row.usable ? 1 : Tokens.dimOpacity
-                        color: card.current === row.index && row.usable ? Tokens.selected : "transparent"
+                        width: column.width
+                        height: modelData.separator ? 2 * Tokens.filesMenuSeparatorGap + Tokens.dividerWidth : Tokens.filesMenuRowHeight
 
-                        LineIcon {
-                            id: icon
-                            anchors.left: parent.left
-                            anchors.leftMargin: Tokens.rowInset
+                        Rectangle {
+                            visible: row.modelData.separator === true
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: path !== ""
-                            path: row.modelData.checked ? Icons.CHECK : row.modelData.icon ?? ""
-                            color: Tokens.fgDim
+                            x: Tokens.menuSeparatorInset
+                            width: parent.width - 2 * x
+                            height: Tokens.dividerWidth
+                            color: Tokens.glassRim
                         }
-                        Text {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 2 * Tokens.rowInset + Tokens.iconSize
-                            anchors.right: hint.left
-                            anchors.rightMargin: Tokens.rowInset
-                            anchors.verticalCenter: parent.verticalCenter
-                            font.family: Tokens.fontSans
-                            font.pixelSize: Tokens.fontSize
-                            color: Tokens.fg
-                            elide: Text.ElideRight
-                            textFormat: Text.PlainText
-                            text: row.modelData.label ?? ""
-                        }
-                        Text {
-                            id: hint
-                            anchors.right: parent.right
-                            anchors.rightMargin: Tokens.rowInset
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: !row.modelData.items
-                            font.family: Tokens.fontMono
-                            font.pixelSize: Tokens.fontSizeSmall
-                            color: Tokens.filesFaint
-                            text: row.modelData.shortcut ?? ""
-                        }
-                        LineIcon {
-                            anchors.right: parent.right
-                            anchors.rightMargin: Tokens.rowInset
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: row.modelData.items !== undefined
-                            size: Tokens.iconSizeMini
-                            path: Icons.RIGHT
-                            color: Tokens.filesFaint
-                        }
-                    }
+                        Rectangle {
+                            visible: !row.modelData.separator
+                            anchors.fill: parent
+                            radius: Tokens.menuRowRadius
+                            opacity: row.usable ? 1 : Tokens.dimOpacity
+                            color: card.current === row.index && row.usable ? Tokens.selected : "transparent"
 
-                    HoverHandler {
-                        enabled: !row.modelData.separator
-                        onHoveredChanged: {
-                            if (hovered) {
-                                card.current = row.index;
-                                card.hovered(row.index);
+                            LineIcon {
+                                id: icon
+                                anchors.left: parent.left
+                                anchors.leftMargin: Tokens.rowInset
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: path !== ""
+                                path: row.modelData.checked ? Icons.CHECK : row.modelData.icon ?? ""
+                                color: Tokens.fgDim
+                            }
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 2 * Tokens.rowInset + Tokens.iconSize
+                                anchors.right: hint.left
+                                anchors.rightMargin: Tokens.rowInset
+                                anchors.verticalCenter: parent.verticalCenter
+                                font.family: Tokens.fontSans
+                                font.pixelSize: Tokens.fontSize
+                                color: Tokens.fg
+                                elide: Text.ElideRight
+                                textFormat: Text.PlainText
+                                text: row.modelData.label ?? ""
+                            }
+                            Text {
+                                id: hint
+                                anchors.right: parent.right
+                                anchors.rightMargin: Tokens.rowInset
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: !row.modelData.items
+                                font.family: Tokens.fontMono
+                                font.pixelSize: Tokens.fontSizeSmall
+                                color: Tokens.filesFaint
+                                text: row.modelData.shortcut ?? ""
+                            }
+                            LineIcon {
+                                anchors.right: parent.right
+                                anchors.rightMargin: Tokens.rowInset
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: row.modelData.items !== undefined
+                                size: Tokens.iconSizeMini
+                                path: Icons.RIGHT
+                                color: Tokens.filesFaint
                             }
                         }
-                    }
-                    TapHandler {
-                        enabled: !row.modelData.separator && row.usable
-                        onTapped: {
-                            if (row.modelData.items)
-                                card.subRequested();
-                            else
-                                menu.pick(row.modelData);
+
+                        HoverHandler {
+                            enabled: !row.modelData.separator
+                            onHoveredChanged: {
+                                if (hovered) {
+                                    card.current = row.index;
+                                    card.hovered(row.index);
+                                }
+                            }
+                        }
+                        TapHandler {
+                            enabled: !row.modelData.separator && row.usable
+                            onTapped: {
+                                if (row.modelData.items)
+                                    card.subRequested();
+                                else
+                                    menu.pick(row.modelData);
+                            }
                         }
                     }
                 }

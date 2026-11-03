@@ -22,6 +22,18 @@ Singleton {
     property string _cutText: ""
     property var _cutPaths: []
 
+    // Anything else put on the clipboard ends the cut, so the same text
+    // copied again later copies.
+    readonly property Connections _watch: Connections {
+        target: Quickshell
+        function onClipboardTextChanged() {
+            if (Quickshell.clipboardText !== clipboard._cutText) {
+                clipboard._cutText = "";
+                clipboard._cutPaths = [];
+            }
+        }
+    }
+
     // Puts the items at `paths` on the clipboard; `move` for a cut.
     function put(paths: var, move: bool) {
         const text = Clipboard.text(paths);

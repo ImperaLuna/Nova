@@ -93,10 +93,11 @@ FocusScope {
         entryList.forceActiveFocus();
         if (typed.trim() === "" || typed === row.name)
             return;
+        const asked = folder;
         FilesService.rename(Paths.child(folder, row.name), typed, (error, name) => {
             if (error)
                 list.renameFailed(row, error);
-            else
+            else if (list.folder === asked)
                 list.model.selectNames([name]);
         });
     }

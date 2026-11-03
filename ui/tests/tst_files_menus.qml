@@ -246,6 +246,23 @@ Item {
             compare([menu.shown, closes.count], [false, 3]);
         }
 
+        function test_a_long_menu_scrolls_inside_the_window() {
+            const menu = createTemporaryObject(menuComponent, stage);
+            const items = [];
+            for (let index = 0; index < 40; index++)
+                items.push({
+                    label: `App ${index}`,
+                    act: () => {}
+                });
+            menu.open(items, Qt.point(20, 20));
+            waitForRendering(menu);
+            const last = findText(menu, "App 39");
+            keyClick(Qt.Key_Up);
+            waitForRendering(menu);
+            const shown = last.mapToItem(stage, 0, 0).y;
+            verify(shown >= 0 && shown + last.height <= stage.height, "the row picked from the keyboard is in view");
+        }
+
         function test_a_submenu_opens_beside_its_row() {
             const menu = createTemporaryObject(menuComponent, stage);
             const picked = [];
