@@ -37,6 +37,13 @@ var SEARCH = "search";
 // The arrows, Page Up/Down, Home and End through a list's rows.
 var MOVE = "move";
 
+// Archives: "Extract all…" into a folder named after one (the one picked,
+// or the one the window is in), "Extract here" beside it, and "Compress
+// to ZIP file" for the items picked.
+var EXTRACT_ALL = "extract_all";
+var EXTRACT_HERE = "extract_here";
+var COMPRESS = "compress";
+
 // From the drive menu and the command row's Sort.
 var EJECT = "eject";
 var SORT = "sort";

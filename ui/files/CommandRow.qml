@@ -7,10 +7,11 @@ import "commands.js" as Commands
 
 // Nova Files' command row, under the navigation row: New first (its menu
 // makes a folder), then cut, copy, paste, rename and move to trash, then
-// Sort. Each asks the window (`commandRequested`, a Commands name), or for
-// a menu under its button (`newRequested`, `sortRequested`); buttons dim
-// while there's nothing for them to do. View waits for the views to choose
-// from.
+// Compress to ZIP, then Sort. Inside an archive, or with one archive
+// picked, "Extract all" comes after New, as in Explorer. Each asks the
+// window (`commandRequested`, a Commands name), or for a menu under its
+// button (`newRequested`, `sortRequested`); buttons dim while there's
+// nothing for them to do. View waits for the views to choose from.
 Rectangle {
     id: row
 
@@ -25,6 +26,10 @@ Rectangle {
     signal newRequested(point at)
     signal sortRequested(point at)
     signal commandRequested(string command)
+    // "Extract all" has an archive to extract.
+    property bool extractable: false
+    // Something is picked that a zip can be made of.
+    property bool compressible: false
 
     color: Tokens.alpha(Tokens.surfaceRaised, Tokens.raisedOpacity * (1 - solid))
 
@@ -60,6 +65,12 @@ Rectangle {
             raised: true
             onClicked: row.newRequested(row.below(newButton))
         }
+        Command {
+            visible: row.extractable
+            icon: Icons.EXTRACT
+            label: qsTr("Extract all")
+            command: Commands.EXTRACT_ALL
+        }
         Separator {}
         Command {
             icon: Icons.CUT
@@ -85,6 +96,11 @@ Rectangle {
             icon: Icons.TRASH
             command: Commands.TRASH
             enabled: row.picked > 0
+        }
+        Command {
+            icon: Icons.ARCHIVE
+            command: Commands.COMPRESS
+            enabled: row.compressible
         }
         Separator {}
         ToolButton {

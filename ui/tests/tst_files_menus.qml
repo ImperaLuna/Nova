@@ -56,13 +56,28 @@ Item {
 
         function test_the_item_menu_follows_what_is_picked() {
             const act = () => {};
-            const one = Menus.forItems([file("a.txt")], () => [], () => "", act);
-            compare(labels(one), ["Open", "Open with…", "-", "Rename…", "Cut", "Copy", "Copy path", "-", "Show details…", "-", "Move to trash", "-", "Properties"]);
-            const two = Menus.forItems([file("a.txt"), folder("b")], () => [], () => "", act);
-            compare(labels(two), ["Open", "-", "Cut", "Copy", "Copy path", "-", "Move to trash", "-", "Properties"], "nothing for one item only, no new window for a file");
-            const folders = Menus.forItems([folder("a"), folder("b")], () => [], () => "", act);
+            const one = Menus.forItems([file("a.txt")], false, () => [], () => "", act);
+            compare(labels(one), ["Open", "Open with…", "-", "Rename…", "Cut", "Copy", "Compress to ZIP file", "Copy path", "-", "Show details…", "-", "Move to trash", "-", "Properties"]);
+            const two = Menus.forItems([file("a.txt"), folder("b")], false, () => [], () => "", act);
+            compare(labels(two), ["Open", "-", "Cut", "Copy", "Compress to ZIP file", "Copy path", "-", "Move to trash", "-", "Properties"], "nothing for one item only, no new window for a file");
+            const folders = Menus.forItems([folder("a"), folder("b")], false, () => [], () => "", act);
             verify(labels(folders).includes("Open in new window"));
             compare(one.find(item => item.label === "Cut").shortcut, "Ctrl + X");
+        }
+
+        function test_an_archive_extracts_and_nothing_changes_inside_one() {
+            const asked = [];
+            const act = (command, rows) => asked.push([command, rows.map(row => row.name)]);
+            const zip = Object.assign(file("photos.zip"), {
+                archive: true
+            });
+            const menu = Menus.forItems([zip], false, () => [], () => "", act);
+            compare(labels(menu).slice(0, 4), ["Open", "Open with…", "Extract all…", "Extract here"]);
+            menu.find(item => item.label === "Extract here").act();
+            menu.find(item => item.label === "Compress to ZIP file").act();
+            compare(asked, [[Commands.EXTRACT_HERE, ["photos.zip"]], [Commands.COMPRESS, ["photos.zip"]]]);
+            const inside = Menus.forItems([file("a.txt")], true, () => [], () => "", act);
+            compare(labels(inside), ["Open", "Open with…", "-", "Copy", "Copy path", "-", "Show details…", "-", "Properties"]);
         }
 
         function test_menu_items_act_with_their_command_and_rows() {
@@ -79,7 +94,7 @@ Item {
                     name: "Vim"
                 }
             ];
-            const menu = Menus.forItems(rows, () => apps, () => "vim.desktop", act);
+            const menu = Menus.forItems(rows, false, () => apps, () => "vim.desktop", act);
             menu.find(item => item.label === "Copy").act();
             const openWith = menu.find(item => item.label === "Open with…").items();
             compare(openWith.map(item => [item.label, item.checked]), [["Text Editor", false], ["Vim", true]]);

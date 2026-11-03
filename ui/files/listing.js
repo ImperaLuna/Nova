@@ -19,6 +19,7 @@ function row(entry) {
         link: entry.link,
         hidden: entry.hidden,
         mime: entry.mime,
+        archive: entry.archive ?? false,
         size: entry.size ?? -1,
         modified: entry.modified_ms ?? -1
     };
@@ -33,6 +34,7 @@ function copy(row) {
         link: row.link,
         hidden: row.hidden,
         mime: row.mime,
+        archive: row.archive,
         size: row.size,
         modified: row.modified
     };
@@ -43,6 +45,8 @@ function copy(row) {
 function icon(row) {
     if (row.dir)
         return Icons.FOLDER;
+    if (row.archive)
+        return Icons.ARCHIVE;
     const group = row.mime.slice(0, row.mime.indexOf("/"));
     if (group === "image")
         return Icons.PICTURE;
@@ -172,10 +176,10 @@ function moved(key, current, count, page) {
 }
 
 // What opening the selected rows does: {folder, files}. One selected
-// folder is gone into; otherwise every selected file opens in its app,
+// folder or archive is gone into; otherwise every selected file opens in its app,
 // and folders among them stay put.
 function opening(rows) {
-    if (rows.length === 1 && rows[0].dir)
+    if (rows.length === 1 && (rows[0].dir || rows[0].archive))
         return {
             folder: rows[0].name,
             files: []

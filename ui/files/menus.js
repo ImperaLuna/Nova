@@ -24,10 +24,13 @@ var SEPARATOR = {
     separator: true
 };
 
-// The menu for `rows` (plain copies, at least one). `apps()` gives the
-// apps that can open a single file ({id, name}) and `defaultApp` its
-// default, for Open with.
-function forItems(rows, apps, defaultApp, act) {
+// The menu for `rows` (plain copies, at least one), in an archive when
+// `inArchive` (where nothing can be changed). `apps()` gives the apps that
+// can open a single file ({id, name}) and `defaultApp` its default, for
+// Open with. A single archive picked gets Extract all… and Extract here
+// after the ways to open it, and items outside an archive get Compress to
+// ZIP file before Copy path, as in Explorer.
+function forItems(rows, inArchive, apps, defaultApp, act) {
     const single = rows.length === 1;
     const folders = rows.every(row => row.dir);
     const menu = [_item(qsTr("Open"), Icons.OPEN, Commands.OPEN, act, rows)];
@@ -44,13 +47,22 @@ function forItems(rows, apps, defaultApp, act) {
         });
     if (folders)
         menu.push(_item(qsTr("Open in new window"), "", Commands.NEW_WINDOW, act, rows));
+    if (single && rows[0].archive && !inArchive)
+        menu.push(_item(qsTr("Extract all…"), Icons.EXTRACT, Commands.EXTRACT_ALL, act, rows), _item(qsTr("Extract here"), "", Commands.EXTRACT_HERE, act, rows));
     menu.push(SEPARATOR);
-    if (single)
+    if (single && !inArchive)
         menu.push(_item(qsTr("Rename…"), Icons.RENAME, Commands.RENAME, act, rows));
-    menu.push(_item(qsTr("Cut"), Icons.CUT, Commands.CUT, act, rows), _item(qsTr("Copy"), Icons.COPY, Commands.COPY, act, rows), _item(qsTr("Copy path"), "", Commands.COPY_PATH, act, rows));
+    if (!inArchive)
+        menu.push(_item(qsTr("Cut"), Icons.CUT, Commands.CUT, act, rows));
+    menu.push(_item(qsTr("Copy"), Icons.COPY, Commands.COPY, act, rows));
+    if (!inArchive)
+        menu.push(_item(qsTr("Compress to ZIP file"), Icons.ARCHIVE, Commands.COMPRESS, act, rows));
+    menu.push(_item(qsTr("Copy path"), "", Commands.COPY_PATH, act, rows));
     if (single)
         menu.push(SEPARATOR, _item(qsTr("Show details…"), Icons.INFO, Commands.DETAILS, act, rows));
-    menu.push(SEPARATOR, _item(qsTr("Move to trash"), Icons.TRASH, Commands.TRASH, act, rows), SEPARATOR, _properties(act, rows));
+    if (!inArchive)
+        menu.push(SEPARATOR, _item(qsTr("Move to trash"), Icons.TRASH, Commands.TRASH, act, rows));
+    menu.push(SEPARATOR, _properties(act, rows));
     return menu;
 }
 

@@ -182,7 +182,11 @@ impl History {
     pub fn moved(&self, origin: Origin, mode: TransferMode, placed: &[(PathBuf, PathBuf)]) {
         let back = || Op::Move(placed.iter().map(|(from, to)| (to.clone(), from.clone())).collect());
         self.change(|stacks| match (origin, mode) {
-            (Origin::New, TransferMode::Copy) => {
+            // What extracting or compressing made is new, like a copy's.
+            (
+                Origin::New,
+                TransferMode::Copy | TransferMode::Extract | TransferMode::ExtractHere | TransferMode::Compress,
+            ) => {
                 let copies = placed.iter().map(|(_, to)| wire_text(to.as_os_str())).collect();
                 stacks.took(Step { kind: FileStep::Copy, op: Op::Trash(copies) });
             }
@@ -451,6 +455,21 @@ mod tests {
         assert!(fixture.exists("to/notes.txt"));
         assert_eq!(fixture.trashed(), 0);
         assert_eq!(fixture.shown(), json!({"undo": "copy"}));
+    }
+
+    #[test]
+    fn a_zip_made_or_extracted_is_undone_to_the_trash() {
+        let fixture = Fixture::new("archive");
+        fixture.write("from/notes.txt");
+        fixture.transfer(TransferMode::Compress, &["from/notes.txt"], "from");
+        assert_eq!(fixture.shown(), json!({"undo": "copy"}));
+        fixture.transfer(TransferMode::Extract, &["from/notes.zip"], "to");
+        assert!(fixture.exists("to/notes/notes.txt"));
+        assert_eq!(fixture.run(Way::Undo), Ok(false));
+        assert!(!fixture.exists("to/notes") && fixture.exists("from/notes.zip"));
+        assert_eq!(fixture.run(Way::Undo), Ok(false));
+        assert!(!fixture.exists("from/notes.zip") && fixture.exists("from/notes.txt"));
+        assert_eq!(fixture.trashed(), 2);
     }
 
     #[test]

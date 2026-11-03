@@ -17,6 +17,8 @@ import "../daemon/protocol.js" as Protocol
 // showing `folder` with `select` selected. The navigation row, the command
 // row, then the sidebar beside the file list, with its copies and moves
 // over them all; opening a folder in the list shows it in the same window.
+// Inside an archive (a zip or tar, opened like a folder) nothing can be
+// changed: its command row offers "Extract all" instead.
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
 // (ConfirmDialog). Right-click menus (menus.js: on items, on the empty
@@ -48,6 +50,16 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    // The archive the folder is inside, or empty.
+    readonly property string archive: list.model.archive
+    // The archive "Extract all" extracts: the one the window is in, or the
+    // one picked.
+    readonly property string extractable: {
+        if (archive !== "")
+            return archive;
+        const picked = list.model.revision >= 0 && list.model.selectedCount === 1 ? list.model.selectedRows()[0] : null;
+        return picked?.archive ? Paths.child(folder, picked.name) : "";
+    }
     readonly property string home: Quickshell.env("HOME") ?? ""
     // A dialog or menu has the window's attention: the confirm dialog, a
     // name clash, a menu, the Properties dialog or a drive's eject problem.
@@ -132,6 +144,15 @@ FloatingWindow {
         case Commands.PASTE:
             window.paste();
             break;
+        case Commands.EXTRACT_ALL:
+        case Commands.EXTRACT_HERE:
+            // The archive picked, or the one the window is in.
+            if (paths.length === 1 || extractable !== "")
+                window.extract(paths.length === 1 ? paths[0] : extractable, command === Commands.EXTRACT_HERE);
+            break;
+        case Commands.COMPRESS:
+            window.compress(paths);
+            break;
         case Commands.NEW_FOLDER:
             {
                 // Named in place only if the window is still there.
@@ -211,6 +232,8 @@ FloatingWindow {
     // Moves the rows (the file list's) in the folder shown to the trash, at
     // once: Delete.
     function moveToTrash(rows: var) {
+        if (archive !== "")
+            return;
         const paths = Trash.paths(folder, rows);
         FilesService.trash(paths, error => {
             if (error)
@@ -221,6 +244,8 @@ FloatingWindow {
     // Asks, then deletes the rows (the file list's) in the folder shown for
     // good: Shift+Delete.
     function deleteForGood(rows: var) {
+        if (archive !== "")
+            return;
         const paths = Trash.paths(folder, rows);
         confirm(rows, () => FilesService.deleteForGood(paths, error => {
                 if (error)
@@ -349,9 +374,24 @@ FloatingWindow {
         transfers.start(mode, sources, folder);
     }
 
+    // Extracts the archive at `path` beside it: into a folder named after
+    // it ("Extract all"), or straight into its folder (`here`).
+    function extract(path: string, here: bool) {
+        transfer(here ? Protocol.TRANSFER_EXTRACT_HERE : Protocol.TRANSFER_EXTRACT, [path], Paths.parent(path));
+    }
+
+    // Packs `paths` into a new zip in the folder shown.
+    function compress(paths: var) {
+        if (archive === "" && paths.length > 0)
+            transfer(Protocol.TRANSFER_COMPRESS, paths, folder);
+    }
+
     // Does what a drop asks: `action` (a Protocol.TRANSFER_* mode or
     // Drops.TRASH) on `sources` (absolute paths) into `folder`.
     function drop(action: string, sources: var, folder: string) {
+        // Nothing goes into or out of an archive by dragging (IMP-337).
+        if (archive !== "" && (Paths.inside(folder, archive) || sources.some(source => Paths.inside(source, archive))))
+            return;
         if (action === Drops.TRASH)
             FilesService.trash(sources, error => {
                 if (error)
@@ -383,6 +423,8 @@ FloatingWindow {
         onCommandRequested: command => window.act(command, list.selection(), null)
         onNewRequested: at => window.openMenu(Menus.forNew(window.act), commands, at)
         onSortRequested: at => window.openMenu(Menus.forSort(list.model.sort, window.act), commands, at)
+        extractable: window.extractable !== ""
+        compressible: window.archive === "" && list.model.selectedCount > 0
     }
     TrashCommandRow {
         id: trashCommands
@@ -426,7 +468,7 @@ FloatingWindow {
         onMenuRequested: (rows, at) => {
             if (rows.length === 1 && !rows[0].dir)
                 menuApps.path = Paths.child(window.folder, rows[0].name);
-            const items = rows.length > 0 ? Menus.forItems(rows, () => menuApps.apps, () => menuApps.defaultApp, window.act) : Menus.forFolder(FilesClipboard.hasFiles, list.showHidden, FilesService.history, window.act);
+            const items = rows.length > 0 ? Menus.forItems(rows, window.archive !== "", () => menuApps.apps, () => menuApps.defaultApp, window.act) : Menus.forFolder(FilesClipboard.hasFiles, list.showHidden, FilesService.history, window.act);
             window.openMenu(items, list, at);
         }
         solid: FilesService.listSolid

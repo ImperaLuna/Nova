@@ -325,6 +325,9 @@ var EJECT_BUSY = "busy";
 // What a files_transfer job does (TransferMode).
 var TRANSFER_COPY = "copy";
 var TRANSFER_MOVE = "move";
+var TRANSFER_EXTRACT = "extract";
+var TRANSFER_EXTRACT_HERE = "extract_here";
+var TRANSFER_COMPRESS = "compress";
 
 // How a files_transfer job is going (TransferState).
 var TRANSFER_COUNTING = "counting";
