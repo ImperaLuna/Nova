@@ -22,7 +22,7 @@ import "../daemon/protocol.js" as Protocol
 // (ConfirmDialog). The Properties dialog (Alt+Enter, a drive's menu), a
 // drive's menu and the dialog when one can't be ejected lie over it all.
 // Files dropped on the list or the sidebar are copied, moved or trashed
-// here, as the drop decided (drops.js).
+// here, as novad answered for the drop (DropTarget).
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
 // window's keys are the table's WINDOW entries (shortcuts.js), done by
@@ -267,8 +267,8 @@ FloatingWindow {
             transfer(Protocol.TRANSFER_COMPRESS, paths, folder);
     }
 
-    // Does what a drop decided: `action` (Drops.decide) on `sources`
-    // (absolute paths) into `folder`.
+    // Does what a drop asks: `action` (a Protocol.TRANSFER_* mode or
+    // Drops.TRASH) on `sources` (absolute paths) into `folder`.
     function drop(action: string, sources: var, folder: string) {
         // Nothing goes into or out of an archive by dragging (IMP-337).
         if (archive !== "" && (Paths.inside(folder, archive) || sources.some(source => Paths.inside(source, archive))))

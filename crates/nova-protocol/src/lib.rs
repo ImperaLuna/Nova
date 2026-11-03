@@ -2019,14 +2019,17 @@ pub enum Command {
         sources: Vec<String>,
         folder: String,
     },
-    /// Whether every item at `sources` (absolute paths, wire text) is on
-    /// the same drive (file system) as the folder `folder` (feature
-    /// `files`), answered with a bool. Nova Files moves what's dragged onto
-    /// a folder on the same drive and copies it to another, as Explorer
-    /// does.
-    FilesSameDrive {
+    /// What dropping `sources` (absolute paths, wire text) on the folder
+    /// `folder` does (feature `files`), answered with a [`TransferMode`],
+    /// or null when nothing can be dropped there, as Explorer decides: on
+    /// the folder's drive it moves, onto another it copies, and `copy`
+    /// (Ctrl) copies anyway. A folder never goes into itself or one of its
+    /// own folders, and a move into the folder the items are in does
+    /// nothing. Nothing is touched: `files_transfer` does the drop.
+    FilesDrop {
         sources: Vec<String>,
         folder: String,
+        copy: bool,
     },
     /// Stops this connection's job `job`. What it already copied or moved
     /// stays; a file it was halfway through is removed.
