@@ -129,6 +129,11 @@ Item {
             }, act);
             compare(labels(mounted), ["Open in new tab", "Open in new window", "Show details…", "-", "Properties"], "how full it is, once mounted");
             compare(mounted[4].shortcut, "Alt + Enter");
+            const shown = [];
+            const hiddenItems = Menus.hiddenItems(true, command => shown.push(command));
+            compare([hiddenItems.label, hiddenItems.checked, hiddenItems.shortcut], ["Hidden items", true, "Ctrl + H"], "the View menu's Hidden items");
+            hiddenItems.act();
+            compare(shown, [Commands.HIDDEN]);
             const picked = [];
             const sort = Menus.forSort({
                 key: Protocol.FILE_SORT_SIZE,

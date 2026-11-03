@@ -94,6 +94,14 @@ function forFolder(canPaste, hidden, history, act) {
     return menu.concat([SEPARATOR, _item(qsTr("Select all"), "", Commands.SELECT_ALL, act, []), showHidden, SEPARATOR, _item(qsTr("Show details…"), Icons.INFO, Commands.DETAILS, act, []), _properties(act, [])]);
 }
 
+// Hidden items, checked while dot files show: in the command row's View
+// (the folder menu's Show hidden files does the same).
+function hiddenItems(hidden, act) {
+    const item = _item(qsTr("Hidden items"), "", Commands.HIDDEN, act, []);
+    item.checked = hidden;
+    return item;
+}
+
 // The command row's New.
 function forNew(act) {
     return [_item(qsTr("Folder"), Icons.FOLDER, Commands.NEW_FOLDER, act, [])];
