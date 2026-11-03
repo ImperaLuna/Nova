@@ -113,7 +113,7 @@ FloatingWindow {
     // Opens `path` (absolute, or from `~`) in a new tab at the end, shown
     // at once when `front`.
     function openTab(path: string, front: bool) {
-        const opened = tabComponent.createObject(window);
+        const opened = tabComponent.createObject(window) as FilesTab;
         opened.navigator.hidden = list.showHidden;
         opened.navigator.begin(path);
         tabs = tabs.concat([opened]);
@@ -160,7 +160,9 @@ FloatingWindow {
     }
 
     function moveTab(moving: FilesTab, to: int) {
-        tabs = Tabs.reordered(tabs, tabs.indexOf(moving), to);
+        const from = tabs.indexOf(moving);
+        if (from !== to)
+            tabs = Tabs.reordered(tabs, from, to);
     }
 
     // Gives `torn` a window of its own and closes it here.

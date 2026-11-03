@@ -157,11 +157,14 @@ Item {
                             row.picked(tab.modelData);
                             return;
                         }
-                        if (Tabs.tornOut(tab.dragged.y, Tokens.filesTabTearDistance, row.tabs.length))
+                        // Either answer can remake the row's tabs, this
+                        // one too, so it's the last thing done here.
+                        const moved = tab.dragged;
+                        tab.dragged = Qt.point(0, 0);
+                        if (Tabs.tornOut(moved.y, Tokens.filesTabTearDistance, row.tabs.length))
                             row.tornOut(tab.modelData);
                         else
-                            row.moved(tab.modelData, Tabs.dropped(tab.index, tab.dragged.x, row.tabWidth + Tokens.filesTabGap, row.tabs.length));
-                        tab.dragged = Qt.point(0, 0);
+                            row.moved(tab.modelData, Tabs.dropped(tab.index, moved.x, row.tabWidth + Tokens.filesTabGap, row.tabs.length));
                     }
                 }
             }
