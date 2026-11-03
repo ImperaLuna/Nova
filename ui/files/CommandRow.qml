@@ -4,28 +4,24 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 import "commands.js" as Commands
+import "listing.js" as Listing
 
 // Nova Files' command row, under the navigation row: New first (its menu
 // makes a folder), then cut, copy, paste, rename and move to trash, then
-// Compress to ZIP, then Sort. Inside an archive, or with one archive
-// picked, "Extract all" comes after New, as in Explorer. Each asks the
-// window (`commandRequested`, a Commands name), or for a menu under its
-// button (`newRequested`, `sortRequested`); buttons dim while there's
-// nothing for them to do. View waits for the views to choose from. At
-// its right end the preview pane's button, raised while the pane shows
-// (Alt+P too).
-// What uses space, after Sort and View, stays lit while the list shows it
-// (`spaceView`).
+// Compress to ZIP, then Sort and View, then What uses space. Inside an
+// archive, or with one archive picked, "Extract all" comes after New, as
+// in Explorer. Each asks the window (`commandRequested`, a Commands name),
+// or for a menu under its button (`newRequested`, `sortRequested`,
+// `viewMenuRequested`); buttons dim while there's nothing for them to do.
+// View shows the file list's view (`view`, a Listing view). What uses
+// space stays lit while the list shows it (`spaceView`). At its right end
+// the preview pane's button, raised while the pane shows (Alt+P too).
 Rectangle {
     id: row
 
     implicitHeight: actions.implicitHeight + Tokens.filesCommandPadTop + Tokens.gap
     // How solid the window frame is (0..1): the row fades into it.
     property real solid: 0
-    property bool spaceView: false
-
-    signal spaceToggled
-
     // How many items are picked, and whether a paste would bring any.
     property int picked: 0
     property bool canPaste: false
@@ -40,6 +36,15 @@ Rectangle {
     property bool extractable: false
     // Something is picked that a zip can be made of.
     property bool compressible: false
+
+    property string view: Listing.DETAILS
+
+    // View was clicked: its menu goes at `at`, in the row's coordinates.
+    signal viewMenuRequested(point at)
+
+    property bool spaceView: false
+
+    signal spaceToggled
 
     color: Tokens.alpha(Tokens.surfaceRaised, Tokens.raisedOpacity * (1 - solid))
 
@@ -121,10 +126,11 @@ Rectangle {
             onClicked: row.sortRequested(row.below(sortButton))
         }
         ToolButton {
-            icon: Icons.VIEW
+            id: viewButton
+            icon: row.view === Listing.ICONS ? Icons.GRID : Icons.VIEW
             label: qsTr("View")
             menu: true
-            enabled: false
+            onClicked: row.viewMenuRequested(viewButton.mapToItem(row, 0, viewButton.height + Tokens.labelNudge * 2))
         }
         Separator {}
         ToolButton {

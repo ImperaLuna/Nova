@@ -85,6 +85,21 @@ fn decode_percents(uri: &str) -> Option<String> {
     String::from_utf8(percent_decoded(uri)?).ok()
 }
 
+/// `bytes` as URI text: ASCII letters, digits and the bytes in `keep` as
+/// they are, every other byte as `%XX` (upper-case hex).
+pub fn percent_encoded(bytes: &[u8], keep: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut out = String::with_capacity(bytes.len());
+    for &byte in bytes {
+        if byte.is_ascii_alphanumeric() || keep.contains(&byte) {
+            out.push(char::from(byte));
+        } else {
+            let _ = write!(out, "%{byte:02X}");
+        }
+    }
+    out
+}
+
 /// The bytes a URI's path names, its `%XX` escapes decoded; `None` when
 /// one is broken.
 pub fn percent_decoded(uri: &str) -> Option<Vec<u8>> {

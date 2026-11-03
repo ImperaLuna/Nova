@@ -4,6 +4,7 @@ import QtQuick
 import QtTest
 import "../files"
 import "../theme"
+import "../files/arrival.js" as Arrival
 import "../files/listing.js" as Listing
 import "../files/paths.js" as Paths
 import "../files/navigation.js" as Navigation
@@ -11,28 +12,30 @@ import "../files/trash.js" as Trash
 import "../files/home.js" as Home
 import "../files/games.js" as Games
 import "../daemon/protocol.js" as Protocol
+import "../theme"
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
-import "../files/space.js" as Space
-import "../files/search.js" as Search
 import "../files/tabs.js" as Tabs
 import "../files/preview.js" as Preview
+import "../files/thumbnails.js" as Thumbnails
+import "../files/space.js" as Space
+import "../text/bytes.js" as Bytes
+import "../files/search.js" as Search
 import "../files/picker.js" as Picker
 
 // Nova Files' address bar parts, window title and entry paths, its
 // history and the sidebar tree's kept folders and rows, its file list:
 // how an entry reads in the columns, sorting by a header, what clicks and
-// keys select, and what opening the selection does, and the copy and move
-// jobs a window keeps and how their card and name clash dialog read and
+// keys select, what opening the selection does and how new rows arrive,
+// and the copy and move jobs a window keeps and how their card and name clash dialog read and
 // answer, and the trash: its rows, its selection, and the dialog that asks
-// before deleting for good, search: how results read and when novad
-// is asked, a window as an app's Open or Save dialog: its title and
-// accept label, what accepting picks, and its bar, what the preview pane
-// shows, the window's
-// tabs: which one Ctrl+Tab and closing land on, their widths, dragging one
-// along or out of the row, and the row's clicks, and the games: their
-// rows, menu and list. The root is an Item: a TestCase root gets no mouse
-// events.
+// before deleting for good, what the preview pane shows, the window's
+// tabs (which one Ctrl+Tab and closing land on, their widths, dragging one
+// along or out of the row, and the row's clicks), and the Icons view's
+// tiles and the View menu, the games: their rows, menu and list, and search: how results read
+// and when novad is asked, and a window as an app's Open or Save dialog:
+// its title and accept label, what accepting picks, and its bar. The root is an Item: a TestCase root gets no
+// mouse events.
 Item {
     id: stage
     width: 880
@@ -248,6 +251,39 @@ Item {
             compare(Listing.items(5), "5 items");
         }
 
+        readonly property var pace: ({
+                stagger: Tokens.filesRowStagger,
+                wave: Tokens.filesRowWave,
+                most: Tokens.filesRowWaveMost
+            })
+
+        function test_a_small_folder_rises_one_row_after_another() {
+            const waits = [0, 1, 2, 3, 4, 5].map(order => Arrival.wait(order, 6, 6, pace));
+            compare(waits, [0, 1, 2, 3, 4, 5].map(order => order * Tokens.filesRowStagger));
+        }
+
+        function test_the_wave_fits_its_time_however_many_rows_take_part() {
+            const page = 30;
+            const coming = Tokens.filesRowWaveMost;
+            const last = Arrival.wait(page, page + 1, coming, pace);
+            verify(last <= Tokens.filesRowWave, `the last row waits ${last} ms`);
+            verify(Arrival.wait(1, page + 1, coming, pace) < Tokens.filesRowStagger, "the step shrinks");
+        }
+
+        function test_a_big_folder_comes_in_as_one_piece() {
+            for (const order of [0, 1, 10, 30])
+                compare(Arrival.wait(order, 31, 2000, pace), 0);
+        }
+
+        function test_rows_off_screen_or_without_a_wave_just_show() {
+            compare(Arrival.order(12, 10, 20), 2, "rows ripple out from where the list opened");
+            compare(Arrival.order(8, 10, 20), 2);
+            compare(Arrival.order(31, 10, 20), -1, "past the screen");
+            compare(Arrival.order(600, 0, 20), -1, "a later page");
+            compare(Arrival.order(3, -1, 20), -1, "no wave running");
+            compare(Arrival.wait(-1, 21, 21, pace), -1);
+        }
+
         // Explorer's "197 GB free of 931 GB": 1024-based, like every size in
         // Nova, one decimal under 10.
         function test_a_drive_reads_what_is_free_of_its_size() {
@@ -402,6 +438,35 @@ Item {
             compare(Listing.moved(Qt.Key_PageUp, 6, 10, 4), 2);
             compare(Listing.moved(Qt.Key_Home, 6, 10, 4), 0);
             compare(Listing.moved(Qt.Key_End, 0, 10, 4), 9);
+            verify(Listing.MOVES.includes(Qt.Key_End));
+            verify(!Listing.MOVES.includes(Qt.Key_Return));
+            verify(!Listing.MOVES.includes(Qt.Key_Left), "Details rows don't go sideways");
+        }
+
+        function test_keys_move_through_the_tiles_like_a_grid() {
+            // 10 tiles, 4 to a line: 0-3, 4-7, then 8 and 9.
+            compare(Listing.moved(Qt.Key_Right, 2, 10, 8, 4), 3);
+            compare(Listing.moved(Qt.Key_Right, 3, 10, 8, 4), 4, "Right wraps to the next line");
+            compare(Listing.moved(Qt.Key_Left, 4, 10, 8, 4), 3);
+            compare(Listing.moved(Qt.Key_Left, 0, 10, 8, 4), 0);
+            compare(Listing.moved(Qt.Key_Right, 9, 10, 8, 4), 9);
+            compare(Listing.moved(Qt.Key_Down, 1, 10, 8, 4), 5);
+            compare(Listing.moved(Qt.Key_Down, 6, 10, 8, 4), 9, "nothing below: the last tile");
+            compare(Listing.moved(Qt.Key_Down, 9, 10, 8, 4), 9, "last line stays put");
+            compare(Listing.moved(Qt.Key_Up, 6, 10, 8, 4), 2);
+            compare(Listing.moved(Qt.Key_Up, 2, 10, 8, 4), 2, "first line stays put");
+            compare(Listing.moved(Qt.Key_PageDown, 1, 10, 8, 4), 9);
+            compare(Listing.moved(Qt.Key_Left, -1, 10, 8, 4), 0, "nothing current: the first tile");
+            verify(Listing.GRID_MOVES.includes(Qt.Key_Left));
+            verify(Listing.GRID_MOVES.includes(Qt.Key_End));
+        }
+
+        function test_tiles_ease_in_rippling_out_from_where_the_list_opened() {
+            compare(Arrival.order(5, 5, 3, 4), 0);
+            compare(Arrival.order(0, 5, 3, 4), 1, "a diagonal is one step");
+            compare(Arrival.order(7, 5, 3, 4), 2);
+            compare(Arrival.order(13, 5, 3, 4), 2, "two lines down");
+            compare(Arrival.order(21, 5, 3, 4), -1, "past the screen");
         }
 
         function test_opening_goes_into_one_folder_or_opens_files() {
@@ -1003,6 +1068,330 @@ Item {
             compare(dismissals.count, 1);
         }
 
+        function test_ctrl_tab_goes_round_the_tabs() {
+            compare(Tabs.cycled(0, 3, 1), 1);
+            compare(Tabs.cycled(2, 3, 1), 0, "from the last to the first");
+            compare(Tabs.cycled(0, 3, -1), 2, "Ctrl+Shift+Tab from the first to the last");
+            compare(Tabs.cycled(0, 1, 1), 0);
+        }
+
+        function test_closing_the_shown_tab_shows_the_next_one() {
+            compare(Tabs.neighbour(1, 3), 2);
+            compare(Tabs.neighbour(2, 3), 1, "the last one's goes back one");
+            compare(Tabs.neighbour(0, 2), 1);
+        }
+
+        function test_tabs_share_the_row_between_their_widths() {
+            compare(Tabs.width(1000, 2, 2, 96, 220), 220, "room to spare: widest");
+            compare(Tabs.width(500, 4, 2, 96, 220), 123);
+            compare(Tabs.width(300, 8, 2, 96, 220), 96, "crowded: narrowest");
+        }
+
+        function test_a_dragged_tab_moves_along_or_comes_out() {
+            verify(Tabs.tornOut(60, 40, 2));
+            verify(Tabs.tornOut(-60, 40, 2), "above the row too");
+            verify(!Tabs.tornOut(20, 40, 2), "near the row it stays");
+            verify(!Tabs.tornOut(200, 40, 1), "the only tab stays");
+            compare(Tabs.dropped(0, 230, 222, 3), 1);
+            compare(Tabs.dropped(2, -1000, 222, 3), 0);
+            compare(Tabs.dropped(1, 1000, 222, 3), 2);
+            compare(Tabs.dropped(1, 50, 222, 3), 1, "less than half a tab stays");
+            compare(Tabs.reordered(["a", "b", "c"], 0, 2), ["b", "c", "a"]);
+            compare(Tabs.reordered(["a", "b", "c"], 2, 0), ["c", "a", "b"]);
+        }
+
+        // A stand-in for FilesTab, whose Navigator needs novad.
+        function test_the_shown_tab_scrolls_into_view() {
+            compare(Tabs.revealed(0, 100, 96, 400), 0, "in view: stays");
+            compare(Tabs.revealed(0, 500, 96, 400), 196, "past the end: its end at the view's");
+            compare(Tabs.revealed(300, 98, 96, 400), 98, "before the start: its start at the view's");
+        }
+
+        Component {
+            id: tabComponent
+            QtObject {
+                property string title
+                property bool trash
+            }
+        }
+        Component {
+            id: tabRowComponent
+            TabRow {
+                width: 880
+                raised: "#202020"
+            }
+        }
+        SignalSpy {
+            id: tabsPicked
+            signalName: "picked"
+        }
+        SignalSpy {
+            id: tabsClosed
+            signalName: "closeRequested"
+        }
+
+        function test_the_tab_row_shows_closes_and_names_its_tabs() {
+            const music = createTemporaryObject(tabComponent, stage, {
+                title: "Music"
+            });
+            const trash = createTemporaryObject(tabComponent, stage, {
+                title: Trash.name(),
+                trash: true
+            });
+            const row = createTemporaryObject(tabRowComponent, stage, {
+                tabs: [music, trash],
+                current: music
+            });
+            tabsPicked.target = row;
+            tabsClosed.target = row;
+            tabsPicked.clear();
+            tabsClosed.clear();
+            waitForRendering(row);
+            compare(row.tabWidth, Tokens.filesTabMaxWidth);
+            verify(findText(row, "Music"));
+            const trashTitle = findText(row, Trash.name());
+            verify(trashTitle);
+            mouseClick(trashTitle);
+            compare(tabsPicked.count, 1);
+            compare(tabsPicked.signalArguments[0][0], trash);
+            // The shown tab's × is at its right end.
+            const musicTitle = findText(row, "Music");
+            mouseClick(musicTitle.parent, musicTitle.parent.width - Tokens.filesTabHeight / 2, musicTitle.parent.height / 2);
+            compare(tabsClosed.count, 1);
+            compare(tabsClosed.signalArguments[0][0], music);
+            compare(tabsPicked.count, 1, "the × doesn't also show it");
+            mouseClick(trashTitle, 1, 1, Qt.MiddleButton);
+            compare(tabsClosed.count, 2, "a middle click closes");
+        }
+
+        Component {
+            id: tileComponent
+            IconTile {
+                index: 0
+                dir: false
+                hidden: false
+                mime: "text/plain"
+                modified: 0
+                folder: "/home/ana/Pictures"
+                thumbnails: null
+                selected: false
+                riseWait: -1
+            }
+        }
+
+        // Stands in for FilesService's thumbnail calls, which need novad:
+        // it keeps what's asked for, and `answer` sends what novad would.
+        QtObject {
+            id: thumbnailAnswers
+
+            property var asked: []
+            property var cancelled: []
+
+            function thumbnail(path, modified, done) {
+                asked = asked.concat([
+                    {
+                        path: path,
+                        done: done
+                    }
+                ]);
+            }
+            function cancelThumbnail(path, done) {
+                cancelled = cancelled.concat([path]);
+                asked = asked.filter(ask => ask.done !== done);
+            }
+            function answer(file) {
+                const waiting = asked;
+                asked = [];
+                for (const ask of waiting)
+                    ask.done(file);
+            }
+            function clear() {
+                asked = [];
+                cancelled = [];
+            }
+        }
+
+        SignalSpy {
+            id: tilePresses
+            signalName: "pressed"
+        }
+
+        SignalSpy {
+            id: tileOpens
+            signalName: "opened"
+        }
+
+        function test_a_tile_shows_its_name_in_two_lines_at_most() {
+            const tile = createTemporaryObject(tileComponent, stage, {
+                name: "a_really_long_file_name_without_any_spaces_that_goes_on_and_on.bin"
+            });
+            const label = findText(tile, tile.name);
+            verify(label);
+            compare(label.lineCount, Tokens.filesTileNameLines);
+            verify(label.truncated, "the rest is cut short");
+            verify(label.y + label.height <= tile.height, "the name stays inside the tile");
+            tile.name = "notes.md";
+            compare(findText(tile, "notes.md").lineCount, 1);
+        }
+
+        function test_a_tile_selects_on_a_press_and_opens_on_a_double_click() {
+            const tile = createTemporaryObject(tileComponent, stage, {
+                name: "notes.md"
+            });
+            tilePresses.target = tile;
+            tileOpens.target = tile;
+            tilePresses.clear();
+            tileOpens.clear();
+            waitForRendering(tile);
+            mouseClick(tile, tile.width / 2, tile.height / 2, Qt.LeftButton, Qt.ControlModifier);
+            compare(tilePresses.count, 1);
+            compare(tilePresses.signalArguments[0][0] & Qt.ControlModifier, Qt.ControlModifier);
+            mouseDoubleClickSequence(tile, tile.width / 2, tile.height / 2);
+            compare(tileOpens.count, 1);
+        }
+
+        function test_a_file_tile_shows_its_thumbnail_in_place_of_its_icon() {
+            thumbnailAnswers.clear();
+            const tile = createTemporaryObject(tileComponent, stage, {
+                name: "beach.png",
+                mime: "image/png",
+                thumbnails: thumbnailAnswers
+            });
+            compare(thumbnailAnswers.asked.map(ask => ask.path), ["/home/ana/Pictures/beach.png"]);
+            const icon = findIcon(tile);
+            verify(icon.visible, "the type's icon until the thumbnail comes");
+            // A 400×300 PNG, as the cache holds one.
+            thumbnailAnswers.answer(Qt.resolvedUrl("data/frame-400x300.png").toString().replace("file://", ""));
+            tryVerify(() => !icon.visible);
+            const picture = findImage(tile);
+            verify(picture.width <= tile.width - 2 * Tokens.filesTilePad && picture.height <= icon.height, "it fits the icon's place");
+            fuzzyCompare(picture.width / picture.height, 4 / 3, 0.05, "it isn't cropped or stretched");
+            verify(findText(tile, "beach.png").y >= icon.y + icon.height, "the name stays below it");
+
+            tile.modified = 1;
+            compare(thumbnailAnswers.asked.length, 1, "a changed file is asked for again");
+            tile.destroy();
+            tryVerify(() => thumbnailAnswers.cancelled.includes("/home/ana/Pictures/beach.png"), 5000, "a tile that goes cancels its ask");
+        }
+
+        function test_a_file_without_a_thumbnail_and_a_folder_keep_their_icons() {
+            thumbnailAnswers.clear();
+            const file = createTemporaryObject(tileComponent, stage, {
+                name: "notes.txt",
+                thumbnails: thumbnailAnswers
+            });
+            thumbnailAnswers.answer("");
+            verify(findIcon(file).visible);
+            const folder = createTemporaryObject(tileComponent, stage, {
+                name: "Trips",
+                dir: true,
+                thumbnails: thumbnailAnswers
+            });
+            compare(thumbnailAnswers.asked.length, 0, "folders aren't asked for");
+            verify(findIcon(folder).visible);
+        }
+
+        function test_a_thumbnail_answer_goes_to_those_who_wanted_that_version() {
+            const old = {
+                modified: 1000,
+                again: false
+            };
+            const edited = {
+                modified: 2000,
+                again: false
+            };
+            const split = Thumbnails.split([old, edited], {
+                path: "/p.png",
+                modified_ms: 2000,
+                thumbnail: "/t.png"
+            });
+            compare(split.answered, [edited]);
+            compare(split.again, [old], "it asks once more for the file as it is");
+            old.again = true;
+            compare(Thumbnails.split([old], {
+                path: "/p.png",
+                modified_ms: 2000
+            }).answered, [old], "but only once");
+            compare(Thumbnails.split([edited], {
+                path: "/gone.png"
+            }).answered, [edited], "a file that's gone answers everyone");
+        }
+
+        function findIcon(item) {
+            return findChild(item, child => child instanceof LineIcon);
+        }
+
+        function findImage(item) {
+            return findChild(item, child => child instanceof Image);
+        }
+
+        function findChild(item, matches) {
+            for (const child of item.children) {
+                if (matches(child))
+                    return child;
+                const found = findChild(child, matches);
+                if (found)
+                    return found;
+            }
+            return null;
+        }
+
+        function test_a_dot_file_tile_reads_fainter() {
+            const tile = createTemporaryObject(tileComponent, stage, {
+                name: ".bashrc",
+                hidden: true
+            });
+            compare(findText(tile, ".bashrc").color.toString(), Tokens.filesFaint.toString());
+        }
+
+        Component {
+            id: viewMenuComponent
+            PopupMenu {
+                id: menu
+                property string view: Listing.DETAILS
+                width: 400
+                height: 300
+                shown: true
+                MenuRow {
+                    icon: Icons.GRID
+                    label: "Icons"
+                    checked: menu.view === Listing.ICONS
+                    onChosen: menu.view = Listing.ICONS
+                }
+                MenuRow {
+                    icon: Icons.VIEW
+                    label: "Details"
+                    checked: menu.view === Listing.DETAILS
+                    onChosen: menu.view = Listing.DETAILS
+                }
+            }
+        }
+
+        SignalSpy {
+            id: menuDismissals
+            signalName: "dismissed"
+        }
+
+        function test_a_menu_row_picks_and_a_click_beside_or_escape_dismisses_it() {
+            const menu = createTemporaryObject(viewMenuComponent, stage);
+            menuDismissals.target = menu;
+            menuDismissals.clear();
+            menu.place(Qt.point(390, 10));
+            waitForRendering(menu);
+            const icons = findText(menu, "Icons");
+            verify(icons.mapToItem(menu, icons.width, 0).x <= menu.width, "kept inside the window");
+            mouseClick(icons);
+            compare(menu.view, Listing.ICONS);
+            mouseClick(menu, 5, menu.height - 5);
+            compare(menuDismissals.count, 1);
+            menu.shown = false;
+            menu.shown = true;
+            verify(menu.activeFocus, "it holds the keyboard while shown");
+            keyClick(Qt.Key_Delete);
+            keyClick(Qt.Key_Escape);
+            compare(menuDismissals.count, 2);
+        }
+
         function picker(mode, extra) {
             return Object.assign({
                 id: 7,
@@ -1124,102 +1513,6 @@ Item {
             verify(!open.naming, "opening has no name field");
         }
 
-        function test_ctrl_tab_goes_round_the_tabs() {
-            compare(Tabs.cycled(0, 3, 1), 1);
-            compare(Tabs.cycled(2, 3, 1), 0, "from the last to the first");
-            compare(Tabs.cycled(0, 3, -1), 2, "Ctrl+Shift+Tab from the first to the last");
-            compare(Tabs.cycled(0, 1, 1), 0);
-        }
-
-        function test_closing_the_shown_tab_shows_the_next_one() {
-            compare(Tabs.neighbour(1, 3), 2);
-            compare(Tabs.neighbour(2, 3), 1, "the last one's goes back one");
-            compare(Tabs.neighbour(0, 2), 1);
-        }
-
-        function test_tabs_share_the_row_between_their_widths() {
-            compare(Tabs.width(1000, 2, 2, 96, 220), 220, "room to spare: widest");
-            compare(Tabs.width(500, 4, 2, 96, 220), 123);
-            compare(Tabs.width(300, 8, 2, 96, 220), 96, "crowded: narrowest");
-        }
-
-        function test_a_dragged_tab_moves_along_or_comes_out() {
-            verify(Tabs.tornOut(60, 40, 2));
-            verify(Tabs.tornOut(-60, 40, 2), "above the row too");
-            verify(!Tabs.tornOut(20, 40, 2), "near the row it stays");
-            verify(!Tabs.tornOut(200, 40, 1), "the only tab stays");
-            compare(Tabs.dropped(0, 230, 222, 3), 1);
-            compare(Tabs.dropped(2, -1000, 222, 3), 0);
-            compare(Tabs.dropped(1, 1000, 222, 3), 2);
-            compare(Tabs.dropped(1, 50, 222, 3), 1, "less than half a tab stays");
-            compare(Tabs.reordered(["a", "b", "c"], 0, 2), ["b", "c", "a"]);
-            compare(Tabs.reordered(["a", "b", "c"], 2, 0), ["c", "a", "b"]);
-        }
-
-        // A stand-in for FilesTab, whose Navigator needs novad.
-        function test_the_shown_tab_scrolls_into_view() {
-            compare(Tabs.revealed(0, 100, 96, 400), 0, "in view: stays");
-            compare(Tabs.revealed(0, 500, 96, 400), 196, "past the end: its end at the view's");
-            compare(Tabs.revealed(300, 98, 96, 400), 98, "before the start: its start at the view's");
-        }
-
-        Component {
-            id: tabComponent
-            QtObject {
-                property string title
-                property bool trash
-            }
-        }
-        Component {
-            id: tabRowComponent
-            TabRow {
-                width: 880
-                raised: "#202020"
-            }
-        }
-        SignalSpy {
-            id: tabsPicked
-            signalName: "picked"
-        }
-        SignalSpy {
-            id: tabsClosed
-            signalName: "closeRequested"
-        }
-
-        function test_the_tab_row_shows_closes_and_names_its_tabs() {
-            const music = createTemporaryObject(tabComponent, stage, {
-                title: "Music"
-            });
-            const trash = createTemporaryObject(tabComponent, stage, {
-                title: Trash.name(),
-                trash: true
-            });
-            const row = createTemporaryObject(tabRowComponent, stage, {
-                tabs: [music, trash],
-                current: music
-            });
-            tabsPicked.target = row;
-            tabsClosed.target = row;
-            tabsPicked.clear();
-            tabsClosed.clear();
-            waitForRendering(row);
-            compare(row.tabWidth, Tokens.filesTabMaxWidth);
-            verify(findText(row, "Music"));
-            const trashTitle = findText(row, Trash.name());
-            verify(trashTitle);
-            mouseClick(trashTitle);
-            compare(tabsPicked.count, 1);
-            compare(tabsPicked.signalArguments[0][0], trash);
-            // The shown tab's × is at its right end.
-            const musicTitle = findText(row, "Music");
-            mouseClick(musicTitle.parent, musicTitle.parent.width - Tokens.filesTabHeight / 2, musicTitle.parent.height / 2);
-            compare(tabsClosed.count, 1);
-            compare(tabsClosed.signalArguments[0][0], music);
-            compare(tabsPicked.count, 1, "the × doesn't also show it");
-            mouseClick(trashTitle, 1, 1, Qt.MiddleButton);
-            compare(tabsClosed.count, 2, "a middle click closes");
-        }
-
         function findText(item, text) {
             for (const child of item.children) {
                 if (child instanceof Text && child.visible && child.text === text)
@@ -1230,6 +1523,7 @@ Item {
             }
             return null;
         }
+
         // files_search's answer as novad sends it (the wire format test's
         // recorded line), for a game in Steam's hidden folder.
         function foundGame() {

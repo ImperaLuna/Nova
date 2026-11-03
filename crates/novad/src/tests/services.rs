@@ -187,6 +187,28 @@ fn a_folder_view_is_listed_and_followed_over_the_socket() {
     assert!(closed["error"].as_str().unwrap().contains("doesn't exist"), "{closed}");
 }
 
+/// Thumbnails over the socket: asked for, answered as an event. Their own
+/// tests cover the cache, the thumbnailers and the queue.
+#[test]
+fn a_thumbnail_is_asked_for_and_answered_over_the_socket() {
+    let novad = TestDaemon::open("files-thumbnail", None, |dir| {
+        std::fs::write(dir.join("config/features.toml"), "enabled = [\"files\"]\n").unwrap()
+    });
+    let folder = nova_test_support::TempDir::new("files-socket-thumbnail");
+    std::fs::write(folder.join("notes.txt"), b"hi").unwrap();
+    let notes = folder.join("notes.txt").display().to_string();
+    let mut client = novad.connect();
+    assert_eq!(client.request(1, "files_thumbnail", Some(json!({"path": notes})))["result"], Value::Null);
+    let answer = client.next_event("files_thumbnail");
+    assert_eq!(answer["path"], json!(notes));
+    assert!(answer["modified_ms"].is_i64(), "{answer}");
+    assert!(answer.get("thumbnail").is_none(), "no thumbnailer takes text");
+    let relative = json!({"path": "notes.txt"});
+    assert!(client.request(2, "files_thumbnail", Some(relative))["error"].as_str().unwrap().contains("absolute"));
+    let cancel = json!({"path": notes});
+    assert_eq!(client.request(3, "files_thumbnail_cancel", Some(cancel))["result"], Value::Null);
+}
+
 /// Searching over the socket: names under Home, hidden folders included.
 /// The search's own tests cover ranking, following changes, and when the
 /// index is kept.

@@ -119,6 +119,9 @@ Singleton {
     signal filesMeasured(var measured)
     // Something in the trash changed, in Nova Files or another app.
     signal filesTrashChanged
+    // A thumbnail this process asked for: {path, thumbnail}, `thumbnail`
+    // the PNG's path, absent when the file has none.
+    signal filesThumbnail(var answer)
     // A folder was pinned to Nova Files' Quick access or unpinned.
     signal filesPlacesChanged
     // novad's index of file names is built: searches can be asked again.
@@ -128,7 +131,7 @@ Singleton {
 
     // The topics this process subscribes to on every connection: the
     // shell's, unless its root sets its own as it's created (Nova Files,
-    // ../files/FilesShell.qml), before the first connection. Topics of features that
+    // ../files.qml), before the first connection. Topics of features that
     // are off send nothing.
     property var topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_PERIPHERALS, Protocol.TOPIC_NETWORK, Protocol.TOPIC_BLUETOOTH, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS, Protocol.TOPIC_MEDIA]
 
@@ -239,6 +242,8 @@ Singleton {
             filesMeasured(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_TRASH_CHANGED) {
             filesTrashChanged();
+        } else if (msg.event === Protocol.EVENT_FILES_THUMBNAIL) {
+            filesThumbnail(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_PLACES_CHANGED) {
             filesPlacesChanged();
         } else if (msg.event === Protocol.EVENT_FILES_SEARCH_READY) {

@@ -108,7 +108,7 @@ pub fn system_time_millis(time: std::time::SystemTime) -> Option<i64> {
     i64::try_from(since.as_millis()).ok()
 }
 
-fn modified_ms(metadata: &Metadata) -> Option<i64> {
+pub(super) fn modified_ms(metadata: &Metadata) -> Option<i64> {
     millis(metadata.mtime(), metadata.mtime_nsec())
 }
 

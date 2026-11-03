@@ -28,17 +28,23 @@ in
   config = lib.mkIf cfg.enable {
     programs.nova.gpu = lib.mkDefault (features.gpuOf config);
 
-    environment.systemPackages = [
-      cfg.package
-    ]
-    ++ features.packagesFor pkgs cfg.gpu on
-    ++ lib.optional filesOn (features.filesDesktop pkgs cfg.package);
+    environment = {
+      systemPackages = [
+        cfg.package
+      ]
+      ++ features.packagesFor pkgs cfg.gpu on
+      ++ lib.optional filesOn (features.filesDesktop pkgs cfg.package);
+      # Nova Files' thumbnails come from the thumbnailers packages install
+      # in share/thumbnailers (gdk-pixbuf's, ffmpegthumbnailer's), which
+      # NixOS doesn't link into the system profile by itself.
+      pathsToLink = lib.mkIf filesOn [ "/share/thumbnailers" ];
+      etc."xdg/nova/features.toml".text = features.selectionFile on;
+    };
     # Nova Files opens folders, in place of whichever app last claimed them
     # (often an editor). A user's own mimeapps.list still wins.
     xdg.mime.defaultApplications = lib.mkIf filesOn {
       "inode/directory" = lib.mkDefault "nova-files.desktop";
     };
-    environment.etc."xdg/nova/features.toml".text = features.selectionFile on;
 
     # Apps' Open and Save dialogs are Nova Files windows: the portal finds
     # Nova's backend and chooses it for files.

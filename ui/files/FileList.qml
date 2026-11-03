@@ -5,34 +5,38 @@ import "service"
 import "../theme"
 import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
+import "arrival.js" as Arrival
+import "commands.js" as Commands
 import "drops.js" as Drops
 import "listing.js" as Listing
 import "paths.js" as Paths
-import "space.js" as Space
-import "commands.js" as Commands
 import "shortcuts.js" as Shortcuts
+import "space.js" as Space
 
-// Nova Files' file list in Details: the column header (Name, then
-// Modified, Type and Size at their widths; a click sorts by that column,
-// again turns the order round) over the folder's rows from novad
-// (FolderModel), and the item count under them. A click selects a row,
-// Ctrl adds or drops one, Shift selects a run. Its keys are the table's
-// LIST entries (shortcuts.js): the arrows, Page Up/Down, Home and End move
-// the selection (Shift extends it), Ctrl+A selects all, Ctrl+H shows or
-// hides dot files, and typing a name goes to it (NameTyping). A
-// double-click or Enter opens: a folder is gone into (`folderOpened`),
-// files open in their default app. Delete asks to move the selection to
-// the trash (`trashRequested`), Shift+Delete to delete it for good
+// Nova Files' file list: the folder's entries from novad (FolderModel) in
+// one of two views (`view`, a Listing view), and the item count under
+// them. Details shows rows under the column header (Name, then Modified,
+// Type and Size at their widths; a click sorts by that column, again turns
+// the order round); Icons shows tiles, line after line, in the same order.
+// A click selects an entry, Ctrl adds or drops one, Shift selects a run.
+// Its keys are the table's LIST entries (shortcuts.js): the arrows (Left
+// and Right too in Icons), Page Up/Down, Home and End move the selection
+// (Shift extends it), Ctrl+A selects all, Ctrl+H shows or hides dot files,
+// and typing a name goes to it (NameTyping). A double-click or Enter
+// opens: a folder is gone into (`folderOpened`), files open in their
+// default app. Delete asks to move the selection to the trash
+// (`trashRequested`), Shift+Delete to delete it for good
 // (`deleteRequested`). F5 (the window's) reads the folder again
-// (`refresh`). A right-click
-// asks for a menu (`menuRequested`): on an item, for the selection,
-// picking the item first unless it's already picked; on the empty list,
-// for the folder. The other keys' commands go to the window as
-// `commandRequested`. `rename(name)` turns that row's name into a field
-// (F2, or a new folder), renamed through novad when it closes. Cut items
-// read faded. A middle click on a folder asks for it in a new tab
-// (`tabRequested`). tabView() and restoreTab() hand its order and
-// selection to the window's tabs and back.
+// (`refresh`). A right-click asks for a menu (`menuRequested`): on an
+// item, for the selection, picking the item first unless it's already
+// picked; on the empty list, for the folder. The other keys' commands go
+// to the window as `commandRequested`. `rename(name)` turns that row's
+// name into a field (F2, or a new folder), renamed through novad when it
+// closes (in Details; Icons' tiles don't rename in place yet). Cut items
+// read faded. A middle
+// click on a folder asks for it in a new tab (`tabRequested`). tabView()
+// and restoreTab() hand its order and selection to the window's tabs and
+// back.
 // Rows drag out (the selection, FileDrag) and files dragged in drop on the
 // folder row under the pointer, or else the folder shown
 // (`dropRequested`); resting on a folder row opens it. Pressing a
@@ -55,6 +59,8 @@ FocusScope {
     // Absolute paths to select once the folder is listed.
     property var select: []
     property bool showHidden: false
+    property string view: Listing.DETAILS
+    readonly property bool details: view === Listing.DETAILS
     property bool spaceView: false
     // The order a header click last asked for, kept while What uses space
     // shows its own.
@@ -64,6 +70,7 @@ FocusScope {
         })
     // The mounted drive the folder is on, or null.
     readonly property var drive: Space.driveOf(FilesService.drives, folder)
+
     // A file picker's: {name, globs, mimes}, or null for every file.
     property var filter: null
     property bool picking: false
@@ -117,8 +124,8 @@ FocusScope {
     function showRenaming() {
         for (let index = 0; index < model.rows.count; index++) {
             if (model.rows.get(index).name === renaming) {
-                entryList.currentIndex = index;
-                entryList.positionViewAtIndex(index, ListView.Contain);
+                entryGrid.currentIndex = index;
+                entryGrid.positionViewAtIndex(index, GridView.Contain);
                 return;
             }
         }
@@ -128,7 +135,7 @@ FocusScope {
     // the name stayed, and keeps it selected under its new name.
     function finishRename(row: var, typed: string) {
         renaming = "";
-        entryList.forceActiveFocus();
+        entryGrid.forceActiveFocus();
         if (typed.trim() === "" || typed === row.name)
             return;
         const asked = folder;
@@ -157,7 +164,7 @@ FocusScope {
             if (rows.length > 0)
                 deleteRequested(rows);
         } else if (command === Commands.RENAME) {
-            if (rows.length === 1)
+            if (rows.length === 1 && !spaceView)
                 rename(rows[0].name);
         } else
             commandRequested(command, rows);
@@ -165,8 +172,8 @@ FocusScope {
 
     // Narrow beside the details or preview pane: fewer, smaller columns.
     property bool compact: false
-    // Modified, Type and Size's widths (a column 0 wide isn't shown), or
-    // in What uses space the bar's and Size's.
+    // Modified, Type and Size's widths (a column 0 wide isn't shown), or in
+    // What uses space the bar's and Size's.
     readonly property var columnWidths: spaceView ? [Tokens.filesSpaceBarWidth, Tokens.filesColumns[2]] : compact ? Tokens.filesColumnsCompact : Tokens.filesColumns
     readonly property real nameWidth: headerRow.width - columnWidths.reduce((sum, column) => column > 0 ? sum + column + headerRow.spacing : sum, 0)
     // The bar's column has no header, and none of them sort.
@@ -200,8 +207,15 @@ FocusScope {
     property bool pickOnClick: false
 
     // The row the list opens at while the rows ease in after a folder's
-    // entries came in (they ripple out from it), or -1 once they have.
+    // entries came in (they ripple out from it, Arrival), or -1 once they
+    // have; and how many came in.
     property int riseFrom: -1
+    property int riseCount: 0
+    readonly property var risePace: ({
+            stagger: Tokens.filesRowStagger,
+            wave: Tokens.filesRowWave,
+            most: Tokens.filesRowWaveMost
+        })
     // The time the Modified column reads against, kept to the minute.
     property real now: Date.now()
 
@@ -210,9 +224,10 @@ FocusScope {
         hidden: list.showHidden
         sort: list.spaceView ? Space.BIGGEST_FIRST : list.chosenSort
         filter: list.filter
-        onFilling: current => {
+        onFilling: (current, total) => {
             list.now = Date.now();
             list.riseFrom = Math.max(current, 0);
+            list.riseCount = total;
             settle.restart();
         }
         onTotalChanged: {
@@ -220,11 +235,11 @@ FocusScope {
                 list.showRenaming();
         }
         onReset: current => {
-            entryList.currentIndex = current;
+            entryGrid.currentIndex = current;
             if (current >= 0)
-                entryList.positionViewAtIndex(current, ListView.Contain);
+                entryGrid.positionViewAtIndex(current, GridView.Contain);
             else
-                entryList.positionViewAtBeginning();
+                entryGrid.positionViewAtBeginning();
         }
     }
 
@@ -259,18 +274,6 @@ FocusScope {
         model.anchor = -1;
     }
 
-    // Reads the folder again, keeping the selection.
-    function refresh() {
-        model.refresh();
-    }
-
-    // A rename asked for in the folder before doesn't follow to the next.
-    // Nor a name being typed.
-    onFolderChanged: {
-        renaming = "";
-        typing.text = "";
-    }
-
     // Selects the entry `name` and moves to it: one search result shown
     // in its folder. A dot file shows hidden files first, so it's listed.
     function reveal(name: string) {
@@ -281,15 +284,23 @@ FocusScope {
         for (let index = 0; index < model.rows.count && !found; index++) {
             found = model.rows.get(index).name === name;
             if (found) {
-                entryList.currentIndex = index;
-                entryList.positionViewAtIndex(index, ListView.Contain);
+                entryGrid.currentIndex = index;
+                entryGrid.positionViewAtIndex(index, GridView.Contain);
             }
         }
         // On a page still to come: the list moves to it when it comes.
         if (!found && model.loaded)
             model._seeking = true;
-        entryList.forceActiveFocus();
+        entryGrid.forceActiveFocus();
     }
+
+    // Reads the folder again, keeping the selection.
+    function refresh() {
+        model.refresh();
+    }
+
+    // A rename asked for in the folder before doesn't follow to the next.
+    onFolderChanged: renaming = ""
 
     Component.onCompleted: {
         const prefix = Paths.child(folder, "");
@@ -309,7 +320,7 @@ FocusScope {
     }
     Timer {
         id: settle
-        interval: Tokens.durationRowIn + Tokens.durationPanel
+        interval: Tokens.filesRowWave + Tokens.durationRowIn
         onTriggered: list.riseFrom = -1
     }
 
@@ -372,6 +383,7 @@ FocusScope {
 
     Row {
         id: headerRow
+        visible: list.details
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: spaceHeader.bottom
@@ -401,91 +413,140 @@ FocusScope {
         }
     }
 
-    ListView {
-        id: entryList
+    // Details' rows are a grid one column wide, so both views share the
+    // selection, the keys and the scrolling.
+    GridView {
+        id: entryGrid
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: headerRow.bottom
+        anchors.top: list.details ? headerRow.bottom : parent.top
         anchors.bottom: countLine.top
         anchors.leftMargin: Tokens.rowInset
         anchors.rightMargin: Tokens.rowInset
+        anchors.topMargin: list.details ? 0 : Tokens.filesRowPadY
         clip: true
         focus: true
-        spacing: Tokens.dividerWidth
         boundsBehavior: Flickable.StopAtBounds
         keyNavigationEnabled: false
         model: list.model.rows
+        cellWidth: list.details ? width : Tokens.filesTileWidth + Tokens.filesTileGap
+        cellHeight: list.details ? Tokens.filesRowHeight + Tokens.dividerWidth : Tokens.filesTileHeight + Tokens.filesTileGap
+        delegate: list.details ? rowDelegate : tileDelegate
 
-        readonly property int page: Math.max(1, Math.floor(height / (Tokens.filesRowHeight + spacing)))
+        readonly property int columns: Math.max(1, Math.floor(width / Math.max(cellWidth, 1)))
+        readonly property int lines: Math.max(1, Math.floor(height / cellHeight))
+        readonly property int page: columns * lines
 
-        // Moves to row `index` and selects what a click there would.
+        // The other view keeps the current entry in sight.
+        onDelegateChanged: Qt.callLater(() => {
+            if (currentIndex >= 0)
+                positionViewAtIndex(currentIndex, GridView.Contain);
+            else
+                positionViewAtBeginning();
+        })
+
+        // Moves to entry `index` and selects what a click there would.
         function go(index: int, extend: bool) {
-            entryList.currentIndex = index;
-            entryList.positionViewAtIndex(index, ListView.Contain);
+            entryGrid.currentIndex = index;
+            entryGrid.positionViewAtIndex(index, GridView.Contain);
             list.model.select(Listing.pick(list.model.anchor, index, false, extend && list.multiple));
         }
 
+        // A press on entry `index` (`selected` already) with `modifiers`
+        // held. A selected entry pressed without Shift may start dragging
+        // the whole selection: what the press picks waits for the click,
+        // Ctrl's toggle too.
+        function press(index: int, selected: bool, modifiers: int) {
+            entryGrid.forceActiveFocus();
+            entryGrid.currentIndex = index;
+            list.pickOnClick = selected && (modifiers & Qt.ShiftModifier) === 0;
+            if (!list.pickOnClick)
+                list.model.select(Listing.pick(list.model.anchor, index, list.multiple && (modifiers & Qt.ControlModifier) !== 0, list.multiple && (modifiers & Qt.ShiftModifier) !== 0));
+        }
+
+        // The press on entry `index` ended as a click.
+        function click(index: int, modifiers: int) {
+            if (list.pickOnClick)
+                list.model.select(Listing.pick(list.model.anchor, index, list.multiple && (modifiers & Qt.ControlModifier) !== 0, false));
+        }
+
+        // Entry `index` was pressed and moved: the selection drags out.
+        function drag(index: int) {
+            const grabbed = list.model.rows.get(index);
+            fileDrag.start(list.model.selectedRows().map(picked => Paths.child(list.folder, picked.name)), Listing.icon(grabbed), grabbed.dir ? Tokens.filesFolder : Tokens.fgDim);
+        }
+
+        // How long entry `index` waits before easing in while a folder's
+        // entries have just come in (Arrival), or -1. The wave ripples out
+        // from where the list opened, as far as a screen reaches either way.
+        function riseWait(index: int): int {
+            const reach = Math.max(lines, columns);
+            return Arrival.wait(Arrival.order(index, list.riseFrom, reach, columns), Math.min(list.riseCount, reach + 1), list.riseCount, list.risePace);
+        }
+
         MouseArea {
-            // A click below the rows clears the selection; a right-click
-            // there asks for the folder's menu.
+            // A click below or beside the entries clears the selection; a
+            // right-click there asks for the folder's menu.
             z: -1
-            width: entryList.width
-            height: Math.max(entryList.height, entryList.contentHeight)
+            width: entryGrid.width
+            height: Math.max(entryGrid.height, entryGrid.contentHeight)
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             onPressed: press => {
-                entryList.forceActiveFocus();
+                entryGrid.forceActiveFocus();
                 list.model.selectNames([]);
                 if (press.button === Qt.RightButton)
                     list.menuRequested([], mapToItem(list, press.x, press.y));
             }
         }
 
-        delegate: FileRow {
-            id: row
+        Component {
+            id: rowDelegate
 
-            width: entryList.width
-            nameWidth: list.nameWidth
-            columnWidths: list.columnWidths
-            bar: list.spaceView ? Space.share(row.size, list.model.firstSize) : -1
-            selected: list.model.revision >= 0 && list.model.isSelected(name)
-            riseOrder: list.riseFrom >= 0 ? Math.min(Math.abs(index - list.riseFrom), entryList.page) : -1
-            now: list.now
-            cut: list.cutNames[row.name] === true
-            renaming: list.renaming !== "" && list.renaming === row.name
+            FileRow {
+                id: row
 
-            onMenuAsked: at => {
-                entryList.forceActiveFocus();
-                entryList.currentIndex = row.index;
-                if (!list.model.isSelected(row.name))
-                    list.model.selectNames([row.name]);
-                list.menuRequested(list.selection(), row.mapToItem(list, at.x, at.y));
-            }
-            onRenameDone: typed => list.finishRename(Listing.copy(list.model.rows.get(row.index)), typed)
+                width: entryGrid.width
+                nameWidth: list.nameWidth
+                columnWidths: list.columnWidths
+                bar: list.spaceView ? Space.share(row.size, list.model.firstSize) : -1
+                selected: list.model.revision >= 0 && list.model.isSelected(name)
+                riseWait: entryGrid.riseWait(index)
+                now: list.now
+                cut: list.cutNames[row.name] === true
+                renaming: list.renaming !== "" && list.renaming === row.name
+                dropTarget: row.dir && drops.action !== Drops.NONE && drops.hovered?.folder === Paths.child(list.folder, row.name)
 
-            dropTarget: row.dir && drops.action !== Drops.NONE && drops.hovered?.folder === Paths.child(list.folder, row.name)
+                onMenuAsked: at => {
+                    entryGrid.forceActiveFocus();
+                    entryGrid.currentIndex = row.index;
+                    if (!list.model.isSelected(row.name))
+                        list.model.selectNames([row.name]);
+                    list.menuRequested(list.selection(), row.mapToItem(list, at.x, at.y));
+                }
+                onRenameDone: typed => list.finishRename(Listing.copy(list.model.rows.get(row.index)), typed)
+                onPressed: modifiers => entryGrid.press(row.index, row.selected, modifiers)
+                onClicked: modifiers => entryGrid.click(row.index, modifiers)
+                onDragRequested: entryGrid.drag(row.index)
+                onOpened: list.open([list.model.rows.get(row.index)])
+                onMiddleClicked: {
+                    if (row.dir)
+                        list.tabRequested(Paths.child(list.folder, row.name));
+                }
+            }
+        }
+        Component {
+            id: tileDelegate
 
-            onPressed: modifiers => {
-                entryList.forceActiveFocus();
-                entryList.currentIndex = row.index;
-                // A selected row pressed without Shift may start dragging
-                // the whole selection: what the press picks waits for the
-                // click (below), Ctrl's toggle too.
-                list.pickOnClick = row.selected && (modifiers & Qt.ShiftModifier) === 0;
-                if (!list.pickOnClick)
-                    list.model.select(Listing.pick(list.model.anchor, row.index, list.multiple && (modifiers & Qt.ControlModifier) !== 0, list.multiple && (modifiers & Qt.ShiftModifier) !== 0));
-            }
-            onClicked: modifiers => {
-                if (list.pickOnClick)
-                    list.model.select(Listing.pick(list.model.anchor, row.index, list.multiple && (modifiers & Qt.ControlModifier) !== 0, false));
-            }
-            onDragRequested: {
-                const grabbed = list.model.rows.get(row.index);
-                fileDrag.start(list.model.selectedRows().map(picked => Paths.child(list.folder, picked.name)), Listing.icon(grabbed), grabbed.dir ? Tokens.filesFolder : Tokens.fgDim);
-            }
-            onOpened: list.open([list.model.rows.get(row.index)])
-            onMiddleClicked: {
-                if (row.dir)
-                    list.tabRequested(Paths.child(list.folder, row.name));
+            IconTile {
+                id: tile
+
+                folder: list.model.path
+                thumbnails: FilesService
+                selected: list.model.revision >= 0 && list.model.isSelected(name)
+                riseWait: entryGrid.riseWait(index)
+
+                onPressed: modifiers => entryGrid.press(tile.index, tile.selected, modifiers)
+                onOpened: list.open([list.model.rows.get(tile.index)])
             }
         }
 
@@ -495,24 +556,25 @@ FocusScope {
 
         Keys.onPressed: event => {
             const command = Shortcuts.action(Shortcuts.LIST, event.key, event.modifiers);
-            if (command === Commands.MOVE) {
-                if (entryList.count > 0)
-                    entryList.go(Listing.moved(event.key, entryList.currentIndex, entryList.count, entryList.page), (event.modifiers & Qt.ShiftModifier) !== 0);
+            const sideways = !list.details && (event.key === Qt.Key_Left || event.key === Qt.Key_Right) && (event.modifiers & ~Qt.ShiftModifier & ~Qt.KeypadModifier) === 0;
+            if (command === Commands.MOVE || sideways) {
+                if (entryGrid.count > 0)
+                    entryGrid.go(Listing.moved(event.key, entryGrid.currentIndex, entryGrid.count, entryGrid.page, list.details ? 1 : entryGrid.columns), (event.modifiers & Qt.ShiftModifier) !== 0);
             } else if (command === Commands.SELECT_ALL && !list.multiple) {
                 // One file at a time in this picker.
             } else if (command !== "")
                 list.run(command);
             else
-                event.accepted = typing.press(event.text, event.modifiers, list.model.rows, entryList.currentIndex, index => entryList.go(index, false));
+                event.accepted = typing.press(event.text, event.modifiers, list.model.rows, entryGrid.currentIndex, index => entryGrid.go(index, false));
         }
     }
 
     DropTarget {
         id: drops
-        anchors.fill: entryList
+        anchors.fill: entryGrid
         service: FilesService
         folderAt: (x, y) => {
-            const index = entryList.indexAt(x + entryList.contentX, y + entryList.contentY);
+            const index = entryGrid.indexAt(x + entryGrid.contentX, y + entryGrid.contentY);
             const row = index >= 0 ? list.model.rows.get(index) : null;
             return row?.dir ? Drops.place(Paths.child(list.folder, row.name), true) : Drops.place(list.folder, false);
         }

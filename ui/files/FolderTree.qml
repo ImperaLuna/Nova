@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
+import "arrival.js" as Arrival
 import "drops.js" as Drops
 import "navigation.js" as Navigation
 import "paths.js" as Paths
@@ -27,10 +28,16 @@ ListView {
 
     signal dragRequested(string path)
     signal tabRequested(string path)
-    // While an update adds rows, the rows created slide in, staggered by
-    // how many came before them; rows created by scrolling just show.
+    // While an update adds rows, the rows created slide in one after
+    // another once it's done, by the file list's wave rule (Arrival); rows
+    // created by scrolling just show.
     property bool arriving: false
-    property int arrivals: 0
+    property var arrivals: []
+    readonly property var pace: ({
+            stagger: Tokens.filesTreeStagger,
+            wave: Tokens.filesRowWave,
+            most: Tokens.filesRowWaveMost
+        })
 
     // The menu of the folder `path` was asked for at `at` (in the window).
     signal menuRequested(string path, point at)
@@ -46,10 +53,14 @@ ListView {
     }
 
     function update() {
-        arrivals = 0;
+        arrivals = [];
         arriving = true;
         Navigation.sync(rows, navigator.treeRows);
         arriving = false;
+        // A row the update made and removed again is gone already.
+        const came = arrivals.filter(item => item?.arriveAfter);
+        arrivals = [];
+        came.forEach((item, order) => item.arriveAfter(Arrival.wait(order, came.length, came.length, pace)));
         for (let i = 0; i < rows.count; i++) {
             if (rows.get(i).path === navigator.folder) {
                 positionViewAtIndex(i, ListView.Contain);
@@ -115,12 +126,19 @@ ListView {
             y: -Tokens.filesTreeRise
         }
         Component.onCompleted: {
-            if (!tree.arriving) {
+            if (tree.arriving)
+                tree.arrivals.push(item);
+            else
+                arriveAfter(-1);
+        }
+        // Eases in after `ms`, or just shows for -1.
+        function arriveAfter(ms: int) {
+            if (ms < 0) {
                 opacity = 1;
                 rise.y = 0;
                 return;
             }
-            wait.duration = tree.arrivals++ * Tokens.filesTreeStagger;
+            wait.duration = ms;
             arrive.start();
         }
         SequentialAnimation {
