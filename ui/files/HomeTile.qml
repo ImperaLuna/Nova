@@ -22,8 +22,8 @@ Rectangle {
     signal opened
     signal menuRequested(point at)
 
-    width: Tokens.filesTileWidth
-    height: Tokens.filesTileHeight
+    width: Tokens.filesHomeTileWidth
+    height: Tokens.filesHomeTileHeight
     radius: Tokens.menuRowRadius
     color: selected ? Tokens.selected : mouse.containsMouse ? Tokens.hover : "transparent"
 
@@ -45,7 +45,7 @@ Rectangle {
         LineIcon {
             id: glyph
             anchors.verticalCenter: parent.verticalCenter
-            size: Tokens.filesTileIconSize
+            size: Tokens.filesHomeTileIconSize
             color: tile.iconColor
             path: tile.icon
         }
