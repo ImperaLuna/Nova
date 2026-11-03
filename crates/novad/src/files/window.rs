@@ -1,5 +1,7 @@
-//! The Nova Files process: Quickshell running `ui/files.qml`, which shows
-//! every Nova Files window. It's started when a window is asked for and
+//! A Nova Files process: Quickshell running `ui/files.qml`, which shows
+//! Nova Files' windows, or `ui/files-picker.qml`, which shows apps' Open
+//! and Save dialogs under an app id of its own, so compositors float them
+//! (packaging/compositor). Each is started when a window is asked for and
 //! none is running, and quits on its own when its last window closes, so
 //! it never counts towards the shell's memory while no window is open and
 //! a crash in it can't take the bar down. Its output goes into novad's log
@@ -16,11 +18,22 @@ use std::process::Stdio;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-/// Its process name in ps and btop.
-pub const PROCESS_NAME: &str = "NovaFiles";
-/// Its shell, in the UI's folder, so it imports the theme and the daemon
-/// connection like the shell does.
-pub const ENTRY: &str = "files.qml";
+/// Which of the two processes.
+#[derive(Clone, Copy)]
+pub struct Entry {
+    /// Its shell, in the UI's folder, so it imports the theme and the
+    /// daemon connection like the shell does.
+    pub file: &'static str,
+    /// Its process name in ps and btop.
+    pub name: &'static str,
+    /// What novad's log calls it (e2e/run.sh reads "Nova Files started").
+    pub shown: &'static str,
+}
+
+/// The one for Nova Files' own windows.
+pub const WINDOWS: Entry = Entry { file: "files.qml", name: "NovaFiles", shown: "Nova Files" };
+/// The one for apps' Open and Save dialogs.
+pub const PICKERS: Entry = Entry { file: "files-picker.qml", name: "NovaFilesPicker", shown: "Nova Files' dialogs" };
 
 /// The process, while it runs.
 pub struct Process {
@@ -44,14 +57,19 @@ struct Running {
 type Exited = Arc<dyn Fn() + Send + Sync>;
 
 impl Process {
-    /// Ready to start Nova Files with `settings` when asked to, calling
+    /// Ready to start `entry` with `settings` when asked to, calling
     /// `exited` each time it exits.
-    pub fn new(settings: UiSettings, logger: Arc<Logger>, exited: impl Fn() + Send + Sync + 'static) -> Self {
+    pub fn new(
+        entry: Entry,
+        settings: UiSettings,
+        logger: Arc<Logger>,
+        exited: impl Fn() + Send + Sync + 'static,
+    ) -> Self {
         let (starts, asked) = mpsc::channel();
         let pid = Arc::new(Mutex::new(Running::default()));
         let running = Arc::clone(&pid);
         let exited: Exited = Arc::new(exited);
-        std::thread::spawn(move || run(&settings, &asked, &running, &logger, &exited));
+        std::thread::spawn(move || run(entry, &settings, &asked, &running, &logger, &exited));
         Self { starts: Mutex::new(Some(starts)), pid }
     }
 
@@ -75,19 +93,32 @@ impl Process {
 
 /// Starts the process each time it's asked to while none runs, until the
 /// asking ends. Its children get SIGTERM when this thread ends.
-fn run(settings: &UiSettings, asked: &Receiver<()>, pid: &Arc<Mutex<Running>>, logger: &Arc<Logger>, exited: &Exited) {
+fn run(
+    entry: Entry,
+    settings: &UiSettings,
+    asked: &Receiver<()>,
+    pid: &Arc<Mutex<Running>>,
+    logger: &Arc<Logger>,
+    exited: &Exited,
+) {
     for () in asked {
         let mut running = lock(pid);
         if running.pid.is_none() && !running.stopped {
-            running.pid = start(settings, pid, logger, exited);
+            running.pid = start(entry, settings, pid, logger, exited);
         }
     }
 }
 
 /// Starts it, logging its output, and forgets its pid once it exits.
 /// Returns its pid, or `None` when it couldn't start (logged).
-fn start(settings: &UiSettings, pid: &Arc<Mutex<Running>>, logger: &Arc<Logger>, exited: &Exited) -> Option<u32> {
-    let mut command = supervisor::quickshell_command(settings, &settings.ui_dir.join(ENTRY), PROCESS_NAME);
+fn start(
+    entry: Entry,
+    settings: &UiSettings,
+    pid: &Arc<Mutex<Running>>,
+    logger: &Arc<Logger>,
+    exited: &Exited,
+) -> Option<u32> {
+    let mut command = supervisor::quickshell_command(settings, &settings.ui_dir.join(entry.file), entry.name);
     command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     child::die_with_novad(&mut command, libc::SIGTERM);
     let mut process = match command.spawn() {
@@ -98,7 +129,7 @@ fn start(settings: &UiSettings, pid: &Arc<Mutex<Running>>, logger: &Arc<Logger>,
         }
     };
     let started = process.id();
-    logger.info(super::LOG_SOURCE, &format!("Nova Files started (pid {started})"));
+    logger.info(super::LOG_SOURCE, &format!("{} started (pid {started})", entry.shown));
     if let Some(out) = process.stdout.take() {
         supervisor::forward_lines(out, Arc::clone(logger), super::LOG_SOURCE);
     }
@@ -108,6 +139,7 @@ fn start(settings: &UiSettings, pid: &Arc<Mutex<Running>>, logger: &Arc<Logger>,
     let forget = Arc::clone(pid);
     let logger = Arc::clone(logger);
     let exited = Arc::clone(exited);
+    let name = entry.shown;
     std::thread::spawn(move || {
         // Waited for without reaping, so the pid is forgotten first.
         let waited = child::wait_for_exit(started);
@@ -119,7 +151,7 @@ fn start(settings: &UiSettings, pid: &Arc<Mutex<Running>>, logger: &Arc<Logger>,
                 format!("couldn't wait for it: {e}")
             }
         };
-        logger.info(super::LOG_SOURCE, &format!("Nova Files exited: {ended}"));
+        logger.info(super::LOG_SOURCE, &format!("{name} exited: {ended}"));
         exited();
     });
     Some(started)

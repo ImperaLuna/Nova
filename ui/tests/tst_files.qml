@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtTest
 import "../files"
+import "../theme"
 import "../files/listing.js" as Listing
 import "../files/paths.js" as Paths
 import "../files/navigation.js" as Navigation
@@ -11,6 +12,10 @@ import "../daemon/protocol.js" as Protocol
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
 import "../files/space.js" as Space
+import "../files/search.js" as Search
+import "../files/tabs.js" as Tabs
+import "../files/preview.js" as Preview
+import "../files/picker.js" as Picker
 
 // Nova Files' address bar parts, window title and entry paths, its
 // history and the sidebar tree's kept folders and rows, its file list:
@@ -18,7 +23,12 @@ import "../files/space.js" as Space
 // keys select, and what opening the selection does, and the copy and move
 // jobs a window keeps and how their card and name clash dialog read and
 // answer, and the trash: its rows, its selection, and the dialog that asks
-// before deleting for good. The root is an Item: a TestCase root gets no mouse events.
+// before deleting for good, search: how results read and when novad
+// is asked, a window as an app's Open or Save dialog: its title and
+// accept label, what accepting picks, and its bar, what the preview pane shows, and the window's
+// tabs: which one Ctrl+Tab and closing land on, their widths, dragging one
+// along or out of the row, and the row's clicks. The root is an Item: a
+// TestCase root gets no mouse events.
 Item {
     id: stage
     width: 880
@@ -168,6 +178,7 @@ Item {
                 mime: "inode/directory"
             });
             compare(row.size, -1, "a folder has no size");
+            compare(row.archive, false, "only novad says what's an archive");
             compare(row.modified, -1);
             compare(entry("a.png", {
                 size: 48213,
@@ -387,8 +398,6 @@ Item {
             compare(Listing.moved(Qt.Key_PageUp, 6, 10, 4), 2);
             compare(Listing.moved(Qt.Key_Home, 6, 10, 4), 0);
             compare(Listing.moved(Qt.Key_End, 0, 10, 4), 9);
-            verify(Listing.MOVES.includes(Qt.Key_End));
-            verify(!Listing.MOVES.includes(Qt.Key_Return));
         }
 
         function test_opening_goes_into_one_folder_or_opens_files() {
@@ -411,6 +420,25 @@ Item {
                 folder: "",
                 files: []
             });
+            const photos = entry("photos.zip", {
+                mime: "application/zip",
+                archive: true
+            });
+            compare(Listing.opening([photos]), {
+                folder: "photos.zip",
+                files: []
+            }, "an archive opens like a folder");
+            compare(Listing.icon(photos), Icons.ARCHIVE);
+        }
+
+        function test_each_job_shows_what_it_does() {
+            compare(Transfers.icon(transfer(1, Protocol.TRANSFER_RUNNING)), Icons.COPY);
+            compare(Transfers.icon(transfer(1, Protocol.TRANSFER_RUNNING, {
+                mode: Protocol.TRANSFER_EXTRACT_HERE
+            })), Icons.EXTRACT);
+            compare(Transfers.icon(transfer(1, Protocol.TRANSFER_RUNNING, {
+                mode: Protocol.TRANSFER_COMPRESS
+            })), Icons.ARCHIVE);
         }
 
         function transfer(job, state, extra) {
@@ -438,6 +466,57 @@ Item {
                     size: 2516582
                 }
             })
+
+        function test_a_file_url_keeps_raw_bytes_and_escapes_the_rest() {
+            const eAcute = String.fromCodePoint(Protocol.RAW_BYTE_BASE + 0xE9);
+            compare(Paths.fileUrl(`/mnt/old/caf${eAcute}.png`), "file:///mnt/old/caf%E9.png");
+            compare(Paths.fileUrl("/home/ana/#1 café.png"), "file:///home/ana/%231%20caf%C3%A9.png");
+        }
+
+        function test_the_preview_pane_previews_one_selected_file() {
+            const photo = entry("a.png", {
+                mime: "image/png"
+            });
+            compare(Preview.subject(1, photo), photo);
+            compare(Preview.subject(0, null), null);
+            compare(Preview.subject(3, photo), null, "several: none of them");
+            verify(Preview.asks(photo));
+            verify(!Preview.asks(entry("Music", {
+                dir: true,
+                mime: "inode/directory"
+            })), "a folder needs no asking");
+            verify(!Preview.asks(null));
+        }
+
+        function test_the_preview_pane_face_follows_the_answer() {
+            const notes = entry("notes.md", {
+                mime: "text/markdown"
+            });
+            const folder = entry("Music", {
+                dir: true,
+                mime: "inode/directory"
+            });
+            const image = {
+                kind: Protocol.PREVIEW_IMAGE,
+                path: "/home/ana/a.png"
+            };
+            const text = {
+                kind: Protocol.PREVIEW_TEXT,
+                text: "# Notes",
+                cut: false
+            };
+            compare(Preview.face(0, null, null, false), Preview.EMPTY);
+            compare(Preview.face(2, null, null, false), Preview.COUNT);
+            compare(Preview.face(1, folder, null, false), Preview.ITEM, "a folder at once");
+            compare(Preview.face(1, notes, null, false), Preview.WAITING);
+            compare(Preview.face(1, notes, text, false), Preview.TEXT);
+            compare(Preview.face(1, notes, image, false), Preview.IMAGE);
+            compare(Preview.face(1, notes, image, true), Preview.ITEM, "a picture Qt can't read");
+            compare(Preview.face(1, notes, {
+                kind: Protocol.PREVIEW_NONE
+            }, false), Preview.ITEM);
+            compare(Preview.face(1, notes, false, false), Preview.ITEM, "novad couldn't tell");
+        }
 
         function test_jobs_come_in_order_and_leave_when_they_end() {
             let jobs = Transfers.apply([], transfer(1, Protocol.TRANSFER_COUNTING));
@@ -775,6 +854,223 @@ Item {
             compare(dismissals.count, 1);
         }
 
+        function picker(mode, extra) {
+            return Object.assign({
+                id: 7,
+                mode: mode,
+                title: "",
+                multiple: false,
+                folders: false,
+                filters: [],
+                filter: 0
+            }, extra ?? {});
+        }
+
+        function test_a_picker_is_titled_and_labelled_like_windows() {
+            compare(Picker.title(picker(Protocol.PICK_OPEN)), "Open");
+            compare(Picker.title(picker(Protocol.PICK_OPEN, {
+                folders: true
+            })), "Select Folder");
+            compare(Picker.title(picker(Protocol.PICK_SAVE)), "Save As");
+            compare(Picker.title(picker(Protocol.PICK_OPEN, {
+                title: "File Upload"
+            })), "File Upload");
+            compare(Picker.acceptLabel(picker(Protocol.PICK_SAVE_FILES)), "Save");
+            compare(Picker.acceptLabel(picker(Protocol.PICK_OPEN, {
+                accept: "_Upload"
+            })), "Upload", "the app's mnemonic goes");
+            compare(Picker.acceptLabel(picker(Protocol.PICK_OPEN, {
+                accept: "Add__ons"
+            })), "Add_ons");
+            compare(Picker.stemLength("cover.tar.png"), 9);
+            compare(Picker.stemLength(".bashrc"), 7, "a dot file is all stem");
+        }
+
+        function test_accepting_picks_files_or_goes_into_a_folder() {
+            const file = name => ({
+                        name: name,
+                        dir: false
+                    });
+            const folder = name => ({
+                        name: name,
+                        dir: true
+                    });
+            const open = picker(Protocol.PICK_OPEN, {
+                multiple: true
+            });
+            compare(Picker.choice(open, "/home/ana", [file("a.png"), folder("Pics"), file("b.png")], "", null), {
+                action: "pick",
+                paths: ["/home/ana/a.png", "/home/ana/b.png"]
+            });
+            compare(Picker.choice(open, "/home/ana", [folder("Pics")], "", null), {
+                action: "enter",
+                folder: "/home/ana/Pics"
+            });
+            compare(Picker.choice(open, "/home/ana", [], "", null).action, "none");
+            const selectFolder = picker(Protocol.PICK_OPEN, {
+                folders: true
+            });
+            compare(Picker.choice(selectFolder, "/", [folder("srv")], "", null).paths, ["/srv"]);
+            compare(Picker.choice(selectFolder, "/home/ana", [], "", null).paths, ["/home/ana"], "nothing selected picks the folder shown");
+            compare(Picker.choice(selectFolder, "/srv", [folder("a"), folder("b")], "", null).paths, ["/srv/a", "/srv/b"], "every selected folder");
+            const save = picker(Protocol.PICK_SAVE);
+            compare(Picker.choice(save, "/home/ana", [], " cover.png ", null).paths, ["/home/ana/cover.png"]);
+            compare(Picker.choice(save, "/home/ana", [], "Pics", folder("Pics")).action, "enter");
+            for (const name of ["", "..", "a/b"])
+                compare(Picker.choice(save, "/home/ana", [], name, null).action, "none", name);
+            compare(Picker.filter(picker(Protocol.PICK_OPEN), 0), null);
+        }
+
+        Component {
+            id: pickerBarComponent
+            PickerBar {
+                // Room above for the filter menu, which opens upward.
+                y: 400
+                width: 880
+            }
+        }
+
+        SignalSpy {
+            id: pickerAccepts
+            signalName: "accepted"
+        }
+
+        function test_the_picker_bar_names_filters_and_answers() {
+            const images = {
+                name: "Images",
+                globs: ["*.png"],
+                mimes: []
+            };
+            const all = {
+                name: "All Files",
+                globs: ["*"],
+                mimes: []
+            };
+            const bar = createTemporaryObject(pickerBarComponent, stage, {
+                picker: picker(Protocol.PICK_SAVE, {
+                    name: "cover.png",
+                    filters: [all, images],
+                    filter: 1
+                }),
+                filterIndex: 1,
+                canAccept: true
+            });
+            pickerAccepts.target = bar;
+            pickerAccepts.clear();
+            verify(findText(bar, "Images"));
+            verify(findText(bar, "Save"));
+            bar.focusName();
+            keyClick(Qt.Key_X);
+            compare(bar.name, "x.png", "the stem is selected, so typing keeps the type");
+            keyClick(Qt.Key_Return);
+            compare(pickerAccepts.count, 1);
+            mouseClick(findText(bar, "Images"));
+            mouseClick(findText(bar, "All Files"));
+            compare(bar.filterIndex, 0);
+            const open = createTemporaryObject(pickerBarComponent, stage, {
+                picker: picker(Protocol.PICK_OPEN),
+                canAccept: false
+            });
+            verify(findText(open, "Open"));
+            verify(!open.naming, "opening has no name field");
+        }
+
+        function test_ctrl_tab_goes_round_the_tabs() {
+            compare(Tabs.cycled(0, 3, 1), 1);
+            compare(Tabs.cycled(2, 3, 1), 0, "from the last to the first");
+            compare(Tabs.cycled(0, 3, -1), 2, "Ctrl+Shift+Tab from the first to the last");
+            compare(Tabs.cycled(0, 1, 1), 0);
+        }
+
+        function test_closing_the_shown_tab_shows_the_next_one() {
+            compare(Tabs.neighbour(1, 3), 2);
+            compare(Tabs.neighbour(2, 3), 1, "the last one's goes back one");
+            compare(Tabs.neighbour(0, 2), 1);
+        }
+
+        function test_tabs_share_the_row_between_their_widths() {
+            compare(Tabs.width(1000, 2, 2, 96, 220), 220, "room to spare: widest");
+            compare(Tabs.width(500, 4, 2, 96, 220), 123);
+            compare(Tabs.width(300, 8, 2, 96, 220), 96, "crowded: narrowest");
+        }
+
+        function test_a_dragged_tab_moves_along_or_comes_out() {
+            verify(Tabs.tornOut(60, 40, 2));
+            verify(Tabs.tornOut(-60, 40, 2), "above the row too");
+            verify(!Tabs.tornOut(20, 40, 2), "near the row it stays");
+            verify(!Tabs.tornOut(200, 40, 1), "the only tab stays");
+            compare(Tabs.dropped(0, 230, 222, 3), 1);
+            compare(Tabs.dropped(2, -1000, 222, 3), 0);
+            compare(Tabs.dropped(1, 1000, 222, 3), 2);
+            compare(Tabs.dropped(1, 50, 222, 3), 1, "less than half a tab stays");
+            compare(Tabs.reordered(["a", "b", "c"], 0, 2), ["b", "c", "a"]);
+            compare(Tabs.reordered(["a", "b", "c"], 2, 0), ["c", "a", "b"]);
+        }
+
+        // A stand-in for FilesTab, whose Navigator needs novad.
+        function test_the_shown_tab_scrolls_into_view() {
+            compare(Tabs.revealed(0, 100, 96, 400), 0, "in view: stays");
+            compare(Tabs.revealed(0, 500, 96, 400), 196, "past the end: its end at the view's");
+            compare(Tabs.revealed(300, 98, 96, 400), 98, "before the start: its start at the view's");
+        }
+
+        Component {
+            id: tabComponent
+            QtObject {
+                property string title
+                property bool trash
+            }
+        }
+        Component {
+            id: tabRowComponent
+            TabRow {
+                width: 880
+                raised: "#202020"
+            }
+        }
+        SignalSpy {
+            id: tabsPicked
+            signalName: "picked"
+        }
+        SignalSpy {
+            id: tabsClosed
+            signalName: "closeRequested"
+        }
+
+        function test_the_tab_row_shows_closes_and_names_its_tabs() {
+            const music = createTemporaryObject(tabComponent, stage, {
+                title: "Music"
+            });
+            const trash = createTemporaryObject(tabComponent, stage, {
+                title: Trash.name(),
+                trash: true
+            });
+            const row = createTemporaryObject(tabRowComponent, stage, {
+                tabs: [music, trash],
+                current: music
+            });
+            tabsPicked.target = row;
+            tabsClosed.target = row;
+            tabsPicked.clear();
+            tabsClosed.clear();
+            waitForRendering(row);
+            compare(row.tabWidth, Tokens.filesTabMaxWidth);
+            verify(findText(row, "Music"));
+            const trashTitle = findText(row, Trash.name());
+            verify(trashTitle);
+            mouseClick(trashTitle);
+            compare(tabsPicked.count, 1);
+            compare(tabsPicked.signalArguments[0][0], trash);
+            // The shown tab's × is at its right end.
+            const musicTitle = findText(row, "Music");
+            mouseClick(musicTitle.parent, musicTitle.parent.width - Tokens.filesTabHeight / 2, musicTitle.parent.height / 2);
+            compare(tabsClosed.count, 1);
+            compare(tabsClosed.signalArguments[0][0], music);
+            compare(tabsPicked.count, 1, "the × doesn't also show it");
+            mouseClick(trashTitle, 1, 1, Qt.MiddleButton);
+            compare(tabsClosed.count, 2, "a middle click closes");
+        }
+
         function findText(item, text) {
             for (const child of item.children) {
                 if (child instanceof Text && child.visible && child.text === text)
@@ -784,6 +1080,198 @@ Item {
                     return found;
             }
             return null;
+        }
+        // files_search's answer as novad sends it (the wire format test's
+        // recorded line), for a game in Steam's hidden folder.
+        function foundGame() {
+            return {
+                entry: {
+                    dir: true,
+                    hidden: false,
+                    link: false,
+                    mime: "inode/directory",
+                    modified_ms: 1793000000000,
+                    name: "Crimson Desert"
+                },
+                folder: "/home/user/.local/share/Steam/steamapps/common",
+                in_hidden_folder: true,
+                marks: [
+                    {
+                        length: 7,
+                        start: 0
+                    }
+                ]
+            };
+        }
+
+        function test_a_result_reads_with_its_match_and_where_it_lives() {
+            const row = Search.row(foundGame());
+            compare([row.name, row.dir, row.size, row.dim], ["Crimson Desert", true, -1, true], "inside a hidden folder reads dimmer");
+            compare(Search.path(row), "/home/user/.local/share/Steam/steamapps/common/Crimson Desert");
+            compare(Search.location(row.folder, "/home/user"), "~/.local/share/Steam/steamapps/common");
+            compare(Search.location("/run/media/user/SANDISK", "/home/user"), "/run/media/user/SANDISK");
+            compare(Search.location("/home/username", "/home/user"), "/home/username", "only Home itself, not a name it starts");
+            compare(Search.location("/home/user/Pictures", "/home/user/"), "~/Pictures", "Home with a slash at its end");
+            compare(Search.marked(row.name, row.marks, "#fd7014"), '<b><font color="#fd7014">Crimson</font></b> Desert');
+        }
+
+        function test_a_marked_name_stays_plain_text() {
+            compare(Search.marked("<b>a&b</b>", [], "#fff"), "&lt;b&gt;a&amp;b&lt;/b&gt;");
+            compare(Search.marked("notes notes", [
+                {
+                    start: 6,
+                    length: 5
+                },
+                {
+                    start: 0,
+                    length: 5
+                }
+            ], "#fff"), '<b><font color="#fff">notes</font></b> <b><font color="#fff">notes</font></b>', "marks in any order");
+            const raw = String.fromCodePoint(Protocol.RAW_BYTE_BASE + 0xE9);
+            compare(Search.marked("caf" + raw, [
+                {
+                    start: 0,
+                    length: 3
+                }
+            ], "#fff"), '<b><font color="#fff">caf</font></b>\uFFFD', "a raw byte shows as a replacement character");
+        }
+
+        function test_the_count_says_how_many_were_found() {
+            compare(Search.count(false, 0, 0), "Indexing");
+            compare(Search.count(true, 0, 0), "No results");
+            compare(Search.count(true, 1, 1), "1 result");
+            compare(Search.count(true, 4, 4), "4 results");
+            compare(Search.count(true, 1532, 200), "200 of 1532 results");
+        }
+
+        Component {
+            id: searchModelComponent
+            SearchModel {
+                settle: 0
+            }
+        }
+
+        // Stands in for FilesService: keeps each search asked, for the
+        // test to answer.
+        Component {
+            id: askedSearchesComponent
+            QtObject {
+                property var asked: []
+                property bool connected: true
+                signal searchReady
+                function search(query: string, within: string, done: var) {
+                    asked = asked.concat([
+                        {
+                            query: query,
+                            within: within,
+                            done: done
+                        }
+                    ]);
+                }
+            }
+        }
+
+        function askedSearches() {
+            return createTemporaryObject(askedSearchesComponent, stage);
+        }
+
+        function test_typing_asks_novad_and_only_the_latest_answer_counts() {
+            const service = askedSearches();
+            const model = createTemporaryObject(searchModelComponent, stage, {
+                service: service,
+                within: "/home/user"
+            });
+            model.query = "crim";
+            tryVerify(() => service.asked.length === 1);
+            model.query = " crimson ";
+            tryVerify(() => service.asked.length === 2);
+            compare([service.asked[1].query, service.asked[1].within], ["crimson", "/home/user"], "spaces around it aside");
+            service.asked[1].done({
+                ready: true,
+                total: 1,
+                results: [foundGame()]
+            });
+            service.asked[0].done({
+                ready: true,
+                total: 0,
+                results: []
+            });
+            compare(model.rows.map(row => row.name), ["Crimson Desert"], "the older answer came late and is dropped");
+            verify(!model.everywhere);
+            verify(model.answered);
+            model.within = "";
+            tryVerify(() => service.asked.length === 3);
+            compare(service.asked[2].within, "", "everywhere");
+            model.query = "  ";
+            compare([model.active, model.rows.length, model.total], [false, 0, 0], "nothing typed, nothing found");
+            compare(service.asked.length, 3, "and nothing asked");
+        }
+
+        function test_once_the_index_is_built_it_asks_again() {
+            const service = askedSearches();
+            const model = createTemporaryObject(searchModelComponent, stage, {
+                service: service
+            });
+            model.query = "crimson";
+            tryVerify(() => service.asked.length === 1);
+            service.asked[0].done({
+                ready: false,
+                total: 0,
+                results: []
+            });
+            verify(!model.ready);
+            wait(10);
+            compare(service.asked.length, 1, "nothing is asked until novad says");
+            service.searchReady();
+            compare(service.asked.length, 2);
+            service.asked[1].done({
+                ready: true,
+                total: 1,
+                results: [foundGame()]
+            });
+            verify(model.ready);
+            compare(model.rows.length, 1);
+            service.searchReady();
+            compare(service.asked.length, 2, "a ready index isn't asked again");
+            model.query = "desert";
+            tryVerify(() => service.asked.length === 3);
+            service.asked[2].done({
+                ready: false,
+                total: 0,
+                results: []
+            });
+            compare(service.asked.length, 4, "an answer from before novad said it's built is asked again");
+        }
+
+        function test_a_search_novad_could_not_answer_is_asked_on_reconnecting() {
+            const service = askedSearches();
+            const model = createTemporaryObject(searchModelComponent, stage, {
+                service: service
+            });
+            model.query = "desert";
+            tryVerify(() => service.asked.length === 1);
+            service.asked[0].done(null);
+            verify(!model.answered, "no count");
+            service.connected = false;
+            service.connected = true;
+            compare(service.asked.length, 2);
+        }
+
+        function test_an_answer_coming_while_typing_settles_is_dropped() {
+            const service = askedSearches();
+            const model = createTemporaryObject(searchModelComponent, stage, {
+                service: service,
+                settle: 1000
+            });
+            model.query = "crim";
+            tryVerify(() => service.asked.length === 1, 2000);
+            model.query = "crimson";
+            service.asked[0].done({
+                ready: true,
+                total: 1,
+                results: [foundGame()]
+            });
+            compare([model.answered, model.rows.length], [false, 0], "it was for what was typed before");
         }
     }
 }

@@ -6,6 +6,7 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "paths.js" as Paths
 import "trash.js" as Trash
+import "../daemon/protocol.js" as Protocol
 
 // Nova Files' top row: back, forward and up, the address bar showing
 // where the window is (a part per folder from Home or the root, hidden
@@ -15,6 +16,10 @@ import "trash.js" as Trash
 // Alt+D) turns it into a text field holding the folder's path: Enter goes
 // to what's typed, Esc or clicking away puts the parts back. A path that
 // isn't a folder keeps the field open, outlined in the error color.
+//
+// The search field widens while it's in use, with the address bar faded
+// back. What's typed is `query`; Esc clears it, then leaves the field, as
+// do Down and Enter (`searchLeft`), to the results or the file list.
 Rectangle {
     id: row
 
@@ -22,6 +27,13 @@ Rectangle {
     readonly property var parts: Trash.isTrash(navigator.folder) ? Trash.crumbs() : Paths.crumbs(navigator.folder, Quickshell.env("HOME") ?? "", qsTr("Home"))
     property bool editing: false
     property bool wrong: false
+    // Searching works here (not in the trash).
+    property bool canSearch: true
+    readonly property alias query: searchField.text
+
+    // The keyboard left the search field (Esc on an empty field, Down or
+    // Enter).
+    signal searchLeft
 
     // Typing a path ended: the keyboard goes back to the file list.
     signal addressClosed
@@ -35,6 +47,21 @@ Rectangle {
         field.forceActiveFocus();
     }
 
+    // Puts the keyboard in the search field with what's typed selected:
+    // Ctrl+F and F3.
+    function focusSearch() {
+        // Closed first: closing the address field gives the keyboard to the
+        // list, which would otherwise take it back from the search field.
+        editing = false;
+        searchField.selectAll();
+        searchField.forceActiveFocus();
+    }
+
+    // Empties the search field: the window moved to another folder.
+    function clearSearch() {
+        searchField.text = "";
+    }
+
     function submit() {
         row.navigator.visit(field.text, ok => {
             if (ok)
@@ -43,6 +70,8 @@ Rectangle {
         });
     }
 
+    // Another tab came to the front: its folder shows, not a half-typed path.
+    onNavigatorChanged: editing = false
     onEditingChanged: {
         if (!editing)
             addressClosed();
@@ -91,6 +120,15 @@ Rectangle {
         border.width: row.editing ? Tokens.filesFocusRing : 0
         border.color: row.wrong ? Tokens.error : Tokens.primary
         clip: true
+        opacity: row.query !== "" && !row.editing ? Tokens.filesSearchCrumbsOpacity : 1
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: Tokens.durationPanel
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Tokens.easing
+            }
+        }
 
         // The empty end: a click there types a path.
         Item {
@@ -197,20 +235,90 @@ Rectangle {
 
     Rectangle {
         id: search
+
+        readonly property bool open: searchField.activeFocus || row.query !== ""
+
         anchors.right: parent.right
         anchors.rightMargin: Tokens.rowInset
         anchors.verticalCenter: parent.verticalCenter
-        width: Tokens.filesSearchWidth
+        width: open ? Tokens.filesSearchWidthOpen : Tokens.filesSearchWidth
         height: Tokens.filesFieldHeight
         radius: Tokens.radiusControl
         color: Tokens.filesField
+        border.width: searchField.activeFocus ? Tokens.filesFocusRing : 0
+        border.color: Tokens.primary
+        enabled: row.canSearch
+        opacity: enabled ? 1 : Tokens.dimOpacity
+
+        Behavior on width {
+            NumberAnimation {
+                duration: Tokens.durationPanel
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Tokens.easing
+            }
+        }
+
+        clip: true
 
         LineIcon {
+            id: searchIcon
             anchors.left: parent.left
             anchors.leftMargin: Tokens.rowInset
             anchors.verticalCenter: parent.verticalCenter
             color: Tokens.fgDim
             path: Icons.SEARCH
+        }
+        TextInput {
+            id: searchField
+            anchors.left: searchIcon.right
+            anchors.right: clear.visible ? clear.left : parent.right
+            anchors.leftMargin: Tokens.iconGap
+            anchors.rightMargin: clear.visible ? 0 : Tokens.rowInset
+            anchors.verticalCenter: parent.verticalCenter
+            clip: true
+            font.family: Tokens.fontSans
+            font.pixelSize: Tokens.fontSize
+            color: Tokens.fg
+            selectionColor: Tokens.secondary
+            selectedTextColor: Tokens.onAccent
+            maximumLength: Protocol.FILES_SEARCH_MAX_CHARS
+            Keys.onEscapePressed: {
+                if (text !== "")
+                    text = "";
+                else
+                    row.searchLeft();
+            }
+            Keys.onDownPressed: row.searchLeft()
+            Keys.onReturnPressed: row.searchLeft()
+            Keys.onEnterPressed: row.searchLeft()
+        }
+        // Clears what's typed.
+        Rectangle {
+            id: clear
+            anchors.right: parent.right
+            anchors.rightMargin: Tokens.labelNudge * 2
+            anchors.verticalCenter: parent.verticalCenter
+            visible: row.query !== ""
+            width: Tokens.filesFieldHeight - 4 * Tokens.labelNudge
+            height: width
+            radius: Tokens.filesCrumbRadius
+            color: clearHover.hovered ? Tokens.hover : "transparent"
+
+            LineIcon {
+                anchors.centerIn: parent
+                size: Tokens.iconSizeMini
+                color: Tokens.fgDim
+                path: Icons.CLOSE
+            }
+            HoverHandler {
+                id: clearHover
+            }
+            TapHandler {
+                onTapped: {
+                    searchField.text = "";
+                    searchField.forceActiveFocus();
+                }
+            }
         }
     }
 }

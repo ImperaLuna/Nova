@@ -2,7 +2,8 @@
 # features that are on, its systemd user unit started with
 # graphical-session.target, a system-wide features.toml in /etc/xdg/nova,
 # which novad reads when the user has none of their own, and Nova Files as
-# the default for folders while the `files` feature is on.
+# the default for folders and apps' Open and Save dialogs (through
+# xdg-desktop-portal, on niri and Hyprland) while the `files` feature is on.
 #
 #   programs.nova.enable = true;
 #   programs.nova.features.wallpaper-engine.enable = true;
@@ -38,6 +39,14 @@ in
       "inode/directory" = lib.mkDefault "nova-files.desktop";
     };
     environment.etc."xdg/nova/features.toml".text = features.selectionFile on;
+
+    # Apps' Open and Save dialogs are Nova Files windows: the portal finds
+    # Nova's backend and chooses it for files.
+    xdg.portal = lib.mkIf filesOn {
+      enable = lib.mkDefault true;
+      extraPortals = [ (features.filesPortal pkgs cfg.package) ];
+      config = features.portalConfig;
+    };
 
     systemd.packages = [ cfg.package ];
     # NixOS ignores [Install] in packaged units; this is the unit's WantedBy=.

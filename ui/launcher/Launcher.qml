@@ -6,6 +6,7 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 import "launcher.js" as LauncherLogic
+import "../files/paths.js" as Paths
 
 // The launcher: a glass deck near the top of the middle of the screen that
 // fades in where it stands (the central pill stays). A search field, the
@@ -15,6 +16,11 @@ import "launcher.js" as LauncherLogic
 // list, Enter launches (focusing an open app's window where it is;
 // Shift+Enter opens another), Esc or a click outside closes. Opened by
 // `nova toggle launcher` (Super+Space) or the central pill's search button.
+// With Nova Files on, tabs in the field switch to the Files mode (or
+// Ctrl+Tab, or typing `~` or `/` first): files found by name, or a typed
+// path's folder, whose completion shows grey and Tab takes; Enter opens a
+// file in its app or a folder in Nova Files, Shift+Enter shows it in its
+// folder.
 // It gets its data and acts through its properties and signals (the stage
 // wires LauncherService to them), so the QML tests can drive it.
 StagePanel {
@@ -30,8 +36,19 @@ StagePanel {
     // An app's icon (its theme name or path) to an Image source, "" for none.
     property var iconSource: icon => ""
 
-    // Typed: novad's matches go to showMatches().
-    signal searchRequested(string query)
+    // Nova Files runs: the Files mode is there.
+    property bool filesMode: false
+    // The mode: Protocol.PROVIDER_APPS, or PROVIDER_FILES.
+    property string mode: Protocol.PROVIDER_APPS
+    readonly property bool inFiles: mode === Protocol.PROVIDER_FILES
+    // Nova Files stopping takes its mode with it.
+    onFilesModeChanged: {
+        if (!filesMode)
+            setMode(Protocol.PROVIDER_APPS);
+    }
+
+    // Typed, in `mode`: novad's matches go to showMatches().
+    signal searchRequested(string query, string mode)
     // What `provider` found as `id` to run: an app starts, or is focused
     // where it is when it's open already unless `newWindow` (Shift+Enter).
     // The answer goes to launched().
@@ -56,12 +73,25 @@ StagePanel {
     property string problem: ""
 
     readonly property var known: LauncherLogic.byId(apps)
-    readonly property var rows: LauncherLogic.rows(query, matches, recent, apps, known)
+    // The recent apps the list shows: novad's latest, held while a launch
+    // runs and while the deck is closed, so a launched app's move to the top
+    // shows the next time it opens, not as the deck fades out.
+    property var shownRecent: []
+    onRecentChanged: {
+        if (open && launching === null)
+            shownRecent = recent;
+    }
+    readonly property var rows: LauncherLogic.rows(query, matches, shownRecent, apps, known, inFiles)
+    // What Tab adds to the query: the selected file's path, past what's typed.
+    // Only once novad has answered what's typed: older rows complete an older query.
+    readonly property string completion: inFiles && matchesFor === query ? LauncherLogic.completion(query, rows[selected]) : ""
+    // Typing a path switched to the Files mode, which clearing the field undoes.
+    property bool pathSwitched: false
     readonly property real contentWidth: Tokens.launcherWidth - 2 * Tokens.launcherPad
     // As many tiles as fit on one row, spread to fill it.
     readonly property int tilesPerRow: Math.floor((contentWidth + Tokens.gap) / (Tokens.launcherTileSize + Tokens.gap))
     readonly property var pinnedApps: LauncherLogic.pick(known, pinned).slice(0, tilesPerRow)
-    readonly property bool showsPinned: query.trim() === "" && pinnedApps.length > 0
+    readonly property bool showsPinned: !inFiles && query.trim() === "" && pinnedApps.length > 0
 
     name: Protocol.FEATURE_LAUNCHER
     placement: "center"
@@ -111,6 +141,8 @@ StagePanel {
         enterPending = null;
         if (!open)
             return;
+        mode = Protocol.PROVIDER_APPS;
+        shownRecent = recent;
         field.text = "";
         matches = [];
         matchesFor = "";
@@ -137,10 +169,10 @@ StagePanel {
         selected = index;
     }
 
-    // novad's matches for `forQuery`; dropped when something else has been
-    // typed since.
-    function showMatches(forQuery: string, found: var) {
-        if (forQuery !== query)
+    // novad's matches for `forQuery` in `forMode` (this mode when unset);
+    // dropped when something else has been typed or picked since.
+    function showMatches(forQuery: string, found: var, forMode: var) {
+        if (forQuery !== query || (forMode ?? mode) !== mode)
             return;
         matches = found;
         matchesFor = forQuery;
@@ -148,6 +180,21 @@ StagePanel {
         enterPending = null;
         if (pending && rows.length > 0)
             launch(rows[0], pending.newWindow);
+    }
+
+    // Switches to the mode `next` (see `mode`), searching what's typed in it.
+    function setMode(next: string) {
+        pathSwitched = false;
+        if (next === mode || (next === Protocol.PROVIDER_FILES && !filesMode))
+            return;
+        mode = next;
+        matches = [];
+        matchesFor = "";
+        enterPending = null;
+        selected = 0;
+        problem = "";
+        if (query.trim() !== "")
+            searchRequested(query, mode);
     }
 
     // Runs the row `row` ({provider, id}; see runRequested), unless one is
@@ -168,11 +215,16 @@ StagePanel {
         return launching !== null && launching.provider === row.provider && launching.id === row.id;
     }
 
+    // Whether the list's selected row is the one running: a pinned tile's
+    // launch leaves the list as it is.
+    readonly property bool launchingSelected: launching !== null && selected < rows.length && isLaunching(rows[selected])
+
     // novad's answer to runRequested: closes once it has run.
     function launched(error: var) {
         if (error) {
             problem = error;
             launching = null;
+            shownRecent = recent;
             return;
         }
         closing.start();
@@ -198,6 +250,15 @@ StagePanel {
             return true;
         case Qt.Key_Escape:
             open = false;
+            return true;
+        // Tab stays in the field: Ctrl+Tab switches modes, Tab fills in the
+        // selected file's path (the grey completion, while a path is typed).
+        case Qt.Key_Tab:
+        case Qt.Key_Backtab:
+            if ((modifiers & Qt.ControlModifier) !== 0)
+                setMode(inFiles ? Protocol.PROVIDER_APPS : Protocol.PROVIDER_FILES);
+            else if (inFiles && matchesFor === query && rows[selected]?.file)
+                field.text = rows[selected].file.completion;
             return true;
         }
         return false;
@@ -255,9 +316,10 @@ StagePanel {
 
                 TextInput {
                     id: field
+                    objectName: "field"
                     anchors.verticalCenter: parent.verticalCenter
                     x: searchIcon.x + searchIcon.width + Tokens.launcherGap
-                    width: escHint.x - x - Tokens.launcherGap
+                    width: (modes.visible ? modes.x : escHint.x) - x - Tokens.launcherGap
                     font.family: Tokens.fontSans
                     font.pixelSize: Tokens.fontSizeHeading
                     font.weight: Tokens.weightLabel
@@ -278,12 +340,19 @@ StagePanel {
                         visible: field.cursorVisible
                     }
                     onTextChanged: {
+                        // A path is typed: the Files mode completes it.
+                        if (LauncherLogic.typesPath(text) && !launcher.inFiles) {
+                            launcher.setMode(Protocol.PROVIDER_FILES);
+                            launcher.pathSwitched = launcher.inFiles;
+                        } else if (text === "" && launcher.pathSwitched) {
+                            launcher.setMode(Protocol.PROVIDER_APPS);
+                        }
                         launcher.query = text;
                         launcher.enterPending = null;
                         launcher.selected = 0;
                         launcher.problem = "";
                         if (text.trim() !== "")
-                            launcher.searchRequested(text);
+                            launcher.searchRequested(text, launcher.mode);
                         else
                             launcher.matches = [];
                     }
@@ -297,7 +366,47 @@ StagePanel {
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSizeHeading
                         color: Tokens.fgDim
-                        text: qsTr("Search apps")
+                        text: launcher.inFiles ? qsTr("Search files") : qsTr("Search apps")
+                    }
+
+                    // The rest of the selected file's path, which Tab takes.
+                    Text {
+                        objectName: "completion"
+                        anchors.verticalCenter: parent.verticalCenter
+                        x: field.contentWidth
+                        width: Math.max(0, field.width - x)
+                        visible: launcher.completion !== "" && field.cursorPosition === field.length && field.contentWidth < field.width
+                        font: field.font
+                        color: Tokens.fgDim
+                        elide: Text.ElideRight
+                        textFormat: Text.PlainText
+                        text: Paths.shown(launcher.completion)
+                    }
+                }
+
+                Segments {
+                    id: modes
+                    objectName: "modes"
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.right: escHint.left
+                    anchors.rightMargin: Tokens.launcherGap
+                    width: Tokens.launcherModesWidth
+                    visible: launcher.filesMode
+                    color: "transparent"
+                    current: launcher.mode
+                    options: [
+                        {
+                            key: Protocol.PROVIDER_APPS,
+                            label: qsTr("Apps")
+                        },
+                        {
+                            key: Protocol.PROVIDER_FILES,
+                            label: qsTr("Files")
+                        }
+                    ]
+                    onPicked: key => {
+                        launcher.setMode(key);
+                        field.forceActiveFocus();
                     }
                 }
 
@@ -330,6 +439,10 @@ StagePanel {
                         appId: modelData.id
                         name: modelData.name
                         iconSource: launcher.iconSource(modelData.icon ?? "")
+                        launching: launcher.isLaunching({
+                            provider: Protocol.PROVIDER_APPS,
+                            id: appId
+                        })
                         onClicked: launcher.launch({
                             provider: Protocol.PROVIDER_APPS,
                             id: appId
@@ -347,7 +460,7 @@ StagePanel {
                 font.capitalization: Font.MixedCase
                 color: Tokens.error
                 textFormat: Text.PlainText
-                text: qsTr("Couldn't start it: %1").arg(launcher.problem)
+                text: (launcher.inFiles ? qsTr("Couldn't open it: %1") : qsTr("Couldn't start it: %1")).arg(launcher.problem)
             }
 
             ListView {
@@ -378,7 +491,7 @@ StagePanel {
                             easing.bezierCurve: Tokens.easing
                         }
                     }
-                    color: launcher.launching !== null ? Tokens.alpha(Tokens.primary, Tokens.accentFillOpacity) : Tokens.selected
+                    color: launcher.launchingSelected ? Tokens.alpha(Tokens.primary, Tokens.accentFillOpacity) : Tokens.selected
                     Behavior on color {
                         ColorAnimation {
                             duration: Tokens.durationFast
@@ -422,7 +535,8 @@ StagePanel {
             text: ({
                     recent: qsTr("Recent"),
                     apps: qsTr("All apps"),
-                    results: qsTr("Results")
+                    results: qsTr("Results"),
+                    files: qsTr("Files")
                 })[item.modelData.group] ?? ""
         }
 
@@ -434,10 +548,16 @@ StagePanel {
             selected: item.index === launcher.selected
             pinnable: item.modelData.provider === Protocol.PROVIDER_APPS
             pinned: pinnable && launcher.pinned.includes(item.modelData.id)
-            launching: launcher.isLaunching(item.modelData)
+            launching: selected && launcher.launchingSelected
             onHovered: at => launcher.pointed(item.index, at)
-            onClicked: launcher.launch(item.modelData, false)
+            onClicked: {
+                if (launcher.launching !== null)
+                    return;
+                launcher.selected = item.index;
+                launcher.launch(item.modelData, false);
+            }
             onPinClicked: launcher.pinRequested(item.modelData.id, !pinned)
+            onShowInFolderClicked: launcher.launch(item.modelData, true)
         }
     }
 
