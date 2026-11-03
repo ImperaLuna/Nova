@@ -64,6 +64,8 @@ expression: all
 {"v":2,"event":"launcher","data":{"apps":[{"id":"org.mozilla.firefox.desktop","name":"Firefox","description":"Web Browser","icon":"firefox"},{"id":"foot.desktop","name":"Foot"}],"pinned":["foot.desktop"],"recent":["org.mozilla.firefox.desktop","foot.desktop"]}}
 {"v":2,"id":24,"cmd":"launcher_search","args":{"query":"fi"}}
 {"v":2,"id":24,"result":[{"description":"Web Browser","id":"org.mozilla.firefox.desktop","name":[{"matched":true,"text":"Fi"},{"text":"refox"}],"provider":"apps"}]}
+{"v":2,"id":91,"cmd":"launcher_search","args":{"query":"~/Doc","mode":"files"}}
+{"v":2,"id":91,"result":[{"description":"~","file":{"completion":"~/Documents/","dir":true,"hidden":false,"mime":"inode/directory"},"id":"/home/me/Documents","name":[{"matched":true,"text":"Doc"},{"text":"uments"}],"provider":"files"}]}
 {"v":2,"id":44,"cmd":"app_icon","args":{"icon_name":"","program":"/nix/store/x-zen/lib/zen/.zen-wrapped","name":"Zen"}}
 {"v":2,"id":44,"result":"zen-browser"}
 {"v":2,"id":25,"cmd":"launcher_run","args":{"provider":"apps","id":"foot.desktop","output":"DP-1","new_window":true}}

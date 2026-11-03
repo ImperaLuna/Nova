@@ -17,3 +17,10 @@ nix = ["udisks2", "poppler-utils", "ffmpeg-headless", "gdk-pixbuf", "ffmpegthumb
 arch = ["udisks2", "poppler", "ffmpeg", "gdk-pixbuf2", "ffmpegthumbnailer"]
 fedora = ["udisks2", "poppler-utils", "ffmpeg-free", "gdk-pixbuf2", "ffmpegthumbnailer"]
 debian = ["udisks2", "poppler-utils", "ffmpeg", "libgdk-pixbuf2.0-bin", "ffmpegthumbnailer"]
+
+# The launcher's Files mode: names from the search index, and paths typed
+# from `~` or `/`.
+[[slot]]
+host = "launcher.providers"
+view = "files"
+order = 20

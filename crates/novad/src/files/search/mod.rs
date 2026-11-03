@@ -136,6 +136,11 @@ impl Searcher {
     /// drive) is searched where it leads; one it holds nothing below at
     /// all, everywhere.
     pub fn search(&self, text: &str, within: Option<&str>) -> Result<FileSearch, String> {
+        self.search_up_to(text, within, FILES_SEARCH_MAX_RESULTS)
+    }
+
+    /// The best `limit` of them.
+    pub fn search_up_to(&self, text: &str, within: Option<&str>, limit: usize) -> Result<FileSearch, String> {
         if text.chars().count() > FILES_SEARCH_MAX_CHARS {
             return Err(format!("Searches are at most {FILES_SEARCH_MAX_CHARS} characters"));
         }
@@ -152,7 +157,7 @@ impl Searcher {
             if index.covers(folder) { Some(folder) } else { leads_to.as_deref().filter(|target| index.covers(target)) }
         });
         let everywhere = within.is_some() && scope.is_none();
-        let (hits, total) = index.search(&query, scope, FILES_SEARCH_MAX_RESULTS);
+        let (hits, total) = index.search(&query, scope, limit);
         drop(held);
         let mime = self.0.mime.current();
         let results = hits

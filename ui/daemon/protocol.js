@@ -10,7 +10,7 @@
 var VERSION = 2;
 
 // novad refuses longer launcher_search queries.
-var LAUNCHER_SEARCH_MAX_CHARS = 200;
+var LAUNCHER_SEARCH_MAX_CHARS = 4096;
 
 // novad refuses longer media player ids.
 var MEDIA_PLAYER_MAX_BYTES = 255;
@@ -276,8 +276,9 @@ var FEATURE_WALLPAPER_ENGINE = "wallpaper-engine";
 var FEATURE_WORKSPACES = "workspaces";
 var FEATURE_X11_TRAY = "x11-tray";
 
-// Launcher providers built into novad (PROVIDER_APPS).
+// Launcher providers built into novad (PROVIDER_*).
 var PROVIDER_APPS = "apps";
+var PROVIDER_FILES = "files";
 
 // Power menu actions (PowerAction).
 var POWER_LOCK = "lock";

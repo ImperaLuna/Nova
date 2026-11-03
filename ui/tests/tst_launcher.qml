@@ -101,7 +101,7 @@ Item {
             keyClick("f");
             keyClick("i");
             compare(searches.count, 2);
-            compare(searches.signalArguments[1][0], "fi");
+            compare(Array.from(searches.signalArguments[1]), ["fi", "apps"]);
             verify(!launcher.showsPinned);
             launcher.showMatches("f", [
                 {
@@ -361,6 +361,143 @@ Item {
             });
             verify(launcher.openY + launcher.tallest <= 540, `${launcher.openY + launcher.tallest} > 540`);
             verify(launcher.listHeight >= Tokens.launcherRowHeight);
+        }
+
+        // What the Files mode finds for "~/Doc": a folder in Home.
+        readonly property var documents: ({
+                provider: "files",
+                id: "/home/me/Documents",
+                name: [
+                    {
+                        text: "Doc",
+                        matched: true
+                    },
+                    {
+                        text: "uments"
+                    }
+                ],
+                description: "~",
+                file: {
+                    dir: true,
+                    mime: "inode/directory",
+                    hidden: false,
+                    completion: "~/Documents/"
+                }
+            })
+
+        function test_the_files_mode_shows_only_with_nova_files_and_ctrl_tab_switches_to_it() {
+            const without = make();
+            verify(!findChild(without, "modes").visible);
+            keyClick(Qt.Key_Tab, Qt.ControlModifier);
+            compare(without.mode, "apps", "no Nova Files, no Files mode");
+            without.destroy();
+
+            const launcher = make({
+                filesMode: true
+            });
+            verify(findChild(launcher, "modes").visible);
+            keyClick("r");
+            keyClick(Qt.Key_Tab, Qt.ControlModifier);
+            compare(launcher.mode, "files");
+            verify(!launcher.showsPinned);
+            compare(Array.from(searches.signalArguments[searches.count - 1]), ["r", "files"], "what's typed is searched again");
+            launcher.showMatches("r", [documents], "apps");
+            compare(launcher.rows.length, 0, "an answer from the other mode is dropped");
+            keyClick(Qt.Key_Backtab, Qt.ControlModifier | Qt.ShiftModifier);
+            compare(launcher.mode, "apps");
+            launcher.open = false;
+            launcher.open = true;
+            compare(launcher.mode, "apps", "it opens in the Apps mode");
+        }
+
+        function test_typing_a_path_switches_to_files_and_tab_takes_the_grey_completion() {
+            const launcher = make({
+                filesMode: true
+            });
+            keyClick("~");
+            compare(launcher.mode, "files");
+            compare(launcher.rows.length, 0, "the Files mode lists only what it finds");
+            keyClick("/");
+            keyClick("D");
+            keyClick("o");
+            keyClick("c");
+            compare(Array.from(searches.signalArguments[searches.count - 1]), ["~/Doc", "files"]);
+            launcher.showMatches("~/Doc", [documents], "files");
+            compare(groups(launcher.rows), ["files"]);
+            compare(launcher.completion, "uments/");
+            const ghost = findChild(launcher, "completion");
+            verify(ghost.visible);
+            compare(ghost.text, "uments/");
+            keyClick(Qt.Key_Tab);
+            compare(launcher.query, "~/Documents/");
+            compare(launcher.completion, "");
+            launcher.showMatches("~/Documents/", [documents], "files");
+            keyClick(Qt.Key_Return);
+            compare(Array.from(launches.signalArguments[0]), ["files", "/home/me/Documents", false]);
+        }
+
+        function test_clearing_a_typed_path_goes_back_to_apps_and_stale_rows_complete_nothing() {
+            const launcher = make({
+                filesMode: true
+            });
+            keyClick("~");
+            keyClick("/");
+            launcher.showMatches("~/", [documents], "files");
+            compare(launcher.completion, "Documents/");
+            keyClick("D");
+            compare(launcher.completion, "", "the rows are the previous query's");
+            keyClick(Qt.Key_Tab);
+            compare(launcher.query, "~/D");
+            for (let i = 0; i < 3; i++)
+                keyClick(Qt.Key_Backspace);
+            compare(launcher.mode, "apps", "the path switched to Files, so clearing it switches back");
+            keyClick(Qt.Key_Tab, Qt.ControlModifier);
+            keyClick("x");
+            keyClick(Qt.Key_Backspace);
+            compare(launcher.mode, "files", "a mode picked by hand stays");
+            launcher.filesMode = false;
+            compare(launcher.mode, "apps", "Nova Files stopping takes its mode");
+        }
+
+        function test_a_file_row_shows_its_folder_and_shows_in_it_on_shift_enter() {
+            const launcher = make({
+                filesMode: true
+            });
+            keyClick(Qt.Key_Tab, Qt.ControlModifier);
+            keyClick("r");
+            const report = {
+                provider: "files",
+                id: "/home/me/.cache/report.pdf",
+                name: [
+                    {
+                        text: "r",
+                        matched: true
+                    },
+                    {
+                        text: "eport.pdf"
+                    }
+                ],
+                description: "~/.cache",
+                file: {
+                    dir: false,
+                    mime: "application/pdf",
+                    hidden: true,
+                    completion: "~/.cache/report.pdf"
+                }
+            };
+            launcher.showMatches("r", [report], "files");
+            compare(launcher.completion, "", "a name search isn't a path being typed");
+            const list = findChild(launcher, "list");
+            tryVerify(() => list.itemAtIndex(0) !== null);
+            const row = findChild(list.itemAtIndex(0), "row");
+            verify(!row.pinnable);
+            compare(row.ink, Tokens.filesFaint, "it's in a hidden folder");
+            verify(findChild(row, "showInFolder").visible);
+            keyClick(Qt.Key_Return, Qt.ShiftModifier);
+            compare(Array.from(launches.signalArguments[0]), ["files", "/home/me/.cache/report.pdf", true]);
+            launcher.launching = null;
+            keyClick(Qt.Key_Tab);
+            compare(launcher.query, "~/.cache/report.pdf", "Tab fills in a found file's path");
         }
     }
 

@@ -442,6 +442,8 @@ QtObject {
     readonly property int launcherRowGap: 2
     readonly property int launcherRowIcon: 30
     readonly property int launcherRows: 6
+    // The Apps and Files tabs in the search field, with Nova Files on.
+    readonly property int launcherModesWidth: 132
     // The note shown when nothing matches.
     readonly property int launcherEmptyHeight: 92
     // An app without an icon: its letter on a swatch, this round.
