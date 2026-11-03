@@ -11,8 +11,9 @@ import "transfers.js" as Transfers
 // jobs it started, each as a card stacked at the bottom right, and the name
 // clash dialog in the middle while one of them asks. Clashes come one at a
 // time, oldest job first; the window behind takes no clicks meanwhile.
-// Closing the window cancels its jobs; novad stops them all when the
-// connection drops, so they're dropped here too.
+// A move undone or redone from this window (Ctrl+Z, Ctrl+Y) shows here as
+// a job of its own. Closing the window cancels its jobs; novad stops them
+// all when the connection drops, so they're dropped here too.
 Item {
     id: transfers
 
@@ -39,6 +40,23 @@ Item {
             });
         });
         mine[started] = true;
+    }
+
+    // Undoes the last step in any window, or redoes the last one undone
+    // (`redo`), showing a move back here; `failed(error)` gets what couldn't
+    // be done. Nothing happens when there's nothing to undo.
+    function undo(redo: bool, failed: var) {
+        if (!(redo ? FilesService.history.redo : FilesService.history.undo))
+            return;
+        // Its job's reports can come before novad's answer.
+        const job = FilesService.newJob();
+        mine[job] = true;
+        FilesService.undo(redo, job, (error, started) => {
+            if (!started)
+                delete mine[job];
+            if (error)
+                failed(error);
+        });
     }
 
     // The numbers of the jobs this window started; others are other

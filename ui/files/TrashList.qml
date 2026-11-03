@@ -12,8 +12,8 @@ import "trash.js" as Trash
 // trashed first, and the count at the foot. Click, Ctrl and Shift pick
 // items; its keys are the table's TRASH entries (shortcuts.js): the arrow
 // keys move, Ctrl+A picks all, Delete asks to delete the picked ones for
-// good, Backspace goes back (`backRequested`), and typing a name goes to
-// it (NameTyping). A trashed item doesn't open. Like the file list,
+// good, Backspace goes back and Ctrl+Z and Ctrl+Y undo and redo
+// (`actionRequested`), and typing a name goes to it (NameTyping). A trashed item doesn't open. Like the file list,
 // it sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
 Item {
@@ -30,7 +30,9 @@ Item {
 
     // Delete was pressed with items picked.
     signal eraseRequested
-    signal backRequested
+    // A table action that is the window's (Backspace's "back", Ctrl+Z's
+    // "undo", Ctrl+Y's "redo").
+    signal actionRequested(string action)
 
     function focusList() {
         rows.forceActiveFocus();
@@ -142,21 +144,16 @@ Item {
             id: typing
         }
 
-        // The rows' names, in the list's order: what typing a name searches.
-        function names(): var {
-            const names = [];
-            for (let index = 0; index < count; index++)
-                names.push(list.model.rows.get(index).name);
-            return names;
-        }
-
         Keys.onPressed: event => {
-            switch (Shortcuts.action(Shortcuts.TRASH, event.key, event.modifiers)) {
+            const action = Shortcuts.action(Shortcuts.TRASH, event.key, event.modifiers);
+            switch (action) {
             case "selectAll":
                 list.model.selectAll();
                 return;
             case "back":
-                list.backRequested();
+            case "undo":
+            case "redo":
+                list.actionRequested(action);
                 return;
             case "deleteForGood":
                 if (list.model.selectedCount > 0)
@@ -167,7 +164,7 @@ Item {
                     rows.go(Listing.moved(event.key, rows.currentIndex, rows.count, rows.page), (event.modifiers & Qt.ShiftModifier) !== 0);
                 return;
             }
-            event.accepted = typing.press(event.text, event.modifiers, rows.names(), rows.currentIndex, index => rows.go(index, false));
+            event.accepted = typing.press(event.text, event.modifiers, list.model.rows, rows.currentIndex, index => rows.go(index, false));
         }
     }
 

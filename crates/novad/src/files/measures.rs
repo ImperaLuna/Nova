@@ -130,6 +130,9 @@ struct Run {
 impl Run {
     fn run(&mut self, paths: &[PathBuf]) {
         for path in paths {
+            if self.stopped() {
+                return;
+            }
             // An item that's gone or can't be read adds nothing. The item
             // itself is followed when it's a link, as the list shows it.
             if let Ok(meta) = fs::metadata(path).or_else(|_| fs::symlink_metadata(path)) {
@@ -149,6 +152,9 @@ impl Run {
     fn walk(&mut self, top: &Path, device: u64) -> bool {
         let mut folders = vec![top.to_path_buf()];
         while let Some(folder) = folders.pop() {
+            if self.stopped() {
+                return false;
+            }
             let Ok(entries) = fs::read_dir(&folder) else { continue };
             for entry in entries {
                 if self.stopped() {

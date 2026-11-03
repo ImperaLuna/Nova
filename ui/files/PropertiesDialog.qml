@@ -42,7 +42,9 @@ Item {
     readonly property var drive: subject.drive ? properties?.drive ?? null : null
 
     implicitWidth: Tokens.filesPropertiesWidth
-    implicitHeight: content.implicitHeight + Tokens.panelPad + Tokens.panelPadBottom
+    // At most this tall (the window's room); past it the facts scroll.
+    property real maxHeight: Infinity
+    implicitHeight: Math.min(content.implicitHeight + Tokens.panelPad + Tokens.panelPadBottom, maxHeight)
 
     onSubjectChanged: choosingApp = false
 
@@ -78,134 +80,143 @@ Item {
         elide: Text.ElideRight
     }
 
-    Column {
-        id: content
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: Tokens.panelPad
-        spacing: Tokens.pad
+    Flickable {
+        id: scroller
+        anchors.fill: parent
+        anchors.leftMargin: Tokens.panelPad
+        anchors.rightMargin: Tokens.panelPad
+        anchors.topMargin: Tokens.panelPad
+        anchors.bottomMargin: Tokens.panelPadBottom
+        clip: true
+        contentHeight: content.implicitHeight
+        boundsBehavior: Flickable.StopAtBounds
 
-        Row {
+        Column {
+            id: content
+            width: scroller.width
             spacing: Tokens.pad
 
-            LineIcon {
-                anchors.verticalCenter: parent.verticalCenter
-                path: Props.icon(dialog.subject, dialog.properties)
-                size: Tokens.filesClashIconSize
-                color: (dialog.properties?.entry?.dir ?? false) && !dialog.subject.drive ? Tokens.filesFolder : Tokens.fgDim
-            }
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                width: content.width - Tokens.filesClashIconSize - Tokens.pad
-                text: dialog.subject.title
-                textFormat: Text.PlainText
-                elide: Text.ElideMiddle
-                font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeTitle
-                font.weight: Tokens.weightTitle
-                color: Tokens.fg
-            }
-        }
-
-        Repeater {
-            model: dialog.groups
-
-            Column {
-                id: group
-
-                required property var modelData
-
-                width: content.width
+            Row {
                 spacing: Tokens.pad
 
-                Rule {}
+                LineIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    path: Props.icon(dialog.subject, dialog.properties)
+                    size: Tokens.filesClashIconSize
+                    color: (dialog.properties?.entry?.dir ?? false) && !dialog.subject.drive ? Tokens.filesFolder : Tokens.fgDim
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: content.width - Tokens.filesClashIconSize - Tokens.pad
+                    text: dialog.subject.title
+                    textFormat: Text.PlainText
+                    elide: Text.ElideMiddle
+                    font.family: Tokens.fontSans
+                    font.pixelSize: Tokens.fontSizeTitle
+                    font.weight: Tokens.weightTitle
+                    color: Tokens.fg
+                }
+            }
+
+            Repeater {
+                model: dialog.groups
+
                 Column {
-                    width: parent.width
+                    id: group
 
-                    Repeater {
-                        model: group.modelData
+                    required property var modelData
 
-                        Column {
-                            id: fact
+                    width: content.width
+                    spacing: Tokens.pad
 
-                            required property var modelData
+                    Rule {}
+                    Column {
+                        width: parent.width
 
-                            width: content.width
+                        Repeater {
+                            model: group.modelData
 
-                            Item {
+                            Column {
+                                id: fact
+
+                                required property var modelData
+
                                 width: content.width
-                                height: Math.max(Tokens.filesPropertiesRowHeight, value.implicitHeight)
 
-                                Label {
-                                    anchors.top: parent.top
-                                    height: Tokens.filesPropertiesRowHeight
-                                    verticalAlignment: Text.AlignVCenter
-                                    text: fact.modelData.label
-                                }
-                                Text {
-                                    id: value
-                                    x: Tokens.filesPropertiesLabelWidth
-                                    width: parent.width - x - (change.visible ? change.width + Tokens.gap : 0)
-                                    topPadding: (Tokens.filesPropertiesRowHeight - fontMetrics.height) / 2
-                                    text: fact.modelData.value
-                                    textFormat: Text.PlainText
-                                    wrapMode: Text.WrapAnywhere
-                                    maximumLineCount: 3
-                                    elide: Text.ElideRight
-                                    font.family: Tokens.fontSans
-                                    font.pixelSize: Tokens.fontSize
-                                    // Still counting: dim until the count is complete.
-                                    color: fact.modelData.counting === true ? Tokens.fgDim : Tokens.fg
-
-                                    FontMetrics {
-                                        id: fontMetrics
-                                        font: value.font
-                                    }
-                                }
-                                DialogButton {
-                                    id: change
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    visible: fact.modelData.change === true && dialog.apps.length > 1
-                                    height: Tokens.filesPropertiesRowHeight
-                                    quiet: true
-                                    text: qsTr("Change")
-                                    onClicked: dialog.choosingApp = !dialog.choosingApp
-                                }
-                            }
-                            // The other apps, right under "Opens with" while choosing.
-                            Repeater {
-                                model: dialog.choosingApp && fact.modelData.change === true ? dialog.apps.slice(1) : []
-
-                                Rectangle {
-                                    id: app
-
-                                    required property var modelData
-
+                                Item {
                                     width: content.width
-                                    height: Tokens.menuRowHeight
-                                    radius: Tokens.menuRowRadius
-                                    color: appHover.hovered ? Tokens.selected : "transparent"
+                                    height: Math.max(Tokens.filesPropertiesRowHeight, value.implicitHeight)
 
+                                    Label {
+                                        anchors.top: parent.top
+                                        height: Tokens.filesPropertiesRowHeight
+                                        verticalAlignment: Text.AlignVCenter
+                                        text: fact.modelData.label
+                                    }
                                     Text {
-                                        anchors.verticalCenter: parent.verticalCenter
+                                        id: value
                                         x: Tokens.filesPropertiesLabelWidth
-                                        width: parent.width - x - Tokens.rowInset
-                                        text: app.modelData.name
+                                        width: parent.width - x - (change.visible ? change.width + Tokens.gap : 0)
+                                        topPadding: (Tokens.filesPropertiesRowHeight - fontMetrics.height) / 2
+                                        text: fact.modelData.value
                                         textFormat: Text.PlainText
+                                        wrapMode: Text.WrapAnywhere
+                                        maximumLineCount: 3
                                         elide: Text.ElideRight
                                         font.family: Tokens.fontSans
                                         font.pixelSize: Tokens.fontSize
-                                        color: Tokens.fgDim
+                                        // Still counting: dim until the count is complete.
+                                        color: fact.modelData.counting === true ? Tokens.fgDim : Tokens.fg
+
+                                        FontMetrics {
+                                            id: fontMetrics
+                                            font: value.font
+                                        }
                                     }
-                                    HoverHandler {
-                                        id: appHover
+                                    DialogButton {
+                                        id: change
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        visible: fact.modelData.change === true && dialog.apps.length > 1
+                                        height: Tokens.filesPropertiesRowHeight
+                                        quiet: true
+                                        text: qsTr("Change")
+                                        onClicked: dialog.choosingApp = !dialog.choosingApp
                                     }
-                                    TapHandler {
-                                        onTapped: {
-                                            dialog.choosingApp = false;
-                                            dialog.defaultChosen(app.modelData.id);
+                                }
+                                // The other apps, right under "Opens with" while choosing.
+                                Repeater {
+                                    model: dialog.choosingApp && fact.modelData.change === true ? dialog.apps.slice(1) : []
+
+                                    Rectangle {
+                                        id: app
+
+                                        required property var modelData
+
+                                        width: content.width
+                                        height: Tokens.menuRowHeight
+                                        radius: Tokens.menuRowRadius
+                                        color: appHover.hovered ? Tokens.selected : "transparent"
+
+                                        Text {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            x: Tokens.filesPropertiesLabelWidth
+                                            width: parent.width - x - Tokens.rowInset
+                                            text: app.modelData.name
+                                            textFormat: Text.PlainText
+                                            elide: Text.ElideRight
+                                            font.family: Tokens.fontSans
+                                            font.pixelSize: Tokens.fontSize
+                                            color: Tokens.fgDim
+                                        }
+                                        HoverHandler {
+                                            id: appHover
+                                        }
+                                        TapHandler {
+                                            onTapped: {
+                                                dialog.choosingApp = false;
+                                                dialog.defaultChosen(app.modelData.id);
+                                            }
                                         }
                                     }
                                 }
@@ -214,105 +225,105 @@ Item {
                     }
                 }
             }
-        }
 
-        // How full a drive is.
-        Rectangle {
-            visible: dialog.drive !== null
-            width: content.width
-            height: Tokens.filesPropertiesBarHeight
-            radius: height / 2
-            color: Tokens.track
-
+            // How full a drive is.
             Rectangle {
-                width: parent.width * Props.fill(dialog.drive)
-                height: parent.height
-                radius: parent.radius
-                color: Tokens.meter
-            }
-        }
+                visible: dialog.drive !== null
+                width: content.width
+                height: Tokens.filesPropertiesBarHeight
+                radius: height / 2
+                color: Tokens.track
 
-        // Who may read, change and run it.
-        Column {
-            id: access
-            visible: dialog.single
-            width: content.width
-            spacing: Tokens.pad
-
-            readonly property var columns: Props.rightsColumns(dialog.properties?.entry?.dir ?? false)
-
-            Rule {}
-            Row {
-                x: content.width - access.columns.length * Tokens.filesPropertiesCheckColumn
-
-                Repeater {
-                    model: access.columns
-
-                    Text {
-                        required property var modelData
-
-                        width: Tokens.filesPropertiesCheckColumn
-                        horizontalAlignment: Text.AlignHCenter
-                        text: modelData.label
-                        font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSizeSmall
-                        font.weight: Tokens.weightLabel
-                        color: Tokens.filesFaint
-                    }
+                Rectangle {
+                    width: parent.width * Props.fill(dialog.drive)
+                    height: parent.height
+                    radius: parent.radius
+                    color: Tokens.meter
                 }
             }
+
+            // Who may read, change and run it.
             Column {
+                id: access
+                visible: dialog.single
                 width: content.width
+                spacing: Tokens.pad
 
-                Repeater {
-                    model: Props.people(dialog.properties)
+                readonly property var columns: Props.rightsColumns(dialog.properties?.entry?.dir ?? false)
 
-                    Item {
-                        id: person
+                Rule {}
+                Row {
+                    x: content.width - access.columns.length * Tokens.filesPropertiesCheckColumn
 
-                        required property var modelData
+                    Repeater {
+                        model: access.columns
 
-                        width: content.width
-                        height: Tokens.filesPropertiesRowHeight
-
-                        Label {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: person.modelData.who
-                        }
                         Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            x: Tokens.filesPropertiesLabelWidth
-                            width: parent.width - x - access.columns.length * Tokens.filesPropertiesCheckColumn
-                            text: person.modelData.name
-                            textFormat: Text.PlainText
-                            elide: Text.ElideRight
+                            required property var modelData
+
+                            width: Tokens.filesPropertiesCheckColumn
+                            horizontalAlignment: Text.AlignHCenter
+                            text: modelData.label
                             font.family: Tokens.fontSans
-                            font.pixelSize: Tokens.fontSize
-                            color: Tokens.fg
+                            font.pixelSize: Tokens.fontSizeSmall
+                            font.weight: Tokens.weightLabel
+                            color: Tokens.filesFaint
                         }
-                        Row {
-                            anchors.right: parent.right
-                            height: parent.height
+                    }
+                }
+                Column {
+                    width: content.width
 
-                            Repeater {
-                                model: access.columns
+                    Repeater {
+                        model: Props.people(dialog.properties)
 
-                                Item {
-                                    id: rightCell
+                        Item {
+                            id: person
 
-                                    required property var modelData
+                            required property var modelData
 
-                                    width: Tokens.filesPropertiesCheckColumn
-                                    height: parent.height
+                            width: content.width
+                            height: Tokens.filesPropertiesRowHeight
 
-                                    CheckMark {
-                                        anchors.centerIn: parent
-                                        enabled: dialog.properties?.yours ?? false
-                                        checked: person.modelData.rights[rightCell.modelData.key]
-                                    }
-                                    TapHandler {
-                                        enabled: (dialog.properties?.yours ?? false) && !dialog.changing
-                                        onTapped: dialog.accessFlipped(person.modelData.key, rightCell.modelData.key)
+                            Label {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: person.modelData.who
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: Tokens.filesPropertiesLabelWidth
+                                width: parent.width - x - access.columns.length * Tokens.filesPropertiesCheckColumn
+                                text: person.modelData.name
+                                textFormat: Text.PlainText
+                                elide: Text.ElideRight
+                                font.family: Tokens.fontSans
+                                font.pixelSize: Tokens.fontSize
+                                color: Tokens.fg
+                            }
+                            Row {
+                                anchors.right: parent.right
+                                height: parent.height
+
+                                Repeater {
+                                    model: access.columns
+
+                                    Item {
+                                        id: rightCell
+
+                                        required property var modelData
+
+                                        width: Tokens.filesPropertiesCheckColumn
+                                        height: parent.height
+
+                                        CheckMark {
+                                            anchors.centerIn: parent
+                                            enabled: dialog.properties?.yours ?? false
+                                            checked: person.modelData.rights[rightCell.modelData.key]
+                                        }
+                                        TapHandler {
+                                            enabled: (dialog.properties?.yours ?? false) && !dialog.changing
+                                            onTapped: dialog.accessFlipped(person.modelData.key, rightCell.modelData.key)
+                                        }
                                     }
                                 }
                             }
@@ -320,14 +331,14 @@ Item {
                     }
                 }
             }
-        }
 
-        DialogButton {
-            anchors.right: parent.right
-            text: qsTr("Close")
-            accent: true
-            minWidth: Tokens.filesDialogButtonMinWidth
-            onClicked: dialog.closeRequested()
+            DialogButton {
+                anchors.right: parent.right
+                text: qsTr("Close")
+                accent: true
+                minWidth: Tokens.filesDialogButtonMinWidth
+                onClicked: dialog.closeRequested()
+            }
         }
     }
 }

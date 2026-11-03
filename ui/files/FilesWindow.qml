@@ -26,7 +26,9 @@ import "../daemon/protocol.js" as Protocol
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
 // window's keys are the table's WINDOW entries (shortcuts.js), done by
-// act(); the lists answer their own. Its
+// act(); the lists answer their own, and hand it theirs that are the
+// window's, like undo and redo (Ctrl+Z, Ctrl+Y), which novad does for
+// every window alike; what can't be undone gets a notice. Its
 // frame and its file list each go from glass to solid as config.toml's
 // [files] says, live. Each draws its own background, so one never shows
 // through the other.
@@ -52,8 +54,10 @@ FloatingWindow {
         const picked = list.model.revision >= 0 && list.model.selectedCount === 1 ? list.model.selectedRows()[0] : null;
         return picked?.archive ? Paths.child(folder, picked.name) : "";
     }
-    // A dialog is up (confirm, Properties): the window's keys wait.
-    readonly property bool asking: confirming !== null || propertiesModel.subject !== null
+    readonly property string home: Quickshell.env("HOME") ?? ""
+    // A dialog or menu has the window's attention: the confirm dialog, a
+    // name clash, the Properties dialog, a drive's menu or its eject problem.
+    readonly property bool asking: confirming !== null || transfers.asking !== null || propertiesModel.subject !== null || driveMenu.visible || ejectProblem.visible
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -187,8 +191,12 @@ FloatingWindow {
                 list.refresh();
             break;
         case "newWindow":
-            // From the trash, on the folder its tree is on.
-            FilesService.showFolder(inTrash ? navigator.treeFolder : folder);
+            // From the trash, on the folder its tree is on, or home.
+            FilesService.showFolder(inTrash ? (navigator.treeFolder || home) : folder);
+            break;
+        case "undo":
+        case "redo":
+            transfers.undo(action === "redo", error => notice(null, error));
             break;
         case "closeWindow":
             // Hiding a window from QML doesn't say `closed` (only the
@@ -330,7 +338,7 @@ FloatingWindow {
         focus: true
         onFolderOpened: path => window.navigator.visit(path, null)
         onTrashRequested: rows => window.moveToTrash(rows)
-        onBackRequested: window.navigator.step(-1)
+        onActionRequested: action => window.act(action)
         onDeleteRequested: rows => window.deleteForGood(rows)
         onPropertiesRequested: rows => window.showProperties(rows, null)
         onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
@@ -349,10 +357,10 @@ FloatingWindow {
         anchors.bottom: parent.bottom
         visible: window.inTrash
         model: trash
-        home: Quickshell.env("HOME") ?? ""
+        home: window.home
         solid: FilesService.listSolid
         onEraseRequested: window.erase()
-        onBackRequested: window.navigator.step(-1)
+        onActionRequested: action => window.act(action)
         onVisibleChanged: {
             if (visible)
                 focusList();
@@ -440,6 +448,9 @@ FloatingWindow {
         id: propertiesDialog
         anchors.centerIn: parent
         visible: propertiesModel.subject !== null
+        width: Math.min(implicitWidth, window.width - 2 * Tokens.filesOverlayInset)
+        height: implicitHeight
+        maxHeight: window.height - 2 * Tokens.filesOverlayInset
         subject: propertiesModel.subject ?? Props.subject(window.folder, [], null)
         properties: propertiesModel.properties
         counted: propertiesModel.counted

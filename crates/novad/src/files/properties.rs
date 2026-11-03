@@ -195,13 +195,15 @@ mod tests {
     #[test]
     fn setting_access_keeps_the_other_bits() {
         let dir = TempDir::new("properties-access");
-        let script = dir.join("run.sh");
-        fs::write(&script, b"#!/bin/sh\n").unwrap();
-        fs::set_permissions(&script, fs::Permissions::from_mode(0o4644)).unwrap();
+        // The sticky bit stands for the bits access doesn't cover; setuid
+        // can't be set inside Nix's build sandbox.
+        let shared = dir.join("Shared");
+        fs::create_dir(&shared).unwrap();
+        fs::set_permissions(&shared, fs::Permissions::from_mode(0o1700)).unwrap();
         let everyone = Rights { read: true, write: false, run: true };
         let access = Access { owner: Rights { read: true, write: true, run: true }, group: everyone, others: everyone };
-        set_access(&wire(&script), access).unwrap();
-        assert_eq!(fs::metadata(&script).unwrap().mode() & 0o7777, 0o4755);
-        assert_eq!(read(&wire(&script), &mime()).unwrap().access, access);
+        set_access(&wire(&shared), access).unwrap();
+        assert_eq!(fs::metadata(&shared).unwrap().mode() & 0o7777, 0o1755);
+        assert_eq!(read(&wire(&shared), &mime()).unwrap().access, access);
     }
 }
