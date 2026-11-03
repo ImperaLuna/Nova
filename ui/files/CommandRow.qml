@@ -3,9 +3,13 @@ import "../theme"
 import "../theme/icons.js" as Icons
 
 // Nova Files' command row, under the navigation row: New first, then cut,
-// copy, paste, rename and delete, then Sort and View.
+// copy, paste, rename and delete, then Sort and View; at its right end the
+// preview pane's button, raised while the pane shows (Alt+P too).
 Rectangle {
     id: row
+
+    property bool previewShown: false
+    signal previewToggled
 
     implicitHeight: actions.implicitHeight + Tokens.filesCommandPadTop + Tokens.gap
     // How solid the window frame is (0..1): the row fades into it.
@@ -69,5 +73,15 @@ Rectangle {
             menu: true
             enabled: false
         }
+    }
+    ToolButton {
+        anchors.right: parent.right
+        anchors.rightMargin: Tokens.rowInset
+        anchors.top: parent.top
+        anchors.topMargin: Tokens.filesCommandPadTop
+        icon: Icons.PREVIEW_PANE
+        label: qsTr("Preview")
+        raised: row.previewShown
+        onClicked: row.previewToggled()
     }
 }

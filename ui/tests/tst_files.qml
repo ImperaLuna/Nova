@@ -10,6 +10,7 @@ import "../files/trash.js" as Trash
 import "../daemon/protocol.js" as Protocol
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
+import "../files/preview.js" as Preview
 
 // Nova Files' address bar parts, window title and entry paths, its
 // history and the sidebar tree's kept folders and rows, its file list:
@@ -17,7 +18,7 @@ import "../files/transfers.js" as Transfers
 // keys select, and what opening the selection does, and the copy and move
 // jobs a window keeps and how their card and name clash dialog read and
 // answer, and the trash: its rows, its selection, and the dialog that asks
-// before deleting for good. The root is an Item: a TestCase root gets no mouse events.
+// before deleting for good, and what the preview pane shows. The root is an Item: a TestCase root gets no mouse events.
 Item {
     id: stage
     width: 880
@@ -369,6 +370,51 @@ Item {
                     size: 2516582
                 }
             })
+
+        function test_the_preview_pane_previews_one_selected_file() {
+            const photo = entry("a.png", {
+                mime: "image/png"
+            });
+            compare(Preview.subject(1, photo), photo);
+            compare(Preview.subject(0, null), null);
+            compare(Preview.subject(3, photo), null, "several: none of them");
+            verify(Preview.asks(photo));
+            verify(!Preview.asks(entry("Music", {
+                dir: true,
+                mime: "inode/directory"
+            })), "a folder needs no asking");
+            verify(!Preview.asks(null));
+        }
+
+        function test_the_preview_pane_face_follows_the_answer() {
+            const notes = entry("notes.md", {
+                mime: "text/markdown"
+            });
+            const folder = entry("Music", {
+                dir: true,
+                mime: "inode/directory"
+            });
+            const image = {
+                kind: Protocol.PREVIEW_IMAGE,
+                path: "/home/ana/a.png"
+            };
+            const text = {
+                kind: Protocol.PREVIEW_TEXT,
+                text: "# Notes",
+                cut: false
+            };
+            compare(Preview.face(0, null, null, false), Preview.EMPTY);
+            compare(Preview.face(2, null, null, false), Preview.COUNT);
+            compare(Preview.face(1, folder, null, false), Preview.ITEM, "a folder at once");
+            compare(Preview.face(1, notes, null, false), Preview.WAITING);
+            compare(Preview.face(1, notes, text, false), Preview.TEXT);
+            compare(Preview.face(1, notes, image, false), Preview.IMAGE);
+            compare(Preview.face(1, notes, image, true), Preview.ITEM, "a picture Qt can't read");
+            compare(Preview.face(1, notes, {
+                kind: Protocol.PREVIEW_NONE
+            }, false), Preview.ITEM);
+            compare(Preview.face(1, notes, false, false), Preview.ITEM, "novad couldn't tell");
+        }
 
         function test_jobs_come_in_order_and_leave_when_they_end() {
             let jobs = Transfers.apply([], transfer(1, Protocol.TRANSFER_COUNTING));

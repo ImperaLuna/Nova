@@ -15,7 +15,8 @@ import "../daemon/protocol.js" as Protocol
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
 // (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
-// lie over it all.
+// lie over it all. The preview pane (Alt+P, or the command row's button)
+// sits at the file list's right, loaded only while it shows.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -37,6 +38,7 @@ FloatingWindow {
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
     property var problems: []
+    property bool previewShown: false
 
     title: inTrash ? Trash.name() : Paths.folderName(folder)
     implicitWidth: Tokens.filesWindowWidth
@@ -144,6 +146,10 @@ FloatingWindow {
         sequences: ["Ctrl+L", "Alt+D"]
         onActivated: navigation.editAddress()
     }
+    Shortcut {
+        sequence: "Alt+P"
+        onActivated: window.previewShown = !window.previewShown
+    }
     TapHandler {
         acceptedButtons: Qt.BackButton | Qt.ForwardButton
         onTapped: (point, button) => window.navigator.step(button === Qt.BackButton ? -1 : 1)
@@ -183,6 +189,8 @@ FloatingWindow {
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
         visible: !window.inTrash
+        previewShown: window.previewShown
+        onPreviewToggled: window.previewShown = !window.previewShown
     }
     TrashCommandRow {
         id: trashCommands
@@ -208,7 +216,7 @@ FloatingWindow {
     FileList {
         id: list
         anchors.left: sidebar.right
-        anchors.right: parent.right
+        anchors.right: preview.active ? preview.left : parent.right
         anchors.top: commands.bottom
         visible: !window.inTrash
         anchors.bottom: parent.bottom
@@ -219,6 +227,19 @@ FloatingWindow {
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
         solid: FilesService.listSolid
+    }
+    Loader {
+        id: preview
+        anchors.right: parent.right
+        anchors.top: commands.bottom
+        anchors.bottom: parent.bottom
+        width: Tokens.filesPreviewWidth
+        active: window.previewShown && !window.inTrash
+        sourceComponent: PreviewPane {
+            folder: window.folder
+            model: list.model
+            solid: FilesService.listSolid
+        }
     }
     TrashModel {
         id: trash

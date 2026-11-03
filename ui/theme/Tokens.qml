@@ -756,6 +756,20 @@ QtObject {
     readonly property int filesClashButtonHeight: 34
     // The scale the dialog pops in from and shrinks back to.
     readonly property real filesClashEnterScale: 0.97
+    // The preview pane (Alt+P) at the file list's right: this wide, its
+    // picture or text this far in, pictures decoded at most at twice its
+    // width (the same for every size, so a resized window never decodes one
+    // again), and the big icon and name (in at most this many lines) for a
+    // file it can't show. It previews a selection that has rested this
+    // long, so arrowing through a folder never asks for every file on the
+    // way, and shows a spinner once an answer has been this long in coming.
+    readonly property int filesPreviewWidth: 300
+    readonly property int filesPreviewPad: 16
+    readonly property int filesPreviewPicturePx: 2 * filesPreviewWidth
+    readonly property int filesPreviewIconSize: 64
+    readonly property int filesPreviewNameLines: 3
+    readonly property int filesPreviewDelay: 120
+    readonly property int filesPreviewSlow: 400
 
     // Type
     readonly property string fontSans: "Inter"

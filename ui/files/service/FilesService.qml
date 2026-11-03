@@ -11,10 +11,11 @@ import "../trash.js" as Trash
 // gets its pages, changes and closing here), the sidebar's tree and
 // places, the drives (and mounting and ejecting them), opening files in
 // apps (the default one on a double-click or Enter, or one from "Open
-// with", which can also become the new default), copy and move jobs, and
-// the trash. The Nova Files process (../../files.qml) and its windows get
-// these here and never talk to Daemon themselves. Also how solid the
-// windows are, from config.toml's [files].
+// with", which can also become the new default), copy and move jobs, the
+// trash and the preview pane's previews. The Nova Files process
+// (../../files.qml) and its windows get these here and never talk to
+// Daemon themselves. Also how solid the windows are, from config.toml's
+// [files].
 Singleton {
     id: root
 
@@ -140,6 +141,21 @@ Singleton {
             if (error)
                 console.warn(`nova: default for ${path}: ${error}`);
             done?.(error ?? null);
+        });
+    }
+
+    // `done(preview)` gets what the preview pane shows of the file at
+    // `path` (absolute): {kind: Protocol.PREVIEW_IMAGE, path} (a picture to
+    // load), {kind: Protocol.PREVIEW_TEXT, text, cut} (its first lines,
+    // `cut` when it goes on) or {kind: Protocol.PREVIEW_NONE}; false when
+    // novad couldn't tell.
+    function preview(path: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_PREVIEW, {
+            path: path
+        }, (error, result) => {
+            if (error)
+                console.warn(`nova: previewing ${path}: ${error}`);
+            done(error ? false : result);
         });
     }
 
