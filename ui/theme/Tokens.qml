@@ -678,6 +678,9 @@ QtObject {
     // darker than the glass.
     readonly property int filesWindowWidth: 880
     readonly property int filesWindowHeight: 700
+    // The corner radius packaging/compositor's niri.kdl and hyprland.conf
+    // suggest for the window, which its blur region follows.
+    readonly property int filesWindowRadius: radiusCard
     readonly property int filesButtonSize: 30
     readonly property int filesFieldHeight: 32
     readonly property int filesSearchWidth: 220
