@@ -26,8 +26,9 @@ import "../daemon/protocol.js" as Protocol
 // (ConfirmDialog). Right-click menus (menus.js: on items, on the empty
 // list, on a drive, and the command row's New and Sort), the Properties
 // dialog (Properties in a menu, Alt+Enter) and the dialog when a drive
-// can't be ejected lie over it all. Show details opens the details pane
-// on the right of the list, on the picked item or the folder.
+// can't be ejected lie over it all. Show details (Alt+Shift+P) opens or
+// closes the details pane on the right of the list, on the picked item or
+// the folder; a drive's always opens it on the drive.
 // Cut, copy and paste go through the system clipboard (FilesClipboard);
 // pasting copies or moves into the folder shown, like dropping there.
 // Files dropped on the list or the sidebar are copied, moved or trashed
@@ -196,8 +197,11 @@ FloatingWindow {
             }
             break;
         case Commands.DETAILS:
+            // A drive's always shows; otherwise it toggles, like Alt+P.
             if (extra)
                 window.onDrive(extra, mount => window.showDetails(mount));
+            else if (detailsShown)
+                detailsShown = false;
             else
                 window.showDetails("");
             break;
