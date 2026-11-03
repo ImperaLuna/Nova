@@ -2087,7 +2087,8 @@ pub enum Command {
     /// this connection's job `job` (feature `files`): the Properties
     /// window's size. Answered once the job is started, without touching
     /// the disk; the counts follow as [`Event::FilesMeasured`]s. Links
-    /// aren't followed, and folders that can't be read are skipped. A job
+    /// aren't followed, other drives mounted inside an item aren't
+    /// counted, and folders that can't be read are skipped. A job
     /// ends by itself when its connection closes.
     FilesMeasure {
         job: u32,

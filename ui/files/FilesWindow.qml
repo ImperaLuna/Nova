@@ -40,6 +40,8 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    // A dialog is up (confirm, Properties): the window's keys wait.
+    readonly property bool asking: confirming !== null || propertiesModel.subject !== null
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -200,7 +202,7 @@ FloatingWindow {
 
             Shortcut {
                 sequences: entry.modelData.keys
-                enabled: window.confirming === null || entry.modelData.asking === true
+                enabled: !window.asking || entry.modelData.asking === true
                 onActivated: window.act(entry.modelData.action)
             }
         }

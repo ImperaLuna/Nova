@@ -4,7 +4,9 @@
 //! every [`FILES_MEASURE_PROGRESS_MS`] and once more when done.
 //!
 //! A job walks its items depth first without following links (a link
-//! counts as a file of its own size), and skips folders it can't read.
+//! counts as a file of its own size), stays on each item's drive (as
+//! `du -x`: a drive mounted inside, or `/proc` under `/`, isn't counted),
+//! and skips folders it can't read.
 //! It checks for a stop before each entry. Every report is sent while the
 //! job is still registered, checked under the jobs lock, so nothing
 //! arrives after a cancel, the client's hang-up or the module stopping;
@@ -128,7 +130,7 @@ impl Run {
             // An item that's gone or can't be read adds nothing.
             if let Ok(meta) = fs::symlink_metadata(path) {
                 self.add(&meta);
-                if meta.is_dir() && !self.walk(path) {
+                if meta.is_dir() && !self.walk(path, meta.dev()) {
                     return;
                 }
             }
@@ -137,8 +139,9 @@ impl Run {
         self.report();
     }
 
-    /// Counts what `folder` holds; false once the job was stopped.
-    fn walk(&mut self, folder: &Path) -> bool {
+    /// Counts what `folder` holds on drive `device`; false once the job was
+    /// stopped.
+    fn walk(&mut self, folder: &Path, device: u64) -> bool {
         let Ok(entries) = fs::read_dir(folder) else { return !self.stopped() };
         for entry in entries {
             if self.stopped() {
@@ -147,13 +150,16 @@ impl Run {
             let Ok(entry) = entry else { continue };
             let path = entry.path();
             let Ok(meta) = fs::symlink_metadata(&path) else { continue };
+            if meta.dev() != device {
+                continue;
+            }
             if meta.is_dir() {
                 self.counted.folders += 1;
             } else {
                 self.counted.files += 1;
             }
             self.add(&meta);
-            if meta.is_dir() && !self.walk(&path) {
+            if meta.is_dir() && !self.walk(&path, device) {
                 return false;
             }
             if self.last_report.elapsed() >= PROGRESS_EVERY {
