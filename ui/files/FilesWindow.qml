@@ -15,7 +15,8 @@ import "../daemon/protocol.js" as Protocol
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
 // (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
-// lie over it all.
+// lie over it all. What uses space (the command row's button, or opening
+// a drive) stays on as the window moves, until the button turns it off.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -33,6 +34,7 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    property bool spaceView: false
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -183,6 +185,8 @@ FloatingWindow {
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
         visible: !window.inTrash
+        spaceView: window.spaceView
+        onSpaceToggled: window.spaceView = !window.spaceView
     }
     TrashCommandRow {
         id: trashCommands
@@ -204,6 +208,10 @@ FloatingWindow {
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
         onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
+        onDriveOpened: folder => {
+            window.spaceView = true;
+            window.navigator.visit(folder, null);
+        }
     }
     FileList {
         id: list
@@ -219,6 +227,7 @@ FloatingWindow {
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
         solid: FilesService.listSolid
+        spaceView: window.spaceView
     }
     TrashModel {
         id: trash

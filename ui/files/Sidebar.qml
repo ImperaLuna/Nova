@@ -11,8 +11,9 @@ import "trash.js" as Trash
 // the trash last among them and marked while the window shows it, then
 // the drives (Drives.qml) under a line of their own, a line, then the
 // folder tree that follows the window. A drive opened goes through the
-// navigator like a place; when the drive the window is on goes away, it
-// goes home.
+// navigator like a place, showing what uses space on it
+// (`driveOpened`); when the drive the window is on goes away, it goes
+// home.
 Item {
     id: sidebar
 
@@ -22,6 +23,8 @@ Item {
 
     // A drive's menu was asked for at `at` (in the window).
     signal driveMenuRequested(var drive, point at)
+    // A drive was opened, at its mount.
+    signal driveOpened(string folder)
 
     readonly property var looks: ({
             [Protocol.PLACE_HOME]: {
@@ -131,7 +134,7 @@ Item {
         Drives {
             width: parent.width
             folder: sidebar.navigator.folder
-            onOpened: folder => sidebar.navigator.visit(folder, null)
+            onOpened: folder => sidebar.driveOpened(folder)
             onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
             onDriveGone: sidebar.navigator.visit("~", null)
         }

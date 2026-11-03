@@ -48,16 +48,19 @@ Singleton {
     }
 
     // Shows the folder at `path` (absolute) in view `view`, ordered by
-    // `sortKey` (a Protocol.FILE_SORT_*), with dot files when `hidden`.
-    // Whatever the view showed is replaced; its entries come as `page`s.
-    // `done(error)` gets novad's answer.
-    function open(view: int, path: string, sortKey: string, descending: bool, hidden: bool, done: var) {
+    // `sort` ({key: a Protocol.FILE_SORT_*, descending, mixed: folders
+    // and files together}), with dot files when `hidden`. Whatever the
+    // view showed is replaced; its entries come as `page`s, and folders'
+    // sizes as `changed` once novad has counted them. `done(error)` gets
+    // novad's answer.
+    function open(view: int, path: string, sort: var, hidden: bool, done: var) {
         Daemon.call(Protocol.CMD_FILES_OPEN, {
             view: view,
             path: path,
             sort: {
-                key: sortKey,
-                descending: descending
+                key: sort.key,
+                descending: sort.descending,
+                mixed: sort.mixed ?? false
             },
             hidden: hidden
         }, error => {

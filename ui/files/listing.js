@@ -90,9 +90,9 @@ function modified(ms, now) {
     return Qt.formatDate(date, "d MMM yyyy");
 }
 
-// The Size column: empty for a folder.
+// The Size column: empty for a folder novad hasn't counted yet.
 function size(row) {
-    return row.dir || row.size < 0 ? "" : Bytes.bytes(row.size);
+    return row.size < 0 ? "" : Bytes.bytes(row.size);
 }
 
 // The footer's count.
