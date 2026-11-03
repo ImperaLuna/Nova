@@ -113,7 +113,12 @@ fn write_file(
     target: &Path,
     go_on: &mut dyn FnMut() -> bool,
 ) -> io::Result<bool> {
-    let mut file = OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(target)?;
+    // An earlier member of the same name may have left it read-only.
+    match fs::remove_file(target) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
+    let mut file = OpenOptions::new().write(true).create_new(true).mode(0o600).open(target)?;
     let mut buffer = vec![0; CHUNK_BYTES];
     loop {
         let read = match contents.read(&mut buffer) {

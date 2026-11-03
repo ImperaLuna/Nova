@@ -218,3 +218,21 @@ fn a_file_opened_from_a_zip_is_a_read_only_copy() {
     assert!(open_copy(&missing, &dir.join("opened")).is_err());
     assert_eq!(fs::read_dir(dir.join("opened")).unwrap().count(), 2, "a failed copy leaves no folder");
 }
+
+#[test]
+fn a_member_listed_twice_ends_as_the_later_one_even_read_only() {
+    let dir = TempDir::new("archive-twice");
+    let mut tar = tar::Builder::new(Vec::new());
+    for contents in ["old", "new"] {
+        let mut header = tar::Header::new_gnu();
+        header.set_mode(0o444);
+        header.set_size(3);
+        tar.append_data(&mut header, "notes.txt", contents.as_bytes()).unwrap();
+    }
+    fs::write(dir.join("twice.tar"), tar.into_inner().unwrap()).unwrap();
+    unpacked(&dir.join("twice.tar"), &dir.join("out"));
+    assert_eq!(fs::read_to_string(dir.join("out/notes.txt")).unwrap(), "new");
+    let inside = Inside::of(&dir.join("twice.tar/notes.txt")).unwrap();
+    assert_eq!(fs::read_to_string(open_copy(&inside, &dir.join("opened")).unwrap()).unwrap(), "new");
+    assert_eq!(folder_name(OsStr::new("..zip")), "..zip", "never a folder named '.'");
+}

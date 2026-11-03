@@ -207,7 +207,7 @@ impl Part {
         let folder = self.path.parent().unwrap_or(Path::new("/")).to_owned();
         let mut name = name.to_owned();
         for _ in 0..MOST_NUMBERED {
-            match rename_new(&self.path, &folder.join(&name)) {
+            match super::trash::rename_new(&self.path, &folder.join(&name)) {
                 Ok(()) => {
                     self.file = None;
                     return Ok(name);
@@ -332,17 +332,6 @@ pub fn remove(path: &Path) -> io::Result<()> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e),
     }
-}
-
-/// Renames `from` to `to` unless something is already there.
-fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
-    use std::ffi::CString;
-    let from = CString::new(from.as_os_str().as_bytes()).map_err(io::Error::other)?;
-    let to = CString::new(to.as_os_str().as_bytes()).map_err(io::Error::other)?;
-    // SAFETY: both are NUL-terminated paths that live through the call.
-    let renamed =
-        unsafe { libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE) };
-    if renamed == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }
 
 #[cfg(test)]

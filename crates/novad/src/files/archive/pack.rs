@@ -4,7 +4,7 @@
 //! plain zip is written as zip64. Devices and pipes are left out.
 
 use std::fs::{self, File, Metadata};
-use std::io::{self, Read, Seek, Write};
+use std::io::{self, BufWriter, Read, Seek, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use zip::write::SimpleFileOptions;
@@ -18,14 +18,15 @@ const ZIP64_BYTES: u64 = u32::MAX as u64;
 /// Writes a zip of `sources` to `out`. `progress` hears each chunk's
 /// bytes, and answers false to stop; then this answers false.
 pub fn pack<W: Write + Seek>(sources: &[&Path], out: W, progress: &mut dyn FnMut(u64) -> bool) -> io::Result<bool> {
-    let mut zip = ZipWriter::new(out);
+    // Headers and deflate's output come in small writes.
+    let mut zip = ZipWriter::new(BufWriter::new(out));
     for source in sources {
         let Some(name) = source.file_name() else { continue };
         if !add(&mut zip, source, &name.to_string_lossy(), progress)? {
             return Ok(false);
         }
     }
-    zip.finish().map_err(io::Error::other)?;
+    zip.finish().map_err(io::Error::other)?.flush()?;
     Ok(true)
 }
 

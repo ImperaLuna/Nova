@@ -414,7 +414,10 @@ impl Run {
         let skipped = copying::measure(source, folders.then_some(target), &|| job.stopped())
             .map_err(|e| failed(source, &e))?
             .ok_or(Halt::Stopped)?;
-        self.total.bytes = self.total.bytes.saturating_sub(skipped.bytes);
+        // Extracted bytes all count, placed or not.
+        if !self.placing_extracted {
+            self.total.bytes = self.total.bytes.saturating_sub(skipped.bytes);
+        }
         // Measured with what it clashed with, a skipped folder counts the
         // clashes a merge would have met; anything else counts as itself.
         let (files, folders) = match clashing {
@@ -632,8 +635,14 @@ impl Run {
     /// Packs the sources into a new zip in the folder, named after the
     /// first ("report.pdf" gives "report.zip").
     fn compress(&mut self) -> Step {
+        let folder = fs::canonicalize(&self.folder).map_err(|e| failed(&self.folder, &e))?;
         let sources = self.sources.clone();
         for source in &sources {
+            // A zip made inside a folder it packs would pack itself.
+            if fs::canonicalize(source).is_ok_and(|source| folder.starts_with(source)) {
+                let name = source.file_name().unwrap_or_default().to_string_lossy();
+                return Err(Halt::Failed(format!("Can't compress {name} into itself")));
+            }
             let job = Arc::clone(&self.job);
             let measured = copying::measure(source, None, &|| job.stopped())
                 .map_err(|e| failed(source, &e))?
@@ -1025,5 +1034,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fs::read_to_string(copy).unwrap(), "png");
+    }
+
+    #[test]
+    fn a_skipped_extracted_file_still_counts_and_a_zip_cant_go_into_what_it_packs() {
+        let fixture = Fixture::new("extract-skip");
+        crate::files::archive::tests::write_zip(&fixture.dir.join("from/docs.zip"), &[("a.txt", "new")]);
+        fixture.write("to/a.txt", "old");
+        fixture.start(TransferMode::ExtractHere, &["from/docs.zip"], "to");
+        let clash = fixture.until(TransferState::Asking).clash.unwrap();
+        fixture.answer(&clash, ClashAnswer::Skip, false);
+        let done = fixture.until(TransferState::Done);
+        assert_eq!((done.done_bytes, done.total_bytes), (3, 3));
+        assert_eq!(fixture.names("to"), ["a.txt"]);
+        fixture.write("from/Photos/2025/a.png", "png");
+        fixture.start(TransferMode::Compress, &["from/Photos"], "from/Photos/2025");
+        assert!(fixture.until(TransferState::Failed).error.unwrap().contains("into itself"));
+        assert_eq!(fixture.names("from/Photos/2025"), ["a.png"]);
     }
 }
