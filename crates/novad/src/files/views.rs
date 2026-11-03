@@ -537,6 +537,36 @@ mod tests {
         assert_eq!(page["data"]["entries"], serde_json::json!([]));
     }
 
+    #[test]
+    fn a_zip_opens_like_a_folder_and_follows_the_zip() {
+        let mut fixture = Fixture::new("files-zip");
+        let dir = TempDir::new("files-zip-folder");
+        let zip = dir.join("photos.zip");
+        crate::files::archive::tests::write_zip(&zip, &[("b.png", "b"), ("2025/a.png", "a")]);
+        fixture.open(&dir).unwrap();
+        fixture.until_shown(&["photos.zip"]);
+        assert!(fixture.shown[0].archive && !fixture.shown[0].dir, "opened like a folder");
+        fixture.open(&zip).unwrap();
+        let page = fixture.next();
+        assert_eq!(page["data"]["archive"], zip.to_str().unwrap());
+        fixture.until_shown(&["2025", "b.png"]);
+        fixture.open(&zip.join("2025")).unwrap();
+        fixture.until_shown(&["a.png"]);
+        // Another program writing the zip again.
+        crate::files::archive::tests::write_zip(&zip, &[("2025/a.png", "a"), ("2025/c.png", "c")]);
+        fixture.until_shown(&["a.png", "c.png"]);
+        std::fs::write(dir.join("unrelated.txt"), b"").unwrap();
+        fixture.nothing_more();
+        std::fs::remove_file(&zip).unwrap();
+        loop {
+            let event = fixture.next();
+            if event["event"] == "files_closed" {
+                assert!(event["data"]["error"].as_str().unwrap().contains("photos.zip"));
+                break;
+            }
+        }
+    }
+
     /// Made, renamed, written and deleted from outside, as a terminal would.
     #[test]
     fn changes_from_other_programs_show_by_themselves() {

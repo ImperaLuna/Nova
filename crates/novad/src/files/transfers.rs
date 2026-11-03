@@ -949,4 +949,68 @@ mod tests {
             "gone with its client"
         );
     }
+
+    #[test]
+    fn extract_all_makes_a_folder_named_after_the_archive_and_merges_into_one_there() {
+        let fixture = Fixture::new("extract");
+        crate::files::archive::tests::write_zip(
+            &fixture.dir.join("from/photos.zip"),
+            &[("a.png", "new"), ("2025/b.png", "bbb")],
+        );
+        fixture.write("to/photos/a.png", "old");
+        fixture.start(TransferMode::Extract, &["from/photos.zip"], "to");
+        let clash = fixture.until(TransferState::Asking).clash.unwrap();
+        assert_eq!((clash.name.as_str(), clash.folder), ("photos", true));
+        fixture.answer(&clash, ClashAnswer::Merge, false);
+        let inner = fixture.until(TransferState::Asking).clash.unwrap();
+        assert_eq!(inner.name, "a.png");
+        fixture.answer(&inner, ClashAnswer::Replace, false);
+        let done = fixture.until(TransferState::Done);
+        assert_eq!((done.done_bytes, done.total_bytes), (6, 6), "measured by what was extracted");
+        assert_eq!(fixture.read("to/photos/a.png"), "new");
+        assert_eq!(fixture.read("to/photos/2025/b.png"), "bbb");
+        assert_eq!(fixture.names("to"), ["photos"], "nothing extracted is left aside");
+        assert!(fixture.exists("from/photos.zip"), "the archive stays");
+    }
+
+    #[test]
+    fn extract_here_puts_the_contents_in_the_folder() {
+        let fixture = Fixture::new("extract-here");
+        crate::files::archive::tests::write_zip(&fixture.dir.join("from/docs.zip"), &[("a.txt", "a"), ("b/c.txt", "c")]);
+        fixture.start(TransferMode::ExtractHere, &["from/docs.zip"], "from");
+        fixture.until(TransferState::Done);
+        assert_eq!(fixture.names("from"), ["a.txt", "b", "docs.zip"]);
+        assert_eq!(fixture.read("from/b/c.txt"), "c");
+    }
+
+    #[test]
+    fn a_file_that_isnt_an_archive_fails_to_extract_and_leaves_nothing() {
+        let fixture = Fixture::new("extract-not");
+        fixture.write("from/fake.zip", "not a zip");
+        fixture.write("from/notes.txt", "text");
+        fixture.start(TransferMode::Extract, &["from/fake.zip"], "to");
+        assert!(fixture.until(TransferState::Failed).error.unwrap().contains("fake.zip"));
+        fixture.transfers.start(fixture.client, 2, TransferMode::Extract, &[fixture.dir.join("from/notes.txt").display().to_string()], &fixture.dir.join("to").display().to_string()).unwrap();
+        assert!(fixture.until(TransferState::Failed).error.unwrap().contains("isn't an archive"));
+        assert!(fixture.names("to").is_empty(), "no hidden folder left behind");
+    }
+
+    #[test]
+    fn compress_names_the_zip_after_the_first_item_and_numbers_a_taken_name() {
+        let fixture = Fixture::new("compress");
+        fixture.write("from/report.pdf", "pdf");
+        fixture.write("from/Photos/a.png", "png");
+        fixture.write("from/report.zip", "taken");
+        fixture.start(TransferMode::Compress, &["from/report.pdf", "from/Photos"], "from");
+        let done = fixture.until(TransferState::Done);
+        assert_eq!((done.done_bytes, done.total_bytes), (6, 6));
+        assert_eq!(fixture.names("from"), ["Photos", "report (2).zip", "report.pdf", "report.zip"]);
+        let inside = crate::files::archive::Inside::of(&fixture.dir.join("from/report (2).zip/Photos")).unwrap();
+        let copy = crate::files::archive::open_copy(
+            &crate::files::archive::Inside { inner: "Photos/a.png".into(), ..inside },
+            &fixture.dir.join("opened"),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(copy).unwrap(), "png");
+    }
 }

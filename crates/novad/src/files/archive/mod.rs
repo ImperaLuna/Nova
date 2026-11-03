@@ -171,3 +171,6 @@ pub fn open_copy(inside: &Inside, copies: &Path) -> io::Result<PathBuf> {
     copied
 }
 
+
+#[cfg(test)]
+pub(crate) mod tests;

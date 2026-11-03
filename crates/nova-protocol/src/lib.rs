@@ -3467,6 +3467,7 @@ mod tests {
                             dir: false,
                             link: false,
                             hidden: false,
+                            archive: false,
                             mime: "text/plain".into(),
                             size: Some(12),
                             modified_ms: Some(1_793_000_000_000),
