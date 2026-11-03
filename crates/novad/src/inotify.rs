@@ -59,6 +59,10 @@ impl Changes {
     pub fn none() -> Self {
         Self { found: Vec::new(), overflowed: false, gone: Vec::new() }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.found.is_empty() && !self.overflowed && self.gone.is_empty()
+    }
 }
 
 pub struct Inotify {

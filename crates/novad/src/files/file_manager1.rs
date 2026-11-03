@@ -128,6 +128,8 @@ mod tests {
                 runner: crate::apps::launch::Runner::Direct,
                 home: dir.to_path_buf(),
                 ui: None,
+                trash: None,
+                mounts: dir.join("no-mountinfo"),
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");

@@ -5,9 +5,11 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 import "service"
+import "trash.js" as Trash
 
 // Nova Files' sidebar: the places that exist first (a click goes there),
-// a line, then the folder tree that follows the window. The drives come
+// the trash last among them and marked while the window shows it, a line,
+// then the folder tree that follows the window. The drives come
 // under it.
 Item {
     id: sidebar
@@ -36,6 +38,10 @@ Item {
             [Protocol.PLACE_PICTURES]: {
                 name: qsTr("Pictures"),
                 icon: Icons.PICTURE
+            },
+            [Protocol.PLACE_TRASH]: {
+                name: Trash.name(),
+                icon: Icons.TRASH
             }
         })
 
@@ -57,11 +63,14 @@ Item {
 
                 required property var modelData
                 readonly property var look: sidebar.looks[modelData.kind]
+                // The tree marks folders; only the trash, which isn't in
+                // it, is marked here.
+                readonly property bool current: Trash.isTrash(modelData.path) && sidebar.navigator.folder === modelData.path
 
                 width: parent.width
                 height: Tokens.filesPlaceHeight
                 radius: Tokens.menuRowRadius
-                color: hover.hovered ? Tokens.hover : "transparent"
+                color: current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
 
                 Behavior on color {
                     ColorAnimation {
@@ -78,11 +87,13 @@ Item {
                     LineIcon {
                         anchors.verticalCenter: parent.verticalCenter
                         path: place.look.icon
+                        color: place.current ? Tokens.primary : Tokens.fg
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSize
+                        font.weight: place.current ? Tokens.weightLabel : Tokens.weightBody
                         color: Tokens.fg
                         text: place.look.name
                     }

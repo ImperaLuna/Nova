@@ -16,6 +16,8 @@ import "paths.js" as Paths
 // Home and End move the selection (Shift extends it), Ctrl+A selects all,
 // Ctrl+H shows or hides dot files. A double-click or Enter opens: a
 // folder is gone into (`folderOpened`), files open in their default app.
+// Delete asks to move the selection to the trash (`trashRequested`),
+// Shift+Delete to delete it for good (`deleteRequested`).
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
 FocusScope {
@@ -29,6 +31,10 @@ FocusScope {
     property bool showHidden: false
 
     signal folderOpened(string path)
+    // Delete and Shift+Delete with rows selected: plain copies of them
+    // (Listing.copy), in the list's order.
+    signal trashRequested(var rows)
+    signal deleteRequested(var rows)
 
     readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
     readonly property var columns: [
@@ -237,7 +243,13 @@ FocusScope {
                 list.model.selectAll();
             else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                 list.open(list.model.selectedRows());
-            else if (Listing.MOVES.includes(event.key) && entryList.count > 0)
+            else if (event.key === Qt.Key_Delete && list.model.selectedCount > 0) {
+                const rows = list.model.selectedRows().map(row => Listing.copy(row));
+                if ((event.modifiers & Qt.ShiftModifier) !== 0)
+                    list.deleteRequested(rows);
+                else
+                    list.trashRequested(rows);
+            } else if (Listing.MOVES.includes(event.key) && entryList.count > 0)
                 entryList.go(Listing.moved(event.key, entryList.currentIndex, entryList.count, entryList.page), (event.modifiers & Qt.ShiftModifier) !== 0);
             else
                 event.accepted = false;

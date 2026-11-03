@@ -187,6 +187,40 @@ fn a_folder_view_is_listed_and_followed_over_the_socket() {
     assert!(closed["error"].as_str().unwrap().contains("doesn't exist"), "{closed}");
 }
 
+/// The trash over the socket: an item trashed, listed, restored, and the
+/// trash emptied, with `files_trash_changed` each time it changes. The
+/// trash's own tests cover the spec.
+#[test]
+fn the_trash_is_used_and_followed_over_the_socket() {
+    let novad = TestDaemon::open("files-trash", None, |dir| {
+        std::fs::write(dir.join("config/features.toml"), "enabled = [\"files\"]\n").unwrap()
+    });
+    let folder = nova_test_support::TempDir::new("files-socket-trash");
+    let notes = folder.join("notes.txt");
+    std::fs::write(&notes, b"hi").unwrap();
+    let mut client = novad.connect();
+    client.request(1, "subscribe", Some(json!({"topics": ["files"]})));
+    assert_eq!(client.request(2, "files_trash_list", None)["result"], json!([]));
+
+    let paths = json!({"paths": [notes.to_str().unwrap()]});
+    assert_eq!(client.request(3, "files_trash", Some(paths))["result"], Value::Null);
+    client.next_event("files_trash_changed");
+    let items = client.request(4, "files_trash_list", None)["result"].clone();
+    assert_eq!(items[0]["entry"]["name"], "notes.txt");
+    assert_eq!(items[0]["folder"], folder.to_str().unwrap());
+    assert!(!notes.exists());
+
+    let ids = json!({"ids": [items[0]["id"].clone()]});
+    assert_eq!(client.request(5, "files_restore", Some(ids))["result"], Value::Null);
+    assert!(notes.exists());
+    let paths = json!({"paths": [notes.to_str().unwrap()]});
+    assert_eq!(client.request(6, "files_trash", Some(paths))["result"], Value::Null);
+    assert_eq!(client.request(7, "files_empty_trash", None)["result"], Value::Null);
+    assert_eq!(client.request(8, "files_trash_list", None)["result"], json!([]));
+    let missing = json!({"paths": [notes.to_str().unwrap()]});
+    assert!(client.request(9, "files_delete", Some(missing))["error"].as_str().unwrap().contains("doesn't exist"));
+}
+
 #[test]
 fn folder_views_need_their_feature() {
     let novad = TestDaemon::start("files-off", None);

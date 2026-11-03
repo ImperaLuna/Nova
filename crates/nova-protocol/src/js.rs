@@ -123,7 +123,7 @@ fn groups(features: &Path) -> Vec<Group> {
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 10] {
+fn limits() -> [(&'static str, u64, &'static str); 11] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
@@ -143,12 +143,18 @@ fn limits() -> [(&'static str, u64, &'static str); 10] {
             u64::from(RAW_BYTE_BASE),
             "Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.",
         ),
+        ("REQUEST_MAX_BYTES", REQUEST_MAX_BYTES, "novad closes the connection on a longer request line."),
         (
             "NETWORK_TRAFFIC_HISTORY_SECS",
             NETWORK_TRAFFIC_HISTORY_SECS,
             "How far back a network_traffic event's history goes, in seconds (one sample each).",
         ),
     ]
+}
+
+/// Fixed wire strings the UI compares with, as `(name, value, comment)`.
+fn texts() -> [(&'static str, &'static str, &'static str); 1] {
+    [("FILES_TRASH_PLACE", FILES_TRASH_PLACE, "The trash place's path in files_places: the trash, not a folder.")]
 }
 
 /// `"focus_workspace"` -> `FOCUS_WORKSPACE`, `"ai-usage"` -> `AI_USAGE`.
@@ -171,6 +177,11 @@ pub fn generated(features: &Path) -> String {
         line(String::new());
         line(format!("// {comment}"));
         line(format!("var {name} = {value};"));
+    }
+    for (name, value, comment) in texts() {
+        line(String::new());
+        line(format!("// {comment}"));
+        line(format!("var {name} = \"{value}\";"));
     }
     for group in groups(features) {
         line(String::new());

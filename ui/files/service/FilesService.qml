@@ -4,13 +4,14 @@ import QtQuick
 import Quickshell
 import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
+import "../trash.js" as Trash
 
 // Nova Files' link to novad: the windows it asks for, the folders they
 // show (folder views: each FolderModel opens one under its own number and
 // gets its pages, changes and closing here), the sidebar's tree and
 // places, opening files in apps (the default one on a double-click or
 // Enter, or one from "Open with", which can also become the new
-// default), and copy and move jobs. The Nova Files
+// default), copy and move jobs, and the trash. The Nova Files
 // process (../../files.qml) and its windows get these here and never talk
 // to Daemon themselves. Also how solid the windows are, from
 // config.toml's [files].
@@ -72,6 +73,9 @@ Singleton {
     signal transferChanged(var transfer)
     // The connection to novad dropped, and novad stopped every job with it.
     signal transfersLost
+
+    // Something in the trash changed: ask trashList again.
+    signal trashChanged
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
@@ -197,6 +201,72 @@ Singleton {
         });
     }
 
+    // Moves `paths` (absolute) to the trash. `done(error)` gets novad's
+    // answer: null, or which ones didn't go.
+    function trash(paths: var, done: var) {
+        _inBatches(Protocol.CMD_FILES_TRASH, "paths", paths, "moving to the trash", done);
+    }
+
+    // Deletes `paths` (absolute) for good.
+    function deleteForGood(paths: var, done: var) {
+        _inBatches(Protocol.CMD_FILES_DELETE, "paths", paths, "deleting", done);
+    }
+
+    // `done(items)` gets what the trash holds, the last trashed first, each
+    // {id, folder, deleted_ms, entry}; none when novad couldn't tell.
+    function trashList(done: var) {
+        Daemon.call(Protocol.CMD_FILES_TRASH_LIST, undefined, (error, result) => {
+            if (error)
+                console.warn(`nova: the trash: ${error}`);
+            done(error ? null : result);
+        });
+    }
+
+    // Puts the trashed items `ids` back where they came from.
+    function restore(ids: var, done: var) {
+        Daemon.call(Protocol.CMD_FILES_RESTORE, {
+            ids: ids
+        }, error => root._answered("restoring", error, done));
+    }
+
+    // Deletes the trashed items `ids` for good.
+    function eraseFromTrash(ids: var, done: var) {
+        _inBatches(Protocol.CMD_FILES_TRASH_DELETE, "ids", ids, "deleting from the trash", done);
+    }
+
+    // Deletes everything in the trash for good.
+    function emptyTrash(done: var) {
+        Daemon.call(Protocol.CMD_FILES_EMPTY_TRASH, undefined, error => root._answered("emptying the trash", error, done));
+    }
+
+    // Sends `cmd` with `items` under `key`, in as many requests as keep each
+    // under novad's limit (Trash.batches), one after another. `done(error)`
+    // gets every request's errors at once, or null.
+    function _inBatches(cmd: string, key: string, items: var, doing: string, done: var) {
+        const batches = Trash.batches(items, Protocol.REQUEST_MAX_BYTES);
+        const errors = [];
+        const next = index => {
+            if (index === batches.length) {
+                root._answered(doing, errors.length > 0 ? errors.join("\n") : null, done);
+                return;
+            }
+            const args = {};
+            args[key] = batches[index];
+            Daemon.call(cmd, args, error => {
+                if (error)
+                    errors.push(error);
+                next(index + 1);
+            });
+        };
+        next(0);
+    }
+
+    function _answered(doing: string, error: var, done: var) {
+        if (error)
+            console.warn(`nova: ${doing}: ${error}`);
+        done?.(error ?? null);
+    }
+
     Connections {
         target: Daemon
         function onFilesWindowRequested(window: var) {
@@ -213,6 +283,9 @@ Singleton {
         }
         function onFilesTransferChanged(transfer: var) {
             root.transferChanged(transfer);
+        }
+        function onFilesTrashChanged() {
+            root.trashChanged();
         }
         function onConnectedChanged() {
             if (Daemon.connected)

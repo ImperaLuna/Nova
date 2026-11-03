@@ -36,8 +36,14 @@ var FILES_TREE_MAX_FOLDERS = 256;
 // Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.
 var RAW_BYTE_BASE = 63232;
 
+// novad closes the connection on a longer request line.
+var REQUEST_MAX_BYTES = 65536;
+
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
+
+// The trash place's path in files_places: the trash, not a folder.
+var FILES_TRASH_PLACE = "trash:///";
 
 // Commands a client sends (Command).
 var CMD_PING = "ping";
@@ -116,6 +122,12 @@ var CMD_FILES_PLACES = "files_places";
 var CMD_FILES_TRANSFER = "files_transfer";
 var CMD_FILES_TRANSFER_CANCEL = "files_transfer_cancel";
 var CMD_FILES_TRANSFER_ANSWER = "files_transfer_answer";
+var CMD_FILES_TRASH = "files_trash";
+var CMD_FILES_DELETE = "files_delete";
+var CMD_FILES_TRASH_LIST = "files_trash_list";
+var CMD_FILES_RESTORE = "files_restore";
+var CMD_FILES_TRASH_DELETE = "files_trash_delete";
+var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -149,6 +161,7 @@ var EVENT_FILES_PAGE = "files_page";
 var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
 var EVENT_FILES_LOOK = "files_look";
+var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
 var EVENT_FILES_TRANSFER = "files_transfer";
 
 // Event topics a client subscribes to (Topic).
@@ -278,6 +291,7 @@ var PLACE_DESKTOP = "desktop";
 var PLACE_DOCUMENTS = "documents";
 var PLACE_DOWNLOADS = "downloads";
 var PLACE_PICTURES = "pictures";
+var PLACE_TRASH = "trash";
 
 // What a files_transfer job does (TransferMode).
 var TRANSFER_COPY = "copy";

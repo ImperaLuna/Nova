@@ -154,6 +154,10 @@ pub enum Event {
     /// `config.toml`'s `[files]`. Topic [`Topic::Files`], sent right after
     /// subscribing and whenever it changes.
     FilesLook(FilesLook),
+    /// Something in the trash changed, in Nova Files or any other app
+    /// (feature `files`): ask `files_trash_list` again. Topic
+    /// [`Topic::Files`].
+    FilesTrashChanged,
     /// How copy or move job `job` is going (feature `files`): as it
     /// starts, every [`FILES_TRANSFER_PROGRESS_MS`] while it runs, when it
     /// asks about a name clash and when it ends. Sent only to the client
@@ -214,9 +218,11 @@ impl Event {
             Event::Network(_) | Event::NetworkTraffic(_) => Some(Topic::Network),
             Event::Bluetooth(_) => Some(Topic::Bluetooth),
             Event::FilesWindow(_) => Some(Topic::Files),
-            Event::FilesPage(_) | Event::FilesChanged { .. } | Event::FilesClosed { .. } | Event::FilesTransfer(_) => {
-                Some(Topic::Files)
-            }
+            Event::FilesPage(_)
+            | Event::FilesChanged { .. }
+            | Event::FilesClosed { .. }
+            | Event::FilesTrashChanged
+            | Event::FilesTransfer(_) => Some(Topic::Files),
             Event::FilesLook(_) => Some(Topic::Files),
         }
     }
@@ -1195,6 +1201,9 @@ pub const FILES_PATH_MAX_BYTES: usize = 4096;
 
 /// Most folders a `files_tree` may name as `opened` or as `closed`, each.
 pub const FILES_TREE_MAX_FOLDERS: usize = 256;
+/// The longest request line novad reads: a longer one closes the
+/// connection, so a client splits a long list across requests.
+pub const REQUEST_MAX_BYTES: u64 = 64 * 1024;
 /// Most copy or move jobs one connection may run at once
 /// (`files_transfer`).
 pub const FILES_MAX_TRANSFERS: usize = 16;
@@ -1985,6 +1994,32 @@ pub enum Command {
         answer: ClashAnswer,
         all: bool,
     },
+    /// Moves the items at `paths` (absolute) to the trash (feature
+    /// `files`), each to its own drive's, as the freedesktop Trash spec
+    /// says, so other apps see them. All are tried; the error names those
+    /// that weren't moved.
+    FilesTrash {
+        paths: Vec<String>,
+    },
+    /// Deletes the items at `paths` (absolute) for good, folders with all
+    /// they hold (feature `files`, Shift+Delete).
+    FilesDelete {
+        paths: Vec<String>,
+    },
+    /// What the trash holds (feature `files`), answered with
+    /// [`TrashItem`]s, the last trashed first.
+    FilesTrashList,
+    /// Puts the trashed items `ids` back where they came from (feature
+    /// `files`). One whose place is taken stays in the trash.
+    FilesRestore {
+        ids: Vec<String>,
+    },
+    /// Deletes the trashed items `ids` for good (feature `files`).
+    FilesTrashDelete {
+        ids: Vec<String>,
+    },
+    /// Deletes everything in the trash for good (feature `files`).
+    FilesEmptyTrash,
 }
 
 /// The answer to [`Command::FilesTree`]: the folder as an absolute path,
@@ -2023,8 +2058,8 @@ pub struct FilePlace {
     pub path: String,
 }
 
-/// Which place a [`FilePlace`] is: Home, or one of the user's folders from
-/// `user-dirs.dirs`.
+/// Which place a [`FilePlace`] is: Home, one of the user's folders from
+/// `user-dirs.dirs`, or the trash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaceKind {
@@ -2033,6 +2068,30 @@ pub enum PlaceKind {
     Documents,
     Downloads,
     Pictures,
+    /// The trash, at [`FILES_TRASH_PLACE`]: not a folder, listed with
+    /// `files_trash_list`.
+    Trash,
+}
+
+/// The trash place's path ([`PlaceKind::Trash`]): a window there shows the
+/// trash instead of a folder.
+pub const FILES_TRASH_PLACE: &str = "trash:///";
+
+/// An item in the trash (feature `files`, [`Command::FilesTrashList`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrashItem {
+    /// Names it to `files_restore` and `files_trash_delete`.
+    pub id: String,
+    /// The folder it was trashed from, which it goes back to, as wire text
+    /// ([`wire_text`]).
+    pub folder: String,
+    /// When it was trashed, in milliseconds since 1970, when the trash
+    /// says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_ms: Option<i64>,
+    /// The item, under the name it had.
+    pub entry: FileEntry,
 }
 
 /// The order of a folder view (`files_open`). Folders always come before
