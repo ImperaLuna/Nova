@@ -191,7 +191,11 @@ FocusScope {
     }
 
     // A rename asked for in the folder before doesn't follow to the next.
-    onFolderChanged: renaming = ""
+    // Nor a name being typed.
+    onFolderChanged: {
+        renaming = "";
+        typing.text = "";
+    }
     Component.onCompleted: {
         const prefix = Paths.child(folder, "");
         model.selectNames(select.filter(path => path.startsWith(prefix) && !path.slice(prefix.length).includes("/")).map(path => path.slice(prefix.length)));

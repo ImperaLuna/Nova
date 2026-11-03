@@ -75,6 +75,7 @@ Item {
             compare(Shortcuts.sequence(Qt.Key_2, Qt.ControlModifier), "Ctrl+2");
             compare(Shortcuts.sequence(Qt.Key_Left, Qt.AltModifier), "Alt+Left");
             compare(Shortcuts.sequence(Qt.Key_Shift, Qt.ShiftModifier), "", "a modifier on its own");
+            compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_Delete, Qt.MetaModifier), "", "Super+Delete isn't Delete");
         }
 
         function test_keys_do_their_place_s_action() {
