@@ -4,13 +4,20 @@
 //!
 //! One file per job, all under this folder:
 //! - `mod.rs`: the module, and the windows asked for (`nova files`,
-//!   [`Files::show`]) that the Nova Files process hasn't been sent yet.
+//!   [`Files::show`]) that no Nova Files process has been sent yet.
 //! - `target.rs`: what a window shows, checked: an absolute folder that
 //!   exists, and items in it to select.
 //! - `file_manager1.rs`: `org.freedesktop.FileManager1`, so apps' "Show in
 //!   folder" opens Nova Files.
-//! - `window.rs`: the Nova Files process (`ui/files.qml`), started when a
-//!   window is asked for and none runs.
+//! - `portal.rs`: `org.freedesktop.impl.portal.FileChooser`, so apps'
+//!   Open and Save dialogs are Nova Files windows in picker mode;
+//!   `picker.rs`: the pickers waiting for their window's answer, and the
+//!   checks an answer passes; `filter.rs`: their file type filters, which
+//!   folder views apply.
+//! - `window.rs`: the Nova Files processes, `ui/files.qml` for its own
+//!   windows and `ui/files-picker.qml` for apps' dialogs (an app id of
+//!   its own, which compositors float), each started when a window for it
+//!   is asked for and none runs.
 //! - Opening files in apps is the shared `crate::apps::opening`, over the
 //!   module's one copy of the MIME database.
 //! - `views.rs`: the folders a window shows (`files_open`), read in pages
@@ -24,33 +31,77 @@
 //!   database (`crate::mime`, read as the module starts and again when a
 //!   package brings new types), and the view's order.
 //! - `tree.rs`: the sidebar's folder tree that follows the window
-//!   (`files_tree`) and its places (`files_places`).
+//!   (`files_tree`).
+//! - `quick_access.rs`: the folders pinned to Quick access (`files_pin`),
+//!   shared with other apps as GTK bookmarks, and the sidebar's places
+//!   around them (`files_places`).
+//! - `recent.rs`: the files any app used last (`files_recent`), for the
+//!   Home page.
+//! - `games/`: the Games place's installed games (`files_games_list`),
+//!   from the launchers' own library files.
+//! - `preview.rs`: what the preview pane shows of a file
+//!   (`files_preview`): an image, the first lines of text, or a PDF's
+//!   first page or a video's still drawn into the cache.
 //! - `search/`: finding files by name (`files_search`) from an index of
 //!   every name under Home and the drives, kept up to date with inotify.
+//! - `launcher.rs`: the launcher's Files mode, a launcher provider that
+//!   searches that index or completes a typed path.
 //! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
 //!   and ejecting them; `drives.rs`: which filesystems are listed and
 //!   what they're called.
+//! - `sizes.rs`: folder sizes, counted under each view's subfolders on a
+//!   thread of its own at the disk's idle priority.
 //! - `transfers.rs`: copy and move jobs (`files_transfer`), one thread
-//!   each, asking the window about name clashes.
+//!   each, asking the window about name clashes, and what a drag and drop
+//!   onto a folder does (`files_drop`).
 //! - `copying.rs`: the file system side of those: measuring, numbered
 //!   names, and copying a file in chunks.
+//! - `archive/`: zips and tars, opened like read-only folders by the
+//!   views, extracted and packed by the copy jobs. A file opened from
+//!   inside one is extracted first, to its own folder under the cache's
+//!   `opened` folder, which is emptied as the module starts.
+//! - `properties.rs`: the Properties window's facts about an item
+//!   (`files_properties`) and changing who may open it
+//!   (`files_set_access`); `measures.rs`: counting a folder's or a
+//!   selection's size in the background (`files_measure`).
+//! - `editing.rs`: new folders, renaming in place, and what the details
+//!   pane shows about an item.
+//! - `history.rs`: undo and redo of copies, moves, trashing, renaming and
+//!   new folders, one history for the session that every window shares.
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
 //! windows follow an edit at once.
 //!
-//! Windows go only to the Nova Files process, once it has attached
+//! Windows go only to their Nova Files process (a [`Lane`]: pickers to
+//! the dialogs' one, the rest to the windows' one), once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
 //! takes them. One asked for while none is attached waits, and starts one,
 //! and goes to it when it attaches. Asking, attaching and detaching take
 //! the same lock, so none is lost or sent twice. A process that detached as
 //! it quit, with windows asked for since, is followed by a new one.
 
+mod archive;
+#[cfg(test)]
+mod bus_fixture;
 mod copying;
 mod drives;
+mod editing;
 mod file_manager1;
+mod filter;
 mod folder;
+pub mod games;
+mod history;
+mod launcher;
+mod measures;
+mod picker;
+mod portal;
+mod preview;
+mod properties;
+mod quick_access;
+mod recent;
 pub mod search;
+mod sizes;
 mod target;
 mod transfers;
 mod trash;
@@ -69,13 +120,15 @@ use crate::lock;
 use crate::logger::Logger;
 use crate::notifications::Notifications;
 use crate::session_bus::{Bus, Stop};
+use history::{History, Way};
 use nova_protocol::{
-    ClashAnswer, EjectOutcome, Event, FeatureState, FilePlace, FileSort, FilesLook, FilesWindow, FolderTree, Topic,
-    TransferMode,
+    ClashAnswer, EjectOutcome, Event, FeatureState, FileFilter, FilePlace, FileSort, FilesLook, FilesWindow,
+    FolderTree, Game, PlaceKind, RecentFile, Topic, TransferMode,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 
+pub use transfers::drop_mode;
 pub use trash::Trash;
 
 pub const FEATURE_ID: &str = "files";
@@ -87,6 +140,10 @@ const MAX_WAITING: usize = 64;
 const TRASH_DIR: &str = "Trash";
 /// This process's mount table.
 const MOUNT_TABLE: &str = "/proc/self/mountinfo";
+/// The preview pane's pictures, in Nova's cache folder.
+const PREVIEWS_DIR: &str = "nova/previews";
+/// Where files opened from inside archives are extracted, in Nova's cache.
+const OPENED_DIR: &str = "nova/opened";
 
 /// Where Nova Files runs from.
 #[derive(Clone)]
@@ -112,6 +169,22 @@ pub struct Sources {
     pub trash: Option<PathBuf>,
     /// The mount table, where drives' trashes are looked for.
     pub mounts: PathBuf,
+    /// The GTK bookmarks file, where Quick access is pinned; none without
+    /// a config folder.
+    pub bookmarks: Option<PathBuf>,
+    /// The user's folders (`user-dirs.dirs`), pinned while there's no
+    /// bookmarks file.
+    pub user_folders: Vec<(PlaceKind, PathBuf)>,
+    /// `recently-used.xbel`; none without a data folder.
+    pub recent: Option<PathBuf>,
+    /// Where the game launchers keep their libraries.
+    pub games: games::Sources,
+    /// Where the preview pane's pictures of PDFs and videos are kept; none
+    /// draws none.
+    pub previews: Option<PathBuf>,
+    /// Where files opened from inside archives are extracted; none without
+    /// a home.
+    pub opened: Option<PathBuf>,
 }
 
 pub struct Files {
@@ -130,11 +203,19 @@ pub struct Files {
     look: Mutex<FilesLook>,
     /// The copies and moves they run.
     transfers: transfers::Transfers,
+    /// The sizes the Properties window counts.
+    measures: measures::Measures,
     trash: Arc<Trash>,
+    /// What Ctrl+Z and Ctrl+Y undo and redo.
+    history: Arc<History>,
     /// Tells windows when the trash changes; none when it can't be followed.
     trash_watch: Option<trash::Watch>,
     /// The drives in the sidebar.
     drives: udisks::Drives,
+    /// The folders pinned to Quick access.
+    quick_access: quick_access::QuickAccess,
+    /// What the preview pane shows.
+    previews: Arc<preview::Previews>,
 }
 
 /// What the module's services share.
@@ -142,8 +223,50 @@ struct Shared {
     sources: Sources,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
+    /// Nova Files' own windows.
+    windows: Lane,
+    /// Apps' Open and Save dialogs, in a process of their own.
+    dialogs: Lane,
+    /// The file pickers apps wait on.
+    pickers: picker::Pickers,
+}
+
+/// One Nova Files process and the windows on their way to it.
+struct Lane {
     delivery: Mutex<Delivery>,
     process: Option<window::Process>,
+}
+
+impl Lane {
+    fn new(
+        entry: window::Entry,
+        ui: Option<&crate::supervisor::UiSettings>,
+        logger: &Arc<Logger>,
+        shared: &Weak<Shared>,
+        pickers: bool,
+    ) -> Self {
+        let shared = Weak::clone(shared);
+        let exited = move || {
+            if let Some(shared) = shared.upgrade() {
+                shared.lane(pickers).exited();
+            }
+        };
+        let process = ui.cloned().map(|ui| window::Process::new(entry, ui, Arc::clone(logger), exited));
+        Self { delivery: Mutex::default(), process }
+    }
+
+    /// Its process exited. One that quit while windows were asked for is
+    /// followed by a new one; one that crashed isn't, until the next window
+    /// is asked for.
+    fn exited(&self) {
+        let mut delivery = lock(&self.delivery);
+        if std::mem::take(&mut delivery.quitting)
+            && !delivery.waiting.is_empty()
+            && let Some(process) = &self.process
+        {
+            process.ensure_running();
+        }
+    }
 }
 
 /// Where windows go, under one lock.
@@ -169,10 +292,14 @@ impl Files {
     ) -> Arc<Self> {
         let mime = crate::mime::Mime::follow(sources.data_dirs.clone(), Arc::clone(&logger));
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
-        let search = search::Search::start(sources.search.clone(), Arc::clone(&logger), Arc::clone(&mime));
-        let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
+        let search =
+            search::Search::start(sources.search.clone(), Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
+        let measures = measures::Measures::new(Arc::clone(&hub));
+        let history = Arc::new(History::new(Arc::clone(&hub)));
+        let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&history));
         let trash = Arc::new(Trash::new(sources.trash.clone(), sources.mounts.clone(), Arc::clone(&mime)));
         let trash_watch = trash::Watch::start(Arc::clone(&trash), Arc::clone(&hub), Arc::clone(&logger));
+        let previews = Arc::new(preview::Previews::new(Arc::clone(&mime), sources.previews.clone(), path_var));
         let opener = Opener::new(
             Arc::clone(&mime),
             sources.associations.clone(),
@@ -182,14 +309,9 @@ impl Files {
             Arc::clone(&logger),
         );
         let shared = Arc::new_cyclic(|shared: &Weak<Shared>| {
-            let shared = Weak::clone(shared);
-            let exited = move || {
-                if let Some(shared) = shared.upgrade() {
-                    shared.exited();
-                }
-            };
-            let process = sources.ui.clone().map(|ui| window::Process::new(ui, Arc::clone(&logger), exited));
-            Shared { sources, hub, logger, delivery: Mutex::default(), process }
+            let windows = Lane::new(window::WINDOWS, sources.ui.as_ref(), &logger, shared, false);
+            let dialogs = Lane::new(window::PICKERS, sources.ui.as_ref(), &logger, shared, true);
+            Shared { sources, hub, logger, windows, dialogs, pickers: picker::Pickers::default() }
         });
         let drives = udisks::Drives::start(
             shared.sources.udisks.clone(),
@@ -198,8 +320,17 @@ impl Files {
             Arc::clone(&shared.hub),
             Arc::clone(&shared.logger),
         );
+        let quick_access =
+            quick_access::QuickAccess::new(shared.sources.bookmarks.clone(), shared.sources.user_folders.clone());
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
+        // Copies opened from archives in an earlier run.
+        if let Some(opened) = &shared.sources.opened
+            && let Err(e) = copying::remove(opened)
+        {
+            shared.logger.warn(LOG_SOURCE, &format!("can't empty {}: {e}", opened.display()));
+        }
+        portal::start(&shared, &stop);
         Arc::new(Self {
             shared,
             opener: Arc::new(opener),
@@ -208,10 +339,14 @@ impl Files {
             folders,
             look: Mutex::default(),
             transfers,
+            measures,
             trash,
+            history,
             trash_watch,
             drives,
             search,
+            quick_access,
+            previews,
         })
     }
 
@@ -220,9 +355,57 @@ impl Files {
         Arc::clone(&self.opener)
     }
 
+    /// Opens the file at `path` in the app `app`, or its default app
+    /// (`files_launch`). One inside an archive is extracted first, and the
+    /// app opens that copy. It reads the archive, so it's called off the
+    /// connection's thread.
+    pub fn launch(&self, path: &str, app: Option<&str>) -> Result<(), String> {
+        let path = self.openable(path)?;
+        match app {
+            Some(app) => self.opener.open_with(&path, app),
+            None => self.opener.open(&path),
+        }
+    }
+
+    /// `path`, or the copy of it extracted when it's in an archive.
+    fn openable(&self, path: &str) -> Result<String, String> {
+        let checked = views::checked_path(path)?;
+        let Some(inside) = archive::Inside::of(&checked).filter(|inside| !inside.inner.as_os_str().is_empty()) else {
+            return Ok(path.to_owned());
+        };
+        let opened = self.shared.sources.opened.as_ref().ok_or("Nowhere to extract it to")?;
+        let name = inside.inner.file_name().map(nova_protocol::wire_text).unwrap_or_default();
+        let copy = archive::open_copy(&inside, opened).map_err(|e| format!("Can't extract {name}: {e}"))?;
+        Ok(nova_protocol::wire_text(copy))
+    }
+
     /// The trash.
     pub fn trash(&self) -> Arc<Trash> {
         Arc::clone(&self.trash)
+    }
+
+    /// What works out the preview pane's previews (`files_preview`).
+    pub fn previews(&self) -> Arc<preview::Previews> {
+        Arc::clone(&self.previews)
+    }
+
+    /// Moves `paths` to the trash (`files_trash`): one step to undo, or
+    /// part of the last one when it `continues` it.
+    pub fn move_to_trash(&self, paths: &[String], continues: bool) -> Result<(), String> {
+        let (ids, problems) = history::split(self.trash.trash_each(paths));
+        self.history.trashed(ids, continues);
+        problems
+    }
+
+    /// Undoes the last step (`files_undo`) for client `client`, a move
+    /// back as its job `job`; answers whether that job started.
+    pub fn undo(&self, client: ClientId, job: u32) -> Result<bool, String> {
+        self.history.run(Way::Undo, &self.trash, &self.transfers, client, job)
+    }
+
+    /// Redoes the last undone step (`files_redo`), as [`Files::undo`].
+    pub fn redo(&self, client: ClientId, job: u32) -> Result<bool, String> {
+        self.history.run(Way::Redo, &self.trash, &self.transfers, client, job)
     }
 
     /// What finds files by name (`files_search`).
@@ -234,8 +417,16 @@ impl Files {
     /// (`files_open`, [`views::Folders::open`]).
     /// How full the drives are is read again too, since a window going
     /// somewhere is when it's looked at.
-    pub fn open(&self, client: ClientId, view: u32, path: &str, sort: FileSort, hidden: bool) -> Result<(), String> {
-        self.folders.open(client, view, path, sort, hidden)?;
+    pub fn open(
+        &self,
+        client: ClientId,
+        view: u32,
+        path: &str,
+        sort: FileSort,
+        hidden: bool,
+        filter: Option<&FileFilter>,
+    ) -> Result<(), String> {
+        self.folders.open(client, view, path, sort, hidden, filter)?;
         self.drives.refresh();
         Ok(())
     }
@@ -244,6 +435,30 @@ impl Files {
     /// udisks2, so it runs off the connection's thread.
     pub fn mount(&self, drive: &str) -> Result<String, String> {
         self.drives.mount(drive)
+    }
+
+    /// Makes a new folder in `folder` (`files_new_folder`); touches the
+    /// disk, so it runs off the connection's thread.
+    /// It's a step to undo.
+    pub fn new_folder(&self, folder: &str) -> Result<String, String> {
+        let name = editing::new_folder(folder)?;
+        self.history.made_folder(&nova_protocol::wire_path(folder).join(nova_protocol::wire_path(&name)));
+        Ok(name)
+    }
+
+    /// Renames the item at `path` to `name` (`files_rename`): a step to
+    /// undo.
+    pub fn rename(&self, path: &str, name: &str) -> Result<String, String> {
+        let renamed = editing::rename(path, name)?;
+        let from = nova_protocol::wire_path(path);
+        let to = from.with_file_name(nova_protocol::wire_path(&renamed));
+        self.history.renamed(from, to);
+        Ok(renamed)
+    }
+
+    /// What the details pane shows about the item at `path` (`files_details`).
+    pub fn details(&self, path: &str) -> Result<nova_protocol::FileDetails, String> {
+        editing::details(path, &self.mime.current())
     }
 
     /// Ejects drive `drive` (`files_eject`). Waits on udisks2 writing what's
@@ -259,9 +474,38 @@ impl Files {
         tree::tree(request, &self.shared.sources.home)
     }
 
-    /// The sidebar's places that exist (`files_places`).
+    /// The sidebar's places that exist (`files_places`): the Home page,
+    /// Quick access, the trash.
+    /// Pins that can't be read are left out, and logged.
     pub fn places(&self) -> Vec<FilePlace> {
-        tree::places(&self.shared.sources.home, nova_paths::user_dir)
+        let pins = self.quick_access.pins().unwrap_or_else(|e| {
+            self.shared.logger.warn(LOG_SOURCE, &format!("Quick access: {e}"));
+            Vec::new()
+        });
+        quick_access::places(pins, self.shared.sources.games.any())
+    }
+
+    /// The installed games (`files_games_list`). It reads the launchers'
+    /// files, so it's called off the connection's thread.
+    pub fn games(&self) -> Vec<Game> {
+        games::list(&self.shared.sources.games, &self.shared.logger)
+    }
+
+    /// Pins the folder `folder` to Quick access, or unpins it
+    /// (`files_pin`), telling every window when that's a change. It writes
+    /// a file, so it's called off the connection's thread.
+    pub fn pin(&self, folder: &str, pinned: bool) -> Result<(), String> {
+        if self.quick_access.pin(folder, pinned)? {
+            self.shared.hub.publish(&Event::FilesPlacesChanged);
+        }
+        Ok(())
+    }
+
+    /// The files used last, by any app (`files_recent`). It reads files, so
+    /// it's called off the connection's thread.
+    pub fn recent(&self) -> Result<Vec<RecentFile>, String> {
+        let Some(file) = &self.shared.sources.recent else { return Ok(Vec::new()) };
+        recent::recent(file, &self.mime.current())
     }
 
     /// Closes client `client`'s view `view` (`files_close`).
@@ -300,17 +544,60 @@ impl Files {
         self.transfers.answer(client, job, clash, answer, all)
     }
 
+    /// What the Properties window shows about the item at `path`
+    /// (`files_properties`). It reads the file, so it's called off the
+    /// connection's thread.
+    pub fn properties(&self, path: &str) -> Result<nova_protocol::FileProperties, String> {
+        properties::read(path, &self.mime.current())
+    }
+
+    /// Sets who may open the item at `path` (`files_set_access`).
+    pub fn set_access(&self, path: &str, access: nova_protocol::Access) -> Result<(), String> {
+        properties::set_access(path, access)
+    }
+
+    /// Starts client `client`'s job `job`, counting what `paths` hold
+    /// (`files_measure`, [`measures::Measures::start`]).
+    pub fn measure(&self, client: ClientId, job: u32, paths: &[String]) -> Result<(), String> {
+        self.measures.start(client, job, paths)
+    }
+
+    /// Stops client `client`'s measuring job `job` (`files_measure_cancel`).
+    pub fn cancel_measure(&self, client: ClientId, job: u32) {
+        self.measures.cancel(client, job);
+    }
+
     /// Opens a window on `folder` with `select` selected, once both check
     /// out ([`target::window`]).
     pub fn show(&self, folder: &str, select: &[String]) -> Result<(), String> {
         self.shared.open(target::window(folder, select)?)
     }
 
-    /// Client `client`, the Nova Files process, can open windows
-    /// (`attached`), and is sent those waiting; or it's quitting, and gets
-    /// no more.
-    pub fn attach(&self, client: ClientId, attached: bool) {
-        let mut delivery = lock(&self.shared.delivery);
+    /// Client `client`'s window answers the file picker `picker` with
+    /// `paths` (`files_pick`). It checks the disk, so it's called off the
+    /// connection's thread.
+    pub fn pick(
+        &self,
+        client: ClientId,
+        picker: u32,
+        paths: &[String],
+        filter: Option<u32>,
+        replace: bool,
+    ) -> Result<(), String> {
+        self.shared.pickers.pick(client, picker, paths, filter, replace)
+    }
+
+    /// Client `client`'s file picker `picker` closed without picking
+    /// (`files_pick_cancel`).
+    pub fn cancel_pick(&self, client: ClientId, picker: u32) {
+        self.shared.pickers.cancel(client, picker);
+    }
+
+    /// Client `client`, a Nova Files process (the one for apps' dialogs
+    /// when `pickers`), can open windows (`attached`), and is sent those
+    /// waiting; or it's quitting, and gets no more.
+    pub fn attach(&self, client: ClientId, attached: bool, pickers: bool) {
+        let mut delivery = lock(&self.shared.lane(pickers).delivery);
         if attached {
             delivery.attached = Some(client);
             delivery.quitting = false;
@@ -342,19 +629,31 @@ impl Files {
         let look = *lock(&self.look);
         self.shared.hub.send_to(client, &Event::FilesLook(look));
         self.drives.send_state(client);
+        self.history.send_state(client);
     }
 
     /// Client `client` hung up: windows aren't sent to it any more.
     pub fn client_gone(&self, client: ClientId) {
         self.folders.client_gone(client);
         self.transfers.client_gone(client);
-        let mut delivery = lock(&self.shared.delivery);
+        self.measures.client_gone(client);
+        // Its picker windows went with it; those still waiting for a
+        // process stay. Under the delivery lock, so a window being sent to
+        // it is either marked shown first, and ends here, or never sent.
+        let mut delivery = lock(&self.shared.dialogs.delivery);
+        self.shared.pickers.end_shown_to(client);
+        if delivery.attached == Some(client) {
+            delivery.attached = None;
+        }
+        drop(delivery);
+        let mut delivery = lock(&self.shared.windows.delivery);
         if delivery.attached == Some(client) {
             delivery.attached = None;
         }
     }
 
-    /// Stops it: it publishes nothing more, gives up FileManager1, closes
+    /// Stops it: it publishes nothing more, gives up FileManager1 and the
+    /// file chooser (its pickers end), closes
     /// Nova Files' windows and folder views, stops copies, following the
     /// MIME database and keeping the search index, and drops windows still
     /// waiting.
@@ -365,21 +664,32 @@ impl Files {
         self.search.stop();
         self.drives.stop();
         self.transfers.stop();
+        self.measures.stop();
         if let Some(watch) = &self.trash_watch {
             watch.stop();
         }
-        if let Some(process) = &self.shared.process {
-            process.stop();
+        for lane in [&self.shared.windows, &self.shared.dialogs] {
+            if let Some(process) = &lane.process {
+                process.stop();
+            }
+            *lock(&lane.delivery) = Delivery::default();
         }
-        *lock(&self.shared.delivery) = Delivery::default();
+        self.shared.pickers.end_all();
     }
 }
 
 impl Shared {
     /// Sends `window` to the Nova Files process, or keeps it for the next
-    /// one to attach, starting one, unless [`MAX_WAITING`] already wait.
+    /// one to attach, starting one, unless [`MAX_WAITING`] already wait. A
+    /// file picker's window whose app stopped asking is dropped: under the
+    /// delivery lock, so [`Shared::end_picker`] either sees it or it's
+    /// never sent.
     fn open(&self, window: FilesWindow) -> Result<(), String> {
-        let mut delivery = lock(&self.delivery);
+        let lane = self.lane(picker_of(&window).is_some());
+        let mut delivery = lock(&lane.delivery);
+        if picker_of(&window).is_some_and(|id| !self.pickers.is_waiting(id)) {
+            return Ok(());
+        }
         if let Some(client) = delivery.attached {
             if self.send(client, &window) {
                 return Ok(());
@@ -391,28 +701,52 @@ impl Shared {
         }
         self.logger.info(LOG_SOURCE, &format!("{} waits for Nova Files to start", window.folder));
         delivery.waiting.push(window);
-        if let Some(process) = &self.process {
+        if let Some(process) = &lane.process {
             process.ensure_running();
         }
         Ok(())
     }
 
-    fn send(&self, client: ClientId, window: &FilesWindow) -> bool {
-        self.hub.send_to(client, &Event::FilesWindow(window.clone()))
+    /// Where windows go: apps' dialogs (`pickers`) or Nova Files' own.
+    fn lane(&self, pickers: bool) -> &Lane {
+        if pickers { &self.dialogs } else { &self.windows }
     }
 
-    /// The Nova Files process exited. One that quit while windows were asked
-    /// for is followed by a new one; one that crashed isn't, until the next
-    /// window is asked for.
-    fn exited(&self) {
-        let mut delivery = lock(&self.delivery);
-        if std::mem::take(&mut delivery.quitting)
-            && !delivery.waiting.is_empty()
-            && let Some(process) = &self.process
+    /// Ends the file picker `picker` for its app (it gave up asking):
+    /// drops its window if it still waits for Nova Files, else closes it.
+    fn end_picker(&self, picker: u32) {
+        if !self.pickers.end(picker) {
+            return;
+        }
+        let mut delivery = lock(&self.dialogs.delivery);
+        let waited = delivery.waiting.len();
+        delivery.waiting.retain(|window| picker_of(window) != Some(picker));
+        if delivery.waiting.len() == waited
+            && let Some(client) = delivery.attached
         {
-            process.ensure_running();
+            self.hub.send_to(client, &Event::FilesPickerClosed { picker });
         }
     }
+
+    /// Sends `window` to `client`; a picker's is then answered only from
+    /// there.
+    fn send(&self, client: ClientId, window: &FilesWindow) -> bool {
+        // Marked first: the window can answer as soon as it's sent.
+        let picker = picker_of(window);
+        if let Some(id) = picker {
+            self.pickers.shown(id, Some(client));
+        }
+        let sent = self.hub.send_to(client, &Event::FilesWindow(window.clone()));
+        if !sent && let Some(id) = picker {
+            self.pickers.shown(id, None);
+        }
+        sent
+    }
+}
+
+/// The file picker a window is, if it's one.
+fn picker_of(window: &FilesWindow) -> Option<u32> {
+    window.picker.as_ref().map(|picker| picker.id)
 }
 
 /// Its options are how solid the windows are, applied in place.
@@ -431,6 +765,11 @@ impl crate::modules::Module for Files {
         let home = nova_paths::home().unwrap_or_else(|| PathBuf::from("/"));
         let trash = nova_paths::data_home().map(|data| data.join(TRASH_DIR));
         let search = search::Sources::system(env.home.clone());
+        let games = games::Sources::system(&home, nova_paths::data_home());
+        let user_folders = quick_access::USER_FOLDERS
+            .iter()
+            .map(|(kind, key, fallback)| (*kind, nova_paths::user_dir(key, fallback)))
+            .collect();
         Sources {
             bus: Bus::Session,
             udisks: Bus::System,
@@ -442,6 +781,12 @@ impl crate::modules::Module for Files {
             trash,
             mounts: MOUNT_TABLE.into(),
             search,
+            bookmarks: nova_paths::config_home().map(|config| config.join(quick_access::BOOKMARKS_FILE)),
+            user_folders,
+            recent: nova_paths::data_home().map(|data| data.join(recent::RECENT_FILE)),
+            games,
+            previews: nova_paths::cache_home().map(|cache| cache.join(PREVIEWS_DIR)),
+            opened: nova_paths::cache_home().map(|cache| cache.join(OPENED_DIR)),
         }
     }
 
@@ -508,6 +853,8 @@ mod tests {
         fn new(name: &str) -> Self {
             let dir = TempDir::new(&format!("files-{name}"));
             std::fs::create_dir_all(dir.join("Downloads")).unwrap();
+            // What the search index covers (`search::Sources::under`).
+            std::fs::create_dir_all(dir.join("home")).unwrap();
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
             let no_bus = Bus::Address(format!("unix:path={}", dir.join("no-bus").display()));
@@ -522,6 +869,12 @@ mod tests {
                 search: search::Sources::under(&dir),
                 trash: Some(dir.join("Trash")),
                 mounts: dir.join("no-mountinfo"),
+                bookmarks: Some(dir.join("bookmarks")),
+                user_folders: vec![(PlaceKind::Downloads, dir.join("Downloads"))],
+                recent: Some(dir.join("recently-used.xbel")),
+                games: games::Sources { steam: vec![] },
+                previews: None,
+                opened: Some(dir.join("opened")),
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");
@@ -541,7 +894,7 @@ mod tests {
         /// The Nova Files process's connection, attached.
         fn nova_files(&self) -> (ClientId, Receiver<Outgoing>, UnixStream) {
             let connection = self.client();
-            self.files.attach(connection.0, true);
+            self.files.attach(connection.0, true, false);
             connection
         }
 
@@ -554,13 +907,21 @@ mod tests {
     fn a_window_waits_until_nova_files_attaches() {
         let fixture = Fixture::new("waits");
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
-        // Another subscriber to the topic takes nothing.
+        // Another subscriber to the topic gets no window.
         let (_, watcher, _watcher_stream) = fixture.client();
         let (_, nova_files, _stream) = fixture.nova_files();
         assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
-        assert!(watcher.try_recv().is_err(), "windows go only to Nova Files");
+        // Other topic events may reach it (the trash watcher says it's
+        // following the trash once its watches are in); windows don't.
+        let windows = std::iter::from_fn(|| watcher.try_recv().ok())
+            .filter(|sent| {
+                matches!(sent, Outgoing::Line(line)
+                    if serde_json::from_str::<serde_json::Value>(line).unwrap()["event"] == "files_window")
+            })
+            .count();
+        assert_eq!(windows, 0, "windows go only to Nova Files");
     }
 
     #[test]
@@ -581,6 +942,21 @@ mod tests {
     }
 
     #[test]
+    fn pinning_tells_every_window_and_the_places_follow() {
+        let fixture = Fixture::new("pin");
+        let (_, events, _stream) = fixture.client();
+        let pinned = |places: Vec<FilePlace>| places.into_iter().map(|place| place.kind).collect::<Vec<_>>();
+        assert_eq!(pinned(fixture.files.places()), [PlaceKind::Home, PlaceKind::Downloads, PlaceKind::Trash]);
+        fixture.files.pin(&fixture.downloads(), false).unwrap();
+        next_named(&events, "files_places_changed", WAIT);
+        assert_eq!(pinned(fixture.files.places()), [PlaceKind::Home, PlaceKind::Trash]);
+        // Unpinning what isn't pinned tells nobody.
+        fixture.files.pin(&fixture.downloads(), false).unwrap();
+        let more = events.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_places")));
+        assert!(!more, "no change, no event");
+    }
+
+    #[test]
     fn windows_past_the_limit_are_refused_while_none_attaches() {
         let fixture = Fixture::new("limit");
         for _ in 0..MAX_WAITING {
@@ -593,11 +969,54 @@ mod tests {
     fn a_window_asked_for_as_nova_files_quits_waits_for_the_next() {
         let fixture = Fixture::new("quits");
         let (client, quitting, _stream) = fixture.nova_files();
-        fixture.files.attach(client, false);
+        fixture.files.attach(client, false, false);
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         let (_, next, _next_stream) = fixture.nova_files();
         assert_eq!(next_named(&next, "files_window", WAIT)["folder"], json!(fixture.downloads()));
-        assert!(quitting.try_recv().is_err(), "nothing for the one quitting");
+        // Other events (the trash's watch starting) may reach it; no window does.
+        let windows =
+            quitting.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_window")));
+        assert!(!windows, "no window for the one quitting");
+    }
+
+    #[test]
+    fn the_launchers_files_mode_finds_indexed_names_and_shows_them_in_nova_files() {
+        use crate::launcher::providers::{Provider, Run};
+        let fixture = Fixture::new("launcher");
+        // The index covers `<dir>/home`; the fixture's Home is `<dir>`.
+        std::fs::create_dir_all(fixture.dir.join("home/Games")).unwrap();
+        std::fs::write(fixture.dir.join("home/Games/Crimson Desert.sh"), b"x").unwrap();
+        let mut found = Vec::new();
+        nova_test_support::wait_until(WAIT, "the index finds it", || {
+            found = fixture.files.search("crim des").unwrap();
+            !found.is_empty()
+        });
+        let game = &found[0];
+        let path = fixture.dir.join("home/Games/Crimson Desert.sh").display().to_string();
+        assert_eq!(game.id, path);
+        assert_eq!(game.description.as_deref(), Some("~/home/Games"));
+        assert!(game.name[0].matched && game.name[0].text == "Crim");
+        assert_eq!(game.file.as_ref().unwrap().completion, "~/home/Games/Crimson Desert.sh");
+
+        let (_, nova_files, _stream) = fixture.nova_files();
+        let logger =
+            Logger::open(&fixture.dir.join("run-logs"), LogLevel::Debug, false, Arc::clone(&fixture.hub)).unwrap();
+        let how = |new_window| Run {
+            output: None,
+            new_window,
+            compositor: None,
+            tray: None,
+            logger: &logger,
+            underway: &|| {},
+        };
+        // Shift+Enter: its folder, with it selected.
+        fixture.files.run(&path, &how(true)).unwrap();
+        let window = next_named(&nova_files, "files_window", WAIT);
+        assert_eq!(window["folder"], json!(fixture.dir.join("home/Games").display().to_string()));
+        assert_eq!(window["select"], json!([path]));
+        // A folder opens in Nova Files.
+        fixture.files.run(&fixture.downloads(), &how(false)).unwrap();
+        assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
     }
 
     #[test]

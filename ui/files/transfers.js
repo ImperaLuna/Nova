@@ -2,6 +2,7 @@
 .import "../daemon/protocol.js" as Protocol
 .import "../text/bytes.js" as Bytes
 .import "paths.js" as Paths
+.import "../theme/icons.js" as Icons
 
 // Nova Files' copies and moves as its window shows them: the jobs it keeps
 // from novad's files_transfer events, the progress card's words, and the
@@ -62,6 +63,20 @@ function asking(jobs) {
 // Paths.shown does), or how many.
 function label(transfer) {
     return transfer.items === 1 ? Paths.shown(transfer.name) : qsTr("%1 items").arg(transfer.items);
+}
+
+// The icon of a job's card: what it does with its items.
+function icon(transfer) {
+    switch (transfer.mode) {
+    case Protocol.TRANSFER_MOVE:
+        return Icons.CUT;
+    case Protocol.TRANSFER_EXTRACT:
+    case Protocol.TRANSFER_EXTRACT_HERE:
+        return Icons.EXTRACT;
+    case Protocol.TRANSFER_COMPRESS:
+        return Icons.ARCHIVE;
+    }
+    return Icons.COPY;
 }
 
 // How far along a job is, 0 to 1.

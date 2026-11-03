@@ -442,6 +442,8 @@ QtObject {
     readonly property int launcherRowGap: 2
     readonly property int launcherRowIcon: 30
     readonly property int launcherRows: 6
+    // The Apps and Files tabs in the search field, with Nova Files on.
+    readonly property int launcherModesWidth: 132
     // The note shown when nothing matches.
     readonly property int launcherEmptyHeight: 92
     // An app without an icon: its letter on a swatch, this round.
@@ -678,6 +680,9 @@ QtObject {
     // darker than the glass.
     readonly property int filesWindowWidth: 880
     readonly property int filesWindowHeight: 700
+    // The corner radius packaging/compositor's niri.kdl and hyprland.conf
+    // suggest for the window, which its blur region follows.
+    readonly property int filesWindowRadius: radiusCard
     readonly property int filesButtonSize: 30
     readonly property int filesFieldHeight: 32
     readonly property int filesSearchWidth: 220
@@ -689,13 +694,22 @@ QtObject {
     readonly property int filesPlaceHeight: 26
     readonly property int filesHeaderHeight: 30
     readonly property list<int> filesColumns: [150, 110, 80]
+    // The same beside the details or preview pane: Type (0) gives way so names fit.
+    readonly property list<int> filesColumnsCompact: [90, 0, 70]
     readonly property color filesFaint: alpha(fg, 0.45)
     // A drive in the sidebar: a taller row with how full it is under its
-    // name. A stick that's plugged in slides in, then glows in the accent
-    // and fades back. Problems with one show in a dialog this wide.
-    readonly property int filesDriveHeight: 38
+    // name, bar then free space. A stick that's plugged in slides in, then
+    // glows in the accent and fades back. Problems with one show in a
+    // dialog this wide.
+    readonly property int filesDriveHeight: 54
     readonly property int filesDriveBarHeight: 4
     readonly property int filesDriveBarGap: 4
+    // What uses space: the drive's bar over the list, thicker, and each
+    // row's bar in the column Modified and Type leave.
+    readonly property int filesSpaceBarHeight: 8
+    readonly property int filesSpaceRowBarHeight: 6
+    readonly property int filesSpacePad: 10
+    readonly property int filesSpaceBarWidth: 220
     readonly property int durationDriveArrive: 420
     readonly property int durationDriveGlow: 1600
     readonly property real filesDriveGlow: 0.22
@@ -729,6 +743,9 @@ QtObject {
     readonly property int filesTileNameLines: 2
     // How often the Modified column looks at the clock, so "Today" moves on.
     readonly property int filesClockTick: 60000
+    // A pause this long in typing a name in a file list starts a new name,
+    // as in Explorer.
+    readonly property int filesTypingPause: 1000
     // Solid Nova Files ([files] in config.toml) ends at the theme's soft
     // greys: the frame a step above bg, the file list at bg. On the way the
     // raised rows fade into the frame.
@@ -742,6 +759,8 @@ QtObject {
     // No at least this wide, the one item it names with a big icon), and
     // the notice at the bottom right when an item can't go back.
     readonly property list<int> filesTrashColumns: [190, 120, 70]
+    // The Games place's columns after the name (Location, Size).
+    readonly property list<int> filesGamesColumns: [300, 90]
     readonly property int filesConfirmWidth: 400
     readonly property int filesDialogButtonMinWidth: 72
     readonly property int filesNoticeWidth: 330
@@ -750,6 +769,16 @@ QtObject {
     readonly property int filesCrumbPadY: 4
     readonly property int filesCrumbRadius: 8
     readonly property real filesFocusRing: strokeThin
+    // Search: the field widens while it's in use and the address bar fades
+    // back; typing settles this long before novad is asked. Results show
+    // where each lives in a column this wide, the matched words in the
+    // accent, and the scope (this folder or everywhere) as round chips.
+    readonly property int filesSearchWidthOpen: 300
+    readonly property real filesSearchCrumbsOpacity: 0.45
+    readonly property int filesSearchSettle: 60
+    readonly property int filesSearchLocationWidth: 260
+    readonly property int filesScopeHeight: 26
+    readonly property int filesScopeGap: 4
     // The sidebar: the line between places, tree and drives, and the tree,
     // its rows the height of a place, each level this far in, with its
     // chevron (turning as it opens) and folder icon. New rows slide in from
@@ -762,6 +791,20 @@ QtObject {
     readonly property int filesTreeGap: 4
     readonly property int filesTreeRise: 4
     readonly property int filesTreeStagger: 30
+    // The Home page: Quick access and the drives as tiles in rows, a big
+    // icon beside a name and a fainter line (where the folder is, a drive's
+    // free space under its bar), then Recent as a list with its own
+    // columns after the name (Date used, Location). The sections sit this
+    // far in and apart, under their headings.
+    readonly property int filesHomePad: 20
+    readonly property int filesHomeSectionGap: 18
+    readonly property int filesHomeTileWidth: 200
+    readonly property int filesHomeTileHeight: 58
+    readonly property int filesHomeTileIconSize: 26
+    readonly property list<int> filesRecentColumns: [130, 220]
+    // The most of the sidebar's height its places and drives take before
+    // they scroll, so the folder tree keeps room under many pins.
+    readonly property real filesPlacesMaxShare: 0.5
 
     // Copies and moves: each running job's card stacked at the window's
     // bottom right, and the name clash dialog in its middle, its two sides
@@ -773,6 +816,68 @@ QtObject {
     readonly property int filesClashButtonHeight: 34
     // The scale the dialog pops in from and shrinks back to.
     readonly property real filesClashEnterScale: 0.97
+    // Tabs along the window's top, as in Windows 11's Explorer: each shares
+    // the room between these widths, the shown one rounded on top and raised
+    // into the navigation row under it. A tab dragged this far below the
+    // row comes out as a window of its own.
+    readonly property int filesTabHeight: 32
+    readonly property int filesTabPadTop: 6
+    readonly property int filesTabGap: 2
+    readonly property int filesTabMinWidth: 96
+    readonly property int filesTabMaxWidth: 220
+    readonly property int filesTabRadius: menuRowRadius
+    readonly property int filesTabCloseSize: 20
+    readonly property int filesTabTearDistance: 40
+    // Right-click menus: wide enough for a label and its shortcut, rows a
+    // little shorter than an app menu's, an item's submenu (Open with)
+    // beside it. Cut items read faded until they're pasted.
+    readonly property int filesMenuWidth: 300
+    readonly property int filesMenuRowHeight: 28
+    readonly property int filesMenuSeparatorGap: 3
+    readonly property real filesCutOpacity: 0.5
+    // The details pane on the right of the file list: its big icon, the
+    // lines between its parts, and its rows of who may do what.
+    readonly property int filesDetailsWidth: 280
+    readonly property int filesDetailsPad: 16
+    readonly property int filesDetailsIconSize: 56
+    readonly property int filesDetailsRowHeight: 42
+    // Drag and drop: how far a press moves before it drags, the tile under
+    // the pointer (the item's icon, and the count in an accent bubble at its
+    // corner for more than one), the wash on the folder a drop would go
+    // into, and how long the pointer rests on a folder before it opens.
+    readonly property int filesDragStart: 6
+    readonly property int filesDragTile: 52
+    readonly property int filesDragIcon: 28
+    readonly property int filesDragCount: 20
+    readonly property color filesDropTarget: alpha(primary, 0.24)
+    readonly property int durationFilesSpring: 800
+    // The Properties dialog (Alt+Enter): this wide, its labels in a column
+    // this wide, its rows this tall, the drive's fill bar this thick, and
+    // the access grid's check columns this wide. A check box that can't be
+    // changed fades to this.
+    readonly property int filesPropertiesWidth: 440
+    readonly property int filesPropertiesLabelWidth: 110
+    readonly property int filesPropertiesRowHeight: 24
+    readonly property int filesPropertiesBarHeight: 6
+    readonly property int filesPropertiesCheckColumn: 64
+    readonly property real filesCheckDisabledOpacity: 0.45
+    // The preview pane (Alt+P) at the file list's right: this wide, its
+    // picture or text this far in (pictures are decoded at
+    // Protocol.FILES_PREVIEW_PICTURE_PX, its width at twice the scale, the
+    // same for every window size), and the big icon and name (in at most this many lines) for a
+    // file it can't show. It previews a selection that has rested this
+    // long, so arrowing through a folder never asks for every file on the
+    // way, and shows a spinner once an answer has been this long in coming.
+    readonly property int filesPreviewWidth: 300
+    readonly property int filesPreviewPad: 16
+    readonly property int filesPreviewIconSize: 64
+    readonly property int filesPreviewNameLines: 3
+    readonly property int filesPreviewDelay: 120
+    readonly property int filesPreviewSlow: 400
+    // A Nova Files window as an app's Open or Save dialog: the bar under
+    // the list with the name field, the file type button (its menu opens
+    // upward) and the answers.
+    readonly property int filesPickerFilterWidth: 220
 
     // Type
     readonly property string fontSans: "Inter"

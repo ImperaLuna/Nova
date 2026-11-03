@@ -3,45 +3,34 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "service"
 import "paths.js" as Paths
+import "space.js" as Space
 
 // The drives in Nova Files' sidebar, as novad lists them. One that comes
 // while the window is open (a stick plugged in) arrives with an animation.
 // `folder` is the window's, so the drive it's on shows as current; when
 // that drive goes away (ejected from any window, or pulled), `driveGone` says
-// the window should go elsewhere.
+// the window should go elsewhere. A drive clicked is opened by the window
+// (`opened`), in the tab it shows.
 Column {
     id: drives
 
     property string folder: ""
 
-    signal opened(string folder)
+    // The drive `id` was clicked: open it (Navigator.openDrive).
+    signal opened(string id)
     signal menuRequested(var drive, point at)
     signal driveGone
+    // Files dropped on a drive: `action` (a Protocol.TRANSFER_* mode or Drops.TRASH) on `sources` into
+    // `folder`.
+    signal dropRequested(string action, var sources, string folder)
 
     // The ids listed so far, and whether the first list is in: rows are
     // made again on every change, and only a new one animates.
     property var seen: ({})
     property bool listed: false
 
-    // The mounted drive the folder is on: the one with the longest mount
-    // that holds it, since one may be mounted inside another (/ and /mnt/games).
-    readonly property var current: {
-        let best = null;
-        for (const drive of FilesService.drives)
-            if (drive.mount !== undefined && Paths.inside(folder, drive.mount) && (best === null || drive.mount.length > best.mount.length))
-                best = drive;
-        return best;
-    }
-    // Mounts drive `id` and opens it. Here, not in its row: rows are made
-    // again when the list changes (as the mount does), and a callback of a
-    // row gone would never run.
-    function open(id: string) {
-        FilesService.mount(id, mounted => {
-            if (mounted !== null)
-                drives.opened(mounted);
-        });
-    }
-
+    // The mounted drive the folder is on.
+    readonly property var current: Space.driveOf(FilesService.drives, folder)
     // Where the drive the folder is on was mounted, before the latest list.
     property string heldMount: ""
 
@@ -70,8 +59,9 @@ Column {
             current: modelData.id === (drives.current?.id ?? "")
             arrived: drives.listed && !(modelData.id in drives.seen)
             Component.onCompleted: drives.seen[modelData.id] = true
-            onOpened: drives.open(modelData.id)
+            onOpened: drives.opened(modelData.id)
             onMenuRequested: at => drives.menuRequested(modelData, at)
+            onDropRequested: (action, sources, folder) => drives.dropRequested(action, sources, folder)
         }
     }
 
