@@ -15,15 +15,19 @@ import "../thumbnails.js" as Thumbnails
 // drives (and mounting and ejecting them), opening files in
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, the
-// trash, new folders, renaming, an item's details, the Properties
-// window's facts, sizes and access, the preview pane's previews,
-// thumbnails for the Icons view, finding files by name, and answering the
-// file pickers apps ask for (Open and Save dialogs). The
+// trash, finding files by name, new folders, renaming, an item's details, the Properties
+// window's facts, sizes and access, the preview pane's previews, answering the
+// file pickers apps ask for (Open and Save dialogs), and thumbnails for
+// the Icons view. The
 // Nova Files process (../../files.qml) and its windows get these here and
 // never talk to Daemon themselves. Also how solid the windows are, from
 // config.toml's [files].
 Singleton {
     id: root
+
+    // This process shows apps' dialogs (files-picker.qml), so novad sends
+    // it pickers only. Set by FilesShell before it connects.
+    property bool pickers: false
 
     // How solid the window frame and the file list are, each 0 (glass,
     // also until novad says) to 1 (the theme's solid surfaces).
@@ -107,13 +111,12 @@ Singleton {
     // novad's index of file names is built: a search that found nothing
     // because it wasn't can be asked again.
     signal searchReady
+    // The file picker `picker`'s app stopped asking: its window closes.
+    signal pickerClosed(int picker)
 
     // Paths whose thumbnails were asked for, each to the callbacks waiting
     // for it; a map without a prototype, so any path is a key.
     property var _thumbnailsWaiting: Object.create(null)
-
-    // The file picker `picker`'s app stopped asking: its window closes.
-    signal pickerClosed(int picker)
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
@@ -127,7 +130,8 @@ Singleton {
     // every connection.
     function attach() {
         Daemon.call(Protocol.CMD_ATTACH_FILES, {
-            attached: true
+            attached: true,
+            pickers: pickers
         });
     }
 
@@ -135,7 +139,8 @@ Singleton {
     // novad isn't there.
     function detach(done) {
         Daemon.call(Protocol.CMD_ATTACH_FILES, {
-            attached: false
+            attached: false,
+            pickers: pickers
         }, () => done());
     }
 
@@ -647,23 +652,23 @@ Singleton {
         function onFilesTransferChanged(transfer: var) {
             root.transferChanged(transfer);
         }
-        function onFilesMeasured(measured: var) {
-            root.measured(measured);
-        }
         function onFilesSearchReady() {
             root.searchReady();
         }
+        function onFilesMeasured(measured: var) {
+            root.measured(measured);
+        }
         function onFilesTrashChanged() {
             root.trashChanged();
-        }
-        function onFilesThumbnail(answer: var) {
-            root._thumbnailAnswered(answer);
         }
         function onFilesPlacesChanged() {
             root.refreshPlaces();
         }
         function onFilesPickerClosed(picker: int) {
             root.pickerClosed(picker);
+        }
+        function onFilesThumbnail(answer: var) {
+            root._thumbnailAnswered(answer);
         }
         function onConnectedChanged() {
             if (Daemon.connected) {
