@@ -21,6 +21,10 @@
 //!   database (`crate::mime`, read as the module starts and again when a
 //!   package brings new types), and the view's order.
 //!
+//! How solid the windows are (`[files]` in config.toml) is applied in place
+//! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
+//! windows follow an edit at once.
+//!
 //! Windows go only to the Nova Files process, once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
 //! takes them. One asked for while none is attached waits, and starts one,
@@ -43,7 +47,7 @@ use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
-use nova_protocol::{Event, FeatureState, FileSort, FilesWindow, Topic};
+use nova_protocol::{Event, FeatureState, FileSort, FilesLook, FilesWindow, Topic};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 
@@ -79,6 +83,8 @@ pub struct Files {
     stop: Arc<Stop>,
     /// The folders the windows show.
     folders: views::Folders,
+    /// How solid the windows are, as last published.
+    look: Mutex<FilesLook>,
 }
 
 /// What the module's services share.
@@ -133,7 +139,7 @@ impl Files {
         });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, opener: Arc::new(opener), mime, stop, folders })
+        Arc::new(Self { shared, opener: Arc::new(opener), mime, stop, folders, look: Mutex::default() })
     }
 
     /// What opens files in apps.
@@ -177,6 +183,22 @@ impl Files {
             delivery.attached = None;
             delivery.quitting = true;
         }
+    }
+
+    /// Makes the windows as solid as `look` says, telling them when that's
+    /// a change. Starts from all glass, which the windows assume too.
+    pub fn set_look(&self, look: FilesLook) {
+        let mut current = lock(&self.look);
+        if *current != look {
+            *current = look;
+            self.shared.hub.publish(&Event::FilesLook(look));
+        }
+    }
+
+    /// Sends client `client`, which just subscribed, how solid the windows are.
+    pub fn send_state(&self, client: ClientId) {
+        let look = lock(&self.look);
+        self.shared.hub.send_to(client, &Event::FilesLook(*look));
     }
 
     /// Client `client` hung up: windows aren't sent to it any more.
@@ -242,14 +264,14 @@ impl Shared {
     }
 }
 
-/// No options yet.
+/// Its options are how solid the windows are, applied in place.
 impl crate::modules::Module for Files {
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<Topic> = Some(Topic::Files);
     /// Files open in apps.
     const NEEDS_APPS: bool = true;
     type Sources = Sources;
-    type Config = ();
+    type Config = FilesLook;
 
     fn sources(env: &crate::modules::Env) -> Sources {
         let data_dirs = crate::data_dirs();
@@ -258,16 +280,29 @@ impl crate::modules::Module for Files {
         Sources { bus: Bus::Session, data_dirs, associations, runner, ui: env.ui.cloned() }
     }
 
-    fn config(_: &crate::config::Config) {}
+    fn config(config: &crate::config::Config) -> FilesLook {
+        config.files.look
+    }
 
-    fn start(ctx: &crate::modules::Context, sources: &Sources, (): &(), _: &[FeatureState]) -> Arc<Self> {
-        Self::start(
+    fn start(ctx: &crate::modules::Context, sources: &Sources, look: &FilesLook, _: &[FeatureState]) -> Arc<Self> {
+        let files = Self::start(
             sources.clone(),
             Arc::clone(&ctx.hub),
             Arc::clone(&ctx.logger),
             Arc::clone(&ctx.apps),
             &ctx.path_var,
-        )
+        );
+        files.set_look(*look);
+        files
+    }
+
+    fn reconfigure(&self, _: &FilesLook, look: &FilesLook, _: &[FeatureState]) -> crate::modules::Reconfigure {
+        self.set_look(*look);
+        crate::modules::Reconfigure::InPlace
+    }
+
+    fn send_state(&self, client: ClientId) {
+        Self::send_state(self, client);
     }
 
     fn client_gone(&self, client: ClientId) {
@@ -350,6 +385,21 @@ mod tests {
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
         assert!(watcher.try_recv().is_err(), "windows go only to Nova Files");
+    }
+
+    #[test]
+    fn subscribers_hear_how_solid_the_windows_are() {
+        let fixture = Fixture::new("look");
+        let (client, events, _stream) = fixture.client();
+        fixture.files.send_state(client);
+        assert_eq!(next_named(&events, "files_look", WAIT), json!({"frame": 0, "list": 0}));
+        fixture.files.set_look(FilesLook { frame: 0, list: 100 });
+        assert_eq!(next_named(&events, "files_look", WAIT), json!({"frame": 0, "list": 100}));
+        // The same look again tells nobody.
+        fixture.files.set_look(FilesLook { frame: 0, list: 100 });
+        fixture.files.send_state(client);
+        assert_eq!(next_named(&events, "files_look", WAIT), json!({"frame": 0, "list": 100}));
+        assert!(events.try_recv().is_err(), "one event per change, one per subscriber");
     }
 
     #[test]

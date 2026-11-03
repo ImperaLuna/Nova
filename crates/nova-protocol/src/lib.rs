@@ -150,6 +150,10 @@ pub enum Event {
     /// says why, for the window. Sent only to the client that opened the
     /// view; topic [`Topic::Files`].
     FilesClosed { view: u32, error: String },
+    /// How solid Nova Files' windows are (feature `files`), from
+    /// `config.toml`'s `[files]`. Topic [`Topic::Files`], sent right after
+    /// subscribing and whenever it changes.
+    FilesLook(FilesLook),
 }
 
 /// Groups of events a client can subscribe to.
@@ -206,6 +210,7 @@ impl Event {
             Event::Bluetooth(_) => Some(Topic::Bluetooth),
             Event::FilesWindow(_) => Some(Topic::Files),
             Event::FilesPage(_) | Event::FilesChanged { .. } | Event::FilesClosed { .. } => Some(Topic::Files),
+            Event::FilesLook(_) => Some(Topic::Files),
         }
     }
 }
@@ -1001,6 +1006,19 @@ pub struct FilesWindow {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub select: Vec<String>,
 }
+
+/// How solid Nova Files' window frame (the rows above the files and the
+/// sidebar) and its file list are, each a percentage from glass (0) to the
+/// theme's solid surfaces (100).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilesLook {
+    pub frame: u8,
+    pub list: u8,
+}
+
+/// The most solid a [`FilesLook`] part can be: the theme's solid surface.
+pub const FILES_SOLID_MAX: u8 = 100;
 
 /// The apps that can open a file (feature `files`), for its "Open with"
 /// menu: the answer to [`Command::FilesOpenWith`].
@@ -2796,6 +2814,7 @@ mod tests {
                 ],
             }),
             encode(Event::FilesClosed { view: 1, error: "/home/user/Pictures doesn't exist".into() }),
+            encode(Event::FilesLook(FilesLook { frame: 0, list: 100 })),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();

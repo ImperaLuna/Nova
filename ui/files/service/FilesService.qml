@@ -9,9 +9,15 @@ import "../../daemon/protocol.js" as Protocol
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default). The Nova Files
 // process (../../files.qml) and its windows get these here and never talk
-// to Daemon themselves.
+// to Daemon themselves. Also how solid the windows are, from
+// config.toml's [files].
 Singleton {
     id: root
+
+    // How solid the window frame and the file list are, each 0 (glass,
+    // also until novad says) to 1 (the theme's solid surfaces).
+    readonly property real frameSolid: (Daemon.filesLook?.frame ?? 0) / Protocol.FILES_SOLID_MAX
+    readonly property real listSolid: (Daemon.filesLook?.list ?? 0) / Protocol.FILES_SOLID_MAX
 
     // A window to open on `window.folder`, with `window.select` (absolute
     // paths in it, maybe none) selected.

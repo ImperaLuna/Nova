@@ -4,11 +4,15 @@ import QtQuick
 import "../theme"
 
 // Nova Files' file list: the column header (Name, then Modified, Type and
-// Size at their widths) over the folder's rows.
-Item {
+// Size at their widths) over the folder's rows, on its own glass or, as
+// `solid` (0..1) rises, the theme's solid list surface.
+Rectangle {
     id: list
 
+    property real solid: 0
     readonly property var columns: [qsTr("Modified"), qsTr("Type"), qsTr("Size")]
+
+    color: Tokens.mix(Tokens.glass, Tokens.filesSolidList, solid)
 
     component HeaderLabel: Text {
         font.family: Tokens.fontSans

@@ -689,6 +689,11 @@ QtObject {
     readonly property int filesHeaderHeight: 30
     readonly property list<int> filesColumns: [150, 110, 80]
     readonly property color filesFaint: alpha(fg, 0.45)
+    // Solid Nova Files ([files] in config.toml) ends at the theme's soft
+    // greys: the frame a step above bg, the file list at bg. On the way the
+    // raised rows fade into the frame.
+    readonly property color filesSolidFrame: tint(fg, 0.025)
+    readonly property color filesSolidList: bg
     // The small chevron beside New, Sort and View.
     readonly property int iconSizeMini: 12
     readonly property real filesChevronOpacity: 0.6
@@ -776,6 +781,13 @@ QtObject {
     readonly property int durationWallpaperHandOver: 1100
     // The cubic-bezier every panel motion uses (fast out, gentle stop).
     readonly property list<real> easing: [0.2, 0.8, 0.2, 1, 1, 1]
+
+    // `from` blended into `to` by `amount` (0 is `from`, 1 is `to`), alpha
+    // too, so glass can turn solid.
+    function mix(from: color, to: color, amount: real): color {
+        const lerp = (a, b) => a + (b - a) * amount;
+        return Qt.rgba(lerp(from.r, to.r), lerp(from.g, to.g), lerp(from.b, to.b), lerp(from.a, to.a));
+    }
 
     // `color` at `opacity` (0..1), whatever its own alpha.
     function alpha(color: color, opacity: real): color {

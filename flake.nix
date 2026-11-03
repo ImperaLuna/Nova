@@ -445,6 +445,15 @@
             touch $out
           '';
 
+          # The rules `nova setup` writes for Hyprland, against this Hyprland.
+          # It refuses to start as root, which a sandboxed build may look like.
+          hyprland-rules = pkgs.runCommand "nova-hyprland-rules" { nativeBuildInputs = [ pkgs.hyprland ]; } ''
+            export XDG_RUNTIME_DIR=$TMPDIR
+            Hyprland --i-am-really-stupid --verify-config -c ${./packaging/compositor/hyprland.conf} | tee log
+            grep -qx "config ok" log
+            touch $out
+          '';
+
           qmlformat = pkgs.runCommand "nova-qmlformat" { nativeBuildInputs = [ pkgs.qt6.qtdeclarative ]; } ''
             cp -r ${./ui} ui && cp -r ${./scripts} scripts && chmod -R u+w .
             patchShebangs scripts

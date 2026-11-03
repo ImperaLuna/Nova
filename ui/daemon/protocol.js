@@ -27,6 +27,9 @@ var FILES_MAX_VIEWS = 16;
 // novad refuses longer files_open paths.
 var FILES_PATH_MAX_BYTES = 4096;
 
+// A files_look part this high is fully solid; 0 is glass.
+var FILES_SOLID_MAX = 100;
+
 // Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.
 var RAW_BYTE_BASE = 63232;
 
@@ -137,6 +140,7 @@ var EVENT_FILES_WINDOW = "files_window";
 var EVENT_FILES_PAGE = "files_page";
 var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
+var EVENT_FILES_LOOK = "files_look";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
