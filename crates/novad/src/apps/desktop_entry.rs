@@ -195,6 +195,13 @@ pub struct Context<'a> {
 
 /// The `[Desktop Entry]` group's keys: `key` or `key[locale]` to its raw value.
 fn group(text: &str) -> HashMap<&str, &str> {
+    keys_of(text, GROUP)
+}
+
+/// The keys of the group headed `header` (like `[Desktop Entry]`), when
+/// it's the file's first: `key` or `key[locale]` to its raw value. Other
+/// files in the same format (thumbnailers) read theirs with it too.
+pub(crate) fn keys_of<'a>(text: &'a str, header: &str) -> HashMap<&'a str, &'a str> {
     let mut keys = HashMap::new();
     let mut inside = false;
     for line in text.lines() {
@@ -207,7 +214,7 @@ fn group(text: &str) -> HashMap<&str, &str> {
             if inside {
                 break;
             }
-            inside = line == GROUP;
+            inside = line == header;
             continue;
         }
         if !inside {
@@ -295,7 +302,7 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
 }
 
 /// A string value with its escapes (`\s`, `\n`, `\t`, `\r`, `\\`) undone.
-fn unescape(value: &str) -> String {
+pub(crate) fn unescape(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     let mut chars = value.chars();
     while let Some(c) = chars.next() {
@@ -321,7 +328,7 @@ fn unescape(value: &str) -> String {
 }
 
 /// A list value (`a;b;c;`), each item unescaped, empty ones dropped.
-fn list(value: &str) -> Vec<String> {
+pub(crate) fn list(value: &str) -> Vec<String> {
     let mut items = Vec::new();
     let mut item = String::new();
     let mut chars = value.chars();
@@ -343,14 +350,11 @@ fn list(value: &str) -> Vec<String> {
     items.into_iter().map(|item| unescape(item.trim())).filter(|item| !item.is_empty()).collect()
 }
 
-/// An `Exec` line, its string escapes already undone, as a program and its
-/// arguments: split at spaces outside double quotes, with `\"`, `` \` ``,
-/// `\$` and `\\` inside them, and field codes expanded. `%i` is the icon,
-/// `%c` the name and `%k` the file; file and URL codes are dropped, since the
-/// launcher opens the app without any, and the first one's place is kept
-/// for opening a file.
-fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<(Vec<String>, FileArg), String> {
-    // Each argument, and whether it was quoted: field codes don't apply there.
+/// An `Exec` line (its string escapes already undone) split into its
+/// arguments, each with whether it was quoted, where field codes don't
+/// apply: split at spaces outside double quotes, with `\"`, `` \` ``, `\$`
+/// and `\\` inside them. Thumbnailers' `Exec` lines split the same way.
+pub(crate) fn exec_words(line: &str) -> Result<Vec<(String, bool)>, String> {
     let mut words: Vec<(String, bool)> = Vec::new();
     let mut chars = line.chars();
     let mut word: Option<(String, bool)> = None;
@@ -381,7 +385,16 @@ fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<
         }
     }
     words.extend(word);
+    Ok(words)
+}
 
+/// An `Exec` line, its string escapes already undone, as a program and its
+/// arguments ([`exec_words`]), field codes expanded. `%i` is the icon,
+/// `%c` the name and `%k` the file; file and URL codes are dropped, since the
+/// launcher opens the app without any, and the first one's place is kept
+/// for opening a file.
+fn exec_argv(line: &str, name: &str, icon: Option<&str>, file: &Path) -> Result<(Vec<String>, FileArg), String> {
+    let words = exec_words(line)?;
     let mut argv = Vec::new();
     let mut file_arg: Option<FileArg> = None;
     for (word, quoted) in words {
