@@ -480,7 +480,11 @@ mod tests {
         let window = next_named(&dialogs, "files_window", WAIT);
         fixture.files.show(&fixture.path("Downloads"), &[]).unwrap();
         assert!(next_named(&windows, "files_window", WAIT)["picker"].is_null());
-        assert!(dialogs.try_recv().is_err(), "Nova Files' own windows don't go to the dialogs' process");
+        assert_eq!(
+            crate::hub::count_named(&dialogs, "files_window"),
+            0,
+            "Nova Files' own windows don't go to the dialogs' process"
+        );
         let report = nova_protocol::wire_text(fixture.dir.join("Downloads/report one.pdf"));
         fixture.files.pick(dialogs_client, picker_id(&window), &[report], None, false).unwrap();
         assert_eq!(replies.recv_timeout(WAIT).unwrap().0, RESPONSE_PICKED);

@@ -186,13 +186,42 @@ pub fn next_event(queue: &Receiver<Outgoing>, wait: std::time::Duration) -> serd
 /// others, like [`next_event`].
 #[cfg(test)]
 pub fn next_named(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Duration) -> serde_json::Value {
+    named_within(queue, name, wait).unwrap_or_else(|| panic!("no {name} event in time"))
+}
+
+/// The data of the next event called `name` within `wait`, skipping others,
+/// or None if none comes.
+#[cfg(test)]
+pub fn named_within(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Duration) -> Option<serde_json::Value> {
     let deadline = std::time::Instant::now() + wait;
     loop {
-        let event = next_event(queue, deadline.saturating_duration_since(std::time::Instant::now()));
-        if event["event"] == name {
-            return event["data"].clone();
+        let left = deadline.checked_duration_since(std::time::Instant::now())?;
+        match queue.recv_timeout(left) {
+            Ok(Outgoing::Line(line)) => {
+                let event: serde_json::Value = serde_json::from_str(&line).unwrap();
+                if event["event"] == name {
+                    return Some(event["data"].clone());
+                }
+            }
+            Ok(Outgoing::Flushed(_)) => {}
+            Err(_) => return None,
         }
     }
+}
+
+/// How many events called `name` a client's queue holds now, taking every
+/// queued event off. For a test that checks an event didn't reach a client:
+/// other events of its topics may well have (a watcher starting, an index
+/// built), so "nothing came" is the wrong question.
+#[cfg(test)]
+pub fn count_named(queue: &Receiver<Outgoing>, name: &str) -> usize {
+    queue
+        .try_iter()
+        .filter(|sent| {
+            matches!(sent, Outgoing::Line(line)
+                if serde_json::from_str::<serde_json::Value>(line).unwrap()["event"] == name)
+        })
+        .count()
 }
 
 #[cfg(test)]

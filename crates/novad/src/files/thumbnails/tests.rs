@@ -2,7 +2,7 @@
 //! runs, with a thumbnailer script that writes a real PNG.
 
 use super::*;
-use crate::hub::{ClientQueue, Outgoing, next_named};
+use crate::hub::{ClientQueue, Outgoing, named_within, next_named};
 use nova_protocol::{LogLevel, Topic};
 use nova_test_support::{TempDir, write_program};
 use serde_json::{Value, json};
@@ -178,7 +178,7 @@ fn what_scrolled_away_is_not_made_and_the_latest_goes_first() {
     let mut answered: Vec<String> = (0..4).map(|_| answer(&events)["path"].as_str().unwrap().to_string()).collect();
     answered.sort();
     assert_eq!(answered, [&photos[0], &photos[1], &photos[2], &photos[4]].map(String::clone));
-    assert!(next_named_within(&events, Duration::from_millis(300)).is_none(), "the cancelled one never comes");
+    assert!(named_within(&events, "files_thumbnail", Duration::from_millis(300)).is_none(), "the cancelled one never comes");
     let runs = std::fs::read_to_string(fixture.dir.join("runs")).unwrap();
     let started: Vec<&str> = runs.lines().skip(2).collect();
     assert_eq!(started, [photos[4].as_str(), photos[2].as_str()], "the latest asked for starts first");
@@ -202,24 +202,6 @@ fn a_client_waiting_for_too_many_has_its_oldest_answered_with_none() {
         fixture.thumbnails.request(client, &many(n)).unwrap();
     }
     assert_eq!(answer(&events), json!({"path": many(0)}), "the longest waiting goes");
-}
-
-/// The next `files_thumbnail` within `wait`, if one comes.
-fn next_named_within(events: &Receiver<Outgoing>, wait: Duration) -> Option<Value> {
-    let deadline = std::time::Instant::now() + wait;
-    while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
-        match events.recv_timeout(left) {
-            Ok(Outgoing::Line(line)) => {
-                let event: Value = serde_json::from_str(&line).unwrap();
-                if event["event"] == "files_thumbnail" {
-                    return Some(event["data"].clone());
-                }
-            }
-            Ok(_) => {}
-            Err(_) => return None,
-        }
-    }
-    None
 }
 
 #[test]
@@ -260,7 +242,7 @@ fn a_file_changed_while_its_thumbnail_is_made_is_made_again() {
     let made = answer(&events);
     assert_eq!(made["modified_ms"], modified_ms(&photo), "only the edited version's answer comes");
     assert!(made["thumbnail"].is_string());
-    assert!(next_named_within(&events, Duration::from_millis(300)).is_none());
+    assert!(named_within(&events, "files_thumbnail", Duration::from_millis(300)).is_none());
     assert_eq!(fixture.runs(), 2);
 }
 
