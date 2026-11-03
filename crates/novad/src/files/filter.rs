@@ -156,6 +156,7 @@ mod tests {
             dir,
             link: false,
             hidden: false,
+            archive: false,
             mime: mime.into(),
             size: None,
             modified_ms: None,

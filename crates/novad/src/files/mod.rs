@@ -72,20 +72,20 @@
 //! the same lock, so none is lost or sent twice. A process that detached as
 //! it quit, with windows asked for since, is followed by a new one.
 
+mod archive;
 #[cfg(test)]
 mod bus_fixture;
-mod archive;
 mod copying;
 mod drives;
 mod editing;
 mod file_manager1;
 mod filter;
 mod folder;
-mod picker;
-mod portal;
 mod history;
 mod launcher;
 mod measures;
+mod picker;
+mod portal;
 mod preview;
 mod properties;
 pub mod search;

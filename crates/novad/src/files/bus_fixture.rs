@@ -42,6 +42,8 @@ impl Fixture {
             search: crate::files::search::Sources::under(&dir),
             trash: None,
             mounts: dir.join("no-mountinfo"),
+            previews: None,
+            opened: None,
         };
         let apps = crate::apps::AppIndex::of(None, &logger);
         let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");
