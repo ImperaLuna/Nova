@@ -5,29 +5,39 @@ import "listing.js" as Listing
 
 // One folder as novad's folder view keeps it (files_open): `rows` holds
 // its entries in the view's order, filled page by page and kept current
-// from novad's changes, and opened again whenever `path`, the order or
-// `hidden` change, or novad comes back. The selection lives here too, by
-// name, so it stays on the same entries as rows come and go or the order
-// changes; `revision` moves on each change of it, for delegates to bind to.
+// from novad's changes, and opened again whenever `path`, the order,
+// `hidden` or `filter` (a file picker's: only the files it matches) change,
+// or novad comes back; no `path` (a page shows) reads nothing. The
+// selection lives here too, by name, so it stays on the same entries as
+// rows come and go or the order changes; `revision` moves on each change
+// of it, for delegates to bind to.
 QtObject {
     id: folder
 
     required property string path
-    // {key, descending}: key is a Protocol.FILE_SORT_*.
+    // {key, descending, mixed}: key is a Protocol.FILE_SORT_*; mixed
+    // lists folders among the files rather than first.
     property var sort: ({
             key: Protocol.FILE_SORT_NAME,
             descending: false
         })
     property bool hidden: false
+    // A file picker's filter ({name, globs, mimes}), or null for every file.
+    property var filter: null
 
     readonly property ListModel rows: ListModel {}
     // How many entries the folder holds, once every page is in.
     property int total: 0
+    // The first row's size (-1 for none): the biggest, biggest first.
+    property real firstSize: -1
     // The first page is in.
     property bool loaded: false
     // Why novad closed the view (the folder couldn't be read or went), or
     // empty while it's open.
     property string error: ""
+    // The archive the folder is inside, read-only; empty for a folder on
+    // disk.
+    property string archive: ""
 
     property int revision: 0
     property int selectedCount: 0
@@ -102,6 +112,21 @@ QtObject {
         _selectingAll = true;
     }
 
+    // The selected names, those still to come in too.
+    function selectedNames(): var {
+        return Object.keys(_selected);
+    }
+
+    // The listed row named `name`, or null.
+    function rowNamed(name: string): var {
+        for (let index = 0; index < rows.count; index++) {
+            const row = rows.get(index);
+            if (row.name === name)
+                return row;
+        }
+        return null;
+    }
+
     // The selected rows, in the list's order.
     function selectedRows(): var {
         const picked = [];
@@ -113,12 +138,19 @@ QtObject {
         return picked;
     }
 
+    // Reads the folder again (F5): novad sends its entries afresh, and the
+    // selection stays on the names still there.
+    function refresh() {
+        _open();
+    }
+
     function _open() {
-        if (!_wanted || !FilesService.connected)
+        // No path: the window shows a page, not a folder.
+        if (!_wanted || !FilesService.connected || path === "")
             return;
         error = "";
         const opening = ++_opening;
-        FilesService.open(view, path, sort.key, sort.descending, hidden, failure => {
+        FilesService.open(view, path, sort, hidden, filter, failure => {
             if (failure && opening === _opening) {
                 error = failure;
                 loaded = true;
@@ -155,6 +187,7 @@ QtObject {
             rows.clear();
             anchor = -1;
             error = "";
+            archive = page.archive ?? "";
             _seeking = found < 0 && selectedCount > 0;
         } else if (page.start < rows.count) {
             rows.remove(page.start, rows.count - page.start);
@@ -165,6 +198,7 @@ QtObject {
         }
         rows.append(page.entries.map(Listing.row));
         total = page.total;
+        _measureFirst();
         if (rows.count >= total)
             _keepListed();
         else if (_selectingAll)
@@ -201,6 +235,7 @@ QtObject {
             }
             anchor = Math.min(Listing.shifted(anchor, change), rows.count - 1);
         }
+        _measureFirst();
         const gone = Object.keys(moving);
         if (gone.length === 0)
             return;
@@ -218,11 +253,17 @@ QtObject {
         loaded = true;
     }
 
+    function _measureFirst() {
+        firstSize = rows.count > 0 ? rows.get(0).size : -1;
+    }
+
     function _clear() {
         rows.clear();
         total = 0;
+        firstSize = -1;
         anchor = -1;
         loaded = false;
+        archive = "";
         selectNames([]);
     }
 
@@ -230,10 +271,13 @@ QtObject {
     // under the new path while it's read.
     onPathChanged: {
         _clear();
+        if (path === "" && view !== 0 && FilesService.connected)
+            FilesService.close(view);
         _open();
     }
     onSortChanged: _open()
     onHiddenChanged: _open()
+    onFilterChanged: _open()
 
     Component.onCompleted: {
         view = FilesService.newView();

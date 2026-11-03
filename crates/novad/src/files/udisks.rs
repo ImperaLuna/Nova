@@ -330,7 +330,7 @@ impl Shared {
 
 /// How big the filesystem mounted at `mount` (wire text) is and how much of it is
 /// used, in bytes.
-fn usage(mount: &str) -> Option<(u64, u64)> {
+pub(super) fn usage(mount: &str) -> Option<(u64, u64)> {
     let path = CString::new(nova_protocol::wire_path(mount).into_os_string().into_vec()).ok()?;
     let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
     // SAFETY: `path` is a valid C string and `stats` is written in full

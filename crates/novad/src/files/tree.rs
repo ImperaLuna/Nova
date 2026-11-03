@@ -1,6 +1,5 @@
-//! The sidebar's folder tree (`files_tree`) and its places
-//! (`files_places`): the folders a window's sidebar shows, worked out here
-//! so the window only draws rows.
+//! The sidebar's folder tree (`files_tree`): the folders a window's
+//! sidebar shows, worked out here so the window only draws rows.
 //!
 //! The tree follows the window: it starts at Home (or at `/` for a folder
 //! outside Home, like the address bar) and is open down to the window's
@@ -22,10 +21,7 @@
 //! chevron.
 
 use super::folder;
-use nova_protocol::{
-    FILES_PATH_MAX_WIRE_BYTES, FILES_TRASH_PLACE, FILES_TREE_MAX_FOLDERS, FilePlace, FolderTree, PlaceKind, TreeRow,
-    wire_path, wire_text,
-};
+use nova_protocol::{FILES_PATH_MAX_WIRE_BYTES, FILES_TREE_MAX_FOLDERS, FolderTree, TreeRow, wire_path, wire_text};
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
@@ -50,10 +46,18 @@ pub fn tree(request: &Request, home: &Path) -> Result<FolderTree, String> {
             return Err(format!("more than {FILES_TREE_MAX_FOLDERS} folders opened or closed"));
         }
     }
-    let folder = resolve(request.folder, home)?;
-    if !folder.is_dir() {
-        return Err(format!("{} isn't a folder", folder.display()));
-    }
+    let asked = resolve(request.folder, home)?;
+    // A folder inside an archive shows in the tree as the folder holding
+    // the archive; the window still goes where it asked.
+    let folder = if asked.is_dir() {
+        asked.clone()
+    } else if let Some(parent) =
+        super::archive::Inside::of(&asked).and_then(|inside| inside.archive.parent().map(Path::to_path_buf))
+    {
+        parent
+    } else {
+        return Err(format!("{} isn't a folder", asked.display()));
+    };
     let root = if folder.starts_with(home) { home.to_path_buf() } else { PathBuf::from("/") };
     let tree = Tree {
         way: folder.ancestors().filter(|ancestor| ancestor.starts_with(&root)).map(Path::to_path_buf).collect(),
@@ -65,24 +69,7 @@ pub fn tree(request: &Request, home: &Path) -> Result<FolderTree, String> {
     let mut rows = Vec::new();
     let name = root.file_name().map_or_else(|| "/".into(), wire_text);
     tree.add(&root, name, 0, false, &mut rows);
-    Ok(FolderTree { folder: wire_text(&folder), rows })
-}
-
-/// The places that exist, in the sidebar's order: Home, then the user's
-/// folders from `user-dirs.dirs`, then the trash, which is always there.
-pub fn places(home: &Path, user_dir: impl Fn(&str, &str) -> PathBuf) -> Vec<FilePlace> {
-    let folders = [
-        (PlaceKind::Desktop, "DESKTOP", "Desktop"),
-        (PlaceKind::Documents, "DOCUMENTS", "Documents"),
-        (PlaceKind::Downloads, "DOWNLOAD", "Downloads"),
-        (PlaceKind::Pictures, "PICTURES", "Pictures"),
-    ];
-    std::iter::once((PlaceKind::Home, home.to_path_buf()))
-        .chain(folders.into_iter().map(|(kind, key, fallback)| (kind, user_dir(key, fallback))))
-        .filter(|(_, path)| path.is_dir())
-        .map(|(kind, path)| FilePlace { kind, path: wire_text(path) })
-        .chain(std::iter::once(FilePlace { kind: PlaceKind::Trash, path: FILES_TRASH_PLACE.into() }))
-        .collect()
+    Ok(FolderTree { folder: wire_text(&asked), rows })
 }
 
 /// A typed or sent folder as an absolute path: `~` is Home, a trailing
@@ -287,6 +274,17 @@ mod tests {
     }
 
     #[test]
+    fn a_folder_in_a_zip_goes_there_with_the_zips_folder_marked() {
+        let home = home("zip");
+        let zip = home.join("Documents/photos.zip");
+        crate::files::archive::tests::write_zip(&zip, &[("2025/a.png", "png")]);
+        let tree = ask(&home, &request(&zip.join("2025")), &[], &[], false).unwrap();
+        assert_eq!(tree.folder, zip.join("2025").to_str().unwrap());
+        assert!(shape(&tree).contains(&"1 Documents-".to_string()), "the tree goes to the zip's folder");
+        assert!(ask(&home, &request(&home.join("Documents/missing.zip")), &[], &[], false).is_err());
+    }
+
+    #[test]
     fn hidden_folders_show_everywhere_when_asked() {
         let home = home("hidden");
         let tree = ask(&home, &request(&home), &[], &[], true).unwrap();
@@ -331,14 +329,5 @@ mod tests {
         let inside = ask(&home, &row.path, &[], &[], false).unwrap();
         assert_eq!(inside.folder, wire_text(&raw));
         assert!(inside.rows.iter().any(|row| row.path == wire_text(&raw) && !row.leaf), "inside is seen");
-    }
-
-    #[test]
-    fn places_are_the_folders_that_exist() {
-        let home = home("places");
-        let places = places(&home, |_, fallback| home.join(fallback));
-        let kinds: Vec<_> = places.iter().map(|place| place.kind).collect();
-        assert_eq!(kinds, [PlaceKind::Home, PlaceKind::Documents, PlaceKind::Pictures, PlaceKind::Trash]);
-        assert_eq!(places[1].path, request(&home.join("Documents")));
     }
 }

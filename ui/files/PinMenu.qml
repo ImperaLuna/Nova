@@ -1,29 +1,31 @@
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
+import "home.js" as Home
+import "service"
 
-// A drive's right-click menu, at the pointer, over the whole window: a
-// click beside it closes it. Eject is only here, never a button on the
-// drive, so it can't be hit by accident; it shows for drives that can be
-// unplugged.
+// A folder's right-click menu in the sidebar or on the Home page, at the
+// pointer, over the whole window: "Pin to Quick access", or "Unpin from
+// Quick access" for one that's pinned, as Explorer words them. A click
+// beside it closes it.
 Item {
     id: menu
 
-    property var drive: null
+    // The folder it's for (absolute); "" while it's closed.
+    property string folder: ""
+    readonly property bool pinned: Home.pinnedIn(FilesService.places, folder)
 
-    signal ejectChosen(var drive)
-
-    function open(drive: var, at: point) {
-        menu.drive = drive;
+    function open(folder: string, at: point) {
+        menu.folder = folder;
         card.x = Math.min(at.x, width - card.width);
         card.y = Math.min(at.y, height - card.height);
     }
 
     function close() {
-        drive = null;
+        folder = "";
     }
 
-    visible: drive !== null && drive.removable
+    visible: folder !== ""
 
     MouseArea {
         anchors.fill: parent
@@ -50,7 +52,7 @@ Item {
                 width: parent.width
                 height: Tokens.menuRowHeight
                 radius: Tokens.menuRowRadius
-                color: ejectHover.hovered ? Tokens.selected : "transparent"
+                color: pinHover.hovered ? Tokens.selected : "transparent"
 
                 Row {
                     anchors.left: parent.left
@@ -60,7 +62,7 @@ Item {
 
                     LineIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        path: Icons.EJECT
+                        path: Icons.PIN
                         color: Tokens.filesFaint
                     }
                     Text {
@@ -68,18 +70,17 @@ Item {
                         font.family: Tokens.fontSans
                         font.pixelSize: Tokens.fontSize
                         color: Tokens.fg
-                        text: qsTr("Eject")
+                        text: menu.pinned ? qsTr("Unpin from Quick access") : qsTr("Pin to Quick access")
                     }
                 }
 
                 HoverHandler {
-                    id: ejectHover
+                    id: pinHover
                 }
                 TapHandler {
                     onTapped: {
-                        const drive = menu.drive;
+                        FilesService.pin(menu.folder, !menu.pinned);
                         menu.close();
-                        menu.ejectChosen(drive);
                     }
                 }
             }

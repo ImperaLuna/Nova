@@ -4,7 +4,7 @@ import "../theme/icons.js" as Icons
 
 // A button of Nova Files' navigation and command rows: an icon, and for
 // the ones that open a menu a label and a small chevron. Dimmed while it
-// can't do anything yet.
+// can't do anything yet; filled while `checked`, for one that stays on.
 Rectangle {
     id: button
 
@@ -13,13 +13,14 @@ Rectangle {
     property bool menu: false
     // Drawn raised, like New, the row's first action.
     property bool raised: false
+    property bool checked: false
     signal clicked
 
     implicitWidth: label === "" ? Tokens.filesButtonSize : content.implicitWidth + 2 * Tokens.rowInset
     implicitHeight: Tokens.filesButtonSize
     radius: Tokens.radiusControl
     opacity: enabled ? 1 : Tokens.dimOpacity
-    color: hover.hovered && enabled ? Tokens.hover : raised ? Tokens.surfaceRaised : "transparent"
+    color: checked ? Tokens.selected : hover.hovered && enabled ? Tokens.hover : raised ? Tokens.surfaceRaised : "transparent"
 
     Behavior on color {
         ColorAnimation {

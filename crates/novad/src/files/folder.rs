@@ -5,11 +5,16 @@
 //! operations the UI applies to its list ([`Listing::apply`]), so the UI
 //! never sorts or searches.
 //!
+//! Folders have no size of their own: the sizes counted for them
+//! ([`super::sizes`]) are kept here ([`Listing::counted`]), so an entry
+//! read again keeps its folder size until the next count.
+//!
 //! The order is Windows Explorer's: folders first, then by the sort key,
 //! ties by name; names compare case aside and with numbers by value
 //! ([`natural`]). It's a total order (raw names break the last ties), so
 //! every entry has exactly one place and a binary search finds it.
 
+use crate::files::archive;
 use crate::mime::MimeDb;
 use nova_protocol::{FileEntry, FileSort, FileSortKey, FolderChange};
 use std::cmp::Ordering;
@@ -38,6 +43,7 @@ pub fn read_entry(folder: &Path, name: &OsStr, mime: &MimeDb) -> Option<FileEntr
             dir: false,
             link,
             hidden,
+            archive: false,
             mime: BROKEN_LINK_MIME.into(),
             size: None,
             modified_ms: None,
@@ -46,6 +52,7 @@ pub fn read_entry(folder: &Path, name: &OsStr, mime: &MimeDb) -> Option<FileEntr
     let dir = target.is_dir();
     Some(FileEntry {
         mime: mime.type_by_name(&name.to_string_lossy(), &target).to_owned(),
+        archive: !dir && archive::Kind::of_name(name).is_some(),
         name: wire,
         dir,
         link,
@@ -87,9 +94,27 @@ pub fn is_hidden(name: &str) -> bool {
     name.starts_with('.')
 }
 
+/// `st_blocks` counts in these, whatever the file system's block size.
+const STAT_BLOCK: u64 = 512;
+
+/// What an item takes on its drive, in bytes.
+pub fn disk_bytes(metadata: &Metadata) -> u64 {
+    metadata.blocks().saturating_mul(STAT_BLOCK)
+}
+
+/// A time in milliseconds since 1970, when it's after then.
+pub fn system_time_millis(time: std::time::SystemTime) -> Option<i64> {
+    let since = time.duration_since(std::time::SystemTime::UNIX_EPOCH).ok()?;
+    i64::try_from(since.as_millis()).ok()
+}
+
 fn modified_ms(metadata: &Metadata) -> Option<i64> {
-    let seconds = metadata.mtime().checked_mul(1000)?;
-    seconds.checked_add(metadata.mtime_nsec() / 1_000_000)
+    millis(metadata.mtime(), metadata.mtime_nsec())
+}
+
+/// A file time (seconds and nanoseconds since 1970) in milliseconds.
+pub fn millis(seconds: i64, nanoseconds: i64) -> Option<i64> {
+    seconds.checked_mul(1000)?.checked_add(nanoseconds / 1_000_000)
 }
 
 /// A folder's entries in a view's order, and where each one is.
@@ -103,6 +128,8 @@ pub struct Listing {
     /// that look alike are two keys), to find it again once it changed.
     /// Only the sort fields, so an entry isn't kept twice.
     by_name: HashMap<String, Place>,
+    /// The sizes counted for its folders, by name.
+    counted: HashMap<String, u64>,
 }
 
 /// What an entry's place in the order depends on, besides its name.
@@ -159,17 +186,40 @@ impl Listing {
     pub fn new(sort: FileSort, hidden: bool, mut entries: Vec<FileEntry>) -> Self {
         entries.sort_by(|a, b| order(sort, a, b));
         let by_name = entries.iter().map(|entry| (entry.name.clone(), Place::of(sort, entry).owned())).collect();
-        Self { sort, hidden, entries, by_name }
+        Self { sort, hidden, entries, by_name, counted: HashMap::new() }
     }
 
     pub fn entries(&self) -> &[FileEntry] {
         &self.entries
     }
 
+    /// The folder `name` (wire text) holds `size` bytes, or has no size to
+    /// show (`None`: it's another drive now). Returns the changes that
+    /// show it, none when it's no longer a folder here.
+    pub fn counted(&mut self, name: &str, size: Option<u64>) -> Vec<FolderChange> {
+        let Some(index) = self.by_name.get(name).map(|place| self.place(name, place.borrowed())) else {
+            return Vec::new();
+        };
+        let entry = &self.entries[index];
+        if !takes_size(entry) {
+            return Vec::new();
+        }
+        let entry = FileEntry { size, ..entry.clone() };
+        match size {
+            Some(size) => self.counted.insert(name.to_owned(), size),
+            None => self.counted.remove(name),
+        };
+        self.apply(name, Some(entry))
+    }
+
     /// The entry `name` (wire text) is now `now` (`None`: gone). Returns the changes
     /// that take the view's list there, none when it looks the same.
     pub fn apply(&mut self, name: &str, now: Option<FileEntry>) -> Vec<FolderChange> {
-        let now = now.filter(|entry| self.hidden || !entry.hidden);
+        let mut now = now.filter(|entry| self.hidden || !entry.hidden);
+        match now.as_mut() {
+            Some(entry) if takes_size(entry) => fill_size(&self.counted, entry),
+            _ => drop(self.counted.remove(name)),
+        }
         let before = self.by_name.get(name).map(|place| self.place(name, place.borrowed()));
         match (before, now) {
             (None, None) => Vec::new(),
@@ -217,6 +267,20 @@ impl Listing {
     }
 }
 
+/// A folder whose size is counted: not a link to one, whose files are
+/// counted where they are.
+pub fn takes_size(entry: &FileEntry) -> bool {
+    entry.dir && !entry.link
+}
+
+/// Gives the folder `entry` the size counted for it, if any, while it has
+/// none of its own.
+fn fill_size(counted: &HashMap<String, u64>, entry: &mut FileEntry) {
+    if takes_size(entry) && entry.size.is_none() {
+        entry.size = counted.get(&entry.name).copied();
+    }
+}
+
 /// An index on the wire. A folder with more than `u32::MAX` entries can't
 /// be read into memory, let alone listed.
 fn wire_index(index: usize) -> u32 {
@@ -245,7 +309,8 @@ fn compare(sort: FileSort, (a_name, a): (&str, Place<&str>), (b_name, b): (&str,
         (true, _) => by_key.reverse().then(by_name),
         (false, _) => by_key.then(by_name),
     };
-    b.dir.cmp(&a.dir).then(within).then_with(|| a_name.cmp(b_name))
+    let folders_first = if sort.mixed { Ordering::Equal } else { b.dir.cmp(&a.dir) };
+    folders_first.then(within).then_with(|| a_name.cmp(b_name))
 }
 
 /// Names the way people read them: case aside, and runs of digits by their
@@ -296,6 +361,7 @@ mod tests {
             dir: false,
             link: false,
             hidden: is_hidden(name),
+            archive: false,
             mime: "text/plain".into(),
             size: Some(size),
             modified_ms: Some(0),
@@ -310,7 +376,8 @@ mod tests {
         listing.entries().iter().map(|entry| entry.name.as_str()).collect()
     }
 
-    const BY_NAME: FileSort = FileSort { key: FileSortKey::Name, descending: false };
+    const BY_NAME: FileSort = FileSort { key: FileSortKey::Name, descending: false, mixed: false };
+    const BIGGEST_FIRST: FileSort = FileSort { key: FileSortKey::Size, descending: true, mixed: true };
 
     #[test]
     fn names_compare_case_aside_and_numbers_by_value() {
@@ -324,7 +391,7 @@ mod tests {
         let entries = vec![file("b.txt", 5), folder("Zeta"), file("a.txt", 9), folder("alpha")];
         let listing = Listing::new(BY_NAME, false, entries.clone());
         assert_eq!(names(&listing), ["alpha", "Zeta", "a.txt", "b.txt"]);
-        let by_size = FileSort { key: FileSortKey::Size, descending: true };
+        let by_size = FileSort { key: FileSortKey::Size, descending: true, mixed: false };
         let listing = Listing::new(by_size, false, entries);
         assert_eq!(names(&listing), ["alpha", "Zeta", "a.txt", "b.txt"]);
     }
@@ -333,7 +400,7 @@ mod tests {
     /// listing's own list.
     #[test]
     fn changes_replay_to_the_same_list() {
-        let by_size = FileSort { key: FileSortKey::Size, descending: false };
+        let by_size = FileSort { key: FileSortKey::Size, descending: false, mixed: false };
         let mut listing = Listing::new(by_size, false, vec![file("a", 1), file("b", 2), file("c", 3)]);
         let mut copy = listing.entries().to_vec();
         let steps = [
@@ -363,6 +430,40 @@ mod tests {
         // New, unchanged, moved, changed in place, gone, hidden, never there.
         assert_eq!(counts, [1, 0, 2, 1, 1, 0, 0]);
         assert_eq!(names(&listing), ["b", "c", "a"]);
+    }
+
+    /// What uses space: folders take their counted size and sit among the
+    /// files, biggest first; one not counted yet goes last.
+    #[test]
+    fn counted_folders_sort_among_files_biggest_first() {
+        let entries = vec![file("movie.mkv", 50), folder("Games"), folder("Notes"), file("a.txt", 1)];
+        let mut listing = Listing::new(BIGGEST_FIRST, false, entries);
+        assert_eq!(names(&listing), ["movie.mkv", "a.txt", "Games", "Notes"]);
+        let changes = listing.counted("Games", Some(900));
+        assert_eq!(changes.len(), 2, "moved to the top: {changes:?}");
+        listing.counted("Notes", Some(10));
+        assert_eq!(names(&listing), ["Games", "movie.mkv", "Notes", "a.txt"]);
+        assert!(listing.counted("a.txt", Some(5)).is_empty(), "a file has its own size");
+        assert!(listing.counted("gone", Some(5)).is_empty());
+    }
+
+    /// A folder read again (its entry changed) keeps its counted size, and
+    /// one that goes takes it along.
+    #[test]
+    fn a_folder_read_again_keeps_its_size() {
+        let mut listing = Listing::new(BY_NAME, false, vec![folder("Games")]);
+        listing.counted("Games", Some(900));
+        assert!(listing.apply("Games", Some(folder("Games"))).is_empty());
+        assert_eq!(listing.entries()[0].size, Some(900));
+        listing.apply("Games", None);
+        listing.apply("Games", Some(folder("Games")));
+        assert_eq!(listing.entries()[0].size, None);
+        listing.counted("Games", Some(900));
+        assert_eq!(listing.counted("Games", None).len(), 1, "a drive mounted on it now");
+        assert!(listing.apply("Games", Some(folder("Games"))).is_empty(), "and it stays without a size");
+        let link = FileEntry { link: true, ..folder("Shortcut") };
+        listing.apply("Shortcut", Some(link));
+        assert!(listing.counted("Shortcut", Some(5)).is_empty(), "a link's folder is counted where it is");
     }
 
     #[test]

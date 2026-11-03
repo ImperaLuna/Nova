@@ -3,18 +3,24 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
+import "../files/listing.js" as Listing
+import "../files/paths.js" as Paths
 
 // One row in the launcher's list, an app or what another provider found:
 // its icon, its name (the letters a search matched in the accent) and what
 // it is, dimmer. Hovering an app shows a pin button, which stays lit while
-// the app is pinned; the selected row shows
+// the app is pinned. A file or folder (the Files mode) shows its type's line
+// icon and the folder it's in, fainter when it's hidden, and on hover a
+// button that shows it in its folder. The selected row shows
 // ↵. The list draws the highlight behind it; while the row launches it
 // turns the accent and the row's text turns to match.
 Item {
     id: row
 
-    // A launcher.js row: {provider, id, name, runs, description, icon}.
+    // A launcher.js row: {provider, id, name, runs, description, icon, file}.
     required property var app
+    // A file or folder: novad's LauncherFile for it, else null.
+    readonly property var file: app.file ?? null
     property string iconSource: ""
     property bool selected: false
     // Only apps can be pinned.
@@ -27,8 +33,9 @@ Item {
     signal hovered(point at)
     signal clicked
     signal pinClicked
+    signal showInFolderClicked
 
-    readonly property color ink: launching ? Tokens.onAccent : Tokens.fg
+    readonly property color ink: launching ? Tokens.onAccent : file?.hidden ? Tokens.filesFaint : Tokens.fg
     readonly property color dim: launching ? Tokens.onAccent : Tokens.fgDim
 
     implicitHeight: Tokens.launcherRowHeight
@@ -42,13 +49,28 @@ Item {
         onClicked: row.clicked()
     }
 
-    AppIcon {
+    Item {
         id: icon
         anchors.verticalCenter: parent.verticalCenter
         x: Tokens.rowInset
-        appId: row.app.id
-        name: row.app.name
-        source: row.iconSource
+        width: Tokens.launcherRowIcon
+        height: Tokens.launcherRowIcon
+
+        AppIcon {
+            visible: row.file === null
+            appId: row.app.id
+            name: row.app.name
+            source: row.iconSource
+        }
+
+        LineIcon {
+            anchors.centerIn: parent
+            visible: row.file !== null
+            size: Tokens.iconSizeMenu
+            path: row.file ? Listing.icon(row.file) : ""
+            color: row.launching ? Tokens.onAccent : row.file?.dir ? Tokens.filesFolder : Tokens.fgDim
+            opacity: row.file?.hidden ? Tokens.filesHiddenIconOpacity : 1
+        }
     }
 
     Row {
@@ -78,7 +100,7 @@ Item {
                     font.weight: modelData.matched ? Tokens.weightTitle : Tokens.weightLabel
                     color: modelData.matched && !row.launching ? Tokens.primary : row.ink
                     textFormat: Text.PlainText
-                    text: modelData.text
+                    text: row.file ? Paths.shown(modelData.text) : modelData.text
                 }
             }
         }
@@ -92,7 +114,7 @@ Item {
             color: row.dim
             elide: Text.ElideRight
             textFormat: Text.PlainText
-            text: row.app.description
+            text: row.file ? Paths.shown(row.app.description) : row.app.description
         }
     }
 
@@ -131,6 +153,37 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: row.pinClicked()
+            }
+        }
+
+        Rectangle {
+            id: folderButton
+            objectName: "showInFolder"
+            visible: row.file !== null
+            width: Tokens.pinButtonSize
+            height: Tokens.pinButtonSize
+            radius: height / 2
+            color: folderMouse.containsMouse ? Tokens.hover : "transparent"
+            opacity: !row.launching && (mouse.containsMouse || folderMouse.containsMouse) ? 1 : 0
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: Tokens.durationFast
+                }
+            }
+
+            LineIcon {
+                anchors.centerIn: parent
+                size: Tokens.iconSizeSmall
+                path: Icons.FOLDER
+                color: folderMouse.containsMouse ? Tokens.fg : Tokens.fgDim
+            }
+
+            MouseArea {
+                id: folderMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: row.showInFolderClicked()
             }
         }
 

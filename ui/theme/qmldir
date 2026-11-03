@@ -7,4 +7,5 @@ GlassBackdrop 1.0 GlassBackdrop.qml
 GlassShadow 1.0 GlassShadow.qml
 GlassTint 1.0 GlassTint.qml
 LineIcon 1.0 LineIcon.qml
+Segments 1.0 Segments.qml
 Spinner 1.0 Spinner.qml

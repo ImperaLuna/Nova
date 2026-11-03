@@ -42,17 +42,18 @@ pub async fn claim(connection: &Connection, name: &'static str) -> zbus::Result<
     connection.request_name_with_flags(name, RequestNameFlags::empty()).await
 }
 
-/// Ends a service's loop: set once, and wakes the loop if it's waiting.
+/// Ends services' loops: set once, and wakes every loop waiting on it.
 #[derive(Default)]
 pub struct Stop {
     stopped: AtomicBool,
-    waker: Mutex<Option<Waker>>,
+    /// Every task waiting for it: one stop can end several services.
+    wakers: Mutex<Vec<Waker>>,
 }
 
 impl Stop {
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::SeqCst);
-        if let Some(waker) = lock(&self.waker).take() {
+        for waker in std::mem::take(&mut *lock(&self.wakers)) {
             waker.wake();
         }
     }
@@ -64,7 +65,11 @@ impl Stop {
     /// Ready once stopped; otherwise `cx` is woken by `stop`.
     pub fn poll(&self, cx: &Context<'_>) -> Poll<()> {
         // Stored before the check, so a stop in between still wakes us.
-        *lock(&self.waker) = Some(cx.waker().clone());
+        let mut wakers = lock(&self.wakers);
+        if !wakers.iter().any(|waker| waker.will_wake(cx.waker())) {
+            wakers.push(cx.waker().clone());
+        }
+        drop(wakers);
         if self.stopped() { Poll::Ready(()) } else { Poll::Pending }
     }
 }
@@ -134,6 +139,32 @@ mod test_bus {
         fn drop(&mut self) {
             let _ = self.bus.kill();
             let _ = self.bus.wait();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Stop;
+    use std::sync::Arc;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn one_stop_ends_every_loop_waiting_on_it() {
+        let stop = Arc::new(Stop::default());
+        let (ended, ends) = mpsc::channel();
+        for _ in 0..2 {
+            let (stop, ended) = (Arc::clone(&stop), ended.clone());
+            std::thread::spawn(move || {
+                zbus::block_on(std::future::poll_fn(|cx| stop.poll(cx)));
+                let _ = ended.send(());
+            });
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        stop.stop();
+        for _ in 0..2 {
+            ends.recv_timeout(Duration::from_secs(5)).unwrap();
         }
     }
 }

@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import "../theme"
 
 // A row of tabs, one of them picked: `options` are {key, label}, some with
 // an `icon` (an Icons path, its solid parts as `fill`) before the label.

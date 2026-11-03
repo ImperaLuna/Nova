@@ -1,7 +1,8 @@
 .pragma library
 
 // Sizes in bytes as people read them, shared by every list that shows one
-// (quick settings' resources and network pages, Nova Files' Size column).
+// (quick settings' resources and network pages, Nova Files' Size column
+// and drives).
 
 // A size in bytes, short: "9.4G", "780M", "42K". One decimal under 10.
 function shortBytes(bytes) {
@@ -22,3 +23,4 @@ function bytes(bytes) {
     var unit = short.slice(-1);
     return short.slice(0, -1) + " " + (unit === "B" ? "B" : unit + "B");
 }
+
