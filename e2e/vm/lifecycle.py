@@ -109,10 +109,14 @@ QT_FRAME = re.compile(r"syncAndRender: frame rendered in (\d+)ms.*\bsync=(\d+), 
 # How long the panel may go on drawing after its pill logs that it opened or
 # closed. The longest animation, the meters filling, ends at
 # Tokens.durationPanel * 0.6 + Tokens.durationFill (750 ms) after opening;
-# the rest is room for software rendering's late last frame.
+# the rest is room for software rendering's late last frame. Counted on the
+# UI's drawing time: a stall between frames (LATE_GAP_MS) is the busy runner's,
+# not the panel's, so it doesn't use up the budget (IMP-326).
 MORPH_DRAWS_FOR = dt.timedelta(milliseconds=1200)
 # The VM's outputs refresh at 60 Hz, for the frames report.
 REFRESH_HZ = 60
+# Frames further apart than two refreshes came late.
+LATE_GAP_MS = 2000 / REFRESH_HZ
 # Frames a surface may draw beyond one per frame callback the compositor sent
 # it: the first, which the click starts, and one whose callback was asked for
 # before the log was followed. Counted per callback rather than per refresh:
@@ -561,12 +565,22 @@ def assert_idle(what: str) -> None:
         raise AssertionError(f"the UI kept drawing {what}: commits per {IDLE_SECS} s: {counts}")
 
 
+def drawing_ms(every_frame: list[float], until: float) -> float:
+    """How long the UI spent drawing from the first of `every_frame` (each
+    surface's commit times, sorted, in ms) to `until`: the time between
+    frames, less whatever a gap ran past LATE_GAP_MS. A loaded runner stalls
+    the VM for hundreds of ms between frames; an animation that runs on
+    draws on time, so its whole length still counts."""
+    shown = [ms for ms in every_frame if ms <= until]
+    return sum(min(b - a, LATE_GAP_MS) for a, b in itertools.pairwise(shown))
+
+
 def morph_frames(what: str, logged: str) -> None:
     """Opens or closes the panel by clicking its pill until it logs
     `logged`, waits for the UI to stop drawing, and checks the frames it drew
     after that line: on at most MORPH_SURFACES surfaces, at most
     one per frame callback (FRAMES_BEYOND_CALLBACKS), all within
-    MORPH_DRAWS_FOR. Prints how
+    MORPH_DRAWS_FOR of drawing time (drawing_ms). Prints how
     far apart they came (the frame time a user sees) and Qt's own time per
     frame; software rendering makes those a trend to read, not something to
     fail on."""
@@ -610,7 +624,7 @@ def morph_frames(what: str, logged: str) -> None:
     print(f"panel {what}: frames per surface:")
     for surface, times in frames.items():
         gaps = [b - a for a, b in itertools.pairwise(times)]
-        late = sum(gap > 2000 / REFRESH_HZ for gap in gaps)
+        late = sum(gap > LATE_GAP_MS for gap in gaps)
         timing = f", {statistics.median(gaps):.1f} ms apart (longest {max(gaps):.1f} ms, {late} late)" if gaps else ""
         print(f"  wl_surface#{surface}: {len(times)} frames over {times[-1] - times[0]:.0f} ms{timing}")
     # `just frames`'s report of the same frames (ui/stage/FrameLog.qml): it
@@ -629,10 +643,13 @@ def morph_frames(what: str, logged: str) -> None:
     assert len(frames) <= MORPH_SURFACES, f"{len(frames)} surfaces drew after the panel {what}, at most {MORPH_SURFACES} may"
     budget_ms = MORPH_DRAWS_FOR / dt.timedelta(milliseconds=1)
     # From the first frame any surface drew, so one that starts late counts.
-    first = min(times[0] for times in frames.values())
+    every_frame = sorted(ms for times in frames.values() for ms in times)
     for surface, times in frames.items():
-        drew_for = times[-1] - first
-        assert drew_for <= budget_ms, f"wl_surface#{surface} drew until {drew_for:.0f} ms after the panel {what}'s first frame, at most {budget_ms:.0f} ms"
+        drew_for = drawing_ms(every_frame, times[-1])
+        assert drew_for <= budget_ms, (
+            f"wl_surface#{surface} drew for {drew_for:.0f} ms (stalls left out) until {times[-1] - every_frame[0]:.0f} ms "
+            f"after the panel {what}'s first frame, at most {budget_ms:.0f} ms"
+        )
         sent = callbacks.get(surface, 0)
         assert len(times) <= sent + FRAMES_BEYOND_CALLBACKS, f"wl_surface#{surface} drew {len(times)} frames after the panel {what} but was sent {sent} frame callbacks: it drew without waiting for them"
 
