@@ -122,6 +122,7 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("Answers to a name clash (ClashAnswer).", "CLASH", names_of::<ClashAnswer>()),
         Group::new("What files_undo and files_redo undo and redo (FileStep).", "FILE_STEP", names_of::<FileStep>()),
         Group::new("What the preview pane shows (FilePreview).", "PREVIEW", tagged_names_of::<FilePreview>("kind")),
+        Group::new("What a file picker picks (PickMode).", "PICK", names_of::<PickMode>()),
     ]
 }
 
@@ -168,8 +169,11 @@ fn limits() -> [(&'static str, u64, &'static str); 15] {
 }
 
 /// Fixed wire strings the UI compares with, as `(name, value, comment)`.
-fn texts() -> [(&'static str, &'static str, &'static str); 1] {
-    [("FILES_TRASH_PLACE", FILES_TRASH_PLACE, "The trash place's path in files_places: the trash, not a folder.")]
+fn texts() -> [(&'static str, &'static str, &'static str); 2] {
+    [
+        ("FILES_TRASH_PLACE", FILES_TRASH_PLACE, "The trash place's path in files_places: the trash, not a folder."),
+        ("FILES_PICK_EXISTS", FILES_PICK_EXISTS, "files_pick's error for a save over a file that's there."),
+    ]
 }
 
 /// `"focus_workspace"` -> `FOCUS_WORKSPACE`, `"ai-usage"` -> `AI_USAGE`.

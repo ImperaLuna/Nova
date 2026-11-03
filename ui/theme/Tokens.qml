@@ -834,6 +834,10 @@ QtObject {
     readonly property int filesPreviewNameLines: 3
     readonly property int filesPreviewDelay: 120
     readonly property int filesPreviewSlow: 400
+    // A Nova Files window as an app's Open or Save dialog: the bar under
+    // the list with the name field, the file type button (its menu opens
+    // upward) and the answers.
+    readonly property int filesPickerFilterWidth: 220
 
     // Type
     readonly property string fontSans: "Inter"

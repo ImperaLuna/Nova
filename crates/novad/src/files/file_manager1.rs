@@ -93,70 +93,15 @@ impl Server {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::files::{Files, Sources};
-    use crate::hub::{ClientQueue, Hub, Outgoing, next_named};
-    use crate::logger::Logger;
-    use crate::session_bus::{Bus, TestBus};
-    use nova_protocol::LogLevel;
-    use nova_test_support::{TempDir, wait_until};
+    use crate::files::bus_fixture::{Fixture, WAIT};
+    use crate::hub::next_named;
+    use nova_test_support::wait_until;
     use serde_json::json;
-    use std::os::unix::net::UnixStream;
-    use std::sync::mpsc::Receiver;
 
-    const WAIT: Duration = Duration::from_secs(5);
-
-    /// A private bus, Files serving on it, and a folder of things to show.
-    struct Fixture {
-        dir: TempDir,
-        bus: TestBus,
-        hub: Arc<Hub>,
-        files: Arc<Files>,
-    }
-
-    impl Fixture {
-        fn new(name: &str) -> Self {
-            let dir = TempDir::new(&format!("file-manager1-{name}"));
-            std::fs::create_dir_all(dir.join("Downloads")).unwrap();
-            std::fs::write(dir.join("Downloads/report one.pdf"), b"").unwrap();
-            let bus = TestBus::start(&dir.join("bus"));
-            let hub = Arc::new(Hub::default());
-            let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
-            let sources = Sources {
-                bus: Bus::Address(bus.address.clone()),
-                udisks: Bus::Address(bus.address.clone()),
-                data_dirs: vec![],
-                associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
-                runner: crate::apps::launch::Runner::Direct,
-                home: dir.to_path_buf(),
-                ui: None,
-                search: crate::files::search::Sources::under(&dir),
-                trash: None,
-                mounts: dir.join("no-mountinfo"),
-                previews: None,
-                opened: None,
-            };
-            let apps = crate::apps::AppIndex::of(None, &logger);
-            let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");
-            Self { dir, bus, hub, files }
-        }
-
-        /// The Nova Files process's connection, attached.
-        fn nova_files(&self) -> (Receiver<Outgoing>, UnixStream) {
-            let (stream, ours) = UnixStream::pair().unwrap();
-            let (queue, outgoing) = ClientQueue::new(&ours).unwrap();
-            self.files.attach(self.hub.register(queue), true);
-            (outgoing, stream)
-        }
-
-        /// An app calling `method` with `uris`, as Firefox's "Show in folder" does.
-        fn call(&self, method: &str, uris: &[String]) -> zbus::Result<zbus::Message> {
-            let app = self.bus.connect();
-            zbus::block_on(app.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), method, &(uris, "")))
-        }
-
-        fn path(&self, relative: &str) -> String {
-            self.dir.join(relative).display().to_string()
-        }
+    /// An app calling `method` with `uris`, as Firefox's "Show in folder" does.
+    fn call(fixture: &Fixture, method: &str, uris: &[String]) -> zbus::Result<zbus::Message> {
+        let app = fixture.bus.connect();
+        zbus::block_on(app.call_method(Some(BUS_NAME), PATH, Some(BUS_NAME), method, &(uris, "")))
     }
 
     #[test]
@@ -164,7 +109,7 @@ mod tests {
         let fixture = Fixture::new("items");
         let (nova_files, _stream) = fixture.nova_files();
         let report = format!("file://{}/report%20one.pdf", fixture.path("Downloads"));
-        fixture.call("ShowItems", &[report]).unwrap();
+        call(&fixture, "ShowItems", &[report]).unwrap();
         let window = next_named(&nova_files, "files_window", WAIT);
         let expected =
             json!({"folder": fixture.path("Downloads"), "select": [fixture.path("Downloads/report one.pdf")]});
@@ -175,19 +120,19 @@ mod tests {
     fn show_folders_opens_each_folder() {
         let fixture = Fixture::new("folders");
         let (nova_files, _stream) = fixture.nova_files();
-        fixture.call("ShowFolders", &[format!("file://{}", fixture.path("Downloads"))]).unwrap();
+        call(&fixture, "ShowFolders", &[format!("file://{}", fixture.path("Downloads"))]).unwrap();
         assert_eq!(next_named(&nova_files, "files_window", WAIT), json!({"folder": fixture.path("Downloads")}));
     }
 
     #[test]
     fn what_isnt_a_local_folder_is_refused() {
         let fixture = Fixture::new("refused");
-        let error = fixture.call("ShowFolders", &["https://example.com/".into()]).unwrap_err();
+        let error = call(&fixture, "ShowFolders", &["https://example.com/".into()]).unwrap_err();
         assert!(error.to_string().contains("isn't a local file"), "{error}");
         let missing = format!("file://{}", fixture.path("Missing"));
-        assert!(fixture.call("ShowFolders", &[missing]).is_err());
+        assert!(call(&fixture, "ShowFolders", &[missing]).is_err());
         assert!(
-            fixture.call("ShowItems", &vec![String::new(); MAX_URIS + 1]).unwrap_err().to_string().contains("URIs")
+            call(&fixture, "ShowItems", &vec![String::new(); MAX_URIS + 1]).unwrap_err().to_string().contains("URIs")
         );
     }
 

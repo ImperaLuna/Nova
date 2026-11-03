@@ -172,4 +172,8 @@ expression: all
 {"v":2,"id":87,"cmd":"files_measure_cancel","args":{"job":4}}
 {"v":2,"event":"files_measured","data":{"job":4,"files":120,"folders":14,"bytes":1400000000,"disk_bytes":1400800000,"done":false}}
 {"v":2,"id":88,"cmd":"files_set_access","args":{"path":"/home/user/run.sh","access":{"owner":{"read":false,"write":false,"run":false},"group":{"read":false,"write":false,"run":false},"others":{"read":false,"write":false,"run":false}}}}
+{"v":2,"event":"files_window","data":{"folder":"/home/user/Downloads","picker":{"id":3,"mode":"save","title":"Save Image","multiple":false,"folders":false,"name":"cover.png","filters":[{"name":"Images","globs":["*.png"],"mimes":["image/*"]}],"filter":0}}}
+{"v":2,"id":82,"cmd":"files_pick","args":{"picker":3,"paths":["/home/user/Downloads/cover.png"],"filter":0,"replace":true}}
+{"v":2,"id":83,"cmd":"files_pick_cancel","args":{"picker":3}}
+{"v":2,"event":"files_picker_closed","data":{"picker":3}}
 {"v":2,"id":8,"error":"bad request"}

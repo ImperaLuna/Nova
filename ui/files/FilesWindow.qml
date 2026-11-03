@@ -14,6 +14,7 @@ import "commands.js" as Commands
 import "properties.js" as Props
 import "shortcuts.js" as Shortcuts
 import "menus.js" as Menus
+import "picker.js" as Picker
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
@@ -55,11 +56,28 @@ import "../daemon/protocol.js" as Protocol
 // frame and its file list each go from glass to solid as config.toml's
 // [files] says, live. Each draws its own background, so one never shows
 // through the other.
+// With a `picker` it's an app's Open or Save dialog: the picker bar sits
+// under the list (PickerBar), the list shows the app's file types, opening
+// files picks them, and the window closes once novad has the answer, or
+// tells the app it was cancelled when closed any other way. A save over a
+// file that's there asks first (ConfirmDialog).
 FloatingWindow {
     id: window
 
     required property string folder
     property var select: []
+    // novad's file picker ({id, mode, title, accept, multiple, folders,
+    // name, filters, filter}), or null for a plain window.
+    property var picker: null
+    readonly property bool picking: picker !== null
+    // The app has its answer (or stopped asking): closing tells it nothing.
+    property bool answered: false
+    // The picker bar, while it's a picker.
+    readonly property PickerBar pickerBar: pickerLoader.item as PickerBar
+    readonly property string typedName: pickerBar?.name ?? ""
+    // What the picker bar's accept button does now (Picker.choice), from
+    // the selection and the typed name, read again as either changes.
+    readonly property var choice: picking && !inTrash ? Picker.choice(picker, folder, list.model.revision >= 0 && list.model.total >= 0 ? list.model.selectedRows() : [], typedName, list.model.total >= 0 ? list.model.rowNamed(typedName.trim()) : null) : null
     // A tab torn out of another window that this one starts as:
     // {history, view (from snapshot()), hidden}, or null.
     property var carried: null
@@ -282,7 +300,7 @@ FloatingWindow {
     // A torn out tab wants a window like this one, starting as `carried`.
     signal windowRequested(string folder, var select, var carried)
 
-    title: tab.title
+    title: picking ? Picker.title(picker) : tab.title
     implicitWidth: Tokens.filesWindowWidth
     implicitHeight: Tokens.filesWindowHeight
     color: "transparent"
@@ -444,11 +462,47 @@ FloatingWindow {
     }
 
     function confirm(rows: var, act: var) {
+        ask(Trash.confirm(rows), act);
+    }
+
+    // Asks `asking` ({title, question, item}) in the confirm dialog, and
+    // calls `act` on a yes.
+    function ask(asking: var, act: var) {
         confirming = {
-            asking: Trash.confirm(rows),
+            asking: asking,
             act: act
         };
         confirmDialog.forceActiveFocus();
+    }
+
+    // The picker bar's accept: picks, or goes into the folder first.
+    function accept() {
+        if (!choice || choice.action === "none")
+            return;
+        if (choice.action === "enter")
+            navigator.visit(choice.folder, null);
+        else
+            pick(choice.paths, false);
+    }
+
+    // Answers the app with `paths`; a save over a file that's there asks
+    // first, then picks again with `replace`.
+    function pick(paths: var, replace: bool) {
+        const filter = (picker.filters ?? []).length > 0 ? pickerBar.filterIndex : -1;
+        FilesService.pick(picker.id, paths, filter, replace, error => {
+            if (error === Protocol.FILES_PICK_EXISTS)
+                window.ask(Picker.replacing(Paths.folderName(paths[0])), () => window.pick(paths, true));
+            else if (error)
+                window.notice(null, error);
+            else
+                window.finish();
+        });
+    }
+
+    // Closes the window once the app has its answer.
+    function finish() {
+        answered = true;
+        closed();
     }
 
     function answer(yes: bool) {
@@ -515,10 +569,40 @@ FloatingWindow {
         } else {
             navigator.begin(folder);
         }
+        if (pickerBar?.naming)
+            pickerBar.focusName();
     }
     onFolderChanged: {
         navigation.clearSearch();
         detailsPath = "";
+    }
+    onClosed: {
+        if (picking && !answered)
+            FilesService.cancelPick(picker.id);
+    }
+
+    Connections {
+        target: FilesService
+        enabled: window.picking
+        function onPickerClosed(id: int) {
+            if (id === window.picker.id)
+                window.finish();
+        }
+    }
+    // Saving: a file picked in the list is the name to save as.
+    Connections {
+        target: list.model
+        enabled: window.pickerBar?.naming ?? false
+        function onRevisionChanged() {
+            const picked = list.model.selectedRows();
+            if (picked.length === 1 && !picked[0].dir)
+                window.pickerBar.setName(picked[0].name);
+        }
+    }
+    Shortcut {
+        sequence: "Escape"
+        enabled: window.picking && !window.confirming && !navigation.editing
+        onActivated: window.closed()
     }
     onConfirmingChanged: {
         if (confirming)
@@ -544,7 +628,9 @@ FloatingWindow {
 
     // The quiet keyboard focus after a text field or a dialog lets go.
     function focusList() {
-        if (inTrash)
+        if (pickerBar?.naming)
+            pickerBar.focusName();
+        else if (inTrash)
             trashList.focusList();
         else
             list.forceActiveFocus();
@@ -677,7 +763,7 @@ FloatingWindow {
         id: sidebar
         anchors.left: parent.left
         anchors.top: window.inTrash ? trashCommands.bottom : commands.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: pickerLoader.top
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
         onDriveMenuRequested: (drive, at) => window.openMenu(Menus.forDrive(drive, window.act), window.contentItem, at)
@@ -691,10 +777,14 @@ FloatingWindow {
         compact: details.visible || preview.active
         anchors.top: commands.bottom
         visible: !window.inTrash && !window.searching
-        anchors.bottom: parent.bottom
+        anchors.bottom: pickerLoader.top
         folder: window.folder
         select: window.select
         focus: true
+        picking: window.picking
+        multiple: !window.picking || window.picker.multiple
+        filter: window.picking ? (Picker.picksFolder(window.picker) ? Picker.ONLY_FOLDERS : Picker.filter(window.picker, window.pickerBar?.filterIndex ?? -1)) : null
+        onFilesChosen: window.accept()
         onFolderOpened: path => window.navigator.visit(path, null)
         onTabRequested: path => window.openTab(path, false)
         onTrashRequested: rows => window.moveToTrash(rows)
@@ -767,7 +857,7 @@ FloatingWindow {
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.top: trashCommands.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: pickerLoader.top
         visible: window.inTrash
         model: trash
         home: window.home
@@ -777,6 +867,23 @@ FloatingWindow {
         onVisibleChanged: {
             if (visible)
                 focusList();
+        }
+    }
+    Loader {
+        id: pickerLoader
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        active: window.picking
+        height: active ? implicitHeight : 0
+
+        sourceComponent: PickerBar {
+            picker: window.picker
+            filterIndex: window.picker.filter ?? 0
+            canAccept: window.choice !== null && window.choice.action !== "none"
+            solid: FilesService.frameSolid
+            onAccepted: window.accept()
+            onCancelled: window.closed()
         }
     }
     // Files dropped on the trash's list go to the trash.

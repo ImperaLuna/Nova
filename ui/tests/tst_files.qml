@@ -14,6 +14,7 @@ import "../files/transfers.js" as Transfers
 import "../files/search.js" as Search
 import "../files/tabs.js" as Tabs
 import "../files/preview.js" as Preview
+import "../files/picker.js" as Picker
 
 // Nova Files' address bar parts, window title and entry paths, its
 // history and the sidebar tree's kept folders and rows, its file list:
@@ -22,7 +23,8 @@ import "../files/preview.js" as Preview
 // jobs a window keeps and how their card and name clash dialog read and
 // answer, and the trash: its rows, its selection, and the dialog that asks
 // before deleting for good, search: how results read and when novad
-// is asked, what the preview pane shows, and the window's
+// is asked, a window as an app's Open or Save dialog: its title and
+// accept label, what accepting picks, and its bar, what the preview pane shows, and the window's
 // tabs: which one Ctrl+Tab and closing land on, their widths, dragging one
 // along or out of the row, and the row's clicks. The root is an Item: a
 // TestCase root gets no mouse events.
@@ -781,6 +783,127 @@ Item {
             waitForRendering(notice);
             mouseClick(notice, notice.width - 20, notice.height / 2);
             compare(dismissals.count, 1);
+        }
+
+        function picker(mode, extra) {
+            return Object.assign({
+                id: 7,
+                mode: mode,
+                title: "",
+                multiple: false,
+                folders: false,
+                filters: [],
+                filter: 0
+            }, extra ?? {});
+        }
+
+        function test_a_picker_is_titled_and_labelled_like_windows() {
+            compare(Picker.title(picker(Protocol.PICK_OPEN)), "Open");
+            compare(Picker.title(picker(Protocol.PICK_OPEN, {
+                folders: true
+            })), "Select Folder");
+            compare(Picker.title(picker(Protocol.PICK_SAVE)), "Save As");
+            compare(Picker.title(picker(Protocol.PICK_OPEN, {
+                title: "File Upload"
+            })), "File Upload");
+            compare(Picker.acceptLabel(picker(Protocol.PICK_SAVE_FILES)), "Save");
+            compare(Picker.acceptLabel(picker(Protocol.PICK_OPEN, {
+                accept: "_Upload"
+            })), "Upload", "the app's mnemonic goes");
+            compare(Picker.acceptLabel(picker(Protocol.PICK_OPEN, {
+                accept: "Add__ons"
+            })), "Add_ons");
+            compare(Picker.stemLength("cover.tar.png"), 9);
+            compare(Picker.stemLength(".bashrc"), 7, "a dot file is all stem");
+        }
+
+        function test_accepting_picks_files_or_goes_into_a_folder() {
+            const file = name => ({
+                        name: name,
+                        dir: false
+                    });
+            const folder = name => ({
+                        name: name,
+                        dir: true
+                    });
+            const open = picker(Protocol.PICK_OPEN, {
+                multiple: true
+            });
+            compare(Picker.choice(open, "/home/ana", [file("a.png"), folder("Pics"), file("b.png")], "", null), {
+                action: "pick",
+                paths: ["/home/ana/a.png", "/home/ana/b.png"]
+            });
+            compare(Picker.choice(open, "/home/ana", [folder("Pics")], "", null), {
+                action: "enter",
+                folder: "/home/ana/Pics"
+            });
+            compare(Picker.choice(open, "/home/ana", [], "", null).action, "none");
+            const selectFolder = picker(Protocol.PICK_OPEN, {
+                folders: true
+            });
+            compare(Picker.choice(selectFolder, "/", [folder("srv")], "", null).paths, ["/srv"]);
+            compare(Picker.choice(selectFolder, "/home/ana", [], "", null).paths, ["/home/ana"], "nothing selected picks the folder shown");
+            compare(Picker.choice(selectFolder, "/srv", [folder("a"), folder("b")], "", null).paths, ["/srv/a", "/srv/b"], "every selected folder");
+            const save = picker(Protocol.PICK_SAVE);
+            compare(Picker.choice(save, "/home/ana", [], " cover.png ", null).paths, ["/home/ana/cover.png"]);
+            compare(Picker.choice(save, "/home/ana", [], "Pics", folder("Pics")).action, "enter");
+            for (const name of ["", "..", "a/b"])
+                compare(Picker.choice(save, "/home/ana", [], name, null).action, "none", name);
+            compare(Picker.filter(picker(Protocol.PICK_OPEN), 0), null);
+        }
+
+        Component {
+            id: pickerBarComponent
+            PickerBar {
+                // Room above for the filter menu, which opens upward.
+                y: 400
+                width: 880
+            }
+        }
+
+        SignalSpy {
+            id: pickerAccepts
+            signalName: "accepted"
+        }
+
+        function test_the_picker_bar_names_filters_and_answers() {
+            const images = {
+                name: "Images",
+                globs: ["*.png"],
+                mimes: []
+            };
+            const all = {
+                name: "All Files",
+                globs: ["*"],
+                mimes: []
+            };
+            const bar = createTemporaryObject(pickerBarComponent, stage, {
+                picker: picker(Protocol.PICK_SAVE, {
+                    name: "cover.png",
+                    filters: [all, images],
+                    filter: 1
+                }),
+                filterIndex: 1,
+                canAccept: true
+            });
+            pickerAccepts.target = bar;
+            pickerAccepts.clear();
+            verify(findText(bar, "Images"));
+            verify(findText(bar, "Save"));
+            bar.focusName();
+            keyClick(Qt.Key_X);
+            compare(bar.name, "x.png", "the stem is selected, so typing keeps the type");
+            keyClick(Qt.Key_Return);
+            compare(pickerAccepts.count, 1);
+            mouseClick(findText(bar, "Images"));
+            mouseClick(findText(bar, "All Files"));
+            compare(bar.filterIndex, 0);
+            const open = createTemporaryObject(pickerBarComponent, stage, {
+                picker: picker(Protocol.PICK_OPEN),
+                canAccept: false
+            });
+            verify(findText(open, "Open"));
+            verify(!open.naming, "opening has no name field");
         }
 
         function test_ctrl_tab_goes_round_the_tabs() {

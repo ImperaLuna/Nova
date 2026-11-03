@@ -121,10 +121,12 @@ Singleton {
     signal filesTrashChanged
     // novad's index of file names is built: searches can be asked again.
     signal filesSearchReady
+    // A file picker window's app stopped asking: the window closes.
+    signal filesPickerClosed(int picker)
 
     // The topics this process subscribes to on every connection: the
     // shell's, unless its root sets its own as it's created (Nova Files,
-    // ../files.qml), before the first connection. Topics of features that
+    // ../files/FilesShell.qml), before the first connection. Topics of features that
     // are off send nothing.
     property var topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_PERIPHERALS, Protocol.TOPIC_NETWORK, Protocol.TOPIC_BLUETOOTH, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS, Protocol.TOPIC_MEDIA]
 
@@ -237,6 +239,8 @@ Singleton {
             filesTrashChanged();
         } else if (msg.event === Protocol.EVENT_FILES_SEARCH_READY) {
             filesSearchReady();
+        } else if (msg.event === Protocol.EVENT_FILES_PICKER_CLOSED) {
+            filesPickerClosed(msg.data.picker);
         }
     }
 

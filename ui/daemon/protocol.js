@@ -57,6 +57,9 @@ var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 // The trash place's path in files_places: the trash, not a folder.
 var FILES_TRASH_PLACE = "trash:///";
 
+// files_pick's error for a save over a file that's there.
+var FILES_PICK_EXISTS = "exists";
+
 // Commands a client sends (Command).
 var CMD_PING = "ping";
 var CMD_LIST_FEATURES = "list_features";
@@ -154,6 +157,8 @@ var CMD_FILES_PROPERTIES = "files_properties";
 var CMD_FILES_MEASURE = "files_measure";
 var CMD_FILES_MEASURE_CANCEL = "files_measure_cancel";
 var CMD_FILES_SET_ACCESS = "files_set_access";
+var CMD_FILES_PICK = "files_pick";
+var CMD_FILES_PICK_CANCEL = "files_pick_cancel";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -193,6 +198,7 @@ var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
 var EVENT_FILES_MEASURED = "files_measured";
 var EVENT_FILES_HISTORY = "files_history";
+var EVENT_FILES_PICKER_CLOSED = "files_picker_closed";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
@@ -359,6 +365,11 @@ var FILE_STEP_NEW_FOLDER = "new_folder";
 var PREVIEW_IMAGE = "image";
 var PREVIEW_TEXT = "text";
 var PREVIEW_NONE = "none";
+
+// What a file picker picks (PickMode).
+var PICK_OPEN = "open";
+var PICK_SAVE = "save";
+var PICK_SAVE_FILES = "save_files";
 
 // END GENERATED
 

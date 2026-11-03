@@ -38,7 +38,10 @@ import "shortcuts.js" as Shortcuts
 // selected row keeps the selection until the release, so a selection
 // drags whole.
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
-// list surface.
+// list surface. In a file picker (`picking`), opening files chooses them
+// (`filesChosen`) instead of launching them, a `filter` leaves out the
+// files it doesn't match, and without `multiple` one row is selected at a
+// time.
 FocusScope {
     id: list
 
@@ -48,8 +51,14 @@ FocusScope {
     // Absolute paths to select once the folder is listed.
     property var select: []
     property bool showHidden: false
+    // A file picker's: {name, globs, mimes}, or null for every file.
+    property var filter: null
+    property bool picking: false
+    property bool multiple: true
 
     signal folderOpened(string path)
+    // In a picker: files opened (double-click, Enter), by name.
+    signal filesChosen(var names)
     signal tabRequested(string path)
     // Delete and Shift+Delete with rows selected: plain copies of them
     // (Listing.copy), in the list's order.
@@ -173,6 +182,7 @@ FocusScope {
     readonly property FolderModel model: FolderModel {
         path: list.folder
         hidden: list.showHidden
+        filter: list.filter
         onFilling: current => {
             list.now = Date.now();
             list.riseFrom = Math.max(current, 0);
@@ -196,6 +206,10 @@ FocusScope {
         const opening = Listing.opening(picked);
         if (opening.folder !== "")
             folderOpened(Paths.child(folder, opening.folder));
+        else if (picking && opening.files.length > 0)
+            filesChosen(opening.files);
+        if (picking)
+            return;
         for (const name of opening.files)
             FilesService.launch(Paths.child(folder, name), "", null);
     }
@@ -371,7 +385,7 @@ FocusScope {
         function go(index: int, extend: bool) {
             entryList.currentIndex = index;
             entryList.positionViewAtIndex(index, ListView.Contain);
-            list.model.select(Listing.pick(list.model.anchor, index, false, extend));
+            list.model.select(Listing.pick(list.model.anchor, index, false, extend && list.multiple));
         }
 
         MouseArea {
@@ -420,11 +434,11 @@ FocusScope {
                 // click (below), Ctrl's toggle too.
                 list.pickOnClick = row.selected && (modifiers & Qt.ShiftModifier) === 0;
                 if (!list.pickOnClick)
-                    list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
+                    list.model.select(Listing.pick(list.model.anchor, row.index, list.multiple && (modifiers & Qt.ControlModifier) !== 0, list.multiple && (modifiers & Qt.ShiftModifier) !== 0));
             }
             onClicked: modifiers => {
                 if (list.pickOnClick)
-                    list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, false));
+                    list.model.select(Listing.pick(list.model.anchor, row.index, list.multiple && (modifiers & Qt.ControlModifier) !== 0, false));
             }
             onDragRequested: {
                 const grabbed = list.model.rows.get(row.index);
@@ -446,6 +460,8 @@ FocusScope {
             if (command === Commands.MOVE) {
                 if (entryList.count > 0)
                     entryList.go(Listing.moved(event.key, entryList.currentIndex, entryList.count, entryList.page), (event.modifiers & Qt.ShiftModifier) !== 0);
+            } else if (command === Commands.SELECT_ALL && !list.multiple) {
+                // One file at a time in this picker.
             } else if (command !== "")
                 list.run(command);
             else
