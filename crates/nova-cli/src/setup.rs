@@ -681,9 +681,9 @@ mod tests {
         // recording's wf-recorder, screenshot's grim, wl-copy and xdg-open
         // wallpaper's awww, peripherals' upower and bluetooth's bluetoothctl
         // are there; Quickshell has no binary check (the package manager
-        // skips it when it's installed).
-        assert_eq!(why, "install Quickshell for the UI");
-        assert_eq!(argv, &words(&["paru", "-S", "--needed", "quickshell"]));
+        // skips it when it's installed), nor has files' udisks2.
+        assert_eq!(why, "install Quickshell for the UI, and packages for files");
+        assert_eq!(argv, &words(&["paru", "-S", "--needed", "quickshell", "udisks2"]));
     }
 
     /// Quickshell (and Fedora's COPR for it) only while a feature that draws
@@ -717,7 +717,7 @@ mod tests {
         assert_eq!(
             steps[0],
             Step::Run {
-                why: "install Quickshell for the UI, and packages for bluetooth, peripherals, recording, screenshot"
+                why: "install Quickshell for the UI, and packages for bluetooth, files, peripherals, recording, screenshot"
                     .into(),
                 argv: words(&[
                     "sudo",
@@ -726,6 +726,7 @@ mod tests {
                     "-y",
                     "quickshell",
                     "bluez",
+                    "udisks2",
                     "upower",
                     "wf-recorder",
                     "grim",
@@ -771,7 +772,10 @@ mod tests {
         facts.paths.config_dir = r#"/home/a "b"\c/.config/nova"#.into();
         facts.paths.niri_config = Some("/home/me/.config/niri/config.kdl".into());
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
-        let Some(Step::AppendLine { line, .. }) = steps.last() else { panic!("{steps:?}") };
+        let Some(Step::AppendLine { line, .. }) = steps.iter().find(|step| matches!(step, Step::AppendLine { .. }))
+        else {
+            panic!("{steps:?}")
+        };
         assert_eq!(line, r#"include "/home/a \"b\"\\c/.config/nova/niri.kdl""#);
     }
 
@@ -780,12 +784,15 @@ mod tests {
         let mut facts = facts(Distro::Fedora, vec![], false);
         facts.paths.hyprland_config = Some("/home/me/.config/hypr/hyprland.conf".into());
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
-        let Some(Step::AppendLine { path, line }) = steps.last() else { panic!("{steps:?}") };
+        let Some(Step::AppendLine { path, line }) = steps.iter().find(|step| matches!(step, Step::AppendLine { .. }))
+        else {
+            panic!("{steps:?}")
+        };
         assert_eq!(path, Path::new("/home/me/.config/hypr/hyprland.conf"));
         assert_eq!(line, "source = /home/me/.config/nova/hyprland.conf");
     }
 
-    /// With `files` on, a second run leaves the desktop entry, the icon and
+    /// With `files` on (its default), a second run leaves the desktop entry, the icon and
     /// the default as the first made them, and keeps the user's other
     /// defaults.
     #[test]
@@ -795,8 +802,8 @@ mod tests {
         let mimeapps = paths.config_home.join("mimeapps.list");
         std::fs::create_dir_all(&paths.config_home).unwrap();
         std::fs::write(&mimeapps, "[Default Applications]\ntext/plain=editor.desktop\n").unwrap();
-        let selection = Selection { enabled: vec![FILES_FEATURE.into()], disabled: vec![] };
-        let facts = Facts { selection, paths: paths.clone(), ..facts(Distro::Arch, vec![], false) };
+        let facts =
+            Facts { selection: Selection::default(), paths: paths.clone(), ..facts(Distro::Arch, vec![], false) };
         let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
         let files = &steps[steps.len() - 3..];
         assert!(matches!(files[2], Step::SetDefault { .. }), "{steps:?}");
@@ -820,7 +827,9 @@ mod tests {
 
     #[test]
     fn nova_files_is_left_out_while_its_feature_is_off() {
-        let Plan::Steps(steps) = plan(&facts(Distro::Debian, vec![], false)).unwrap() else { panic!() };
+        let selection = Selection { enabled: vec![], disabled: vec![FILES_FEATURE.into()] };
+        let facts = Facts { selection, ..facts(Distro::Debian, vec![], false) };
+        let Plan::Steps(steps) = plan(&facts).unwrap() else { panic!() };
         assert!(!steps.iter().any(|step| matches!(step, Step::SetDefault { .. })), "{steps:?}");
     }
 
