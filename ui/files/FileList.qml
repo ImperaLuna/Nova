@@ -8,6 +8,7 @@ import "../daemon/protocol.js" as Protocol
 import "drops.js" as Drops
 import "listing.js" as Listing
 import "paths.js" as Paths
+import "commands.js" as Commands
 import "shortcuts.js" as Shortcuts
 
 // Nova Files' file list in Details: the column header (Name, then
@@ -17,12 +18,18 @@ import "shortcuts.js" as Shortcuts
 // Ctrl adds or drops one, Shift selects a run. Its keys are the table's
 // LIST entries (shortcuts.js): the arrows, Page Up/Down, Home and End move
 // the selection (Shift extends it), Ctrl+A selects all, Ctrl+H shows or
-// hides dot files, Backspace goes back and Ctrl+Z and Ctrl+Y undo and redo
-// (`actionRequested`), and typing a name goes to it (NameTyping). A double-click or Enter opens: a folder is
-// gone into (`folderOpened`), files open in their default app. Delete
-// asks to move the selection to the trash (`trashRequested`),
-// Shift+Delete to delete it for good (`deleteRequested`). F5 (the
-// window's) reads the folder again (`refresh`).
+// hides dot files, and typing a name goes to it (NameTyping). A
+// double-click or Enter opens: a folder is gone into (`folderOpened`),
+// files open in their default app. Delete asks to move the selection to
+// the trash (`trashRequested`), Shift+Delete to delete it for good
+// (`deleteRequested`). F5 (the window's) reads the folder again
+// (`refresh`). A right-click
+// asks for a menu (`menuRequested`): on an item, for the selection,
+// picking the item first unless it's already picked; on the empty list,
+// for the folder. The other keys' commands go to the window as
+// `commandRequested`. `rename(name)` turns that row's name into a field
+// (F2, or a new folder), renamed through novad when it closes. Cut items
+// read faded.
 // Rows drag out (the selection, FileDrag) and files dragged in drop on the
 // folder row under the pointer, or else the folder shown
 // (`dropRequested`); resting on a folder row opens it. Pressing a
@@ -45,14 +52,97 @@ FocusScope {
     // (Listing.copy), in the list's order.
     signal trashRequested(var rows)
     signal deleteRequested(var rows)
-    // A table action that is the window's (Backspace's "back", Ctrl+Z's
-    // "undo", Ctrl+Y's "redo").
-    signal actionRequested(string action)
+    // A menu at `at` (in the list) for `rows` (plain copies), none for the
+    // folder itself.
+    signal menuRequested(var rows, point at)
+    // A shortcut for the window: a Commands name, with the selection.
+    signal commandRequested(string command, var rows)
+    // novad couldn't rename `row`: why.
+    signal renameFailed(var row, string error)
     // A drop asks for `action` (a Protocol.TRANSFER_* mode or Drops.TRASH)
     // on `sources` into `folder`.
     signal dropRequested(string action, var sources, string folder)
 
-    readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
+    // The row whose name is a field, by name, or "".
+    property string renaming: ""
+    // The items cut, by name in this folder, for their rows to fade.
+    readonly property var cutNames: {
+        const prefix = Paths.child(folder, "");
+        const names = Object.create(null);
+        for (const path of FilesClipboard.cut) {
+            if (path.startsWith(prefix) && !path.slice(prefix.length).includes("/"))
+                names[path.slice(prefix.length)] = true;
+        }
+        return names;
+    }
+
+    // The selection as plain copies, in the list's order.
+    function selection(): var {
+        return model.selectedRows().map(row => Listing.copy(row));
+    }
+
+    // Selects the item `name` alone and turns its name into a field, once
+    // it's listed (a new folder comes a moment later).
+    function rename(name: string) {
+        model.selectNames([name]);
+        renaming = name;
+        showRenaming();
+    }
+
+    function showRenaming() {
+        for (let index = 0; index < model.rows.count; index++) {
+            if (model.rows.get(index).name === renaming) {
+                entryList.currentIndex = index;
+                entryList.positionViewAtIndex(index, ListView.Contain);
+                return;
+            }
+        }
+    }
+
+    // The field closed with `typed` ("" for Esc): renames the item unless
+    // the name stayed, and keeps it selected under its new name.
+    function finishRename(row: var, typed: string) {
+        renaming = "";
+        entryList.forceActiveFocus();
+        if (typed.trim() === "" || typed === row.name)
+            return;
+        const asked = folder;
+        FilesService.rename(Paths.child(folder, row.name), typed, (error, name) => {
+            if (error)
+                list.renameFailed(row, error);
+            else if (list.folder === asked)
+                list.model.selectNames([name]);
+        });
+    }
+
+    // Runs `command` (a Commands name) on the selection: the list's own
+    // ones here, the rest in the window.
+    function run(command: string) {
+        const rows = selection();
+        if (command === Commands.OPEN)
+            open(model.selectedRows());
+        else if (command === Commands.SELECT_ALL)
+            model.selectAll();
+        else if (command === Commands.HIDDEN)
+            showHidden = !showHidden;
+        else if (command === Commands.TRASH) {
+            if (rows.length > 0)
+                trashRequested(rows);
+        } else if (command === Commands.DELETE_FOR_GOOD) {
+            if (rows.length > 0)
+                deleteRequested(rows);
+        } else if (command === Commands.RENAME) {
+            if (rows.length === 1)
+                rename(rows[0].name);
+        } else
+            commandRequested(command, rows);
+    }
+
+    // Narrow beside the details pane: fewer, smaller columns.
+    property bool compact: false
+    // Modified, Type and Size's widths; a column 0 wide isn't shown.
+    readonly property var columnWidths: compact ? Tokens.filesColumnsCompact : Tokens.filesColumns
+    readonly property real nameWidth: headerRow.width - columnWidths.reduce((sum, column) => column > 0 ? sum + column + headerRow.spacing : sum, 0)
     readonly property var columns: [
         {
             label: qsTr("Modified"),
@@ -85,6 +175,10 @@ FocusScope {
             list.riseFrom = Math.max(current, 0);
             settle.restart();
         }
+        onTotalChanged: {
+            if (list.renaming !== "")
+                list.showRenaming();
+        }
         onReset: current => {
             entryList.currentIndex = current;
             if (current >= 0)
@@ -108,6 +202,8 @@ FocusScope {
         model.refresh();
     }
 
+    // A rename asked for in the folder before doesn't follow to the next.
+    onFolderChanged: renaming = ""
     Component.onCompleted: {
         const prefix = Paths.child(folder, "");
         model.selectNames(select.filter(path => path.startsWith(prefix) && !path.slice(prefix.length).includes("/")).map(path => path.slice(prefix.length)));
@@ -199,7 +295,8 @@ FocusScope {
                 required property var modelData
                 required property int index
 
-                width: Tokens.filesColumns[index]
+                width: list.columnWidths[index]
+                visible: width > 0
                 label: modelData.label
                 key: modelData.key
                 alignRight: index === list.columns.length - 1
@@ -232,13 +329,17 @@ FocusScope {
         }
 
         MouseArea {
-            // A click below the rows clears the selection.
+            // A click below the rows clears the selection; a right-click
+            // there asks for the folder's menu.
             z: -1
             width: entryList.width
             height: Math.max(entryList.height, entryList.contentHeight)
-            onPressed: {
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onPressed: press => {
                 entryList.forceActiveFocus();
                 list.model.selectNames([]);
+                if (press.button === Qt.RightButton)
+                    list.menuRequested([], mapToItem(list, press.x, press.y));
             }
         }
 
@@ -247,9 +348,21 @@ FocusScope {
 
             width: entryList.width
             nameWidth: list.nameWidth
+            columnWidths: list.columnWidths
             selected: list.model.revision >= 0 && list.model.isSelected(name)
             riseOrder: list.riseFrom >= 0 ? Math.min(Math.abs(index - list.riseFrom), entryList.page) : -1
             now: list.now
+            cut: list.cutNames[row.name] === true
+            renaming: list.renaming !== "" && list.renaming === row.name
+
+            onMenuAsked: at => {
+                entryList.forceActiveFocus();
+                entryList.currentIndex = row.index;
+                if (!list.model.isSelected(row.name))
+                    list.model.selectNames([row.name]);
+                list.menuRequested(list.selection(), row.mapToItem(list, at.x, at.y));
+            }
+            onRenameDone: typed => list.finishRename(Listing.copy(list.model.rows.get(row.index)), typed)
 
             dropTarget: row.dir && drops.action !== Drops.NONE && drops.hovered?.folder === Paths.child(list.folder, row.name)
 
@@ -279,37 +392,14 @@ FocusScope {
         }
 
         Keys.onPressed: event => {
-            const picked = () => list.model.selectedRows().map(row => Listing.copy(row));
-            const action = Shortcuts.action(Shortcuts.LIST, event.key, event.modifiers);
-            switch (action) {
-            case "hidden":
-                list.showHidden = !list.showHidden;
-                return;
-            case "selectAll":
-                list.model.selectAll();
-                return;
-            case "open":
-                list.open(list.model.selectedRows());
-                return;
-            case "back":
-            case "undo":
-            case "redo":
-                list.actionRequested(action);
-                return;
-            case "trash":
-                if (list.model.selectedCount > 0)
-                    list.trashRequested(picked());
-                return;
-            case "deleteForGood":
-                if (list.model.selectedCount > 0)
-                    list.deleteRequested(picked());
-                return;
-            case "move":
+            const command = Shortcuts.action(Shortcuts.LIST, event.key, event.modifiers);
+            if (command === Commands.MOVE) {
                 if (entryList.count > 0)
                     entryList.go(Listing.moved(event.key, entryList.currentIndex, entryList.count, entryList.page), (event.modifiers & Qt.ShiftModifier) !== 0);
-                return;
-            }
-            event.accepted = typing.press(event.text, event.modifiers, list.model.rows, entryList.currentIndex, index => entryList.go(index, false));
+            } else if (command !== "")
+                list.run(command);
+            else
+                event.accepted = typing.press(event.text, event.modifiers, list.model.rows, entryList.currentIndex, index => entryList.go(index, false));
         }
     }
 
