@@ -843,8 +843,8 @@ FloatingWindow {
     FileList {
         id: list
         anchors.left: sidebar.right
-        anchors.right: details.visible ? details.left : preview.active ? preview.left : parent.right
-        compact: details.visible || preview.active
+        anchors.right: detailsPane.visible ? detailsPane.left : preview.active ? preview.left : parent.right
+        compact: detailsPane.visible || preview.active
         anchors.top: commands.bottom
         visible: window.inFolder && !window.searching
         anchors.bottom: pickerLoader.top
@@ -932,7 +932,7 @@ FloatingWindow {
         service: FilesService
     }
     DetailsPane {
-        id: details
+        id: detailsPane
         anchors.right: parent.right
         anchors.top: commands.bottom
         anchors.bottom: parent.bottom
@@ -1076,10 +1076,10 @@ FloatingWindow {
     // The pane on the folder or an item in it reads it again as it changes.
     Connections {
         target: FilesService
-        enabled: details.visible
+        enabled: detailsPane.visible
         function onChanged(changed: var) {
             if (changed.view === list.model.view)
-                details.reload();
+                detailsPane.reload();
         }
     }
     FilesMenu {
