@@ -36,7 +36,7 @@ FloatingWindow {
     required property string folder
     property var select: []
     // A tab torn out of another window that this one starts as:
-    // {history, view, hidden}, or null.
+    // {history, view (from snapshot()), hidden}, or null.
     property var carried: null
 
     readonly property FilesTab firstTab: FilesTab {}
@@ -126,19 +126,31 @@ FloatingWindow {
         openTab(Quickshell.env("HOME") ?? "/", true);
     }
 
+    // The shown tab's view: the file list's order and selection, and the
+    // trash's selection.
+    function snapshot(): var {
+        return {
+            list: list.view(),
+            trash: trash.selectedIds()
+        };
+    }
+
     // Brings `next` to the front, keeping the shown tab's view with it.
     function showTab(next: FilesTab) {
         if (next === tab)
             return;
-        tab.view = list.view();
+        tab.view = snapshot();
         front(next);
     }
 
+    // Shows `next` as it was; its folder first, which clears the lists'
+    // selections, then its view.
     function front(next: FilesTab) {
         next.navigator.hidden = list.showHidden;
         tab = next;
         folder = next.navigator.folder;
-        list.show(next.view);
+        list.show(next.view?.list ?? null);
+        trash.selectIds(next.view?.trash ?? []);
     }
 
     function cycleTabs(steps: int) {
@@ -167,9 +179,9 @@ FloatingWindow {
 
     // Gives `torn` a window of its own and closes it here.
     function tearOut(torn: FilesTab) {
-        const view = torn === tab ? list.view() : torn.view;
+        const view = torn === tab ? snapshot() : torn.view;
         const place = torn.navigator.folder;
-        windowRequested(place, (view?.selected ?? []).map(name => Paths.child(place, name)), {
+        windowRequested(place, (view?.list.selected ?? []).map(name => Paths.child(place, name)), {
             history: torn.navigator.history,
             view: view,
             hidden: list.showHidden
@@ -210,8 +222,10 @@ FloatingWindow {
             list.showHidden = carried.hidden;
             navigator.hidden = carried.hidden;
             navigator.resume(carried.history);
-            if (carried.view)
-                list.model.sort = carried.view.sort;
+            if (carried.view) {
+                list.model.sort = carried.view.list.sort;
+                trash.selectIds(carried.view.trash);
+            }
         } else {
             navigator.begin(folder);
         }

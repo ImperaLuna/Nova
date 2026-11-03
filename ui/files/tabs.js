@@ -46,3 +46,13 @@ function reordered(tabs, from, to) {
     rest.splice(to, 0, tabs[from]);
     return rest;
 }
+
+// The row's scroll (`scroll`, px) that brings a tab at `x`, `size` wide,
+// into a view `view` wide, moving it as little as it can.
+function revealed(scroll, x, size, view) {
+    if (x < scroll)
+        return x;
+    if (x + size > scroll + view)
+        return x + size - view;
+    return scroll;
+}

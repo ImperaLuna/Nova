@@ -743,6 +743,12 @@ Item {
         }
 
         // A stand-in for FilesTab, whose Navigator needs novad.
+        function test_the_shown_tab_scrolls_into_view() {
+            compare(Tabs.revealed(0, 100, 96, 400), 0, "in view: stays");
+            compare(Tabs.revealed(0, 500, 96, 400), 196, "past the end: its end at the view's");
+            compare(Tabs.revealed(300, 98, 96, 400), 98, "before the start: its start at the view's");
+        }
+
         Component {
             id: tabComponent
             QtObject {

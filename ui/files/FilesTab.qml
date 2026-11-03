@@ -11,8 +11,8 @@ QtObject {
     id: tab
 
     readonly property Navigator navigator: Navigator {}
-    // {sort, selected} from FileList.view(), or null until the tab was
-    // first sent to the back.
+    // FilesWindow.snapshot() as the tab last went to the back, or null
+    // until it first did.
     property var view: null
     readonly property bool trash: Trash.isTrash(navigator.folder)
     // The tab's name: the folder's, or the trash's.

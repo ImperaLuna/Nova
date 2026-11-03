@@ -91,7 +91,7 @@ FocusScope {
     function view(): var {
         return {
             sort: model.sort,
-            selected: model.selectedRows().map(row => row.name)
+            selected: model.selectedNames()
         };
     }
 
