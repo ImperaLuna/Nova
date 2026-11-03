@@ -158,6 +158,10 @@ pub enum Event {
     /// (feature `files`): ask `files_trash_list` again. Topic
     /// [`Topic::Files`].
     FilesTrashChanged,
+    /// novad's index of file names is built (feature `files`), so a
+    /// `files_search` that answered `ready: false` can be asked again.
+    /// Topic [`Topic::Files`].
+    FilesSearchReady,
     /// The drives Nova Files' sidebar lists (feature `files`): every
     /// filesystem udisks2 knows that a person would open, as it is now.
     /// Topic [`Topic::Files`], sent right after subscribing and whenever a
@@ -184,6 +188,11 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         redo: Option<FileStep>,
     },
+    /// The file picker `picker` (a [`FilePicker::id`]) ended without the
+    /// window (feature `files`): the app gave up asking, or Nova Files was
+    /// turned off. Its window closes. Sent only to the Nova Files process;
+    /// topic [`Topic::Files`].
+    FilesPickerClosed { picker: u32 },
 }
 
 /// Groups of events a client can subscribe to.
@@ -243,11 +252,12 @@ impl Event {
             | Event::FilesChanged { .. }
             | Event::FilesClosed { .. }
             | Event::FilesTrashChanged
+            | Event::FilesSearchReady
             | Event::FilesTransfer(_)
             | Event::FilesMeasured(_)
             | Event::FilesDrives { .. }
             | Event::FilesHistory { .. } => Some(Topic::Files),
-            Event::FilesLook(_) => Some(Topic::Files),
+            Event::FilesLook(_) | Event::FilesPickerClosed { .. } => Some(Topic::Files),
         }
     }
 }
@@ -1035,14 +1045,84 @@ pub const WIFI_PASSWORD_MAX_BYTES: usize = 128;
 pub const WPA_PASSWORD_MIN_BYTES: usize = 8;
 
 /// A Nova Files window to open (feature `files`): the folder it shows, an
-/// absolute path, and the items in it to select, by absolute path.
+/// absolute path, and the items in it to select, by absolute path. With a
+/// `picker`, it's an app's Open or Save dialog, answered with `files_pick`
+/// or `files_pick_cancel`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FilesWindow {
     pub folder: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub select: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub picker: Option<FilePicker>,
 }
+
+/// An app's Open or Save dialog, asked for through the desktop portal
+/// (feature `files`), shown as a Nova Files window in picker mode.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilePicker {
+    /// Names it to `files_pick` and `files_pick_cancel`.
+    pub id: u32,
+    pub mode: PickMode,
+    /// The window's title, as the app asked; may be empty.
+    pub title: String,
+    /// The app's own label for the accept button; empty for the mode's.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub accept: String,
+    /// More than one item may be picked (`open` only).
+    pub multiple: bool,
+    /// Folders are picked, not files (`open` only; `save_files` always
+    /// picks a folder).
+    pub folders: bool,
+    /// The name a `save` starts with.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// The app's file type filters, in its order; none shows every file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filters: Vec<FileFilter>,
+    /// The filter shown first, an index into `filters`.
+    #[serde(default)]
+    pub filter: u32,
+}
+
+/// What a [`FilePicker`] picks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PickMode {
+    /// Existing files (or folders).
+    Open,
+    /// One file to write: a folder and a name.
+    Save,
+    /// A folder to write the app's several files into.
+    SaveFiles,
+}
+
+/// A file type filter of a [`FilePicker`]: files matching any of `globs`
+/// (case aside, like `*.png`) or any of `mimes` (a type, a kind of it, or
+/// `image/*`) show. Folders always show.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileFilter {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub globs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mimes: Vec<String>,
+}
+
+/// The error `files_pick` answers a `save` over a file that's there with,
+/// unless it says to replace it.
+pub const FILES_PICK_EXISTS: &str = "exists";
+
+/// Most filters a [`FilePicker`] keeps from an app.
+pub const FILES_PICKER_MAX_FILTERS: usize = 64;
+/// Most globs and types one [`FileFilter`] holds, together.
+pub const FILES_FILTER_MAX_PATTERNS: usize = 256;
+/// The longest glob or type in a [`FileFilter`], and the longest filter
+/// name, title or label a picker keeps, in characters.
+pub const FILES_PICKER_MAX_CHARS: usize = 256;
 
 /// How solid Nova Files' window frame (the rows above the files and the
 /// sidebar) and its file list are, each a percentage from glass (0) to the
@@ -1987,9 +2067,14 @@ pub enum Command {
     /// open windows, which novad then sends it ([`Event::FilesWindow`]),
     /// waiting ones first; `false` as it quits after its last window
     /// closes, so the next window starts a new one. A connection that
-    /// closes is detached.
+    /// closes is detached. `pickers` says it's the process for apps' Open
+    /// and Save dialogs (`ui/files-picker.qml`, its own app id so
+    /// compositors float them), which gets only picker windows; the other
+    /// gets the rest.
     AttachFiles {
         attached: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pickers: bool,
     },
     /// Opens the file at `path`, an absolute path, in the app `app` (its
     /// desktop file id) or, without one, in its type's default app
@@ -2023,6 +2108,10 @@ pub enum Command {
         path: String,
         sort: FileSort,
         hidden: bool,
+        /// Shows only the files it matches (a file picker's filter);
+        /// folders always show.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filter: Option<FileFilter>,
     },
     /// Closes this connection's view `view`. A view closes by itself when
     /// its connection does.
@@ -2144,10 +2233,13 @@ pub enum Command {
     },
     /// Finds files by name (feature `files`): every name under Home and
     /// the drives holding each word of `query`, case aside, hidden folders
-    /// included. Answered with a [`FileSearch`] from novad's index, without
-    /// reading folders.
+    /// included; only those below the folder `within` (absolute, wire
+    /// text) when it's given. Answered with a [`FileSearch`] from novad's
+    /// index, without reading folders.
     FilesSearch {
         query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        within: Option<String>,
     },
     /// Makes a folder in the folder `folder` (absolute, feature `files`),
     /// called "New folder", or "New folder (2)" and on when that's taken,
@@ -2202,6 +2294,26 @@ pub enum Command {
     FilesSetAccess {
         path: String,
         access: Access,
+    },
+    /// Answers the file picker `picker` (feature `files`) with `paths`
+    /// (absolute): the files or folders picked to open, or for a save, the
+    /// file to write (`save`) or the folder to write into (`save_files`).
+    /// `filter` is the filter shown, an index into the picker's. Refused
+    /// when the paths don't fit the picker (a folder for a file, a file
+    /// that isn't there to open); the picker then still waits. A `save`
+    /// over a file that's there is refused with [`FILES_PICK_EXISTS`]
+    /// unless `replace`, so the window asks first.
+    FilesPick {
+        picker: u32,
+        paths: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filter: Option<u32>,
+        #[serde(default)]
+        replace: bool,
+    },
+    /// The file picker `picker` was closed without picking.
+    FilesPickCancel {
+        picker: u32,
     },
 }
 
@@ -2452,6 +2564,10 @@ pub struct FileSearch {
     /// each, names that aren't hidden (themselves or by a folder they're
     /// in) first, then shorter names.
     pub results: Vec<FoundFile>,
+    /// `within` was a folder the index holds nothing below (`/etc`), so
+    /// everywhere was searched instead.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub everywhere: bool,
 }
 
 /// A file a search found ([`FileSearch`]).
@@ -2461,7 +2577,8 @@ pub struct FoundFile {
     /// The folder it's in, an absolute path, as wire text ([`wire_text`]).
     pub folder: String,
     pub entry: FileEntry,
-    /// A folder it's in is hidden (its own name is `entry.hidden`).
+    /// A folder it's in is hidden (its own name is `entry.hidden`); with
+    /// `within`, only folders below that one count.
     pub in_hidden_folder: bool,
     /// Where the query's words are in its name, in order.
     pub marks: Vec<TextMark>,
@@ -3462,6 +3579,7 @@ mod tests {
                     path: "/home/user/Pictures".into(),
                     sort: FileSort { key: FileSortKey::Modified, descending: true },
                     hidden: false,
+                    filter: None,
                 },
             }),
             encode(Request { id: Some(75), command: Command::FilesClose { view: 1 } }),
@@ -3578,6 +3696,7 @@ mod tests {
                 ],
             }),
             encode(Event::FilesClosed { view: 1, error: "/home/user/Pictures doesn't exist".into() }),
+            encode(Event::FilesSearchReady),
             encode(Event::FilesLook(FilesLook { frame: 0, list: 100 })),
             encode(Event::FilesDrives {
                 drives: vec![
@@ -3665,12 +3784,19 @@ mod tests {
                 ),
             }),
             encode(Response { id: 91, outcome: Outcome::Result(serde_json::to_value(FilePreview::None).unwrap()) }),
-            encode(Request { id: Some(81), command: Command::FilesSearch { query: "crimson".into() } }),
+            encode(Request {
+                id: Some(81),
+                command: Command::FilesSearch {
+                    query: "crimson".into(),
+                    within: Some("/home/user/.local/share/Steam".into()),
+                },
+            }),
             encode(Response {
                 id: 81,
                 outcome: Outcome::Result(
                     serde_json::to_value(FileSearch {
                         ready: true,
+                        everywhere: false,
                         total: 1,
                         results: vec![FoundFile {
                             folder: "/home/user/.local/share/Steam/steamapps/common".into(),
@@ -3684,7 +3810,7 @@ mod tests {
                                 size: None,
                                 modified_ms: Some(1_793_000_000_000),
                             },
-                            in_hidden_folder: true,
+                            in_hidden_folder: false,
                             marks: vec![TextMark { start: 0, length: 7 }],
                         }],
                     })
@@ -3775,6 +3901,36 @@ mod tests {
                 id: Some(88),
                 command: Command::FilesSetAccess { path: "/home/user/run.sh".into(), access: Access::default() },
             }),
+            encode(Event::FilesWindow(FilesWindow {
+                folder: "/home/user/Downloads".into(),
+                select: vec![],
+                picker: Some(FilePicker {
+                    id: 3,
+                    mode: PickMode::Save,
+                    title: "Save Image".into(),
+                    accept: String::new(),
+                    multiple: false,
+                    folders: false,
+                    name: "cover.png".into(),
+                    filters: vec![FileFilter {
+                        name: "Images".into(),
+                        globs: vec!["*.png".into()],
+                        mimes: vec!["image/*".into()],
+                    }],
+                    filter: 0,
+                }),
+            })),
+            encode(Request {
+                id: Some(82),
+                command: Command::FilesPick {
+                    picker: 3,
+                    paths: vec!["/home/user/Downloads/cover.png".into()],
+                    filter: Some(0),
+                    replace: true,
+                },
+            }),
+            encode(Request { id: Some(83), command: Command::FilesPickCancel { picker: 3 } }),
+            encode(Event::FilesPickerClosed { picker: 3 }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();

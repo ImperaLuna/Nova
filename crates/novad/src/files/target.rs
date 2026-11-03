@@ -7,7 +7,8 @@
 //!
 //! Also turns the `file://` URIs apps give `org.freedesktop.FileManager1`
 //! into windows: a folder to show, or items grouped by the folder holding
-//! them, one window per folder.
+//! them, one window per folder, and picked paths back into URIs for the
+//! app that asked a file picker ([`uri`]).
 
 use nova_protocol::{FILES_PATH_MAX_BYTES, FilesWindow, wire_path, wire_text};
 use std::ffi::OsString;
@@ -31,7 +32,7 @@ pub fn window(folder: &str, select: &[String]) -> Result<FilesWindow, String> {
             Ok(wire_text(&cleaned))
         })
         .collect::<Result<_, _>>()?;
-    Ok(FilesWindow { folder: wire_text(&folder), select })
+    Ok(FilesWindow { folder: wire_text(&folder), select, picker: None })
 }
 
 /// A window on each folder `uris` name (`ShowFolders`).
@@ -70,6 +71,22 @@ fn path(uri: &str) -> Result<PathBuf, String> {
     path.filter(|path| path.as_os_str().len() <= FILES_PATH_MAX_BYTES).ok_or_else(|| format!("{uri} isn't a file path"))
 }
 
+/// The `file://` URI of `path`, escaping every byte but letters, digits,
+/// `/` and `-._~`, as apps expect from a file picker.
+pub fn uri(path: &std::path::Path) -> String {
+    use std::fmt::Write;
+    use std::os::unix::ffi::OsStrExt;
+    let mut uri = String::from("file://");
+    for &byte in path.as_os_str().as_bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
+            uri.push(char::from(byte));
+        } else {
+            let _ = write!(uri, "%{byte:02X}");
+        }
+    }
+    uri
+}
+
 /// The path wire text `path` names, once it's absolute and has no `.` or
 /// `..` in it.
 pub(super) fn clean(path: &str) -> Result<PathBuf, String> {
@@ -106,7 +123,7 @@ mod tests {
         let music = display(&dir.join("Music"));
         let song = display(&dir.join("Music/song one.flac"));
         let shown = window(&format!("{music}/"), &[format!("{music}//song one.flac")]).unwrap();
-        assert_eq!(shown, FilesWindow { folder: music.clone(), select: vec![song] });
+        assert_eq!(shown, FilesWindow { folder: music.clone(), select: vec![song], picker: None });
         assert_eq!(window(&music, &[]).unwrap().select, Vec::<String>::new());
     }
 
@@ -122,6 +139,15 @@ mod tests {
         assert!(window(&music, &[elsewhere]).unwrap_err().contains("isn't in"));
         let deeper = display(&dir.join("Music/Albums/a.flac"));
         assert!(window(&music, &[deeper]).unwrap_err().contains("isn't in"), "only straight inside");
+    }
+
+    #[test]
+    fn uris_escape_what_isnt_plain_and_read_back() {
+        use std::os::unix::ffi::OsStrExt;
+        let odd = std::ffi::OsStr::from_bytes(b"/home/me/Caf\xc3\xa9 50%/r\xe9sum\xe9 #1.txt");
+        let uri = uri(Path::new(odd));
+        assert_eq!(uri, "file:///home/me/Caf%C3%A9%2050%25/r%E9sum%E9%20%231.txt");
+        assert_eq!(path(&uri).unwrap(), Path::new(odd));
     }
 
     #[test]

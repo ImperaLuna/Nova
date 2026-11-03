@@ -39,14 +39,17 @@ mod roots;
 mod walk;
 
 use crate::files::folder::read_entry;
-use crate::hub::ClientId;
+use crate::files::views::checked_path;
+use crate::hub::{ClientId, Hub};
 use crate::inotify::{self, Changes, Inotify, Stopper};
 use crate::lock;
 use crate::logger::Logger;
 use crate::mime::Mime;
 use index::Index;
 use matching::Query;
-use nova_protocol::{FILES_SEARCH_MAX_CHARS, FILES_SEARCH_MAX_RESULTS, FileSearch, FoundFile, wire_path, wire_text};
+use nova_protocol::{
+    Event, FILES_SEARCH_MAX_CHARS, FILES_SEARCH_MAX_RESULTS, FileSearch, FoundFile, wire_path, wire_text,
+};
 use roots::Mounts;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -115,6 +118,7 @@ struct Shared {
     index: RwLock<Held>,
     mime: Arc<Mime>,
     sources: Sources,
+    hub: Arc<Hub>,
     logger: Arc<Logger>,
     demand: Mutex<Demand>,
     /// Wakes the thread that drops the index when [`Shared::demand`] changes.
@@ -151,12 +155,15 @@ struct Demand {
 pub struct Searcher(Arc<Shared>);
 
 impl Search {
-    /// Ready to index `sources`' folders once something uses them.
-    pub fn start(sources: Sources, logger: Arc<Logger>, mime: Arc<Mime>) -> Self {
+    /// Ready to index `sources`' folders once something uses them. Says
+    /// on `hub` each time it's built after it wasn't
+    /// ([`Event::FilesSearchReady`]).
+    pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>, mime: Arc<Mime>) -> Self {
         let shared = Arc::new(Shared {
             index: RwLock::default(),
             mime,
             sources,
+            hub,
             logger,
             demand: Mutex::default(),
             changed: Condvar::new(),
@@ -260,6 +267,7 @@ impl Shared {
                 sources: self.sources.clone(),
                 watcher,
                 shared: Arc::clone(self),
+                hub: Arc::clone(&self.hub),
                 logger: Arc::clone(&self.logger),
                 generation,
             };
@@ -315,24 +323,36 @@ impl Searcher {
         self.0.is_built()
     }
 
-    /// The files whose names hold every word of `text`. With nobody using
-    /// the index, a search has it built and kept for [`KEPT_UNUSED`].
-    pub fn search(&self, text: &str) -> Result<FileSearch, String> {
-        self.search_up_to(text, FILES_SEARCH_MAX_RESULTS)
+    /// The files whose names hold every word of `text`, below the folder
+    /// `within` (absolute, wire text) when it's given. A folder the index
+    /// doesn't hold as itself (a link to a folder, say `~/Downloads` to a
+    /// drive) is searched where it leads; one it holds nothing below at
+    /// all, everywhere. With nobody using the index, a search has it built
+    /// and kept for [`KEPT_UNUSED`].
+    pub fn search(&self, text: &str, within: Option<&str>) -> Result<FileSearch, String> {
+        self.search_up_to(text, within, FILES_SEARCH_MAX_RESULTS)
     }
 
     /// The best `limit` of them.
-    pub fn search_up_to(&self, text: &str, limit: usize) -> Result<FileSearch, String> {
+    pub fn search_up_to(&self, text: &str, within: Option<&str>, limit: usize) -> Result<FileSearch, String> {
         if text.chars().count() > FILES_SEARCH_MAX_CHARS {
             return Err(format!("Searches are at most {FILES_SEARCH_MAX_CHARS} characters"));
         }
         self.0.asked();
+        let within = within.map(checked_path).transpose()?;
+        // Read before taking the lock, so a slow drive never holds it.
+        let leads_to = within.as_deref().and_then(|folder| std::fs::canonicalize(folder).ok());
         let held = self.0.index.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let ready = held.index.is_some();
         let (Some(index), Some(query)) = (held.index.as_ref(), Query::parse(text)) else {
-            return Ok(FileSearch { ready, total: 0, results: Vec::new() });
+            return Ok(FileSearch { ready, total: 0, results: Vec::new(), everywhere: false });
         };
-        let (hits, total) = index.search(&query, limit);
+        // A folder nothing indexed is below (`/etc`) searches everywhere.
+        let scope = within.as_deref().and_then(|folder| {
+            if index.covers(folder) { Some(folder) } else { leads_to.as_deref().filter(|target| index.covers(target)) }
+        });
+        let everywhere = within.is_some() && scope.is_none();
+        let (hits, total) = index.search(&query, scope, limit);
         drop(held);
         let mime = self.0.mime.current();
         let results = hits
@@ -348,7 +368,7 @@ impl Searcher {
                 })
             })
             .collect();
-        Ok(FileSearch { ready, total: u32::try_from(total).unwrap_or(u32::MAX), results })
+        Ok(FileSearch { ready, total: u32::try_from(total).unwrap_or(u32::MAX), results, everywhere })
     }
 }
 
@@ -357,6 +377,7 @@ struct Keeper {
     sources: Sources,
     watcher: Inotify,
     shared: Arc<Shared>,
+    hub: Arc<Hub>,
     logger: Arc<Logger>,
     /// Its own: it writes the index only while it's the latest.
     generation: u64,
@@ -430,11 +451,14 @@ impl Keeper {
         if held.generation != self.generation {
             return None;
         }
-        held.index = Some(index);
+        let first = held.index.replace(index).is_none();
         drop(held);
         let (lock, built) = &self.shared.built;
         drop(lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
         built.notify_all();
+        if first {
+            self.hub.publish(&Event::FilesSearchReady);
+        }
         Some(Built { mounts, skipped, reach, at: Instant::now() })
     }
 
@@ -577,9 +601,9 @@ mod tests {
             std::fs::create_dir_all(dir.join("home")).unwrap();
             prepare(&dir.join("home"));
             let hub = Arc::new(crate::hub::Hub::default());
-            let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, hub).unwrap());
+            let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
             let mime = Mime::follow(Vec::new(), Arc::clone(&logger));
-            let search = Search::start(Sources::under(&dir), logger, mime);
+            let search = Search::start(Sources::under(&dir), hub, logger, mime);
             Self { dir, search }
         }
 
@@ -594,7 +618,7 @@ mod tests {
         }
 
         fn find(&self, query: &str) -> FileSearch {
-            self.search.searcher().search(query).unwrap()
+            self.search.searcher().search(query, None).unwrap()
         }
 
         /// The paths found, under Home.
@@ -628,16 +652,33 @@ mod tests {
     }
 
     #[test]
+    fn a_linked_folder_is_searched_where_it_leads() {
+        let fixture = Fixture::new("link", |home| {
+            std::fs::create_dir_all(home.join("data/downloads")).unwrap();
+            std::fs::write(home.join("data/downloads/setup.sh"), b"").unwrap();
+            std::os::unix::fs::symlink(home.join("data/downloads"), home.join("Downloads")).unwrap();
+        });
+        let link = fixture.home().join("Downloads");
+        let found = fixture.search.searcher().search("setup", Some(link.to_str().unwrap())).unwrap();
+        assert_eq!(found.results.iter().map(|file| file.entry.name.as_str()).collect::<Vec<_>>(), ["setup.sh"]);
+        assert_eq!(found.results[0].folder, fixture.home().join("data/downloads").to_str().unwrap());
+        assert!(!found.everywhere);
+        let elsewhere = fixture.search.searcher().search("setup", Some("/etc")).unwrap();
+        assert!(elsewhere.everywhere, "nothing indexed is below /etc");
+        assert_eq!(elsewhere.total, 1);
+    }
+
+    #[test]
     fn a_search_can_wait_for_the_index_to_be_built() {
         let dir = TempDir::new("files-search-wait");
         std::fs::create_dir_all(dir.join("home/Games")).unwrap();
         let hub = Arc::new(crate::hub::Hub::default());
-        let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, hub).unwrap());
+        let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
         let mime = Mime::follow(Vec::new(), Arc::clone(&logger));
-        let search = Search::start(Sources::under(&dir), logger, mime);
+        let search = Search::start(Sources::under(&dir), hub, logger, mime);
         // Nothing uses it yet: waiting has it built.
         assert!(search.searcher().wait_ready(WAIT));
-        assert_eq!(search.searcher().search("games").unwrap().total, 1);
+        assert_eq!(search.searcher().search("games", None).unwrap().total, 1);
         search.stop();
     }
 
@@ -653,7 +694,8 @@ mod tests {
         assert_eq!(exe.marks, [TextMark { start: 0, length: 7 }, TextMark { start: 7, length: 6 }]);
         assert!(found.results[0].entry.dir);
         assert!(fixture.find("   ").results.is_empty());
-        assert!(fixture.search.searcher().search(&"x".repeat(FILES_SEARCH_MAX_CHARS + 1)).is_err());
+        assert!(fixture.search.searcher().search(&"x".repeat(FILES_SEARCH_MAX_CHARS + 1), None).is_err());
+        assert!(fixture.search.searcher().search("x", Some("relative/folder")).is_err());
     }
 
     #[test]

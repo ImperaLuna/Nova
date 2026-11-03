@@ -744,6 +744,16 @@ QtObject {
     readonly property int filesCrumbPadY: 4
     readonly property int filesCrumbRadius: 8
     readonly property real filesFocusRing: strokeThin
+    // Search: the field widens while it's in use and the address bar fades
+    // back; typing settles this long before novad is asked. Results show
+    // where each lives in a column this wide, the matched words in the
+    // accent, and the scope (this folder or everywhere) as round chips.
+    readonly property int filesSearchWidthOpen: 300
+    readonly property real filesSearchCrumbsOpacity: 0.45
+    readonly property int filesSearchSettle: 60
+    readonly property int filesSearchLocationWidth: 260
+    readonly property int filesScopeHeight: 26
+    readonly property int filesScopeGap: 4
     // The sidebar: the line between places, tree and drives, and the tree,
     // its rows the height of a place, each level this far in, with its
     // chevron (turning as it opens) and folder icon. New rows slide in from
@@ -824,6 +834,10 @@ QtObject {
     readonly property int filesPreviewNameLines: 3
     readonly property int filesPreviewDelay: 120
     readonly property int filesPreviewSlow: 400
+    // A Nova Files window as an app's Open or Save dialog: the bar under
+    // the list with the name field, the file type button (its menu opens
+    // upward) and the answers.
+    readonly property int filesPickerFilterWidth: 220
 
     // Type
     readonly property string fontSans: "Inter"

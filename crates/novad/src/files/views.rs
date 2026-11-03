@@ -18,17 +18,22 @@
 //!
 //! Every event of a view is sent while holding its state, after checking
 //! the view is still open, so nothing arrives after `files_close` or after
-//! another `files_open` replaced it. Each page is encoded before the state
+//! another `files_open` replaced it. A view with a file picker's filter
+//! ([`super::filter`]) leaves out the files it doesn't match. Each page is encoded before the state
 //! is taken, so a big folder doesn't hold up closing it.
 
 use crate::files::archive::{self, Inside};
+use crate::files::filter::Filter;
 use crate::files::folder::{self, Listing};
 use crate::files::watcher::{Following, Notice, Wait, Watcher};
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
-use crate::mime::Mime;
-use nova_protocol::{Event, FILES_MAX_VIEWS, FILES_PATH_MAX_BYTES, FILES_PATH_MAX_WIRE_BYTES, FileSort, FolderPage};
+use crate::mime::{Mime, MimeDb};
+use nova_protocol::{
+    Event, FILES_MAX_VIEWS, FILES_PATH_MAX_BYTES, FILES_PATH_MAX_WIRE_BYTES, FileEntry, FileFilter, FileSort,
+    FolderPage,
+};
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsString;
 use std::path::{Component, PathBuf};
@@ -72,6 +77,8 @@ struct View {
     named: String,
     sort: FileSort,
     hidden: bool,
+    /// A file picker's filter: only the files it matches show.
+    filter: Option<Filter>,
     state: Mutex<State>,
     watcher: Arc<Watcher>,
     /// Its route in `watcher`.
@@ -91,10 +98,19 @@ impl Folders {
     /// Opens `path` in `client`'s view `view`, replacing what it showed.
     /// Doesn't touch the disk: the entries, or why they can't be read,
     /// follow as events.
-    pub fn open(&self, client: ClientId, view: u32, path: &str, sort: FileSort, hidden: bool) -> Result<(), String> {
+    pub fn open(
+        &self,
+        client: ClientId,
+        view: u32,
+        path: &str,
+        sort: FileSort,
+        hidden: bool,
+        filter: Option<&FileFilter>,
+    ) -> Result<(), String> {
         let folder = checked_path(path)?;
         // Looks at the disk only for a path with an archive's name in it.
         let inside = Inside::of(&folder);
+        let filter = filter.map(Filter::new).transpose()?;
         let key = (client, view);
         let mut views = lock(&self.views);
         let Some(open) = views.as_mut() else { return Err("Nova Files is off".into()) };
@@ -120,6 +136,7 @@ impl Folders {
             named: path.into(),
             sort,
             hidden,
+            filter,
             state: Mutex::new(State { open: true, listing: None }),
             route: following.id(),
             watcher,
@@ -190,6 +207,11 @@ impl View {
 
     fn is_open(&self) -> bool {
         lock(&self.state).open
+    }
+
+    /// Whether the view lists `entry`: every one, or those its filter shows.
+    fn shows(&self, entry: &FileEntry, mime: &MimeDb) -> bool {
+        self.filter.as_ref().is_none_or(|filter| filter.shows(entry, mime))
     }
 }
 
@@ -266,7 +288,10 @@ impl Worker {
             None => folder::read_folder(&self.view.path, self.view.hidden, &mime, stopped),
         };
         let entries = match read {
-            Ok(Some(entries)) => entries,
+            Ok(Some(mut entries)) => {
+                entries.retain(|entry| self.view.shows(entry, &mime));
+                entries
+            }
             Ok(None) => return false,
             Err(e) if settling && e.kind() != std::io::ErrorKind::NotFound => {
                 self.logger.info(LOG_SOURCE, &format!("{} doesn't read yet: {e}", self.view.path.display()));
@@ -347,7 +372,11 @@ impl Worker {
         let mime = self.mime.current();
         let now: Vec<_> = names
             .into_iter()
-            .map(|name| (folder::read_entry(&self.view.path, &name, &mime), nova_protocol::wire_text(&name)))
+            .map(|name| {
+                let entry = folder::read_entry(&self.view.path, &name, &mime);
+                // One the filter hides is gone from the view, as if deleted.
+                (entry.filter(|entry| self.view.shows(entry, &mime)), nova_protocol::wire_text(&name))
+            })
             .collect();
         let mut state = lock(&self.view.state);
         if !state.open {
@@ -456,7 +485,7 @@ mod tests {
         }
 
         fn open(&self, folder: &Path) -> Result<(), String> {
-            self.folders.open(self.client, 1, &nova_protocol::wire_text(folder), BY_NAME, false)
+            self.folders.open(self.client, 1, &nova_protocol::wire_text(folder), BY_NAME, false, None)
         }
 
         /// Takes the next event and applies it to `shown` as the UI would.
@@ -515,6 +544,24 @@ mod tests {
             self.folders.stop();
             let _ = &self.logs;
         }
+    }
+
+    #[test]
+    fn a_pickers_filter_shows_matching_files_and_every_folder() {
+        let mut fixture = Fixture::new("files-filter");
+        let dir = TempDir::new("files-filter-folder");
+        std::fs::write(dir.join("cover.PNG"), b"x").unwrap();
+        std::fs::write(dir.join("notes.txt"), b"x").unwrap();
+        std::fs::create_dir(dir.join("Albums")).unwrap();
+        let pictures = FileFilter { name: "Pictures".into(), globs: vec!["*.png".into()], mimes: vec![] };
+        let folder = nova_protocol::wire_text(&*dir);
+        fixture.folders.open(fixture.client, 1, &folder, BY_NAME, false, Some(&pictures)).unwrap();
+        fixture.until_shown(&["Albums", "cover.PNG"]);
+        // Renamed into the filter, it comes; out of it, it goes.
+        std::fs::rename(dir.join("notes.txt"), dir.join("notes.png")).unwrap();
+        fixture.until_shown(&["Albums", "cover.PNG", "notes.png"]);
+        std::fs::rename(dir.join("cover.PNG"), dir.join("cover.webp")).unwrap();
+        fixture.until_shown(&["Albums", "notes.png"]);
     }
 
     #[test]
@@ -782,7 +829,7 @@ mod tests {
             std::fs::create_dir(folder).unwrap();
             let (client, ..) = &clients[number / FILES_MAX_VIEWS];
             let view = u32::try_from(number).unwrap();
-            fixture.folders.open(*client, view, folder.to_str().unwrap(), BY_NAME, false).unwrap();
+            fixture.folders.open(*client, view, folder.to_str().unwrap(), BY_NAME, false, None).unwrap();
         }
         for (_, events, _) in &clients {
             while let Ok(Outgoing::Line(_)) = events.recv_timeout(MOST_DELAY * 2) {}
@@ -821,7 +868,7 @@ mod tests {
         fixture.open(&dir).unwrap();
         fixture.next();
         let path = dir.to_str().unwrap();
-        fixture.folders.open(fixture.client, 2, path, BY_NAME, false).unwrap();
+        fixture.folders.open(fixture.client, 2, path, BY_NAME, false, None).unwrap();
         fixture.next();
         fixture.folders.close(fixture.client, 2);
         // Its thread lets go of the watch.
@@ -859,11 +906,11 @@ mod tests {
         let fixture = Fixture::new("files-refused");
         let dir = TempDir::new("files-refused-folder");
         std::fs::write(dir.join("note.md"), b"").unwrap();
-        let open = |path: &str| fixture.folders.open(fixture.client, 1, path, BY_NAME, false);
+        let open = |path: &str| fixture.folders.open(fixture.client, 1, path, BY_NAME, false, None);
         assert!(open("relative/folder").unwrap_err().contains("absolute"));
         assert!(open(&format!("/{}", "x".repeat(FILES_PATH_MAX_BYTES))).is_err());
         let views = (0..=FILES_MAX_VIEWS as u32)
-            .map(|view| fixture.folders.open(fixture.client, view, dir.to_str().unwrap(), BY_NAME, false));
+            .map(|view| fixture.folders.open(fixture.client, view, dir.to_str().unwrap(), BY_NAME, false, None));
         assert_eq!(views.filter(Result::is_err).count(), 1, "one view past the limit");
     }
 
@@ -904,6 +951,7 @@ mod tests {
             named: "/".into(),
             sort: BY_NAME,
             hidden: false,
+            filter: None,
             state: Mutex::new(State { open: false, listing: None }),
             watcher: fixture.folders.watcher().unwrap(),
             route: 0,

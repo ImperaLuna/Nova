@@ -12,13 +12,18 @@ import "../trash.js" as Trash
 // places, the drives (and mounting and ejecting them), opening files in
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, the
-// trash, new folders, renaming, an item's details, the Properties
-// window's facts, sizes and access, and the preview pane's previews. The
+// trash, finding files by name, new folders, renaming, an item's details, the Properties
+// window's facts, sizes and access, the preview pane's previews, and answering the
+// file pickers apps ask for (Open and Save dialogs). The
 // Nova Files process (../../files.qml) and its windows get these here and
 // never talk to Daemon themselves. Also how solid the windows are, from
 // config.toml's [files].
 Singleton {
     id: root
+
+    // This process shows apps' dialogs (files-picker.qml), so novad sends
+    // it pickers only. Set by FilesShell before it connects.
+    property bool pickers: false
 
     // How solid the window frame and the file list are, each 0 (glass,
     // also until novad says) to 1 (the theme's solid surfaces).
@@ -53,11 +58,12 @@ Singleton {
     }
 
     // Shows the folder at `path` (absolute) in view `view`, ordered by
-    // `sortKey` (a Protocol.FILE_SORT_*), with dot files when `hidden`.
-    // Whatever the view showed is replaced; its entries come as `page`s.
-    // `done(error)` gets novad's answer.
-    function open(view: int, path: string, sortKey: string, descending: bool, hidden: bool, done: var) {
-        Daemon.call(Protocol.CMD_FILES_OPEN, {
+    // `sortKey` (a Protocol.FILE_SORT_*), with dot files when `hidden`, and
+    // only the files `filter` matches when it isn't null (a file picker's
+    // {name, globs, mimes}). Whatever the view showed is replaced; its
+    // entries come as `page`s. `done(error)` gets novad's answer.
+    function open(view: int, path: string, sortKey: string, descending: bool, hidden: bool, filter: var, done: var) {
+        const args = {
             view: view,
             path: path,
             sort: {
@@ -65,7 +71,10 @@ Singleton {
                 descending: descending
             },
             hidden: hidden
-        }, error => {
+        };
+        if (filter)
+            args.filter = filter;
+        Daemon.call(Protocol.CMD_FILES_OPEN, args, error => {
             if (error)
                 console.warn(`nova: opening the folder ${path}: ${error}`);
             done?.(error ?? null);
@@ -85,6 +94,11 @@ Singleton {
 
     // Something in the trash changed: ask trashList again.
     signal trashChanged
+    // novad's index of file names is built: a search that found nothing
+    // because it wasn't can be asked again.
+    signal searchReady
+    // The file picker `picker`'s app stopped asking: its window closes.
+    signal pickerClosed(int picker)
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
@@ -98,7 +112,8 @@ Singleton {
     // every connection.
     function attach() {
         Daemon.call(Protocol.CMD_ATTACH_FILES, {
-            attached: true
+            attached: true,
+            pickers: pickers
         });
     }
 
@@ -106,7 +121,8 @@ Singleton {
     // novad isn't there.
     function detach(done) {
         Daemon.call(Protocol.CMD_ATTACH_FILES, {
-            attached: false
+            attached: false,
+            pickers: pickers
         }, () => done());
     }
 
@@ -189,6 +205,24 @@ Singleton {
             if (error)
                 console.warn(`nova: sidebar places: ${error}`);
             done(error ? [] : result);
+        });
+    }
+
+    // Finds files by name: `done(found)` gets novad's answer ({ready,
+    // total, results}, see Protocol's FileSearch) for `query`, below the
+    // folder `within` (absolute) or everywhere when it's "", or null when
+    // novad couldn't search.
+    function search(query: string, within: string, done: var) {
+        const args = within !== "" ? {
+            query: query,
+            within: within
+        } : {
+            query: query
+        };
+        Daemon.call(Protocol.CMD_FILES_SEARCH, args, (error, result) => {
+            if (error)
+                console.warn(`nova: searching for ${query}: ${error}`);
+            done(error ? null : result);
         });
     }
 
@@ -437,6 +471,39 @@ Singleton {
         next(0);
     }
 
+    // Answers the file picker `picker` with `paths` (absolute), `filter`
+    // being the index of the filter shown (or -1), over a file that's
+    // there only when `replace`. `done(error)` gets novad's answer: null,
+    // Protocol.FILES_PICK_EXISTS for a save that would replace a file, or
+    // why the paths don't fit the picker. A selection too long for one
+    // request isn't sent: novad would close the connection, and with it
+    // every picker it shows.
+    function pick(picker: int, paths: var, filter: int, replace: bool, done: var) {
+        if (Trash.batches(paths, Protocol.REQUEST_MAX_BYTES).length > 1) {
+            done(qsTr("Too many items are selected to answer at once. Select fewer."));
+            return;
+        }
+        const args = {
+            picker: picker,
+            paths: paths,
+            replace: replace
+        };
+        if (filter >= 0)
+            args.filter = filter;
+        Daemon.call(Protocol.CMD_FILES_PICK, args, error => {
+            if (error && error !== Protocol.FILES_PICK_EXISTS)
+                console.warn(`nova: answering the file picker: ${error}`);
+            done(error ?? null);
+        });
+    }
+
+    // The file picker `picker` closed without picking.
+    function cancelPick(picker: int) {
+        Daemon.call(Protocol.CMD_FILES_PICK_CANCEL, {
+            picker: picker
+        });
+    }
+
     function _answered(doing: string, error: var, done: var) {
         if (error)
             console.warn(`nova: ${doing}: ${error}`);
@@ -460,11 +527,17 @@ Singleton {
         function onFilesTransferChanged(transfer: var) {
             root.transferChanged(transfer);
         }
+        function onFilesSearchReady() {
+            root.searchReady();
+        }
         function onFilesMeasured(measured: var) {
             root.measured(measured);
         }
         function onFilesTrashChanged() {
             root.trashChanged();
+        }
+        function onFilesPickerClosed(picker: int) {
+            root.pickerClosed(picker);
         }
         function onConnectedChanged() {
             if (Daemon.connected)

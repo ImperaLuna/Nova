@@ -300,8 +300,8 @@ impl<'a> Connection<'a> {
             Command::ShowFolder { folder, select } => done(self.files().and_then(|files| files.show(folder, select))),
             // Answered here, in order with the connection's other requests,
             // so a close or a hang-up never overtakes the open it follows.
-            Command::FilesOpen { view, path, sort, hidden } => {
-                done(self.files().and_then(|files| files.open(self.id, *view, path, *sort, *hidden)))
+            Command::FilesOpen { view, path, sort, hidden, filter } => {
+                done(self.files().and_then(|files| files.open(self.id, *view, path, *sort, *hidden, filter.as_ref())))
             }
             Command::FilesClose { view } => done(self.files().map(|files| files.close(self.id, *view))),
             Command::FilesTransfer { job, mode, sources, folder } => {
@@ -313,19 +313,26 @@ impl<'a> Connection<'a> {
             Command::FilesTransferAnswer { job, clash, answer, all } => {
                 done(self.files().and_then(|files| files.answer_clash(self.id, *job, *clash, *answer, *all)))
             }
-            Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
+            Command::FilesPick { picker, paths, filter, replace } => {
+                let (client, picker, paths, filter, replace) = (self.id, *picker, paths.clone(), *filter, *replace);
+                return self.files_later(move |files| files.pick(client, picker, &paths, filter, replace));
+            }
+            Command::FilesPickCancel { picker } => done(self.files().map(|files| files.cancel_pick(self.id, *picker))),
+            Command::AttachFiles { attached, pickers } => {
+                done(self.files().map(|files| files.attach(self.id, *attached, *pickers)))
+            }
             Command::FilesLaunch { path, app } => {
                 let (path, app) = (path.clone(), app.clone());
                 return self.files_later(move |files| files.launch(&path, app.as_deref()));
             }
             // Answered off the connection's thread: the files found are
             // looked at, and a slow drive must not hold up its other requests.
-            Command::FilesSearch { query } => {
-                let query = query.clone();
+            Command::FilesSearch { query, within } => {
+                let (query, within) = (query.clone(), within.clone());
                 return match self.files() {
                     Ok(files) => {
                         let searcher = files.searcher();
-                        Answer::later(move || value(searcher.search(&query)))
+                        Answer::later(move || value(searcher.search(&query, within.as_deref())))
                     }
                     Err(e) => Answer::Now(Outcome::Error(e)),
                 };
@@ -1019,6 +1026,8 @@ impl<'a> Connection<'a> {
             | Command::FilesTransferCancel { .. }
             | Command::FilesTransferAnswer { .. }
             | Command::AttachFiles { .. }
+            | Command::FilesPick { .. }
+            | Command::FilesPickCancel { .. }
             | Command::FilesLaunch { .. }
             | Command::FilesOpenWith { .. }
             | Command::FilesSetDefault { .. }

@@ -12,8 +12,9 @@ import "daemon/protocol.js" as Protocol
 // Nova Files' own Quickshell process, apart from the shell's: novad's
 // files module starts it (as NovaFiles) when a window is asked for and
 // none runs. Once connected it attaches, opens a window for each one novad
-// sends (and for each tab torn out of one), and quits when its last
-// window closes. It subscribes only to what its windows need.
+// sends (an app's Open or Save dialog too, as a window in picker mode,
+// and each tab torn out of one), and quits when its last window closes.
+// It subscribes only to what its windows need.
 ShellRoot {
     id: root
 
@@ -37,16 +38,18 @@ ShellRoot {
     }
 
     // Shows a window at `folder` with `select` selected, or as the tab
-    // `carried` was (FilesWindow.carried).
-    function show(folder: string, select: var, carried: var) {
+    // `carried` was (FilesWindow.carried), or as an app's file picker
+    // (`picker`, a FilePicker).
+    function show(folder: string, select: var, carried: var, picker: var) {
         const shown = windowComponent.createObject(root, {
             folder: folder,
             select: select,
-            carried: carried
+            carried: carried,
+            picker: picker ?? null
         });
         root.windows++;
         console.info("nova: files window shown");
-        shown.windowRequested.connect(root.show);
+        shown.windowRequested.connect((folder, select, carried) => root.show(folder, select, carried, null));
         shown.closed.connect(() => {
             shown.destroy();
             if (--root.windows === 0)
@@ -57,7 +60,7 @@ ShellRoot {
     Connections {
         target: FilesService
         function onWindowRequested(window: var) {
-            root.show(window.folder, window.select ?? [], null);
+            root.show(window.folder, window.select ?? [], null, window.picker ?? null);
         }
     }
 }
