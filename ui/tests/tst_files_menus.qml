@@ -172,7 +172,7 @@ Item {
             compare(Details.facts(details).map(fact => fact.label), ["Items", "Modified"], "no times the file system didn't keep");
             compare(Details.facts(details)[0].value, "1");
             compare(Details.access(details).map(line => [line.who, line.role, line.can]), [["ana", "Owner", "Read, write, and execute"], ["users", "Group", "Read and execute"], ["Others", "", "None"]]);
-            compare([Details.can(6), Details.can(4), Details.can(2)], ["Read and write", "Read-only", "Write-only"]);
+            compare([Details.can(6), Details.can(4), Details.can(2), Details.can(1), Details.can(3)], ["Read and write", "Read-only", "Write-only", "Execute-only", "Write and execute"], "execute is never dropped");
             const notes = {
                 entry: {
                     name: "notes.txt",
@@ -281,6 +281,7 @@ Item {
                 size: 1
                 modified: 5
                 nameWidth: 300
+                columnWidths: Tokens.filesColumns
                 selected: true
                 riseOrder: -1
                 now: 5

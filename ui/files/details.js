@@ -53,20 +53,8 @@ function access(details) {
     ];
 }
 
-// Three permission bits (read, write, execute) in words.
+// Three permission bits (read, write, execute) in words, by their value.
 function can(bits) {
-    const read = (bits & 4) !== 0;
-    const write = (bits & 2) !== 0;
-    const run = (bits & 1) !== 0;
-    if (read && write && run)
-        return qsTr("Read, write, and execute");
-    if (read && write)
-        return qsTr("Read and write");
-    if (read && run)
-        return qsTr("Read and execute");
-    if (read)
-        return qsTr("Read-only");
-    if (write)
-        return qsTr("Write-only");
-    return qsTr("None");
+    const words = [qsTr("None"), qsTr("Execute-only"), qsTr("Write-only"), qsTr("Write and execute"), qsTr("Read-only"), qsTr("Read and execute"), qsTr("Read and write"), qsTr("Read, write, and execute")];
+    return words[bits & 7];
 }

@@ -121,7 +121,11 @@ FocusScope {
             commandRequested(command, rows);
     }
 
-    readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
+    // Narrow beside the details pane: fewer, smaller columns.
+    property bool compact: false
+    // Modified, Type and Size's widths; a column 0 wide isn't shown.
+    readonly property var columnWidths: compact ? Tokens.filesColumnsCompact : Tokens.filesColumns
+    readonly property real nameWidth: headerRow.width - columnWidths.reduce((sum, column) => column > 0 ? sum + column + headerRow.spacing : sum, 0)
     readonly property var columns: [
         {
             label: qsTr("Modified"),
@@ -266,7 +270,8 @@ FocusScope {
                 required property var modelData
                 required property int index
 
-                width: Tokens.filesColumns[index]
+                width: list.columnWidths[index]
+                visible: width > 0
                 label: modelData.label
                 key: modelData.key
                 alignRight: index === list.columns.length - 1
@@ -318,6 +323,7 @@ FocusScope {
 
             width: entryList.width
             nameWidth: list.nameWidth
+            columnWidths: list.columnWidths
             selected: list.model.revision >= 0 && list.model.isSelected(name)
             riseOrder: list.riseFrom >= 0 ? Math.min(Math.abs(index - list.riseFrom), entryList.page) : -1
             now: list.now

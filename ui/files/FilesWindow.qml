@@ -91,12 +91,16 @@ FloatingWindow {
             window.paste();
             break;
         case Commands.NEW_FOLDER:
-            FilesService.newFolder(folder, (error, name) => {
-                if (error)
-                    window.notice(null, error);
-                else
-                    list.rename(name);
-            });
+            {
+                // Named in place only if the window is still there.
+                const asked = folder;
+                FilesService.newFolder(asked, (error, name) => {
+                    if (error)
+                        window.notice(null, error);
+                    else if (window.folder === asked)
+                        list.rename(name);
+                });
+            }
             break;
         case Commands.DETAILS:
             if (extra)
@@ -325,6 +329,7 @@ FloatingWindow {
         id: list
         anchors.left: sidebar.right
         anchors.right: details.visible ? details.left : parent.right
+        compact: details.visible
         anchors.top: commands.bottom
         visible: !window.inTrash
         anchors.bottom: parent.bottom

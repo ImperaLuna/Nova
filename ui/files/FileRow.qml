@@ -23,6 +23,8 @@ Rectangle {
     required property real modified
 
     required property real nameWidth
+    // Modified, Type and Size's widths; one 0 wide isn't shown.
+    required property var columnWidths
     required property bool selected
     property bool cut: false
     property bool renaming: false
@@ -127,15 +129,18 @@ Rectangle {
             }
         }
         Cell {
-            width: Tokens.filesColumns[0]
+            width: entry.columnWidths[0]
+            visible: width > 0
             text: Listing.modified(entry.modified, entry.now)
         }
         Cell {
-            width: Tokens.filesColumns[1]
+            width: entry.columnWidths[1]
+            visible: width > 0
             text: Listing.kind(entry)
         }
         Cell {
-            width: Tokens.filesColumns[2] - Tokens.rowInset
+            width: entry.columnWidths[2] - Tokens.rowInset
+            visible: width > 0
             horizontalAlignment: Text.AlignRight
             text: Listing.size(entry)
         }
