@@ -5,17 +5,31 @@ import Quickshell
 import "../theme"
 import "service"
 import "paths.js" as Paths
+import "tabs.js" as Tabs
 import "trash.js" as Trash
+import "properties.js" as Props
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
-// showing `folder` with `select` selected. The navigation row, the command
-// row, then the sidebar beside the file list, with its copies and moves
-// over them all; opening a folder in the list shows it in the same window.
+// showing `folder` with `select` selected. The tab row, the navigation
+// row, the command row, then the sidebar beside the file list, with its
+// copies and moves over them all; opening a folder in the list shows it in
+// the same window.
+// Inside an archive (a zip or tar, opened like a folder) nothing can be
+// changed: its command row offers "Extract all" instead.
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
-// (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
-// lie over it all.
+// (ConfirmDialog). The Properties dialog (Alt+Enter, a drive's menu), a
+// drive's menu and the dialog when one can't be ejected lie over it all.
+// The preview pane (Alt+P, or the command row's button) sits at the file
+// list's right, loaded only while it shows.
+// Each tab (FilesTab) has its own Navigator; the rows, the sidebar and the
+// one file list follow the shown tab's, and the list's order and
+// selection are kept with a tab as it goes to the back (Ctrl+T, Ctrl+W,
+// Ctrl+Tab, Ctrl+Shift+Tab; a middle click on a folder opens it in a tab
+// behind). Closing the last tab closes the window; a tab torn out of the
+// row asks for a window of its own (`windowRequested`), carrying its
+// history, order and selection.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -26,19 +40,37 @@ FloatingWindow {
 
     required property string folder
     property var select: []
-    readonly property Navigator navigator: Navigator {
-        hidden: list.showHidden
-        onFolderChanged: window.folder = folder
-    }
+    // A tab torn out of another window that this one starts as:
+    // {history, view (from snapshot()), hidden}, or null.
+    property var carried: null
+
+    readonly property FilesTab firstTab: FilesTab {}
+    property var tabs: [firstTab]
+    property FilesTab tab: firstTab
+    readonly property Navigator navigator: tab.navigator
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    // The archive the folder is inside, or empty.
+    readonly property string archive: list.model.archive
+    // The archive "Extract all" extracts: the one the window is in, or the
+    // one picked.
+    readonly property string extractable: {
+        if (archive !== "")
+            return archive;
+        const picked = list.model.revision >= 0 && list.model.selectedCount === 1 ? list.model.selectedRows()[0] : null;
+        return picked?.archive ? Paths.child(folder, picked.name) : "";
+    }
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
     property var problems: []
+    property bool previewShown: false
 
-    title: inTrash ? Trash.name() : Paths.folderName(folder)
+    // A torn out tab wants a window like this one, starting as `carried`.
+    signal windowRequested(string folder, var select, var carried)
+
+    title: tab.title
     implicitWidth: Tokens.filesWindowWidth
     implicitHeight: Tokens.filesWindowHeight
     color: "transparent"
@@ -46,6 +78,8 @@ FloatingWindow {
     // Moves the rows (the file list's) in the folder shown to the trash, at
     // once: Delete.
     function moveToTrash(rows: var) {
+        if (archive !== "")
+            return;
         const paths = Trash.paths(folder, rows);
         FilesService.trash(paths, error => {
             if (error)
@@ -56,6 +90,8 @@ FloatingWindow {
     // Asks, then deletes the rows (the file list's) in the folder shown for
     // good: Shift+Delete.
     function deleteForGood(rows: var) {
+        if (archive !== "")
+            return;
         const paths = Trash.paths(folder, rows);
         confirm(rows, () => FilesService.deleteForGood(paths, error => {
                 if (error)
@@ -94,6 +130,88 @@ FloatingWindow {
                 }));
     }
 
+    // Opens `path` (absolute, or from `~`) in a new tab at the end, shown
+    // at once when `front`.
+    function openTab(path: string, front: bool) {
+        const opened = tabComponent.createObject(window) as FilesTab;
+        opened.navigator.hidden = list.showHidden;
+        opened.navigator.begin(path);
+        tabs = tabs.concat([opened]);
+        if (front)
+            showTab(opened);
+    }
+
+    // A new tab at Home, as Explorer's opens on its Home: Ctrl+T and +.
+    function newTab() {
+        openTab(Quickshell.env("HOME") ?? "/", true);
+    }
+
+    // The shown tab's view: the file list's order and selection, and the
+    // trash's selection.
+    function snapshot(): var {
+        return {
+            folder: folder,
+            list: list.view(),
+            trash: trash.selectedIds()
+        };
+    }
+
+    // Brings `next` to the front, keeping the shown tab's view with it.
+    function showTab(next: FilesTab) {
+        if (next === tab)
+            return;
+        tab.view = snapshot();
+        front(next);
+    }
+
+    // Shows `next` as it was; its folder first, which clears the lists'
+    // selections, then its view. A tab that moved on while at the back (a
+    // move it asked for before) keeps its order but selects nothing.
+    function front(next: FilesTab) {
+        next.navigator.hidden = list.showHidden;
+        tab = next;
+        folder = next.navigator.folder;
+        const kept = next.view?.folder === folder ? next.view : null;
+        list.show(next.view?.list ?? null, kept?.list.selected ?? []);
+        trash.selectIds(kept?.trash ?? []);
+    }
+
+    function cycleTabs(steps: int) {
+        showTab(tabs[Tabs.cycled(tabs.indexOf(tab), tabs.length, steps)]);
+    }
+
+    function closeTab(closing: FilesTab) {
+        const at = tabs.indexOf(closing);
+        if (tabs.length === 1) {
+            window.closed();
+            return;
+        }
+        if (closing === tab)
+            front(tabs[Tabs.neighbour(at, tabs.length)]);
+        tabs = tabs.filter(other => other !== closing);
+        // The first tab is part of the window and goes with it.
+        if (closing !== firstTab)
+            closing.destroy();
+    }
+
+    function moveTab(moving: FilesTab, to: int) {
+        const from = tabs.indexOf(moving);
+        if (from !== to)
+            tabs = Tabs.reordered(tabs, from, to);
+    }
+
+    // Gives `torn` a window of its own and closes it here.
+    function tearOut(torn: FilesTab) {
+        const view = torn === tab ? snapshot() : torn.view;
+        const place = torn.navigator.folder;
+        windowRequested(place, (view?.list.selected ?? []).map(name => Paths.child(place, name)), {
+            history: torn.navigator.history,
+            view: view,
+            hidden: list.showHidden
+        });
+        closeTab(torn);
+    }
+
     function confirm(rows: var, act: var) {
         confirming = {
             asking: Trash.confirm(rows),
@@ -113,6 +231,18 @@ FloatingWindow {
             list.forceActiveFocus();
     }
 
+    // Shows the Properties of `rows` (the file list's) in the folder shown,
+    // of the folder itself when there are none, or of `drive`.
+    function showProperties(rows: var, drive: var) {
+        propertiesModel.show(Props.subject(folder, rows, drive));
+        propertiesDialog.forceActiveFocus();
+    }
+
+    function closeProperties() {
+        propertiesModel.close();
+        list.forceActiveFocus();
+    }
+
     function notice(row: var, error: string) {
         problems = problems.concat([
             {
@@ -122,12 +252,58 @@ FloatingWindow {
         ]);
     }
 
-    Component.onCompleted: navigator.begin(folder)
+    Component.onCompleted: {
+        if (carried) {
+            list.showHidden = carried.hidden;
+            navigator.hidden = carried.hidden;
+            navigator.resume(carried.history);
+            if (carried.view) {
+                list.model.sort = carried.view.list.sort;
+                trash.selectIds(carried.view.trash);
+            }
+        } else {
+            navigator.begin(folder);
+        }
+    }
     onConfirmingChanged: {
         if (confirming)
             confirmDialog.shown = confirming.asking;
     }
 
+    Component {
+        id: tabComponent
+        FilesTab {}
+    }
+    Connections {
+        target: window.navigator
+        function onFolderChanged() {
+            window.folder = window.navigator.folder;
+        }
+    }
+    Connections {
+        target: list
+        function onShowHiddenChanged() {
+            window.navigator.hidden = list.showHidden;
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+T"
+        onActivated: window.newTab()
+    }
+    Shortcut {
+        sequence: "Ctrl+W"
+        onActivated: window.closeTab(window.tab)
+    }
+    Shortcut {
+        sequence: "Ctrl+Tab"
+        onActivated: window.cycleTabs(1)
+    }
+    Shortcut {
+        // Shift+Tab comes as Backtab.
+        sequences: ["Ctrl+Shift+Tab", "Ctrl+Backtab", "Ctrl+Shift+Backtab"]
+        onActivated: window.cycleTabs(-1)
+    }
     Shortcut {
         sequence: "Alt+Left"
         onActivated: window.navigator.step(-1)
@@ -144,12 +320,17 @@ FloatingWindow {
         sequences: ["Ctrl+L", "Alt+D"]
         onActivated: navigation.editAddress()
     }
+    Shortcut {
+        sequence: "Alt+P"
+        enabled: !window.inTrash
+        onActivated: window.previewShown = !window.previewShown
+    }
     TapHandler {
         acceptedButtons: Qt.BackButton | Qt.ForwardButton
         onTapped: (point, button) => window.navigator.step(button === Qt.BackButton ? -1 : 1)
     }
 
-    // The frame's background: behind the two rows, and the sidebar.
+    // The frame's background: behind the three rows, and the sidebar.
     Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
@@ -167,11 +348,38 @@ FloatingWindow {
         transfers.start(mode, sources, folder);
     }
 
+    TabRow {
+        id: tabRow
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        tabs: window.tabs
+        current: window.tab
+        raised: navigation.color
+        onPicked: picked => window.showTab(picked)
+        onCloseRequested: closing => window.closeTab(closing)
+        onNewRequested: window.newTab()
+        onMoved: (moving, to) => window.moveTab(moving, to)
+        onTornOut: torn => window.tearOut(torn)
+    }
+    // Extracts the archive at `path` beside it: into a folder named after
+    // it ("Extract all"), or straight into its folder (`here`).
+    function extract(path: string, here: bool) {
+        transfer(here ? Protocol.TRANSFER_EXTRACT_HERE : Protocol.TRANSFER_EXTRACT, [path], Paths.parent(path));
+    }
+
+    // Packs the picked rows into a new zip in the folder shown.
+    function compress() {
+        const paths = list.model.selectedRows().map(row => Paths.child(folder, row.name));
+        if (archive === "" && paths.length > 0)
+            transfer(Protocol.TRANSFER_COMPRESS, paths, folder);
+    }
+
     NavigationRow {
         id: navigation
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.top: tabRow.bottom
         navigator: window.navigator
         solid: FilesService.frameSolid
         onAddressClosed: list.forceActiveFocus()
@@ -183,6 +391,12 @@ FloatingWindow {
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
         visible: !window.inTrash
+        extractable: window.extractable !== ""
+        compressible: window.archive === "" && list.model.revision >= 0 && list.model.selectedCount > 0
+        onExtractAllRequested: window.extract(window.extractable, false)
+        onCompressRequested: window.compress()
+        previewShown: window.previewShown
+        onPreviewToggled: window.previewShown = !window.previewShown
     }
     TrashCommandRow {
         id: trashCommands
@@ -204,11 +418,12 @@ FloatingWindow {
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
         onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
+        onTabRequested: path => window.openTab(path, false)
     }
     FileList {
         id: list
         anchors.left: sidebar.right
-        anchors.right: parent.right
+        anchors.right: preview.active ? preview.left : parent.right
         anchors.top: commands.bottom
         visible: !window.inTrash
         anchors.bottom: parent.bottom
@@ -216,9 +431,24 @@ FloatingWindow {
         select: window.select
         focus: true
         onFolderOpened: path => window.navigator.visit(path, null)
+        onTabRequested: path => window.openTab(path, false)
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
+        onPropertiesRequested: rows => window.showProperties(rows, null)
         solid: FilesService.listSolid
+    }
+    Loader {
+        id: preview
+        anchors.right: parent.right
+        anchors.top: commands.bottom
+        anchors.bottom: parent.bottom
+        width: Tokens.filesPreviewWidth
+        active: window.previewShown && !window.inTrash
+        sourceComponent: PreviewPane {
+            folder: window.folder
+            model: list.model
+            solid: FilesService.listSolid
+        }
     }
     TrashModel {
         id: trash
@@ -299,9 +529,34 @@ FloatingWindow {
             }
         }
     }
+    PropertiesModel {
+        id: propertiesModel
+    }
+    // A click beside the Properties dialog closes it.
+    MouseArea {
+        anchors.fill: parent
+        visible: propertiesModel.subject !== null
+        acceptedButtons: Qt.AllButtons
+        onClicked: window.closeProperties()
+        onWheel: wheel => wheel.accepted = true
+    }
+    PropertiesDialog {
+        id: propertiesDialog
+        anchors.centerIn: parent
+        visible: propertiesModel.subject !== null
+        subject: propertiesModel.subject ?? Props.subject(window.folder, [], null)
+        properties: propertiesModel.properties
+        counted: propertiesModel.counted
+        apps: propertiesModel.openWith.apps
+        defaultApp: propertiesModel.openWith.defaultApp
+        onCloseRequested: window.closeProperties()
+        onAccessFlipped: (who, right) => propertiesModel.flipAccess(who, right)
+        onDefaultChosen: app => propertiesModel.openWith.makeDefault(app)
+    }
     DriveMenu {
         id: driveMenu
         anchors.fill: parent
+        onPropertiesChosen: drive => window.showProperties([], drive)
         onEjectChosen: drive => FilesService.eject(drive.id, outcome => {
                 if (outcome === Protocol.EJECT_BUSY)
                     ejectProblem.show(drive.name);

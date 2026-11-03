@@ -38,9 +38,15 @@ QtObject {
 
     // Starts at `start` (absolute), with nothing to go back to.
     function begin(start: string) {
-        folder = start;
-        history = Navigation.start(start);
-        go(start, "stay", 0, null);
+        resume(Navigation.start(start));
+    }
+
+    // Starts where `kept` (a history another window's tab had) is, with
+    // its back and forward.
+    function resume(kept: var) {
+        folder = Navigation.current(kept);
+        history = kept;
+        go(folder, "stay", 0, null);
     }
 
     // Goes to `path` (absolute, or from `~`); `done(ok)`, when given, says

@@ -43,6 +43,8 @@ Rectangle {
         });
     }
 
+    // Another tab came to the front: its folder shows, not a half-typed path.
+    onNavigatorChanged: editing = false
     onEditingChanged: {
         if (!editing)
             addressClosed();

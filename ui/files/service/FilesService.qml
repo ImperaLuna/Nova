@@ -11,10 +11,11 @@ import "../trash.js" as Trash
 // gets its pages, changes and closing here), the sidebar's tree and
 // places, the drives (and mounting and ejecting them), opening files in
 // apps (the default one on a double-click or Enter, or one from "Open
-// with", which can also become the new default), copy and move jobs, and
-// the trash. The Nova Files process (../../files.qml) and its windows get
-// these here and never talk to Daemon themselves. Also how solid the
-// windows are, from config.toml's [files].
+// with", which can also become the new default), copy and move jobs, the
+// trash, the Properties window's facts, sizes and access, and the preview
+// pane's previews. The Nova Files process (../../files.qml) and its
+// windows get these here and never talk to Daemon themselves. Also how
+// solid the windows are, from config.toml's [files].
 Singleton {
     id: root
 
@@ -143,6 +144,21 @@ Singleton {
         });
     }
 
+    // `done(preview)` gets what the preview pane shows of the file at
+    // `path` (absolute): {kind: Protocol.PREVIEW_IMAGE, path} (a picture to
+    // load), {kind: Protocol.PREVIEW_TEXT, text, cut} (its first lines,
+    // `cut` when it goes on) or {kind: Protocol.PREVIEW_NONE}; false when
+    // novad couldn't tell.
+    function preview(path: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_PREVIEW, {
+            path: path
+        }, (error, result) => {
+            if (error)
+                console.warn(`nova: previewing ${path}: ${error}`);
+            done(error ? false : result);
+        });
+    }
+
     // `done(error, tree)` gets the sidebar's tree for a window on `folder`
     // (absolute, or from `~`): {folder, rows}, with `folder` absolute. The
     // tree is open down to `folder` but at the folders in `closed`, and at
@@ -230,6 +246,55 @@ Singleton {
         });
     }
 
+    // How far a measuring job got (see Daemon.filesMeasured).
+    signal measured(var measured)
+
+    // `done(properties)` gets what the Properties window shows about the
+    // item at `path` (absolute): novad's files_properties answer, or null
+    // when it couldn't be read.
+    function properties(path: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_PROPERTIES, {
+            path: path
+        }, (error, result) => {
+            if (error)
+                console.warn(`nova: properties of ${path}: ${error}`);
+            done(error ? null : result);
+        });
+    }
+
+    // Counts what `paths` (absolute) hold, in as many jobs as keep each
+    // request under novad's limit. Returns the jobs' numbers, whose
+    // `measured` events carry them.
+    function measure(paths: var): var {
+        return Trash.batches(paths, Protocol.REQUEST_MAX_BYTES).map(batch => {
+            const job = _nextJob++;
+            Daemon.call(Protocol.CMD_FILES_MEASURE, {
+                job: job,
+                paths: batch
+            }, error => {
+                if (error)
+                    console.warn(`nova: counting sizes: ${error}`);
+            });
+            return job;
+        });
+    }
+
+    // Stops measuring job `job`; it sends nothing more.
+    function cancelMeasure(job: int) {
+        Daemon.call(Protocol.CMD_FILES_MEASURE_CANCEL, {
+            job: job
+        });
+    }
+
+    // Sets who may read, change and run the item at `path` ({owner, group,
+    // others}, each {read, write, run}). `done(error)` gets novad's answer.
+    function setAccess(path: string, access: var, done: var) {
+        Daemon.call(Protocol.CMD_FILES_SET_ACCESS, {
+            path: path,
+            access: access
+        }, error => root._answered("changing access", error, done));
+    }
+
     // Moves `paths` (absolute) to the trash. `done(error)` gets novad's
     // answer: null, or which ones didn't go.
     function trash(paths: var, done: var) {
@@ -312,6 +377,9 @@ Singleton {
         }
         function onFilesTransferChanged(transfer: var) {
             root.transferChanged(transfer);
+        }
+        function onFilesMeasured(measured: var) {
+            root.measured(measured);
         }
         function onFilesTrashChanged() {
             root.trashChanged();

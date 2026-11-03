@@ -17,7 +17,11 @@ import "paths.js" as Paths
 // Ctrl+H shows or hides dot files. A double-click or Enter opens: a
 // folder is gone into (`folderOpened`), files open in their default app.
 // Delete asks to move the selection to the trash (`trashRequested`),
-// Shift+Delete to delete it for good (`deleteRequested`).
+// Shift+Delete to delete it for good (`deleteRequested`); Alt+Enter asks
+// for its Properties, or the folder's with nothing selected
+// (`propertiesRequested`). A middle click on a folder asks for it in a new
+// tab (`tabRequested`). view() and show() hand its order and selection to
+// the window's tabs and back.
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
 FocusScope {
@@ -31,10 +35,12 @@ FocusScope {
     property bool showHidden: false
 
     signal folderOpened(string path)
+    signal tabRequested(string path)
     // Delete and Shift+Delete with rows selected: plain copies of them
     // (Listing.copy), in the list's order.
     signal trashRequested(var rows)
     signal deleteRequested(var rows)
+    signal propertiesRequested(var rows)
 
     readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
     readonly property var columns: [
@@ -82,6 +88,24 @@ FocusScope {
             folderOpened(Paths.child(folder, opening.folder));
         for (const name of opening.files)
             FilesService.launch(Paths.child(folder, name), "", null);
+    }
+
+    // The order and the selected names, for a tab going to the back.
+    function view(): var {
+        return {
+            sort: model.sort,
+            selected: model.selectedNames()
+        };
+    }
+
+    // Shows a tab's view() (its order; null keeps this one) once its folder
+    // is set, with `selected` (names) selected. Shift starts from nothing,
+    // not from the last tab's anchor.
+    function show(kept: var, selected: var) {
+        if (kept && (kept.sort.key !== model.sort.key || kept.sort.descending !== model.sort.descending))
+            model.sort = kept.sort;
+        model.selectNames(selected);
+        model.anchor = -1;
     }
 
     Component.onCompleted: {
@@ -233,6 +257,10 @@ FocusScope {
                 list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
             }
             onOpened: list.open([list.model.rows.get(row.index)])
+            onMiddleClicked: {
+                if (row.dir)
+                    list.tabRequested(Paths.child(list.folder, row.name));
+            }
         }
 
         Keys.onPressed: event => {
@@ -241,6 +269,8 @@ FocusScope {
                 list.showHidden = !list.showHidden;
             else if (event.key === Qt.Key_A && ctrl)
                 list.model.selectAll();
+            else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.AltModifier) !== 0)
+                list.propertiesRequested(list.model.selectedRows().map(row => Listing.copy(row)));
             else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                 list.open(list.model.selectedRows());
             else if (event.key === Qt.Key_Delete && list.model.selectedCount > 0) {

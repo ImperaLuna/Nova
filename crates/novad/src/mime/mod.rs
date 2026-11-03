@@ -89,7 +89,13 @@ impl MimeDb {
         if let Some(special) = special_type(metadata) {
             return special;
         }
-        if metadata.len() == 0 {
+        self.type_of_name(name, metadata.len())
+    }
+
+    /// The type of a file `name` of `size` bytes, from its name alone: a
+    /// file that isn't on disk, like one in an archive.
+    pub fn type_of_name<'a>(&'a self, name: &str, size: u64) -> &'a str {
+        if size == 0 {
             return EMPTY;
         }
         self.globs.find(name).types.first().copied().unwrap_or(BINARY)

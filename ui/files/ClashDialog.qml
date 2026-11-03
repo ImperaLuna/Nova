@@ -119,22 +119,9 @@ Item {
             visible: dialog.clash.others > 0
             spacing: Tokens.rowInset
 
-            Rectangle {
+            CheckMark {
                 anchors.verticalCenter: parent.verticalCenter
-                width: Tokens.menuCheckSize
-                height: Tokens.menuCheckSize
-                radius: Tokens.menuCheckRadius
-                color: dialog.all ? Tokens.primary : "transparent"
-                border.width: dialog.all ? 0 : Tokens.strokeThin
-                border.color: Tokens.filesFaint
-
-                LineIcon {
-                    anchors.centerIn: parent
-                    visible: dialog.all
-                    path: Icons.CHECK
-                    size: Tokens.menuCheckIconSize
-                    color: Tokens.onAccent
-                }
+                checked: dialog.all
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter

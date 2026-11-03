@@ -756,6 +756,41 @@ QtObject {
     readonly property int filesClashButtonHeight: 34
     // The scale the dialog pops in from and shrinks back to.
     readonly property real filesClashEnterScale: 0.97
+    // Tabs along the window's top, as in Windows 11's Explorer: each shares
+    // the room between these widths, the shown one rounded on top and raised
+    // into the navigation row under it. A tab dragged this far below the
+    // row comes out as a window of its own.
+    readonly property int filesTabHeight: 32
+    readonly property int filesTabPadTop: 6
+    readonly property int filesTabGap: 2
+    readonly property int filesTabMinWidth: 96
+    readonly property int filesTabMaxWidth: 220
+    readonly property int filesTabRadius: menuRowRadius
+    readonly property int filesTabCloseSize: 20
+    readonly property int filesTabTearDistance: 40
+    // The Properties dialog (Alt+Enter): this wide, its labels in a column
+    // this wide, its rows this tall, the drive's fill bar this thick, and
+    // the access grid's check columns this wide. A check box that can't be
+    // changed fades to this.
+    readonly property int filesPropertiesWidth: 440
+    readonly property int filesPropertiesLabelWidth: 110
+    readonly property int filesPropertiesRowHeight: 24
+    readonly property int filesPropertiesBarHeight: 6
+    readonly property int filesPropertiesCheckColumn: 64
+    readonly property real filesCheckDisabledOpacity: 0.45
+    // The preview pane (Alt+P) at the file list's right: this wide, its
+    // picture or text this far in (pictures are decoded at
+    // Protocol.FILES_PREVIEW_PICTURE_PX, its width at twice the scale, the
+    // same for every window size), and the big icon and name (in at most this many lines) for a
+    // file it can't show. It previews a selection that has rested this
+    // long, so arrowing through a folder never asks for every file on the
+    // way, and shows a spinner once an answer has been this long in coming.
+    readonly property int filesPreviewWidth: 300
+    readonly property int filesPreviewPad: 16
+    readonly property int filesPreviewIconSize: 64
+    readonly property int filesPreviewNameLines: 3
+    readonly property int filesPreviewDelay: 120
+    readonly property int filesPreviewSlow: 400
 
     // Type
     readonly property string fontSans: "Inter"
