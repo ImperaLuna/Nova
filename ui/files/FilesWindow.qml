@@ -7,6 +7,7 @@ import "service"
 import "paths.js" as Paths
 import "drops.js" as Drops
 import "trash.js" as Trash
+import "shortcuts.js" as Shortcuts
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
@@ -19,7 +20,9 @@ import "../daemon/protocol.js" as Protocol
 // lie over it all. Files dropped on the list or the sidebar are copied,
 // moved or trashed here, as the drop decided (drops.js).
 // `folder` follows the window's Navigator as it moves (Alt+Left,
-// Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
+// Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
+// window's keys are the table's WINDOW entries (shortcuts.js), done by
+// act(); the lists answer their own. Its
 // frame and its file list each go from glass to solid as config.toml's
 // [files] says, live. Each draws its own background, so one never shows
 // through the other.
@@ -109,10 +112,7 @@ FloatingWindow {
         confirming = null;
         if (yes)
             act?.();
-        if (inTrash)
-            trashList.focusList();
-        else
-            list.forceActiveFocus();
+        focusList();
     }
 
     function notice(row: var, error: string) {
@@ -130,21 +130,66 @@ FloatingWindow {
             confirmDialog.shown = confirming.asking;
     }
 
-    Shortcut {
-        sequence: "Alt+Left"
-        onActivated: window.navigator.step(-1)
+    // Does a shortcut table action (Shortcuts.TABLE) that is the window's.
+    function act(action: string) {
+        switch (action) {
+        case "back":
+            navigator.step(-1);
+            break;
+        case "forward":
+            navigator.step(1);
+            break;
+        case "up":
+            navigator.up();
+            break;
+        case "address":
+            navigation.editAddress();
+            break;
+        case "search":
+            navigation.editSearch();
+            break;
+        case "refresh":
+            if (inTrash)
+                trash.refresh();
+            else
+                list.refresh();
+            break;
+        case "newWindow":
+            // From the trash, on the folder its tree is on.
+            FilesService.showFolder(inTrash ? navigator.treeFolder : folder);
+            break;
+        case "closeWindow":
+            // Hiding a window from QML doesn't say `closed` (only the
+            // compositor closing it does), which files.qml waits for.
+            closed();
+            break;
+        default:
+            console.warn(`nova: files: no window action ${action}`);
+        }
     }
-    Shortcut {
-        sequence: "Alt+Right"
-        onActivated: window.navigator.step(1)
+
+    // The quiet keyboard focus after a text field or a dialog lets go.
+    function focusList() {
+        if (inTrash)
+            trashList.focusList();
+        else
+            list.forceActiveFocus();
     }
-    Shortcut {
-        sequence: "Alt+Up"
-        onActivated: window.navigator.up()
-    }
-    Shortcut {
-        sequences: ["Ctrl+L", "Alt+D"]
-        onActivated: navigation.editAddress()
+
+    Repeater {
+        model: Shortcuts.entries(Shortcuts.WINDOW)
+
+        Item {
+            id: entry
+
+            required property var modelData
+
+            Shortcut {
+                sequences: entry.modelData.keys
+                enabled: window.confirming === null || entry.modelData.asking === true
+                onActivated: window.act(entry.modelData.action)
+            }
+        }
     }
     TapHandler {
         acceptedButtons: Qt.BackButton | Qt.ForwardButton
@@ -188,7 +233,8 @@ FloatingWindow {
         anchors.top: parent.top
         navigator: window.navigator
         solid: FilesService.frameSolid
-        onAddressClosed: list.forceActiveFocus()
+        onAddressClosed: window.focusList()
+        onSearchClosed: window.focusList()
     }
     CommandRow {
         id: commands
@@ -232,6 +278,7 @@ FloatingWindow {
         focus: true
         onFolderOpened: path => window.navigator.visit(path, null)
         onTrashRequested: rows => window.moveToTrash(rows)
+        onBackRequested: window.navigator.step(-1)
         onDeleteRequested: rows => window.deleteForGood(rows)
         onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
         solid: FilesService.listSolid
@@ -249,8 +296,10 @@ FloatingWindow {
         anchors.bottom: parent.bottom
         visible: window.inTrash
         model: trash
+        home: Quickshell.env("HOME") ?? ""
         solid: FilesService.listSolid
         onEraseRequested: window.erase()
+        onBackRequested: window.navigator.step(-1)
         onVisibleChanged: {
             if (visible)
                 focusList();
