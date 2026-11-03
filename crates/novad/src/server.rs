@@ -351,6 +351,7 @@ impl<'a> Connection<'a> {
                 return self.files_later(move |_| crate::files::Trash::delete(&paths));
             }
             Command::FilesTrashList => return self.files_later(|files| Ok(files.trash().list())),
+            Command::FilesGamesList => return self.files_later(|files| Ok(files.games())),
             Command::FilesRestore { ids } => {
                 let ids = ids.clone();
                 return self.files_later(move |files| files.trash().restore(&ids));
@@ -951,6 +952,7 @@ impl<'a> Connection<'a> {
             | Command::FilesTrash { .. }
             | Command::FilesDelete { .. }
             | Command::FilesTrashList
+            | Command::FilesGamesList
             | Command::FilesRestore { .. }
             | Command::FilesTrashDelete { .. }
             | Command::FilesEmptyTrash

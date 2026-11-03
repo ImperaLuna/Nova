@@ -309,6 +309,8 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             // A home trash under `<dir>/trash`, and no drives.
             trash: Some(dir.join("trash")),
             mounts: dir.join("no-mountinfo"),
+            // Steam, once a test installs it, at `<dir>/steam`.
+            games: crate::files::games::Sources { steam: vec![dir.join("steam")] },
         },
         session_lock: dir.to_owned(),
         screenshots: dir.to_owned(),

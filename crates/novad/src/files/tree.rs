@@ -23,8 +23,8 @@
 
 use super::folder;
 use nova_protocol::{
-    FILES_PATH_MAX_WIRE_BYTES, FILES_TRASH_PLACE, FILES_TREE_MAX_FOLDERS, FilePlace, FolderTree, PlaceKind, TreeRow,
-    wire_path, wire_text,
+    FILES_GAMES_PLACE, FILES_PATH_MAX_WIRE_BYTES, FILES_TRASH_PLACE, FILES_TREE_MAX_FOLDERS, FilePlace, FolderTree,
+    PlaceKind, TreeRow, wire_path, wire_text,
 };
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
@@ -69,8 +69,9 @@ pub fn tree(request: &Request, home: &Path) -> Result<FolderTree, String> {
 }
 
 /// The places that exist, in the sidebar's order: Home, then the user's
-/// folders from `user-dirs.dirs`, then the trash, which is always there.
-pub fn places(home: &Path, user_dir: impl Fn(&str, &str) -> PathBuf) -> Vec<FilePlace> {
+/// folders from `user-dirs.dirs`, then the games while there are
+/// `games`, then the trash, which is always there.
+pub fn places(home: &Path, user_dir: impl Fn(&str, &str) -> PathBuf, games: bool) -> Vec<FilePlace> {
     let folders = [
         (PlaceKind::Desktop, "DESKTOP", "Desktop"),
         (PlaceKind::Documents, "DOCUMENTS", "Documents"),
@@ -81,6 +82,7 @@ pub fn places(home: &Path, user_dir: impl Fn(&str, &str) -> PathBuf) -> Vec<File
         .chain(folders.into_iter().map(|(kind, key, fallback)| (kind, user_dir(key, fallback))))
         .filter(|(_, path)| path.is_dir())
         .map(|(kind, path)| FilePlace { kind, path: wire_text(path) })
+        .chain(games.then(|| FilePlace { kind: PlaceKind::Games, path: FILES_GAMES_PLACE.into() }))
         .chain(std::iter::once(FilePlace { kind: PlaceKind::Trash, path: FILES_TRASH_PLACE.into() }))
         .collect()
 }
@@ -336,9 +338,11 @@ mod tests {
     #[test]
     fn places_are_the_folders_that_exist() {
         let home = home("places");
-        let places = places(&home, |_, fallback| home.join(fallback));
+        let places = places(&home, |_, fallback| home.join(fallback), false);
         let kinds: Vec<_> = places.iter().map(|place| place.kind).collect();
         assert_eq!(kinds, [PlaceKind::Home, PlaceKind::Documents, PlaceKind::Pictures, PlaceKind::Trash]);
+        let with_games = super::places(&home, |_, fallback| home.join(fallback), true);
+        assert_eq!(with_games[with_games.len() - 2].kind, PlaceKind::Games, "the games come before the trash");
         assert_eq!(places[1].path, request(&home.join("Documents")));
     }
 }

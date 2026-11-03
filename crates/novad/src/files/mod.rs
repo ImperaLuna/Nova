@@ -25,6 +25,8 @@
 //!   package brings new types), and the view's order.
 //! - `tree.rs`: the sidebar's folder tree that follows the window
 //!   (`files_tree`) and its places (`files_places`).
+//! - `games/`: the Games place's installed games (`files_games_list`),
+//!   from the launchers' own library files.
 //! - `search/`: finding files by name (`files_search`) from an index of
 //!   every name under Home and the drives, kept up to date with inotify.
 //! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
@@ -50,6 +52,7 @@ mod copying;
 mod drives;
 mod file_manager1;
 mod folder;
+pub mod games;
 pub mod search;
 mod target;
 mod transfers;
@@ -70,8 +73,8 @@ use crate::logger::Logger;
 use crate::notifications::Notifications;
 use crate::session_bus::{Bus, Stop};
 use nova_protocol::{
-    ClashAnswer, EjectOutcome, Event, FeatureState, FilePlace, FileSort, FilesLook, FilesWindow, FolderTree, Topic,
-    TransferMode,
+    ClashAnswer, EjectOutcome, Event, FeatureState, FilePlace, FileSort, FilesLook, FilesWindow, FolderTree, Game,
+    Topic, TransferMode,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
@@ -112,6 +115,8 @@ pub struct Sources {
     pub trash: Option<PathBuf>,
     /// The mount table, where drives' trashes are looked for.
     pub mounts: PathBuf,
+    /// Where the game launchers keep their libraries.
+    pub games: games::Sources,
 }
 
 pub struct Files {
@@ -261,7 +266,13 @@ impl Files {
 
     /// The sidebar's places that exist (`files_places`).
     pub fn places(&self) -> Vec<FilePlace> {
-        tree::places(&self.shared.sources.home, nova_paths::user_dir)
+        tree::places(&self.shared.sources.home, nova_paths::user_dir, self.shared.sources.games.any())
+    }
+
+    /// The installed games (`files_games_list`). It reads the launchers'
+    /// files, so it's called off the connection's thread.
+    pub fn games(&self) -> Vec<Game> {
+        games::list(&self.shared.sources.games, &self.shared.logger)
     }
 
     /// Closes client `client`'s view `view` (`files_close`).
@@ -431,6 +442,7 @@ impl crate::modules::Module for Files {
         let home = nova_paths::home().unwrap_or_else(|| PathBuf::from("/"));
         let trash = nova_paths::data_home().map(|data| data.join(TRASH_DIR));
         let search = search::Sources::system(env.home.clone());
+        let games = games::Sources::system(&home, nova_paths::data_home());
         Sources {
             bus: Bus::Session,
             udisks: Bus::System,
@@ -442,6 +454,7 @@ impl crate::modules::Module for Files {
             trash,
             mounts: MOUNT_TABLE.into(),
             search,
+            games,
         }
     }
 
@@ -522,6 +535,7 @@ mod tests {
                 search: search::Sources::under(&dir),
                 trash: Some(dir.join("Trash")),
                 mounts: dir.join("no-mountinfo"),
+                games: games::Sources { steam: vec![] },
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");

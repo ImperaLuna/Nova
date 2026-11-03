@@ -213,6 +213,25 @@ fn files_are_found_by_name_over_the_socket() {
 /// trash emptied, with `files_trash_changed` each time it changes. The
 /// trash's own tests cover the spec.
 #[test]
+fn installed_games_are_a_place_and_a_list_over_the_socket() {
+    let novad = TestDaemon::open("files-games", None, |dir| {
+        std::fs::write(dir.join("config/features.toml"), "enabled = [\"files\"]\n").unwrap();
+        let manifest =
+            "\"AppState\" { \"appid\" \"3321460\" \"name\" \"Crimson Desert\" \"installdir\" \"Crimson Desert\" }";
+        std::fs::create_dir_all(dir.join("steam/steamapps/common/Crimson Desert")).unwrap();
+        std::fs::write(dir.join("steam/steamapps/appmanifest_3321460.acf"), manifest).unwrap();
+    });
+    let mut client = novad.connect();
+    let places = client.request(1, "files_places", None)["result"].clone();
+    let kinds: Vec<_> = places.as_array().unwrap().iter().map(|place| place["kind"].clone()).collect();
+    assert_eq!(kinds[kinds.len() - 2..], [json!("games"), json!("trash")]);
+    let games = client.request(2, "files_games_list", None)["result"].clone();
+    assert_eq!(games[0]["name"], "Crimson Desert");
+    assert!(games[0]["folder"].as_str().unwrap().ends_with("steam/steamapps/common/Crimson Desert"));
+    assert!(games[0].get("size").is_none(), "no size when Steam doesn't say");
+}
+
+#[test]
 fn the_trash_is_used_and_followed_over_the_socket() {
     let novad = TestDaemon::open("files-trash", None, |dir| {
         std::fs::write(dir.join("config/features.toml"), "enabled = [\"files\"]\n").unwrap()

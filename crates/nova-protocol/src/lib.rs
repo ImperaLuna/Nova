@@ -2023,6 +2023,9 @@ pub enum Command {
     /// What the trash holds (feature `files`), answered with
     /// [`TrashItem`]s, the last trashed first.
     FilesTrashList,
+    /// The games installed (feature `files`), answered with [`Game`]s in
+    /// name order: every Steam library's, on every drive.
+    FilesGamesList,
     /// Puts the trashed items `ids` back where they came from (feature
     /// `files`). One whose place is taken stays in the trash.
     FilesRestore {
@@ -2124,7 +2127,7 @@ pub struct FilePlace {
 }
 
 /// Which place a [`FilePlace`] is: Home, one of the user's folders from
-/// `user-dirs.dirs`, or the trash.
+/// `user-dirs.dirs`, the games, or the trash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaceKind {
@@ -2133,9 +2136,34 @@ pub enum PlaceKind {
     Documents,
     Downloads,
     Pictures,
+    /// The installed games, at [`FILES_GAMES_PLACE`]: not a folder,
+    /// listed with `files_games_list`. There while a game launcher's
+    /// library is.
+    Games,
     /// The trash, at [`FILES_TRASH_PLACE`]: not a folder, listed with
     /// `files_trash_list`.
     Trash,
+}
+
+/// The games place's path ([`PlaceKind::Games`]): a window there shows the
+/// installed games instead of a folder.
+pub const FILES_GAMES_PLACE: &str = "games:///";
+
+/// An installed game (feature `files`, [`Command::FilesGamesList`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Game {
+    /// What its launcher calls it.
+    pub name: String,
+    /// Where it's installed, absolute, as wire text ([`wire_text`]).
+    pub folder: String,
+    /// How much room it takes, in bytes, when its launcher says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// The folder its saves are under, absolute, as wire text, when one is
+    /// found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saves: Option<String>,
 }
 
 /// The trash place's path ([`PlaceKind::Trash`]): a window there shows the

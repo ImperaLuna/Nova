@@ -132,6 +132,7 @@ mod tests {
                 search: crate::files::search::Sources::under(&dir),
                 trash: None,
                 mounts: dir.join("no-mountinfo"),
+                games: crate::files::games::Sources { steam: vec![] },
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");

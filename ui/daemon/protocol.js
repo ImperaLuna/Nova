@@ -48,6 +48,9 @@ var REQUEST_MAX_BYTES = 65536;
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 
+// The games place's path in files_places: the games, not a folder.
+var FILES_GAMES_PLACE = "games:///";
+
 // The trash place's path in files_places: the trash, not a folder.
 var FILES_TRASH_PLACE = "trash:///";
 
@@ -131,6 +134,7 @@ var CMD_FILES_TRANSFER_ANSWER = "files_transfer_answer";
 var CMD_FILES_TRASH = "files_trash";
 var CMD_FILES_DELETE = "files_delete";
 var CMD_FILES_TRASH_LIST = "files_trash_list";
+var CMD_FILES_GAMES_LIST = "files_games_list";
 var CMD_FILES_RESTORE = "files_restore";
 var CMD_FILES_TRASH_DELETE = "files_trash_delete";
 var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
@@ -301,6 +305,7 @@ var PLACE_DESKTOP = "desktop";
 var PLACE_DOCUMENTS = "documents";
 var PLACE_DOWNLOADS = "downloads";
 var PLACE_PICTURES = "pictures";
+var PLACE_GAMES = "games";
 var PLACE_TRASH = "trash";
 
 // How files_eject went (EjectOutcome).
