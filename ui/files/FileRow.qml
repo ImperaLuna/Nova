@@ -5,7 +5,9 @@ import "paths.js" as Paths
 
 // A row of Nova Files' Details list: the entry's icon and name, then its
 // Modified, Type and Size at the header's column widths. Hovered rows
-// lighten, selected ones fill; dot files read fainter. When a folder's
+// lighten, selected ones fill, a folder a drag would drop into washes in
+// the accent; dot files read fainter. A press that moves far enough asks
+// to drag (`dragRequested`); one that doesn't is a click. When a folder's
 // entries have just come in (`riseOrder`), it eases up into place after
 // the rows nearer where the list opened.
 Rectangle {
@@ -21,6 +23,8 @@ Rectangle {
 
     required property real nameWidth
     required property bool selected
+    // A drag over the list would drop into this folder.
+    property bool dropTarget: false
     // Rows from where the list opened, while a folder's entries have just
     // come in, or -1: read once, as the row is made.
     required property int riseOrder
@@ -28,11 +32,14 @@ Rectangle {
     required property real now
 
     signal pressed(int modifiers)
+    // Released where it was pressed, without dragging.
+    signal clicked(int modifiers)
+    signal dragRequested
     signal opened
 
     height: Tokens.filesRowHeight
     radius: Tokens.menuRowRadius
-    color: selected ? Tokens.selected : mouse.containsMouse ? Tokens.hover : "transparent"
+    color: dropTarget ? Tokens.filesDropTarget : selected ? Tokens.selected : mouse.containsMouse ? Tokens.hover : "transparent"
 
     component Cell: Text {
         anchors.verticalCenter: parent?.verticalCenter
@@ -86,7 +93,28 @@ Rectangle {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true
-        onPressed: press => entry.pressed(press.modifiers)
+        // A drag takes the rows along; the wheel scrolls the list.
+        preventStealing: true
+
+        // Where the press was, until it moved far enough to drag.
+        property point pressedAt
+        property bool dragging: false
+
+        onPressed: press => {
+            pressedAt = Qt.point(press.x, press.y);
+            dragging = false;
+            entry.pressed(press.modifiers);
+        }
+        onPositionChanged: move => {
+            if (pressed && !dragging && Math.hypot(move.x - pressedAt.x, move.y - pressedAt.y) >= Tokens.filesDragStart) {
+                dragging = true;
+                entry.dragRequested();
+            }
+        }
+        onClicked: click => {
+            if (!dragging)
+                entry.clicked(click.modifiers);
+        }
         onDoubleClicked: entry.opened()
     }
 

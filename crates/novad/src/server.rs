@@ -342,6 +342,10 @@ impl<'a> Connection<'a> {
                 });
             }
             Command::FilesPlaces => return self.files_later(|files| Ok(files.places())),
+            Command::FilesSameDrive { sources, folder } => {
+                let (sources, folder) = (sources.clone(), folder.clone());
+                return self.files_later(move |_| crate::files::same_drive(&sources, &folder));
+            }
             Command::FilesTrash { paths } => {
                 let paths = paths.clone();
                 return self.files_later(move |files| files.trash().trash(&paths));
@@ -954,6 +958,7 @@ impl<'a> Connection<'a> {
             | Command::FilesOpen { .. }
             | Command::FilesClose { .. }
             | Command::FilesTransfer { .. }
+            | Command::FilesSameDrive { .. }
             | Command::FilesTransferCancel { .. }
             | Command::FilesTransferAnswer { .. }
             | Command::AttachFiles { .. }

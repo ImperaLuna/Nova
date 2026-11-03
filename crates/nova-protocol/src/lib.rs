@@ -2007,6 +2007,15 @@ pub enum Command {
         sources: Vec<String>,
         folder: String,
     },
+    /// Whether every item at `sources` (absolute paths, wire text) is on
+    /// the same drive (file system) as the folder `folder` (feature
+    /// `files`), answered with a bool. Nova Files moves what's dragged onto
+    /// a folder on the same drive and copies it to another, as Explorer
+    /// does.
+    FilesSameDrive {
+        sources: Vec<String>,
+        folder: String,
+    },
     /// Stops this connection's job `job`. What it already copied or moved
     /// stays; a file it was halfway through is removed.
     FilesTransferCancel {
