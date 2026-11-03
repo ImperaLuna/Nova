@@ -340,9 +340,8 @@ fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
     let from = CString::new(from.as_os_str().as_bytes()).map_err(io::Error::other)?;
     let to = CString::new(to.as_os_str().as_bytes()).map_err(io::Error::other)?;
     // SAFETY: both are NUL-terminated paths that live through the call.
-    let renamed = unsafe {
-        libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE)
-    };
+    let renamed =
+        unsafe { libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE) };
     if renamed == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }
 

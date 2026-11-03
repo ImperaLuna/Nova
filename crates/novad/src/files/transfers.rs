@@ -635,8 +635,9 @@ impl Run {
         let sources = self.sources.clone();
         for source in &sources {
             let job = Arc::clone(&self.job);
-            let measured =
-                copying::measure(source, None, &|| job.stopped()).map_err(|e| failed(source, &e))?.ok_or(Halt::Stopped)?;
+            let measured = copying::measure(source, None, &|| job.stopped())
+                .map_err(|e| failed(source, &e))?
+                .ok_or(Halt::Stopped)?;
             self.total.bytes += measured.bytes;
         }
         let first = &sources[0];
@@ -976,7 +977,10 @@ mod tests {
     #[test]
     fn extract_here_puts_the_contents_in_the_folder() {
         let fixture = Fixture::new("extract-here");
-        crate::files::archive::tests::write_zip(&fixture.dir.join("from/docs.zip"), &[("a.txt", "a"), ("b/c.txt", "c")]);
+        crate::files::archive::tests::write_zip(
+            &fixture.dir.join("from/docs.zip"),
+            &[("a.txt", "a"), ("b/c.txt", "c")],
+        );
         fixture.start(TransferMode::ExtractHere, &["from/docs.zip"], "from");
         fixture.until(TransferState::Done);
         assert_eq!(fixture.names("from"), ["a.txt", "b", "docs.zip"]);
@@ -990,7 +994,16 @@ mod tests {
         fixture.write("from/notes.txt", "text");
         fixture.start(TransferMode::Extract, &["from/fake.zip"], "to");
         assert!(fixture.until(TransferState::Failed).error.unwrap().contains("fake.zip"));
-        fixture.transfers.start(fixture.client, 2, TransferMode::Extract, &[fixture.dir.join("from/notes.txt").display().to_string()], &fixture.dir.join("to").display().to_string()).unwrap();
+        fixture
+            .transfers
+            .start(
+                fixture.client,
+                2,
+                TransferMode::Extract,
+                &[fixture.dir.join("from/notes.txt").display().to_string()],
+                &fixture.dir.join("to").display().to_string(),
+            )
+            .unwrap();
         assert!(fixture.until(TransferState::Failed).error.unwrap().contains("isn't an archive"));
         assert!(fixture.names("to").is_empty(), "no hidden folder left behind");
     }

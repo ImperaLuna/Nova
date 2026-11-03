@@ -2,11 +2,11 @@
 //! compressions), then listed, extracted and packed through this module.
 
 use super::*;
-use std::time::{Duration, UNIX_EPOCH};
 use nova_test_support::TempDir;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::time::{Duration, UNIX_EPOCH};
 use zip::write::SimpleFileOptions;
 
 /// A zip of `members`: a name ending in `/` is a folder, `->` makes a link.
@@ -56,7 +56,11 @@ fn names(entries: &[FileEntry]) -> Vec<(String, bool)> {
 }
 
 fn listed(archive: &Path, inner: &str, hidden: bool) -> io::Result<Vec<FileEntry>> {
-    let inside = Inside { archive: archive.to_owned(), kind: Kind::of_name(archive.file_name().unwrap()).unwrap(), inner: inner.into() };
+    let inside = Inside {
+        archive: archive.to_owned(),
+        kind: Kind::of_name(archive.file_name().unwrap()).unwrap(),
+        inner: inner.into(),
+    };
     list(&inside, hidden, &MimeDb::default(), &|| false).map(Option::unwrap)
 }
 
@@ -68,7 +72,9 @@ fn unpacked(archive: &Path, into: &Path) {
 
 #[test]
 fn archives_are_known_by_name_and_extract_to_their_stem() {
-    for (name, kind) in [("a.zip", Kind::Zip), ("A.TAR.GZ", Kind::TarGz), ("b.tgz", Kind::TarGz), ("c.tar.zst", Kind::TarZst)] {
+    for (name, kind) in
+        [("a.zip", Kind::Zip), ("A.TAR.GZ", Kind::TarGz), ("b.tgz", Kind::TarGz), ("c.tar.zst", Kind::TarZst)]
+    {
         assert_eq!(Kind::of_name(OsStr::new(name)), Some(kind), "{name}");
     }
     assert_eq!(Kind::of_name(OsStr::new(".zip")), None, "only an ending");
@@ -91,8 +97,14 @@ fn a_path_through_a_zip_is_inside_it_and_a_folder_named_like_one_isnt() {
 fn a_zip_lists_like_a_folder_with_the_folders_it_only_implies() {
     let dir = TempDir::new("archive-list");
     let zip = dir.join("photos.zip");
-    write_zip(&zip, &[("cover.png", "png"), ("2025/a.png", "1234"), ("2025/trip/b.png", "b"), (".hidden", "h"), ("empty/", "")]);
-    assert_eq!(names(&listed(&zip, "", false).unwrap()), [("2025".into(), true), ("cover.png".into(), false), ("empty".into(), true)]);
+    write_zip(
+        &zip,
+        &[("cover.png", "png"), ("2025/a.png", "1234"), ("2025/trip/b.png", "b"), (".hidden", "h"), ("empty/", "")],
+    );
+    assert_eq!(
+        names(&listed(&zip, "", false).unwrap()),
+        [("2025".into(), true), ("cover.png".into(), false), ("empty".into(), true)]
+    );
     assert_eq!(listed(&zip, "", true).unwrap().len(), 4, "hidden entries on request");
     let inner = listed(&zip, "2025", false).unwrap();
     assert_eq!(names(&inner), [("a.png".into(), false), ("trip".into(), true)]);
@@ -160,7 +172,10 @@ fn every_tar_compression_extracts() {
         assert_eq!(fs::read_link(into.join("folder/link")).unwrap(), Path::new("a.txt"), "{name}");
         let modified = fs::metadata(into.join("folder/a.txt")).unwrap().modified().unwrap();
         assert_eq!(modified, UNIX_EPOCH + Duration::from_secs(1_700_000_000), "{name}");
-        assert_eq!(names(&listed(&dir.join(name), "folder", false).unwrap()), [("a.txt".into(), false), ("link".into(), false)]);
+        assert_eq!(
+            names(&listed(&dir.join(name), "folder", false).unwrap()),
+            [("a.txt".into(), false), ("link".into(), false)]
+        );
     }
 }
 
@@ -175,11 +190,13 @@ fn a_packed_zip_extracts_to_what_was_packed() {
     let mut packed_bytes = 0;
     let sources = [dir.join("from/Photos"), dir.join("from/notes.txt")];
     let sources: Vec<_> = sources.iter().map(PathBuf::as_path).collect();
-    assert!(pack(&sources, fs::File::create(&zip).unwrap(), &mut |bytes| {
-        packed_bytes += bytes;
-        true
-    })
-    .unwrap());
+    assert!(
+        pack(&sources, fs::File::create(&zip).unwrap(), &mut |bytes| {
+            packed_bytes += bytes;
+            true
+        })
+        .unwrap()
+    );
     assert_eq!(packed_bytes, 5);
     unpacked(&zip, &dir.join("out"));
     assert_eq!(fs::read_to_string(dir.join("out/Photos/2025/a.png")).unwrap(), "png");

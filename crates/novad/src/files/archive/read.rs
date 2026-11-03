@@ -71,8 +71,14 @@ pub fn members(path: &Path, kind: Kind, stopped: &dyn Fn() -> bool) -> io::Resul
 /// learn its size).
 pub(super) fn total(path: &Path, kind: Kind) -> io::Result<u64> {
     if kind == Kind::Zip {
-        let zip = open_zip(path)?;
-        return Ok(zip.decompressed_size().map_or(0, |size| u64::try_from(size).unwrap_or(u64::MAX)));
+        // From the table of contents, which knows every size even where a
+        // member's own header leaves it for after its data.
+        let mut zip = open_zip(path)?;
+        let mut total = 0u64;
+        for index in 0..zip.len() {
+            total = total.saturating_add(zip.by_index_raw(index).map_err(zip_error)?.size());
+        }
+        return Ok(total);
     }
     Ok(std::fs::metadata(path)?.len())
 }

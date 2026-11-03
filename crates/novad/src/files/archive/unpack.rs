@@ -107,7 +107,12 @@ pub fn fresh_folder(parent: &Path, what: &OsStr) -> io::Result<PathBuf> {
 
 /// Writes `member`'s `contents` to `target`, replacing a file there;
 /// false when `go_on` stops it between chunks.
-fn write_file(member: &Member, contents: &mut dyn Read, target: &Path, go_on: &mut dyn FnMut() -> bool) -> io::Result<bool> {
+fn write_file(
+    member: &Member,
+    contents: &mut dyn Read,
+    target: &Path,
+    go_on: &mut dyn FnMut() -> bool,
+) -> io::Result<bool> {
     let mut file = OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(target)?;
     let mut buffer = vec![0; CHUNK_BYTES];
     loop {

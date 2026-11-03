@@ -44,7 +44,8 @@ fn add<W: Write + Seek>(
         zip.add_symlink(name, target.to_string_lossy(), options).map_err(io::Error::other)?;
     } else if kind.is_dir() {
         zip.add_directory(format!("{name}/"), options).map_err(io::Error::other)?;
-        let mut children: Vec<_> = fs::read_dir(path)?.map(|entry| entry.map(|entry| entry.file_name())).collect::<io::Result<_>>()?;
+        let mut children: Vec<_> =
+            fs::read_dir(path)?.map(|entry| entry.map(|entry| entry.file_name())).collect::<io::Result<_>>()?;
         // The same zip from the same folder.
         children.sort();
         for child in children {
