@@ -7,7 +7,7 @@
 //! its target) share the kernel's watch, and its events are reported under
 //! both.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::{CString, OsStr};
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
@@ -70,11 +70,60 @@ impl Changes {
 pub struct Inotify {
     file: std::fs::File,
     mask: u32,
-    /// The paths each watch was added for.
-    dirs: Mutex<HashMap<i32, Vec<PathBuf>>>,
+    dirs: Mutex<Watches>,
     stop: Stopper,
     /// Another file whose poll events in `.1` end a wait too.
     also: Option<(Arc<std::fs::File>, i16)>,
+}
+
+/// Which paths are watched, both ways round, so adding or dropping one
+/// touches only its own watch however many there are.
+#[derive(Default)]
+struct Watches {
+    /// The paths each watch was added for.
+    paths: HashMap<i32, Vec<PathBuf>>,
+    /// The watch each path is on, ordered so a folder's subfolders are a
+    /// range.
+    wds: BTreeMap<PathBuf, i32>,
+}
+
+impl Watches {
+    /// Adds `dir` on the watch `wd`. Returns a watch it left that no path
+    /// is on any more, for the kernel to drop.
+    fn add(&mut self, dir: &Path, wd: i32) -> Option<i32> {
+        let old = self.wds.insert(dir.to_owned(), wd);
+        if old == Some(wd) {
+            return None;
+        }
+        self.paths.entry(wd).or_default().push(dir.to_owned());
+        old.and_then(|old| self.take_off(old, dir))
+    }
+
+    /// Takes `dir` off its watch. Returns that watch if no path is on it
+    /// any more, for the kernel to drop.
+    fn remove(&mut self, dir: &Path) -> Option<i32> {
+        let wd = self.wds.remove(dir)?;
+        self.take_off(wd, dir)
+    }
+
+    /// Takes `dir` off `wd`'s paths (not off `wds`); `wd` once empty.
+    fn take_off(&mut self, wd: i32, dir: &Path) -> Option<i32> {
+        let paths = self.paths.get_mut(&wd)?;
+        paths.retain(|path| path != dir);
+        paths.is_empty().then(|| {
+            self.paths.remove(&wd);
+            wd
+        })
+    }
+
+    /// The kernel dropped the watch `wd` (its folder went).
+    fn ignored(&mut self, wd: i32) {
+        for path in self.paths.remove(&wd).unwrap_or_default() {
+            if self.wds.get(&path) == Some(&wd) {
+                self.wds.remove(&path);
+            }
+        }
+    }
 }
 
 /// Ends a blocked or future `Inotify::read` (or any wait that polls its
@@ -128,7 +177,7 @@ impl Inotify {
 
     /// How many folders are watched.
     pub fn watched(&self) -> usize {
-        lock(&self.dirs).values().map(Vec::len).sum()
+        lock(&self.dirs).wds.len()
     }
 
     /// A handle that makes `read` return `None`.
@@ -164,51 +213,50 @@ impl Inotify {
             return Err(std::io::Error::last_os_error());
         }
         let mut dirs = lock(&self.dirs);
-        self.forget(&mut dirs, dir, Some(wd));
-        let paths = dirs.entry(wd).or_default();
-        if !paths.iter().any(|path| path == dir) {
-            paths.push(dir.to_owned());
-        }
+        let unused = dirs.add(dir, wd);
+        self.rm_watches(unused);
         Ok(())
     }
 
     /// Stops watching `dir` and every folder watched below it.
     pub fn unwatch_tree(&self, dir: &Path) {
-        self.unwatch_unless(|path| !path.starts_with(dir));
+        let mut dirs = lock(&self.dirs);
+        // Paths sort by component, so the folders below `dir` follow it.
+        let below: Vec<PathBuf> = dirs
+            .wds
+            .range::<Path, _>((std::ops::Bound::Included(dir), std::ops::Bound::Unbounded))
+            .map(|(path, _)| path)
+            .take_while(|path| path.starts_with(dir))
+            .cloned()
+            .collect();
+        let unused: Vec<i32> = below.iter().filter_map(|path| dirs.remove(path)).collect();
+        self.rm_watches(unused);
     }
 
     /// Stops watching `dir`, whatever it pointed to when it was watched.
     pub fn unwatch(&self, dir: &Path) {
-        self.forget(&mut lock(&self.dirs), dir, None);
+        let mut dirs = lock(&self.dirs);
+        let unused = dirs.remove(dir);
+        self.rm_watches(unused);
     }
 
-    /// Takes `dir` off every watch but `keep`, dropping the watches no path
-    /// is left on.
-    fn forget(&self, dirs: &mut HashMap<i32, Vec<PathBuf>>, dir: &Path, keep: Option<i32>) {
-        dirs.retain(|wd, paths| {
-            if Some(*wd) == keep {
-                return true;
-            }
-            paths.retain(|path| path != dir);
-            if paths.is_empty() {
-                // SAFETY: no pointers; a stale `wd` only fails with EINVAL.
-                unsafe { libc::inotify_rm_watch(self.file.as_raw_fd(), *wd) };
-            }
-            !paths.is_empty()
-        });
+    /// Has the kernel drop the watches no path is on any more. Called under
+    /// the `dirs` lock: a `watch_for` of the same folder in between would
+    /// get the dropped watch back from the kernel and lose it.
+    fn rm_watches(&self, unused: impl IntoIterator<Item = i32>) {
+        for wd in unused {
+            // SAFETY: no pointers; a stale `wd` only fails with EINVAL.
+            unsafe { libc::inotify_rm_watch(self.file.as_raw_fd(), wd) };
+        }
     }
 
     /// Stops watching the folders `keep` says no to, like ones a swapped
     /// link no longer leads to.
     pub fn unwatch_unless(&self, keep: impl Fn(&Path) -> bool) {
-        lock(&self.dirs).retain(|wd, paths| {
-            paths.retain(|path| keep(path));
-            if paths.is_empty() {
-                // SAFETY: no pointers; a stale `wd` only fails with EINVAL.
-                unsafe { libc::inotify_rm_watch(self.file.as_raw_fd(), *wd) };
-            }
-            !paths.is_empty()
-        });
+        let mut dirs = lock(&self.dirs);
+        let dropped: Vec<PathBuf> = dirs.wds.keys().filter(|path| !keep(path)).cloned().collect();
+        let unused: Vec<i32> = dropped.iter().filter_map(|path| dirs.remove(path)).collect();
+        self.rm_watches(unused);
     }
 
     /// Blocks until something changes, or `None` once stopped.
@@ -245,10 +293,10 @@ impl Inotify {
                 continue;
             }
             if mask & libc::IN_IGNORED != 0 {
-                dirs.remove(&wd);
+                dirs.ignored(wd);
                 continue;
             }
-            let paths = dirs.get(&wd).map(Vec::as_slice).unwrap_or_default();
+            let paths = dirs.paths.get(&wd).map(Vec::as_slice).unwrap_or_default();
             if mask & ITSELF != 0 {
                 changes.gone.extend(paths.iter().cloned());
                 continue;
@@ -350,5 +398,83 @@ mod tests {
         });
         let overflowed = std::iter::from_fn(|| watcher.read().unwrap()).any(|changes| changes.overflowed);
         assert!(overflowed, "the dropped events went unnoticed");
+    }
+
+    /// A tree as wide as a big Home's is watched, re-watched and dropped in
+    /// time linear in its folders (IMP-339: each watch used to look at all
+    /// the others, which took hours for 173k folders).
+    #[test]
+    fn a_big_tree_is_watched_quickly() {
+        const WIDE: usize = 50;
+        const DEEP: usize = 100;
+        let dir = nova_test_support::TempDir::new("inotify-big-tree");
+        for i in 0..WIDE {
+            for j in 0..DEEP {
+                std::fs::create_dir_all(dir.join(format!("{i}/{j}"))).unwrap();
+            }
+        }
+        let folders = 1 + WIDE + WIDE * DEEP;
+        let watcher = Inotify::new(ENTRIES).unwrap();
+        let started = Instant::now();
+        // A rescan watches every folder again.
+        for _ in 0..2 {
+            watcher.watch_tree(&dir).unwrap();
+        }
+        let took = started.elapsed();
+        assert_eq!(watcher.watched(), folders);
+        // Quadratic bookkeeping took over 2 s here in a release build;
+        // linear takes under 100 ms, most of it the kernel's.
+        assert!(took < std::time::Duration::from_secs(1), "watching {folders} folders twice took {took:?}");
+        // Only "1" and below go: "10" to "19" start with the same digit.
+        watcher.unwatch_tree(&dir.join("1"));
+        assert_eq!(watcher.watched(), folders - 1 - DEEP);
+        watcher.unwatch_tree(&dir);
+        assert_eq!(watcher.watched(), 0);
+    }
+
+    /// A link and its folder share the kernel's watch: dropping one path
+    /// keeps the watch for the other.
+    #[test]
+    fn a_shared_watch_lives_until_its_last_path_goes() {
+        let dir = nova_test_support::TempDir::new("inotify-shared");
+        let folder = dir.join("folder");
+        let link = dir.join("link");
+        std::fs::create_dir(&folder).unwrap();
+        std::os::unix::fs::symlink(&folder, &link).unwrap();
+        let watcher = Inotify::new(ENTRIES).unwrap();
+        watcher.watch(&folder).unwrap();
+        watcher.watch(&link).unwrap();
+        watcher.watch(&link).unwrap();
+        assert_eq!(watcher.watched(), 2);
+        watcher.unwatch(&link);
+        assert_eq!(watcher.watched(), 1);
+        std::fs::create_dir(folder.join("new")).unwrap();
+        let changes = watcher.read().unwrap().unwrap();
+        let paths: Vec<_> = changes.found.iter().map(|change| change.path.clone()).collect();
+        assert_eq!(paths, [folder.join("new")]);
+    }
+
+    /// Re-watching a path after it names another folder moves it there and
+    /// drops the old folder's watch.
+    #[test]
+    fn a_path_watched_again_follows_what_it_names_now() {
+        let dir = nova_test_support::TempDir::new("inotify-swap");
+        let (old, new, link) = (dir.join("old"), dir.join("new"), dir.join("link"));
+        std::fs::create_dir(&old).unwrap();
+        std::fs::create_dir(&new).unwrap();
+        std::os::unix::fs::symlink(&old, &link).unwrap();
+        let watcher = Inotify::new(ENTRIES).unwrap();
+        watcher.watch(&link).unwrap();
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink(&new, &link).unwrap();
+        // The link's own swap lands on no watch: only `link` was watched,
+        // through its target.
+        watcher.watch(&link).unwrap();
+        assert_eq!(watcher.watched(), 1);
+        std::fs::create_dir(old.join("unseen")).unwrap();
+        std::fs::create_dir(new.join("seen")).unwrap();
+        let changes = watcher.read().unwrap().unwrap();
+        let paths: Vec<_> = changes.found.iter().map(|change| change.path.clone()).collect();
+        assert_eq!(paths, [link.join("seen")]);
     }
 }

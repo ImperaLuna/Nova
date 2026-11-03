@@ -9,6 +9,8 @@ Item {
     required property string appId
     required property string name
     property string iconSource: ""
+    // Launching: on the accent, as a launching row is.
+    property bool launching: false
 
     signal clicked
 
@@ -25,10 +27,15 @@ Item {
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
-            color: Tokens.hover
-            opacity: mouse.containsMouse ? 1 : 0
+            color: tile.launching ? Tokens.alpha(Tokens.primary, Tokens.accentFillOpacity) : Tokens.hover
+            opacity: tile.launching || mouse.containsMouse ? 1 : 0
             Behavior on opacity {
                 NumberAnimation {
+                    duration: Tokens.durationFast
+                }
+            }
+            Behavior on color {
+                ColorAnimation {
                     duration: Tokens.durationFast
                 }
             }

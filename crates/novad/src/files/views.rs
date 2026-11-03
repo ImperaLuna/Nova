@@ -22,17 +22,23 @@
 //!
 //! Every event of a view is sent while holding its state, after checking
 //! the view is still open, so nothing arrives after `files_close` or after
-//! another `files_open` replaced it. Each page is encoded before the state
+//! another `files_open` replaced it. A view with a file picker's filter
+//! ([`super::filter`]) leaves out the files it doesn't match. Each page is encoded before the state
 //! is taken, so a big folder doesn't hold up closing it.
 
+use crate::files::archive::{self, Inside};
+use crate::files::filter::Filter;
 use crate::files::folder::{self, Listing};
 use crate::files::sizes::{Counter, Recent, Why};
 use crate::files::watcher::{Following, Notice, Wait, Watcher};
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
-use crate::mime::Mime;
-use nova_protocol::{Event, FILES_MAX_VIEWS, FILES_PATH_MAX_BYTES, FILES_PATH_MAX_WIRE_BYTES, FileSort, FolderPage};
+use crate::mime::{Mime, MimeDb};
+use nova_protocol::{
+    Event, FILES_MAX_VIEWS, FILES_PATH_MAX_BYTES, FILES_PATH_MAX_WIRE_BYTES, FileEntry, FileFilter, FileSort,
+    FolderPage,
+};
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsString;
 use std::path::{Component, PathBuf};
@@ -68,11 +74,18 @@ pub struct Folders {
 
 struct View {
     key: Key,
+    /// Where the folder is inside an archive, when it is.
+    inside: Option<Inside>,
+    /// The archive file the view follows: through any link, so a change
+    /// to the file itself shows.
+    archive_file: Option<PathBuf>,
     path: PathBuf,
     /// The path as `files_open` named it, for the pages.
     named: String,
     sort: FileSort,
     hidden: bool,
+    /// A file picker's filter: only the files it matches show.
+    filter: Option<Filter>,
     state: Mutex<State>,
     watcher: Arc<Watcher>,
     /// Its route in `watcher`.
@@ -99,8 +112,19 @@ impl Folders {
     /// Opens `path` in `client`'s view `view`, replacing what it showed.
     /// Doesn't touch the disk: the entries, or why they can't be read,
     /// follow as events.
-    pub fn open(&self, client: ClientId, view: u32, path: &str, sort: FileSort, hidden: bool) -> Result<(), String> {
+    pub fn open(
+        &self,
+        client: ClientId,
+        view: u32,
+        path: &str,
+        sort: FileSort,
+        hidden: bool,
+        filter: Option<&FileFilter>,
+    ) -> Result<(), String> {
         let folder = checked_path(path)?;
+        // Looks at the disk only for a path with an archive's name in it.
+        let inside = Inside::of(&folder);
+        let filter = filter.map(Filter::new).transpose()?;
         let key = (client, view);
         let mut views = lock(&self.views);
         let Some(open) = views.as_mut() else { return Err("Nova Files is off".into()) };
@@ -112,13 +136,21 @@ impl Folders {
         if let Some(old) = open.remove(&key) {
             old.close();
         }
-        let following = watcher.follow(&folder);
+        // An archive's view follows the folder the archive is in.
+        let archive_file = inside
+            .as_ref()
+            .map(|inside| std::fs::canonicalize(&inside.archive).unwrap_or_else(|_| inside.archive.clone()));
+        let followed = archive_file.as_ref().map_or(folder.as_path(), |file| file.parent().unwrap_or(&folder));
+        let following = watcher.follow(followed);
         let opened = Arc::new(View {
             key,
+            inside,
+            archive_file,
             path: folder,
             named: path.into(),
             sort,
             hidden,
+            filter,
             state: Mutex::new(State { open: true, listing: None }),
             route: following.id(),
             watcher,
@@ -192,6 +224,11 @@ impl View {
     fn is_open(&self) -> bool {
         lock(&self.state).open
     }
+
+    /// Whether the view lists `entry`: every one, or those its filter shows.
+    fn shows(&self, entry: &FileEntry, mime: &MimeDb) -> bool {
+        self.filter.as_ref().is_none_or(|filter| filter.shows(entry, mime))
+    }
 }
 
 /// The thread that reads and follows one view's folder.
@@ -261,13 +298,31 @@ impl Worker {
     /// `why` its subfolders are counted: `Changed` when what the path
     /// names may have changed.
     fn send_all(&self, why: Why) -> bool {
+        self.send_all_settling(why, false)
+    }
+
+    /// [`Self::send_all`]; while `settling`, an archive that doesn't read
+    /// (another program is still writing it) is read again on its next
+    /// change rather than closing the view.
+    fn send_all_settling(&self, why: Why, settling: bool) -> bool {
         // No size is sent against the old list while the new one's pages go.
         lock(&self.view.state).listing = None;
-        let read =
-            folder::read_folder(&self.view.path, self.view.hidden, &self.mime.current(), || !self.view.is_open());
+        let mime = self.mime.current();
+        let stopped = || !self.view.is_open();
+        let read = match &self.view.inside {
+            Some(inside) => archive::list(inside, self.view.hidden, &mime, &stopped),
+            None => folder::read_folder(&self.view.path, self.view.hidden, &mime, stopped),
+        };
         let entries = match read {
-            Ok(Some(entries)) => entries,
+            Ok(Some(mut entries)) => {
+                entries.retain(|entry| self.view.shows(entry, &mime));
+                entries
+            }
             Ok(None) => return false,
+            Err(e) if settling && e.kind() != std::io::ErrorKind::NotFound => {
+                self.logger.info(LOG_SOURCE, &format!("{} doesn't read yet: {e}", self.view.path.display()));
+                return true;
+            }
             Err(e) => {
                 self.logger.warn(LOG_SOURCE, &format!("can't read {}: {e}", self.view.path.display()));
                 self.closed(unreadable(&self.view.named, &e));
@@ -282,7 +337,8 @@ impl Worker {
         let pages = all.chunks(PAGE_ENTRIES).map(<[_]>::to_vec).chain(all.is_empty().then(Vec::new));
         for (number, entries) in pages.enumerate() {
             let start = u32::try_from(number * PAGE_ENTRIES).unwrap_or(u32::MAX);
-            let page = FolderPage { view, path: self.view.named.clone(), start, total, entries };
+            let archive = self.view.inside.as_ref().map(|inside| nova_protocol::wire_text(&inside.archive));
+            let page = FolderPage { view, path: self.view.named.clone(), start, total, entries, archive };
             let line = Hub::encode(&Event::FilesPage(page));
             // Only this thread sends the view's events, so pages can't
             // interleave with its changes.
@@ -375,11 +431,18 @@ impl Worker {
     /// Reads the entries `names` again and sends what changed. False once
     /// the view is closed.
     fn send_changes(&self, names: BTreeSet<OsString>) -> bool {
+        // An archive is read again whole when it changes; nothing else in
+        // its folder shows.
+        if let Some(file) = &self.view.archive_file {
+            let archive = file.file_name().unwrap_or_default();
+            return !names.iter().any(|name| name == archive) || self.send_all_settling(Why::Changed, true);
+        }
         let mime = self.mime.current();
         let mut recount = Vec::new();
         let mut now = Vec::new();
         for name in names {
-            let entry = folder::read_entry(&self.view.path, &name, &mime);
+            // One the filter hides is gone from the view, as if deleted.
+            let entry = folder::read_entry(&self.view.path, &name, &mime).filter(|entry| self.view.shows(entry, &mime));
             let wire = nova_protocol::wire_text(&name);
             // A folder that changed may hold more or less.
             if entry.as_ref().is_some_and(folder::takes_size) {
@@ -499,7 +562,7 @@ mod tests {
         }
 
         fn open(&self, folder: &Path) -> Result<(), String> {
-            self.folders.open(self.client, 1, &nova_protocol::wire_text(folder), BY_NAME, false)
+            self.folders.open(self.client, 1, &nova_protocol::wire_text(folder), BY_NAME, false, None)
         }
 
         /// Takes the next event and applies it to `shown` as the UI would.
@@ -558,6 +621,24 @@ mod tests {
             self.folders.stop();
             let _ = &self.logs;
         }
+    }
+
+    #[test]
+    fn a_pickers_filter_shows_matching_files_and_every_folder() {
+        let mut fixture = Fixture::new("files-filter");
+        let dir = TempDir::new("files-filter-folder");
+        std::fs::write(dir.join("cover.PNG"), b"x").unwrap();
+        std::fs::write(dir.join("notes.txt"), b"x").unwrap();
+        std::fs::create_dir(dir.join("Albums")).unwrap();
+        let pictures = FileFilter { name: "Pictures".into(), globs: vec!["*.png".into()], mimes: vec![] };
+        let folder = nova_protocol::wire_text(&*dir);
+        fixture.folders.open(fixture.client, 1, &folder, BY_NAME, false, Some(&pictures)).unwrap();
+        fixture.until_shown(&["Albums", "cover.PNG"]);
+        // Renamed into the filter, it comes; out of it, it goes.
+        std::fs::rename(dir.join("notes.txt"), dir.join("notes.png")).unwrap();
+        fixture.until_shown(&["Albums", "cover.PNG", "notes.png"]);
+        std::fs::rename(dir.join("cover.PNG"), dir.join("cover.webp")).unwrap();
+        fixture.until_shown(&["Albums", "notes.png"]);
     }
 
     #[test]
@@ -621,6 +702,36 @@ mod tests {
         assert_eq!(page["event"], "files_page");
         assert_eq!(page["data"]["total"], 0);
         assert_eq!(page["data"]["entries"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn a_zip_opens_like_a_folder_and_follows_the_zip() {
+        let mut fixture = Fixture::new("files-zip");
+        let dir = TempDir::new("files-zip-folder");
+        let zip = dir.join("photos.zip");
+        crate::files::archive::tests::write_zip(&zip, &[("b.png", "b"), ("2025/a.png", "a")]);
+        fixture.open(&dir).unwrap();
+        fixture.until_shown(&["photos.zip"]);
+        assert!(fixture.shown[0].archive && !fixture.shown[0].dir, "opened like a folder");
+        fixture.open(&zip).unwrap();
+        let page = fixture.next();
+        assert_eq!(page["data"]["archive"], zip.to_str().unwrap());
+        fixture.until_shown(&["2025", "b.png"]);
+        fixture.open(&zip.join("2025")).unwrap();
+        fixture.until_shown(&["a.png"]);
+        // Another program writing the zip again.
+        crate::files::archive::tests::write_zip(&zip, &[("2025/a.png", "a"), ("2025/c.png", "c")]);
+        fixture.until_shown(&["a.png", "c.png"]);
+        std::fs::write(dir.join("unrelated.txt"), b"").unwrap();
+        fixture.nothing_more();
+        std::fs::remove_file(&zip).unwrap();
+        loop {
+            let event = fixture.next();
+            if event["event"] == "files_closed" {
+                assert!(event["data"]["error"].as_str().unwrap().contains("photos.zip"));
+                break;
+            }
+        }
     }
 
     /// Made, renamed, written and deleted from outside, as a terminal would.
@@ -820,7 +931,7 @@ mod tests {
             std::fs::create_dir(folder).unwrap();
             let (client, ..) = &clients[number / FILES_MAX_VIEWS];
             let view = u32::try_from(number).unwrap();
-            fixture.folders.open(*client, view, folder.to_str().unwrap(), BY_NAME, false).unwrap();
+            fixture.folders.open(*client, view, folder.to_str().unwrap(), BY_NAME, false, None).unwrap();
         }
         for (_, events, _) in &clients {
             while let Ok(Outgoing::Line(_)) = events.recv_timeout(MOST_DELAY * 2) {}
@@ -859,7 +970,7 @@ mod tests {
         fixture.open(&dir).unwrap();
         fixture.next();
         let path = dir.to_str().unwrap();
-        fixture.folders.open(fixture.client, 2, path, BY_NAME, false).unwrap();
+        fixture.folders.open(fixture.client, 2, path, BY_NAME, false, None).unwrap();
         fixture.next();
         fixture.folders.close(fixture.client, 2);
         // Its thread lets go of the watch.
@@ -897,11 +1008,11 @@ mod tests {
         let fixture = Fixture::new("files-refused");
         let dir = TempDir::new("files-refused-folder");
         std::fs::write(dir.join("note.md"), b"").unwrap();
-        let open = |path: &str| fixture.folders.open(fixture.client, 1, path, BY_NAME, false);
+        let open = |path: &str| fixture.folders.open(fixture.client, 1, path, BY_NAME, false, None);
         assert!(open("relative/folder").unwrap_err().contains("absolute"));
         assert!(open(&format!("/{}", "x".repeat(FILES_PATH_MAX_BYTES))).is_err());
         let views = (0..=FILES_MAX_VIEWS as u32)
-            .map(|view| fixture.folders.open(fixture.client, view, dir.to_str().unwrap(), BY_NAME, false));
+            .map(|view| fixture.folders.open(fixture.client, view, dir.to_str().unwrap(), BY_NAME, false, None));
         assert_eq!(views.filter(Result::is_err).count(), 1, "one view past the limit");
     }
 
@@ -936,10 +1047,13 @@ mod tests {
         let fixture = Fixture::new("files-cancel");
         let view = Arc::new(View {
             key: (fixture.client, 1),
+            inside: None,
+            archive_file: None,
             path: PathBuf::from("/"),
             named: "/".into(),
             sort: BY_NAME,
             hidden: false,
+            filter: None,
             state: Mutex::new(State { open: false, listing: None }),
             watcher: fixture.folders.watcher().unwrap(),
             route: 0,

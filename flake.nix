@@ -390,6 +390,11 @@
                 in
                 assert pkgs.lib.all (features.isOn selection) (builtins.attrValues features.manifests);
                 assert config.xdg.mime.defaultApplications."inode/directory" == "nova-files.desktop";
+                # Apps' Open and Save dialogs go to Nova Files, and niri
+                # keeps its own portals for the rest (the option keeps
+                # portals.conf's "a;b" text).
+                assert config.xdg.portal.config.niri."org.freedesktop.impl.portal.FileChooser" == "nova;gtk";
+                assert config.xdg.portal.config.niri.default == "gnome;gtk";
                 pkgs.lib.concatLines (map (package: package.name) config.environment.systemPackages);
             in
             pkgs.writeText "nova-nix-modules" (

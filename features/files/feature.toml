@@ -5,10 +5,19 @@ default = true
 daemon = "files"
 
 # The drives in the sidebar come from udisks2 (udisksd) on the system bus,
-# which most desktops already run; the NixOS module turns it on. Without it
-# Nova Files works, with no drives listed, so it isn't checked for.
+# which most desktops already run; the NixOS module turns it on. The
+# preview pane draws a PDF's first page with poppler's pdftoppm and a
+# video's still with ffmpeg. Without them Nova Files works, with no drives
+# listed or those previews, so none is checked for.
 [variants.default]
-nix = ["udisks2"]
-arch = ["udisks2"]
-fedora = ["udisks2"]
-debian = ["udisks2"]
+nix = ["udisks2", "poppler-utils", "ffmpeg-headless"]
+arch = ["udisks2", "poppler", "ffmpeg"]
+fedora = ["udisks2", "poppler-utils", "ffmpeg-free"]
+debian = ["udisks2", "poppler-utils", "ffmpeg"]
+
+# The launcher's Files mode: names from the search index, and paths typed
+# from `~` or `/`.
+[[slot]]
+host = "launcher.providers"
+view = "files"
+order = 20

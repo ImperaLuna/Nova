@@ -134,10 +134,10 @@ impl Trash {
         Self { home, mounts, uid, mime }
     }
 
-    /// Moves each of `paths` to its drive's trash. All are tried; the
-    /// error names those that weren't moved.
-    pub fn trash(&self, paths: &[String]) -> Result<(), String> {
-        each(paths, |path| self.trash_one(&checked(path)?))
+    /// Moves each of `paths` to its drive's trash: each one's id there, or
+    /// why it stayed.
+    pub fn trash_each(&self, paths: &[String]) -> Vec<Result<String, String>> {
+        paths.iter().map(|path| self.trash_one(&checked(path)?)).collect()
     }
 
     /// Deletes each of `paths` for good, folders with all they hold.
@@ -155,25 +155,33 @@ impl Trash {
     /// Puts each item `ids` names back where it came from, making its
     /// folder again if it's gone. An item whose place is taken stays.
     pub fn restore(&self, ids: &[String]) -> Result<(), String> {
+        joined(self.restore_each(ids).into_iter().filter_map(Result::err).collect())
+    }
+
+    /// Puts each item `ids` names back, as [`Trash::restore`]: where each
+    /// went, or why it stayed.
+    pub fn restore_each(&self, ids: &[String]) -> Vec<Result<PathBuf, String>> {
         let roots = self.roots();
-        each(ids, |id| {
-            let found = find(&roots, id)?;
-            let (original, _) = read_info(&found.info, &found.root)?;
-            if let Ok(there) = original.symlink_metadata() {
-                return Err(taken(&original, there.is_dir()));
-            }
-            if let Some(folder) = original.parent() {
-                std::fs::create_dir_all(folder).map_err(|e| failed("restore", &original, &e))?;
-            }
-            rename_new(&found.file(), &original).map_err(|e| match e.raw_os_error() {
-                Some(libc::EEXIST) => taken(&original, original.is_dir()),
-                _ => failed("restore", &original, &e),
-            })?;
-            // The item is back; a stale info file is only ignored by
-            // every app.
-            let _ = std::fs::remove_file(&found.info);
-            Ok(())
-        })
+        ids.iter()
+            .map(|id| {
+                let found = find(&roots, id)?;
+                let (original, _) = read_info(&found.info, &found.root)?;
+                if let Ok(there) = original.symlink_metadata() {
+                    return Err(taken(&original, there.is_dir()));
+                }
+                if let Some(folder) = original.parent() {
+                    std::fs::create_dir_all(folder).map_err(|e| failed("restore", &original, &e))?;
+                }
+                rename_new(&found.file(), &original).map_err(|e| match e.raw_os_error() {
+                    Some(libc::EEXIST) => taken(&original, original.is_dir()),
+                    _ => failed("restore", &original, &e),
+                })?;
+                // The item is back; a stale info file is only ignored by
+                // every app.
+                let _ = std::fs::remove_file(&found.info);
+                Ok(original)
+            })
+            .collect()
     }
 
     /// Deletes each item `ids` names from the trash, for good.
@@ -244,7 +252,8 @@ impl Trash {
             })
     }
 
-    fn trash_one(&self, asked: &Path) -> Result<(), String> {
+    /// Trashes `asked`, answering its id.
+    fn trash_one(&self, asked: &Path) -> Result<String, String> {
         let meta = asked.symlink_metadata().map_err(|e| failed("move to the trash", asked, &e))?;
         // Its folder as the mount table spells it (`~/Stick` may be a link
         // to `/run/media/…`), so its drive's top is found; the item itself
@@ -267,7 +276,7 @@ impl Trash {
             let _ = std::fs::remove_file(&info);
             return Err(failed("move to the trash", path, &e));
         }
-        Ok(())
+        Ok(escape(info.as_os_str()))
     }
 
     /// The trash for an item on drive `dev`, made if it isn't there yet.
@@ -634,7 +643,7 @@ fn remove(path: &Path) -> std::io::Result<()> {
 
 /// Renames `from` to `to`, failing with EEXIST when `to` is there, even
 /// if it came after a check.
-fn rename_new(from_path: &Path, to_path: &Path) -> std::io::Result<()> {
+pub(super) fn rename_new(from_path: &Path, to_path: &Path) -> std::io::Result<()> {
     let from = std::ffi::CString::new(from_path.as_os_str().as_bytes())?;
     let to = std::ffi::CString::new(to_path.as_os_str().as_bytes())?;
     // SAFETY: both paths are NUL-terminated C strings that outlive the call.
@@ -679,6 +688,11 @@ mod tests {
             Self { dir, trash }
         }
 
+        /// Trashes `paths`, saying which didn't go.
+        fn trash_all(&self, paths: &[String]) -> Result<(), String> {
+            joined(self.trash.trash_each(paths).into_iter().filter_map(Result::err).collect())
+        }
+
         fn path(&self, name: &str) -> PathBuf {
             self.dir.join(name)
         }
@@ -698,7 +712,7 @@ mod tests {
         let fixture = Fixture::new("long");
         let long = "é".repeat(123);
         let file = fixture.write(&format!("home/Documents/{long}"));
-        fixture.trash.trash(std::slice::from_ref(&file)).unwrap();
+        fixture.trash_all(std::slice::from_ref(&file)).unwrap();
         let items = fixture.trash.list();
         assert_eq!(items[0].entry.name, long, "the full name comes from the info file");
         fixture.trash.restore(std::slice::from_ref(&items[0].id)).unwrap();
@@ -711,7 +725,7 @@ mod tests {
         std::os::unix::fs::symlink(fixture.path("home/Documents"), fixture.path("home/Linked")).unwrap();
         fixture.write("home/Documents/a.txt");
         let through_link = fixture.text("home/Linked/a.txt");
-        fixture.trash.trash(std::slice::from_ref(&through_link)).unwrap();
+        fixture.trash_all(std::slice::from_ref(&through_link)).unwrap();
         assert!(!fixture.path("home/Documents/a.txt").exists());
         assert!(fixture.path("home/Linked").exists(), "the link stays");
         fixture.trash.restore(&[fixture.trash.list()[0].id.clone()]).unwrap();
@@ -722,7 +736,7 @@ mod tests {
     fn a_trashed_file_follows_the_spec_and_lists_where_it_came_from() {
         let fixture = Fixture::new("spec");
         let report = fixture.write("home/Documents/report 1.txt");
-        fixture.trash.trash(std::slice::from_ref(&report)).unwrap();
+        fixture.trash_all(std::slice::from_ref(&report)).unwrap();
 
         assert!(!Path::new(&report).exists());
         let trash = fixture.path("home/.local/share/Trash");
@@ -743,9 +757,9 @@ mod tests {
     fn the_same_name_twice_gets_a_number_and_both_come_back() {
         let fixture = Fixture::new("twice");
         let note = fixture.write("home/note");
-        fixture.trash.trash(std::slice::from_ref(&note)).unwrap();
+        fixture.trash_all(std::slice::from_ref(&note)).unwrap();
         std::fs::create_dir(fixture.path("home/note")).unwrap();
-        fixture.trash.trash(std::slice::from_ref(&note)).unwrap();
+        fixture.trash_all(std::slice::from_ref(&note)).unwrap();
         assert!(fixture.path("home/.local/share/Trash/files/note.2").is_dir());
 
         let items = fixture.trash.list();
@@ -766,7 +780,7 @@ mod tests {
     fn restore_makes_a_folder_that_went() {
         let fixture = Fixture::new("folder-went");
         let photo = fixture.write("home/Documents/photo.png");
-        fixture.trash.trash(std::slice::from_ref(&photo)).unwrap();
+        fixture.trash_all(std::slice::from_ref(&photo)).unwrap();
         std::fs::remove_dir(fixture.path("home/Documents")).unwrap();
         let id = fixture.trash.list()[0].id.clone();
         fixture.trash.restore(&[id]).unwrap();
@@ -822,11 +836,11 @@ mod tests {
     fn the_trash_itself_and_relative_paths_cant_be_trashed() {
         let fixture = Fixture::new("itself");
         let home = fixture.text("home");
-        assert!(fixture.trash.trash(std::slice::from_ref(&home)).unwrap_err().contains("holds the trash"));
+        assert!(fixture.trash_all(std::slice::from_ref(&home)).unwrap_err().contains("holds the trash"));
         let inside = fixture.text("home/.local/share/Trash/files");
-        assert!(fixture.trash.trash(&[inside]).unwrap_err().contains("holds the trash"));
-        assert!(fixture.trash.trash(&["home/Documents".into()]).is_err());
-        assert!(fixture.trash.trash(&[format!("{home}/Documents/..")]).is_err());
+        assert!(fixture.trash_all(&[inside]).unwrap_err().contains("holds the trash"));
+        assert!(fixture.trash_all(&["home/Documents".into()]).is_err());
+        assert!(fixture.trash_all(&[format!("{home}/Documents/..")]).is_err());
         assert!(fixture.path("home/Documents").is_dir());
     }
 
@@ -837,7 +851,7 @@ mod tests {
         let deep = fixture.write("home/tree/deep/file");
         let a = fixture.write("home/a");
         let b = fixture.write("home/b");
-        fixture.trash.trash(&[fixture.text("home/tree"), a, b]).unwrap();
+        fixture.trash_all(&[fixture.text("home/tree"), a, b]).unwrap();
         let items = fixture.trash.list();
         assert_eq!(items.len(), 3);
         let a_id = items.iter().find(|item| item.entry.name == "a").unwrap().id.clone();

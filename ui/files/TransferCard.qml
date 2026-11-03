@@ -41,7 +41,7 @@ Item {
 
         LineIcon {
             anchors.verticalCenter: parent.verticalCenter
-            path: card.transfer.mode === Protocol.TRANSFER_MOVE ? Icons.CUT : Icons.COPY
+            path: Transfers.icon(card.transfer)
             color: card.failed ? Tokens.error : Tokens.fgDim
         }
         Column {
