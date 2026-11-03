@@ -10,7 +10,7 @@
 var VERSION = 2;
 
 // novad refuses longer launcher_search queries.
-var LAUNCHER_SEARCH_MAX_CHARS = 200;
+var LAUNCHER_SEARCH_MAX_CHARS = 4096;
 
 // novad refuses longer media player ids.
 var MEDIA_PLAYER_MAX_BYTES = 255;

@@ -1195,8 +1195,9 @@ pub struct App {
 }
 
 /// The longest `launcher_search` query, in characters: anything on the
-/// socket is capped, and nobody types more.
-pub const LAUNCHER_SEARCH_MAX_CHARS: usize = 200;
+/// socket is capped, and a path typed into the Files mode (each byte at
+/// most a character) is the longest anyone enters.
+pub const LAUNCHER_SEARCH_MAX_CHARS: usize = FILES_PATH_MAX_BYTES;
 
 /// Most folder views one connection may have open (`files_open`): each
 /// holds its folder's entries in novad.
