@@ -42,6 +42,10 @@ Singleton {
     // arrives, which only happens with the files feature on. Read it
     // through the FilesService singleton.
     property var filesLook: null
+    // The latest files_history event's data ({undo, redo}, each a
+    // Protocol.FILE_STEP_* or absent); null until one arrives. Read it
+    // through the FilesService singleton.
+    property var filesHistory: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
     // novad's word on whether the session is locked. Read it through the
     // LockService singleton, which also hears lockRequested.
@@ -110,11 +114,20 @@ Singleton {
     // How one of this process's copy or move jobs is going: {job, mode,
     // state, items, name, done_bytes, total_bytes, clash, error}.
     signal filesTransferChanged(var transfer)
+    // How far one of this process's measuring jobs got: {job, files,
+    // folders, bytes, disk_bytes, done}.
+    signal filesMeasured(var measured)
     // Something in the trash changed, in Nova Files or another app.
     signal filesTrashChanged
     // A thumbnail this process asked for: {path, thumbnail}, `thumbnail`
     // the PNG's path, absent when the file has none.
     signal filesThumbnail(var answer)
+    // A folder was pinned to Nova Files' Quick access or unpinned.
+    signal filesPlacesChanged
+    // novad's index of file names is built: searches can be asked again.
+    signal filesSearchReady
+    // A file picker window's app stopped asking: the window closes.
+    signal filesPickerClosed(int picker)
 
     // The topics this process subscribes to on every connection: the
     // shell's, unless its root sets its own as it's created (Nova Files,
@@ -219,14 +232,24 @@ Singleton {
             filesClosed(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_LOOK) {
             filesLook = msg.data;
+        } else if (msg.event === Protocol.EVENT_FILES_HISTORY) {
+            filesHistory = msg.data;
         } else if (msg.event === Protocol.EVENT_FILES_DRIVES) {
             filesDrives = msg.data.drives;
         } else if (msg.event === Protocol.EVENT_FILES_TRANSFER) {
             filesTransferChanged(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_MEASURED) {
+            filesMeasured(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_TRASH_CHANGED) {
             filesTrashChanged();
         } else if (msg.event === Protocol.EVENT_FILES_THUMBNAIL) {
             filesThumbnail(msg.data);
+        } else if (msg.event === Protocol.EVENT_FILES_PLACES_CHANGED) {
+            filesPlacesChanged();
+        } else if (msg.event === Protocol.EVENT_FILES_SEARCH_READY) {
+            filesSearchReady();
+        } else if (msg.event === Protocol.EVENT_FILES_PICKER_CLOSED) {
+            filesPickerClosed(msg.data.picker);
         }
     }
 

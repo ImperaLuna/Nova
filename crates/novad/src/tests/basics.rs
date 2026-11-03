@@ -133,10 +133,18 @@ fn log_subscribers_get_a_backlog_then_live_entries() {
     assert!(messages.contains(&"before"), "{messages:?}");
 
     novad.daemon.logger.warn("test", "after");
-    let live = client.next();
-    assert_eq!(live["data"].get("backlog"), None);
-    assert_eq!(live["data"]["entries"][0]["message"], "after");
-    assert_eq!(live["data"]["entries"][0]["level"], "warn");
+    // Features starting in the background (NetworkManager without a bus)
+    // log their own entries meanwhile, so only this test's entry counts.
+    let entry = loop {
+        let live = client.next();
+        assert_eq!(live["data"].get("backlog"), None);
+        let entries = live["data"]["entries"].as_array().unwrap();
+        if let Some(entry) = entries.iter().find(|entry| entry["source"] == "test") {
+            break entry.clone();
+        }
+    };
+    assert_eq!(entry["message"], "after");
+    assert_eq!(entry["level"], "warn");
 }
 
 #[test]

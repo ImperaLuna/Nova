@@ -97,7 +97,7 @@ mod tests {
     use nova_test_support::TempDir;
 
     fn names(index: &Index, query: &str) -> Vec<String> {
-        let (hits, _) = index.search(&Query::parse(query).unwrap(), 50);
+        let (hits, _) = index.search(&Query::parse(query).unwrap(), None, 50);
         hits.into_iter().map(|hit| hit.name).collect()
     }
 

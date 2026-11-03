@@ -4,18 +4,30 @@ import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
 import "arrival.js" as Arrival
+import "drops.js" as Drops
 import "navigation.js" as Navigation
 import "paths.js" as Paths
 
 // The sidebar's folder tree, as novad lays it out for the window
 // (files_tree): open down to the window's folder, which is marked and
-// kept in view, with hidden folders dimmer. A row's chevron opens or
-// closes it; a click elsewhere on the row goes there. Rows that come slide in one
-// after another, the others move to make room.
+// kept in view, with hidden folders dimmer. The top is the home folder,
+// by its own name (Home is the Home page). A row's chevron opens or
+// closes it; a click elsewhere on the row goes there, a right-click
+// asks for its menu (pinning it to Quick access), and a middle click asks
+// for it in a new tab (`tabRequested`). Rows that come slide in one after
+// another, the others move to make room. A folder below the top
+// drags out (`dragRequested`); while a drag is over the tree, the folder a
+// drop would go into (`dropFolder`) washes in the accent, and `placeAt`
+// says which it is, opening when the pointer rests on it.
 ListView {
     id: tree
 
     required property Navigator navigator
+    // The folder a drag over the tree would drop into, or "".
+    property string dropFolder: ""
+
+    signal dragRequested(string path)
+    signal tabRequested(string path)
     // While an update adds rows, the rows created slide in one after
     // another once it's done, by the file list's wave rule (Arrival); rows
     // created by scrolling just show.
@@ -26,6 +38,19 @@ ListView {
             wave: Tokens.filesRowWave,
             most: Tokens.filesRowWaveMost
         })
+
+    // The menu of the folder `path` was asked for at `at` (in the window).
+    signal menuRequested(string path, point at)
+
+    // The place under (x, y) in the tree's own coordinates, for a
+    // DropTarget: a closed folder with folders in it opens by resting on it.
+    function placeAt(x: real, y: real): var {
+        const index = indexAt(x + contentX, y + contentY);
+        if (index < 0)
+            return Drops.NOWHERE;
+        const row = rows.get(index);
+        return Drops.place(row.path, !row.open && !row.leaf);
+    }
 
     function update() {
         arrivals = [];
@@ -58,6 +83,8 @@ ListView {
         }
     }
     Component.onCompleted: update()
+    // Another tab came to the front.
+    onNavigatorChanged: update()
 
     displaced: Transition {
         NumberAnimation {
@@ -84,7 +111,7 @@ ListView {
         width: ListView.view.width
         height: Tokens.filesPlaceHeight
         radius: Tokens.menuRowRadius
-        color: current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
+        color: tree.dropFolder === path ? Tokens.filesDropTarget : current ? Tokens.selected : hover.hovered ? Tokens.hover : "transparent"
 
         Behavior on color {
             ColorAnimation {
@@ -180,12 +207,23 @@ ListView {
                 font.weight: item.current ? Tokens.weightLabel : Tokens.weightBody
                 color: item.hidden ? Tokens.filesFaint : Tokens.fg
                 textFormat: Text.PlainText
-                text: item.home ? qsTr("Home") : Paths.shown(item.name)
+                text: Paths.shown(item.name)
             }
         }
 
         HoverHandler {
             id: hover
+        }
+        // Home (or the root) stays put; folders under it drag.
+        DragHandler {
+            target: null
+            enabled: item.depth > 0
+            // The tree doesn't scroll by dragging; the wheel scrolls it.
+            grabPermissions: PointerHandler.CanTakeOverFromAnything
+            onActiveChanged: {
+                if (active)
+                    tree.dragRequested(item.path);
+            }
         }
         // One handler for the row, so a click on the chevron doesn't also
         // go to the folder: up to the chevron's far edge it opens or closes.
@@ -196,6 +234,14 @@ ListView {
                 else
                     tree.navigator.visit(item.path, null);
             }
+        }
+        TapHandler {
+            acceptedButtons: Qt.RightButton
+            onTapped: point => tree.menuRequested(item.path, item.mapToItem(null, point.position))
+        }
+        TapHandler {
+            acceptedButtons: Qt.MiddleButton
+            onTapped: tree.tabRequested(item.path)
         }
     }
 }

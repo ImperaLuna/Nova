@@ -36,6 +36,13 @@ sha1 = { version = "0.11", default-features = false }
 # Names in the shared freedesktop thumbnail cache (the MD5 of a file's URI), pure Rust.
 md-5 = { version = "0.11", default-features = false }
 base64 = "0.23"
+# Nova Files' archives (IMP-323), pure Rust for the static musl build: zip, tar, deflate and gzip
+# through flate2's miniz_oxide (png's already), zstd decoding through ruzstd, xz through lzma-rust2.
+zip = { version = "9", default-features = false, features = ["deflate-flate2", "deflate64", "lzma", "xz", "jiff-02"] }
+tar = { version = "0.4", default-features = false }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+ruzstd = "0.9"
+lzma-rust2 = { version = "0.23", default-features = false, features = ["std", "xz"] }
 nova-protocol = { path = "crates/nova-protocol" }
 nova-features = { path = "crates/nova-features" }
 nova-paths = { path = "crates/nova-paths" }

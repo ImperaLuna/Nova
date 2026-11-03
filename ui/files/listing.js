@@ -6,8 +6,9 @@
 // Nova Files' file list logic, kept apart so ui/tests can check it: how an
 // entry of novad's folder view reads in the Details columns (icon, Modified,
 // Type, Size), the order a column header click asks for, what a click or a
-// key selects, and what opening the selection does. Rows are novad's
-// entries flattened for a ListModel (`row`).
+// key selects, what opening the selection does, and how much of a name the
+// rename field picks. Rows are novad's entries flattened for a ListModel
+// (`row`).
 
 // What a row holds: novad's entry with its optional size and modified time
 // as -1 when it has none, since a ListModel's rows all need every role.
@@ -18,6 +19,7 @@ function row(entry) {
         link: entry.link,
         hidden: entry.hidden,
         mime: entry.mime,
+        archive: entry.archive ?? false,
         size: entry.size ?? -1,
         modified: entry.modified_ms ?? -1
     };
@@ -32,6 +34,7 @@ function copy(row) {
         link: row.link,
         hidden: row.hidden,
         mime: row.mime,
+        archive: row.archive,
         size: row.size,
         modified: row.modified
     };
@@ -42,6 +45,8 @@ function copy(row) {
 function icon(row) {
     if (row.dir)
         return Icons.FOLDER;
+    if (row.archive)
+        return Icons.ARCHIVE;
     const group = row.mime.slice(0, row.mime.indexOf("/"));
     if (group === "image")
         return Icons.PICTURE;
@@ -90,9 +95,9 @@ function modified(ms, now) {
     return Qt.formatDate(date, "d MMM yyyy");
 }
 
-// The Size column: empty for a folder.
+// The Size column: empty for a folder novad hasn't counted yet.
 function size(row) {
-    return row.dir || row.size < 0 ? "" : Bytes.bytes(row.size);
+    return row.size < 0 ? "" : Bytes.bytes(row.size);
 }
 
 // The footer's count.
@@ -192,10 +197,10 @@ function moved(key, current, count, page, columns = 1) {
 }
 
 // What opening the selected rows does: {folder, files}. One selected
-// folder is gone into; otherwise every selected file opens in its app,
+// folder or archive is gone into; otherwise every selected file opens in its app,
 // and folders among them stay put.
 function opening(rows) {
-    if (rows.length === 1 && rows[0].dir)
+    if (rows.length === 1 && (rows[0].dir || rows[0].archive))
         return {
             folder: rows[0].name,
             files: []
@@ -204,4 +209,11 @@ function opening(rows) {
         folder: "",
         files: rows.filter(row => !row.dir).map(row => row.name)
     };
+}
+
+// How much of a name the rename field picks at first: a file's name up to
+// its extension, as in Explorer; a folder's, or a dot file's, whole.
+function stemLength(name, dir) {
+    const dot = name.lastIndexOf(".");
+    return dir || dot <= 0 ? name.length : dot;
 }

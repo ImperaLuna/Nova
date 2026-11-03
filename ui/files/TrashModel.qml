@@ -72,6 +72,22 @@ QtObject {
         _changed();
     }
 
+    // The selected ids, for a tab going to the back.
+    function selectedIds(): var {
+        return Object.keys(_selected);
+    }
+
+    // Selects the items with `ids` and nothing else; ids the next read
+    // doesn't list drop out then.
+    function selectIds(ids: var) {
+        _selected = Object.create(null);
+        for (const id of ids)
+            _selected[id] = true;
+        anchor = -1;
+        _anchorId = "";
+        _changed();
+    }
+
     // The selected rows, in the list's order.
     function selectedRows(): var {
         return _items.filter(row => isSelected(row.trashId));

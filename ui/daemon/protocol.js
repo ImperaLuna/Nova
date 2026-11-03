@@ -10,7 +10,7 @@
 var VERSION = 2;
 
 // novad refuses longer launcher_search queries.
-var LAUNCHER_SEARCH_MAX_CHARS = 200;
+var LAUNCHER_SEARCH_MAX_CHARS = 4096;
 
 // novad refuses longer media player ids.
 var MEDIA_PLAYER_MAX_BYTES = 255;
@@ -23,6 +23,9 @@ var WPA_PASSWORD_MIN_BYTES = 8;
 
 // novad refuses more open folder views per connection.
 var FILES_MAX_VIEWS = 16;
+
+// novad refuses a longer files_rename name, in UTF-8 bytes.
+var FILES_NAME_MAX_BYTES = 255;
 
 // novad refuses longer files_open paths.
 var FILES_PATH_MAX_BYTES = 4096;
@@ -39,6 +42,9 @@ var FILES_THUMBNAIL_PIXELS = 256;
 // A files_look part this high is fully solid; 0 is glass.
 var FILES_SOLID_MAX = 100;
 
+// How wide and tall, at most, preview pictures are drawn and decoded.
+var FILES_PREVIEW_PICTURE_PX = 600;
+
 // novad refuses a files_tree with more opened or closed folders.
 var FILES_TREE_MAX_FOLDERS = 256;
 
@@ -51,8 +57,17 @@ var REQUEST_MAX_BYTES = 65536;
 // How far back a network_traffic event's history goes, in seconds (one sample each).
 var NETWORK_TRAFFIC_HISTORY_SECS = 60;
 
+// The games place's path in files_places: the games, not a folder.
+var FILES_GAMES_PLACE = "games:///";
+
 // The trash place's path in files_places: the trash, not a folder.
 var FILES_TRASH_PLACE = "trash:///";
+
+// The Home page's path in files_places: Quick access and Recent, not a folder.
+var FILES_HOME_PLACE = "home:///";
+
+// files_pick's error for a save over a file that's there.
+var FILES_PICK_EXISTS = "exists";
 
 // Commands a client sends (Command).
 var CMD_PING = "ping";
@@ -128,18 +143,34 @@ var CMD_FILES_OPEN = "files_open";
 var CMD_FILES_CLOSE = "files_close";
 var CMD_FILES_TREE = "files_tree";
 var CMD_FILES_PLACES = "files_places";
+var CMD_FILES_PIN = "files_pin";
+var CMD_FILES_RECENT = "files_recent";
 var CMD_FILES_TRANSFER = "files_transfer";
+var CMD_FILES_DROP = "files_drop";
 var CMD_FILES_TRANSFER_CANCEL = "files_transfer_cancel";
 var CMD_FILES_TRANSFER_ANSWER = "files_transfer_answer";
 var CMD_FILES_TRASH = "files_trash";
+var CMD_FILES_UNDO = "files_undo";
+var CMD_FILES_REDO = "files_redo";
 var CMD_FILES_DELETE = "files_delete";
 var CMD_FILES_TRASH_LIST = "files_trash_list";
+var CMD_FILES_GAMES_LIST = "files_games_list";
 var CMD_FILES_RESTORE = "files_restore";
 var CMD_FILES_TRASH_DELETE = "files_trash_delete";
 var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
 var CMD_FILES_MOUNT = "files_mount";
 var CMD_FILES_EJECT = "files_eject";
 var CMD_FILES_SEARCH = "files_search";
+var CMD_FILES_NEW_FOLDER = "files_new_folder";
+var CMD_FILES_RENAME = "files_rename";
+var CMD_FILES_DETAILS = "files_details";
+var CMD_FILES_PREVIEW = "files_preview";
+var CMD_FILES_PROPERTIES = "files_properties";
+var CMD_FILES_MEASURE = "files_measure";
+var CMD_FILES_MEASURE_CANCEL = "files_measure_cancel";
+var CMD_FILES_SET_ACCESS = "files_set_access";
+var CMD_FILES_PICK = "files_pick";
+var CMD_FILES_PICK_CANCEL = "files_pick_cancel";
 var CMD_FILES_THUMBNAIL = "files_thumbnail";
 var CMD_FILES_THUMBNAIL_CANCEL = "files_thumbnail_cancel";
 
@@ -176,9 +207,14 @@ var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
 var EVENT_FILES_LOOK = "files_look";
 var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
+var EVENT_FILES_PLACES_CHANGED = "files_places_changed";
+var EVENT_FILES_SEARCH_READY = "files_search_ready";
 var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
 var EVENT_FILES_THUMBNAIL = "files_thumbnail";
+var EVENT_FILES_MEASURED = "files_measured";
+var EVENT_FILES_HISTORY = "files_history";
+var EVENT_FILES_PICKER_CLOSED = "files_picker_closed";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
@@ -256,8 +292,9 @@ var FEATURE_WALLPAPER_ENGINE = "wallpaper-engine";
 var FEATURE_WORKSPACES = "workspaces";
 var FEATURE_X11_TRAY = "x11-tray";
 
-// Launcher providers built into novad (PROVIDER_APPS).
+// Launcher providers built into novad (PROVIDER_*).
 var PROVIDER_APPS = "apps";
+var PROVIDER_FILES = "files";
 
 // Power menu actions (PowerAction).
 var POWER_LOCK = "lock";
@@ -307,6 +344,10 @@ var PLACE_DESKTOP = "desktop";
 var PLACE_DOCUMENTS = "documents";
 var PLACE_DOWNLOADS = "downloads";
 var PLACE_PICTURES = "pictures";
+var PLACE_MUSIC = "music";
+var PLACE_VIDEOS = "videos";
+var PLACE_FOLDER = "folder";
+var PLACE_GAMES = "games";
 var PLACE_TRASH = "trash";
 
 // How files_eject went (EjectOutcome).
@@ -316,6 +357,9 @@ var EJECT_BUSY = "busy";
 // What a files_transfer job does (TransferMode).
 var TRANSFER_COPY = "copy";
 var TRANSFER_MOVE = "move";
+var TRANSFER_EXTRACT = "extract";
+var TRANSFER_EXTRACT_HERE = "extract_here";
+var TRANSFER_COMPRESS = "compress";
 
 // How a files_transfer job is going (TransferState).
 var TRANSFER_COUNTING = "counting";
@@ -329,6 +373,23 @@ var TRANSFER_FAILED = "failed";
 var CLASH_REPLACE = "replace";
 var CLASH_MERGE = "merge";
 var CLASH_SKIP = "skip";
+
+// What files_undo and files_redo undo and redo (FileStep).
+var FILE_STEP_COPY = "copy";
+var FILE_STEP_MOVE = "move";
+var FILE_STEP_TRASH = "trash";
+var FILE_STEP_RENAME = "rename";
+var FILE_STEP_NEW_FOLDER = "new_folder";
+
+// What the preview pane shows (FilePreview).
+var PREVIEW_IMAGE = "image";
+var PREVIEW_TEXT = "text";
+var PREVIEW_NONE = "none";
+
+// What a file picker picks (PickMode).
+var PICK_OPEN = "open";
+var PICK_SAVE = "save";
+var PICK_SAVE_FILES = "save_files";
 
 // END GENERATED
 

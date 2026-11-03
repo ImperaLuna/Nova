@@ -47,6 +47,7 @@ Item {
         Text {
             width: parent.width
             text: dialog.asking.title
+            textFormat: Text.PlainText
             wrapMode: Text.Wrap
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSizeTitle
@@ -56,6 +57,7 @@ Item {
         Text {
             width: parent.width
             text: dialog.asking.question
+            textFormat: Text.PlainText
             wrapMode: Text.Wrap
             font.family: Tokens.fontSans
             font.pixelSize: Tokens.fontSize

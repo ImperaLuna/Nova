@@ -3,7 +3,7 @@ source: crates/nova-cli/src/setup.rs
 expression: "shown(&facts(Distro::Arch, vec![Gpu::Amd], false))"
 ---
 install Quickshell for the UI, and packages for bluetooth, files, peripherals, recording, screenshot, wallpaper (packages only in the AUR need paru or yay installed first):
-    sudo pacman -S --needed quickshell bluez bluez-utils udisks2 gdk-pixbuf2 ffmpegthumbnailer upower headsetcontrol wf-recorder grim wl-clipboard xdg-utils awww
+    sudo pacman -S --needed quickshell bluez bluez-utils udisks2 poppler ffmpeg gdk-pixbuf2 ffmpegthumbnailer upower headsetcontrol wf-recorder grim wl-clipboard xdg-utils awww
 create /home/me/.config/nova/config.toml
 create /home/me/.config/nova/features.toml
 write /home/me/.config/systemd/user/nova.service
@@ -16,3 +16,6 @@ link /home/me/.local/bin/NovaUI to quickshell
 write /home/me/.local/share/applications/nova-files.desktop
 write /home/me/.local/share/icons/hicolor/scalable/apps/nova-files.svg
 make nova-files.desktop the default for inode/directory
+write /home/me/.local/share/xdg-desktop-portal/portals/nova.portal
+restart the desktop portal, if it runs, so it reads that:
+    systemctl --user try-restart xdg-desktop-portal.service

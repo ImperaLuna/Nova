@@ -25,6 +25,8 @@ skip = [
     # png 0.18 inflates with miniz_oxide 0.8 itself but encodes through
     # flate2, whose current release is on miniz_oxide 0.9.
     { crate = "miniz_oxide@0.8", reason = "png 0.18 and its flate2 pin different miniz_oxide versions" },
+    # ring (ureq's rustls) is still on getrandom 0.2; zip 9 needs 0.4.
+    { crate = "getrandom@0.2", reason = "ring 0.17 and zip 9 pin different getrandom majors" },
 ]
 
 [sources]

@@ -5,13 +5,22 @@ default = true
 daemon = "files"
 
 # The drives in the sidebar come from udisks2 (udisksd) on the system bus,
-# which most desktops already run; the NixOS module turns it on. Without it
-# Nova Files works, with no drives listed, so it isn't checked for.
-# Thumbnails of images come from gdk-pixbuf's thumbnailer and of videos from
-# ffmpegthumbnailer, as in GNOME's file manager; any other thumbnailer
-# installed is used too. Without them files show their type's icon.
+# which most desktops already run; the NixOS module turns it on. The
+# preview pane draws a PDF's first page with poppler's pdftoppm and a
+# video's still with ffmpeg. Thumbnails of images come from gdk-pixbuf's
+# thumbnailer and of videos from ffmpegthumbnailer, as in GNOME's file
+# manager; any other thumbnailer installed is used too. Without them Nova
+# Files works, with no drives listed, those previews or thumbnails, so none
+# is checked for.
 [variants.default]
-nix = ["udisks2", "gdk-pixbuf", "ffmpegthumbnailer"]
-arch = ["udisks2", "gdk-pixbuf2", "ffmpegthumbnailer"]
-fedora = ["udisks2", "gdk-pixbuf2", "ffmpegthumbnailer"]
-debian = ["udisks2", "libgdk-pixbuf2.0-bin", "ffmpegthumbnailer"]
+nix = ["udisks2", "poppler-utils", "ffmpeg-headless", "gdk-pixbuf", "ffmpegthumbnailer"]
+arch = ["udisks2", "poppler", "ffmpeg", "gdk-pixbuf2", "ffmpegthumbnailer"]
+fedora = ["udisks2", "poppler-utils", "ffmpeg-free", "gdk-pixbuf2", "ffmpegthumbnailer"]
+debian = ["udisks2", "poppler-utils", "ffmpeg", "libgdk-pixbuf2.0-bin", "ffmpegthumbnailer"]
+
+# The launcher's Files mode: names from the search index, and paths typed
+# from `~` or `/`.
+[[slot]]
+host = "launcher.providers"
+view = "files"
+order = 20

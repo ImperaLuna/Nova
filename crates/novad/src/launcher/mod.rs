@@ -25,8 +25,8 @@ use std::time::Duration;
 
 pub const FEATURE_ID: &str = "launcher";
 const LOG_SOURCE: &str = "launcher";
-/// Matches a search returns at most.
-const MAX_MATCHES: usize = 50;
+/// Matches a provider returns for a search, at most.
+pub const MAX_MATCHES: usize = 50;
 /// Apps that can be pinned at once.
 const MAX_PINNED: usize = 32;
 /// Recent apps sent, the latest first.
@@ -178,6 +178,7 @@ impl Launcher {
                     name,
                     description: app.description,
                     icon: app.icon,
+                    file: None,
                 }
             })
             .collect()
@@ -314,7 +315,9 @@ fn snapshot(state: &State, apps: &crate::apps::State) -> nova_protocol::Launcher
 /// started again with `start`: a running app then shows its window, which
 /// gets no focus from the compositor either (the activation token went to
 /// the process that handed over), so it takes focus here once it shows.
+/// `underway` hears when only waiting for that window is left.
 /// `true` when nothing (more) needs starting.
+#[allow(clippy::too_many_arguments)]
 pub fn focus_open(
     id: &str,
     ids: &[String],
@@ -322,6 +325,7 @@ pub fn focus_open(
     tray: Option<&Tray>,
     output: Option<&str>,
     start: impl FnOnce() -> Result<(), String>,
+    underway: &dyn Fn(),
     logger: &Logger,
 ) -> Result<bool, String> {
     if let Some(compositor) = compositor {
@@ -338,10 +342,14 @@ pub fn focus_open(
         false
     });
     let shown = |wait| compositor.is_none_or(|compositor| focus_shown(id, ids, compositor, output, wait, logger));
-    if activated && shown(SHOWN_WINDOW_WAIT) {
-        return Ok(true);
+    if activated {
+        underway();
+        if shown(SHOWN_WINDOW_WAIT) {
+            return Ok(true);
+        }
     }
     start()?;
+    underway();
     shown(STARTED_WINDOW_WAIT);
     Ok(true)
 }
