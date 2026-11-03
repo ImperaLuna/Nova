@@ -157,4 +157,8 @@ expression: all
 {"v":2,"id":84,"cmd":"files_measure_cancel","args":{"job":4}}
 {"v":2,"event":"files_measured","data":{"job":4,"files":120,"folders":14,"bytes":1400000000,"disk_bytes":1400800000,"done":false}}
 {"v":2,"id":85,"cmd":"files_set_access","args":{"path":"/home/user/run.sh","access":{"owner":{"read":false,"write":false,"run":false},"group":{"read":false,"write":false,"run":false},"others":{"read":false,"write":false,"run":false}}}}
+{"v":2,"id":82,"cmd":"files_thumbnail","args":{"path":"/home/user/Pictures/cover.png"}}
+{"v":2,"id":83,"cmd":"files_thumbnail_cancel","args":{"path":"/home/user/Pictures/cover.png"}}
+{"v":2,"event":"files_thumbnail","data":{"path":"/home/user/Pictures/cover.png","modified_ms":1793000000000,"thumbnail":"/home/user/.cache/thumbnails/large/7c5e3f0c3d1d1c4f8b1c5b9e5f1a2b3c.png"}}
+{"v":2,"event":"files_thumbnail","data":{"path":"/home/user/Documents/notes.txt","modified_ms":1793000000000}}
 {"v":2,"id":8,"error":"bad request"}

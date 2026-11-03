@@ -704,13 +704,29 @@ QtObject {
     readonly property int filesDialogButtonPad: 16
     // The file list's rows: a folder's icon in its own warm color (dimmer
     // for a dot folder), and rows easing up into place one after another
-    // when a folder's entries come in.
+    // when a folder's entries come in (ui/files/arrival.js). Only the rows
+    // on screen take part, all in filesRowWave, however many: the step
+    // shrinks below filesRowStagger as they grow. More than filesRowWaveMost
+    // rows coming in (about a screenful) come in as one piece. The tree's
+    // rows arrive by the same rule.
     readonly property int filesRowHeight: 32
     readonly property color filesFolder: "#E8A35A"
     readonly property real filesHiddenIconOpacity: 0.6
     readonly property int filesRowRise: 4
     readonly property int filesRowStagger: 25
+    readonly property int filesRowWave: durationPanel
+    readonly property int filesRowWaveMost: 40
     readonly property int durationRowIn: 220
+    // The Icons view: each entry a tile this big, a gap apart, its icon
+    // this size (its lines kept fine) over its name, centered, in up to
+    // this many lines.
+    readonly property int filesTileWidth: 96
+    readonly property int filesTileHeight: 100
+    readonly property int filesTileGap: 4
+    readonly property int filesTilePad: 8
+    readonly property int filesTileIconSize: 44
+    readonly property real filesTileIconStroke: 1.1
+    readonly property int filesTileNameLines: 2
     // How often the Modified column looks at the clock, so "Today" moves on.
     readonly property int filesClockTick: 60000
     // Solid Nova Files ([files] in config.toml) ends at the theme's soft
@@ -737,7 +753,8 @@ QtObject {
     // The sidebar: the line between places, tree and drives, and the tree,
     // its rows the height of a place, each level this far in, with its
     // chevron (turning as it opens) and folder icon. New rows slide in from
-    // just above, one after another, this much apart.
+    // just above, one after another, at most this much apart (the file
+    // list's wave rule above).
     readonly property color filesRule: glassRim
     readonly property int filesRuleInset: 6
     readonly property int filesTreeIndent: 14

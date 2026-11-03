@@ -33,6 +33,8 @@ aes = "0.9"
 cbc = { version = "0.2", features = ["alloc", "block-padding"] }
 pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
 sha1 = { version = "0.11", default-features = false }
+# Names in the shared freedesktop thumbnail cache (the MD5 of a file's URI), pure Rust.
+md-5 = { version = "0.11", default-features = false }
 base64 = "0.23"
 # Nova Files' archives (IMP-323), pure Rust for the static musl build: zip, tar, deflate and gzip
 # through flate2's miniz_oxide (png's already), zstd decoding through ruzstd, xz through lzma-rust2.

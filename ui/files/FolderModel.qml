@@ -38,9 +38,9 @@ QtObject {
     property int anchor: -1
 
     // A folder's entries are coming in anew: `current` is the first
-    // selected one's row (or -1). `reset` follows once they're in, for the
-    // list to move to it.
-    signal filling(int current)
+    // selected one's row (or -1), `total` how many the folder holds.
+    // `reset` follows once they're in, for the list to move to it.
+    signal filling(int current, int total)
     signal reset(int current)
 
     // This view's number, handed out as it's made.
@@ -159,7 +159,7 @@ QtObject {
         const fresh = page.start === 0;
         const found = page.entries.findIndex(entry => isSelected(entry.name));
         if (fresh) {
-            filling(found);
+            filling(found, page.total);
             rows.clear();
             anchor = -1;
             error = "";

@@ -33,6 +33,9 @@ var FILES_SEARCH_MAX_CHARS = 200;
 // Most results a files_search answers with.
 var FILES_SEARCH_MAX_RESULTS = 200;
 
+// The longer side of files_thumbnail's thumbnails.
+var FILES_THUMBNAIL_PIXELS = 256;
+
 // A files_look part this high is fully solid; 0 is glass.
 var FILES_SOLID_MAX = 100;
 
@@ -145,6 +148,8 @@ var CMD_FILES_PROPERTIES = "files_properties";
 var CMD_FILES_MEASURE = "files_measure";
 var CMD_FILES_MEASURE_CANCEL = "files_measure_cancel";
 var CMD_FILES_SET_ACCESS = "files_set_access";
+var CMD_FILES_THUMBNAIL = "files_thumbnail";
+var CMD_FILES_THUMBNAIL_CANCEL = "files_thumbnail_cancel";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -182,6 +187,7 @@ var EVENT_FILES_TRASH_CHANGED = "files_trash_changed";
 var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
 var EVENT_FILES_MEASURED = "files_measured";
+var EVENT_FILES_THUMBNAIL = "files_thumbnail";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";

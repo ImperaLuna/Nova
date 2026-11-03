@@ -8,6 +8,8 @@ import "paths.js" as Paths
 import "tabs.js" as Tabs
 import "trash.js" as Trash
 import "properties.js" as Props
+import "listing.js" as Listing
+import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
@@ -30,6 +32,8 @@ import "../daemon/protocol.js" as Protocol
 // behind). Closing the last tab closes the window; a tab torn out of the
 // row asks for a window of its own (`windowRequested`), carrying its
 // history, order and selection.
+// The View menu (and Explorer's Ctrl+Shift+1 to 4 and 6) switch the file
+// list between Icons and Details for the window, in every folder it shows.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -225,6 +229,11 @@ FloatingWindow {
         confirming = null;
         if (yes)
             act?.();
+        focusContent();
+    }
+
+    // Gives the keyboard back to the list shown: the folder's or the trash's.
+    function focusContent() {
         if (inTrash)
             trashList.focusList();
         else
@@ -325,6 +334,18 @@ FloatingWindow {
         enabled: !window.inTrash
         onActivated: window.previewShown = !window.previewShown
     }
+    // Explorer's icon sizes (Nova has one) and Details, while the file
+    // list has the keyboard.
+    Shortcut {
+        sequences: ["Ctrl+Shift+1", "Ctrl+Shift+2", "Ctrl+Shift+3", "Ctrl+Shift+4"]
+        enabled: list.activeFocus
+        onActivated: list.view = Listing.ICONS
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+6"
+        enabled: list.activeFocus
+        onActivated: list.view = Listing.DETAILS
+    }
     TapHandler {
         acceptedButtons: Qt.BackButton | Qt.ForwardButton
         onTapped: (point, button) => window.navigator.step(button === Qt.BackButton ? -1 : 1)
@@ -397,6 +418,8 @@ FloatingWindow {
         onCompressRequested: window.compress()
         previewShown: window.previewShown
         onPreviewToggled: window.previewShown = !window.previewShown
+        view: list.view
+        onViewMenuRequested: at => viewMenu.open(commands.mapToItem(viewMenu, at))
     }
     TrashCommandRow {
         id: trashCommands
@@ -553,10 +576,41 @@ FloatingWindow {
         onAccessFlipped: (who, right) => propertiesModel.flipAccess(who, right)
         onDefaultChosen: app => propertiesModel.openWith.makeDefault(app)
     }
+    PopupMenu {
+        id: viewMenu
+        anchors.fill: parent
+
+        onHidden: window.focusContent()
+
+        function choose(view: string) {
+            list.view = view;
+            shown = false;
+        }
+
+        function open(at: point) {
+            place(at);
+            shown = true;
+        }
+        onDismissed: shown = false
+
+        MenuRow {
+            icon: Icons.GRID
+            label: qsTr("Icons")
+            checked: list.view === Listing.ICONS
+            onChosen: viewMenu.choose(Listing.ICONS)
+        }
+        MenuRow {
+            icon: Icons.VIEW
+            label: qsTr("Details")
+            checked: list.details
+            onChosen: viewMenu.choose(Listing.DETAILS)
+        }
+    }
     DriveMenu {
         id: driveMenu
         anchors.fill: parent
         onPropertiesChosen: drive => window.showProperties([], drive)
+        onHidden: window.focusContent()
         onEjectChosen: drive => FilesService.eject(drive.id, outcome => {
                 if (outcome === Protocol.EJECT_BUSY)
                     ejectProblem.show(drive.name);

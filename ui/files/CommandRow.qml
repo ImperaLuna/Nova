@@ -1,12 +1,14 @@
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
+import "listing.js" as Listing
 
 // Nova Files' command row, under the navigation row: New first, then cut,
 // copy, paste, rename and delete, then Compress to ZIP, then Sort and View;
 // at its right end the preview pane's button, raised while the pane shows
 // (Alt+P too). Inside an archive, or with one archive picked, "Extract
-// all" comes after New, as in Explorer.
+// all" comes after New, as in Explorer. View shows the file list's view
+// (`view`, a Listing view) and asks for its menu under it.
 Rectangle {
     id: row
 
@@ -23,6 +25,11 @@ Rectangle {
 
     signal extractAllRequested
     signal compressRequested
+
+    property string view: Listing.DETAILS
+
+    // View was clicked: its menu goes at `at`, in the row's coordinates.
+    signal viewMenuRequested(point at)
 
     color: Tokens.alpha(Tokens.surfaceRaised, Tokens.raisedOpacity * (1 - solid))
 
@@ -88,10 +95,11 @@ Rectangle {
             enabled: false
         }
         ToolButton {
-            icon: Icons.VIEW
+            id: viewButton
+            icon: row.view === Listing.ICONS ? Icons.GRID : Icons.VIEW
             label: qsTr("View")
             menu: true
-            enabled: false
+            onClicked: row.viewMenuRequested(viewButton.mapToItem(row, 0, viewButton.height + Tokens.labelNudge * 2))
         }
     }
     ToolButton {

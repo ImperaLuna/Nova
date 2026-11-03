@@ -134,6 +134,7 @@ mod tests {
                 mounts: dir.join("no-mountinfo"),
                 previews: None,
                 opened: None,
+                thumbnails: crate::files::thumbnails::Sources::under(&dir),
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");

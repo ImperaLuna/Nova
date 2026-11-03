@@ -33,7 +33,6 @@ use crate::mime::Mime;
 use crate::notifications::image::percent_decoded;
 use nova_protocol::{Event, FILES_PATH_MAX_WIRE_BYTES, TrashItem, wire_text};
 use std::ffi::{OsStr, OsString};
-use std::fmt::Write as _;
 use std::io::Write as _;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
@@ -591,15 +590,7 @@ fn deletion_ms(value: &str) -> Option<i64> {
 
 /// `bytes` percent-escaped as a URI path: an info file's `Path`.
 fn escape(bytes: &OsStr) -> String {
-    let mut out = String::with_capacity(bytes.len());
-    for &byte in bytes.as_bytes() {
-        if byte.is_ascii_alphanumeric() || PATH_SAFE.contains(&byte) {
-            out.push(char::from(byte));
-        } else {
-            let _ = write!(out, "%{byte:02X}");
-        }
-    }
-    out
+    crate::notifications::image::percent_encoded(bytes.as_bytes(), PATH_SAFE)
 }
 
 /// The item `id` names, once it's an info file in one of `roots`.

@@ -312,6 +312,8 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             opened: Some(dir.join("opened")),
             mounts: dir.join("no-mountinfo"),
             previews: Some(dir.join("previews")),
+            // A cache under `<dir>/thumbnails`, and no thumbnailers.
+            thumbnails: crate::files::thumbnails::Sources::under(dir),
         },
         session_lock: dir.to_owned(),
         screenshots: dir.to_owned(),

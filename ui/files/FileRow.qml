@@ -6,7 +6,7 @@ import "paths.js" as Paths
 // A row of Nova Files' Details list: the entry's icon and name, then its
 // Modified, Type and Size at the header's column widths. Hovered rows
 // lighten, selected ones fill; dot files read fainter. When a folder's
-// entries have just come in (`riseOrder`), it eases up into place after
+// entries have just come in (`riseWait`), it eases up into place after
 // the rows nearer where the list opened. A middle click is its own signal
 // (`middleClicked`) and selects nothing.
 Rectangle {
@@ -22,9 +22,9 @@ Rectangle {
 
     required property real nameWidth
     required property bool selected
-    // Rows from where the list opened, while a folder's entries have just
-    // come in, or -1: read once, as the row is made.
-    required property int riseOrder
+    // How long it waits before easing in, in ms, while a folder's entries
+    // have just come in, or -1 to just show: read once, as the row is made.
+    required property int riseWait
     // When the Modified column was worked out, so "Today" moves on.
     required property real now
 
@@ -104,46 +104,12 @@ Rectangle {
     }
 
     transform: Translate {
-        id: lift
+        id: rowLift
     }
 
-    Component.onCompleted: {
-        if (riseOrder >= 0)
-            riseIn.start();
-    }
-
-    SequentialAnimation {
-        id: riseIn
-        PropertyAction {
-            target: entry
-            property: "opacity"
-            value: 0
-        }
-        PropertyAction {
-            target: lift
-            property: "y"
-            value: Tokens.filesRowRise
-        }
-        PauseAnimation {
-            duration: Math.max(entry.riseOrder, 0) * Tokens.filesRowStagger
-        }
-        ParallelAnimation {
-            NumberAnimation {
-                target: entry
-                property: "opacity"
-                to: 1
-                duration: Tokens.durationRowIn
-                easing.type: Easing.BezierSpline
-                easing.bezierCurve: Tokens.easing
-            }
-            NumberAnimation {
-                target: lift
-                property: "y"
-                to: 0
-                duration: Tokens.durationRowIn
-                easing.type: Easing.BezierSpline
-                easing.bezierCurve: Tokens.easing
-            }
-        }
+    RiseIn {
+        item: entry
+        lift: rowLift
+        wait: entry.riseWait
     }
 }

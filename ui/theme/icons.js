@@ -131,6 +131,8 @@ var RENAME = "M4 20h4L19 9l-4-4L4 16zM13 7l4 4";
 var SORT = "M7 5v14M4 16l3 3 3-3M17 19V5M14 8l3-3 3 3";
 var VIEW = "M4 6h16M4 12h16M4 18h16";
 var PREVIEW_PANE = "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM15 4v16";
+// The file list's Icons view (Details is VIEW).
+var GRID = "M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z";
 // Nova Files' drives: a disk inside the machine, a USB stick, and Eject.
 var DISK = "M5.5 7h13a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zM7 12h.01M10 12h7";
 var USB = "M8 9.5h8V20H8zM9.5 4h5v5.5h-5zM11 6.5h.01M13 6.5h.01";
