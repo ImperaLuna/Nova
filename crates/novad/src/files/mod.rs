@@ -469,9 +469,14 @@ impl Shared {
     /// Sends `window` to `client`; a picker's is then answered only from
     /// there.
     fn send(&self, client: ClientId, window: &FilesWindow) -> bool {
+        // Marked first: the window can answer as soon as it's sent.
+        let picker = picker_of(window);
+        if let Some(id) = picker {
+            self.pickers.shown(id, Some(client));
+        }
         let sent = self.hub.send_to(client, &Event::FilesWindow(window.clone()));
-        if sent && let Some(id) = picker_of(window) {
-            self.pickers.shown(id, client);
+        if !sent && let Some(id) = picker {
+            self.pickers.shown(id, None);
         }
         sent
     }

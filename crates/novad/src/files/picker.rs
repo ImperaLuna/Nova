@@ -86,10 +86,11 @@ impl Pickers {
         lock(&self.state).open.contains_key(&id)
     }
 
-    /// Picker `id`'s window went to the Nova Files connection `client`.
-    pub fn shown(&self, id: u32, client: ClientId) {
+    /// Picker `id`'s window goes to the Nova Files connection `client`,
+    /// or (None) waits for one again.
+    pub fn shown(&self, id: u32, client: Option<ClientId>) {
         if let Some(asked) = lock(&self.state).open.get_mut(&id) {
-            asked.shown_to = Some(client);
+            asked.shown_to = client;
         }
     }
 
@@ -305,7 +306,7 @@ mod tests {
         let (asked, slot) = pickers.ask("org.mozilla.firefox", picker(PickMode::Open, false, false), vec![]).unwrap();
         let song = [wire(&dir, "Music/song.flac")];
         assert!(pickers.pick(window, asked.id, &song, None, false).is_err(), "not shown yet");
-        pickers.shown(asked.id, window);
+        pickers.shown(asked.id, Some(window));
         assert!(pickers.pick(window, asked.id, &[wire(&dir, "Music")], None, false).is_err(), "a folder isn't a file");
         assert!(pickers.pick(window, asked.id, &song, Some(0), false).unwrap_err().contains("filter"));
         pickers.pick(window, asked.id, &song, None, false).unwrap();
@@ -324,8 +325,8 @@ mod tests {
         let (second, second_slot) = pickers.ask("b", picker(PickMode::Save, false, false), vec![]).unwrap();
         let (third, third_slot) = pickers.ask("c", picker(PickMode::Save, false, false), vec![]).unwrap();
         assert_ne!(first.id, second.id);
-        pickers.shown(first.id, window);
-        pickers.shown(second.id, window);
+        pickers.shown(first.id, Some(window));
+        pickers.shown(second.id, Some(window));
         pickers.cancel(window, first.id);
         assert!(!pickers.end(first.id));
         assert_eq!(zbus::block_on(first_slot.wait()), Answer::Cancelled);

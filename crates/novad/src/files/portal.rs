@@ -38,6 +38,10 @@ const PATH: &str = "/org/freedesktop/portal/desktop";
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 /// Most files one `SaveFiles` writes.
 const MAX_SAVE_FILES: usize = 1024;
+/// Most characters of patterns one filter keeps, so the filter fits in
+/// the request Nova Files opens a folder with (REQUEST_MAX_BYTES), even
+/// with every character escaped.
+const FILTER_MAX_CHARS: usize = 8 * 1024;
 
 /// The portal's response codes.
 const RESPONSE_PICKED: u32 = 0;
@@ -117,6 +121,13 @@ impl FileChooser {
         mode: PickMode,
         options: Options,
     ) -> (u32, Results) {
+        // The answer needs a URI for each file, in order, so a list Nova
+        // can't take whole is turned down.
+        let files = options.files.as_deref().filter(|_| mode == PickMode::SaveFiles).unwrap_or_default();
+        if files.len() > MAX_SAVE_FILES || files.iter().any(|file| file_name(file.clone()).is_none()) {
+            self.shared.logger.warn(super::LOG_SOURCE, "turned down saving files Nova can't name");
+            return (RESPONSE_ENDED, Results::default());
+        }
         let last_folder = self.shared.pickers.last_folder(app);
         let asked = Asked::new(mode, title, options, last_folder, &self.shared.sources.home);
         let files = asked.files.clone();
@@ -249,9 +260,7 @@ impl Asked {
         let (filters, filter) = kept_filters(options.filters.unwrap_or_default(), options.current_filter);
         let nova_filters = filters.iter().map(nova_filter).collect();
         let files = match mode {
-            PickMode::SaveFiles => {
-                options.files.unwrap_or_default().into_iter().take(MAX_SAVE_FILES).filter_map(file_name).collect()
-            }
+            PickMode::SaveFiles => options.files.unwrap_or_default().into_iter().filter_map(file_name).collect(),
             PickMode::Open | PickMode::Save => Vec::new(),
         };
         let picker = FilePicker {
@@ -289,12 +298,22 @@ fn kept_filters(filters: Vec<PortalFilter>, current: Option<PortalFilter>) -> (V
 }
 
 /// The app's filter as Nova's: its name cut to fit, and its globs and
-/// types that fit, up to [`FILES_FILTER_MAX_PATTERNS`].
+/// types that fit, up to [`FILES_FILTER_MAX_PATTERNS`] and
+/// [`FILTER_MAX_CHARS`] in all.
 fn nova_filter((name, patterns): &PortalFilter) -> FileFilter {
     let fits = |(kind, pattern): &&(u32, String)| {
         matches!(*kind, GLOB | MIME) && pattern.chars().count() <= FILES_PICKER_MAX_CHARS
     };
-    let kept: Vec<&(u32, String)> = patterns.iter().filter(fits).take(FILES_FILTER_MAX_PATTERNS).collect();
+    let mut chars = 0;
+    let kept: Vec<&(u32, String)> = patterns
+        .iter()
+        .filter(fits)
+        .take(FILES_FILTER_MAX_PATTERNS)
+        .take_while(|(_, pattern)| {
+            chars += pattern.chars().count();
+            chars <= FILTER_MAX_CHARS
+        })
+        .collect();
     let of =
         |wanted: u32| kept.iter().filter(|(kind, _)| *kind == wanted).map(|(_, pattern)| pattern.clone()).collect();
     FileFilter { name: capped(name.clone()), globs: of(GLOB), mimes: of(MIME) }
@@ -494,5 +513,11 @@ mod tests {
         assert_eq!((kept, index), (vec![odd.clone()], 0), "kept as the app sent it, for the answer");
         let nova = nova_filter(&odd);
         assert_eq!((nova.globs, nova.mimes), (vec!["*.odd".to_string()], vec![]), "an unknown kind is left out");
+        let long: PortalFilter = (
+            "Long".into(),
+            (0..FILES_FILTER_MAX_PATTERNS).map(|_| (GLOB, "*".repeat(FILES_PICKER_MAX_CHARS))).collect(),
+        );
+        let kept = nova_filter(&long).globs.len();
+        assert_eq!(kept, FILTER_MAX_CHARS / FILES_PICKER_MAX_CHARS, "patterns stop at the filter's budget");
     }
 }
