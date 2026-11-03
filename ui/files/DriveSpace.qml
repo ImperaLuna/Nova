@@ -2,8 +2,8 @@ import QtQuick
 import "../theme"
 import "space.js" as Space
 
-// How full a drive is: a bar, and under it what's free ("212 GB free of
-// 1 TB"). The bar turns to the warning colour once less than a tenth is
+// How full a drive is: a bar, and under it what's free ("197 GB free of
+// 931 GB"). The bar turns to the warning colour once less than a tenth is
 // free. Shown in the sidebar under each drive's name and over a drive's
 // "What uses space" list; nothing while novad can't say (not mounted).
 Column {

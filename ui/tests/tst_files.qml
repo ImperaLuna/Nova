@@ -12,7 +12,6 @@ import "../daemon/protocol.js" as Protocol
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
 import "../files/space.js" as Space
-import "../text/bytes.js" as Bytes
 
 // Nova Files' address bar parts, window title and entry paths, its
 // history and the sidebar tree's kept folders and rows, its file list:
@@ -235,8 +234,8 @@ Item {
             compare(Listing.items(5), "5 items");
         }
 
-        // Explorer's "212 GB free of 1 TB": the drive's own units (thousands),
-        // one decimal under 10.
+        // Explorer's "197 GB free of 931 GB": 1024-based, like every size in
+        // Nova, one decimal under 10.
         function test_a_drive_reads_what_is_free_of_its_size() {
             const drive = (size, used) => ({
                         id: "d",
@@ -246,18 +245,15 @@ Item {
                         size: size,
                         used: used
                     });
-            compare(Space.freeOf(drive(1e12, 788e9)), "212 GB free of 1 TB");
-            compare(Space.freeOf(drive(64e9, 54.5e9)), "9.5 GB free of 64 GB");
-            compare(Space.freeOf(drive(2e12, 2e12)), "0 B free of 2 TB");
+            compare(Space.freeOf(drive(1e12, 788e9)), "197 GB free of 931 GB");
+            compare(Space.freeOf(drive(64e9, 54.5e9)), "8.8 GB free of 60 GB");
+            compare(Space.freeOf(drive(2e12, 2e12)), "0 B free of 1.8 TB");
             compare(Space.freeOf({
                 id: "u",
                 name: "Stick",
                 removable: true,
                 size: 32e9
             }), "", "not mounted");
-            compare(Bytes.storage(999.7e9), "1 TB");
-            compare(Bytes.storage(9.96e9), "10 GB");
-            compare(Bytes.storage(512), "512 B");
             compare(Space.fill(drive(1e12, 250e9)), 0.25);
         }
 
