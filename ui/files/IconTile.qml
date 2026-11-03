@@ -5,8 +5,8 @@ import "paths.js" as Paths
 
 // A tile of Nova Files' Icons view: the entry's icon, big, or a file's
 // thumbnail in its place once there is one, over its name centered in up
-// to two lines (cut short with an ellipsis). Hovered tiles
-// lighten, selected ones fill, like Details' rows; dot files read fainter.
+// to two lines (cut short with an ellipsis). Hovered tiles lighten,
+// selected ones fill, like Details' rows; dot files read fainter.
 // When a folder's entries have just come in (`riseWait`), it eases up
 // into place after the tiles nearer where the list opened.
 Rectangle {
