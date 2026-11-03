@@ -7,7 +7,7 @@ default:
     @just --list
 
 # Everything CI runs, except e2e
-check: fmt-check lint lint-nix deny test lint-qml test-qml test-install test-vm-failures shaders-check
+check: fmt-check lint lint-nix deny test lint-qml test-qml test-install test-vm-failures test-stack shaders-check
 
 # Rust unit tests
 test:
@@ -56,6 +56,10 @@ test-install:
 # scripts/vm-failures.sh (CI's VM failure tracker) on recorded CI logs
 test-vm-failures:
     scripts/test-vm-failures.sh
+
+# scripts/stack.sh (the stack keeper's tool) on a throwaway stack
+test-stack:
+    scripts/test-stack.sh
 
 # Compile ui/**/*.frag into the .qsb files QML loads (committed)
 shaders:
