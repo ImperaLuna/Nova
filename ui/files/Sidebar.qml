@@ -122,6 +122,10 @@ Item {
                         enabled: place.pinned
                         onTapped: point => sidebar.pinMenuRequested(place.modelData.path, place.mapToItem(null, point.position))
                     }
+                    TapHandler {
+                        acceptedButtons: Qt.MiddleButton
+                        onTapped: sidebar.tabRequested(place.modelData.path)
+                    }
                 }
             }
 
@@ -138,10 +142,6 @@ Item {
                     anchors.rightMargin: Tokens.filesRuleInset
                     height: Tokens.dividerWidth
                     color: Tokens.filesRule
-                }
-                TapHandler {
-                    acceptedButtons: Qt.MiddleButton
-                    onTapped: sidebar.tabRequested(place.modelData.path)
                 }
             }
             Drives {

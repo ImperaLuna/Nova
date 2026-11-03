@@ -1508,6 +1508,7 @@ Item {
             });
             verify(findText(open, "Open"));
             verify(!open.naming, "opening has no name field");
+        }
 
         function findText(item, text) {
             for (const child of item.children) {
@@ -1519,6 +1520,7 @@ Item {
             }
             return null;
         }
+
         // files_search's answer as novad sends it (the wire format test's
         // recorded line), for a game in Steam's hidden folder.
         function foundGame() {

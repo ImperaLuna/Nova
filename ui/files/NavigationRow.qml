@@ -6,7 +6,6 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "paths.js" as Paths
 import "home.js" as Home
-import "trash.js" as Trash
 import "../daemon/protocol.js" as Protocol
 
 // Nova Files' top row: back, forward and up, the address bar showing
