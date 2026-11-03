@@ -12,6 +12,7 @@ import "../daemon/protocol.js" as Protocol
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
 import "../files/tabs.js" as Tabs
+import "../files/preview.js" as Preview
 
 // Nova Files' address bar parts, window title and entry paths, its
 // history and the sidebar tree's kept folders and rows, its file list:
@@ -19,9 +20,10 @@ import "../files/tabs.js" as Tabs
 // keys select, and what opening the selection does, and the copy and move
 // jobs a window keeps and how their card and name clash dialog read and
 // answer, and the trash: its rows, its selection, and the dialog that asks
-// before deleting for good, and the window's tabs: which one Ctrl+Tab and
-// closing land on, their widths, dragging one along or out of the row, and
-// the row's clicks. The root is an Item: a TestCase root gets no mouse events.
+// before deleting for good, what the preview pane shows, and the window's
+// tabs: which one Ctrl+Tab and closing land on, their widths, dragging one
+// along or out of the row, and the row's clicks. The root is an Item: a
+// TestCase root gets no mouse events.
 Item {
     id: stage
     width: 880
@@ -171,6 +173,7 @@ Item {
                 mime: "inode/directory"
             });
             compare(row.size, -1, "a folder has no size");
+            compare(row.archive, false, "only novad says what's an archive");
             compare(row.modified, -1);
             compare(entry("a.png", {
                 size: 48213,
@@ -346,6 +349,25 @@ Item {
                 folder: "",
                 files: []
             });
+            const photos = entry("photos.zip", {
+                mime: "application/zip",
+                archive: true
+            });
+            compare(Listing.opening([photos]), {
+                folder: "photos.zip",
+                files: []
+            }, "an archive opens like a folder");
+            compare(Listing.icon(photos), Icons.ARCHIVE);
+        }
+
+        function test_each_job_shows_what_it_does() {
+            compare(Transfers.icon(transfer(1, Protocol.TRANSFER_RUNNING)), Icons.COPY);
+            compare(Transfers.icon(transfer(1, Protocol.TRANSFER_RUNNING, {
+                mode: Protocol.TRANSFER_EXTRACT_HERE
+            })), Icons.EXTRACT);
+            compare(Transfers.icon(transfer(1, Protocol.TRANSFER_RUNNING, {
+                mode: Protocol.TRANSFER_COMPRESS
+            })), Icons.ARCHIVE);
         }
 
         function transfer(job, state, extra) {
@@ -373,6 +395,51 @@ Item {
                     size: 2516582
                 }
             })
+
+        function test_the_preview_pane_previews_one_selected_file() {
+            const photo = entry("a.png", {
+                mime: "image/png"
+            });
+            compare(Preview.subject(1, photo), photo);
+            compare(Preview.subject(0, null), null);
+            compare(Preview.subject(3, photo), null, "several: none of them");
+            verify(Preview.asks(photo));
+            verify(!Preview.asks(entry("Music", {
+                dir: true,
+                mime: "inode/directory"
+            })), "a folder needs no asking");
+            verify(!Preview.asks(null));
+        }
+
+        function test_the_preview_pane_face_follows_the_answer() {
+            const notes = entry("notes.md", {
+                mime: "text/markdown"
+            });
+            const folder = entry("Music", {
+                dir: true,
+                mime: "inode/directory"
+            });
+            const image = {
+                kind: Protocol.PREVIEW_IMAGE,
+                path: "/home/ana/a.png"
+            };
+            const text = {
+                kind: Protocol.PREVIEW_TEXT,
+                text: "# Notes",
+                cut: false
+            };
+            compare(Preview.face(0, null, null, false), Preview.EMPTY);
+            compare(Preview.face(2, null, null, false), Preview.COUNT);
+            compare(Preview.face(1, folder, null, false), Preview.ITEM, "a folder at once");
+            compare(Preview.face(1, notes, null, false), Preview.WAITING);
+            compare(Preview.face(1, notes, text, false), Preview.TEXT);
+            compare(Preview.face(1, notes, image, false), Preview.IMAGE);
+            compare(Preview.face(1, notes, image, true), Preview.ITEM, "a picture Qt can't read");
+            compare(Preview.face(1, notes, {
+                kind: Protocol.PREVIEW_NONE
+            }, false), Preview.ITEM);
+            compare(Preview.face(1, notes, false, false), Preview.ITEM, "novad couldn't tell");
+        }
 
         function test_jobs_come_in_order_and_leave_when_they_end() {
             let jobs = Transfers.apply([], transfer(1, Protocol.TRANSFER_COUNTING));

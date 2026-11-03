@@ -297,10 +297,7 @@ impl<'a> Connection<'a> {
             Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
             Command::FilesLaunch { path, app } => {
                 let (path, app) = (path.clone(), app.clone());
-                return self.opener_later(move |opener| match app {
-                    Some(app) => opener.open_with(&path, &app),
-                    None => opener.open(&path),
-                });
+                return self.files_later(move |files| files.launch(&path, app.as_deref()));
             }
             // Answered off the connection's thread: the files found are
             // looked at, and a slow drive must not hold up its other requests.
@@ -313,6 +310,12 @@ impl<'a> Connection<'a> {
                     }
                     Err(e) => Answer::Now(Outcome::Error(e)),
                 };
+            }
+            // Off the connection's thread too: it reads the file, and may
+            // draw it.
+            Command::FilesPreview { path } => {
+                let path = path.clone();
+                return self.files_later(move |files| files.previews().preview(&path));
             }
             Command::FilesOpenWith { path } => {
                 let path = path.clone();
@@ -360,6 +363,19 @@ impl<'a> Connection<'a> {
                 return self.files_later(move |files| files.trash().erase(&ids));
             }
             Command::FilesEmptyTrash => return self.files_later(|files| files.trash().empty()),
+            Command::FilesProperties { path } => {
+                let path = path.clone();
+                return self.files_later(move |files| files.properties(&path));
+            }
+            Command::FilesSetAccess { path, access } => {
+                let (path, access) = (path.clone(), *access);
+                return self.files_later(move |files| files.set_access(&path, access));
+            }
+            // Answered here, in order with a cancel that follows it.
+            Command::FilesMeasure { job, paths } => {
+                done(self.files().and_then(|files| files.measure(self.id, *job, paths)))
+            }
+            Command::FilesMeasureCancel { job } => done(self.files().map(|files| files.cancel_measure(self.id, *job))),
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -948,6 +964,7 @@ impl<'a> Connection<'a> {
             | Command::FilesOpenWith { .. }
             | Command::FilesSetDefault { .. }
             | Command::FilesSearch { .. }
+            | Command::FilesPreview { .. }
             | Command::FilesTrash { .. }
             | Command::FilesDelete { .. }
             | Command::FilesTrashList
@@ -955,7 +972,11 @@ impl<'a> Connection<'a> {
             | Command::FilesTrashDelete { .. }
             | Command::FilesEmptyTrash
             | Command::FilesMount { .. }
-            | Command::FilesEject { .. } => {}
+            | Command::FilesEject { .. }
+            | Command::FilesProperties { .. }
+            | Command::FilesMeasure { .. }
+            | Command::FilesMeasureCancel { .. }
+            | Command::FilesSetAccess { .. } => {}
             Command::FilesTree { .. } | Command::FilesPlaces => {}
         }
     }

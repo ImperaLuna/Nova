@@ -19,6 +19,7 @@
 //! by the client's hang-up or the module stopped; the last one (done,
 //! cancelled or failed) unregisters it in the same step.
 
+use crate::files::archive;
 use crate::files::copying::{self, Aside, Clashing, Measure, Part};
 use crate::files::views::checked_path;
 use crate::hub::{ClientId, Hub};
@@ -29,7 +30,7 @@ use nova_protocol::{
     TransferMode, TransferState,
 };
 use std::collections::HashMap;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs::{self, Metadata};
 use std::io;
 use std::os::unix::fs::DirBuilderExt;
@@ -39,6 +40,8 @@ use std::time::{Duration, Instant};
 
 const LOG_SOURCE: &str = "files";
 const PROGRESS_EVERY: Duration = Duration::from_millis(FILES_TRANSFER_PROGRESS_MS);
+/// A new zip's permissions, as an app saving a file would give it.
+const ZIP_MODE: u32 = 0o644;
 
 /// A job, named by its client and the client's number for it.
 type Key = (ClientId, u32);
@@ -125,6 +128,8 @@ impl Transfers {
             next_clash: 0,
             last_report: Instant::now(),
             copying_moved: false,
+            staging: None,
+            placing_extracted: false,
         };
         let spawned = std::thread::Builder::new().name("novad-files-copy".into()).spawn(move || run.run());
         spawned.map(drop).map_err(|e| {
@@ -235,15 +240,30 @@ struct Run {
     /// entries stay in place until all of it is, so a stop halfway (which
     /// may put back what it replaced) loses none of them.
     copying_moved: bool,
+    /// The hidden folder in `folder` archives are extracted to, deleted
+    /// with whatever is left in it when the job ends.
+    staging: Option<PathBuf>,
+    /// Extracted items are being placed: their bytes were counted as they
+    /// were extracted.
+    placing_extracted: bool,
 }
 
 impl Run {
     fn run(mut self) {
         self.report(TransferState::Counting, None, None);
-        let result = self.prepare().and_then(|items| {
-            self.report(TransferState::Running, None, None);
-            items.into_iter().try_for_each(|item| self.place_item(item))
-        });
+        let result = if self.job.mode == TransferMode::Compress {
+            self.compress()
+        } else {
+            self.prepare().and_then(|items| {
+                self.report(TransferState::Running, None, None);
+                items.into_iter().try_for_each(|item| self.place_item(item))
+            })
+        };
+        if let Some(staging) = self.staging.take()
+            && let Err(e) = fs::remove_dir_all(&staging)
+        {
+            self.logger.warn(LOG_SOURCE, &format!("can't delete {}: {e}", staging.display()));
+        }
         match result {
             Ok(()) => self.report(TransferState::Done, None, None),
             Err(Halt::Stopped) => self.report(TransferState::Cancelled, None, None),
@@ -260,8 +280,9 @@ impl Run {
         if !folder.is_dir() {
             return Err(Halt::Failed(format!("{} isn't a folder", self.folder.display())));
         }
-        let mut items = Vec::with_capacity(self.sources.len());
-        for source in &self.sources {
+        let sources = if self.extracts() { self.unpack(&folder)? } else { self.sources.clone() };
+        let mut items = Vec::with_capacity(sources.len());
+        for source in &sources {
             let meta = fs::symlink_metadata(source).map_err(|e| failed(source, &e))?;
             let (Some(parent), Some(name)) = (source.parent(), source.file_name()) else {
                 return Err(Halt::Failed(format!("Can't {} /", self.verb())));
@@ -271,7 +292,7 @@ impl Run {
                 return Err(Halt::Failed(format!("Can't {} {} into itself", self.verb(), name.to_string_lossy())));
             }
             // Moving an item where it already is leaves it be.
-            if in_place && self.job.mode == TransferMode::Move {
+            if in_place && self.moves() {
                 continue;
             }
             let target = (!in_place).then(|| self.folder.join(name));
@@ -279,8 +300,9 @@ impl Run {
             let measured = copying::measure(source, target.as_deref(), &|| job.stopped())
                 .map_err(|e| failed(source, &e))?
                 .ok_or(Halt::Stopped)?;
-            self.total.add(measured);
-            let bytes = measured.bytes;
+            // Extracted bytes were counted as they were extracted.
+            let bytes = if self.placing_extracted { 0 } else { measured.bytes };
+            self.total.add(Measure { bytes, ..measured });
             items.push(Item { source: source.clone(), name: name.to_owned(), meta, bytes, renamed: in_place });
         }
         Ok(items)
@@ -410,7 +432,7 @@ impl Run {
     fn merge(&mut self, source: &Path, target: &Path) -> Step {
         self.total.folder_clashes = self.total.folder_clashes.saturating_sub(1);
         self.place_children(source, target)?;
-        if self.job.mode == TransferMode::Move {
+        if self.moves() {
             // Whatever was skipped stays in it.
             let _ = fs::remove_dir(source);
         }
@@ -456,7 +478,7 @@ impl Run {
 
     /// Puts `source` at `target`, where only a file can be.
     fn put_free(&mut self, source: &Path, meta: &Metadata, target: &Path, bytes: Option<u64>) -> Step {
-        let moving = self.job.mode == TransferMode::Move && !self.copying_moved;
+        let moving = self.moves() && !self.copying_moved;
         if moving {
             match fs::rename(source, target) {
                 Ok(()) => {
@@ -524,6 +546,9 @@ impl Run {
     }
 
     fn copied(&mut self, bytes: u64) {
+        if self.placing_extracted {
+            return;
+        }
         self.done_bytes += bytes;
         if self.last_report.elapsed() >= PROGRESS_EVERY {
             self.report(TransferState::Running, None, None);
@@ -538,7 +563,102 @@ impl Run {
         match self.job.mode {
             TransferMode::Copy => "copy",
             TransferMode::Move => "move",
+            TransferMode::Extract | TransferMode::ExtractHere => "extract",
+            TransferMode::Compress => "compress",
         }
+    }
+
+    /// Its items leave where they were: a move, or what was extracted
+    /// leaving the folder it was extracted to.
+    fn moves(&self) -> bool {
+        matches!(self.job.mode, TransferMode::Move | TransferMode::Extract | TransferMode::ExtractHere)
+    }
+
+    fn extracts(&self) -> bool {
+        matches!(self.job.mode, TransferMode::Extract | TransferMode::ExtractHere)
+    }
+
+    /// Extracts each archive among the sources to its own folder in a
+    /// hidden one in `folder`, measuring the progress by it, and answers
+    /// what to place in `folder`: each archive's folder ("Extract all"),
+    /// or what's in it ("Extract here").
+    fn unpack(&mut self, folder: &Path) -> Result<Vec<PathBuf>, Halt> {
+        let mut archives = Vec::with_capacity(self.sources.len());
+        for source in &self.sources {
+            let kind = source.file_name().and_then(archive::Kind::of_name);
+            let Some(kind) = kind.filter(|_| fs::metadata(source).is_ok_and(|meta| meta.is_file())) else {
+                return Err(Halt::Failed(format!("{} isn't an archive Nova can open", source.display())));
+            };
+            self.total.bytes += archive::total(source, kind).map_err(|e| unreadable(source, &e))?;
+            archives.push((source.clone(), kind));
+        }
+        let staging = archive::fresh_folder(folder, OsStr::new("extract")).map_err(|e| failed(folder, &e))?;
+        self.staging = Some(staging.clone());
+        self.report(TransferState::Running, None, None);
+        let mut staged = Vec::new();
+        for (number, (source, kind)) in archives.into_iter().enumerate() {
+            self.check()?;
+            // One folder each, so two archives' files meet only in `folder`,
+            // where a clash is asked about.
+            let own = staging.join(number.to_string());
+            let into = match self.job.mode {
+                TransferMode::Extract => own.join(archive::folder_name(source.file_name().unwrap_or_default())),
+                _ => own.clone(),
+            };
+            fs::DirBuilder::new().recursive(true).mode(0o700).create(&into).map_err(|e| failed(&into, &e))?;
+            let base = self.done_bytes;
+            let job = Arc::clone(&self.job);
+            let finished = archive::unpack(&source, kind, &into, &mut |done| {
+                self.done_bytes = base.saturating_add(done);
+                if self.last_report.elapsed() >= PROGRESS_EVERY {
+                    self.report(TransferState::Running, None, None);
+                }
+                !job.stopped()
+            });
+            if !finished.map_err(|e| unreadable(&source, &e))? {
+                return Err(Halt::Stopped);
+            }
+            let mut names: Vec<_> = fs::read_dir(&own)
+                .and_then(|entries| entries.map(|entry| entry.map(|entry| entry.file_name())).collect())
+                .map_err(|e| failed(&own, &e))?;
+            names.sort();
+            staged.extend(names.into_iter().map(|name| own.join(name)));
+        }
+        self.done_bytes = self.total.bytes;
+        self.placing_extracted = true;
+        Ok(staged)
+    }
+
+    /// Packs the sources into a new zip in the folder, named after the
+    /// first ("report.pdf" gives "report.zip").
+    fn compress(&mut self) -> Step {
+        let sources = self.sources.clone();
+        for source in &sources {
+            let job = Arc::clone(&self.job);
+            let measured = copying::measure(source, None, &|| job.stopped())
+                .map_err(|e| failed(source, &e))?
+                .ok_or(Halt::Stopped)?;
+            self.total.bytes += measured.bytes;
+        }
+        let first = &sources[0];
+        let dir = fs::symlink_metadata(first).is_ok_and(|meta| meta.is_dir());
+        let stem = if dir { first.file_name() } else { first.file_stem() };
+        let mut name = stem.unwrap_or(OsStr::new("Archive")).to_owned();
+        name.push(".zip");
+        self.report(TransferState::Running, None, None);
+        let mut part = Part::create(&self.folder).map_err(|e| failed(&self.folder, &e))?;
+        let file = part.file().map_err(|e| failed(&self.folder, &e))?;
+        let sources: Vec<&Path> = sources.iter().map(PathBuf::as_path).collect();
+        let job = Arc::clone(&self.job);
+        let packed = archive::pack(&sources, file, &mut |bytes| {
+            self.copied(bytes);
+            !job.stopped()
+        });
+        if !packed.map_err(|e| failed(&self.folder.join(&name), &e))? {
+            return Err(Halt::Stopped);
+        }
+        part.keep(&name, ZIP_MODE).map_err(|e| failed(&self.folder.join(&name), &e))?;
+        Ok(())
     }
 
     /// Tells the client how the job is going, while it's still registered;
@@ -580,6 +700,17 @@ fn moved_bytes(target: &Path, meta: &Metadata) -> u64 {
     } else {
         0
     }
+}
+
+/// Why the archive at `path` couldn't be extracted, for the window.
+fn unreadable(path: &Path, error: &io::Error) -> Halt {
+    let name = path.file_name().map_or_else(|| path.display().to_string(), |name| name.to_string_lossy().into_owned());
+    Halt::Failed(match error.kind() {
+        io::ErrorKind::NotFound => format!("{} doesn't exist", path.display()),
+        io::ErrorKind::PermissionDenied => format!("No permission for {}", path.display()),
+        io::ErrorKind::StorageFull => format!("No space left to extract {name}"),
+        _ => format!("Can't extract {name}: {error}"),
+    })
 }
 
 /// Why `path` couldn't be copied or moved, for the window.
@@ -818,5 +949,81 @@ mod tests {
             fixture.transfers.answer(fixture.client, 1, 1, ClashAnswer::Skip, false).is_err(),
             "gone with its client"
         );
+    }
+
+    #[test]
+    fn extract_all_makes_a_folder_named_after_the_archive_and_merges_into_one_there() {
+        let fixture = Fixture::new("extract");
+        crate::files::archive::tests::write_zip(
+            &fixture.dir.join("from/photos.zip"),
+            &[("a.png", "new"), ("2025/b.png", "bbb")],
+        );
+        fixture.write("to/photos/a.png", "old");
+        fixture.start(TransferMode::Extract, &["from/photos.zip"], "to");
+        let clash = fixture.until(TransferState::Asking).clash.unwrap();
+        assert_eq!((clash.name.as_str(), clash.folder), ("photos", true));
+        fixture.answer(&clash, ClashAnswer::Merge, false);
+        let inner = fixture.until(TransferState::Asking).clash.unwrap();
+        assert_eq!(inner.name, "a.png");
+        fixture.answer(&inner, ClashAnswer::Replace, false);
+        let done = fixture.until(TransferState::Done);
+        assert_eq!((done.done_bytes, done.total_bytes), (6, 6), "measured by what was extracted");
+        assert_eq!(fixture.read("to/photos/a.png"), "new");
+        assert_eq!(fixture.read("to/photos/2025/b.png"), "bbb");
+        assert_eq!(fixture.names("to"), ["photos"], "nothing extracted is left aside");
+        assert!(fixture.exists("from/photos.zip"), "the archive stays");
+    }
+
+    #[test]
+    fn extract_here_puts_the_contents_in_the_folder() {
+        let fixture = Fixture::new("extract-here");
+        crate::files::archive::tests::write_zip(
+            &fixture.dir.join("from/docs.zip"),
+            &[("a.txt", "a"), ("b/c.txt", "c")],
+        );
+        fixture.start(TransferMode::ExtractHere, &["from/docs.zip"], "from");
+        fixture.until(TransferState::Done);
+        assert_eq!(fixture.names("from"), ["a.txt", "b", "docs.zip"]);
+        assert_eq!(fixture.read("from/b/c.txt"), "c");
+    }
+
+    #[test]
+    fn a_file_that_isnt_an_archive_fails_to_extract_and_leaves_nothing() {
+        let fixture = Fixture::new("extract-not");
+        fixture.write("from/fake.zip", "not a zip");
+        fixture.write("from/notes.txt", "text");
+        fixture.start(TransferMode::Extract, &["from/fake.zip"], "to");
+        assert!(fixture.until(TransferState::Failed).error.unwrap().contains("fake.zip"));
+        fixture
+            .transfers
+            .start(
+                fixture.client,
+                2,
+                TransferMode::Extract,
+                &[fixture.dir.join("from/notes.txt").display().to_string()],
+                &fixture.dir.join("to").display().to_string(),
+            )
+            .unwrap();
+        assert!(fixture.until(TransferState::Failed).error.unwrap().contains("isn't an archive"));
+        assert!(fixture.names("to").is_empty(), "no hidden folder left behind");
+    }
+
+    #[test]
+    fn compress_names_the_zip_after_the_first_item_and_numbers_a_taken_name() {
+        let fixture = Fixture::new("compress");
+        fixture.write("from/report.pdf", "pdf");
+        fixture.write("from/Photos/a.png", "png");
+        fixture.write("from/report.zip", "taken");
+        fixture.start(TransferMode::Compress, &["from/report.pdf", "from/Photos"], "from");
+        let done = fixture.until(TransferState::Done);
+        assert_eq!((done.done_bytes, done.total_bytes), (6, 6));
+        assert_eq!(fixture.names("from"), ["Photos", "report (2).zip", "report.pdf", "report.zip"]);
+        let inside = crate::files::archive::Inside::of(&fixture.dir.join("from/report (2).zip/Photos")).unwrap();
+        let copy = crate::files::archive::open_copy(
+            &crate::files::archive::Inside { inner: "Photos/a.png".into(), ..inside },
+            &fixture.dir.join("opened"),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(copy).unwrap(), "png");
     }
 }

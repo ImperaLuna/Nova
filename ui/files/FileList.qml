@@ -17,9 +17,11 @@ import "paths.js" as Paths
 // Ctrl+H shows or hides dot files. A double-click or Enter opens: a
 // folder is gone into (`folderOpened`), files open in their default app.
 // Delete asks to move the selection to the trash (`trashRequested`),
-// Shift+Delete to delete it for good (`deleteRequested`). A middle click
-// on a folder asks for it in a new tab (`tabRequested`). view() and show()
-// hand its order and selection to the window's tabs and back.
+// Shift+Delete to delete it for good (`deleteRequested`); Alt+Enter asks
+// for its Properties, or the folder's with nothing selected
+// (`propertiesRequested`). A middle click on a folder asks for it in a new
+// tab (`tabRequested`). view() and show() hand its order and selection to
+// the window's tabs and back.
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
 FocusScope {
@@ -38,6 +40,7 @@ FocusScope {
     // (Listing.copy), in the list's order.
     signal trashRequested(var rows)
     signal deleteRequested(var rows)
+    signal propertiesRequested(var rows)
 
     readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
     readonly property var columns: [
@@ -266,6 +269,8 @@ FocusScope {
                 list.showHidden = !list.showHidden;
             else if (event.key === Qt.Key_A && ctrl)
                 list.model.selectAll();
+            else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.AltModifier) !== 0)
+                list.propertiesRequested(list.model.selectedRows().map(row => Listing.copy(row)));
             else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                 list.open(list.model.selectedRows());
             else if (event.key === Qt.Key_Delete && list.model.selectedCount > 0) {

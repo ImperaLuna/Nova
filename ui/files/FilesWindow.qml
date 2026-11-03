@@ -7,6 +7,7 @@ import "service"
 import "paths.js" as Paths
 import "tabs.js" as Tabs
 import "trash.js" as Trash
+import "properties.js" as Props
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
@@ -14,10 +15,14 @@ import "../daemon/protocol.js" as Protocol
 // row, the command row, then the sidebar beside the file list, with its
 // copies and moves over them all; opening a folder in the list shows it in
 // the same window.
+// Inside an archive (a zip or tar, opened like a folder) nothing can be
+// changed: its command row offers "Extract all" instead.
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
-// (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
-// lie over it all.
+// (ConfirmDialog). The Properties dialog (Alt+Enter, a drive's menu), a
+// drive's menu and the dialog when one can't be ejected lie over it all.
+// The preview pane (Alt+P, or the command row's button) sits at the file
+// list's right, loaded only while it shows.
 // Each tab (FilesTab) has its own Navigator; the rows, the sidebar and the
 // one file list follow the shown tab's, and the list's order and
 // selection are kept with a tab as it goes to the back (Ctrl+T, Ctrl+W,
@@ -46,10 +51,21 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    // The archive the folder is inside, or empty.
+    readonly property string archive: list.model.archive
+    // The archive "Extract all" extracts: the one the window is in, or the
+    // one picked.
+    readonly property string extractable: {
+        if (archive !== "")
+            return archive;
+        const picked = list.model.revision >= 0 && list.model.selectedCount === 1 ? list.model.selectedRows()[0] : null;
+        return picked?.archive ? Paths.child(folder, picked.name) : "";
+    }
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
     property var problems: []
+    property bool previewShown: false
 
     // A torn out tab wants a window like this one, starting as `carried`.
     signal windowRequested(string folder, var select, var carried)
@@ -62,6 +78,8 @@ FloatingWindow {
     // Moves the rows (the file list's) in the folder shown to the trash, at
     // once: Delete.
     function moveToTrash(rows: var) {
+        if (archive !== "")
+            return;
         const paths = Trash.paths(folder, rows);
         FilesService.trash(paths, error => {
             if (error)
@@ -72,6 +90,8 @@ FloatingWindow {
     // Asks, then deletes the rows (the file list's) in the folder shown for
     // good: Shift+Delete.
     function deleteForGood(rows: var) {
+        if (archive !== "")
+            return;
         const paths = Trash.paths(folder, rows);
         confirm(rows, () => FilesService.deleteForGood(paths, error => {
                 if (error)
@@ -211,6 +231,18 @@ FloatingWindow {
             list.forceActiveFocus();
     }
 
+    // Shows the Properties of `rows` (the file list's) in the folder shown,
+    // of the folder itself when there are none, or of `drive`.
+    function showProperties(rows: var, drive: var) {
+        propertiesModel.show(Props.subject(folder, rows, drive));
+        propertiesDialog.forceActiveFocus();
+    }
+
+    function closeProperties() {
+        propertiesModel.close();
+        list.forceActiveFocus();
+    }
+
     function notice(row: var, error: string) {
         problems = problems.concat([
             {
@@ -288,6 +320,11 @@ FloatingWindow {
         sequences: ["Ctrl+L", "Alt+D"]
         onActivated: navigation.editAddress()
     }
+    Shortcut {
+        sequence: "Alt+P"
+        enabled: !window.inTrash
+        onActivated: window.previewShown = !window.previewShown
+    }
     TapHandler {
         acceptedButtons: Qt.BackButton | Qt.ForwardButton
         onTapped: (point, button) => window.navigator.step(button === Qt.BackButton ? -1 : 1)
@@ -325,6 +362,19 @@ FloatingWindow {
         onMoved: (moving, to) => window.moveTab(moving, to)
         onTornOut: torn => window.tearOut(torn)
     }
+    // Extracts the archive at `path` beside it: into a folder named after
+    // it ("Extract all"), or straight into its folder (`here`).
+    function extract(path: string, here: bool) {
+        transfer(here ? Protocol.TRANSFER_EXTRACT_HERE : Protocol.TRANSFER_EXTRACT, [path], Paths.parent(path));
+    }
+
+    // Packs the picked rows into a new zip in the folder shown.
+    function compress() {
+        const paths = list.model.selectedRows().map(row => Paths.child(folder, row.name));
+        if (archive === "" && paths.length > 0)
+            transfer(Protocol.TRANSFER_COMPRESS, paths, folder);
+    }
+
     NavigationRow {
         id: navigation
         anchors.left: parent.left
@@ -341,6 +391,12 @@ FloatingWindow {
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
         visible: !window.inTrash
+        extractable: window.extractable !== ""
+        compressible: window.archive === "" && list.model.revision >= 0 && list.model.selectedCount > 0
+        onExtractAllRequested: window.extract(window.extractable, false)
+        onCompressRequested: window.compress()
+        previewShown: window.previewShown
+        onPreviewToggled: window.previewShown = !window.previewShown
     }
     TrashCommandRow {
         id: trashCommands
@@ -367,7 +423,7 @@ FloatingWindow {
     FileList {
         id: list
         anchors.left: sidebar.right
-        anchors.right: parent.right
+        anchors.right: preview.active ? preview.left : parent.right
         anchors.top: commands.bottom
         visible: !window.inTrash
         anchors.bottom: parent.bottom
@@ -378,7 +434,21 @@ FloatingWindow {
         onTabRequested: path => window.openTab(path, false)
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
+        onPropertiesRequested: rows => window.showProperties(rows, null)
         solid: FilesService.listSolid
+    }
+    Loader {
+        id: preview
+        anchors.right: parent.right
+        anchors.top: commands.bottom
+        anchors.bottom: parent.bottom
+        width: Tokens.filesPreviewWidth
+        active: window.previewShown && !window.inTrash
+        sourceComponent: PreviewPane {
+            folder: window.folder
+            model: list.model
+            solid: FilesService.listSolid
+        }
     }
     TrashModel {
         id: trash
@@ -459,9 +529,34 @@ FloatingWindow {
             }
         }
     }
+    PropertiesModel {
+        id: propertiesModel
+    }
+    // A click beside the Properties dialog closes it.
+    MouseArea {
+        anchors.fill: parent
+        visible: propertiesModel.subject !== null
+        acceptedButtons: Qt.AllButtons
+        onClicked: window.closeProperties()
+        onWheel: wheel => wheel.accepted = true
+    }
+    PropertiesDialog {
+        id: propertiesDialog
+        anchors.centerIn: parent
+        visible: propertiesModel.subject !== null
+        subject: propertiesModel.subject ?? Props.subject(window.folder, [], null)
+        properties: propertiesModel.properties
+        counted: propertiesModel.counted
+        apps: propertiesModel.openWith.apps
+        defaultApp: propertiesModel.openWith.defaultApp
+        onCloseRequested: window.closeProperties()
+        onAccessFlipped: (who, right) => propertiesModel.flipAccess(who, right)
+        onDefaultChosen: app => propertiesModel.openWith.makeDefault(app)
+    }
     DriveMenu {
         id: driveMenu
         anchors.fill: parent
+        onPropertiesChosen: drive => window.showProperties([], drive)
         onEjectChosen: drive => FilesService.eject(drive.id, outcome => {
                 if (outcome === Protocol.EJECT_BUSY)
                     ejectProblem.show(drive.name);

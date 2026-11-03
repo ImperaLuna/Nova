@@ -28,6 +28,9 @@ QtObject {
     // Why novad closed the view (the folder couldn't be read or went), or
     // empty while it's open.
     property string error: ""
+    // The archive the folder is inside, read-only; empty for a folder on
+    // disk.
+    property string archive: ""
 
     property int revision: 0
     property int selectedCount: 0
@@ -160,6 +163,7 @@ QtObject {
             rows.clear();
             anchor = -1;
             error = "";
+            archive = page.archive ?? "";
             _seeking = found < 0 && selectedCount > 0;
         } else if (page.start < rows.count) {
             rows.remove(page.start, rows.count - page.start);
@@ -228,6 +232,7 @@ QtObject {
         total = 0;
         anchor = -1;
         loaded = false;
+        archive = "";
         selectNames([]);
     }
 
