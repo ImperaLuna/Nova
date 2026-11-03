@@ -756,6 +756,19 @@ QtObject {
     readonly property int filesClashButtonHeight: 34
     // The scale the dialog pops in from and shrinks back to.
     readonly property real filesClashEnterScale: 0.97
+    // Right-click menus: wide enough for a label and its shortcut, rows a
+    // little shorter than an app menu's, an item's submenu (Open with)
+    // beside it. Cut items read faded until they're pasted.
+    readonly property int filesMenuWidth: 300
+    readonly property int filesMenuRowHeight: 28
+    readonly property int filesMenuSeparatorGap: 3
+    readonly property real filesCutOpacity: 0.5
+    // The details pane on the right of the file list: its big icon, the
+    // lines between its parts, and its rows of who may do what.
+    readonly property int filesDetailsWidth: 280
+    readonly property int filesDetailsPad: 16
+    readonly property int filesDetailsIconSize: 56
+    readonly property int filesDetailsRowHeight: 42
 
     // Type
     readonly property string fontSans: "Inter"
