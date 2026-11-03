@@ -5,8 +5,11 @@ import "paths.js" as Paths
 
 // A tile of Nova Files' Icons view: the entry's icon, big, or a file's
 // thumbnail in its place once there is one, over its name centered in up
-// to two lines (cut short with an ellipsis). Hovered tiles lighten,
-// selected ones fill, like Details' rows; dot files read fainter.
+// to two lines (cut short with an ellipsis). Like Details' rows (FileRow),
+// hovered tiles lighten, selected ones fill, a folder a drag would drop
+// into washes in the accent, dot files read fainter and cut ones faded; a
+// press drags, clicks, opens or asks for the menu as a row's does
+// (EntryMouse), and while `renaming` its name is a field (NameField).
 // When a folder's entries have just come in (`riseWait`), it eases up
 // into place after the tiles nearer where the list opened.
 Rectangle {
@@ -24,17 +27,30 @@ Rectangle {
     required property var thumbnails
 
     required property bool selected
+    // A drag over the list would drop into this folder.
+    property bool dropTarget: false
+    property bool cut: false
+    property bool renaming: false
     // How long it waits before easing in, in ms, while a folder's entries
     // have just come in, or -1 to just show: read once, as the tile is made.
     required property int riseWait
 
     signal pressed(int modifiers)
+    // Released where it was pressed, without dragging.
+    signal clicked(int modifiers)
+    signal dragRequested
     signal opened
+    signal middleClicked
+    // A right-click at `at` (in the tile).
+    signal menuAsked(point at)
+    // The name field closed: `name` as typed, or "" for Esc.
+    signal renameDone(string name)
 
     width: Tokens.filesTileWidth
     height: Tokens.filesTileHeight
     radius: Tokens.menuRowRadius
-    color: selected ? Tokens.selected : mouse.containsMouse ? Tokens.hover : "transparent"
+    color: dropTarget ? Tokens.filesDropTarget : selected ? Tokens.selected : mouse.containsMouse ? Tokens.hover : "transparent"
+    opacity: cut ? Tokens.filesCutOpacity : 1
 
     LineIcon {
         id: icon
@@ -60,6 +76,7 @@ Rectangle {
         thumbnails: tile.thumbnails
     }
     Text {
+        visible: !tile.renaming
         anchors.top: icon.bottom
         anchors.topMargin: Tokens.iconGap
         anchors.horizontalCenter: parent.horizontalCenter
@@ -75,12 +92,29 @@ Rectangle {
         text: Paths.shown(tile.name)
     }
 
-    MouseArea {
+    NameField {
+        anchors.top: icon.bottom
+        anchors.topMargin: Tokens.iconGap
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: parent.width - Tokens.filesTilePad
+        height: Tokens.filesRowHeight - 2 * Tokens.labelNudge * 2
+        alignment: TextInput.AlignHCenter
+        name: tile.name
+        dir: tile.dir
+        renaming: tile.renaming
+        onDone: typed => tile.renameDone(typed)
+    }
+
+    EntryMouse {
         id: mouse
         anchors.fill: parent
-        hoverEnabled: true
-        onPressed: press => tile.pressed(press.modifiers)
-        onDoubleClicked: tile.opened()
+        enabled: !tile.renaming
+        onEntryPressed: modifiers => tile.pressed(modifiers)
+        onEntryClicked: modifiers => tile.clicked(modifiers)
+        onDragRequested: tile.dragRequested()
+        onEntryOpened: tile.opened()
+        onMiddleClicked: tile.middleClicked()
+        onMenuAsked: at => tile.menuAsked(at)
     }
 
     transform: Translate {

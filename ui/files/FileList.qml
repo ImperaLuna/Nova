@@ -32,16 +32,16 @@ import "space.js" as Space
 // picked; on the empty list, for the folder. The other keys' commands go
 // to the window as `commandRequested`. `rename(name)` turns that row's
 // name into a field (F2, or a new folder), renamed through novad when it
-// closes (in Details; Icons' tiles don't rename in place yet). Cut items
-// read faded. A middle
-// click on a folder asks for it in a new tab (`tabRequested`). tabView()
+// closes (in a Details row or an Icons tile alike). Cut items read
+// faded. A middle click on a folder asks for it in a new tab
+// (`tabRequested`). tabView()
 // and restoreTab() hand its order and selection to the window's tabs and
 // back.
-// Rows drag out (the selection, FileDrag) and files dragged in drop on the
-// folder row under the pointer, or else the folder shown
-// (`dropRequested`); resting on a folder row opens it. Pressing a
-// selected row keeps the selection until the release, so a selection
-// drags whole.
+// Entries drag out (the selection, FileDrag) and files dragged in drop on
+// the folder row or tile under the pointer, or else the folder shown
+// (`dropRequested`); resting on a folder opens it. Pressing a selected
+// entry keeps the selection until the release, so a selection drags
+// whole.
 // As "What uses space" (`spaceView`) it lists folders and files together,
 // biggest first, each with a bar against the biggest, under the drive the
 // folder is on and how full it is; the header no longer sorts.
@@ -60,7 +60,8 @@ FocusScope {
     property var select: []
     property bool showHidden: false
     property string view: Listing.DETAILS
-    readonly property bool details: view === Listing.DETAILS
+    // What uses space shows its bars in rows, whatever the view.
+    readonly property bool details: view === Listing.DETAILS || spaceView
     property bool spaceView: false
     // The order a header click last asked for, kept while What uses space
     // shows its own.
@@ -470,6 +471,22 @@ FocusScope {
                 list.model.select(Listing.pick(list.model.anchor, index, list.multiple && (modifiers & Qt.ControlModifier) !== 0, false));
         }
 
+        // A right-click on entry `index` (`name`), at `at` in the list: its
+        // menu, on the selection when it's in it, or on it alone.
+        function menu(index: int, name: string, at: point) {
+            entryGrid.forceActiveFocus();
+            entryGrid.currentIndex = index;
+            if (!list.model.isSelected(name))
+                list.model.selectNames([name]);
+            list.menuRequested(list.selection(), at);
+        }
+
+        // A middle click on entry `name`: a folder opens in a tab behind.
+        function middle(name: string, dir: bool) {
+            if (dir)
+                list.tabRequested(Paths.child(list.folder, name));
+        }
+
         // Entry `index` was pressed and moved: the selection drags out.
         function drag(index: int) {
             const grabbed = list.model.rows.get(index);
@@ -516,22 +533,13 @@ FocusScope {
                 renaming: list.renaming !== "" && list.renaming === row.name
                 dropTarget: row.dir && drops.action !== Drops.NONE && drops.hovered?.folder === Paths.child(list.folder, row.name)
 
-                onMenuAsked: at => {
-                    entryGrid.forceActiveFocus();
-                    entryGrid.currentIndex = row.index;
-                    if (!list.model.isSelected(row.name))
-                        list.model.selectNames([row.name]);
-                    list.menuRequested(list.selection(), row.mapToItem(list, at.x, at.y));
-                }
+                onMenuAsked: at => entryGrid.menu(row.index, row.name, row.mapToItem(list, at.x, at.y))
                 onRenameDone: typed => list.finishRename(Listing.copy(list.model.rows.get(row.index)), typed)
                 onPressed: modifiers => entryGrid.press(row.index, row.selected, modifiers)
                 onClicked: modifiers => entryGrid.click(row.index, modifiers)
                 onDragRequested: entryGrid.drag(row.index)
                 onOpened: list.open([list.model.rows.get(row.index)])
-                onMiddleClicked: {
-                    if (row.dir)
-                        list.tabRequested(Paths.child(list.folder, row.name));
-                }
+                onMiddleClicked: entryGrid.middle(row.name, row.dir)
             }
         }
         Component {
@@ -545,8 +553,17 @@ FocusScope {
                 selected: list.model.revision >= 0 && list.model.isSelected(name)
                 riseWait: entryGrid.riseWait(index)
 
+                cut: list.cutNames[tile.name] === true
+                renaming: list.renaming !== "" && list.renaming === tile.name
+                dropTarget: tile.dir && drops.action !== Drops.NONE && drops.hovered?.folder === Paths.child(list.folder, tile.name)
+
+                onMenuAsked: at => entryGrid.menu(tile.index, tile.name, tile.mapToItem(list, at.x, at.y))
+                onRenameDone: typed => list.finishRename(Listing.copy(list.model.rows.get(tile.index)), typed)
                 onPressed: modifiers => entryGrid.press(tile.index, tile.selected, modifiers)
+                onClicked: modifiers => entryGrid.click(tile.index, modifiers)
+                onDragRequested: entryGrid.drag(tile.index)
                 onOpened: list.open([list.model.rows.get(tile.index)])
+                onMiddleClicked: entryGrid.middle(tile.name, tile.dir)
             }
         }
 
