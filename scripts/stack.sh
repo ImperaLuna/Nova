@@ -41,8 +41,13 @@ REMOTE=${REMOTE:-origin}
 BASE=${BASE:-main}
 # The job of ci.yml the main ruleset requires.
 CHECK=checks
+# How long one fetch or push may take before the script gives up on it.
+REMOTE_TIMEOUT=${REMOTE_TIMEOUT:-120}
 
-git fetch --quiet "$REMOTE" "$BASE" "${branches[@]}"
+# remote <git args>: a git command that talks to the remote, bounded.
+remote() { timeout "$REMOTE_TIMEOUT" git "$@"; }
+
+remote fetch --quiet "$REMOTE" "$BASE" "${branches[@]}"
 
 # ref <name>: the remote-tracking ref of a branch.
 ref() { echo "refs/remotes/$REMOTE/$1"; }
@@ -69,20 +74,27 @@ foreign() {
 }
 
 # pr_line <branch> <expected base>: the PR columns, from gh; empty without.
+# A line starting with "!" needs doing; status drops the mark.
 pr_line() {
-  [[ $(git remote get-url "$REMOTE") == *github.com* ]] && command -v gh >/dev/null && gh auth status >/dev/null 2>&1 || return 0
+  [[ $(git remote get-url "$REMOTE") == *github.com* ]] && command -v gh >/dev/null && timeout "$REMOTE_TIMEOUT" gh auth status >/dev/null 2>&1 || return 0
   local pr
-  pr=$(gh pr view "$1" --json number,baseRefName,mergeable,headRefOid,statusCheckRollup 2>/dev/null) || {
-    echo "  no open PR"
+  pr=$(timeout "$REMOTE_TIMEOUT" gh pr view "$1" --json number,baseRefName,mergeable,headRefOid,statusCheckRollup 2>/dev/null) || {
+    echo "!  no open PR"
     return 0
   }
+  # A check still queued or running needs nothing yet; any other result but
+  # success (failure, cancelled, timed out...) does.
   jq -r --arg base "$2" --arg check "$CHECK" '
     ([.statusCheckRollup[] | select(.name == $check)] | last) as $c
-    | "  #\(.number)"
+    | ($c.conclusion // "" | ascii_downcase) as $done
+    | (.baseRefName != $base or .mergeable == "CONFLICTING" or $c == null
+       or ($done != "" and $done != "success")) as $todo
+    | (if $todo then "!" else "" end)
+      + "  #\(.number)"
       + (if .baseRefName == $base then "" else "  PR base is \(.baseRefName), not \($base)" end)
       + (if .mergeable == "CONFLICTING" then "  conflicts with its base: no CI runs" else "" end)
       + "  \($check): " + (if $c == null then "no run for \(.headRefOid[0:7])"
-                           else ($c.conclusion // $c.status | ascii_downcase) end)
+                           elif $done != "" then $done else ($c.status | ascii_downcase) end)
   ' <<<"$pr"
 }
 
@@ -104,7 +116,10 @@ status() {
       problems=1
     fi
     cols=$(pr_line "$branch" "$base")
-    [[ $cols == *"not $base"* || $cols == *conflicts* || $cols == *"no run"* || $cols == *failure* || $cols == *"no open PR"* ]] && problems=1
+    if [[ $cols == "!"* ]]; then
+      problems=1
+      cols=${cols#!}
+    fi
     echo "$line$cols"
   done
   return $problems
@@ -136,7 +151,7 @@ restack() {
     fi
     tip[$branch]=$(git -C "$dir" rev-parse HEAD)
     if ((push)); then
-      git -C "$dir" push --quiet "$REMOTE" "HEAD:refs/heads/$branch"
+      remote -C "$dir" push --quiet "$REMOTE" "HEAD:refs/heads/$branch"
       echo "$branch: merged $(base_of "$i"), pushed $(git -C "$dir" rev-parse --short HEAD)"
     else
       echo "$branch: merges $(base_of "$i") cleanly (not pushed)"

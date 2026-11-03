@@ -158,11 +158,13 @@ fi
 if command -v nova-ui >/dev/null; then
   [[ $(<"/proc/$ui/comm") == NovaUI ]] || fail "the UI's process name isn't NovaUI"
 fi
+# grep reads all of tr's output (no -q): stopping at the first match would
+# break tr's pipe, and pipefail would fail the check.
 # Covered windows don't redraw while idle (supervisor.rs, FRAME_CALLBACK_TIMEOUT).
-tr '\0' '\n' <"/proc/$ui/environ" | grep -qx QT_WAYLAND_FRAME_CALLBACK_TIMEOUT=0 ||
+tr '\0' '\n' <"/proc/$ui/environ" | grep -x QT_WAYLAND_FRAME_CALLBACK_TIMEOUT=0 >/dev/null ||
   fail "the UI doesn't have QT_WAYLAND_FRAME_CALLBACK_TIMEOUT=0"
 # Animations follow each screen's frames (supervisor.rs, SIMPLE_ANIMATION_DRIVER).
-tr '\0' '\n' <"/proc/$ui/environ" | grep -qx QSG_USE_SIMPLE_ANIMATION_DRIVER=1 ||
+tr '\0' '\n' <"/proc/$ui/environ" | grep -x QSG_USE_SIMPLE_ANIMATION_DRIVER=1 >/dev/null ||
   fail "the UI doesn't have QSG_USE_SIMPLE_ANIMATION_DRIVER=1"
 [[ $(<"/proc/$(jq -r .pid "$out/status.json")/comm") == Nova ]] || fail "the daemon's process name isn't Nova"
 

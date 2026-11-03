@@ -27,7 +27,7 @@ const DEFAULTS: &str = "Default Applications";
 const ADDED: &str = "Added Associations";
 const REMOVED: &str = "Removed Associations";
 /// The spec's default for an unset `XDG_CONFIG_DIRS`.
-const DEFAULT_CONFIG_DIRS: &str = "/etc/xdg";
+pub(crate) const DEFAULT_CONFIG_DIRS: &str = "/etc/xdg";
 /// A `mimeapps.list` is a few kilobytes; anything far bigger isn't one.
 const MAX_LIST_BYTES: u64 = 1024 * 1024;
 
@@ -193,7 +193,7 @@ fn with_default(text: &str, mime: &str, app: &str) -> String {
 
 /// Sets `key` in `group` to what `value` makes of its ids now, adding the
 /// group at the end when there's none.
-fn set_key(lines: &mut Vec<String>, group: &str, key: &str, value: impl FnOnce(Vec<String>) -> Vec<String>) {
+pub(crate) fn set_key(lines: &mut Vec<String>, group: &str, key: &str, value: impl FnOnce(Vec<String>) -> Vec<String>) {
     let line = |ids: Vec<String>| format!("{key}={};", ids.join(";"));
     if let Some(at) = find_key(lines, group, key) {
         let now = ids(lines[at].split_once('=').map_or("", |(_, value)| value));
@@ -258,7 +258,7 @@ fn ids(value: &str) -> Vec<String> {
 }
 
 /// A list's text, `None` when there's no such file.
-fn read(path: &Path) -> std::io::Result<Option<String>> {
+pub(crate) fn read(path: &Path) -> std::io::Result<Option<String>> {
     use std::io::Read;
     let mut text = String::new();
     match std::fs::File::open(path) {

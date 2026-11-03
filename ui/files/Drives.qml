@@ -9,7 +9,8 @@ import "space.js" as Space
 // while the window is open (a stick plugged in) arrives with an animation.
 // `folder` is the window's, so the drive it's on shows as current; when
 // that drive goes away (ejected from any window, or pulled), `driveGone` says
-// the window should go elsewhere.
+// the window should go elsewhere. A drive clicked is opened by the window
+// (`opened`), in the tab it shows.
 Column {
     id: drives
 
@@ -19,6 +20,9 @@ Column {
     signal opened(string id)
     signal menuRequested(var drive, point at)
     signal driveGone
+    // Files dropped on a drive: `action` (a Protocol.TRANSFER_* mode or Drops.TRASH) on `sources` into
+    // `folder`.
+    signal dropRequested(string action, var sources, string folder)
 
     // The ids listed so far, and whether the first list is in: rows are
     // made again on every change, and only a new one animates.
@@ -57,6 +61,7 @@ Column {
             Component.onCompleted: drives.seen[modelData.id] = true
             onOpened: drives.opened(modelData.id)
             onMenuRequested: at => drives.menuRequested(modelData, at)
+            onDropRequested: (action, sources, folder) => drives.dropRequested(action, sources, folder)
         }
     }
 

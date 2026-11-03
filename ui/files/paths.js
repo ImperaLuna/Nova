@@ -29,6 +29,23 @@ function shown(text) {
     return out;
 }
 
+// A file URL for `path` (absolute wire text), each part escaped and each
+// raw byte's stand-in turned back into that byte, so Qt loads the file
+// novad named, whatever its name's bytes.
+function fileUrl(path) {
+    let url = "file://";
+    for (const character of path) {
+        const code = character.codePointAt(0);
+        if (code >= RAW_FIRST && code <= RAW_LAST)
+            url += "%" + (code - Protocol.RAW_BYTE_BASE).toString(16).toUpperCase();
+        else if (character === "/")
+            url += "/";
+        else
+            url += encodeURIComponent(character);
+    }
+    return url;
+}
+
 // The address bar's parts for `folder` (absolute): one per folder from the
 // root down, each {name, path, hidden}, starting at "Home" for a folder in
 // `home`. `hidden` marks a dot folder and everything inside one, as the
