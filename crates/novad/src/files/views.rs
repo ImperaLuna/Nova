@@ -354,7 +354,7 @@ enum Gathered {
 }
 
 /// `path` from the socket (wire text), if it's a usable absolute path.
-fn checked_path(path: &str) -> Result<PathBuf, String> {
+pub(super) fn checked_path(path: &str) -> Result<PathBuf, String> {
     if path.len() > FILES_PATH_MAX_WIRE_BYTES {
         return Err("Not a path".into());
     }

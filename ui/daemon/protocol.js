@@ -113,6 +113,9 @@ var CMD_FILES_OPEN = "files_open";
 var CMD_FILES_CLOSE = "files_close";
 var CMD_FILES_TREE = "files_tree";
 var CMD_FILES_PLACES = "files_places";
+var CMD_FILES_TRANSFER = "files_transfer";
+var CMD_FILES_TRANSFER_CANCEL = "files_transfer_cancel";
+var CMD_FILES_TRANSFER_ANSWER = "files_transfer_answer";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -146,6 +149,7 @@ var EVENT_FILES_PAGE = "files_page";
 var EVENT_FILES_CHANGED = "files_changed";
 var EVENT_FILES_CLOSED = "files_closed";
 var EVENT_FILES_LOOK = "files_look";
+var EVENT_FILES_TRANSFER = "files_transfer";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
@@ -274,6 +278,23 @@ var PLACE_DESKTOP = "desktop";
 var PLACE_DOCUMENTS = "documents";
 var PLACE_DOWNLOADS = "downloads";
 var PLACE_PICTURES = "pictures";
+
+// What a files_transfer job does (TransferMode).
+var TRANSFER_COPY = "copy";
+var TRANSFER_MOVE = "move";
+
+// How a files_transfer job is going (TransferState).
+var TRANSFER_COUNTING = "counting";
+var TRANSFER_RUNNING = "running";
+var TRANSFER_ASKING = "asking";
+var TRANSFER_DONE = "done";
+var TRANSFER_CANCELLED = "cancelled";
+var TRANSFER_FAILED = "failed";
+
+// Answers to a name clash (ClashAnswer).
+var CLASH_REPLACE = "replace";
+var CLASH_MERGE = "merge";
+var CLASH_SKIP = "skip";
 
 // END GENERATED
 

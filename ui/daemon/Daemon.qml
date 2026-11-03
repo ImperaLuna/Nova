@@ -103,6 +103,9 @@ Singleton {
     signal filesPage(var page)
     signal filesChanged(var changed)
     signal filesClosed(var closed)
+    // How one of this process's copy or move jobs is going: {job, mode,
+    // state, items, name, done_bytes, total_bytes, clash, error}.
+    signal filesTransferChanged(var transfer)
 
     // The topics this process subscribes to on every connection: the
     // shell's, unless its root sets its own as it's created (Nova Files,
@@ -207,6 +210,8 @@ Singleton {
             filesClosed(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_LOOK) {
             filesLook = msg.data;
+        } else if (msg.event === Protocol.EVENT_FILES_TRANSFER) {
+            filesTransferChanged(msg.data);
         }
     }
 
