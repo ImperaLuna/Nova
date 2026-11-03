@@ -61,6 +61,10 @@ var VIDEO_OFF = VIDEO + STRIKE;
 // is one with lines of text.
 var FILE = "M7 3h7l4 4v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM14 3v4h4";
 var DOCUMENT = FILE + "M9 12h6M9 16h6";
+// A zip or tar: a page with a zipper down it; Extract all: a box with an
+// arrow coming out.
+var ARCHIVE = FILE + "M10 5h2M12 7h2M10 9h2M12 11h2M10.5 14h3v4h-3z";
+var EXTRACT = "M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM3 5h18v4H3zM12 12v6M9.5 15.5L12 18l2.5-2.5";
 var PAUSE = "M9 6v12M15 6v12";
 // The now-playing controls: solid, so pass each as `fill` too.
 var PAUSE_SOLID = "M7.7 5h1.6a1.2 1.2 0 0 1 1.2 1.2v11.6a1.2 1.2 0 0 1-1.2 1.2H7.7a1.2 1.2 0 0 1-1.2-1.2V6.2A1.2 1.2 0 0 1 7.7 5zM14.7 5h1.6a1.2 1.2 0 0 1 1.2 1.2v11.6a1.2 1.2 0 0 1-1.2 1.2h-1.6a1.2 1.2 0 0 1-1.2-1.2V6.2a1.2 1.2 0 0 1 1.2-1.2z";

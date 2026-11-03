@@ -37,6 +37,14 @@
 //!   each, asking the window about name clashes.
 //! - `copying.rs`: the file system side of those: measuring, numbered
 //!   names, and copying a file in chunks.
+//! - `archive/`: zips and tars, opened like read-only folders by the
+//!   views, extracted and packed by the copy jobs. A file opened from
+//!   inside one is extracted first, to its own folder under the cache's
+//!   `opened` folder, which is emptied as the module starts.
+//! - `properties.rs`: the Properties window's facts about an item
+//!   (`files_properties`) and changing who may open it
+//!   (`files_set_access`); `measures.rs`: counting a folder's or a
+//!   selection's size in the background (`files_measure`).
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
@@ -49,11 +57,14 @@
 //! the same lock, so none is lost or sent twice. A process that detached as
 //! it quit, with windows asked for since, is followed by a new one.
 
+mod archive;
 mod copying;
 mod drives;
 mod file_manager1;
 mod folder;
+mod measures;
 mod preview;
+mod properties;
 pub mod search;
 mod target;
 mod transfers;
@@ -93,6 +104,8 @@ const TRASH_DIR: &str = "Trash";
 const MOUNT_TABLE: &str = "/proc/self/mountinfo";
 /// The preview pane's pictures, in Nova's cache folder.
 const PREVIEWS_DIR: &str = "nova/previews";
+/// Where files opened from inside archives are extracted, in Nova's cache.
+const OPENED_DIR: &str = "nova/opened";
 
 /// Where Nova Files runs from.
 #[derive(Clone)]
@@ -121,6 +134,9 @@ pub struct Sources {
     /// Where the preview pane's pictures of PDFs and videos are kept; none
     /// draws none.
     pub previews: Option<PathBuf>,
+    /// Where files opened from inside archives are extracted; none without
+    /// a home.
+    pub opened: Option<PathBuf>,
 }
 
 pub struct Files {
@@ -139,6 +155,8 @@ pub struct Files {
     look: Mutex<FilesLook>,
     /// The copies and moves they run.
     transfers: transfers::Transfers,
+    /// The sizes the Properties window counts.
+    measures: measures::Measures,
     trash: Arc<Trash>,
     /// Tells windows when the trash changes; none when it can't be followed.
     trash_watch: Option<trash::Watch>,
@@ -182,6 +200,7 @@ impl Files {
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
         let search = search::Search::start(sources.search.clone(), Arc::clone(&logger), Arc::clone(&mime));
         let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
+        let measures = measures::Measures::new(Arc::clone(&hub));
         let trash = Arc::new(Trash::new(sources.trash.clone(), sources.mounts.clone(), Arc::clone(&mime)));
         let trash_watch = trash::Watch::start(Arc::clone(&trash), Arc::clone(&hub), Arc::clone(&logger));
         let previews = Arc::new(preview::Previews::new(Arc::clone(&mime), sources.previews.clone(), path_var));
@@ -212,6 +231,12 @@ impl Files {
         );
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
+        // Copies opened from archives in an earlier run.
+        if let Some(opened) = &shared.sources.opened
+            && let Err(e) = copying::remove(opened)
+        {
+            shared.logger.warn(LOG_SOURCE, &format!("can't empty {}: {e}", opened.display()));
+        }
         Arc::new(Self {
             shared,
             opener: Arc::new(opener),
@@ -220,6 +245,7 @@ impl Files {
             folders,
             look: Mutex::default(),
             transfers,
+            measures,
             trash,
             trash_watch,
             drives,
@@ -231,6 +257,30 @@ impl Files {
     /// What opens files in apps.
     pub fn opener(&self) -> Arc<Opener> {
         Arc::clone(&self.opener)
+    }
+
+    /// Opens the file at `path` in the app `app`, or its default app
+    /// (`files_launch`). One inside an archive is extracted first, and the
+    /// app opens that copy. It reads the archive, so it's called off the
+    /// connection's thread.
+    pub fn launch(&self, path: &str, app: Option<&str>) -> Result<(), String> {
+        let path = self.openable(path)?;
+        match app {
+            Some(app) => self.opener.open_with(&path, app),
+            None => self.opener.open(&path),
+        }
+    }
+
+    /// `path`, or the copy of it extracted when it's in an archive.
+    fn openable(&self, path: &str) -> Result<String, String> {
+        let checked = views::checked_path(path)?;
+        let Some(inside) = archive::Inside::of(&checked).filter(|inside| !inside.inner.as_os_str().is_empty()) else {
+            return Ok(path.to_owned());
+        };
+        let opened = self.shared.sources.opened.as_ref().ok_or("Nowhere to extract it to")?;
+        let name = inside.inner.file_name().map(nova_protocol::wire_text).unwrap_or_default();
+        let copy = archive::open_copy(&inside, opened).map_err(|e| format!("Can't extract {name}: {e}"))?;
+        Ok(nova_protocol::wire_text(copy))
     }
 
     /// The trash.
@@ -318,6 +368,29 @@ impl Files {
         self.transfers.answer(client, job, clash, answer, all)
     }
 
+    /// What the Properties window shows about the item at `path`
+    /// (`files_properties`). It reads the file, so it's called off the
+    /// connection's thread.
+    pub fn properties(&self, path: &str) -> Result<nova_protocol::FileProperties, String> {
+        properties::read(path, &self.mime.current())
+    }
+
+    /// Sets who may open the item at `path` (`files_set_access`).
+    pub fn set_access(&self, path: &str, access: nova_protocol::Access) -> Result<(), String> {
+        properties::set_access(path, access)
+    }
+
+    /// Starts client `client`'s job `job`, counting what `paths` hold
+    /// (`files_measure`, [`measures::Measures::start`]).
+    pub fn measure(&self, client: ClientId, job: u32, paths: &[String]) -> Result<(), String> {
+        self.measures.start(client, job, paths)
+    }
+
+    /// Stops client `client`'s measuring job `job` (`files_measure_cancel`).
+    pub fn cancel_measure(&self, client: ClientId, job: u32) {
+        self.measures.cancel(client, job);
+    }
+
     /// Opens a window on `folder` with `select` selected, once both check
     /// out ([`target::window`]).
     pub fn show(&self, folder: &str, select: &[String]) -> Result<(), String> {
@@ -366,6 +439,7 @@ impl Files {
     pub fn client_gone(&self, client: ClientId) {
         self.folders.client_gone(client);
         self.transfers.client_gone(client);
+        self.measures.client_gone(client);
         let mut delivery = lock(&self.shared.delivery);
         if delivery.attached == Some(client) {
             delivery.attached = None;
@@ -383,6 +457,7 @@ impl Files {
         self.search.stop();
         self.drives.stop();
         self.transfers.stop();
+        self.measures.stop();
         if let Some(watch) = &self.trash_watch {
             watch.stop();
         }
@@ -461,6 +536,7 @@ impl crate::modules::Module for Files {
             mounts: MOUNT_TABLE.into(),
             search,
             previews: nova_paths::cache_home().map(|cache| cache.join(PREVIEWS_DIR)),
+            opened: nova_paths::cache_home().map(|cache| cache.join(OPENED_DIR)),
         }
     }
 
@@ -542,6 +618,7 @@ mod tests {
                 trash: Some(dir.join("Trash")),
                 mounts: dir.join("no-mountinfo"),
                 previews: None,
+                opened: Some(dir.join("opened")),
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");

@@ -3,8 +3,10 @@ import "../theme"
 import "../theme/icons.js" as Icons
 
 // Nova Files' command row, under the navigation row: New first, then cut,
-// copy, paste, rename and delete, then Sort and View; at its right end the
-// preview pane's button, raised while the pane shows (Alt+P too).
+// copy, paste, rename and delete, then Compress to ZIP, then Sort and View;
+// at its right end the preview pane's button, raised while the pane shows
+// (Alt+P too). Inside an archive, or with one archive picked, "Extract
+// all" comes after New, as in Explorer.
 Rectangle {
     id: row
 
@@ -14,6 +16,13 @@ Rectangle {
     implicitHeight: actions.implicitHeight + Tokens.filesCommandPadTop + Tokens.gap
     // How solid the window frame is (0..1): the row fades into it.
     property real solid: 0
+    // "Extract all" has an archive to extract.
+    property bool extractable: false
+    // Something is picked that a zip can be made of.
+    property bool compressible: false
+
+    signal extractAllRequested
+    signal compressRequested
 
     color: Tokens.alpha(Tokens.surfaceRaised, Tokens.raisedOpacity * (1 - solid))
 
@@ -39,6 +48,12 @@ Rectangle {
             raised: true
             enabled: false
         }
+        ToolButton {
+            visible: row.extractable
+            icon: Icons.EXTRACT
+            label: qsTr("Extract all")
+            onClicked: row.extractAllRequested()
+        }
         Separator {}
         ToolButton {
             icon: Icons.CUT
@@ -59,6 +74,11 @@ Rectangle {
         ToolButton {
             icon: Icons.TRASH
             enabled: false
+        }
+        ToolButton {
+            icon: Icons.ARCHIVE
+            enabled: row.compressible
+            onClicked: row.compressRequested()
         }
         Separator {}
         ToolButton {

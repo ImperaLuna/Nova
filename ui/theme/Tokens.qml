@@ -756,6 +756,16 @@ QtObject {
     readonly property int filesClashButtonHeight: 34
     // The scale the dialog pops in from and shrinks back to.
     readonly property real filesClashEnterScale: 0.97
+    // The Properties dialog (Alt+Enter): this wide, its labels in a column
+    // this wide, its rows this tall, the drive's fill bar this thick, and
+    // the access grid's check columns this wide. A check box that can't be
+    // changed fades to this.
+    readonly property int filesPropertiesWidth: 440
+    readonly property int filesPropertiesLabelWidth: 110
+    readonly property int filesPropertiesRowHeight: 24
+    readonly property int filesPropertiesBarHeight: 6
+    readonly property int filesPropertiesCheckColumn: 64
+    readonly property real filesCheckDisabledOpacity: 0.45
     // The preview pane (Alt+P) at the file list's right: this wide, its
     // picture or text this far in (pictures are decoded at
     // Protocol.FILES_PREVIEW_PICTURE_PX, its width at twice the scale, the
