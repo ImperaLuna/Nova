@@ -303,7 +303,8 @@ mod tests {
 
     /// Previews over the test MIME database, drawing with the fake
     /// programs in `<dir>/bin`, which log their arguments to `<dir>/drawn`
-    /// and copy `<dir>/picture.png` to where they're told.
+    /// and write a stand-in PNG where they're told with the shell's own
+    /// printf (a test sandbox has no `cp`).
     struct Fixture {
         dir: TempDir,
         previews: Previews,
@@ -317,17 +318,14 @@ mod tests {
             let mime = Mime::follow(vec![dir.to_path_buf()], logger);
             let bin = dir.join("bin");
             std::fs::create_dir_all(&bin).unwrap();
-            std::fs::write(dir.join("picture.png"), b"\x89PNG drawn").unwrap();
             let log = dir.join("drawn");
-            let picture = dir.join("picture.png");
             for program in programs {
                 // pdftoppm is told a base and adds `.png`; ffmpeg gets
                 // the whole name last.
                 let out = if *program == PDF_PROGRAM { "\"$last.png\"" } else { "\"$last\"" };
                 let body = format!(
-                    "for last; do :; done\necho \"{program} $*\" >> {}\n/bin/cp {} {out}",
-                    log.display(),
-                    picture.display()
+                    "for last; do :; done\necho \"{program} $*\" >> {}\nprintf '\\211PNG drawn' > {out}",
+                    log.display()
                 );
                 write_program(&bin, program, &body);
             }
