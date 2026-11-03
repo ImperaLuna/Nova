@@ -713,13 +713,21 @@ mod tests {
     fn a_window_waits_until_nova_files_attaches() {
         let fixture = Fixture::new("waits");
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
-        // Another subscriber to the topic takes nothing.
+        // Another subscriber to the topic gets no window.
         let (_, watcher, _watcher_stream) = fixture.client();
         let (_, nova_files, _stream) = fixture.nova_files();
         assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
-        assert!(watcher.try_recv().is_err(), "windows go only to Nova Files");
+        // Other topic events may reach it (the trash watcher says it's
+        // following the trash once its watches are in); windows don't.
+        let windows = std::iter::from_fn(|| watcher.try_recv().ok())
+            .filter(|sent| {
+                matches!(sent, Outgoing::Line(line)
+                    if serde_json::from_str::<serde_json::Value>(line).unwrap()["event"] == "files_window")
+            })
+            .count();
+        assert_eq!(windows, 0, "windows go only to Nova Files");
     }
 
     #[test]
