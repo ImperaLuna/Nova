@@ -37,6 +37,10 @@ in
     xdg.mime.defaultApplications = lib.mkIf filesOn {
       "inode/directory" = lib.mkDefault "nova-files.desktop";
     };
+    # Nova Files' thumbnails come from the thumbnailers packages install
+    # in share/thumbnailers (gdk-pixbuf's, ffmpegthumbnailer's), which
+    # NixOS doesn't link into the system profile by itself.
+    environment.pathsToLink = lib.mkIf filesOn [ "/share/thumbnailers" ];
     environment.etc."xdg/nova/features.toml".text = features.selectionFile on;
 
     systemd.packages = [ cfg.package ];

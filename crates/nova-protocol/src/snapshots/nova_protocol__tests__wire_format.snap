@@ -147,4 +147,8 @@ expression: all
 {"v":2,"event":"files_transfer","data":{"job":2,"mode":"copy","state":"asking","items":6,"name":"cover.png","done_bytes":1800000,"total_bytes":4700000,"clash":{"id":1,"name":"cover.png","folder":false,"original":{"size":1800000,"modified_ms":1791800000000},"replacement":{"size":2400000,"modified_ms":1793640000000},"others":2}}}
 {"v":2,"id":81,"cmd":"files_search","args":{"query":"crimson"}}
 {"v":2,"id":81,"result":{"ready":true,"results":[{"entry":{"dir":true,"hidden":false,"link":false,"mime":"inode/directory","modified_ms":1793000000000,"name":"Crimson Desert"},"folder":"/home/user/.local/share/Steam/steamapps/common","in_hidden_folder":true,"marks":[{"length":7,"start":0}]}],"total":1}}
+{"v":2,"id":82,"cmd":"files_thumbnail","args":{"path":"/home/user/Pictures/cover.png"}}
+{"v":2,"id":83,"cmd":"files_thumbnail_cancel","args":{"path":"/home/user/Pictures/cover.png"}}
+{"v":2,"event":"files_thumbnail","data":{"path":"/home/user/Pictures/cover.png","thumbnail":"/home/user/.cache/thumbnails/large/7c5e3f0c3d1d1c4f8b1c5b9e5f1a2b3c.png"}}
+{"v":2,"event":"files_thumbnail","data":{"path":"/home/user/Documents/notes.txt"}}
 {"v":2,"id":8,"error":"bad request"}

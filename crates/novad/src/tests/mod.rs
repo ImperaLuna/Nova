@@ -309,6 +309,8 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             // A home trash under `<dir>/trash`, and no drives.
             trash: Some(dir.join("trash")),
             mounts: dir.join("no-mountinfo"),
+            // A cache under `<dir>/thumbnails`, and no thumbnailers.
+            thumbnails: crate::files::thumbnails::Sources::under(dir),
         },
         session_lock: dir.to_owned(),
         screenshots: dir.to_owned(),

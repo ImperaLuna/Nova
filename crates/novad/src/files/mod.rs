@@ -34,6 +34,9 @@
 //!   each, asking the window about name clashes.
 //! - `copying.rs`: the file system side of those: measuring, numbered
 //!   names, and copying a file in chunks.
+//! - `thumbnails/`: pictures of images and videos for the Icons view
+//!   (`files_thumbnail`), from the shared freedesktop cache or made by the
+//!   system's thumbnailers off the connection's thread.
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
@@ -52,6 +55,7 @@ mod file_manager1;
 mod folder;
 pub mod search;
 mod target;
+pub mod thumbnails;
 mod transfers;
 mod trash;
 pub mod tree;
@@ -112,6 +116,8 @@ pub struct Sources {
     pub trash: Option<PathBuf>,
     /// The mount table, where drives' trashes are looked for.
     pub mounts: PathBuf,
+    /// Where thumbnails are kept and what makes them.
+    pub thumbnails: thumbnails::Sources,
 }
 
 pub struct Files {
@@ -135,6 +141,8 @@ pub struct Files {
     trash_watch: Option<trash::Watch>,
     /// The drives in the sidebar.
     drives: udisks::Drives,
+    /// Thumbnails for the Icons view.
+    thumbnails: thumbnails::Thumbnails,
 }
 
 /// What the module's services share.
@@ -171,6 +179,12 @@ impl Files {
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
         let search = search::Search::start(sources.search.clone(), Arc::clone(&logger), Arc::clone(&mime));
         let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
+        let thumbnails = thumbnails::Thumbnails::start(
+            sources.thumbnails.clone(),
+            Arc::clone(&hub),
+            Arc::clone(&logger),
+            Arc::clone(&mime),
+        );
         let trash = Arc::new(Trash::new(sources.trash.clone(), sources.mounts.clone(), Arc::clone(&mime)));
         let trash_watch = trash::Watch::start(Arc::clone(&trash), Arc::clone(&hub), Arc::clone(&logger));
         let opener = Opener::new(
@@ -212,6 +226,7 @@ impl Files {
             trash_watch,
             drives,
             search,
+            thumbnails,
         })
     }
 
@@ -300,6 +315,18 @@ impl Files {
         self.transfers.answer(client, job, clash, answer, all)
     }
 
+    /// Client `client` wants a thumbnail of the file at `path`
+    /// (`files_thumbnail`, [`thumbnails::Thumbnails::request`]).
+    pub fn thumbnail(&self, client: ClientId, path: &str) -> Result<(), String> {
+        self.thumbnails.request(client, path)
+    }
+
+    /// Client `client` no longer shows the file at `path`
+    /// (`files_thumbnail_cancel`).
+    pub fn cancel_thumbnail(&self, client: ClientId, path: &str) {
+        self.thumbnails.cancel(client, path);
+    }
+
     /// Opens a window on `folder` with `select` selected, once both check
     /// out ([`target::window`]).
     pub fn show(&self, folder: &str, select: &[String]) -> Result<(), String> {
@@ -348,6 +375,7 @@ impl Files {
     pub fn client_gone(&self, client: ClientId) {
         self.folders.client_gone(client);
         self.transfers.client_gone(client);
+        self.thumbnails.client_gone(client);
         let mut delivery = lock(&self.shared.delivery);
         if delivery.attached == Some(client) {
             delivery.attached = None;
@@ -356,8 +384,8 @@ impl Files {
 
     /// Stops it: it publishes nothing more, gives up FileManager1, closes
     /// Nova Files' windows and folder views, stops copies, following the
-    /// MIME database and keeping the search index, and drops windows still
-    /// waiting.
+    /// MIME database, keeping the search index and making thumbnails, and
+    /// drops windows still waiting.
     pub fn stop(&self) {
         self.stop.stop();
         self.mime.stop();
@@ -365,6 +393,7 @@ impl Files {
         self.search.stop();
         self.drives.stop();
         self.transfers.stop();
+        self.thumbnails.stop();
         if let Some(watch) = &self.trash_watch {
             watch.stop();
         }
@@ -431,6 +460,7 @@ impl crate::modules::Module for Files {
         let home = nova_paths::home().unwrap_or_else(|| PathBuf::from("/"));
         let trash = nova_paths::data_home().map(|data| data.join(TRASH_DIR));
         let search = search::Sources::system(env.home.clone());
+        let thumbnails = thumbnails::Sources::system(data_dirs.clone(), env.path_var);
         Sources {
             bus: Bus::Session,
             udisks: Bus::System,
@@ -442,6 +472,7 @@ impl crate::modules::Module for Files {
             trash,
             mounts: MOUNT_TABLE.into(),
             search,
+            thumbnails,
         }
     }
 
@@ -522,6 +553,7 @@ mod tests {
                 search: search::Sources::under(&dir),
                 trash: Some(dir.join("Trash")),
                 mounts: dir.join("no-mountinfo"),
+                thumbnails: thumbnails::Sources::under(&dir),
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");

@@ -6,8 +6,11 @@ daemon = "files"
 # The drives in the sidebar come from udisks2 (udisksd) on the system bus,
 # which most desktops already run; the NixOS module turns it on. Without it
 # Nova Files works, with no drives listed, so it isn't checked for.
+# Thumbnails of images come from gdk-pixbuf's thumbnailer and of videos from
+# ffmpegthumbnailer, as in GNOME's file manager; any other thumbnailer
+# installed is used too. Without them files show their type's icon.
 [variants.default]
-nix = ["udisks2"]
-arch = ["udisks2"]
-fedora = ["udisks2"]
-debian = ["udisks2"]
+nix = ["udisks2", "gdk-pixbuf", "ffmpegthumbnailer"]
+arch = ["udisks2", "gdk-pixbuf2", "ffmpegthumbnailer"]
+fedora = ["udisks2", "gdk-pixbuf2", "ffmpegthumbnailer"]
+debian = ["udisks2", "libgdk-pixbuf2.0-bin", "ffmpegthumbnailer"]

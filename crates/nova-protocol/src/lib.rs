@@ -168,6 +168,17 @@ pub enum Event {
     /// asks about a name clash and when it ends. Sent only to the client
     /// that started the job; topic [`Topic::Files`].
     FilesTransfer(Transfer),
+    /// The thumbnail asked for with `files_thumbnail` for the file at
+    /// `path` (feature `files`): a PNG at most [`FILES_THUMBNAIL_PIXELS`]
+    /// on its longer side in the shared freedesktop thumbnail cache, or
+    /// none when the file has none (no thumbnailer for its type, or making
+    /// one failed). Sent only to the client that asked; topic
+    /// [`Topic::Files`].
+    FilesThumbnail {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thumbnail: Option<String>,
+    },
 }
 
 /// Groups of events a client can subscribe to.
@@ -228,7 +239,8 @@ impl Event {
             | Event::FilesClosed { .. }
             | Event::FilesTrashChanged
             | Event::FilesTransfer(_)
-            | Event::FilesDrives { .. } => Some(Topic::Files),
+            | Event::FilesDrives { .. }
+            | Event::FilesThumbnail { .. } => Some(Topic::Files),
             Event::FilesLook(_) => Some(Topic::Files),
         }
     }
@@ -1218,6 +1230,16 @@ pub const FILES_TREE_MAX_FOLDERS: usize = 256;
 /// The longest request line novad reads: a longer one closes the
 /// connection, so a client splits a long list across requests.
 pub const REQUEST_MAX_BYTES: u64 = 64 * 1024;
+/// The longer side of the thumbnails `files_thumbnail` answers with, in
+/// pixels: the freedesktop cache's "large" size, sharp in an Icons view
+/// tile on a scaled screen.
+pub const FILES_THUMBNAIL_PIXELS: u32 = 256;
+
+/// Most thumbnails one connection may be waiting for (`files_thumbnail`):
+/// more than an Icons view shows at once. Past it, the longest waiting is
+/// dropped and answered with none.
+pub const FILES_THUMBNAILS_MAX_WAITING: usize = 512;
+
 /// Most copy or move jobs one connection may run at once
 /// (`files_transfer`).
 pub const FILES_MAX_TRANSFERS: usize = 16;
@@ -2053,6 +2075,20 @@ pub enum Command {
     /// reading folders.
     FilesSearch {
         query: String,
+    },
+    /// Asks for a thumbnail of the file at `path` (absolute, feature
+    /// `files`), answered at once; the thumbnail follows as an
+    /// [`Event::FilesThumbnail`], worked out off the connection's thread.
+    /// Ones already in the shared cache for the file as it is now never
+    /// wait behind ones being made, and the latest asked for go first, so
+    /// what's on screen after a scroll comes before what scrolled past.
+    FilesThumbnail {
+        path: String,
+    },
+    /// The file at `path` scrolled away (feature `files`): its thumbnail,
+    /// unless it's being made already, isn't made or sent.
+    FilesThumbnailCancel {
+        path: String,
     },
 }
 
@@ -3315,6 +3351,19 @@ mod tests {
                     .unwrap(),
                 ),
             }),
+            encode(Request {
+                id: Some(82),
+                command: Command::FilesThumbnail { path: "/home/user/Pictures/cover.png".into() },
+            }),
+            encode(Request {
+                id: Some(83),
+                command: Command::FilesThumbnailCancel { path: "/home/user/Pictures/cover.png".into() },
+            }),
+            encode(Event::FilesThumbnail {
+                path: "/home/user/Pictures/cover.png".into(),
+                thumbnail: Some("/home/user/.cache/thumbnails/large/7c5e3f0c3d1d1c4f8b1c5b9e5f1a2b3c.png".into()),
+            }),
+            encode(Event::FilesThumbnail { path: "/home/user/Documents/notes.txt".into(), thumbnail: None }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();
