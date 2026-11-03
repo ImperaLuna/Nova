@@ -116,7 +116,11 @@ Item {
 
         function test_a_pause_starts_a_new_name() {
             const typing = createTemporaryObject(typingComponent, stage);
-            const names = ["alpha", "beta", "bravo"];
+            const names = createTemporaryQmlObject("import QtQuick; ListModel {}", stage);
+            for (const name of ["alpha", "beta", "bravo"])
+                names.append({
+                    name: name
+                });
             const went = [];
             const go = index => went.push(index);
             verify(typing.press("b", Qt.NoModifier, names, 0, go));
@@ -162,8 +166,8 @@ Item {
         }
 
         SignalSpy {
-            id: backs
-            signalName: "backRequested"
+            id: actions
+            signalName: "actionRequested"
         }
 
         SignalSpy {
@@ -177,9 +181,9 @@ Item {
             const list = createTemporaryObject(trashListComponent, stage, {
                 model: model
             });
-            backs.target = list;
+            actions.target = list;
             erases.target = list;
-            backs.clear();
+            actions.clear();
             erases.clear();
             list.focusList();
             keyClick(Qt.Key_Delete);
@@ -193,11 +197,14 @@ Item {
             keyClick(Qt.Key_Delete, Qt.ShiftModifier);
             compare(erases.count, 1);
             keyClick(Qt.Key_Backspace);
-            compare(backs.count, 1);
+            compare(actions.signalArguments.map(args => args[0]), ["back"]);
             keyClick(Qt.Key_Down);
             compare(model.selectedCount, 1);
             keyClick(Qt.Key_A, Qt.ControlModifier);
             compare(model.selectedCount, 3);
+            // The list goes before its model, as in a window.
+            list.destroy();
+            wait(0);
         }
     }
 }

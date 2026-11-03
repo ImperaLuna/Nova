@@ -36,6 +36,10 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    readonly property string home: Quickshell.env("HOME") ?? ""
+    // A dialog or menu has the window's attention: the confirm dialog, a
+    // name clash, a drive's menu or its eject problem.
+    readonly property bool asking: confirming !== null || transfers.asking !== null || driveMenu.visible || ejectProblem.visible
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -153,8 +157,8 @@ FloatingWindow {
                 list.refresh();
             break;
         case "newWindow":
-            // From the trash, on the folder its tree is on.
-            FilesService.showFolder(inTrash ? navigator.treeFolder : folder);
+            // From the trash, on the folder its tree is on, or home.
+            FilesService.showFolder(inTrash ? (navigator.treeFolder || home) : folder);
             break;
         case "closeWindow":
             // Hiding a window from QML doesn't say `closed` (only the
@@ -184,7 +188,7 @@ FloatingWindow {
 
             Shortcut {
                 sequences: entry.modelData.keys
-                enabled: window.confirming === null || entry.modelData.asking === true
+                enabled: !window.asking || entry.modelData.asking === true
                 onActivated: window.act(entry.modelData.action)
             }
         }
@@ -263,7 +267,7 @@ FloatingWindow {
         focus: true
         onFolderOpened: path => window.navigator.visit(path, null)
         onTrashRequested: rows => window.moveToTrash(rows)
-        onBackRequested: window.navigator.step(-1)
+        onActionRequested: action => window.act(action)
         onDeleteRequested: rows => window.deleteForGood(rows)
         solid: FilesService.listSolid
     }
@@ -280,10 +284,10 @@ FloatingWindow {
         anchors.bottom: parent.bottom
         visible: window.inTrash
         model: trash
-        home: Quickshell.env("HOME") ?? ""
+        home: window.home
         solid: FilesService.listSolid
         onEraseRequested: window.erase()
-        onBackRequested: window.navigator.step(-1)
+        onActionRequested: action => window.act(action)
         onVisibleChanged: {
             if (visible)
                 focusList();
