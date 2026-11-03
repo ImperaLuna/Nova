@@ -12,9 +12,7 @@
 
 use super::Shared;
 use nova_protocol::{BLUETOOTH_PIN_MAX_BYTES, PairingAnswer, PairingAsk};
-use std::future::poll_fn;
-use std::sync::{Arc, Mutex};
-use std::task::{Poll, Waker};
+use std::sync::Arc;
 use std::time::Duration;
 use zbus::interface;
 use zbus::wire::OwnedObjectPath;
@@ -38,37 +36,7 @@ pub enum Reply {
 }
 
 /// Where a question's reply lands, for the agent call waiting on it.
-#[derive(Default)]
-pub struct Slot {
-    reply: Mutex<Option<Reply>>,
-    waker: Mutex<Option<Waker>>,
-}
-
-impl Slot {
-    /// Ends the question with `reply`, unless it has ended already.
-    pub fn resolve(&self, reply: Reply) {
-        let mut slot = crate::lock(&self.reply);
-        if slot.is_none() {
-            *slot = Some(reply);
-            drop(slot);
-            if let Some(waker) = crate::lock(&self.waker).take() {
-                waker.wake();
-            }
-        }
-    }
-
-    async fn wait(&self) -> Reply {
-        poll_fn(|cx| {
-            // Stored before the check, so a reply in between still wakes us.
-            *crate::lock(&self.waker) = Some(cx.waker().clone());
-            match crate::lock(&self.reply).clone() {
-                Some(reply) => Poll::Ready(reply),
-                None => Poll::Pending,
-            }
-        })
-        .await
-    }
-}
+pub type Slot = crate::reply_slot::Slot<Reply>;
 
 /// Whether `answer` answers `ask`. Turning down works for every question
 /// that waits for one.

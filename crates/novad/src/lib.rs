@@ -48,10 +48,12 @@ mod network;
 mod notifications;
 mod notify;
 mod peripherals;
+mod portal_config;
 mod power;
 mod procfs;
 mod recording;
 mod render_loop;
+mod reply_slot;
 mod resources;
 mod screenshot;
 mod server;
@@ -455,6 +457,8 @@ pub fn set_default_app(config_home: &Path, mime: &str, app: &str) -> Result<Path
     let places = apps::associations::Places::new(Some(config_home.to_owned()), &[], &[], &apps::current_desktops());
     apps::associations::set_default(&places, mime, app)
 }
+
+pub use portal_config::prefer_nova_file_chooser;
 
 /// The spec's default for an unset `XDG_DATA_DIRS`.
 const DEFAULT_DATA_DIRS: &str = "/usr/local/share:/usr/share";

@@ -30,7 +30,10 @@ import "space.js" as Space
 // biggest first, each with a bar against the biggest, under the drive the
 // folder is on and how full it is; the header no longer sorts.
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
-// list surface.
+// list surface. In a file picker (`picking`), opening files chooses them
+// (`filesChosen`) instead of launching them, a `filter` leaves out the
+// files it doesn't match, and without `multiple` one row is selected at a
+// time.
 FocusScope {
     id: list
 
@@ -52,7 +55,14 @@ FocusScope {
     // The mounted drive the folder is on, or null.
     readonly property var drive: Space.driveOf(FilesService.drives, folder)
 
+    // A file picker's: {name, globs, mimes}, or null for every file.
+    property var filter: null
+    property bool picking: false
+    property bool multiple: true
+
     signal folderOpened(string path)
+    // In a picker: files opened (double-click, Enter), by name.
+    signal filesChosen(var names)
     signal tabRequested(string path)
     // Delete and Shift+Delete with rows selected: plain copies of them
     // (Listing.copy), in the list's order.
@@ -106,6 +116,7 @@ FocusScope {
         path: list.folder
         hidden: list.showHidden
         sort: list.spaceView ? Space.BIGGEST_FIRST : list.chosenSort
+        filter: list.filter
         onFilling: (current, total) => {
             list.now = Date.now();
             list.riseFrom = Math.max(current, 0);
@@ -126,6 +137,10 @@ FocusScope {
         const opening = Listing.opening(picked);
         if (opening.folder !== "")
             folderOpened(Paths.child(folder, opening.folder));
+        else if (picking && opening.files.length > 0)
+            filesChosen(opening.files);
+        if (picking)
+            return;
         for (const name of opening.files)
             FilesService.launch(Paths.child(folder, name), "", null);
     }
@@ -314,14 +329,14 @@ FocusScope {
         function go(index: int, extend: bool) {
             entryGrid.currentIndex = index;
             entryGrid.positionViewAtIndex(index, GridView.Contain);
-            list.model.select(Listing.pick(list.model.anchor, index, false, extend));
+            list.model.select(Listing.pick(list.model.anchor, index, false, extend && list.multiple));
         }
 
         // A press on entry `index` with `modifiers` held.
         function press(index: int, modifiers: int) {
             entryGrid.forceActiveFocus();
             entryGrid.currentIndex = index;
-            list.model.select(Listing.pick(list.model.anchor, index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
+            list.model.select(Listing.pick(list.model.anchor, index, list.multiple && (modifiers & Qt.ControlModifier) !== 0, list.multiple && (modifiers & Qt.ShiftModifier) !== 0));
         }
 
         // How long entry `index` waits before easing in while a folder's
@@ -386,7 +401,7 @@ FocusScope {
             const moves = list.details ? Listing.MOVES : Listing.GRID_MOVES;
             if (event.key === Qt.Key_H && ctrl)
                 list.showHidden = !list.showHidden;
-            else if (event.key === Qt.Key_A && ctrl)
+            else if (event.key === Qt.Key_A && ctrl && list.multiple)
                 list.model.selectAll();
             else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.AltModifier) !== 0)
                 list.propertiesRequested(list.model.selectedRows().map(row => Listing.copy(row)));

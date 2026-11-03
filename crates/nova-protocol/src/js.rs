@@ -121,6 +121,7 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("How a files_transfer job is going (TransferState).", "TRANSFER", names_of::<TransferState>()),
         Group::new("Answers to a name clash (ClashAnswer).", "CLASH", names_of::<ClashAnswer>()),
         Group::new("What the preview pane shows (FilePreview).", "PREVIEW", tagged_names_of::<FilePreview>("kind")),
+        Group::new("What a file picker picks (PickMode).", "PICK", names_of::<PickMode>()),
     ]
 }
 
@@ -167,7 +168,7 @@ fn limits() -> [(&'static str, u64, &'static str); 15] {
 }
 
 /// Fixed wire strings the UI compares with, as `(name, value, comment)`.
-fn texts() -> [(&'static str, &'static str, &'static str); 3] {
+fn texts() -> [(&'static str, &'static str, &'static str); 4] {
     [
         ("FILES_GAMES_PLACE", FILES_GAMES_PLACE, "The games place's path in files_places: the games, not a folder."),
         ("FILES_TRASH_PLACE", FILES_TRASH_PLACE, "The trash place's path in files_places: the trash, not a folder."),
@@ -176,6 +177,7 @@ fn texts() -> [(&'static str, &'static str, &'static str); 3] {
             FILES_HOME_PLACE,
             "The Home page's path in files_places: Quick access and Recent, not a folder.",
         ),
+        ("FILES_PICK_EXISTS", FILES_PICK_EXISTS, "files_pick's error for a save over a file that's there."),
     ]
 }
 

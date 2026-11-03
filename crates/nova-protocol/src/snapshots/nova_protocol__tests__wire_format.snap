@@ -168,4 +168,8 @@ expression: all
 {"v":2,"event":"files_places_changed"}
 {"v":2,"id":83,"cmd":"files_recent"}
 {"v":2,"id":83,"result":[{"entry":{"dir":false,"hidden":false,"link":false,"mime":"text/markdown","modified_ms":1792000000000,"name":"plan.md","size":2048},"folder":"/home/user/Documents","used_ms":1793000000000}]}
+{"v":2,"event":"files_window","data":{"folder":"/home/user/Downloads","picker":{"id":3,"mode":"save","title":"Save Image","multiple":false,"folders":false,"name":"cover.png","filters":[{"name":"Images","globs":["*.png"],"mimes":["image/*"]}],"filter":0}}}
+{"v":2,"id":82,"cmd":"files_pick","args":{"picker":3,"paths":["/home/user/Downloads/cover.png"],"filter":0,"replace":true}}
+{"v":2,"id":83,"cmd":"files_pick_cancel","args":{"picker":3}}
+{"v":2,"event":"files_picker_closed","data":{"picker":3}}
 {"v":2,"id":8,"error":"bad request"}

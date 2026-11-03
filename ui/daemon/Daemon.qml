@@ -122,6 +122,8 @@ Singleton {
     signal filesPlacesChanged
     // novad's index of file names is built: searches can be asked again.
     signal filesSearchReady
+    // A file picker window's app stopped asking: the window closes.
+    signal filesPickerClosed(int picker)
 
     // The topics this process subscribes to on every connection: the
     // shell's, unless its root sets its own as it's created (Nova Files,
@@ -240,6 +242,8 @@ Singleton {
             filesPlacesChanged();
         } else if (msg.event === Protocol.EVENT_FILES_SEARCH_READY) {
             filesSearchReady();
+        } else if (msg.event === Protocol.EVENT_FILES_PICKER_CLOSED) {
+            filesPickerClosed(msg.data.picker);
         }
     }
 

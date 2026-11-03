@@ -62,6 +62,8 @@ var FILES_TRASH_PLACE = "trash:///";
 
 // The Home page's path in files_places: Quick access and Recent, not a folder.
 var FILES_HOME_PLACE = "home:///";
+// files_pick's error for a save over a file that's there.
+var FILES_PICK_EXISTS = "exists";
 
 // Commands a client sends (Command).
 var CMD_PING = "ping";
@@ -159,6 +161,8 @@ var CMD_FILES_MEASURE_CANCEL = "files_measure_cancel";
 var CMD_FILES_SET_ACCESS = "files_set_access";
 var CMD_FILES_THUMBNAIL = "files_thumbnail";
 var CMD_FILES_THUMBNAIL_CANCEL = "files_thumbnail_cancel";
+var CMD_FILES_PICK = "files_pick";
+var CMD_FILES_PICK_CANCEL = "files_pick_cancel";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -199,6 +203,7 @@ var EVENT_FILES_DRIVES = "files_drives";
 var EVENT_FILES_TRANSFER = "files_transfer";
 var EVENT_FILES_MEASURED = "files_measured";
 var EVENT_FILES_THUMBNAIL = "files_thumbnail";
+var EVENT_FILES_PICKER_CLOSED = "files_picker_closed";
 
 // Event topics a client subscribes to (Topic).
 var TOPIC_FEATURES = "features";
@@ -362,6 +367,10 @@ var CLASH_SKIP = "skip";
 var PREVIEW_IMAGE = "image";
 var PREVIEW_TEXT = "text";
 var PREVIEW_NONE = "none";
+// What a file picker picks (PickMode).
+var PICK_OPEN = "open";
+var PICK_SAVE = "save";
+var PICK_SAVE_FILES = "save_files";
 
 // END GENERATED
 

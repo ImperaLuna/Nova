@@ -195,6 +195,11 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thumbnail: Option<String>,
     },
+    /// The file picker `picker` (a [`FilePicker::id`]) ended without the
+    /// window (feature `files`): the app gave up asking, or Nova Files was
+    /// turned off. Its window closes. Sent only to the Nova Files process;
+    /// topic [`Topic::Files`].
+    FilesPickerClosed { picker: u32 },
 }
 
 /// Groups of events a client can subscribe to.
@@ -260,7 +265,7 @@ impl Event {
             | Event::FilesMeasured(_)
             | Event::FilesDrives { .. }
             | Event::FilesThumbnail { .. } => Some(Topic::Files),
-            Event::FilesLook(_) => Some(Topic::Files),
+            Event::FilesLook(_) | Event::FilesPickerClosed { .. } => Some(Topic::Files),
         }
     }
 }
@@ -1048,14 +1053,84 @@ pub const WIFI_PASSWORD_MAX_BYTES: usize = 128;
 pub const WPA_PASSWORD_MIN_BYTES: usize = 8;
 
 /// A Nova Files window to open (feature `files`): the folder it shows, an
-/// absolute path, and the items in it to select, by absolute path.
+/// absolute path, and the items in it to select, by absolute path. With a
+/// `picker`, it's an app's Open or Save dialog, answered with `files_pick`
+/// or `files_pick_cancel`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FilesWindow {
     pub folder: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub select: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub picker: Option<FilePicker>,
 }
+
+/// An app's Open or Save dialog, asked for through the desktop portal
+/// (feature `files`), shown as a Nova Files window in picker mode.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilePicker {
+    /// Names it to `files_pick` and `files_pick_cancel`.
+    pub id: u32,
+    pub mode: PickMode,
+    /// The window's title, as the app asked; may be empty.
+    pub title: String,
+    /// The app's own label for the accept button; empty for the mode's.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub accept: String,
+    /// More than one item may be picked (`open` only).
+    pub multiple: bool,
+    /// Folders are picked, not files (`open` only; `save_files` always
+    /// picks a folder).
+    pub folders: bool,
+    /// The name a `save` starts with.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// The app's file type filters, in its order; none shows every file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filters: Vec<FileFilter>,
+    /// The filter shown first, an index into `filters`.
+    #[serde(default)]
+    pub filter: u32,
+}
+
+/// What a [`FilePicker`] picks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PickMode {
+    /// Existing files (or folders).
+    Open,
+    /// One file to write: a folder and a name.
+    Save,
+    /// A folder to write the app's several files into.
+    SaveFiles,
+}
+
+/// A file type filter of a [`FilePicker`]: files matching any of `globs`
+/// (case aside, like `*.png`) or any of `mimes` (a type, a kind of it, or
+/// `image/*`) show. Folders always show.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileFilter {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub globs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mimes: Vec<String>,
+}
+
+/// The error `files_pick` answers a `save` over a file that's there with,
+/// unless it says to replace it.
+pub const FILES_PICK_EXISTS: &str = "exists";
+
+/// Most filters a [`FilePicker`] keeps from an app.
+pub const FILES_PICKER_MAX_FILTERS: usize = 64;
+/// Most globs and types one [`FileFilter`] holds, together.
+pub const FILES_FILTER_MAX_PATTERNS: usize = 256;
+/// The longest glob or type in a [`FileFilter`], and the longest filter
+/// name, title or label a picker keeps, in characters.
+pub const FILES_PICKER_MAX_CHARS: usize = 256;
 
 /// How solid Nova Files' window frame (the rows above the files and the
 /// sidebar) and its file list are, each a percentage from glass (0) to the
@@ -2040,6 +2115,10 @@ pub enum Command {
         path: String,
         sort: FileSort,
         hidden: bool,
+        /// Shows only the files it matches (a file picker's filter);
+        /// folders always show.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filter: Option<FileFilter>,
     },
     /// Closes this connection's view `view`. A view closes by itself when
     /// its connection does.
@@ -2205,6 +2284,26 @@ pub enum Command {
     /// unless it's being made already, isn't made or sent.
     FilesThumbnailCancel {
         path: String,
+    },
+    /// Answers the file picker `picker` (feature `files`) with `paths`
+    /// (absolute): the files or folders picked to open, or for a save, the
+    /// file to write (`save`) or the folder to write into (`save_files`).
+    /// `filter` is the filter shown, an index into the picker's. Refused
+    /// when the paths don't fit the picker (a folder for a file, a file
+    /// that isn't there to open); the picker then still waits. A `save`
+    /// over a file that's there is refused with [`FILES_PICK_EXISTS`]
+    /// unless `replace`, so the window asks first.
+    FilesPick {
+        picker: u32,
+        paths: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filter: Option<u32>,
+        #[serde(default)]
+        replace: bool,
+    },
+    /// The file picker `picker` was closed without picking.
+    FilesPickCancel {
+        picker: u32,
     },
 }
 
@@ -3492,6 +3591,7 @@ mod tests {
                     path: "/home/user/Pictures".into(),
                     sort: FileSort { key: FileSortKey::Modified, descending: true, mixed: false },
                     hidden: false,
+                    filter: None,
                 },
             }),
             encode(Request { id: Some(75), command: Command::FilesClose { view: 1 } }),
@@ -3821,6 +3921,36 @@ mod tests {
                     .unwrap(),
                 ),
             }),
+            encode(Event::FilesWindow(FilesWindow {
+                folder: "/home/user/Downloads".into(),
+                select: vec![],
+                picker: Some(FilePicker {
+                    id: 3,
+                    mode: PickMode::Save,
+                    title: "Save Image".into(),
+                    accept: String::new(),
+                    multiple: false,
+                    folders: false,
+                    name: "cover.png".into(),
+                    filters: vec![FileFilter {
+                        name: "Images".into(),
+                        globs: vec!["*.png".into()],
+                        mimes: vec!["image/*".into()],
+                    }],
+                    filter: 0,
+                }),
+            })),
+            encode(Request {
+                id: Some(82),
+                command: Command::FilesPick {
+                    picker: 3,
+                    paths: vec!["/home/user/Downloads/cover.png".into()],
+                    filter: Some(0),
+                    replace: true,
+                },
+            }),
+            encode(Request { id: Some(83), command: Command::FilesPickCancel { picker: 3 } }),
+            encode(Event::FilesPickerClosed { picker: 3 }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();

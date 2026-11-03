@@ -16,10 +16,11 @@ import "../thumbnails.js" as Thumbnails
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, the
 // trash, the Properties window's facts, sizes and access, the preview
-// pane's previews, thumbnails for the Icons view, and finding files by
-// name. The Nova Files process (../../files.qml) and its windows get these
-// here and never talk to Daemon themselves. Also how solid the windows
-// are, from config.toml's [files].
+// pane's previews, thumbnails for the Icons view, finding files by name,
+// and answering the file pickers apps ask for (Open and Save dialogs). The
+// Nova Files process (../../files.qml) and its windows get these here and
+// never talk to Daemon themselves. Also how solid the windows are, from
+// config.toml's [files].
 Singleton {
     id: root
 
@@ -61,12 +62,13 @@ Singleton {
 
     // Shows the folder at `path` (absolute) in view `view`, ordered by
     // `sort` ({key: a Protocol.FILE_SORT_*, descending, mixed: folders
-    // and files together}), with dot files when `hidden`. Whatever the
-    // view showed is replaced; its entries come as `page`s, and folders'
-    // sizes as `changed` once novad has counted them. `done(error)` gets
-    // novad's answer.
-    function open(view: int, path: string, sort: var, hidden: bool, done: var) {
-        Daemon.call(Protocol.CMD_FILES_OPEN, {
+    // and files together}), with dot files when `hidden`, and only the
+    // files `filter` matches when it isn't null (a file picker's {name,
+    // globs, mimes}). Whatever the view showed is replaced; its entries
+    // come as `page`s, and folders' sizes as `changed` once novad has
+    // counted them. `done(error)` gets novad's answer.
+    function open(view: int, path: string, sort: var, hidden: bool, filter: var, done: var) {
+        const args = {
             view: view,
             path: path,
             sort: {
@@ -75,7 +77,10 @@ Singleton {
                 mixed: sort.mixed ?? false
             },
             hidden: hidden
-        }, error => {
+        };
+        if (filter)
+            args.filter = filter;
+        Daemon.call(Protocol.CMD_FILES_OPEN, args, error => {
             if (error)
                 console.warn(`nova: opening the folder ${path}: ${error}`);
             done?.(error ?? null);
@@ -102,6 +107,9 @@ Singleton {
     // Paths whose thumbnails were asked for, each to the callbacks waiting
     // for it; a map without a prototype, so any path is a key.
     property var _thumbnailsWaiting: Object.create(null)
+
+    // The file picker `picker`'s app stopped asking: its window closes.
+    signal pickerClosed(int picker)
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
@@ -501,6 +509,39 @@ Singleton {
         next(0);
     }
 
+    // Answers the file picker `picker` with `paths` (absolute), `filter`
+    // being the index of the filter shown (or -1), over a file that's
+    // there only when `replace`. `done(error)` gets novad's answer: null,
+    // Protocol.FILES_PICK_EXISTS for a save that would replace a file, or
+    // why the paths don't fit the picker. A selection too long for one
+    // request isn't sent: novad would close the connection, and with it
+    // every picker it shows.
+    function pick(picker: int, paths: var, filter: int, replace: bool, done: var) {
+        if (Trash.batches(paths, Protocol.REQUEST_MAX_BYTES).length > 1) {
+            done(qsTr("Too many items are selected to answer at once. Select fewer."));
+            return;
+        }
+        const args = {
+            picker: picker,
+            paths: paths,
+            replace: replace
+        };
+        if (filter >= 0)
+            args.filter = filter;
+        Daemon.call(Protocol.CMD_FILES_PICK, args, error => {
+            if (error && error !== Protocol.FILES_PICK_EXISTS)
+                console.warn(`nova: answering the file picker: ${error}`);
+            done(error ?? null);
+        });
+    }
+
+    // The file picker `picker` closed without picking.
+    function cancelPick(picker: int) {
+        Daemon.call(Protocol.CMD_FILES_PICK_CANCEL, {
+            picker: picker
+        });
+    }
+
     function _answered(doing: string, error: var, done: var) {
         if (error)
             console.warn(`nova: ${doing}: ${error}`);
@@ -538,6 +579,9 @@ Singleton {
         }
         function onFilesPlacesChanged() {
             root.refreshPlaces();
+        }
+        function onFilesPickerClosed(picker: int) {
+            root.pickerClosed(picker);
         }
         function onConnectedChanged() {
             if (Daemon.connected) {
