@@ -16,11 +16,17 @@ Singleton {
     // The feature is on and novad has said what's installed.
     readonly property bool ready: Daemon.readyFeatures.includes(Protocol.FEATURE_LAUNCHER) && current !== null
 
+    // Nova Files runs, so the launcher has its Files mode.
+    readonly property bool filesReady: Daemon.readyFeatures.includes(Protocol.FEATURE_FILES)
+
     // `done(items)` gets the LauncherItems novad's providers found for
-    // `query`, or none when the search failed.
-    function search(query: string, done: var) {
+    // `query` in the launcher's `mode` (a provider's id; the apps mode
+    // mixes every provider without a mode of its own), or none when the
+    // search failed.
+    function search(query: string, mode: string, done: var) {
         Daemon.call(Protocol.CMD_LAUNCHER_SEARCH, {
-            query: query
+            query: query,
+            mode: mode === Protocol.PROVIDER_APPS ? null : mode
         }, (error, result) => {
             if (error)
                 console.warn(`nova: launcher search: ${error}`);

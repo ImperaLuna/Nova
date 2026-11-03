@@ -10,6 +10,7 @@
 //! ([`natural`]). It's a total order (raw names break the last ties), so
 //! every entry has exactly one place and a binary search finds it.
 
+use crate::files::archive;
 use crate::mime::MimeDb;
 use nova_protocol::{FileEntry, FileSort, FileSortKey, FolderChange};
 use std::cmp::Ordering;
@@ -38,6 +39,7 @@ pub fn read_entry(folder: &Path, name: &OsStr, mime: &MimeDb) -> Option<FileEntr
             dir: false,
             link,
             hidden,
+            archive: false,
             mime: BROKEN_LINK_MIME.into(),
             size: None,
             modified_ms: None,
@@ -46,6 +48,7 @@ pub fn read_entry(folder: &Path, name: &OsStr, mime: &MimeDb) -> Option<FileEntr
     let dir = target.is_dir();
     Some(FileEntry {
         mime: mime.type_by_name(&name.to_string_lossy(), &target).to_owned(),
+        archive: !dir && archive::Kind::of_name(name).is_some(),
         name: wire,
         dir,
         link,
@@ -87,9 +90,27 @@ pub fn is_hidden(name: &str) -> bool {
     name.starts_with('.')
 }
 
+/// `st_blocks` counts in these, whatever the file system's block size.
+const STAT_BLOCK: u64 = 512;
+
+/// What an item takes on its drive, in bytes.
+pub fn disk_bytes(metadata: &Metadata) -> u64 {
+    metadata.blocks().saturating_mul(STAT_BLOCK)
+}
+
+/// A time in milliseconds since 1970, when it's after then.
+pub fn system_time_millis(time: std::time::SystemTime) -> Option<i64> {
+    let since = time.duration_since(std::time::SystemTime::UNIX_EPOCH).ok()?;
+    i64::try_from(since.as_millis()).ok()
+}
+
 fn modified_ms(metadata: &Metadata) -> Option<i64> {
-    let seconds = metadata.mtime().checked_mul(1000)?;
-    seconds.checked_add(metadata.mtime_nsec() / 1_000_000)
+    millis(metadata.mtime(), metadata.mtime_nsec())
+}
+
+/// A file time (seconds and nanoseconds since 1970) in milliseconds.
+pub fn millis(seconds: i64, nanoseconds: i64) -> Option<i64> {
+    seconds.checked_mul(1000)?.checked_add(nanoseconds / 1_000_000)
 }
 
 /// A folder's entries in a view's order, and where each one is.
@@ -296,6 +317,7 @@ mod tests {
             dir: false,
             link: false,
             hidden: is_hidden(name),
+            archive: false,
             mime: "text/plain".into(),
             size: Some(size),
             modified_ms: Some(0),

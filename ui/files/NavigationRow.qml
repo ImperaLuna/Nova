@@ -50,6 +50,9 @@ Rectangle {
     // Puts the keyboard in the search field with what's typed selected:
     // Ctrl+F and F3.
     function focusSearch() {
+        // Closed first: closing the address field gives the keyboard to the
+        // list, which would otherwise take it back from the search field.
+        editing = false;
         searchField.selectAll();
         searchField.forceActiveFocus();
     }
@@ -67,6 +70,8 @@ Rectangle {
         });
     }
 
+    // Another tab came to the front: its folder shows, not a half-typed path.
+    onNavigatorChanged: editing = false
     onEditingChanged: {
         if (!editing)
             addressClosed();
@@ -252,6 +257,8 @@ Rectangle {
                 easing.bezierCurve: Tokens.easing
             }
         }
+
+        clip: true
 
         LineIcon {
             id: searchIcon
