@@ -76,6 +76,19 @@ function kind(row) {
     return subtype.charAt(0).toUpperCase() + subtype.slice(1);
 }
 
+// How many of the columns after Name (widths `columns`, `spacing` apart)
+// fit in a row `width` wide with Name at least `nameMin` wide: the last
+// ones go first when the list narrows, as when the preview pane opens.
+function columnsShown(width, columns, spacing, nameMin) {
+    let room = width - nameMin;
+    let shown = 0;
+    while (shown < columns.length && room >= columns[shown] + spacing) {
+        room -= columns[shown] + spacing;
+        shown++;
+    }
+    return shown;
+}
+
 // Subtypes this short are abbreviations (PDF, JPEG), read in capitals.
 var SHORT_KIND = 4;
 

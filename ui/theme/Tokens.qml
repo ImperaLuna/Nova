@@ -689,6 +689,8 @@ QtObject {
     readonly property int filesPlaceHeight: 26
     readonly property int filesHeaderHeight: 30
     readonly property list<int> filesColumns: [150, 110, 80]
+    // Name stays at least this wide: columns after it drop out first.
+    readonly property int filesNameMinWidth: 160
     readonly property color filesFaint: alpha(fg, 0.45)
     // A drive in the sidebar: a taller row with how full it is under its
     // name. A stick that's plugged in slides in, then glows in the accent

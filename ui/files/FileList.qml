@@ -39,7 +39,9 @@ FocusScope {
     signal deleteRequested(var rows)
     signal propertiesRequested(var rows)
 
-    readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
+    // The columns after Name that fit (Listing.columnsShown), and Name's width.
+    readonly property int shownColumns: Listing.columnsShown(headerRow.width, Tokens.filesColumns, headerRow.spacing, Tokens.filesNameMinWidth)
+    readonly property real nameWidth: headerRow.width - Tokens.filesColumns.slice(0, shownColumns).reduce((sum, column) => sum + column + headerRow.spacing, 0)
     readonly property var columns: [
         {
             label: qsTr("Modified"),
@@ -172,7 +174,7 @@ FocusScope {
             key: Protocol.FILE_SORT_NAME
         }
         Repeater {
-            model: list.columns
+            model: list.columns.slice(0, list.shownColumns)
 
             HeaderCell {
                 required property var modelData
@@ -226,6 +228,7 @@ FocusScope {
 
             width: entryList.width
             nameWidth: list.nameWidth
+            columns: list.shownColumns
             selected: list.model.revision >= 0 && list.model.isSelected(name)
             riseOrder: list.riseFrom >= 0 ? Math.min(Math.abs(index - list.riseFrom), entryList.page) : -1
             now: list.now

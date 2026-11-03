@@ -48,6 +48,9 @@ const PDF: &str = "application/pdf";
 const IMAGE_PREFIX: &str = "image/";
 const VIDEO_PREFIX: &str = "video/";
 const PICTURE_EXTENSION: &str = "png";
+/// The cache's mode, and its pictures': this user's only.
+const PRIVATE_FOLDER: u32 = 0o700;
+const PRIVATE_FILE: u32 = 0o600;
 
 /// Works out previews.
 pub struct Previews {
@@ -185,14 +188,17 @@ impl Pictures {
         if self.latest.load(Ordering::SeqCst) != ask {
             return None;
         }
-        std::fs::create_dir_all(&self.folder).ok()?;
+        // Pictures show what's inside files that may be private.
+        private_folder(&self.folder).ok()?;
         let temp = self.folder.join(format!(
             ".{}-{}.{}",
             std::process::id(),
             self.next_temp.fetch_add(1, Ordering::Relaxed),
             PICTURE_EXTENSION
         ));
-        let drawn = self.draw(file, kind, &temp);
+        // Made private before the program writes into it, which keeps
+        // the file's mode.
+        let drawn = private_file(&temp).is_ok() && self.draw(file, kind, &temp);
         let kept = drawn && std::fs::rename(&temp, &picture).is_ok();
         let _ = std::fs::remove_file(&temp);
         if kept {
@@ -262,6 +268,21 @@ fn cache_name(file: &Path, metadata: &std::fs::Metadata) -> String {
     }
     digest.update(FILES_PREVIEW_PICTURE_PX.to_le_bytes());
     digest.finalize()[..CACHE_NAME_BYTES].iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Makes `folder` (and the folders above it it makes) readable by this
+/// user only.
+fn private_folder(folder: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    std::fs::DirBuilder::new().recursive(true).mode(PRIVATE_FOLDER).create(folder)?;
+    // One made before, by hand or by an older novad.
+    std::fs::set_permissions(folder, std::fs::Permissions::from_mode(PRIVATE_FOLDER))
+}
+
+/// Makes the empty file `file`, readable by this user only.
+fn private_file(file: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::File::options().write(true).create_new(true).mode(PRIVATE_FILE).open(file).map(drop)
 }
 
 /// Whether the picture at `picture` exists, marking it shown now so the
@@ -408,6 +429,10 @@ mod tests {
         std::fs::write(&report, b"%PDF-1.7 with a new page").unwrap();
         assert_ne!(image_path(fixture.previews.preview(&report).unwrap()), page);
         assert_eq!(fixture.draws(), 3);
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&fixture.dir.join("cache")), PRIVATE_FOLDER);
+        assert_eq!(mode(Path::new(&page)), PRIVATE_FILE, "private from the start");
         let left: Vec<_> = std::fs::read_dir(fixture.dir.join("cache")).unwrap().flatten().collect();
         assert!(left.iter().all(|entry| !entry.file_name().to_string_lossy().starts_with('.')), "no temp files left");
     }

@@ -391,6 +391,19 @@ Item {
                 }
             })
 
+        function test_columns_drop_from_the_right_when_the_list_narrows() {
+            const columns = [150, 110, 80];
+            compare(Listing.columnsShown(900, columns, 10, 160), 3);
+            compare(Listing.columnsShown(340, columns, 10, 160), 1, "the default window with the preview pane");
+            compare(Listing.columnsShown(200, columns, 10, 160), 0);
+        }
+
+        function test_a_file_url_keeps_raw_bytes_and_escapes_the_rest() {
+            const eAcute = String.fromCodePoint(Protocol.RAW_BYTE_BASE + 0xE9);
+            compare(Paths.fileUrl(`/mnt/old/caf${eAcute}.png`), "file:///mnt/old/caf%E9.png");
+            compare(Paths.fileUrl("/home/ana/#1 café.png"), "file:///home/ana/%231%20caf%C3%A9.png");
+        }
+
         function test_the_preview_pane_previews_one_selected_file() {
             const photo = entry("a.png", {
                 mime: "image/png"

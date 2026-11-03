@@ -4,7 +4,6 @@ import QtQuick
 import "service"
 import "../theme"
 import "../daemon/protocol.js" as Protocol
-import "../text/files.js" as Files
 import "listing.js" as Listing
 import "paths.js" as Paths
 import "preview.js" as Preview
@@ -80,10 +79,14 @@ Item {
             pane.follow();
         }
     }
-    // A row changes in place when its file does.
+    // A row changes in place when its file does, or moves (a remove and an
+    // insert) when the order is by what changed.
     Connections {
         target: pane.model.rows
         function onDataChanged() {
+            pane.follow();
+        }
+        function onRowsInserted() {
             pane.follow();
         }
     }
@@ -120,7 +123,7 @@ Item {
         Image {
             id: picture
             anchors.fill: parent
-            source: pane.preview?.kind === Protocol.PREVIEW_IMAGE ? Files.fileUrl(pane.preview.path) : ""
+            source: pane.preview?.kind === Protocol.PREVIEW_IMAGE ? Paths.fileUrl(pane.preview.path) : ""
             asynchronous: true
             cache: false
             autoTransform: true

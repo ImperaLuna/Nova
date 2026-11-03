@@ -20,6 +20,8 @@ Rectangle {
     required property real modified
 
     required property real nameWidth
+    // How many of Modified, Type and Size show (the list's shownColumns).
+    required property int columns
     required property bool selected
     // Rows from where the list opened, while a folder's entries have just
     // come in, or -1: read once, as the row is made.
@@ -68,14 +70,17 @@ Rectangle {
             }
         }
         Cell {
+            visible: entry.columns > 0
             width: Tokens.filesColumns[0]
             text: Listing.modified(entry.modified, entry.now)
         }
         Cell {
+            visible: entry.columns > 1
             width: Tokens.filesColumns[1]
             text: Listing.kind(entry)
         }
         Cell {
+            visible: entry.columns > 2
             width: Tokens.filesColumns[2] - Tokens.rowInset
             horizontalAlignment: Text.AlignRight
             text: Listing.size(entry)
