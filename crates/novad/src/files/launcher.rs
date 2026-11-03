@@ -3,7 +3,8 @@
 //! path being typed: the folder it names so far is listed, the entries whose
 //! names start with what follows its last `/` (case aside; dot entries only
 //! once a dot is typed), folders first, each with the path Tab completes
-//! to. Any other query searches the names Nova Files indexes (`search/`).
+//! to. Any other query searches the names Nova Files indexes (`search/`),
+//! waiting for the index when it's still being built.
 //!
 //! Running an item opens a file in its type's default app and a folder in
 //! Nova Files; Shift+Enter shows either in its folder, selected. Items are
@@ -16,6 +17,9 @@ use crate::launcher::providers::{Provider, Run};
 use nova_protocol::{FileEntry, LauncherFile, LauncherItem, TextMark, TextRun, wire_path, wire_text};
 use std::path::{Component, Path, PathBuf};
 
+/// How long a name search waits for the index to be built, as Nova Files
+/// builds it when it starts; past this it finds what there is (nothing).
+const INDEX_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 /// How a typed path names Home.
 const HOME_PREFIX: char = '~';
 const SEPARATOR: char = '/';
@@ -52,7 +56,11 @@ impl Files {
 
     /// The indexed files whose names hold every word of `query`, best first.
     fn names(&self, query: &str, home: Option<&Path>) -> Result<Vec<LauncherItem>, String> {
-        let found = self.searcher().search_up_to(query, MAX_MATCHES)?;
+        let searcher = self.searcher();
+        // Searches run off the connection's thread, so one typed while the
+        // index is still being built waits for it rather than finding nothing.
+        searcher.wait_ready(INDEX_WAIT);
+        let found = searcher.search_up_to(query, MAX_MATCHES)?;
         Ok(found
             .results
             .into_iter()

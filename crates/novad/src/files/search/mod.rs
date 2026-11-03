@@ -38,7 +38,7 @@ use matching::Query;
 use nova_protocol::{FILES_SEARCH_MAX_CHARS, FILES_SEARCH_MAX_RESULTS, FileSearch, FoundFile, wire_path, wire_text};
 use roots::Mounts;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use walk::Walk;
 
@@ -92,6 +92,15 @@ pub struct Search {
 struct Shared {
     index: RwLock<Option<Index>>,
     mime: Arc<Mime>,
+    /// Woken each time an index is swapped in, for searches that wait for
+    /// one ([`Searcher::wait_ready`]); the lock is taken after the swap.
+    built: (Mutex<()>, Condvar),
+}
+
+impl Shared {
+    fn is_built(&self) -> bool {
+        self.index.read().unwrap_or_else(std::sync::PoisonError::into_inner).is_some()
+    }
 }
 
 /// Answers searches; cheap to clone into a request's own thread.
@@ -101,7 +110,7 @@ pub struct Searcher(Arc<Shared>);
 impl Search {
     /// Starts building the index of `sources`' folders.
     pub fn start(sources: Sources, logger: Arc<Logger>, mime: Arc<Mime>) -> Self {
-        let shared = Arc::new(Shared { index: RwLock::new(None), mime });
+        let shared = Arc::new(Shared { index: RwLock::new(None), mime, built: (Mutex::new(()), Condvar::new()) });
         let started = Inotify::new(WATCHED).and_then(|watcher| {
             let stopper = watcher.stopper();
             let keeper = Keeper { sources, watcher, shared: Arc::clone(&shared), logger: Arc::clone(&logger) };
@@ -125,6 +134,16 @@ impl Search {
 }
 
 impl Searcher {
+    /// Waits up to `timeout` for the index to be built; `true` once it is.
+    pub fn wait_ready(&self, timeout: Duration) -> bool {
+        let (lock, built) = &self.0.built;
+        let held = lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (_held, _) = built
+            .wait_timeout_while(held, timeout, |()| !self.0.is_built())
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.0.is_built()
+    }
+
     /// The files whose names hold every word of `text`.
     pub fn search(&self, text: &str) -> Result<FileSearch, String> {
         self.search_up_to(text, FILES_SEARCH_MAX_RESULTS)
@@ -233,6 +252,9 @@ impl Keeper {
             ),
         );
         *self.shared.index.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(index);
+        let (lock, built) = &self.shared.built;
+        drop(lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
+        built.notify_all();
         Some(Built { mounts, skipped, reach, at: Instant::now() })
     }
 
@@ -402,6 +424,20 @@ mod tests {
         let game = home.join(".local/share/Steam/steamapps/common/Crimson Desert");
         std::fs::create_dir_all(&game).unwrap();
         std::fs::write(game.join("CrimsonDesert.exe"), b"exe").unwrap();
+    }
+
+    #[test]
+    fn a_search_can_wait_for_the_index_to_be_built() {
+        let dir = TempDir::new("files-search-wait");
+        std::fs::create_dir_all(dir.join("home/Games")).unwrap();
+        let hub = Arc::new(crate::hub::Hub::default());
+        let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, hub).unwrap());
+        let mime = Mime::follow(Vec::new(), Arc::clone(&logger));
+        let search = Search::start(Sources::under(&dir), logger, mime);
+        // Straight after starting, before the first build is swapped in.
+        assert!(search.searcher().wait_ready(WAIT));
+        assert_eq!(search.searcher().search("games").unwrap().total, 1);
+        search.stop();
     }
 
     #[test]
