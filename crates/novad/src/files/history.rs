@@ -2,8 +2,9 @@
 //! history for the session, shared by every Nova Files window, so a step
 //! taken in one window can be undone from another.
 //!
-//! Each step is kept as what undoing it does ([`Op`]): copies go to the
-//! trash, trashed items are restored, moved items move back. Running an
+//! Each step is kept as what undoing it does ([`Op`]): copies and new
+//! folders go to the trash, trashed items are restored, moved items move
+//! back, renamed items get their old name. Running an
 //! op answers its inverse, which goes on the other stack, so undo and redo
 //! are the same code. What an op couldn't do is dropped, as in Explorer,
 //! so one item that can't go back never blocks the steps before it; the
@@ -29,6 +30,7 @@ use crate::hub::{ClientId, Hub};
 use crate::lock;
 use nova_protocol::{Event, FileStep, TransferMode, wire_text};
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -44,6 +46,8 @@ enum Op {
     Restore(Vec<String>),
     /// Moves each item from where it is to where it goes: (now, goes).
     Move(Vec<(PathBuf, PathBuf)>),
+    /// Renames the item at `now` to `name`, in its folder.
+    Rename { now: PathBuf, name: OsString },
 }
 
 impl Op {
@@ -51,6 +55,7 @@ impl Op {
         match self {
             Op::Trash(items) | Op::Restore(items) => items.is_empty(),
             Op::Move(items) => items.is_empty(),
+            Op::Rename { .. } => false,
         }
     }
 }
@@ -158,6 +163,20 @@ impl History {
         });
     }
 
+    /// The item at `from` was renamed to `to`, in its folder.
+    pub fn renamed(&self, from: PathBuf, to: PathBuf) {
+        let Some(name) = from.file_name().map(OsString::from) else { return };
+        if from != to {
+            self.change(|stacks| stacks.took(Step { kind: FileStep::Rename, op: Op::Rename { now: to, name } }));
+        }
+    }
+
+    /// A new folder was made at `path`.
+    pub fn made_folder(&self, path: &std::path::Path) {
+        let op = Op::Trash(vec![wire_text(path.as_os_str())]);
+        self.change(|stacks| stacks.took(Step { kind: FileStep::NewFolder, op }));
+    }
+
     /// A copy or move job from `origin` ended, having placed each item
     /// (from, to): a new step, or the inverse of a step run.
     pub fn moved(&self, origin: Origin, mode: TransferMode, placed: &[(PathBuf, PathBuf)]) {
@@ -207,6 +226,14 @@ impl History {
                 let done = done.iter().map(|path| wire_text(path.as_os_str())).collect();
                 self.change(|stacks| stacks.ran(way, kind, Op::Trash(done)));
                 problems.map(|()| false)
+            }
+            Op::Rename { now, name } => {
+                let renamed = crate::files::editing::rename(&wire_text(now.as_os_str()), &wire_text(&name));
+                if let (Ok(_), Some(old), Some(folder)) = (&renamed, now.file_name(), now.parent()) {
+                    let done = Op::Rename { now: folder.join(&name), name: old.to_owned() };
+                    self.change(|stacks| stacks.ran(way, kind, done));
+                }
+                renamed.map(|_| false)
             }
             Op::Move(items) => {
                 let legs = legs(&items).inspect_err(|_| self.change(|stacks| stacks.moving = false))?;
@@ -495,6 +522,27 @@ mod tests {
         std::fs::remove_file(fixture.dir.join("to/a.txt")).unwrap();
         assert_eq!(fixture.run(Way::Undo), Ok(true));
         assert!(fixture.exists("from/b.txt"));
+    }
+
+    #[test]
+    fn a_rename_and_a_new_folder_are_undone_and_redone() {
+        let fixture = Fixture::new("editing");
+        fixture.write("from/a.txt");
+        let name = crate::files::editing::new_folder(&fixture.text("from")).unwrap();
+        fixture.history.made_folder(&fixture.dir.join("from").join(&name));
+        crate::files::editing::rename(&fixture.text("from/a.txt"), "b.txt").unwrap();
+        fixture.history.renamed(fixture.dir.join("from/a.txt"), fixture.dir.join("from/b.txt"));
+        assert_eq!(fixture.shown(), json!({"undo": "rename"}));
+
+        assert_eq!(fixture.run(Way::Undo), Ok(false));
+        assert!(fixture.exists("from/a.txt") && !fixture.exists("from/b.txt"));
+        assert_eq!(fixture.run(Way::Undo), Ok(false));
+        assert!(!fixture.exists("from/New folder"), "the new folder went to the trash");
+        assert_eq!(fixture.shown(), json!({"redo": "new_folder"}));
+        assert_eq!(fixture.run(Way::Redo), Ok(false));
+        assert!(fixture.exists("from/New folder"));
+        assert_eq!(fixture.run(Way::Redo), Ok(false));
+        assert!(fixture.exists("from/b.txt") && !fixture.exists("from/a.txt"));
     }
 
     #[test]

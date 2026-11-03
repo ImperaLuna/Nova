@@ -6,7 +6,9 @@ import "../theme"
 import "service"
 import "paths.js" as Paths
 import "trash.js" as Trash
+import "commands.js" as Commands
 import "shortcuts.js" as Shortcuts
+import "menus.js" as Menus
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
@@ -15,14 +17,17 @@ import "../daemon/protocol.js" as Protocol
 // over them all; opening a folder in the list shows it in the same window.
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
-// (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
-// lie over it all.
+// (ConfirmDialog). Right-click menus (menus.js: on items, on the empty
+// list, on a drive, and the command row's New and Sort) and the dialog
+// when a drive can't be ejected lie over it all. Show details opens the
+// details pane on the right of the list, on the picked item or the folder.
+// Cut, copy and paste go through the system clipboard (FilesClipboard);
+// pasting copies or moves into the folder shown, like dropping there.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
-// window's keys are the table's WINDOW entries (shortcuts.js), done by
-// act(); the lists answer their own, and hand it theirs that are the
-// window's, like undo and redo (Ctrl+Z, Ctrl+Y), which novad does for
-// every window alike; what can't be undone gets a notice. Its
+// window's keys are the table's WINDOW entries (shortcuts.js), and every
+// command, from a key, a menu or a button, is done by act(); undo and redo
+// (Ctrl+Z, Ctrl+Y, the folder's menu) are novad's, alike in every window. Its
 // frame and its file list each go from glass to solid as config.toml's
 // [files] says, live. Each draws its own background, so one never shows
 // through the other.
@@ -40,12 +45,155 @@ FloatingWindow {
     readonly property bool inTrash: Trash.isTrash(folder)
     readonly property string home: Quickshell.env("HOME") ?? ""
     // A dialog or menu has the window's attention: the confirm dialog, a
-    // name clash, a drive's menu or its eject problem.
-    readonly property bool asking: confirming !== null || transfers.asking !== null || driveMenu.visible || ejectProblem.visible
+    // name clash, a menu or a drive's eject problem.
+    readonly property bool asking: confirming !== null || transfers.asking !== null || menu.shown || ejectProblem.visible
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
     property var problems: []
+    // The details pane is out, on `detailsPath` when it's a drive's, or else
+    // on the one picked item, or the folder.
+    property bool detailsShown: false
+    property string detailsPath: ""
+    readonly property string detailsOn: {
+        if (detailsPath !== "")
+            return detailsPath;
+        void list.model.revision;
+        const picked = list.model.selectedCount === 1 ? list.model.selectedRows() : [];
+        return picked.length === 1 ? Paths.child(folder, picked[0].name) : folder;
+    }
+
+    // Runs `command` (a Commands name) from a menu, a button or a key, on
+    // `rows` (plain copies of the list's) or, for a drive's menu, on the
+    // drive `extra`; Open with's app and Sort's order come as `extra` too.
+    function act(command: string, rows: var, extra: var) {
+        const paths = rows.map(row => Paths.child(folder, row.name));
+        switch (command) {
+        case Commands.OPEN:
+        case Commands.SELECT_ALL:
+        case Commands.HIDDEN:
+        case Commands.RENAME:
+        case Commands.TRASH:
+            list.run(command);
+            break;
+        case Commands.OPEN_WITH:
+            FilesService.launch(paths[0], extra, null);
+            break;
+        case Commands.NEW_WINDOW:
+            if (extra)
+                window.onDrive(extra, mount => FilesService.openWindow(mount));
+            else if (rows.length === 0)
+                // From the trash, on the folder its tree is on, or home.
+                FilesService.openWindow(inTrash ? (navigator.treeFolder || home) : folder);
+            else
+                for (const row of rows.filter(row => row.dir))
+                    FilesService.openWindow(Paths.child(folder, row.name));
+            break;
+        case Commands.CLOSE_WINDOW:
+            // Hiding a window from QML doesn't say `closed` (only the
+            // compositor closing it does), which files.qml waits for.
+            closed();
+            break;
+        case Commands.BACK:
+            navigator.step(-1);
+            break;
+        case Commands.FORWARD:
+            navigator.step(1);
+            break;
+        case Commands.UP:
+            navigator.up();
+            break;
+        case Commands.ADDRESS:
+            navigation.editAddress();
+            break;
+        case Commands.SEARCH:
+            navigation.editSearch();
+            break;
+        case Commands.REFRESH:
+            if (inTrash)
+                trash.refresh();
+            else
+                list.refresh();
+            break;
+        case Commands.CUT:
+        case Commands.COPY:
+            if (paths.length > 0)
+                FilesClipboard.put(paths, command === Commands.CUT);
+            break;
+        case Commands.COPY_PATH:
+            if (paths.length > 0)
+                FilesClipboard.putText(paths.join("\n"));
+            break;
+        case Commands.PASTE:
+            window.paste();
+            break;
+        case Commands.NEW_FOLDER:
+            {
+                // Named in place only if the window is still there.
+                const asked = folder;
+                FilesService.newFolder(asked, (error, name) => {
+                    if (error)
+                        window.notice(null, error);
+                    else if (window.folder === asked)
+                        list.rename(name);
+                });
+            }
+            break;
+        case Commands.DETAILS:
+            if (extra)
+                window.onDrive(extra, mount => window.showDetails(mount));
+            else
+                window.showDetails("");
+            break;
+        case Commands.EJECT:
+            FilesService.eject(extra.id, outcome => {
+                if (outcome === Protocol.EJECT_BUSY)
+                    ejectProblem.show(extra.name);
+            });
+            break;
+        case Commands.SORT:
+            list.model.sort = extra;
+            break;
+        case Commands.UNDO:
+        case Commands.REDO:
+            transfers.undo(command === Commands.REDO, error => window.notice(null, error));
+            break;
+        default:
+            console.warn(`nova: files: no command ${command}`);
+        }
+    }
+
+    // Copies, or moves once cut, what the clipboard names into the folder.
+    function paste() {
+        const taken = FilesClipboard.take();
+        if (taken.paths.length > 0)
+            transfer(taken.mode, taken.paths, folder);
+    }
+
+    // Opens the details pane on `path` (a drive's folder), or on the
+    // selection, as it changes, when empty.
+    function showDetails(path: string) {
+        detailsPath = path;
+        detailsShown = true;
+    }
+
+    // Calls `then(folder)` with where drive `drive` is mounted, mounting it
+    // first when it isn't.
+    function onDrive(drive: var, then: var) {
+        if (drive.mount !== undefined)
+            then(drive.mount);
+        else
+            FilesService.mount(drive.id, mount => {
+                if (mount)
+                    then(mount);
+            });
+    }
+
+    // A menu of `items` (menus.js) at `at`, in `from`'s coordinates.
+    function openMenu(items: var, from: Item, at: point) {
+        const shown = from.mapToItem(menu, at.x, at.y);
+        menu.open(items, Qt.point(shown.x, shown.y));
+    }
 
     title: inTrash ? Trash.name() : Paths.folderName(folder)
     implicitWidth: Tokens.filesWindowWidth
@@ -129,51 +277,10 @@ FloatingWindow {
     }
 
     Component.onCompleted: navigator.begin(folder)
+    onFolderChanged: detailsPath = ""
     onConfirmingChanged: {
         if (confirming)
             confirmDialog.shown = confirming.asking;
-    }
-
-    // Does a shortcut table action (Shortcuts.TABLE) that is the window's.
-    function act(action: string) {
-        switch (action) {
-        case "back":
-            navigator.step(-1);
-            break;
-        case "forward":
-            navigator.step(1);
-            break;
-        case "up":
-            navigator.up();
-            break;
-        case "address":
-            navigation.editAddress();
-            break;
-        case "search":
-            navigation.editSearch();
-            break;
-        case "refresh":
-            if (inTrash)
-                trash.refresh();
-            else
-                list.refresh();
-            break;
-        case "newWindow":
-            // From the trash, on the folder its tree is on, or home.
-            FilesService.showFolder(inTrash ? (navigator.treeFolder || home) : folder);
-            break;
-        case "undo":
-        case "redo":
-            transfers.undo(action === "redo", error => notice(null, error));
-            break;
-        case "closeWindow":
-            // Hiding a window from QML doesn't say `closed` (only the
-            // compositor closing it does), which files.qml waits for.
-            closed();
-            break;
-        default:
-            console.warn(`nova: files: no window action ${action}`);
-        }
     }
 
     // The quiet keyboard focus after a text field or a dialog lets go.
@@ -195,7 +302,7 @@ FloatingWindow {
             Shortcut {
                 sequences: entry.modelData.keys
                 enabled: !window.asking || entry.modelData.asking === true
-                onActivated: window.act(entry.modelData.action)
+                onActivated: window.act(entry.modelData.action, [], null)
             }
         }
     }
@@ -239,6 +346,11 @@ FloatingWindow {
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
         visible: !window.inTrash
+        picked: list.model.selectedCount
+        canPaste: FilesClipboard.hasFiles
+        onCommandRequested: command => window.act(command, list.selection(), null)
+        onNewRequested: at => window.openMenu(Menus.forNew(window.act), commands, at)
+        onSortRequested: at => window.openMenu(Menus.forSort(list.model.sort, window.act), commands, at)
     }
     TrashCommandRow {
         id: trashCommands
@@ -259,12 +371,13 @@ FloatingWindow {
         anchors.bottom: parent.bottom
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
-        onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
+        onDriveMenuRequested: (drive, at) => window.openMenu(Menus.forDrive(drive, window.act), window.contentItem, at)
     }
     FileList {
         id: list
         anchors.left: sidebar.right
-        anchors.right: parent.right
+        anchors.right: details.visible ? details.left : parent.right
+        compact: details.visible
         anchors.top: commands.bottom
         visible: !window.inTrash
         anchors.bottom: parent.bottom
@@ -273,9 +386,32 @@ FloatingWindow {
         focus: true
         onFolderOpened: path => window.navigator.visit(path, null)
         onTrashRequested: rows => window.moveToTrash(rows)
-        onActionRequested: action => window.act(action)
         onDeleteRequested: rows => window.deleteForGood(rows)
+        onCommandRequested: (command, rows) => window.act(command, rows, null)
+        onRenameFailed: (row, error) => window.notice(row, error)
+        onMenuRequested: (rows, at) => {
+            if (rows.length === 1 && !rows[0].dir)
+                menuApps.path = Paths.child(window.folder, rows[0].name);
+            const items = rows.length > 0 ? Menus.forItems(rows, () => menuApps.apps, () => menuApps.defaultApp, window.act) : Menus.forFolder(FilesClipboard.hasFiles, list.showHidden, FilesService.history, window.act);
+            window.openMenu(items, list, at);
+        }
         solid: FilesService.listSolid
+    }
+    // The apps for the item menu's Open with.
+    OpenWithModel {
+        id: menuApps
+        service: FilesService
+    }
+    DetailsPane {
+        id: details
+        anchors.right: parent.right
+        anchors.top: commands.bottom
+        anchors.bottom: parent.bottom
+        width: Tokens.filesDetailsWidth
+        visible: window.detailsShown && !window.inTrash
+        service: visible ? FilesService : null
+        path: visible ? window.detailsOn : ""
+        onCloseRequested: window.detailsShown = false
     }
     TrashModel {
         id: trash
@@ -293,7 +429,7 @@ FloatingWindow {
         home: window.home
         solid: FilesService.listSolid
         onEraseRequested: window.erase()
-        onActionRequested: action => window.act(action)
+        onCommandRequested: command => window.act(command, [], null)
         onVisibleChanged: {
             if (visible)
                 focusList();
@@ -358,13 +494,19 @@ FloatingWindow {
             }
         }
     }
-    DriveMenu {
-        id: driveMenu
+    // The pane on the folder or an item in it reads it again as it changes.
+    Connections {
+        target: FilesService
+        enabled: details.visible
+        function onChanged(changed: var) {
+            if (changed.view === list.model.view)
+                details.reload();
+        }
+    }
+    FilesMenu {
+        id: menu
         anchors.fill: parent
-        onEjectChosen: drive => FilesService.eject(drive.id, outcome => {
-                if (outcome === Protocol.EJECT_BUSY)
-                    ejectProblem.show(drive.name);
-            })
+        onClosed: list.forceActiveFocus()
     }
     EjectProblem {
         id: ejectProblem

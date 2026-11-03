@@ -5,6 +5,7 @@ import QtTest
 import "../files"
 import "../theme"
 import "../files/shortcuts.js" as Shortcuts
+import "../files/commands.js" as Commands
 
 // Nova Files' keys (shortcuts.js): the whole table as it stands, its rules
 // (window keys never edit text, no key means two things in one place), how
@@ -35,7 +36,7 @@ Item {
         function test_the_whole_table() {
             const moves = ["Up", "Down", "PgUp", "PgDown", "Home", "End"];
             const moving = where => moves.concat(moves.map(key => `Shift+${key}`)).map(key => `${where}: ${key} = move`);
-            const expected = ["window: Alt+Left = back", "window: Alt+Right = forward", "window: Alt+Up = up", "window: Ctrl+L = address", "window: Alt+D = address", "window: Ctrl+F = search", "window: F3 = search", "window: F5 = refresh", "window: Ctrl+N = newWindow", "window: Ctrl+W = closeWindow", "list: Backspace = back", "list: Ctrl+H = hidden", "list: Ctrl+A = selectAll", "list: Return = open", "list: Enter = open", "list: Del = trash", "list: Shift+Del = deleteForGood", "list: Ctrl+Z = undo", "list: Ctrl+Y = redo", "list: Ctrl+Shift+Z = redo", "trash: Ctrl+Z = undo", "trash: Ctrl+Y = redo", "trash: Ctrl+Shift+Z = redo", "trash: Backspace = back", "trash: Ctrl+A = selectAll", "trash: Del = deleteForGood", "trash: Shift+Del = deleteForGood"].concat(moving("list"), moving("trash"));
+            const expected = ["window: Alt+Left = back", "window: Alt+Right = forward", "window: Alt+Up = up", "window: Ctrl+L = address", "window: Alt+D = address", "window: Ctrl+F = search", "window: F3 = search", "window: F5 = refresh", "window: Ctrl+N = new_window", "window: Ctrl+W = close_window", "list: Shift+Return = new_window", "list: Shift+Enter = new_window", "list: Ctrl+Shift+N = new_folder", "list: F2 = rename", "list: Ctrl+X = cut", "list: Ctrl+C = copy", "list: Ctrl+Shift+C = copy_path", "list: Ctrl+V = paste", "list: Alt+Shift+P = details", "list: Backspace = back", "list: Ctrl+H = hidden", "list: Ctrl+A = select_all", "list: Return = open", "list: Enter = open", "list: Del = trash", "list: Shift+Del = delete_for_good", "list: Ctrl+Z = undo", "list: Ctrl+Y = redo", "list: Ctrl+Shift+Z = redo", "trash: Ctrl+Z = undo", "trash: Ctrl+Y = redo", "trash: Ctrl+Shift+Z = redo", "trash: Backspace = back", "trash: Ctrl+A = select_all", "trash: Del = delete_for_good", "trash: Shift+Del = delete_for_good"].concat(moving("list"), moving("trash"));
             compare(lines(), expected.sort());
         }
 
@@ -63,7 +64,7 @@ Item {
         }
 
         function test_only_opening_and_closing_windows_work_while_a_dialog_asks() {
-            compare(Shortcuts.TABLE.filter(entry => entry.asking).map(entry => entry.action).sort(), ["closeWindow", "newWindow"]);
+            compare(Shortcuts.TABLE.filter(entry => entry.asking).map(entry => entry.action).sort(), [Commands.CLOSE_WINDOW, Commands.NEW_WINDOW]);
         }
 
         function test_a_key_press_reads_as_its_sequence() {
@@ -77,15 +78,24 @@ Item {
         }
 
         function test_keys_do_their_place_s_action() {
-            compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_Delete, Qt.NoModifier), "trash");
-            compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_Delete, Qt.ShiftModifier), "deleteForGood");
-            compare(Shortcuts.action(Shortcuts.TRASH, Qt.Key_Delete, Qt.NoModifier), "deleteForGood");
-            compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_End, Qt.ShiftModifier), "move");
+            compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_Delete, Qt.NoModifier), Commands.TRASH);
+            compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_Delete, Qt.ShiftModifier), Commands.DELETE_FOR_GOOD);
+            compare(Shortcuts.action(Shortcuts.TRASH, Qt.Key_Delete, Qt.NoModifier), Commands.DELETE_FOR_GOOD);
+            compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_End, Qt.ShiftModifier), Commands.MOVE);
+            compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_Return, Qt.ShiftModifier), Commands.NEW_WINDOW);
+            compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_N, Qt.ControlModifier | Qt.ShiftModifier), Commands.NEW_FOLDER);
+            compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_X, Qt.NoModifier), "", "a plain letter is typing");
             compare(Shortcuts.action(Shortcuts.TRASH, Qt.Key_Return, Qt.NoModifier), "", "a trashed item doesn't open");
             compare(Shortcuts.action(Shortcuts.LIST, Qt.Key_H, Qt.ControlModifier | Qt.ShiftModifier), "", "held keys count");
-            compare(Shortcuts.action(Shortcuts.WINDOW, Qt.Key_F, Qt.ControlModifier), "search");
-            compare(Shortcuts.action(Shortcuts.TRASH, Qt.Key_Z, Qt.ControlModifier | Qt.ShiftModifier), "redo");
-            compare(Shortcuts.action(Shortcuts.WINDOW, Qt.Key_Z, Qt.ControlModifier), "", "a text field keeps Ctrl+Z");
+            compare(Shortcuts.action(Shortcuts.WINDOW, Qt.Key_F, Qt.ControlModifier), Commands.SEARCH);
+        }
+
+        function test_menus_show_a_command_s_key() {
+            compare(Shortcuts.shown(Commands.COPY_PATH), "Ctrl + Shift + C");
+            compare(Shortcuts.shown(Commands.TRASH), "Delete");
+            compare(Shortcuts.shown(Commands.NEW_WINDOW), "Shift + Enter", "a list's key before the window's");
+            compare(Shortcuts.shown(Commands.REFRESH), "F5");
+            compare(Shortcuts.shown(Commands.OPEN_WITH), "", "no key, nothing shown");
         }
 
         function test_only_printable_text_without_ctrl_or_alt_types() {
@@ -169,7 +179,7 @@ Item {
 
         SignalSpy {
             id: actions
-            signalName: "actionRequested"
+            signalName: "commandRequested"
         }
 
         SignalSpy {
@@ -199,7 +209,7 @@ Item {
             keyClick(Qt.Key_Delete, Qt.ShiftModifier);
             compare(erases.count, 1);
             keyClick(Qt.Key_Backspace);
-            compare(actions.signalArguments.map(args => args[0]), ["back"]);
+            compare(actions.signalArguments.map(args => args[0]), [Commands.BACK]);
             keyClick(Qt.Key_Down);
             compare(model.selectedCount, 1);
             keyClick(Qt.Key_A, Qt.ControlModifier);
