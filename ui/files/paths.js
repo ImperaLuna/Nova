@@ -31,8 +31,8 @@ function shown(text) {
 
 // The address bar's parts for `folder` (absolute): one per folder from the
 // root down, each {name, path, hidden}, starting at "Home" for a folder in
-// `home`. `hidden` marks a dot folder; `name` is `shown`, `path` is wire
-// text.
+// `home`. `hidden` marks a dot folder and everything inside one, as the
+// sidebar's tree does; `name` is `shown`, `path` is wire text.
 function crumbs(folder, home, homeName) {
     const inHome = home !== "" && (folder === home || folder.startsWith(home + "/"));
     const start = inHome ? home : "";
@@ -49,7 +49,7 @@ function crumbs(folder, home, homeName) {
         parts.push({
             name: shown(name),
             path: path,
-            hidden: name.startsWith(".")
+            hidden: name.startsWith(".") || parts[parts.length - 1].hidden
         });
     }
     return parts;
@@ -59,6 +59,14 @@ function crumbs(folder, home, homeName) {
 function folderName(folder) {
     const name = folder.slice(folder.lastIndexOf("/") + 1);
     return name === "" ? "/" : shown(name);
+}
+
+// The folder holding `folder`, or "" for the root.
+function parent(folder) {
+    if (folder === "/")
+        return "";
+    const cut = folder.lastIndexOf("/");
+    return cut <= 0 ? "/" : folder.slice(0, cut);
 }
 
 // The path of the entry `name` in `folder` (absolute), as wire text.

@@ -115,11 +115,12 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("What a media player is doing (PlaybackStatus).", "PLAYBACK", names_of::<PlaybackStatus>()),
         Group::new("What a folder view is ordered by (FileSortKey).", "FILE_SORT", names_of::<FileSortKey>()),
         Group::new("The ops of a files_changed event (FolderChange).", "FOLDER", tagged_names_of::<FolderChange>("op")),
+        Group::new("The places on top of Nova Files' sidebar (PlaceKind).", "PLACE", names_of::<PlaceKind>()),
     ]
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 9] {
+fn limits() -> [(&'static str, u64, &'static str); 10] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
@@ -129,6 +130,11 @@ fn limits() -> [(&'static str, u64, &'static str); 9] {
         ("FILES_MAX_VIEWS", size(FILES_MAX_VIEWS), "novad refuses more open folder views per connection."),
         ("FILES_PATH_MAX_BYTES", size(FILES_PATH_MAX_BYTES), "novad refuses longer files_open paths."),
         ("FILES_SOLID_MAX", u64::from(FILES_SOLID_MAX), "A files_look part this high is fully solid; 0 is glass."),
+        (
+            "FILES_TREE_MAX_FOLDERS",
+            size(FILES_TREE_MAX_FOLDERS),
+            "novad refuses a files_tree with more opened or closed folders.",
+        ),
         (
             "RAW_BYTE_BASE",
             u64::from(RAW_BYTE_BASE),

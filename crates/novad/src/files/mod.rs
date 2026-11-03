@@ -20,6 +20,8 @@
 //! - `folder.rs`: a folder's entries, their types from the shared MIME
 //!   database (`crate::mime`, read as the module starts and again when a
 //!   package brings new types), and the view's order.
+//! - `tree.rs`: the sidebar's folder tree that follows the window
+//!   (`files_tree`) and its places (`files_places`).
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
@@ -35,6 +37,7 @@
 mod file_manager1;
 mod folder;
 mod target;
+pub mod tree;
 mod views;
 mod watcher;
 mod window;
@@ -47,7 +50,7 @@ use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::{Bus, Stop};
-use nova_protocol::{Event, FeatureState, FileSort, FilesLook, FilesWindow, Topic};
+use nova_protocol::{Event, FeatureState, FilePlace, FileSort, FilesLook, FilesWindow, FolderTree, Topic};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 
@@ -68,6 +71,8 @@ pub struct Sources {
     pub associations: Places,
     /// How apps opening files are started.
     pub runner: Runner,
+    /// The user's Home, where the sidebar's tree starts.
+    pub home: PathBuf,
     /// How the Nova Files process runs; none for a novad without its UI,
     /// where windows only wait.
     pub ui: Option<crate::supervisor::UiSettings>,
@@ -151,6 +156,18 @@ impl Files {
     /// (`files_open`, [`views::Folders::open`]).
     pub fn open(&self, client: ClientId, view: u32, path: &str, sort: FileSort, hidden: bool) -> Result<(), String> {
         self.folders.open(client, view, path, sort, hidden)
+    }
+
+    /// The sidebar's tree for a window on `request.folder` (`files_tree`,
+    /// [`tree::tree`]). It reads folders, so it's called off the
+    /// connection's thread.
+    pub fn tree(&self, request: &tree::Request) -> Result<FolderTree, String> {
+        tree::tree(request, &self.shared.sources.home)
+    }
+
+    /// The sidebar's places that exist (`files_places`).
+    pub fn places(&self) -> Vec<FilePlace> {
+        tree::places(&self.shared.sources.home, nova_paths::user_dir)
     }
 
     /// Closes client `client`'s view `view` (`files_close`).
@@ -277,7 +294,8 @@ impl crate::modules::Module for Files {
         let data_dirs = crate::data_dirs();
         let associations = Places::system(&data_dirs);
         let runner = Runner::detect(env.path_var);
-        Sources { bus: Bus::Session, data_dirs, associations, runner, ui: env.ui.cloned() }
+        let home = nova_paths::home().unwrap_or_else(|| PathBuf::from("/"));
+        Sources { bus: Bus::Session, data_dirs, associations, runner, home, ui: env.ui.cloned() }
     }
 
     fn config(config: &crate::config::Config) -> FilesLook {
@@ -345,6 +363,7 @@ mod tests {
                 data_dirs: vec![],
                 associations: crate::apps::associations::Places::new(None, &[], &[], &[]),
                 runner: crate::apps::launch::Runner::Direct,
+                home: dir.to_path_buf(),
                 ui: None,
             };
             let apps = crate::apps::AppIndex::of(None, &logger);

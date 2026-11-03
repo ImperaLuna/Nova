@@ -7,13 +7,45 @@ import "../theme/icons.js" as Icons
 import "paths.js" as Paths
 
 // Nova Files' top row: back, forward and up, the address bar showing
-// where the window is (a part per folder from Home or the root, dot
+// where the window is (a part per folder from Home or the root, hidden
 // folders dimmer, the current one bold), and the search field.
+//
+// A click on a part goes there. A click on the bar's empty end (or Ctrl+L,
+// Alt+D) turns it into a text field holding the folder's path: Enter goes
+// to what's typed, Esc or clicking away puts the parts back. A path that
+// isn't a folder keeps the field open, outlined in the error color.
 Rectangle {
     id: row
 
-    required property string folder
-    readonly property var parts: Paths.crumbs(folder, Quickshell.env("HOME") ?? "", qsTr("Home"))
+    required property Navigator navigator
+    readonly property var parts: Paths.crumbs(navigator.folder, Quickshell.env("HOME") ?? "", qsTr("Home"))
+    property bool editing: false
+    property bool wrong: false
+
+    // Typing a path ended: the keyboard goes back to the file list.
+    signal addressClosed
+
+    // Turns the address bar into a text field with the path selected.
+    function editAddress() {
+        field.text = navigator.folder;
+        wrong = false;
+        editing = true;
+        field.selectAll();
+        field.forceActiveFocus();
+    }
+
+    function submit() {
+        row.navigator.visit(field.text, ok => {
+            if (ok)
+                row.editing = false;
+            row.wrong = !ok;
+        });
+    }
+
+    onEditingChanged: {
+        if (!editing)
+            addressClosed();
+    }
 
     implicitHeight: Tokens.filesFieldHeight + 2 * Tokens.filesRowPadY
     // How solid the window frame is (0..1): the row fades into it.
@@ -30,19 +62,23 @@ Rectangle {
 
         ToolButton {
             icon: Icons.LEFT
-            enabled: false
+            enabled: row.navigator.canGoBack
+            onClicked: row.navigator.step(-1)
         }
         ToolButton {
             icon: Icons.RIGHT
-            enabled: false
+            enabled: row.navigator.canGoForward
+            onClicked: row.navigator.step(1)
         }
         ToolButton {
             icon: Icons.UP
-            enabled: false
+            enabled: row.navigator.canGoUp
+            onClicked: row.navigator.up()
         }
     }
 
     Rectangle {
+        id: address
         anchors.left: buttons.right
         anchors.right: search.left
         anchors.leftMargin: Tokens.gap
@@ -51,12 +87,30 @@ Rectangle {
         height: Tokens.filesFieldHeight
         radius: Tokens.radiusControl
         color: Tokens.filesField
+        border.width: row.editing ? Tokens.filesFocusRing : 0
+        border.color: row.wrong ? Tokens.error : Tokens.primary
         clip: true
 
+        // The empty end: a click there types a path.
+        Item {
+            anchors.left: crumbs.right
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            visible: !row.editing
+
+            TapHandler {
+                onTapped: row.editAddress()
+            }
+        }
+
         Row {
-            anchors.left: parent.left
-            anchors.leftMargin: Tokens.iconGap
+            id: crumbs
+            // Ends at the bar's end when the path is longer than the bar,
+            // so the current folder always shows.
+            x: Math.min(Tokens.iconGap, address.width - Tokens.iconGap - width)
             anchors.verticalCenter: parent.verticalCenter
+            visible: !row.editing
             spacing: Tokens.labelNudge
 
             Repeater {
@@ -79,19 +133,64 @@ Rectangle {
                         color: Tokens.filesFaint
                         path: Icons.RIGHT
                     }
-                    Text {
+                    Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
-                        leftPadding: Tokens.iconGap
-                        rightPadding: Tokens.iconGap
-                        font.family: Tokens.fontSans
-                        font.pixelSize: Tokens.fontSize
-                        font.weight: crumb.current ? Tokens.weightTitle : Tokens.weightBody
-                        color: crumb.modelData.hidden ? Tokens.fgDim : Tokens.fg
-                        textFormat: Text.PlainText
-                        text: crumb.modelData.name
+                        width: label.implicitWidth
+                        height: label.implicitHeight + 2 * Tokens.filesCrumbPadY
+                        radius: Tokens.filesCrumbRadius
+                        color: partHover.hovered ? Tokens.hover : "transparent"
+
+                        Behavior on color {
+                            ColorAnimation {
+                                duration: Tokens.durationFast
+                            }
+                        }
+
+                        Text {
+                            id: label
+                            anchors.centerIn: parent
+                            leftPadding: Tokens.iconGap
+                            rightPadding: Tokens.iconGap
+                            font.family: Tokens.fontSans
+                            font.pixelSize: Tokens.fontSize
+                            font.weight: crumb.current ? Tokens.weightTitle : Tokens.weightBody
+                            color: crumb.modelData.hidden ? Tokens.fgDim : Tokens.fg
+                            textFormat: Text.PlainText
+                            text: crumb.modelData.name
+                        }
+                        HoverHandler {
+                            id: partHover
+                        }
+                        TapHandler {
+                            onTapped: row.navigator.visit(crumb.modelData.path, null)
+                        }
                     }
                 }
             }
+        }
+
+        TextInput {
+            id: field
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: Tokens.rowInset
+            anchors.rightMargin: Tokens.rowInset
+            anchors.verticalCenter: parent.verticalCenter
+            visible: row.editing
+            clip: true
+            font.family: Tokens.fontSans
+            font.pixelSize: Tokens.fontSize
+            color: Tokens.fg
+            selectionColor: Tokens.secondary
+            selectedTextColor: Tokens.onAccent
+            onTextEdited: row.wrong = false
+            onActiveFocusChanged: {
+                if (!activeFocus)
+                    row.editing = false;
+            }
+            Keys.onReturnPressed: row.submit()
+            Keys.onEnterPressed: row.submit()
+            Keys.onEscapePressed: row.editing = false
         }
     }
 

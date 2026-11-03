@@ -1186,6 +1186,9 @@ pub const FILES_MAX_VIEWS: usize = 16;
 /// The longest `files_open` path, in bytes: Linux's own limit.
 pub const FILES_PATH_MAX_BYTES: usize = 4096;
 
+/// Most folders a `files_tree` may name as `opened` or as `closed`, each.
+pub const FILES_TREE_MAX_FOLDERS: usize = 256;
+
 /// The longest wire text a path of [`FILES_PATH_MAX_BYTES`] can be: each
 /// byte is at most a three-byte character ([`path_to_wire`]).
 pub const FILES_PATH_MAX_WIRE_BYTES: usize = 3 * FILES_PATH_MAX_BYTES;
@@ -1920,6 +1923,72 @@ pub enum Command {
     FilesClose {
         view: u32,
     },
+    /// The sidebar's folder tree for a window on `folder` (feature
+    /// `files`), answered with a [`FolderTree`], or an error when `folder`
+    /// isn't a folder. `folder` is absolute or starts at `~`. The tree
+    /// starts at Home, or at `/` for a folder outside it, and is open down
+    /// to `folder` except at the folders in `closed`; the folders in
+    /// `opened` are open too. Hidden folders show only on the way to
+    /// `folder`, or everywhere when `hidden`.
+    FilesTree {
+        folder: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        opened: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        closed: Vec<String>,
+        hidden: bool,
+    },
+    /// The places on top of Nova Files' sidebar (feature `files`),
+    /// answered with the [`FilePlace`]s that exist, in order.
+    FilesPlaces,
+}
+
+/// The answer to [`Command::FilesTree`]: the folder as an absolute path,
+/// and the tree's rows, top to bottom.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FolderTree {
+    pub folder: String,
+    pub rows: Vec<TreeRow>,
+}
+
+/// One folder in the sidebar's tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TreeRow {
+    /// Its name; `/` for the root.
+    pub name: String,
+    /// Absolute.
+    pub path: String,
+    /// How far in from the tree's top: 0 for Home or `/`.
+    pub depth: u32,
+    /// Its subfolders are the rows that follow.
+    pub open: bool,
+    /// It has no subfolders to show.
+    pub leaf: bool,
+    /// It's a dot folder or inside one.
+    pub hidden: bool,
+}
+
+/// One of the places on top of Nova Files' sidebar.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilePlace {
+    pub kind: PlaceKind,
+    /// Absolute.
+    pub path: String,
+}
+
+/// Which place a [`FilePlace`] is: Home, or one of the user's folders from
+/// `user-dirs.dirs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaceKind {
+    Home,
+    Desktop,
+    Documents,
+    Downloads,
+    Pictures,
 }
 
 /// The order of a folder view (`files_open`). Folders always come before
@@ -2757,6 +2826,57 @@ mod tests {
                 },
             }),
             encode(Request { id: Some(75), command: Command::FilesClose { view: 1 } }),
+            encode(Request {
+                id: Some(76),
+                command: Command::FilesTree {
+                    folder: "~/.local/share".into(),
+                    opened: vec!["/home/user/Projects".into()],
+                    closed: vec![],
+                    hidden: false,
+                },
+            }),
+            encode(Response {
+                id: 76,
+                outcome: Outcome::Result(
+                    serde_json::to_value(FolderTree {
+                        folder: "/home/user/.local/share".into(),
+                        rows: vec![
+                            TreeRow {
+                                name: "user".into(),
+                                path: "/home/user".into(),
+                                depth: 0,
+                                open: true,
+                                leaf: false,
+                                hidden: false,
+                            },
+                            TreeRow {
+                                name: ".local".into(),
+                                path: "/home/user/.local".into(),
+                                depth: 1,
+                                open: true,
+                                leaf: false,
+                                hidden: true,
+                            },
+                            TreeRow {
+                                name: "share".into(),
+                                path: "/home/user/.local/share".into(),
+                                depth: 2,
+                                open: false,
+                                leaf: false,
+                                hidden: true,
+                            },
+                        ],
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Request { id: Some(77), command: Command::FilesPlaces }),
+            encode(Response {
+                id: 77,
+                outcome: Outcome::Result(
+                    serde_json::to_value(vec![FilePlace { kind: PlaceKind::Home, path: "/home/user".into() }]).unwrap(),
+                ),
+            }),
             encode(Event::FilesPage(FolderPage {
                 view: 1,
                 path: "/home/user/Pictures".into(),

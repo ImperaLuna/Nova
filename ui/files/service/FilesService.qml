@@ -7,9 +7,10 @@ import "../../daemon/protocol.js" as Protocol
 
 // Nova Files' link to novad: the windows it asks for, the folders they
 // show (folder views: each FolderModel opens one under its own number and
-// gets its pages, changes and closing here), and opening files in apps
-// (the default one on a double-click or Enter, or one from "Open with",
-// which can also become the new default). The Nova Files
+// gets its pages, changes and closing here), the sidebar's tree and
+// places, and opening files in apps (the default one on a double-click or
+// Enter, or one from "Open with", which can also become the new
+// default). The Nova Files
 // process (../../files.qml) and its windows get these here and never talk
 // to Daemon themselves. Also how solid the windows are, from
 // config.toml's [files].
@@ -124,6 +125,30 @@ Singleton {
             if (error)
                 console.warn(`nova: default for ${path}: ${error}`);
             done?.(error ?? null);
+        });
+    }
+
+    // `done(error, tree)` gets the sidebar's tree for a window on `folder`
+    // (absolute, or from `~`): {folder, rows}, with `folder` absolute. The
+    // tree is open down to `folder` but at the folders in `closed`, and at
+    // those in `opened`; hidden folders show off the way only when `hidden`.
+    // An error means `folder` isn't a folder.
+    function tree(folder: string, opened: var, closed: var, hidden: bool, done: var) {
+        Daemon.call(Protocol.CMD_FILES_TREE, {
+            folder: folder,
+            opened: opened,
+            closed: closed,
+            hidden: hidden
+        }, (error, result) => done(error ?? null, result ?? null));
+    }
+
+    // `done(places)` gets the sidebar's places that exist, in order, each
+    // {kind, path}; none when novad couldn't tell.
+    function places(done: var) {
+        Daemon.call(Protocol.CMD_FILES_PLACES, undefined, (error, result) => {
+            if (error)
+                console.warn(`nova: sidebar places: ${error}`);
+            done(error ? [] : result);
         });
     }
 
