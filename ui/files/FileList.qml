@@ -19,7 +19,10 @@ import "paths.js" as Paths
 // Delete asks to move the selection to the trash (`trashRequested`),
 // Shift+Delete to delete it for good (`deleteRequested`).
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
-// list surface.
+// list surface. In a file picker (`picking`), opening files chooses them
+// (`filesChosen`) instead of launching them, a `filter` leaves out the
+// files it doesn't match, and without `multiple` one row is selected at a
+// time.
 FocusScope {
     id: list
 
@@ -29,8 +32,14 @@ FocusScope {
     // Absolute paths to select once the folder is listed.
     property var select: []
     property bool showHidden: false
+    // A file picker's: {name, globs, mimes}, or null for every file.
+    property var filter: null
+    property bool picking: false
+    property bool multiple: true
 
     signal folderOpened(string path)
+    // In a picker: files opened (double-click, Enter), by name.
+    signal filesChosen(var names)
     // Delete and Shift+Delete with rows selected: plain copies of them
     // (Listing.copy), in the list's order.
     signal trashRequested(var rows)
@@ -61,6 +70,7 @@ FocusScope {
     readonly property FolderModel model: FolderModel {
         path: list.folder
         hidden: list.showHidden
+        filter: list.filter
         onFilling: current => {
             list.now = Date.now();
             list.riseFrom = Math.max(current, 0);
@@ -80,6 +90,10 @@ FocusScope {
         const opening = Listing.opening(picked);
         if (opening.folder !== "")
             folderOpened(Paths.child(folder, opening.folder));
+        else if (picking && opening.files.length > 0)
+            filesChosen(opening.files);
+        if (picking)
+            return;
         for (const name of opening.files)
             FilesService.launch(Paths.child(folder, name), "", null);
     }
@@ -204,7 +218,7 @@ FocusScope {
         function go(index: int, extend: bool) {
             entryList.currentIndex = index;
             entryList.positionViewAtIndex(index, ListView.Contain);
-            list.model.select(Listing.pick(list.model.anchor, index, false, extend));
+            list.model.select(Listing.pick(list.model.anchor, index, false, extend && list.multiple));
         }
 
         MouseArea {
@@ -230,7 +244,9 @@ FocusScope {
             onPressed: modifiers => {
                 entryList.forceActiveFocus();
                 entryList.currentIndex = row.index;
-                list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
+                const ctrl = list.multiple && (modifiers & Qt.ControlModifier) !== 0;
+                const shift = list.multiple && (modifiers & Qt.ShiftModifier) !== 0;
+                list.model.select(Listing.pick(list.model.anchor, row.index, ctrl, shift));
             }
             onOpened: list.open([list.model.rows.get(row.index)])
         }
@@ -239,7 +255,7 @@ FocusScope {
             const ctrl = (event.modifiers & Qt.ControlModifier) !== 0;
             if (event.key === Qt.Key_H && ctrl)
                 list.showHidden = !list.showHidden;
-            else if (event.key === Qt.Key_A && ctrl)
+            else if (event.key === Qt.Key_A && ctrl && list.multiple)
                 list.model.selectAll();
             else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                 list.open(list.model.selectedRows());

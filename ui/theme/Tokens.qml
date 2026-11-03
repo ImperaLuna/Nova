@@ -756,6 +756,10 @@ QtObject {
     readonly property int filesClashButtonHeight: 34
     // The scale the dialog pops in from and shrinks back to.
     readonly property real filesClashEnterScale: 0.97
+    // A Nova Files window as an app's Open or Save dialog: the bar under
+    // the list with the name field, the file type button (its menu opens
+    // upward) and the answers.
+    readonly property int filesPickerFilterWidth: 220
 
     // Type
     readonly property string fontSans: "Inter"

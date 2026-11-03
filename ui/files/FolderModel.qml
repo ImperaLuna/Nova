@@ -5,8 +5,9 @@ import "listing.js" as Listing
 
 // One folder as novad's folder view keeps it (files_open): `rows` holds
 // its entries in the view's order, filled page by page and kept current
-// from novad's changes, and opened again whenever `path`, the order or
-// `hidden` change, or novad comes back. The selection lives here too, by
+// from novad's changes, and opened again whenever `path`, the order,
+// `hidden` or `filter` (a file picker's: only the files it matches) change,
+// or novad comes back. The selection lives here too, by
 // name, so it stays on the same entries as rows come and go or the order
 // changes; `revision` moves on each change of it, for delegates to bind to.
 QtObject {
@@ -19,6 +20,8 @@ QtObject {
             descending: false
         })
     property bool hidden: false
+    // A file picker's filter ({name, globs, mimes}), or null for every file.
+    property var filter: null
 
     readonly property ListModel rows: ListModel {}
     // How many entries the folder holds, once every page is in.
@@ -102,6 +105,16 @@ QtObject {
         _selectingAll = true;
     }
 
+    // The listed row named `name`, or null.
+    function rowNamed(name: string): var {
+        for (let index = 0; index < rows.count; index++) {
+            const row = rows.get(index);
+            if (row.name === name)
+                return row;
+        }
+        return null;
+    }
+
     // The selected rows, in the list's order.
     function selectedRows(): var {
         const picked = [];
@@ -118,7 +131,7 @@ QtObject {
             return;
         error = "";
         const opening = ++_opening;
-        FilesService.open(view, path, sort.key, sort.descending, hidden, failure => {
+        FilesService.open(view, path, sort.key, sort.descending, hidden, filter, failure => {
             if (failure && opening === _opening) {
                 error = failure;
                 loaded = true;
@@ -234,6 +247,7 @@ QtObject {
     }
     onSortChanged: _open()
     onHiddenChanged: _open()
+    onFilterChanged: _open()
 
     Component.onCompleted: {
         view = FilesService.newView();

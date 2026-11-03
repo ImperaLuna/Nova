@@ -12,7 +12,8 @@ import "../trash.js" as Trash
 // places, the drives (and mounting and ejecting them), opening files in
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, and
-// the trash. The Nova Files process (../../files.qml) and its windows get
+// the trash, and answering the file pickers apps ask for (Open and Save
+// dialogs). The Nova Files process (../../files.qml) and its windows get
 // these here and never talk to Daemon themselves. Also how solid the
 // windows are, from config.toml's [files].
 Singleton {
@@ -48,11 +49,12 @@ Singleton {
     }
 
     // Shows the folder at `path` (absolute) in view `view`, ordered by
-    // `sortKey` (a Protocol.FILE_SORT_*), with dot files when `hidden`.
-    // Whatever the view showed is replaced; its entries come as `page`s.
-    // `done(error)` gets novad's answer.
-    function open(view: int, path: string, sortKey: string, descending: bool, hidden: bool, done: var) {
-        Daemon.call(Protocol.CMD_FILES_OPEN, {
+    // `sortKey` (a Protocol.FILE_SORT_*), with dot files when `hidden`, and
+    // only the files `filter` matches when it isn't null (a file picker's
+    // {name, globs, mimes}). Whatever the view showed is replaced; its
+    // entries come as `page`s. `done(error)` gets novad's answer.
+    function open(view: int, path: string, sortKey: string, descending: bool, hidden: bool, filter: var, done: var) {
+        const args = {
             view: view,
             path: path,
             sort: {
@@ -60,7 +62,10 @@ Singleton {
                 descending: descending
             },
             hidden: hidden
-        }, error => {
+        };
+        if (filter)
+            args.filter = filter;
+        Daemon.call(Protocol.CMD_FILES_OPEN, args, error => {
             if (error)
                 console.warn(`nova: opening the folder ${path}: ${error}`);
             done?.(error ?? null);
@@ -80,6 +85,8 @@ Singleton {
 
     // Something in the trash changed: ask trashList again.
     signal trashChanged
+    // The file picker `picker`'s app stopped asking: its window closes.
+    signal pickerClosed(int picker)
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
@@ -290,6 +297,33 @@ Singleton {
         next(0);
     }
 
+    // Answers the file picker `picker` with `paths` (absolute), `filter`
+    // being the index of the filter shown (or -1), over a file that's
+    // there only when `replace`. `done(error)` gets novad's answer: null,
+    // Protocol.FILES_PICK_EXISTS for a save that would replace a file, or
+    // why the paths don't fit the picker.
+    function pick(picker: int, paths: var, filter: int, replace: bool, done: var) {
+        const args = {
+            picker: picker,
+            paths: paths,
+            replace: replace
+        };
+        if (filter >= 0)
+            args.filter = filter;
+        Daemon.call(Protocol.CMD_FILES_PICK, args, error => {
+            if (error && error !== Protocol.FILES_PICK_EXISTS)
+                console.warn(`nova: answering the file picker: ${error}`);
+            done(error ?? null);
+        });
+    }
+
+    // The file picker `picker` closed without picking.
+    function cancelPick(picker: int) {
+        Daemon.call(Protocol.CMD_FILES_PICK_CANCEL, {
+            picker: picker
+        });
+    }
+
     function _answered(doing: string, error: var, done: var) {
         if (error)
             console.warn(`nova: ${doing}: ${error}`);
@@ -315,6 +349,9 @@ Singleton {
         }
         function onFilesTrashChanged() {
             root.trashChanged();
+        }
+        function onFilesPickerClosed(picker: int) {
+            root.pickerClosed(picker);
         }
         function onConnectedChanged() {
             if (Daemon.connected)
