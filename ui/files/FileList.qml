@@ -276,6 +276,8 @@ FocusScope {
             IconTile {
                 id: tile
 
+                folder: list.model.path
+                thumbnails: FilesService
                 selected: list.model.revision >= 0 && list.model.isSelected(name)
                 riseOrder: entryGrid.riseOrder(index)
 

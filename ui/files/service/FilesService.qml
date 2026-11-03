@@ -11,8 +11,8 @@ import "../trash.js" as Trash
 // gets its pages, changes and closing here), the sidebar's tree and
 // places, the drives (and mounting and ejecting them), opening files in
 // apps (the default one on a double-click or Enter, or one from "Open
-// with", which can also become the new default), copy and move jobs, and
-// the trash. The Nova Files process (../../files.qml) and its windows get
+// with", which can also become the new default), copy and move jobs, the
+// trash, and thumbnails for the Icons view. The Nova Files process (../../files.qml) and its windows get
 // these here and never talk to Daemon themselves. Also how solid the
 // windows are, from config.toml's [files].
 Singleton {
@@ -80,6 +80,10 @@ Singleton {
 
     // Something in the trash changed: ask trashList again.
     signal trashChanged
+
+    // Paths whose thumbnails were asked for, each to the callbacks waiting
+    // for it; a map without a prototype, so any path is a key.
+    property var _thumbnailsWaiting: Object.create(null)
 
     // The number the next job gets; novad numbers jobs per connection.
     property int _nextJob: 1
@@ -268,6 +272,56 @@ Singleton {
         Daemon.call(Protocol.CMD_FILES_EMPTY_TRASH, undefined, error => root._answered("emptying the trash", error, done));
     }
 
+    // `done(file)` gets the path of a PNG thumbnail of the file at `path`
+    // (absolute), or "" when it has none. Asking for a path already asked
+    // for waits for the same answer.
+    function thumbnail(path: string, done: var) {
+        const waiting = _thumbnailsWaiting[path];
+        if (waiting) {
+            waiting.push(done);
+            return;
+        }
+        _thumbnailsWaiting[path] = [done];
+        _askThumbnail(path);
+    }
+
+    // `done` no longer wants `path`'s thumbnail; once nothing does, novad
+    // drops it unless it's being made.
+    function cancelThumbnail(path: string, done: var) {
+        const waiting = _thumbnailsWaiting[path];
+        if (!waiting)
+            return;
+        const left = waiting.filter(callback => callback !== done);
+        if (left.length > 0) {
+            _thumbnailsWaiting[path] = left;
+            return;
+        }
+        delete _thumbnailsWaiting[path];
+        Daemon.call(Protocol.CMD_FILES_THUMBNAIL_CANCEL, {
+            path: path
+        });
+    }
+
+    function _askThumbnail(path: string) {
+        Daemon.call(Protocol.CMD_FILES_THUMBNAIL, {
+            path: path
+        }, error => {
+            if (error)
+                root._thumbnailAnswered({
+                    path: path
+                });
+        });
+    }
+
+    function _thumbnailAnswered(answer: var) {
+        const waiting = _thumbnailsWaiting[answer.path];
+        if (!waiting)
+            return;
+        delete _thumbnailsWaiting[answer.path];
+        for (const done of waiting)
+            done(answer.thumbnail ?? "");
+    }
+
     // Sends `cmd` with `items` under `key`, in as many requests as keep each
     // under novad's limit (Trash.batches), one after another. `done(error)`
     // gets every request's errors at once, or null.
@@ -316,11 +370,18 @@ Singleton {
         function onFilesTrashChanged() {
             root.trashChanged();
         }
+        function onFilesThumbnail(answer: var) {
+            root._thumbnailAnswered(answer);
+        }
         function onConnectedChanged() {
-            if (Daemon.connected)
+            if (Daemon.connected) {
                 root.attach();
-            else
+                // novad forgot what the last connection asked for.
+                for (const path of Object.keys(root._thumbnailsWaiting))
+                    root._askThumbnail(path);
+            } else {
                 root.transfersLost();
+            }
         }
     }
 }
