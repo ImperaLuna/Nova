@@ -743,8 +743,8 @@ fn a_notification_click_focuses_the_window_its_app_shows_or_opens_an_app_that_ha
 
 /// The app index serves whatever names apps, not only the launcher: with
 /// the launcher off, an app stream still gets its app's icon while the
-/// tray, notifications or media run, and the apps are forgotten once none
-/// of them does.
+/// tray, notifications, media or Nova Files run, and the apps are forgotten
+/// once none of them does.
 #[test]
 fn apps_are_named_with_the_launcher_off() {
     let novad = TestDaemon::start("apps-without-launcher", None);
@@ -762,7 +762,7 @@ fn apps_are_named_with_the_launcher_off() {
 
     std::fs::write(
         novad.features_file(),
-        "disabled = [\"ai-usage\", \"launcher\", \"tray\", \"notifications\", \"media\"]\n",
+        "disabled = [\"ai-usage\", \"files\", \"launcher\", \"tray\", \"notifications\", \"media\"]\n",
     )
     .unwrap();
     wait_until(Duration::from_secs(5), "the apps to be forgotten", || icon(&mut client) == json!(null));
