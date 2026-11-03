@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
 import "../theme"
 import "service"
 import "paths.js" as Paths
@@ -274,6 +275,22 @@ FloatingWindow {
     implicitHeight: Tokens.filesWindowHeight
     color: "transparent"
 
+    // The compositor's blur behind the glass: the whole window, with the
+    // corners the compositor rounds it to (niri and Hyprland don't round a
+    // blur the window asks for). None once the frame and the list are both
+    // solid, so solid costs nothing.
+    readonly property bool glass: FilesService.frameSolid < 1 || FilesService.listSolid < 1
+    Region {
+        id: blur
+        width: window.width
+        height: window.height
+        radius: Tokens.filesWindowRadius
+    }
+    function askForBlur() {
+        BackgroundEffect.blurRegion = glass ? blur : null;
+    }
+    onGlassChanged: askForBlur()
+
     // Moves the rows (the file list's) in the folder shown to the trash, at
     // once: Delete.
     function moveToTrash(rows: var) {
@@ -452,6 +469,7 @@ FloatingWindow {
     }
 
     Component.onCompleted: {
+        askForBlur();
         if (carried) {
             list.showHidden = carried.hidden;
             navigator.hidden = carried.hidden;
