@@ -6,7 +6,8 @@ import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
 
 // The launcher's link to novad: the apps and the user's pinned and recent
-// ones, searching its providers, running what they found, and pinning. The launcher (../Launcher.qml)
+// ones, searching its providers, running what they found, pinning, and
+// whether a launcher is open. The launcher (../Launcher.qml)
 // gets these through the stage and never talks to Daemon itself.
 Singleton {
     id: root
@@ -15,6 +16,25 @@ Singleton {
     readonly property var current: Daemon.launcher
     // The feature is on and novad has said what's installed.
     readonly property bool ready: Daemon.readyFeatures.includes(Protocol.FEATURE_LAUNCHER) && current !== null
+
+    // The screens whose launcher is open. novad hears when the first
+    // opens and the last closes, and keeps the file index meanwhile.
+    property var shownOn: ({})
+
+    function setShown(output: string, shown: bool) {
+        const was = Object.keys(shownOn).length > 0;
+        const next = Object.assign({}, shownOn);
+        if (shown)
+            next[output] = true;
+        else
+            delete next[output];
+        shownOn = next;
+        const now = Object.keys(next).length > 0;
+        if (now !== was)
+            Daemon.call(Protocol.CMD_LAUNCHER_SHOWN, {
+                shown: now
+            });
+    }
 
     // `done(items)` gets the LauncherItems novad's providers found for
     // `query`, or none when the search failed.

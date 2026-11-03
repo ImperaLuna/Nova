@@ -29,6 +29,8 @@ Scope {
             onSearchRequested: query => LauncherService.search(query, found => deck.showMatches(query, found))
             onRunRequested: (provider, id, newWindow) => LauncherService.run(provider, id, slot.stage.output.name, newWindow, error => deck.launched(error))
             onPinRequested: (id, pinned) => LauncherService.pin(id, pinned)
+            onOpenChanged: LauncherService.setShown(slot.stage.output.name, open)
+            Component.onDestruction: LauncherService.setShown(slot.stage.output.name, false)
         }
     }
 }

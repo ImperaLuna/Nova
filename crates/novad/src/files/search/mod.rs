@@ -3,9 +3,18 @@
 //! (so a game in `~/.local/share/Steam` is found), and a search only reads
 //! that, so it answers in milliseconds.
 //!
-//! One thread keeps the index. It reads every root into a new index
-//! ([`walk`]), watching each folder with inotify as it goes, and swaps it
-//! in; then it applies what inotify reports: names that came are added
+//! The index is kept only while it's used: novad's Pss grows by about
+//! 110 MB over a big home, and its inotify watches count against the
+//! user's limit. A Nova Files process attached or a launcher open uses it
+//! ([`Search::set_used`], by connection, so one that hangs up stops); the
+//! first has it built (about 2 s over a home of 1.5M names), and it's
+//! dropped with its watches [`KEPT_UNUSED`] after the last goes. A search
+//! with nobody using it has it built and kept as long too. One asked for
+//! while it builds answers `ready: false`, as before the first build.
+//!
+//! One thread keeps the index while it's used. It reads every root into
+//! a new index ([`walk`]), watching each folder with inotify as it goes,
+//! and swaps it in; then it applies what inotify reports: names that came are added
 //! (a folder with everything in it), names that went are removed. It
 //! builds a new index from scratch every [`RESCAN_EVERY`], which also
 //! catches folders it couldn't watch (past the system's watch limit) and
@@ -30,15 +39,18 @@ mod roots;
 mod walk;
 
 use crate::files::folder::read_entry;
+use crate::hub::ClientId;
 use crate::inotify::{self, Changes, Inotify, Stopper};
+use crate::lock;
 use crate::logger::Logger;
 use crate::mime::Mime;
 use index::Index;
 use matching::Query;
 use nova_protocol::{FILES_SEARCH_MAX_CHARS, FILES_SEARCH_MAX_RESULTS, FileSearch, FoundFile, wire_path, wire_text};
 use roots::Mounts;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use walk::Walk;
 
@@ -52,6 +64,9 @@ const RESCAN_GAP: Duration = Duration::from_secs(60);
 /// folder itself going.
 const WATCHED: u32 = inotify::ENTRIES | inotify::ITSELF | libc::IN_ONLYDIR | libc::IN_EXCL_UNLINK;
 const BYTES_PER_MB: usize = 1024 * 1024;
+/// How long the index is kept once nothing uses it, so a launcher or Nova
+/// Files opened again soon finds it built rather than building it again.
+const KEPT_UNUSED: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(3 * 60) };
 
 /// Where the search looks.
 #[derive(Clone)]
@@ -82,16 +97,50 @@ impl Sources {
     }
 }
 
-/// Keeps the index while it runs.
-pub struct Search {
-    shared: Arc<Shared>,
-    stopper: Option<Stopper>,
+/// Who uses the index: a Nova Files process attached, or a launcher open,
+/// each by its connection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Use {
+    Files,
+    Launcher,
 }
 
-/// What searches read: the index, none until it's built.
+/// Keeps the index while it's used, and a while after.
+pub struct Search {
+    shared: Arc<Shared>,
+}
+
+/// What searches read, and who uses it.
 struct Shared {
-    index: RwLock<Option<Index>>,
+    index: RwLock<Held>,
     mime: Arc<Mime>,
+    sources: Sources,
+    logger: Arc<Logger>,
+    demand: Mutex<Demand>,
+    /// Wakes the thread that drops the index when [`Shared::demand`] changes.
+    changed: Condvar,
+}
+
+/// The index, none until it's built and after it's dropped.
+#[derive(Default)]
+struct Held {
+    index: Option<Index>,
+    /// Which keeper it's from: one that was stopped never writes over its
+    /// successor's.
+    generation: u64,
+}
+
+/// Who uses the index, under one lock with starting and stopping its keeper.
+#[derive(Default)]
+struct Demand {
+    users: HashSet<(ClientId, Use)>,
+    /// Nobody uses it: it's dropped then, unless someone does by then.
+    drop_at: Option<Instant>,
+    /// Stops the thread keeping the index, while one runs.
+    keeper: Option<Stopper>,
+    generation: u64,
+    /// [`Search::stop`]ped: no keeper starts again.
+    ended: bool,
 }
 
 /// Answers searches; cheap to clone into a request's own thread.
@@ -99,40 +148,155 @@ struct Shared {
 pub struct Searcher(Arc<Shared>);
 
 impl Search {
-    /// Starts building the index of `sources`' folders.
+    /// Ready to index `sources`' folders once something uses them.
     pub fn start(sources: Sources, logger: Arc<Logger>, mime: Arc<Mime>) -> Self {
-        let shared = Arc::new(Shared { index: RwLock::new(None), mime });
-        let started = Inotify::new(WATCHED).and_then(|watcher| {
-            let stopper = watcher.stopper();
-            let keeper = Keeper { sources, watcher, shared: Arc::clone(&shared), logger: Arc::clone(&logger) };
-            std::thread::Builder::new().name("novad-files-search".into()).spawn(move || keeper.run())?;
-            Ok(stopper)
+        let shared = Arc::new(Shared {
+            index: RwLock::default(),
+            mime,
+            sources,
+            logger,
+            demand: Mutex::default(),
+            changed: Condvar::new(),
         });
-        let stopper = started.inspect_err(|e| logger.error(LOG_SOURCE, &format!("Can't index files: {e}"))).ok();
-        Self { shared, stopper }
+        let dropper = Arc::clone(&shared);
+        let spawned =
+            std::thread::Builder::new().name("novad-files-index-idle".into()).spawn(move || dropper.drop_unused());
+        if let Err(e) = spawned {
+            shared.logger.warn(LOG_SOURCE, &format!("The search index won't be dropped while unused: {e}"));
+        }
+        Self { shared }
     }
 
     pub fn searcher(&self) -> Searcher {
         Searcher(Arc::clone(&self.shared))
     }
 
-    /// Stops keeping the index; searches find what it held.
+    /// Client `client` starts or stops using the index for `what`. The
+    /// first user has it built; it's dropped [`KEPT_UNUSED`] after the last
+    /// one goes.
+    pub fn set_used(&self, client: ClientId, what: Use, used: bool) {
+        let mut demand = lock(&self.shared.demand);
+        if used {
+            demand.users.insert((client, what));
+        } else {
+            demand.users.remove(&(client, what));
+        }
+        self.shared.used(&mut demand);
+    }
+
+    /// The client `client` hung up: it uses nothing any more.
+    pub fn client_gone(&self, client: ClientId) {
+        let mut demand = lock(&self.shared.demand);
+        demand.users.retain(|(user, _)| *user != client);
+        self.shared.used(&mut demand);
+    }
+
+    /// Stops keeping the index for good; searches find what it held.
     pub fn stop(&self) {
-        if let Some(stopper) = &self.stopper {
-            stopper.stop();
+        let mut demand = lock(&self.shared.demand);
+        demand.ended = true;
+        if let Some(keeper) = demand.keeper.take() {
+            keeper.stop();
+        }
+        self.shared.changed.notify_all();
+    }
+
+    /// The index is built now. Unlike a search, asking doesn't build it.
+    #[cfg(test)]
+    fn built(&self) -> bool {
+        self.shared.index.read().unwrap_or_else(std::sync::PoisonError::into_inner).index.is_some()
+    }
+}
+
+impl Shared {
+    /// Who uses the index changed: it's built if anyone does, and set to
+    /// be dropped if nobody does.
+    fn used(self: &Arc<Self>, demand: &mut Demand) {
+        if demand.users.is_empty() {
+            if demand.keeper.is_some() {
+                demand.drop_at = Some(Instant::now() + KEPT_UNUSED);
+            }
+        } else {
+            demand.drop_at = None;
+            self.build(demand);
+        }
+        self.changed.notify_all();
+    }
+
+    /// Starts a keeper unless one runs.
+    fn build(self: &Arc<Self>, demand: &mut Demand) {
+        if demand.keeper.is_some() || demand.ended {
+            return;
+        }
+        demand.generation += 1;
+        let generation = demand.generation;
+        self.index.write().unwrap_or_else(std::sync::PoisonError::into_inner).generation = generation;
+        let started = Inotify::new(WATCHED).and_then(|watcher| {
+            let stopper = watcher.stopper();
+            let keeper = Keeper {
+                sources: self.sources.clone(),
+                watcher,
+                shared: Arc::clone(self),
+                logger: Arc::clone(&self.logger),
+                generation,
+            };
+            std::thread::Builder::new().name("novad-files-search".into()).spawn(move || keeper.run())?;
+            Ok(stopper)
+        });
+        match started {
+            Ok(stopper) => demand.keeper = Some(stopper),
+            Err(e) => self.logger.error(LOG_SOURCE, &format!("Can't index files: {e}")),
+        }
+    }
+
+    /// The thread that drops the index once it's been unused for
+    /// [`KEPT_UNUSED`], until the search stops.
+    fn drop_unused(self: Arc<Self>) {
+        let mut demand = lock(&self.demand);
+        while !demand.ended {
+            let Some(drop_at) = demand.drop_at else {
+                demand = self.changed.wait(demand).unwrap_or_else(std::sync::PoisonError::into_inner);
+                continue;
+            };
+            let now = Instant::now();
+            if now < drop_at {
+                demand = self
+                    .changed
+                    .wait_timeout(demand, drop_at - now)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .0;
+                continue;
+            }
+            demand.drop_at = None;
+            if let Some(keeper) = demand.keeper.take() {
+                keeper.stop();
+            }
+            demand.generation += 1;
+            *self.index.write().unwrap_or_else(std::sync::PoisonError::into_inner) =
+                Held { index: None, generation: demand.generation };
+            self.logger.info(LOG_SOURCE, &format!("Dropped the search index, unused for {} s", KEPT_UNUSED.as_secs()));
         }
     }
 }
 
 impl Searcher {
-    /// The files whose names hold every word of `text`.
+    /// The files whose names hold every word of `text`. With nobody using
+    /// the index, a search has it built and kept for [`KEPT_UNUSED`].
     pub fn search(&self, text: &str) -> Result<FileSearch, String> {
         if text.chars().count() > FILES_SEARCH_MAX_CHARS {
             return Err(format!("Searches are at most {FILES_SEARCH_MAX_CHARS} characters"));
         }
+        {
+            let mut demand = lock(&self.0.demand);
+            if demand.users.is_empty() {
+                self.0.build(&mut demand);
+                demand.drop_at = Some(Instant::now() + KEPT_UNUSED);
+                self.0.changed.notify_all();
+            }
+        }
         let held = self.0.index.read().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let ready = held.is_some();
-        let (Some(index), Some(query)) = (held.as_ref(), Query::parse(text)) else {
+        let ready = held.index.is_some();
+        let (Some(index), Some(query)) = (held.index.as_ref(), Query::parse(text)) else {
             return Ok(FileSearch { ready, total: 0, results: Vec::new() });
         };
         let (hits, total) = index.search(&query, FILES_SEARCH_MAX_RESULTS);
@@ -161,6 +325,8 @@ struct Keeper {
     watcher: Inotify,
     shared: Arc<Shared>,
     logger: Arc<Logger>,
+    /// Its own: it writes the index only while it's the latest.
+    generation: u64,
 }
 
 /// What the index was built from, to follow its changes.
@@ -227,7 +393,12 @@ impl Keeper {
                 self.watcher.watched(),
             ),
         );
-        *self.shared.index.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(index);
+        let mut held = self.shared.index.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if held.generation != self.generation {
+            return None;
+        }
+        held.index = Some(index);
+        drop(held);
         Some(Built { mounts, skipped, reach, at: Instant::now() })
     }
 
@@ -269,8 +440,11 @@ impl Keeper {
         if found.is_empty() && gone.is_empty() {
             return;
         }
-        let mut index = self.shared.index.write().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(index) = index.as_mut() else { return };
+        let mut held = self.shared.index.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if held.generation != self.generation {
+            return;
+        }
+        let Some(index) = held.index.as_mut() else { return };
         let mut walk = Walk {
             watcher: &mut self.watcher,
             mounts: &built.mounts,
@@ -347,8 +521,22 @@ mod tests {
         search: Search,
     }
 
+    /// The connection Nova Files is on.
+    const FILES: ClientId = 1;
+    /// The UI's, with the launchers.
+    const UI: ClientId = 2;
+
     impl Fixture {
+        /// With the index built, and used by Nova Files so it's kept.
         fn new(name: &str, prepare: impl FnOnce(&Path)) -> Self {
+            let fixture = Self::unused(name, prepare);
+            fixture.search.set_used(FILES, Use::Files, true);
+            fixture.wait_built(true);
+            fixture
+        }
+
+        /// With nothing using the index yet.
+        fn unused(name: &str, prepare: impl FnOnce(&Path)) -> Self {
             let dir = TempDir::new(&format!("files-search-{name}"));
             std::fs::create_dir_all(dir.join("home")).unwrap();
             prepare(&dir.join("home"));
@@ -356,9 +544,13 @@ mod tests {
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, hub).unwrap());
             let mime = Mime::follow(Vec::new(), Arc::clone(&logger));
             let search = Search::start(Sources::under(&dir), logger, mime);
-            let fixture = Self { dir, search };
-            wait_until(WAIT, "the index is built", || fixture.find("").ready);
-            fixture
+            Self { dir, search }
+        }
+
+        /// Waits until the index is built, or until it's dropped.
+        fn wait_built(&self, built: bool) {
+            let what = if built { "the index is built" } else { "the index is dropped" };
+            wait_until(WAIT, what, || self.search.built() == built);
         }
 
         fn home(&self) -> PathBuf {
@@ -477,6 +669,58 @@ mod tests {
         assert_eq!(found.results.len(), 1, "the folder was walked");
         assert_eq!(wire_path(&found.results[0].folder), fixture.home().join(latin1));
         assert_eq!(fixture.find("caf").results[0].entry.name, wire_text(latin1));
+    }
+
+    #[test]
+    fn the_index_is_built_while_a_launcher_is_open_and_dropped_after() {
+        let fixture = Fixture::unused("launcher", steam_game);
+        std::thread::sleep(KEPT_UNUSED);
+        assert!(!fixture.search.built(), "nothing used it");
+        fixture.search.set_used(UI, Use::Launcher, true);
+        fixture.wait_built(true);
+        // Open past the time an unused one is kept.
+        std::thread::sleep(KEPT_UNUSED * 2);
+        assert!(fixture.search.built());
+        fixture.search.set_used(UI, Use::Launcher, false);
+        assert!(fixture.search.built(), "kept a while after");
+        fixture.wait_built(false);
+        // Opened again: built afresh, and following changes again.
+        fixture.search.set_used(UI, Use::Launcher, true);
+        fixture.wait_built(true);
+        std::fs::write(fixture.home().join("crimson notes.txt"), b"").unwrap();
+        fixture.finds("notes", &["crimson notes.txt"]);
+    }
+
+    #[test]
+    fn it_is_kept_until_its_last_user_goes() {
+        let fixture = Fixture::new("users", steam_game);
+        fixture.search.set_used(UI, Use::Launcher, true);
+        // Nova Files hangs up, the launcher is still open.
+        fixture.search.client_gone(FILES);
+        std::thread::sleep(KEPT_UNUSED * 2);
+        assert!(fixture.search.built());
+        // The UI hanging up closes its launchers.
+        fixture.search.client_gone(UI);
+        fixture.wait_built(false);
+    }
+
+    #[test]
+    fn a_launcher_opened_again_soon_finds_it_still_built() {
+        let fixture = Fixture::new("reopened", steam_game);
+        fixture.search.set_used(FILES, Use::Files, false);
+        std::thread::sleep(KEPT_UNUSED / 2);
+        fixture.search.set_used(UI, Use::Launcher, true);
+        std::thread::sleep(KEPT_UNUSED * 2);
+        assert!(fixture.search.built(), "never dropped");
+        assert_eq!(fixture.find("crimson").total, 2);
+    }
+
+    #[test]
+    fn a_search_with_nobody_using_the_index_builds_it_for_a_while() {
+        let fixture = Fixture::unused("unused-search", steam_game);
+        wait_until(WAIT, "a search finds it", || fixture.find("crimson").total == 2);
+        fixture.wait_built(false);
+        wait_until(WAIT, "the next search builds it again", || fixture.find("crimson").total == 2);
     }
 
     #[test]

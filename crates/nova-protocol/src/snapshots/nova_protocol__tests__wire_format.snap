@@ -62,6 +62,7 @@ expression: all
 {"v":2,"id":23,"cmd":"end_app","args":{"key":"/usr/lib/firefox/firefox"}}
 {"v":2,"cmd":"toggle","args":{"panel":"quick-settings"}}
 {"v":2,"event":"launcher","data":{"apps":[{"id":"org.mozilla.firefox.desktop","name":"Firefox","description":"Web Browser","icon":"firefox"},{"id":"foot.desktop","name":"Foot"}],"pinned":["foot.desktop"],"recent":["org.mozilla.firefox.desktop","foot.desktop"]}}
+{"v":2,"cmd":"launcher_shown","args":{"shown":true}}
 {"v":2,"id":24,"cmd":"launcher_search","args":{"query":"fi"}}
 {"v":2,"id":24,"result":[{"description":"Web Browser","id":"org.mozilla.firefox.desktop","name":[{"matched":true,"text":"Fi"},{"text":"refox"}],"provider":"apps"}]}
 {"v":2,"id":44,"cmd":"app_icon","args":{"icon_name":"","program":"/nix/store/x-zen/lib/zen/.zen-wrapped","name":"Zen"}}

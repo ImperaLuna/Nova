@@ -26,7 +26,8 @@
 //! - `tree.rs`: the sidebar's folder tree that follows the window
 //!   (`files_tree`) and its places (`files_places`).
 //! - `search/`: finding files by name (`files_search`) from an index of
-//!   every name under Home and the drives, kept up to date with inotify.
+//!   every name under Home and the drives, kept up to date with inotify
+//!   while Nova Files runs or a launcher is open, and a while after.
 //! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
 //!   and ejecting them; `drives.rs`: which filesystems are listed and
 //!   what they're called.
@@ -230,6 +231,12 @@ impl Files {
         self.search.searcher()
     }
 
+    /// Client `client`'s launcher opened or closed (`launcher_shown`): it
+    /// may search files, so the index is built while it's open.
+    pub fn launcher_shown(&self, client: ClientId, shown: bool) {
+        self.search.set_used(client, search::Use::Launcher, shown);
+    }
+
     /// Shows the folder `path` in client `client`'s view `view`
     /// (`files_open`, [`views::Folders::open`]).
     /// How full the drives are is read again too, since a window going
@@ -310,6 +317,8 @@ impl Files {
     /// (`attached`), and is sent those waiting; or it's quitting, and gets
     /// no more.
     pub fn attach(&self, client: ClientId, attached: bool) {
+        // Its windows search, so the index is kept while it runs.
+        self.search.set_used(client, search::Use::Files, attached);
         let mut delivery = lock(&self.shared.delivery);
         if attached {
             delivery.attached = Some(client);
@@ -346,6 +355,7 @@ impl Files {
 
     /// Client `client` hung up: windows aren't sent to it any more.
     pub fn client_gone(&self, client: ClientId) {
+        self.search.client_gone(client);
         self.folders.client_gone(client);
         self.transfers.client_gone(client);
         let mut delivery = lock(&self.shared.delivery);
