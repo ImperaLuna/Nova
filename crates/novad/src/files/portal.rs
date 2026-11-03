@@ -465,6 +465,28 @@ mod tests {
     }
 
     #[test]
+    fn dialogs_go_to_their_own_process() {
+        let fixture = Fixture::new("portal-lanes");
+        let attached = |pickers: bool| {
+            let (stream, ours) = std::os::unix::net::UnixStream::pair().unwrap();
+            let (queue, outgoing) = crate::hub::ClientQueue::new(&ours).unwrap();
+            let client = fixture.hub.register(queue);
+            fixture.files.attach(client, true, pickers);
+            (client, outgoing, stream)
+        };
+        let (_, windows, _windows_stream) = attached(false);
+        let (dialogs_client, dialogs, _dialogs_stream) = attached(true);
+        let replies = ask(&fixture, "OpenFile", HashMap::new());
+        let window = next_named(&dialogs, "files_window", WAIT);
+        fixture.files.show(&fixture.path("Downloads"), &[]).unwrap();
+        assert!(next_named(&windows, "files_window", WAIT)["picker"].is_null());
+        assert!(dialogs.try_recv().is_err(), "Nova Files' own windows don't go to the dialogs' process");
+        let report = nova_protocol::wire_text(fixture.dir.join("Downloads/report one.pdf"));
+        fixture.files.pick(dialogs_client, picker_id(&window), &[report], None, false).unwrap();
+        assert_eq!(replies.recv_timeout(WAIT).unwrap().0, RESPONSE_PICKED);
+    }
+
+    #[test]
     fn cancelling_or_the_app_closing_ends_the_call() {
         let fixture = Fixture::new("portal-cancel");
         let (client, nova_files, _stream) = fixture.nova_files_client();

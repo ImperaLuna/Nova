@@ -13,11 +13,15 @@ import "../trash.js" as Trash
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, and
 // the trash, and answering the file pickers apps ask for (Open and Save
-// dialogs). The Nova Files process (../../files.qml) and its windows get
+// dialogs). A Nova Files process (FilesShell) and its windows get
 // these here and never talk to Daemon themselves. Also how solid the
 // windows are, from config.toml's [files].
 Singleton {
     id: root
+
+    // This process shows apps' dialogs (files-picker.qml), so novad sends
+    // it pickers only. Set by FilesShell before it connects.
+    property bool pickers: false
 
     // How solid the window frame and the file list are, each 0 (glass,
     // also until novad says) to 1 (the theme's solid surfaces).
@@ -95,7 +99,8 @@ Singleton {
     // every connection.
     function attach() {
         Daemon.call(Protocol.CMD_ATTACH_FILES, {
-            attached: true
+            attached: true,
+            pickers: pickers
         });
     }
 
@@ -103,7 +108,8 @@ Singleton {
     // novad isn't there.
     function detach(done) {
         Daemon.call(Protocol.CMD_ATTACH_FILES, {
-            attached: false
+            attached: false,
+            pickers: pickers
         }, () => done());
     }
 

@@ -54,12 +54,14 @@ impl Fixture {
         (outgoing, stream)
     }
 
-    /// The same, with its client id.
+    /// The same, with its client id. It stands in for both processes:
+    /// it's sent Nova Files' windows and apps' dialogs.
     pub fn nova_files_client(&self) -> (ClientId, Receiver<Outgoing>, UnixStream) {
         let (stream, ours) = UnixStream::pair().unwrap();
         let (queue, outgoing) = ClientQueue::new(&ours).unwrap();
         let client = self.hub.register(queue);
-        self.files.attach(client, true);
+        self.files.attach(client, true, false);
+        self.files.attach(client, true, true);
         (client, outgoing, stream)
     }
 

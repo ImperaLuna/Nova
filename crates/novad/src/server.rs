@@ -299,7 +299,9 @@ impl<'a> Connection<'a> {
                 return self.files_later(move |files| files.pick(client, picker, &paths, filter, replace));
             }
             Command::FilesPickCancel { picker } => done(self.files().map(|files| files.cancel_pick(self.id, *picker))),
-            Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
+            Command::AttachFiles { attached, pickers } => {
+                done(self.files().map(|files| files.attach(self.id, *attached, *pickers)))
+            }
             Command::FilesLaunch { path, app } => {
                 let (path, app) = (path.clone(), app.clone());
                 return self.opener_later(move |opener| match app {

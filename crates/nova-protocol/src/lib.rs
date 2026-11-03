@@ -1996,9 +1996,14 @@ pub enum Command {
     /// open windows, which novad then sends it ([`Event::FilesWindow`]),
     /// waiting ones first; `false` as it quits after its last window
     /// closes, so the next window starts a new one. A connection that
-    /// closes is detached.
+    /// closes is detached. `pickers` says it's the process for apps' Open
+    /// and Save dialogs (`ui/files-picker.qml`, its own app id so
+    /// compositors float them), which gets only picker windows; the other
+    /// gets the rest.
     AttachFiles {
         attached: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pickers: bool,
     },
     /// Opens the file at `path`, an absolute path, in the app `app` (its
     /// desktop file id) or, without one, in its type's default app

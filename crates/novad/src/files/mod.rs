@@ -4,7 +4,7 @@
 //!
 //! One file per job, all under this folder:
 //! - `mod.rs`: the module, and the windows asked for (`nova files`,
-//!   [`Files::show`]) that the Nova Files process hasn't been sent yet.
+//!   [`Files::show`]) that no Nova Files process has been sent yet.
 //! - `target.rs`: what a window shows, checked: an absolute folder that
 //!   exists, and items in it to select.
 //! - `file_manager1.rs`: `org.freedesktop.FileManager1`, so apps' "Show in
@@ -14,8 +14,10 @@
 //!   `picker.rs`: the pickers waiting for their window's answer, and the
 //!   checks an answer passes; `filter.rs`: their file type filters, which
 //!   folder views apply.
-//! - `window.rs`: the Nova Files process (`ui/files.qml`), started when a
-//!   window is asked for and none runs.
+//! - `window.rs`: the Nova Files processes, `ui/files.qml` for its own
+//!   windows and `ui/files-picker.qml` for apps' dialogs (an app id of
+//!   its own, which compositors float), each started when a window for it
+//!   is asked for and none runs.
 //! - Opening files in apps is the shared `crate::apps::opening`, over the
 //!   module's one copy of the MIME database.
 //! - `views.rs`: the folders a window shows (`files_open`), read in pages
@@ -44,7 +46,8 @@
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
 //! windows follow an edit at once.
 //!
-//! Windows go only to the Nova Files process, once it has attached
+//! Windows go only to their Nova Files process (a [`Lane`]: pickers to
+//! the dialogs' one, the rest to the windows' one), once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
 //! takes them. One asked for while none is attached waits, and starts one,
 //! and goes to it when it attaches. Asking, attaching and detaching take
@@ -152,10 +155,50 @@ struct Shared {
     sources: Sources,
     hub: Arc<Hub>,
     logger: Arc<Logger>,
-    delivery: Mutex<Delivery>,
-    process: Option<window::Process>,
+    /// Nova Files' own windows.
+    windows: Lane,
+    /// Apps' Open and Save dialogs, in a process of their own.
+    dialogs: Lane,
     /// The file pickers apps wait on.
     pickers: picker::Pickers,
+}
+
+/// One Nova Files process and the windows on their way to it.
+struct Lane {
+    delivery: Mutex<Delivery>,
+    process: Option<window::Process>,
+}
+
+impl Lane {
+    fn new(
+        entry: window::Entry,
+        ui: Option<&crate::supervisor::UiSettings>,
+        logger: &Arc<Logger>,
+        shared: &Weak<Shared>,
+        pickers: bool,
+    ) -> Self {
+        let shared = Weak::clone(shared);
+        let exited = move || {
+            if let Some(shared) = shared.upgrade() {
+                shared.lane(pickers).exited();
+            }
+        };
+        let process = ui.cloned().map(|ui| window::Process::new(entry, ui, Arc::clone(logger), exited));
+        Self { delivery: Mutex::default(), process }
+    }
+
+    /// Its process exited. One that quit while windows were asked for is
+    /// followed by a new one; one that crashed isn't, until the next window
+    /// is asked for.
+    fn exited(&self) {
+        let mut delivery = lock(&self.delivery);
+        if std::mem::take(&mut delivery.quitting)
+            && !delivery.waiting.is_empty()
+            && let Some(process) = &self.process
+        {
+            process.ensure_running();
+        }
+    }
 }
 
 /// Where windows go, under one lock.
@@ -194,14 +237,9 @@ impl Files {
             Arc::clone(&logger),
         );
         let shared = Arc::new_cyclic(|shared: &Weak<Shared>| {
-            let shared = Weak::clone(shared);
-            let exited = move || {
-                if let Some(shared) = shared.upgrade() {
-                    shared.exited();
-                }
-            };
-            let process = sources.ui.clone().map(|ui| window::Process::new(ui, Arc::clone(&logger), exited));
-            Shared { sources, hub, logger, delivery: Mutex::default(), process, pickers: picker::Pickers::default() }
+            let windows = Lane::new(window::WINDOWS, sources.ui.as_ref(), &logger, shared, false);
+            let dialogs = Lane::new(window::PICKERS, sources.ui.as_ref(), &logger, shared, true);
+            Shared { sources, hub, logger, windows, dialogs, pickers: picker::Pickers::default() }
         });
         let drives = udisks::Drives::start(
             shared.sources.udisks.clone(),
@@ -347,11 +385,11 @@ impl Files {
         self.shared.pickers.cancel(client, picker);
     }
 
-    /// Client `client`, the Nova Files process, can open windows
-    /// (`attached`), and is sent those waiting; or it's quitting, and gets
-    /// no more.
-    pub fn attach(&self, client: ClientId, attached: bool) {
-        let mut delivery = lock(&self.shared.delivery);
+    /// Client `client`, a Nova Files process (the one for apps' dialogs
+    /// when `pickers`), can open windows (`attached`), and is sent those
+    /// waiting; or it's quitting, and gets no more.
+    pub fn attach(&self, client: ClientId, attached: bool, pickers: bool) {
+        let mut delivery = lock(&self.shared.lane(pickers).delivery);
         if attached {
             delivery.attached = Some(client);
             delivery.quitting = false;
@@ -392,8 +430,13 @@ impl Files {
         // Its picker windows went with it; those still waiting for a
         // process stay. Under the delivery lock, so a window being sent to
         // it is either marked shown first, and ends here, or never sent.
-        let mut delivery = lock(&self.shared.delivery);
+        let mut delivery = lock(&self.shared.dialogs.delivery);
         self.shared.pickers.end_shown_to(client);
+        if delivery.attached == Some(client) {
+            delivery.attached = None;
+        }
+        drop(delivery);
+        let mut delivery = lock(&self.shared.windows.delivery);
         if delivery.attached == Some(client) {
             delivery.attached = None;
         }
@@ -414,10 +457,12 @@ impl Files {
         if let Some(watch) = &self.trash_watch {
             watch.stop();
         }
-        if let Some(process) = &self.shared.process {
-            process.stop();
+        for lane in [&self.shared.windows, &self.shared.dialogs] {
+            if let Some(process) = &lane.process {
+                process.stop();
+            }
+            *lock(&lane.delivery) = Delivery::default();
         }
-        *lock(&self.shared.delivery) = Delivery::default();
         self.shared.pickers.end_all();
     }
 }
@@ -429,7 +474,8 @@ impl Shared {
     /// delivery lock, so [`Shared::end_picker`] either sees it or it's
     /// never sent.
     fn open(&self, window: FilesWindow) -> Result<(), String> {
-        let mut delivery = lock(&self.delivery);
+        let lane = self.lane(picker_of(&window).is_some());
+        let mut delivery = lock(&lane.delivery);
         if picker_of(&window).is_some_and(|id| !self.pickers.is_waiting(id)) {
             return Ok(());
         }
@@ -444,10 +490,15 @@ impl Shared {
         }
         self.logger.info(LOG_SOURCE, &format!("{} waits for Nova Files to start", window.folder));
         delivery.waiting.push(window);
-        if let Some(process) = &self.process {
+        if let Some(process) = &lane.process {
             process.ensure_running();
         }
         Ok(())
+    }
+
+    /// Where windows go: apps' dialogs (`pickers`) or Nova Files' own.
+    fn lane(&self, pickers: bool) -> &Lane {
+        if pickers { &self.dialogs } else { &self.windows }
     }
 
     /// Ends the file picker `picker` for its app (it gave up asking):
@@ -456,7 +507,7 @@ impl Shared {
         if !self.pickers.end(picker) {
             return;
         }
-        let mut delivery = lock(&self.delivery);
+        let mut delivery = lock(&self.dialogs.delivery);
         let waited = delivery.waiting.len();
         delivery.waiting.retain(|window| picker_of(window) != Some(picker));
         if delivery.waiting.len() == waited
@@ -479,19 +530,6 @@ impl Shared {
             self.pickers.shown(id, None);
         }
         sent
-    }
-
-    /// The Nova Files process exited. One that quit while windows were asked
-    /// for is followed by a new one; one that crashed isn't, until the next
-    /// window is asked for.
-    fn exited(&self) {
-        let mut delivery = lock(&self.delivery);
-        if std::mem::take(&mut delivery.quitting)
-            && !delivery.waiting.is_empty()
-            && let Some(process) = &self.process
-        {
-            process.ensure_running();
-        }
     }
 }
 
@@ -626,7 +664,7 @@ mod tests {
         /// The Nova Files process's connection, attached.
         fn nova_files(&self) -> (ClientId, Receiver<Outgoing>, UnixStream) {
             let connection = self.client();
-            self.files.attach(connection.0, true);
+            self.files.attach(connection.0, true, false);
             connection
         }
 
@@ -678,7 +716,7 @@ mod tests {
     fn a_window_asked_for_as_nova_files_quits_waits_for_the_next() {
         let fixture = Fixture::new("quits");
         let (client, quitting, _stream) = fixture.nova_files();
-        fixture.files.attach(client, false);
+        fixture.files.attach(client, false, false);
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         let (_, next, _next_stream) = fixture.nova_files();
         assert_eq!(next_named(&next, "files_window", WAIT)["folder"], json!(fixture.downloads()));

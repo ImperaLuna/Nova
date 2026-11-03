@@ -117,7 +117,7 @@ Singleton {
 
     // The topics this process subscribes to on every connection: the
     // shell's, unless its root sets its own as it's created (Nova Files,
-    // ../files.qml), before the first connection. Topics of features that
+    // ../files/FilesShell.qml), before the first connection. Topics of features that
     // are off send nothing.
     property var topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_PERIPHERALS, Protocol.TOPIC_NETWORK, Protocol.TOPIC_BLUETOOTH, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS, Protocol.TOPIC_MEDIA]
 
