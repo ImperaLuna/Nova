@@ -439,6 +439,15 @@ FloatingWindow {
             }
         }
     }
+    // The pane on the folder or an item in it reads it again as it changes.
+    Connections {
+        target: FilesService
+        enabled: details.visible
+        function onChanged(changed: var) {
+            if (changed.view === list.model.view)
+                details.reload();
+        }
+    }
     FilesMenu {
         id: menu
         anchors.fill: parent

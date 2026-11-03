@@ -6,8 +6,8 @@ import "../clipboard.js" as Clipboard
 import "../../daemon/protocol.js" as Protocol
 
 // Cut, copy and paste for every Nova Files window: copied items go on the
-// system clipboard as text (clipboard.js), so other apps paste their
-// names and Nova Files pastes what other file managers copied. A cut is
+// system clipboard as file URIs in text (clipboard.js), so other apps
+// paste their names, and Nova Files pastes such text back. A cut is
 // kept here too, since text can't say "move": pasting the same text moves
 // the items, and empties the clipboard after, as in Explorer. Cut items
 // read faded in the windows (`cut`, absolute paths) until then.

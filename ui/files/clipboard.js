@@ -2,8 +2,8 @@
 
 // Files on the clipboard as text: one file:// URI per line, as
 // text/uri-list spells them, so a terminal or editor pastes them as
-// names. Pasting takes those URIs back, or absolute paths one per line, as
-// other file managers put copied files in their text.
+// names. Pasting takes only such URIs back: a path copied as plain text
+// ("/home") is text, not files to copy.
 
 // The text for the items at `paths` (absolute).
 function text(paths) {
@@ -15,7 +15,7 @@ function paths(text) {
     const lines = String(text ?? "").split(/\r?\n/).map(line => line.trim()).filter(line => line !== "" && !line.startsWith("#"));
     const found = [];
     for (const line of lines) {
-        const path = line.startsWith("file://") ? _local(line) : line;
+        const path = line.startsWith("file://") ? _local(line) : "";
         if (!path.startsWith("/"))
             return [];
         found.push(path);

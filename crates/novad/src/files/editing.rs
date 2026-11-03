@@ -58,7 +58,7 @@ pub fn rename(path: &str, name: &str) -> Result<String, String> {
     }
     match rename_no_replace(&from, &to) {
         Ok(()) => Ok(wire_text(&name)),
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists && same_item(&from, &to) => {
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists && only_case_differs(&from, &to) => {
             fs::rename(&from, &to).map(|()| wire_text(&name)).map_err(|e| failed("renaming", &from, &e))
         }
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
@@ -118,16 +118,32 @@ fn checked_name(name: &str) -> Result<PathBuf, String> {
     Ok(name)
 }
 
-/// The same file or folder, maybe under a name that differs only in case.
-fn same_item(a: &Path, b: &Path) -> bool {
-    match (fs::symlink_metadata(a), fs::symlink_metadata(b)) {
-        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+/// `to` is `from` itself under a name that differs only in case, as a
+/// file system that ignores case finds it (not a hard link to it).
+fn only_case_differs(from: &Path, to: &Path) -> bool {
+    let lower = |path: &Path| path.file_name().map(|name| name.to_string_lossy().to_lowercase());
+    let same_name = lower(from) == lower(to);
+    match (fs::symlink_metadata(from), fs::symlink_metadata(to)) {
+        (Ok(a), Ok(b)) => same_name && a.dev() == b.dev() && a.ino() == b.ino(),
         _ => false,
     }
 }
 
-/// `rename`, failing with `AlreadyExists` instead of replacing an item.
+/// `rename`, failing with `AlreadyExists` instead of replacing an item. On
+/// a file system without `RENAME_NOREPLACE` (NFS, most FUSE drives) it
+/// checks the name is free first, which another app could still beat.
 fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+    match rename_no_replace_flag(from, to) {
+        Err(e) if matches!(e.raw_os_error(), Some(libc::EINVAL | libc::ENOSYS)) => match fs::symlink_metadata(to) {
+            Ok(_) => Err(io::ErrorKind::AlreadyExists.into()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => fs::rename(from, to),
+            Err(e) => Err(e),
+        },
+        done => done,
+    }
+}
+
+fn rename_no_replace_flag(from: &Path, to: &Path) -> io::Result<()> {
     let from = CString::new(from.as_os_str().as_bytes())?;
     let to = CString::new(to.as_os_str().as_bytes())?;
     // SAFETY: both are NUL-terminated paths that live through the call.
@@ -178,6 +194,9 @@ mod tests {
         assert_eq!(rename(&text(&dir.join("a.txt")), "  c.txt ").unwrap(), "c.txt", "spaces around go");
         assert_eq!(fs::read_to_string(dir.join("c.txt")).unwrap(), "a");
         assert_eq!(rename(&text(&dir.join("c.txt")), "c.txt").unwrap(), "c.txt", "the same name is no change");
+        fs::hard_link(dir.join("c.txt"), dir.join("d.txt")).unwrap();
+        assert!(rename(&text(&dir.join("c.txt")), "d.txt").is_err(), "a hard link is another item");
+        assert!(dir.join("c.txt").exists());
     }
 
     #[test]

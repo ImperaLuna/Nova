@@ -63,6 +63,7 @@ Item {
             compare(Commands.forKey(Qt.Key_F2, Qt.NoModifier), Commands.RENAME);
             compare(Commands.forKey(Qt.Key_Delete, Qt.ShiftModifier), "", "Shift+Delete asks first, in the list");
             compare(Commands.forKey(Qt.Key_X, Qt.NoModifier), "", "a plain letter is typing");
+            compare(Commands.forKey(Qt.Key_Delete, Qt.AltModifier), "", "Alt makes it another shortcut");
             compare(Commands.shown(Commands.COPY_PATH), "Ctrl + Shift + C");
             compare(Commands.shown(Commands.OPEN_WITH), "", "no shortcut, nothing shown");
         }
@@ -138,7 +139,7 @@ Item {
             const text = Clipboard.text(paths);
             compare(text, "file:///home/ana/My%20Photos/a%231.png\nfile:///home/ana/%C3%A9.txt");
             compare(Clipboard.paths(text), paths);
-            compare(Clipboard.paths("/home/ana/a.txt\n/home/ana/b.txt\n"), ["/home/ana/a.txt", "/home/ana/b.txt"], "plain paths, as other apps copy them");
+            compare(Clipboard.paths("/\n/home/ana"), [], "a path copied as text isn't files to copy");
             compare(Clipboard.paths("file://localhost/tmp/x"), ["/tmp/x"]);
             compare(Clipboard.paths("some words"), [], "text that isn't files pastes nothing");
             compare(Clipboard.paths("file:///a\nhello"), [], "all or nothing");
@@ -301,6 +302,11 @@ Item {
             keyClick(Qt.Key_Return);
             compare(renames.count, 1);
             compare(renames.signalArguments[0][0], "a.png", "the name up to its extension was picked");
+            row.renaming = false;
+            row.renaming = true;
+            keyClick(Qt.Key_Down);
+            keyClick(Qt.Key_F2);
+            compare(renames.count, 1, "other keys stay in the field");
             row.renaming = false;
             row.renaming = true;
             keyClick(Qt.Key_Escape);

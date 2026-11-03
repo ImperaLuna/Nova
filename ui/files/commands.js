@@ -56,7 +56,7 @@ function shown(command) {
 // The command a key press with `modifiers` asks for, or "".
 function forKey(key, modifiers) {
     const name = KEYS[key];
-    if (name === undefined)
+    if (name === undefined || (modifiers & (Qt.AltModifier | Qt.MetaModifier)) !== 0)
         return "";
     const ctrl = (modifiers & Qt.ControlModifier) !== 0 ? "Ctrl+" : "";
     const shift = (modifiers & Qt.ShiftModifier) !== 0 ? "Shift+" : "";

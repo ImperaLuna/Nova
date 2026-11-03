@@ -2,7 +2,6 @@ import QtQuick
 import "../theme"
 import "listing.js" as Listing
 import "paths.js" as Paths
-import "../daemon/protocol.js" as Protocol
 
 // A row of Nova Files' Details list: the entry's icon and name, then its
 // Modified, Type and Size at the header's column widths. Hovered rows
@@ -100,7 +99,6 @@ Rectangle {
                     color: Tokens.fg
                     selectionColor: Tokens.selected
                     selectedTextColor: Tokens.fg
-                    maximumLength: Protocol.FILES_NAME_MAX_BYTES
                     // Answered once: Enter, Esc or leaving it.
                     property bool answered: false
 
@@ -111,13 +109,14 @@ Rectangle {
                         entry.renameDone(name);
                     }
 
+                    // After the field's own keys: Enter and Esc answer, and
+                    // no other key reaches the list while it's open.
+                    Keys.priority: Keys.AfterItem
                     Keys.onPressed: event => {
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                             finish(text);
                         else if (event.key === Qt.Key_Escape)
                             finish("");
-                        else
-                            return;
                         event.accepted = true;
                     }
                     onActiveFocusChanged: {
@@ -164,7 +163,9 @@ Rectangle {
         if (!renaming)
             return;
         field.answered = false;
-        field.text = Paths.shown(name);
+        // The name as novad spells it, so bytes that aren't UTF-8 stay as
+        // they were in a name that's only partly changed.
+        field.text = name;
         field.select(0, Listing.stemLength(field.text, dir));
         field.forceActiveFocus();
     }

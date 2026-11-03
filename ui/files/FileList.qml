@@ -91,7 +91,7 @@ FocusScope {
     function finishRename(row: var, typed: string) {
         renaming = "";
         entryList.forceActiveFocus();
-        if (typed.trim() === "" || typed === Paths.shown(row.name))
+        if (typed.trim() === "" || typed === row.name)
             return;
         FilesService.rename(Paths.child(folder, row.name), typed, (error, name) => {
             if (error)
@@ -173,6 +173,8 @@ FocusScope {
             FilesService.launch(Paths.child(folder, name), "", null);
     }
 
+    // A rename asked for in the folder before doesn't follow to the next.
+    onFolderChanged: renaming = ""
     Component.onCompleted: {
         const prefix = Paths.child(folder, "");
         model.selectNames(select.filter(path => path.startsWith(prefix) && !path.slice(prefix.length).includes("/")).map(path => path.slice(prefix.length)));
