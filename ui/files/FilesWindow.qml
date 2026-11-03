@@ -6,6 +6,7 @@ import Quickshell.Wayland
 import "../theme"
 import "service"
 import "paths.js" as Paths
+import "games.js" as Games
 import "tabs.js" as Tabs
 import "drops.js" as Drops
 import "trash.js" as Trash
@@ -28,7 +29,8 @@ import "../daemon/protocol.js" as Protocol
 // changed: its command row offers "Extract all" instead.
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
-// (ConfirmDialog). A folder's pin menu, right-click menus (menus.js: on items, on the empty
+// (ConfirmDialog). At the games, theirs do, and a game's menu goes to its
+// install or save folder. A folder's pin menu, a game's menu, right-click menus (menus.js: on items, on the empty
 // list, on a drive, and the command row's New and Sort), the Properties
 // dialog (Properties in a menu, Alt+Enter) and the dialog when a drive
 // can't be ejected lie over it all. Show details (Alt+Shift+P) opens or
@@ -94,6 +96,10 @@ FloatingWindow {
 
     readonly property bool inTrash: Trash.isTrash(folder)
     readonly property bool inHome: Home.isHome(folder)
+    readonly property bool inGames: Games.isGames(folder)
+    readonly property bool inFolder: !Home.isPage(folder)
+    // The command row shown: the trash's, the games' or the folder's.
+    readonly property Item commandRow: inTrash ? trashCommands : inGames ? gamesCommands : commands
     property bool spaceView: false
     readonly property bool searching: search.active && !inTrash
     readonly property SearchModel search: SearchModel {
@@ -114,7 +120,7 @@ FloatingWindow {
     readonly property string home: Quickshell.env("HOME") ?? ""
     // A dialog or menu has the window's attention: the confirm dialog, a
     // name clash, a menu, the Properties dialog or a drive's eject problem.
-    readonly property bool asking: confirming !== null || transfers.asking !== null || menu.shown || pinMenu.visible || propertiesModel.subject !== null || ejectProblem.visible
+    readonly property bool asking: confirming !== null || transfers.asking !== null || menu.shown || pinMenu.visible || gameMenu.visible || propertiesModel.subject !== null || ejectProblem.visible
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -616,6 +622,8 @@ FloatingWindow {
         enabled: window.picking && !window.confirming && !navigation.editing
         onActivated: window.closed()
     }
+    // A game's menu doesn't outlive the games.
+    onInGamesChanged: gameMenu.close()
     onConfirmingChanged: {
         if (confirming)
             confirmDialog.shown = confirming.asking;
@@ -644,6 +652,8 @@ FloatingWindow {
             pickerBar.focusName();
         else if (inTrash)
             trashList.focusList();
+        else if (inGames)
+            gamesList.focusList();
         else if (inHome)
             homePage.forceActiveFocus();
         else
@@ -675,7 +685,7 @@ FloatingWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.bottom: window.inTrash ? trashCommands.bottom : commands.bottom
+        anchors.bottom: window.commandRow.bottom
         color: window.frameColor
     }
     Rectangle {
@@ -751,7 +761,7 @@ FloatingWindow {
         anchors.right: parent.right
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
-        visible: !window.inTrash
+        visible: !window.inTrash && !window.inGames
         spaceView: window.spaceView
         onSpaceToggled: window.spaceView = !window.spaceView
         picked: list.model.selectedCount
@@ -775,10 +785,20 @@ FloatingWindow {
         onRestoreRequested: window.restore()
         onEraseRequested: window.erase()
     }
+    GamesCommandRow {
+        id: gamesCommands
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: navigation.bottom
+        visible: window.inGames
+        model: games
+        solid: FilesService.frameSolid
+        onChosen: folder => window.navigator.visit(folder, null)
+    }
     Sidebar {
         id: sidebar
         anchors.left: parent.left
-        anchors.top: window.inTrash ? trashCommands.bottom : commands.bottom
+        anchors.top: window.commandRow.bottom
         anchors.bottom: pickerLoader.top
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
@@ -794,7 +814,7 @@ FloatingWindow {
         anchors.right: details.visible ? details.left : preview.active ? preview.left : parent.right
         compact: details.visible || preview.active
         anchors.top: commands.bottom
-        visible: !window.inTrash && !window.inHome && !window.searching
+        visible: window.inFolder && !window.searching
         anchors.bottom: pickerLoader.top
         // Nothing to read while a page shows.
         folder: Home.isPage(window.folder) ? "" : window.folder
@@ -819,7 +839,8 @@ FloatingWindow {
         }
         solid: FilesService.listSolid
         spaceView: window.spaceView
-        // Back from a page (Home, the trash): keys go to the list at once.
+        // Back from a page (Home, the games, the trash): keys go to the
+        // list at once.
         onVisibleChanged: {
             if (visible)
                 forceActiveFocus();
@@ -906,6 +927,31 @@ FloatingWindow {
         solid: FilesService.listSolid
         onEraseRequested: window.erase()
         onCommandRequested: command => window.act(command, [], null)
+        onVisibleChanged: {
+            if (visible)
+                focusList();
+        }
+    }
+    GamesModel {
+        id: games
+        service: FilesService
+        active: window.inGames
+    }
+    GamesList {
+        id: gamesList
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: gamesCommands.bottom
+        anchors.bottom: parent.bottom
+        visible: window.inGames
+        model: games
+        home: Quickshell.env("HOME") ?? ""
+        solid: FilesService.listSolid
+        onOpened: index => window.navigator.visit(games.rows.get(index).folder, null)
+        onMenuRequested: (index, at) => {
+            games.pick(index);
+            gameMenu.open(games.pickedRow, at);
+        }
         onVisibleChanged: {
             if (visible)
                 focusList();
@@ -1040,6 +1086,11 @@ FloatingWindow {
     EjectProblem {
         id: ejectProblem
         anchors.fill: parent
+    }
+    GameMenu {
+        id: gameMenu
+        anchors.fill: parent
+        onChosen: folder => window.navigator.visit(folder, null)
     }
     PinMenu {
         id: pinMenu

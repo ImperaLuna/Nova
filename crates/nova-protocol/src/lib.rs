@@ -2219,6 +2219,9 @@ pub enum Command {
     /// What the trash holds (feature `files`), answered with
     /// [`TrashItem`]s, the last trashed first.
     FilesTrashList,
+    /// The games installed (feature `files`), answered with [`Game`]s in
+    /// name order: every Steam library's, on every drive.
+    FilesGamesList,
     /// Puts the trashed items `ids` back where they came from (feature
     /// `files`). One whose place is taken stays in the trash.
     FilesRestore {
@@ -2507,8 +2510,8 @@ pub struct FilePlace {
 
 /// Which place a [`FilePlace`] is: the Home page, a folder pinned to Quick
 /// access (one of the user's folders from `user-dirs.dirs`, which picks its
-/// icon, or any other), or the trash. Every kind but `Home` and `Trash` is
-/// a pinned folder.
+/// icon, or any other), the games, or the trash. Every kind but `Home`,
+/// `Games` and `Trash` is a pinned folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaceKind {
@@ -2523,6 +2526,10 @@ pub enum PlaceKind {
     Videos,
     /// A pinned folder that isn't one of the user's folders above.
     Folder,
+    /// The installed games, at [`FILES_GAMES_PLACE`]: not a folder,
+    /// listed with `files_games_list`. There while a game launcher's
+    /// library is.
+    Games,
     /// The trash, at [`FILES_TRASH_PLACE`]: not a folder, listed with
     /// `files_trash_list`.
     Trash,
@@ -2531,6 +2538,27 @@ pub enum PlaceKind {
 /// The trash place's path ([`PlaceKind::Trash`]): a window there shows the
 /// trash instead of a folder.
 pub const FILES_TRASH_PLACE: &str = "trash:///";
+
+/// The games place's path ([`PlaceKind::Games`]): a window there shows the
+/// installed games instead of a folder.
+pub const FILES_GAMES_PLACE: &str = "games:///";
+
+/// An installed game (feature `files`, [`Command::FilesGamesList`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Game {
+    /// What its launcher calls it.
+    pub name: String,
+    /// Where it's installed, absolute, as wire text ([`wire_text`]).
+    pub folder: String,
+    /// How much room it takes, in bytes, when its launcher says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// The folder its saves are under, absolute, as wire text, when one is
+    /// found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saves: Option<String>,
+}
 
 /// The Home page's path ([`PlaceKind::Home`]): a window there shows Quick
 /// access, the drives and recent files instead of a folder. `nova files`

@@ -314,6 +314,8 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             bookmarks: None,
             user_folders: Vec::new(),
             recent: None,
+            // Steam, once a test installs it, at `<dir>/steam`.
+            games: crate::files::games::Sources { steam: vec![dir.join("steam")] },
             previews: Some(dir.join("previews")),
         },
         session_lock: dir.to_owned(),

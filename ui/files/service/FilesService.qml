@@ -467,6 +467,16 @@ Singleton {
         });
     }
 
+    // `done(games)` gets the installed games in name order, each {name,
+    // folder, size, saves}; none when novad couldn't tell.
+    function gamesList(done: var) {
+        Daemon.call(Protocol.CMD_FILES_GAMES_LIST, undefined, (error, result) => {
+            if (error)
+                console.warn(`nova: games: ${error}`);
+            done(error ? null : result);
+        });
+    }
+
     // Puts the trashed items `ids` back where they came from.
     function restore(ids: var, done: var) {
         Daemon.call(Protocol.CMD_FILES_RESTORE, {

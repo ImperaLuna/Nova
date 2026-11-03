@@ -6,27 +6,21 @@
 .import "transfers.js" as Transfers
 
 // Nova Files' trash as its window shows it, kept apart so ui/tests can
-// check it: a trashed item as a row, where it came from, the command row's
-// Restore, the footer, and the words of Windows' "Delete file" and "Delete
-// multiple items" dialogs that ask before anything is deleted for good.
+// check it: a trashed item as a row, the command row's Restore, the
+// footer, and the words of Windows' "Delete file" and "Delete multiple
+// items" dialogs that ask before anything is deleted for good.
 
 // The trash's name, in the sidebar, the address bar and the window title.
 function name() {
     return qsTr("Trash");
 }
 
-// The address bar's one part while a window shows the trash.
-function crumbs() {
-    return [{
-            name: name(),
-            path: Protocol.FILES_TRASH_PLACE,
-            hidden: false
-        }];
-}
+// The trash's path, a place rather than a folder.
+var PLACE = Protocol.FILES_TRASH_PLACE;
 
 // Whether a window at `folder` shows the trash.
 function isTrash(folder) {
-    return folder === Protocol.FILES_TRASH_PLACE;
+    return folder === PLACE;
 }
 
 // The absolute paths of `rows` (the file list's) in `folder`.

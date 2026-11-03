@@ -5,7 +5,6 @@ import Quickshell
 import "../theme"
 import "../theme/icons.js" as Icons
 import "paths.js" as Paths
-import "trash.js" as Trash
 import "home.js" as Home
 import "../daemon/protocol.js" as Protocol
 
@@ -29,7 +28,7 @@ Rectangle {
     // The home folder reads as its own name, as in the tree: "Home" is the
     // Home page.
     readonly property string home: Quickshell.env("HOME") ?? ""
-    readonly property var parts: Trash.isTrash(navigator.folder) ? Trash.crumbs() : Home.isHome(navigator.folder) ? Home.crumbs() : Paths.crumbs(navigator.folder, home, Paths.folderName(home))
+    readonly property var parts: Home.isPage(navigator.folder) ? Home.crumbs(navigator.folder) : Paths.crumbs(navigator.folder, home, Paths.folderName(home))
     property bool editing: false
     property bool wrong: false
     // Searching works here (not in the trash).

@@ -17,7 +17,7 @@
 
 use super::target;
 use super::trash::escape;
-use nova_protocol::{FILES_HOME_PLACE, FILES_TRASH_PLACE, FilePlace, PlaceKind, wire_text};
+use nova_protocol::{FILES_GAMES_PLACE, FILES_HOME_PLACE, FILES_TRASH_PLACE, FilePlace, PlaceKind, wire_text};
 use std::io::Write as _;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
@@ -146,12 +146,13 @@ impl QuickAccess {
     }
 }
 
-/// The sidebar's places, in its order: the Home page, `pins`, then the
-/// trash, which is always there.
-pub fn places(pins: Vec<FilePlace>) -> Vec<FilePlace> {
+/// The sidebar's places, in its order: the Home page, `pins`, the games
+/// while there are `games`, then the trash, which is always there.
+pub fn places(pins: Vec<FilePlace>, games: bool) -> Vec<FilePlace> {
     let place = |kind, path: &str| FilePlace { kind, path: path.into(), name: String::new() };
     std::iter::once(place(PlaceKind::Home, FILES_HOME_PLACE))
         .chain(pins)
+        .chain(games.then(|| place(PlaceKind::Games, FILES_GAMES_PLACE)))
         .chain(std::iter::once(place(PlaceKind::Trash, FILES_TRASH_PLACE)))
         .collect()
 }
@@ -206,7 +207,7 @@ mod tests {
     #[test]
     fn without_a_bookmarks_file_the_user_folders_that_exist_are_pinned() {
         let home = home("defaults");
-        let listed = places(quick_access(&home).pins().unwrap());
+        let listed = places(quick_access(&home).pins().unwrap(), false);
         assert_eq!(
             kinds(&listed),
             [PlaceKind::Home, PlaceKind::Desktop, PlaceKind::Documents, PlaceKind::Pictures, PlaceKind::Trash]
@@ -234,7 +235,7 @@ mod tests {
         )
         .unwrap();
         let quick = quick_access(&home);
-        let listed = places(quick.pins().unwrap());
+        let listed = places(quick.pins().unwrap(), false);
         assert_eq!(kinds(&listed), [PlaceKind::Home, PlaceKind::Folder, PlaceKind::Pictures, PlaceKind::Trash]);
         assert_eq!(listed[1].name, "Work", "the bookmark's label");
 
@@ -245,7 +246,7 @@ mod tests {
         assert!(text.contains("sftp://server/srv Server\n"), "other apps' lines stay: {text}");
         assert!(text.contains("/Gone\n"), "a folder that's gone stays pinned for when it's back");
         assert!(!text.contains("Work"), "unpinned");
-        let names: Vec<_> = places(quick.pins().unwrap()).into_iter().map(|place| place.name).collect();
+        let names: Vec<_> = places(quick.pins().unwrap(), false).into_iter().map(|place| place.name).collect();
         assert_eq!(names, ["", "Pictures", "Old", ""]);
     }
 
@@ -255,14 +256,20 @@ mod tests {
         let quick = quick_access(&home);
         assert!(quick.pin(&wire_text(home.join("Desktop")), false).unwrap());
         assert_eq!(
-            kinds(&places(quick.pins().unwrap())),
+            kinds(&places(quick.pins().unwrap(), false)),
             [PlaceKind::Home, PlaceKind::Documents, PlaceKind::Pictures, PlaceKind::Trash]
         );
         // Unpinning the rest leaves an empty file: nothing pinned, not the
         // user's folders again.
         quick.pin(&wire_text(home.join("Documents")), false).unwrap();
         quick.pin(&wire_text(home.join("Pictures")), false).unwrap();
-        assert_eq!(kinds(&places(quick.pins().unwrap())), [PlaceKind::Home, PlaceKind::Trash]);
+        assert_eq!(kinds(&places(quick.pins().unwrap(), false)), [PlaceKind::Home, PlaceKind::Trash]);
+        let with_games = places(quick.pins().unwrap(), true);
+        assert_eq!(
+            kinds(&with_games),
+            [PlaceKind::Home, PlaceKind::Games, PlaceKind::Trash],
+            "the games before the trash"
+        );
     }
 
     #[test]
@@ -275,7 +282,8 @@ mod tests {
         assert!(quick.pin(&wire_text(&raw), true).unwrap());
         let text = std::fs::read_to_string(home.join(".config").join(BOOKMARKS_FILE)).unwrap();
         assert!(text.contains("caf%E9%20bar"), "{text}");
-        let pinned = places(quick.pins().unwrap()).into_iter().find(|place| place.kind == PlaceKind::Folder).unwrap();
+        let pinned =
+            places(quick.pins().unwrap(), false).into_iter().find(|place| place.kind == PlaceKind::Folder).unwrap();
         assert_eq!(pinned.path, wire_text(&raw));
     }
 
@@ -287,7 +295,10 @@ mod tests {
         let old = escape(home.join("Old").as_os_str());
         std::fs::write(&file, format!("file://{old}\nfile://{old}/ Again\nfile://{old}/../Projects\n")).unwrap();
         let quick = quick_access(&home);
-        assert_eq!(kinds(&places(quick.pins().unwrap())), [PlaceKind::Home, PlaceKind::Folder, PlaceKind::Trash]);
+        assert_eq!(
+            kinds(&places(quick.pins().unwrap(), false)),
+            [PlaceKind::Home, PlaceKind::Folder, PlaceKind::Trash]
+        );
         assert!(quick.pin(&wire_text(home.join("Old")), false).unwrap());
         assert!(quick.pins().unwrap().is_empty(), "unpinning drops every line naming it");
     }

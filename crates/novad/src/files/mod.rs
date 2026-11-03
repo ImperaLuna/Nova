@@ -37,6 +37,8 @@
 //!   around them (`files_places`).
 //! - `recent.rs`: the files any app used last (`files_recent`), for the
 //!   Home page.
+//! - `games/`: the Games place's installed games (`files_games_list`),
+//!   from the launchers' own library files.
 //! - `preview.rs`: what the preview pane shows of a file
 //!   (`files_preview`): an image, the first lines of text, or a PDF's
 //!   first page or a video's still drawn into the cache.
@@ -88,6 +90,7 @@ mod editing;
 mod file_manager1;
 mod filter;
 mod folder;
+pub mod games;
 mod history;
 mod launcher;
 mod measures;
@@ -120,7 +123,7 @@ use crate::session_bus::{Bus, Stop};
 use history::{History, Way};
 use nova_protocol::{
     ClashAnswer, EjectOutcome, Event, FeatureState, FileFilter, FilePlace, FileSort, FilesLook, FilesWindow,
-    FolderTree, PlaceKind, RecentFile, Topic, TransferMode,
+    FolderTree, Game, PlaceKind, RecentFile, Topic, TransferMode,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
@@ -174,6 +177,8 @@ pub struct Sources {
     pub user_folders: Vec<(PlaceKind, PathBuf)>,
     /// `recently-used.xbel`; none without a data folder.
     pub recent: Option<PathBuf>,
+    /// Where the game launchers keep their libraries.
+    pub games: games::Sources,
     /// Where the preview pane's pictures of PDFs and videos are kept; none
     /// draws none.
     pub previews: Option<PathBuf>,
@@ -477,7 +482,13 @@ impl Files {
             self.shared.logger.warn(LOG_SOURCE, &format!("Quick access: {e}"));
             Vec::new()
         });
-        quick_access::places(pins)
+        quick_access::places(pins, self.shared.sources.games.any())
+    }
+
+    /// The installed games (`files_games_list`). It reads the launchers'
+    /// files, so it's called off the connection's thread.
+    pub fn games(&self) -> Vec<Game> {
+        games::list(&self.shared.sources.games, &self.shared.logger)
     }
 
     /// Pins the folder `folder` to Quick access, or unpins it
@@ -754,6 +765,7 @@ impl crate::modules::Module for Files {
         let home = nova_paths::home().unwrap_or_else(|| PathBuf::from("/"));
         let trash = nova_paths::data_home().map(|data| data.join(TRASH_DIR));
         let search = search::Sources::system(env.home.clone());
+        let games = games::Sources::system(&home, nova_paths::data_home());
         let user_folders = quick_access::USER_FOLDERS
             .iter()
             .map(|(kind, key, fallback)| (*kind, nova_paths::user_dir(key, fallback)))
@@ -772,6 +784,7 @@ impl crate::modules::Module for Files {
             bookmarks: nova_paths::config_home().map(|config| config.join(quick_access::BOOKMARKS_FILE)),
             user_folders,
             recent: nova_paths::data_home().map(|data| data.join(recent::RECENT_FILE)),
+            games,
             previews: nova_paths::cache_home().map(|cache| cache.join(PREVIEWS_DIR)),
             opened: nova_paths::cache_home().map(|cache| cache.join(OPENED_DIR)),
         }
@@ -859,6 +872,7 @@ mod tests {
                 bookmarks: Some(dir.join("bookmarks")),
                 user_folders: vec![(PlaceKind::Downloads, dir.join("Downloads"))],
                 recent: Some(dir.join("recently-used.xbel")),
+                games: games::Sources { steam: vec![] },
                 previews: None,
                 opened: Some(dir.join("opened")),
             };
@@ -959,7 +973,10 @@ mod tests {
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         let (_, next, _next_stream) = fixture.nova_files();
         assert_eq!(next_named(&next, "files_window", WAIT)["folder"], json!(fixture.downloads()));
-        assert!(quitting.try_recv().is_err(), "nothing for the one quitting");
+        // Other events (the trash's watch starting) may reach it; no window does.
+        let windows =
+            quitting.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_window")));
+        assert!(!windows, "no window for the one quitting");
     }
 
     #[test]

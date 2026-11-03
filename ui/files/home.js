@@ -2,14 +2,15 @@
 .import "../daemon/protocol.js" as Protocol
 .import "../theme/icons.js" as Icons
 .import "listing.js" as Listing
+.import "games.js" as Games
 .import "paths.js" as Paths
 .import "trash.js" as Trash
 
 // Nova Files' Home page and the places around it, kept apart so ui/tests
 // can check them: the page's name and address, which places aren't
-// folders (the Home page and the trash), how a sidebar place or a Quick
-// access tile reads, and a recent file as a row. How full a drive is comes
-// from space.js.
+// folders (the Home page, the games and the trash), how a sidebar place
+// or a Quick access tile reads, and a recent file as a row. How full a
+// drive is comes from space.js.
 
 // The Home page's name, in the sidebar, the address bar and the window
 // title.
@@ -23,16 +24,21 @@ function isHome(folder) {
 }
 
 // Whether a window at `folder` shows a page rather than a folder: the Home
-// page or the trash, which have nothing above them.
+// page, the games or the trash, which have nothing above them.
 function isPage(folder) {
-    return isHome(folder) || Trash.isTrash(folder);
+    return isHome(folder) || Games.isGames(folder) || Trash.isTrash(folder);
 }
 
-// The address bar's one part while a window shows the Home page.
-function crumbs() {
+// The page at `folder`'s name, in the address bar and the window title.
+function pageName(folder) {
+    return isHome(folder) ? name() : Games.isGames(folder) ? Games.name() : Trash.name();
+}
+
+// The address bar's one part while a window shows the page at `folder`.
+function crumbs(folder) {
     return [{
-            name: name(),
-            path: Protocol.FILES_HOME_PLACE,
+            name: pageName(folder),
+            path: folder,
             hidden: false
         }];
 }
@@ -40,18 +46,23 @@ function crumbs() {
 // Whether a place ({kind, path, name} from files_places) is a folder
 // pinned to Quick access.
 function isPinned(place) {
-    return place.kind !== Protocol.PLACE_HOME && place.kind !== Protocol.PLACE_TRASH;
+    return place.kind !== Protocol.PLACE_HOME && place.kind !== Protocol.PLACE_GAMES && place.kind !== Protocol.PLACE_TRASH;
 }
 
-// How a place reads: {name, icon}. The Home page and the trash have their
-// own names; a pinned folder has the name novad gives (its bookmark's
-// label or its own), and its kind's icon.
+// How a place reads: {name, icon}. The Home page, the games and the trash
+// have their own names; a pinned folder has the name novad gives (its
+// bookmark's label or its own), and its kind's icon.
 function look(place) {
     switch (place.kind) {
     case Protocol.PLACE_HOME:
         return {
             name: name(),
             icon: Icons.HOME
+        };
+    case Protocol.PLACE_GAMES:
+        return {
+            name: Games.name(),
+            icon: Icons.GAMEPAD
         };
     case Protocol.PLACE_TRASH:
         return {

@@ -9,6 +9,7 @@ import "../files/paths.js" as Paths
 import "../files/navigation.js" as Navigation
 import "../files/trash.js" as Trash
 import "../files/home.js" as Home
+import "../files/games.js" as Games
 import "../daemon/protocol.js" as Protocol
 import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
@@ -26,10 +27,12 @@ import "../files/picker.js" as Picker
 // answer, and the trash: its rows, its selection, and the dialog that asks
 // before deleting for good, search: how results read and when novad
 // is asked, a window as an app's Open or Save dialog: its title and
-// accept label, what accepting picks, and its bar, what the preview pane shows, and the window's
+// accept label, what accepting picks, and its bar, what the preview pane
+// shows, the window's
 // tabs: which one Ctrl+Tab and closing land on, their widths, dragging one
-// along or out of the row, and the row's clicks. The root is an Item: a
-// TestCase root gets no mouse events.
+// along or out of the row, and the row's clicks, and the games: their
+// rows, menu and list. The root is an Item: a TestCase root gets no mouse
+// events.
 Item {
     id: stage
     width: 880
@@ -672,7 +675,7 @@ Item {
             verify(Home.isHome(Protocol.FILES_HOME_PLACE));
             verify(Home.isPage(Protocol.FILES_HOME_PLACE) && Home.isPage(Protocol.FILES_TRASH_PLACE));
             verify(!Home.isPage("/home/ana"), "a folder isn't a page");
-            compare(names(Home.crumbs()), ["Home"]);
+            compare(names(Home.crumbs(Protocol.FILES_HOME_PLACE)), ["Home"]);
         }
 
         function test_places_read_by_kind_and_pins_by_their_name() {
@@ -734,7 +737,9 @@ Item {
         function test_the_trash_is_a_place_with_one_part() {
             verify(Trash.isTrash(Protocol.FILES_TRASH_PLACE));
             verify(!Trash.isTrash("/home/ana"));
-            compare(names(Trash.crumbs()), ["Trash"]);
+            compare(names(Home.crumbs(Protocol.FILES_TRASH_PLACE)), ["Trash"]);
+            verify(Home.isPage(Protocol.FILES_TRASH_PLACE));
+            verify(!Home.isPage("/home/ana"));
         }
 
         function test_a_trashed_row_says_where_it_came_from() {
@@ -858,6 +863,86 @@ Item {
             compare(kept[0].trashId, "a", "rows handed out stay as they were");
             model.clearSelection();
             compare(model.selectedCount, 0);
+        }
+
+        function game(name, folder, extra) {
+            return Object.assign({
+                name: name,
+                folder: folder
+            }, extra ?? {});
+        }
+
+        function test_the_games_are_a_place_with_one_part() {
+            verify(Games.isGames(Protocol.FILES_GAMES_PLACE));
+            verify(Home.isPage(Protocol.FILES_GAMES_PLACE));
+            compare(names(Home.crumbs(Protocol.FILES_GAMES_PLACE)), ["Games"]);
+            compare(Home.pageName(Protocol.FILES_GAMES_PLACE), "Games");
+            const games = {
+                kind: Protocol.PLACE_GAMES,
+                path: Protocol.FILES_GAMES_PLACE
+            };
+            compare(Home.look(games).name, "Games");
+            verify(!Home.isPinned(games), "the games aren't a pinned folder");
+        }
+
+        function test_a_game_row_has_every_role_and_its_folders() {
+            const bare = Games.row(game("Crimson Desert", "/mnt/games/SteamLibrary/steamapps/common/Crimson Desert"));
+            compare([bare.size, bare.saves], [-1, ""], "no size or saves found");
+            compare(Games.size(bare), "");
+            const saved = Games.row(game("ELDEN RING", "/home/ana/.local/share/Steam/steamapps/common/ELDEN RING", {
+                size: 52813463184,
+                saves: "/home/ana/.local/share/Steam/steamapps/compatdata/1245620/pfx/drive_c/users/steamuser"
+            }));
+            verify(Games.size(saved) !== "");
+            compare(Games.actions(saved).map(action => action.label), ["Open install folder", "Open save folder"]);
+            compare(Games.actions(saved).map(action => action.folder), [saved.folder, saved.saves]);
+            compare(Games.actions(bare)[1].folder, "", "nowhere to go without saves");
+            compare(Games.actions(null).map(action => action.folder), ["", ""], "nothing picked");
+        }
+
+        Component {
+            id: gamesModelComponent
+            GamesModel {}
+        }
+        Component {
+            id: fakeGamesService
+            QtObject {
+                property bool connected: true
+                property var asked: []
+                function gamesList(done) {
+                    asked.push(done);
+                }
+            }
+        }
+
+        function test_the_games_are_read_when_shown_and_keep_the_pick() {
+            const service = createTemporaryObject(fakeGamesService, stage);
+            const model = createTemporaryObject(gamesModelComponent, stage, {
+                service: service
+            });
+            compare(service.asked.length, 0, "not read until shown");
+            model.active = true;
+            compare(service.asked.length, 1);
+            service.asked[0]([game("A", "/g/A"), game("B", "/g/B", {
+                    saves: "/s/B"
+                })]);
+            verify(model.loaded);
+            model.pick(1);
+            compare(model.pickedRow.saves, "/s/B");
+            model.refresh();
+            service.asked[1]([game("0", "/g/0"), game("A", "/g/A"), game("B", "/g/B")]);
+            compare(model.picked, 2, "the pick follows its game");
+            model.refresh();
+            service.asked[2](null);
+            compare(model.rows.count, 3, "a failed read keeps what's shown");
+            model.refresh();
+            model.refresh();
+            service.asked[4]([game("C", "/g/C")]);
+            service.asked[3]([game("late", "/g/late")]);
+            compare(model.rows.get(0).name, "C", "a late answer to an older read is dropped");
+            compare(model.picked, -1, "the picked game is gone");
+            model.active = false;
+            compare(model.pickedRow, null);
         }
 
         Component {

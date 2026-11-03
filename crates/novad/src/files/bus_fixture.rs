@@ -47,6 +47,7 @@ impl Fixture {
             bookmarks: None,
             user_folders: Vec::new(),
             recent: None,
+            games: crate::files::games::Sources { steam: vec![] },
         };
         let apps = crate::apps::AppIndex::of(None, &logger);
         let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");
