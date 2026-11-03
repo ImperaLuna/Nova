@@ -25,8 +25,8 @@ import "shortcuts.js" as Shortcuts
 // for its Properties, or the folder's with nothing selected
 // (`propertiesRequested`). F5 (the
 // window's) reads the folder again (`refresh`). A middle click on a folder
-// asks for it in a new tab (`tabRequested`). view() and show() hand its
-// order and selection to the window's tabs and back.
+// asks for it in a new tab (`tabRequested`). tabView() and restoreTab()
+// hand its order and selection to the window's tabs and back.
 // Rows drag out (the selection, FileDrag) and files dragged in drop on the
 // folder row under the pointer, or else the folder shown
 // (`dropRequested`); resting on a folder row opens it. Pressing a
@@ -108,17 +108,17 @@ FocusScope {
     }
 
     // The order and the selected names, for a tab going to the back.
-    function view(): var {
+    function tabView(): var {
         return {
             sort: model.sort,
             selected: model.selectedNames()
         };
     }
 
-    // Shows a tab's view() (its order; null keeps this one) once its folder
+    // Shows a tab's tabView() (its order; null keeps this one) once its folder
     // is set, with `selected` (names) selected. Shift starts from nothing,
     // not from the last tab's anchor.
-    function show(kept: var, selected: var) {
+    function restoreTab(kept: var, selected: var) {
         if (kept && (kept.sort.key !== model.sort.key || kept.sort.descending !== model.sort.descending))
             model.sort = kept.sort;
         model.selectNames(selected);

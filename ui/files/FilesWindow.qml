@@ -163,7 +163,7 @@ FloatingWindow {
     function snapshot(): var {
         return {
             folder: folder,
-            list: list.view(),
+            list: list.tabView(),
             trash: trash.selectedIds()
         };
     }
@@ -184,7 +184,7 @@ FloatingWindow {
         tab = next;
         folder = next.navigator.folder;
         const kept = next.view?.folder === folder ? next.view : null;
-        list.show(next.view?.list ?? null, kept?.list.selected ?? []);
+        list.restoreTab(next.view?.list ?? null, kept?.list.selected ?? []);
         trash.selectIds(kept?.trash ?? []);
     }
 
