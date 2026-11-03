@@ -2054,6 +2054,24 @@ pub enum Command {
     FilesSearch {
         query: String,
     },
+    /// Makes a folder in the folder `folder` (absolute, feature `files`),
+    /// called "New folder", or "New folder (2)" and on when that's taken,
+    /// and answers with its name as wire text.
+    FilesNewFolder {
+        folder: String,
+    },
+    /// Renames the item at `path` (absolute) to `name`, in the same folder
+    /// (feature `files`), and answers with the new name as wire text. A
+    /// name taken by another item is refused, never replaced.
+    FilesRename {
+        path: String,
+        name: String,
+    },
+    /// What the details pane shows about the item at `path` (absolute,
+    /// feature `files`), answered with a [`FileDetails`].
+    FilesDetails {
+        path: String,
+    },
 }
 
 /// A drive in Nova Files' sidebar ([`Event::FilesDrives`]): one
@@ -2158,6 +2176,33 @@ pub struct TrashItem {
     /// The item, under the name it had.
     pub entry: FileEntry,
 }
+
+/// The answer to [`Command::FilesDetails`]: one item, as the details
+/// pane shows it. Times are in milliseconds since 1970, when the file
+/// system keeps them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileDetails {
+    pub entry: FileEntry,
+    /// How many items a folder holds; none for a file, or a folder that
+    /// can't be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accessed_ms: Option<i64>,
+    /// Its owner's and group's names, or their numbers when the user
+    /// database has no name for them.
+    pub owner: String,
+    pub group: String,
+    /// Its permission bits (`0o755`): owner, group, others.
+    pub mode: u32,
+}
+
+/// The longest name `files_rename` takes, in bytes: Linux file systems'
+/// `NAME_MAX`.
+pub const FILES_NAME_MAX_BYTES: usize = 255;
 
 /// The answer to [`Command::FilesSearch`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -3311,6 +3356,39 @@ mod tests {
                             in_hidden_folder: true,
                             marks: vec![TextMark { start: 0, length: 7 }],
                         }],
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Request { id: Some(82), command: Command::FilesNewFolder { folder: "/home/user/Pictures".into() } }),
+            encode(Response { id: 82, outcome: Outcome::Result(json!("New folder (2)")) }),
+            encode(Request {
+                id: Some(83),
+                command: Command::FilesRename { path: "/home/user/Pictures/New folder".into(), name: "Trips".into() },
+            }),
+            encode(Request {
+                id: Some(84),
+                command: Command::FilesDetails { path: "/home/user/Pictures/Trips".into() },
+            }),
+            encode(Response {
+                id: 84,
+                outcome: Outcome::Result(
+                    serde_json::to_value(FileDetails {
+                        entry: FileEntry {
+                            name: "Trips".into(),
+                            dir: true,
+                            link: false,
+                            hidden: false,
+                            mime: "inode/directory".into(),
+                            size: None,
+                            modified_ms: Some(1_793_000_000_000),
+                        },
+                        items: Some(12),
+                        created_ms: Some(1_792_000_000_000),
+                        accessed_ms: Some(1_793_600_000_000),
+                        owner: "user".into(),
+                        group: "users".into(),
+                        mode: 0o755,
                     })
                     .unwrap(),
                 ),
