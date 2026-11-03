@@ -52,6 +52,7 @@ mod power;
 mod procfs;
 mod recording;
 mod render_loop;
+mod reply_slot;
 mod resources;
 mod screenshot;
 mod server;
