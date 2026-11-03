@@ -242,7 +242,6 @@ Rectangle {
         id: lift
     }
 
-
     SequentialAnimation {
         id: riseIn
         PropertyAction {
