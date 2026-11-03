@@ -41,7 +41,7 @@ impl Fixture {
         write_program(
             &dir.join("prefix/bin"),
             "png-thumbnailer",
-            &format!("echo \"$1\" >> '{runs}'\n{body}\n/bin/cp '{picture}' \"$2\""),
+            &format!("echo \"$1\" >> '{runs}'\n{body}\ncp '{picture}' \"$2\""),
         );
         std::fs::create_dir_all(dir.join("Pictures")).unwrap();
         let hub = Arc::new(Hub::default());
@@ -253,4 +253,21 @@ fn a_file_changed_while_its_thumbnail_is_made_is_made_again() {
     assert!(made["thumbnail"].is_string());
     assert!(next_named_within(&events, Duration::from_millis(300)).is_none());
     assert_eq!(fixture.runs(), 2);
+}
+
+#[test]
+fn a_thumbnailer_installed_later_is_used_without_a_restart() {
+    let fixture = Fixture::new("installed", "");
+    let entry = fixture.dir.join("prefix/share/thumbnailers/png.thumbnailer");
+    let text = std::fs::read_to_string(&entry).unwrap();
+    std::fs::remove_file(&entry).unwrap();
+    let (client, events, _stream) = fixture.client();
+    let before = fixture.photo("before.png");
+    fixture.thumbnails.request(client, &before).unwrap();
+    assert_eq!(answer(&events)["thumbnail"], Value::Null, "no thumbnailer yet");
+
+    std::fs::write(&entry, text).unwrap();
+    let after = fixture.photo("after.png");
+    fixture.thumbnails.request(client, &after).unwrap();
+    assert!(answer(&events)["thumbnail"].is_string(), "the new thumbnailer was read");
 }

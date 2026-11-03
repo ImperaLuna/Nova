@@ -18,6 +18,7 @@ use std::io::{BufReader, Cursor};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The size folder for [`FILES_THUMBNAIL_PIXELS`].
 const LARGE: &str = "large";
@@ -82,19 +83,26 @@ pub fn uri(path: &Path) -> String {
 /// The cache folder.
 pub struct Cache {
     root: PathBuf,
+    /// This cache's number in novad: scratch files of one opened earlier
+    /// (Nova Files turned off and on) never share a name with its own.
+    instance: usize,
 }
+
+/// The next [`Cache::instance`].
+static NEXT_INSTANCE: AtomicUsize = AtomicUsize::new(0);
 
 impl Cache {
     /// The cache at `root` (`$XDG_CACHE_HOME/thumbnails`), made when it's
     /// first written to.
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self { root, instance: NEXT_INSTANCE.fetch_add(1, Ordering::Relaxed) }
     }
 
-    /// Whether `path` is in the cache: thumbnails of thumbnails aren't
-    /// made.
+    /// Whether `path` is in the cache, as named or through links:
+    /// thumbnails of thumbnails aren't made.
     pub fn holds(&self, path: &Path) -> bool {
-        path.starts_with(&self.root)
+        let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+        path.starts_with(&self.root) || real(path).starts_with(real(&self.root))
     }
 
     /// The thumbnail of `original` that's still good, if there is one.
@@ -133,7 +141,8 @@ impl Cache {
     pub fn scratch_path(&self, original: &Original, worker: usize) -> Result<PathBuf, String> {
         let folder = self.root.join(LARGE);
         self.make_folder(&folder)?;
-        Ok(folder.join(format!(".{OWN_FAIL}-{}-{worker}-{}", std::process::id(), name(&original.uri))))
+        let (pid, instance) = (std::process::id(), self.instance);
+        Ok(folder.join(format!(".{OWN_FAIL}-{pid}-{instance}-{worker}-{}", name(&original.uri))))
     }
 
     fn thumbnail_path(&self, original: &Original) -> PathBuf {
@@ -171,7 +180,8 @@ fn name(uri: &str) -> String {
 }
 
 /// Whether the PNG at `path` is a thumbnail (or failure mark) of `original`
-/// as it is now: its URI and modification time match.
+/// as it is now: its URI and modification time match, and its size when
+/// the PNG says (a quick save within the same second changes only that).
 fn describes(path: &Path, original: &Original) -> bool {
     let Ok(file) = std::fs::File::open(path) else { return false };
     let Ok(reader) = png::Decoder::new(BufReader::new(file)).read_info() else { return false };
@@ -190,7 +200,9 @@ fn describes(path: &Path, original: &Original) -> bool {
     // Some apps write fractions of a second; the standard's whole seconds count.
     #[allow(clippy::cast_possible_truncation)]
     let same_time = mtime.is_some_and(|mtime| mtime.trunc() as i64 == original.mtime);
-    same_time && text(URI_KEY).as_deref() == Some(original.uri.as_str())
+    let size = text(SIZE_KEY).and_then(|size| size.trim().parse::<u64>().ok());
+    let same_size = size.is_none_or(|size| size == original.size);
+    same_time && same_size && text(URI_KEY).as_deref() == Some(original.uri.as_str())
 }
 
 /// A picture as 8-bit RGBA rows.
@@ -334,6 +346,8 @@ pub mod tests {
 
         let changed = Original { mtime: photo.mtime + 60, ..photo.clone() };
         assert_eq!(cache.found(&changed), None, "a thumbnail of the file as it was is stale");
+        let resaved = Original { size: photo.size + 1, ..photo.clone() };
+        assert_eq!(cache.found(&resaved), None, "saved again within the second, it's stale too");
     }
 
     #[test]
@@ -345,7 +359,8 @@ pub mod tests {
         cache.mark_failed(&broken).unwrap();
         assert!(cache.failed(&broken));
         assert_eq!(cache.found(&broken), None);
-        assert!(!cache.failed(&Original { mtime: broken.mtime + 1, ..broken }));
+        assert!(!cache.failed(&Original { mtime: broken.mtime + 1, ..broken.clone() }));
+        assert!(!cache.failed(&Original { size: broken.size + 1, ..broken }));
     }
 
     #[test]
@@ -374,5 +389,28 @@ pub mod tests {
         let cache = Cache::new(PathBuf::from("/home/me/.cache/thumbnails"));
         assert!(cache.holds(Path::new("/home/me/.cache/thumbnails/large/x.png")));
         assert!(!cache.holds(Path::new("/home/me/.cache/thumbnailsx/y.png")));
+    }
+
+    #[test]
+    fn the_cache_holds_its_files_reached_through_links() {
+        let dir = TempDir::new("thumbnail-cache-links");
+        std::fs::create_dir_all(dir.join("real/large")).unwrap();
+        std::fs::write(dir.join("real/large/x.png"), b"").unwrap();
+        std::os::unix::fs::symlink(dir.join("real/large"), dir.join("shortcut")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("cache")).unwrap();
+        let cache = Cache::new(dir.join("real"));
+        assert!(cache.holds(&dir.join("shortcut/x.png")), "a link into the cache");
+        assert!(Cache::new(dir.join("cache")).holds(&dir.join("real/large/x.png")), "a cache that's a link");
+        std::fs::write(dir.join("y.png"), b"").unwrap();
+        assert!(!cache.holds(&dir.join("y.png")));
+    }
+
+    #[test]
+    fn caches_opened_again_never_share_scratch_files() {
+        let dir = TempDir::new("thumbnail-cache-scratch");
+        let photo = original(&dir, "photo.jpg");
+        let first = Cache::new(dir.join("thumbnails")).scratch_path(&photo, 0).unwrap();
+        let again = Cache::new(dir.join("thumbnails")).scratch_path(&photo, 0).unwrap();
+        assert_ne!(first, again);
     }
 }

@@ -20,9 +20,9 @@
 //! [`MAKE_TIMEOUT`] or a cache that can't be written is only logged, so the
 //! file is tried again next time.
 //!
-//! The thumbnailers are read as the module starts and again whenever the
-//! MIME database is (a package came or went), so one installed later is
-//! used without a restart.
+//! The thumbnailers are read when first needed and again whenever the MIME
+//! database is or a thumbnailers folder changed (a package came or went),
+//! so one installed later is used without a restart.
 
 mod cache;
 mod thumbnailers;
@@ -211,11 +211,31 @@ impl Queues {
     }
 }
 
-/// The thumbnailers, as read with one MIME database.
+/// The thumbnailers, as read with one MIME database and their folders as
+/// they were.
 #[derive(Default)]
 struct Known {
     db: Option<Arc<MimeDb>>,
+    folders: Vec<Folder>,
     thumbnailers: Vec<Thumbnailer>,
+}
+
+/// A thumbnailers folder as it was: where it really is (a NixOS profile
+/// links somewhere new each generation) and when it last changed; none when
+/// it isn't there.
+type Folder = Option<(PathBuf, Option<std::time::SystemTime>)>;
+
+/// The thumbnailers folders in `data_dirs`, as they are now: a few stats,
+/// cheap beside running a thumbnailer.
+fn folders(data_dirs: &[PathBuf]) -> Vec<Folder> {
+    data_dirs
+        .iter()
+        .map(|dir| {
+            let real = std::fs::canonicalize(dir.join("thumbnailers")).ok()?;
+            let changed = std::fs::metadata(&real).and_then(|metadata| metadata.modified()).ok();
+            Some((real, changed))
+        })
+        .collect()
 }
 
 impl Thumbnails {
@@ -366,10 +386,11 @@ impl Shared {
     }
 
     /// The thumbnailer for type `mime`, reading them again when the MIME
-    /// database was.
+    /// database was or a thumbnailers folder changed.
     fn thumbnailer(&self, db: &Arc<MimeDb>, mime: &str) -> Option<Thumbnailer> {
+        let folders = folders(&self.sources.data_dirs);
         let mut known = lock(&self.known);
-        if !known.db.as_ref().is_some_and(|seen| Arc::ptr_eq(seen, db)) {
+        if !known.db.as_ref().is_some_and(|seen| Arc::ptr_eq(seen, db)) || known.folders != folders {
             let (found, problems) = thumbnailers::load(&self.sources.data_dirs, &self.sources.path_var);
             for problem in problems {
                 self.logger.warn(LOG_SOURCE, &format!("thumbnailer {problem}"));
@@ -379,7 +400,7 @@ impl Shared {
                 LOG_SOURCE,
                 &format!("thumbnailers: {}", if names.is_empty() { "none".into() } else { names.join(", ") }),
             );
-            *known = Known { db: Some(Arc::clone(db)), thumbnailers: found };
+            *known = Known { db: Some(Arc::clone(db)), folders, thumbnailers: found };
         }
         thumbnailers::for_type(&known.thumbnailers, mime, db).cloned()
     }
@@ -410,6 +431,9 @@ impl Shared {
         // Not left running if novad goes.
         crate::child::die_with_novad(&mut command, libc::SIGKILL);
         let stored = match crate::child::output_within(command, MAKE_TIMEOUT) {
+            // Turned off meanwhile: nothing is stored or marked, as Files
+            // turned on again may be making it too.
+            Ok(_) if lock(&self.queues).stopped => Err(Failed::Here("Nova Files stopped".into())),
             Ok(output) if output.status.success() => cache.store(original, &scratch),
             Ok(output) => {
                 Err(Failed::File(format!("{}: {}", output.status, String::from_utf8_lossy(&output.stderr).trim())))
