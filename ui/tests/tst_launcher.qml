@@ -495,6 +495,9 @@ Item {
             verify(findChild(row, "showInFolder").visible);
             keyClick(Qt.Key_Return, Qt.ShiftModifier);
             compare(Array.from(launches.signalArguments[0]), ["files", "/home/me/.cache/report.pdf", true]);
+            launcher.launching = null;
+            keyClick(Qt.Key_Tab);
+            compare(launcher.query, "~/.cache/report.pdf", "Tab fills in a found file's path");
         }
     }
 

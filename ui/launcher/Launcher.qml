@@ -237,13 +237,13 @@ StagePanel {
         case Qt.Key_Escape:
             open = false;
             return true;
-        // Tab stays in the field: Ctrl+Tab switches modes, Tab takes the
-        // grey completion.
+        // Tab stays in the field: Ctrl+Tab switches modes, Tab fills in the
+        // selected file's path (the grey completion, while a path is typed).
         case Qt.Key_Tab:
         case Qt.Key_Backtab:
             if ((modifiers & Qt.ControlModifier) !== 0)
                 setMode(inFiles ? Protocol.PROVIDER_APPS : Protocol.PROVIDER_FILES);
-            else if (completion !== "")
+            else if (inFiles && matchesFor === query && rows[selected]?.file)
                 field.text = rows[selected].file.completion;
             return true;
         }
