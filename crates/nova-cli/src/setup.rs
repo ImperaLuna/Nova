@@ -681,9 +681,13 @@ mod tests {
         // recording's wf-recorder, screenshot's grim, wl-copy and xdg-open
         // wallpaper's awww, peripherals' upower and bluetooth's bluetoothctl
         // are there; Quickshell has no binary check (the package manager
-        // skips it when it's installed), nor has files' udisks2.
+        // skips it when it's installed), nor have files' udisks2 and
+        // thumbnailers.
         assert_eq!(why, "install Quickshell for the UI, and packages for files");
-        assert_eq!(argv, &words(&["paru", "-S", "--needed", "quickshell", "udisks2"]));
+        assert_eq!(
+            argv,
+            &words(&["paru", "-S", "--needed", "quickshell", "udisks2", "gdk-pixbuf2", "ffmpegthumbnailer"])
+        );
     }
 
     /// Quickshell (and Fedora's COPR for it) only while a feature that draws
@@ -727,6 +731,8 @@ mod tests {
                     "quickshell",
                     "bluez",
                     "udisks2",
+                    "libgdk-pixbuf2.0-bin",
+                    "ffmpegthumbnailer",
                     "upower",
                     "wf-recorder",
                     "grim",
