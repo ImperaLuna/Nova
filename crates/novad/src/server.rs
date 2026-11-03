@@ -360,6 +360,18 @@ impl<'a> Connection<'a> {
                 return self.files_later(move |files| files.trash().erase(&ids));
             }
             Command::FilesEmptyTrash => return self.files_later(|files| files.trash().empty()),
+            Command::FilesNewFolder { folder } => {
+                let folder = folder.clone();
+                return self.files_later(move |files| files.new_folder(&folder));
+            }
+            Command::FilesRename { path, name } => {
+                let (path, name) = (path.clone(), name.clone());
+                return self.files_later(move |files| files.rename(&path, &name));
+            }
+            Command::FilesDetails { path } => {
+                let path = path.clone();
+                return self.files_later(move |files| files.details(&path));
+            }
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -955,7 +967,10 @@ impl<'a> Connection<'a> {
             | Command::FilesTrashDelete { .. }
             | Command::FilesEmptyTrash
             | Command::FilesMount { .. }
-            | Command::FilesEject { .. } => {}
+            | Command::FilesEject { .. }
+            | Command::FilesNewFolder { .. }
+            | Command::FilesRename { .. }
+            | Command::FilesDetails { .. } => {}
             Command::FilesTree { .. } | Command::FilesPlaces => {}
         }
     }

@@ -34,6 +34,8 @@
 //!   each, asking the window about name clashes.
 //! - `copying.rs`: the file system side of those: measuring, numbered
 //!   names, and copying a file in chunks.
+//! - `editing.rs`: new folders, renaming in place, and what the details
+//!   pane shows about an item.
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
@@ -48,6 +50,7 @@
 
 mod copying;
 mod drives;
+mod editing;
 mod file_manager1;
 mod folder;
 pub mod search;
@@ -244,6 +247,22 @@ impl Files {
     /// udisks2, so it runs off the connection's thread.
     pub fn mount(&self, drive: &str) -> Result<String, String> {
         self.drives.mount(drive)
+    }
+
+    /// Makes a new folder in `folder` (`files_new_folder`); touches the
+    /// disk, so it runs off the connection's thread.
+    pub fn new_folder(&self, folder: &str) -> Result<String, String> {
+        editing::new_folder(folder)
+    }
+
+    /// Renames the item at `path` to `name` (`files_rename`).
+    pub fn rename(&self, path: &str, name: &str) -> Result<String, String> {
+        editing::rename(path, name)
+    }
+
+    /// What the details pane shows about the item at `path` (`files_details`).
+    pub fn details(&self, path: &str) -> Result<nova_protocol::FileDetails, String> {
+        editing::details(path, &self.mime.current())
     }
 
     /// Ejects drive `drive` (`files_eject`). Waits on udisks2 writing what's

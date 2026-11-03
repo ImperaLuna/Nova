@@ -77,21 +77,46 @@ fn user_name() -> String {
 /// This process's user's login name, from the user database (which may be
 /// LDAP or systemd-userdb, not just /etc/passwd).
 fn login_name() -> Option<String> {
-    // Big enough for any real entry; getpwuid_r says ERANGE otherwise.
-    let mut buffer = vec![0u8; 16 * 1024];
+    // SAFETY: getuid can't fail.
+    user_name_of(unsafe { libc::getuid() })
+}
+
+/// Big enough for any real user or group entry; the lookups say ERANGE
+/// otherwise.
+const ENTRY_BUFFER_BYTES: usize = 16 * 1024;
+
+/// User `uid`'s login name, from the user database.
+pub(crate) fn user_name_of(uid: libc::uid_t) -> Option<String> {
+    let mut buffer = vec![0u8; ENTRY_BUFFER_BYTES];
     // SAFETY: zeroed is a valid passwd (null pointers, zero ids); it's only
     // read after getpwuid_r fills it.
     let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
     let mut found: *mut libc::passwd = std::ptr::null_mut();
     // SAFETY: every pointer is valid for the sizes passed, and `entry`'s
     // strings point into `buffer`, which outlives their use below.
-    let status =
-        unsafe { libc::getpwuid_r(libc::getuid(), &mut entry, buffer.as_mut_ptr().cast(), buffer.len(), &mut found) };
+    let status = unsafe { libc::getpwuid_r(uid, &mut entry, buffer.as_mut_ptr().cast(), buffer.len(), &mut found) };
     if status != 0 || found.is_null() || entry.pw_name.is_null() {
         return None;
     }
     // SAFETY: getpwuid_r set it to a NUL-terminated string in `buffer`.
     let name = unsafe { std::ffi::CStr::from_ptr(entry.pw_name) }.to_string_lossy().into_owned();
+    Some(name).filter(|name| !name.is_empty())
+}
+
+/// Group `gid`'s name, from the group database.
+pub(crate) fn group_name_of(gid: libc::gid_t) -> Option<String> {
+    let mut buffer = vec![0u8; ENTRY_BUFFER_BYTES];
+    // SAFETY: zeroed is a valid group (null pointers, zero id); it's only
+    // read after getgrgid_r fills it.
+    let mut entry: libc::group = unsafe { std::mem::zeroed() };
+    let mut found: *mut libc::group = std::ptr::null_mut();
+    // SAFETY: as in user_name_of.
+    let status = unsafe { libc::getgrgid_r(gid, &mut entry, buffer.as_mut_ptr().cast(), buffer.len(), &mut found) };
+    if status != 0 || found.is_null() || entry.gr_name.is_null() {
+        return None;
+    }
+    // SAFETY: getgrgid_r set it to a NUL-terminated string in `buffer`.
+    let name = unsafe { std::ffi::CStr::from_ptr(entry.gr_name) }.to_string_lossy().into_owned();
     Some(name).filter(|name| !name.is_empty())
 }
 
