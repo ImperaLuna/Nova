@@ -39,6 +39,8 @@
 //!   (`files_properties`) and changing who may open it
 //!   (`files_set_access`); `measures.rs`: counting a folder's or a
 //!   selection's size in the background (`files_measure`).
+//! - `history.rs`: undo and redo of copies, moves and trashing, one
+//!   history for the session that every window shares.
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
@@ -55,6 +57,7 @@ mod copying;
 mod drives;
 mod file_manager1;
 mod folder;
+mod history;
 mod measures;
 mod properties;
 pub mod search;
@@ -76,6 +79,7 @@ use crate::lock;
 use crate::logger::Logger;
 use crate::notifications::Notifications;
 use crate::session_bus::{Bus, Stop};
+use history::{History, Way};
 use nova_protocol::{
     ClashAnswer, EjectOutcome, Event, FeatureState, FilePlace, FileSort, FilesLook, FilesWindow, FolderTree, Topic,
     TransferMode,
@@ -141,6 +145,8 @@ pub struct Files {
     /// The sizes the Properties window counts.
     measures: measures::Measures,
     trash: Arc<Trash>,
+    /// What Ctrl+Z and Ctrl+Y undo and redo.
+    history: Arc<History>,
     /// Tells windows when the trash changes; none when it can't be followed.
     trash_watch: Option<trash::Watch>,
     /// The drives in the sidebar.
@@ -180,8 +186,9 @@ impl Files {
         let mime = crate::mime::Mime::follow(sources.data_dirs.clone(), Arc::clone(&logger));
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
         let search = search::Search::start(sources.search.clone(), Arc::clone(&logger), Arc::clone(&mime));
-        let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
         let measures = measures::Measures::new(Arc::clone(&hub));
+        let history = Arc::new(History::new(Arc::clone(&hub)));
+        let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&history));
         let trash = Arc::new(Trash::new(sources.trash.clone(), sources.mounts.clone(), Arc::clone(&mime)));
         let trash_watch = trash::Watch::start(Arc::clone(&trash), Arc::clone(&hub), Arc::clone(&logger));
         let opener = Opener::new(
@@ -221,6 +228,7 @@ impl Files {
             transfers,
             measures,
             trash,
+            history,
             trash_watch,
             drives,
             search,
@@ -235,6 +243,25 @@ impl Files {
     /// The trash.
     pub fn trash(&self) -> Arc<Trash> {
         Arc::clone(&self.trash)
+    }
+
+    /// Moves `paths` to the trash (`files_trash`): one step to undo, or
+    /// part of the last one when it `continues` it.
+    pub fn move_to_trash(&self, paths: &[String], continues: bool) -> Result<(), String> {
+        let (ids, problems) = history::split(self.trash.trash_each(paths));
+        self.history.trashed(ids, continues);
+        problems
+    }
+
+    /// Undoes the last step (`files_undo`) for client `client`, a move
+    /// back as its job `job`; answers whether that job started.
+    pub fn undo(&self, client: ClientId, job: u32) -> Result<bool, String> {
+        self.history.run(Way::Undo, &self.trash, &self.transfers, client, job)
+    }
+
+    /// Redoes the last undone step (`files_redo`), as [`Files::undo`].
+    pub fn redo(&self, client: ClientId, job: u32) -> Result<bool, String> {
+        self.history.run(Way::Redo, &self.trash, &self.transfers, client, job)
     }
 
     /// What finds files by name (`files_search`).
@@ -377,6 +404,7 @@ impl Files {
         let look = *lock(&self.look);
         self.shared.hub.send_to(client, &Event::FilesLook(look));
         self.drives.send_state(client);
+        self.history.send_state(client);
     }
 
     /// Client `client` hung up: windows aren't sent to it any more.
