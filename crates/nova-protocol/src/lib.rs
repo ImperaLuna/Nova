@@ -2197,13 +2197,17 @@ pub struct TextMark {
     pub length: u32,
 }
 
-/// The order of a folder view (`files_open`). Folders always come before
-/// files; within each, entries are ordered by `key`, then by name.
+/// The order of a folder view (`files_open`). Folders come before files,
+/// unless `mixed`; within each, entries are ordered by `key`, then by name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileSort {
     pub key: FileSortKey,
     pub descending: bool,
+    /// Folders and files in one order, as "What uses space" lists them
+    /// (by size, biggest first).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mixed: bool,
 }
 
 /// What a folder view is ordered by. Names compare the way people read
@@ -2248,7 +2252,9 @@ pub struct FileEntry {
     /// Its type in the shared MIME database, from its name (`inode/directory`
     /// for a folder).
     pub mime: String,
-    /// In bytes; none for a folder.
+    /// In bytes. For a folder, everything in it on the same drive, once
+    /// novad has counted it (`files_changed` brings it); none until then,
+    /// and for a link to a folder or a folder that is another drive.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
     /// Last modified, in milliseconds since 1970.
@@ -3120,7 +3126,7 @@ mod tests {
                 command: Command::FilesOpen {
                     view: 1,
                     path: "/home/user/Pictures".into(),
-                    sort: FileSort { key: FileSortKey::Modified, descending: true },
+                    sort: FileSort { key: FileSortKey::Modified, descending: true, mixed: false },
                     hidden: false,
                 },
             }),

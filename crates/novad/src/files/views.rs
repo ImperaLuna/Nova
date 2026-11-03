@@ -16,12 +16,17 @@
 //! to what it names now. When the folder can't be read or goes, the view
 //! closes with `files_closed`. Reading stops as soon as the view closes.
 //!
+//! Its subfolders' sizes are counted on a second thread
+//! ([`super::sizes::Counter`]): each once the folder is read, and again
+//! when its entry changes. A count is sent as the folder's entry changing.
+//!
 //! Every event of a view is sent while holding its state, after checking
 //! the view is still open, so nothing arrives after `files_close` or after
 //! another `files_open` replaced it. Each page is encoded before the state
 //! is taken, so a big folder doesn't hold up closing it.
 
 use crate::files::folder::{self, Listing};
+use crate::files::sizes::Counter;
 use crate::files::watcher::{Following, Notice, Wait, Watcher};
 use crate::hub::{ClientId, Hub};
 use crate::lock;
@@ -118,6 +123,7 @@ impl Folders {
             logger: Arc::clone(&self.logger),
             mime: Arc::clone(&self.mime),
             views: Arc::clone(&self.views),
+            counter: None,
         };
         let spawned = std::thread::Builder::new().name("novad-files-view".into()).spawn(move || worker.run());
         spawned.map(drop).map_err(|e| {
@@ -186,10 +192,14 @@ struct Worker {
     logger: Arc<Logger>,
     mime: Arc<Mime>,
     views: Views,
+    /// Counts its subfolders; none when its thread couldn't start, and
+    /// folders then show no size.
+    counter: Option<Counter>,
 }
 
 impl Worker {
     fn run(mut self) {
+        self.counter = self.start_counter();
         if let Err(e) = self.following.watch() {
             return self.closed(unreadable(&self.view.named, &e));
         }
@@ -237,6 +247,8 @@ impl Worker {
     /// Reads the whole folder and sends it from the start. False once the
     /// view is closed.
     fn send_all(&self) -> bool {
+        // What was counted stays shown until it's counted again.
+        let counted = lock(&self.view.state).listing.take().map(Listing::into_counted).unwrap_or_default();
         let read =
             folder::read_folder(&self.view.path, self.view.hidden, &self.mime.current(), || !self.view.is_open());
         let entries = match read {
@@ -248,7 +260,7 @@ impl Worker {
                 return false;
             }
         };
-        let listing = Listing::new(self.view.sort, self.view.hidden, entries);
+        let listing = Listing::with_sizes(self.view.sort, self.view.hidden, entries, counted);
         let (client, view) = self.view.key;
         let all = listing.entries();
         let total = u32::try_from(all.len()).unwrap_or(u32::MAX);
@@ -268,12 +280,53 @@ impl Worker {
                 self.hub.send_line_to(client, line);
             }
         }
+        let folders: Vec<_> = listing
+            .entries()
+            .iter()
+            .filter(|entry| folder::takes_size(entry))
+            .map(|entry| entry.name.clone())
+            .collect();
         let mut state = lock(&self.view.state);
         if !state.open {
             return false;
         }
         state.listing = Some(listing);
+        drop(state);
+        for name in folders {
+            self.count(nova_protocol::wire_path(&name).into_os_string());
+        }
         true
+    }
+
+    /// The thread counting this view's subfolders, which sends each size
+    /// as a change to the folder's entry.
+    fn start_counter(&self) -> Option<Counter> {
+        let open = Arc::clone(&self.view);
+        let view = Arc::clone(&self.view);
+        let hub = Arc::clone(&self.hub);
+        let counted = move |name: &OsString, bytes: u64| {
+            let mut state = lock(&view.state);
+            if !state.open {
+                return;
+            }
+            let Some(listing) = state.listing.as_mut() else { return };
+            let changes = listing.counted(&nova_protocol::wire_text(name), bytes);
+            if !changes.is_empty() {
+                hub.send_to(view.key.0, &Event::FilesChanged { view: view.key.1, changes });
+            }
+        };
+        let counter = Counter::start(self.view.path.clone(), move || !open.is_open(), counted);
+        if counter.is_none() {
+            self.logger.warn(LOG_SOURCE, &format!("can't count folder sizes in {}", self.view.path.display()));
+        }
+        counter
+    }
+
+    /// Counts the subfolder `name` (again).
+    fn count(&self, name: OsString) {
+        if let Some(counter) = &self.counter {
+            counter.ask(name);
+        }
     }
 
     /// Waits for changes and gathers them until the folder is quiet.
@@ -308,10 +361,17 @@ impl Worker {
     /// the view is closed.
     fn send_changes(&self, names: BTreeSet<OsString>) -> bool {
         let mime = self.mime.current();
-        let now: Vec<_> = names
-            .into_iter()
-            .map(|name| (folder::read_entry(&self.view.path, &name, &mime), nova_protocol::wire_text(&name)))
-            .collect();
+        let mut recount = Vec::new();
+        let mut now = Vec::new();
+        for name in names {
+            let entry = folder::read_entry(&self.view.path, &name, &mime);
+            let wire = nova_protocol::wire_text(&name);
+            // A folder that changed may hold more or less.
+            if entry.as_ref().is_some_and(folder::takes_size) {
+                recount.push(name);
+            }
+            now.push((entry, wire));
+        }
         let mut state = lock(&self.view.state);
         if !state.open {
             return false;
@@ -321,6 +381,11 @@ impl Worker {
         if !changes.is_empty() {
             let (client, view) = self.view.key;
             self.hub.send_to(client, &Event::FilesChanged { view, changes });
+        }
+        drop(state);
+        // Once listed, so the count finds them.
+        for name in recount {
+            self.count(name);
         }
         true
     }
@@ -390,7 +455,7 @@ mod tests {
     use std::sync::mpsc::Receiver;
 
     const WAIT: Duration = Duration::from_secs(5);
-    const BY_NAME: FileSort = FileSort { key: FileSortKey::Name, descending: false };
+    const BY_NAME: FileSort = FileSort { key: FileSortKey::Name, descending: false, mixed: false };
 
     /// The views of one client, and what the UI would hold for its view 1.
     struct Fixture {
@@ -504,7 +569,32 @@ mod tests {
         let photo = &fixture.shown[2];
         assert_eq!((photo.mime.as_str(), photo.size, photo.dir), ("image/png", Some(1), false));
         assert_eq!(fixture.shown[0].mime, "inode/directory");
+        // Then the folders' sizes, counted in the list's order.
+        for folder in ["alpha", "Zeta"] {
+            assert_eq!(fixture.next()["event"], "files_changed");
+            let counted = fixture.shown.iter().find(|entry| entry.name == folder).unwrap();
+            assert_eq!(counted.size, Some(0), "{folder}");
+        }
         fixture.nothing_more();
+    }
+
+    /// A folder's size follows what's put in it, once its entry changes.
+    #[test]
+    fn a_folder_is_counted_again_when_it_changes() {
+        let mut fixture = Fixture::new("files-recount");
+        let dir = TempDir::new("files-recount-folder");
+        std::fs::create_dir(dir.join("Games")).unwrap();
+        std::fs::write(dir.join("Games/save"), [0u8; 40]).unwrap();
+        fixture.open(&dir).unwrap();
+        fixture.next();
+        fixture.next();
+        assert_eq!(fixture.shown[0].size, Some(40));
+        // Renamed: its entry goes and comes back, and is counted again.
+        std::fs::rename(dir.join("Games"), dir.join("Play")).unwrap();
+        while fixture.shown.first().is_none_or(|entry| entry.name != "Play" || entry.size.is_none()) {
+            fixture.next();
+        }
+        assert_eq!(fixture.shown[0].size, Some(40));
     }
 
     #[test]

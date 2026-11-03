@@ -5,6 +5,10 @@
 //! operations the UI applies to its list ([`Listing::apply`]), so the UI
 //! never sorts or searches.
 //!
+//! Folders have no size of their own: the sizes counted for them
+//! ([`super::sizes`]) are kept here ([`Listing::counted`]), so an entry
+//! read again keeps its folder size until the next count.
+//!
 //! The order is Windows Explorer's: folders first, then by the sort key,
 //! ties by name; names compare case aside and with numbers by value
 //! ([`natural`]). It's a total order (raw names break the last ties), so
@@ -103,6 +107,8 @@ pub struct Listing {
     /// that look alike are two keys), to find it again once it changed.
     /// Only the sort fields, so an entry isn't kept twice.
     by_name: HashMap<String, Place>,
+    /// The sizes counted for its folders, by name.
+    counted: HashMap<String, u64>,
 }
 
 /// What an entry's place in the order depends on, besides its name.
@@ -156,20 +162,61 @@ impl Place {
 }
 
 impl Listing {
-    pub fn new(sort: FileSort, hidden: bool, mut entries: Vec<FileEntry>) -> Self {
+    /// With no folder sizes counted yet.
+    #[cfg(test)]
+    pub fn new(sort: FileSort, hidden: bool, entries: Vec<FileEntry>) -> Self {
+        Self::with_sizes(sort, hidden, entries, HashMap::new())
+    }
+
+    /// With the folder sizes `counted` before (by name), for the folders
+    /// still there.
+    pub fn with_sizes(
+        sort: FileSort,
+        hidden: bool,
+        mut entries: Vec<FileEntry>,
+        mut counted: HashMap<String, u64>,
+    ) -> Self {
+        for entry in &mut entries {
+            fill_size(&counted, entry);
+        }
+        counted.retain(|name, _| entries.iter().any(|entry| &entry.name == name && takes_size(entry)));
         entries.sort_by(|a, b| order(sort, a, b));
         let by_name = entries.iter().map(|entry| (entry.name.clone(), Place::of(sort, entry).owned())).collect();
-        Self { sort, hidden, entries, by_name }
+        Self { sort, hidden, entries, by_name, counted }
     }
 
     pub fn entries(&self) -> &[FileEntry] {
         &self.entries
     }
 
+    /// The folder sizes counted so far, by name.
+    pub fn into_counted(self) -> HashMap<String, u64> {
+        self.counted
+    }
+
+    /// The folder `name` (wire text) holds `size` bytes. Returns the
+    /// changes that show it, none when it's no longer a folder here.
+    pub fn counted(&mut self, name: &str, size: u64) -> Vec<FolderChange> {
+        let Some(index) = self.by_name.get(name).map(|place| self.place(name, place.borrowed())) else {
+            return Vec::new();
+        };
+        let entry = &self.entries[index];
+        if !takes_size(entry) {
+            return Vec::new();
+        }
+        let entry = FileEntry { size: Some(size), ..entry.clone() };
+        self.counted.insert(name.to_owned(), size);
+        self.apply(name, Some(entry))
+    }
+
     /// The entry `name` (wire text) is now `now` (`None`: gone). Returns the changes
     /// that take the view's list there, none when it looks the same.
     pub fn apply(&mut self, name: &str, now: Option<FileEntry>) -> Vec<FolderChange> {
-        let now = now.filter(|entry| self.hidden || !entry.hidden);
+        let mut now = now.filter(|entry| self.hidden || !entry.hidden);
+        match now.as_mut() {
+            Some(entry) if takes_size(entry) => fill_size(&self.counted, entry),
+            _ => drop(self.counted.remove(name)),
+        }
         let before = self.by_name.get(name).map(|place| self.place(name, place.borrowed()));
         match (before, now) {
             (None, None) => Vec::new(),
@@ -217,6 +264,20 @@ impl Listing {
     }
 }
 
+/// A folder whose size is counted: not a link to one, whose files are
+/// counted where they are.
+pub fn takes_size(entry: &FileEntry) -> bool {
+    entry.dir && !entry.link
+}
+
+/// Gives the folder `entry` the size counted for it, if any, while it has
+/// none of its own.
+fn fill_size(counted: &HashMap<String, u64>, entry: &mut FileEntry) {
+    if takes_size(entry) && entry.size.is_none() {
+        entry.size = counted.get(&entry.name).copied();
+    }
+}
+
 /// An index on the wire. A folder with more than `u32::MAX` entries can't
 /// be read into memory, let alone listed.
 fn wire_index(index: usize) -> u32 {
@@ -245,7 +306,8 @@ fn compare(sort: FileSort, (a_name, a): (&str, Place<&str>), (b_name, b): (&str,
         (true, _) => by_key.reverse().then(by_name),
         (false, _) => by_key.then(by_name),
     };
-    b.dir.cmp(&a.dir).then(within).then_with(|| a_name.cmp(b_name))
+    let folders_first = if sort.mixed { Ordering::Equal } else { b.dir.cmp(&a.dir) };
+    folders_first.then(within).then_with(|| a_name.cmp(b_name))
 }
 
 /// Names the way people read them: case aside, and runs of digits by their
@@ -310,7 +372,8 @@ mod tests {
         listing.entries().iter().map(|entry| entry.name.as_str()).collect()
     }
 
-    const BY_NAME: FileSort = FileSort { key: FileSortKey::Name, descending: false };
+    const BY_NAME: FileSort = FileSort { key: FileSortKey::Name, descending: false, mixed: false };
+    const BIGGEST_FIRST: FileSort = FileSort { key: FileSortKey::Size, descending: true, mixed: true };
 
     #[test]
     fn names_compare_case_aside_and_numbers_by_value() {
@@ -324,7 +387,7 @@ mod tests {
         let entries = vec![file("b.txt", 5), folder("Zeta"), file("a.txt", 9), folder("alpha")];
         let listing = Listing::new(BY_NAME, false, entries.clone());
         assert_eq!(names(&listing), ["alpha", "Zeta", "a.txt", "b.txt"]);
-        let by_size = FileSort { key: FileSortKey::Size, descending: true };
+        let by_size = FileSort { key: FileSortKey::Size, descending: true, mixed: false };
         let listing = Listing::new(by_size, false, entries);
         assert_eq!(names(&listing), ["alpha", "Zeta", "a.txt", "b.txt"]);
     }
@@ -333,7 +396,7 @@ mod tests {
     /// listing's own list.
     #[test]
     fn changes_replay_to_the_same_list() {
-        let by_size = FileSort { key: FileSortKey::Size, descending: false };
+        let by_size = FileSort { key: FileSortKey::Size, descending: false, mixed: false };
         let mut listing = Listing::new(by_size, false, vec![file("a", 1), file("b", 2), file("c", 3)]);
         let mut copy = listing.entries().to_vec();
         let steps = [
@@ -363,6 +426,47 @@ mod tests {
         // New, unchanged, moved, changed in place, gone, hidden, never there.
         assert_eq!(counts, [1, 0, 2, 1, 1, 0, 0]);
         assert_eq!(names(&listing), ["b", "c", "a"]);
+    }
+
+    /// What uses space: folders take their counted size and sit among the
+    /// files, biggest first; one not counted yet goes last.
+    #[test]
+    fn counted_folders_sort_among_files_biggest_first() {
+        let entries = vec![file("movie.mkv", 50), folder("Games"), folder("Notes"), file("a.txt", 1)];
+        let mut listing = Listing::new(BIGGEST_FIRST, false, entries);
+        assert_eq!(names(&listing), ["movie.mkv", "a.txt", "Games", "Notes"]);
+        let changes = listing.counted("Games", 900);
+        assert_eq!(changes.len(), 2, "moved to the top: {changes:?}");
+        listing.counted("Notes", 10);
+        assert_eq!(names(&listing), ["Games", "movie.mkv", "Notes", "a.txt"]);
+        assert!(listing.counted("a.txt", 5).is_empty(), "a file has its own size");
+        assert!(listing.counted("gone", 5).is_empty());
+    }
+
+    /// A folder read again (its entry changed) keeps its counted size, and
+    /// one that goes takes it along.
+    #[test]
+    fn a_folder_read_again_keeps_its_size() {
+        let mut listing = Listing::new(BY_NAME, false, vec![folder("Games")]);
+        listing.counted("Games", 900);
+        assert!(listing.apply("Games", Some(folder("Games"))).is_empty());
+        assert_eq!(listing.entries()[0].size, Some(900));
+        listing.apply("Games", None);
+        listing.apply("Games", Some(folder("Games")));
+        assert_eq!(listing.entries()[0].size, None);
+        let link = FileEntry { link: true, ..folder("Shortcut") };
+        listing.apply("Shortcut", Some(link));
+        assert!(listing.counted("Shortcut", 5).is_empty(), "a link's folder is counted where it is");
+    }
+
+    #[test]
+    fn sizes_carry_over_to_a_new_listing() {
+        let mut listing = Listing::new(BY_NAME, false, vec![folder("Games"), folder("Old")]);
+        listing.counted("Games", 900);
+        listing.counted("Old", 3);
+        let listing = Listing::with_sizes(BY_NAME, false, vec![folder("Games")], listing.into_counted());
+        assert_eq!(listing.entries()[0].size, Some(900));
+        assert_eq!(listing.into_counted().len(), 1);
     }
 
     #[test]
