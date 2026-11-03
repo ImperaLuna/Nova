@@ -7,7 +7,7 @@ import "paths.js" as Paths
 // thumbnail in its place once there is one, over its name centered in up
 // to two lines (cut short with an ellipsis). Hovered tiles
 // lighten, selected ones fill, like Details' rows; dot files read fainter.
-// When a folder's entries have just come in (`riseOrder`), it eases up
+// When a folder's entries have just come in (`riseWait`), it eases up
 // into place after the tiles nearer where the list opened.
 Rectangle {
     id: tile
@@ -24,9 +24,9 @@ Rectangle {
     required property var thumbnails
 
     required property bool selected
-    // Steps from where the list opened, while a folder's entries have just
-    // come in, or -1: read once, as the tile is made.
-    required property int riseOrder
+    // How long it waits before easing in, in ms, while a folder's entries
+    // have just come in, or -1 to just show: read once, as the tile is made.
+    required property int riseWait
 
     signal pressed(int modifiers)
     signal opened
@@ -90,6 +90,6 @@ Rectangle {
     RiseIn {
         item: tile
         lift: tileLift
-        order: tile.riseOrder
+        wait: tile.riseWait
     }
 }

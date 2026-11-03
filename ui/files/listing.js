@@ -153,14 +153,6 @@ function pick(anchor, index, ctrl, shift) {
 var DETAILS = "details";
 var ICONS = "icons";
 
-// How many steps tile `index` is from tile `from` in a grid `columns`
-// wide, counting a diagonal step as one: the order tiles ease in, rippling
-// out from where the list opened.
-function gridDistance(index, from, columns) {
-    const lines = Math.abs(Math.floor(index / columns) - Math.floor(from / columns));
-    return Math.max(lines, Math.abs(index % columns - from % columns));
-}
-
 // The keys that move through the rows, and through the tiles of the
 // Icons view, which go sideways too.
 var MOVES = [Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End];

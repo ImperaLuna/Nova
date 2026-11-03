@@ -5,6 +5,7 @@ import "service"
 import "../theme"
 import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
+import "arrival.js" as Arrival
 import "listing.js" as Listing
 import "paths.js" as Paths
 
@@ -57,17 +58,25 @@ FocusScope {
     ]
 
     // The row the list opens at while the rows ease in after a folder's
-    // entries came in (they ripple out from it), or -1 once they have.
+    // entries came in (they ripple out from it, Arrival), or -1 once they
+    // have; and how many came in.
     property int riseFrom: -1
+    property int riseCount: 0
+    readonly property var risePace: ({
+            stagger: Tokens.filesRowStagger,
+            wave: Tokens.filesRowWave,
+            most: Tokens.filesRowWaveMost
+        })
     // The time the Modified column reads against, kept to the minute.
     property real now: Date.now()
 
     readonly property FolderModel model: FolderModel {
         path: list.folder
         hidden: list.showHidden
-        onFilling: current => {
+        onFilling: (current, total) => {
             list.now = Date.now();
             list.riseFrom = Math.max(current, 0);
+            list.riseCount = total;
             settle.restart();
         }
         onReset: current => {
@@ -106,7 +115,7 @@ FocusScope {
     }
     Timer {
         id: settle
-        interval: Tokens.durationRowIn + Tokens.durationPanel
+        interval: Tokens.filesRowWave + Tokens.durationRowIn
         onTriggered: list.riseFrom = -1
     }
 
@@ -234,13 +243,12 @@ FocusScope {
             list.model.select(Listing.pick(list.model.anchor, index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
         }
 
-        // Steps from where the list opened for entry `index`, while a
-        // folder's entries have just come in (no further than across a
-        // screen), or -1.
-        function riseOrder(index: int): int {
-            if (list.riseFrom < 0)
-                return -1;
-            return Math.min(Listing.gridDistance(index, list.riseFrom, columns), Math.max(lines, columns));
+        // How long entry `index` waits before easing in while a folder's
+        // entries have just come in (Arrival), or -1. The wave ripples out
+        // from where the list opened, as far as a screen reaches either way.
+        function riseWait(index: int): int {
+            const reach = Math.max(lines, columns);
+            return Arrival.wait(Arrival.order(index, list.riseFrom, reach, columns), Math.min(list.riseCount, reach + 1), list.riseCount, list.risePace);
         }
 
         MouseArea {
@@ -263,7 +271,7 @@ FocusScope {
                 width: entryGrid.width
                 nameWidth: list.nameWidth
                 selected: list.model.revision >= 0 && list.model.isSelected(name)
-                riseOrder: entryGrid.riseOrder(index)
+                riseWait: entryGrid.riseWait(index)
                 now: list.now
 
                 onPressed: modifiers => entryGrid.press(row.index, modifiers)
@@ -279,7 +287,7 @@ FocusScope {
                 folder: list.model.path
                 thumbnails: FilesService
                 selected: list.model.revision >= 0 && list.model.isSelected(name)
-                riseOrder: entryGrid.riseOrder(index)
+                riseWait: entryGrid.riseWait(index)
 
                 onPressed: modifiers => entryGrid.press(tile.index, modifiers)
                 onOpened: list.open([list.model.rows.get(tile.index)])
