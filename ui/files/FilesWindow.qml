@@ -407,6 +407,7 @@ FloatingWindow {
         subject: propertiesModel.subject ?? Props.subject(window.folder, [], null)
         properties: propertiesModel.properties
         counted: propertiesModel.counted
+        changing: propertiesModel.changing
         apps: propertiesModel.openWith.apps
         defaultApp: propertiesModel.openWith.defaultApp
         onCloseRequested: window.closeProperties()

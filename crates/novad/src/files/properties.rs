@@ -7,17 +7,14 @@
 //! A link is described by what it points to, as the listing does, plus
 //! where it points; one whose target is gone by the link itself.
 
-use crate::files::folder::read_entry;
+use crate::files::folder::{disk_bytes, millis, read_entry};
 use crate::files::views::checked_path;
 use crate::mime::MimeDb;
 use nova_protocol::{Access, DriveSpace, FileProperties, Rights};
 use std::fs::{self, Metadata};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
-use std::time::SystemTime;
 
-/// `st_blocks` counts in these, whatever the file system's block size.
-const STAT_BLOCK: u64 = 512;
 /// The mode bits of each kind of person, from the owner's down.
 const OWNER_SHIFT: u32 = 6;
 const GROUP_SHIFT: u32 = 3;
@@ -43,25 +40,29 @@ pub fn read(path: &str, mime: &MimeDb) -> Result<FileProperties, String> {
     };
     let mut entry = read_entry(folder, name, mime).ok_or_else(|| format!("{} doesn't exist", path.display()))?;
     let link_target = own.file_type().is_symlink().then(|| fs::read_link(&path).ok()).flatten();
-    // What it points to, when there is something.
-    let meta = fs::metadata(&path).unwrap_or(own);
+    // What it points to, when there is something; a link whose target is
+    // gone is described by itself, and its access can't be changed.
+    let (meta, target_found) = match fs::metadata(&path) {
+        Ok(target) => (target, true),
+        Err(_) => (own.clone(), false),
+    };
     if meta.is_file()
         && let Ok(sniffed) = mime.type_of(&path)
     {
         entry.mime = sniffed;
     }
-    let drive = is_mount_point(&path, &meta).then(|| drive_space(&path)).flatten();
+    let drive = is_mount_point(&path, &own).then(|| drive_space(&path)).flatten();
     Ok(FileProperties {
         folder: nova_protocol::wire_text(folder),
         entry,
         link_target: link_target.map(nova_protocol::wire_text),
-        disk_bytes: (!meta.is_dir()).then(|| meta.blocks().saturating_mul(STAT_BLOCK)),
+        disk_bytes: (!meta.is_dir()).then(|| disk_bytes(&meta)),
         created_ms: meta.created().ok().and_then(millis),
         accessed_ms: meta.accessed().ok().and_then(millis),
         owner: crate::users::user_name(meta.uid()).unwrap_or_else(|| meta.uid().to_string()),
         group: crate::users::group_name(meta.gid()).unwrap_or_else(|| meta.gid().to_string()),
         access: access(meta.mode()),
-        yours: meta.uid() == crate::users::current_uid(),
+        yours: target_found && meta.uid() == crate::users::current_uid(),
         drive,
     })
 }
@@ -97,26 +98,22 @@ fn mode_bits(access: Access) -> u32 {
     bits(access.owner, OWNER_SHIFT) | bits(access.group, GROUP_SHIFT) | bits(access.others, OTHERS_SHIFT)
 }
 
-/// A drive is mounted at `path`: it's the root, or on another device than
-/// the folder it's in.
-fn is_mount_point(path: &Path, meta: &Metadata) -> bool {
-    if !meta.is_dir() {
+/// A drive is mounted at `path` (`own` is its own metadata, a link's not
+/// followed): it's the root, or a folder on another device than the folder
+/// it's in. A link to a folder on another drive is no mount.
+fn is_mount_point(path: &Path, own: &Metadata) -> bool {
+    if !own.is_dir() {
         return false;
     }
     match path.parent() {
         None => true,
-        Some(parent) => fs::metadata(parent).is_ok_and(|parent| parent.dev() != meta.dev()),
+        Some(parent) => fs::metadata(parent).is_ok_and(|parent| parent.dev() != own.dev()),
     }
 }
 
 fn drive_space(path: &Path) -> Option<DriveSpace> {
     let (size, used) = super::udisks::usage(&nova_protocol::wire_text(path))?;
     Some(DriveSpace { size, used })
-}
-
-fn millis(time: SystemTime) -> Option<i64> {
-    let since = time.duration_since(SystemTime::UNIX_EPOCH).ok()?;
-    i64::try_from(since.as_millis()).ok()
 }
 
 #[cfg(test)]
@@ -167,6 +164,16 @@ mod tests {
         assert!(read.entry.link && read.entry.dir);
         assert_eq!(read.link_target.as_deref(), Some("Photos"));
         assert_eq!(read.disk_bytes, None, "a folder's size is measured");
+    }
+
+    #[test]
+    fn a_broken_link_cant_have_its_access_changed() {
+        let dir = TempDir::new("properties-broken");
+        std::os::unix::fs::symlink("/nowhere", dir.join("broken")).unwrap();
+        let read = read(&wire(&dir.join("broken")), &mime()).unwrap();
+        assert_eq!(read.link_target.as_deref(), Some("/nowhere"));
+        assert!(!read.yours);
+        assert_eq!(read.drive, None);
     }
 
     #[test]

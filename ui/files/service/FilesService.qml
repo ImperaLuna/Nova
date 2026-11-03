@@ -271,21 +271,18 @@ Singleton {
         });
     }
 
-    // Counts what `paths` (absolute) hold, in as many jobs as keep each
-    // request under novad's limit. Returns the jobs' numbers, whose
-    // `measured` events carry them.
-    function measure(paths: var): var {
-        return Trash.batches(paths, Protocol.REQUEST_MAX_BYTES).map(batch => {
-            const job = _nextJob++;
-            Daemon.call(Protocol.CMD_FILES_MEASURE, {
-                job: job,
-                paths: batch
-            }, error => {
-                if (error)
-                    console.warn(`nova: counting sizes: ${error}`);
-            });
-            return job;
+    // Counts what `paths` (absolute, fitting one request) hold. Returns
+    // the job's number, which its `measured` events carry.
+    function measure(paths: var): int {
+        const job = _nextJob++;
+        Daemon.call(Protocol.CMD_FILES_MEASURE, {
+            job: job,
+            paths: paths
+        }, error => {
+            if (error)
+                console.warn(`nova: counting sizes: ${error}`);
         });
+        return job;
     }
 
     // Stops measuring job `job`; it sends nothing more.

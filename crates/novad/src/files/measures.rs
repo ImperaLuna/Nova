@@ -3,8 +3,9 @@
 //! never holds up anything else, and reported to the client that asked
 //! every [`FILES_MEASURE_PROGRESS_MS`] and once more when done.
 //!
-//! A job walks its items depth first without following links (a link
-//! counts as a file of its own size), stays on each item's drive (as
+//! A job walks its items without following links below them (a link
+//! counts as a file of its own size; an item that is a link is followed,
+//! as the list shows it), counts a file with several names once, stays on each item's drive (as
 //! `du -x`: a drive mounted inside, or `/proc` under `/`, isn't counted),
 //! and skips folders it can't read.
 //! It checks for a stop before each entry. Every report is sent while the
@@ -12,11 +13,12 @@
 //! arrives after a cancel, the client's hang-up or the module stopping;
 //! the last one unregisters it in the same step.
 
+use crate::files::folder::disk_bytes;
 use crate::files::views::checked_path;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use nova_protocol::{Event, FILES_MAX_MEASURES, FILES_MEASURE_PROGRESS_MS, FILES_TRANSFER_MAX_SOURCES, Measured};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -25,8 +27,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const PROGRESS_EVERY: Duration = Duration::from_millis(FILES_MEASURE_PROGRESS_MS);
-/// `st_blocks` counts in these, whatever the file system's block size.
-const STAT_BLOCK: u64 = 512;
 
 /// A job, named by its client and the client's number for it.
 type Key = (ClientId, u32);
@@ -76,6 +76,7 @@ impl Measures {
             jobs: Arc::clone(&self.jobs),
             counted: Measured { job, files: 0, folders: 0, bytes: 0, disk_bytes: 0, done: false },
             last_report: Instant::now(),
+            linked: HashSet::new(),
         };
         let spawned = std::thread::Builder::new().name("novad-files-measure".into()).spawn(move || run.run(&paths));
         spawned.map(drop).map_err(|e| {
@@ -122,13 +123,16 @@ struct Run {
     jobs: Jobs,
     counted: Measured,
     last_report: Instant,
+    /// The files with more than one name already counted.
+    linked: HashSet<(u64, u64)>,
 }
 
 impl Run {
     fn run(&mut self, paths: &[PathBuf]) {
         for path in paths {
-            // An item that's gone or can't be read adds nothing.
-            if let Ok(meta) = fs::symlink_metadata(path) {
+            // An item that's gone or can't be read adds nothing. The item
+            // itself is followed when it's a link, as the list shows it.
+            if let Ok(meta) = fs::metadata(path).or_else(|_| fs::symlink_metadata(path)) {
                 self.add(&meta);
                 if meta.is_dir() && !self.walk(path, meta.dev()) {
                     return;
@@ -139,41 +143,48 @@ impl Run {
         self.report();
     }
 
-    /// Counts what `folder` holds on drive `device`; false once the job was
-    /// stopped.
-    fn walk(&mut self, folder: &Path, device: u64) -> bool {
-        let Ok(entries) = fs::read_dir(folder) else { return !self.stopped() };
-        for entry in entries {
-            if self.stopped() {
-                return false;
-            }
-            let Ok(entry) = entry else { continue };
-            let path = entry.path();
-            let Ok(meta) = fs::symlink_metadata(&path) else { continue };
-            if meta.dev() != device {
-                continue;
-            }
-            if meta.is_dir() {
-                self.counted.folders += 1;
-            } else {
-                self.counted.files += 1;
-            }
-            self.add(&meta);
-            if meta.is_dir() && !self.walk(&path, device) {
-                return false;
-            }
-            if self.last_report.elapsed() >= PROGRESS_EVERY {
-                self.report();
+    /// Counts what `top` holds on drive `device`, one folder at a time from
+    /// a list of those still to read (so a deep tree holds no open folders
+    /// and no deep stack); false once the job was stopped.
+    fn walk(&mut self, top: &Path, device: u64) -> bool {
+        let mut folders = vec![top.to_path_buf()];
+        while let Some(folder) = folders.pop() {
+            let Ok(entries) = fs::read_dir(&folder) else { continue };
+            for entry in entries {
+                if self.stopped() {
+                    return false;
+                }
+                let Ok(entry) = entry else { continue };
+                let path = entry.path();
+                let Ok(meta) = fs::symlink_metadata(&path) else { continue };
+                if meta.dev() != device {
+                    continue;
+                }
+                if meta.is_dir() {
+                    self.counted.folders += 1;
+                    folders.push(path);
+                } else {
+                    self.counted.files += 1;
+                }
+                self.add(&meta);
+                if self.last_report.elapsed() >= PROGRESS_EVERY {
+                    self.report();
+                }
             }
         }
         !self.stopped()
     }
 
+    /// Adds an item's bytes. A file with more than one name (a hard link)
+    /// adds them once, as `du` does, however many of its names are found.
     fn add(&mut self, meta: &fs::Metadata) {
+        if meta.nlink() > 1 && !meta.is_dir() && !self.linked.insert((meta.dev(), meta.ino())) {
+            return;
+        }
         if !meta.is_dir() {
             self.counted.bytes += meta.len();
         }
-        self.counted.disk_bytes += meta.blocks().saturating_mul(STAT_BLOCK);
+        self.counted.disk_bytes += disk_bytes(meta);
     }
 
     fn stopped(&self) -> bool {
@@ -249,6 +260,22 @@ mod tests {
         let bytes = measured["bytes"].as_u64().unwrap();
         assert_eq!(bytes, 3500 + "/nowhere".len() as u64, "a link counts as itself");
         assert!(measured["disk_bytes"].as_u64().unwrap() > 0);
+    }
+
+    #[test]
+    fn a_linked_folder_counts_what_it_points_to_and_hard_links_count_once() {
+        let dir = TempDir::new("measure-links");
+        fs::create_dir(dir.join("Photos")).unwrap();
+        fs::write(dir.join("Photos/a.jpg"), vec![0u8; 400]).unwrap();
+        fs::hard_link(dir.join("Photos/a.jpg"), dir.join("Photos/b.jpg")).unwrap();
+        std::os::unix::fs::symlink("Photos", dir.join("Pictures")).unwrap();
+        let hub = Arc::new(Hub::default());
+        let measures = Measures::new(Arc::clone(&hub));
+        let (id, events, _stream) = client(&hub);
+        measures.start(id, 2, &[wire(&dir.join("Pictures"))]).unwrap();
+        let measured = finished(&events);
+        assert_eq!(measured["files"], json!(2), "both names are listed");
+        assert_eq!(measured["bytes"], json!(400), "one file's bytes");
     }
 
     #[test]
