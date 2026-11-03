@@ -1,10 +1,12 @@
 .pragma library
+.import "commands.js" as Commands
 
 // Every key Nova Files answers, after Windows Explorer, in one table: the
 // window (FilesWindow), the file list (FileList) and the trash's list
 // (TrashList) each read their part of it, so ui/tests can check them all
-// together. An entry is {action, keys, where}: `keys` are Qt's portable
-// key sequence names ("Ctrl+Shift+N", "PgUp"), `where` the places it works.
+// together, and menus show a command's key from it (shown()). An entry is
+// {action, keys, where}: `action` a Commands name, `keys` Qt's portable key
+// sequence names ("Ctrl+Shift+N", "PgUp"), `where` the places it works.
 //
 // The rules that keep it free of surprises:
 // - A WINDOW key works anywhere in the window, also while a text field has
@@ -23,127 +25,171 @@ var TRASH = "trash";
 
 var TABLE = [
     {
-        action: "back",
+        action: Commands.BACK,
         keys: ["Alt+Left"],
         where: [WINDOW]
     },
     // Explorer's Backspace views the previous folder, like Alt+Left.
     {
-        action: "back",
+        action: Commands.BACK,
         keys: ["Backspace"],
         where: [LIST, TRASH]
     },
     {
-        action: "forward",
+        action: Commands.FORWARD,
         keys: ["Alt+Right"],
         where: [WINDOW]
     },
     {
-        action: "up",
+        action: Commands.UP,
         keys: ["Alt+Up"],
         where: [WINDOW]
     },
     {
-        action: "address",
+        action: Commands.ADDRESS,
         keys: ["Ctrl+L", "Alt+D"],
         where: [WINDOW]
     },
     {
-        action: "search",
+        action: Commands.SEARCH,
         keys: ["Ctrl+F", "F3"],
         where: [WINDOW]
     },
     {
-        action: "refresh",
+        action: Commands.REFRESH,
         keys: ["F5"],
         where: [WINDOW]
     },
+    // The picked folders in new windows; Ctrl+N (the window's) the folder
+    // shown.
     {
-        action: "newWindow",
+        action: Commands.NEW_WINDOW,
+        keys: ["Shift+Return", "Shift+Enter"],
+        where: [LIST]
+    },
+    {
+        action: Commands.NEW_WINDOW,
         asking: true,
         keys: ["Ctrl+N"],
         where: [WINDOW]
     },
     // Tabs, as in Explorer: closing the last one closes the window.
     {
-        action: "newTab",
+        action: Commands.NEW_TAB,
         keys: ["Ctrl+T"],
         where: [WINDOW]
     },
     {
-        action: "closeTab",
+        action: Commands.CLOSE_TAB,
         keys: ["Ctrl+W"],
         where: [WINDOW]
     },
     {
-        action: "nextTab",
+        action: Commands.NEXT_TAB,
         keys: ["Ctrl+Tab"],
         where: [WINDOW]
     },
     // Shift+Tab comes as Backtab.
     {
-        action: "previousTab",
+        action: Commands.PREVIOUS_TAB,
         keys: ["Ctrl+Shift+Tab", "Ctrl+Backtab"],
         where: [WINDOW]
     },
     {
-        action: "preview",
+        action: Commands.PREVIEW,
         keys: ["Alt+P"],
         where: [WINDOW]
     },
     {
-        action: "hidden",
+        action: Commands.NEW_FOLDER,
+        keys: ["Ctrl+Shift+N"],
+        where: [LIST]
+    },
+    {
+        action: Commands.RENAME,
+        keys: ["F2"],
+        where: [LIST]
+    },
+    {
+        action: Commands.CUT,
+        keys: ["Ctrl+X"],
+        where: [LIST]
+    },
+    {
+        action: Commands.COPY,
+        keys: ["Ctrl+C"],
+        where: [LIST]
+    },
+    // Explorer's Copy as path.
+    {
+        action: Commands.COPY_PATH,
+        keys: ["Ctrl+Shift+C"],
+        where: [LIST]
+    },
+    {
+        action: Commands.PASTE,
+        keys: ["Ctrl+V"],
+        where: [LIST]
+    },
+    // Explorer's Details pane.
+    {
+        action: Commands.DETAILS,
+        keys: ["Alt+Shift+P"],
+        where: [LIST]
+    },
+    {
+        action: Commands.HIDDEN,
         keys: ["Ctrl+H"],
         where: [LIST]
     },
     {
-        action: "selectAll",
+        action: Commands.SELECT_ALL,
         keys: ["Ctrl+A"],
         where: [LIST, TRASH]
     },
     {
-        action: "open",
+        action: Commands.OPEN,
         keys: ["Return", "Enter"],
         where: [LIST]
     },
     // The selection's Properties, or the folder's with nothing selected.
     {
-        action: "properties",
+        action: Commands.PROPERTIES,
         keys: ["Alt+Return", "Alt+Enter"],
         where: [LIST]
     },
     {
-        action: "trash",
+        action: Commands.TRASH,
         keys: ["Del"],
         where: [LIST]
     },
     // In the trash, Delete already deletes for good (Explorer's Recycle
     // Bin does the same), so Shift+Delete does too.
     {
-        action: "deleteForGood",
+        action: Commands.DELETE_FOR_GOOD,
         keys: ["Shift+Del"],
         where: [LIST]
     },
     {
-        action: "deleteForGood",
+        action: Commands.DELETE_FOR_GOOD,
         keys: ["Del", "Shift+Del"],
         where: [TRASH]
     },
-    // Undo and redo the last copy, move or trashing, from any window. A
-    // text field keeps them for its own text, so they're the lists'.
+    // Undo and redo the last step taken in any window. A text field keeps
+    // them for its own text, so they're the lists'.
     {
-        action: "undo",
+        action: Commands.UNDO,
         keys: ["Ctrl+Z"],
         where: [LIST, TRASH]
     },
     {
-        action: "redo",
+        action: Commands.REDO,
         keys: ["Ctrl+Y", "Ctrl+Shift+Z"],
         where: [LIST, TRASH]
     },
     // The moves: with Shift each extends the selection from its anchor.
     {
-        action: "move",
+        action: Commands.MOVE,
         keys: ["Up", "Down", "PgUp", "PgDown", "Home", "End", "Shift+Up", "Shift+Down", "Shift+PgUp", "Shift+PgDown", "Shift+Home", "Shift+End"],
         where: [LIST, TRASH]
     }
@@ -155,6 +201,21 @@ var TEXT_KEYS = ["Backspace", "Del", "Left", "Right", "Up", "Down", "Home", "End
 // The entries that work in `where`.
 function entries(where) {
     return TABLE.filter(entry => entry.where.includes(where));
+}
+
+// How menus spell the portable names that read differently.
+var SHOWN_NAMES = {
+    Return: "Enter",
+    Del: "Delete"
+};
+
+// The key a menu shows for `command`: its first in a list, else the
+// window's ("Ctrl + Shift + C"), or "" for none.
+function shown(command) {
+    const entry = entries(LIST).find(candidate => candidate.action === command) ?? entries(WINDOW).find(candidate => candidate.action === command);
+    if (!entry)
+        return "";
+    return entry.keys[0].split("+").map(part => SHOWN_NAMES[part] ?? part).join(" + ");
 }
 
 // The names of keys that aren't a letter, a digit or F1..F35.

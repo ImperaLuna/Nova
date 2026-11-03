@@ -12,10 +12,11 @@ import "../trash.js" as Trash
 // places, the drives (and mounting and ejecting them), opening files in
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, the
-// trash, the Properties window's facts, sizes and access, and the preview
-// pane's previews. The Nova Files process (../../files.qml) and its
-// windows get these here and never talk to Daemon themselves. Also how
-// solid the windows are, from config.toml's [files].
+// trash, new folders, renaming, an item's details, the Properties
+// window's facts, sizes and access, and the preview pane's previews. The
+// Nova Files process (../../files.qml) and its windows get these here and
+// never talk to Daemon themselves. Also how solid the windows are, from
+// config.toml's [files].
 Singleton {
     id: root
 
@@ -107,17 +108,6 @@ Singleton {
         Daemon.call(Protocol.CMD_ATTACH_FILES, {
             attached: false
         }, () => done());
-    }
-
-    // Opens another Nova Files window on `folder` (absolute): Ctrl+N. novad
-    // sends it back as a window like any other.
-    function showFolder(folder: string) {
-        Daemon.call(Protocol.CMD_SHOW_FOLDER, {
-            folder: folder
-        }, error => {
-            if (error)
-                console.warn(`nova: files: a window on ${folder}: ${error}`);
-        });
     }
 
     // Opens the file at `path` (absolute) in the app `app` (a desktop file
@@ -247,17 +237,18 @@ Singleton {
         return job;
     }
 
-    // Whether every item at `sources` (absolute paths) is on the same
-    // drive as the folder `folder`: a drop there moves them, elsewhere it
-    // copies. `done(same)` gets the answer, or null when novad can't tell.
-    function sameDrive(sources: var, folder: string, done: var) {
-        Daemon.call(Protocol.CMD_FILES_SAME_DRIVE, {
+    // What dropping `sources` (absolute paths) on the folder `folder`
+    // does, Ctrl held when `copy`: `done(mode)` gets a Protocol.TRANSFER_*
+    // mode, or null when nothing can be dropped there (or novad can't tell).
+    function drop(sources: var, folder: string, copy: bool, done: var) {
+        Daemon.call(Protocol.CMD_FILES_DROP, {
             sources: sources,
-            folder: folder
-        }, (error, same) => {
+            folder: folder,
+            copy: copy
+        }, (error, mode) => {
             if (error)
-                console.warn(`nova: checking the drive of ${folder}: ${error}`);
-            done(error ? null : same);
+                console.warn(`nova: dropping into ${folder}: ${error}`);
+            done(error ? null : mode ?? null);
         });
     }
 
@@ -279,6 +270,36 @@ Singleton {
         });
     }
 
+    // Makes a new folder in `folder` (absolute). `done(error, name)` gets
+    // novad's answer: the folder's name ("New folder", or numbered).
+    function newFolder(folder: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_NEW_FOLDER, {
+            folder: folder
+        }, (error, name) => root._answered("making a folder", error, error => done?.(error, name ?? "")));
+    }
+
+    // Renames the item at `path` (absolute) to `name`. `done(error, name)`
+    // gets novad's answer: the name it now has.
+    function rename(path: string, name: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_RENAME, {
+            path: path,
+            name: name
+        }, (error, renamed) => root._answered("renaming", error, error => done?.(error, renamed ?? "")));
+    }
+
+    // `done(details)` gets what the details pane shows about the item at
+    // `path` (absolute): {entry, items, created_ms, accessed_ms, owner,
+    // group, mode}, or null when novad couldn't tell.
+    function details(path: string, done: var) {
+        Daemon.call(Protocol.CMD_FILES_DETAILS, {
+            path: path
+        }, (error, result) => {
+            if (error)
+                console.warn(`nova: details of ${path}: ${error}`);
+            done(error ? null : result);
+        });
+    }
+
     // How far a measuring job got (see Daemon.filesMeasured).
     signal measured(var measured)
 
@@ -292,6 +313,16 @@ Singleton {
             if (error)
                 console.warn(`nova: properties of ${path}: ${error}`);
             done(error ? null : result);
+        });
+    }
+
+    // Opens another Nova Files window on `folder` (absolute).
+    function openWindow(folder: string) {
+        Daemon.call(Protocol.CMD_SHOW_FOLDER, {
+            folder: folder
+        }, error => {
+            if (error)
+                console.warn(`nova: a window on ${folder}: ${error}`);
         });
     }
 
@@ -328,8 +359,6 @@ Singleton {
         }, error => root._answered("changing access", error, done));
     }
 
-    // Moves `paths` (absolute) to the trash. `done(error)` gets novad's
-    // answer: null, or which ones didn't go.
     // Moves `paths` (absolute) to the trash, one step to undo however many
     // requests it takes. `done(error)` gets novad's answer: null, or which
     // ones didn't go.

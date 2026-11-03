@@ -1,15 +1,11 @@
 .pragma library
 .import "../daemon/protocol.js" as Protocol
-.import "paths.js" as Paths
 .import "trash.js" as Trash
 
 // Nova Files' drag and drop, kept apart so ui/tests can check it: what's
 // dragged travels as text/uri-list (file:// URIs), so other apps take it
-// and give it, and what a drop on a folder does follows Explorer: on the
-// same drive it moves, onto another drive it copies, Ctrl copies anyway,
-// and onto the trash it goes to the trash. A folder dropped into itself
-// or one of its own folders, or a move into the folder it's already in,
-// does nothing, and the pointer says so.
+// and give it. What a drop on a folder does is novad's (files_drop); onto
+// the trash it goes to the trash.
 
 // What a drop does besides Protocol.TRANSFER_COPY and TRANSFER_MOVE.
 var TRASH = "trash";
@@ -117,23 +113,6 @@ function localPaths(urls) {
         paths.push(wireText(bytesOf(match[2])));
     }
     return paths;
-}
-
-// What dropping `sources` (absolute paths) on `folder` does: a
-// Protocol.TRANSFER_* mode, TRASH or NONE. `trash` when it's the trash,
-// `copy` when the drag asks for a copy (Ctrl), `sameDrive` whether they're
-// on the folder's drive (null while that isn't known: a move, till then).
-function decide(sources, folder, trash, copy, sameDrive) {
-    if (sources.length === 0 || folder === "")
-        return NONE;
-    if (trash)
-        return TRASH;
-    if (sources.some(source => Paths.inside(folder, source)))
-        return NONE;
-    const mode = copy || sameDrive === false ? Protocol.TRANSFER_COPY : Protocol.TRANSFER_MOVE;
-    if (mode === Protocol.TRANSFER_MOVE && sources.every(source => Paths.parent(source) === folder))
-        return NONE;
-    return mode;
 }
 
 // The drag action the pointer shows for `action`.

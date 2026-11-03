@@ -27,7 +27,7 @@ Item {
     // A drive's menu was asked for at `at` (in the window).
     signal driveMenuRequested(var drive, point at)
     signal tabRequested(string path)
-    // A drop asks for `action` (Drops.decide) on `sources` into `folder`.
+    // A drop asks for `action` (a Protocol.TRANSFER_* mode or Drops.TRASH) on `sources` into `folder`.
     signal dropRequested(string action, var sources, string folder)
 
     readonly property var looks: ({
