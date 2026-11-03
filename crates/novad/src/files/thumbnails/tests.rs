@@ -149,9 +149,14 @@ fn a_file_the_thumbnailer_fails_on_is_not_tried_again_until_it_changes() {
 
 #[test]
 fn what_scrolled_away_is_not_made_and_the_latest_goes_first() {
-    // Each run waits until the test lets it go, so both makers are busy
-    // while more are asked for.
-    let fixture = Fixture::new("cancel", "while [ ! -e \"$(dirname \"$2\")/../../go\" ]; do sleep 0.02; done");
+    // Each run waits until the test lets it go, all of them (`go`) or its
+    // own file (`go-<name>`), so both makers are busy while more are asked
+    // for, and then one maker at a time takes from the queue.
+    let fixture = Fixture::new(
+        "cancel",
+        "cache=\"$(dirname \"$2\")/../..\"\n\
+         while [ ! -e \"$cache/go\" ] && [ ! -e \"$cache/go-$(basename \"$1\")\" ]; do sleep 0.02; done",
+    );
     let (client, events, _stream) = fixture.client();
     let photos: Vec<String> = (0..5).map(|n| fixture.photo(&format!("{n}.png"))).collect();
     for photo in &photos[..2] {
@@ -165,6 +170,10 @@ fn what_scrolled_away_is_not_made_and_the_latest_goes_first() {
     nova_test_support::wait_until(WAIT, "both looked up", || {
         lock(&fixture.thumbnails.shared.queues).to_make.len() == 2
     });
+    // One maker comes free and takes the latest asked for; the other is
+    // still busy, so nothing races it.
+    std::fs::write(fixture.dir.join("cache/go-0.png"), "").unwrap();
+    nova_test_support::wait_until(WAIT, "a third run", || fixture.runs() == 3);
     std::fs::write(fixture.dir.join("cache/go"), "").unwrap();
     let mut answered: Vec<String> = (0..4).map(|_| answer(&events)["path"].as_str().unwrap().to_string()).collect();
     answered.sort();
