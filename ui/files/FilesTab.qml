@@ -17,5 +17,5 @@ QtObject {
     property var view: null
     readonly property bool trash: Trash.isTrash(navigator.folder)
     // The tab's name: the folder's, or the trash's.
-    readonly property string title: trash ? Trash.name() : Home.isHome(navigator.folder) ? Home.name() : Paths.folderName(navigator.folder)
+    readonly property string title: trash ? Trash.name() : Home.isPage(navigator.folder) ? Home.pageName(navigator.folder) : Paths.folderName(navigator.folder)
 }
