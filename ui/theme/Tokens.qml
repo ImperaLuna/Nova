@@ -673,8 +673,9 @@ QtObject {
     // windows), its size when it opens, the navigation row (back, forward,
     // up, the address and search fields) and the command row under it, the
     // sidebar of places, and the file list's header with its Modified, Type
-    // and Size columns. Rows and fields use the radius of a menu row and of
-    // a control; the fields sit darker than the glass.
+    // and Size columns (the sorted one with a small chevron). Rows and
+    // fields use the radius of a menu row and of a control; the fields sit
+    // darker than the glass.
     readonly property int filesWindowWidth: 880
     readonly property int filesWindowHeight: 700
     readonly property int filesButtonSize: 30
@@ -689,6 +690,17 @@ QtObject {
     readonly property int filesHeaderHeight: 30
     readonly property list<int> filesColumns: [150, 110, 80]
     readonly property color filesFaint: alpha(fg, 0.45)
+    // The file list's rows: a folder's icon in its own warm color (dimmer
+    // for a dot folder), and rows easing up into place one after another
+    // when a folder's entries come in.
+    readonly property int filesRowHeight: 32
+    readonly property color filesFolder: "#E8A35A"
+    readonly property real filesHiddenIconOpacity: 0.6
+    readonly property int filesRowRise: 4
+    readonly property int filesRowStagger: 25
+    readonly property int durationRowIn: 220
+    // How often the Modified column looks at the clock, so "Today" moves on.
+    readonly property int filesClockTick: 60000
     // Solid Nova Files ([files] in config.toml) ends at the theme's soft
     // greys: the frame a step above bg, the file list at bg. On the way the
     // raised rows fade into the frame.

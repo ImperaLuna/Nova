@@ -5,9 +5,11 @@ import Quickshell
 import "../../daemon"
 import "../../daemon/protocol.js" as Protocol
 
-// Nova Files' link to novad: the windows it asks for, and opening files in
-// apps (the default one on a double-click or Enter, or one from "Open
-// with", which can also become the new default). The Nova Files
+// Nova Files' link to novad: the windows it asks for, the folders they
+// show (folder views: each FolderModel opens one under its own number and
+// gets its pages, changes and closing here), and opening files in apps
+// (the default one on a double-click or Enter, or one from "Open with",
+// which can also become the new default). The Nova Files
 // process (../../files.qml) and its windows get these here and never talk
 // to Daemon themselves. Also how solid the windows are, from
 // config.toml's [files].
@@ -22,6 +24,49 @@ Singleton {
     // A window to open on `window.folder`, with `window.select` (absolute
     // paths in it, maybe none) selected.
     signal windowRequested(var window)
+    // A folder view's page of entries, its changes and novad closing it,
+    // for every view: each FolderModel picks its own by `view`.
+    signal page(var page)
+    signal changed(var changed)
+    signal viewClosed(var closed)
+
+    // novad drops a connection's views when it goes: views open again on
+    // the next connection.
+    readonly property bool connected: Daemon.connected
+
+    property int _nextView: 1
+
+    // A number for a new folder view, never handed out twice.
+    function newView(): int {
+        return _nextView++;
+    }
+
+    // Shows the folder at `path` (absolute) in view `view`, ordered by
+    // `sortKey` (a Protocol.FILE_SORT_*), with dot files when `hidden`.
+    // Whatever the view showed is replaced; its entries come as `page`s.
+    // `done(error)` gets novad's answer.
+    function open(view: int, path: string, sortKey: string, descending: bool, hidden: bool, done: var) {
+        Daemon.call(Protocol.CMD_FILES_OPEN, {
+            view: view,
+            path: path,
+            sort: {
+                key: sortKey,
+                descending: descending
+            },
+            hidden: hidden
+        }, error => {
+            if (error)
+                console.warn(`nova: opening the folder ${path}: ${error}`);
+            done?.(error ?? null);
+        });
+    }
+
+    // Closes view `view`; nothing more comes for it.
+    function close(view: int) {
+        Daemon.call(Protocol.CMD_FILES_CLOSE, {
+            view: view
+        });
+    }
 
     // Tells novad this process opens Nova Files' windows; done again on
     // every connection.
@@ -86,6 +131,15 @@ Singleton {
         target: Daemon
         function onFilesWindowRequested(window: var) {
             root.windowRequested(window);
+        }
+        function onFilesPage(page: var) {
+            root.page(page);
+        }
+        function onFilesChanged(changed: var) {
+            root.changed(changed);
+        }
+        function onFilesClosed(closed: var) {
+            root.viewClosed(closed);
         }
         function onConnectedChanged() {
             if (Daemon.connected)

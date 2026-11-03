@@ -6,9 +6,10 @@ import "paths.js" as Paths
 
 // A Nova Files window: an app window the compositor tiles and rounds,
 // showing `folder` with `select` selected. The navigation row, the command
-// row, then the sidebar beside the file list. Its frame and its file list
-// each go from glass to solid as config.toml's [files] says, live. Each
-// draws its own background, so one never shows through the other.
+// row, then the sidebar beside the file list; opening a folder in the
+// list shows it in the same window. Its frame and its file list each go
+// from glass to solid as config.toml's [files] says, live. Each draws its
+// own background, so one never shows through the other.
 FloatingWindow {
     id: window
 
@@ -60,6 +61,10 @@ FloatingWindow {
         anchors.right: parent.right
         anchors.top: commands.bottom
         anchors.bottom: parent.bottom
+        folder: window.folder
+        select: window.select
+        focus: true
+        onFolderOpened: path => window.folder = path
         solid: FilesService.listSolid
     }
 }
