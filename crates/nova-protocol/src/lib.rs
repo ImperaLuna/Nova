@@ -1205,6 +1205,14 @@ pub const FILES_MAX_VIEWS: usize = 16;
 /// The longest `files_open` path, in bytes: Linux's own limit.
 pub const FILES_PATH_MAX_BYTES: usize = 4096;
 
+/// The longest `files_search` query, in characters: anything on the socket
+/// is capped, and nobody types more.
+pub const FILES_SEARCH_MAX_CHARS: usize = 200;
+
+/// Most results a `files_search` answers with: more than a list shows
+/// before anyone types another letter.
+pub const FILES_SEARCH_MAX_RESULTS: usize = 200;
+
 /// Most folders a `files_tree` may name as `opened` or as `closed`, each.
 pub const FILES_TREE_MAX_FOLDERS: usize = 256;
 /// The longest request line novad reads: a longer one closes the
@@ -2039,6 +2047,13 @@ pub enum Command {
     FilesEject {
         drive: String,
     },
+    /// Finds files by name (feature `files`): every name under Home and
+    /// the drives holding each word of `query`, case aside, hidden folders
+    /// included. Answered with a [`FileSearch`] from novad's index, without
+    /// reading folders.
+    FilesSearch {
+        query: String,
+    },
 }
 
 /// A drive in Nova Files' sidebar ([`Event::FilesDrives`]): one
@@ -2142,6 +2157,44 @@ pub struct TrashItem {
     pub deleted_ms: Option<i64>,
     /// The item, under the name it had.
     pub entry: FileEntry,
+}
+
+/// The answer to [`Command::FilesSearch`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileSearch {
+    /// The index is built; until then nothing is found.
+    pub ready: bool,
+    /// How many names fit, of which `results` are the best, at most
+    /// [`FILES_SEARCH_MAX_RESULTS`].
+    pub total: u32,
+    /// Best first: whole names, then names starting with the first word,
+    /// then a word in the name starting with it, then the rest; within
+    /// each, names that aren't hidden (themselves or by a folder they're
+    /// in) first, then shorter names.
+    pub results: Vec<FoundFile>,
+}
+
+/// A file a search found ([`FileSearch`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FoundFile {
+    /// The folder it's in, an absolute path, as wire text ([`wire_text`]).
+    pub folder: String,
+    pub entry: FileEntry,
+    /// A folder it's in is hidden (its own name is `entry.hidden`).
+    pub in_hidden_folder: bool,
+    /// Where the query's words are in its name, in order.
+    pub marks: Vec<TextMark>,
+}
+
+/// A stretch of text to highlight, in UTF-16 code units, what QML's
+/// strings count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TextMark {
+    pub start: u32,
+    pub length: u32,
 }
 
 /// The order of a folder view (`files_open`). Folders always come before
@@ -3237,6 +3290,31 @@ mod tests {
                 }),
                 error: None,
             })),
+            encode(Request { id: Some(81), command: Command::FilesSearch { query: "crimson".into() } }),
+            encode(Response {
+                id: 81,
+                outcome: Outcome::Result(
+                    serde_json::to_value(FileSearch {
+                        ready: true,
+                        total: 1,
+                        results: vec![FoundFile {
+                            folder: "/home/user/.local/share/Steam/steamapps/common".into(),
+                            entry: FileEntry {
+                                name: "Crimson Desert".into(),
+                                dir: true,
+                                link: false,
+                                hidden: false,
+                                mime: "inode/directory".into(),
+                                size: None,
+                                modified_ms: Some(1_793_000_000_000),
+                            },
+                            in_hidden_folder: true,
+                            marks: vec![TextMark { start: 0, length: 7 }],
+                        }],
+                    })
+                    .unwrap(),
+                ),
+            }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
         let all: String = lines.into_iter().map(Result::unwrap).collect();

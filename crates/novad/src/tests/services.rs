@@ -187,6 +187,28 @@ fn a_folder_view_is_listed_and_followed_over_the_socket() {
     assert!(closed["error"].as_str().unwrap().contains("doesn't exist"), "{closed}");
 }
 
+/// Searching over the socket: names under Home, hidden folders included.
+/// The search's own tests cover ranking and following changes.
+#[test]
+fn files_are_found_by_name_over_the_socket() {
+    let novad = TestDaemon::open("files-search", None, |dir| {
+        std::fs::write(dir.join("config/features.toml"), "enabled = [\"files\"]\n").unwrap();
+        std::fs::create_dir_all(dir.join("home/.local/share/Steam/Crimson Desert")).unwrap();
+    });
+    let mut client = novad.connect();
+    let mut id = 0;
+    let mut search = |query: &str| {
+        id += 1;
+        client.request(id, "files_search", Some(json!({"query": query})))["result"].clone()
+    };
+    nova_test_support::wait_until(Duration::from_secs(5), "the index is built", || search("crimson")["ready"] == true);
+    let found = search("crimson");
+    assert_eq!(found["total"], 1);
+    assert_eq!(found["results"][0]["entry"]["name"], "Crimson Desert");
+    assert_eq!(found["results"][0]["in_hidden_folder"], true);
+    assert_eq!(found["results"][0]["marks"], json!([{"start": 0, "length": 7}]));
+}
+
 /// The trash over the socket: an item trashed, listed, restored, and the
 /// trash emptied, with `files_trash_changed` each time it changes. The
 /// trash's own tests cover the spec.

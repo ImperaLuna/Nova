@@ -302,6 +302,18 @@ impl<'a> Connection<'a> {
                     None => opener.open(&path),
                 });
             }
+            // Answered off the connection's thread: the files found are
+            // looked at, and a slow drive must not hold up its other requests.
+            Command::FilesSearch { query } => {
+                let query = query.clone();
+                return match self.files() {
+                    Ok(files) => {
+                        let searcher = files.searcher();
+                        Answer::later(move || value(searcher.search(&query)))
+                    }
+                    Err(e) => Answer::Now(Outcome::Error(e)),
+                };
+            }
             Command::FilesOpenWith { path } => {
                 let path = path.clone();
                 return self.opener_later(move |opener| opener.choices(&path));
@@ -935,6 +947,7 @@ impl<'a> Connection<'a> {
             | Command::FilesLaunch { .. }
             | Command::FilesOpenWith { .. }
             | Command::FilesSetDefault { .. }
+            | Command::FilesSearch { .. }
             | Command::FilesTrash { .. }
             | Command::FilesDelete { .. }
             | Command::FilesTrashList

@@ -25,6 +25,8 @@
 //!   package brings new types), and the view's order.
 //! - `tree.rs`: the sidebar's folder tree that follows the window
 //!   (`files_tree`) and its places (`files_places`).
+//! - `search/`: finding files by name (`files_search`) from an index of
+//!   every name under Home and the drives, kept up to date with inotify.
 //! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
 //!   and ejecting them; `drives.rs`: which filesystems are listed and
 //!   what they're called.
@@ -48,6 +50,7 @@ mod copying;
 mod drives;
 mod file_manager1;
 mod folder;
+pub mod search;
 mod target;
 mod transfers;
 mod trash;
@@ -103,6 +106,8 @@ pub struct Sources {
     /// How the Nova Files process runs; none for a novad without its UI,
     /// where windows only wait.
     pub ui: Option<crate::supervisor::UiSettings>,
+    /// What the search index covers.
+    pub search: search::Sources,
     /// The home trash (`$XDG_DATA_HOME/Trash`); none without a home.
     pub trash: Option<PathBuf>,
     /// The mount table, where drives' trashes are looked for.
@@ -119,6 +124,8 @@ pub struct Files {
     stop: Arc<Stop>,
     /// The folders the windows show.
     folders: views::Folders,
+    /// The index of file names.
+    search: search::Search,
     /// How solid the windows are, as last published.
     look: Mutex<FilesLook>,
     /// The copies and moves they run.
@@ -162,6 +169,7 @@ impl Files {
     ) -> Arc<Self> {
         let mime = crate::mime::Mime::follow(sources.data_dirs.clone(), Arc::clone(&logger));
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
+        let search = search::Search::start(sources.search.clone(), Arc::clone(&logger), Arc::clone(&mime));
         let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
         let trash = Arc::new(Trash::new(sources.trash.clone(), sources.mounts.clone(), Arc::clone(&mime)));
         let trash_watch = trash::Watch::start(Arc::clone(&trash), Arc::clone(&hub), Arc::clone(&logger));
@@ -203,6 +211,7 @@ impl Files {
             trash,
             trash_watch,
             drives,
+            search,
         })
     }
 
@@ -214,6 +223,11 @@ impl Files {
     /// The trash.
     pub fn trash(&self) -> Arc<Trash> {
         Arc::clone(&self.trash)
+    }
+
+    /// What finds files by name (`files_search`).
+    pub fn searcher(&self) -> search::Searcher {
+        self.search.searcher()
     }
 
     /// Shows the folder `path` in client `client`'s view `view`
@@ -341,12 +355,14 @@ impl Files {
     }
 
     /// Stops it: it publishes nothing more, gives up FileManager1, closes
-    /// Nova Files' windows and folder views, stops copies and following the MIME
-    /// database, and drops windows still waiting.
+    /// Nova Files' windows and folder views, stops copies, following the
+    /// MIME database and keeping the search index, and drops windows still
+    /// waiting.
     pub fn stop(&self) {
         self.stop.stop();
         self.mime.stop();
         self.folders.stop();
+        self.search.stop();
         self.drives.stop();
         self.transfers.stop();
         if let Some(watch) = &self.trash_watch {
@@ -414,6 +430,7 @@ impl crate::modules::Module for Files {
         let runner = Runner::detect(env.path_var);
         let home = nova_paths::home().unwrap_or_else(|| PathBuf::from("/"));
         let trash = nova_paths::data_home().map(|data| data.join(TRASH_DIR));
+        let search = search::Sources::system(env.home.clone());
         Sources {
             bus: Bus::Session,
             udisks: Bus::System,
@@ -424,6 +441,7 @@ impl crate::modules::Module for Files {
             ui: env.ui.cloned(),
             trash,
             mounts: MOUNT_TABLE.into(),
+            search,
         }
     }
 
@@ -501,6 +519,7 @@ mod tests {
                 runner: crate::apps::launch::Runner::Direct,
                 home: dir.to_path_buf(),
                 ui: None,
+                search: search::Sources::under(&dir),
                 trash: Some(dir.join("Trash")),
                 mounts: dir.join("no-mountinfo"),
             };

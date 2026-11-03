@@ -129,6 +129,7 @@ mod tests {
                 runner: crate::apps::launch::Runner::Direct,
                 home: dir.to_path_buf(),
                 ui: None,
+                search: crate::files::search::Sources::under(&dir),
                 trash: None,
                 mounts: dir.join("no-mountinfo"),
             };

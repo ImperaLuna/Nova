@@ -27,6 +27,12 @@ var FILES_MAX_VIEWS = 16;
 // novad refuses longer files_open paths.
 var FILES_PATH_MAX_BYTES = 4096;
 
+// novad refuses longer files_search queries.
+var FILES_SEARCH_MAX_CHARS = 200;
+
+// Most results a files_search answers with.
+var FILES_SEARCH_MAX_RESULTS = 200;
+
 // A files_look part this high is fully solid; 0 is glass.
 var FILES_SOLID_MAX = 100;
 
@@ -130,6 +136,7 @@ var CMD_FILES_TRASH_DELETE = "files_trash_delete";
 var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
 var CMD_FILES_MOUNT = "files_mount";
 var CMD_FILES_EJECT = "files_eject";
+var CMD_FILES_SEARCH = "files_search";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";

@@ -305,6 +305,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             runner: launcher::Runner::Direct,
             home: dir.join("home"),
             ui: None,
+            search: crate::files::search::Sources::under(dir),
             // A home trash under `<dir>/trash`, and no drives.
             trash: Some(dir.join("trash")),
             mounts: dir.join("no-mountinfo"),
