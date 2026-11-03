@@ -54,13 +54,32 @@ function forItems(rows, apps, defaultApp, act) {
     return menu;
 }
 
-// The menu for the folder itself, from the empty list.
-function forFolder(canPaste, hidden, act) {
+// What undoing or redoing a step (a Protocol.FILE_STEP_*) is called, as
+// in Explorer's "Undo Rename".
+function _undoLabel(redo, step) {
+    const steps = {};
+    steps[Protocol.FILE_STEP_COPY] = redo ? qsTr("Redo copy") : qsTr("Undo copy");
+    steps[Protocol.FILE_STEP_MOVE] = redo ? qsTr("Redo move") : qsTr("Undo move");
+    steps[Protocol.FILE_STEP_TRASH] = redo ? qsTr("Redo move to trash") : qsTr("Undo move to trash");
+    steps[Protocol.FILE_STEP_RENAME] = redo ? qsTr("Redo rename") : qsTr("Undo rename");
+    steps[Protocol.FILE_STEP_NEW_FOLDER] = redo ? qsTr("Redo new folder") : qsTr("Undo new folder");
+    return steps[step] ?? (redo ? qsTr("Redo") : qsTr("Undo"));
+}
+
+// The menu for the folder itself, from the empty list. `history` is what
+// can be undone and redone ({undo, redo}, FilesService.history); each is
+// listed only when there's one, after Paste as in Explorer.
+function forFolder(canPaste, hidden, history, act) {
     const paste = _item(qsTr("Paste"), Icons.PASTE, Commands.PASTE, act, []);
     paste.enabled = canPaste;
     const showHidden = _item(qsTr("Show hidden files"), "", Commands.HIDDEN, act, []);
     showHidden.checked = hidden;
-    return [_item(qsTr("New folder"), Icons.FOLDER, Commands.NEW_FOLDER, act, []), paste, SEPARATOR, _item(qsTr("Select all"), "", Commands.SELECT_ALL, act, []), showHidden, SEPARATOR, _item(qsTr("Show details…"), Icons.INFO, Commands.DETAILS, act, [])];
+    const menu = [_item(qsTr("New folder"), Icons.FOLDER, Commands.NEW_FOLDER, act, []), paste];
+    if (history.undo)
+        menu.push(_item(_undoLabel(false, history.undo), Icons.UNDO, Commands.UNDO, act, []));
+    if (history.redo)
+        menu.push(_item(_undoLabel(true, history.redo), Icons.REDO, Commands.REDO, act, []));
+    return menu.concat([SEPARATOR, _item(qsTr("Select all"), "", Commands.SELECT_ALL, act, []), showHidden, SEPARATOR, _item(qsTr("Show details…"), Icons.INFO, Commands.DETAILS, act, [])]);
 }
 
 // The command row's New.

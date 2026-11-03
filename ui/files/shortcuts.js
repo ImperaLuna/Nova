@@ -148,6 +148,18 @@ var TABLE = [
         keys: ["Del", "Shift+Del"],
         where: [TRASH]
     },
+    // Undo and redo the last step taken in any window. A text field keeps
+    // them for its own text, so they're the lists'.
+    {
+        action: Commands.UNDO,
+        keys: ["Ctrl+Z"],
+        where: [LIST, TRASH]
+    },
+    {
+        action: Commands.REDO,
+        keys: ["Ctrl+Y", "Ctrl+Shift+Z"],
+        where: [LIST, TRASH]
+    },
     // The moves: with Shift each extends the selection from its anchor.
     {
         action: Commands.MOVE,

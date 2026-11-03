@@ -89,11 +89,18 @@ Item {
 
         function test_the_folder_drive_and_sort_menus() {
             const act = () => {};
-            const empty = Menus.forFolder(false, true, act);
+            const empty = Menus.forFolder(false, true, {}, act);
             compare(labels(empty), ["New folder", "Paste", "-", "Select all", "Show hidden files", "-", "Show details…"]);
             compare(empty[1].enabled, false, "nothing to paste");
             compare(empty[4].checked, true);
-            verify(Menus.forFolder(true, false, act)[1].enabled);
+            verify(Menus.forFolder(true, false, {}, act)[1].enabled);
+            const history = {
+                undo: Protocol.FILE_STEP_RENAME,
+                redo: Protocol.FILE_STEP_TRASH
+            };
+            const undoing = Menus.forFolder(false, false, history, act);
+            compare(labels(undoing).slice(0, 4), ["New folder", "Paste", "Undo rename", "Redo move to trash"]);
+            compare(undoing[2].shortcut, "Ctrl + Z");
             compare(labels(Menus.forDrive({
                 removable: false
             }, act)), ["Open in new window", "Show details…"], "no Eject for a disk inside");

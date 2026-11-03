@@ -13,6 +13,11 @@
 //! A move is a rename when it stays on one file system, and a copy and
 //! delete when it doesn't.
 //!
+//! A job may have several legs, each items going into one folder: an undone
+//! move puts items back in the folders they came from. As it ends, the job
+//! tells the history ([`History::moved`]) each item it placed at the top
+//! (not what's inside a folder it copied), so the step can be undone.
+//!
 //! The job checks for a cancel before each item and between chunks of a
 //! file. Every event is sent while the job is still registered, checked
 //! under the jobs lock, so nothing arrives after it ended, was cancelled
@@ -20,6 +25,7 @@
 //! cancelled or failed) unregisters it in the same step.
 
 use crate::files::copying::{self, Aside, Clashing, Measure, Part};
+use crate::files::history::{History, Origin};
 use crate::files::views::checked_path;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
@@ -51,7 +57,14 @@ type Jobs = Arc<Mutex<Option<HashMap<Key, Arc<Job>>>>>;
 pub struct Transfers {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
+    history: Arc<History>,
     jobs: Jobs,
+}
+
+/// Items going into one folder.
+pub struct Leg {
+    pub sources: Vec<PathBuf>,
+    pub folder: PathBuf,
 }
 
 struct Job {
@@ -76,12 +89,13 @@ struct Control {
 }
 
 impl Transfers {
-    pub fn new(hub: Arc<Hub>, logger: Arc<Logger>) -> Self {
-        Self { hub, logger, jobs: Arc::new(Mutex::new(Some(HashMap::new()))) }
+    pub fn new(hub: Arc<Hub>, logger: Arc<Logger>, history: Arc<History>) -> Self {
+        Self { hub, logger, history, jobs: Arc::new(Mutex::new(Some(HashMap::new()))) }
     }
 
     /// Starts `client`'s job `job`, copying or moving `sources` into
-    /// `folder`. Doesn't touch the disk: how it goes follows as events.
+    /// `folder`: a new step in the history. Doesn't touch the disk: how it
+    /// goes follows as events.
     pub fn start(
         &self,
         client: ClientId,
@@ -90,15 +104,30 @@ impl Transfers {
         sources: &[String],
         folder: &str,
     ) -> Result<(), String> {
-        if sources.is_empty() {
-            return Err("Nothing to copy".into());
-        }
+        let sources = sources.iter().map(|source| checked_path(source)).collect::<Result<Vec<_>, _>>()?;
         if sources.len() > FILES_TRANSFER_MAX_SOURCES {
             return Err(format!("At most {FILES_TRANSFER_MAX_SOURCES} items can be copied at once"));
         }
-        let sources = sources.iter().map(|source| checked_path(source)).collect::<Result<Vec<_>, _>>()?;
-        let folder = checked_path(folder)?;
-        let name = sources[0].file_name().map_or_else(|| "/".into(), nova_protocol::wire_text);
+        let leg = Leg { sources, folder: checked_path(folder)? };
+        self.start_legs(client, job, mode, vec![leg], Origin::New)
+    }
+
+    /// Starts `client`'s job `job` over `legs`, whose paths are checked,
+    /// for `origin`. A step's move isn't held to the request's limit on
+    /// items: undoing a merge moves back each item it placed.
+    pub fn start_legs(
+        &self,
+        client: ClientId,
+        job: u32,
+        mode: TransferMode,
+        legs: Vec<Leg>,
+        origin: Origin,
+    ) -> Result<(), String> {
+        let count: usize = legs.iter().map(|leg| leg.sources.len()).sum();
+        let Some(first) = legs.iter().find_map(|leg| leg.sources.first()) else {
+            return Err("Nothing to copy".into());
+        };
+        let name = first.file_name().map_or_else(|| "/".into(), nova_protocol::wire_text);
         let key = (client, job);
         let mut jobs = lock(&self.jobs);
         let Some(running) = jobs.as_mut() else { return Err("Nova Files is off".into()) };
@@ -108,7 +137,7 @@ impl Transfers {
         if running.keys().filter(|(owner, _)| *owner == client).count() >= FILES_MAX_TRANSFERS {
             return Err(format!("At most {FILES_MAX_TRANSFERS} copies can run at once"));
         }
-        let items = u32::try_from(sources.len()).unwrap_or(u32::MAX);
+        let items = u32::try_from(count).unwrap_or(u32::MAX);
         let started = Arc::new(Job { key, mode, items, name, control: Mutex::default(), changed: Condvar::new() });
         running.insert(key, Arc::clone(&started));
         drop(jobs);
@@ -117,8 +146,11 @@ impl Transfers {
             hub: Arc::clone(&self.hub),
             logger: Arc::clone(&self.logger),
             jobs: Arc::clone(&self.jobs),
-            sources,
-            folder,
+            history: Arc::clone(&self.history),
+            origin,
+            legs,
+            placed: Vec::new(),
+            inside_copy: 0,
             done_bytes: 0,
             total: Measure::default(),
             remembered: [None; 2],
@@ -207,6 +239,8 @@ type Step = Result<(), Halt>;
 /// An item to place, checked.
 struct Item {
     source: PathBuf,
+    /// The folder it goes into.
+    folder: PathBuf,
     name: OsString,
     meta: Metadata,
     /// Its bytes, as measured.
@@ -221,8 +255,14 @@ struct Run {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     jobs: Jobs,
-    sources: Vec<PathBuf>,
-    folder: PathBuf,
+    history: Arc<History>,
+    origin: Origin,
+    legs: Vec<Leg>,
+    /// Each item placed at the top, (from, to): what the history keeps.
+    placed: Vec<(PathBuf, PathBuf)>,
+    /// How deep in folders being copied it is; what's placed there isn't
+    /// at the top.
+    inside_copy: u32,
     done_bytes: u64,
     /// The bytes to copy and the clashes still ahead, kept as items are
     /// placed or skipped.
@@ -244,6 +284,7 @@ impl Run {
             self.report(TransferState::Running, None, None);
             items.into_iter().try_for_each(|item| self.place_item(item))
         });
+        self.record();
         match result {
             Ok(()) => self.report(TransferState::Done, None, None),
             Err(Halt::Stopped) => self.report(TransferState::Cancelled, None, None),
@@ -254,14 +295,31 @@ impl Run {
         }
     }
 
+    /// Tells the history what the job placed; a step's move tells it
+    /// even when nothing moved, so the next step can run.
+    fn record(&self) {
+        if !self.placed.is_empty() || self.origin != Origin::New {
+            self.history.moved(self.origin, self.job.mode, &self.placed);
+        }
+    }
+
     /// Checks the job's items and measures them.
     fn prepare(&mut self) -> Result<Vec<Item>, Halt> {
-        let folder = fs::canonicalize(&self.folder).map_err(|e| failed(&self.folder, &e))?;
-        if !folder.is_dir() {
-            return Err(Halt::Failed(format!("{} isn't a folder", self.folder.display())));
+        let mut items = Vec::new();
+        for leg in 0..self.legs.len() {
+            self.prepare_leg(leg, &mut items)?;
         }
-        let mut items = Vec::with_capacity(self.sources.len());
-        for source in &self.sources {
+        Ok(items)
+    }
+
+    /// Checks leg `leg`'s items and measures them, into `items`.
+    fn prepare_leg(&mut self, leg: usize, items: &mut Vec<Item>) -> Step {
+        let Leg { sources, folder: asked } = &self.legs[leg];
+        let folder = fs::canonicalize(asked).map_err(|e| failed(asked, &e))?;
+        if !folder.is_dir() {
+            return Err(Halt::Failed(format!("{} isn't a folder", asked.display())));
+        }
+        for source in sources {
             let meta = fs::symlink_metadata(source).map_err(|e| failed(source, &e))?;
             let (Some(parent), Some(name)) = (source.parent(), source.file_name()) else {
                 return Err(Halt::Failed(format!("Can't {} /", self.verb())));
@@ -274,27 +332,27 @@ impl Run {
             if in_place && self.job.mode == TransferMode::Move {
                 continue;
             }
-            let target = (!in_place).then(|| self.folder.join(name));
+            let target = (!in_place).then(|| asked.join(name));
             let job = Arc::clone(&self.job);
             let measured = copying::measure(source, target.as_deref(), &|| job.stopped())
                 .map_err(|e| failed(source, &e))?
                 .ok_or(Halt::Stopped)?;
             self.total.add(measured);
             let bytes = measured.bytes;
-            items.push(Item { source: source.clone(), name: name.to_owned(), meta, bytes, renamed: in_place });
+            let (source, folder, name) = (source.clone(), asked.clone(), name.to_owned());
+            items.push(Item { source, folder, name, meta, bytes, renamed: in_place });
         }
-        Ok(items)
+        Ok(())
     }
 
     fn place_item(&mut self, item: Item) -> Step {
         if !item.renamed {
-            let folder = self.folder.clone();
-            return self.place(&item.source, &folder, &item.name, Some(item.bytes));
+            return self.place(&item.source, &item.folder, &item.name, Some(item.bytes));
         }
         self.check()?;
         let name =
-            copying::numbered(&self.folder, &item.name, item.meta.is_dir()).map_err(|e| failed(&item.source, &e))?;
-        self.put(&item.source, &item.meta, &self.folder.join(name), None, Some(item.bytes))
+            copying::numbered(&item.folder, &item.name, item.meta.is_dir()).map_err(|e| failed(&item.source, &e))?;
+        self.put(&item.source, &item.meta, &item.folder.join(name), None, Some(item.bytes))
     }
 
     /// Copies or moves `source` into the folder `into` as `name`, asking
@@ -446,23 +504,37 @@ impl Run {
             _ => None,
         };
         let placed = self.put_free(source, meta, target, bytes);
-        let Some(aside) = aside else { return placed };
-        let settled = if placed.is_ok() { aside.discard() } else { aside.restore() };
-        if let Err(e) = settled {
-            self.logger.warn(LOG_SOURCE, &format!("can't tidy up after replacing {}: {e}", target.display()));
+        let put = matches!(placed, Ok(true));
+        // A folder copy stopped halfway leaves what it copied, which can
+        // be undone too.
+        let partly = placed.is_err()
+            && aside.is_none()
+            && meta.is_dir()
+            && self.job.mode == TransferMode::Copy
+            && target.symlink_metadata().is_ok();
+        if (put || partly) && self.inside_copy == 0 {
+            self.placed.push((source.to_owned(), target.to_owned()));
         }
-        placed
+        if let Some(aside) = aside {
+            // What was left out (a device, a socket) replaced nothing.
+            let settled = if put { aside.discard() } else { aside.restore() };
+            if let Err(e) = settled {
+                self.logger.warn(LOG_SOURCE, &format!("can't tidy up after replacing {}: {e}", target.display()));
+            }
+        }
+        placed.map(drop)
     }
 
-    /// Puts `source` at `target`, where only a file can be.
-    fn put_free(&mut self, source: &Path, meta: &Metadata, target: &Path, bytes: Option<u64>) -> Step {
+    /// Puts `source` at `target`, where only a file can be. False for what
+    /// can't be copied, which is left out.
+    fn put_free(&mut self, source: &Path, meta: &Metadata, target: &Path, bytes: Option<u64>) -> Result<bool, Halt> {
         let moving = self.job.mode == TransferMode::Move && !self.copying_moved;
         if moving {
             match fs::rename(source, target) {
                 Ok(()) => {
                     let bytes = bytes.unwrap_or_else(|| moved_bytes(target, meta));
                     self.copied(bytes);
-                    return Ok(());
+                    return Ok(true);
                 }
                 // Another file system: copied, then deleted.
                 Err(e) if e.raw_os_error() == Some(libc::EXDEV) => {}
@@ -476,16 +548,17 @@ impl Run {
             // Once all of it is copied the move has happened: what can't
             // be deleted after that stays at the source too, and nothing
             // placed is undone.
-            if placed? && let Err(e) = copying::remove_moved(source) {
+            let placed = placed?;
+            if placed && let Err(e) = copying::remove_moved(source) {
                 self.logger.warn(LOG_SOURCE, &format!("moved {}, but can't delete all of it: {e}", source.display()));
             }
-            return Ok(());
+            return Ok(placed);
         }
         let placed = self.copy(source, meta, target)?;
         if placed && moving {
             fs::remove_file(source).map_err(|e| failed(source, &e))?;
         }
-        Ok(())
+        Ok(placed)
     }
 
     /// Copies `source` to the free `target`. False for what can't be
@@ -509,7 +582,10 @@ impl Run {
             // Private while it fills, so what the source folder kept from
             // other users isn't open to them meanwhile; its own mode after.
             fs::DirBuilder::new().mode(0o700).create(target).map_err(|e| failed(target, &e))?;
-            self.place_children(source, target)?;
+            self.inside_copy += 1;
+            let children = self.place_children(source, target);
+            self.inside_copy -= 1;
+            children?;
             // Best effort, after its entries are in: a read-only folder
             // would refuse them.
             let _ = fs::set_permissions(target, meta.permissions());
@@ -624,7 +700,8 @@ mod tests {
             let (socket, ours) = UnixStream::pair().unwrap();
             let (queue, events) = ClientQueue::new(&ours).unwrap();
             let client = hub.register(queue);
-            Self { transfers: Transfers::new(hub, logger), dir, client, events, _socket: socket }
+            let history = Arc::new(History::new(Arc::clone(&hub)));
+            Self { transfers: Transfers::new(hub, logger, history), dir, client, events, _socket: socket }
         }
 
         fn write(&self, path: &str, content: &str) {

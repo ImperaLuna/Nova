@@ -26,7 +26,8 @@ import "../daemon/protocol.js" as Protocol
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
 // window's keys are the table's WINDOW entries (shortcuts.js), and every
-// command, from a key, a menu or a button, is done by act(). Its
+// command, from a key, a menu or a button, is done by act(); undo and redo
+// (Ctrl+Z, Ctrl+Y, the folder's menu) are novad's, alike in every window. Its
 // frame and its file list each go from glass to solid as config.toml's
 // [files] says, live. Each draws its own background, so one never shows
 // through the other.
@@ -152,6 +153,10 @@ FloatingWindow {
             break;
         case Commands.SORT:
             list.model.sort = extra;
+            break;
+        case Commands.UNDO:
+        case Commands.REDO:
+            transfers.undo(command === Commands.REDO, error => window.notice(null, error));
             break;
         default:
             console.warn(`nova: files: no command ${command}`);
@@ -387,7 +392,7 @@ FloatingWindow {
         onMenuRequested: (rows, at) => {
             if (rows.length === 1 && !rows[0].dir)
                 menuApps.path = Paths.child(window.folder, rows[0].name);
-            const items = rows.length > 0 ? Menus.forItems(rows, () => menuApps.apps, () => menuApps.defaultApp, window.act) : Menus.forFolder(FilesClipboard.hasFiles, list.showHidden, window.act);
+            const items = rows.length > 0 ? Menus.forItems(rows, () => menuApps.apps, () => menuApps.defaultApp, window.act) : Menus.forFolder(FilesClipboard.hasFiles, list.showHidden, FilesService.history, window.act);
             window.openMenu(items, list, at);
         }
         solid: FilesService.listSolid

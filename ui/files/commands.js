@@ -22,6 +22,9 @@ var DELETE_FOR_GOOD = "delete_for_good";
 var SELECT_ALL = "select_all";
 var HIDDEN = "hidden";
 var REFRESH = "refresh";
+// The last step taken in any window, and the last one undone.
+var UNDO = "undo";
+var REDO = "redo";
 
 // Moving about.
 var BACK = "back";

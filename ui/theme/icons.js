@@ -125,6 +125,8 @@ var COPY = "M10.5 8.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 
 var PASTE = "M9 4.5h6v3H9zM15 6h2.5v14h-11V6H9";
 var INFO = "M12 3.5a8.5 8.5 0 1 1 0 17a8.5 8.5 0 1 1 0-17zM12 11v5.5M12 7.8v.2";
 var RENAME = "M4 20h4L19 9l-4-4L4 16zM13 7l4 4";
+var UNDO = "M9 14L4.5 9.5 9 5M4.5 9.5h10a5 5 0 0 1 0 10H11";
+var REDO = "M15 14l4.5-4.5L15 5M19.5 9.5h-10a5 5 0 0 0 0 10H13";
 var SORT = "M7 5v14M4 16l3 3 3-3M17 19V5M14 8l3-3 3 3";
 var VIEW = "M4 6h16M4 12h16M4 18h16";
 // Nova Files' drives: a disk inside the machine, a USB stick, and Eject.
