@@ -43,8 +43,10 @@
 //!   (`files_properties`) and changing who may open it
 //!   (`files_set_access`); `measures.rs`: counting a folder's or a
 //!   selection's size in the background (`files_measure`).
-//! - `history.rs`: undo and redo of copies, moves and trashing, one
-//!   history for the session that every window shares.
+//! - `editing.rs`: new folders, renaming in place, and what the details
+//!   pane shows about an item.
+//! - `history.rs`: undo and redo of copies, moves, trashing, renaming and
+//!   new folders, one history for the session that every window shares.
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
@@ -60,6 +62,7 @@
 mod archive;
 mod copying;
 mod drives;
+mod editing;
 mod file_manager1;
 mod folder;
 mod history;
@@ -323,6 +326,30 @@ impl Files {
     /// udisks2, so it runs off the connection's thread.
     pub fn mount(&self, drive: &str) -> Result<String, String> {
         self.drives.mount(drive)
+    }
+
+    /// Makes a new folder in `folder` (`files_new_folder`); touches the
+    /// disk, so it runs off the connection's thread.
+    /// It's a step to undo.
+    pub fn new_folder(&self, folder: &str) -> Result<String, String> {
+        let name = editing::new_folder(folder)?;
+        self.history.made_folder(&nova_protocol::wire_path(folder).join(nova_protocol::wire_path(&name)));
+        Ok(name)
+    }
+
+    /// Renames the item at `path` to `name` (`files_rename`): a step to
+    /// undo.
+    pub fn rename(&self, path: &str, name: &str) -> Result<String, String> {
+        let renamed = editing::rename(path, name)?;
+        let from = nova_protocol::wire_path(path);
+        let to = from.with_file_name(nova_protocol::wire_path(&renamed));
+        self.history.renamed(from, to);
+        Ok(renamed)
+    }
+
+    /// What the details pane shows about the item at `path` (`files_details`).
+    pub fn details(&self, path: &str) -> Result<nova_protocol::FileDetails, String> {
+        editing::details(path, &self.mime.current())
     }
 
     /// Ejects drive `drive` (`files_eject`). Waits on udisks2 writing what's

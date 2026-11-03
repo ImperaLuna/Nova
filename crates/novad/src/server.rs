@@ -369,6 +369,18 @@ impl<'a> Connection<'a> {
                 return self.files_later(move |files| files.trash().erase(&ids));
             }
             Command::FilesEmptyTrash => return self.files_later(|files| files.trash().empty()),
+            Command::FilesNewFolder { folder } => {
+                let folder = folder.clone();
+                return self.files_later(move |files| files.new_folder(&folder));
+            }
+            Command::FilesRename { path, name } => {
+                let (path, name) = (path.clone(), name.clone());
+                return self.files_later(move |files| files.rename(&path, &name));
+            }
+            Command::FilesDetails { path } => {
+                let path = path.clone();
+                return self.files_later(move |files| files.details(&path));
+            }
             Command::FilesProperties { path } => {
                 let path = path.clone();
                 return self.files_later(move |files| files.properties(&path));
@@ -984,7 +996,10 @@ impl<'a> Connection<'a> {
             | Command::FilesProperties { .. }
             | Command::FilesMeasure { .. }
             | Command::FilesMeasureCancel { .. }
-            | Command::FilesSetAccess { .. } => {}
+            | Command::FilesSetAccess { .. }
+            | Command::FilesNewFolder { .. }
+            | Command::FilesRename { .. }
+            | Command::FilesDetails { .. } => {}
             Command::FilesTree { .. } | Command::FilesPlaces => {}
         }
     }

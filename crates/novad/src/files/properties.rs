@@ -7,7 +7,7 @@
 //! A link is described by what it points to, as the listing does, plus
 //! where it points; one whose target is gone by the link itself.
 
-use crate::files::folder::{disk_bytes, millis, read_entry};
+use crate::files::folder::{disk_bytes, millis, read_entry, system_time_millis};
 use crate::files::views::checked_path;
 use crate::mime::MimeDb;
 use nova_protocol::{Access, DriveSpace, FileProperties, Rights};
@@ -57,12 +57,12 @@ pub fn read(path: &str, mime: &MimeDb) -> Result<FileProperties, String> {
         entry,
         link_target: link_target.map(nova_protocol::wire_text),
         disk_bytes: (!meta.is_dir()).then(|| disk_bytes(&meta)),
-        created_ms: meta.created().ok().and_then(millis),
-        accessed_ms: meta.accessed().ok().and_then(millis),
-        owner: crate::users::user_name(meta.uid()).unwrap_or_else(|| meta.uid().to_string()),
-        group: crate::users::group_name(meta.gid()).unwrap_or_else(|| meta.gid().to_string()),
+        created_ms: meta.created().ok().and_then(system_time_millis),
+        accessed_ms: millis(meta.atime(), meta.atime_nsec()),
+        owner: crate::host::user_name_of(meta.uid()).unwrap_or_else(|| meta.uid().to_string()),
+        group: crate::host::group_name_of(meta.gid()).unwrap_or_else(|| meta.gid().to_string()),
         access: access(meta.mode()),
-        yours: target_found && meta.uid() == crate::users::current_uid(),
+        yours: target_found && meta.uid() == crate::host::current_uid(),
         drive,
     })
 }
@@ -72,7 +72,7 @@ pub fn read(path: &str, mime: &MimeDb) -> Result<FileProperties, String> {
 pub fn set_access(path: &str, access: Access) -> Result<(), String> {
     let path = checked_path(path)?;
     let meta = fs::metadata(&path).map_err(|e| format!("Can't read {}: {e}", path.display()))?;
-    if meta.uid() != crate::users::current_uid() {
+    if meta.uid() != crate::host::current_uid() {
         return Err(format!("Only its owner can change who may open {}", path.display()));
     }
     let mode = (meta.mode() & !ACCESS_BITS) | mode_bits(access);

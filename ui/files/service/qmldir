@@ -1,1 +1,2 @@
 singleton FilesService FilesService.qml
+singleton FilesClipboard FilesClipboard.qml

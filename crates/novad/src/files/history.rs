@@ -2,8 +2,9 @@
 //! history for the session, shared by every Nova Files window, so a step
 //! taken in one window can be undone from another.
 //!
-//! Each step is kept as what undoing it does ([`Op`]): copies go to the
-//! trash, trashed items are restored, moved items move back. Running an
+//! Each step is kept as what undoing it does ([`Op`]): copies and new
+//! folders go to the trash, trashed items are restored, moved items move
+//! back, renamed items get their old name. Running an
 //! op answers its inverse, which goes on the other stack, so undo and redo
 //! are the same code. What an op couldn't do is dropped, as in Explorer,
 //! so one item that can't go back never blocks the steps before it; the
@@ -17,6 +18,9 @@
 //! aren't known: an op then fails on the item it can't find, as Explorer's
 //! does. Deleting for good is no step: it can't be undone.
 //!
+//! While a step's move runs, Ctrl+Z and Ctrl+Y do nothing: the step under
+//! it may need what that move is still putting back.
+//!
 //! The stacks and the [`Event::FilesHistory`] last published change under
 //! one lock, so windows never see an older state after a newer one.
 
@@ -26,6 +30,7 @@ use crate::hub::{ClientId, Hub};
 use crate::lock;
 use nova_protocol::{Event, FileStep, TransferMode, wire_text};
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -41,6 +46,8 @@ enum Op {
     Restore(Vec<String>),
     /// Moves each item from where it is to where it goes: (now, goes).
     Move(Vec<(PathBuf, PathBuf)>),
+    /// Renames the item at `now` to `name`, in its folder.
+    Rename { now: PathBuf, name: OsString },
 }
 
 impl Op {
@@ -48,6 +55,7 @@ impl Op {
         match self {
             Op::Trash(items) | Op::Restore(items) => items.is_empty(),
             Op::Move(items) => items.is_empty(),
+            Op::Rename { .. } => false,
         }
     }
 }
@@ -81,6 +89,8 @@ struct Stacks {
     redo: Vec<Step>,
     /// What was last published: the kinds on top of each stack.
     shown: (Option<FileStep>, Option<FileStep>),
+    /// A step's move is running.
+    moving: bool,
 }
 
 impl Stacks {
@@ -153,6 +163,20 @@ impl History {
         });
     }
 
+    /// The item at `from` was renamed to `to`, in its folder.
+    pub fn renamed(&self, from: PathBuf, to: PathBuf) {
+        let Some(name) = from.file_name().map(OsString::from) else { return };
+        if from != to {
+            self.change(|stacks| stacks.took(Step { kind: FileStep::Rename, op: Op::Rename { now: to, name } }));
+        }
+    }
+
+    /// A new folder was made at `path`.
+    pub fn made_folder(&self, path: &std::path::Path) {
+        let op = Op::Trash(vec![wire_text(path.as_os_str())]);
+        self.change(|stacks| stacks.took(Step { kind: FileStep::NewFolder, op }));
+    }
+
     /// A copy or move job from `origin` ended, having placed each item
     /// (from, to): a new step, or the inverse of a step run.
     pub fn moved(&self, origin: Origin, mode: TransferMode, placed: &[(PathBuf, PathBuf)]) {
@@ -167,7 +191,10 @@ impl History {
                 stacks.took(Step { kind: FileStep::Copy, op: Op::Trash(copies) });
             }
             (Origin::New, TransferMode::Move) => stacks.took(Step { kind: FileStep::Move, op: back() }),
-            (Origin::Step(way), _) => stacks.ran(way, FileStep::Move, back()),
+            (Origin::Step(way), _) => {
+                stacks.moving = false;
+                stacks.ran(way, FileStep::Move, back());
+            }
         });
     }
 
@@ -182,7 +209,16 @@ impl History {
         client: ClientId,
         job: u32,
     ) -> Result<bool, String> {
-        let Some(Step { kind, op }) = self.change(|stacks| stacks.from(way).pop()) else { return Ok(false) };
+        let popped = self.change(|stacks| {
+            if stacks.moving {
+                return None;
+            }
+            let step = stacks.from(way).pop()?;
+            // Set before its job starts, which may end at once.
+            stacks.moving = matches!(step.op, Op::Move(_));
+            Some(step)
+        });
+        let Some(Step { kind, op }) = popped else { return Ok(false) };
         match op {
             Op::Trash(paths) => {
                 let (done, problems) = split(trash.trash_each(&paths));
@@ -195,11 +231,23 @@ impl History {
                 self.change(|stacks| stacks.ran(way, kind, Op::Trash(done)));
                 problems.map(|()| false)
             }
+            Op::Rename { now, name } => {
+                let renamed = crate::files::editing::rename(&wire_text(now.as_os_str()), &wire_text(&name));
+                if let (Ok(_), Some(old), Some(folder)) = (&renamed, now.file_name(), now.parent()) {
+                    let done = Op::Rename { now: folder.join(&name), name: old.to_owned() };
+                    self.change(|stacks| stacks.ran(way, kind, done));
+                }
+                renamed.map(|_| false)
+            }
             Op::Move(items) => {
-                let started = transfers.start_legs(client, job, TransferMode::Move, legs(&items)?, Origin::Step(way));
-                // Not started (too many jobs running): it's still to do.
+                let legs = legs(&items).inspect_err(|_| self.change(|stacks| stacks.moving = false))?;
+                let started = transfers.start_legs(client, job, TransferMode::Move, legs, Origin::Step(way));
                 if let Err(e) = started {
-                    self.change(|stacks| Stacks::pushed(stacks.from(way), Step { kind, op: Op::Move(items) }));
+                    self.change(|stacks| {
+                        stacks.moving = false;
+                        // Not started (too many jobs running): it's still to do.
+                        Stacks::pushed(stacks.from(way), Step { kind, op: Op::Move(items) });
+                    });
                     return Err(e);
                 }
                 Ok(true)
@@ -235,10 +283,15 @@ pub(super) fn split<T>(outcomes: Vec<Result<T, String>>) -> (Vec<T>, Result<(), 
 }
 
 /// A move's items as one leg per folder they go to, each made again if
-/// it's gone (a folder merged away when they first moved).
+/// it's gone (a folder merged away when they first moved). Items no longer
+/// there (deleted or renamed since) are left out, so the rest still go.
 fn legs(items: &[(PathBuf, PathBuf)]) -> Result<Vec<Leg>, String> {
     let mut folders: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
-    for (now, goes) in items {
+    let there: Vec<_> = items.iter().filter(|(now, _)| now.symlink_metadata().is_ok()).collect();
+    if let (Some((now, _)), true) = (items.first(), there.is_empty()) {
+        return Err(format!("{} doesn't exist", now.display()));
+    }
+    for (now, goes) in there {
         let folder = goes.parent().ok_or_else(|| format!("Can't move {} to /", now.display()))?;
         folders.entry(folder.to_owned()).or_default().push(now.clone());
     }
@@ -451,6 +504,64 @@ mod tests {
         assert!(fixture.exists("to/Photos/a.png") && fixture.exists("to/notes.txt"));
         assert_eq!(fixture.run(Way::Undo), Ok(true));
         assert!(fixture.exists("from/Photos/a.png") && !fixture.exists("to/notes.txt"));
+    }
+
+    #[test]
+    fn nothing_runs_while_a_step_s_move_does() {
+        let fixture = Fixture::new("one-at-a-time");
+        fixture.write("from/a.txt");
+        fixture.transfer(TransferMode::Copy, &["from/a.txt"], "to");
+        fixture.transfer(TransferMode::Move, &["to/a.txt"], "from/..");
+        // Something took its old place: moving it back asks.
+        fixture.write("to/a.txt");
+        let started = fixture.history.run(Way::Undo, &fixture.trash, &fixture.transfers, fixture.client, 9);
+        assert_eq!(started, Ok(true));
+        let asking = loop {
+            let transfer = fixture.next_transfer();
+            if transfer.state == TransferState::Asking {
+                break transfer;
+            }
+        };
+        assert_eq!(fixture.run(Way::Undo), Ok(false), "the copy waits for the move");
+        assert!(fixture.exists("to/a.txt") && fixture.exists("a.txt"));
+        let clash = asking.clash.unwrap();
+        fixture.transfers.answer(fixture.client, 9, clash.id, nova_protocol::ClashAnswer::Skip, false).unwrap();
+        fixture.ended(TransferState::Done);
+        // Skipped, it stays where it was moved; the copy is next.
+        assert_eq!(fixture.run(Way::Undo), Ok(false));
+        assert!(!fixture.exists("to/a.txt"), "the copy went to the trash");
+    }
+
+    #[test]
+    fn a_move_goes_back_without_an_item_deleted_since() {
+        let fixture = Fixture::new("gone");
+        fixture.write("from/a.txt");
+        fixture.write("from/b.txt");
+        fixture.transfer(TransferMode::Move, &["from/a.txt", "from/b.txt"], "to");
+        std::fs::remove_file(fixture.dir.join("to/a.txt")).unwrap();
+        assert_eq!(fixture.run(Way::Undo), Ok(true));
+        assert!(fixture.exists("from/b.txt"));
+    }
+
+    #[test]
+    fn a_rename_and_a_new_folder_are_undone_and_redone() {
+        let fixture = Fixture::new("editing");
+        fixture.write("from/a.txt");
+        let name = crate::files::editing::new_folder(&fixture.text("from")).unwrap();
+        fixture.history.made_folder(&fixture.dir.join("from").join(&name));
+        crate::files::editing::rename(&fixture.text("from/a.txt"), "b.txt").unwrap();
+        fixture.history.renamed(fixture.dir.join("from/a.txt"), fixture.dir.join("from/b.txt"));
+        assert_eq!(fixture.shown(), json!({"undo": "rename"}));
+
+        assert_eq!(fixture.run(Way::Undo), Ok(false));
+        assert!(fixture.exists("from/a.txt") && !fixture.exists("from/b.txt"));
+        assert_eq!(fixture.run(Way::Undo), Ok(false));
+        assert!(!fixture.exists("from/New folder"), "the new folder went to the trash");
+        assert_eq!(fixture.shown(), json!({"redo": "new_folder"}));
+        assert_eq!(fixture.run(Way::Redo), Ok(false));
+        assert!(fixture.exists("from/New folder"));
+        assert_eq!(fixture.run(Way::Redo), Ok(false));
+        assert!(fixture.exists("from/b.txt") && !fixture.exists("from/a.txt"));
     }
 
     #[test]
