@@ -8,13 +8,20 @@
 //! ([`Counter`]), at the disk's idle priority so counting never slows what
 //! people are doing: all of them once the folder is read, and each again
 //! when its entry changes. A count stops as soon as the view closes.
+//! Totals are kept for a short while ([`Recent`]), so going back to a
+//! folder or sorting it another way doesn't count it all again. Changes
+//! deep inside a subfolder don't change its entry, so they show the next
+//! time the folder is opened after that.
 
-use std::collections::HashSet;
+use crate::lock;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::OsString;
 use std::fs::Metadata;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// `ioprio_set`'s "this thread", its idle class, and where the class sits
 /// in the priority value (linux/ioprio.h).
@@ -64,58 +71,140 @@ fn same_drive_folder(path: &Path, drive: u64) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir() && metadata.dev() == drive)
 }
 
+/// How long a total stays good enough for a view that only lists the
+/// folder (opened again, sorted another way, What uses space turned on),
+/// so moving around doesn't read the disk again. A folder whose entry
+/// changed is always counted again.
+const FRESH: Duration = Duration::from_secs(30);
+/// The most totals [`Recent`] keeps; past it, it starts over.
+const MOST_RECENT: usize = 4096;
+
+/// Totals counted lately, by folder, shared by every view.
+#[derive(Clone, Default)]
+pub struct Recent(Arc<Mutex<HashMap<PathBuf, (u64, Instant)>>>);
+
+impl Recent {
+    fn get(&self, folder: &Path) -> Option<u64> {
+        let recent = lock(&self.0);
+        recent.get(folder).filter(|(_, counted)| counted.elapsed() < FRESH).map(|(bytes, _)| *bytes)
+    }
+
+    fn put(&self, folder: PathBuf, bytes: u64) {
+        let mut recent = lock(&self.0);
+        if recent.len() >= MOST_RECENT {
+            recent.retain(|_, (_, counted)| counted.elapsed() < FRESH);
+            if recent.len() >= MOST_RECENT {
+                recent.clear();
+            }
+        }
+        recent.insert(folder, (bytes, Instant::now()));
+    }
+}
+
+/// Why a subfolder is asked for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Why {
+    /// It's listed: a total from the last [`FRESH`] will do.
+    Listed,
+    /// Its entry changed: count it now.
+    Changed,
+}
+
 /// What a view's count thread is asked: subfolders to count, by name.
 pub struct Counter {
-    asks: Sender<OsString>,
+    asks: Sender<(OsString, Why)>,
 }
+
+/// Where a view's counts go: a subfolder's name and its total, or `None`
+/// when it has no size to show (another drive now, or gone).
+pub type Counted = dyn Fn(&OsString, Option<u64>) + Send;
 
 impl Counter {
     /// Starts counting subfolders of `folder` as they're asked for,
-    /// calling `counted(name, bytes)` for each. Ends once the counter is
-    /// dropped or `stopped` says so; `None` when no thread could start.
+    /// calling `counted` for each. Ends once the counter is dropped or
+    /// `stopped` says so; `None` when no thread could start.
     pub fn start(
         folder: PathBuf,
+        recent: Recent,
         stopped: impl Fn() -> bool + Send + 'static,
-        counted: impl Fn(&OsString, u64) + Send + 'static,
+        counted: Box<Counted>,
     ) -> Option<Self> {
         let (asks, asked) = channel();
         let thread = std::thread::Builder::new().name("novad-files-sizes".into());
-        thread.spawn(move || run(&folder, &asked, &stopped, &counted)).ok()?;
+        thread.spawn(move || run(&folder, &recent, &asked, &stopped, &*counted)).ok()?;
         Some(Self { asks })
     }
 
     /// Counts the subfolder `name` (again).
-    pub fn ask(&self, name: OsString) {
+    pub fn ask(&self, name: OsString, why: Why) {
         // Only fails once the thread has stopped, with its view.
-        let _ = self.asks.send(name);
+        let _ = self.asks.send((name, why));
     }
 }
 
-fn run(folder: &Path, asked: &Receiver<OsString>, stopped: &dyn Fn() -> bool, counted: &dyn Fn(&OsString, u64)) {
+fn run(
+    folder: &Path,
+    recent: &Recent,
+    asked: &Receiver<(OsString, Why)>,
+    stopped: &dyn Fn() -> bool,
+    counted: &Counted,
+) {
     lower_disk_priority();
-    let Ok(drive) = std::fs::metadata(folder).map(|metadata| metadata.dev()) else { return };
-    // Asked, not counted yet, in the order asked; one asked twice is
-    // counted once.
-    let mut queue: Vec<OsString> = Vec::new();
+    let mut queue = Queue::default();
     loop {
-        if queue.is_empty() {
-            let Ok(name) = asked.recv() else { return };
-            queue.push(name);
+        if queue.order.is_empty() {
+            let Ok(ask) = asked.recv() else { return };
+            queue.take(ask);
         }
-        queue.extend(asked.try_iter());
-        let mut seen = HashSet::new();
-        queue.retain(|name| seen.insert(name.clone()));
-        let name = queue.remove(0);
+        asked.try_iter().for_each(|ask| queue.take(ask));
+        let Some((name, why)) = queue.next() else { continue };
+        // The view's folder may have been replaced since it opened.
+        let Ok(drive) = std::fs::metadata(folder).map(|metadata| metadata.dev()) else { continue };
         let path = folder.join(&name);
         if !same_drive_folder(&path, drive) {
+            counted(&name, None);
+            continue;
+        }
+        if let Some(bytes) = recent.get(&path).filter(|_| why == Why::Listed) {
+            counted(&name, Some(bytes));
             continue;
         }
         match count(&path, stopped) {
-            Ok(Some(bytes)) => counted(&name, bytes),
+            Ok(Some(bytes)) => {
+                recent.put(path, bytes);
+                counted(&name, Some(bytes));
+            }
             Ok(None) => return,
             // Gone since it was asked for: its entry's change follows.
-            Err(_) => {}
+            Err(_) => counted(&name, None),
         }
+    }
+}
+
+/// Subfolders asked for and not counted yet, in the order asked; one
+/// asked twice is counted once, now if either ask says so.
+#[derive(Default)]
+struct Queue {
+    order: VecDeque<OsString>,
+    why: HashMap<OsString, Why>,
+}
+
+impl Queue {
+    fn take(&mut self, (name, why): (OsString, Why)) {
+        match self.why.get_mut(&name) {
+            Some(was) if why == Why::Changed => *was = why,
+            Some(_) => {}
+            None => {
+                self.why.insert(name.clone(), why);
+                self.order.push_back(name);
+            }
+        }
+    }
+
+    fn next(&mut self) -> Option<(OsString, Why)> {
+        let name = self.order.pop_front()?;
+        let why = self.why.remove(&name).unwrap_or(Why::Changed);
+        Some((name, why))
     }
 }
 
@@ -133,8 +222,6 @@ fn lower_disk_priority() {
 mod tests {
     use super::*;
     use nova_test_support::TempDir;
-    use std::sync::{Arc, Mutex};
-    use std::time::Duration;
 
     fn write(path: &Path, bytes: usize) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -170,20 +257,30 @@ mod tests {
         write(&dir.join("Music/song"), 7);
         write(&dir.join("file"), 1);
         let (done, results) = channel();
-        let done = Arc::new(Mutex::new(done));
+        let done = Mutex::new(done);
+        let recent = Recent::default();
         let counter = Counter::start(
             dir.to_path_buf(),
+            recent.clone(),
             || false,
-            move |name, bytes| drop(done.lock().unwrap().send((name.clone(), bytes))),
+            Box::new(move |name: &OsString, bytes| drop(lock(&done).send((name.clone(), bytes)))),
         )
         .unwrap();
         for name in ["Games", "file", "missing", "Music"] {
-            counter.ask(name.into());
+            counter.ask(name.into(), Why::Listed);
         }
         let wait = Duration::from_secs(5);
-        assert_eq!(results.recv_timeout(wait).unwrap(), ("Games".into(), 40));
-        assert_eq!(results.recv_timeout(wait).unwrap(), ("Music".into(), 7));
-        drop(counter);
-        assert!(results.recv_timeout(Duration::from_millis(200)).is_err(), "a file or a missing name isn't counted");
+        let next = || results.recv_timeout(wait).unwrap();
+        assert_eq!(next(), ("Games".into(), Some(40)));
+        assert_eq!(next(), ("file".into(), None), "a file has no folder size");
+        assert_eq!(next(), ("missing".into(), None));
+        assert_eq!(next(), ("Music".into(), Some(7)));
+        // Listed again, a recent total does; changed, it's counted again.
+        write(&dir.join("Games/more"), 2);
+        counter.ask("Games".into(), Why::Listed);
+        assert_eq!(next(), ("Games".into(), Some(40)));
+        counter.ask("Games".into(), Why::Changed);
+        assert_eq!(next(), ("Games".into(), Some(42)));
+        assert_eq!(recent.get(&dir.join("Games")), Some(42));
     }
 }

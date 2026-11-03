@@ -26,7 +26,7 @@
 //! is taken, so a big folder doesn't hold up closing it.
 
 use crate::files::folder::{self, Listing};
-use crate::files::sizes::Counter;
+use crate::files::sizes::{Counter, Recent, Why};
 use crate::files::watcher::{Following, Notice, Wait, Watcher};
 use crate::hub::{ClientId, Hub};
 use crate::lock;
@@ -62,6 +62,8 @@ pub struct Folders {
     views: Views,
     /// Started with the first view, stopped with the module.
     watcher: Mutex<Option<Arc<Watcher>>>,
+    /// Folder sizes counted lately, for every view.
+    recent: Recent,
 }
 
 struct View {
@@ -84,7 +86,14 @@ struct State {
 
 impl Folders {
     pub fn new(hub: Arc<Hub>, logger: Arc<Logger>, mime: Arc<Mime>) -> Self {
-        Self { hub, logger, mime, views: Arc::new(Mutex::new(Some(HashMap::new()))), watcher: Mutex::default() }
+        Self {
+            hub,
+            logger,
+            mime,
+            views: Arc::new(Mutex::new(Some(HashMap::new()))),
+            watcher: Mutex::default(),
+            recent: Recent::default(),
+        }
     }
 
     /// Opens `path` in `client`'s view `view`, replacing what it showed.
@@ -123,6 +132,7 @@ impl Folders {
             logger: Arc::clone(&self.logger),
             mime: Arc::clone(&self.mime),
             views: Arc::clone(&self.views),
+            recent: self.recent.clone(),
             counter: None,
         };
         let spawned = std::thread::Builder::new().name("novad-files-view".into()).spawn(move || worker.run());
@@ -192,6 +202,7 @@ struct Worker {
     logger: Arc<Logger>,
     mime: Arc<Mime>,
     views: Views,
+    recent: Recent,
     /// Counts its subfolders; none when its thread couldn't start, and
     /// folders then show no size.
     counter: Option<Counter>,
@@ -293,7 +304,7 @@ impl Worker {
         state.listing = Some(listing);
         drop(state);
         for name in folders {
-            self.count(nova_protocol::wire_path(&name).into_os_string());
+            self.count(nova_protocol::wire_path(&name).into_os_string(), Why::Listed);
         }
         true
     }
@@ -304,7 +315,7 @@ impl Worker {
         let open = Arc::clone(&self.view);
         let view = Arc::clone(&self.view);
         let hub = Arc::clone(&self.hub);
-        let counted = move |name: &OsString, bytes: u64| {
+        let counted = move |name: &OsString, bytes: Option<u64>| {
             let mut state = lock(&view.state);
             if !state.open {
                 return;
@@ -315,7 +326,8 @@ impl Worker {
                 hub.send_to(view.key.0, &Event::FilesChanged { view: view.key.1, changes });
             }
         };
-        let counter = Counter::start(self.view.path.clone(), move || !open.is_open(), counted);
+        let counter =
+            Counter::start(self.view.path.clone(), self.recent.clone(), move || !open.is_open(), Box::new(counted));
         if counter.is_none() {
             self.logger.warn(LOG_SOURCE, &format!("can't count folder sizes in {}", self.view.path.display()));
         }
@@ -323,9 +335,9 @@ impl Worker {
     }
 
     /// Counts the subfolder `name` (again).
-    fn count(&self, name: OsString) {
+    fn count(&self, name: OsString, why: Why) {
         if let Some(counter) = &self.counter {
-            counter.ask(name);
+            counter.ask(name, why);
         }
     }
 
@@ -385,7 +397,7 @@ impl Worker {
         drop(state);
         // Once listed, so the count finds them.
         for name in recount {
-            self.count(name);
+            self.count(name, Why::Changed);
         }
         true
     }
