@@ -5,10 +5,13 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 import "service"
+import "games.js" as Games
+import "places.js" as Places
 import "trash.js" as Trash
 
 // Nova Files' sidebar: the places that exist first (a click goes there),
-// the trash last among them and marked while the window shows it, then
+// the games (while a launcher is installed) and the trash last among them
+// and marked while the window shows them, then
 // the drives (Drives.qml) under a line of their own, a line, then the
 // folder tree that follows the window. A drive opened goes through the
 // navigator like a place; when the drive the window is on goes away, it
@@ -44,6 +47,10 @@ Item {
                 name: qsTr("Pictures"),
                 icon: Icons.PICTURE
             },
+            [Protocol.PLACE_GAMES]: {
+                name: Games.name(),
+                icon: Icons.GAMEPAD
+            },
             [Protocol.PLACE_TRASH]: {
                 name: Trash.name(),
                 icon: Icons.TRASH
@@ -68,9 +75,9 @@ Item {
 
                 required property var modelData
                 readonly property var look: sidebar.looks[modelData.kind]
-                // The tree marks folders; only the trash, which isn't in
-                // it, is marked here.
-                readonly property bool current: Trash.isTrash(modelData.path) && sidebar.navigator.folder === modelData.path
+                // The tree marks folders; only the places that aren't
+                // folders, which aren't in it, are marked here.
+                readonly property bool current: !Places.isFolder(modelData.path) && sidebar.navigator.folder === modelData.path
 
                 width: parent.width
                 height: Tokens.filesPlaceHeight

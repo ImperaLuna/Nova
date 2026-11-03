@@ -726,6 +726,8 @@ QtObject {
     // No at least this wide, the one item it names with a big icon), and
     // the notice at the bottom right when an item can't go back.
     readonly property list<int> filesTrashColumns: [190, 120, 70]
+    // The Games place's columns after the name (Location, Size).
+    readonly property list<int> filesGamesColumns: [300, 90]
     readonly property int filesConfirmWidth: 400
     readonly property int filesDialogButtonMinWidth: 72
     readonly property int filesNoticeWidth: 330

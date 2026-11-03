@@ -5,6 +5,7 @@ import Quickshell
 import "../theme"
 import "service"
 import "paths.js" as Paths
+import "games.js" as Games
 import "trash.js" as Trash
 import "places.js" as Places
 import "../daemon/protocol.js" as Protocol
@@ -15,7 +16,8 @@ import "../daemon/protocol.js" as Protocol
 // over them all; opening a folder in the list shows it in the same window.
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
-// (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
+// (ConfirmDialog). At the games, theirs do, and a game's menu goes to its
+// install or save folder. A drive's menu and the dialog when one can't be ejected
 // lie over it all.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
@@ -34,6 +36,10 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    readonly property bool inGames: Games.isGames(folder)
+    readonly property bool inFolder: Places.isFolder(folder)
+    // The command row shown: the folder's, the trash's or the games'.
+    readonly property Item commandRow: inFolder ? commands : inTrash ? trashCommands : gamesCommands
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -108,8 +114,15 @@ FloatingWindow {
         confirming = null;
         if (yes)
             act?.();
+        focusList();
+    }
+
+    // Gives the keyboard to the list shown.
+    function focusList() {
         if (inTrash)
             trashList.focusList();
+        else if (inGames)
+            gamesList.focusList();
         else
             list.forceActiveFocus();
     }
@@ -155,7 +168,7 @@ FloatingWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.bottom: window.inTrash ? trashCommands.bottom : commands.bottom
+        anchors.bottom: window.commandRow.bottom
         color: window.frameColor
     }
     Rectangle {
@@ -175,7 +188,7 @@ FloatingWindow {
         anchors.top: parent.top
         navigator: window.navigator
         solid: FilesService.frameSolid
-        onAddressClosed: list.forceActiveFocus()
+        onAddressClosed: window.focusList()
     }
     CommandRow {
         id: commands
@@ -183,7 +196,7 @@ FloatingWindow {
         anchors.right: parent.right
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
-        visible: !window.inTrash
+        visible: window.inFolder
     }
     TrashCommandRow {
         id: trashCommands
@@ -197,10 +210,20 @@ FloatingWindow {
         onRestoreRequested: window.restore()
         onEraseRequested: window.erase()
     }
+    GamesCommandRow {
+        id: gamesCommands
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: navigation.bottom
+        visible: window.inGames
+        model: games
+        solid: FilesService.frameSolid
+        onChosen: folder => window.navigator.visit(folder, null)
+    }
     Sidebar {
         id: sidebar
         anchors.left: parent.left
-        anchors.top: window.inTrash ? trashCommands.bottom : commands.bottom
+        anchors.top: window.commandRow.bottom
         anchors.bottom: parent.bottom
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
@@ -211,7 +234,7 @@ FloatingWindow {
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.top: commands.bottom
-        visible: !window.inTrash
+        visible: window.inFolder
         anchors.bottom: parent.bottom
         folder: window.folder
         select: window.select
@@ -236,6 +259,31 @@ FloatingWindow {
         model: trash
         solid: FilesService.listSolid
         onEraseRequested: window.erase()
+        onVisibleChanged: {
+            if (visible)
+                focusList();
+        }
+    }
+    GamesModel {
+        id: games
+        service: FilesService
+        active: window.inGames
+    }
+    GamesList {
+        id: gamesList
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: gamesCommands.bottom
+        anchors.bottom: parent.bottom
+        visible: window.inGames
+        model: games
+        home: Quickshell.env("HOME") ?? ""
+        solid: FilesService.listSolid
+        onOpened: index => window.navigator.visit(games.rows.get(index).folder, null)
+        onMenuRequested: (index, at) => {
+            games.pick(index);
+            gameMenu.open(games.pickedRow, at);
+        }
         onVisibleChanged: {
             if (visible)
                 focusList();
@@ -311,5 +359,10 @@ FloatingWindow {
     EjectProblem {
         id: ejectProblem
         anchors.fill: parent
+    }
+    GameMenu {
+        id: gameMenu
+        anchors.fill: parent
+        onChosen: folder => window.navigator.visit(folder, null)
     }
 }

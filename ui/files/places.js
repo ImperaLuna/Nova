@@ -1,4 +1,5 @@
 .pragma library
+.import "games.js" as Games
 .import "trash.js" as Trash
 
 // Nova Files' places that aren't folders, kept apart so ui/tests can
@@ -8,6 +9,9 @@
 // The places, by path, each {name}.
 function _places() {
     return {
+        [Games.PLACE]: {
+            name: Games.name()
+        },
         [Trash.PLACE]: {
             name: Trash.name()
         }
