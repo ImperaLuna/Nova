@@ -36,6 +36,17 @@ Singleton {
             });
     }
 
+    // A novad started again hasn't heard of a launcher already open.
+    Connections {
+        target: Daemon
+        function onConnectedChanged() {
+            if (Daemon.connected && Object.keys(root.shownOn).length > 0)
+                Daemon.call(Protocol.CMD_LAUNCHER_SHOWN, {
+                    shown: true
+                });
+        }
+    }
+
     // `done(items)` gets the LauncherItems novad's providers found for
     // `query`, or none when the search failed.
     function search(query: string, done: var) {
