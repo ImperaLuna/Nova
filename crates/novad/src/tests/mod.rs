@@ -309,6 +309,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             // A home trash under `<dir>/trash`, and no drives.
             trash: Some(dir.join("trash")),
             mounts: dir.join("no-mountinfo"),
+            previews: Some(dir.join("previews")),
         },
         session_lock: dir.to_owned(),
         screenshots: dir.to_owned(),

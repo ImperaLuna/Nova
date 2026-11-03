@@ -137,6 +137,7 @@ var CMD_FILES_EMPTY_TRASH = "files_empty_trash";
 var CMD_FILES_MOUNT = "files_mount";
 var CMD_FILES_EJECT = "files_eject";
 var CMD_FILES_SEARCH = "files_search";
+var CMD_FILES_PREVIEW = "files_preview";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";
@@ -323,6 +324,11 @@ var TRANSFER_FAILED = "failed";
 var CLASH_REPLACE = "replace";
 var CLASH_MERGE = "merge";
 var CLASH_SKIP = "skip";
+
+// What the preview pane shows (FilePreview).
+var PREVIEW_IMAGE = "image";
+var PREVIEW_TEXT = "text";
+var PREVIEW_NONE = "none";
 
 // END GENERATED
 

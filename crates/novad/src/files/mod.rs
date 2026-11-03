@@ -25,6 +25,9 @@
 //!   package brings new types), and the view's order.
 //! - `tree.rs`: the sidebar's folder tree that follows the window
 //!   (`files_tree`) and its places (`files_places`).
+//! - `preview.rs`: what the preview pane shows of a file
+//!   (`files_preview`): an image, the first lines of text, or a PDF's
+//!   first page or a video's still drawn into the cache.
 //! - `search/`: finding files by name (`files_search`) from an index of
 //!   every name under Home and the drives, kept up to date with inotify.
 //! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
@@ -50,6 +53,7 @@ mod copying;
 mod drives;
 mod file_manager1;
 mod folder;
+mod preview;
 pub mod search;
 mod target;
 mod transfers;
@@ -87,6 +91,8 @@ const MAX_WAITING: usize = 64;
 const TRASH_DIR: &str = "Trash";
 /// This process's mount table.
 const MOUNT_TABLE: &str = "/proc/self/mountinfo";
+/// The preview pane's pictures, in Nova's cache folder.
+const PREVIEWS_DIR: &str = "nova/previews";
 
 /// Where Nova Files runs from.
 #[derive(Clone)]
@@ -112,6 +118,9 @@ pub struct Sources {
     pub trash: Option<PathBuf>,
     /// The mount table, where drives' trashes are looked for.
     pub mounts: PathBuf,
+    /// Where the preview pane's pictures of PDFs and videos are kept; none
+    /// draws none.
+    pub previews: Option<PathBuf>,
 }
 
 pub struct Files {
@@ -135,6 +144,8 @@ pub struct Files {
     trash_watch: Option<trash::Watch>,
     /// The drives in the sidebar.
     drives: udisks::Drives,
+    /// What the preview pane shows.
+    previews: Arc<preview::Previews>,
 }
 
 /// What the module's services share.
@@ -173,6 +184,7 @@ impl Files {
         let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger));
         let trash = Arc::new(Trash::new(sources.trash.clone(), sources.mounts.clone(), Arc::clone(&mime)));
         let trash_watch = trash::Watch::start(Arc::clone(&trash), Arc::clone(&hub), Arc::clone(&logger));
+        let previews = Arc::new(preview::Previews::new(Arc::clone(&mime), sources.previews.clone(), path_var));
         let opener = Opener::new(
             Arc::clone(&mime),
             sources.associations.clone(),
@@ -212,6 +224,7 @@ impl Files {
             trash_watch,
             drives,
             search,
+            previews,
         })
     }
 
@@ -223,6 +236,11 @@ impl Files {
     /// The trash.
     pub fn trash(&self) -> Arc<Trash> {
         Arc::clone(&self.trash)
+    }
+
+    /// What works out the preview pane's previews (`files_preview`).
+    pub fn previews(&self) -> Arc<preview::Previews> {
+        Arc::clone(&self.previews)
     }
 
     /// What finds files by name (`files_search`).
@@ -442,6 +460,7 @@ impl crate::modules::Module for Files {
             trash,
             mounts: MOUNT_TABLE.into(),
             search,
+            previews: nova_paths::cache_home().map(|cache| cache.join(PREVIEWS_DIR)),
         }
     }
 
@@ -522,6 +541,7 @@ mod tests {
                 search: search::Sources::under(&dir),
                 trash: Some(dir.join("Trash")),
                 mounts: dir.join("no-mountinfo"),
+                previews: None,
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");
