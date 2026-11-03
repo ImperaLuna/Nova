@@ -40,7 +40,8 @@ use std::time::{Duration, Instant};
 
 const LOG_SOURCE: &str = "files";
 const PROGRESS_EVERY: Duration = Duration::from_millis(FILES_TRANSFER_PROGRESS_MS);
-/// A new zip's permissions, as an app saving a file would give it.
+/// A new zip's permissions, as an app saving a file would give it, kept
+/// to what its items allow: a zip of private files stays private.
 const ZIP_MODE: u32 = 0o644;
 
 /// A job, named by its client and the client's number for it.
@@ -666,7 +667,11 @@ impl Run {
         if !packed.map_err(|e| failed(&self.folder.join(&name), &e))? {
             return Err(Halt::Stopped);
         }
-        part.keep(&name, ZIP_MODE).map_err(|e| failed(&self.folder.join(&name), &e))?;
+        self.check()?;
+        let mode = sources
+            .iter()
+            .fold(ZIP_MODE, |mode, source| fs::metadata(source).map_or(mode, |meta| mode & (meta.mode() | 0o600)));
+        part.keep(&name, mode).map_err(|e| failed(&self.folder.join(&name), &e))?;
         Ok(())
     }
 
@@ -766,6 +771,7 @@ mod tests {
     use crate::hub::{ClientQueue, Outgoing, next_named};
     use nova_protocol::LogLevel;
     use nova_test_support::TempDir;
+    use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::UnixStream;
     use std::sync::mpsc::Receiver;
 
@@ -1070,6 +1076,22 @@ mod tests {
         let done = fixture.until(TransferState::Done);
         assert_eq!((done.done_bytes, done.total_bytes), (6, 6));
         assert_eq!(fixture.names("from"), ["Photos", "report (2).zip", "report.pdf", "report.zip"]);
+        let mode = fs::metadata(fixture.dir.join("from/report (2).zip")).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644);
+        fs::set_permissions(fixture.dir.join("from/report.pdf"), fs::Permissions::from_mode(0o600)).unwrap();
+        fixture
+            .transfers
+            .start(
+                fixture.client,
+                2,
+                TransferMode::Compress,
+                &[fixture.dir.join("from/report.pdf").display().to_string()],
+                &fixture.dir.join("from").display().to_string(),
+            )
+            .unwrap();
+        fixture.until(TransferState::Done);
+        let private = fs::metadata(fixture.dir.join("from/report (3).zip")).unwrap().permissions().mode() & 0o777;
+        assert_eq!(private, 0o600, "a zip of a private file stays private");
         let inside = crate::files::archive::Inside::of(&fixture.dir.join("from/report (2).zip/Photos")).unwrap();
         let copy = crate::files::archive::open_copy(
             &crate::files::archive::Inside { inner: "Photos/a.png".into(), ..inside },

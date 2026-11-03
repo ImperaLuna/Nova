@@ -64,6 +64,9 @@ struct View {
     key: Key,
     /// Where the folder is inside an archive, when it is.
     inside: Option<Inside>,
+    /// The archive file the view follows: through any link, so a change
+    /// to the file itself shows.
+    archive_file: Option<PathBuf>,
     path: PathBuf,
     /// The path as `files_open` named it, for the pages.
     named: String,
@@ -104,11 +107,15 @@ impl Folders {
             old.close();
         }
         // An archive's view follows the folder the archive is in.
-        let followed = inside.as_ref().map_or(folder.as_path(), |inside| inside.archive.parent().unwrap_or(&folder));
+        let archive_file = inside
+            .as_ref()
+            .map(|inside| std::fs::canonicalize(&inside.archive).unwrap_or_else(|_| inside.archive.clone()));
+        let followed = archive_file.as_ref().map_or(folder.as_path(), |file| file.parent().unwrap_or(&folder));
         let following = watcher.follow(followed);
         let opened = Arc::new(View {
             key,
             inside,
+            archive_file,
             path: folder,
             named: path.into(),
             sort,
@@ -333,8 +340,8 @@ impl Worker {
     fn send_changes(&self, names: BTreeSet<OsString>) -> bool {
         // An archive is read again whole when it changes; nothing else in
         // its folder shows.
-        if let Some(inside) = &self.view.inside {
-            let archive = inside.archive.file_name().unwrap_or_default();
+        if let Some(file) = &self.view.archive_file {
+            let archive = file.file_name().unwrap_or_default();
             return !names.iter().any(|name| name == archive) || self.send_all_settling(true);
         }
         let mime = self.mime.current();
@@ -892,6 +899,7 @@ mod tests {
         let view = Arc::new(View {
             key: (fixture.client, 1),
             inside: None,
+            archive_file: None,
             path: PathBuf::from("/"),
             named: "/".into(),
             sort: BY_NAME,
