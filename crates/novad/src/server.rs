@@ -346,7 +346,7 @@ impl<'a> Connection<'a> {
                 let (path, pinned) = (path.clone(), *pinned);
                 return self.files_later(move |files| files.pin(&path, pinned));
             }
-            Command::FilesRecent => return self.files_later(|files| Ok(files.recent())),
+            Command::FilesRecent => return self.files_later(|files| files.recent()),
             Command::FilesTrash { paths } => {
                 let paths = paths.clone();
                 return self.files_later(move |files| files.trash().trash(&paths));

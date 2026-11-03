@@ -22,19 +22,26 @@ const BOOKMARK_TAG: &str = "<bookmark ";
 /// The attributes a bookmark's times are in.
 const TIMES: [&str; 3] = ["added", "modified", "visited"];
 
-/// The recent files in `file`, typed by `mime`; none when it can't be read.
-pub fn recent(file: &Path, mime: &MimeDb) -> Vec<RecentFile> {
-    let Ok(text) = std::fs::read_to_string(file) else { return Vec::new() };
+/// The recent files in `file`, typed by `mime`; none while there's no
+/// list, and an error when it can't be read.
+pub fn recent(file: &Path, mime: &MimeDb) -> Result<Vec<RecentFile>, String> {
+    let text = match std::fs::read_to_string(file) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("can't read {}: {e}", file.display())),
+    };
     let mut used = bookmarks(&text);
     used.sort_by_key(|(_, used_ms)| std::cmp::Reverse(*used_ms));
-    used.into_iter()
+    let recent = used
+        .into_iter()
         .filter_map(|(path, used_ms)| {
             let (folder, name) = (path.parent()?, path.file_name()?);
             let entry = folder::read_entry(folder, name, mime)?;
             Some(RecentFile { folder: wire_text(folder), used_ms, entry })
         })
         .take(FILES_RECENT_MAX)
-        .collect()
+        .collect();
+    Ok(recent)
 }
 
 /// Each local file `text` lists, with when it was used last.
@@ -159,7 +166,7 @@ mod tests {
                 ),
             ],
         );
-        let recent = recent(&file, &MimeDb::default());
+        let recent = recent(&file, &MimeDb::default()).unwrap();
         let names: Vec<_> = recent.iter().map(|file| file.entry.name.as_str()).collect();
         assert_eq!(names, ["photo one.png", "plan & notes.md"]);
         assert_eq!(recent[1].folder, wire_text(dir.join("Documents")));
@@ -180,13 +187,13 @@ mod tests {
                 )
             })
             .collect();
-        assert_eq!(recent(&list(&dir, &bookmarks), &MimeDb::default()).len(), FILES_RECENT_MAX);
+        assert_eq!(recent(&list(&dir, &bookmarks), &MimeDb::default()).unwrap().len(), FILES_RECENT_MAX);
     }
 
     #[test]
     fn no_list_lists_nothing() {
         let dir = TempDir::new("files-recent-none");
-        assert!(recent(&dir.join(RECENT_FILE), &MimeDb::default()).is_empty());
+        assert!(recent(&dir.join(RECENT_FILE), &MimeDb::default()).unwrap().is_empty());
     }
 
     #[test]

@@ -83,19 +83,14 @@ impl QuickAccess {
         Self { file, user_folders, writing: Mutex::default() }
     }
 
-    /// The sidebar's places, in its order: the Home page, the pinned
-    /// folders that exist, then the trash, which is always there.
-    pub fn places(&self) -> Vec<FilePlace> {
-        let place = |kind, path: &str| FilePlace { kind, path: path.into(), name: String::new() };
-        let lines = self.read().unwrap_or_else(|_| Vec::new());
+    /// The pinned folders that exist, in their order.
+    pub fn pins(&self) -> Result<Vec<FilePlace>, String> {
+        let lines = self.read()?;
         let pins = lines.iter().filter_map(|line| match line {
             Line::Pin { path, label, .. } if path.is_dir() => Some(self.pin_place(path, label)),
             _ => None,
         });
-        std::iter::once(place(PlaceKind::Home, FILES_HOME_PLACE))
-            .chain(pins)
-            .chain(std::iter::once(place(PlaceKind::Trash, FILES_TRASH_PLACE)))
-            .collect()
+        Ok(pins.collect())
     }
 
     /// Pins the folder `folder` (wire text, absolute) or unpins it, and
@@ -145,6 +140,16 @@ impl QuickAccess {
     }
 }
 
+/// The sidebar's places, in its order: the Home page, `pins`, then the
+/// trash, which is always there.
+pub fn places(pins: Vec<FilePlace>) -> Vec<FilePlace> {
+    let place = |kind, path: &str| FilePlace { kind, path: path.into(), name: String::new() };
+    std::iter::once(place(PlaceKind::Home, FILES_HOME_PLACE))
+        .chain(pins)
+        .chain(std::iter::once(place(PlaceKind::Trash, FILES_TRASH_PLACE)))
+        .collect()
+}
+
 /// Writes `lines` as `file`'s new contents: a new file renamed over it, so
 /// a reader never sees half of it.
 fn write(file: &Path, lines: &[Line]) -> std::io::Result<()> {
@@ -185,15 +190,15 @@ mod tests {
     #[test]
     fn without_a_bookmarks_file_the_user_folders_that_exist_are_pinned() {
         let home = home("defaults");
-        let places = quick_access(&home).places();
+        let listed = places(quick_access(&home).pins().unwrap());
         assert_eq!(
-            kinds(&places),
+            kinds(&listed),
             [PlaceKind::Home, PlaceKind::Desktop, PlaceKind::Documents, PlaceKind::Pictures, PlaceKind::Trash]
         );
-        assert_eq!(places[0].path, FILES_HOME_PLACE);
-        assert_eq!(places[2].path, wire_text(home.join("Documents")));
-        assert_eq!(places[2].name, "Documents");
-        assert_eq!(places[4].path, FILES_TRASH_PLACE);
+        assert_eq!(listed[0].path, FILES_HOME_PLACE);
+        assert_eq!(listed[2].path, wire_text(home.join("Documents")));
+        assert_eq!(listed[2].name, "Documents");
+        assert_eq!(listed[4].path, FILES_TRASH_PLACE);
     }
 
     #[test]
@@ -213,9 +218,9 @@ mod tests {
         )
         .unwrap();
         let quick = quick_access(&home);
-        let places = quick.places();
-        assert_eq!(kinds(&places), [PlaceKind::Home, PlaceKind::Folder, PlaceKind::Pictures, PlaceKind::Trash]);
-        assert_eq!(places[1].name, "Work", "the bookmark's label");
+        let listed = places(quick.pins().unwrap());
+        assert_eq!(kinds(&listed), [PlaceKind::Home, PlaceKind::Folder, PlaceKind::Pictures, PlaceKind::Trash]);
+        assert_eq!(listed[1].name, "Work", "the bookmark's label");
 
         assert!(quick.pin(&wire_text(home.join("Old")), true).unwrap());
         assert!(!quick.pin(&wire_text(home.join("Old")), true).unwrap(), "pinned already");
@@ -224,7 +229,7 @@ mod tests {
         assert!(text.contains("sftp://server/srv Server\n"), "other apps' lines stay: {text}");
         assert!(text.contains("/Gone\n"), "a folder that's gone stays pinned for when it's back");
         assert!(!text.contains("Work"), "unpinned");
-        let names: Vec<_> = quick.places().into_iter().map(|place| place.name).collect();
+        let names: Vec<_> = places(quick.pins().unwrap()).into_iter().map(|place| place.name).collect();
         assert_eq!(names, ["", "Pictures", "Old", ""]);
     }
 
@@ -234,14 +239,14 @@ mod tests {
         let quick = quick_access(&home);
         assert!(quick.pin(&wire_text(home.join("Desktop")), false).unwrap());
         assert_eq!(
-            kinds(&quick.places()),
+            kinds(&places(quick.pins().unwrap())),
             [PlaceKind::Home, PlaceKind::Documents, PlaceKind::Pictures, PlaceKind::Trash]
         );
         // Unpinning the rest leaves an empty file: nothing pinned, not the
         // user's folders again.
         quick.pin(&wire_text(home.join("Documents")), false).unwrap();
         quick.pin(&wire_text(home.join("Pictures")), false).unwrap();
-        assert_eq!(kinds(&quick.places()), [PlaceKind::Home, PlaceKind::Trash]);
+        assert_eq!(kinds(&places(quick.pins().unwrap())), [PlaceKind::Home, PlaceKind::Trash]);
     }
 
     #[test]
@@ -254,7 +259,7 @@ mod tests {
         assert!(quick.pin(&wire_text(&raw), true).unwrap());
         let text = std::fs::read_to_string(home.join(".config").join(BOOKMARKS_FILE)).unwrap();
         assert!(text.contains("caf%E9%20bar"), "{text}");
-        let pinned = quick.places().into_iter().find(|place| place.kind == PlaceKind::Folder).unwrap();
+        let pinned = places(quick.pins().unwrap()).into_iter().find(|place| place.kind == PlaceKind::Folder).unwrap();
         assert_eq!(pinned.path, wire_text(&raw));
     }
 

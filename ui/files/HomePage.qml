@@ -76,8 +76,10 @@ FocusScope {
         }
     }
     Component.onCompleted: {
-        if (visible)
+        if (visible) {
             refresh();
+            forceActiveFocus();
+        }
     }
 
     Keys.onReturnPressed: {

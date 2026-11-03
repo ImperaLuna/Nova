@@ -281,8 +281,13 @@ impl Files {
 
     /// The sidebar's places that exist (`files_places`): the Home page,
     /// Quick access, the trash.
+    /// Pins that can't be read are left out, and logged.
     pub fn places(&self) -> Vec<FilePlace> {
-        self.quick_access.places()
+        let pins = self.quick_access.pins().unwrap_or_else(|e| {
+            self.shared.logger.warn(LOG_SOURCE, &format!("Quick access: {e}"));
+            Vec::new()
+        });
+        quick_access::places(pins)
     }
 
     /// Pins the folder `folder` to Quick access, or unpins it
@@ -297,8 +302,8 @@ impl Files {
 
     /// The files used last, by any app (`files_recent`). It reads files, so
     /// it's called off the connection's thread.
-    pub fn recent(&self) -> Vec<RecentFile> {
-        let Some(file) = &self.shared.sources.recent else { return Vec::new() };
+    pub fn recent(&self) -> Result<Vec<RecentFile>, String> {
+        let Some(file) = &self.shared.sources.recent else { return Ok(Vec::new()) };
         recent::recent(file, &self.mime.current())
     }
 
