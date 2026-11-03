@@ -17,7 +17,7 @@
 use crate::mime::MimeDb;
 use nova_protocol::{FileEntry, FileSort, FileSortKey, FolderChange};
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::Metadata;
 use std::os::unix::fs::MetadataExt;
@@ -162,38 +162,14 @@ impl Place {
 }
 
 impl Listing {
-    /// With no folder sizes counted yet.
-    #[cfg(test)]
-    pub fn new(sort: FileSort, hidden: bool, entries: Vec<FileEntry>) -> Self {
-        Self::with_sizes(sort, hidden, entries, HashMap::new())
-    }
-
-    /// With the folder sizes `counted` before (by name), for the folders
-    /// still there.
-    pub fn with_sizes(
-        sort: FileSort,
-        hidden: bool,
-        mut entries: Vec<FileEntry>,
-        mut counted: HashMap<String, u64>,
-    ) -> Self {
-        let folders: HashSet<&str> =
-            entries.iter().filter(|entry| takes_size(entry)).map(|entry| entry.name.as_str()).collect();
-        counted.retain(|name, _| folders.contains(name.as_str()));
-        for entry in &mut entries {
-            fill_size(&counted, entry);
-        }
+    pub fn new(sort: FileSort, hidden: bool, mut entries: Vec<FileEntry>) -> Self {
         entries.sort_by(|a, b| order(sort, a, b));
         let by_name = entries.iter().map(|entry| (entry.name.clone(), Place::of(sort, entry).owned())).collect();
-        Self { sort, hidden, entries, by_name, counted }
+        Self { sort, hidden, entries, by_name, counted: HashMap::new() }
     }
 
     pub fn entries(&self) -> &[FileEntry] {
         &self.entries
-    }
-
-    /// The folder sizes counted so far, by name.
-    pub fn into_counted(self) -> HashMap<String, u64> {
-        self.counted
     }
 
     /// The folder `name` (wire text) holds `size` bytes, or has no size to
@@ -466,16 +442,6 @@ mod tests {
         let link = FileEntry { link: true, ..folder("Shortcut") };
         listing.apply("Shortcut", Some(link));
         assert!(listing.counted("Shortcut", Some(5)).is_empty(), "a link's folder is counted where it is");
-    }
-
-    #[test]
-    fn sizes_carry_over_to_a_new_listing() {
-        let mut listing = Listing::new(BY_NAME, false, vec![folder("Games"), folder("Old")]);
-        listing.counted("Games", Some(900));
-        listing.counted("Old", Some(3));
-        let listing = Listing::with_sizes(BY_NAME, false, vec![folder("Games")], listing.into_counted());
-        assert_eq!(listing.entries()[0].size, Some(900));
-        assert_eq!(listing.into_counted().len(), 1);
     }
 
     #[test]

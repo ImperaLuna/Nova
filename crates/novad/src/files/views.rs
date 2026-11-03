@@ -214,7 +214,7 @@ impl Worker {
         if let Err(e) = self.following.watch() {
             return self.closed(unreadable(&self.view.named, &e));
         }
-        if !self.send_all() {
+        if !self.send_all(Why::Listed) {
             return;
         }
         loop {
@@ -243,7 +243,8 @@ impl Worker {
     /// closes the view when nothing is there. False once the view is closed.
     fn reattach(&mut self) -> bool {
         match self.following.watch() {
-            Ok(()) => self.send_all(),
+            // Maybe another folder now: nothing counted before holds.
+            Ok(()) => self.send_all(Why::Changed),
             Err(e) => {
                 let error = match e.kind() {
                     std::io::ErrorKind::NotFound => format!("{} was deleted or moved", self.view.named),
@@ -257,9 +258,9 @@ impl Worker {
 
     /// Reads the whole folder and sends it from the start. False once the
     /// view is closed.
-    fn send_all(&self) -> bool {
-        // What was counted stays shown until it's counted again.
-        let counted = lock(&self.view.state).listing.take().map(Listing::into_counted).unwrap_or_default();
+    /// `why` its subfolders are counted: `Changed` when what the path
+    /// names may have changed.
+    fn send_all(&self, why: Why) -> bool {
         let read =
             folder::read_folder(&self.view.path, self.view.hidden, &self.mime.current(), || !self.view.is_open());
         let entries = match read {
@@ -271,7 +272,7 @@ impl Worker {
                 return false;
             }
         };
-        let listing = Listing::with_sizes(self.view.sort, self.view.hidden, entries, counted);
+        let listing = Listing::new(self.view.sort, self.view.hidden, entries);
         let (client, view) = self.view.key;
         let all = listing.entries();
         let total = u32::try_from(all.len()).unwrap_or(u32::MAX);
@@ -304,7 +305,7 @@ impl Worker {
         state.listing = Some(listing);
         drop(state);
         for name in folders {
-            self.count(nova_protocol::wire_path(&name).into_os_string(), Why::Listed);
+            self.count(nova_protocol::wire_path(&name).into_os_string(), why);
         }
         true
     }

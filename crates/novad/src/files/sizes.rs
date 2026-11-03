@@ -30,7 +30,7 @@ const IOPRIO_CLASS_IDLE: libc::c_long = 3;
 const IOPRIO_CLASS_SHIFT: libc::c_long = 13;
 
 /// Bytes under `folder` on its own drive, or `None` once `stopped` says
-/// the count is no longer wanted (asked before each folder is read). An
+/// the count is no longer wanted (asked before each entry is looked at). An
 /// error only when `folder` itself can't be looked at.
 pub fn count(folder: &Path, stopped: impl Fn() -> bool) -> std::io::Result<Option<u64>> {
     let top = std::fs::symlink_metadata(folder)?;
@@ -39,13 +39,13 @@ pub fn count(folder: &Path, stopped: impl Fn() -> bool) -> std::io::Result<Optio
     let mut total = 0u64;
     let mut pending = vec![folder.to_path_buf()];
     while let Some(dir) = pending.pop() {
-        if stopped() {
-            return Ok(None);
-        }
         // A folder that can't be read (no permission, gone meanwhile)
         // adds nothing.
         let Ok(found) = std::fs::read_dir(&dir) else { continue };
         for entry in found.flatten() {
+            if stopped() {
+                return Ok(None);
+            }
             let Ok(metadata) = entry.metadata() else { continue };
             if metadata.is_dir() {
                 if metadata.dev() == drive {
@@ -56,7 +56,7 @@ pub fn count(folder: &Path, stopped: impl Fn() -> bool) -> std::io::Result<Optio
             }
         }
     }
-    Ok(Some(total))
+    Ok((!stopped()).then_some(total))
 }
 
 /// Whether a file adds to the total: always, unless it's another hard
@@ -247,6 +247,14 @@ mod tests {
         let dir = TempDir::new("files-sizes-stop");
         write(&dir.join("a/one"), 1);
         assert_eq!(count(&dir.join("a"), || true).unwrap(), None);
+        // Stopped in the middle of a folder's entries.
+        write(&dir.join("a/two"), 1);
+        let asked = std::cell::Cell::new(0);
+        let stop_at_second = || {
+            asked.set(asked.get() + 1);
+            asked.get() > 1
+        };
+        assert_eq!(count(&dir.join("a"), stop_at_second).unwrap(), None);
         assert!(count(&dir.join("missing"), || false).is_err());
     }
 
