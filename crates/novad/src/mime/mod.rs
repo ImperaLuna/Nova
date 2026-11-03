@@ -8,10 +8,14 @@
 //! file's metadata, for listing big folders, and [`MimeDb::type_of`] also
 //! reads the file's first bytes when the name doesn't settle it, the way
 //! the spec orders them: the name first, contents for a name that matches
-//! no pattern or several, then "text or binary".
+//! no pattern or several, then "text or binary". [`Mime`] keeps it up to
+//! date as packages bring new types (`follow.rs`).
 
+mod follow;
 mod globs;
 mod magic;
+
+pub use follow::Mime;
 
 use globs::Globs;
 use magic::Magic;

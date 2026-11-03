@@ -18,8 +18,8 @@
 //! - `watcher.rs`: the one inotify instance every view follows its folder
 //!   through, and the folders above it, so a renamed parent is seen.
 //! - `folder.rs`: a folder's entries, their types from the shared MIME
-//!   database (`crate::mime`, loaded once as the module starts), and the
-//!   view's order.
+//!   database (`crate::mime`, read as the module starts and again when a
+//!   package brings new types), and the view's order.
 //!
 //! Windows go only to the Nova Files process, once it has attached
 //! (`attach_files`, [`Files::attach`]); no other client on [`Topic::Files`]
@@ -73,6 +73,8 @@ pub struct Files {
     shared: Arc<Shared>,
     /// Opens files in apps.
     opener: Arc<Opener>,
+    /// The MIME database, followed while the module runs.
+    mime: Arc<crate::mime::Mime>,
     /// Ends the FileManager1 service.
     stop: Arc<Stop>,
     /// The folders the windows show.
@@ -109,14 +111,10 @@ impl Files {
         apps: Arc<AppIndex>,
         path_var: &str,
     ) -> Arc<Self> {
-        let (mime, problems) = crate::mime::MimeDb::load(&sources.data_dirs);
-        for problem in problems {
-            logger.warn(LOG_SOURCE, &problem);
-        }
-        let mime = Arc::new(mime);
+        let mime = crate::mime::Mime::follow(sources.data_dirs.clone(), Arc::clone(&logger));
         let folders = views::Folders::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&mime));
         let opener = Opener::new(
-            mime,
+            Arc::clone(&mime),
             sources.associations.clone(),
             sources.runner.clone(),
             apps,
@@ -135,7 +133,7 @@ impl Files {
         });
         let stop = Arc::new(Stop::default());
         file_manager1::start(&shared, &stop);
-        Arc::new(Self { shared, opener: Arc::new(opener), stop, folders })
+        Arc::new(Self { shared, opener: Arc::new(opener), mime, stop, folders })
     }
 
     /// What opens files in apps.
@@ -191,10 +189,11 @@ impl Files {
     }
 
     /// Stops it: it publishes nothing more, gives up FileManager1, closes
-    /// Nova Files' windows and folder views, and drops windows still
-    /// waiting.
+    /// Nova Files' windows and folder views, stops following the MIME
+    /// database and drops windows still waiting.
     pub fn stop(&self) {
         self.stop.stop();
+        self.mime.stop();
         self.folders.stop();
         if let Some(process) = &self.shared.process {
             process.stop();
