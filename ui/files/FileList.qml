@@ -7,17 +7,21 @@ import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 import "listing.js" as Listing
 import "paths.js" as Paths
+import "shortcuts.js" as Shortcuts
 
 // Nova Files' file list in Details: the column header (Name, then
 // Modified, Type and Size at their widths; a click sorts by that column,
 // again turns the order round) over the folder's rows from novad
 // (FolderModel), and the item count under them. A click selects a row,
-// Ctrl adds or drops one, Shift selects a run; the arrows, Page Up/Down,
-// Home and End move the selection (Shift extends it), Ctrl+A selects all,
-// Ctrl+H shows or hides dot files. A double-click or Enter opens: a
-// folder is gone into (`folderOpened`), files open in their default app.
-// Delete asks to move the selection to the trash (`trashRequested`),
-// Shift+Delete to delete it for good (`deleteRequested`).
+// Ctrl adds or drops one, Shift selects a run. Its keys are the table's
+// LIST entries (shortcuts.js): the arrows, Page Up/Down, Home and End move
+// the selection (Shift extends it), Ctrl+A selects all, Ctrl+H shows or
+// hides dot files, Backspace goes back (`backRequested`), and typing a
+// name goes to it (NameTyping). A double-click or Enter opens: a folder is
+// gone into (`folderOpened`), files open in their default app. Delete
+// asks to move the selection to the trash (`trashRequested`),
+// Shift+Delete to delete it for good (`deleteRequested`). F5 (the
+// window's) reads the folder again (`refresh`).
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
 FocusScope {
@@ -35,6 +39,7 @@ FocusScope {
     // (Listing.copy), in the list's order.
     signal trashRequested(var rows)
     signal deleteRequested(var rows)
+    signal backRequested
 
     readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
     readonly property var columns: [
@@ -82,6 +87,11 @@ FocusScope {
             folderOpened(Paths.child(folder, opening.folder));
         for (const name of opening.files)
             FilesService.launch(Paths.child(folder, name), "", null);
+    }
+
+    // Reads the folder again, keeping the selection.
+    function refresh() {
+        model.refresh();
     }
 
     Component.onCompleted: {
@@ -235,24 +245,47 @@ FocusScope {
             onOpened: list.open([list.model.rows.get(row.index)])
         }
 
+        NameTyping {
+            id: typing
+        }
+
+        // The rows' names, in the list's order: what typing a name searches.
+        function names(): var {
+            const names = [];
+            for (let index = 0; index < count; index++)
+                names.push(list.model.rows.get(index).name);
+            return names;
+        }
+
         Keys.onPressed: event => {
-            const ctrl = (event.modifiers & Qt.ControlModifier) !== 0;
-            if (event.key === Qt.Key_H && ctrl)
+            const picked = () => list.model.selectedRows().map(row => Listing.copy(row));
+            switch (Shortcuts.action(Shortcuts.LIST, event.key, event.modifiers)) {
+            case "hidden":
                 list.showHidden = !list.showHidden;
-            else if (event.key === Qt.Key_A && ctrl)
+                return;
+            case "selectAll":
                 list.model.selectAll();
-            else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                return;
+            case "open":
                 list.open(list.model.selectedRows());
-            else if (event.key === Qt.Key_Delete && list.model.selectedCount > 0) {
-                const rows = list.model.selectedRows().map(row => Listing.copy(row));
-                if ((event.modifiers & Qt.ShiftModifier) !== 0)
-                    list.deleteRequested(rows);
-                else
-                    list.trashRequested(rows);
-            } else if (Listing.MOVES.includes(event.key) && entryList.count > 0)
-                entryList.go(Listing.moved(event.key, entryList.currentIndex, entryList.count, entryList.page), (event.modifiers & Qt.ShiftModifier) !== 0);
-            else
-                event.accepted = false;
+                return;
+            case "back":
+                list.backRequested();
+                return;
+            case "trash":
+                if (list.model.selectedCount > 0)
+                    list.trashRequested(picked());
+                return;
+            case "deleteForGood":
+                if (list.model.selectedCount > 0)
+                    list.deleteRequested(picked());
+                return;
+            case "move":
+                if (entryList.count > 0)
+                    entryList.go(Listing.moved(event.key, entryList.currentIndex, entryList.count, entryList.page), (event.modifiers & Qt.ShiftModifier) !== 0);
+                return;
+            }
+            event.accepted = typing.press(event.text, event.modifiers, entryList.names(), entryList.currentIndex, index => entryList.go(index, false));
         }
     }
 
