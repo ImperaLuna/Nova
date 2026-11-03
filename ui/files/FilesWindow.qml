@@ -15,9 +15,11 @@ import "../daemon/protocol.js" as Protocol
 // over them all; opening a folder in the list shows it in the same window.
 // On the Home page (Home.isHome, where `nova files` without a path opens)
 // the Home page takes the file list's place. At the trash, the trash's
-// command row and list take the place of the folder's, and anything deleted for good is asked about first
-// (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
-// and a folder's pin menu lie over it all.
+// command row and list take the place of the folder's, and anything
+// deleted for good is asked about first (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
+// and a folder's pin menu lie over it all. What uses space (the command
+// row's button, or opening a drive) stays on as the window moves, until
+// the button turns it off.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -36,6 +38,7 @@ FloatingWindow {
 
     readonly property bool inTrash: Trash.isTrash(folder)
     readonly property bool inHome: Home.isHome(folder)
+    property bool spaceView: false
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -95,6 +98,12 @@ FloatingWindow {
                     if (error)
                         window.notice(null, error);
                 }));
+    }
+
+    // Opens the drive `id`, showing what uses space on it.
+    function openDrive(id: string) {
+        spaceView = true;
+        navigator.openDrive(id);
     }
 
     function confirm(rows: var, act: var) {
@@ -193,6 +202,8 @@ FloatingWindow {
         anchors.top: navigation.bottom
         solid: FilesService.frameSolid
         visible: !window.inTrash
+        spaceView: window.spaceView
+        onSpaceToggled: window.spaceView = !window.spaceView
     }
     TrashCommandRow {
         id: trashCommands
@@ -215,6 +226,7 @@ FloatingWindow {
         navigator: window.navigator
         onDriveMenuRequested: (drive, at) => driveMenu.open(drive, at)
         onPinMenuRequested: (path, at) => pinMenu.open(path, at)
+        onDriveOpened: id => window.openDrive(id)
     }
     FileList {
         id: list
@@ -231,6 +243,7 @@ FloatingWindow {
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
         solid: FilesService.listSolid
+        spaceView: window.spaceView
         // Back from a page (Home, the trash): keys go to the list at once.
         onVisibleChanged: {
             if (visible)
@@ -252,6 +265,7 @@ FloatingWindow {
             if (visible)
                 forceActiveFocus();
         }
+        onDriveOpened: id => window.openDrive(id)
     }
     TrashModel {
         id: trash

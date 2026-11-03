@@ -1,6 +1,5 @@
 .pragma library
 .import "../daemon/protocol.js" as Protocol
-.import "../text/bytes.js" as Bytes
 .import "../theme/icons.js" as Icons
 .import "listing.js" as Listing
 .import "paths.js" as Paths
@@ -9,7 +8,8 @@
 // Nova Files' Home page and the places around it, kept apart so ui/tests
 // can check them: the page's name and address, which places aren't
 // folders (the Home page and the trash), how a sidebar place or a Quick
-// access tile reads, a drive's free space, and a recent file as a row.
+// access tile reads, and a recent file as a row. How full a drive is comes
+// from space.js.
 
 // The Home page's name, in the sidebar, the address bar and the window
 // title.
@@ -83,26 +83,6 @@ function pinned(places) {
 // Whether the folder `path` is pinned among `places`.
 function pinnedIn(places, path) {
     return places.some(place => isPinned(place) && place.path === path);
-}
-
-// Whether novad said how full a drive is: only while it's mounted.
-function measured(drive) {
-    return drive.mount !== undefined && drive.used !== undefined && drive.size > 0;
-}
-
-// A drive's free space under its bar, as Explorer reads it: "120 GB free of
-// 500 GB"; empty while it isn't measured.
-function free(drive) {
-    if (!measured(drive))
-        return "";
-    return qsTr("%1 free of %2").arg(Bytes.bytes(Math.max(0, drive.size - drive.used))).arg(Bytes.bytes(drive.size));
-}
-
-// How full a drive is, 0 to 1; 0 while it isn't measured.
-function fill(drive) {
-    if (!measured(drive))
-        return 0;
-    return Math.min(1, drive.used / drive.size);
 }
 
 // What a Recent row holds: a recent file ({folder, used_ms, entry}) as the

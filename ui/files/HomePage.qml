@@ -35,6 +35,8 @@ FocusScope {
 
     signal pinMenuRequested(string path, point at)
     signal driveMenuRequested(var drive, point at)
+    // The drive `id` was opened: the window opens it.
+    signal driveOpened(string id)
 
     function refresh() {
         FilesService.recent(files => {
@@ -53,7 +55,7 @@ FocusScope {
         if (kind === "pin") {
             navigator.visit(value, null);
         } else if (kind === "drive") {
-            navigator.openDrive(value);
+            driveOpened(value);
         } else if (kind === "recent") {
             const file = recent.find(row => Paths.child(row.folder, row.name) === value);
             if (file?.dir)
@@ -186,9 +188,7 @@ FocusScope {
 
                         icon: modelData.removable ? Icons.USB : Icons.DISK
                         title: modelData.name
-                        detail: Home.free(modelData)
-                        measured: Home.measured(modelData)
-                        fill: Home.fill(modelData)
+                        drive: modelData
                         selected: page.selected === key
                         onPicked: {
                             page.selected = key;

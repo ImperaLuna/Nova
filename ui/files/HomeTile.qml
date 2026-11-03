@@ -1,10 +1,10 @@
 import QtQuick
 import "../theme"
+import "space.js" as Space
 
 // A tile on Nova Files' Home page, as Explorer's Quick access and drives
 // show them: a big icon beside a name and, under it, a fainter line (where
-// the folder is, or a drive's free space) and, for a drive, a bar of how
-// full it is. Hovered tiles lighten, the selected one fills. A click
+// the folder is) or, for a drive, how full it is (DriveSpace). Hovered tiles lighten, the selected one fills. A click
 // selects it, a double-click opens it, a right-click asks for its menu at
 // the pointer (in the window).
 Rectangle {
@@ -14,9 +14,8 @@ Rectangle {
     property color iconColor: Tokens.fg
     required property string title
     property string detail: ""
-    // How full, 0 to 1, when it shows a bar (`measured`).
-    property bool measured: false
-    property real fill: 0
+    // A drive (novad's), whose bar and free space show under the title.
+    property var drive: null
     property bool selected: false
 
     signal picked
@@ -65,27 +64,10 @@ Rectangle {
                 textFormat: Text.PlainText
                 text: tile.title
             }
-            Rectangle {
-                visible: tile.measured
+            DriveSpace {
+                visible: tile.drive !== null && Space.measured(tile.drive)
                 width: parent.width
-                height: Tokens.filesDriveBarHeight
-                radius: height / 2
-                color: Tokens.track
-
-                Rectangle {
-                    width: parent.width * tile.fill
-                    height: parent.height
-                    radius: parent.radius
-                    color: Tokens.meter
-
-                    Behavior on width {
-                        NumberAnimation {
-                            duration: Tokens.durationFill
-                            easing.type: Easing.BezierSpline
-                            easing.bezierCurve: Tokens.easing
-                        }
-                    }
-                }
+                drive: tile.drive ?? ({})
             }
             Text {
                 visible: tile.detail !== ""

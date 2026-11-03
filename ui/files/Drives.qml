@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "service"
 import "paths.js" as Paths
+import "space.js" as Space
 
 // The drives in Nova Files' sidebar, as novad lists them. One that comes
 // while the window is open (a stick plugged in) arrives with an animation.
@@ -24,15 +25,8 @@ Column {
     property var seen: ({})
     property bool listed: false
 
-    // The mounted drive the folder is on: the one with the longest mount
-    // that holds it, since one may be mounted inside another (/ and /mnt/games).
-    readonly property var current: {
-        let best = null;
-        for (const drive of FilesService.drives)
-            if (drive.mount !== undefined && Paths.inside(folder, drive.mount) && (best === null || drive.mount.length > best.mount.length))
-                best = drive;
-        return best;
-    }
+    // The mounted drive the folder is on.
+    readonly property var current: Space.driveOf(FilesService.drives, folder)
     // Where the drive the folder is on was mounted, before the latest list.
     property string heldMount: ""
 

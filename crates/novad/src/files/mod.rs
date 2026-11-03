@@ -35,6 +35,8 @@
 //! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
 //!   and ejecting them; `drives.rs`: which filesystems are listed and
 //!   what they're called.
+//! - `sizes.rs`: folder sizes, counted under each view's subfolders on a
+//!   thread of its own at the disk's idle priority.
 //! - `transfers.rs`: copy and move jobs (`files_transfer`), one thread
 //!   each, asking the window about name clashes.
 //! - `copying.rs`: the file system side of those: measuring, numbered
@@ -58,6 +60,7 @@ mod folder;
 mod quick_access;
 mod recent;
 pub mod search;
+mod sizes;
 mod target;
 mod transfers;
 mod trash;

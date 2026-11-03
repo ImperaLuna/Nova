@@ -12,8 +12,9 @@ import "home.js" as Home
 // shows them. Then the drives (Drives.qml) under a line of their own, a
 // line, then the folder tree that follows the window. A right-click on a
 // pinned folder or a tree row asks for the menu that pins or unpins it.
-// A drive opened goes through the navigator like a place; when the drive
-// the window is on goes away, it goes to the home folder.
+// A drive clicked is opened by the window (`driveOpened`), showing what
+// uses space on it; when the drive the window is on goes away, it goes to
+// the home folder.
 Item {
     id: sidebar
 
@@ -24,6 +25,8 @@ Item {
     // The pin menu of the folder `path` was asked for at `at` (in the
     // window).
     signal pinMenuRequested(string path, point at)
+    // The drive `id` was clicked: the window opens it.
+    signal driveOpened(string id)
 
     // The places and drives scroll once they'd take more than their share
     // of the sidebar (many pins), so the tree under them keeps its room.
@@ -137,7 +140,7 @@ Item {
             Drives {
                 width: parent.width
                 folder: sidebar.navigator.folder
-                onOpened: id => sidebar.navigator.openDrive(id)
+                onOpened: id => sidebar.driveOpened(id)
                 onMenuRequested: (drive, at) => sidebar.driveMenuRequested(drive, at)
                 onDriveGone: sidebar.navigator.visit("~", null)
             }
