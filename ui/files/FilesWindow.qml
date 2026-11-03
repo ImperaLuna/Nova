@@ -6,6 +6,7 @@ import "../theme"
 import "service"
 import "paths.js" as Paths
 import "trash.js" as Trash
+import "properties.js" as Props
 import "../daemon/protocol.js" as Protocol
 
 // A Nova Files window: an app window the compositor tiles and rounds,
@@ -16,8 +17,8 @@ import "../daemon/protocol.js" as Protocol
 // changed: its command row offers "Extract all" instead.
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
-// (ConfirmDialog). A drive's menu and the dialog when one can't be ejected
-// lie over it all.
+// (ConfirmDialog). The Properties dialog (Alt+Enter, a drive's menu), a
+// drive's menu and the dialog when one can't be ejected lie over it all.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
 // frame and its file list each go from glass to solid as config.toml's
@@ -127,6 +128,18 @@ FloatingWindow {
             trashList.focusList();
         else
             list.forceActiveFocus();
+    }
+
+    // Shows the Properties of `rows` (the file list's) in the folder shown,
+    // of the folder itself when there are none, or of `drive`.
+    function showProperties(rows: var, drive: var) {
+        propertiesModel.show(Props.subject(folder, rows, drive));
+        propertiesDialog.forceActiveFocus();
+    }
+
+    function closeProperties() {
+        propertiesModel.close();
+        list.forceActiveFocus();
     }
 
     function notice(row: var, error: string) {
@@ -251,6 +264,7 @@ FloatingWindow {
         onFolderOpened: path => window.navigator.visit(path, null)
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
+        onPropertiesRequested: rows => window.showProperties(rows, null)
         solid: FilesService.listSolid
     }
     TrashModel {
@@ -332,9 +346,34 @@ FloatingWindow {
             }
         }
     }
+    PropertiesModel {
+        id: propertiesModel
+    }
+    // A click beside the Properties dialog closes it.
+    MouseArea {
+        anchors.fill: parent
+        visible: propertiesModel.subject !== null
+        acceptedButtons: Qt.AllButtons
+        onClicked: window.closeProperties()
+        onWheel: wheel => wheel.accepted = true
+    }
+    PropertiesDialog {
+        id: propertiesDialog
+        anchors.centerIn: parent
+        visible: propertiesModel.subject !== null
+        subject: propertiesModel.subject ?? Props.subject(window.folder, [], null)
+        properties: propertiesModel.properties
+        counted: propertiesModel.counted
+        apps: propertiesModel.openWith.apps
+        defaultApp: propertiesModel.openWith.defaultApp
+        onCloseRequested: window.closeProperties()
+        onAccessFlipped: (who, right) => propertiesModel.flipAccess(who, right)
+        onDefaultChosen: app => propertiesModel.openWith.makeDefault(app)
+    }
     DriveMenu {
         id: driveMenu
         anchors.fill: parent
+        onPropertiesChosen: drive => window.showProperties([], drive)
         onEjectChosen: drive => FilesService.eject(drive.id, outcome => {
                 if (outcome === Protocol.EJECT_BUSY)
                     ejectProblem.show(drive.name);
