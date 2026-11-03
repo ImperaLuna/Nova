@@ -505,7 +505,14 @@ impl Run {
         };
         let placed = self.put_free(source, meta, target, bytes);
         let put = matches!(placed, Ok(true));
-        if put && self.inside_copy == 0 {
+        // A folder copy stopped halfway leaves what it copied, which can
+        // be undone too.
+        let partly = placed.is_err()
+            && aside.is_none()
+            && meta.is_dir()
+            && self.job.mode == TransferMode::Copy
+            && target.symlink_metadata().is_ok();
+        if (put || partly) && self.inside_copy == 0 {
             self.placed.push((source.to_owned(), target.to_owned()));
         }
         if let Some(aside) = aside {

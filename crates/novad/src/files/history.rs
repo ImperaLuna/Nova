@@ -252,10 +252,15 @@ pub(super) fn split<T>(outcomes: Vec<Result<T, String>>) -> (Vec<T>, Result<(), 
 }
 
 /// A move's items as one leg per folder they go to, each made again if
-/// it's gone (a folder merged away when they first moved).
+/// it's gone (a folder merged away when they first moved). Items no longer
+/// there (deleted or renamed since) are left out, so the rest still go.
 fn legs(items: &[(PathBuf, PathBuf)]) -> Result<Vec<Leg>, String> {
     let mut folders: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
-    for (now, goes) in items {
+    let there: Vec<_> = items.iter().filter(|(now, _)| now.symlink_metadata().is_ok()).collect();
+    if let (Some((now, _)), true) = (items.first(), there.is_empty()) {
+        return Err(format!("{} doesn't exist", now.display()));
+    }
+    for (now, goes) in there {
         let folder = goes.parent().ok_or_else(|| format!("Can't move {} to /", now.display()))?;
         folders.entry(folder.to_owned()).or_default().push(now.clone());
     }
@@ -479,6 +484,17 @@ mod tests {
         // Skipped, it stays where it was moved; the copy is next.
         assert_eq!(fixture.run(Way::Undo), Ok(false));
         assert!(!fixture.exists("to/a.txt"), "the copy went to the trash");
+    }
+
+    #[test]
+    fn a_move_goes_back_without_an_item_deleted_since() {
+        let fixture = Fixture::new("gone");
+        fixture.write("from/a.txt");
+        fixture.write("from/b.txt");
+        fixture.transfer(TransferMode::Move, &["from/a.txt", "from/b.txt"], "to");
+        std::fs::remove_file(fixture.dir.join("to/a.txt")).unwrap();
+        assert_eq!(fixture.run(Way::Undo), Ok(true));
+        assert!(fixture.exists("from/b.txt"));
     }
 
     #[test]
