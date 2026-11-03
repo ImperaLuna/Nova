@@ -195,8 +195,19 @@ impl<'a> Connection<'a> {
             Command::OpenLog => {
                 done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().open_log()))
             }
-            Command::LauncherSearch { query } => {
-                value(self.launcher_providers().and_then(|providers| providers.search(query, &self.daemon.logger)))
+            // A provider's own mode (files) may read the disk, so it's
+            // answered off the connection's thread: a slow drive must not
+            // hold up other requests. The mixed providers answer from memory.
+            Command::LauncherSearch { query, mode } => {
+                let providers = match self.launcher_providers() {
+                    Ok(providers) => providers,
+                    Err(e) => return Answer::Now(Outcome::Error(e)),
+                };
+                if mode.is_none() {
+                    return Answer::Now(value(providers.search(query, None, &self.daemon.logger)));
+                }
+                let (query, mode, logger) = (query.clone(), mode.clone(), Arc::clone(&self.daemon.logger));
+                return Answer::later(move || value(providers.search(&query, mode.as_deref(), &logger)));
             }
             // Only Nova Files cares, by building its index of file names;
             // without it there's nothing to do.
@@ -305,10 +316,7 @@ impl<'a> Connection<'a> {
             Command::AttachFiles { attached } => done(self.files().map(|files| files.attach(self.id, *attached))),
             Command::FilesLaunch { path, app } => {
                 let (path, app) = (path.clone(), app.clone());
-                return self.opener_later(move |opener| match app {
-                    Some(app) => opener.open_with(&path, &app),
-                    None => opener.open(&path),
-                });
+                return self.files_later(move |files| files.launch(&path, app.as_deref()));
             }
             // Answered off the connection's thread: the files found are
             // looked at, and a slow drive must not hold up its other requests.
@@ -321,6 +329,12 @@ impl<'a> Connection<'a> {
                     }
                     Err(e) => Answer::Now(Outcome::Error(e)),
                 };
+            }
+            // Off the connection's thread too: it reads the file, and may
+            // draw it.
+            Command::FilesPreview { path } => {
+                let path = path.clone();
+                return self.files_later(move |files| files.previews().preview(&path));
             }
             Command::FilesOpenWith { path } => {
                 let path = path.clone();
@@ -350,9 +364,21 @@ impl<'a> Connection<'a> {
                 });
             }
             Command::FilesPlaces => return self.files_later(|files| Ok(files.places())),
-            Command::FilesTrash { paths } => {
-                let paths = paths.clone();
-                return self.files_later(move |files| files.trash().trash(&paths));
+            Command::FilesDrop { sources, folder, copy } => {
+                let (sources, folder, copy) = (sources.clone(), folder.clone(), *copy);
+                return self.files_later(move |_| crate::files::drop_mode(&sources, &folder, copy));
+            }
+            Command::FilesTrash { paths, continues } => {
+                let (paths, continues) = (paths.clone(), *continues);
+                return self.files_later(move |files| files.move_to_trash(&paths, continues));
+            }
+            Command::FilesUndo { job } => {
+                let (client, job) = (self.id, *job);
+                return self.files_later(move |files| files.undo(client, job));
+            }
+            Command::FilesRedo { job } => {
+                let (client, job) = (self.id, *job);
+                return self.files_later(move |files| files.redo(client, job));
             }
             Command::FilesDelete { paths } => {
                 let paths = paths.clone();
@@ -368,6 +394,31 @@ impl<'a> Connection<'a> {
                 return self.files_later(move |files| files.trash().erase(&ids));
             }
             Command::FilesEmptyTrash => return self.files_later(|files| files.trash().empty()),
+            Command::FilesNewFolder { folder } => {
+                let folder = folder.clone();
+                return self.files_later(move |files| files.new_folder(&folder));
+            }
+            Command::FilesRename { path, name } => {
+                let (path, name) = (path.clone(), name.clone());
+                return self.files_later(move |files| files.rename(&path, &name));
+            }
+            Command::FilesDetails { path } => {
+                let path = path.clone();
+                return self.files_later(move |files| files.details(&path));
+            }
+            Command::FilesProperties { path } => {
+                let path = path.clone();
+                return self.files_later(move |files| files.properties(&path));
+            }
+            Command::FilesSetAccess { path, access } => {
+                let (path, access) = (path.clone(), *access);
+                return self.files_later(move |files| files.set_access(&path, access));
+            }
+            // Answered here, in order with a cancel that follows it.
+            Command::FilesMeasure { job, paths } => {
+                done(self.files().and_then(|files| files.measure(self.id, *job, paths)))
+            }
+            Command::FilesMeasureCancel { job } => done(self.files().map(|files| files.cancel_measure(self.id, *job))),
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -541,7 +592,10 @@ impl<'a> Connection<'a> {
     }
 
     /// Runs what the launcher's provider `provider` found as `id`, like an
-    /// app it focuses or starts (see `launcher::providers`).
+    /// app it focuses or starts (see `launcher::providers`). Answers once it
+    /// is underway: the launcher waits for the answer to close, and an app
+    /// in the tray may take seconds to show its window. A failure after
+    /// that is only logged.
     fn launcher_run(&self, provider: &str, id: &str, output: Option<String>, new_window: bool) -> Answer {
         let provider = match self.launcher_providers().and_then(|providers| providers.provider(provider)) {
             Ok(provider) => provider,
@@ -552,14 +606,25 @@ impl<'a> Connection<'a> {
         let logger = Arc::clone(&self.daemon.logger);
         let id = id.to_owned();
         Answer::later(move || {
-            let how = crate::launcher::providers::Run {
-                output: output.as_deref(),
-                new_window,
-                compositor: compositor.as_deref(),
-                tray: tray.as_deref(),
-                logger: &logger,
-            };
-            done(provider.run(&id, &how))
+            let (answer, answered) = mpsc::channel();
+            std::thread::spawn(move || {
+                let early = answer.clone();
+                let underway = move || {
+                    let _ = early.send(Ok(()));
+                };
+                let how = crate::launcher::providers::Run {
+                    output: output.as_deref(),
+                    new_window,
+                    compositor: compositor.as_deref(),
+                    tray: tray.as_deref(),
+                    logger: &logger,
+                    underway: &underway,
+                };
+                // Unheard once it was underway; starting the app logs its
+                // own failures.
+                let _ = answer.send(provider.run(&id, &how));
+            });
+            done(answered.recv().unwrap_or_else(|_| Err("the launch stopped without an answer".into())))
         })
     }
 
@@ -950,6 +1015,7 @@ impl<'a> Connection<'a> {
             | Command::FilesOpen { .. }
             | Command::FilesClose { .. }
             | Command::FilesTransfer { .. }
+            | Command::FilesDrop { .. }
             | Command::FilesTransferCancel { .. }
             | Command::FilesTransferAnswer { .. }
             | Command::AttachFiles { .. }
@@ -957,14 +1023,24 @@ impl<'a> Connection<'a> {
             | Command::FilesOpenWith { .. }
             | Command::FilesSetDefault { .. }
             | Command::FilesSearch { .. }
+            | Command::FilesPreview { .. }
             | Command::FilesTrash { .. }
+            | Command::FilesUndo { .. }
+            | Command::FilesRedo { .. }
             | Command::FilesDelete { .. }
             | Command::FilesTrashList
             | Command::FilesRestore { .. }
             | Command::FilesTrashDelete { .. }
             | Command::FilesEmptyTrash
             | Command::FilesMount { .. }
-            | Command::FilesEject { .. } => {}
+            | Command::FilesEject { .. }
+            | Command::FilesProperties { .. }
+            | Command::FilesMeasure { .. }
+            | Command::FilesMeasureCancel { .. }
+            | Command::FilesSetAccess { .. }
+            | Command::FilesNewFolder { .. }
+            | Command::FilesRename { .. }
+            | Command::FilesDetails { .. } => {}
             Command::FilesTree { .. } | Command::FilesPlaces => {}
         }
     }

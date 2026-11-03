@@ -28,11 +28,13 @@ function pick(known, ids) {
 
 // What the list shows: what the providers found while there's a query (the
 // name in runs, matched letters marked), else the recent apps followed by
-// every other app by name, so the arrows reach any app without typing. Each
-// row is {provider, id, name, runs, description, icon, group}, `group` being
-// "results", "recent" or "apps": the list's headings.
-function rows(query, matches, recent, apps, known) {
-    function row(app, group, runs, provider) {
+// every other app by name, so the arrows reach any app without typing; in
+// the Files mode (`files`), only what was found. Each row is {provider, id,
+// name, runs, description, icon, file, group}, `file` being a found file's
+// LauncherFile (else null) and `group` "results", "files", "recent" or
+// "apps": the list's headings.
+function rows(query, matches, recent, apps, known, files) {
+    function row(app, group, runs, provider, file) {
         return {
             provider: provider ?? Protocol.PROVIDER_APPS,
             id: app.id,
@@ -45,9 +47,12 @@ function rows(query, matches, recent, apps, known) {
             ],
             description: app.description ?? "",
             icon: app.icon ?? "",
+            file: file ?? null,
             group: group
         };
     }
+    if (files && query.trim() === "")
+        return [];
     if (query.trim() !== "") {
         return matches.map(function (item) {
             var name = item.name.map(function (run) {
@@ -58,12 +63,12 @@ function rows(query, matches, recent, apps, known) {
                 name: name,
                 description: item.description,
                 icon: item.icon
-            }, "results", item.name.map(function (run) {
+            }, files ? "files" : "results", item.name.map(function (run) {
                 return {
                     text: run.text,
                     matched: run.matched === true
                 };
-            }), item.provider);
+            }), item.provider, item.file);
         });
     }
     var shown = pick(known, recent).map(function (app) {
@@ -78,6 +83,20 @@ function rows(query, matches, recent, apps, known) {
     return shown.concat(others.map(function (app) {
         return row(app, "apps");
     }));
+}
+
+// The query starts a path (`~` or `/`), which the Files mode completes.
+function typesPath(query) {
+    return query.startsWith("~") || query.startsWith("/");
+}
+
+// What Tab would add to `query` to complete it to `row`'s path: the rest of
+// its completion when the query starts it (case aside), else "".
+function completion(query, row) {
+    const full = row?.file?.completion ?? "";
+    if (full.length <= query.length || full.slice(0, query.length).toLowerCase() !== query.toLowerCase())
+        return "";
+    return full.slice(query.length);
 }
 
 // The selection after moving `by` rows from `index` among `count`, going

@@ -26,7 +26,8 @@ Scope {
             pinned: LauncherService.current.pinned
             recent: LauncherService.current.recent
             iconSource: icon => AppIcons.source(icon)
-            onSearchRequested: query => LauncherService.search(query, found => deck.showMatches(query, found))
+            filesMode: LauncherService.filesReady
+            onSearchRequested: (query, mode) => LauncherService.search(query, mode, found => deck.showMatches(query, found, mode))
             onRunRequested: (provider, id, newWindow) => LauncherService.run(provider, id, slot.stage.output.name, newWindow, error => deck.launched(error))
             onPinRequested: (id, pinned) => LauncherService.pin(id, pinned)
             onOpenChanged: LauncherService.setShown(slot.stage.output.name, open)

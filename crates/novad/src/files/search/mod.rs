@@ -119,6 +119,9 @@ struct Shared {
     demand: Mutex<Demand>,
     /// Wakes the thread that drops the index when [`Shared::demand`] changes.
     changed: Condvar,
+    /// Woken each time an index is swapped in, for searches that wait for
+    /// one ([`Searcher::wait_ready`]); the lock is taken after the swap.
+    built: (Mutex<()>, Condvar),
 }
 
 /// The index, none until it's built and after it's dropped.
@@ -157,6 +160,7 @@ impl Search {
             logger,
             demand: Mutex::default(),
             changed: Condvar::new(),
+            built: (Mutex::new(()), Condvar::new()),
         });
         let dropper = Arc::clone(&shared);
         let spawned =
@@ -206,11 +210,26 @@ impl Search {
     /// The index is built now. Unlike a search, asking doesn't build it.
     #[cfg(test)]
     fn built(&self) -> bool {
-        self.shared.index.read().unwrap_or_else(std::sync::PoisonError::into_inner).index.is_some()
+        self.shared.is_built()
     }
 }
 
 impl Shared {
+    fn is_built(&self) -> bool {
+        self.index.read().unwrap_or_else(std::sync::PoisonError::into_inner).index.is_some()
+    }
+
+    /// A search asks for the index: with nobody using it, it's built and
+    /// kept for [`KEPT_UNUSED`].
+    fn asked(self: &Arc<Self>) {
+        let mut demand = lock(&self.demand);
+        if demand.users.is_empty() {
+            self.build(&mut demand);
+            demand.drop_at = Some(Instant::now() + KEPT_UNUSED);
+            self.changed.notify_all();
+        }
+    }
+
     /// Who uses the index may have changed: it's built if anyone does,
     /// and set to be dropped once the last user goes. With nobody using it
     /// before either, the time it's dropped stays, so connections that
@@ -284,26 +303,36 @@ impl Shared {
 }
 
 impl Searcher {
+    /// Waits up to `timeout` for the index to be built; `true` once it is.
+    /// With nobody using the index, it's built and kept as for a search.
+    pub fn wait_ready(&self, timeout: Duration) -> bool {
+        self.0.asked();
+        let (lock, built) = &self.0.built;
+        let held = lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (_held, _) = built
+            .wait_timeout_while(held, timeout, |()| !self.0.is_built())
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.0.is_built()
+    }
+
     /// The files whose names hold every word of `text`. With nobody using
     /// the index, a search has it built and kept for [`KEPT_UNUSED`].
     pub fn search(&self, text: &str) -> Result<FileSearch, String> {
+        self.search_up_to(text, FILES_SEARCH_MAX_RESULTS)
+    }
+
+    /// The best `limit` of them.
+    pub fn search_up_to(&self, text: &str, limit: usize) -> Result<FileSearch, String> {
         if text.chars().count() > FILES_SEARCH_MAX_CHARS {
             return Err(format!("Searches are at most {FILES_SEARCH_MAX_CHARS} characters"));
         }
-        {
-            let mut demand = lock(&self.0.demand);
-            if demand.users.is_empty() {
-                self.0.build(&mut demand);
-                demand.drop_at = Some(Instant::now() + KEPT_UNUSED);
-                self.0.changed.notify_all();
-            }
-        }
+        self.0.asked();
         let held = self.0.index.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let ready = held.index.is_some();
         let (Some(index), Some(query)) = (held.index.as_ref(), Query::parse(text)) else {
             return Ok(FileSearch { ready, total: 0, results: Vec::new() });
         };
-        let (hits, total) = index.search(&query, FILES_SEARCH_MAX_RESULTS);
+        let (hits, total) = index.search(&query, limit);
         drop(held);
         let mime = self.0.mime.current();
         let results = hits
@@ -403,6 +432,9 @@ impl Keeper {
         }
         held.index = Some(index);
         drop(held);
+        let (lock, built) = &self.shared.built;
+        drop(lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
+        built.notify_all();
         Some(Built { mounts, skipped, reach, at: Instant::now() })
     }
 
@@ -593,6 +625,20 @@ mod tests {
         let game = home.join(".local/share/Steam/steamapps/common/Crimson Desert");
         std::fs::create_dir_all(&game).unwrap();
         std::fs::write(game.join("CrimsonDesert.exe"), b"exe").unwrap();
+    }
+
+    #[test]
+    fn a_search_can_wait_for_the_index_to_be_built() {
+        let dir = TempDir::new("files-search-wait");
+        std::fs::create_dir_all(dir.join("home/Games")).unwrap();
+        let hub = Arc::new(crate::hub::Hub::default());
+        let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, hub).unwrap());
+        let mime = Mime::follow(Vec::new(), Arc::clone(&logger));
+        let search = Search::start(Sources::under(&dir), logger, mime);
+        // Nothing uses it yet: waiting has it built.
+        assert!(search.searcher().wait_ready(WAIT));
+        assert_eq!(search.searcher().search("games").unwrap().total, 1);
+        search.stop();
     }
 
     #[test]
