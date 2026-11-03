@@ -106,10 +106,9 @@ SWAYSOCK=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock | head -n1)
 export SWAYSOCK
 
 # Its own settings and AI usage files, so the run starts like a new user's,
-# never touches the user's files and never asks Anthropic. Nova Files is
-# off by default; it's turned on to check its window.
+# never touches the user's files and never asks Anthropic.
 mkdir -p "$out/config"
-echo 'enabled = ["files"]' >"$out/config/features.toml"
+: >"$out/config/features.toml"
 "$nova" daemon --ui ui --log-dir "$out/state" --state-dir "$out/state" --codex-home "$out/codex" \
   --claude-credentials "$out/claude/.credentials.json" \
   --claude-desktop-config "$out/claude-desktop/config.json" \
