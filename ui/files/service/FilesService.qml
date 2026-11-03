@@ -231,17 +231,18 @@ Singleton {
         return job;
     }
 
-    // Whether every item at `sources` (absolute paths) is on the same
-    // drive as the folder `folder`: a drop there moves them, elsewhere it
-    // copies. `done(same)` gets the answer, or null when novad can't tell.
-    function sameDrive(sources: var, folder: string, done: var) {
-        Daemon.call(Protocol.CMD_FILES_SAME_DRIVE, {
+    // What dropping `sources` (absolute paths) on the folder `folder`
+    // does, Ctrl held when `copy`: `done(mode)` gets a Protocol.TRANSFER_*
+    // mode, or null when nothing can be dropped there (or novad can't tell).
+    function drop(sources: var, folder: string, copy: bool, done: var) {
+        Daemon.call(Protocol.CMD_FILES_DROP, {
             sources: sources,
-            folder: folder
-        }, (error, same) => {
+            folder: folder,
+            copy: copy
+        }, (error, mode) => {
             if (error)
-                console.warn(`nova: checking the drive of ${folder}: ${error}`);
-            done(error ? null : same);
+                console.warn(`nova: dropping into ${folder}: ${error}`);
+            done(error ? null : mode ?? null);
         });
     }
 
