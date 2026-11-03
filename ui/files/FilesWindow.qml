@@ -52,8 +52,6 @@ FloatingWindow {
         const picked = list.model.revision >= 0 && list.model.selectedCount === 1 ? list.model.selectedRows()[0] : null;
         return picked?.archive ? Paths.child(folder, picked.name) : "";
     }
-    }
-
     // A dialog is up (confirm, Properties): the window's keys wait.
     readonly property bool asking: confirming !== null || propertiesModel.subject !== null
     // What the confirm dialog asks, and what a yes does: {asking, act}.
