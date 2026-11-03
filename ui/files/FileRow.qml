@@ -94,13 +94,7 @@ Rectangle {
         id: rowLift
     }
 
-    Component.onCompleted: {
-        if (riseOrder >= 0)
-            riseIn.start();
-    }
-
     RiseIn {
-        id: riseIn
         item: entry
         lift: rowLift
         order: entry.riseOrder

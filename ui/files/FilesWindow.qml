@@ -111,6 +111,11 @@ FloatingWindow {
         confirming = null;
         if (yes)
             act?.();
+        focusContent();
+    }
+
+    // Gives the keyboard back to the list shown: the folder's or the trash's.
+    function focusContent() {
         if (inTrash)
             trashList.focusList();
         else
@@ -148,16 +153,17 @@ FloatingWindow {
         sequences: ["Ctrl+L", "Alt+D"]
         onActivated: navigation.editAddress()
     }
-    Instantiator {
-        model: [1, 2, 3, 4, 6]
-
-        Shortcut {
-            required property int modelData
-
-            sequence: "Ctrl+Shift+" + modelData
-            enabled: !window.inTrash
-            onActivated: list.view = Listing.viewForNumber(modelData)
-        }
+    // Explorer's icon sizes (Nova has one) and Details, while the file
+    // list has the keyboard.
+    Shortcut {
+        sequences: ["Ctrl+Shift+1", "Ctrl+Shift+2", "Ctrl+Shift+3", "Ctrl+Shift+4"]
+        enabled: list.activeFocus
+        onActivated: list.view = Listing.ICONS
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+6"
+        enabled: list.activeFocus
+        onActivated: list.view = Listing.DETAILS
     }
     TapHandler {
         acceptedButtons: Qt.BackButton | Qt.ForwardButton
@@ -320,10 +326,11 @@ FloatingWindow {
         id: viewMenu
         anchors.fill: parent
 
+        onHidden: window.focusContent()
+
         function choose(view: string) {
             list.view = view;
             shown = false;
-            list.forceActiveFocus();
         }
 
         function open(at: point) {
@@ -348,6 +355,7 @@ FloatingWindow {
     DriveMenu {
         id: driveMenu
         anchors.fill: parent
+        onHidden: window.focusContent()
         onEjectChosen: drive => FilesService.eject(drive.id, outcome => {
                 if (outcome === Protocol.EJECT_BUSY)
                     ejectProblem.show(drive.name);

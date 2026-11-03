@@ -351,13 +351,6 @@ Item {
             compare(Listing.gridDistance(3, 0, 1), 3, "one column is a list");
         }
 
-        function test_explorer_view_shortcuts() {
-            compare(Listing.viewForNumber(2), Listing.ICONS);
-            compare(Listing.viewForNumber(4), Listing.ICONS);
-            compare(Listing.viewForNumber(6), Listing.DETAILS);
-            compare(Listing.viewForNumber(5), "", "List isn't a Nova view");
-        }
-
         function test_opening_goes_into_one_folder_or_opens_files() {
             const music = entry("Music", {
                 dir: true,
@@ -829,7 +822,7 @@ Item {
             signalName: "dismissed"
         }
 
-        function test_a_menu_row_picks_and_a_click_beside_the_menu_dismisses_it() {
+        function test_a_menu_row_picks_and_a_click_beside_or_escape_dismisses_it() {
             const menu = createTemporaryObject(viewMenuComponent, stage);
             menuDismissals.target = menu;
             menuDismissals.clear();
@@ -841,6 +834,12 @@ Item {
             compare(menu.view, Listing.ICONS);
             mouseClick(menu, 5, menu.height - 5);
             compare(menuDismissals.count, 1);
+            menu.shown = false;
+            menu.shown = true;
+            verify(menu.activeFocus, "it holds the keyboard while shown");
+            keyClick(Qt.Key_Delete);
+            keyClick(Qt.Key_Escape);
+            compare(menuDismissals.count, 2);
         }
 
         function findText(item, text) {

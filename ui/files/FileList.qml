@@ -216,6 +216,8 @@ FocusScope {
         onDelegateChanged: Qt.callLater(() => {
             if (currentIndex >= 0)
                 positionViewAtIndex(currentIndex, GridView.Contain);
+            else
+                positionViewAtBeginning();
         })
 
         // Moves to entry `index` and selects what a click there would.
@@ -233,12 +235,12 @@ FocusScope {
         }
 
         // Steps from where the list opened for entry `index`, while a
-        // folder's entries have just come in (no further than a screen
-        // away), or -1.
+        // folder's entries have just come in (no further than across a
+        // screen), or -1.
         function riseOrder(index: int): int {
             if (list.riseFrom < 0)
                 return -1;
-            return Math.min(Listing.gridDistance(index, list.riseFrom, columns), lines);
+            return Math.min(Listing.gridDistance(index, list.riseFrom, columns), Math.max(lines, columns));
         }
 
         MouseArea {

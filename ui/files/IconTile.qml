@@ -69,13 +69,7 @@ Rectangle {
         id: tileLift
     }
 
-    Component.onCompleted: {
-        if (riseOrder >= 0)
-            riseIn.start();
-    }
-
     RiseIn {
-        id: riseIn
         item: tile
         lift: tileLift
         order: tile.riseOrder

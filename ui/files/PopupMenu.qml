@@ -3,7 +3,9 @@ import "../theme"
 
 // A Nova Files menu over the whole window: a card of MenuRows (its
 // children) placed at a point by `place`, shown while `shown`. A click
-// beside it closes it (`dismissed`).
+// beside it or Escape closes it (`dismissed`). It holds the keyboard while
+// shown, so keys meant for it never reach what's under it, and says when
+// it's gone (`hidden`) for the window to take the keyboard back.
 Item {
     id: menu
 
@@ -11,6 +13,7 @@ Item {
     default property alias rows: rows.data
 
     signal dismissed
+    signal hidden
 
     // Puts the card's top left at `at`, kept inside the window.
     function place(at: point) {
@@ -19,6 +22,17 @@ Item {
     }
 
     visible: shown
+
+    onShownChanged: {
+        if (shown)
+            forceActiveFocus();
+        else
+            hidden();
+    }
+    Keys.onPressed: event => {
+        if (event.key === Qt.Key_Escape)
+            menu.dismissed();
+    }
 
     MouseArea {
         anchors.fill: parent

@@ -153,15 +153,6 @@ function pick(anchor, index, ctrl, shift) {
 var DETAILS = "details";
 var ICONS = "icons";
 
-// The view Explorer's Ctrl+Shift+<number> shortcuts ask for: 1 to 4 are
-// icon sizes (Nova has one), 6 is Details; "" for the rest, which Nova
-// doesn't have.
-function viewForNumber(number) {
-    if (number >= 1 && number <= 4)
-        return ICONS;
-    return number === 6 ? DETAILS : "";
-}
-
 // How many steps tile `index` is from tile `from` in a grid `columns`
 // wide, counting a diagonal step as one: the order tiles ease in, rippling
 // out from where the list opened.
