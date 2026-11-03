@@ -772,6 +772,20 @@ QtObject {
     readonly property int filesTreeGap: 4
     readonly property int filesTreeRise: 4
     readonly property int filesTreeStagger: 30
+    // The Home page: Quick access and the drives as tiles in rows, a big
+    // icon beside a name and a fainter line (where the folder is, a drive's
+    // free space under its bar), then Recent as a list with its own
+    // columns after the name (Date used, Location). The sections sit this
+    // far in and apart, under their headings.
+    readonly property int filesHomePad: 20
+    readonly property int filesHomeSectionGap: 18
+    readonly property int filesHomeTileWidth: 200
+    readonly property int filesHomeTileHeight: 58
+    readonly property int filesHomeTileIconSize: 26
+    readonly property list<int> filesRecentColumns: [130, 220]
+    // The most of the sidebar's height its places and drives take before
+    // they scroll, so the folder tree keeps room under many pins.
+    readonly property real filesPlacesMaxShare: 0.5
 
     // Copies and moves: each running job's card stacked at the window's
     // bottom right, and the name clash dialog in its middle, its two sides

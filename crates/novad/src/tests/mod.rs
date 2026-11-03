@@ -311,6 +311,9 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             // Files opened from archives under `<dir>/opened`.
             opened: Some(dir.join("opened")),
             mounts: dir.join("no-mountinfo"),
+            bookmarks: None,
+            user_folders: Vec::new(),
+            recent: None,
             previews: Some(dir.join("previews")),
         },
         session_lock: dir.to_owned(),

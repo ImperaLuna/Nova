@@ -598,8 +598,9 @@ fn deletion_ms(value: &str) -> Option<i64> {
     Some(local.to_zoned(jiff::tz::TimeZone::system()).ok()?.timestamp().as_millisecond())
 }
 
-/// `bytes` percent-escaped as a URI path: an info file's `Path`.
-fn escape(bytes: &OsStr) -> String {
+/// `bytes` percent-escaped as a URI path: an info file's `Path`, or a
+/// bookmark's `file://` URI after its scheme.
+pub(super) fn escape(bytes: &OsStr) -> String {
     let mut out = String::with_capacity(bytes.len());
     for &byte in bytes.as_bytes() {
         if byte.is_ascii_alphanumeric() || PATH_SAFE.contains(&byte) {

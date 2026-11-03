@@ -9,6 +9,7 @@ import "paths.js" as Paths
 import "tabs.js" as Tabs
 import "drops.js" as Drops
 import "trash.js" as Trash
+import "home.js" as Home
 import "search.js" as Search
 import "commands.js" as Commands
 import "properties.js" as Props
@@ -21,12 +22,13 @@ import "../daemon/protocol.js" as Protocol
 // showing `folder` with `select` selected. The tab row, the navigation
 // row, the command row, then the sidebar beside the file list, with its
 // copies and moves over them all; opening a folder in the list shows it in
-// the same window.
+// the same window. On the Home page (Home.isHome, where `nova files`
+// without a path opens) the Home page takes the file list's place.
 // Inside an archive (a zip or tar, opened like a folder) nothing can be
 // changed: its command row offers "Extract all" instead.
 // At the trash, the trash's command row and list take the place of the
 // folder's, and anything deleted for good is asked about first
-// (ConfirmDialog). Right-click menus (menus.js: on items, on the empty
+// (ConfirmDialog). A folder's pin menu, right-click menus (menus.js: on items, on the empty
 // list, on a drive, and the command row's New and Sort), the Properties
 // dialog (Properties in a menu, Alt+Enter) and the dialog when a drive
 // can't be ejected lie over it all. Show details (Alt+Shift+P) opens or
@@ -91,6 +93,7 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    readonly property bool inHome: Home.isHome(folder)
     property bool spaceView: false
     readonly property bool searching: search.active && !inTrash
     readonly property SearchModel search: SearchModel {
@@ -111,7 +114,7 @@ FloatingWindow {
     readonly property string home: Quickshell.env("HOME") ?? ""
     // A dialog or menu has the window's attention: the confirm dialog, a
     // name clash, a menu, the Properties dialog or a drive's eject problem.
-    readonly property bool asking: confirming !== null || transfers.asking !== null || menu.shown || propertiesModel.subject !== null || ejectProblem.visible
+    readonly property bool asking: confirming !== null || transfers.asking !== null || menu.shown || pinMenu.visible || propertiesModel.subject !== null || ejectProblem.visible
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -379,6 +382,12 @@ FloatingWindow {
                 }));
     }
 
+    // Opens the drive `id`, showing what uses space on it.
+    function openDrive(id: string) {
+        spaceView = true;
+        navigator.openDrive(id);
+    }
+
     // Opens `path` (absolute, or from `~`) in a new tab at the end, shown
     // at once when `front`.
     function openTab(path: string, front: bool) {
@@ -635,6 +644,8 @@ FloatingWindow {
             pickerBar.focusName();
         else if (inTrash)
             trashList.focusList();
+        else if (inHome)
+            homePage.forceActiveFocus();
         else
             list.forceActiveFocus();
     }
@@ -774,14 +785,8 @@ FloatingWindow {
         onDriveMenuRequested: (drive, at) => window.openMenu(Menus.forDrive(drive, window.act), window.contentItem, at)
         onTabRequested: path => window.openTab(path, false)
         onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
-        onDriveOpened: (folder, asker) => {
-            const navigator = asker as Navigator;
-            if (!navigator)
-                return;
-            if (navigator === window.navigator)
-                window.spaceView = true;
-            navigator.visit(folder, null);
-        }
+        onPinMenuRequested: (path, at) => pinMenu.open(path, at)
+        onDriveOpened: id => window.openDrive(id)
     }
     FileList {
         id: list
@@ -789,9 +794,10 @@ FloatingWindow {
         anchors.right: details.visible ? details.left : preview.active ? preview.left : parent.right
         compact: details.visible || preview.active
         anchors.top: commands.bottom
-        visible: !window.inTrash && !window.searching
+        visible: !window.inTrash && !window.inHome && !window.searching
         anchors.bottom: pickerLoader.top
-        folder: window.folder
+        // Nothing to read while a page shows.
+        folder: Home.isPage(window.folder) ? "" : window.folder
         select: window.select
         focus: true
         picking: window.picking
@@ -813,6 +819,28 @@ FloatingWindow {
         }
         solid: FilesService.listSolid
         spaceView: window.spaceView
+        // Back from a page (Home, the trash): keys go to the list at once.
+        onVisibleChanged: {
+            if (visible)
+                forceActiveFocus();
+        }
+    }
+    HomePage {
+        id: homePage
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: commands.bottom
+        anchors.bottom: parent.bottom
+        visible: window.inHome
+        navigator: window.navigator
+        solid: FilesService.listSolid
+        onPinMenuRequested: (path, at) => pinMenu.open(path, at)
+        onDriveMenuRequested: (drive, at) => window.openMenu(Menus.forDrive(drive, window.act), window.contentItem, at)
+        onVisibleChanged: {
+            if (visible)
+                forceActiveFocus();
+        }
+        onDriveOpened: id => window.openDrive(id)
     }
     SearchResults {
         id: results
@@ -1011,6 +1039,10 @@ FloatingWindow {
     }
     EjectProblem {
         id: ejectProblem
+        anchors.fill: parent
+    }
+    PinMenu {
+        id: pinMenu
         anchors.fill: parent
     }
 }

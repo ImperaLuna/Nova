@@ -119,6 +119,8 @@ Singleton {
     signal filesMeasured(var measured)
     // Something in the trash changed, in Nova Files or another app.
     signal filesTrashChanged
+    // A folder was pinned to Nova Files' Quick access or unpinned.
+    signal filesPlacesChanged
     // novad's index of file names is built: searches can be asked again.
     signal filesSearchReady
     // A file picker window's app stopped asking: the window closes.
@@ -237,6 +239,8 @@ Singleton {
             filesMeasured(msg.data);
         } else if (msg.event === Protocol.EVENT_FILES_TRASH_CHANGED) {
             filesTrashChanged();
+        } else if (msg.event === Protocol.EVENT_FILES_PLACES_CHANGED) {
+            filesPlacesChanged();
         } else if (msg.event === Protocol.EVENT_FILES_SEARCH_READY) {
             filesSearchReady();
         } else if (msg.event === Protocol.EVENT_FILES_PICKER_CLOSED) {

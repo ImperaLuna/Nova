@@ -1,6 +1,7 @@
 //! `nova files [path]...`: opens a Nova Files window on each path. A folder
 //! opens itself, a file opens the folder holding it with the file selected,
-//! and no path opens the home folder. It's what Nova Files' desktop entry
+//! and no path opens the Home page (Quick access, the drives and recent
+//! files). It's what Nova Files' desktop entry
 //! runs, so it's the default file manager's command too.
 //!
 //! Paths are made absolute here, against this command's folder, since
@@ -10,20 +11,22 @@
 //! (`nova_protocol::wire_text`), so any name opens, UTF-8 or not.
 
 use crate::client::Client;
-use nova_protocol::{Command, wire_text};
+use nova_protocol::{Command, FILES_HOME_PLACE, wire_text};
 use std::path::{Component, Path, PathBuf};
 
 #[derive(clap::Args)]
 pub struct FilesArgs {
-    /// Folders to open, or files to show in their folder. The home folder
+    /// Folders to open, or files to show in their folder. The Home page
     /// when none is given.
     paths: Vec<PathBuf>,
 }
 
 pub fn run(args: &FilesArgs, socket: &Path) -> Result<(), String> {
-    let home = || nova_paths::home().ok_or_else(|| "can't tell the home folder: HOME isn't set".to_string());
-    let paths = if args.paths.is_empty() { vec![home()?] } else { args.paths.clone() };
-    let commands = paths.iter().map(|path| show(path)).collect::<Result<Vec<_>, _>>()?;
+    let commands = if args.paths.is_empty() {
+        vec![Command::ShowFolder { folder: FILES_HOME_PLACE.into(), select: Vec::new() }]
+    } else {
+        args.paths.iter().map(|path| show(path)).collect::<Result<Vec<_>, _>>()?
+    };
     let mut client = Client::connect(socket)?;
     for command in commands {
         client.request(command)?;

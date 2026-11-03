@@ -9,16 +9,15 @@ import "space.js" as Space
 // while the window is open (a stick plugged in) arrives with an animation.
 // `folder` is the window's, so the drive it's on shows as current; when
 // that drive goes away (ejected from any window, or pulled), `driveGone` says
-// the window should go elsewhere. A drive clicked opens once it's mounted,
-// in the tab (`asker`, the window's Navigator then) it was clicked in.
+// the window should go elsewhere. A drive clicked is opened by the window
+// (`opened`), in the tab it shows.
 Column {
     id: drives
 
     property string folder: ""
-    // Who's asking when a drive is clicked: handed back with `opened`.
-    property var asker: null
 
-    signal opened(string folder, var asker)
+    // The drive `id` was clicked: open it (Navigator.openDrive).
+    signal opened(string id)
     signal menuRequested(var drive, point at)
     signal driveGone
     // Files dropped on a drive: `action` (a Protocol.TRANSFER_* mode or Drops.TRASH) on `sources` into
@@ -32,17 +31,6 @@ Column {
 
     // The mounted drive the folder is on.
     readonly property var current: Space.driveOf(FilesService.drives, folder)
-    // Mounts drive `id` and opens it. Here, not in its row: rows are made
-    // again when the list changes (as the mount does), and a callback of a
-    // row gone would never run.
-    function open(id: string) {
-        const asking = asker;
-        FilesService.mount(id, mounted => {
-            if (mounted !== null)
-                drives.opened(mounted, asking);
-        });
-    }
-
     // Where the drive the folder is on was mounted, before the latest list.
     property string heldMount: ""
 
@@ -71,7 +59,7 @@ Column {
             current: modelData.id === (drives.current?.id ?? "")
             arrived: drives.listed && !(modelData.id in drives.seen)
             Component.onCompleted: drives.seen[modelData.id] = true
-            onOpened: drives.open(modelData.id)
+            onOpened: drives.opened(modelData.id)
             onMenuRequested: at => drives.menuRequested(modelData, at)
             onDropRequested: (action, sources, folder) => drives.dropRequested(action, sources, folder)
         }

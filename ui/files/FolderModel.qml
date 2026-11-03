@@ -7,9 +7,10 @@ import "listing.js" as Listing
 // its entries in the view's order, filled page by page and kept current
 // from novad's changes, and opened again whenever `path`, the order,
 // `hidden` or `filter` (a file picker's: only the files it matches) change,
-// or novad comes back. The selection lives here too, by
-// name, so it stays on the same entries as rows come and go or the order
-// changes; `revision` moves on each change of it, for delegates to bind to.
+// or novad comes back; no `path` (a page shows) reads nothing. The
+// selection lives here too, by name, so it stays on the same entries as
+// rows come and go or the order changes; `revision` moves on each change
+// of it, for delegates to bind to.
 QtObject {
     id: folder
 
@@ -144,7 +145,8 @@ QtObject {
     }
 
     function _open() {
-        if (!_wanted || !FilesService.connected)
+        // No path: the window shows a page, not a folder.
+        if (!_wanted || !FilesService.connected || path === "")
             return;
         error = "";
         const opening = ++_opening;
@@ -269,6 +271,8 @@ QtObject {
     // under the new path while it's read.
     onPathChanged: {
         _clear();
+        if (path === "" && view !== 0 && FilesService.connected)
+            FilesService.close(view);
         _open();
     }
     onSortChanged: _open()

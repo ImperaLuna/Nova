@@ -9,7 +9,9 @@ import "../trash.js" as Trash
 // Nova Files' link to novad: the windows it asks for, the folders they
 // show (folder views: each FolderModel opens one under its own number and
 // gets its pages, changes and closing here), the sidebar's tree and
-// places, the drives (and mounting and ejecting them), opening files in
+// places (the Home page, Quick access and the trash, read again whenever
+// a folder is pinned or unpinned), recent files for the Home page, the
+// drives (and mounting and ejecting them), opening files in
 // apps (the default one on a double-click or Enter, or one from "Open
 // with", which can also become the new default), copy and move jobs, the
 // trash, finding files by name, new folders, renaming, an item's details, the Properties
@@ -36,6 +38,13 @@ Singleton {
     // mount (absent while it isn't mounted), size, used (bytes, while
     // mounted)}.
     readonly property var drives: Daemon.filesDrives
+    // The sidebar's places, in its order ({kind, path, name}): the Home
+    // page, the folders pinned to Quick access, the trash. Empty until
+    // novad answers.
+    property var places: []
+    // Which read `places` shows, so a late answer to an earlier one is
+    // dropped.
+    property int _readingPlaces: 0
 
     // A window to open on `window.folder`, with `window.select` (absolute
     // paths in it, maybe none) selected.
@@ -201,13 +210,39 @@ Singleton {
         }, (error, result) => done(error ?? null, result ?? null));
     }
 
-    // `done(places)` gets the sidebar's places that exist, in order, each
-    // {kind, path}; none when novad couldn't tell.
-    function places(done: var) {
+    // Reads `places` again; a failed read keeps what's there.
+    function refreshPlaces() {
+        const reading = ++_readingPlaces;
         Daemon.call(Protocol.CMD_FILES_PLACES, undefined, (error, result) => {
+            // An answer to an earlier read, finishing late, is dropped.
+            if (reading !== root._readingPlaces)
+                return;
             if (error)
                 console.warn(`nova: sidebar places: ${error}`);
-            done(error ? [] : result);
+            else
+                root.places = result;
+        });
+    }
+
+    // Pins the folder at `path` (absolute) to Quick access, or unpins it;
+    // `places` follows once novad says it changed.
+    function pin(path: string, pinned: bool) {
+        Daemon.call(Protocol.CMD_FILES_PIN, {
+            path: path,
+            pinned: pinned
+        }, error => {
+            if (error)
+                console.warn(`nova: ${pinned ? "pinning" : "unpinning"} ${path}: ${error}`);
+        });
+    }
+
+    // `done(files)` gets the files used last, by any app, the latest first,
+    // each {folder, used_ms, entry}; null when novad couldn't tell.
+    function recent(done: var) {
+        Daemon.call(Protocol.CMD_FILES_RECENT, undefined, (error, result) => {
+            if (error)
+                console.warn(`nova: recent files: ${error}`);
+            done(error ? null : result);
         });
     }
 
@@ -539,13 +574,17 @@ Singleton {
         function onFilesTrashChanged() {
             root.trashChanged();
         }
+        function onFilesPlacesChanged() {
+            root.refreshPlaces();
+        }
         function onFilesPickerClosed(picker: int) {
             root.pickerClosed(picker);
         }
         function onConnectedChanged() {
-            if (Daemon.connected)
+            if (Daemon.connected) {
                 root.attach();
-            else
+                root.refreshPlaces();
+            } else
                 root.transfersLost();
         }
     }

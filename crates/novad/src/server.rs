@@ -363,6 +363,11 @@ impl<'a> Connection<'a> {
                 });
             }
             Command::FilesPlaces => return self.files_later(|files| Ok(files.places())),
+            Command::FilesPin { path, pinned } => {
+                let (path, pinned) = (path.clone(), *pinned);
+                return self.files_later(move |files| files.pin(&path, pinned));
+            }
+            Command::FilesRecent => return self.files_later(|files| files.recent()),
             Command::FilesDrop { sources, folder, copy } => {
                 let (sources, folder, copy) = (sources.clone(), folder.clone(), *copy);
                 return self.files_later(move |_| crate::files::drop_mode(&sources, &folder, copy));
@@ -1041,7 +1046,7 @@ impl<'a> Connection<'a> {
             | Command::FilesNewFolder { .. }
             | Command::FilesRename { .. }
             | Command::FilesDetails { .. } => {}
-            Command::FilesTree { .. } | Command::FilesPlaces => {}
+            Command::FilesTree { .. } | Command::FilesPlaces | Command::FilesPin { .. } | Command::FilesRecent => {}
         }
     }
 

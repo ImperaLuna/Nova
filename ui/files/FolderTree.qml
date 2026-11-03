@@ -9,8 +9,10 @@ import "paths.js" as Paths
 
 // The sidebar's folder tree, as novad lays it out for the window
 // (files_tree): open down to the window's folder, which is marked and
-// kept in view, with hidden folders dimmer. A row's chevron opens or
-// closes it; a click elsewhere on the row goes there, a middle click asks
+// kept in view, with hidden folders dimmer. The top is the home folder,
+// by its own name (Home is the Home page). A row's chevron opens or
+// closes it; a click elsewhere on the row goes there, a right-click
+// asks for its menu (pinning it to Quick access), and a middle click asks
 // for it in a new tab (`tabRequested`). Rows that come slide in one after
 // another, the others move to make room. A folder below the top
 // drags out (`dragRequested`); while a drag is over the tree, the folder a
@@ -29,6 +31,9 @@ ListView {
     // how many came before them; rows created by scrolling just show.
     property bool arriving: false
     property int arrivals: 0
+
+    // The menu of the folder `path` was asked for at `at` (in the window).
+    signal menuRequested(string path, point at)
 
     // The place under (x, y) in the tree's own coordinates, for a
     // DropTarget: a closed folder with folders in it opens by resting on it.
@@ -184,7 +189,7 @@ ListView {
                 font.weight: item.current ? Tokens.weightLabel : Tokens.weightBody
                 color: item.hidden ? Tokens.filesFaint : Tokens.fg
                 textFormat: Text.PlainText
-                text: item.home ? qsTr("Home") : Paths.shown(item.name)
+                text: Paths.shown(item.name)
             }
         }
 
@@ -211,6 +216,10 @@ ListView {
                 else
                     tree.navigator.visit(item.path, null);
             }
+        }
+        TapHandler {
+            acceptedButtons: Qt.RightButton
+            onTapped: point => tree.menuRequested(item.path, item.mapToItem(null, point.position))
         }
         TapHandler {
             acceptedButtons: Qt.MiddleButton
