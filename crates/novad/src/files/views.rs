@@ -261,6 +261,8 @@ impl Worker {
     /// `why` its subfolders are counted: `Changed` when what the path
     /// names may have changed.
     fn send_all(&self, why: Why) -> bool {
+        // No size is sent against the old list while the new one's pages go.
+        lock(&self.view.state).listing = None;
         let read =
             folder::read_folder(&self.view.path, self.view.hidden, &self.mime.current(), || !self.view.is_open());
         let entries = match read {
