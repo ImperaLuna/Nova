@@ -152,6 +152,9 @@ impl Run {
     fn walk(&mut self, top: &Path, device: u64) -> bool {
         let mut folders = vec![top.to_path_buf()];
         while let Some(folder) = folders.pop() {
+            if self.stopped() {
+                return false;
+            }
             let Ok(entries) = fs::read_dir(&folder) else { continue };
             for entry in entries {
                 if self.stopped() {

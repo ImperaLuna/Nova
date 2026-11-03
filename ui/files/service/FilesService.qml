@@ -280,15 +280,18 @@ Singleton {
     }
 
     // Counts what `paths` (absolute, fitting one request) hold. Returns
-    // the job's number, which its `measured` events carry.
-    function measure(paths: var): int {
+    // the job's number, which its `measured` events carry;
+    // `failed(job)` hears when novad refuses to start it.
+    function measure(paths: var, failed: var): int {
         const job = newJob();
         Daemon.call(Protocol.CMD_FILES_MEASURE, {
             job: job,
             paths: paths
         }, error => {
-            if (error)
+            if (error) {
                 console.warn(`nova: counting sizes: ${error}`);
+                failed?.(job);
+            }
         });
         return job;
     }
