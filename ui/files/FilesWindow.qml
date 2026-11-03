@@ -404,6 +404,9 @@ FloatingWindow {
         id: propertiesDialog
         anchors.centerIn: parent
         visible: propertiesModel.subject !== null
+        width: Math.min(implicitWidth, window.width - 2 * Tokens.filesOverlayInset)
+        height: implicitHeight
+        maxHeight: window.height - 2 * Tokens.filesOverlayInset
         subject: propertiesModel.subject ?? Props.subject(window.folder, [], null)
         properties: propertiesModel.properties
         counted: propertiesModel.counted
