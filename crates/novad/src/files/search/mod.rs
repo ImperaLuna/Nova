@@ -35,7 +35,9 @@ use crate::logger::Logger;
 use crate::mime::Mime;
 use index::Index;
 use matching::Query;
-use nova_protocol::{FILES_SEARCH_MAX_CHARS, FILES_SEARCH_MAX_RESULTS, FileSearch, FoundFile, wire_path, wire_text};
+use nova_protocol::{
+    FILES_PATH_MAX_BYTES, FILES_SEARCH_MAX_CHARS, FILES_SEARCH_MAX_RESULTS, FileSearch, FoundFile, wire_path, wire_text,
+};
 use roots::Mounts;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -125,17 +127,21 @@ impl Search {
 }
 
 impl Searcher {
-    /// The files whose names hold every word of `text`.
-    pub fn search(&self, text: &str) -> Result<FileSearch, String> {
+    /// The files whose names hold every word of `text`, below the folder
+    /// `within` (absolute, wire text) when it's given.
+    pub fn search(&self, text: &str, within: Option<&str>) -> Result<FileSearch, String> {
         if text.chars().count() > FILES_SEARCH_MAX_CHARS {
             return Err(format!("Searches are at most {FILES_SEARCH_MAX_CHARS} characters"));
+        }
+        if within.is_some_and(|folder| folder.len() > FILES_PATH_MAX_BYTES || !folder.starts_with('/')) {
+            return Err("A search's folder is an absolute path".into());
         }
         let held = self.0.index.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let ready = held.is_some();
         let (Some(index), Some(query)) = (held.as_ref(), Query::parse(text)) else {
             return Ok(FileSearch { ready, total: 0, results: Vec::new() });
         };
-        let (hits, total) = index.search(&query, FILES_SEARCH_MAX_RESULTS);
+        let (hits, total) = index.search(&query, within, FILES_SEARCH_MAX_RESULTS);
         drop(held);
         let mime = self.0.mime.current();
         let results = hits
@@ -366,7 +372,7 @@ mod tests {
         }
 
         fn find(&self, query: &str) -> FileSearch {
-            self.search.searcher().search(query).unwrap()
+            self.search.searcher().search(query, None).unwrap()
         }
 
         /// The paths found, under Home.
@@ -411,7 +417,8 @@ mod tests {
         assert_eq!(exe.marks, [TextMark { start: 0, length: 7 }, TextMark { start: 7, length: 6 }]);
         assert!(found.results[0].entry.dir);
         assert!(fixture.find("   ").results.is_empty());
-        assert!(fixture.search.searcher().search(&"x".repeat(FILES_SEARCH_MAX_CHARS + 1)).is_err());
+        assert!(fixture.search.searcher().search(&"x".repeat(FILES_SEARCH_MAX_CHARS + 1), None).is_err());
+        assert!(fixture.search.searcher().search("x", Some("relative/folder")).is_err());
     }
 
     #[test]

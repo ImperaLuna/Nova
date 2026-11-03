@@ -15,7 +15,8 @@
 //! A search ([`Index::search`]) checks every name and keeps the best
 //! [`Index::search`]'s `limit` in a heap, ranked by how well the name fits
 //! ([`Fit`]), then names outside hidden folders first, then shorter names,
-//! then the order they were found in.
+//! then the order they were found in. A search below a folder walks only
+//! that folder's entries.
 
 use super::matching::{Fit, Query};
 use nova_protocol::{wire_path, wire_text};
@@ -163,33 +164,64 @@ impl Index {
     }
 
     /// The names that fit `query`, at most `limit` of them, best first,
-    /// and how many fit in all.
-    pub fn search(&self, query: &Query, limit: usize) -> (Vec<Hit>, usize) {
-        let mut best: BinaryHeap<(Fit, bool, u16, Id)> = BinaryHeap::with_capacity(limit + 1);
-        let mut total = 0;
-        for (id, node) in (0..).zip(&self.nodes) {
-            if node.flags & (ROOT | FREE) != 0 {
-                continue;
+    /// and how many fit in all. With `within` (an absolute path, wire
+    /// text), only names below that folder count, and hidden means hidden
+    /// below it: inside a dot folder, every result isn't dimmer.
+    pub fn search(&self, query: &Query, within: Option<&str>, limit: usize) -> (Vec<Hit>, usize) {
+        let mut best = Best { query, limit, heap: BinaryHeap::with_capacity(limit + 1), total: 0 };
+        match within {
+            None => {
+                for (id, node) in (0..).zip(&self.nodes) {
+                    if node.flags & (ROOT | FREE) == 0 {
+                        let in_hidden_folder = self.nodes[node.parent as usize].flags & HIDDEN != 0;
+                        best.consider(self.name(id), id, node, node.flags & HIDDEN != 0, in_hidden_folder);
+                    }
+                }
             }
-            let Some(fit) = query.fit(self.name(id), node.flags & ASCII != 0) else { continue };
-            total += 1;
-            let key = (fit, node.flags & HIDDEN != 0, node.name_len, id);
-            if best.len() < limit {
-                best.push(key);
-            } else if best.peek().is_some_and(|worst| key < *worst) {
-                best.pop();
-                best.push(key);
+            Some(folder) => {
+                // Each sibling run waiting, with whether a folder above it,
+                // below `within`, is hidden.
+                let mut runs: Vec<(Id, bool)> = self
+                    .scope(&wire_path(folder))
+                    .into_iter()
+                    .map(|id| (self.nodes[id as usize].first_child, false))
+                    .collect();
+                while let Some((mut at, in_hidden_folder)) = runs.pop() {
+                    while at != NONE {
+                        let node = &self.nodes[at as usize];
+                        let name = self.name(at);
+                        let hidden = in_hidden_folder || name.starts_with('.');
+                        best.consider(name, at, node, hidden, in_hidden_folder);
+                        if node.first_child != NONE {
+                            runs.push((node.first_child, hidden));
+                        }
+                        at = node.next_sibling;
+                    }
+                }
             }
         }
-        let hits = best.into_sorted_vec().into_iter().map(|(.., id)| self.hit(id)).collect();
-        (hits, total)
+        let hits = best
+            .heap
+            .into_sorted_vec()
+            .into_iter()
+            .map(|(.., id, in_hidden_folder)| self.hit(id, in_hidden_folder))
+            .collect();
+        (hits, best.total)
     }
 
-    fn hit(&self, id: Id) -> Hit {
+    /// The folders whose entries are below `folder`: the indexed folder
+    /// itself, or the roots inside it (a search from `/` or `/run/media`).
+    fn scope(&self, folder: &Path) -> Vec<Id> {
+        match self.find(folder) {
+            Some(id) if self.nodes[id as usize].flags & DIR != 0 => vec![id],
+            Some(_) => Vec::new(),
+            None => self.roots.iter().copied().filter(|&root| wire_path(self.name(root)).starts_with(folder)).collect(),
+        }
+    }
+
+    fn hit(&self, id: Id, in_hidden_folder: bool) -> Hit {
         let mut folders = Vec::new();
-        let parent = self.nodes[id as usize].parent;
-        let in_hidden_folder = self.nodes[parent as usize].flags & HIDDEN != 0;
-        let mut at = parent;
+        let mut at = self.nodes[id as usize].parent;
         while at != NONE {
             folders.push(self.name(at));
             at = self.nodes[at as usize].parent;
@@ -256,12 +288,36 @@ impl Index {
     }
 }
 
+/// A search's best names so far: a heap whose top is the worst kept,
+/// ranked by fit, then hidden last, then shorter names, then the order
+/// found; each with whether a folder it's in is hidden.
+struct Best<'q> {
+    query: &'q Query,
+    limit: usize,
+    heap: BinaryHeap<(Fit, bool, u16, Id, bool)>,
+    total: usize,
+}
+
+impl Best<'_> {
+    fn consider(&mut self, name: &str, id: Id, node: &Node, hidden: bool, in_hidden_folder: bool) {
+        let Some(fit) = self.query.fit(name, node.flags & ASCII != 0) else { return };
+        self.total += 1;
+        let key = (fit, hidden, node.name_len, id, in_hidden_folder);
+        if self.heap.len() < self.limit {
+            self.heap.push(key);
+        } else if self.heap.peek().is_some_and(|worst| key < *worst) {
+            self.heap.pop();
+            self.heap.push(key);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn found(index: &Index, query: &str) -> Vec<String> {
-        let (hits, _) = index.search(&Query::parse(query).unwrap(), 10);
+        let (hits, _) = index.search(&Query::parse(query).unwrap(), None, 10);
         hits.iter().map(|hit| format!("{}/{}", hit.folder, hit.name)).collect()
     }
 
@@ -289,7 +345,7 @@ mod tests {
                 "/home/me/.local/Steam/Crimson Desert/CrimsonDesert.exe",
             ]
         );
-        let (hits, total) = index.search(&Query::parse("desert").unwrap(), 10);
+        let (hits, total) = index.search(&Query::parse("desert").unwrap(), None, 10);
         assert_eq!(total, 3);
         assert_eq!(hits.iter().map(|hit| hit.in_hidden_folder).collect::<Vec<_>>(), [false, true, true]);
     }
@@ -301,7 +357,7 @@ mod tests {
         for name in ["steamapps", "my steam", "Steam", "steam.sh", "nothing"] {
             index.add(root, name, false);
         }
-        let (hits, total) = index.search(&Query::parse("steam").unwrap(), 2);
+        let (hits, total) = index.search(&Query::parse("steam").unwrap(), None, 2);
         assert_eq!(total, 4);
         assert_eq!(hits.iter().map(|hit| hit.name.as_str()).collect::<Vec<_>>(), ["Steam", "steam.sh"]);
     }
@@ -328,6 +384,52 @@ mod tests {
         let first = index.add(home, "notes.txt", false);
         assert_eq!(index.add(home, "notes.txt", false), first);
         assert_eq!(found(&index, "notes"), ["/home/me/notes.txt"]);
+    }
+
+    fn found_within(index: &Index, query: &str, within: &str) -> Vec<(String, bool)> {
+        let (hits, total) = index.search(&Query::parse(query).unwrap(), Some(within), 10);
+        assert_eq!(total, hits.len());
+        hits.iter().map(|hit| (format!("{}/{}", hit.folder, hit.name), hit.in_hidden_folder)).collect()
+    }
+
+    #[test]
+    fn a_search_within_a_folder_finds_only_what_is_below_it() {
+        let index = home();
+        assert_eq!(
+            found_within(&index, "crimson", "/home/me/Pictures"),
+            [("/home/me/Pictures/crimson-desert-key-art.jpg".to_owned(), false)]
+        );
+        assert!(found_within(&index, "pictures", "/home/me/Pictures").is_empty(), "the folder itself isn't below it");
+        assert_eq!(found_within(&index, "crimson", "/home/me").len(), 3, "a root is searched whole");
+        assert!(
+            found_within(&index, "crimson", "/home/me/Pictures/crimson-desert-key-art.jpg").is_empty(),
+            "a file holds nothing"
+        );
+        assert!(found_within(&index, "crimson", "/etc").is_empty(), "a folder the index doesn't hold");
+    }
+
+    #[test]
+    fn inside_a_hidden_folder_its_entries_are_not_hidden() {
+        let index = home();
+        assert_eq!(
+            found_within(&index, "crimson", "/home/me/.local"),
+            [
+                ("/home/me/.local/Steam/Crimson Desert".to_owned(), false),
+                ("/home/me/.local/Steam/Crimson Desert/CrimsonDesert.exe".to_owned(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_folder_above_the_roots_searches_the_roots_inside_it() {
+        let mut index = home();
+        let stick = index.add_root(Path::new("/run/media/me/SANDISK"));
+        index.add(stick, "crimson-backup.zip", false);
+        let names =
+            |within| found_within(&index, "crimson", within).into_iter().map(|(path, _)| path).collect::<Vec<_>>();
+        assert_eq!(names("/run/media"), ["/run/media/me/SANDISK/crimson-backup.zip"]);
+        assert_eq!(names("/").len(), 4);
+        assert!(names("/run/med").is_empty(), "a path a root only starts with doesn't hold it");
     }
 
     #[test]
