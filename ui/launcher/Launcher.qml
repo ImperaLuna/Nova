@@ -16,9 +16,9 @@ import "../files/paths.js" as Paths
 // list, Enter launches (focusing an open app's window where it is;
 // Shift+Enter opens another), Esc or a click outside closes. Opened by
 // `nova toggle launcher` (Super+Space) or the central pill's search button.
-// With Nova Files on, tabs in the field switch to the Files mode (or
-// Ctrl+Tab, or typing `~` or `/` first): files found by name, or a typed
-// path's folder, whose completion shows grey and Tab takes; Enter opens a
+// With Nova Files on, tabs in the field switch to the Files mode (or Tab,
+// or typing `~` or `/` first): files found by name, or a typed path's
+// folder, whose completion shows grey and Tab takes; Enter opens a
 // file in its app or a folder in Nova Files, Shift+Enter shows it in its
 // folder.
 // It gets its data and acts through its properties and signals (the stage
@@ -251,14 +251,16 @@ StagePanel {
         case Qt.Key_Escape:
             open = false;
             return true;
-        // Tab stays in the field: Ctrl+Tab switches modes, Tab fills in the
-        // selected file's path (the grey completion, while a path is typed).
+        // Tab stays in the field and switches modes (Shift+Tab and Ctrl+Tab
+        // too). While a path is typed, plain Tab completes it instead, as a
+        // shell's would: it takes the grey completion when there is one.
         case Qt.Key_Tab:
         case Qt.Key_Backtab:
-            if ((modifiers & Qt.ControlModifier) !== 0)
+            if (key === Qt.Key_Tab && (modifiers & Qt.ControlModifier) === 0 && inFiles && LauncherLogic.typesPath(query)) {
+                if (completion !== "")
+                    field.text = rows[selected].file.completion;
+            } else
                 setMode(inFiles ? Protocol.PROVIDER_APPS : Protocol.PROVIDER_FILES);
-            else if (inFiles && matchesFor === query && rows[selected]?.file)
-                field.text = rows[selected].file.completion;
             return true;
         }
         return false;
