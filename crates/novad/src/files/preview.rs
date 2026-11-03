@@ -69,11 +69,12 @@ impl Previews {
         let file = clean(path)?;
         let db = self.mime.current();
         let mime = db.type_of(&file).map_err(|e| format!("can't read {}: {e}", file.display()))?;
-        Ok(match Kind::of(&db, &mime) {
+        let kind = Kind::of(&db, &mime);
+        Ok(match kind {
             Kind::Image => FilePreview::Image { path: wire_text(&file) },
             Kind::Text => text(&file).map_err(|e| format!("can't read {}: {e}", file.display()))?,
             Kind::Pdf | Kind::Video => {
-                let drawn = self.pictures.as_ref().and_then(|pictures| pictures.picture(&file, Kind::of(&db, &mime)));
+                let drawn = self.pictures.as_ref().and_then(|pictures| pictures.picture(&file, kind));
                 drawn.map_or(FilePreview::None, |picture| FilePreview::Image { path: wire_text(picture) })
             }
             Kind::Other => FilePreview::None,
