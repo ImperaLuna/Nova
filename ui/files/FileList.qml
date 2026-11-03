@@ -51,7 +51,8 @@ FocusScope {
     // A table action that is the window's (Backspace's "back", Ctrl+Z's
     // "undo", Ctrl+Y's "redo").
     signal actionRequested(string action)
-    // A drop asks for `action` (Drops.decide) on `sources` into `folder`.
+    // A drop asks for `action` (a Protocol.TRANSFER_* mode or Drops.TRASH)
+    // on `sources` into `folder`.
     signal dropRequested(string action, var sources, string folder)
 
     readonly property real nameWidth: headerRow.width - Tokens.filesColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
@@ -69,6 +70,9 @@ FocusScope {
             key: Protocol.FILE_SORT_SIZE
         }
     ]
+
+    // The last press was on a selected row: the click picks, not the press.
+    property bool pickOnClick: false
 
     // The row the list opens at while the rows ease in after a folder's
     // entries came in (they ripple out from it), or -1 once they have.
@@ -255,15 +259,16 @@ FocusScope {
             onPressed: modifiers => {
                 entryList.forceActiveFocus();
                 entryList.currentIndex = row.index;
-                const plain = (modifiers & (Qt.ControlModifier | Qt.ShiftModifier)) === 0;
-                // A selected row pressed plainly may start dragging the
-                // whole selection: the click (below) narrows it.
-                if (!(plain && row.selected))
+                // A selected row pressed without Shift may start dragging
+                // the whole selection: what the press picks waits for the
+                // click (below), Ctrl's toggle too.
+                list.pickOnClick = row.selected && (modifiers & Qt.ShiftModifier) === 0;
+                if (!list.pickOnClick)
                     list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
             }
             onClicked: modifiers => {
-                if ((modifiers & (Qt.ControlModifier | Qt.ShiftModifier)) === 0)
-                    list.model.select(Listing.pick(list.model.anchor, row.index, false, false));
+                if (list.pickOnClick)
+                    list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, false));
             }
             onDragRequested: {
                 const grabbed = list.model.rows.get(row.index);

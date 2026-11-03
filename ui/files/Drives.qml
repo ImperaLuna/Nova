@@ -17,7 +17,7 @@ Column {
     signal opened(string folder)
     signal menuRequested(var drive, point at)
     signal driveGone
-    // Files dropped on a drive: `action` (Drops.decide) on `sources` into
+    // Files dropped on a drive: `action` (a Protocol.TRANSFER_* mode or Drops.TRASH) on `sources` into
     // `folder`.
     signal dropRequested(string action, var sources, string folder)
 
