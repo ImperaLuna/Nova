@@ -215,8 +215,16 @@ StagePanel {
         radius: launcher.radius
     }
 
-    // Laid out at full size and scaled with the deck as it fades in.
+    // Laid out at full size and scaled with the deck as it fades in. Closed,
+    // it stays laid out under the center surface, so it takes no clicks then:
+    // they belong to the panel open there (a closed row used to launch its
+    // app). The search field takes the keyboard once it's enabled again.
     Item {
+        enabled: launcher.open
+        onEnabledChanged: {
+            if (enabled)
+                field.forceActiveFocus();
+        }
         width: Tokens.launcherWidth
         height: launcher.shownHeight
         scale: launcher.grow
