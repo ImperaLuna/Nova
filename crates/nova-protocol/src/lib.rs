@@ -2085,8 +2085,9 @@ pub const FILES_PREVIEW_MAX_LINES: usize = 200;
 pub const FILES_PREVIEW_MAX_BYTES: usize = 16 * 1024;
 
 /// How wide and tall, at most, the pictures novad draws for the preview
-/// pane are, in pixels: the pane's widest at twice the scale.
-pub const FILES_PREVIEW_PICTURE_PX: u32 = 1024;
+/// pane are, and the UI decodes them at, in pixels: its 300-wide pane at
+/// twice the scale.
+pub const FILES_PREVIEW_PICTURE_PX: u32 = 600;
 
 /// A drive in Nova Files' sidebar ([`Event::FilesDrives`]): one
 /// filesystem, on a disk inside the machine or a USB stick.

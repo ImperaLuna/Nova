@@ -148,6 +148,7 @@ FloatingWindow {
     }
     Shortcut {
         sequence: "Alt+P"
+        enabled: !window.inTrash
         onActivated: window.previewShown = !window.previewShown
     }
     TapHandler {

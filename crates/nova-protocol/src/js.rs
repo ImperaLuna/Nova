@@ -125,7 +125,7 @@ fn groups(features: &Path) -> Vec<Group> {
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 13] {
+fn limits() -> [(&'static str, u64, &'static str); 14] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
@@ -137,6 +137,11 @@ fn limits() -> [(&'static str, u64, &'static str); 13] {
         ("FILES_SEARCH_MAX_CHARS", size(FILES_SEARCH_MAX_CHARS), "novad refuses longer files_search queries."),
         ("FILES_SEARCH_MAX_RESULTS", size(FILES_SEARCH_MAX_RESULTS), "Most results a files_search answers with."),
         ("FILES_SOLID_MAX", u64::from(FILES_SOLID_MAX), "A files_look part this high is fully solid; 0 is glass."),
+        (
+            "FILES_PREVIEW_PICTURE_PX",
+            u64::from(FILES_PREVIEW_PICTURE_PX),
+            "How wide and tall, at most, preview pictures are drawn and decoded.",
+        ),
         (
             "FILES_TREE_MAX_FOLDERS",
             size(FILES_TREE_MAX_FOLDERS),

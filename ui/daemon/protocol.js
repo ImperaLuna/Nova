@@ -36,6 +36,9 @@ var FILES_SEARCH_MAX_RESULTS = 200;
 // A files_look part this high is fully solid; 0 is glass.
 var FILES_SOLID_MAX = 100;
 
+// How wide and tall, at most, preview pictures are drawn and decoded.
+var FILES_PREVIEW_PICTURE_PX = 600;
+
 // novad refuses a files_tree with more opened or closed folders.
 var FILES_TREE_MAX_FOLDERS = 256;
 

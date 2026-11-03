@@ -8,7 +8,8 @@
 //!   first lines ([`text`]);
 //! - a PDF's first page (`pdftoppm`, from poppler) and a still from a video
 //!   (`ffmpeg`'s thumbnail filter, which picks a telling frame near the
-//!   start) are drawn once into the cache folder ([`Pictures`]);
+//!   start) are drawn once into the cache folder ([`Pictures`]), one at a
+//!   time and only for the latest file asked about;
 //! - anything else, or a picture whose program isn't installed or fails,
 //!   is [`FilePreview::None`], and the pane shows what the file is.
 
@@ -19,7 +20,8 @@ use crate::mime::{Mime, MimeDb};
 use nova_protocol::{
     FILES_PREVIEW_MAX_BYTES, FILES_PREVIEW_MAX_LINES, FILES_PREVIEW_PICTURE_PX, FilePreview, wire_text,
 };
-use std::hash::{Hash, Hasher};
+use sha1::Digest;
+use std::collections::HashSet;
 use std::io::Read;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -36,7 +38,11 @@ const VIDEO_PROGRAM: &str = "ffmpeg";
 /// rather than hold a thread.
 const DRAW_TIMEOUT: Duration = Duration::from_secs(10);
 /// Most pictures the cache keeps; past it, the least recently shown go.
+/// As many files that couldn't be drawn are remembered, so a broken one
+/// doesn't hold up the others each time it's selected.
 const CACHE_KEEP: usize = 500;
+/// How many bytes of the file's digest name its picture.
+const CACHE_NAME_BYTES: usize = 8;
 /// The PDF type, and the start of every image's and video's.
 const PDF: &str = "application/pdf";
 const IMAGE_PREFIX: &str = "image/";
@@ -58,6 +64,8 @@ impl Previews {
             path_var: path_var.to_string(),
             drawing: Mutex::new(()),
             next_temp: AtomicU64::new(0),
+            latest: AtomicU64::new(0),
+            failed: Mutex::default(),
         });
         Self { mime, pictures }
     }
@@ -138,13 +146,20 @@ fn text(file: &Path) -> std::io::Result<FilePreview> {
 /// The pictures drawn for PDFs and videos, as PNGs in `folder` named by the
 /// file's path, size and modification time, so a file changed since is
 /// drawn anew. One is drawn at a time, so moving through a folder of PDFs
-/// never starts a crowd of programs; one already drawn is answered at once.
+/// never starts a crowd of programs, and an ask overtaken by a later one
+/// while it waited its turn gives up (the pane only shows the latest); one
+/// already drawn is answered at once.
 struct Pictures {
     folder: PathBuf,
     path_var: String,
     drawing: Mutex<()>,
     /// Numbers the temp files pictures are drawn into.
     next_temp: AtomicU64,
+    /// Numbers the asks to draw, the latest last.
+    latest: AtomicU64,
+    /// The pictures that couldn't be drawn, by name: not tried again until
+    /// the file changes.
+    failed: Mutex<HashSet<String>>,
 }
 
 impl Pictures {
@@ -152,14 +167,23 @@ impl Pictures {
     /// it was before; none when it can't be.
     fn picture(&self, file: &Path, kind: Kind) -> Option<PathBuf> {
         let metadata = std::fs::metadata(file).ok()?;
-        let picture = self.folder.join(format!("{:016x}.{PICTURE_EXTENSION}", cache_key(file, &metadata)));
+        let name = cache_name(file, &metadata);
+        let picture = self.folder.join(format!("{name}.{PICTURE_EXTENSION}"));
         if mark_shown(&picture) {
             return Some(picture);
         }
+        if lock(&self.failed).contains(&name) {
+            return None;
+        }
+        let ask = self.latest.fetch_add(1, Ordering::SeqCst) + 1;
         let _drawing = lock(&self.drawing);
         // Drawn while this one waited its turn.
         if mark_shown(&picture) {
             return Some(picture);
+        }
+        // Another file was asked about since: this one is no longer shown.
+        if self.latest.load(Ordering::SeqCst) != ask {
+            return None;
         }
         std::fs::create_dir_all(&self.folder).ok()?;
         let temp = self.folder.join(format!(
@@ -173,6 +197,12 @@ impl Pictures {
         let _ = std::fs::remove_file(&temp);
         if kept {
             self.trim();
+        } else {
+            let mut failed = lock(&self.failed);
+            if failed.len() >= CACHE_KEEP {
+                failed.clear();
+            }
+            failed.insert(name);
         }
         kept.then_some(picture)
     }
@@ -219,16 +249,19 @@ impl Pictures {
     }
 }
 
-/// What names `file`'s picture in the cache: its path, size and
-/// modification time, and the size pictures are drawn at.
-fn cache_key(file: &Path, metadata: &std::fs::Metadata) -> u64 {
-    let mut hasher = std::hash::DefaultHasher::new();
-    file.hash(&mut hasher);
-    metadata.len().hash(&mut hasher);
-    metadata.mtime().hash(&mut hasher);
-    metadata.mtime_nsec().hash(&mut hasher);
-    FILES_PREVIEW_PICTURE_PX.hash(&mut hasher);
-    hasher.finish()
+/// What names `file`'s picture in the cache, in hex: a digest of its path,
+/// size and modification time, and the size pictures are drawn at, the
+/// same from one build of novad to the next.
+fn cache_name(file: &Path, metadata: &std::fs::Metadata) -> String {
+    use std::os::unix::ffi::OsStrExt;
+    let mut digest = sha1::Sha1::new();
+    digest.update(file.as_os_str().as_bytes());
+    digest.update([0]);
+    for number in [metadata.len(), metadata.mtime().cast_unsigned(), metadata.mtime_nsec().cast_unsigned()] {
+        digest.update(number.to_le_bytes());
+    }
+    digest.update(FILES_PREVIEW_PICTURE_PX.to_le_bytes());
+    digest.finalize()[..CACHE_NAME_BYTES].iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Whether the picture at `picture` exists, marking it shown now so the
@@ -377,6 +410,23 @@ mod tests {
         assert_eq!(fixture.draws(), 3);
         let left: Vec<_> = std::fs::read_dir(fixture.dir.join("cache")).unwrap().flatten().collect();
         assert!(left.iter().all(|entry| !entry.file_name().to_string_lossy().starts_with('.')), "no temp files left");
+    }
+
+    #[test]
+    fn a_file_that_cant_be_drawn_isnt_tried_again_until_it_changes() {
+        let fixture = Fixture::new("failed", &[]);
+        write_program(
+            &fixture.dir.join("bin"),
+            PDF_PROGRAM,
+            &format!("echo tried >> {}\nexit 1", fixture.dir.join("drawn").display()),
+        );
+        let report = fixture.file("report.pdf", b"%PDF-1.7 broken");
+        assert_eq!(fixture.previews.preview(&report).unwrap(), FilePreview::None);
+        assert_eq!(fixture.previews.preview(&report).unwrap(), FilePreview::None);
+        assert_eq!(fixture.draws(), 1, "remembered");
+        std::fs::write(&report, b"%PDF-1.7 mended").unwrap();
+        fixture.previews.preview(&report).unwrap();
+        assert_eq!(fixture.draws(), 2, "changed: tried again");
     }
 
     #[test]

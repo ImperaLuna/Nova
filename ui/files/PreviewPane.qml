@@ -14,7 +14,8 @@ import "preview.js" as Preview
 // once the selection has rested (Tokens.filesPreviewDelay), asking novad
 // (files_preview) off the UI thread: a picture (an image itself, a PDF's
 // first page, a video's still) decoded asynchronously and fitted to the
-// pane, or the first lines of text, scrollable. A folder, a file with
+// pane, or the first lines of text, scrollable from the top. A selected
+// file that changes on disk is previewed anew. A folder, a file with
 // nothing to show and a picture Qt can't read show their icon and name;
 // several selected show how many; nothing selected, nothing. A slow answer
 // gets a spinner; a late answer for a file passed by is dropped
@@ -44,24 +45,30 @@ Item {
         count = model.selectedCount;
         const picked = count === 1 ? model.selectedRows()[0] : null;
         const next = Preview.subject(count, picked ? Listing.copy(picked) : null);
-        const same = next !== null && row !== null && next.name === row.name && next.modified === row.modified && next.size === row.size;
+        // The same file as it was, unless asking about it failed.
+        const same = next !== null && row !== null && preview !== false && next.name === row.name && next.modified === row.modified && next.size === row.size;
         if (same)
             return;
         row = next;
         preview = null;
         slow = false;
         asking++;
-        if (Preview.asks(row))
+        if (Preview.asks(row)) {
             rest.restart();
-        else
+            slowTimer.restart();
+        } else {
             rest.stop();
+            slowTimer.stop();
+        }
     }
 
     function ask() {
         const asked = ++asking;
         FilesService.preview(Paths.child(folder, row.name), answer => {
-            if (asked === pane.asking)
+            if (asked === pane.asking) {
+                slowTimer.stop();
                 pane.preview = answer;
+            }
         });
     }
 
@@ -73,14 +80,21 @@ Item {
             pane.follow();
         }
     }
+    // A row changes in place when its file does.
+    Connections {
+        target: pane.model.rows
+        function onDataChanged() {
+            pane.follow();
+        }
+    }
     Timer {
         id: rest
         interval: Tokens.filesPreviewDelay
         onTriggered: pane.ask()
     }
     Timer {
-        interval: Tokens.filesPreviewSlow
-        running: pane.face === Preview.WAITING && !pane.slow
+        id: slowTimer
+        interval: Tokens.filesPreviewDelay + Tokens.filesPreviewSlow
         onTriggered: pane.slow = true
     }
 
@@ -111,7 +125,7 @@ Item {
             cache: false
             autoTransform: true
             fillMode: Image.PreserveAspectFit
-            sourceSize: Qt.size(Tokens.filesPreviewPicturePx, Tokens.filesPreviewPicturePx)
+            sourceSize: Qt.size(Protocol.FILES_PREVIEW_PICTURE_PX, Protocol.FILES_PREVIEW_PICTURE_PX)
             opacity: pane.face === Preview.IMAGE && status === Image.Ready ? 1 : 0
 
             Behavior on opacity {
@@ -122,6 +136,7 @@ Item {
         }
 
         Flickable {
+            id: scroller
             anchors.fill: parent
             visible: pane.face === Preview.TEXT
             clip: true
@@ -137,6 +152,7 @@ Item {
                 wrapMode: Text.Wrap
                 textFormat: Text.PlainText
                 text: pane.preview?.kind === Protocol.PREVIEW_TEXT ? pane.preview.text : ""
+                onTextChanged: scroller.contentY = 0
             }
         }
 
