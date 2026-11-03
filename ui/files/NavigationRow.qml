@@ -262,8 +262,6 @@ Rectangle {
             }
         }
 
-        border.width: searchField.activeFocus ? Tokens.filesFocusRing : 0
-        border.color: Tokens.primary
         clip: true
 
         LineIcon {

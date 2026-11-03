@@ -16,6 +16,7 @@ Rectangle {
     required property var drive
     property bool current: false
     property bool arrived: false
+    readonly property bool mounted: drive.mount !== undefined
 
     signal opened
     signal menuRequested(point at)

@@ -314,8 +314,9 @@ Item {
                 modified: 5
                 nameWidth: 300
                 columnWidths: Tokens.filesColumns
+                bar: -1
                 selected: true
-                riseOrder: -1
+                riseWait: -1
                 now: 5
             }
         }
