@@ -65,10 +65,7 @@ pub fn unpack(archive: &Path, kind: Kind, into: &Path, progress: &mut dyn FnMut(
         }
         Ok(progress(done.get()))
     })?;
-    if finished {
-        later.finish(into)?;
-    }
-    Ok(finished)
+    Ok(finished && later.finish(into, &mut || progress(done.get()))?)
 }
 
 /// Extracts the one file `inside` names into the folder `into`, readable
@@ -156,12 +153,16 @@ struct Later {
 }
 
 impl Later {
-    fn finish(self, into: &Path) -> io::Result<()> {
+    /// False once `go_on` stops it, which is asked before each hard link.
+    fn finish(self, into: &Path, go_on: &mut dyn FnMut() -> bool) -> io::Result<bool> {
         // Hard links first: one may repeat a file a symbolic link would
         // stand in the way of.
         let (hard, soft): (Vec<_>, Vec<_>) =
             self.links.into_iter().partition(|(_, member)| member.kind == MemberKind::HardLink);
         for (target, member) in hard {
+            if !go_on() {
+                return Ok(false);
+            }
             let Some(original) = member.target.as_ref().map(|original| into.join(original)) else { continue };
             if fs::symlink_metadata(&original).is_ok_and(|meta| meta.is_file()) && original != target {
                 make_parent(&target)?;
@@ -188,7 +189,7 @@ impl Later {
             let member = Member { mode: Some(member.mode.unwrap_or(DIR_MODE) | 0o700), ..member };
             settle(&folder, &member, DIR_MODE)?;
         }
-        Ok(())
+        Ok(true)
     }
 }
 
