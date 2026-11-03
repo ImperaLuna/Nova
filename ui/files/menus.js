@@ -46,7 +46,7 @@ function forItems(rows, inArchive, apps, defaultApp, act) {
                     }))
         });
     if (folders)
-        menu.push(_item(qsTr("Open in new window"), "", Commands.NEW_WINDOW, act, rows));
+        menu.push(_item(qsTr("Open in new tab"), "", Commands.NEW_TAB, act, rows), _item(qsTr("Open in new window"), "", Commands.NEW_WINDOW, act, rows));
     if (single && rows[0].archive && !inArchive)
         menu.push(_item(qsTr("Extract all…"), Icons.EXTRACT, Commands.EXTRACT_ALL, act, rows), _item(qsTr("Extract here"), "", Commands.EXTRACT_HERE, act, rows));
     menu.push(SEPARATOR);
@@ -102,7 +102,7 @@ function forNew(act) {
 // A drive's menu: Eject only for one that can be unplugged, Properties
 // (how full it is) only while it's mounted.
 function forDrive(drive, act) {
-    const menu = [_item(qsTr("Open in new window"), "", Commands.NEW_WINDOW, act, [], drive), _item(qsTr("Show details…"), Icons.INFO, Commands.DETAILS, act, [], drive)];
+    const menu = [_item(qsTr("Open in new tab"), "", Commands.NEW_TAB, act, [], drive), _item(qsTr("Open in new window"), "", Commands.NEW_WINDOW, act, [], drive), _item(qsTr("Show details…"), Icons.INFO, Commands.DETAILS, act, [], drive)];
     if (drive.removable)
         menu.push(SEPARATOR, _item(qsTr("Eject"), Icons.EJECT, Commands.EJECT, act, [], drive));
     if (drive.mount !== undefined)

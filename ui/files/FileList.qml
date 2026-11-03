@@ -29,7 +29,9 @@ import "shortcuts.js" as Shortcuts
 // for the folder. The other keys' commands go to the window as
 // `commandRequested`. `rename(name)` turns that row's name into a field
 // (F2, or a new folder), renamed through novad when it closes. Cut items
-// read faded.
+// read faded. A middle click on a folder asks for it in a new tab
+// (`tabRequested`). tabView() and restoreTab() hand its order and
+// selection to the window's tabs and back.
 // Rows drag out (the selection, FileDrag) and files dragged in drop on the
 // folder row under the pointer, or else the folder shown
 // (`dropRequested`); resting on a folder row opens it. Pressing a
@@ -48,6 +50,7 @@ FocusScope {
     property bool showHidden: false
 
     signal folderOpened(string path)
+    signal tabRequested(string path)
     // Delete and Shift+Delete with rows selected: plain copies of them
     // (Listing.copy), in the list's order.
     signal trashRequested(var rows)
@@ -195,6 +198,24 @@ FocusScope {
             folderOpened(Paths.child(folder, opening.folder));
         for (const name of opening.files)
             FilesService.launch(Paths.child(folder, name), "", null);
+    }
+
+    // The order and the selected names, for a tab going to the back.
+    function tabView(): var {
+        return {
+            sort: model.sort,
+            selected: model.selectedNames()
+        };
+    }
+
+    // Shows a tab's tabView() (its order; null keeps this one) once its folder
+    // is set, with `selected` (names) selected. Shift starts from nothing,
+    // not from the last tab's anchor.
+    function restoreTab(kept: var, selected: var) {
+        if (kept && (kept.sort.key !== model.sort.key || kept.sort.descending !== model.sort.descending))
+            model.sort = kept.sort;
+        model.selectNames(selected);
+        model.anchor = -1;
     }
 
     // Reads the folder again, keeping the selection.
@@ -389,6 +410,10 @@ FocusScope {
                 fileDrag.start(list.model.selectedRows().map(picked => Paths.child(list.folder, picked.name)), Listing.icon(grabbed), grabbed.dir ? Tokens.filesFolder : Tokens.fgDim);
             }
             onOpened: list.open([list.model.rows.get(row.index)])
+            onMiddleClicked: {
+                if (row.dir)
+                    list.tabRequested(Paths.child(list.folder, row.name));
+            }
         }
 
         NameTyping {

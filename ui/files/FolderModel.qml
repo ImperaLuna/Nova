@@ -105,6 +105,11 @@ QtObject {
         _selectingAll = true;
     }
 
+    // The selected names, those still to come in too.
+    function selectedNames(): var {
+        return Object.keys(_selected);
+    }
+
     // The selected rows, in the list's order.
     function selectedRows(): var {
         const picked = [];

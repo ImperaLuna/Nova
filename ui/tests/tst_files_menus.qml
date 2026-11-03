@@ -62,6 +62,7 @@ Item {
             compare(labels(two), ["Open", "-", "Cut", "Copy", "Compress to ZIP file", "Copy path", "-", "Move to trash", "-", "Properties"], "nothing for one item only, no new window for a file");
             const folders = Menus.forItems([folder("a"), folder("b")], false, () => [], () => "", act);
             verify(labels(folders).includes("Open in new window"));
+            verify(labels(folders).includes("Open in new tab"));
             compare(one.find(item => item.label === "Cut").shortcut, "Ctrl + X");
         }
 
@@ -118,7 +119,7 @@ Item {
             compare(undoing[2].shortcut, "Ctrl + Z");
             compare(labels(Menus.forDrive({
                 removable: false
-            }, act)), ["Open in new window", "Show details…"], "no Eject for a disk inside");
+            }, act)), ["Open in new tab", "Open in new window", "Show details…"], "no Eject for a disk inside");
             verify(labels(Menus.forDrive({
                 removable: true
             }, act)).includes("Eject"));
@@ -126,8 +127,8 @@ Item {
                 removable: false,
                 mount: "/"
             }, act);
-            compare(labels(mounted), ["Open in new window", "Show details…", "-", "Properties"], "how full it is, once mounted");
-            compare(mounted[3].shortcut, "Alt + Enter");
+            compare(labels(mounted), ["Open in new tab", "Open in new window", "Show details…", "-", "Properties"], "how full it is, once mounted");
+            compare(mounted[4].shortcut, "Alt + Enter");
             const picked = [];
             const sort = Menus.forSort({
                 key: Protocol.FILE_SORT_SIZE,
@@ -214,6 +215,36 @@ Item {
         SignalSpy {
             id: closes
             signalName: "closed"
+        }
+
+        // What lies under the menu, like the sidebar's tree rows.
+        Component {
+            id: underComponent
+            Item {
+                property int taps: 0
+                width: stage.width
+                height: stage.height
+                TapHandler {
+                    onTapped: parent.taps++
+                }
+            }
+        }
+
+        function test_picking_an_item_never_clicks_what_is_under_it() {
+            const under = createTemporaryObject(underComponent, stage);
+            const menu = createTemporaryObject(menuComponent, stage);
+            const picked = [];
+            menu.open([
+                {
+                    label: "Properties",
+                    act: () => picked.push("properties")
+                }
+            ], Qt.point(50, 50));
+            waitForRendering(menu);
+            const row = findText(menu, "Properties");
+            mouseClick(row);
+            compare(picked, ["properties"]);
+            compare(under.taps, 0);
         }
 
         function test_the_menu_picks_with_the_mouse_and_the_keys() {

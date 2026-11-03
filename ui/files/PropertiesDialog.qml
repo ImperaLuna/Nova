@@ -313,7 +313,10 @@ Item {
                                         required property var modelData
 
                                         width: Tokens.filesPropertiesCheckColumn
-                                        height: parent.height
+                                        // The person's row, by id: a
+                                        // Repeater's delegate has no parent
+                                        // yet while it's made.
+                                        height: person.height
 
                                         CheckMark {
                                             anchors.centerIn: parent

@@ -36,7 +36,7 @@ Item {
         function test_the_whole_table() {
             const moves = ["Up", "Down", "PgUp", "PgDown", "Home", "End"];
             const moving = where => moves.concat(moves.map(key => `Shift+${key}`)).map(key => `${where}: ${key} = move`);
-            const expected = ["window: Alt+Left = back", "window: Alt+Right = forward", "window: Alt+Up = up", "window: Ctrl+L = address", "window: Alt+D = address", "window: Ctrl+F = search", "window: F3 = search", "window: F5 = refresh", "window: Ctrl+N = new_window", "window: Ctrl+W = close_window", "window: Alt+P = preview", "list: Shift+Return = new_window", "list: Shift+Enter = new_window", "list: Ctrl+Shift+N = new_folder", "list: F2 = rename", "list: Ctrl+X = cut", "list: Ctrl+C = copy", "list: Ctrl+Shift+C = copy_path", "list: Ctrl+V = paste", "list: Alt+Shift+P = details", "list: Backspace = back", "list: Ctrl+H = hidden", "list: Ctrl+A = select_all", "list: Return = open", "list: Enter = open", "list: Alt+Return = properties", "list: Alt+Enter = properties", "list: Del = trash", "list: Shift+Del = delete_for_good", "list: Ctrl+Z = undo", "list: Ctrl+Y = redo", "list: Ctrl+Shift+Z = redo", "trash: Ctrl+Z = undo", "trash: Ctrl+Y = redo", "trash: Ctrl+Shift+Z = redo", "trash: Backspace = back", "trash: Ctrl+A = select_all", "trash: Del = delete_for_good", "trash: Shift+Del = delete_for_good"].concat(moving("list"), moving("trash"));
+            const expected = ["window: Alt+Left = back", "window: Alt+Right = forward", "window: Alt+Up = up", "window: Ctrl+L = address", "window: Alt+D = address", "window: Ctrl+F = search", "window: F3 = search", "window: F5 = refresh", "window: Ctrl+N = new_window", "window: Ctrl+T = new_tab", "window: Ctrl+W = close_tab", "window: Ctrl+Tab = next_tab", "window: Ctrl+Shift+Tab = previous_tab", "window: Ctrl+Backtab = previous_tab", "window: Alt+P = preview", "list: Shift+Return = new_window", "list: Shift+Enter = new_window", "list: Ctrl+Shift+N = new_folder", "list: F2 = rename", "list: Ctrl+X = cut", "list: Ctrl+C = copy", "list: Ctrl+Shift+C = copy_path", "list: Ctrl+V = paste", "list: Alt+Shift+P = details", "list: Backspace = back", "list: Ctrl+H = hidden", "list: Ctrl+A = select_all", "list: Return = open", "list: Enter = open", "list: Alt+Return = properties", "list: Alt+Enter = properties", "list: Del = trash", "list: Shift+Del = delete_for_good", "list: Ctrl+Z = undo", "list: Ctrl+Y = redo", "list: Ctrl+Shift+Z = redo", "trash: Ctrl+Z = undo", "trash: Ctrl+Y = redo", "trash: Ctrl+Shift+Z = redo", "trash: Backspace = back", "trash: Ctrl+A = select_all", "trash: Del = delete_for_good", "trash: Shift+Del = delete_for_good"].concat(moving("list"), moving("trash"));
             compare(lines(), expected.sort());
         }
 
@@ -63,8 +63,8 @@ Item {
                         verify(!windowKeys.includes(key), `${key} is the window's and the ${where}'s`);
         }
 
-        function test_only_opening_and_closing_windows_work_while_a_dialog_asks() {
-            compare(Shortcuts.TABLE.filter(entry => entry.asking).map(entry => entry.action).sort(), [Commands.CLOSE_WINDOW, Commands.NEW_WINDOW]);
+        function test_only_opening_a_window_works_while_a_dialog_asks() {
+            compare(Shortcuts.TABLE.filter(entry => entry.asking).map(entry => entry.action).sort(), [Commands.NEW_WINDOW]);
         }
 
         function test_a_key_press_reads_as_its_sequence() {

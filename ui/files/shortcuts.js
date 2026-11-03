@@ -14,8 +14,8 @@
 // - LIST and TRASH keys work only while that list has the keyboard, so a
 //   text field (the address bar, search) keeps every editing key.
 // - No key means two things in the same place.
-// - While a dialog asks, only the WINDOW keys marked `asking` (opening and
-//   closing windows) work, so nothing moves under the question.
+// - While a dialog asks, only the WINDOW keys marked `asking` (opening a
+//   window) work, so nothing moves under the question.
 // Typing a name in a list (type-to-select) isn't a key here: it is any
 // printable text without Ctrl or Alt (typed()).
 
@@ -73,10 +73,26 @@ var TABLE = [
         keys: ["Ctrl+N"],
         where: [WINDOW]
     },
+    // Tabs, as in Explorer: closing the last one closes the window.
     {
-        action: Commands.CLOSE_WINDOW,
-        asking: true,
+        action: Commands.NEW_TAB,
+        keys: ["Ctrl+T"],
+        where: [WINDOW]
+    },
+    {
+        action: Commands.CLOSE_TAB,
         keys: ["Ctrl+W"],
+        where: [WINDOW]
+    },
+    {
+        action: Commands.NEXT_TAB,
+        keys: ["Ctrl+Tab"],
+        where: [WINDOW]
+    },
+    // Shift+Tab comes as Backtab.
+    {
+        action: Commands.PREVIOUS_TAB,
+        keys: ["Ctrl+Shift+Tab", "Ctrl+Backtab"],
         where: [WINDOW]
     },
     {

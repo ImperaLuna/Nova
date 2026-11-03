@@ -12,7 +12,8 @@ import "paths.js" as Paths
 // (`riseOrder`), it eases up into place after the rows nearer where the
 // list opened. While `renaming`, its name is a field with the name picked
 // up to its extension, as in Explorer: Enter or leaving it renames, Esc
-// keeps the name.
+// keeps the name. A middle click is its own signal (`middleClicked`) and
+// selects nothing.
 Rectangle {
     id: entry
 
@@ -43,6 +44,7 @@ Rectangle {
     signal clicked(int modifiers)
     signal dragRequested
     signal opened
+    signal middleClicked
     // A right-click at `at` (in the row).
     signal menuAsked(point at)
     // The name field closed: `name` as typed, or "" for Esc.
@@ -158,7 +160,7 @@ Rectangle {
         anchors.fill: parent
         enabled: !entry.renaming
         hoverEnabled: true
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         // A drag takes the rows along; the wheel scrolls the list.
         preventStealing: true
 
@@ -173,7 +175,8 @@ Rectangle {
             }
             pressedAt = Qt.point(press.x, press.y);
             dragging = false;
-            entry.pressed(press.modifiers);
+            if (press.button === Qt.LeftButton)
+                entry.pressed(press.modifiers);
         }
         onPositionChanged: move => {
             if ((pressedButtons & Qt.LeftButton) && !dragging && Math.hypot(move.x - pressedAt.x, move.y - pressedAt.y) >= Tokens.filesDragStart) {
@@ -182,7 +185,9 @@ Rectangle {
             }
         }
         onClicked: click => {
-            if (click.button === Qt.LeftButton && !dragging)
+            if (click.button === Qt.MiddleButton)
+                entry.middleClicked();
+            else if (click.button === Qt.LeftButton && !dragging)
                 entry.clicked(click.modifiers);
         }
         onDoubleClicked: press => {

@@ -35,52 +35,60 @@ Item {
     Drag.hotSpot.x: Tokens.filesDragTile / 2
     Drag.hotSpot.y: Tokens.filesDragTile / 2
 
-    // The tile under the pointer. Drawn out of sight: it's only grabbed.
+    // Holds the tile under the pointer out of sight wherever the dragger
+    // sits: an empty clip shows none of it, and grabbing the tile draws it
+    // on its own, unclipped.
     Item {
-        id: tile
+        width: 0
+        height: 0
+        clip: true
 
-        property int count: 0
-        property string icon: ""
-        property color iconColor: Tokens.fg
+        // The tile under the pointer: it's only grabbed.
+        Item {
+            id: tile
 
-        x: -width - Tokens.filesDragTile
-        width: Tokens.filesDragTile + Tokens.filesDragCount / 2
-        height: width
+            property int count: 0
+            property string icon: ""
+            property color iconColor: Tokens.fg
 
-        Rectangle {
-            anchors.left: parent.left
-            anchors.bottom: parent.bottom
-            width: Tokens.filesDragTile
-            height: Tokens.filesDragTile
-            radius: Tokens.radiusRow
-            color: Tokens.filesSolidFrame
-            border.width: Tokens.dividerWidth
-            border.color: Tokens.glassRim
+            width: Tokens.filesDragTile + Tokens.filesDragCount / 2
+            height: width
 
-            LineIcon {
-                anchors.centerIn: parent
-                size: Tokens.filesDragIcon
-                path: tile.icon === "" ? "M0 0" : tile.icon
-                color: tile.iconColor
+            Rectangle {
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                width: Tokens.filesDragTile
+                height: Tokens.filesDragTile
+                radius: Tokens.radiusRow
+                color: Tokens.filesSolidFrame
+                border.width: Tokens.dividerWidth
+                border.color: Tokens.glassRim
+
+                LineIcon {
+                    anchors.centerIn: parent
+                    size: Tokens.filesDragIcon
+                    path: tile.icon === "" ? "M0 0" : tile.icon
+                    color: tile.iconColor
+                }
             }
-        }
-        Rectangle {
-            anchors.right: parent.right
-            anchors.top: parent.top
-            visible: tile.count > 1
-            width: Math.max(height, countText.implicitWidth + Tokens.filesDragCount / 2)
-            height: Tokens.filesDragCount
-            radius: height / 2
-            color: Tokens.primary
+            Rectangle {
+                anchors.right: parent.right
+                anchors.top: parent.top
+                visible: tile.count > 1
+                width: Math.max(height, countText.implicitWidth + Tokens.filesDragCount / 2)
+                height: Tokens.filesDragCount
+                radius: height / 2
+                color: Tokens.primary
 
-            Text {
-                id: countText
-                anchors.centerIn: parent
-                font.family: Tokens.fontSans
-                font.pixelSize: Tokens.fontSizeSmall
-                font.weight: Tokens.weightLabel
-                color: Tokens.onAccent
-                text: tile.count
+                Text {
+                    id: countText
+                    anchors.centerIn: parent
+                    font.family: Tokens.fontSans
+                    font.pixelSize: Tokens.fontSizeSmall
+                    font.weight: Tokens.weightLabel
+                    color: Tokens.onAccent
+                    text: tile.count
+                }
             }
         }
     }

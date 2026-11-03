@@ -9,7 +9,13 @@ var OPEN_WITH = "open_with";
 // On folders picked (Shift+Enter, a menu), or on the window's own folder
 // when none are (Ctrl+N).
 var NEW_WINDOW = "new_window";
-var CLOSE_WINDOW = "close_window";
+// Tabs: on folders picked (a menu) or a drive, each in a tab behind; with
+// none, a new tab at Home in front (Ctrl+T, +). Closing the last tab
+// closes the window.
+var NEW_TAB = "new_tab";
+var CLOSE_TAB = "close_tab";
+var NEXT_TAB = "next_tab";
+var PREVIOUS_TAB = "previous_tab";
 var RENAME = "rename";
 var CUT = "cut";
 var COPY = "copy";

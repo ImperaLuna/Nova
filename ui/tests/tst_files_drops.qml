@@ -11,7 +11,8 @@ import "../daemon/protocol.js" as Protocol
 // from other apps' drags, and a DropTarget following a drag over a list,
 // the tree and the trash, showing and doing what novad answers (its rules
 // are tested in novad: transfers.rs), Ctrl changing mid-drag, a folder
-// opened by resting on it, and dropping. The root is an Item: a TestCase
+// opened by resting on it, and dropping, and the dragged tile kept out of
+// sight. The root is an Item: a TestCase
 // root gets no mouse events.
 Item {
     id: stage
@@ -23,6 +24,26 @@ Item {
         when: windowShown
 
         readonly property string raw: String.fromCodePoint(Protocol.RAW_BYTE_BASE + 0xE9)
+
+        Component {
+            id: fileDragComponent
+            FileDrag {
+                x: 200
+                y: 200
+            }
+        }
+
+        // The tile it grabs for the pointer never shows where the dragger
+        // sits, whatever its place.
+        function test_the_drag_tile_stays_out_of_sight() {
+            const before = grabImage(stage);
+            const dragger = createTemporaryObject(fileDragComponent, stage);
+            waitForRendering(stage);
+            const after = grabImage(stage);
+            for (const x of [50, 100, 150, 210, 250])
+                for (const y of [150, 210, 250])
+                    compare(after.pixel(x, y), before.pixel(x, y), `${x},${y}`);
+        }
 
         function test_paths_go_out_as_file_uris_and_come_back() {
             const paths = ["/home/ana/My Photos", "/home/ana/café #1.txt", "/home/ana/100%", `/home/ana/caf${raw}`];
