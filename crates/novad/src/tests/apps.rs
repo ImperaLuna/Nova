@@ -125,8 +125,9 @@ fn launcher_searches_rank_apps_and_refuse_long_queries() {
     assert_eq!(by_keyword["result"], json!([{"provider": "apps", "id": "files.desktop", "name": [{"text": "Files"}]}]));
     assert_eq!(client.request(4, "launcher_search", Some(json!({"query": ""})))["result"], json!([]));
     assert_eq!(client.request(5, "launcher_search", Some(json!({"query": "zzz"})))["result"], json!([]));
-    let long = client.request(6, "launcher_search", Some(json!({"query": "x".repeat(201)})));
-    assert!(long["error"].as_str().unwrap().contains("at most 200"));
+    let max = nova_protocol::LAUNCHER_SEARCH_MAX_CHARS;
+    let long = client.request(6, "launcher_search", Some(json!({"query": "x".repeat(max + 1)})));
+    assert!(long["error"].as_str().unwrap().contains(&format!("at most {max}")));
 }
 
 #[test]

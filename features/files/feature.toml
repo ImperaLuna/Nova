@@ -14,3 +14,10 @@ nix = ["udisks2", "poppler-utils", "ffmpeg-headless"]
 arch = ["udisks2", "poppler", "ffmpeg"]
 fedora = ["udisks2", "poppler-utils", "ffmpeg-free"]
 debian = ["udisks2", "poppler-utils", "ffmpeg"]
+
+# The launcher's Files mode: names from the search index, and paths typed
+# from `~` or `/`.
+[[slot]]
+host = "launcher.providers"
+view = "files"
+order = 20

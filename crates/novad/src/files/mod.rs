@@ -30,6 +30,8 @@
 //!   first page or a video's still drawn into the cache.
 //! - `search/`: finding files by name (`files_search`) from an index of
 //!   every name under Home and the drives, kept up to date with inotify.
+//! - `launcher.rs`: the launcher's Files mode, a launcher provider that
+//!   searches that index or completes a typed path.
 //! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
 //!   and ejecting them; `drives.rs`: which filesystems are listed and
 //!   what they're called.
@@ -69,6 +71,7 @@ mod editing;
 mod file_manager1;
 mod folder;
 mod history;
+mod launcher;
 mod measures;
 mod preview;
 mod properties;
@@ -660,6 +663,8 @@ mod tests {
         fn new(name: &str) -> Self {
             let dir = TempDir::new(&format!("files-{name}"));
             std::fs::create_dir_all(dir.join("Downloads")).unwrap();
+            // What the search index covers (`search::Sources::under`).
+            std::fs::create_dir_all(dir.join("home")).unwrap();
             let hub = Arc::new(Hub::default());
             let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::clone(&hub)).unwrap());
             let no_bus = Bus::Address(format!("unix:path={}", dir.join("no-bus").display()));
@@ -708,13 +713,21 @@ mod tests {
     fn a_window_waits_until_nova_files_attaches() {
         let fixture = Fixture::new("waits");
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
-        // Another subscriber to the topic takes nothing.
+        // Another subscriber to the topic gets no window.
         let (_, watcher, _watcher_stream) = fixture.client();
         let (_, nova_files, _stream) = fixture.nova_files();
         assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
         fixture.files.show(&fixture.downloads(), &[]).unwrap();
         assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
-        assert!(watcher.try_recv().is_err(), "windows go only to Nova Files");
+        // Other topic events may reach it (the trash watcher says it's
+        // following the trash once its watches are in); windows don't.
+        let windows = std::iter::from_fn(|| watcher.try_recv().ok())
+            .filter(|sent| {
+                matches!(sent, Outgoing::Line(line)
+                    if serde_json::from_str::<serde_json::Value>(line).unwrap()["event"] == "files_window")
+            })
+            .count();
+        assert_eq!(windows, 0, "windows go only to Nova Files");
     }
 
     #[test]
@@ -752,6 +765,46 @@ mod tests {
         let (_, next, _next_stream) = fixture.nova_files();
         assert_eq!(next_named(&next, "files_window", WAIT)["folder"], json!(fixture.downloads()));
         assert!(quitting.try_recv().is_err(), "nothing for the one quitting");
+    }
+
+    #[test]
+    fn the_launchers_files_mode_finds_indexed_names_and_shows_them_in_nova_files() {
+        use crate::launcher::providers::{Provider, Run};
+        let fixture = Fixture::new("launcher");
+        // The index covers `<dir>/home`; the fixture's Home is `<dir>`.
+        std::fs::create_dir_all(fixture.dir.join("home/Games")).unwrap();
+        std::fs::write(fixture.dir.join("home/Games/Crimson Desert.sh"), b"x").unwrap();
+        let mut found = Vec::new();
+        nova_test_support::wait_until(WAIT, "the index finds it", || {
+            found = fixture.files.search("crim des").unwrap();
+            !found.is_empty()
+        });
+        let game = &found[0];
+        let path = fixture.dir.join("home/Games/Crimson Desert.sh").display().to_string();
+        assert_eq!(game.id, path);
+        assert_eq!(game.description.as_deref(), Some("~/home/Games"));
+        assert!(game.name[0].matched && game.name[0].text == "Crim");
+        assert_eq!(game.file.as_ref().unwrap().completion, "~/home/Games/Crimson Desert.sh");
+
+        let (_, nova_files, _stream) = fixture.nova_files();
+        let logger =
+            Logger::open(&fixture.dir.join("run-logs"), LogLevel::Debug, false, Arc::clone(&fixture.hub)).unwrap();
+        let how = |new_window| Run {
+            output: None,
+            new_window,
+            compositor: None,
+            tray: None,
+            logger: &logger,
+            underway: &|| {},
+        };
+        // Shift+Enter: its folder, with it selected.
+        fixture.files.run(&path, &how(true)).unwrap();
+        let window = next_named(&nova_files, "files_window", WAIT);
+        assert_eq!(window["folder"], json!(fixture.dir.join("home/Games").display().to_string()));
+        assert_eq!(window["select"], json!([path]));
+        // A folder opens in Nova Files.
+        fixture.files.run(&fixture.downloads(), &how(false)).unwrap();
+        assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
     }
 
     #[test]
