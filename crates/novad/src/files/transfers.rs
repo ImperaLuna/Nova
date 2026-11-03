@@ -109,12 +109,16 @@ impl Transfers {
         folder: &str,
     ) -> Result<(), String> {
         let sources = sources.iter().map(|source| checked_path(source)).collect::<Result<Vec<_>, _>>()?;
+        if sources.len() > FILES_TRANSFER_MAX_SOURCES {
+            return Err(format!("At most {FILES_TRANSFER_MAX_SOURCES} items can be copied at once"));
+        }
         let leg = Leg { sources, folder: checked_path(folder)? };
         self.start_legs(client, job, mode, vec![leg], Origin::New)
     }
 
     /// Starts `client`'s job `job` over `legs`, whose paths are checked,
-    /// for `origin`.
+    /// for `origin`. A step's move isn't held to the request's limit on
+    /// items: undoing a merge moves back each item it placed.
     pub fn start_legs(
         &self,
         client: ClientId,
@@ -127,9 +131,6 @@ impl Transfers {
         let Some(first) = legs.iter().find_map(|leg| leg.sources.first()) else {
             return Err("Nothing to copy".into());
         };
-        if count > FILES_TRANSFER_MAX_SOURCES {
-            return Err(format!("At most {FILES_TRANSFER_MAX_SOURCES} items can be copied at once"));
-        }
         let name = first.file_name().map_or_else(|| "/".into(), nova_protocol::wire_text);
         let key = (client, job);
         let mut jobs = lock(&self.jobs);
@@ -315,9 +316,10 @@ impl Run {
         }
     }
 
-    /// Tells the history what the job placed.
+    /// Tells the history what the job placed; a step's move tells it
+    /// even when nothing moved, so the next step can run.
     fn record(&self) {
-        if !self.placed.is_empty() {
+        if !self.placed.is_empty() || self.origin != Origin::New {
             self.history.moved(self.origin, self.job.mode, &self.placed);
         }
     }
@@ -529,26 +531,37 @@ impl Run {
             _ => None,
         };
         let placed = self.put_free(source, meta, target, bytes);
-        if placed.is_ok() && self.inside_copy == 0 {
+        let put = matches!(placed, Ok(true));
+        // A folder copy stopped halfway leaves what it copied, which can
+        // be undone too.
+        let partly = placed.is_err()
+            && aside.is_none()
+            && meta.is_dir()
+            && self.job.mode == TransferMode::Copy
+            && target.symlink_metadata().is_ok();
+        if (put || partly) && self.inside_copy == 0 {
             self.placed.push((source.to_owned(), target.to_owned()));
         }
-        let Some(aside) = aside else { return placed };
-        let settled = if placed.is_ok() { aside.discard() } else { aside.restore() };
-        if let Err(e) = settled {
-            self.logger.warn(LOG_SOURCE, &format!("can't tidy up after replacing {}: {e}", target.display()));
+        if let Some(aside) = aside {
+            // What was left out (a device, a socket) replaced nothing.
+            let settled = if put { aside.discard() } else { aside.restore() };
+            if let Err(e) = settled {
+                self.logger.warn(LOG_SOURCE, &format!("can't tidy up after replacing {}: {e}", target.display()));
+            }
         }
-        placed
+        placed.map(drop)
     }
 
-    /// Puts `source` at `target`, where only a file can be.
-    fn put_free(&mut self, source: &Path, meta: &Metadata, target: &Path, bytes: Option<u64>) -> Step {
+    /// Puts `source` at `target`, where only a file can be. False for what
+    /// can't be copied, which is left out.
+    fn put_free(&mut self, source: &Path, meta: &Metadata, target: &Path, bytes: Option<u64>) -> Result<bool, Halt> {
         let moving = self.moves() && !self.copying_moved;
         if moving {
             match fs::rename(source, target) {
                 Ok(()) => {
                     let bytes = bytes.unwrap_or_else(|| moved_bytes(target, meta));
                     self.copied(bytes);
-                    return Ok(());
+                    return Ok(true);
                 }
                 // Another file system: copied, then deleted.
                 Err(e) if e.raw_os_error() == Some(libc::EXDEV) => {}
@@ -562,16 +575,17 @@ impl Run {
             // Once all of it is copied the move has happened: what can't
             // be deleted after that stays at the source too, and nothing
             // placed is undone.
-            if placed? && let Err(e) = copying::remove_moved(source) {
+            let placed = placed?;
+            if placed && let Err(e) = copying::remove_moved(source) {
                 self.logger.warn(LOG_SOURCE, &format!("moved {}, but can't delete all of it: {e}", source.display()));
             }
-            return Ok(());
+            return Ok(placed);
         }
         let placed = self.copy(source, meta, target)?;
         if placed && moving {
             fs::remove_file(source).map_err(|e| failed(source, &e))?;
         }
-        Ok(())
+        Ok(placed)
     }
 
     /// Copies `source` to the free `target`. False for what can't be
@@ -795,25 +809,39 @@ fn unreadable(path: &Path, error: &io::Error) -> Halt {
     })
 }
 
-/// Whether every item at `sources` is on the same drive (file system) as
-/// `folder` (`files_same_drive`), so a drop there moves rather than copies.
-/// An item is looked at itself, not through a link, and a drive mounted on
-/// a folder counts as its own: dragging a mount point copies it.
-pub fn same_drive(sources: &[String], folder: &str) -> Result<bool, String> {
+/// What dropping `sources` on `folder` does (`files_drop`): a move on the
+/// folder's drive, a copy onto another or when `copy` (Ctrl) asks, or
+/// `None` when nothing can be dropped there: a folder into itself or one of
+/// its own folders (links followed, so no way round), or a move into the
+/// folder the items are already in. An item is looked at itself, not
+/// through a link, and a drive mounted on a folder counts as its own, so
+/// dragging a mount point copies it.
+pub fn drop_mode(sources: &[String], folder: &str, copy: bool) -> Result<Option<TransferMode>, String> {
+    if sources.is_empty() {
+        return Ok(None);
+    }
     if sources.len() > FILES_TRANSFER_MAX_SOURCES {
         return Err(format!("At most {FILES_TRANSFER_MAX_SOURCES} items can be copied at once"));
     }
-    let device =
-        |path: &Path, meta: io::Result<Metadata>| meta.map(|meta| meta.dev()).map_err(|e| why_failed(path, &e));
     let folder = checked_path(folder)?;
-    let drive = device(&folder, fs::metadata(&folder))?;
+    let target = fs::canonicalize(&folder).map_err(|e| why_failed(&folder, &e))?;
+    let drive = fs::metadata(&target).map_err(|e| why_failed(&folder, &e))?.dev();
+    let (mut same_drive, mut all_here) = (true, true);
     for source in sources {
         let source = checked_path(source)?;
-        if device(&source, fs::symlink_metadata(&source))? != drive {
-            return Ok(false);
+        let meta = fs::symlink_metadata(&source).map_err(|e| why_failed(&source, &e))?;
+        if meta.is_dir() && target.starts_with(fs::canonicalize(&source).map_err(|e| why_failed(&source, &e))?) {
+            return Ok(None);
         }
+        same_drive &= meta.dev() == drive;
+        let holder = source.parent().map(fs::canonicalize).transpose().map_err(|e| why_failed(&source, &e))?;
+        all_here &= holder.as_deref() == Some(target.as_path());
     }
-    Ok(true)
+    Ok(match (copy || !same_drive, all_here) {
+        (true, _) => Some(TransferMode::Copy),
+        (false, true) => None,
+        (false, false) => Some(TransferMode::Move),
+    })
 }
 
 /// Why `path` couldn't be copied or moved, for the window.
@@ -920,20 +948,57 @@ mod tests {
     }
 
     #[test]
-    fn a_drop_on_the_same_drive_moves_and_on_another_copies() {
-        let fixture = Fixture::new("same-drive");
+    fn a_drop_moves_on_one_drive_and_copies_onto_another() {
+        let fixture = Fixture::new("drop-drive");
         fixture.write("from/Photos/a.png", "1");
         let path = |name: &str| fixture.dir.join(name).display().to_string();
         let sources = [path("from/Photos"), path("from/Photos/a.png")];
-        assert_eq!(same_drive(&sources, &path("to")), Ok(true));
-        assert_eq!(same_drive(&sources, "/proc"), Ok(false), "/proc is a file system of its own");
+        assert_eq!(drop_mode(&sources, &path("to"), false), Ok(Some(TransferMode::Move)));
+        assert_eq!(drop_mode(&sources, &path("to"), true), Ok(Some(TransferMode::Copy)), "Ctrl copies");
+        let tmpfs = Path::new("/dev/shm");
+        if tmpfs.is_dir() && fs::metadata(tmpfs).unwrap().dev() != fs::metadata(fixture.dir.join("to")).unwrap().dev() {
+            assert_eq!(drop_mode(&sources, "/dev/shm", false), Ok(Some(TransferMode::Copy)), "another drive copies");
+        }
+        assert!(drop_mode(&[path("from/gone.txt")], &path("to"), false).unwrap_err().contains("doesn't exist"));
+        assert!(drop_mode(&sources, "relative", false).is_err(), "paths are checked");
+        assert_eq!(drop_mode(&[], &path("to"), false), Ok(None));
+    }
+
+    #[test]
+    fn a_folder_never_drops_into_itself() {
+        let fixture = Fixture::new("drop-itself");
+        fixture.write("from/Photos/2025/May/a.png", "1");
+        let path = |name: &str| fixture.dir.join(name).display().to_string();
+        let photos = [path("from/Photos")];
+        assert_eq!(drop_mode(&photos, &path("from/Photos"), false), Ok(None));
+        assert_eq!(drop_mode(&photos, &path("from/Photos/2025/May"), true), Ok(None), "not even as a copy");
+        std::os::unix::fs::symlink(fixture.dir.join("from/Photos/2025"), fixture.dir.join("to/shortcut")).unwrap();
+        assert_eq!(drop_mode(&photos, &path("to/shortcut"), false), Ok(None), "nor through a link");
+        fs::create_dir_all(fixture.dir.join("from/Photos 2")).unwrap();
         assert_eq!(
-            same_drive(&[path("from/Photos"), "/proc/self".into()], &path("to")),
-            Ok(false),
-            "one away is enough"
+            drop_mode(&photos, &path("from/Photos 2"), false),
+            Ok(Some(TransferMode::Move)),
+            "a name it starts is elsewhere"
         );
-        assert!(same_drive(&[path("from/gone.txt")], &path("to")).unwrap_err().contains("doesn't exist"));
-        assert!(same_drive(&sources, "relative").is_err(), "paths are checked");
+    }
+
+    #[test]
+    fn a_move_where_the_items_are_does_nothing() {
+        let fixture = Fixture::new("drop-here");
+        fixture.write("from/a.txt", "1");
+        fixture.write("to/b.txt", "1");
+        let path = |name: &str| fixture.dir.join(name).display().to_string();
+        assert_eq!(drop_mode(&[path("from/a.txt")], &path("from"), false), Ok(None));
+        assert_eq!(
+            drop_mode(&[path("from/a.txt")], &path("from"), true),
+            Ok(Some(TransferMode::Copy)),
+            "Ctrl makes a numbered copy"
+        );
+        assert_eq!(
+            drop_mode(&[path("from/a.txt"), path("to/b.txt")], &path("from"), false),
+            Ok(Some(TransferMode::Move)),
+            "one from elsewhere comes"
+        );
     }
 
     #[test]

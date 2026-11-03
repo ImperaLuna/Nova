@@ -71,7 +71,64 @@ fn unquote(value: &str) -> String {
 
 /// The user's login name, else `$USER`.
 fn user_name() -> String {
-    crate::users::user_name(crate::users::current_uid()).or_else(|| std::env::var("USER").ok()).unwrap_or_default()
+    login_name().or_else(|| std::env::var("USER").ok()).unwrap_or_default()
+}
+
+/// This process's user's login name, from the user database (which may be
+/// LDAP or systemd-userdb, not just /etc/passwd).
+fn login_name() -> Option<String> {
+    user_name_of(current_uid())
+}
+
+/// The user this process runs as.
+pub(crate) fn current_uid() -> libc::uid_t {
+    // SAFETY: getuid can't fail.
+    unsafe { libc::getuid() }
+}
+
+/// Big enough for any real user or group entry; the lookups say ERANGE
+/// otherwise.
+const ENTRY_BUFFER_BYTES: usize = 16 * 1024;
+
+/// User `uid`'s login name, from the user database.
+pub(crate) fn user_name_of(uid: libc::uid_t) -> Option<String> {
+    // SAFETY: getpwuid_r writes only within `entry` and `buffer` (the sizes
+    // passed), and sets `found` to `entry` or null.
+    database_name(
+        |entry, buffer, size, found| unsafe { libc::getpwuid_r(uid, entry, buffer, size, found) },
+        |entry: &libc::passwd| entry.pw_name,
+    )
+}
+
+/// Group `gid`'s name, from the group database.
+pub(crate) fn group_name_of(gid: libc::gid_t) -> Option<String> {
+    // SAFETY: as in user_name_of, for getgrgid_r.
+    database_name(
+        |entry, buffer, size, found| unsafe { libc::getgrgid_r(gid, entry, buffer, size, found) },
+        |entry: &libc::group| entry.gr_name,
+    )
+}
+
+/// A name from a reentrant user or group database lookup: `lookup` fills
+/// an entry, its strings in a buffer, and `name` picks the name from it.
+fn database_name<Entry>(
+    lookup: impl FnOnce(*mut Entry, *mut libc::c_char, usize, *mut *mut Entry) -> libc::c_int,
+    name: impl FnOnce(&Entry) -> *mut libc::c_char,
+) -> Option<String> {
+    let mut buffer = vec![0u8; ENTRY_BUFFER_BYTES];
+    // SAFETY: zeroed is a valid passwd or group (null pointers, zero ids);
+    // it's only read after the lookup fills it.
+    let mut entry: Entry = unsafe { std::mem::zeroed() };
+    let mut found: *mut Entry = std::ptr::null_mut();
+    let status = lookup(&mut entry, buffer.as_mut_ptr().cast(), buffer.len(), &mut found);
+    let name = name(&entry);
+    if status != 0 || found.is_null() || name.is_null() {
+        return None;
+    }
+    // SAFETY: the lookup set it to a NUL-terminated string in `buffer`,
+    // which is still alive.
+    let name = unsafe { std::ffi::CStr::from_ptr(name) }.to_string_lossy().into_owned();
+    Some(name).filter(|name| !name.is_empty())
 }
 
 #[cfg(test)]

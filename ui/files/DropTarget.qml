@@ -7,57 +7,82 @@ import "drops.js" as Drops
 // Where Nova Files takes files dragged onto it, from its own windows or
 // from other apps (text/uri-list). `folderAt(x, y)` names the place under
 // the pointer (Drops.place, or Drops.NOWHERE); while a drag is over one,
-// `hovered` and `action` say what a drop there would do (Drops.decide),
-// asking novad once per folder whether it's on the dragged items' drive,
-// and the pointer shows it, or that nothing can be dropped there. A drop
-// asks the window to do it (`dropRequested`); a place that springs opens
-// after the pointer rests on it (`springOpened`).
+// `hovered` and `action` say what a drop there would do, as novad answers
+// (files_drop, asked once per folder and Ctrl state; onto the trash it's
+// Drops.TRASH), and the pointer shows it, or that nothing can be dropped
+// there; until novad answers, it shows what the drag proposes. Ctrl is
+// read again at every move and at the drop. A drop goes where it's let
+// go, asks novad first if it hasn't answered for there, and then asks the
+// window to do it (`dropRequested`); a place that springs opens after the
+// pointer rests on it (`springOpened`).
 DropArea {
     id: target
 
     required property var folderAt
-    // What asks novad which drive things are on: FilesService, or a
-    // stand-in in tests.
+    // What asks novad what a drop does: FilesService, or a stand-in in
+    // tests.
     required property var service
 
     // The place under the pointer while a drag is over, or null.
     property var hovered: null
-    readonly property string action: hovered === null ? Drops.NONE : Drops.decide(sources, hovered.folder, hovered.trash, copy, sameDrives[hovered.folder] ?? null)
+    readonly property string action: what(hovered, copy, answers)
 
-    // The drag's items (absolute paths), whether it asks for a copy, and
-    // for each folder novad answered about, whether they're on its drive.
+    // The drag's items (absolute paths), whether it asks for a copy (Ctrl),
+    // and novad's answers for it: Drops.NONE or a mode, by answerKey.
     property var sources: []
     property bool copy: false
-    property var sameDrives: ({})
+    property var answers: ({})
 
     signal dropRequested(string action, var sources, string folder)
     signal springOpened(string folder)
 
     keys: [Drops.URI_LIST]
 
-    // Follows the pointer to (x, y); the pointer shows what a drop there does.
+    function answerKey(folder: string, copy: bool): string {
+        return (copy ? "copy:" : "drop:") + folder;
+    }
+
+    // What a drop on `place` does with `copy`, from `known` answers; nothing
+    // while novad hasn't answered.
+    function what(place: var, copy: bool, known: var): string {
+        if (place === null)
+            return Drops.NONE;
+        if (place.trash)
+            return Drops.TRASH;
+        return known[answerKey(place.folder, copy)] ?? Drops.NONE;
+    }
+
+    // Asks novad what a drop on `folder` does with `copy`, then `done(action)`.
+    function ask(folder: string, copy: bool, done: var) {
+        const asked = sources;
+        service.drop(asked, folder, copy, mode => {
+            if (asked !== target.sources)
+                return;
+            const action = mode ?? Drops.NONE;
+            target.answers = Object.assign({}, target.answers, {
+                [target.answerKey(folder, copy)]: action
+            });
+            done?.(action);
+        });
+    }
+
+    // Follows the drag to (x, y); the pointer shows what a drop there does.
     function follow(drag: var) {
+        copy = drag.proposedAction === Qt.CopyAction;
         const place = folderAt(drag.x, drag.y);
         if (place?.folder !== hovered?.folder || place?.trash !== hovered?.trash) {
             hovered = place;
             spring.restart();
-            if (place !== null && !place.trash && !(place.folder in sameDrives))
-                ask(place.folder);
         }
-        drag.accepted = action !== Drops.NONE;
+        // While novad hasn't answered, the drag stays droppable here (the
+        // drop asks again): Wayland drops nothing after a refused move.
+        const unknown = () => place !== null && !place.trash && !(answerKey(place.folder, copy) in answers);
+        if (unknown())
+            ask(place.folder, copy, null);
+        const pending = unknown();
+        drag.accepted = pending || action !== Drops.NONE;
         if (drag.accepted)
-            drag.action = Drops.dragAction(action);
-    }
-
-    function ask(folder: string) {
-        const asked = sources;
-        target.service.sameDrive(asked, folder, same => {
-            if (asked !== target.sources || same === null)
-                return;
-            target.sameDrives = Object.assign({}, target.sameDrives, {
-                [folder]: same
-            });
-        });
+            drag.action = pending ? drag.proposedAction : Drops.dragAction(action);
     }
 
     function leave() {
@@ -69,40 +94,39 @@ DropArea {
     // urls, proposedAction, accepted and action.
     function enter(drag: var) {
         sources = Drops.localPaths(drag.urls);
-        // Ctrl turns the proposed action into a copy; anything else lets
-        // the drive decide.
-        copy = drag.proposedAction === Qt.CopyAction;
-        sameDrives = {};
+        answers = {};
         if (sources.length === 0) {
             drag.accepted = false;
             return;
         }
         follow(drag);
         // A refused place still follows the pointer to the next one.
-        drag.accepted = true;
-        if (action === Drops.NONE)
+        if (!drag.accepted) {
+            drag.accepted = true;
             drag.action = Qt.IgnoreAction;
+        }
     }
 
-    // The drag was let go: `drop` is the DragEvent, or anything with its
-    // accepted and accept().
+    // The drag was let go: `drop` is the DragEvent, or anything with its x,
+    // y, proposedAction, accepted and accept(). The place is looked up
+    // again: a folder opened by resting on it may have put another there.
     function release(drop: var) {
-        const place = hovered;
-        const action = target.action;
+        const place = folderAt(drop.x, drop.y);
+        const copy = drop.proposedAction === Qt.CopyAction;
+        const action = what(place, copy, answers);
         const sources = target.sources;
         leave();
-        if (place === null || action === Drops.NONE) {
+        if (place === null || (action === Drops.NONE && answerKey(place.folder, copy) in answers)) {
             drop.accepted = false;
             return;
         }
-        drop.accept(Drops.dragAction(action));
-        if (action === Drops.TRASH || place.folder in sameDrives || copy) {
+        drop.accept(action === Drops.NONE ? drop.proposedAction : Drops.dragAction(action));
+        if (action !== Drops.NONE) {
             dropRequested(action, sources, place.folder);
             return;
         }
-        // Dropped before novad said which drive: ask, then do it.
-        target.service.sameDrive(sources, place.folder, same => {
-            const settled = Drops.decide(sources, place.folder, false, false, same ?? false);
+        // Dropped before novad answered for here: ask, then do it.
+        ask(place.folder, copy, settled => {
             if (settled !== Drops.NONE)
                 target.dropRequested(settled, sources, place.folder);
         });
@@ -117,8 +141,13 @@ DropArea {
         id: spring
         interval: Tokens.durationFilesSpring
         onTriggered: {
-            if (target.hovered?.spring && target.action !== Drops.NONE)
-                target.springOpened(target.hovered.folder);
+            if (!target.hovered?.spring || target.action === Drops.NONE)
+                return;
+            const folder = target.hovered.folder;
+            // What's under the pointer changes as the folder opens: the
+            // next move or the drop looks again.
+            target.hovered = null;
+            target.springOpened(folder);
         }
     }
 }

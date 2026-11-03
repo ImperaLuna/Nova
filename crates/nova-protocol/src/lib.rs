@@ -2019,14 +2019,17 @@ pub enum Command {
         sources: Vec<String>,
         folder: String,
     },
-    /// Whether every item at `sources` (absolute paths, wire text) is on
-    /// the same drive (file system) as the folder `folder` (feature
-    /// `files`), answered with a bool. Nova Files moves what's dragged onto
-    /// a folder on the same drive and copies it to another, as Explorer
-    /// does.
-    FilesSameDrive {
+    /// What dropping `sources` (absolute paths, wire text) on the folder
+    /// `folder` does (feature `files`), answered with a [`TransferMode`],
+    /// or null when nothing can be dropped there, as Explorer decides: on
+    /// the folder's drive it moves, onto another it copies, and `copy`
+    /// (Ctrl) copies anyway. A folder never goes into itself or one of its
+    /// own folders, and a move into the folder the items are in does
+    /// nothing. Nothing is touched: `files_transfer` does the drop.
+    FilesDrop {
         sources: Vec<String>,
         folder: String,
+        copy: bool,
     },
     /// Stops this connection's job `job`. What it already copied or moved
     /// stays; a file it was halfway through is removed.
@@ -2104,6 +2107,24 @@ pub enum Command {
     /// reading folders.
     FilesSearch {
         query: String,
+    },
+    /// Makes a folder in the folder `folder` (absolute, feature `files`),
+    /// called "New folder", or "New folder (2)" and on when that's taken,
+    /// and answers with its name as wire text.
+    FilesNewFolder {
+        folder: String,
+    },
+    /// Renames the item at `path` (absolute) to `name`, in the same folder
+    /// (feature `files`), and answers with the new name as wire text. A
+    /// name taken by another item is refused, never replaced.
+    FilesRename {
+        path: String,
+        name: String,
+    },
+    /// What the details pane shows about the item at `path` (absolute,
+    /// feature `files`), answered with a [`FileDetails`].
+    FilesDetails {
+        path: String,
     },
     /// What the preview pane shows for the file at `path` (absolute, wire
     /// text; feature `files`), answered with a [`FilePreview`]. Pictures of
@@ -2349,6 +2370,33 @@ pub struct TrashItem {
     pub entry: FileEntry,
 }
 
+/// The answer to [`Command::FilesDetails`]: one item, as the details
+/// pane shows it. Times are in milliseconds since 1970, when the file
+/// system keeps them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileDetails {
+    pub entry: FileEntry,
+    /// How many items a folder holds; none for a file, or a folder that
+    /// can't be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accessed_ms: Option<i64>,
+    /// Its owner's and group's names, or their numbers when the user
+    /// database has no name for them.
+    pub owner: String,
+    pub group: String,
+    /// Its permission bits (`0o755`): owner, group, others.
+    pub mode: u32,
+}
+
+/// The longest name `files_rename` takes, in bytes: Linux file systems'
+/// `NAME_MAX`.
+pub const FILES_NAME_MAX_BYTES: usize = 255;
+
 /// The answer to [`Command::FilesSearch`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2476,6 +2524,10 @@ pub enum FileStep {
     Move,
     /// Items moved to the trash; undone, they're restored.
     Trash,
+    /// An item renamed; undone, it gets its old name back.
+    Rename,
+    /// A new folder; undone, it goes to the trash.
+    NewFolder,
 }
 
 /// What a `files_transfer` job does with its items.
@@ -3523,18 +3575,19 @@ mod tests {
             encode(Request { id: Some(104), command: Command::FilesRedo { job: 4 } }),
             encode(Event::FilesHistory { undo: Some(FileStep::Move), redo: Some(FileStep::Trash) }),
             encode(Event::FilesHistory { undo: Some(FileStep::Copy), redo: None }),
+            encode(Event::FilesHistory { undo: Some(FileStep::Rename), redo: Some(FileStep::NewFolder) }),
             encode(Request {
-                id: Some(82),
+                id: Some(89),
                 command: Command::FilesPreview { path: "/home/user/Documents/notes.md".into() },
             }),
             encode(Response {
-                id: 82,
+                id: 89,
                 outcome: Outcome::Result(
                     serde_json::to_value(FilePreview::Text { text: "# Notes\nBuy milk".into(), cut: false }).unwrap(),
                 ),
             }),
             encode(Response {
-                id: 83,
+                id: 90,
                 outcome: Outcome::Result(
                     serde_json::to_value(FilePreview::Image {
                         path: "/home/user/.cache/nova/previews/00c0ffee00c0ffee.png".into(),
@@ -3542,7 +3595,7 @@ mod tests {
                     .unwrap(),
                 ),
             }),
-            encode(Response { id: 84, outcome: Outcome::Result(serde_json::to_value(FilePreview::None).unwrap()) }),
+            encode(Response { id: 91, outcome: Outcome::Result(serde_json::to_value(FilePreview::None).unwrap()) }),
             encode(Request { id: Some(81), command: Command::FilesSearch { query: "crimson".into() } }),
             encode(Response {
                 id: 81,
@@ -3569,9 +3622,43 @@ mod tests {
                     .unwrap(),
                 ),
             }),
-            encode(Request { id: Some(82), command: Command::FilesProperties { path: "/home/user/notes.txt".into() } }),
+            encode(Request { id: Some(82), command: Command::FilesNewFolder { folder: "/home/user/Pictures".into() } }),
+            encode(Response { id: 82, outcome: Outcome::Result(json!("New folder (2)")) }),
+            encode(Request {
+                id: Some(83),
+                command: Command::FilesRename { path: "/home/user/Pictures/New folder".into(), name: "Trips".into() },
+            }),
+            encode(Request {
+                id: Some(84),
+                command: Command::FilesDetails { path: "/home/user/Pictures/Trips".into() },
+            }),
             encode(Response {
-                id: 82,
+                id: 84,
+                outcome: Outcome::Result(
+                    serde_json::to_value(FileDetails {
+                        entry: FileEntry {
+                            name: "Trips".into(),
+                            dir: true,
+                            link: false,
+                            hidden: false,
+                            archive: false,
+                            mime: "inode/directory".into(),
+                            size: None,
+                            modified_ms: Some(1_793_000_000_000),
+                        },
+                        items: Some(12),
+                        created_ms: Some(1_792_000_000_000),
+                        accessed_ms: Some(1_793_600_000_000),
+                        owner: "user".into(),
+                        group: "users".into(),
+                        mode: 0o755,
+                    })
+                    .unwrap(),
+                ),
+            }),
+            encode(Request { id: Some(85), command: Command::FilesProperties { path: "/home/user/notes.txt".into() } }),
+            encode(Response {
+                id: 85,
                 outcome: Outcome::Result(
                     serde_json::to_value(FileProperties {
                         folder: "/home/user".into(),
@@ -3603,10 +3690,10 @@ mod tests {
                 ),
             }),
             encode(Request {
-                id: Some(83),
+                id: Some(86),
                 command: Command::FilesMeasure { job: 4, paths: vec!["/home/user/Pictures".into()] },
             }),
-            encode(Request { id: Some(84), command: Command::FilesMeasureCancel { job: 4 } }),
+            encode(Request { id: Some(87), command: Command::FilesMeasureCancel { job: 4 } }),
             encode(Event::FilesMeasured(Measured {
                 job: 4,
                 files: 120,
@@ -3616,7 +3703,7 @@ mod tests {
                 done: false,
             })),
             encode(Request {
-                id: Some(85),
+                id: Some(88),
                 command: Command::FilesSetAccess { path: "/home/user/run.sh".into(), access: Access::default() },
             }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
