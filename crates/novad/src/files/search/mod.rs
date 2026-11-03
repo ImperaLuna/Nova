@@ -127,6 +127,11 @@ impl Search {
 impl Searcher {
     /// The files whose names hold every word of `text`.
     pub fn search(&self, text: &str) -> Result<FileSearch, String> {
+        self.search_up_to(text, FILES_SEARCH_MAX_RESULTS)
+    }
+
+    /// The best `limit` of them.
+    pub fn search_up_to(&self, text: &str, limit: usize) -> Result<FileSearch, String> {
         if text.chars().count() > FILES_SEARCH_MAX_CHARS {
             return Err(format!("Searches are at most {FILES_SEARCH_MAX_CHARS} characters"));
         }
@@ -135,7 +140,7 @@ impl Searcher {
         let (Some(index), Some(query)) = (held.as_ref(), Query::parse(text)) else {
             return Ok(FileSearch { ready, total: 0, results: Vec::new() });
         };
-        let (hits, total) = index.search(&query, FILES_SEARCH_MAX_RESULTS);
+        let (hits, total) = index.search(&query, limit);
         drop(held);
         let mime = self.0.mime.current();
         let results = hits

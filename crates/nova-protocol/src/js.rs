@@ -106,7 +106,7 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("step_workspace's directions (Step).", "STEP", names_of::<Step>()),
         Group::new("The volume keys a volume event carries (VolumeKey).", "VOLUME", names_of::<VolumeKey>()),
         Group { comment: "Feature ids (features/<id>/feature.toml).", prefix: "FEATURE", names: feature_ids(features) },
-        Group::new("Launcher providers built into novad (PROVIDER_APPS).", "PROVIDER", &[PROVIDER_APPS]),
+        Group::new("Launcher providers built into novad (PROVIDER_*).", "PROVIDER", &[PROVIDER_APPS, PROVIDER_FILES]),
         Group::new("Power menu actions (PowerAction).", "POWER", names_of::<PowerAction>()),
         Group::new("What the capture toolbar takes (CaptureMode).", "CAPTURE", names_of::<CaptureMode>()),
         Group::new("The screenshot card's buttons (ScreenshotAction).", "SHOT", names_of::<ScreenshotAction>()),
@@ -273,5 +273,7 @@ fn providers_are_manifest_views() {
                 .is_ok_and(|manifest| manifest.contains(&format!("view = \"{provider}\"")))
         })
     };
-    assert!(slotted(PROVIDER_APPS), "no feature.toml slots in the {PROVIDER_APPS:?} provider");
+    for provider in [PROVIDER_APPS, PROVIDER_FILES] {
+        assert!(slotted(provider), "no feature.toml slots in the {provider:?} provider");
+    }
 }

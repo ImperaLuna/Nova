@@ -25,8 +25,8 @@ use std::time::Duration;
 
 pub const FEATURE_ID: &str = "launcher";
 const LOG_SOURCE: &str = "launcher";
-/// Matches a search returns at most.
-const MAX_MATCHES: usize = 50;
+/// Matches a provider returns for a search, at most.
+pub const MAX_MATCHES: usize = 50;
 /// Apps that can be pinned at once.
 const MAX_PINNED: usize = 32;
 /// Recent apps sent, the latest first.
@@ -178,6 +178,7 @@ impl Launcher {
                     name,
                     description: app.description,
                     icon: app.icon,
+                    file: None,
                 }
             })
             .collect()

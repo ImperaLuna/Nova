@@ -1302,6 +1302,11 @@ pub const APP_ICON_MAX_CHARS: usize = 512;
 /// apps: the `launcher` feature's own.
 pub const PROVIDER_APPS: &str = "apps";
 
+/// The launcher provider that finds files (feature `files`): the launcher's
+/// Files mode, which searches the names Nova Files indexes or, for a query
+/// starting with `~` or `/`, completes a path.
+pub const PROVIDER_FILES: &str = "files";
+
 /// Something a launcher provider found for a search, best first within its
 /// provider.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1321,6 +1326,26 @@ pub struct LauncherItem {
     /// Its icon: an absolute path to an image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// What it is when it's a file or folder ([`PROVIDER_FILES`]); then
+    /// `id` is its absolute path, and `name` and `description` (its folder)
+    /// are wire text ([`wire_text`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<LauncherFile>,
+}
+
+/// A file or folder the launcher's Files mode found ([`LauncherItem::file`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LauncherFile {
+    /// A folder, or a link to one.
+    pub dir: bool,
+    /// Its type in the shared MIME database (`inode/directory` for a folder).
+    pub mime: String,
+    /// Hidden: its name starts with a dot, or a folder it's in does.
+    pub hidden: bool,
+    /// Its path as the search field spells it, `~/` for Home, a folder's
+    /// with a `/` at the end: what Tab completes the query to.
+    pub completion: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1698,9 +1723,14 @@ pub enum Command {
     /// [`LauncherItem`]s (feature `launcher`): the providers in their slot
     /// order, each one's best first. A query that starts with a provider's
     /// trigger goes to the providers with that trigger only, without it. A
-    /// blank query finds nothing.
+    /// blank query finds nothing. With a `mode` (a provider's view id, like
+    /// [`PROVIDER_FILES`]) the launcher is in that provider's own mode, and
+    /// it alone answers, given the whole query; without one, providers with
+    /// a mode of their own don't answer.
     LauncherSearch {
         query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mode: Option<String>,
     },
     /// Replies with an icon (an absolute path to an image) for an app
     /// stream, as PipeWire names it (each may be ""): its installed app's
@@ -1719,7 +1749,10 @@ pub enum Command {
     /// `launcher`), on `output` (the focused output when unset). An app
     /// ([`PROVIDER_APPS`]) opens and counts towards the recent ones; when it
     /// already has a window, that window takes focus where it is, unless
-    /// `new_window` asks for another one.
+    /// `new_window` (Shift+Enter) asks for another one. A file
+    /// ([`PROVIDER_FILES`]) opens in its default app and a folder in Nova
+    /// Files; with `new_window`, Nova Files shows either in its folder,
+    /// selected.
     LauncherRun {
         provider: String,
         id: String,
@@ -2896,7 +2929,7 @@ mod tests {
             encode(Request { id: Some(23), command: Command::EndApp { key: "/usr/lib/firefox/firefox".into() } }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::QuickSettings } }),
             encode(Event::Launcher(launcher())),
-            encode(Request { id: Some(24), command: Command::LauncherSearch { query: "fi".into() } }),
+            encode(Request { id: Some(24), command: Command::LauncherSearch { query: "fi".into(), mode: None } }),
             encode(Response {
                 id: 24,
                 outcome: Outcome::Result(
@@ -2909,6 +2942,33 @@ mod tests {
                         ],
                         description: Some("Web Browser".into()),
                         icon: None,
+                        file: None,
+                    }])
+                    .unwrap(),
+                ),
+            }),
+            encode(Request {
+                id: Some(91),
+                command: Command::LauncherSearch { query: "~/Doc".into(), mode: Some(PROVIDER_FILES.into()) },
+            }),
+            encode(Response {
+                id: 91,
+                outcome: Outcome::Result(
+                    serde_json::to_value(vec![LauncherItem {
+                        provider: PROVIDER_FILES.into(),
+                        id: "/home/me/Documents".into(),
+                        name: vec![
+                            TextRun { text: "Doc".into(), matched: true },
+                            TextRun { text: "uments".into(), matched: false },
+                        ],
+                        description: Some("~".into()),
+                        icon: None,
+                        file: Some(LauncherFile {
+                            dir: true,
+                            mime: "inode/directory".into(),
+                            hidden: false,
+                            completion: "~/Documents/".into(),
+                        }),
                     }])
                     .unwrap(),
                 ),

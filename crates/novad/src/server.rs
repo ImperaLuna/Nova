@@ -195,8 +195,15 @@ impl<'a> Connection<'a> {
             Command::OpenLog => {
                 done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().open_log()))
             }
-            Command::LauncherSearch { query } => {
-                value(self.launcher_providers().and_then(|providers| providers.search(query, &self.daemon.logger)))
+            // Answered off the connection's thread: a provider may read the
+            // disk (files), and a slow drive must not hold up other requests.
+            Command::LauncherSearch { query, mode } => {
+                let providers = match self.launcher_providers() {
+                    Ok(providers) => providers,
+                    Err(e) => return Answer::Now(Outcome::Error(e)),
+                };
+                let (query, mode, logger) = (query.clone(), mode.clone(), Arc::clone(&self.daemon.logger));
+                return Answer::later(move || value(providers.search(&query, mode.as_deref(), &logger)));
             }
             Command::AppIcon { icon_name, program, name } => {
                 let apps = Arc::clone(&lock(&self.daemon.settings).context.apps);

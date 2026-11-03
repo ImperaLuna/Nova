@@ -12,3 +12,10 @@ nix = ["udisks2"]
 arch = ["udisks2"]
 fedora = ["udisks2"]
 debian = ["udisks2"]
+
+# The launcher's Files mode: names from the search index, and paths typed
+# from `~` or `/`.
+[[slot]]
+host = "launcher.providers"
+view = "files"
+order = 20

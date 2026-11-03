@@ -250,8 +250,9 @@ var FEATURE_WALLPAPER_ENGINE = "wallpaper-engine";
 var FEATURE_WORKSPACES = "workspaces";
 var FEATURE_X11_TRAY = "x11-tray";
 
-// Launcher providers built into novad (PROVIDER_APPS).
+// Launcher providers built into novad (PROVIDER_*).
 var PROVIDER_APPS = "apps";
+var PROVIDER_FILES = "files";
 
 // Power menu actions (PowerAction).
 var POWER_LOCK = "lock";
