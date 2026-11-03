@@ -5,6 +5,7 @@ import "service"
 import "../theme"
 import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
+import "drops.js" as Drops
 import "listing.js" as Listing
 import "paths.js" as Paths
 import "commands.js" as Commands
@@ -29,6 +30,11 @@ import "shortcuts.js" as Shortcuts
 // `commandRequested`. `rename(name)` turns that row's name into a field
 // (F2, or a new folder), renamed through novad when it closes. Cut items
 // read faded.
+// Rows drag out (the selection, FileDrag) and files dragged in drop on the
+// folder row under the pointer, or else the folder shown
+// (`dropRequested`); resting on a folder row opens it. Pressing a
+// selected row keeps the selection until the release, so a selection
+// drags whole.
 // It sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
 FocusScope {
@@ -53,6 +59,9 @@ FocusScope {
     signal commandRequested(string command, var rows)
     // novad couldn't rename `row`: why.
     signal renameFailed(var row, string error)
+    // A drop asks for `action` (a Protocol.TRANSFER_* mode or Drops.TRASH)
+    // on `sources` into `folder`.
+    signal dropRequested(string action, var sources, string folder)
 
     // The row whose name is a field, by name, or "".
     property string renaming: ""
@@ -148,6 +157,9 @@ FocusScope {
             key: Protocol.FILE_SORT_SIZE
         }
     ]
+
+    // The last press was on a selected row: the click picks, not the press.
+    property bool pickOnClick: false
 
     // The row the list opens at while the rows ease in after a folder's
     // entries came in (they ripple out from it), or -1 once they have.
@@ -356,10 +368,25 @@ FocusScope {
             }
             onRenameDone: typed => list.finishRename(Listing.copy(list.model.rows.get(row.index)), typed)
 
+            dropTarget: row.dir && drops.action !== Drops.NONE && drops.hovered?.folder === Paths.child(list.folder, row.name)
+
             onPressed: modifiers => {
                 entryList.forceActiveFocus();
                 entryList.currentIndex = row.index;
-                list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
+                // A selected row pressed without Shift may start dragging
+                // the whole selection: what the press picks waits for the
+                // click (below), Ctrl's toggle too.
+                list.pickOnClick = row.selected && (modifiers & Qt.ShiftModifier) === 0;
+                if (!list.pickOnClick)
+                    list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0));
+            }
+            onClicked: modifiers => {
+                if (list.pickOnClick)
+                    list.model.select(Listing.pick(list.model.anchor, row.index, (modifiers & Qt.ControlModifier) !== 0, false));
+            }
+            onDragRequested: {
+                const grabbed = list.model.rows.get(row.index);
+                fileDrag.start(list.model.selectedRows().map(picked => Paths.child(list.folder, picked.name)), Listing.icon(grabbed), grabbed.dir ? Tokens.filesFolder : Tokens.fgDim);
             }
             onOpened: list.open([list.model.rows.get(row.index)])
         }
@@ -378,6 +405,22 @@ FocusScope {
             else
                 event.accepted = typing.press(event.text, event.modifiers, list.model.rows, entryList.currentIndex, index => entryList.go(index, false));
         }
+    }
+
+    DropTarget {
+        id: drops
+        anchors.fill: entryList
+        service: FilesService
+        folderAt: (x, y) => {
+            const index = entryList.indexAt(x + entryList.contentX, y + entryList.contentY);
+            const row = index >= 0 ? list.model.rows.get(index) : null;
+            return row?.dir ? Drops.place(Paths.child(list.folder, row.name), true) : Drops.place(list.folder, false);
+        }
+        onDropRequested: (action, sources, folder) => list.dropRequested(action, sources, folder)
+        onSpringOpened: folder => list.folderOpened(folder)
+    }
+    FileDrag {
+        id: fileDrag
     }
 
     Text {

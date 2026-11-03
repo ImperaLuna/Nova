@@ -5,6 +5,7 @@ import Quickshell
 import "../theme"
 import "service"
 import "paths.js" as Paths
+import "drops.js" as Drops
 import "trash.js" as Trash
 import "commands.js" as Commands
 import "shortcuts.js" as Shortcuts
@@ -23,6 +24,8 @@ import "../daemon/protocol.js" as Protocol
 // details pane on the right of the list, on the picked item or the folder.
 // Cut, copy and paste go through the system clipboard (FilesClipboard);
 // pasting copies or moves into the folder shown, like dropping there.
+// Files dropped on the list or the sidebar are copied, moved or trashed
+// here, as novad answered for the drop (DropTarget).
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
 // window's keys are the table's WINDOW entries (shortcuts.js), and every
@@ -329,6 +332,18 @@ FloatingWindow {
         transfers.start(mode, sources, folder);
     }
 
+    // Does what a drop asks: `action` (a Protocol.TRANSFER_* mode or
+    // Drops.TRASH) on `sources` (absolute paths) into `folder`.
+    function drop(action: string, sources: var, folder: string) {
+        if (action === Drops.TRASH)
+            FilesService.trash(sources, error => {
+                if (error)
+                    window.notice(null, error);
+            });
+        else
+            transfer(action, sources, folder);
+    }
+
     NavigationRow {
         id: navigation
         anchors.left: parent.left
@@ -372,6 +387,7 @@ FloatingWindow {
         width: Tokens.filesSidebarWidth
         navigator: window.navigator
         onDriveMenuRequested: (drive, at) => window.openMenu(Menus.forDrive(drive, window.act), window.contentItem, at)
+        onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
     }
     FileList {
         id: list
@@ -387,6 +403,7 @@ FloatingWindow {
         onFolderOpened: path => window.navigator.visit(path, null)
         onTrashRequested: rows => window.moveToTrash(rows)
         onDeleteRequested: rows => window.deleteForGood(rows)
+        onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
         onCommandRequested: (command, rows) => window.act(command, rows, null)
         onRenameFailed: (row, error) => window.notice(row, error)
         onMenuRequested: (rows, at) => {
@@ -434,6 +451,14 @@ FloatingWindow {
             if (visible)
                 focusList();
         }
+    }
+    // Files dropped on the trash's list go to the trash.
+    DropTarget {
+        anchors.fill: trashList
+        enabled: window.inTrash
+        service: FilesService
+        folderAt: () => Drops.place(Protocol.FILES_TRASH_PLACE, false)
+        onDropRequested: (action, sources, folder) => window.drop(action, sources, folder)
     }
     Transfers {
         id: transfers

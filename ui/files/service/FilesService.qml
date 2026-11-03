@@ -221,6 +221,21 @@ Singleton {
         return job;
     }
 
+    // What dropping `sources` (absolute paths) on the folder `folder`
+    // does, Ctrl held when `copy`: `done(mode)` gets a Protocol.TRANSFER_*
+    // mode, or null when nothing can be dropped there (or novad can't tell).
+    function drop(sources: var, folder: string, copy: bool, done: var) {
+        Daemon.call(Protocol.CMD_FILES_DROP, {
+            sources: sources,
+            folder: folder,
+            copy: copy
+        }, (error, mode) => {
+            if (error)
+                console.warn(`nova: dropping into ${folder}: ${error}`);
+            done(error ? null : mode ?? null);
+        });
+    }
+
     // Stops job `job`; it then reports it was cancelled.
     function cancelTransfer(job: int) {
         Daemon.call(Protocol.CMD_FILES_TRANSFER_CANCEL, {

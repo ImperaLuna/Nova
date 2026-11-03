@@ -38,7 +38,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::{self, Metadata};
 use std::io;
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -658,16 +658,56 @@ fn moved_bytes(target: &Path, meta: &Metadata) -> u64 {
     }
 }
 
+/// What dropping `sources` on `folder` does (`files_drop`): a move on the
+/// folder's drive, a copy onto another or when `copy` (Ctrl) asks, or
+/// `None` when nothing can be dropped there: a folder into itself or one of
+/// its own folders (links followed, so no way round), or a move into the
+/// folder the items are already in. An item is looked at itself, not
+/// through a link, and a drive mounted on a folder counts as its own, so
+/// dragging a mount point copies it.
+pub fn drop_mode(sources: &[String], folder: &str, copy: bool) -> Result<Option<TransferMode>, String> {
+    if sources.is_empty() {
+        return Ok(None);
+    }
+    if sources.len() > FILES_TRANSFER_MAX_SOURCES {
+        return Err(format!("At most {FILES_TRANSFER_MAX_SOURCES} items can be copied at once"));
+    }
+    let folder = checked_path(folder)?;
+    let target = fs::canonicalize(&folder).map_err(|e| why_failed(&folder, &e))?;
+    let drive = fs::metadata(&target).map_err(|e| why_failed(&folder, &e))?.dev();
+    let (mut same_drive, mut all_here) = (true, true);
+    for source in sources {
+        let source = checked_path(source)?;
+        let meta = fs::symlink_metadata(&source).map_err(|e| why_failed(&source, &e))?;
+        if meta.is_dir() && target.starts_with(fs::canonicalize(&source).map_err(|e| why_failed(&source, &e))?) {
+            return Ok(None);
+        }
+        same_drive &= meta.dev() == drive;
+        let holder = source.parent().map(fs::canonicalize).transpose().map_err(|e| why_failed(&source, &e))?;
+        all_here &= holder.as_deref() == Some(target.as_path());
+    }
+    Ok(match (copy || !same_drive, all_here) {
+        (true, _) => Some(TransferMode::Copy),
+        (false, true) => None,
+        (false, false) => Some(TransferMode::Move),
+    })
+}
+
 /// Why `path` couldn't be copied or moved, for the window.
 fn failed(path: &Path, error: &io::Error) -> Halt {
+    Halt::Failed(why_failed(path, error))
+}
+
+/// Why `path` couldn't be read, copied or moved, in words.
+fn why_failed(path: &Path, error: &io::Error) -> String {
     let path = path.display();
-    Halt::Failed(match error.kind() {
+    match error.kind() {
         io::ErrorKind::NotFound => format!("{path} doesn't exist"),
         io::ErrorKind::PermissionDenied => format!("No permission for {path}"),
         io::ErrorKind::StorageFull => format!("No space left for {path}"),
         io::ErrorKind::ReadOnlyFilesystem => format!("{path} is on a read-only drive"),
         _ => format!("Can't copy {path}: {error}"),
-    })
+    }
 }
 
 #[cfg(test)]
@@ -753,6 +793,60 @@ mod tests {
             names.sort();
             names
         }
+    }
+
+    #[test]
+    fn a_drop_moves_on_one_drive_and_copies_onto_another() {
+        let fixture = Fixture::new("drop-drive");
+        fixture.write("from/Photos/a.png", "1");
+        let path = |name: &str| fixture.dir.join(name).display().to_string();
+        let sources = [path("from/Photos"), path("from/Photos/a.png")];
+        assert_eq!(drop_mode(&sources, &path("to"), false), Ok(Some(TransferMode::Move)));
+        assert_eq!(drop_mode(&sources, &path("to"), true), Ok(Some(TransferMode::Copy)), "Ctrl copies");
+        let tmpfs = Path::new("/dev/shm");
+        if tmpfs.is_dir() && fs::metadata(tmpfs).unwrap().dev() != fs::metadata(fixture.dir.join("to")).unwrap().dev() {
+            assert_eq!(drop_mode(&sources, "/dev/shm", false), Ok(Some(TransferMode::Copy)), "another drive copies");
+        }
+        assert!(drop_mode(&[path("from/gone.txt")], &path("to"), false).unwrap_err().contains("doesn't exist"));
+        assert!(drop_mode(&sources, "relative", false).is_err(), "paths are checked");
+        assert_eq!(drop_mode(&[], &path("to"), false), Ok(None));
+    }
+
+    #[test]
+    fn a_folder_never_drops_into_itself() {
+        let fixture = Fixture::new("drop-itself");
+        fixture.write("from/Photos/2025/May/a.png", "1");
+        let path = |name: &str| fixture.dir.join(name).display().to_string();
+        let photos = [path("from/Photos")];
+        assert_eq!(drop_mode(&photos, &path("from/Photos"), false), Ok(None));
+        assert_eq!(drop_mode(&photos, &path("from/Photos/2025/May"), true), Ok(None), "not even as a copy");
+        std::os::unix::fs::symlink(fixture.dir.join("from/Photos/2025"), fixture.dir.join("to/shortcut")).unwrap();
+        assert_eq!(drop_mode(&photos, &path("to/shortcut"), false), Ok(None), "nor through a link");
+        fs::create_dir_all(fixture.dir.join("from/Photos 2")).unwrap();
+        assert_eq!(
+            drop_mode(&photos, &path("from/Photos 2"), false),
+            Ok(Some(TransferMode::Move)),
+            "a name it starts is elsewhere"
+        );
+    }
+
+    #[test]
+    fn a_move_where_the_items_are_does_nothing() {
+        let fixture = Fixture::new("drop-here");
+        fixture.write("from/a.txt", "1");
+        fixture.write("to/b.txt", "1");
+        let path = |name: &str| fixture.dir.join(name).display().to_string();
+        assert_eq!(drop_mode(&[path("from/a.txt")], &path("from"), false), Ok(None));
+        assert_eq!(
+            drop_mode(&[path("from/a.txt")], &path("from"), true),
+            Ok(Some(TransferMode::Copy)),
+            "Ctrl makes a numbered copy"
+        );
+        assert_eq!(
+            drop_mode(&[path("from/a.txt"), path("to/b.txt")], &path("from"), false),
+            Ok(Some(TransferMode::Move)),
+            "one from elsewhere comes"
+        );
     }
 
     #[test]

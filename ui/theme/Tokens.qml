@@ -774,6 +774,16 @@ QtObject {
     readonly property int filesDetailsPad: 16
     readonly property int filesDetailsIconSize: 56
     readonly property int filesDetailsRowHeight: 42
+    // Drag and drop: how far a press moves before it drags, the tile under
+    // the pointer (the item's icon, and the count in an accent bubble at its
+    // corner for more than one), the wash on the folder a drop would go
+    // into, and how long the pointer rests on a folder before it opens.
+    readonly property int filesDragStart: 6
+    readonly property int filesDragTile: 52
+    readonly property int filesDragIcon: 28
+    readonly property int filesDragCount: 20
+    readonly property color filesDropTarget: alpha(primary, 0.24)
+    readonly property int durationFilesSpring: 800
 
     // Type
     readonly property string fontSans: "Inter"

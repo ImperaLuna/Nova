@@ -5,8 +5,10 @@ import "paths.js" as Paths
 
 // A row of Nova Files' Details list: the entry's icon and name, then its
 // Modified, Type and Size at the header's column widths. Hovered rows
-// lighten, selected ones fill; dot files read fainter, and cut ones faded
-// until they're pasted. When a folder's entries have just come in
+// lighten, selected ones fill, a folder a drag would drop into washes in
+// the accent; dot files read fainter, and cut ones faded until they're
+// pasted. A press that moves far enough asks to drag (`dragRequested`);
+// one that doesn't is a click. When a folder's entries have just come in
 // (`riseOrder`), it eases up into place after the rows nearer where the
 // list opened. While `renaming`, its name is a field with the name picked
 // up to its extension, as in Explorer: Enter or leaving it renames, Esc
@@ -26,6 +28,8 @@ Rectangle {
     // Modified, Type and Size's widths; one 0 wide isn't shown.
     required property var columnWidths
     required property bool selected
+    // A drag over the list would drop into this folder.
+    property bool dropTarget: false
     property bool cut: false
     property bool renaming: false
     // Rows from where the list opened, while a folder's entries have just
@@ -35,6 +39,9 @@ Rectangle {
     required property real now
 
     signal pressed(int modifiers)
+    // Released where it was pressed, without dragging.
+    signal clicked(int modifiers)
+    signal dragRequested
     signal opened
     // A right-click at `at` (in the row).
     signal menuAsked(point at)
@@ -43,7 +50,7 @@ Rectangle {
 
     height: Tokens.filesRowHeight
     radius: Tokens.menuRowRadius
-    color: selected ? Tokens.selected : mouse.containsMouse ? Tokens.hover : "transparent"
+    color: dropTarget ? Tokens.filesDropTarget : selected ? Tokens.selected : mouse.containsMouse ? Tokens.hover : "transparent"
     opacity: cut ? Tokens.filesCutOpacity : 1
 
     component Cell: Text {
@@ -152,18 +159,37 @@ Rectangle {
         enabled: !entry.renaming
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton
+        // A drag takes the rows along; the wheel scrolls the list.
+        preventStealing: true
+
+        // Where the press was, until it moved far enough to drag.
+        property point pressedAt
+        property bool dragging: false
+
         onPressed: press => {
-            if (press.button === Qt.RightButton)
+            if (press.button === Qt.RightButton) {
                 entry.menuAsked(Qt.point(press.x, press.y));
-            else
-                entry.pressed(press.modifiers);
+                return;
+            }
+            pressedAt = Qt.point(press.x, press.y);
+            dragging = false;
+            entry.pressed(press.modifiers);
+        }
+        onPositionChanged: move => {
+            if ((pressedButtons & Qt.LeftButton) && !dragging && Math.hypot(move.x - pressedAt.x, move.y - pressedAt.y) >= Tokens.filesDragStart) {
+                dragging = true;
+                entry.dragRequested();
+            }
+        }
+        onClicked: click => {
+            if (click.button === Qt.LeftButton && !dragging)
+                entry.clicked(click.modifiers);
         }
         onDoubleClicked: press => {
             if (press.button === Qt.LeftButton)
                 entry.opened();
         }
     }
-
     onRenamingChanged: {
         if (!renaming)
             return;
