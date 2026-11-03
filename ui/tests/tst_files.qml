@@ -281,6 +281,8 @@ Item {
             compare(Arrival.order(600, 0, 20), -1, "a later page");
             compare(Arrival.order(3, -1, 20), -1, "no wave running");
             compare(Arrival.wait(-1, 21, 21, pace), -1);
+        }
+
         // Explorer's "197 GB free of 931 GB": 1024-based, like every size in
         // Nova, one decimal under 10.
         function test_a_drive_reads_what_is_free_of_its_size() {
