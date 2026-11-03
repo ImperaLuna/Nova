@@ -425,7 +425,7 @@ Item {
                 }
             })
 
-        function test_the_files_mode_shows_only_with_nova_files_and_ctrl_tab_switches_to_it() {
+        function test_the_files_mode_shows_only_with_nova_files_and_tab_switches_to_it() {
             const without = make();
             verify(!findChild(without, "modes").visible);
             keyClick(Qt.Key_Tab, Qt.ControlModifier);
@@ -437,13 +437,17 @@ Item {
             });
             verify(findChild(launcher, "modes").visible);
             keyClick("r");
-            keyClick(Qt.Key_Tab, Qt.ControlModifier);
+            keyClick(Qt.Key_Tab);
             compare(launcher.mode, "files");
             verify(!launcher.showsPinned);
             compare(Array.from(searches.signalArguments[searches.count - 1]), ["r", "files"], "what's typed is searched again");
             launcher.showMatches("r", [documents], "apps");
             compare(launcher.rows.length, 0, "an answer from the other mode is dropped");
-            keyClick(Qt.Key_Backtab, Qt.ControlModifier | Qt.ShiftModifier);
+            keyClick(Qt.Key_Backtab, Qt.ShiftModifier);
+            compare(launcher.mode, "apps", "Shift+Tab switches back");
+            keyClick(Qt.Key_Tab, Qt.ControlModifier);
+            compare(launcher.mode, "files", "Ctrl+Tab switches too");
+            keyClick(Qt.Key_Tab);
             compare(launcher.mode, "apps");
             launcher.open = false;
             launcher.open = true;
@@ -488,6 +492,7 @@ Item {
             compare(launcher.completion, "", "the rows are the previous query's");
             keyClick(Qt.Key_Tab);
             compare(launcher.query, "~/D");
+            compare(launcher.mode, "files", "Tab in a typed path never switches modes");
             for (let i = 0; i < 3; i++)
                 keyClick(Qt.Key_Backspace);
             compare(launcher.mode, "apps", "the path switched to Files, so clearing it switches back");
@@ -537,7 +542,7 @@ Item {
             compare(Array.from(launches.signalArguments[0]), ["files", "/home/me/.cache/report.pdf", true]);
             launcher.launching = null;
             keyClick(Qt.Key_Tab);
-            compare(launcher.query, "~/.cache/report.pdf", "Tab fills in a found file's path");
+            compare(launcher.mode, "apps", "outside a typed path, Tab switches modes");
         }
     }
 

@@ -1250,6 +1250,37 @@ Item {
             compare(tileOpens.count, 1);
         }
 
+        SignalSpy {
+            id: tileMenus
+            signalName: "menuAsked"
+        }
+
+        SignalSpy {
+            id: tileRenames
+            signalName: "renameDone"
+        }
+
+        function test_a_tile_asks_for_its_menu_renames_and_fades_when_cut() {
+            const tile = createTemporaryObject(tileComponent, stage, {
+                name: "notes.md"
+            });
+            tileMenus.target = tile;
+            tileRenames.target = tile;
+            tileMenus.clear();
+            tileRenames.clear();
+            waitForRendering(tile);
+            mouseClick(tile, tile.width / 2, tile.height / 2, Qt.RightButton);
+            compare(tileMenus.count, 1, "a right-click is the tile's, not the folder's");
+            tile.cut = true;
+            compare(tile.opacity, Tokens.filesCutOpacity);
+            tile.renaming = true;
+            compare(findText(tile, "notes.md"), null, "the name gives way to the field");
+            keyClick(Qt.Key_A);
+            keyClick(Qt.Key_Return);
+            compare(tileRenames.count, 1);
+            compare(tileRenames.signalArguments[0][0], "a.md", "the name up to its extension was picked");
+        }
+
         function test_a_file_tile_shows_its_thumbnail_in_place_of_its_icon() {
             thumbnailAnswers.clear();
             const tile = createTemporaryObject(tileComponent, stage, {

@@ -91,53 +91,14 @@ Rectangle {
                 color: entry.hidden ? Tokens.filesFaint : Tokens.fg
                 text: Paths.shown(entry.name)
             }
-            Rectangle {
+            NameField {
                 anchors.verticalCenter: parent.verticalCenter
-                visible: entry.renaming
                 width: parent.width - icon.width - parent.spacing
                 height: Tokens.filesRowHeight - 2 * Tokens.labelNudge * 2
-                radius: Tokens.filesCrumbRadius
-                color: Tokens.filesField
-                border.width: Tokens.filesFocusRing
-                border.color: Tokens.primary
-
-                TextInput {
-                    id: field
-                    anchors.fill: parent
-                    anchors.leftMargin: Tokens.labelNudge * 4
-                    anchors.rightMargin: Tokens.labelNudge * 4
-                    verticalAlignment: TextInput.AlignVCenter
-                    clip: true
-                    font.family: Tokens.fontSans
-                    font.pixelSize: Tokens.fontSize
-                    color: Tokens.fg
-                    selectionColor: Tokens.selected
-                    selectedTextColor: Tokens.fg
-                    // Answered once: Enter, Esc or leaving it.
-                    property bool answered: false
-
-                    function finish(name: string) {
-                        if (answered)
-                            return;
-                        answered = true;
-                        entry.renameDone(name);
-                    }
-
-                    // After the field's own keys: Enter and Esc answer, and
-                    // no other key reaches the list while it's open.
-                    Keys.priority: Keys.AfterItem
-                    Keys.onPressed: event => {
-                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
-                            finish(text);
-                        else if (event.key === Qt.Key_Escape)
-                            finish("");
-                        event.accepted = true;
-                    }
-                    onActiveFocusChanged: {
-                        if (!activeFocus && entry.renaming)
-                            finish(text);
-                    }
-                }
+                name: entry.name
+                dir: entry.dir
+                renaming: entry.renaming
+                onDone: typed => entry.renameDone(typed)
             }
         }
         Cell {
@@ -181,59 +142,16 @@ Rectangle {
         }
     }
 
-    MouseArea {
+    EntryMouse {
         id: mouse
         anchors.fill: parent
         enabled: !entry.renaming
-        hoverEnabled: true
-        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-        // A drag takes the rows along; the wheel scrolls the list.
-        preventStealing: true
-
-        // Where the press was, until it moved far enough to drag.
-        property point pressedAt
-        property bool dragging: false
-
-        onPressed: press => {
-            if (press.button === Qt.RightButton) {
-                entry.menuAsked(Qt.point(press.x, press.y));
-                return;
-            }
-            pressedAt = Qt.point(press.x, press.y);
-            dragging = false;
-            if (press.button === Qt.LeftButton)
-                entry.pressed(press.modifiers);
-        }
-        onPositionChanged: move => {
-            if ((pressedButtons & Qt.LeftButton) && !dragging && Math.hypot(move.x - pressedAt.x, move.y - pressedAt.y) >= Tokens.filesDragStart) {
-                dragging = true;
-                entry.dragRequested();
-            }
-        }
-        onClicked: click => {
-            if (click.button === Qt.MiddleButton)
-                entry.middleClicked();
-            else if (click.button === Qt.LeftButton && !dragging)
-                entry.clicked(click.modifiers);
-        }
-        onDoubleClicked: press => {
-            if (press.button === Qt.LeftButton)
-                entry.opened();
-        }
-    }
-    onRenamingChanged: {
-        if (!renaming)
-            return;
-        field.answered = false;
-        // The name as novad spells it, so bytes that aren't UTF-8 stay as
-        // they were in a name that's only partly changed.
-        field.text = name;
-        field.select(0, Listing.stemLength(field.text, dir));
-        field.forceActiveFocus();
-    }
-    Component.onCompleted: {
-        if (renaming)
-            renamingChanged();
+        onEntryPressed: modifiers => entry.pressed(modifiers)
+        onEntryClicked: modifiers => entry.clicked(modifiers)
+        onDragRequested: entry.dragRequested()
+        onEntryOpened: entry.opened()
+        onMiddleClicked: entry.middleClicked()
+        onMenuAsked: at => entry.menuAsked(at)
     }
 
     transform: Translate {

@@ -315,7 +315,8 @@ FloatingWindow {
         menu.open(items, Qt.point(shown.x, shown.y));
     }
 
-    // The command row's View menu: Icons or Details, the one shown checked.
+    // The command row's View menu: Icons or Details, the one shown checked,
+    // then Hidden items (dot files shown, Ctrl+H), as in Explorer's View.
     function viewItems(): var {
         const item = (label, icon, view) => ({
                     label: label,
@@ -323,7 +324,7 @@ FloatingWindow {
                     checked: list.view === view,
                     act: () => list.view = view
                 });
-        return [item(qsTr("Icons"), Icons.GRID, Listing.ICONS), item(qsTr("Details"), Icons.VIEW, Listing.DETAILS)];
+        return [item(qsTr("Icons"), Icons.GRID, Listing.ICONS), item(qsTr("Details"), Icons.VIEW, Listing.DETAILS), Menus.SEPARATOR, Menus.hiddenItems(list.showHidden, window.act)];
     }
 
     // A torn out tab wants a window like this one, starting as `carried`.
