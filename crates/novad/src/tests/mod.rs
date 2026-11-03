@@ -311,12 +311,14 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             // Files opened from archives under `<dir>/opened`.
             opened: Some(dir.join("opened")),
             mounts: dir.join("no-mountinfo"),
+            previews: Some(dir.join("previews")),
+            // A cache under `<dir>/thumbnails`, and no thumbnailers.
+            thumbnails: crate::files::thumbnails::Sources::under(dir),
             bookmarks: None,
             user_folders: Vec::new(),
             recent: None,
             // Steam, once a test installs it, at `<dir>/steam`.
             games: crate::files::games::Sources { steam: vec![dir.join("steam")] },
-            previews: Some(dir.join("previews")),
         },
         session_lock: dir.to_owned(),
         screenshots: dir.to_owned(),

@@ -296,6 +296,12 @@ impl<'a> Connection<'a> {
                 done(self.files().and_then(|files| files.open(self.id, *view, path, *sort, *hidden, filter.as_ref())))
             }
             Command::FilesClose { view } => done(self.files().map(|files| files.close(self.id, *view))),
+            // Queued here, so a cancel never overtakes the ask it follows;
+            // the thumbnail comes as an event, worked out off this thread.
+            Command::FilesThumbnail { path } => done(self.files().and_then(|files| files.thumbnail(self.id, path))),
+            Command::FilesThumbnailCancel { path } => {
+                done(self.files().map(|files| files.cancel_thumbnail(self.id, path)))
+            }
             Command::FilesTransfer { job, mode, sources, folder } => {
                 done(self.files().and_then(|files| files.transfer(self.id, *job, *mode, sources, folder)))
             }
@@ -1047,7 +1053,9 @@ impl<'a> Connection<'a> {
             | Command::FilesSetAccess { .. }
             | Command::FilesNewFolder { .. }
             | Command::FilesRename { .. }
-            | Command::FilesDetails { .. } => {}
+            | Command::FilesDetails { .. }
+            | Command::FilesThumbnail { .. }
+            | Command::FilesThumbnailCancel { .. } => {}
             Command::FilesTree { .. } | Command::FilesPlaces | Command::FilesPin { .. } | Command::FilesRecent => {}
         }
     }

@@ -17,6 +17,7 @@ import "../theme/icons.js" as Icons
 import "../files/transfers.js" as Transfers
 import "../files/tabs.js" as Tabs
 import "../files/preview.js" as Preview
+import "../files/thumbnails.js" as Thumbnails
 import "../files/space.js" as Space
 import "../text/bytes.js" as Bytes
 import "../files/search.js" as Search
@@ -1170,8 +1171,43 @@ Item {
                 dir: false
                 hidden: false
                 mime: "text/plain"
+                modified: 0
+                folder: "/home/ana/Pictures"
+                thumbnails: null
                 selected: false
                 riseWait: -1
+            }
+        }
+
+        // Stands in for FilesService's thumbnail calls, which need novad:
+        // it keeps what's asked for, and `answer` sends what novad would.
+        QtObject {
+            id: thumbnailAnswers
+
+            property var asked: []
+            property var cancelled: []
+
+            function thumbnail(path, modified, done) {
+                asked = asked.concat([
+                    {
+                        path: path,
+                        done: done
+                    }
+                ]);
+            }
+            function cancelThumbnail(path, done) {
+                cancelled = cancelled.concat([path]);
+                asked = asked.filter(ask => ask.done !== done);
+            }
+            function answer(file) {
+                const waiting = asked;
+                asked = [];
+                for (const ask of waiting)
+                    ask.done(file);
+            }
+            function clear() {
+                asked = [];
+                cancelled = [];
             }
         }
 
@@ -1212,6 +1248,92 @@ Item {
             compare(tilePresses.signalArguments[0][0] & Qt.ControlModifier, Qt.ControlModifier);
             mouseDoubleClickSequence(tile, tile.width / 2, tile.height / 2);
             compare(tileOpens.count, 1);
+        }
+
+        function test_a_file_tile_shows_its_thumbnail_in_place_of_its_icon() {
+            thumbnailAnswers.clear();
+            const tile = createTemporaryObject(tileComponent, stage, {
+                name: "beach.png",
+                mime: "image/png",
+                thumbnails: thumbnailAnswers
+            });
+            compare(thumbnailAnswers.asked.map(ask => ask.path), ["/home/ana/Pictures/beach.png"]);
+            const icon = findIcon(tile);
+            verify(icon.visible, "the type's icon until the thumbnail comes");
+            // A 400×300 PNG, as the cache holds one.
+            thumbnailAnswers.answer(Qt.resolvedUrl("data/frame-400x300.png").toString().replace("file://", ""));
+            tryVerify(() => !icon.visible);
+            const picture = findImage(tile);
+            verify(picture.width <= tile.width - 2 * Tokens.filesTilePad && picture.height <= icon.height, "it fits the icon's place");
+            fuzzyCompare(picture.width / picture.height, 4 / 3, 0.05, "it isn't cropped or stretched");
+            verify(findText(tile, "beach.png").y >= icon.y + icon.height, "the name stays below it");
+
+            tile.modified = 1;
+            compare(thumbnailAnswers.asked.length, 1, "a changed file is asked for again");
+            tile.destroy();
+            tryVerify(() => thumbnailAnswers.cancelled.includes("/home/ana/Pictures/beach.png"), 5000, "a tile that goes cancels its ask");
+        }
+
+        function test_a_file_without_a_thumbnail_and_a_folder_keep_their_icons() {
+            thumbnailAnswers.clear();
+            const file = createTemporaryObject(tileComponent, stage, {
+                name: "notes.txt",
+                thumbnails: thumbnailAnswers
+            });
+            thumbnailAnswers.answer("");
+            verify(findIcon(file).visible);
+            const folder = createTemporaryObject(tileComponent, stage, {
+                name: "Trips",
+                dir: true,
+                thumbnails: thumbnailAnswers
+            });
+            compare(thumbnailAnswers.asked.length, 0, "folders aren't asked for");
+            verify(findIcon(folder).visible);
+        }
+
+        function test_a_thumbnail_answer_goes_to_those_who_wanted_that_version() {
+            const old = {
+                modified: 1000,
+                again: false
+            };
+            const edited = {
+                modified: 2000,
+                again: false
+            };
+            const split = Thumbnails.split([old, edited], {
+                path: "/p.png",
+                modified_ms: 2000,
+                thumbnail: "/t.png"
+            });
+            compare(split.answered, [edited]);
+            compare(split.again, [old], "it asks once more for the file as it is");
+            old.again = true;
+            compare(Thumbnails.split([old], {
+                path: "/p.png",
+                modified_ms: 2000
+            }).answered, [old], "but only once");
+            compare(Thumbnails.split([edited], {
+                path: "/gone.png"
+            }).answered, [edited], "a file that's gone answers everyone");
+        }
+
+        function findIcon(item) {
+            return findChild(item, child => child instanceof LineIcon);
+        }
+
+        function findImage(item) {
+            return findChild(item, child => child instanceof Image);
+        }
+
+        function findChild(item, matches) {
+            for (const child of item.children) {
+                if (matches(child))
+                    return child;
+                const found = findChild(child, matches);
+                if (found)
+                    return found;
+            }
+            return null;
         }
 
         function test_a_dot_file_tile_reads_fainter() {

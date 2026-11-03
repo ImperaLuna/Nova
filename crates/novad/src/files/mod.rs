@@ -68,6 +68,9 @@
 //!   pane shows about an item.
 //! - `history.rs`: undo and redo of copies, moves, trashing, renaming and
 //!   new folders, one history for the session that every window shares.
+//! - `thumbnails/`: pictures of images and videos for the Icons view
+//!   (`files_thumbnail`), from the shared freedesktop cache or made by the
+//!   system's thumbnailers off the connection's thread.
 //!
 //! How solid the windows are (`[files]` in config.toml) is applied in place
 //! and published on [`Topic::Files`] as [`Event::FilesLook`], so the open
@@ -103,6 +106,7 @@ mod recent;
 pub mod search;
 mod sizes;
 mod target;
+pub mod thumbnails;
 mod transfers;
 mod trash;
 pub mod tree;
@@ -185,6 +189,8 @@ pub struct Sources {
     /// Where files opened from inside archives are extracted; none without
     /// a home.
     pub opened: Option<PathBuf>,
+    /// Where thumbnails are kept and what makes them.
+    pub thumbnails: thumbnails::Sources,
 }
 
 pub struct Files {
@@ -216,6 +222,8 @@ pub struct Files {
     quick_access: quick_access::QuickAccess,
     /// What the preview pane shows.
     previews: Arc<preview::Previews>,
+    /// Thumbnails for the Icons view.
+    thumbnails: thumbnails::Thumbnails,
 }
 
 /// What the module's services share.
@@ -297,6 +305,12 @@ impl Files {
         let measures = measures::Measures::new(Arc::clone(&hub));
         let history = Arc::new(History::new(Arc::clone(&hub)));
         let transfers = transfers::Transfers::new(Arc::clone(&hub), Arc::clone(&logger), Arc::clone(&history));
+        let thumbnails = thumbnails::Thumbnails::start(
+            sources.thumbnails.clone(),
+            Arc::clone(&hub),
+            Arc::clone(&logger),
+            Arc::clone(&mime),
+        );
         let trash = Arc::new(Trash::new(sources.trash.clone(), sources.mounts.clone(), Arc::clone(&mime)));
         let trash_watch = trash::Watch::start(Arc::clone(&trash), Arc::clone(&hub), Arc::clone(&logger));
         let previews = Arc::new(preview::Previews::new(Arc::clone(&mime), sources.previews.clone(), path_var));
@@ -347,6 +361,7 @@ impl Files {
             search,
             quick_access,
             previews,
+            thumbnails,
         })
     }
 
@@ -544,6 +559,18 @@ impl Files {
         self.transfers.answer(client, job, clash, answer, all)
     }
 
+    /// Client `client` wants a thumbnail of the file at `path`
+    /// (`files_thumbnail`, [`thumbnails::Thumbnails::request`]).
+    pub fn thumbnail(&self, client: ClientId, path: &str) -> Result<(), String> {
+        self.thumbnails.request(client, path)
+    }
+
+    /// Client `client` no longer shows the file at `path`
+    /// (`files_thumbnail_cancel`).
+    pub fn cancel_thumbnail(&self, client: ClientId, path: &str) {
+        self.thumbnails.cancel(client, path);
+    }
+
     /// What the Properties window shows about the item at `path`
     /// (`files_properties`). It reads the file, so it's called off the
     /// connection's thread.
@@ -636,6 +663,7 @@ impl Files {
     pub fn client_gone(&self, client: ClientId) {
         self.folders.client_gone(client);
         self.transfers.client_gone(client);
+        self.thumbnails.client_gone(client);
         self.measures.client_gone(client);
         // Its picker windows went with it; those still waiting for a
         // process stay. Under the delivery lock, so a window being sent to
@@ -655,8 +683,8 @@ impl Files {
     /// Stops it: it publishes nothing more, gives up FileManager1 and the
     /// file chooser (its pickers end), closes
     /// Nova Files' windows and folder views, stops copies, following the
-    /// MIME database and keeping the search index, and drops windows still
-    /// waiting.
+    /// MIME database, keeping the search index and making thumbnails, and
+    /// drops windows still waiting.
     pub fn stop(&self) {
         self.stop.stop();
         self.mime.stop();
@@ -665,6 +693,7 @@ impl Files {
         self.drives.stop();
         self.transfers.stop();
         self.measures.stop();
+        self.thumbnails.stop();
         if let Some(watch) = &self.trash_watch {
             watch.stop();
         }
@@ -770,6 +799,7 @@ impl crate::modules::Module for Files {
             .iter()
             .map(|(kind, key, fallback)| (*kind, nova_paths::user_dir(key, fallback)))
             .collect();
+        let thumbnails = thumbnails::Sources::system(data_dirs.clone(), env.path_var);
         Sources {
             bus: Bus::Session,
             udisks: Bus::System,
@@ -787,6 +817,7 @@ impl crate::modules::Module for Files {
             games,
             previews: nova_paths::cache_home().map(|cache| cache.join(PREVIEWS_DIR)),
             opened: nova_paths::cache_home().map(|cache| cache.join(OPENED_DIR)),
+            thumbnails,
         }
     }
 
@@ -875,6 +906,7 @@ mod tests {
                 games: games::Sources { steam: vec![] },
                 previews: None,
                 opened: Some(dir.join("opened")),
+                thumbnails: thumbnails::Sources::under(&dir),
             };
             let apps = crate::apps::AppIndex::of(None, &logger);
             let files = Files::start(sources, Arc::clone(&hub), logger, apps, "");
