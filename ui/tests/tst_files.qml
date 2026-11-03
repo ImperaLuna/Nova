@@ -167,6 +167,7 @@ Item {
                 mime: "inode/directory"
             });
             compare(row.size, -1, "a folder has no size");
+            compare(row.archive, false, "only novad says what's an archive");
             compare(row.modified, -1);
             compare(entry("a.png", {
                 size: 48213,
@@ -342,6 +343,25 @@ Item {
                 folder: "",
                 files: []
             });
+            const photos = entry("photos.zip", {
+                mime: "application/zip",
+                archive: true
+            });
+            compare(Listing.opening([photos]), {
+                folder: "photos.zip",
+                files: []
+            }, "an archive opens like a folder");
+            compare(Listing.icon(photos), Icons.ARCHIVE);
+        }
+
+        function test_each_job_shows_what_it_does() {
+            compare(Transfers.icon(transfer(1, Protocol.TRANSFER_RUNNING)), Icons.COPY);
+            compare(Transfers.icon(transfer(1, Protocol.TRANSFER_RUNNING, {
+                mode: Protocol.TRANSFER_EXTRACT_HERE
+            })), Icons.EXTRACT);
+            compare(Transfers.icon(transfer(1, Protocol.TRANSFER_RUNNING, {
+                mode: Protocol.TRANSFER_COMPRESS
+            })), Icons.ARCHIVE);
         }
 
         function transfer(job, state, extra) {
