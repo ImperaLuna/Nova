@@ -175,10 +175,22 @@ pub fn next_event(queue: &Receiver<Outgoing>, wait: std::time::Duration) -> serd
     let deadline = std::time::Instant::now() + wait;
     loop {
         match queue.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
-            Ok(Outgoing::Line(line)) => return serde_json::from_str(&line).unwrap(),
-            Ok(Outgoing::Flushed(_)) => {}
+            Ok(sent) => {
+                if let Some(event) = sent_event(sent) {
+                    return event;
+                }
+            }
             Err(e) => panic!("no event in time: {e}"),
         }
+    }
+}
+
+/// What a client was sent, as a JSON event, or None for a flush marker.
+#[cfg(test)]
+fn sent_event(sent: Outgoing) -> Option<serde_json::Value> {
+    match sent {
+        Outgoing::Line(line) => Some(serde_json::from_str(&line).unwrap()),
+        Outgoing::Flushed(_) => None,
     }
 }
 
@@ -197,13 +209,11 @@ pub fn named_within(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Dur
     loop {
         let left = deadline.checked_duration_since(std::time::Instant::now())?;
         match queue.recv_timeout(left) {
-            Ok(Outgoing::Line(line)) => {
-                let event: serde_json::Value = serde_json::from_str(&line).unwrap();
-                if event["event"] == name {
+            Ok(sent) => {
+                if let Some(event) = sent_event(sent).filter(|event| event["event"] == name) {
                     return Some(event["data"].clone());
                 }
             }
-            Ok(Outgoing::Flushed(_)) => {}
             Err(_) => return None,
         }
     }
@@ -215,13 +225,7 @@ pub fn named_within(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Dur
 /// built), so "nothing came" is the wrong question.
 #[cfg(test)]
 pub fn count_named(queue: &Receiver<Outgoing>, name: &str) -> usize {
-    queue
-        .try_iter()
-        .filter(|sent| {
-            matches!(sent, Outgoing::Line(line)
-                if serde_json::from_str::<serde_json::Value>(line).unwrap()["event"] == name)
-        })
-        .count()
+    queue.try_iter().filter_map(sent_event).filter(|event| event["event"] == name).count()
 }
 
 #[cfg(test)]
