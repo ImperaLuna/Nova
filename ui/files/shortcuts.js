@@ -177,13 +177,18 @@ function action(where, key, modifiers) {
     return entry ? entry.action : "";
 }
 
+// Below this and at DELETE_CHARACTER a key's text is a control character
+// (Backspace, Tab, Esc), not typing.
+var FIRST_PRINTABLE = 0x20;
+var DELETE_CHARACTER = 0x7f;
+
 // The text a key press types into a list's name search, or "" when it
 // isn't typing: Ctrl or Alt held, nothing printable, or a space before any
 // letter (a space only continues a name).
 function typed(text, modifiers, typing) {
     if (modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
         return "";
-    if (text.length === 0 || text.charCodeAt(0) < 0x20 || text.charCodeAt(0) === 0x7f)
+    if (text.length === 0 || text.charCodeAt(0) < FIRST_PRINTABLE || text.charCodeAt(0) === DELETE_CHARACTER)
         return "";
     if (text === " " && typing === "")
         return "";

@@ -20,8 +20,9 @@ import "../daemon/protocol.js" as Protocol
 // `folder` follows the window's Navigator as it moves (Alt+Left,
 // Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
 // window's keys are the table's WINDOW entries (shortcuts.js), done by
-// act(); the lists answer their own, and ask the window to undo and redo
-// (Ctrl+Z, Ctrl+Y), which novad does for every window alike. Its
+// act(); the lists answer their own, and hand it theirs that are the
+// window's, like undo and redo (Ctrl+Z, Ctrl+Y), which novad does for
+// every window alike; what can't be undone gets a notice. Its
 // frame and its file list each go from glass to solid as config.toml's
 // [files] says, live. Each draws its own background, so one never shows
 // through the other.
@@ -37,6 +38,10 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    readonly property string home: Quickshell.env("HOME") ?? ""
+    // A dialog or menu has the window's attention: the confirm dialog, a
+    // name clash, a drive's menu or its eject problem.
+    readonly property bool asking: confirming !== null || transfers.asking !== null || driveMenu.visible || ejectProblem.visible
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -114,12 +119,6 @@ FloatingWindow {
         focusList();
     }
 
-    // Undoes the last step taken in any window, or redoes the last one
-    // undone (`redo`); what can't be done gets a notice.
-    function undo(redo: bool) {
-        transfers.undo(redo, error => window.notice(null, error));
-    }
-
     function notice(row: var, error: string) {
         problems = problems.concat([
             {
@@ -160,8 +159,12 @@ FloatingWindow {
                 list.refresh();
             break;
         case "newWindow":
-            // From the trash, on the folder its tree is on.
-            FilesService.showFolder(inTrash ? navigator.treeFolder : folder);
+            // From the trash, on the folder its tree is on, or home.
+            FilesService.showFolder(inTrash ? (navigator.treeFolder || home) : folder);
+            break;
+        case "undo":
+        case "redo":
+            transfers.undo(action === "redo", error => notice(null, error));
             break;
         case "closeWindow":
             // Hiding a window from QML doesn't say `closed` (only the
@@ -191,7 +194,7 @@ FloatingWindow {
 
             Shortcut {
                 sequences: entry.modelData.keys
-                enabled: window.confirming === null || entry.modelData.asking === true
+                enabled: !window.asking || entry.modelData.asking === true
                 onActivated: window.act(entry.modelData.action)
             }
         }
@@ -270,9 +273,7 @@ FloatingWindow {
         focus: true
         onFolderOpened: path => window.navigator.visit(path, null)
         onTrashRequested: rows => window.moveToTrash(rows)
-        onBackRequested: window.navigator.step(-1)
-        onUndoRequested: window.undo(false)
-        onRedoRequested: window.undo(true)
+        onActionRequested: action => window.act(action)
         onDeleteRequested: rows => window.deleteForGood(rows)
         solid: FilesService.listSolid
     }
@@ -289,12 +290,10 @@ FloatingWindow {
         anchors.bottom: parent.bottom
         visible: window.inTrash
         model: trash
-        home: Quickshell.env("HOME") ?? ""
+        home: window.home
         solid: FilesService.listSolid
         onEraseRequested: window.erase()
-        onBackRequested: window.navigator.step(-1)
-        onUndoRequested: window.undo(false)
-        onRedoRequested: window.undo(true)
+        onActionRequested: action => window.act(action)
         onVisibleChanged: {
             if (visible)
                 focusList();

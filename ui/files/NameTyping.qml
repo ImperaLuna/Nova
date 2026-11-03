@@ -17,15 +17,19 @@ QtObject {
         onTriggered: typing.text = ""
     }
 
-    // Takes a key press (its `text` and `modifiers`) as typing among
-    // `names` from row `current`, calling `go(index)` with the row it
-    // finds. False when the press isn't typing.
-    function press(pressed: string, modifiers: int, names: var, current: int, go: var): bool {
+    // Takes a key press (its `text` and `modifiers`) as typing among the
+    // rows of `rows` (a ListModel with a `name` role) from row `current`,
+    // calling `go(index)` with the row it finds. False when the press isn't
+    // typing; the names are read only when it is.
+    function press(pressed: string, modifiers: int, rows: ListModel, current: int, go: var): bool {
         const letter = Shortcuts.typed(pressed, modifiers, text);
         if (letter === "")
             return false;
         text += letter;
         _pause.restart();
+        const names = [];
+        for (let index = 0; index < rows.count; index++)
+            names.push(rows.get(index).name);
         const found = Shortcuts.find(names, current, text);
         if (found >= 0)
             go(found);
