@@ -289,6 +289,46 @@ Item {
             tryCompare(launcher, "open", false);
         }
 
+        function test_a_pinned_tile_launching_leaves_the_selected_row_alone() {
+            const launcher = make();
+            launcher.launch({
+                provider: "apps",
+                id: "foot.desktop"
+            }, false);
+            verify(launcher.isLaunching({
+                provider: "apps",
+                id: "foot.desktop"
+            }));
+            verify(!launcher.launchingSelected, "the selected Files row isn't the one launching");
+        }
+
+        function test_the_selected_row_launching_shows_on_it() {
+            const launcher = make();
+            keyClick(Qt.Key_Return);
+            verify(launcher.launchingSelected);
+        }
+
+        function test_a_new_recent_order_shows_the_next_time_it_opens() {
+            const launcher = make();
+            const before = ids(launcher.rows);
+            launcher.pointed(1, Qt.point(10, 40));
+            keyClick(Qt.Key_Return);
+            // novad moves the launched app to the top before it answers.
+            launcher.recent = ["firefox.desktop", "org.gnome.Nautilus.desktop"];
+            compare(ids(launcher.rows), before, "held while it launches");
+            launcher.launched(null);
+            tryCompare(launcher, "open", false);
+            compare(ids(launcher.rows), before, "held while it fades out");
+            launcher.open = true;
+            compare(ids(launcher.rows), ["firefox.desktop", "org.gnome.Nautilus.desktop", "foot.desktop"]);
+        }
+
+        function test_a_new_recent_order_shows_at_once_while_nothing_launches() {
+            const launcher = make();
+            launcher.recent = ["firefox.desktop"];
+            compare(ids(launcher.rows), ["firefox.desktop", "org.gnome.Nautilus.desktop", "foot.desktop"]);
+        }
+
         function test_rows_scrolling_under_a_still_pointer_keep_the_selection() {
             const launcher = make();
             launcher.pointed(1, Qt.point(10, 40));
