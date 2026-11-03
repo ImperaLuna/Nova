@@ -7,6 +7,7 @@ import "service"
 import "paths.js" as Paths
 import "trash.js" as Trash
 import "commands.js" as Commands
+import "shortcuts.js" as Shortcuts
 import "menus.js" as Menus
 import "../daemon/protocol.js" as Protocol
 
@@ -23,7 +24,9 @@ import "../daemon/protocol.js" as Protocol
 // Cut, copy and paste go through the system clipboard (FilesClipboard);
 // pasting copies or moves into the folder shown, like dropping there.
 // `folder` follows the window's Navigator as it moves (Alt+Left,
-// Alt+Right, Alt+Up and the mouse's back and forward buttons too). Its
+// Alt+Right, Alt+Up and the mouse's back and forward buttons too). The
+// window's keys are the table's WINDOW entries (shortcuts.js), and every
+// command, from a key, a menu or a button, is done by act(). Its
 // frame and its file list each go from glass to solid as config.toml's
 // [files] says, live. Each draws its own background, so one never shows
 // through the other.
@@ -39,6 +42,10 @@ FloatingWindow {
     readonly property color frameColor: Tokens.mix(Tokens.glass, Tokens.filesSolidFrame, FilesService.frameSolid)
 
     readonly property bool inTrash: Trash.isTrash(folder)
+    readonly property string home: Quickshell.env("HOME") ?? ""
+    // A dialog or menu has the window's attention: the confirm dialog, a
+    // name clash, a menu or a drive's eject problem.
+    readonly property bool asking: confirming !== null || transfers.asking !== null || menu.shown || ejectProblem.visible
     // What the confirm dialog asks, and what a yes does: {asking, act}.
     property var confirming: null
     // Notices of what the trash couldn't do, oldest first: {row, error}.
@@ -74,9 +81,38 @@ FloatingWindow {
         case Commands.NEW_WINDOW:
             if (extra)
                 window.onDrive(extra, mount => FilesService.openWindow(mount));
+            else if (rows.length === 0)
+                // From the trash, on the folder its tree is on, or home.
+                FilesService.openWindow(inTrash ? (navigator.treeFolder || home) : folder);
             else
                 for (const row of rows.filter(row => row.dir))
                     FilesService.openWindow(Paths.child(folder, row.name));
+            break;
+        case Commands.CLOSE_WINDOW:
+            // Hiding a window from QML doesn't say `closed` (only the
+            // compositor closing it does), which files.qml waits for.
+            closed();
+            break;
+        case Commands.BACK:
+            navigator.step(-1);
+            break;
+        case Commands.FORWARD:
+            navigator.step(1);
+            break;
+        case Commands.UP:
+            navigator.up();
+            break;
+        case Commands.ADDRESS:
+            navigation.editAddress();
+            break;
+        case Commands.SEARCH:
+            navigation.editSearch();
+            break;
+        case Commands.REFRESH:
+            if (inTrash)
+                trash.refresh();
+            else
+                list.refresh();
             break;
         case Commands.CUT:
         case Commands.COPY:
@@ -117,6 +153,8 @@ FloatingWindow {
         case Commands.SORT:
             list.model.sort = extra;
             break;
+        default:
+            console.warn(`nova: files: no command ${command}`);
         }
     }
 
@@ -221,10 +259,7 @@ FloatingWindow {
         confirming = null;
         if (yes)
             act?.();
-        if (inTrash)
-            trashList.focusList();
-        else
-            list.forceActiveFocus();
+        focusList();
     }
 
     function notice(row: var, error: string) {
@@ -243,21 +278,28 @@ FloatingWindow {
             confirmDialog.shown = confirming.asking;
     }
 
-    Shortcut {
-        sequence: "Alt+Left"
-        onActivated: window.navigator.step(-1)
+    // The quiet keyboard focus after a text field or a dialog lets go.
+    function focusList() {
+        if (inTrash)
+            trashList.focusList();
+        else
+            list.forceActiveFocus();
     }
-    Shortcut {
-        sequence: "Alt+Right"
-        onActivated: window.navigator.step(1)
-    }
-    Shortcut {
-        sequence: "Alt+Up"
-        onActivated: window.navigator.up()
-    }
-    Shortcut {
-        sequences: ["Ctrl+L", "Alt+D"]
-        onActivated: navigation.editAddress()
+
+    Repeater {
+        model: Shortcuts.entries(Shortcuts.WINDOW)
+
+        Item {
+            id: entry
+
+            required property var modelData
+
+            Shortcut {
+                sequences: entry.modelData.keys
+                enabled: !window.asking || entry.modelData.asking === true
+                onActivated: window.act(entry.modelData.action, [], null)
+            }
+        }
     }
     TapHandler {
         acceptedButtons: Qt.BackButton | Qt.ForwardButton
@@ -289,7 +331,8 @@ FloatingWindow {
         anchors.top: parent.top
         navigator: window.navigator
         solid: FilesService.frameSolid
-        onAddressClosed: list.forceActiveFocus()
+        onAddressClosed: window.focusList()
+        onSearchClosed: window.focusList()
     }
     CommandRow {
         id: commands
@@ -378,8 +421,10 @@ FloatingWindow {
         anchors.bottom: parent.bottom
         visible: window.inTrash
         model: trash
+        home: window.home
         solid: FilesService.listSolid
         onEraseRequested: window.erase()
+        onCommandRequested: command => window.act(command, [], null)
         onVisibleChanged: {
             if (visible)
                 focusList();

@@ -715,6 +715,9 @@ QtObject {
     readonly property int durationRowIn: 220
     // How often the Modified column looks at the clock, so "Today" moves on.
     readonly property int filesClockTick: 60000
+    // A pause this long in typing a name in a file list starts a new name,
+    // as in Explorer.
+    readonly property int filesTypingPause: 1000
     // Solid Nova Files ([files] in config.toml) ends at the theme's soft
     // greys: the frame a step above bg, the file list at bg. On the way the
     // raised rows fade into the frame.

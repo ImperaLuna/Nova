@@ -1,17 +1,20 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell
 import "../theme"
 import "listing.js" as Listing
+import "commands.js" as Commands
+import "shortcuts.js" as Shortcuts
 import "trash.js" as Trash
 
 // The trash's list, where a window's file list goes while it shows the
 // trash: the column header (Name, then Original location, Date deleted and
 // Size, after Windows' Recycle Bin) over every trashed item, the last
 // trashed first, and the count at the foot. Click, Ctrl and Shift pick
-// items, the arrow keys move, Ctrl+A picks all, Delete asks to delete the
-// picked ones for good. A trashed item doesn't open. Like the file list,
+// items; its keys are the table's TRASH entries (shortcuts.js): the arrow
+// keys move, Ctrl+A picks all, Delete asks to delete the picked ones for
+// good, Backspace goes back (`commandRequested`), and typing a name goes to
+// it (NameTyping). A trashed item doesn't open. Like the file list,
 // it sits on its own glass or, as `solid` (0..1) rises, the theme's solid
 // list surface.
 Item {
@@ -23,10 +26,13 @@ Item {
     readonly property real nameWidth: headerRow.width - Tokens.filesTrashColumns.reduce((sum, column) => sum + column + headerRow.spacing, 0)
     // When the Date deleted column was last worked out.
     property real now: Date.now()
-    readonly property string home: Quickshell.env("HOME") ?? ""
+    // The home folder, which Original location reads from.
+    property string home: ""
 
     // Delete was pressed with items picked.
     signal eraseRequested
+    // A command that is the window's (Backspace's Commands.BACK).
+    signal commandRequested(string command)
 
     function focusList() {
         rows.forceActiveFocus();
@@ -134,17 +140,28 @@ Item {
             }
         }
 
+        NameTyping {
+            id: typing
+        }
+
         Keys.onPressed: event => {
-            if (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier)) {
+            switch (Shortcuts.action(Shortcuts.TRASH, event.key, event.modifiers)) {
+            case Commands.SELECT_ALL:
                 list.model.selectAll();
-                event.accepted = true;
-            } else if (event.key === Qt.Key_Delete && list.model.selectedCount > 0) {
-                list.eraseRequested();
-                event.accepted = true;
-            } else if (Listing.MOVES.includes(event.key) && rows.count > 0) {
-                rows.go(Listing.moved(event.key, rows.currentIndex, rows.count, rows.page), (event.modifiers & Qt.ShiftModifier) !== 0);
-                event.accepted = true;
+                return;
+            case Commands.BACK:
+                list.commandRequested(Commands.BACK);
+                return;
+            case Commands.DELETE_FOR_GOOD:
+                if (list.model.selectedCount > 0)
+                    list.eraseRequested();
+                return;
+            case Commands.MOVE:
+                if (rows.count > 0)
+                    rows.go(Listing.moved(event.key, rows.currentIndex, rows.count, rows.page), (event.modifiers & Qt.ShiftModifier) !== 0);
+                return;
             }
+            event.accepted = typing.press(event.text, event.modifiers, list.model.rows, rows.currentIndex, index => rows.go(index, false));
         }
     }
 

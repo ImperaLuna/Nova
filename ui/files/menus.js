@@ -1,6 +1,7 @@
 .pragma library
 
 .import "commands.js" as Commands
+.import "shortcuts.js" as Shortcuts
 .import "../daemon/protocol.js" as Protocol
 .import "../theme/icons.js" as Icons
 
@@ -14,7 +15,7 @@ function _item(label, icon, command, act, rows, extra) {
     return {
         label: label,
         icon: icon,
-        shortcut: Commands.shown(command),
+        shortcut: Shortcuts.shown(command),
         act: () => act(command, rows, extra)
     };
 }

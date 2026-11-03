@@ -8,20 +8,24 @@ import "../daemon/protocol.js" as Protocol
 import "listing.js" as Listing
 import "paths.js" as Paths
 import "commands.js" as Commands
+import "shortcuts.js" as Shortcuts
 
 // Nova Files' file list in Details: the column header (Name, then
 // Modified, Type and Size at their widths; a click sorts by that column,
 // again turns the order round) over the folder's rows from novad
 // (FolderModel), and the item count under them. A click selects a row,
-// Ctrl adds or drops one, Shift selects a run; the arrows, Page Up/Down,
-// Home and End move the selection (Shift extends it), Ctrl+A selects all,
-// Ctrl+H shows or hides dot files. A double-click or Enter opens: a
-// folder is gone into (`folderOpened`), files open in their default app.
-// Delete asks to move the selection to the trash (`trashRequested`),
-// Shift+Delete to delete it for good (`deleteRequested`). A right-click
+// Ctrl adds or drops one, Shift selects a run. Its keys are the table's
+// LIST entries (shortcuts.js): the arrows, Page Up/Down, Home and End move
+// the selection (Shift extends it), Ctrl+A selects all, Ctrl+H shows or
+// hides dot files, and typing a name goes to it (NameTyping). A
+// double-click or Enter opens: a folder is gone into (`folderOpened`),
+// files open in their default app. Delete asks to move the selection to
+// the trash (`trashRequested`), Shift+Delete to delete it for good
+// (`deleteRequested`). F5 (the window's) reads the folder again
+// (`refresh`). A right-click
 // asks for a menu (`menuRequested`): on an item, for the selection,
 // picking the item first unless it's already picked; on the empty list,
-// for the folder. The other shortcuts (commands.js) go to the window as
+// for the folder. The other keys' commands go to the window as
 // `commandRequested`. `rename(name)` turns that row's name into a field
 // (F2, or a new folder), renamed through novad when it closes. Cut items
 // read faded.
@@ -115,6 +119,9 @@ FocusScope {
         else if (command === Commands.TRASH) {
             if (rows.length > 0)
                 trashRequested(rows);
+        } else if (command === Commands.DELETE_FOR_GOOD) {
+            if (rows.length > 0)
+                deleteRequested(rows);
         } else if (command === Commands.RENAME) {
             if (rows.length === 1)
                 rename(rows[0].name);
@@ -178,8 +185,17 @@ FocusScope {
             FilesService.launch(Paths.child(folder, name), "", null);
     }
 
+    // Reads the folder again, keeping the selection.
+    function refresh() {
+        model.refresh();
+    }
+
     // A rename asked for in the folder before doesn't follow to the next.
-    onFolderChanged: renaming = ""
+    // Nor a name being typed.
+    onFolderChanged: {
+        renaming = "";
+        typing.text = "";
+    }
     Component.onCompleted: {
         const prefix = Paths.child(folder, "");
         model.selectNames(select.filter(path => path.startsWith(prefix) && !path.slice(prefix.length).includes("/")).map(path => path.slice(prefix.length)));
@@ -348,17 +364,19 @@ FocusScope {
             onOpened: list.open([list.model.rows.get(row.index)])
         }
 
+        NameTyping {
+            id: typing
+        }
+
         Keys.onPressed: event => {
-            const command = Commands.forKey(event.key, event.modifiers);
-            if (command !== "")
+            const command = Shortcuts.action(Shortcuts.LIST, event.key, event.modifiers);
+            if (command === Commands.MOVE) {
+                if (entryList.count > 0)
+                    entryList.go(Listing.moved(event.key, entryList.currentIndex, entryList.count, entryList.page), (event.modifiers & Qt.ShiftModifier) !== 0);
+            } else if (command !== "")
                 list.run(command);
-            else if (event.key === Qt.Key_Delete && (event.modifiers & Qt.ShiftModifier) !== 0) {
-                if (list.model.selectedCount > 0)
-                    list.deleteRequested(list.selection());
-            } else if (Listing.MOVES.includes(event.key) && entryList.count > 0)
-                entryList.go(Listing.moved(event.key, entryList.currentIndex, entryList.count, entryList.page), (event.modifiers & Qt.ShiftModifier) !== 0);
             else
-                event.accepted = false;
+                event.accepted = typing.press(event.text, event.modifiers, list.model.rows, entryList.currentIndex, index => entryList.go(index, false));
         }
     }
 

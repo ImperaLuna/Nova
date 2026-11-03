@@ -15,6 +15,10 @@ import "trash.js" as Trash
 // Alt+D) turns it into a text field holding the folder's path: Enter goes
 // to what's typed, Esc or clicking away puts the parts back. A path that
 // isn't a folder keeps the field open, outlined in the error color.
+//
+// Ctrl+F or F3 (the window's) puts the keyboard in the search field
+// (editSearch); Esc there clears what's typed, and a second Esc, on an
+// empty field, gives the keyboard back to the list (`searchClosed`).
 Rectangle {
     id: row
 
@@ -25,6 +29,10 @@ Rectangle {
 
     // Typing a path ended: the keyboard goes back to the file list.
     signal addressClosed
+    // Esc on the empty search field: the keyboard goes back to the list.
+    signal searchClosed
+    // What's typed in the search field.
+    readonly property alias searchText: searchField.text
 
     // Turns the address bar into a text field with the path selected.
     function editAddress() {
@@ -33,6 +41,15 @@ Rectangle {
         editing = true;
         field.selectAll();
         field.forceActiveFocus();
+    }
+
+    // Puts the keyboard in the search field with what's there selected.
+    function editSearch() {
+        // Closed first: closing it gives the keyboard to the list, which
+        // would otherwise take it back from the search field.
+        editing = false;
+        searchField.selectAll();
+        searchField.forceActiveFocus();
     }
 
     function submit() {
@@ -205,12 +222,37 @@ Rectangle {
         radius: Tokens.radiusControl
         color: Tokens.filesField
 
+        border.width: searchField.activeFocus ? Tokens.filesFocusRing : 0
+        border.color: Tokens.primary
+        clip: true
+
         LineIcon {
+            id: searchIcon
             anchors.left: parent.left
             anchors.leftMargin: Tokens.rowInset
             anchors.verticalCenter: parent.verticalCenter
             color: Tokens.fgDim
             path: Icons.SEARCH
+        }
+        TextInput {
+            id: searchField
+            anchors.left: searchIcon.right
+            anchors.right: parent.right
+            anchors.leftMargin: Tokens.iconGap
+            anchors.rightMargin: Tokens.rowInset
+            anchors.verticalCenter: parent.verticalCenter
+            clip: true
+            font.family: Tokens.fontSans
+            font.pixelSize: Tokens.fontSize
+            color: Tokens.fg
+            selectionColor: Tokens.secondary
+            selectedTextColor: Tokens.onAccent
+            Keys.onEscapePressed: {
+                if (text !== "")
+                    clear();
+                else
+                    row.searchClosed();
+            }
         }
     }
 }

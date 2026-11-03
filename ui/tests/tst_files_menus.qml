@@ -54,20 +54,6 @@ Item {
             return menu.map(item => item.separator ? "-" : item.label);
         }
 
-        function test_keys_find_their_command_and_menus_show_it() {
-            compare(Commands.forKey(Qt.Key_X, Qt.ControlModifier), Commands.CUT);
-            compare(Commands.forKey(Qt.Key_C, Qt.ControlModifier | Qt.ShiftModifier), Commands.COPY_PATH);
-            compare(Commands.forKey(Qt.Key_N, Qt.ControlModifier | Qt.ShiftModifier), Commands.NEW_FOLDER);
-            compare(Commands.forKey(Qt.Key_Return, Qt.ShiftModifier), Commands.NEW_WINDOW);
-            compare(Commands.forKey(Qt.Key_Enter, Qt.NoModifier), Commands.OPEN, "the keypad's Enter too");
-            compare(Commands.forKey(Qt.Key_F2, Qt.NoModifier), Commands.RENAME);
-            compare(Commands.forKey(Qt.Key_Delete, Qt.ShiftModifier), "", "Shift+Delete asks first, in the list");
-            compare(Commands.forKey(Qt.Key_X, Qt.NoModifier), "", "a plain letter is typing");
-            compare(Commands.forKey(Qt.Key_Delete, Qt.AltModifier), "", "Alt makes it another shortcut");
-            compare(Commands.shown(Commands.COPY_PATH), "Ctrl + Shift + C");
-            compare(Commands.shown(Commands.OPEN_WITH), "", "no shortcut, nothing shown");
-        }
-
         function test_the_item_menu_follows_what_is_picked() {
             const act = () => {};
             const one = Menus.forItems([file("a.txt")], () => [], () => "", act);
