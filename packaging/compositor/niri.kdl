@@ -38,10 +38,13 @@ window-rule {
 // any app; this is the radius it suggests (packaging/compositor/hyprland.conf
 // suggests the same, and the blur Nova Files asks for is rounded to it:
 // Tokens.filesWindowRadius). Your own window-rule for it, after this
-// include, wins. Like other windows its blur is xray: it shows the
-// wallpaper, not the windows under it (Explorer's Mica does the same).
+// include, wins. Its blur shows the windows under it, like Nova's glass
+// (niri's default for windows, xray, would show only the wallpaper).
 window-rule {
     match app-id="^nova-files$"
     geometry-corner-radius 16
     clip-to-geometry true
+    background-effect {
+        xray false
+    }
 }
