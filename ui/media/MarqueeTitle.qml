@@ -55,10 +55,23 @@ Item {
     implicitHeight: label.implicitHeight
     clip: true
 
+    // Only text that doesn't fit is drawn through the fade instead of as it
+    // is: none at the start until the text has moved past it, none at the
+    // end once its end is in view. Through its layer, not a
+    // ShaderEffectSource of its own: one with no parent item took a window
+    // reference it never gave back, and a removed screen left the title on
+    // a deleted window (IMP-353).
     Item {
         id: strip
         width: title.width
         height: title.height
+        layer.enabled: title.over > 0
+        layer.smooth: true
+        layer.effect: ShaderEffect {
+            readonly property real fadeStart: Math.min(-label.x, Tokens.mediaFade)
+            readonly property real fadeEnd: Math.min(title.over + label.x, Tokens.mediaFade)
+            fragmentShader: Qt.resolvedUrl("fade.frag.qsb")
+        }
 
         Text {
             id: label
@@ -75,23 +88,6 @@ Item {
                     duration: Tokens.durationColor
                 }
             }
-        }
-    }
-
-    // Only for text that doesn't fit, drawn through the fade instead of
-    // as it is: none at the start until the text has moved past it, none at
-    // the end once its end is in view.
-    Loader {
-        anchors.fill: parent
-        active: title.over > 0
-        sourceComponent: ShaderEffect {
-            readonly property var source: ShaderEffectSource {
-                sourceItem: strip
-                hideSource: true
-            }
-            readonly property real fadeStart: Math.min(-label.x, Tokens.mediaFade)
-            readonly property real fadeEnd: Math.min(title.over + label.x, Tokens.mediaFade)
-            fragmentShader: Qt.resolvedUrl("fade.frag.qsb")
         }
     }
 
