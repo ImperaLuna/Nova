@@ -377,9 +377,26 @@ fn a_fullscreen_column_scrolled_out_of_view_is_not_fullscreen() {
     assert!(!shown(&state), "two columns away, it's out of view");
 }
 
-/// Remembers the workspaces it was asked to show.
+/// A compositor following `backend`, last reported `desktop`, and the
+/// folder its log goes to.
+fn compositor(backend: Box<dyn Backend>, desktop: Option<Desktop>) -> (Compositor, nova_test_support::TempDir) {
+    let logs = nova_test_support::TempDir::new("compositor-logs");
+    let logger = Logger::open(&logs, nova_protocol::LogLevel::Debug, false, Arc::default()).unwrap();
+    let compositor = Compositor {
+        backend,
+        desktop: Mutex::new(desktop),
+        hub: Arc::default(),
+        output_listeners: Mutex::default(),
+        dialogs: Mutex::default(),
+        logger: Arc::new(logger),
+    };
+    (compositor, logs)
+}
+
+/// Remembers the workspaces it was asked to show, and the windows it was
+/// asked to focus by id; the third field lists the windows that are open.
 #[derive(Default)]
-struct Shown(Mutex<Vec<WorkspaceId>>);
+struct Shown(Mutex<Vec<WorkspaceId>>, Mutex<Vec<String>>, Mutex<Vec<String>>);
 
 impl Backend for Arc<Shown> {
     fn name(&self) -> &'static str {
@@ -412,6 +429,11 @@ impl Backend for Arc<Shown> {
         Ok(false)
     }
 
+    fn focus_window_id(&self, id: &str) -> Result<bool, String> {
+        lock(&self.1).push(id.to_owned());
+        Ok(lock(&self.2).iter().any(|open| open == id))
+    }
+
     fn window_workspace(&self, _: &[String], _: &Workspace) -> Result<Option<WorkspaceId>, String> {
         Ok(None)
     }
@@ -431,12 +453,7 @@ fn focusing_an_output_shows_its_workspace_unless_it_has_focus() {
     let focused = desktop.outputs[0].name.clone();
     desktop.outputs.push(other);
     let shown = Arc::new(Shown::default());
-    let compositor = Compositor {
-        backend: Box::new(Arc::clone(&shown)),
-        desktop: Mutex::new(Some(desktop)),
-        hub: Arc::default(),
-        output_listeners: Mutex::default(),
-    };
+    let (compositor, _logs) = compositor(Box::new(Arc::clone(&shown)), Some(desktop));
 
     compositor.focus_output(&focused).unwrap();
     assert!(lock(&shown.0).is_empty(), "the focused output stays as it is");
@@ -478,12 +495,7 @@ fn a_special_workspace_shows_on_one_output_and_is_listed_on_every_one() {
 #[test]
 fn output_listeners_hear_only_of_output_changes() {
     let desktop = follow_niri(&Recording::load("niri")).pop().unwrap().1;
-    let compositor = Compositor {
-        backend: Box::new(Arc::new(Shown::default())),
-        desktop: Mutex::new(None),
-        hub: Arc::default(),
-        output_listeners: Mutex::default(),
-    };
+    let (compositor, _logs) = compositor(Box::new(Arc::new(Shown::default())), None);
     let heard = Arc::new(Mutex::new(Vec::new()));
     let hearing = Arc::clone(&heard);
     compositor.on_outputs(move |names| lock(&hearing).push(names));
@@ -509,4 +521,42 @@ fn output_listeners_hear_only_of_output_changes() {
     let hearing = Arc::clone(&late);
     compositor.on_outputs(move |names| lock(&hearing).push(names));
     assert_eq!(lock(&late).len(), 1);
+}
+
+#[test]
+fn a_dialog_gets_the_focus_back_from_the_app_that_asked_for_it() {
+    let desktop = follow_niri(&Recording::load("niri")).pop().unwrap().1;
+    let shown = Arc::new(Shown::default());
+    *lock(&shown.2) = vec!["2".into(), "4".into()];
+    let (compositor, _logs) = compositor(Box::new(Arc::clone(&shown)), None);
+    const DIALOG: &str = "nova-files-picker";
+    compositor.keep_dialogs_up(DIALOG);
+    let focus = |id: &str, app_id: &str, title: &str| {
+        let mut focused = desktop.clone();
+        focused.focused_window = Some(FocusedWindow { id: id.into(), app_id: app_id.into(), title: title.into() });
+        compositor.update(focused);
+    };
+    let asked = || lock(&shown.1).clone();
+
+    focus("1", "zen", "a page");
+    focus("2", DIALOG, "File Upload");
+    assert!(asked().is_empty(), "the dialog has it");
+    focus("1", "zen", "a page");
+    assert_eq!(asked(), ["2"], "its app gives it back");
+    focus("1", "zen", "another page");
+    assert_eq!(asked().len(), 1, "a new title isn't the focus moving");
+    focus("3", "claude", "Claude");
+    assert_eq!(asked().len(), 1, "another window keeps it");
+
+    // Claude's own dialog closes while Zen's stays open: Claude keeps the
+    // focus, and Zen still gives it to its own.
+    focus("4", DIALOG, "Open Files");
+    lock(&shown.2).retain(|open| open != "4");
+    focus("3", "claude", "Claude");
+    assert_eq!(asked(), ["2", "4"]);
+    focus("5", "ghostty", "~");
+    focus("3", "claude", "Claude");
+    assert_eq!(asked().len(), 2, "nothing to give back");
+    focus("1", "zen", "a page");
+    assert_eq!(asked().last().unwrap(), "2");
 }

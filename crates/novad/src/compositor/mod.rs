@@ -6,7 +6,11 @@
 //! stream (no polling) and says which [`Capability`]s it has; the UI hides
 //! what a compositor can't do instead of asking which compositor it is.
 //! novad picks the backend from the variables the compositor sets.
+//!
+//! As the focus moves, Nova's dialogs stay over the app that asked for them
+//! (`dialogs.rs`).
 
+mod dialogs;
 mod hyprland;
 #[cfg(test)]
 pub(crate) use hyprland::LUA_PROBE as HYPRLAND_LUA_PROBE;
@@ -58,6 +62,10 @@ pub trait Backend: Send + Sync {
     /// window has one of them.
     fn focus_window(&self, app_ids: &[String], here: &Workspace) -> Result<bool, String>;
 
+    /// Focuses the window with `id`, as [`Desktop::focused_window`] names
+    /// it. `false` when it's gone.
+    fn focus_window_id(&self, id: &str) -> Result<bool, String>;
+
     /// The workspace of the window [`Backend::focus_window`] would focus
     /// for `app_ids` and `here`, `None` when no window has one of them.
     fn window_workspace(&self, app_ids: &[String], here: &Workspace) -> Result<Option<WorkspaceId>, String>;
@@ -85,6 +93,9 @@ pub struct Compositor {
     hub: Arc<Hub>,
     /// Told the outputs' names whenever they change ([`Compositor::on_outputs`]).
     output_listeners: Mutex<Vec<OutputListener>>,
+    /// Nova's dialogs and the apps they belong to.
+    dialogs: Mutex<dialogs::Dialogs>,
+    logger: Arc<Logger>,
 }
 
 type OutputListener = Box<dyn Fn(Vec<String>) + Send>;
@@ -92,8 +103,14 @@ type OutputListener = Box<dyn Fn(Vec<String>) + Send>;
 impl Compositor {
     pub fn start(backend: Box<dyn Backend>, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
         logger.info(LOG_SOURCE, &format!("following {}", backend.name()));
-        let compositor =
-            Arc::new(Self { backend, desktop: Mutex::new(None), hub, output_listeners: Mutex::new(Vec::new()) });
+        let compositor = Arc::new(Self {
+            backend,
+            desktop: Mutex::new(None),
+            hub,
+            output_listeners: Mutex::new(Vec::new()),
+            dialogs: Mutex::default(),
+            logger: Arc::clone(&logger),
+        });
         let watcher = Arc::clone(&compositor);
         std::thread::spawn(move || {
             let name = watcher.backend.name();
@@ -143,6 +160,13 @@ impl Compositor {
             listener(output_names(desktop).cloned().collect());
         }
         lock(&self.output_listeners).push(Box::new(listener));
+    }
+
+    /// Windows with `app_id` are Nova's dialogs from now on: while one is
+    /// open, the app it belongs to gives the focus back to it, so a
+    /// fullscreen app can't cover it (`dialogs.rs`).
+    pub fn keep_dialogs_up(&self, app_id: &str) {
+        lock(&self.dialogs).add(app_id);
     }
 
     /// Subscribes `client` and sends it the current desktop, if known.
@@ -220,13 +244,30 @@ impl Compositor {
         Err(format!("{} can't do that (no {capability:?} capability)", self.backend.name()))
     }
 
-    /// Publishes `desktop` when it differs from the last one.
-    fn update(&self, mut desktop: Desktop) {
+    /// Publishes `desktop` when it differs from the last one, then gives a
+    /// dialog the focus back when its app took it.
+    fn update(&self, desktop: Desktop) {
+        let Some(dialog) = self.publish(desktop) else { return };
+        match self.backend.focus_window_id(&dialog) {
+            Ok(true) => {}
+            Ok(false) => lock(&self.dialogs).closed(&dialog),
+            Err(e) => self.logger.warn(LOG_SOURCE, &format!("can't give the focus back to a dialog: {e}")),
+        }
+    }
+
+    /// Publishes `desktop` when it differs from the last one. The window id
+    /// of a dialog that should take the focus back.
+    fn publish(&self, mut desktop: Desktop) -> Option<String> {
         desktop.outputs.sort_by(|a, b| a.name.cmp(&b.name));
         let mut current = lock(&self.desktop);
         if current.as_ref() == Some(&desktop) {
-            return;
+            return None;
         }
+        let before = current.as_ref().and_then(|current| current.focused_window.as_ref());
+        let now = desktop.focused_window.as_ref();
+        // A new title alone isn't the focus moving.
+        let moved = before.map(|window| &window.id) != now.map(|window| &window.id);
+        let dialog = moved.then(|| lock(&self.dialogs).focused(before, now)).flatten();
         self.hub.publish(&Event::Compositor(desktop.clone()));
         if current.as_ref().is_none_or(|current| !output_names(current).eq(output_names(&desktop))) {
             let names: Vec<String> = output_names(&desktop).cloned().collect();
@@ -235,6 +276,7 @@ impl Compositor {
             }
         }
         *current = Some(desktop);
+        dialog
     }
 }
 

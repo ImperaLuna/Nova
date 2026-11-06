@@ -32,6 +32,9 @@ pub struct Entry {
 
 /// The one for Nova Files' own windows.
 pub const WINDOWS: Entry = Entry { file: "files.qml", name: "NovaFiles", shown: "Nova Files" };
+/// The app id `ui/files-picker.qml` gives apps' Open and Save dialogs
+/// (its `AppId` pragma, which packaging/compositor's rules match).
+pub const PICKER_APP_ID: &str = "nova-files-picker";
 /// The one for apps' Open and Save dialogs.
 pub const PICKERS: Entry = Entry { file: "files-picker.qml", name: "NovaFilesPicker", shown: "Nova Files' dialogs" };
 
