@@ -263,10 +263,12 @@ impl Backend for Hyprland {
     }
 
     fn focus_window_id(&self, id: &str) -> Result<bool, String> {
-        if !self.clients()?.iter().any(|client| client.address == id) {
+        // Desktop ids are written without `0x`, as events write them.
+        let clients = self.clients()?;
+        let Some(client) = clients.iter().find(|client| strip_address(&client.address) == strip_address(id)) else {
             return Ok(false);
-        }
-        self.dispatch(&Action::FocusWindow(format!("address:{id}")))?;
+        };
+        self.dispatch(&Action::FocusWindow(format!("address:{}", client.address)))?;
         Ok(true)
     }
 
