@@ -844,6 +844,10 @@ impl crate::modules::Module for Files {
             &ctx.path_var,
         );
         files.set_look(*look);
+        // Apps' Open and Save dialogs stay over the app that asked.
+        if let Some(compositor) = &ctx.compositor {
+            compositor.keep_dialogs_up(window::PICKER_APP_ID);
+        }
         files
     }
 

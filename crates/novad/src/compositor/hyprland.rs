@@ -103,10 +103,8 @@ impl Hyprland {
     /// A window whose class (or first class) is one of `app_ids` (lower
     /// case), one on `here` first.
     fn app_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<Option<Client>, String> {
-        let answer = self.request(CLIENTS)?;
-        let clients: Vec<Client> =
-            serde_json::from_str(&answer).map_err(|e| format!("Hyprland sent odd windows ({e})"))?;
-        let mut matching: Vec<Client> = clients
+        let mut matching: Vec<Client> = self
+            .clients()?
             .into_iter()
             .filter(|client| {
                 [&client.class, &client.initial_class].iter().any(|class| app_ids.contains(&class.to_lowercase()))
@@ -114,6 +112,12 @@ impl Hyprland {
             .collect();
         matching.sort_by_key(|client| client.workspace.id != here.id);
         Ok(matching.into_iter().next())
+    }
+
+    /// Every window, as Hyprland answers now.
+    fn clients(&self) -> Result<Vec<Client>, String> {
+        let answer = self.request(CLIENTS)?;
+        serde_json::from_str(&answer).map_err(|e| format!("Hyprland sent odd windows ({e})"))
     }
 
     /// The dispatcher language this Hyprland takes, asked the first time.
@@ -254,6 +258,16 @@ impl Backend for Hyprland {
     fn focus_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<bool, String> {
         let Some(client) = self.app_window(app_ids, here)? else { return Ok(false) };
         // Hyprland shows the window's workspace and monitor for it.
+        self.dispatch(&Action::FocusWindow(format!("address:{}", client.address)))?;
+        Ok(true)
+    }
+
+    fn focus_window_id(&self, id: &str) -> Result<bool, String> {
+        // Desktop ids are written without `0x`, as events write them.
+        let clients = self.clients()?;
+        let Some(client) = clients.iter().find(|client| strip_address(&client.address) == strip_address(id)) else {
+            return Ok(false);
+        };
         self.dispatch(&Action::FocusWindow(format!("address:{}", client.address)))?;
         Ok(true)
     }
