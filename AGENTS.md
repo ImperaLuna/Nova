@@ -191,7 +191,15 @@ Every change goes through a pull request; `main` is protected.
 A stack of PRs is one chain: the bottom PR targets main, each one above
 targets the branch below, and a branch merges only its own base. Its top PR
 runs the VM tests for all of it. `scripts/stack.sh status|restack` checks the
-chain and merges each base upward; its header says more.
+chain and merges each base upward, running `just check-branch` on every
+branch before pushing it (run it inside `nix develop`); its header says more.
+A PR whose base moved on without it gets a red `stack` status: restack it.
+
+A batch of PRs is ready for the maintainer only when `stack.sh status` is clean
+for every stack and each branch passed `just check-branch`. While a batch's
+merges land one by one, other threads' ready PRs get the `hold` label until
+the batch is in. Desktop test passes for a batch start once the CI runners
+`nova-1` and `nova-2` are idle.
 
 Everything a session makes for Nova on the desktop stays inside `~/Projects/Nova`;
 never create a folder elsewhere in `~`, such as `~/Projects/nova-imp121`, even

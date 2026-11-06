@@ -1,0 +1,51 @@
+name: Stacks
+
+# Marks every open PR in a stack with a `stack` commit status: red when its
+# base (main, or the branch of the PR below) has moved on without it, green
+# when it holds it (scripts/stack.sh mark). A push to main or to a stack
+# branch leaves the PRs above stale, and their `checks` stays green because
+# nothing re-runs it; this makes that visible at once, without starting CI.
+# Restacking (scripts/stack.sh restack) pushes, which runs this again (IMP-351).
+#
+# Runs main's script on a GitHub-hosted machine, never the pushed code, so it
+# doesn't wait behind CI on the self-hosted runners.
+on:
+  push:
+    branches: ['**']
+  pull_request_target:
+    # A new PR, a PR moved onto another base, or one closed without merging
+    # (no push follows, but the PR below may have left its stack).
+    types: [opened, reopened, edited, closed]
+
+permissions:
+  contents: read
+
+# One at a time; a newer queued run replaces an older queued one, and the
+# running one finishes, so every PR gets its status.
+concurrency:
+  group: stacks
+  cancel-in-progress: false
+
+jobs:
+  mark:
+    name: mark stale stacks
+    # An edit that only changed a PR's title or text moves no stack.
+    if: github.event.action != 'edited' || github.event.changes.base != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BASE: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          # mark fetches each PR's head again; the token only reads code.
+          persist-credentials: true
+      - name: mark
+        run: scripts/stack.sh mark

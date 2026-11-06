@@ -8,23 +8,39 @@
 #            that its base lacks, and with gh: its PR, the PR's base, whether
 #            it conflicts (GitHub then runs no CI for it) and its `checks`
 #            on the current head. Exits 1 when anything needs doing.
-#   restack  From the bottom up, merges each branch's base into it and
-#            pushes (never forced), so every branch holds the one below.
-#            Stops at the first conflict and names the files; the branch's
-#            own thread resolves it, then restack runs again.
+#   restack  From the bottom up, merges each branch's base into it, runs
+#            $STACK_CHECK on the merge, and pushes (never forced), so every
+#            branch holds the one below. Stops at the first conflict, naming
+#            the files, or at the first branch whose check fails, and pushes
+#            nothing from there up; the branch's own thread fixes it, then
+#            restack runs again.
+#   mark     For every open PR in a stack (its base isn't $BASE, or another
+#            PR is built on it), sets a `stack` commit status on its head:
+#            failure when the branch below has moved on without it, pending
+#            when only $BASE has (restack once, just before merging, so CI
+#            doesn't run for every move of $BASE), success when it holds its
+#            base. So a stale stack shows on GitHub without any CI run. A PR
+#            that left its stack gets its status cleared to success. Takes no
+#            branches; needs gh. .github/workflows/stacks.yml runs it on
+#            every push.
 #
 # A branch merges only its own base: merging one further down resolves the
 # same conflict twice and ends in a rewrite (the Nova Files stack, IMP-326).
 #
+# Every branch is checked on its own, not only the top: a merge that breaks
+# a lower branch (a lost brace, a stale snapshot) fails that PR's CI, and the
+# stack can't merge (the Nova Files batch, IMP-351).
+#
 # Branches are named bottom to top; the base of the first is $BASE (main).
-# Works in a temporary worktree, so the checkout it runs from is untouched.
-# Needs git; status's PR columns need a GitHub remote and gh, signed in, and
-# are left out without.
-# Usage: scripts/stack.sh status|restack [-n] <branch>...
-#   -n  restack without pushing: merge in the worktree and report.
+# Works in a temporary worktree, so the checkout it runs from is untouched;
+# the check shares that checkout's cargo target dir. Run restack inside
+# `nix develop`, where the check's tools are. Needs git; status's PR columns
+# need a GitHub remote and gh, signed in, and are left out without.
+# Usage: scripts/stack.sh status|restack [-n] <branch>... | mark
+#   -n  restack without pushing: merge and check in the worktree and report.
 set -euo pipefail
 
-usage="usage: stack.sh status|restack [-n] <branch>..."
+usage="usage: stack.sh status|restack [-n] <branch>... | mark"
 mode=${1:?$usage}
 shift
 push=1
@@ -32,13 +48,23 @@ if [[ ${1:-} == -n ]]; then
   push=0
   shift
 fi
-(($# > 0)) || {
+if [[ $mode == mark ]]; then
+  ((push && $# == 0)) || {
+    echo "mark takes no branches and no -n" >&2
+    exit 2
+  }
+elif (($# == 0)); then
   echo "$usage" >&2
   exit 2
-}
+fi
 branches=("$@")
 REMOTE=${REMOTE:-origin}
 BASE=${BASE:-main}
+# What restack runs on each merged branch before pushing it, from the
+# branch's root; "none" skips it.
+STACK_CHECK=${STACK_CHECK:-just check-branch}
+# The commit status mark sets.
+CONTEXT=stack
 # The job of ci.yml the main ruleset requires.
 CHECK=checks
 # How long one fetch or push may take before the script gives up on it.
@@ -47,7 +73,7 @@ REMOTE_TIMEOUT=${REMOTE_TIMEOUT:-120}
 # remote <git args>: a git command that talks to the remote, bounded.
 remote() { timeout "$REMOTE_TIMEOUT" git "$@"; }
 
-remote fetch --quiet "$REMOTE" "$BASE" "${branches[@]}"
+((${#branches[@]} == 0)) || remote fetch --quiet "$REMOTE" "$BASE" "${branches[@]}"
 
 # ref <name>: the remote-tracking ref of a branch.
 ref() { echo "refs/remotes/$REMOTE/$1"; }
@@ -129,6 +155,14 @@ restack() {
   local i branch base
   # Each branch's tip once restacked, so the branch above merges that.
   local -A tip=()
+  local target
+  target=${CARGO_TARGET_DIR:-$(git rev-parse --show-toplevel)/target}
+  # The default check's tools come from the dev shell; without them every
+  # branch would look broken.
+  if [[ $STACK_CHECK == "just "* ]] && ! { command -v just >/dev/null && [[ -n ${NOVA_QML_IMPORTS:-} ]]; }; then
+    echo "restack checks each branch with \`$STACK_CHECK\`: run it inside \`nix develop\` (or set STACK_CHECK=none to skip the check)." >&2
+    return 2
+  fi
   dir=$(mktemp -d)
   git worktree add --quiet --detach "$dir" "$(ref "${branches[0]}")"
   trap 'git worktree remove --force "$dir"' EXIT
@@ -149,6 +183,11 @@ restack() {
       echo "Its thread merges $REMOTE/$(base_of "$i"), resolves and pushes; then run restack again." >&2
       return 1
     fi
+    if [[ $STACK_CHECK != none ]] && ! (cd "$dir" && CARGO_TARGET_DIR=$target bash -c "$STACK_CHECK") >&2; then
+      echo "$branch: \`$STACK_CHECK\` fails after merging $(base_of "$i"); nothing pushed from here up." >&2
+      echo "Its thread merges $REMOTE/$(base_of "$i"), fixes and pushes; then run restack again." >&2
+      return 1
+    fi
     tip[$branch]=$(git -C "$dir" rev-parse HEAD)
     if ((push)); then
       remote -C "$dir" push --quiet "$REMOTE" "HEAD:refs/heads/$branch"
@@ -159,9 +198,68 @@ restack() {
   done
 }
 
+# gh_api <args>: a GitHub API call, bounded.
+gh_api() { timeout "$REMOTE_TIMEOUT" gh api "$@"; }
+
+# set_status <repo> <sha> <state> <text>: the `stack` status on a commit,
+# unless it already says that (GitHub keeps at most 1000 per commit).
+set_status() {
+  local now text=${4:0:140}
+  now=$(gh_api "repos/$1/commits/$2/status" --jq ".statuses[] | select(.context == \"$CONTEXT\") | \"\(.state) \(.description)\"") || now=
+  [[ $now == "$3 $text" ]] && return 0
+  gh_api --method POST "repos/$1/statuses/$2" -f state="$3" -f context="$CONTEXT" -f description="$text" >/dev/null
+}
+
+mark() {
+  local repo prs number branch head base stacked state text failed=0
+  repo=${GITHUB_REPOSITORY:-$(timeout "$REMOTE_TIMEOUT" gh repo view --json nameWithOwner --jq .nameWithOwner)}
+  # Same-repo open PRs, one "number branch head base stacked" per line.
+  prs=$(gh_api --paginate "repos/$repo/pulls?state=open&per_page=100" --jq '.[]' | jq -rs --arg main "$BASE" --arg repo "$repo" '
+    [.[] | select(.head.repo.full_name == $repo)] as $own
+    | ($own | map(.base.ref)) as $bases
+    | $own[]
+    | (.base.ref != $main or (.head.ref as $h | $bases | index($h) != null)) as $stacked
+    | "\(.number) \(.head.ref) \(.head.sha) \(.base.ref) \($stacked)"')
+  if [[ -z $prs ]]; then
+    echo "No open PRs."
+    return 0
+  fi
+  while read -r number branch head base stacked; do
+    if [[ $stacked != true ]]; then
+      # Out of a stack now (its base merged, say): clear an old red mark.
+      if gh_api "repos/$repo/commits/$head/status" --jq ".statuses[].context" | grep -x "$CONTEXT" >/dev/null; then
+        set_status "$repo" "$head" success "Not in a stack" || failed=1
+      fi
+      continue
+    fi
+    # One ref at a time: a base deleted as its PR merged fails only its own.
+    if ! remote fetch --quiet "$REMOTE" "$branch" "$base" 2>/dev/null ||
+      [[ $(git rev-parse "$(ref "$branch")") != "$head" ]]; then
+      # Pushed again or gone since the list; that change runs mark again.
+      echo "#$number: $branch moved or its base is gone, skipped"
+      continue
+    fi
+    if git merge-base --is-ancestor "$(ref "$base")" "$head"; then
+      state=success text="Holds $base"
+    elif [[ $base == "$BASE" ]]; then
+      state=pending text="$BASE moved on: restack just before merging the stack"
+    else
+      state=failure text="Behind $base: run scripts/stack.sh restack on this stack"
+    fi
+    if set_status "$repo" "$head" "$state" "$text"; then
+      echo "#$number $branch: $state ($text)"
+    else
+      echo "::warning::#$number $branch: couldn't set the $CONTEXT status"
+      failed=1
+    fi
+  done <<<"$prs"
+  return $failed
+}
+
 case $mode in
 status) status ;;
 restack) restack ;;
+mark) mark ;;
 *)
   echo "$usage" >&2
   exit 2

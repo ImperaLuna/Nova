@@ -9,6 +9,10 @@ default:
 # Everything CI runs, except e2e
 check: fmt-check lint lint-nix deny test lint-qml test-qml test-install test-vm-failures test-stack shaders-check
 
+# What scripts/stack.sh restack runs on each branch of a stack before pushing it:
+# `check` without the slow advisory fetch and the script tests
+check-branch: fmt-check lint lint-nix test lint-qml test-qml shaders-check
+
 # Rust unit tests
 test:
     cargo test --workspace
