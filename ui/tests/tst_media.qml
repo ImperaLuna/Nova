@@ -250,6 +250,25 @@ Item {
             verify(!title.moving);
         }
 
+        // Its fade held a window reference that nothing gave back, so a
+        // removed screen left the title pointing at a deleted window, and
+        // the UI crashed tearing it down (IMP-353).
+        function test_a_long_title_leaves_the_window_with_its_parent() {
+            const title = createTemporaryObject(titleComponent, stage);
+            verify(title.over > 0);
+            waitForRendering(title);
+            title.parent = null;
+            const inWindow = [];
+            const visit = item => {
+                if (item.Window.window !== null)
+                    inWindow.push(item);
+                for (const child of item.children)
+                    visit(child);
+            };
+            visit(title);
+            compare(inWindow.length, 0, `still in the window: ${inWindow}`);
+        }
+
         function test_paused_it_lingers_and_then_slides_away() {
             const pill = createPill(stage.media([playing("a")], "a"));
             tryCompare(pill, "shownT", 1);

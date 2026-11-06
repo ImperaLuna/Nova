@@ -1,5 +1,5 @@
 #version 440
-// Fades the item it draws (through a ShaderEffectSource) out towards its
+// Fades the item it draws (as its layer.effect) out towards its
 // left and right edges: over `fadeStart` px from the left and `fadeEnd` px
 // from the right, none where either is 0. For a long title, cut at the
 // pill's edge (MarqueeTitle.qml).

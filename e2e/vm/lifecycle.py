@@ -5,7 +5,9 @@
 # COMPOSITOR, QUIT_COMPOSITOR, FOCUS_NEXT_WORKSPACE, FULLSCREEN_WINDOW,
 # CLOSE_WINDOW, LIST_WINDOWS, FOCUSED_WINDOW, LIST_LAYERS, ADDED_OUTPUTS (the
 # commands that add an output, focus the VM's own one, and remove the added
-# one, as one triple, or none where the compositor can't), COMPOSITOR_LOG,
+# one, as one triple, or none where the compositor can't), OUTPUT_OFF_AND_ON
+# (the commands that turn the VM's output off and back on, as one pair, or
+# none where the compositor can't), COMPOSITOR_LOG,
 # FRAMES_REPORT and QT_LOGGING_CONF (Qt's drawing lines, for frames.py) above
 # this script.
 #
@@ -53,6 +55,9 @@ MEDIA_CLOSED = "nova: now playing panel closed"
 # as a user unit, and the MPRIS call that pauses it.
 PLAYER_UNIT = "nova-test-player"
 START_PLAYER = f"systemd-run --user --collect --unit={PLAYER_UNIT} nova-test-player"
+# A title too long for the pill (Tokens.mediaTitleMax), which it then draws
+# through its fade (ui/media/MarqueeTitle.qml).
+LONG_TITLE = "Everything In Its Right Place (Live in Paris, 2001, Remastered)"
 STOP_PLAYER = f"systemctl --user stop {PLAYER_UNIT}"
 PAUSE_PLAYER = (
     "busctl --user call $(busctl --user list --no-legend | awk '/^org[.]mpris[.]MediaPlayer2[.]mpv/ { print $1; exit }') "

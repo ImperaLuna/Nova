@@ -198,6 +198,12 @@ let
                 "remove the added output"
               ])
             }
+            OUTPUT_OFF_AND_ON = ${
+              builtins.toJSON (stepsIfAny [
+                "turn the VM's output off"
+                "turn the VM's output on"
+              ])
+            }
             COMPOSITOR_LOG = ${builtins.toJSON "export ${ipcEnv}; ${compositorLog}"}
             FRAMES_REPORT = ${builtins.toJSON "${pkgs.gawk}/bin/awk -f ${../../scripts/frames-report.awk}"}
           ''
@@ -412,6 +418,10 @@ in
       "focus the first output" = "niri msg action focus-monitor-previous";
       "close the focused window" = "niri msg action close-window";
       "fullscreen the focused window" = "niri msg action fullscreen-window";
+      # As a monitor does when it drops off for a moment (IMP-353): the
+      # output's screen goes away, and comes back.
+      "turn the VM's output off" = "niri msg output Virtual-1 off";
+      "turn the VM's output on" = "niri msg output Virtual-1 on";
     };
   };
 

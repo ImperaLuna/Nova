@@ -303,6 +303,32 @@ for add_output, focus_first, remove_output in ADDED_OUTPUTS:
         finally:
             machine.succeed(as_user(remove_output))
 
+for output_off, output_on in OUTPUT_OFF_AND_ON:
+    with subtest("the UI lives through its screen going away and coming back"):
+        # As when a monitor drops off for a moment because another of its
+        # inputs was unplugged (IMP-353): the screen's stage and panel
+        # surfaces go, then come back. A title too long for the pill draws
+        # through its fade, which once kept the window it was on after that
+        # window was gone. Quickshell can relaunch a crashed UI in the same
+        # process, so a crash shows as a second launch.
+        running = wait_running()
+        launches = ui_log_count(UI_LAUNCHED)
+        shown = ui_log_count(MEDIA_SHOWN)
+        machine.succeed(as_user(f"{START_PLAYER} --force-media-title={shlex.quote(LONG_TITLE)}"))
+        try:
+            retry(lambda _last_try: ui_log_count(MEDIA_SHOWN) > shown, timeout=WAIT)
+            bars = ui_log_count(BAR_SHOWN)
+            machine.succeed(as_user(output_off))
+            try:
+                retry(lambda _last_try: not layers_of("nova-stage"), timeout=CLICK_EFFECT)
+            finally:
+                machine.succeed(as_user(output_on))
+            retry(lambda _last_try: ui_log_count(BAR_SHOWN) > bars, timeout=WAIT)
+        finally:
+            machine.succeed(as_user(STOP_PLAYER))
+        assert ui_log_count(UI_LAUNCHED) == launches, "the UI crashed and was launched again"
+        assert wait_running()["ui"]["pid"] == running["ui"]["pid"], "the UI was restarted"
+
 with subtest("novad restarts a killed UI and saves the lines before it"):
     machine.succeed(f"kill -9 {first['ui']['pid']}")
     crashed = wait_running(not_ui=first["ui"]["pid"])
