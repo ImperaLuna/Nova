@@ -225,7 +225,18 @@ pub fn named_within(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Dur
 /// built), so "nothing came" is the wrong question.
 #[cfg(test)]
 pub fn count_named(queue: &Receiver<Outgoing>, name: &str) -> usize {
-    queue.try_iter().filter_map(sent_event).filter(|event| event["event"] == name).count()
+    queued_names(queue).iter().filter(|queued| *queued == name).count()
+}
+
+/// The names of the events a client's queue holds now, in order, taking
+/// them all off: for checking several events didn't come, in one pass.
+#[cfg(test)]
+pub fn queued_names(queue: &Receiver<Outgoing>) -> Vec<String> {
+    queue
+        .try_iter()
+        .filter_map(sent_event)
+        .map(|event| event["event"].as_str().unwrap_or_default().to_string())
+        .collect()
 }
 
 #[cfg(test)]
