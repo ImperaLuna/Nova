@@ -393,10 +393,10 @@ fn compositor(backend: Box<dyn Backend>, desktop: Option<Desktop>) -> (Composito
     (compositor, logs)
 }
 
-/// Remembers the workspaces it was asked to show, and the apps it was
-/// asked to focus (`open` says whether one of theirs is).
+/// Remembers the workspaces it was asked to show, and the windows it was
+/// asked to focus by id; the third field lists the windows that are open.
 #[derive(Default)]
-struct Shown(Mutex<Vec<WorkspaceId>>, Mutex<Vec<Vec<String>>>, std::sync::atomic::AtomicBool);
+struct Shown(Mutex<Vec<WorkspaceId>>, Mutex<Vec<String>>, Mutex<Vec<String>>);
 
 impl Backend for Arc<Shown> {
     fn name(&self) -> &'static str {
@@ -425,9 +425,13 @@ impl Backend for Arc<Shown> {
         Ok(())
     }
 
-    fn focus_window(&self, app_ids: &[String], _: &Workspace) -> Result<bool, String> {
-        lock(&self.1).push(app_ids.to_vec());
-        Ok(self.2.load(std::sync::atomic::Ordering::SeqCst))
+    fn focus_window(&self, _: &[String], _: &Workspace) -> Result<bool, String> {
+        Ok(false)
+    }
+
+    fn focus_window_id(&self, id: &str) -> Result<bool, String> {
+        lock(&self.1).push(id.to_owned());
+        Ok(lock(&self.2).iter().any(|open| open == id))
     }
 
     fn window_workspace(&self, _: &[String], _: &Workspace) -> Result<Option<WorkspaceId>, String> {
@@ -523,7 +527,7 @@ fn output_listeners_hear_only_of_output_changes() {
 fn a_dialog_gets_the_focus_back_from_the_app_that_asked_for_it() {
     let desktop = follow_niri(&Recording::load("niri")).pop().unwrap().1;
     let shown = Arc::new(Shown::default());
-    shown.2.store(true, std::sync::atomic::Ordering::SeqCst);
+    *lock(&shown.2) = vec!["2".into(), "4".into()];
     let (compositor, _logs) = compositor(Box::new(Arc::clone(&shown)), None);
     const DIALOG: &str = "nova-files-picker";
     compositor.keep_dialogs_up(DIALOG);
@@ -532,23 +536,27 @@ fn a_dialog_gets_the_focus_back_from_the_app_that_asked_for_it() {
         focused.focused_window = Some(FocusedWindow { id: id.into(), app_id: app_id.into(), title: title.into() });
         compositor.update(focused);
     };
-    let asked = || lock(&shown.1).len();
+    let asked = || lock(&shown.1).clone();
 
     focus("1", "zen", "a page");
     focus("2", DIALOG, "File Upload");
-    assert_eq!(asked(), 0, "the dialog has it");
+    assert!(asked().is_empty(), "the dialog has it");
     focus("1", "zen", "a page");
-    assert_eq!(*lock(&shown.1), [vec![DIALOG.to_owned()]], "its app gives it back");
+    assert_eq!(asked(), ["2"], "its app gives it back");
     focus("1", "zen", "another page");
-    assert_eq!(asked(), 1, "a new title isn't the focus moving");
-    focus("3", "ghostty", "~");
-    assert_eq!(asked(), 1, "another window keeps it");
+    assert_eq!(asked().len(), 1, "a new title isn't the focus moving");
+    focus("3", "claude", "Claude");
+    assert_eq!(asked().len(), 1, "another window keeps it");
 
-    // Once the dialog is gone, its app keeps the focus for good.
-    shown.2.store(false, std::sync::atomic::Ordering::SeqCst);
+    // Claude's own dialog closes while Zen's stays open: Claude keeps the
+    // focus, and Zen still gives it to its own.
+    focus("4", DIALOG, "Open Files");
+    lock(&shown.2).retain(|open| open != "4");
+    focus("3", "claude", "Claude");
+    assert_eq!(asked(), ["2", "4"]);
+    focus("5", "ghostty", "~");
+    focus("3", "claude", "Claude");
+    assert_eq!(asked().len(), 2, "nothing to give back");
     focus("1", "zen", "a page");
-    assert_eq!(asked(), 2);
-    focus("3", "ghostty", "~");
-    focus("1", "zen", "a page");
-    assert_eq!(asked(), 2, "nothing to give back");
+    assert_eq!(asked().last().unwrap(), "2");
 }

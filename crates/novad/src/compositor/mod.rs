@@ -62,6 +62,10 @@ pub trait Backend: Send + Sync {
     /// window has one of them.
     fn focus_window(&self, app_ids: &[String], here: &Workspace) -> Result<bool, String>;
 
+    /// Focuses the window with `id`, as [`Desktop::focused_window`] names
+    /// it. `false` when it's gone.
+    fn focus_window_id(&self, id: &str) -> Result<bool, String>;
+
     /// The workspace of the window [`Backend::focus_window`] would focus
     /// for `app_ids` and `here`, `None` when no window has one of them.
     fn window_workspace(&self, app_ids: &[String], here: &Workspace) -> Result<Option<WorkspaceId>, String>;
@@ -243,18 +247,17 @@ impl Compositor {
     /// Publishes `desktop` when it differs from the last one, then gives a
     /// dialog the focus back when its app took it.
     fn update(&self, desktop: Desktop) {
-        let Some(dialogs) = self.publish(desktop) else { return };
-        // After the desktop is unlocked: focusing asks for it.
-        match self.focus_app(&dialogs, None) {
+        let Some(dialog) = self.publish(desktop) else { return };
+        match self.backend.focus_window_id(&dialog) {
             Ok(true) => {}
-            Ok(false) => lock(&self.dialogs).closed(),
+            Ok(false) => lock(&self.dialogs).closed(&dialog),
             Err(e) => self.logger.warn(LOG_SOURCE, &format!("can't give the focus back to a dialog: {e}")),
         }
     }
 
-    /// Publishes `desktop` when it differs from the last one. The dialogs'
-    /// app ids when one should take the focus back.
-    fn publish(&self, mut desktop: Desktop) -> Option<Vec<String>> {
+    /// Publishes `desktop` when it differs from the last one. The window id
+    /// of a dialog that should take the focus back.
+    fn publish(&self, mut desktop: Desktop) -> Option<String> {
         desktop.outputs.sort_by(|a, b| a.name.cmp(&b.name));
         let mut current = lock(&self.desktop);
         if current.as_ref() == Some(&desktop) {
@@ -264,7 +267,7 @@ impl Compositor {
         let now = desktop.focused_window.as_ref();
         // A new title alone isn't the focus moving.
         let moved = before.map(|window| &window.id) != now.map(|window| &window.id);
-        let dialogs = moved.then(|| lock(&self.dialogs).focused(before, now).map(<[String]>::to_vec)).flatten();
+        let dialog = moved.then(|| lock(&self.dialogs).focused(before, now)).flatten();
         self.hub.publish(&Event::Compositor(desktop.clone()));
         if current.as_ref().is_none_or(|current| !output_names(current).eq(output_names(&desktop))) {
             let names: Vec<String> = output_names(&desktop).cloned().collect();
@@ -273,7 +276,7 @@ impl Compositor {
             }
         }
         *current = Some(desktop);
-        dialogs
+        dialog
     }
 }
 

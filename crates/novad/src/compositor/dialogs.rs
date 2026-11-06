@@ -22,9 +22,15 @@ use nova_protocol::FocusedWindow;
 pub(super) struct Dialogs {
     /// Their app ids.
     app_ids: Vec<String>,
-    /// The dialog that got the focus last, by the compositor's window id.
-    dialog: Option<String>,
-    /// The window it belongs to, by the compositor's window id.
+    /// The dialogs that have had the focus, oldest first, each with the
+    /// window it belongs to, by the compositor's window ids. Several can be
+    /// open at once, from different apps or one.
+    open: Vec<Dialog>,
+}
+
+#[derive(Debug)]
+struct Dialog {
+    id: String,
     owner: Option<String>,
 }
 
@@ -36,26 +42,26 @@ impl Dialogs {
         }
     }
 
-    /// The focus moved from `before` to `now`. The dialogs' app ids when a
-    /// dialog should take it back.
-    pub(super) fn focused(&mut self, before: Option<&FocusedWindow>, now: Option<&FocusedWindow>) -> Option<&[String]> {
+    /// The focus moved from `before` to `now`. The window id of the dialog
+    /// that should take it back, when `now` is the app of one.
+    pub(super) fn focused(&mut self, before: Option<&FocusedWindow>, now: Option<&FocusedWindow>) -> Option<String> {
         let now = now?;
         if self.is_dialog(now) {
-            // The window that had the focus as a new dialog opened asked for
-            // it. Coming back to the same dialog keeps its app.
-            if self.dialog.as_ref() != Some(&now.id) {
-                self.dialog = Some(now.id.clone());
-                self.owner = before.filter(|window| !self.is_dialog(window)).map(|window| window.id.clone());
+            // The window that had the focus as a new dialog first got it
+            // asked for it. Coming back to a known dialog keeps its app.
+            if !self.open.iter().any(|dialog| dialog.id == now.id) {
+                let owner = before.filter(|window| !self.is_dialog(window)).map(|window| window.id.clone());
+                self.open.push(Dialog { id: now.id.clone(), owner });
             }
             return None;
         }
-        (self.owner.as_ref() == Some(&now.id)).then_some(&self.app_ids[..])
+        // The newest of its dialogs.
+        self.open.iter().rev().find(|dialog| dialog.owner.as_ref() == Some(&now.id)).map(|dialog| dialog.id.clone())
     }
 
-    /// No dialog is open any more: its app takes the focus as usual.
-    pub(super) fn closed(&mut self) {
-        self.dialog = None;
-        self.owner = None;
+    /// The dialog `id` is gone: its app takes the focus as usual.
+    pub(super) fn closed(&mut self, id: &str) {
+        self.open.retain(|dialog| dialog.id != id);
     }
 
     fn is_dialog(&self, window: &FocusedWindow) -> bool {
@@ -85,7 +91,7 @@ mod tests {
         let mut dialogs = dialogs();
         let (app, dialog) = (window(1, "zen"), window(2, DIALOG));
         assert_eq!(dialogs.focused(Some(&app), Some(&dialog)), None);
-        assert_eq!(dialogs.focused(Some(&dialog), Some(&app)), Some(&[DIALOG.to_owned()][..]));
+        assert_eq!(dialogs.focused(Some(&dialog), Some(&app)).as_deref(), Some("2"));
         // After the dialog took it back, again.
         assert_eq!(dialogs.focused(Some(&app), Some(&dialog)), None);
         assert!(dialogs.focused(Some(&dialog), Some(&app)).is_some(), "still its app");
@@ -108,8 +114,24 @@ mod tests {
         let mut dialogs = dialogs();
         let (app, dialog) = (window(1, "zen"), window(2, DIALOG));
         dialogs.focused(Some(&app), Some(&dialog));
-        dialogs.closed();
+        dialogs.closed("2");
         assert_eq!(dialogs.focused(Some(&dialog), Some(&app)), None);
+    }
+
+    #[test]
+    fn each_app_gets_its_own_dialog_back() {
+        let mut dialogs = dialogs();
+        let (zen, zen_dialog) = (window(1, "zen"), window(2, DIALOG));
+        let (claude, claude_dialog) = (window(3, "claude"), window(4, DIALOG));
+        dialogs.focused(Some(&zen), Some(&zen_dialog));
+        dialogs.focused(Some(&zen_dialog), Some(&claude));
+        dialogs.focused(Some(&claude), Some(&claude_dialog));
+        assert_eq!(dialogs.focused(Some(&claude_dialog), Some(&zen)).as_deref(), Some("2"));
+        assert_eq!(dialogs.focused(Some(&zen_dialog), Some(&claude)).as_deref(), Some("4"));
+        // Claude's dialog closes: Claude keeps the focus, Zen still waits.
+        dialogs.closed("4");
+        assert_eq!(dialogs.focused(Some(&zen_dialog), Some(&claude)), None);
+        assert_eq!(dialogs.focused(Some(&claude), Some(&zen)).as_deref(), Some("2"));
     }
 
     #[test]

@@ -59,15 +59,19 @@ impl Niri {
     /// `here` first.
     fn app_window(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<Option<Window>, String> {
         let here = u64::try_from(here.id).ok();
-        let reply = self.request(WINDOWS_REQUEST)?;
-        let windows: Vec<Window> =
-            serde_json::from_value(reply["Windows"].clone()).map_err(|e| format!("niri sent odd windows ({e})"))?;
-        let mut matching: Vec<Window> = windows
+        let mut matching: Vec<Window> = self
+            .windows()?
             .into_iter()
             .filter(|window| window.app_id.as_ref().is_some_and(|id| app_ids.contains(&id.to_lowercase())))
             .collect();
         matching.sort_by_key(|window| window.workspace_id != here);
         Ok(matching.into_iter().next())
+    }
+
+    /// Every window, as niri answers now.
+    fn windows(&self) -> Result<Vec<Window>, String> {
+        let reply = self.request(WINDOWS_REQUEST)?;
+        serde_json::from_value(reply["Windows"].clone()).map_err(|e| format!("niri sent odd windows ({e})"))
     }
 
     fn connect(&self) -> Result<UnixStream, String> {
@@ -140,6 +144,15 @@ impl Backend for Niri {
         let Some(window) = self.app_window(app_ids, here)? else { return Ok(false) };
         // niri shows the window's workspace and output for it.
         let action = json!({"Action": {"FocusWindow": {"id": window.id}}});
+        self.request(&action.to_string()).map(|_| true)
+    }
+
+    fn focus_window_id(&self, id: &str) -> Result<bool, String> {
+        let Ok(id) = id.parse::<u64>() else { return Ok(false) };
+        if !self.windows()?.iter().any(|window| window.id == id) {
+            return Ok(false);
+        }
+        let action = json!({"Action": {"FocusWindow": {"id": id}}});
         self.request(&action.to_string()).map(|_| true)
     }
 
