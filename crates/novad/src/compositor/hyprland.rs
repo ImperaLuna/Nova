@@ -54,8 +54,9 @@ const FULLSCREEN_MODE: u8 = 2;
 /// FNV-1a (64 bits), which turns an address into an id.
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
-/// Bits of an integer a JavaScript number holds exactly (beside its sign).
-const JS_EXACT_BITS: u32 = 52;
+/// Bits of a negative id the UI keeps whole: its workspace clicks come back
+/// through a QML `int`, 32 bits with a sign.
+const UI_ID_BITS: u32 = 31;
 /// How long Hyprland may take to answer a request.
 const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -354,14 +355,13 @@ impl From<RawWorkspace> for Workspace {
 /// The id novad gives a workspace Hyprland gives none: 0.57 numbers only
 /// numbered workspaces and calls special and named ones by address (older
 /// releases gave those negative ids). A stable negative number from the
-/// address, within the integers JavaScript keeps exactly, since the UI sends
-/// ids back; 0 for no workspace.
+/// address, small enough for the UI to send back; 0 for no workspace.
 fn address_id(address: &str) -> WorkspaceId {
     if address.is_empty() {
         return 0;
     }
     let hash = address.bytes().fold(FNV_OFFSET, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME));
-    -WorkspaceId::try_from(hash >> (u64::BITS - JS_EXACT_BITS)).unwrap_or_default() - 1
+    -WorkspaceId::try_from(hash >> (u64::BITS - UI_ID_BITS)).unwrap_or_default() - 1
 }
 
 #[derive(Debug, Deserialize)]

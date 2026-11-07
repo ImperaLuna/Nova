@@ -291,7 +291,7 @@ fn hyprland_0_57_shows_its_special_workspace() {
     assert_eq!(magic.name, "magic");
     assert!(!magic.empty, "its window is in it");
     assert!(magic.id < 0, "an id of its own: {}", magic.id);
-    assert!(magic.id.unsigned_abs() < 1 << 53, "one JavaScript keeps exactly: {}", magic.id);
+    assert!(i32::try_from(magic.id).is_ok(), "one a QML int keeps whole: {}", magic.id);
     assert!(!here.workspaces[1].active, "covered by the special workspace");
 
     let elsewhere = &there.workspaces[0];
