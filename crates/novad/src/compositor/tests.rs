@@ -279,17 +279,17 @@ fn hyprland_0_57(dir: &str) -> hyprland::State {
 
 #[test]
 fn hyprland_0_57_shows_its_special_workspace() {
-    // `recorded/hyprland-0.57-special/` is the two-output desktop above with
-    // `special:magic` shown on DP-1 and a window in it, written as 0.57's
-    // formatter writes it: special workspaces and their windows have no
-    // `id`, only an address.
+    // Answers from the same desktop on Hyprland 0.57, kept in
+    // `recorded/hyprland-0.57-special/`: `special:magic` shows on DP-1 with a
+    // fullscreen window, and DP-2 has focus. Special workspaces and their
+    // windows have no `id` there, only an address.
     let desktop = hyprland_0_57("hyprland-0.57-special").desktop();
     let [here, there] = &desktop.outputs[..] else { panic!("{desktop:#?}") };
 
     let magic = &here.workspaces[0];
-    assert!(magic.special && magic.active && magic.focused, "{here:#?}");
+    assert!(magic.special && magic.active && !magic.focused, "{here:#?}");
     assert_eq!(magic.name, "magic");
-    assert!(!magic.empty, "its window is in it");
+    assert!(!magic.empty && magic.fullscreen, "its fullscreen window is in it");
     assert!(magic.id < 0, "an id of its own: {}", magic.id);
     assert!(i32::try_from(magic.id).is_ok(), "one a QML int keeps whole: {}", magic.id);
     assert!(!here.workspaces[1].active, "covered by the special workspace");
@@ -297,6 +297,7 @@ fn hyprland_0_57_shows_its_special_workspace() {
     let elsewhere = &there.workspaces[0];
     assert_eq!(elsewhere.id, magic.id, "the same workspace on every output");
     assert!(elsewhere.shown_elsewhere && !elsewhere.active);
+    assert_eq!(focused_workspace(&desktop).name, "2");
 }
 
 #[test]

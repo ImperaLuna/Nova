@@ -1,0 +1,14 @@
+{
+    "address": "2",
+    "id": 2,
+    "type": "normal",
+    "name": "2",
+    "monitor": "DP-2",
+    "monitorID": 1,
+    "windows": 1,
+    "hasfullscreen": false,
+    "lastwindow": "0x5597a9abff20",
+    "lastwindowtitle": "imperaluna@RyzenShine: ~/Projects/nova-benchmark",
+    "ispersistent": false,
+    "tiledLayout": "master"
+}

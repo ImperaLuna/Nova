@@ -1,24 +1,30 @@
 {
-    "address": "0x6330813dc150",
+    "address": "0x5597a9abff20",
     "mapped": true,
     "hidden": false,
     "visible": true,
     "acceptsInput": true,
-    "at": [1921, 45],
-    "size": [2558, 1394],
+    "at": [
+        4481,
+        45
+    ],
+    "size": [
+        1918,
+        1034
+    ],
     "workspace": {
-        "address": "1",
-        "id": 1,
+        "address": "2",
+        "id": 2,
         "type": "normal",
-        "name": "1"
+        "name": "2"
     },
     "floating": false,
-    "monitor": 0,
-    "class": "com.anthropic.Claude",
-    "title": "Claude",
-    "initialClass": "com.anthropic.Claude",
-    "initialTitle": "Claude",
-    "pid": 5654,
+    "monitor": 1,
+    "class": "com.mitchellh.ghostty",
+    "title": "imperaluna@RyzenShine: ~/Projects/nova-benchmark",
+    "initialClass": "com.mitchellh.ghostty",
+    "initialTitle": "Ghostty",
+    "pid": 13615,
     "xwayland": false,
     "pinned": false,
     "pinFullscreened": false,
@@ -30,10 +36,10 @@
     "tags": [],
     "swallowing": "0x0",
     "focusHistoryID": 0,
-    "inhibitingIdle": true,
+    "inhibitingIdle": false,
     "xdgTag": "",
     "xdgDescription": "",
     "contentType": "none",
     "tearingHint": false,
-    "stableId": "18000005"
+    "stableId": "18000099"
 }
