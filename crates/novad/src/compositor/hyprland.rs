@@ -445,7 +445,8 @@ impl State {
         let Some((event, data)) = line.split_once(EVENT_SEPARATOR) else { return };
         match event {
             "workspacev2" | "focusedmonv2" | "createworkspacev2" | "destroyworkspacev2" | "moveworkspacev2"
-            | "renameworkspace" | "monitoraddedv2" | "monitorremovedv2" | "configreloaded" | "activespecialv2" => {
+            | "renameworkspace" | "monitoraddedv2" | "monitorremovedv2" | "configreloaded" | "activespecialv2"
+            | "changeworkspaceid" => {
                 self.stale_workspaces = true;
             }
             "openwindow" => {
