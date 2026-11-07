@@ -961,13 +961,7 @@ mod tests {
         assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
         // Other topic events may reach it (the trash watcher says it's
         // following the trash once its watches are in); windows don't.
-        let windows = std::iter::from_fn(|| watcher.try_recv().ok())
-            .filter(|sent| {
-                matches!(sent, Outgoing::Line(line)
-                    if serde_json::from_str::<serde_json::Value>(line).unwrap()["event"] == "files_window")
-            })
-            .count();
-        assert_eq!(windows, 0, "windows go only to Nova Files");
+        assert_eq!(crate::hub::count_named(&watcher, "files_window"), 0, "windows go only to Nova Files");
     }
 
     #[test]
@@ -982,9 +976,7 @@ mod tests {
         fixture.files.set_look(FilesLook { frame: 0, list: 100 });
         fixture.files.send_state(client);
         assert_eq!(next_named(&events, "files_look", WAIT), json!({"frame": 0, "list": 100}));
-        let more_looks =
-            events.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_look")));
-        assert!(!more_looks, "one event per change, one per subscriber");
+        assert_eq!(crate::hub::count_named(&events, "files_look"), 0, "one event per change, one per subscriber");
     }
 
     #[test]
@@ -998,8 +990,7 @@ mod tests {
         assert_eq!(pinned(fixture.files.places()), [PlaceKind::Home, PlaceKind::Trash]);
         // Unpinning what isn't pinned tells nobody.
         fixture.files.pin(&fixture.downloads(), false).unwrap();
-        let more = events.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_places")));
-        assert!(!more, "no change, no event");
+        assert_eq!(crate::hub::count_named(&events, "files_places_changed"), 0, "no change, no event");
     }
 
     #[test]
@@ -1021,9 +1012,7 @@ mod tests {
         assert_eq!(next_named(&next, "files_window", WAIT)["folder"], json!(fixture.downloads()));
         // Other events (the trash's watch starting, the search index built)
         // may reach it; no window does.
-        let windows =
-            quitting.try_iter().any(|sent| matches!(sent, Outgoing::Line(line) if line.contains("files_window")));
-        assert!(!windows, "no window for the one quitting");
+        assert_eq!(crate::hub::count_named(&quitting, "files_window"), 0, "no window for the one quitting");
     }
 
     #[test]

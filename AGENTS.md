@@ -175,7 +175,10 @@ Run `just` inside `nix develop` to list the recipes. CI runs the flake checks:
 what `just check` runs plus the headless e2e on every push, and the VM tests on
 niri and Hyprland only once a PR is out of draft (so mark a PR ready, or open
 it ready, to get VM results) and has no PR stacked on it. Locally, `just check` and `just e2e` cover most of it; the VM
-tests need KVM. Without KVM (cloud sessions), approve goldens with the "Approve
+tests need KVM. Before opening a PR, also run `just test-sandbox`: it runs the
+Rust tests in CI's Nix sandbox, where a test that needs the network, setuid
+bits or a host tool fails although `cargo test` passes (cloud sessions can't
+fetch its GitHub inputs, so there CI is the first sandbox run). Without KVM (cloud sessions), approve goldens with the "Approve
 goldens" workflow from main on the PR branch instead of `just e2e-approve`.
 `just run` logs to `~/.local/state/nova-dev`.
 

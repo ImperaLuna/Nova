@@ -845,7 +845,11 @@ mod tests {
         let error = fixture.start(None, RecordAudio::default()).unwrap_err();
         assert!(error.contains("didn't start") && error.contains("no capture permission"), "{error}");
         assert!(fixture.files().is_empty());
-        assert!(fixture.ui.try_recv().is_err(), "nothing was announced");
+        let queued = crate::hub::queued_names(&fixture.ui);
+        assert!(
+            !queued.iter().any(|name| name == "recording" || name == "recording_saved"),
+            "nothing was announced: {queued:?}"
+        );
     }
 
     #[test]

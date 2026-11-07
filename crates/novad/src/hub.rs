@@ -175,10 +175,22 @@ pub fn next_event(queue: &Receiver<Outgoing>, wait: std::time::Duration) -> serd
     let deadline = std::time::Instant::now() + wait;
     loop {
         match queue.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
-            Ok(Outgoing::Line(line)) => return serde_json::from_str(&line).unwrap(),
-            Ok(Outgoing::Flushed(_)) => {}
+            Ok(sent) => {
+                if let Some(event) = sent_event(sent) {
+                    return event;
+                }
+            }
             Err(e) => panic!("no event in time: {e}"),
         }
+    }
+}
+
+/// What a client was sent, as a JSON event, or None for a flush marker.
+#[cfg(test)]
+fn sent_event(sent: Outgoing) -> Option<serde_json::Value> {
+    match sent {
+        Outgoing::Line(line) => Some(serde_json::from_str(&line).unwrap()),
+        Outgoing::Flushed(_) => None,
     }
 }
 
@@ -186,13 +198,45 @@ pub fn next_event(queue: &Receiver<Outgoing>, wait: std::time::Duration) -> serd
 /// others, like [`next_event`].
 #[cfg(test)]
 pub fn next_named(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Duration) -> serde_json::Value {
+    named_within(queue, name, wait).unwrap_or_else(|| panic!("no {name} event in time"))
+}
+
+/// The data of the next event called `name` within `wait`, skipping others,
+/// or None if none comes.
+#[cfg(test)]
+pub fn named_within(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Duration) -> Option<serde_json::Value> {
     let deadline = std::time::Instant::now() + wait;
     loop {
-        let event = next_event(queue, deadline.saturating_duration_since(std::time::Instant::now()));
-        if event["event"] == name {
-            return event["data"].clone();
+        let left = deadline.checked_duration_since(std::time::Instant::now())?;
+        match queue.recv_timeout(left) {
+            Ok(sent) => {
+                if let Some(event) = sent_event(sent).filter(|event| event["event"] == name) {
+                    return Some(event["data"].clone());
+                }
+            }
+            Err(_) => return None,
         }
     }
+}
+
+/// How many events called `name` a client's queue holds now, taking every
+/// queued event off. For a test that checks an event didn't reach a client:
+/// other events of its topics may well have (a watcher starting, an index
+/// built), so "nothing came" is the wrong question.
+#[cfg(test)]
+pub fn count_named(queue: &Receiver<Outgoing>, name: &str) -> usize {
+    queued_names(queue).iter().filter(|queued| *queued == name).count()
+}
+
+/// The names of the events a client's queue holds now, in order, taking
+/// them all off: for checking several events didn't come, in one pass.
+#[cfg(test)]
+pub fn queued_names(queue: &Receiver<Outgoing>) -> Vec<String> {
+    queue
+        .try_iter()
+        .filter_map(sent_event)
+        .map(|event| event["event"].as_str().unwrap_or_default().to_string())
+        .collect()
 }
 
 #[cfg(test)]

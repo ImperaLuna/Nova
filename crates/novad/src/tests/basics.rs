@@ -72,8 +72,19 @@ fn oversized_requests_close_the_connection() {
     let novad = TestDaemon::start("oversized", None);
     let mut client = novad.connect();
     let huge = "x".repeat(usize::try_from(server::MAX_REQUEST_BYTES).unwrap() + 10);
-    client.send_raw(&huge);
-    assert!(client.lines.next().is_none(), "novad should hang up");
+    // novad may hang up before it has read the whole line, and a write it
+    // stops reading mustn't hang the test.
+    client.writer.set_write_timeout(Some(Duration::from_secs(10))).unwrap();
+    let _ = writeln!(client.writer, "{huge}");
+    // Hanging up on a line it hasn't read all of resets the connection
+    // rather than ending it (a Unix socket closed with unread data), and
+    // which one comes depends on how far novad read: both are a hang-up.
+    client.writer.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    match client.lines.next() {
+        None => {}
+        Some(Err(e)) if e.kind() == std::io::ErrorKind::ConnectionReset => {}
+        other => panic!("novad should hang up, got {other:?}"),
+    }
 }
 
 #[test]

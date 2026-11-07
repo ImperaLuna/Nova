@@ -463,6 +463,24 @@
                 touch $out
               '';
 
+          # Test and script patterns that flaked before (scripts/lint-traps.sh).
+          lint-traps = pkgs.runCommand "nova-lint-traps" { nativeBuildInputs = [ pkgs.shellcheck ]; } ''
+            cp -r ${
+              pkgs.lib.fileset.toSource {
+                root = ./.;
+                fileset = pkgs.lib.fileset.unions [
+                  ./scripts
+                  ./e2e
+                  ./packaging
+                  ./crates/novad/src
+                ];
+              }
+            }/. src
+            shellcheck src/scripts/lint-traps.sh
+            bash src/scripts/lint-traps.sh src
+            touch $out
+          '';
+
           # The blur rules `nova setup` writes for niri, against this niri.
           niri-rules = pkgs.runCommand "nova-niri-rules" { nativeBuildInputs = [ pkgs.niri ]; } ''
             niri validate -c ${./packaging/compositor/niri.kdl}

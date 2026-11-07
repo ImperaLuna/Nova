@@ -3,7 +3,6 @@
 //! put on a `PATH`, and waiting until something happens. Small helpers, not
 //! a fixture framework: each test still builds its own real setup.
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -55,10 +54,26 @@ impl Drop for TempDir {
 
 /// Writes an executable `sh` script named `name` into `dir` that runs
 /// `body`, and returns its path.
+///
+/// The program itself is written by a `sh` child, never through a file this
+/// process opens: another test thread forking meanwhile would inherit that
+/// write handle, and running the program while the fork still holds it fails
+/// with "Text file busy" (ETXTBSY). Only the source text goes through ours,
+/// in its own temporary file outside `dir`, so a test watching `dir` never
+/// sees it.
 pub fn write_program(dir: &Path, name: &str, body: &str) -> PathBuf {
+    static COUNT: AtomicU64 = AtomicU64::new(0);
     let path = dir.join(name);
-    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap_or_else(|e| panic!("can't write {name}: {e}"));
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let count = COUNT.fetch_add(1, Ordering::Relaxed);
+    let source = std::env::temp_dir().join(format!("nova-test-program-{}-{count}", std::process::id()));
+    std::fs::write(&source, format!("#!/bin/sh\n{body}\n")).unwrap_or_else(|e| panic!("can't write {name}: {e}"));
+    let copied = std::process::Command::new("/bin/sh")
+        .args(["-c", "cat \"$1\" >\"$2\" && chmod 755 \"$2\"", "sh"])
+        .args([&source, &path])
+        .status()
+        .unwrap_or_else(|e| panic!("can't write {name}: {e}"));
+    assert!(copied.success(), "can't write {name}: {copied}");
+    std::fs::remove_file(&source).unwrap();
     path
 }
 
