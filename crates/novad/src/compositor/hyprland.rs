@@ -51,6 +51,11 @@ const ADDRESS_PREFIX: &str = "0x";
 /// The bit of a window's `fullscreen` mode that means fullscreen; the
 /// other (1) is maximized, which keeps the bar's space.
 const FULLSCREEN_MODE: u8 = 2;
+/// FNV-1a (64 bits), which turns an address into an id.
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+/// Bits of an integer a JavaScript number holds exactly (beside its sign).
+const JS_EXACT_BITS: u32 = 52;
 /// How long Hyprland may take to answer a request.
 const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -292,24 +297,71 @@ struct Monitor {
     special_workspace: SpecialWorkspaceRef,
 }
 
-#[derive(Debug, Deserialize)]
-struct WorkspaceRef {
-    id: WorkspaceId,
-}
-
-/// A monitor's special workspace. Hyprland 0.57 leaves out `id` when none
-/// shows; older releases write 0.
+/// A workspace as monitors and windows point at it.
 #[derive(Debug, Default, Deserialize)]
-struct SpecialWorkspaceRef {
-    #[serde(default)]
+#[serde(from = "RawWorkspaceRef")]
+struct WorkspaceRef {
+    /// 0 when it points at none (a monitor without a special workspace).
     id: WorkspaceId,
 }
 
+/// A monitor's special workspace: none shows when its address and name are
+/// empty (older releases also write `id` 0).
+type SpecialWorkspaceRef = WorkspaceRef;
+
 #[derive(Debug, Deserialize)]
+struct RawWorkspaceRef {
+    id: Option<WorkspaceId>,
+    address: Option<String>,
+    #[serde(default)]
+    name: String,
+}
+
+impl From<RawWorkspaceRef> for WorkspaceRef {
+    fn from(raw: RawWorkspaceRef) -> Self {
+        let address = raw.address.unwrap_or(raw.name);
+        Self { id: raw.id.unwrap_or_else(|| address_id(&address)) }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(from = "RawWorkspace")]
 struct Workspace {
     id: WorkspaceId,
+    /// What dispatchers and events call it: `special:magic` for a special
+    /// workspace, the number for a numbered one.
+    address: String,
+    /// What it shows as.
     name: String,
     monitor: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawWorkspace {
+    id: Option<WorkspaceId>,
+    address: Option<String>,
+    name: String,
+    monitor: String,
+}
+
+impl From<RawWorkspace> for Workspace {
+    fn from(raw: RawWorkspace) -> Self {
+        let address = raw.address.unwrap_or_else(|| raw.name.clone());
+        Self { id: raw.id.unwrap_or_else(|| address_id(&address)), address, name: raw.name, monitor: raw.monitor }
+    }
+}
+
+/// The id novad gives a workspace Hyprland gives none: 0.57 numbers only
+/// numbered workspaces and calls special and named ones by address (older
+/// releases gave those negative ids). A stable negative number from the
+/// address, within the integers JavaScript keeps exactly, since the UI sends
+/// ids back; 0 for no workspace.
+fn address_id(address: &str) -> WorkspaceId {
+    if address.is_empty() {
+        return 0;
+    }
+    let hash = address.bytes().fold(FNV_OFFSET, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME));
+    -WorkspaceId::try_from(hash >> (u64::BITS - JS_EXACT_BITS)).unwrap_or_default() - 1
 }
 
 #[derive(Debug, Deserialize)]
@@ -404,11 +456,13 @@ impl State {
             }
             "movewindowv2" => {
                 self.stale_windows = true;
-                // ADDRESS,WORKSPACEID,WORKSPACENAME: where it was, and where it went.
+                // ADDRESS,WORKSPACE,NAME: where it was, and where it went.
+                // WORKSPACE is the id before 0.57, its address since.
                 let mut fields = data.split(',');
                 let from = fields.next().and_then(|address| Some(self.windows.get(address)?.workspace));
                 self.moved_on(from);
-                self.moved_on(fields.next().and_then(|id| id.parse().ok()));
+                let to = fields.next().and_then(|to| to.parse().ok().or_else(|| self.workspace_named(to)));
+                self.moved_on(to);
             }
             "fullscreen" => {
                 self.stale_windows = true;
@@ -449,7 +503,7 @@ impl State {
     }
 
     fn workspace_named(&self, name: &str) -> Option<WorkspaceId> {
-        self.workspaces.iter().find(|workspace| workspace.name == name).map(|workspace| workspace.id)
+        self.workspaces.iter().find(|workspace| workspace.address == name).map(|workspace| workspace.id)
     }
 
     /// Windows moved on the monitor showing `workspace`, or the focused one
@@ -508,7 +562,7 @@ impl State {
         let mut special: Vec<(&Workspace, &str)> = self
             .workspaces
             .iter()
-            .filter_map(|workspace| Some((workspace, workspace.name.strip_prefix(SPECIAL_PREFIX)?)))
+            .filter_map(|workspace| Some((workspace, workspace.address.strip_prefix(SPECIAL_PREFIX)?)))
             .collect();
         special.sort_by_key(|(_, name)| *name);
         let shown: HashSet<WorkspaceId> = self.monitors.iter().map(|monitor| monitor.special_workspace.id).collect();
@@ -520,7 +574,7 @@ impl State {
                     .workspaces
                     .iter()
                     .filter(|workspace| {
-                        workspace.monitor == monitor.name && !workspace.name.starts_with(SPECIAL_PREFIX)
+                        workspace.monitor == monitor.name && !workspace.address.starts_with(SPECIAL_PREFIX)
                     })
                     .collect();
                 own.sort_by_key(|workspace| (workspace.id < 0, workspace.id.unsigned_abs()));

@@ -260,16 +260,43 @@ fn hyprland_0_57_without_a_special_workspace_id_still_loads() {
     // Answers from a real Hyprland 0.57 desktop with two outputs, kept in
     // `recorded/hyprland-0.57/`: its monitors leave out the special
     // workspace's `id` when none shows.
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/compositor/recorded/hyprland-0.57");
-    let mut ask = |request: &str| {
-        let query = request.strip_prefix("j/").unwrap();
-        Ok(std::fs::read_to_string(dir.join(format!("{query}.json"))).unwrap())
-    };
-    let desktop = hyprland::State::load(&mut ask).unwrap().desktop();
+    let desktop = hyprland_0_57("hyprland-0.57").desktop();
     let names: Vec<&str> = desktop.outputs.iter().map(|output| output.name.as_str()).collect();
     assert_eq!(names, ["DP-1", "DP-2"]);
     assert!(special(&desktop).is_empty(), "{desktop:#?}");
     assert_eq!(focused_workspace(&desktop).name, "1");
+}
+
+/// Hyprland 0.57 as it answers from `recorded/<dir>/`.
+fn hyprland_0_57(dir: &str) -> hyprland::State {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/compositor/recorded").join(dir);
+    let mut ask = |request: &str| {
+        let query = request.strip_prefix("j/").unwrap();
+        Ok(std::fs::read_to_string(dir.join(format!("{query}.json"))).unwrap())
+    };
+    hyprland::State::load(&mut ask).unwrap()
+}
+
+#[test]
+fn hyprland_0_57_shows_its_special_workspace() {
+    // `recorded/hyprland-0.57-special/` is the two-output desktop above with
+    // `special:magic` shown on DP-1 and a window in it, written as 0.57's
+    // formatter writes it: special workspaces and their windows have no
+    // `id`, only an address.
+    let desktop = hyprland_0_57("hyprland-0.57-special").desktop();
+    let [here, there] = &desktop.outputs[..] else { panic!("{desktop:#?}") };
+
+    let magic = &here.workspaces[0];
+    assert!(magic.special && magic.active && magic.focused, "{here:#?}");
+    assert_eq!(magic.name, "magic");
+    assert!(!magic.empty, "its window is in it");
+    assert!(magic.id < 0, "an id of its own: {}", magic.id);
+    assert!(magic.id.unsigned_abs() < 1 << 53, "one JavaScript keeps exactly: {}", magic.id);
+    assert!(!here.workspaces[1].active, "covered by the special workspace");
+
+    let elsewhere = &there.workspaces[0];
+    assert_eq!(elsewhere.id, magic.id, "the same workspace on every output");
+    assert!(elsewhere.shown_elsewhere && !elsewhere.active);
 }
 
 #[test]
