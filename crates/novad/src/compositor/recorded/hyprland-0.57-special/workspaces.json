@@ -1,0 +1,57 @@
+[
+    {
+        "address": "1",
+        "id": 1,
+        "type": "normal",
+        "name": "1",
+        "monitor": "DP-1",
+        "monitorID": 0,
+        "windows": 1,
+        "hasfullscreen": false,
+        "lastwindow": "0x5597a9a3cbf0",
+        "lastwindowtitle": "Nova Files",
+        "ispersistent": false,
+        "tiledLayout": "master"
+    },
+    {
+        "address": "2",
+        "id": 2,
+        "type": "normal",
+        "name": "2",
+        "monitor": "DP-2",
+        "monitorID": 1,
+        "windows": 1,
+        "hasfullscreen": false,
+        "lastwindow": "0x5597a9abff20",
+        "lastwindowtitle": "imperaluna@RyzenShine: ~/Projects/nova-benchmark",
+        "ispersistent": false,
+        "tiledLayout": "master"
+    },
+    {
+        "address": "special:magic",
+        "type": "special",
+        "name": "special:magic",
+        "monitor": "DP-1",
+        "monitorID": 0,
+        "windows": 1,
+        "hasfullscreen": true,
+        "lastwindow": "0x5597a991fa00",
+        "lastwindowtitle": "Claude",
+        "ispersistent": false,
+        "tiledLayout": "master"
+    },
+    {
+        "address": "3",
+        "id": 3,
+        "type": "normal",
+        "name": "3",
+        "monitor": "DP-2",
+        "monitorID": 1,
+        "windows": 2,
+        "hasfullscreen": false,
+        "lastwindow": "0x5597a9a92d80",
+        "lastwindowtitle": "New session - Claude — Zen Browser",
+        "ispersistent": false,
+        "tiledLayout": "master"
+    }
+]
