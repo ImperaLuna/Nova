@@ -445,9 +445,13 @@ impl State {
         let Some((event, data)) = line.split_once(EVENT_SEPARATOR) else { return };
         match event {
             "workspacev2" | "focusedmonv2" | "createworkspacev2" | "destroyworkspacev2" | "moveworkspacev2"
-            | "renameworkspace" | "monitoraddedv2" | "monitorremovedv2" | "configreloaded" | "activespecialv2"
-            | "changeworkspaceid" => {
+            | "renameworkspace" | "monitoraddedv2" | "monitorremovedv2" | "configreloaded" | "activespecialv2" => {
                 self.stale_workspaces = true;
+            }
+            // Its windows still point at the old id.
+            "changeworkspaceid" => {
+                self.stale_workspaces = true;
+                self.stale_windows = true;
             }
             "openwindow" => {
                 self.stale_windows = true;
