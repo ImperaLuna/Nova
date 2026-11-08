@@ -279,6 +279,7 @@ var FEATURE_MEDIA = "media";
 var FEATURE_MICROPHONE = "microphone";
 var FEATURE_NETWORK = "network";
 var FEATURE_NOTIFICATIONS = "notifications";
+var FEATURE_NOVA_FILES = "nova-files";
 var FEATURE_PERIPHERALS = "peripherals";
 var FEATURE_POWER = "power";
 var FEATURE_QUICK_SETTINGS = "quick-settings";

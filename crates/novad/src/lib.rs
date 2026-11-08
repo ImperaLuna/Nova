@@ -47,6 +47,7 @@ mod modules;
 mod network;
 mod notifications;
 mod notify;
+mod nova_files;
 mod peripherals;
 mod portal_config;
 mod power;
