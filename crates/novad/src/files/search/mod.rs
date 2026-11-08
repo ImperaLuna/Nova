@@ -100,6 +100,12 @@ impl Sources {
     }
 }
 
+/// Where each word of `text` is in `name`, for highlighting a name another
+/// search found; none where it matched a word by its letters or a typo.
+pub fn marks(text: &str, name: &str) -> Vec<nova_protocol::TextMark> {
+    Query::parse(text).map(|query| query.marks(name)).unwrap_or_default()
+}
+
 /// Who uses the index: a Nova Files process attached, or a launcher open,
 /// each by its connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -196,6 +202,14 @@ impl Search {
         self.shared.used(&mut demand, was_used);
     }
 
+    /// No launcher uses it any more: another search answers them.
+    pub fn stop_launcher_use(&self) {
+        let mut demand = lock(&self.shared.demand);
+        let was_used = !demand.users.is_empty();
+        demand.users.retain(|(_, what)| *what != Use::Launcher);
+        self.shared.used(&mut demand, was_used);
+    }
+
     /// The client `client` hung up: it uses nothing any more.
     pub fn client_gone(&self, client: ClientId) {
         let mut demand = lock(&self.shared.demand);
@@ -216,7 +230,7 @@ impl Search {
 
     /// The index is built now. Unlike a search, asking doesn't build it.
     #[cfg(test)]
-    fn built(&self) -> bool {
+    pub fn built(&self) -> bool {
         self.shared.is_built()
     }
 }
@@ -781,6 +795,22 @@ mod tests {
         fixture.wait_built(true);
         std::fs::write(fixture.home().join("crimson notes.txt"), b"").unwrap();
         fixture.finds("notes", &["crimson notes.txt"]);
+    }
+
+    #[test]
+    fn another_search_answering_the_launchers_lets_the_index_go_but_not_nova_files_hold() {
+        let fixture = Fixture::unused("launchers-elsewhere", steam_game);
+        fixture.search.set_used(UI, Use::Launcher, true);
+        fixture.search.set_used(UI + 1, Use::Launcher, true);
+        fixture.wait_built(true);
+        fixture.search.stop_launcher_use();
+        fixture.wait_built(false);
+        // A Nova Files window still keeps it.
+        fixture.search.set_used(FILES, Use::Files, true);
+        fixture.wait_built(true);
+        fixture.search.stop_launcher_use();
+        std::thread::sleep(KEPT_UNUSED * 2);
+        assert!(fixture.search.built());
     }
 
     #[test]
