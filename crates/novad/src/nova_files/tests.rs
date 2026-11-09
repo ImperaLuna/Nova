@@ -68,35 +68,15 @@ fn a_failed_search_says_why() {
 }
 
 #[test]
-fn open_and_show_in_folder_pass_the_path() {
-    let fixture = Fixture::new("open");
-    let client = fixture.client();
-    client.call(super::client::OPEN, "/h/kitchen.txt").unwrap();
-    client.call(super::client::SHOW_IN_FOLDER, "/h/kitchen.txt").unwrap();
-    assert!(client.call(super::client::OPEN, "/h/missing").is_err());
-    assert_eq!(
-        lock(&fixture.stand_in.asked).opened,
-        [("open".to_string(), "/h/kitchen.txt".to_string()), ("show".to_string(), "/h/kitchen.txt".to_string())]
-    );
-}
-
-#[test]
-fn without_nova_files_on_the_bus_every_call_fails() {
+fn without_nova_files_on_the_bus_a_search_fails() {
     let dir = TempDir::new("nova-files-absent");
     let bus = TestBus::start(&dir.join("bus"));
     let client = client(&bus.address);
     assert!(client.search("kit", 30, TIMEOUT).is_err());
-    assert!(client.call(super::client::OPEN, "/h/a").is_err());
 }
 
 #[test]
-fn a_feature_that_cannot_connect_says_so_on_every_call() {
+fn a_feature_that_cannot_connect_says_so() {
     let unreachable = NovaFiles { client: Err("no bus".into()) };
-    for error in [
-        unreachable.search("kit", 30).unwrap_err(),
-        unreachable.open("/h/a").unwrap_err(),
-        unreachable.show_in_folder("/h/a").unwrap_err(),
-    ] {
-        assert_eq!(error, "Nova Files isn't reachable: no bus");
-    }
+    assert_eq!(unreachable.search("kit", 30).unwrap_err(), "Nova Files isn't reachable: no bus");
 }

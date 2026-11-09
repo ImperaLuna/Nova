@@ -7,16 +7,16 @@
 //! a few idle minutes. `Search` returns at once and its stages come as
 //! `Found` signals sent only to the caller, until one is `done`; a search
 //! waits [`STAGES_WAIT`] for that, then answers with the stages it has.
-//! Starting a search cancels the one before if it's still going. `Open`
-//! opens a file in its default app or a folder in a Nova Files window,
-//! `ShowInFolder` the folder holding it.
+//! Starting a search cancels the one before if it's still going.
 //!
 //! One connection, kept while the feature runs, with one thread reading the
 //! signals and handing each stage to the search it belongs to.
 //!
-//! The `files` feature still answers the typed paths (`~/…`, `/…`); only
-//! name searches and running what they found come here
-//! (`files::launcher`, linked in [`crate::files::Files`]).
+//! Only name searches come here (`files::launcher`, linked in
+//! [`crate::files::Files`]). The `files` feature still answers the typed
+//! paths (`~/…`, `/…`) and runs every item, opening files in their apps and
+//! folders in Nova's own file manager, until the Nova Files app is ready to
+//! take those over too.
 
 mod client;
 
@@ -46,17 +46,6 @@ impl NovaFiles {
     /// per stage.
     pub fn search(&self, query: &str, limit: u32) -> Result<Vec<PathBuf>, String> {
         self.client()?.search(query, limit, STAGES_WAIT)
-    }
-
-    /// Opens `path`: a file in its default app, a folder in a Nova Files
-    /// window.
-    pub fn open(&self, path: &str) -> Result<(), String> {
-        self.client()?.call(client::OPEN, path)
-    }
-
-    /// Opens a Nova Files window on the folder holding `path`.
-    pub fn show_in_folder(&self, path: &str) -> Result<(), String> {
-        self.client()?.call(client::SHOW_IN_FOLDER, path)
     }
 
     fn client(&self) -> Result<&Client, String> {

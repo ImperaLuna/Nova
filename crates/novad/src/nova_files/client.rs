@@ -24,8 +24,6 @@ pub const PATH: &str = "/io/github/ImperaLuna/NovaFiles";
 pub const INTERFACE: &str = "io.github.ImperaLuna.NovaFiles.Search1";
 const SEARCH: &str = "Search";
 const CANCEL: &str = "Cancel";
-pub const OPEN: &str = "Open";
-pub const SHOW_IN_FOLDER: &str = "ShowInFolder";
 const FOUND: &str = "Found";
 const FAILED: &str = "Failed";
 /// Signals that may wait unread before older ones are dropped: a few
@@ -128,15 +126,6 @@ impl Client {
         if let Ok(message) = message {
             let _ = zbus::block_on(self.connection.send(&message));
         }
-    }
-
-    /// Calls `method` (`Open`, `ShowInFolder`) on `path`, with no platform
-    /// data: novad has no activation token to pass.
-    pub fn call(&self, method: &str, path: &str) -> Result<(), String> {
-        let platform_data: HashMap<&str, zbus::Variant> = HashMap::new();
-        zbus::block_on(self.connection.call_method(Some(APP_ID), PATH, Some(INTERFACE), method, &(path, platform_data)))
-            .map(drop)
-            .map_err(|e| e.to_string())
     }
 
     pub fn stop(&self) {

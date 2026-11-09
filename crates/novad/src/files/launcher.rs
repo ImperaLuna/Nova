@@ -11,9 +11,9 @@
 //! named by their absolute path, as wire text, and checked again on run.
 //!
 //! While the `nova-files` feature runs, the standalone Nova Files app
-//! (`crate::nova_files`) does the name searches and runs what they found
-//! (its `Open` and `ShowInFolder`), and the index isn't asked. When it
-//! can't, the answer is one item saying why, not the index's names.
+//! (`crate::nova_files`) does the name searches and the index isn't asked.
+//! When it can't, the answer is one item saying why, not the index's
+//! names. What it found runs here as any other item does.
 
 use super::Files;
 use super::folder::{is_hidden, natural, read_entry};
@@ -48,10 +48,6 @@ impl Provider for Files {
 
     fn run(&self, id: &str, how: &Run) -> Result<(), String> {
         let path = super::target::clean(id)?;
-        if let Some(nova_files) = self.nova_files() {
-            let id = wire_text(&path);
-            return if how.new_window { nova_files.show_in_folder(&id) } else { nova_files.open(&id) };
-        }
         let folder = path.parent().ok_or_else(|| format!("{id} has no folder"))?;
         if how.new_window {
             return self.show(&wire_text(folder), &[wire_text(&path)]);

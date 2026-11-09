@@ -1081,7 +1081,7 @@ mod tests {
     }
 
     #[test]
-    fn with_the_nova_files_app_on_the_launcher_searches_and_runs_through_it() {
+    fn with_the_nova_files_app_on_the_launcher_searches_through_it_and_runs_in_nova() {
         use crate::launcher::providers::{Provider, Run};
         use crate::nova_files::stand_in::{StandIn, nova_files};
         let fixture = super::bus_fixture::Fixture::new("nova-files-app");
@@ -1121,13 +1121,14 @@ mod tests {
             logger: &logger,
             underway: &|| {},
         };
-        fixture.files.run(&path, &how(false)).unwrap();
+        // What it found runs in Nova, as any item does: Shift+Enter shows
+        // it in Nova's own file manager.
+        let (windows, _stream) = fixture.nova_files();
         fixture.files.run(&path, &how(true)).unwrap();
+        let window = next_named(&windows, "files_window", WAIT);
+        assert_eq!(window["folder"], json!(found_in));
+        assert_eq!(window["select"], json!([path]));
         assert!(fixture.files.run(&failed[0].id, &how(false)).is_err());
-        assert_eq!(
-            lock(&stand_in.asked).opened,
-            [("open".to_string(), path.clone()), ("show".to_string(), path.clone())]
-        );
 
         // Off again: the launcher builds the index as before.
         fixture.files.set_nova_files(None);

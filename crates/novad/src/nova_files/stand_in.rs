@@ -5,10 +5,8 @@
 use super::NovaFiles;
 use super::client::{APP_ID, Client, PATH};
 use crate::lock;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use zbus::OwnedVariant;
 use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
 
@@ -19,7 +17,6 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 pub struct Asked {
     pub searches: Vec<(u64, String, u32)>,
     pub cancelled: Vec<u64>,
-    pub opened: Vec<(String, String)>,
 }
 
 /// The stand-in, serving while it lives.
@@ -83,20 +80,6 @@ impl Search1 {
 
     fn cancel(&self, id: u64) {
         lock(&self.asked).cancelled.push(id);
-    }
-
-    fn open(&self, path: String, platform_data: HashMap<String, OwnedVariant>) -> zbus::fdo::Result<()> {
-        assert!(platform_data.is_empty());
-        if path.ends_with("missing") {
-            return Err(zbus::fdo::Error::FileNotFound(path));
-        }
-        lock(&self.asked).opened.push(("open".into(), path));
-        Ok(())
-    }
-
-    fn show_in_folder(&self, path: String, platform_data: HashMap<String, OwnedVariant>) {
-        assert!(platform_data.is_empty());
-        lock(&self.asked).opened.push(("show".into(), path));
     }
 
     #[zbus(signal)]
