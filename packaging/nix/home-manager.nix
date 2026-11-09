@@ -24,6 +24,7 @@ let
   cfg = config.programs.nova;
   on = features.onIds cfg.features;
   filesOn = lib.elem "files" on;
+  novaFilesOn = lib.elem "nova-files" on;
   unit = "${cfg.package}/lib/systemd/user/nova.service";
 in
 {
@@ -37,7 +38,10 @@ in
       cfg.package
     ]
     ++ features.packagesFor pkgs cfg.gpu on
-    ++ lib.optional filesOn (features.filesDesktop pkgs cfg.package);
+    ++ lib.optional filesOn (features.filesDesktop pkgs cfg.package)
+    # The Nova Files app; the session bus finds its D-Bus service in the
+    # profile's share/dbus-1/services.
+    ++ lib.optional novaFilesOn cfg.novaFilesPackage;
     xdg = {
       # Nova Files opens folders. home-manager writes mimeapps.list only with
       # xdg.mimeApps.enable, which is left to the user: it replaces the file.
