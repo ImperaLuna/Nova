@@ -1,0 +1,12 @@
+id = "nova-files"
+name = "Nova Files app"
+description = "The launcher's Files mode searches with the standalone Nova Files app instead of Nova's own index, and opens what it finds there."
+default = false
+daemon = "nova-files"
+
+# Nova Files is its own app (github.com/ImperaLuna/Nova-Files), with the
+# D-Bus service that starts it for a search. No distro packages it yet: the
+# Nix modules install it from its flake (`programs.nova.novaFilesPackage`),
+# not through a `nix` list here.
+[check]
+binaries = ["nova-files"]

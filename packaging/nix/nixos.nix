@@ -3,7 +3,8 @@
 # graphical-session.target, a system-wide features.toml in /etc/xdg/nova,
 # which novad reads when the user has none of their own, and Nova Files as
 # the default for folders and apps' Open and Save dialogs (through
-# xdg-desktop-portal, on niri and Hyprland) while the `files` feature is on.
+# xdg-desktop-portal, on niri and Hyprland) while the `files` feature is on,
+# and the Nova Files app with its D-Bus service while `nova-files` is.
 #
 #   programs.nova.enable = true;
 #   programs.nova.features.wallpaper-engine.enable = true;
@@ -21,6 +22,7 @@ let
   cfg = config.programs.nova;
   on = features.onIds cfg.features;
   filesOn = lib.elem "files" on;
+  novaFilesOn = lib.elem "nova-files" on;
 in
 {
   imports = [ (import ./options.nix { inherit packages; }) ];
@@ -33,7 +35,8 @@ in
         cfg.package
       ]
       ++ features.packagesFor pkgs cfg.gpu on
-      ++ lib.optional filesOn (features.filesDesktop pkgs cfg.package);
+      ++ lib.optional filesOn (features.filesDesktop pkgs cfg.package)
+      ++ lib.optional novaFilesOn cfg.novaFilesPackage;
       # Nova Files' thumbnails come from the thumbnailers packages install
       # in share/thumbnailers (gdk-pixbuf's, ffmpegthumbnailer's), which
       # NixOS doesn't link into the system profile by itself.
@@ -53,6 +56,10 @@ in
       extraPortals = [ (features.filesPortal pkgs cfg.package) ];
       config = features.portalConfig;
     };
+
+    # The Nova Files app's D-Bus service, so the launcher's first search
+    # starts it.
+    services.dbus.packages = lib.mkIf novaFilesOn [ cfg.novaFilesPackage ];
 
     systemd.packages = [ cfg.package ];
     # NixOS ignores [Install] in packaged units; this is the unit's WantedBy=.

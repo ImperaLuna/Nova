@@ -21,6 +21,10 @@
       url = "git+https://github.com/quickshell-mirror/quickshell?ref=refs/tags/v0.3.2&shallow=1";
       flake = false;
     };
+    # The standalone Nova Files app, which the `nova-files` feature installs.
+    # Its own nixpkgs, not Nova's: following Nova's would change its store
+    # paths and miss its binary cache, so every user would build GPUI.
+    nova-files.url = "github:ImperaLuna/Nova-Files";
   };
 
   outputs =
@@ -30,6 +34,7 @@
       advisory-db,
       crane,
       quickshell-newest,
+      nova-files,
     }:
     let
       systems = [
@@ -247,6 +252,8 @@
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 
         inherit (novaFor pkgs) nova nova-ui;
+        # What the `nova-files` feature installs.
+        nova-files = nova-files.packages.${pkgs.stdenv.hostPlatform.system}.default;
         # .github/workflows/release.yml attaches this to a GitHub release.
         dist = distFor pkgs;
       });
@@ -379,6 +386,9 @@
                       programs.nova = {
                         enable = true;
                         features = pkgs.lib.mapAttrs (_: _: { enable = true; }) features.manifests;
+                        # A stand-in, so the check doesn't build the Nova
+                        # Files app (GPUI) just to list it.
+                        novaFilesPackage = pkgs.runCommand "nova-files-stand-in" { } "mkdir $out";
                       };
                     }
                   ];

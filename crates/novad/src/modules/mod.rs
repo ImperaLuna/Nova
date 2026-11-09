@@ -23,8 +23,8 @@ use crate::hub::{ClientId, Hub};
 use crate::icons::Icons;
 use crate::logger::Logger;
 use crate::{
-    ai_usage, bluetooth, features, files, launcher, media, network, notifications, peripherals, recording, resources,
-    screenshot, session_lock, tray, wallpaper, x11_tray,
+    ai_usage, bluetooth, features, files, launcher, media, network, notifications, nova_files, peripherals, recording,
+    resources, screenshot, session_lock, tray, wallpaper, x11_tray,
 };
 use nova_protocol::{FeatureState, Topic};
 use std::path::{Path, PathBuf};
@@ -260,6 +260,7 @@ modules! {
         bluetooth: bluetooth::Bluetooth,
         x11_tray: x11_tray::X11Tray,
         files: files::Files,
+        nova_files: nova_files::NovaFiles,
     ],
     kept: [
         session_lock: session_lock::SessionLock,

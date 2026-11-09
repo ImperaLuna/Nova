@@ -9,11 +9,17 @@
 //! Running an item opens a file in its type's default app and a folder in
 //! Nova Files; Shift+Enter shows either in its folder, selected. Items are
 //! named by their absolute path, as wire text, and checked again on run.
+//!
+//! While the `nova-files` feature runs, the standalone Nova Files app
+//! (`crate::nova_files`) does the name searches and the index isn't asked.
+//! When it can't, the answer is one item saying why, not the index's
+//! names. What it found runs here as any other item does.
 
 use super::Files;
 use super::folder::{is_hidden, natural, read_entry};
 use crate::launcher::MAX_MATCHES;
 use crate::launcher::providers::{Provider, Run};
+use crate::nova_files::NovaFiles;
 use nova_protocol::{FileEntry, LauncherFile, LauncherItem, TextMark, TextRun, wire_path, wire_text};
 use std::path::{Component, Path, PathBuf};
 
@@ -23,6 +29,8 @@ const INDEX_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 /// How a typed path names Home.
 const HOME_PREFIX: char = '~';
 const SEPARATOR: char = '/';
+/// The icon of the item saying Nova Files couldn't search.
+const UNANSWERED_ICON: &str = "dialog-error";
 
 impl Provider for Files {
     fn own_mode(&self) -> bool {
@@ -31,9 +39,10 @@ impl Provider for Files {
 
     fn search(&self, query: &str) -> Result<Vec<LauncherItem>, String> {
         let home = self.home();
-        match TypedPath::parse(query, home) {
-            Some(typed) => typed.complete(&self.mime.current()),
-            None => self.names(query, home),
+        match (TypedPath::parse(query, home), self.nova_files()) {
+            (Some(typed), _) => typed.complete(&self.mime.current()),
+            (None, Some(nova_files)) => Ok(self.found_by(&nova_files, query, home)),
+            (None, None) => self.names(query, home),
         }
     }
 
@@ -70,6 +79,50 @@ impl Files {
                 item(&folder, &found.entry, name, found.in_hidden_folder, home)
             })
             .collect())
+    }
+}
+
+impl Files {
+    /// What the Nova Files app finds for `query`, best first, or one item
+    /// saying why it found nothing.
+    fn found_by(&self, nova_files: &NovaFiles, query: &str, home: Option<&Path>) -> Vec<LauncherItem> {
+        let limit = u32::try_from(MAX_MATCHES).unwrap_or(u32::MAX);
+        let paths = match nova_files.search(query, limit) {
+            Ok(paths) => paths,
+            Err(e) => return vec![unanswered(e)],
+        };
+        let mime = self.mime.current();
+        paths
+            .iter()
+            .filter_map(|path| {
+                let (folder, name) = (path.parent()?, path.file_name()?);
+                // Gone since it was indexed: nothing to open.
+                let entry = read_entry(folder, name, &mime)?;
+                let marked = runs(&entry.name, &super::search::marks(query, &entry.name));
+                Some(item(folder, &entry, marked, in_hidden_folder(folder, home), home))
+            })
+            .take(MAX_MATCHES)
+            .collect()
+    }
+}
+
+/// Whether `folder`, below Home if it's there, is inside a dot folder. Only
+/// folders below Home count: a Home inside a dot folder hides nothing.
+fn in_hidden_folder(folder: &Path, home: Option<&Path>) -> bool {
+    let below_home = home.and_then(|home| folder.strip_prefix(home).ok()).unwrap_or(folder);
+    below_home.iter().any(|part| is_hidden(&part.to_string_lossy()))
+}
+
+/// The item that says a search found nothing because of `reason`. It names
+/// no path, so running it does nothing.
+fn unanswered(reason: String) -> LauncherItem {
+    LauncherItem {
+        provider: String::new(),
+        id: String::new(),
+        name: vec![TextRun { text: reason, matched: false }],
+        description: None,
+        icon: Some(UNANSWERED_ICON.to_string()),
+        file: None,
     }
 }
 
@@ -122,9 +175,7 @@ impl<'a> TypedPath<'a> {
             .collect();
         names.sort_by(|(a_dir, a), (b_dir, b)| b_dir.cmp(a_dir).then_with(|| natural(a, b)).then_with(|| a.cmp(b)));
         let typed = self.start.chars().count();
-        // Only folders below Home count: a Home inside a dot folder hides nothing.
-        let below_home = self.home.and_then(|home| self.folder.strip_prefix(home).ok()).unwrap_or(&self.folder);
-        let hidden_folder = below_home.iter().any(|part| is_hidden(&part.to_string_lossy()));
+        let hidden_folder = in_hidden_folder(&self.folder, self.home);
         Ok(names
             .into_iter()
             .take(MAX_MATCHES)

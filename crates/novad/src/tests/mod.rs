@@ -255,6 +255,8 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             images: dir.join("notifications"),
             icons: Arc::clone(icons),
         },
+        // No bus: its own tests give it one.
+        nova_files: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
         // No bus either: the media's own tests give it one.
         media: media::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
