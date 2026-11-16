@@ -349,6 +349,41 @@ with subtest("nova restart gives new processes; logs --previous reads the run be
     old_start = f"starting (pid {revived['pid']})"
     machine.succeed(as_user(f"nova logs --previous -n 1000 | grep -qF {shlex.quote(old_start)}"))
 
+for add_output, _focus_first, remove_output in ADDED_OUTPUTS:
+    with subtest("the UI lives through a screen it started on dropping off twice"):
+        # As when a monitor wakes from DPMS off and drops off the bus twice,
+        # a few seconds apart (IMP-360). Each glass keeps a ScreencopyView of
+        # its screen, and one made while the UI starts waits for Quickshell's
+        # buffer manager, then makes a capture context each time the
+        # compositor resends its dmabuf feedback, as it does when outputs
+        # change. Quickshell 0.3.2 made one for the screen that was gone and
+        # crashed. So the screen has to be there when the UI starts.
+        # Quickshell can relaunch a crashed UI in the same process, so a
+        # crash shows as a second launch.
+        def survived(removal: str) -> None:
+            machine.sleep(SETTLED_SECS)
+            assert ui_log_count(UI_LAUNCHED) == launches, f"the UI crashed and was launched again after the {removal} removal"
+            assert wait_running()["ui"]["pid"] == restarted["ui"]["pid"], f"the UI died after the {removal} removal"
+
+        machine.succeed(as_user(add_output))
+        try:
+            machine.succeed(as_user("nova restart"))
+            restarted = wait_running(not_daemon=restarted["pid"], not_ui=restarted["ui"]["pid"])
+            retry(lambda _last_try: ui_log_count(BAR_SHOWN) >= 2, timeout=WAIT)
+            # Long enough for every glass to take its first copy.
+            machine.sleep(SETTLED_SECS)
+            launches = ui_log_count(UI_LAUNCHED)
+        finally:
+            machine.succeed(as_user(remove_output))
+        survived("first")
+        bars = ui_log_count(BAR_SHOWN)
+        machine.succeed(as_user(add_output))
+        try:
+            retry(lambda _last_try: ui_log_count(BAR_SHOWN) > bars, timeout=WAIT)
+        finally:
+            machine.succeed(as_user(remove_output))
+        survived("second")
+
 with subtest("SIGTERM stops the daemon for good"):
     restarts = unit_property("NRestarts")
     machine.succeed(f"kill -TERM {restarted['pid']}")

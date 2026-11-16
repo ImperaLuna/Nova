@@ -7,14 +7,18 @@
 # nixpkgs' own wrapper does. --inherit-argv0 keeps the `NovaUI` argv[0]
 # that novad passes.
 #
-# Quickshell is built here with quickshell-wlr-output.patch, so it compiles
-# from source instead of coming from the binary cache (a few minutes, once
-# per nixpkgs update). Its wlr-screencopy code binds each monitor a second
-# time as a QtWayland::wl_output, which Qt mistakes for a screen: a Nova
-# window leaving a monitor on niri then crashes the UI while glass keeps a
-# screen copy (IMP-262). Drop the patch, and this override, once nixpkgs
-# ships a Quickshell with it fixed upstream; it stops applying when that
-# file changes, so the "Newest Quickshell" check flags it.
+# Quickshell is built here with two patches, so it compiles from source
+# instead of coming from the binary cache (a few minutes, once per nixpkgs
+# update). Both fix crashes while glass keeps a screen copy:
+# - quickshell-wlr-output.patch: its wlr-screencopy code binds each monitor
+#   a second time as a QtWayland::wl_output, which Qt mistakes for a screen,
+#   so a Nova window leaving a monitor on niri crashed the UI (IMP-262).
+# - quickshell-null-screen.patch: upstream's fix from after 0.3.2. A copy
+#   of a monitor that dropped off read its gone screen, which crashed the UI
+#   each time screens woke from DPMS off on Hyprland (IMP-360).
+# Drop each patch, and this override with the last, once nixpkgs ships a
+# Quickshell with it fixed upstream; a patch stops applying when its file
+# changes, so the "Newest Quickshell" check flags it.
 {
   stdenv,
   qt6,
@@ -23,7 +27,10 @@
 }:
 let
   patched = quickshell.overrideAttrs (old: {
-    patches = (old.patches or [ ]) ++ [ ./quickshell-wlr-output.patch ];
+    patches = (old.patches or [ ]) ++ [
+      ./quickshell-wlr-output.patch
+      ./quickshell-null-screen.patch
+    ];
   });
 in
 stdenv.mkDerivation {

@@ -1,0 +1,47 @@
+wayland/screencopy: avoid crash when capturing null screen
+
+Upstream Quickshell commit 95a1f91 (PR #1269, merged after 0.3.2). Once a
+monitor drops off, its ShellScreen's QScreen is gone, and ScreencopyView
+made a capture context for it anyway: captureOutput read the null screen
+and NovaUI segfaulted each time the screens woke from DPMS off (IMP-360).
+Return no context for a null screen instead. Applied by
+packaging/nix/nova-ui.nix.
+
+diff --git a/src/wayland/screencopy/image_copy_capture/image_copy_capture.cpp b/src/wayland/screencopy/image_copy_capture/image_copy_capture.cpp
+index 39bc3fc..8727412 100644
+--- a/src/wayland/screencopy/image_copy_capture/image_copy_capture.cpp
++++ b/src/wayland/screencopy/image_copy_capture/image_copy_capture.cpp
+@@ -220,6 +220,8 @@ IccOutputSourceManager* IccOutputSourceManager::instance() {
+ }
+ 
+ ScreencopyContext* IccOutputSourceManager::captureOutput(QScreen* screen, bool paintCursors) {
++	if (screen == nullptr) return nullptr;
++
+ 	auto* waylandScreen = dynamic_cast<QtWaylandClient::QWaylandScreen*>(screen->handle());
+ 	if (!waylandScreen) return nullptr;
+ 
+diff --git a/src/wayland/screencopy/manager.cpp b/src/wayland/screencopy/manager.cpp
+index 37ef038..9413c9f 100644
+--- a/src/wayland/screencopy/manager.cpp
++++ b/src/wayland/screencopy/manager.cpp
+@@ -25,6 +25,8 @@ namespace qs::wayland::screencopy {
+ 
+ ScreencopyContext* ScreencopyManager::createContext(QObject* object, bool paintCursors) {
+ 	if (auto* screen = qobject_cast<QuickshellScreenInfo*>(object)) {
++		if (screen->screen == nullptr) return nullptr;
++
+ #if SCREENCOPY_ICC
+ 		{
+ 			auto* manager = icc::IccOutputSourceManager::instance();
+diff --git a/src/wayland/screencopy/wlr_screencopy/wlr_screencopy.cpp b/src/wayland/screencopy/wlr_screencopy/wlr_screencopy.cpp
+index 927da8d..dd61c22 100644
+--- a/src/wayland/screencopy/wlr_screencopy/wlr_screencopy.cpp
++++ b/src/wayland/screencopy/wlr_screencopy/wlr_screencopy.cpp
+@@ -34,6 +34,7 @@ WlrScreencopyManager* WlrScreencopyManager::instance() {
+ 
+ ScreencopyContext*
+ WlrScreencopyManager::captureOutput(QScreen* screen, bool paintCursors, QRect region) {
++	if (screen == nullptr) return nullptr;
+ 	if (!dynamic_cast<QtWaylandClient::QWaylandScreen*>(screen->handle())) return nullptr;
+ 	return new WlrScreencopyContext(this, screen, paintCursors, region);
+ }
