@@ -360,6 +360,11 @@ for add_output, _focus_first, remove_output in ADDED_OUTPUTS:
         # crashed. So the screen has to be there when the UI starts.
         # Quickshell can relaunch a crashed UI in the same process, so a
         # crash shows as a second launch.
+        def survived(removal: str) -> None:
+            machine.sleep(SETTLED_SECS)
+            assert ui_log_count(UI_LAUNCHED) == launches, f"the UI crashed and was launched again after the {removal} removal"
+            assert wait_running()["ui"]["pid"] == restarted["ui"]["pid"], f"the UI died after the {removal} removal"
+
         machine.succeed(as_user(add_output))
         try:
             machine.succeed(as_user("nova restart"))
@@ -370,16 +375,14 @@ for add_output, _focus_first, remove_output in ADDED_OUTPUTS:
             launches = ui_log_count(UI_LAUNCHED)
         finally:
             machine.succeed(as_user(remove_output))
-        machine.sleep(SETTLED_SECS)
+        survived("first")
         bars = ui_log_count(BAR_SHOWN)
         machine.succeed(as_user(add_output))
         try:
             retry(lambda _last_try: ui_log_count(BAR_SHOWN) > bars, timeout=WAIT)
         finally:
             machine.succeed(as_user(remove_output))
-        machine.sleep(SETTLED_SECS)
-        assert ui_log_count(UI_LAUNCHED) == launches, "the UI crashed and was launched again"
-        assert wait_running()["ui"]["pid"] == restarted["ui"]["pid"], "the UI was restarted"
+        survived("second")
 
 with subtest("SIGTERM stops the daemon for good"):
     restarts = unit_property("NRestarts")
