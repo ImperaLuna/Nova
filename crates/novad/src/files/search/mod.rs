@@ -102,6 +102,7 @@ impl Sources {
 
 /// Where each word of `text` is in `name`, for highlighting a name another
 /// search found; none where it matched a word by its letters or a typo.
+#[allow(dead_code, reason = "the launcher uses the Nova Files app now; IMP-363 removes this module")]
 pub fn marks(text: &str, name: &str) -> Vec<nova_protocol::TextMark> {
     Query::parse(text).map(|query| query.marks(name)).unwrap_or_default()
 }
@@ -111,6 +112,7 @@ pub fn marks(text: &str, name: &str) -> Vec<nova_protocol::TextMark> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Use {
     Files,
+    #[allow(dead_code, reason = "the launcher uses the Nova Files app now; IMP-363 removes this module")]
     Launcher,
 }
 
@@ -203,6 +205,7 @@ impl Search {
     }
 
     /// No launcher uses it any more: another search answers them.
+    #[allow(dead_code, reason = "the launcher uses the Nova Files app now; IMP-363 removes this module")]
     pub fn stop_launcher_use(&self) {
         let mut demand = lock(&self.shared.demand);
         let was_used = !demand.users.is_empty();
@@ -236,6 +239,7 @@ impl Search {
 }
 
 impl Shared {
+    #[allow(dead_code, reason = "the launcher uses the Nova Files app now; IMP-363 removes this module")]
     fn is_built(&self) -> bool {
         self.index.read().unwrap_or_else(std::sync::PoisonError::into_inner).index.is_some()
     }
@@ -327,6 +331,7 @@ impl Shared {
 impl Searcher {
     /// Waits up to `timeout` for the index to be built; `true` once it is.
     /// With nobody using the index, it's built and kept as for a search.
+    #[allow(dead_code, reason = "the launcher uses the Nova Files app now; IMP-363 removes this module")]
     pub fn wait_ready(&self, timeout: Duration) -> bool {
         self.0.asked();
         let (lock, built) = &self.0.built;

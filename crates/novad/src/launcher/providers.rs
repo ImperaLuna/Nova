@@ -4,14 +4,15 @@
 //! that answers for that view in `find`; the host asks the ready ones in their
 //! slot order. A provider with a trigger (like `=`) answers only queries that
 //! start with it, and then it alone (with any others sharing it) does. One
-//! with a mode of its own (files) answers only searches made in that mode,
-//! which the launcher names, and never shows among the others.
+//! with a mode of its own (files, which the Nova Files app answers) answers
+//! only searches made in that mode, which the launcher names, and never
+//! shows among the others.
 
 use super::Launcher;
 use crate::compositor::Compositor;
-use crate::files::Files;
 use crate::logger::Logger;
 use crate::modules::{Has, Module, Running};
+use crate::nova_files::NovaFiles;
 use crate::tray::Tray;
 use nova_protocol::{
     FeatureState, FeatureStatus, LAUNCHER_SEARCH_MAX_CHARS, LauncherItem, PROVIDER_APPS, PROVIDER_FILES,
@@ -66,7 +67,7 @@ type Finds = fn(&Running) -> Option<Arc<dyn Provider>>;
 
 /// Every provider view and the module that answers it: the one line a new
 /// provider adds outside its folder.
-const PROVIDERS: &[(&str, Finds)] = &[(PROVIDER_APPS, running::<Launcher>), (PROVIDER_FILES, running::<Files>)];
+const PROVIDERS: &[(&str, Finds)] = &[(PROVIDER_APPS, running::<Launcher>), (PROVIDER_FILES, running::<NovaFiles>)];
 
 /// The module `M`, while it runs, as a provider.
 fn running<M: Module + Provider>(modules: &Running) -> Option<Arc<dyn Provider>>

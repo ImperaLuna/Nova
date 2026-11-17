@@ -1,10 +1,16 @@
 //! A stand-in for Nova Files' `Search1` on a test bus, for the tests of
 //! the client and of the launcher's Files mode through it. It answers the
-//! way Nova Files does: stages as signals sent to the caller only.
+//! way Nova Files does: stages as signals sent to the caller only, and it
+//! notes what it was asked to open or show.
 
 use super::NovaFiles;
 use super::client::{APP_ID, Client, PATH};
 use crate::lock;
+use crate::logger::Logger;
+use crate::mime::Mime;
+use nova_protocol::LogLevel;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zbus::message::Header;
@@ -17,6 +23,8 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 pub struct Asked {
     pub searches: Vec<(u64, String, u32)>,
     pub cancelled: Vec<u64>,
+    pub opened: Vec<String>,
+    pub shown: Vec<String>,
 }
 
 /// The stand-in, serving while it lives.
@@ -41,9 +49,16 @@ pub fn client(address: &str) -> Client {
     Client::connect(&crate::session_bus::Bus::Address(address.to_string()), TIMEOUT).unwrap()
 }
 
-/// The feature's module on the bus at `address`.
-pub fn nova_files(address: &str) -> Arc<NovaFiles> {
-    Arc::new(NovaFiles { client: Ok(client(address)) })
+/// The feature's module on the bus at `address`, with Home at `home`; it
+/// keeps its log under `dir`.
+pub fn nova_files(address: &str, dir: &Path, home: Option<PathBuf>) -> NovaFiles {
+    NovaFiles { client: Ok(client(address)), mime: mime(dir), home }
+}
+
+/// An empty MIME database, logging under `dir`.
+pub fn mime(dir: &Path) -> Arc<Mime> {
+    let logger = Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::default()).unwrap();
+    Mime::follow(Vec::new(), Arc::new(logger))
 }
 
 struct Search1 {
@@ -80,6 +95,14 @@ impl Search1 {
 
     fn cancel(&self, id: u64) {
         lock(&self.asked).cancelled.push(id);
+    }
+
+    fn open(&self, path: String, _platform_data: HashMap<String, zbus::OwnedVariant>) {
+        lock(&self.asked).opened.push(path);
+    }
+
+    fn show_in_folder(&self, path: String, _platform_data: HashMap<String, zbus::OwnedVariant>) {
+        lock(&self.asked).shown.push(path);
     }
 
     #[zbus(signal)]
