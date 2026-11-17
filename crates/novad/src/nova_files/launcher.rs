@@ -17,7 +17,7 @@ use crate::launcher::MAX_MATCHES;
 use crate::launcher::providers::{Provider, Run};
 use crate::mime::{DIRECTORY, MimeDb};
 use nova_protocol::{LauncherFile, LauncherItem, TextMark, TextRun, wire_path, wire_text};
-use std::path::Path;
+use std::path::{Component, Path};
 
 /// How a typed path names Home.
 const HOME_PREFIX: char = '~';
@@ -45,7 +45,10 @@ impl Provider for NovaFiles {
 
     fn run(&self, id: &str, how: &Run) -> Result<(), String> {
         let path = wire_path(id);
-        if !path.is_absolute() {
+        // What Nova Files finds is absolute and plain; anything else wasn't
+        // found by it.
+        let plain = path.components().all(|part| matches!(part, Component::RootDir | Component::Normal(_)));
+        if !path.is_absolute() || !plain {
             return Err(format!("{id} isn't a path Nova Files found"));
         }
         if how.new_window { self.show_in_folder(&path) } else { self.open(&path) }

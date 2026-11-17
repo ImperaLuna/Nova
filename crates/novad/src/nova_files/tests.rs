@@ -129,6 +129,7 @@ fn the_launchers_files_mode_finds_opens_and_shows_files_through_nova_files() {
     run(&files, &dir, &found[1].id, false).unwrap();
     run(&files, &dir, &found[1].id, true).unwrap();
     assert!(run(&files, &dir, "relative/path", false).is_err(), "only paths Nova Files found run");
+    assert!(run(&files, &dir, "/home/me/../../etc/shadow", false).is_err());
     let asked = lock(&stand_in.asked);
     assert_eq!(asked.opened, [found[1].id.clone()]);
     assert_eq!(asked.shown, [found[1].id.clone()]);
