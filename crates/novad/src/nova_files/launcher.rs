@@ -2,7 +2,9 @@
 //! by the Nova Files app: a query is a name search there, and each path it
 //! finds becomes an item with its type (for the icon), its folder spelled
 //! from `~`, and whether it's hidden. Running an item asks Nova Files to
-//! open it; Shift+Enter asks it to show the item in its folder.
+//! open it; Shift+Enter asks it to show the item in its folder (the user's
+//! own file manager does both for folders in the `launcher` mode, see
+//! `super`).
 //!
 //! Items are named by their absolute path, as wire text. A path that's gone
 //! since Nova Files indexed it is left out. When Nova Files can't search,

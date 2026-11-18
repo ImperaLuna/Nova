@@ -3,6 +3,10 @@
 //! waiting for it, by the search's id. `Open` and `ShowInFolder` take the
 //! path as text and the launcher's platform data, empty as Nova has no
 //! activation token to pass yet.
+//!
+//! The same connection reaches the user's own file manager through
+//! `org.freedesktop.FileManager1`, which takes `file://` URIs: Nautilus,
+//! Dolphin, Thunar and others serve it.
 
 use crate::lock;
 use crate::session_bus::{Bus, Stop};
@@ -29,6 +33,13 @@ const CANCEL: &str = "Cancel";
 const OPEN: &str = "Open";
 const SHOW_IN_FOLDER: &str = "ShowInFolder";
 const FOUND: &str = "Found";
+/// The file manager interface, served at its own name and path.
+const FILE_MANAGER: &str = "org.freedesktop.FileManager1";
+const FILE_MANAGER_PATH: &str = "/org/freedesktop/FileManager1";
+const SHOW_FOLDERS: &str = "ShowFolders";
+const SHOW_ITEMS: &str = "ShowItems";
+/// The bytes a `file://` URI's path keeps as they are; the rest are `%XX`.
+const URI_PATH_BYTES: &[u8] = b"/-._~!$&'()*+,;=:@";
 const FAILED: &str = "Failed";
 /// Signals that may wait unread before older ones are dropped: a few
 /// searches' stages.
@@ -129,6 +140,25 @@ impl Client {
         self.call_with_path(SHOW_IN_FOLDER, path)
     }
 
+    /// Opens folder `path` in the user's file manager.
+    pub fn show_folder_elsewhere(&self, path: &Path) -> Result<(), String> {
+        self.call_file_manager(SHOW_FOLDERS, path)
+    }
+
+    /// Shows `path` in its folder, in the user's file manager.
+    pub fn show_item_elsewhere(&self, path: &Path) -> Result<(), String> {
+        self.call_file_manager(SHOW_ITEMS, path)
+    }
+
+    /// Calls the file manager's `method` with `path`'s URI and no startup
+    /// id.
+    fn call_file_manager(&self, method: &str, path: &Path) -> Result<(), String> {
+        let body = (vec![file_uri(path)], "");
+        let call =
+            self.connection.call_method(Some(FILE_MANAGER), FILE_MANAGER_PATH, Some(FILE_MANAGER), method, &body);
+        zbus::block_on(call).map(drop).map_err(|e| format!("no file manager answered: {e}"))
+    }
+
     /// Calls `method` with `path` and empty platform data.
     fn call_with_path(&self, method: &str, path: &Path) -> Result<(), String> {
         let path =
@@ -162,6 +192,21 @@ impl Drop for Client {
     fn drop(&mut self) {
         self.stop.stop();
     }
+}
+
+/// `path` as a `file://` URI.
+pub fn file_uri(path: &Path) -> String {
+    use std::fmt::Write;
+    use std::os::unix::ffi::OsStrExt;
+    let mut uri = String::from("file://");
+    for &byte in path.as_os_str().as_bytes() {
+        if byte.is_ascii_alphanumeric() || URI_PATH_BYTES.contains(&byte) {
+            uri.push(char::from(byte));
+        } else {
+            let _ = write!(uri, "%{byte:02X}");
+        }
+    }
+    uri
 }
 
 /// Hands each signal to the search it's for, until `stop`.
