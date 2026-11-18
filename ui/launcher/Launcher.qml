@@ -6,7 +6,7 @@ import "../theme"
 import "../theme/icons.js" as Icons
 import "../daemon/protocol.js" as Protocol
 import "launcher.js" as LauncherLogic
-import "../files/paths.js" as Paths
+import "../text/files.js" as Files
 
 // The launcher: a glass deck near the top of the middle of the screen that
 // fades in where it stands (the central pill stays). A search field, the
@@ -382,7 +382,7 @@ StagePanel {
                         color: Tokens.fgDim
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
-                        text: Paths.shown(launcher.completion)
+                        text: Files.shown(launcher.completion)
                     }
                 }
 

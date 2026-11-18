@@ -38,14 +38,6 @@ Singleton {
     // arrives, which only happens with the media feature on. Read it through
     // the MediaService singleton.
     property var media: null
-    // The latest files_look event's data ({frame, list}); null until one
-    // arrives, which only happens with the files feature on. Read it
-    // through the FilesService singleton.
-    property var filesLook: null
-    // The latest files_history event's data ({undo, redo}, each a
-    // Protocol.FILE_STEP_* or absent); null until one arrives. Read it
-    // through the FilesService singleton.
-    property var filesHistory: null
     readonly property var readyFeatures: Protocol.readyFeatures(features)
     // novad's word on whether the session is locked. Read it through the
     // LockService singleton, which also hears lockRequested.
@@ -98,42 +90,9 @@ Singleton {
     property var recording: null
     // A recording was saved: {id, path, duration_ms}.
     signal recordingSaved(var saved)
-    // A Nova Files window to open: {folder, select}. Only the Nova Files
-    // process subscribes to its topic.
-    signal filesWindowRequested(var window)
-    // A folder view's page of entries ({view, path, start, total,
-    // entries}), its changes ({view, changes}), and novad closing it
-    // ({view, error}). Only the client that opened the view gets these.
-    signal filesPage(var page)
-    signal filesChanged(var changed)
-    signal filesClosed(var closed)
-    // The drives Nova Files' sidebar lists ({id, name, removable, mount,
-    // size, used} each), from the latest files_drives event. Read it
-    // through FilesService.
-    property var filesDrives: []
-    // How one of this process's copy or move jobs is going: {job, mode,
-    // state, items, name, done_bytes, total_bytes, clash, error}.
-    signal filesTransferChanged(var transfer)
-    // How far one of this process's measuring jobs got: {job, files,
-    // folders, bytes, disk_bytes, done}.
-    signal filesMeasured(var measured)
-    // Something in the trash changed, in Nova Files or another app.
-    signal filesTrashChanged
-    // A thumbnail this process asked for: {path, thumbnail}, `thumbnail`
-    // the PNG's path, absent when the file has none.
-    signal filesThumbnail(var answer)
-    // A folder was pinned to Nova Files' Quick access or unpinned.
-    signal filesPlacesChanged
-    // novad's index of file names is built: searches can be asked again.
-    signal filesSearchReady
-    // A file picker window's app stopped asking: the window closes.
-    signal filesPickerClosed(int picker)
-
-    // The topics this process subscribes to on every connection: the
-    // shell's, unless its root sets its own as it's created (Nova Files,
-    // ../files.qml), before the first connection. Topics of features that
-    // are off send nothing.
-    property var topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_PERIPHERALS, Protocol.TOPIC_NETWORK, Protocol.TOPIC_BLUETOOTH, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS, Protocol.TOPIC_MEDIA]
+    // The topics this process subscribes to on every connection. Topics of
+    // features that are off send nothing.
+    readonly property var topics: [Protocol.TOPIC_FEATURES, Protocol.TOPIC_THEME, Protocol.TOPIC_AI_USAGE, Protocol.TOPIC_COMPOSITOR, Protocol.TOPIC_TOGGLE, Protocol.TOPIC_LOCK, Protocol.TOPIC_VOLUME, Protocol.TOPIC_SCREENSHOT, Protocol.TOPIC_RECORDING, Protocol.TOPIC_HOST, Protocol.TOPIC_RESOURCES, Protocol.TOPIC_PERIPHERALS, Protocol.TOPIC_NETWORK, Protocol.TOPIC_BLUETOOTH, Protocol.TOPIC_LAUNCHER, Protocol.TOPIC_TRAY, Protocol.TOPIC_NOTIFICATIONS, Protocol.TOPIC_MEDIA]
 
     property int _nextId: 1
     property var _pending: ({})
@@ -222,34 +181,6 @@ Singleton {
             notificationPopped(msg.data);
         } else if (msg.event === Protocol.EVENT_MEDIA) {
             media = msg.data;
-        } else if (msg.event === Protocol.EVENT_FILES_WINDOW) {
-            filesWindowRequested(msg.data);
-        } else if (msg.event === Protocol.EVENT_FILES_PAGE) {
-            filesPage(msg.data);
-        } else if (msg.event === Protocol.EVENT_FILES_CHANGED) {
-            filesChanged(msg.data);
-        } else if (msg.event === Protocol.EVENT_FILES_CLOSED) {
-            filesClosed(msg.data);
-        } else if (msg.event === Protocol.EVENT_FILES_LOOK) {
-            filesLook = msg.data;
-        } else if (msg.event === Protocol.EVENT_FILES_HISTORY) {
-            filesHistory = msg.data;
-        } else if (msg.event === Protocol.EVENT_FILES_DRIVES) {
-            filesDrives = msg.data.drives;
-        } else if (msg.event === Protocol.EVENT_FILES_TRANSFER) {
-            filesTransferChanged(msg.data);
-        } else if (msg.event === Protocol.EVENT_FILES_MEASURED) {
-            filesMeasured(msg.data);
-        } else if (msg.event === Protocol.EVENT_FILES_TRASH_CHANGED) {
-            filesTrashChanged();
-        } else if (msg.event === Protocol.EVENT_FILES_THUMBNAIL) {
-            filesThumbnail(msg.data);
-        } else if (msg.event === Protocol.EVENT_FILES_PLACES_CHANGED) {
-            filesPlacesChanged();
-        } else if (msg.event === Protocol.EVENT_FILES_SEARCH_READY) {
-            filesSearchReady();
-        } else if (msg.event === Protocol.EVENT_FILES_PICKER_CLOSED) {
-            filesPickerClosed(msg.data.picker);
         }
     }
 
@@ -263,9 +194,7 @@ Singleton {
             const runtime = Quickshell.env("XDG_RUNTIME_DIR");
             return runtime ? `${runtime}/nova/novad.sock` : "";
         }
-        // Connected once whatever made this singleton is created, so its
-        // root has set `topics` first.
-        Component.onCompleted: Qt.callLater(() => connected = true)
+        connected: true
 
         parser: SplitParser {
             onRead: data => root._handle(data)

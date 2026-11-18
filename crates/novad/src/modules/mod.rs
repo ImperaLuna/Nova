@@ -23,7 +23,7 @@ use crate::hub::{ClientId, Hub};
 use crate::icons::Icons;
 use crate::logger::Logger;
 use crate::{
-    ai_usage, bluetooth, features, files, launcher, media, network, notifications, nova_files, peripherals, recording,
+    ai_usage, bluetooth, features, launcher, media, network, notifications, nova_files, peripherals, recording,
     resources, screenshot, session_lock, tray, wallpaper, x11_tray,
 };
 use nova_protocol::{FeatureState, Topic};
@@ -86,9 +86,6 @@ pub enum Reconfigure {
 /// What modules find their sources from, on this machine.
 pub struct Env<'a> {
     pub args: &'a crate::Args,
-    /// How Quickshell runs, for a module with windows of its own; none for
-    /// a novad without its UI (tests, a UI run by hand).
-    pub ui: Option<&'a crate::supervisor::UiSettings>,
     /// novad's runtime folder, its socket's.
     pub runtime_dir: &'a Path,
     pub path_var: &'a str,
@@ -259,7 +256,6 @@ modules! {
         network: network::Network,
         bluetooth: bluetooth::Bluetooth,
         x11_tray: x11_tray::X11Tray,
-        files: files::Files,
         nova_files: nova_files::NovaFiles,
     ],
     kept: [

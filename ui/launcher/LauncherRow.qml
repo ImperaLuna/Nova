@@ -3,8 +3,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "../theme"
 import "../theme/icons.js" as Icons
-import "../files/listing.js" as Listing
-import "../files/paths.js" as Paths
+import "../text/files.js" as Files
+import "launcher.js" as LauncherLogic
 
 // One row in the launcher's list, an app or what another provider found:
 // its icon, its name (the letters a search matched in the accent) and what
@@ -35,7 +35,7 @@ Item {
     signal pinClicked
     signal showInFolderClicked
 
-    readonly property color ink: launching ? Tokens.onAccent : file?.hidden ? Tokens.filesFaint : Tokens.fg
+    readonly property color ink: launching ? Tokens.onAccent : file?.hidden ? Tokens.launcherFileFaint : Tokens.fg
     readonly property color dim: launching ? Tokens.onAccent : Tokens.fgDim
 
     implicitHeight: Tokens.launcherRowHeight
@@ -67,9 +67,9 @@ Item {
             anchors.centerIn: parent
             visible: row.file !== null
             size: Tokens.iconSizeMenu
-            path: row.file ? Listing.icon(row.file) : ""
-            color: row.launching ? Tokens.onAccent : row.file?.dir ? Tokens.filesFolder : Tokens.fgDim
-            opacity: row.file?.hidden ? Tokens.filesHiddenIconOpacity : 1
+            path: row.file ? LauncherLogic.fileIcon(row.file) : ""
+            color: row.launching ? Tokens.onAccent : row.file?.dir ? Tokens.launcherFolder : Tokens.fgDim
+            opacity: row.file?.hidden ? Tokens.launcherHiddenIconOpacity : 1
         }
     }
 
@@ -100,7 +100,7 @@ Item {
                     font.weight: modelData.matched ? Tokens.weightTitle : Tokens.weightLabel
                     color: modelData.matched && !row.launching ? Tokens.primary : row.ink
                     textFormat: Text.PlainText
-                    text: row.file ? Paths.shown(modelData.text) : modelData.text
+                    text: row.file ? Files.shown(modelData.text) : modelData.text
                 }
             }
         }
@@ -114,7 +114,7 @@ Item {
             color: row.dim
             elide: Text.ElideRight
             textFormat: Text.PlainText
-            text: row.file ? Paths.shown(row.app.description) : row.app.description
+            text: row.file ? Files.shown(row.app.description) : row.app.description
         }
     }
 

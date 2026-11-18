@@ -75,59 +75,6 @@ in
   usesGpuScreenRecorder =
     gpu: ids: lib.any (id: lib.elem "gpu-screen-recorder" (nixNames manifests.${id} gpu)) ids;
 
-  # Nova Files' desktop entry and its hicolor icon (features/files), running
-  # `package`'s nova, for the systems where the `files` feature is on: Nova
-  # Files is then listed with the apps, and can be the default for folders.
-  filesDesktop =
-    pkgs: package:
-    pkgs.runCommand "nova-files-desktop" { } ''
-      install -Dm644 ${package}/share/nova/features/files/nova-files.desktop \
-        $out/share/applications/nova-files.desktop
-      substituteInPlace $out/share/applications/nova-files.desktop \
-        --replace-fail "Exec=nova " "Exec=${lib.getExe package} "
-      install -Dm644 ${package}/share/nova/features/files/nova-files.svg \
-        $out/share/icons/hicolor/scalable/apps/nova-files.svg
-    '';
-
-  # Nova's file chooser backend for xdg-desktop-portal (the `files`
-  # feature), for xdg.portal.extraPortals: share/xdg-desktop-portal/portals.
-  filesPortal =
-    pkgs: package:
-    pkgs.runCommand "nova-files-portal" { } ''
-      install -Dm644 ${package}/share/nova/features/files/nova.portal \
-        $out/share/xdg-desktop-portal/portals/nova.portal
-    '';
-
-  # The portal config that makes Nova the file chooser
-  # (xdg.portal.config.<desktop>), on the compositors Nova supports. The
-  # portal reads one config file per desktop, so this one also carries the
-  # compositor's own choices from its packaged <desktop>-portals.conf
-  # (niri 25.08, Hyprland 0.50), which a user's own settings override.
-  # What chose the file chooser before stays as the fallback.
-  portalConfig = lib.mkMerge [
-    (lib.mapAttrs (_: lib.mapAttrs (_: lib.mkDefault)) {
-      niri = {
-        default = [
-          "gnome"
-          "gtk"
-        ];
-        "org.freedesktop.impl.portal.Access" = [ "gtk" ];
-        "org.freedesktop.impl.portal.Notification" = [ "gtk" ];
-        "org.freedesktop.impl.portal.Secret" = [ "gnome-keyring" ];
-      };
-      hyprland.default = [
-        "hyprland"
-        "gtk"
-      ];
-    })
-    (lib.genAttrs [ "niri" "hyprland" ] (_: {
-      "org.freedesktop.impl.portal.FileChooser" = [
-        "nova"
-        "gtk"
-      ];
-    }))
-  ];
-
   # A features.toml for `on` (the ids that are on): what differs from each
   # feature's default.
   selectionFile =

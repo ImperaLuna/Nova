@@ -1,9 +1,8 @@
 # Nova's home-manager module (homeManagerModules.default): Nova, the
 # packages of the features that are on, its systemd user unit started with
-# graphical-session.target, the features.toml novad reads, Nova Files as
-# the default for folders while the `files` feature is on (and, with
-# home-manager's xdg.portal on, apps' Open and Save dialogs), and Nova's
-# compositor rules (blur, Nova Files' corners) in ~/.config/nova: include
+# graphical-session.target, the features.toml novad reads, the Nova Files
+# app while the `nova-files` feature is on, and Nova's compositor rules
+# (blur) in ~/.config/nova: include
 # niri.kdl from niri's config; home-manager's own Hyprland config sources
 # hyprland.conf by itself.
 #
@@ -23,7 +22,6 @@ let
   features = import ./features.nix { inherit lib; };
   cfg = config.programs.nova;
   on = features.onIds cfg.features;
-  filesOn = lib.elem "files" on;
   novaFilesOn = lib.elem "nova-files" on;
   unit = "${cfg.package}/lib/systemd/user/nova.service";
 in
@@ -38,24 +36,10 @@ in
       cfg.package
     ]
     ++ features.packagesFor pkgs cfg.gpu on
-    ++ lib.optional filesOn (features.filesDesktop pkgs cfg.package)
     # The Nova Files app; the session bus finds its D-Bus service in the
     # profile's share/dbus-1/services.
     ++ lib.optional novaFilesOn cfg.novaFilesPackage;
     xdg = {
-      # Nova Files opens folders. home-manager writes mimeapps.list only with
-      # xdg.mimeApps.enable, which is left to the user: it replaces the file.
-      mimeApps.defaultApplications = lib.mkIf filesOn {
-        "inode/directory" = lib.mkDefault [ "nova-files.desktop" ];
-      };
-
-      # Apps' Open and Save dialogs, when home-manager runs the portal config
-      # (xdg.portal.enable is left to the user, or to the NixOS module).
-      portal = lib.mkIf (filesOn && config.xdg.portal.enable) {
-        extraPortals = [ (features.filesPortal pkgs cfg.package) ];
-        config = features.portalConfig;
-      };
-
       configFile = {
         "nova/features.toml".text = features.selectionFile on;
         # The package's own unit, linked where systemd looks, and wanted by

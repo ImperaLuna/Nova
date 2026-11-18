@@ -100,15 +100,6 @@ pub(crate) fn user_name_of(uid: libc::uid_t) -> Option<String> {
     )
 }
 
-/// Group `gid`'s name, from the group database.
-pub(crate) fn group_name_of(gid: libc::gid_t) -> Option<String> {
-    // SAFETY: as in user_name_of, for getgrgid_r.
-    database_name(
-        |entry, buffer, size, found| unsafe { libc::getgrgid_r(gid, entry, buffer, size, found) },
-        |entry: &libc::group| entry.gr_name,
-    )
-}
-
 /// A name from a reentrant user or group database lookup: `lookup` fills
 /// an entry, its strings in a buffer, and `name` picks the name from it.
 fn database_name<Entry>(
