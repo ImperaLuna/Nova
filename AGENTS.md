@@ -32,6 +32,9 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   that is off or missing dependencies is never loaded by the UI. Its `nix`
   list is what the flake's modules (`programs.nova`, packaging/nix) install
   when it's on, so never ask users to add a feature's packages by hand.
+  A feature with `modes` (and a `default-mode`) gets the picked mode from
+  `features.toml`'s `[modes]` or the Nix `mode` option, carried on its
+  `FeatureState`; one feature never grows a second switch for the same choice.
 - Window model is "stage": one masked layer surface per monitor, across the
   top and only as tall as the tallest panel open (niri blurs the whole
   surface behind glass each frame, so its size is the blur cost). The bar,

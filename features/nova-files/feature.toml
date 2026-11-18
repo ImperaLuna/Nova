@@ -4,6 +4,14 @@ description = "The launcher's Files mode finds, opens and shows files through th
 default = false
 daemon = "nova-files"
 
+# How much of Nova Files to install, passed to its own Nix module
+# (programs.nova-files.mode): `launcher` only the search service the
+# launcher's Files mode uses, no app; `basic` the app too, as the default
+# for folders and the file picker; `full` basic plus what its extras need
+# (video thumbnails, drives).
+modes = ["launcher", "basic", "full"]
+default-mode = "basic"
+
 # Nova Files is its own app (github.com/ImperaLuna/Nova-Files), with the
 # D-Bus service that starts it for a search. No distro packages it yet: the
 # Nix modules install it from its flake (`programs.nova.novaFilesPackage`),

@@ -33,7 +33,7 @@ in
       ]
       ++ features.packagesFor pkgs cfg.gpu on
       ++ lib.optional novaFilesOn cfg.novaFilesPackage;
-      etc."xdg/nova/features.toml".text = features.selectionFile on;
+      etc."xdg/nova/features.toml".text = features.selectionFile cfg.features;
     };
     # The Nova Files app's D-Bus service, so the launcher's first search
     # starts it.

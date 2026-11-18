@@ -69,7 +69,10 @@ fn describe(status: &Status) -> String {
         .features
         .iter()
         .map(|f| match f.status {
-            FeatureStatus::Ready => format!("{} on", f.id),
+            FeatureStatus::Ready => match &f.mode {
+                Some(mode) => format!("{} on ({mode})", f.id),
+                None => format!("{} on", f.id),
+            },
             FeatureStatus::Off => format!("{} off", f.id),
             FeatureStatus::MissingDeps => format!("{} missing {}", f.id, f.missing.join(", ")),
         })
@@ -249,12 +252,26 @@ mod tests {
                 last_crash: Some(Crash { time: "not a time".into(), log: "/x.log".into() }),
             },
             features: vec![
-                FeatureState { id: "bar".into(), status: FeatureStatus::Ready, missing: vec![], slots: vec![] },
+                FeatureState {
+                    id: "bar".into(),
+                    status: FeatureStatus::Ready,
+                    missing: vec![],
+                    slots: vec![],
+                    mode: None,
+                },
+                FeatureState {
+                    id: "nova-files".into(),
+                    status: FeatureStatus::Ready,
+                    missing: vec![],
+                    slots: vec![],
+                    mode: Some("full".into()),
+                },
                 FeatureState {
                     id: "recording".into(),
                     status: FeatureStatus::MissingDeps,
                     missing: vec!["wf-recorder".into()],
                     slots: vec![],
+                    mode: None,
                 },
             ],
             log_dir: "/x".into(),
@@ -264,7 +281,7 @@ mod tests {
         assert!(text.contains("daemon     running, pid 10, up 1m 5s, 10 MB"), "{text}");
         assert!(text.contains("UI         running, pid 11, 180 MB, restarted 2 times"), "{text}");
         assert!(text.contains("last crash not a time: see `nova logs --crash`"), "{text}");
-        assert!(text.contains("features   bar on, recording missing wf-recorder"), "{text}");
+        assert!(text.contains("features   bar on, nova-files on (full), recording missing wf-recorder"), "{text}");
         assert!(!text.contains("warning"), "a supported Quickshell gets no row: {text}");
         assert!(text.contains("compositor none followed"), "{text}");
 

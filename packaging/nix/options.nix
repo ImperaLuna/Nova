@@ -3,8 +3,9 @@
 #
 # Turn features on or off either with programs.nova.features.<id>.enable,
 # or with programs.nova.featuresFile, Nova's own features.toml (the same
-# file `nova setup` reads on other distros). The switches start from that
-# file, so setting one still wins over it.
+# file `nova setup` reads on other distros). A feature with modes also has
+# programs.nova.features.<id>.mode. The switches start from that file, so
+# setting one still wins over it.
 { packages }:
 {
   config,
@@ -41,8 +42,9 @@ in
       default = null;
       example = lib.literalExpression "./nova/features.toml";
       description = ''
-        Nova's features.toml (`enabled = [...]`, `disabled = [...]`), as on
-        other distros. When set, each feature's switch starts from it.
+        Nova's features.toml (`enabled = [...]`, `disabled = [...]`, and
+        `[modes]`), as on other distros. When set, each feature's switch and
+        mode start from it.
       '';
     };
 
@@ -66,13 +68,23 @@ in
       _: manifest:
       lib.mkOption {
         type = lib.types.submodule {
-          options.enable = lib.mkOption {
-            type = lib.types.bool;
-            default = features.isOn fileSelection manifest;
-            defaultText = lib.literalMD "`${
-              lib.boolToString (manifest.default or false)
-            }`, or what `programs.nova.featuresFile` says";
-            description = "Whether Nova's ${manifest.name} feature is on: ${manifest.description}";
+          options = {
+            enable = lib.mkOption {
+              type = lib.types.bool;
+              default = features.isOn fileSelection manifest;
+              defaultText = lib.literalMD "`${
+                lib.boolToString (manifest.default or false)
+              }`, or what `programs.nova.featuresFile` says";
+              description = "Whether Nova's ${manifest.name} feature is on: ${manifest.description}";
+            };
+          }
+          // lib.optionalAttrs (manifest ? modes) {
+            mode = lib.mkOption {
+              type = lib.types.enum manifest.modes;
+              default = features.modeOf fileSelection manifest;
+              defaultText = lib.literalMD "`\"${manifest.default-mode}\"`, or what `programs.nova.featuresFile` says";
+              description = "Which mode Nova's ${manifest.name} feature runs in while it's on.";
+            };
           };
         };
         default = { };

@@ -196,6 +196,10 @@ pub struct FeatureState {
     /// each host with the slots of the features that are ready.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub slots: Vec<Slot>,
+    /// The mode it runs in, for a feature with modes that's on (its
+    /// manifest's `modes`, picked in `features.toml`'s `[modes]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 /// One place a feature's UI fills (`[[slot]]` in `feature.toml`): a view in
@@ -2212,14 +2216,29 @@ mod tests {
                         status: FeatureStatus::Ready,
                         missing: vec![],
                         slots: vec![Slot { host: "bar.center".into(), view: "central-pill".into(), order: 10 }],
+                        mode: None,
+                    },
+                    FeatureState {
+                        id: "nova-files".into(),
+                        status: FeatureStatus::Ready,
+                        missing: vec![],
+                        slots: vec![Slot { host: "launcher.providers".into(), view: "files".into(), order: 20 }],
+                        mode: Some("full".into()),
                     },
                     FeatureState {
                         id: "recording".into(),
                         status: FeatureStatus::MissingDeps,
                         missing: vec!["gpu-screen-recorder|wf-recorder".into()],
                         slots: vec![],
+                        mode: None,
                     },
-                    FeatureState { id: "weather".into(), status: FeatureStatus::Off, missing: vec![], slots: vec![] },
+                    FeatureState {
+                        id: "weather".into(),
+                        status: FeatureStatus::Off,
+                        missing: vec![],
+                        slots: vec![],
+                        mode: None,
+                    },
                 ],
             }),
             encode(Request { id: Some(7), command: Command::Ping }),
@@ -3034,6 +3053,7 @@ mod tests {
                 status: FeatureStatus::Ready,
                 missing: vec![],
                 slots: vec![],
+                mode: None,
             }],
             log_dir: "/home/me/.local/state/nova".into(),
             desktop: None,

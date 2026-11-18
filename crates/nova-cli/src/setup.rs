@@ -334,7 +334,15 @@ fn default_selection(manifests: &[Manifest]) -> String {
         manifests
             .iter()
             .filter(|manifest| manifest.default == default)
-            .map(|manifest| format!("#   {}: {}\n", manifest.id, manifest.name))
+            .map(|manifest| match &manifest.default_mode {
+                Some(default) => format!(
+                    "#   {}: {} (modes {}; {default} unless picked below)\n",
+                    manifest.id,
+                    manifest.name,
+                    manifest.modes.join(", ")
+                ),
+                None => format!("#   {}: {}\n", manifest.id, manifest.name),
+            })
             .collect::<String>()
     };
     format!(
@@ -344,7 +352,11 @@ fn default_selection(manifests: &[Manifest]) -> String {
          # On unless listed in `disabled`:\n{}\
          # Off unless listed in `enabled`:\n{}\
          enabled = []\n\
-         disabled = []\n",
+         disabled = []\n\
+         \n\
+         # A feature with modes runs in the one picked here:\n\
+         # [modes]\n\
+         # nova-files = \"full\"\n",
         listed(true),
         listed(false)
     )
@@ -516,7 +528,7 @@ mod tests {
         Facts {
             host: Host { distro, gpus, nvidia_driver },
             manifests: manifests(),
-            selection: Selection { enabled: vec!["recording".into()], disabled: vec![] },
+            selection: Selection { enabled: vec!["recording".into()], ..Selection::default() },
             path_var: String::new(),
             paths: paths(Path::new("/home/me")),
             yes: false,
@@ -618,6 +630,7 @@ mod tests {
         let only = |id: &str| Selection {
             enabled: vec![id.into()],
             disabled: all.iter().filter(|m| m.id != id).map(|m| m.id.clone()).collect(),
+            ..Selection::default()
         };
         let run_lines = |selection: Selection| {
             let facts = Facts { selection, ..facts(Distro::Fedora, vec![], false) };

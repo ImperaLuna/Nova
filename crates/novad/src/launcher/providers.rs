@@ -239,7 +239,7 @@ mod tests {
     /// A feature `id` in `status`, filling `host` with the view `id` at `order`.
     fn feature(id: &str, status: FeatureStatus, host: &str, order: i64) -> FeatureState {
         let slot = Slot { host: host.into(), view: id.into(), order };
-        FeatureState { id: id.into(), status, missing: Vec::new(), slots: vec![slot] }
+        FeatureState { id: id.into(), status, missing: Vec::new(), slots: vec![slot], mode: None }
     }
 
     fn provider(id: &str, order: i64) -> FeatureState {

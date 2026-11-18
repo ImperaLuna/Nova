@@ -19,20 +19,20 @@ pub fn read_selection(paths: &[PathBuf]) -> Result<Selection, String> {
     Ok(Selection::default())
 }
 
-/// Each feature's state (off, missing what it needs, or ready) and its
-/// slots, for the UI to fill its hosts with.
+/// Each feature's state (off, missing what it needs, or ready), its slots,
+/// for the UI to fill its hosts with, and its mode while it's on.
 pub fn states(manifests: &[Manifest], selection: &Selection, path_var: &str) -> Vec<FeatureState> {
     manifests
         .iter()
         .map(|m| {
-            let (status, missing) = if !selection.is_on(m) {
-                (FeatureStatus::Off, vec![])
+            let (status, missing, mode) = if !selection.is_on(m) {
+                (FeatureStatus::Off, vec![], None)
             } else {
                 let missing = m.missing_binaries(path_var);
                 let status = if missing.is_empty() { FeatureStatus::Ready } else { FeatureStatus::MissingDeps };
-                (status, missing)
+                (status, missing, selection.mode(m).map(str::to_string))
             };
-            FeatureState { id: m.id.clone(), status, missing, slots: m.slots.clone() }
+            FeatureState { id: m.id.clone(), status, missing, slots: m.slots.clone(), mode }
         })
         .collect()
 }
@@ -105,5 +105,24 @@ mod tests {
         let states = states(&manifests, &Selection::default(), "/nonexistent");
         let bar = states.iter().find(|s| s.id == "bar").unwrap();
         assert_eq!(bar.slots, manifests.iter().find(|m| m.id == "bar").unwrap().slots);
+    }
+
+    /// nova-files runs in the mode `features.toml` picks, else its default,
+    /// and has none while it's off.
+    #[test]
+    fn states_carry_the_mode_while_on() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let manifests = nova_features::load_all(&root).unwrap();
+        let mode = |selection: &str| {
+            let states = states(&manifests, &Selection::parse(selection).unwrap(), "/nonexistent");
+            states.into_iter().find(|s| s.id == "nova-files").unwrap().mode
+        };
+        assert_eq!(mode(""), None, "off by default");
+        assert_eq!(mode("enabled = [\"nova-files\"]").as_deref(), Some("basic"));
+        for picked in ["launcher", "basic", "full"] {
+            let selection = format!("enabled = [\"nova-files\"]\n[modes]\nnova-files = \"{picked}\"");
+            assert_eq!(mode(&selection).as_deref(), Some(picked));
+        }
+        assert_eq!(mode("enabled = [\"recording\"]\n[modes]\nnova-files = \"full\""), None);
     }
 }

@@ -368,8 +368,8 @@
 
           # The NixOS module with every feature on, with and without NVIDIA:
           # each manifest's `nix` packages exist in nixpkgs, and the
-          # features.toml it writes reads back as the same choice. The VM
-          # tests run the module for real.
+          # features.toml it writes reads back as the same choice, modes
+          # too. The VM tests run the module for real.
           nix-modules =
             let
               features = import ./packaging/nix/features.nix { inherit (pkgs) lib; };
@@ -385,7 +385,15 @@
                       services.xserver = { inherit videoDrivers; };
                       programs.nova = {
                         enable = true;
-                        features = pkgs.lib.mapAttrs (_: _: { enable = true; }) features.manifests;
+                        # Every feature on, each with modes in its last mode
+                        # (none defaults to it).
+                        features = pkgs.lib.mapAttrs (
+                          _: manifest:
+                          {
+                            enable = true;
+                          }
+                          // pkgs.lib.optionalAttrs (manifest ? modes) { mode = pkgs.lib.last manifest.modes; }
+                        ) features.manifests;
                         # A stand-in, so the check doesn't build the Nova
                         # Files app (GPUI) just to list it.
                         novaFilesPackage = pkgs.runCommand "nova-files-stand-in" { } "mkdir $out";
@@ -399,6 +407,9 @@
                   selection = builtins.fromTOML config.environment.etc."xdg/nova/features.toml".text;
                 in
                 assert pkgs.lib.all (features.isOn selection) (builtins.attrValues features.manifests);
+                assert pkgs.lib.all (manifest: features.modeOf selection manifest == pkgs.lib.last manifest.modes) (
+                  builtins.filter (manifest: manifest ? modes) (builtins.attrValues features.manifests)
+                );
                 pkgs.lib.concatLines (map (package: package.name) config.environment.systemPackages);
             in
             pkgs.writeText "nova-nix-modules" (

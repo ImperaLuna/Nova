@@ -41,7 +41,7 @@ in
     ++ lib.optional novaFilesOn cfg.novaFilesPackage;
     xdg = {
       configFile = {
-        "nova/features.toml".text = features.selectionFile on;
+        "nova/features.toml".text = features.selectionFile cfg.features;
         # The package's own unit, linked where systemd looks, and wanted by
         # graphical-session.target (which niri, and Hyprland through uwsm,
         # start).

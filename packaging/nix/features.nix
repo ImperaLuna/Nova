@@ -60,6 +60,16 @@ in
     !(lib.elem manifest.id (selection.disabled or [ ]))
     && (isDefault manifest || lib.elem manifest.id (selection.enabled or [ ]));
 
+  # The mode a features.toml `selection` ({ modes }) picks for `manifest`:
+  # the one picked when it's one of its modes, else its `default-mode`;
+  # null for a feature without modes (Selection::mode).
+  modeOf =
+    selection: manifest:
+    let
+      picked = (selection.modes or { }).${manifest.id} or null;
+    in
+    if lib.elem picked (manifest.modes or [ ]) then picked else manifest.default-mode or null;
+
   # The packages of the features in `ids`, from `pkgs`. A name like
   # `kdePackages.plasma-workspace` is an attribute path.
   packagesFor =
@@ -75,13 +85,18 @@ in
   usesGpuScreenRecorder =
     gpu: ids: lib.any (id: lib.elem "gpu-screen-recorder" (nixNames manifests.${id} gpu)) ids;
 
-  # A features.toml for `on` (the ids that are on): what differs from each
-  # feature's default.
+  # A features.toml for `switches` (programs.nova.features): which
+  # features differ from their default, and the mode of each that's on and
+  # has modes.
   selectionFile =
-    on:
+    switches:
     let
+      on = lib.attrNames (lib.filterAttrs (_: feature: feature.enable) switches);
       enabled = lib.attrNames (lib.filterAttrs (id: m: !isDefault m && lib.elem id on) manifests);
       disabled = lib.attrNames (lib.filterAttrs (id: m: isDefault m && !lib.elem id on) manifests);
+      modes = lib.mapAttrs (id: _: switches.${id}.mode) (
+        lib.filterAttrs (id: m: lib.elem id on && (m.modes or [ ]) != [ ]) manifests
+      );
     in
     ''
       # Written by Nova's Nix module from programs.nova.features (or
@@ -89,5 +104,8 @@ in
       # also installs what they need.
       enabled = ${builtins.toJSON enabled}
       disabled = ${builtins.toJSON disabled}
-    '';
+
+      [modes]
+    ''
+    + lib.concatStrings (lib.mapAttrsToList (id: mode: "${id} = ${builtins.toJSON mode}\n") modes);
 }
