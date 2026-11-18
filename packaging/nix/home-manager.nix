@@ -23,6 +23,9 @@ let
   cfg = config.programs.nova;
   on = features.onIds cfg.features;
   novaFilesOn = lib.elem "nova-files" on;
+  # Nova Files' modes come from its NixOS module (Nova's NixOS module passes
+  # the feature's mode on); home-manager can only install the whole app.
+  novaFilesBySystem = osConfig.programs.nova-files.enable or false;
   unit = "${cfg.package}/lib/systemd/user/nova.service";
 in
 {
@@ -36,9 +39,9 @@ in
       cfg.package
     ]
     ++ features.packagesFor pkgs cfg.gpu on
-    # The Nova Files app; the session bus finds its D-Bus service in the
-    # profile's share/dbus-1/services.
-    ++ lib.optional novaFilesOn cfg.novaFilesPackage;
+    # The Nova Files app, unless the system installs it; the session bus
+    # finds its D-Bus service in the profile's share/dbus-1/services.
+    ++ lib.optional (novaFilesOn && !novaFilesBySystem) cfg.novaFilesPackage;
     xdg = {
       configFile = {
         "nova/features.toml".text = features.selectionFile cfg.features;
@@ -68,6 +71,9 @@ in
           features.usesGpuScreenRecorder cfg.gpu on
           && !(osConfig.programs.gpu-screen-recorder.enable or false)
         )
-        "Nova's screen recording uses gpu-screen-recorder, whose capture helper needs `programs.gpu-screen-recorder.enable = true;` in your NixOS configuration (or Nova's NixOS module).";
+        "Nova's screen recording uses gpu-screen-recorder, whose capture helper needs `programs.gpu-screen-recorder.enable = true;` in your NixOS configuration (or Nova's NixOS module)."
+      ++
+        lib.optional (novaFilesOn && !novaFilesBySystem && cfg.features.nova-files.mode != "basic")
+          "Nova Files' `${cfg.features.nova-files.mode}` mode needs Nova's NixOS module; home-manager installs the whole app, as in the `basic` mode, without making it the folder default or file picker.";
   };
 }
