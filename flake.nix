@@ -275,6 +275,7 @@
             import ./e2e/vm {
               pkgs = newest;
               inherit nova;
+              novaFilesModule = nova-files.nixosModules.default;
             }
             // {
               inherit (newest) quickshell;
@@ -308,6 +309,7 @@
         import ./e2e/vm {
           inherit pkgs;
           inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) nova;
+          novaFilesModule = nova-files.nixosModules.default;
         }
         // {
           build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
