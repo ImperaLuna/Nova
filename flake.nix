@@ -246,7 +246,10 @@
       # `programs.nova`: Nova, and a switch per feature that also installs
       # what it needs (packaging/nix/options.nix).
       homeManagerModules.default = import ./packaging/nix/home-manager.nix { inherit (self) packages; };
-      nixosModules.default = import ./packaging/nix/nixos.nix { inherit (self) packages; };
+      nixosModules.default = import ./packaging/nix/nixos.nix {
+        inherit (self) packages;
+        novaFilesModule = nova-files.nixosModules.default;
+      };
 
       packages = forAllSystems (pkgs: {
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
@@ -272,6 +275,7 @@
             import ./e2e/vm {
               pkgs = newest;
               inherit nova;
+              novaFilesModule = nova-files.nixosModules.default;
             }
             // {
               inherit (newest) quickshell;
@@ -305,6 +309,7 @@
         import ./e2e/vm {
           inherit pkgs;
           inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) nova;
+          novaFilesModule = nova-files.nixosModules.default;
         }
         // {
           build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
@@ -410,6 +415,13 @@
                 assert pkgs.lib.all (manifest: features.modeOf selection manifest == pkgs.lib.last manifest.modes) (
                   builtins.filter (manifest: manifest ? modes) (builtins.attrValues features.manifests)
                 );
+                # Nova Files installs through its own module, in the mode
+                # picked, as the picker on niri without losing niri's other
+                # portal lines.
+                assert config.programs.nova-files.enable && config.programs.nova-files.mode == "full";
+                assert
+                  config.xdg.portal.config.niri ? "org.freedesktop.impl.portal.FileChooser"
+                  && config.xdg.portal.config.niri.default == "gnome;gtk";
                 pkgs.lib.concatLines (map (package: package.name) config.environment.systemPackages);
             in
             pkgs.writeText "nova-nix-modules" (

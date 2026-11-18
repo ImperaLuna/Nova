@@ -1,7 +1,9 @@
 //! A stand-in for Nova Files' `Search1` on a test bus, for the tests of
 //! the client and of the launcher's Files mode through it. It answers the
 //! way Nova Files does: stages as signals sent to the caller only, and it
-//! notes what it was asked to open or show.
+//! notes what it was asked to open or show. It serves the user's file
+//! manager (`org.freedesktop.FileManager1`) on the same bus too, noting the
+//! URIs it was asked to show.
 
 use super::NovaFiles;
 use super::client::{APP_ID, Client, PATH};
@@ -25,12 +27,16 @@ pub struct Asked {
     pub cancelled: Vec<u64>,
     pub opened: Vec<String>,
     pub shown: Vec<String>,
+    /// The file manager's `ShowFolders` and `ShowItems` URIs.
+    pub folders_elsewhere: Vec<String>,
+    pub items_elsewhere: Vec<String>,
 }
 
 /// The stand-in, serving while it lives.
 pub struct StandIn {
     pub asked: Arc<Mutex<Asked>>,
     _connection: zbus::Connection,
+    _file_manager: zbus::Connection,
 }
 
 impl StandIn {
@@ -40,7 +46,16 @@ impl StandIn {
         let asked = Arc::default();
         let search = Search1 { asked: Arc::clone(&asked), root: root.to_string() };
         let builder = zbus::connection::Builder::address(address).name(APP_ID).serve_at(PATH, search);
-        Self { asked, _connection: zbus::block_on(builder.build()).unwrap() }
+        let file_manager = FileManager1 { asked: Arc::clone(&asked) };
+        let file_manager = zbus::connection::Builder::address(address)
+            .name("org.freedesktop.FileManager1")
+            .serve_at("/org/freedesktop/FileManager1", file_manager);
+        let (connection, file_manager) = (builder.build(), file_manager.build());
+        Self {
+            asked,
+            _connection: zbus::block_on(connection).unwrap(),
+            _file_manager: zbus::block_on(file_manager).unwrap(),
+        }
     }
 }
 
@@ -49,10 +64,11 @@ pub fn client(address: &str) -> Client {
     Client::connect(&crate::session_bus::Bus::Address(address.to_string()), TIMEOUT).unwrap()
 }
 
-/// The feature's module on the bus at `address`, with Home at `home`; it
-/// keeps its log under `dir`.
-pub fn nova_files(address: &str, dir: &Path, home: Option<PathBuf>) -> NovaFiles {
-    NovaFiles { client: Ok(client(address)), mime: mime(dir), home }
+/// The feature's module on the bus at `address`, with Home at `home`, in a
+/// mode with Nova Files' own windows unless `launcher_mode`; it keeps its
+/// log under `dir`.
+pub fn nova_files(address: &str, dir: &Path, home: Option<PathBuf>, launcher_mode: bool) -> NovaFiles {
+    NovaFiles { client: Ok(client(address)), mime: mime(dir), home, own_windows: !launcher_mode }
 }
 
 /// An empty MIME database, logging under `dir`.
@@ -110,4 +126,19 @@ impl Search1 {
 
     #[zbus(signal)]
     async fn failed(emitter: &SignalEmitter<'_>, id: u64, reason: String) -> zbus::Result<()>;
+}
+
+struct FileManager1 {
+    asked: Arc<Mutex<Asked>>,
+}
+
+#[zbus::interface(name = "org.freedesktop.FileManager1")]
+impl FileManager1 {
+    fn show_folders(&self, uris: Vec<String>, _startup_id: String) {
+        lock(&self.asked).folders_elsewhere.extend(uris);
+    }
+
+    fn show_items(&self, uris: Vec<String>, _startup_id: String) {
+        lock(&self.asked).items_elsewhere.extend(uris);
+    }
 }

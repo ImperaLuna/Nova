@@ -34,7 +34,7 @@ in
       type = lib.types.package;
       default = packages.${pkgs.stdenv.hostPlatform.system}.nova-files;
       defaultText = lib.literalExpression "nova.packages.\${system}.nova-files";
-      description = "The Nova Files app, which the `nova-files` feature installs with its D-Bus service.";
+      description = "The Nova Files app, which the `nova-files` feature installs (on NixOS through `programs.nova-files.package`).";
     };
 
     featuresFile = lib.mkOption {

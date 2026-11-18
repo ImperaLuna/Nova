@@ -12,7 +12,11 @@
 #   checks.<system>.e2e-<compositor>.frames   the second half (frames.py), pss.txt
 #   checks.<system>.e2e-<compositor>.compare  report.txt, screenshots/, diff/
 #   checks.<system>.e2e-<compositor>.record   recorded IPC data (record.py)
-{ pkgs, nova }:
+{
+  pkgs,
+  nova,
+  novaFilesModule,
+}:
 let
   user = "alice";
   uid = 1000;
@@ -114,7 +118,10 @@ let
         imports = [
           desktop
           # The flake's packages aren't at hand here; `package` sets Nova.
-          (import ../../packaging/nix/nixos.nix { packages = null; })
+          (import ../../packaging/nix/nixos.nix {
+            packages = null;
+            inherit novaFilesModule;
+          })
         ];
         programs.nova = {
           enable = true;

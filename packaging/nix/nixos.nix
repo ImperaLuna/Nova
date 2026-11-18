@@ -1,14 +1,24 @@
 # Nova's NixOS module (nixosModules.default): Nova, the packages of the
 # features that are on, its systemd user unit started with
 # graphical-session.target, a system-wide features.toml in /etc/xdg/nova,
-# which novad reads when the user has none of their own, and the Nova Files
-# app with its D-Bus service while the `nova-files` feature is on.
+# which novad reads when the user has none of their own, and Nova Files
+# while the `nova-files` feature is on.
 #
 #   programs.nova.enable = true;
 #   programs.nova.features.wallpaper-engine.enable = true;
 #
-# `packages`: the flake's packages, by system.
-{ packages }:
+# Nova Files installs through its own module (`programs.nova-files`), which
+# this one imports, in the feature's mode:
+#
+#   programs.nova.features.nova-files = { enable = true; mode = "full"; };
+#
+# So don't import Nova Files' module again. Its file picker goes in niri's
+# and Hyprland's portals.conf, which replace the ones they ship, so their
+# other lines are set here too.
+#
+# `packages`: the flake's packages, by system. `novaFilesModule`: Nova
+# Files' NixOS module.
+{ packages, novaFilesModule }:
 {
   config,
   lib,
@@ -20,33 +30,67 @@ let
   cfg = config.programs.nova;
   on = features.onIds cfg.features;
   novaFilesOn = lib.elem "nova-files" on;
+  # The desktops Nova runs on, as `XDG_CURRENT_DESKTOP` names them in lower
+  # case, and the lines of the portals.conf each ships, which a picker
+  # set there replaces.
+  desktopPortals = {
+    niri = {
+      default = [
+        "gnome"
+        "gtk"
+      ];
+      "org.freedesktop.impl.portal.Access" = [ "gtk" ];
+      "org.freedesktop.impl.portal.Notification" = [ "gtk" ];
+      "org.freedesktop.impl.portal.Secret" = [ "gnome-keyring" ];
+    };
+    hyprland.default = [
+      "hyprland"
+      "gtk"
+    ];
+  };
 in
 {
-  imports = [ (import ./options.nix { inherit packages; }) ];
+  imports = [
+    (import ./options.nix { inherit packages; })
+    novaFilesModule
+  ];
 
   config = lib.mkIf cfg.enable {
-    programs.nova.gpu = lib.mkDefault (features.gpuOf config);
+    programs = {
+      nova.gpu = lib.mkDefault (features.gpuOf config);
+
+      nova-files = lib.mkIf novaFilesOn {
+        enable = true;
+        inherit (cfg.features.nova-files) mode;
+        package = lib.mkDefault cfg.novaFilesPackage;
+        filePicker.desktops = lib.mkDefault (lib.attrNames desktopPortals);
+      };
+
+      # gpu-screen-recorder's capture helper, for screen recording on NVIDIA.
+      gpu-screen-recorder.enable = lib.mkIf (features.usesGpuScreenRecorder cfg.gpu on) (
+        lib.mkDefault true
+      );
+    };
 
     environment = {
       systemPackages = [
         cfg.package
       ]
-      ++ features.packagesFor pkgs cfg.gpu on
-      ++ lib.optional novaFilesOn cfg.novaFilesPackage;
+      ++ features.packagesFor pkgs cfg.gpu on;
       etc."xdg/nova/features.toml".text = features.selectionFile cfg.features;
     };
-    # The Nova Files app's D-Bus service, so the launcher's first search
-    # starts it.
-    services.dbus.packages = lib.mkIf novaFilesOn [ cfg.novaFilesPackage ];
+
+    xdg.portal.config = lib.mkIf (novaFilesOn && config.programs.nova-files.filePicker.enable) (
+      lib.mapAttrs (_: lib.mapAttrs (_: lib.mkDefault)) (
+        lib.filterAttrs (
+          desktop: _: lib.elem desktop config.programs.nova-files.filePicker.desktops
+        ) desktopPortals
+      )
+    );
 
     systemd.packages = [ cfg.package ];
     # NixOS ignores [Install] in packaged units; this is the unit's WantedBy=.
     systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
-
-    # gpu-screen-recorder's capture helper, for screen recording on NVIDIA.
-    programs.gpu-screen-recorder.enable = lib.mkIf (features.usesGpuScreenRecorder cfg.gpu on) (
-      lib.mkDefault true
-    );
 
     services = {
       # Device batteries: novad reads upowerd on the system bus,
