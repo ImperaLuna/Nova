@@ -18,7 +18,7 @@ Singleton {
     readonly property bool ready: Daemon.readyFeatures.includes(Protocol.FEATURE_LAUNCHER) && current !== null
 
     // Nova Files runs, so the launcher has its Files mode.
-    readonly property bool filesReady: Daemon.readyFeatures.includes(Protocol.FEATURE_FILES)
+    readonly property bool filesReady: Daemon.readyFeatures.includes(Protocol.FEATURE_NOVA_FILES)
 
     // The screens whose launcher is open. novad hears when the first
     // opens and the last closes, and keeps the file index meanwhile.
