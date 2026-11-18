@@ -101,11 +101,11 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1794176619,
-        "narHash": "sha256-TGdHPStQojgd2wzwDHbfG5bb+LPTq2PcG/SbMFCMJBo=",
+        "lastModified": 1794959374,
+        "narHash": "sha256-3P82XvIWwzy8zS2r20gUR1qwaQcxcuJ+/MDIOMl2N6k=",
         "owner": "ImperaLuna",
         "repo": "Nova-Files",
-        "rev": "6f4bc264afa71956553e7cf8c0cae30dbd8fa582",
+        "rev": "e20766005788a706e8716239d1fdbebd42688b0f",
         "type": "github"
       },
       "original": {
