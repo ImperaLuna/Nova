@@ -32,13 +32,15 @@ in
   imports = [ (import ./options.nix { inherit packages; }) ];
 
   config = lib.mkIf cfg.enable {
-    # Inside a NixOS configuration, the GPU it drives.
-    programs.nova.gpu = lib.mkIf (osConfig != null) (lib.mkDefault (features.gpuOf osConfig));
-    # Nova Files installed by the system runs in the system's mode, which
-    # novad has to know to route folders.
-    programs.nova.features.nova-files.mode = lib.mkIf novaFilesBySystem (
-      lib.mkDefault osConfig.programs.nova-files.mode
-    );
+    programs.nova = {
+      # Inside a NixOS configuration, the GPU it drives.
+      gpu = lib.mkIf (osConfig != null) (lib.mkDefault (features.gpuOf osConfig));
+      # Nova Files installed by the system runs in the system's mode, which
+      # novad has to know to route folders.
+      features.nova-files.mode = lib.mkIf novaFilesBySystem (
+        lib.mkDefault osConfig.programs.nova-files.mode
+      );
+    };
 
     home.packages = [
       cfg.package

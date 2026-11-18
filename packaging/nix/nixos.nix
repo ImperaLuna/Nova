@@ -56,7 +56,21 @@ in
   ];
 
   config = lib.mkIf cfg.enable {
-    programs.nova.gpu = lib.mkDefault (features.gpuOf config);
+    programs = {
+      nova.gpu = lib.mkDefault (features.gpuOf config);
+
+      nova-files = lib.mkIf novaFilesOn {
+        enable = true;
+        inherit (cfg.features.nova-files) mode;
+        package = lib.mkDefault cfg.novaFilesPackage;
+        filePicker.desktops = lib.mkDefault (lib.attrNames desktopPortals);
+      };
+
+      # gpu-screen-recorder's capture helper, for screen recording on NVIDIA.
+      gpu-screen-recorder.enable = lib.mkIf (features.usesGpuScreenRecorder cfg.gpu on) (
+        lib.mkDefault true
+      );
+    };
 
     environment = {
       systemPackages = [
@@ -66,12 +80,6 @@ in
       etc."xdg/nova/features.toml".text = features.selectionFile cfg.features;
     };
 
-    programs.nova-files = lib.mkIf novaFilesOn {
-      enable = true;
-      inherit (cfg.features.nova-files) mode;
-      package = lib.mkDefault cfg.novaFilesPackage;
-      filePicker.desktops = lib.mkDefault (lib.attrNames desktopPortals);
-    };
     xdg.portal.config = lib.mkIf (novaFilesOn && config.programs.nova-files.filePicker.enable) (
       lib.mapAttrs (_: lib.mapAttrs (_: lib.mkDefault)) (
         lib.filterAttrs (
@@ -83,11 +91,6 @@ in
     systemd.packages = [ cfg.package ];
     # NixOS ignores [Install] in packaged units; this is the unit's WantedBy=.
     systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
-
-    # gpu-screen-recorder's capture helper, for screen recording on NVIDIA.
-    programs.gpu-screen-recorder.enable = lib.mkIf (features.usesGpuScreenRecorder cfg.gpu on) (
-      lib.mkDefault true
-    );
 
     services = {
       # Device batteries: novad reads upowerd on the system bus,
