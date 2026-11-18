@@ -109,6 +109,16 @@ impl crate::modules::Module for NovaFiles {
         Arc::new(Self { client, mime, home: sources.home.clone(), own_windows: own_windows(features) })
     }
 
+    /// A mode change that adds or drops Nova Files' windows restarts the
+    /// module, which reads the mode when it starts.
+    fn reconfigure(&self, _: &(), _: &(), features: &[FeatureState]) -> crate::modules::Reconfigure {
+        if own_windows(features) == self.own_windows {
+            crate::modules::Reconfigure::InPlace
+        } else {
+            crate::modules::Reconfigure::Restart
+        }
+    }
+
     fn stop(&self) {
         if let Ok(client) = &self.client {
             client.stop();

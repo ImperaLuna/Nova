@@ -164,6 +164,25 @@ fn in_the_launcher_mode_folders_open_in_the_users_file_manager() {
     assert!(asked.shown.is_empty(), "no Nova Files window");
 }
 
+/// Switching between a mode with windows and the launcher mode restarts
+/// the module, so it routes folders the new way; other changes keep it.
+#[test]
+fn a_change_to_or_from_the_launcher_mode_restarts_the_module() {
+    use crate::modules::{Module, Reconfigure};
+    let dir = TempDir::new("nova-files-reconfigure");
+    let state = |mode: &str| nova_protocol::FeatureState {
+        id: super::ID.into(),
+        status: nova_protocol::FeatureStatus::Ready,
+        missing: vec![],
+        slots: vec![],
+        mode: Some(mode.to_string()),
+    };
+    let with_windows =
+        NovaFiles { client: Err("no bus".into()), mime: super::stand_in::mime(&dir), home: None, own_windows: true };
+    assert_eq!(with_windows.reconfigure(&(), &(), &[state("full")]), Reconfigure::InPlace);
+    assert_eq!(with_windows.reconfigure(&(), &(), &[state(super::LAUNCHER_MODE)]), Reconfigure::Restart);
+}
+
 #[test]
 fn only_the_launcher_mode_goes_without_nova_files_windows() {
     let state = |mode: Option<&str>| nova_protocol::FeatureState {
