@@ -28,6 +28,11 @@
 //! order = 10
 //! ```
 //!
+//! A feature can come in modes, one of which is on while the feature is:
+//! `modes` lists them and `default-mode` says which one a user who didn't
+//! pick gets. `features.toml` picks one under `[modes]`
+//! (`nova-files = "full"`).
+//!
 //! Each `[[slot]]` is a place its UI goes: a view (an id the UI maps to its
 //! component in ui/slots/Views.qml) in one of the [`HOSTS`], sorted there by
 //! `order`. novad sends them with the feature's state, so a new feature
@@ -140,6 +145,12 @@ pub struct Manifest {
     /// Names the feature's daemon side in novad (`novad::modules`).
     #[serde(default)]
     pub daemon: Option<String>,
+    /// The ways it can run, when there's more than one (`modes`), and the
+    /// one it runs in unless the user picks another (`default-mode`).
+    #[serde(default)]
+    pub modes: Vec<String>,
+    #[serde(default, rename = "default-mode")]
+    pub default_mode: Option<String>,
     #[serde(default)]
     pub variants: BTreeMap<String, Variant>,
     #[serde(default)]
@@ -256,6 +267,21 @@ impl Manifest {
                 ));
             }
         }
+        for (index, mode) in self.modes.iter().enumerate() {
+            if !kebab(mode) {
+                return Err(format!("mode \"{mode}\" must be lowercase kebab-case"));
+            }
+            if self.modes[..index].contains(mode) {
+                return Err(format!("mode \"{mode}\" is listed twice"));
+            }
+        }
+        match &self.default_mode {
+            None if !self.modes.is_empty() => return Err("modes need a `default-mode`".into()),
+            Some(mode) if !self.modes.contains(mode) => {
+                return Err(format!("default-mode \"{mode}\" isn't one of its modes"));
+            }
+            _ => {}
+        }
         for (index, slot) in self.slots.iter().enumerate() {
             let well_formed = slot.view.split('.').all(kebab);
             if !well_formed {
@@ -305,7 +331,8 @@ pub fn load_all(root: &Path) -> Result<Vec<Manifest>, Error> {
     Ok(manifests)
 }
 
-/// The user's choices from `features.toml`: `enabled = [...]`, `disabled = [...]`.
+/// The user's choices from `features.toml`: `enabled = [...]`, `disabled =
+/// [...]`, and a mode for a feature that has modes under `[modes]`.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Selection {
@@ -313,6 +340,9 @@ pub struct Selection {
     pub enabled: Vec<String>,
     #[serde(default)]
     pub disabled: Vec<String>,
+    /// Feature id to mode.
+    #[serde(default)]
+    pub modes: BTreeMap<String, String>,
 }
 
 impl Selection {
@@ -325,6 +355,26 @@ impl Selection {
             return false;
         }
         manifest.default || self.enabled.contains(&manifest.id)
+    }
+
+    /// The mode `manifest` runs in while it's on: the one picked, else its
+    /// `default-mode`. A pick that isn't one of its modes counts as none
+    /// ([`Selection::unknown_modes`] lists those). `None` for a feature
+    /// without modes.
+    pub fn mode<'a>(&self, manifest: &'a Manifest) -> Option<&'a str> {
+        let picked = self.modes.get(&manifest.id);
+        manifest.modes.iter().find(|mode| Some(*mode) == picked).or(manifest.default_mode.as_ref()).map(String::as_str)
+    }
+
+    /// The `[modes]` picks that name no mode of their feature, as
+    /// `(id, mode)`, for `nova doctor` and the log. A feature that isn't
+    /// installed is left out: an old pick for it does no harm.
+    pub fn unknown_modes<'a>(&'a self, manifests: &[Manifest]) -> Vec<(&'a str, &'a str)> {
+        self.modes
+            .iter()
+            .filter(|(id, mode)| manifests.iter().any(|manifest| &manifest.id == *id && !manifest.modes.contains(mode)))
+            .map(|(id, mode)| (id.as_str(), mode.as_str()))
+            .collect()
     }
 }
 
@@ -423,8 +473,16 @@ mod tests {
                 "twice",
             ),
         ];
+        let modes = |extra: &str| format!("id = \"a\"\nname = \"x\"\ndescription = \"x\"\n{extra}");
+        let cases = cases.into_iter().map(|(text, dir, expected)| (text.to_string(), dir, expected)).chain([
+            (modes("modes = [\"Big\"]\ndefault-mode = \"Big\""), "a", "kebab-case"),
+            (modes("modes = [\"lite\", \"lite\"]\ndefault-mode = \"lite\""), "a", "twice"),
+            (modes("modes = [\"lite\"]"), "a", "need a `default-mode`"),
+            (modes("modes = [\"lite\"]\ndefault-mode = \"full\""), "a", "isn't one of its modes"),
+            (modes("default-mode = \"full\""), "a", "isn't one of its modes"),
+        ]);
         for (text, dir, expected) in cases {
-            let err = manifest(text).validate(dir).unwrap_err();
+            let err = manifest(&text).validate(dir).unwrap_err();
             assert!(err.contains(expected), "{err:?} should mention {expected:?}");
         }
     }
@@ -439,6 +497,22 @@ mod tests {
         let sel = Selection::parse("enabled = [\"recording\"]\ndisabled = [\"bar\"]").unwrap();
         assert!(!sel.is_on(&bar), "every feature can be turned off, the bar too");
         assert!(sel.is_on(&rec));
+    }
+
+    #[test]
+    fn a_mode_is_the_one_picked_else_the_default() {
+        let files = manifest(
+            "id = \"files\"\nname = \"x\"\ndescription = \"x\"\nmodes = [\"lite\", \"full\"]\ndefault-mode = \"lite\"",
+        );
+        let rec = manifest(RECORDING);
+        assert_eq!(Selection::default().mode(&files), Some("lite"));
+        assert_eq!(Selection::default().mode(&rec), None, "no modes, no mode");
+        let picked = Selection::parse("[modes]\nfiles = \"full\"\nrecording = \"fast\"").unwrap();
+        assert_eq!(picked.mode(&files), Some("full"));
+        assert_eq!(picked.mode(&rec), None);
+        let typo = Selection::parse("[modes]\nfiles = \"ful\"\ngone = \"x\"").unwrap();
+        assert_eq!(typo.mode(&files), Some("lite"), "a mode it doesn't have counts as none");
+        assert_eq!(typo.unknown_modes(&[files, rec]), [("files", "ful")]);
     }
 
     #[test]
@@ -525,7 +599,7 @@ mod tests {
     fn state(id: &str, status: FeatureStatus, hosts: &[&str]) -> FeatureState {
         let slots =
             hosts.iter().map(|host| Slot { host: host.to_string(), view: format!("{id}.view"), order: 0 }).collect();
-        FeatureState { id: id.into(), status, missing: vec![], slots }
+        FeatureState { id: id.into(), status, missing: vec![], slots, mode: None }
     }
 
     #[test]

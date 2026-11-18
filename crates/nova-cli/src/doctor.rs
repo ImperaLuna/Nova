@@ -332,7 +332,13 @@ mod tests {
     }
 
     fn feature(id: &str, status: FeatureStatus, missing: &[&str]) -> FeatureState {
-        FeatureState { id: id.into(), status, missing: missing.iter().map(|m| m.to_string()).collect(), slots: vec![] }
+        FeatureState {
+            id: id.into(),
+            status,
+            missing: missing.iter().map(|m| m.to_string()).collect(),
+            slots: vec![],
+            mode: None,
+        }
     }
 
     fn healthy() -> Facts {
