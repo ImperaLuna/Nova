@@ -1,6 +1,6 @@
 id = "nova-files"
 name = "Nova Files app"
-description = "The launcher's Files mode searches with the standalone Nova Files app instead of Nova's own index, and opens what it finds there."
+description = "The launcher's Files mode finds, opens and shows files through the standalone Nova Files app."
 default = false
 daemon = "nova-files"
 
@@ -10,3 +10,9 @@ daemon = "nova-files"
 # not through a `nix` list here.
 [check]
 binaries = ["nova-files"]
+
+# The launcher's Files mode: names Nova Files finds, opened or shown there.
+[[slot]]
+host = "launcher.providers"
+view = "files"
+order = 20

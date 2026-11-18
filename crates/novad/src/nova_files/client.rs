@@ -1,13 +1,15 @@
 //! The D-Bus side of [`super::NovaFiles`]: one connection, the calls, and
 //! the thread that reads `Found` and `Failed` and hands each to the search
-//! waiting for it, by the search's id.
+//! waiting for it, by the search's id. `Open` and `ShowInFolder` take the
+//! path as text and the launcher's platform data, empty as Nova has no
+//! activation token to pass yet.
 
 use crate::lock;
 use crate::session_bus::{Bus, Stop};
 use futures_core::Stream;
 use std::collections::HashMap;
 use std::future::poll_fn;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
@@ -24,6 +26,8 @@ pub const PATH: &str = "/io/github/ImperaLuna/NovaFiles";
 pub const INTERFACE: &str = "io.github.ImperaLuna.NovaFiles.Search1";
 const SEARCH: &str = "Search";
 const CANCEL: &str = "Cancel";
+const OPEN: &str = "Open";
+const SHOW_IN_FOLDER: &str = "ShowInFolder";
 const FOUND: &str = "Found";
 const FAILED: &str = "Failed";
 /// Signals that may wait unread before older ones are dropped: a few
@@ -112,6 +116,27 @@ impl Client {
                 Err(RecvTimeoutError::Disconnected) => return Err("the signals stopped".into()),
             }
         }
+    }
+
+    /// Opens `path` in Nova Files' way: a file in its default app, a
+    /// folder in a window.
+    pub fn open(&self, path: &Path) -> Result<(), String> {
+        self.call_with_path(OPEN, path)
+    }
+
+    /// Opens a window on the folder that holds `path`.
+    pub fn show_in_folder(&self, path: &Path) -> Result<(), String> {
+        self.call_with_path(SHOW_IN_FOLDER, path)
+    }
+
+    /// Calls `method` with `path` and empty platform data.
+    fn call_with_path(&self, method: &str, path: &Path) -> Result<(), String> {
+        let path =
+            path.to_str().ok_or_else(|| format!("{} isn't UTF-8, so Nova Files can't take it", path.display()))?;
+        let platform_data: HashMap<&str, zbus::Variant<'_>> = HashMap::new();
+        zbus::block_on(self.connection.call_method(Some(APP_ID), PATH, Some(INTERFACE), method, &(path, platform_data)))
+            .map(drop)
+            .map_err(|e| e.to_string())
     }
 
     /// Stops search `id`, without waiting for an answer.

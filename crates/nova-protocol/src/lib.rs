@@ -1438,9 +1438,9 @@ pub const APP_ICON_MAX_CHARS: usize = 512;
 /// apps: the `launcher` feature's own.
 pub const PROVIDER_APPS: &str = "apps";
 
-/// The launcher provider that finds files (feature `files`): the launcher's
-/// Files mode, which searches the names Nova Files indexes or, for a query
-/// starting with `~` or `/`, completes a path.
+/// The launcher provider that finds files (feature `nova-files`): the
+/// launcher's Files mode, which searches the names the Nova Files app
+/// indexes and opens or shows what it finds there.
 pub const PROVIDER_FILES: &str = "files";
 
 /// Something a launcher provider found for a search, best first within its
@@ -1868,10 +1868,9 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mode: Option<String>,
     },
-    /// The client's launcher opened (`shown: true`) or closed. While one
-    /// is open, novad keeps the index of file names its searches may
-    /// read (feature `files`; nothing without it). A connection that
-    /// closes counts as closed.
+    /// The client's launcher opened (`shown: true`) or closed. Nothing
+    /// needs it now that the Nova Files app keeps its own index of file
+    /// names; it goes with the `files` feature (IMP-363).
     LauncherShown {
         shown: bool,
     },

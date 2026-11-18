@@ -44,9 +44,7 @@
 //!   first page or a video's still drawn into the cache.
 //! - `search/`: finding files by name (`files_search`) from an index of
 //!   every name under Home and the drives, kept up to date with inotify
-//!   while Nova Files runs or a launcher is open, and a while after.
-//! - `launcher.rs`: the launcher's Files mode, a launcher provider that
-//!   searches that index or completes a typed path.
+//!   while Nova Files runs, and a while after.
 //! - `udisks.rs`: the drives in the sidebar, from udisks2, and mounting
 //!   and ejecting them; `drives.rs`: which filesystems are listed and
 //!   what they're called.
@@ -96,7 +94,6 @@ mod filter;
 mod folder;
 pub mod games;
 mod history;
-mod launcher;
 mod measures;
 mod picker;
 mod portal;
@@ -124,7 +121,6 @@ use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
 use crate::notifications::Notifications;
-use crate::nova_files::NovaFiles;
 use crate::session_bus::{Bus, Stop};
 use history::{History, Way};
 use nova_protocol::{
@@ -226,9 +222,6 @@ pub struct Files {
     previews: Arc<preview::Previews>,
     /// Thumbnails for the Icons view.
     thumbnails: thumbnails::Thumbnails,
-    /// The standalone Nova Files app, while its feature runs: it answers
-    /// the launcher's name searches instead of `search`.
-    nova_files: Mutex<Option<Arc<NovaFiles>>>,
 }
 
 /// What the module's services share.
@@ -357,7 +350,6 @@ impl Files {
             stop,
             folders,
             look: Mutex::default(),
-            nova_files: Mutex::default(),
             transfers,
             measures,
             trash,
@@ -432,29 +424,6 @@ impl Files {
     /// What finds files by name (`files_search`).
     pub fn searcher(&self) -> search::Searcher {
         self.search.searcher()
-    }
-
-    /// Client `client`'s launcher opened or closed (`launcher_shown`): it
-    /// may search files, so the index is built while it's open, unless the
-    /// Nova Files app answers its searches.
-    pub fn launcher_shown(&self, client: ClientId, shown: bool) {
-        let used = shown && self.nova_files().is_none();
-        self.search.set_used(client, search::Use::Launcher, used);
-    }
-
-    /// The standalone Nova Files app, while its feature runs.
-    fn nova_files(&self) -> Option<Arc<NovaFiles>> {
-        lock(&self.nova_files).clone()
-    }
-
-    /// The Nova Files app's feature started (`Some`) or stopped. Started,
-    /// it answers the launchers, so their hold on the index goes.
-    fn set_nova_files(&self, nova_files: Option<Arc<NovaFiles>>) {
-        let mut linked = lock(&self.nova_files);
-        if nova_files.is_some() {
-            self.search.stop_launcher_use();
-        }
-        *linked = nova_files;
     }
 
     /// Shows the folder `path` in client `client`'s view `view`
@@ -887,11 +856,9 @@ impl crate::modules::Module for Files {
     }
 
     /// "Safe To Remove Hardware" goes to the notifications, while they're
-    /// on. The launcher's name searches go to the Nova Files app while its
-    /// feature runs; it turning on lets the launchers' hold on the index go.
+    /// on.
     fn linked(&self, running: &crate::modules::Running) {
         self.drives.set_notifications(running.get::<Notifications>().as_ref());
-        self.set_nova_files(running.get::<NovaFiles>());
     }
 
     fn stop(&self) {
@@ -1038,102 +1005,6 @@ mod tests {
         // Other events (the trash's watch starting, the search index built)
         // may reach it; no window does.
         assert_eq!(crate::hub::count_named(&quitting, "files_window"), 0, "no window for the one quitting");
-    }
-
-    #[test]
-    fn the_launchers_files_mode_finds_indexed_names_and_shows_them_in_nova_files() {
-        use crate::launcher::providers::{Provider, Run};
-        let fixture = Fixture::new("launcher");
-        // The index covers `<dir>/home`; the fixture's Home is `<dir>`.
-        std::fs::create_dir_all(fixture.dir.join("home/Games")).unwrap();
-        std::fs::write(fixture.dir.join("home/Games/Crimson Desert.sh"), b"x").unwrap();
-        let mut found = Vec::new();
-        nova_test_support::wait_until(WAIT, "the index finds it", || {
-            found = fixture.files.search("crim des").unwrap();
-            !found.is_empty()
-        });
-        let game = &found[0];
-        let path = fixture.dir.join("home/Games/Crimson Desert.sh").display().to_string();
-        assert_eq!(game.id, path);
-        assert_eq!(game.description.as_deref(), Some("~/home/Games"));
-        assert!(game.name[0].matched && game.name[0].text == "Crim");
-        assert_eq!(game.file.as_ref().unwrap().completion, "~/home/Games/Crimson Desert.sh");
-
-        let (_, nova_files, _stream) = fixture.nova_files();
-        let logger =
-            Logger::open(&fixture.dir.join("run-logs"), LogLevel::Debug, false, Arc::clone(&fixture.hub)).unwrap();
-        let how = |new_window| Run {
-            output: None,
-            new_window,
-            compositor: None,
-            tray: None,
-            logger: &logger,
-            underway: &|| {},
-        };
-        // Shift+Enter: its folder, with it selected.
-        fixture.files.run(&path, &how(true)).unwrap();
-        let window = next_named(&nova_files, "files_window", WAIT);
-        assert_eq!(window["folder"], json!(fixture.dir.join("home/Games").display().to_string()));
-        assert_eq!(window["select"], json!([path]));
-        // A folder opens in Nova Files.
-        fixture.files.run(&fixture.downloads(), &how(false)).unwrap();
-        assert_eq!(next_named(&nova_files, "files_window", WAIT)["folder"], json!(fixture.downloads()));
-    }
-
-    #[test]
-    fn with_the_nova_files_app_on_the_launcher_searches_through_it_and_runs_in_nova() {
-        use crate::launcher::providers::{Provider, Run};
-        use crate::nova_files::stand_in::{StandIn, nova_files};
-        let fixture = super::bus_fixture::Fixture::new("nova-files-app");
-        let found_in = fixture.dir.join("Downloads").display().to_string();
-        std::fs::write(fixture.dir.join("Downloads/kitchen.txt"), b"x").unwrap();
-        let stand_in = StandIn::serve(&fixture.bus.address, &found_in);
-        fixture.files.set_nova_files(Some(nova_files(&fixture.bus.address)));
-        // The launcher opening doesn't build the index.
-        fixture.files.launcher_shown(7, true);
-        std::thread::sleep(Duration::from_millis(300));
-        assert!(!fixture.files.search.built());
-
-        // Names come from the app; one it found that's gone isn't listed.
-        let found = fixture.files.search("kit").unwrap();
-        let path = format!("{found_in}/kitchen.txt");
-        assert_eq!(found.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), [path.as_str()]);
-        assert_eq!(found[0].description.as_deref(), Some("~/Downloads"));
-        assert!(found[0].name[0].matched && found[0].name[0].text == "kit");
-        assert_eq!(found[0].file.as_ref().unwrap().completion, "~/Downloads/kitchen.txt");
-        // Typed paths are still Nova's own.
-        let typed = fixture.files.search("~/Downloads/kit").unwrap();
-        assert_eq!(typed.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), [path.as_str()]);
-        assert_eq!(lock(&stand_in.asked).searches.len(), 1);
-        // A failed search is one item saying why, not the index's names.
-        let failed = fixture.files.search("broken").unwrap();
-        assert_eq!(failed.len(), 1);
-        assert!(failed[0].id.is_empty() && failed[0].file.is_none());
-        assert!(failed[0].name[0].text.contains("index-failed"), "{:?}", failed[0].name);
-
-        let logger = Logger::open(&fixture.dir.join("run-logs"), LogLevel::Debug, false, Arc::clone(&fixture.hub));
-        let logger = logger.unwrap();
-        let how = |new_window| Run {
-            output: None,
-            new_window,
-            compositor: None,
-            tray: None,
-            logger: &logger,
-            underway: &|| {},
-        };
-        // What it found runs in Nova, as any item does: Shift+Enter shows
-        // it in Nova's own file manager.
-        let (windows, _stream) = fixture.nova_files();
-        fixture.files.run(&path, &how(true)).unwrap();
-        let window = next_named(&windows, "files_window", WAIT);
-        assert_eq!(window["folder"], json!(found_in));
-        assert_eq!(window["select"], json!([path]));
-        assert!(fixture.files.run(&failed[0].id, &how(false)).is_err());
-
-        // Off again: the launcher builds the index as before.
-        fixture.files.set_nova_files(None);
-        fixture.files.launcher_shown(7, true);
-        nova_test_support::wait_until(WAIT, "the index is built", || fixture.files.search.built());
     }
 
     #[test]
