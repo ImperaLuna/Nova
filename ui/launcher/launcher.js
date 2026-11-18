@@ -1,5 +1,6 @@
 .pragma library
 .import "../daemon/protocol.js" as Protocol
+.import "../theme/icons.js" as Icons
 
 // The launcher's logic that needs no Qt: what its list shows, moving the
 // selection, and an app's stand-in when its icon is missing. The QML tests
@@ -83,6 +84,23 @@ function rows(query, matches, recent, apps, known, files) {
     return shown.concat(others.map(function (app) {
         return row(app, "apps");
     }));
+}
+
+// The line icon for a found file (a LauncherFile): a folder, a picture, a
+// video, music, a document with text, or a plain file.
+function fileIcon(file) {
+    if (file.dir)
+        return Icons.FOLDER;
+    const group = file.mime.slice(0, file.mime.indexOf("/"));
+    if (group === "image")
+        return Icons.PICTURE;
+    if (group === "video")
+        return Icons.VIDEO;
+    if (group === "audio")
+        return Icons.MUSIC;
+    if (group === "text" || file.mime === "application/pdf")
+        return Icons.DOCUMENT;
+    return Icons.FILE;
 }
 
 // The query starts a path (`~` or `/`), which the Files mode completes.

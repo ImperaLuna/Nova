@@ -5,6 +5,7 @@ import QtTest
 import "../launcher"
 import "../theme"
 import "../launcher/launcher.js" as LauncherLogic
+import "../theme/icons.js" as Icons
 
 // The launcher with apps in the shape novad sends: what its list shows
 // before and while searching, what other providers find, typing, the
@@ -78,6 +79,20 @@ Item {
 
         function groups(rows) {
             return rows.map(row => row.group);
+        }
+
+        // A found file's line icon follows its type.
+        function test_file_icons_follow_the_type() {
+            const file = (mime, dir) => ({
+                    mime: mime,
+                    dir: dir ?? false
+                });
+            compare(LauncherLogic.fileIcon(file("inode/directory", true)), Icons.FOLDER);
+            compare(LauncherLogic.fileIcon(file("image/png")), Icons.PICTURE);
+            compare(LauncherLogic.fileIcon(file("video/x-matroska")), Icons.VIDEO);
+            compare(LauncherLogic.fileIcon(file("audio/flac")), Icons.MUSIC);
+            compare(LauncherLogic.fileIcon(file("application/pdf")), Icons.DOCUMENT);
+            compare(LauncherLogic.fileIcon(file("application/octet-stream")), Icons.FILE);
         }
 
         function test_recent_apps_then_every_other_app_by_name_until_something_is_typed() {
@@ -536,7 +551,7 @@ Item {
             tryVerify(() => list.itemAtIndex(0) !== null);
             const row = findChild(list.itemAtIndex(0), "row");
             verify(!row.pinnable);
-            compare(row.ink, Tokens.filesFaint, "it's in a hidden folder");
+            compare(row.ink, Tokens.launcherFileFaint, "it's in a hidden folder");
             verify(findChild(row, "showInFolder").visible);
             keyClick(Qt.Key_Return, Qt.ShiftModifier);
             compare(Array.from(launches.signalArguments[0]), ["files", "/home/me/.cache/report.pdf", true]);

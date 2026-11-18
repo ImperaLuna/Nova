@@ -4,8 +4,8 @@ expression: "shown(&facts(Distro::Fedora, vec![Gpu::Amd], false))"
 ---
 add the Quickshell package repository:
     sudo dnf copr enable -y errornointernet/quickshell
-install Quickshell for the UI, and packages for bluetooth, files, peripherals, recording, screenshot:
-    sudo dnf install quickshell bluez udisks2 poppler-utils ffmpeg-free gdk-pixbuf2 ffmpegthumbnailer upower wf-recorder grim wl-clipboard xdg-utils
+install Quickshell for the UI, and packages for bluetooth, peripherals, recording, screenshot:
+    sudo dnf install quickshell bluez upower wf-recorder grim wl-clipboard xdg-utils
 create /home/me/.config/nova/config.toml
 create /home/me/.config/nova/features.toml
 write /home/me/.config/systemd/user/nova.service
@@ -15,9 +15,3 @@ reload systemd's units:
 start novad with the graphical session:
     systemctl --user enable nova.service
 link /home/me/.local/bin/NovaUI to quickshell
-write /home/me/.local/share/applications/nova-files.desktop
-write /home/me/.local/share/icons/hicolor/scalable/apps/nova-files.svg
-make nova-files.desktop the default for inode/directory
-write /home/me/.local/share/xdg-desktop-portal/portals/nova.portal
-restart the desktop portal, if it runs, so it reads that:
-    systemctl --user try-restart xdg-desktop-portal.service

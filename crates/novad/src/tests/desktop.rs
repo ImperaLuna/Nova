@@ -90,23 +90,6 @@ fn hyprland_logs_out_in_its_config_language() {
 }
 
 #[test]
-fn a_window_is_focused_by_the_id_the_desktop_gives_it() {
-    // Hyprland's desktop names windows without `0x`, its clients with.
-    let dir = nova_test_support::TempDir::new("focus-window-id");
-    let (hyprland, backend) = FakeCompositor::hyprland(&dir.path().join("hyprland"));
-    assert_eq!(backend.focus_window_id("56ba8fd9b880"), Ok(true));
-    assert_eq!(backend.focus_window_id("1234"), Ok(false), "gone");
-    assert_eq!(hyprland.actions(), ["dispatch focuswindow address:0x56ba8fd9b880"]);
-
-    let niri_dir = dir.path().join("niri");
-    std::fs::create_dir_all(&niri_dir).unwrap();
-    let (niri, backend) = FakeCompositor::niri(&niri_dir);
-    assert_eq!(backend.focus_window_id("3"), Ok(true));
-    assert_eq!(backend.focus_window_id("99"), Ok(false), "gone");
-    assert_eq!(niri.sent(r#"{"Action":{"FocusWindow":{"id":3}}}"#), 1);
-}
-
-#[test]
 fn hyprland_lua_dispatchers_quote_what_they_name() {
     // A named workspace goes by its name, which the user chose.
     let dir = nova_test_support::TempDir::new("lua-quoting-hyprland");

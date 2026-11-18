@@ -16,10 +16,6 @@
 //! [recording]
 //! folder = "~/Videos/Recordings"
 //!
-//! [files]
-//! frame = 0   # Nova Files' frame, from glass (0) to solid (100)
-//! list = 100  # and its file list
-//!
 //! [quick-settings]
 //! name = "Luna"
 //!
@@ -50,41 +46,11 @@ pub struct Config {
     pub quick_settings: QuickSettingsConfig,
     #[serde(default)]
     pub wallpaper: WallpaperConfig,
-    #[serde(default)]
-    pub files: FilesConfig,
-}
-
-/// `[files]`: how solid Nova Files' window is, its frame (the rows above the
-/// files, and the sidebar) and its file list each from glass (0, the
-/// default) to the theme's solid surfaces (100). A number above that is an
-/// error, so a typo doesn't pass for solid.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, try_from = "RawFilesConfig")]
-pub struct FilesConfig {
-    pub look: nova_protocol::FilesLook,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawFilesConfig {
-    #[serde(default)]
-    frame: u8,
-    #[serde(default)]
-    list: u8,
-}
-
-impl TryFrom<RawFilesConfig> for FilesConfig {
-    type Error = String;
-
-    fn try_from(raw: RawFilesConfig) -> Result<Self, String> {
-        let max = nova_protocol::FILES_SOLID_MAX;
-        for (key, value) in [("frame", raw.frame), ("list", raw.list)] {
-            if value > max {
-                return Err(format!("[files] {key} = {value} is past {max}, which is fully solid"));
-            }
-        }
-        Ok(Self { look: nova_protocol::FilesLook { frame: raw.frame, list: raw.list } })
-    }
+    /// `[files]` set the look of the file manager Nova used to have; Nova
+    /// Files is its own app now. Ignored, so a config that still has it
+    /// loads.
+    #[serde(default, rename = "files")]
+    _files: Option<serde::de::IgnoredAny>,
 }
 
 /// `[wallpaper]`: the wallpaper on every output, and ones for single
@@ -260,14 +226,9 @@ mod tests {
     }
 
     #[test]
-    fn nova_files_is_glass_unless_set() {
-        let look = |text: &str| toml::from_str::<Config>(text).map(|config| config.files.look);
-        assert_eq!(look(""), Ok(nova_protocol::FilesLook { frame: 0, list: 0 }));
-        assert_eq!(look("[files]\nlist = 100"), Ok(nova_protocol::FilesLook { frame: 0, list: 100 }));
-        assert_eq!(look("[files]\nframe = 40\nlist = 0"), Ok(nova_protocol::FilesLook { frame: 40, list: 0 }));
-        assert!(look("[files]\nframe = 101").unwrap_err().to_string().contains("fully solid"));
-        assert!(look("[files]\nframe = -1").is_err());
-        assert!(look("[files]\nsidebar = 50").is_err());
+    fn an_old_files_section_still_loads() {
+        let config = toml::from_str::<Config>("[files]\nframe = 40\nlist = 100\n[screenshot]\nfolder = \"~/Shots\"");
+        assert_eq!(config.unwrap().screenshot.folder.as_deref(), Some("~/Shots"));
     }
 
     #[test]

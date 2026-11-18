@@ -219,15 +219,6 @@ pub fn named_within(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Dur
     }
 }
 
-/// How many events called `name` a client's queue holds now, taking every
-/// queued event off. For a test that checks an event didn't reach a client:
-/// other events of its topics may well have (a watcher starting, an index
-/// built), so "nothing came" is the wrong question.
-#[cfg(test)]
-pub fn count_named(queue: &Receiver<Outgoing>, name: &str) -> usize {
-    queued_names(queue).iter().filter(|queued| *queued == name).count()
-}
-
 /// The names of the events a client's queue holds now, in order, taking
 /// them all off: for checking several events didn't come, in one pass.
 #[cfg(test)]

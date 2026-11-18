@@ -1,10 +1,8 @@
 # Nova's NixOS module (nixosModules.default): Nova, the packages of the
 # features that are on, its systemd user unit started with
 # graphical-session.target, a system-wide features.toml in /etc/xdg/nova,
-# which novad reads when the user has none of their own, and Nova Files as
-# the default for folders and apps' Open and Save dialogs (through
-# xdg-desktop-portal, on niri and Hyprland) while the `files` feature is on,
-# and the Nova Files app with its D-Bus service while `nova-files` is.
+# which novad reads when the user has none of their own, and the Nova Files
+# app with its D-Bus service while the `nova-files` feature is on.
 #
 #   programs.nova.enable = true;
 #   programs.nova.features.wallpaper-engine.enable = true;
@@ -21,7 +19,6 @@ let
   features = import ./features.nix { inherit lib; };
   cfg = config.programs.nova;
   on = features.onIds cfg.features;
-  filesOn = lib.elem "files" on;
   novaFilesOn = lib.elem "nova-files" on;
 in
 {
@@ -35,28 +32,9 @@ in
         cfg.package
       ]
       ++ features.packagesFor pkgs cfg.gpu on
-      ++ lib.optional filesOn (features.filesDesktop pkgs cfg.package)
       ++ lib.optional novaFilesOn cfg.novaFilesPackage;
-      # Nova Files' thumbnails come from the thumbnailers packages install
-      # in share/thumbnailers (gdk-pixbuf's, ffmpegthumbnailer's), which
-      # NixOS doesn't link into the system profile by itself.
-      pathsToLink = lib.mkIf filesOn [ "/share/thumbnailers" ];
       etc."xdg/nova/features.toml".text = features.selectionFile on;
     };
-    # Nova Files opens folders, in place of whichever app last claimed them
-    # (often an editor). A user's own mimeapps.list still wins.
-    xdg.mime.defaultApplications = lib.mkIf filesOn {
-      "inode/directory" = lib.mkDefault "nova-files.desktop";
-    };
-
-    # Apps' Open and Save dialogs are Nova Files windows: the portal finds
-    # Nova's backend and chooses it for files.
-    xdg.portal = lib.mkIf filesOn {
-      enable = lib.mkDefault true;
-      extraPortals = [ (features.filesPortal pkgs cfg.package) ];
-      config = features.portalConfig;
-    };
-
     # The Nova Files app's D-Bus service, so the launcher's first search
     # starts it.
     services.dbus.packages = lib.mkIf novaFilesOn [ cfg.novaFilesPackage ];
@@ -71,9 +49,6 @@ in
     );
 
     services = {
-      # Nova Files lists and ejects drives through udisksd.
-      udisks2.enable = lib.mkIf filesOn (lib.mkDefault true);
-
       # Device batteries: novad reads upowerd on the system bus,
       # HeadsetControl needs its udev rules to open headsets without root,
       # and Nova's own rules let novad open Logitech's and Keychron's hidraw

@@ -1,6 +1,6 @@
 //! A thin wrapper over Linux inotify: novad learns about changed files (new
-//! Codex log lines, edited settings, a folder open in Nova Files) when
-//! they're written instead of checking on a timer.
+//! Codex log lines, edited settings, a new wallpaper) when they're written
+//! instead of checking on a timer.
 //!
 //! One watcher can be shared between threads: one blocks in `read` while
 //! others add and drop watches. Two paths that name one folder (a link and
@@ -39,8 +39,6 @@ const BUFFER_BYTES: usize = 64 * 1024;
 pub struct Change {
     pub path: PathBuf,
     pub is_dir: bool,
-    /// What happened, as inotify's `IN_*` bits.
-    pub mask: u32,
 }
 
 /// What one `Inotify::read` saw.
@@ -52,18 +50,12 @@ pub struct Changes {
     /// Watched folders that were deleted, moved or unmounted, for a watch
     /// with [`ITSELF`].
     pub gone: Vec<PathBuf>,
-    /// The file given to [`Inotify::wake_on`] is ready.
-    pub woken: bool,
 }
 
 impl Changes {
     /// Nothing seen.
     pub fn none() -> Self {
-        Self { found: Vec::new(), overflowed: false, gone: Vec::new(), woken: false }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.found.is_empty() && !self.overflowed && self.gone.is_empty() && !self.woken
+        Self { found: Vec::new(), overflowed: false, gone: Vec::new() }
     }
 }
 
@@ -72,8 +64,6 @@ pub struct Inotify {
     mask: u32,
     dirs: Mutex<Watches>,
     stop: Stopper,
-    /// Another file whose poll events in `.1` end a wait too.
-    also: Option<(Arc<std::fs::File>, i16)>,
 }
 
 /// Which paths are watched, both ways round, so adding or dropping one
@@ -82,8 +72,7 @@ pub struct Inotify {
 struct Watches {
     /// The paths each watch was added for.
     paths: HashMap<i32, Vec<PathBuf>>,
-    /// The watch each path is on, ordered so a folder's subfolders are a
-    /// range.
+    /// The watch each path is on.
     wds: BTreeMap<PathBuf, i32>,
 }
 
@@ -165,17 +154,11 @@ impl Inotify {
     pub fn new(mask: u32) -> std::io::Result<Self> {
         // SAFETY: no pointers; returns a new descriptor or -1.
         let file = owned(unsafe { libc::inotify_init1(libc::IN_CLOEXEC) })?;
-        Ok(Self { file: file.into(), mask, dirs: Mutex::default(), stop: Stopper::new()?, also: None })
-    }
-
-    /// Makes `read` also return, with [`Changes::woken`], when `file` has
-    /// one of the poll `events` (like `POLLPRI` on `/proc/self/mountinfo`,
-    /// which the kernel raises when mounts change).
-    pub fn wake_on(&mut self, file: Arc<std::fs::File>, events: i16) {
-        self.also = Some((file, events));
+        Ok(Self { file: file.into(), mask, dirs: Mutex::default(), stop: Stopper::new()? })
     }
 
     /// How many folders are watched.
+    #[cfg(test)]
     pub fn watched(&self) -> usize {
         lock(&self.dirs).wds.len()
     }
@@ -218,28 +201,6 @@ impl Inotify {
         Ok(())
     }
 
-    /// Stops watching `dir` and every folder watched below it.
-    pub fn unwatch_tree(&self, dir: &Path) {
-        let mut dirs = lock(&self.dirs);
-        // Paths sort by component, so the folders below `dir` follow it.
-        let below: Vec<PathBuf> = dirs
-            .wds
-            .range::<Path, _>((std::ops::Bound::Included(dir), std::ops::Bound::Unbounded))
-            .map(|(path, _)| path)
-            .take_while(|path| path.starts_with(dir))
-            .cloned()
-            .collect();
-        let unused: Vec<i32> = below.iter().filter_map(|path| dirs.remove(path)).collect();
-        self.rm_watches(unused);
-    }
-
-    /// Stops watching `dir`, whatever it pointed to when it was watched.
-    pub fn unwatch(&self, dir: &Path) {
-        let mut dirs = lock(&self.dirs);
-        let unused = dirs.remove(dir);
-        self.rm_watches(unused);
-    }
-
     /// Has the kernel drop the watches no path is on any more. Called under
     /// the `dirs` lock: a `watch_for` of the same folder in between would
     /// get the dropped watch back from the kernel and lose it.
@@ -267,16 +228,15 @@ impl Inotify {
     /// Like [`Inotify::read`], but waits only until `deadline`: then the
     /// changes are empty.
     pub fn read_until(&self, deadline: Option<Instant>) -> std::io::Result<Option<Changes>> {
-        let woken = match self.wait(deadline)? {
+        match self.wait(deadline)? {
             Woke::Stopped => return Ok(None),
             Woke::TimedOut => return Ok(Some(Changes::none())),
-            Woke::Also => return Ok(Some(Changes { woken: true, ..Changes::none() })),
-            Woke::Changed { also } => also,
-        };
+            Woke::Changed => {}
+        }
         let mut buffer = vec![0u8; BUFFER_BYTES];
         let read = (&self.file).read(&mut buffer)?;
         let mut dirs = lock(&self.dirs);
-        let mut changes = Changes { woken, ..Changes::none() };
+        let mut changes = Changes::none();
         let mut at = 0;
         while at + HEADER_BYTES <= read {
             let field = |offset: usize| {
@@ -304,7 +264,7 @@ impl Inotify {
             let name = name.split(|byte| *byte == 0).next().unwrap_or_default();
             if !name.is_empty() {
                 let is_dir = mask & libc::IN_ISDIR != 0;
-                let found = paths.iter().map(|dir| Change { path: dir.join(OsStr::from_bytes(name)), is_dir, mask });
+                let found = paths.iter().map(|dir| Change { path: dir.join(OsStr::from_bytes(name)), is_dir });
                 changes.found.extend(found);
             }
         }
@@ -314,13 +274,7 @@ impl Inotify {
     /// Waits for changes, a stop, or `deadline`.
     fn wait(&self, deadline: Option<Instant>) -> std::io::Result<Woke> {
         let pollfd = |fd, events| libc::pollfd { fd, events, revents: 0 };
-        // Without another file, its slot is a negative fd, which poll skips.
-        let (also, also_events) = self.also.as_ref().map_or((-1, 0), |(file, events)| (file.as_raw_fd(), *events));
-        let mut fds = [
-            pollfd(self.file.as_raw_fd(), libc::POLLIN),
-            pollfd(self.stop.0.as_raw_fd(), libc::POLLIN),
-            pollfd(also, also_events),
-        ];
+        let mut fds = [pollfd(self.file.as_raw_fd(), libc::POLLIN), pollfd(self.stop.0.as_raw_fd(), libc::POLLIN)];
         loop {
             // Rounded up, so a wait never ends just before its deadline.
             let timeout = deadline.map_or(-1, |deadline| {
@@ -333,16 +287,7 @@ impl Inotify {
                 return Ok(Woke::TimedOut);
             }
             if ready != -1 {
-                // The other file counts even alongside changes: a file like
-                // mountinfo reports each change to one poll only.
-                let also = fds[2].revents != 0;
-                return Ok(if fds[1].revents != 0 {
-                    Woke::Stopped
-                } else if fds[0].revents != 0 {
-                    Woke::Changed { also }
-                } else {
-                    Woke::Also
-                });
+                return Ok(if fds[1].revents != 0 { Woke::Stopped } else { Woke::Changed });
             }
             let error = std::io::Error::last_os_error();
             if error.kind() != std::io::ErrorKind::Interrupted {
@@ -354,15 +299,10 @@ impl Inotify {
 
 /// Why [`Inotify::wait`] returned.
 enum Woke {
-    /// Events to read; `also` when the file given to
-    /// [`Inotify::wake_on`] is ready too.
-    Changed {
-        also: bool,
-    },
+    /// Events to read.
+    Changed,
     Stopped,
     TimedOut,
-    /// The file given to [`Inotify::wake_on`].
-    Also,
 }
 
 fn owned(fd: libc::c_int) -> std::io::Result<OwnedFd> {
@@ -426,9 +366,10 @@ mod tests {
         // linear takes under 100 ms, most of it the kernel's.
         assert!(took < std::time::Duration::from_secs(1), "watching {folders} folders twice took {took:?}");
         // Only "1" and below go: "10" to "19" start with the same digit.
-        watcher.unwatch_tree(&dir.join("1"));
+        let one = dir.join("1");
+        watcher.unwatch_unless(|path| !path.starts_with(&one));
         assert_eq!(watcher.watched(), folders - 1 - DEEP);
-        watcher.unwatch_tree(&dir);
+        watcher.unwatch_unless(|_| false);
         assert_eq!(watcher.watched(), 0);
     }
 
@@ -446,7 +387,7 @@ mod tests {
         watcher.watch(&link).unwrap();
         watcher.watch(&link).unwrap();
         assert_eq!(watcher.watched(), 2);
-        watcher.unwatch(&link);
+        watcher.unwatch_unless(|path| path != link);
         assert_eq!(watcher.watched(), 1);
         std::fs::create_dir(folder.join("new")).unwrap();
         let changes = watcher.read().unwrap().unwrap();
