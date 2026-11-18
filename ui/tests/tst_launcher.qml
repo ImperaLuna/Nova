@@ -84,9 +84,9 @@ Item {
         // A found file's line icon follows its type.
         function test_file_icons_follow_the_type() {
             const file = (mime, dir) => ({
-                    mime: mime,
-                    dir: dir ?? false
-                });
+                        mime: mime,
+                        dir: dir ?? false
+                    });
             compare(LauncherLogic.fileIcon(file("inode/directory", true)), Icons.FOLDER);
             compare(LauncherLogic.fileIcon(file("image/png")), Icons.PICTURE);
             compare(LauncherLogic.fileIcon(file("video/x-matroska")), Icons.VIDEO);
