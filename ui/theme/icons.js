@@ -52,10 +52,6 @@ var REGION = "M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 
 var OPEN = "M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4";
 var FOLDER = "M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z";
 var TRASH = "M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3";
-// A game's saves: a floppy disk (the Games place's Open save folder).
-var SAVE = "M6 4h10l4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 4v4h7V4M8 20v-6h8v6";
-// Back where it was: an arrow coming round (the trash's Restore).
-var RESTORE = "M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4";
 var CAMERA = "M4 8h3l2-3h6l2 3h3v11H4zM8.5 13a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0";
 var VIDEO = "M4 7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM16 10l4-2.5v9L16 14";
 var VIDEO_OFF = VIDEO + STRIKE;
@@ -63,10 +59,6 @@ var VIDEO_OFF = VIDEO + STRIKE;
 // is one with lines of text.
 var FILE = "M7 3h7l4 4v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM14 3v4h4";
 var DOCUMENT = FILE + "M9 12h6M9 16h6";
-// A zip or tar: a page with a zipper down it; Extract all: a box with an
-// arrow coming out.
-var ARCHIVE = FILE + "M10 5h2M12 7h2M10 9h2M12 11h2M10.5 14h3v4h-3z";
-var EXTRACT = "M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM3 5h18v4H3zM12 12v6M9.5 15.5L12 18l2.5-2.5";
 var PAUSE = "M9 6v12M15 6v12";
 // The now-playing controls: solid, so pass each as `fill` too.
 var PAUSE_SOLID = "M7.7 5h1.6a1.2 1.2 0 0 1 1.2 1.2v11.6a1.2 1.2 0 0 1-1.2 1.2H7.7a1.2 1.2 0 0 1-1.2-1.2V6.2A1.2 1.2 0 0 1 7.7 5zM14.7 5h1.6a1.2 1.2 0 0 1 1.2 1.2v11.6a1.2 1.2 0 0 1-1.2 1.2h-1.6a1.2 1.2 0 0 1-1.2-1.2V6.2a1.2 1.2 0 0 1 1.2-1.2z";
@@ -117,30 +109,6 @@ var WIRED_OFF = PORT + STRIKE;
 // A password field's show and hide.
 var EYE = "M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12zM12 9a3 3 0 1 1 0 6a3 3 0 1 1 0-6z";
 var EYE_OFF = "M10 5.7A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4M6.6 6.6C3.9 8.3 2.5 12 2.5 12s3.5 6.5 9.5 6.5a9.3 9.3 0 0 0 5.4-1.7M9.9 9.9a3 3 0 0 0 4.2 4.2" + STRIKE;
-// Nova Files: places in the sidebar, moving up a folder, and the command
-// row's actions. Back and forward are LEFT and RIGHT.
-var HOME = "M4 11l8-6.5 8 6.5v8.5h-5.5v-5h-5v5H4z";
-var DESKTOP = "M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 5 4.5zM9 20h6M12 16.5V20";
-var DOWNLOAD = "M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14";
+// The launcher's found files: a picture (FOLDER, VIDEO, MUSIC, FILE and
+// DOCUMENT are above).
 var PICTURE = "M5.5 5h13a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM6 17l4.5-5 3 3.5 2-2 3 3.5M15.5 7.5a1.5 1.5 0 1 1 0 3a1.5 1.5 0 1 1 0-3z";
-var UP = "M12 19V6M6.5 11.5L12 6l5.5 5.5";
-var CHEVRON_DOWN = "M7 9.5l5 5 5-5";
-var PLUS = "M12 5v14M5 12h14";
-var CUT = "M7 14.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5zM17 14.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5zM8.8 15.2L17 4M15.2 15.2L7 4";
-var COPY = "M10.5 8.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5";
-var PASTE = "M9 4.5h6v3H9zM15 6h2.5v14h-11V6H9";
-var INFO = "M12 3.5a8.5 8.5 0 1 1 0 17a8.5 8.5 0 1 1 0-17zM12 11v5.5M12 7.8v.2";
-var RENAME = "M4 20h4L19 9l-4-4L4 16zM13 7l4 4";
-var UNDO = "M9 14L4.5 9.5 9 5M4.5 9.5h10a5 5 0 0 1 0 10H11";
-var REDO = "M15 14l4.5-4.5L15 5M19.5 9.5h-10a5 5 0 0 0 0 10H13";
-var SORT = "M7 5v14M4 16l3 3 3-3M17 19V5M14 8l3-3 3 3";
-var VIEW = "M4 6h16M4 12h16M4 18h16";
-var PREVIEW_PANE = "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM15 4v16";
-// The file list's Icons view (Details is VIEW).
-var GRID = "M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z";
-// What uses space: bars from longest to shortest.
-var SIZES = "M4 6h16M4 12h11M4 18h6";
-// Nova Files' drives: a disk inside the machine, a USB stick, and Eject.
-var DISK = "M5.5 7h13a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zM7 12h.01M10 12h7";
-var USB = "M8 9.5h8V20H8zM9.5 4h5v5.5h-5zM11 6.5h.01M13 6.5h.01";
-var EJECT = "M12 6l6 7H6zM6 17.5h12";

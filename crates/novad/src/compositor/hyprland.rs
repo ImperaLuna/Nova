@@ -268,16 +268,6 @@ impl Backend for Hyprland {
         Ok(true)
     }
 
-    fn focus_window_id(&self, id: &str) -> Result<bool, String> {
-        // Desktop ids are written without `0x`, as events write them.
-        let clients = self.clients()?;
-        let Some(client) = clients.iter().find(|client| strip_address(&client.address) == strip_address(id)) else {
-            return Ok(false);
-        };
-        self.dispatch(&Action::FocusWindow(format!("address:{}", client.address)))?;
-        Ok(true)
-    }
-
     fn window_workspace(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<Option<WorkspaceId>, String> {
         Ok(self.app_window(app_ids, here)?.map(|client| client.workspace.id))
     }

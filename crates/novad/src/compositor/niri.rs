@@ -147,15 +147,6 @@ impl Backend for Niri {
         self.request(&action.to_string()).map(|_| true)
     }
 
-    fn focus_window_id(&self, id: &str) -> Result<bool, String> {
-        let Ok(id) = id.parse::<u64>() else { return Ok(false) };
-        if !self.windows()?.iter().any(|window| window.id == id) {
-            return Ok(false);
-        }
-        let action = json!({"Action": {"FocusWindow": {"id": id}}});
-        self.request(&action.to_string()).map(|_| true)
-    }
-
     fn window_workspace(&self, app_ids: &[String], here: &NovaWorkspace) -> Result<Option<WorkspaceId>, String> {
         let window = self.app_window(app_ids, here)?;
         Ok(window.and_then(|window| WorkspaceId::try_from(window.workspace_id?).ok()))

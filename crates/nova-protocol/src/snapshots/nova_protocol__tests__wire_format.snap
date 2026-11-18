@@ -3,10 +3,10 @@ source: crates/nova-protocol/src/lib.rs
 expression: all
 ---
 {"v":2,"event":"hello","data":{"daemon":"0.1.0"}}
-{"v":2,"event":"features","data":{"features":[{"id":"bar","status":"ready","slots":[{"host":"bar.center","view":"central-pill","order":10}]},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
+{"v":2,"event":"features","data":{"features":[{"id":"bar","status":"ready","slots":[{"host":"bar.center","view":"central-pill","order":10}]},{"id":"nova-files","status":"ready","slots":[{"host":"launcher.providers","view":"files","order":20}],"mode":"full"},{"id":"recording","status":"missing_deps","missing":["gpu-screen-recorder|wf-recorder"]},{"id":"weather","status":"off"}]}}
 {"v":2,"id":7,"cmd":"ping"}
 {"v":2,"cmd":"list_features"}
-{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray","notifications","media","peripherals","network","bluetooth","files"]}}
+{"v":2,"id":9,"cmd":"subscribe","args":{"topics":["features","logs","theme","ai_usage","compositor","toggle","lock","volume","screenshot","recording","host","resources","launcher","tray","notifications","media","peripherals","network","bluetooth"]}}
 {"v":2,"event":"theme","data":{"id":"carbonfox","name":"Carbonfox","mode":"dark","colors":{"bg":"#1D1D1D","bgAlt":"#393E46","backdrop":"#000000","glassTint":"#0A0807","fg":"#FFF6EB","primary":"#FD7014","secondary":"#BE95FF","onAccent":"#1D1D1D","info":"#00ADB5","success":"#25BE6A","warning":"#FAEB92","error":"#EE5396","swatch1":"#5988DB","swatch2":"#E8650E","swatch3":"#07A7A5","swatch4":"#9067CC","swatch5":"#029A43","swatch6":"#049BE7","swatch7":"#DD6098","swatch8":"#9C7C02"}}}
 {"v":2,"id":10,"cmd":"status"}
 {"v":2,"id":11,"cmd":"quit"}
@@ -62,7 +62,6 @@ expression: all
 {"v":2,"id":23,"cmd":"end_app","args":{"key":"/usr/lib/firefox/firefox"}}
 {"v":2,"cmd":"toggle","args":{"panel":"quick-settings"}}
 {"v":2,"event":"launcher","data":{"apps":[{"id":"org.mozilla.firefox.desktop","name":"Firefox","description":"Web Browser","icon":"firefox"},{"id":"foot.desktop","name":"Foot"}],"pinned":["foot.desktop"],"recent":["org.mozilla.firefox.desktop","foot.desktop"]}}
-{"v":2,"cmd":"launcher_shown","args":{"shown":true}}
 {"v":2,"id":24,"cmd":"launcher_search","args":{"query":"fi"}}
 {"v":2,"id":24,"result":[{"description":"Web Browser","id":"org.mozilla.firefox.desktop","name":[{"matched":true,"text":"Fi"},{"text":"refox"}],"provider":"apps"}]}
 {"v":2,"id":91,"cmd":"launcher_search","args":{"query":"~/Doc","mode":"files"}}
@@ -124,65 +123,4 @@ expression: all
 {"v":2,"id":64,"cmd":"bluetooth_forget","args":{"address":"00:1B:66:AA:BB:CC"}}
 {"v":2,"id":65,"cmd":"bluetooth_answer","args":{"id":3,"answer":"accept"}}
 {"v":2,"id":66,"cmd":"bluetooth_answer","args":{"id":4,"answer":{"code":"0000"}}}
-{"v":2,"id":70,"cmd":"files_launch","args":{"path":"/home/me/photo.png"}}
-{"v":2,"id":71,"cmd":"files_launch","args":{"path":"/home/me/photo.png","app":"org.gnome.Loupe.desktop"}}
-{"v":2,"id":72,"cmd":"files_open_with","args":{"path":"/home/me/photo.png"}}
-{"v":2,"id":72,"result":{"apps":[{"icon":"/icons/loupe.svg","id":"org.gnome.Loupe.desktop","name":"Image Viewer"}],"default":"org.gnome.Loupe.desktop","mime":"image/png"}}
-{"v":2,"id":73,"cmd":"files_set_default","args":{"path":"/home/me/photo.png","app":"org.gnome.Loupe.desktop"}}
-{"v":2,"id":74,"cmd":"files_open","args":{"view":1,"path":"/home/user/Pictures","sort":{"key":"modified","descending":true},"hidden":false}}
-{"v":2,"id":75,"cmd":"files_close","args":{"view":1}}
-{"v":2,"id":76,"cmd":"files_tree","args":{"folder":"~/.local/share","opened":["/home/user/Projects"],"hidden":false}}
-{"v":2,"id":76,"result":{"folder":"/home/user/.local/share","rows":[{"depth":0,"hidden":false,"leaf":false,"name":"user","open":true,"path":"/home/user"},{"depth":1,"hidden":true,"leaf":false,"name":".local","open":true,"path":"/home/user/.local"},{"depth":2,"hidden":true,"leaf":false,"name":"share","open":false,"path":"/home/user/.local/share"}]}}
-{"v":2,"id":77,"cmd":"files_places"}
-{"v":2,"id":77,"result":[{"kind":"home","path":"home:///"},{"kind":"folder","name":"Projects","path":"/home/user/Projects"}]}
-{"v":2,"event":"files_page","data":{"view":1,"path":"/home/user/Pictures","start":0,"total":2,"entries":[{"name":"Screenshots","dir":true,"link":false,"hidden":false,"mime":"inode/directory","modified_ms":1793000000000},{"name":"cover.png","dir":false,"link":false,"hidden":false,"mime":"image/png","size":48213,"modified_ms":1792900000000}]}}
-{"v":2,"event":"files_changed","data":{"view":1,"changes":[{"op":"remove","index":1},{"op":"insert","index":1,"entry":{"name":"cover (2).png","dir":false,"link":false,"hidden":false,"mime":"image/png","size":48213,"modified_ms":1793000100000}},{"op":"update","index":0,"entry":{"name":"Screenshots","dir":true,"link":true,"hidden":false,"mime":"inode/directory"}}]}}
-{"v":2,"event":"files_closed","data":{"view":1,"error":"/home/user/Pictures doesn't exist"}}
-{"v":2,"event":"files_search_ready"}
-{"v":2,"event":"files_look","data":{"frame":0,"list":100}}
-{"v":2,"event":"files_drives","data":{"drives":[{"id":"nvme0n1p2","name":"System","removable":false,"mount":"/","size":1000000000000,"used":580000000000},{"id":"sdb1","name":"SANDISK","removable":true,"size":32000000000}]}}
-{"v":2,"id":79,"cmd":"files_mount","args":{"drive":"sdb1"}}
-{"v":2,"id":79,"result":"/run/media/user/SANDISK"}
-{"v":2,"id":80,"cmd":"files_eject","args":{"drive":"sdb1"}}
-{"v":2,"id":80,"result":"busy"}
-{"v":2,"id":76,"cmd":"files_transfer","args":{"job":2,"mode":"copy","sources":["/home/user/Pictures/cover.png"],"folder":"/run/media/user/SANDISK"}}
-{"v":2,"id":77,"cmd":"files_transfer_cancel","args":{"job":2}}
-{"v":2,"id":78,"cmd":"files_transfer_answer","args":{"job":2,"clash":1,"answer":"replace","all":true}}
-{"v":2,"event":"files_transfer","data":{"job":2,"mode":"copy","state":"asking","items":6,"name":"cover.png","done_bytes":1800000,"total_bytes":4700000,"clash":{"id":1,"name":"cover.png","folder":false,"original":{"size":1800000,"modified_ms":1791800000000},"replacement":{"size":2400000,"modified_ms":1793640000000},"others":2}}}
-{"v":2,"id":102,"cmd":"files_trash","args":{"paths":["/home/user/Pictures/cover.png"],"continues":true}}
-{"v":2,"id":103,"cmd":"files_undo","args":{"job":3}}
-{"v":2,"id":103,"result":true}
-{"v":2,"id":104,"cmd":"files_redo","args":{"job":4}}
-{"v":2,"event":"files_history","data":{"undo":"move","redo":"trash"}}
-{"v":2,"event":"files_history","data":{"undo":"copy"}}
-{"v":2,"event":"files_history","data":{"undo":"rename","redo":"new_folder"}}
-{"v":2,"id":89,"cmd":"files_preview","args":{"path":"/home/user/Documents/notes.md"}}
-{"v":2,"id":89,"result":{"cut":false,"kind":"text","text":"# Notes\nBuy milk"}}
-{"v":2,"id":90,"result":{"kind":"image","path":"/home/user/.cache/nova/previews/00c0ffee00c0ffee.png"}}
-{"v":2,"id":91,"result":{"kind":"none"}}
-{"v":2,"id":81,"cmd":"files_search","args":{"query":"crimson","within":"/home/user/.local/share/Steam"}}
-{"v":2,"id":81,"result":{"ready":true,"results":[{"entry":{"dir":true,"hidden":false,"link":false,"mime":"inode/directory","modified_ms":1793000000000,"name":"Crimson Desert"},"folder":"/home/user/.local/share/Steam/steamapps/common","in_hidden_folder":false,"marks":[{"length":7,"start":0}]}],"total":1}}
-{"v":2,"id":82,"cmd":"files_new_folder","args":{"folder":"/home/user/Pictures"}}
-{"v":2,"id":82,"result":"New folder (2)"}
-{"v":2,"id":83,"cmd":"files_rename","args":{"path":"/home/user/Pictures/New folder","name":"Trips"}}
-{"v":2,"id":84,"cmd":"files_details","args":{"path":"/home/user/Pictures/Trips"}}
-{"v":2,"id":84,"result":{"accessed_ms":1793600000000,"created_ms":1792000000000,"entry":{"dir":true,"hidden":false,"link":false,"mime":"inode/directory","modified_ms":1793000000000,"name":"Trips"},"group":"users","items":12,"mode":493,"owner":"user"}}
-{"v":2,"id":85,"cmd":"files_properties","args":{"path":"/home/user/notes.txt"}}
-{"v":2,"id":85,"result":{"access":{"group":{"read":true,"run":false,"write":false},"others":{"read":false,"run":false,"write":false},"owner":{"read":true,"run":false,"write":true}},"accessed_ms":1793500000000,"created_ms":1792000000000,"disk_bytes":4096,"drive":{"size":500000000000,"used":120000000000},"entry":{"dir":false,"hidden":false,"link":false,"mime":"text/plain","modified_ms":1793000000000,"name":"notes.txt","size":12},"folder":"/home/user","group":"users","owner":"user","yours":true}}
-{"v":2,"id":86,"cmd":"files_measure","args":{"job":4,"paths":["/home/user/Pictures"]}}
-{"v":2,"id":87,"cmd":"files_measure_cancel","args":{"job":4}}
-{"v":2,"event":"files_measured","data":{"job":4,"files":120,"folders":14,"bytes":1400000000,"disk_bytes":1400800000,"done":false}}
-{"v":2,"id":88,"cmd":"files_set_access","args":{"path":"/home/user/run.sh","access":{"owner":{"read":false,"write":false,"run":false},"group":{"read":false,"write":false,"run":false},"others":{"read":false,"write":false,"run":false}}}}
-{"v":2,"event":"files_window","data":{"folder":"/home/user/Downloads","picker":{"id":3,"mode":"save","title":"Save Image","multiple":false,"folders":false,"name":"cover.png","filters":[{"name":"Images","globs":["*.png"],"mimes":["image/*"]}],"filter":0}}}
-{"v":2,"id":82,"cmd":"files_pick","args":{"picker":3,"paths":["/home/user/Downloads/cover.png"],"filter":0,"replace":true}}
-{"v":2,"id":83,"cmd":"files_pick_cancel","args":{"picker":3}}
-{"v":2,"event":"files_picker_closed","data":{"picker":3}}
-{"v":2,"id":82,"cmd":"files_pin","args":{"path":"/home/user/Projects","pinned":true}}
-{"v":2,"event":"files_places_changed"}
-{"v":2,"id":83,"cmd":"files_recent"}
-{"v":2,"id":83,"result":[{"entry":{"dir":false,"hidden":false,"link":false,"mime":"text/markdown","modified_ms":1792000000000,"name":"plan.md","size":2048},"folder":"/home/user/Documents","used_ms":1793000000000}]}
-{"v":2,"id":82,"cmd":"files_thumbnail","args":{"path":"/home/user/Pictures/cover.png"}}
-{"v":2,"id":83,"cmd":"files_thumbnail_cancel","args":{"path":"/home/user/Pictures/cover.png"}}
-{"v":2,"event":"files_thumbnail","data":{"path":"/home/user/Pictures/cover.png","modified_ms":1793000000000,"thumbnail":"/home/user/.cache/thumbnails/large/7c5e3f0c3d1d1c4f8b1c5b9e5f1a2b3c.png"}}
-{"v":2,"event":"files_thumbnail","data":{"path":"/home/user/Documents/notes.txt","modified_ms":1793000000000}}
 {"v":2,"id":8,"error":"bad request"}

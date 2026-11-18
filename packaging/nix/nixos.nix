@@ -1,16 +1,24 @@
 # Nova's NixOS module (nixosModules.default): Nova, the packages of the
 # features that are on, its systemd user unit started with
 # graphical-session.target, a system-wide features.toml in /etc/xdg/nova,
-# which novad reads when the user has none of their own, and Nova Files as
-# the default for folders and apps' Open and Save dialogs (through
-# xdg-desktop-portal, on niri and Hyprland) while the `files` feature is on,
-# and the Nova Files app with its D-Bus service while `nova-files` is.
+# which novad reads when the user has none of their own, and Nova Files
+# while the `nova-files` feature is on.
 #
 #   programs.nova.enable = true;
 #   programs.nova.features.wallpaper-engine.enable = true;
 #
-# `packages`: the flake's packages, by system.
-{ packages }:
+# Nova Files installs through its own module (`programs.nova-files`), which
+# this one imports, in the feature's mode:
+#
+#   programs.nova.features.nova-files = { enable = true; mode = "full"; };
+#
+# So don't import Nova Files' module again. Its file picker goes in niri's
+# and Hyprland's portals.conf, which replace the ones they ship, so their
+# other lines are set here too.
+#
+# `packages`: the flake's packages, by system. `novaFilesModule`: Nova
+# Files' NixOS module.
+{ packages, novaFilesModule }:
 {
   config,
   lib,
@@ -21,59 +29,70 @@ let
   features = import ./features.nix { inherit lib; };
   cfg = config.programs.nova;
   on = features.onIds cfg.features;
-  filesOn = lib.elem "files" on;
   novaFilesOn = lib.elem "nova-files" on;
+  # The desktops Nova runs on, as `XDG_CURRENT_DESKTOP` names them in lower
+  # case, and the lines of the portals.conf each ships, which a picker
+  # set there replaces.
+  desktopPortals = {
+    niri = {
+      default = [
+        "gnome"
+        "gtk"
+      ];
+      "org.freedesktop.impl.portal.Access" = [ "gtk" ];
+      "org.freedesktop.impl.portal.Notification" = [ "gtk" ];
+      "org.freedesktop.impl.portal.Secret" = [ "gnome-keyring" ];
+    };
+    hyprland.default = [
+      "hyprland"
+      "gtk"
+    ];
+  };
 in
 {
-  imports = [ (import ./options.nix { inherit packages; }) ];
+  imports = [
+    (import ./options.nix { inherit packages; })
+    novaFilesModule
+  ];
 
   config = lib.mkIf cfg.enable {
-    programs.nova.gpu = lib.mkDefault (features.gpuOf config);
+    programs = {
+      nova.gpu = lib.mkDefault (features.gpuOf config);
+
+      nova-files = lib.mkIf novaFilesOn {
+        enable = true;
+        inherit (cfg.features.nova-files) mode;
+        package = lib.mkDefault cfg.novaFilesPackage;
+        filePicker.desktops = lib.mkDefault (lib.attrNames desktopPortals);
+      };
+
+      # gpu-screen-recorder's capture helper, for screen recording on NVIDIA.
+      gpu-screen-recorder.enable = lib.mkIf (features.usesGpuScreenRecorder cfg.gpu on) (
+        lib.mkDefault true
+      );
+    };
 
     environment = {
       systemPackages = [
         cfg.package
       ]
-      ++ features.packagesFor pkgs cfg.gpu on
-      ++ lib.optional filesOn (features.filesDesktop pkgs cfg.package)
-      ++ lib.optional novaFilesOn cfg.novaFilesPackage;
-      # Nova Files' thumbnails come from the thumbnailers packages install
-      # in share/thumbnailers (gdk-pixbuf's, ffmpegthumbnailer's), which
-      # NixOS doesn't link into the system profile by itself.
-      pathsToLink = lib.mkIf filesOn [ "/share/thumbnailers" ];
-      etc."xdg/nova/features.toml".text = features.selectionFile on;
-    };
-    # Nova Files opens folders, in place of whichever app last claimed them
-    # (often an editor). A user's own mimeapps.list still wins.
-    xdg.mime.defaultApplications = lib.mkIf filesOn {
-      "inode/directory" = lib.mkDefault "nova-files.desktop";
+      ++ features.packagesFor pkgs cfg.gpu on;
+      etc."xdg/nova/features.toml".text = features.selectionFile cfg.features;
     };
 
-    # Apps' Open and Save dialogs are Nova Files windows: the portal finds
-    # Nova's backend and chooses it for files.
-    xdg.portal = lib.mkIf filesOn {
-      enable = lib.mkDefault true;
-      extraPortals = [ (features.filesPortal pkgs cfg.package) ];
-      config = features.portalConfig;
-    };
-
-    # The Nova Files app's D-Bus service, so the launcher's first search
-    # starts it.
-    services.dbus.packages = lib.mkIf novaFilesOn [ cfg.novaFilesPackage ];
+    xdg.portal.config = lib.mkIf (novaFilesOn && config.programs.nova-files.filePicker.enable) (
+      lib.mapAttrs (_: lib.mapAttrs (_: lib.mkDefault)) (
+        lib.filterAttrs (
+          desktop: _: lib.elem desktop config.programs.nova-files.filePicker.desktops
+        ) desktopPortals
+      )
+    );
 
     systemd.packages = [ cfg.package ];
     # NixOS ignores [Install] in packaged units; this is the unit's WantedBy=.
     systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
 
-    # gpu-screen-recorder's capture helper, for screen recording on NVIDIA.
-    programs.gpu-screen-recorder.enable = lib.mkIf (features.usesGpuScreenRecorder cfg.gpu on) (
-      lib.mkDefault true
-    );
-
     services = {
-      # Nova Files lists and ejects drives through udisksd.
-      udisks2.enable = lib.mkIf filesOn (lib.mkDefault true);
-
       # Device batteries: novad reads upowerd on the system bus,
       # HeadsetControl needs its udev rules to open headsets without root,
       # and Nova's own rules let novad open Logitech's and Keychron's hidraw

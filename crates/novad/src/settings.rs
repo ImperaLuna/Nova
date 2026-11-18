@@ -65,6 +65,7 @@ impl Settings {
         let fallback = "broken settings, using the defaults";
         let config = logged(config::read(&sources.config), fallback, logger).unwrap_or_default();
         let selection = logged(features::read_selection(&sources.selection), fallback, logger).unwrap_or_default();
+        warn_unknown_modes(&sources.manifests, &selection, logger);
         let features = features::states(&sources.manifests, &selection, &sources.path_var);
         let theme = resolve_theme(sources, &config, logger);
         hub.publish(&Event::Theme(theme.clone()));
@@ -93,6 +94,7 @@ impl Settings {
             return;
         }
         logger.info(LOG_SOURCE, "settings changed, applying them");
+        warn_unknown_modes(&sources.manifests, &selection, logger);
         let features = features::states(&sources.manifests, &selection, &sources.path_var);
         if self.config.theme != config.theme {
             let theme = resolve_theme(sources, &config, logger);
@@ -154,10 +156,21 @@ fn resolve_theme(sources: &Sources, config: &Config, logger: &Logger) -> Theme {
 /// all when any did.
 fn publish_features(before: &[FeatureState], features: &[FeatureState], hub: &Hub, logger: &Logger) {
     for feature in features.iter().filter(|feature| !before.contains(feature)) {
-        logger.info("features", &format!("{} is {:?}", feature.id, feature.status));
+        match &feature.mode {
+            Some(mode) => logger.info("features", &format!("{} is {:?} ({mode})", feature.id, feature.status)),
+            None => logger.info("features", &format!("{} is {:?}", feature.id, feature.status)),
+        }
     }
     if before != features {
         hub.publish(&Event::Features { features: features.to_vec() });
+    }
+}
+
+/// Warns of `[modes]` picks in `features.toml` that name no mode of their
+/// feature, which then runs in its default mode.
+fn warn_unknown_modes(manifests: &[Manifest], selection: &Selection, logger: &Logger) {
+    for (id, mode) in selection.unknown_modes(manifests) {
+        logger.warn("features", &format!("{id} has no mode \"{mode}\" (features.toml), so it runs in its default"));
     }
 }
 

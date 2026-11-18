@@ -60,6 +60,16 @@ in
     !(lib.elem manifest.id (selection.disabled or [ ]))
     && (isDefault manifest || lib.elem manifest.id (selection.enabled or [ ]));
 
+  # The mode a features.toml `selection` ({ modes }) picks for `manifest`:
+  # the one picked when it's one of its modes, else its `default-mode`;
+  # null for a feature without modes (Selection::mode).
+  modeOf =
+    selection: manifest:
+    let
+      picked = (selection.modes or { }).${manifest.id} or null;
+    in
+    if lib.elem picked (manifest.modes or [ ]) then picked else manifest.default-mode or null;
+
   # The packages of the features in `ids`, from `pkgs`. A name like
   # `kdePackages.plasma-workspace` is an attribute path.
   packagesFor =
@@ -75,66 +85,18 @@ in
   usesGpuScreenRecorder =
     gpu: ids: lib.any (id: lib.elem "gpu-screen-recorder" (nixNames manifests.${id} gpu)) ids;
 
-  # Nova Files' desktop entry and its hicolor icon (features/files), running
-  # `package`'s nova, for the systems where the `files` feature is on: Nova
-  # Files is then listed with the apps, and can be the default for folders.
-  filesDesktop =
-    pkgs: package:
-    pkgs.runCommand "nova-files-desktop" { } ''
-      install -Dm644 ${package}/share/nova/features/files/nova-files.desktop \
-        $out/share/applications/nova-files.desktop
-      substituteInPlace $out/share/applications/nova-files.desktop \
-        --replace-fail "Exec=nova " "Exec=${lib.getExe package} "
-      install -Dm644 ${package}/share/nova/features/files/nova-files.svg \
-        $out/share/icons/hicolor/scalable/apps/nova-files.svg
-    '';
-
-  # Nova's file chooser backend for xdg-desktop-portal (the `files`
-  # feature), for xdg.portal.extraPortals: share/xdg-desktop-portal/portals.
-  filesPortal =
-    pkgs: package:
-    pkgs.runCommand "nova-files-portal" { } ''
-      install -Dm644 ${package}/share/nova/features/files/nova.portal \
-        $out/share/xdg-desktop-portal/portals/nova.portal
-    '';
-
-  # The portal config that makes Nova the file chooser
-  # (xdg.portal.config.<desktop>), on the compositors Nova supports. The
-  # portal reads one config file per desktop, so this one also carries the
-  # compositor's own choices from its packaged <desktop>-portals.conf
-  # (niri 25.08, Hyprland 0.50), which a user's own settings override.
-  # What chose the file chooser before stays as the fallback.
-  portalConfig = lib.mkMerge [
-    (lib.mapAttrs (_: lib.mapAttrs (_: lib.mkDefault)) {
-      niri = {
-        default = [
-          "gnome"
-          "gtk"
-        ];
-        "org.freedesktop.impl.portal.Access" = [ "gtk" ];
-        "org.freedesktop.impl.portal.Notification" = [ "gtk" ];
-        "org.freedesktop.impl.portal.Secret" = [ "gnome-keyring" ];
-      };
-      hyprland.default = [
-        "hyprland"
-        "gtk"
-      ];
-    })
-    (lib.genAttrs [ "niri" "hyprland" ] (_: {
-      "org.freedesktop.impl.portal.FileChooser" = [
-        "nova"
-        "gtk"
-      ];
-    }))
-  ];
-
-  # A features.toml for `on` (the ids that are on): what differs from each
-  # feature's default.
+  # A features.toml for `switches` (programs.nova.features): which
+  # features differ from their default, and the mode of each that's on and
+  # has modes.
   selectionFile =
-    on:
+    switches:
     let
+      on = lib.attrNames (lib.filterAttrs (_: feature: feature.enable) switches);
       enabled = lib.attrNames (lib.filterAttrs (id: m: !isDefault m && lib.elem id on) manifests);
       disabled = lib.attrNames (lib.filterAttrs (id: m: isDefault m && !lib.elem id on) manifests);
+      modes = lib.mapAttrs (id: _: switches.${id}.mode) (
+        lib.filterAttrs (id: m: lib.elem id on && (m.modes or [ ]) != [ ]) manifests
+      );
     in
     ''
       # Written by Nova's Nix module from programs.nova.features (or
@@ -142,5 +104,8 @@ in
       # also installs what they need.
       enabled = ${builtins.toJSON enabled}
       disabled = ${builtins.toJSON disabled}
-    '';
+
+      [modes]
+    ''
+    + lib.concatStrings (lib.mapAttrsToList (id: mode: "${id} = ${builtins.toJSON mode}\n") modes);
 }

@@ -69,21 +69,6 @@ pub fn launch(entry: &Entry, runner: &Runner, path_var: &str, logger: &Arc<Logge
     start(entry, entry.exec.iter().map(OsString::from).collect(), runner, path_var, logger)
 }
 
-/// Starts `entry`'s app to open `file`, an absolute path.
-pub fn launch_with_file(
-    entry: &Entry,
-    file: &Path,
-    runner: &Runner,
-    path_var: &str,
-    logger: &Arc<Logger>,
-) -> Result<(), String> {
-    // A relative one could pass for an option (`-rf`).
-    if !file.is_absolute() {
-        return Err(format!("{} isn't an absolute path", file.display()));
-    }
-    start(entry, entry.exec_with(file.as_os_str()), runner, path_var, logger)
-}
-
 /// Starts `entry`'s app as `argv`.
 fn start(
     entry: &Entry,
@@ -95,16 +80,12 @@ fn start(
     if entry.terminal {
         argv.splice(0..0, terminal(path_var)?.into_iter().map(OsString::from));
     }
-    // The program comes from the entry's own text, so it's UTF-8; only a
-    // file to open may not be.
+    // The program comes from the entry's own text, so it's UTF-8.
     let name = argv[0].to_string_lossy().into_owned();
     let program = find_program(&name, path_var).ok_or_else(|| format!("{name} isn't installed"))?;
     let home = nova_paths::home();
     // A folder that isn't there would fail the start.
     let dir = entry.path.clone().into_iter().chain(home).find(|dir| dir.is_dir()).unwrap_or_else(|| "/".into());
-    // systemd-run hands the command to systemd over D-Bus, whose strings
-    // must be UTF-8: a file named otherwise starts directly instead.
-    let runner = if argv.iter().all(|arg| arg.to_str().is_some()) { runner } else { &Runner::Direct };
     let mut command = match runner {
         Runner::Service(systemd_run) => {
             let mut command = Command::new(systemd_run);
@@ -212,7 +193,6 @@ pub fn open(target: &Path, path_var: &str, logger: &Arc<Logger>) -> Result<(), S
         exec: vec![OPENER.into(), target.display().to_string()],
         terminal: false,
         path: None,
-        file_arg: Default::default(),
         mime_types: vec![],
         listed: true,
         window_class: None,
@@ -287,7 +267,6 @@ mod tests {
             exec: vec!["true".into()],
             terminal: false,
             path: None,
-            file_arg: Default::default(),
             mime_types: vec![],
             listed: true,
             window_class: None,
@@ -300,12 +279,6 @@ mod tests {
         assert!(error.contains("didn't start"), "{error}");
         let started = find_program("true", &path_var).unwrap();
         assert_eq!(launch(&entry, &Runner::Service(started), &path_var, &logger), Ok(()));
-        // A file named in Latin-1 can't go through systemd's D-Bus, so the
-        // failing systemd-run is never asked.
-        let latin1 = Path::new(OsStr::from_bytes(b"/tmp/caf\xe9.md"));
-        let failing = find_program("false", &path_var).unwrap();
-        let opens = Entry { file_arg: crate::apps::desktop_entry::FileArg { index: 1, within: None }, ..entry };
-        assert_eq!(launch_with_file(&opens, latin1, &Runner::Service(failing), &path_var, &logger), Ok(()));
     }
 
     #[test]

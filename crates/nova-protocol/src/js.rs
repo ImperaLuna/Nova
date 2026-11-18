@@ -113,52 +113,17 @@ fn groups(features: &Path) -> Vec<Group> {
         Group::new("How much a notification matters (Urgency).", "URGENCY", names_of::<Urgency>()),
         Group::new("The now-playing panel's buttons (MediaAction).", "MEDIA", names_of::<MediaAction>()),
         Group::new("What a media player is doing (PlaybackStatus).", "PLAYBACK", names_of::<PlaybackStatus>()),
-        Group::new("What a folder view is ordered by (FileSortKey).", "FILE_SORT", names_of::<FileSortKey>()),
-        Group::new("The ops of a files_changed event (FolderChange).", "FOLDER", tagged_names_of::<FolderChange>("op")),
-        Group::new("The places on top of Nova Files' sidebar (PlaceKind).", "PLACE", names_of::<PlaceKind>()),
-        Group::new("How files_eject went (EjectOutcome).", "EJECT", names_of::<EjectOutcome>()),
-        Group::new("What a files_transfer job does (TransferMode).", "TRANSFER", names_of::<TransferMode>()),
-        Group::new("How a files_transfer job is going (TransferState).", "TRANSFER", names_of::<TransferState>()),
-        Group::new("Answers to a name clash (ClashAnswer).", "CLASH", names_of::<ClashAnswer>()),
-        Group::new("What files_undo and files_redo undo and redo (FileStep).", "FILE_STEP", names_of::<FileStep>()),
-        Group::new("What the preview pane shows (FilePreview).", "PREVIEW", tagged_names_of::<FilePreview>("kind")),
-        Group::new("What a file picker picks (PickMode).", "PICK", names_of::<PickMode>()),
     ]
 }
 
 /// The numbers the UI checks before sending, as `(name, value, comment)`.
-fn limits() -> [(&'static str, u64, &'static str); 16] {
+fn limits() -> [(&'static str, u64, &'static str); 7] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
         ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
         ("MEDIA_PLAYER_MAX_BYTES", size(MEDIA_PLAYER_MAX_BYTES), "novad refuses longer media player ids."),
         ("WIFI_PASSWORD_MAX_BYTES", size(WIFI_PASSWORD_MAX_BYTES), "novad refuses longer Wi-Fi passwords."),
         ("WPA_PASSWORD_MIN_BYTES", size(WPA_PASSWORD_MIN_BYTES), "novad refuses shorter WPA passwords."),
-        ("FILES_MAX_VIEWS", size(FILES_MAX_VIEWS), "novad refuses more open folder views per connection."),
-        (
-            "FILES_NAME_MAX_BYTES",
-            size(FILES_NAME_MAX_BYTES),
-            "novad refuses a longer files_rename name, in UTF-8 bytes.",
-        ),
-        ("FILES_PATH_MAX_BYTES", size(FILES_PATH_MAX_BYTES), "novad refuses longer files_open paths."),
-        ("FILES_SEARCH_MAX_CHARS", size(FILES_SEARCH_MAX_CHARS), "novad refuses longer files_search queries."),
-        ("FILES_SEARCH_MAX_RESULTS", size(FILES_SEARCH_MAX_RESULTS), "Most results a files_search answers with."),
-        (
-            "FILES_THUMBNAIL_PIXELS",
-            u64::from(FILES_THUMBNAIL_PIXELS),
-            "The longer side of files_thumbnail's thumbnails.",
-        ),
-        ("FILES_SOLID_MAX", u64::from(FILES_SOLID_MAX), "A files_look part this high is fully solid; 0 is glass."),
-        (
-            "FILES_PREVIEW_PICTURE_PX",
-            u64::from(FILES_PREVIEW_PICTURE_PX),
-            "How wide and tall, at most, preview pictures are drawn and decoded.",
-        ),
-        (
-            "FILES_TREE_MAX_FOLDERS",
-            size(FILES_TREE_MAX_FOLDERS),
-            "novad refuses a files_tree with more opened or closed folders.",
-        ),
         (
             "RAW_BYTE_BASE",
             u64::from(RAW_BYTE_BASE),
@@ -170,20 +135,6 @@ fn limits() -> [(&'static str, u64, &'static str); 16] {
             NETWORK_TRAFFIC_HISTORY_SECS,
             "How far back a network_traffic event's history goes, in seconds (one sample each).",
         ),
-    ]
-}
-
-/// Fixed wire strings the UI compares with, as `(name, value, comment)`.
-fn texts() -> [(&'static str, &'static str, &'static str); 4] {
-    [
-        ("FILES_GAMES_PLACE", FILES_GAMES_PLACE, "The games place's path in files_places: the games, not a folder."),
-        ("FILES_TRASH_PLACE", FILES_TRASH_PLACE, "The trash place's path in files_places: the trash, not a folder."),
-        (
-            "FILES_HOME_PLACE",
-            FILES_HOME_PLACE,
-            "The Home page's path in files_places: Quick access and Recent, not a folder.",
-        ),
-        ("FILES_PICK_EXISTS", FILES_PICK_EXISTS, "files_pick's error for a save over a file that's there."),
     ]
 }
 
@@ -207,11 +158,6 @@ pub fn generated(features: &Path) -> String {
         line(String::new());
         line(format!("// {comment}"));
         line(format!("var {name} = {value};"));
-    }
-    for (name, value, comment) in texts() {
-        line(String::new());
-        line(format!("// {comment}"));
-        line(format!("var {name} = \"{value}\";"));
     }
     for group in groups(features) {
         line(String::new());

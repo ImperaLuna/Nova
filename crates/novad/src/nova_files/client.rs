@@ -1,13 +1,19 @@
 //! The D-Bus side of [`super::NovaFiles`]: one connection, the calls, and
 //! the thread that reads `Found` and `Failed` and hands each to the search
-//! waiting for it, by the search's id.
+//! waiting for it, by the search's id. `Open` and `ShowInFolder` take the
+//! path as text and the launcher's platform data, empty as Nova has no
+//! activation token to pass yet.
+//!
+//! The same connection reaches the user's own file manager through
+//! `org.freedesktop.FileManager1`, which takes `file://` URIs: Nautilus,
+//! Dolphin, Thunar and others serve it.
 
 use crate::lock;
 use crate::session_bus::{Bus, Stop};
 use futures_core::Stream;
 use std::collections::HashMap;
 use std::future::poll_fn;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
@@ -24,7 +30,16 @@ pub const PATH: &str = "/io/github/ImperaLuna/NovaFiles";
 pub const INTERFACE: &str = "io.github.ImperaLuna.NovaFiles.Search1";
 const SEARCH: &str = "Search";
 const CANCEL: &str = "Cancel";
+const OPEN: &str = "Open";
+const SHOW_IN_FOLDER: &str = "ShowInFolder";
 const FOUND: &str = "Found";
+/// The file manager interface, served at its own name and path.
+const FILE_MANAGER: &str = "org.freedesktop.FileManager1";
+const FILE_MANAGER_PATH: &str = "/org/freedesktop/FileManager1";
+const SHOW_FOLDERS: &str = "ShowFolders";
+const SHOW_ITEMS: &str = "ShowItems";
+/// The bytes a `file://` URI's path keeps as they are; the rest are `%XX`.
+const URI_PATH_BYTES: &[u8] = b"/-._~!$&'()*+,;=:@";
 const FAILED: &str = "Failed";
 /// Signals that may wait unread before older ones are dropped: a few
 /// searches' stages.
@@ -114,6 +129,46 @@ impl Client {
         }
     }
 
+    /// Opens `path` in Nova Files' way: a file in its default app, a
+    /// folder in a window.
+    pub fn open(&self, path: &Path) -> Result<(), String> {
+        self.call_with_path(OPEN, path)
+    }
+
+    /// Opens a window on the folder that holds `path`.
+    pub fn show_in_folder(&self, path: &Path) -> Result<(), String> {
+        self.call_with_path(SHOW_IN_FOLDER, path)
+    }
+
+    /// Opens folder `path` in the user's file manager.
+    pub fn show_folder_elsewhere(&self, path: &Path) -> Result<(), String> {
+        self.call_file_manager(SHOW_FOLDERS, path)
+    }
+
+    /// Shows `path` in its folder, in the user's file manager.
+    pub fn show_item_elsewhere(&self, path: &Path) -> Result<(), String> {
+        self.call_file_manager(SHOW_ITEMS, path)
+    }
+
+    /// Calls the file manager's `method` with `path`'s URI and no startup
+    /// id.
+    fn call_file_manager(&self, method: &str, path: &Path) -> Result<(), String> {
+        let body = (vec![file_uri(path)], "");
+        let call =
+            self.connection.call_method(Some(FILE_MANAGER), FILE_MANAGER_PATH, Some(FILE_MANAGER), method, &body);
+        zbus::block_on(call).map(drop).map_err(|e| format!("no file manager answered: {e}"))
+    }
+
+    /// Calls `method` with `path` and empty platform data.
+    fn call_with_path(&self, method: &str, path: &Path) -> Result<(), String> {
+        let path =
+            path.to_str().ok_or_else(|| format!("{} isn't UTF-8, so Nova Files can't take it", path.display()))?;
+        let platform_data: HashMap<&str, zbus::Variant<'_>> = HashMap::new();
+        zbus::block_on(self.connection.call_method(Some(APP_ID), PATH, Some(INTERFACE), method, &(path, platform_data)))
+            .map(drop)
+            .map_err(|e| e.to_string())
+    }
+
     /// Stops search `id`, without waiting for an answer.
     fn cancel(&self, id: u64) {
         let message = Message::method_call(PATH, CANCEL)
@@ -137,6 +192,21 @@ impl Drop for Client {
     fn drop(&mut self) {
         self.stop.stop();
     }
+}
+
+/// `path` as a `file://` URI.
+pub fn file_uri(path: &Path) -> String {
+    use std::fmt::Write;
+    use std::os::unix::ffi::OsStrExt;
+    let mut uri = String::from("file://");
+    for &byte in path.as_os_str().as_bytes() {
+        if byte.is_ascii_alphanumeric() || URI_PATH_BYTES.contains(&byte) {
+            uri.push(char::from(byte));
+        } else {
+            let _ = write!(uri, "%{byte:02X}");
+        }
+    }
+    uri
 }
 
 /// Hands each signal to the search it's for, until `stop`.

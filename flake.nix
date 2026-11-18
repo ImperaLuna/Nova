@@ -246,7 +246,10 @@
       # `programs.nova`: Nova, and a switch per feature that also installs
       # what it needs (packaging/nix/options.nix).
       homeManagerModules.default = import ./packaging/nix/home-manager.nix { inherit (self) packages; };
-      nixosModules.default = import ./packaging/nix/nixos.nix { inherit (self) packages; };
+      nixosModules.default = import ./packaging/nix/nixos.nix {
+        inherit (self) packages;
+        novaFilesModule = nova-files.nixosModules.default;
+      };
 
       packages = forAllSystems (pkgs: {
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
@@ -272,6 +275,7 @@
             import ./e2e/vm {
               pkgs = newest;
               inherit nova;
+              novaFilesModule = nova-files.nixosModules.default;
             }
             // {
               inherit (newest) quickshell;
@@ -305,6 +309,7 @@
         import ./e2e/vm {
           inherit pkgs;
           inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) nova;
+          novaFilesModule = nova-files.nixosModules.default;
         }
         // {
           build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
@@ -368,8 +373,8 @@
 
           # The NixOS module with every feature on, with and without NVIDIA:
           # each manifest's `nix` packages exist in nixpkgs, and the
-          # features.toml it writes reads back as the same choice. The VM
-          # tests run the module for real.
+          # features.toml it writes reads back as the same choice, modes
+          # too. The VM tests run the module for real.
           nix-modules =
             let
               features = import ./packaging/nix/features.nix { inherit (pkgs) lib; };
@@ -385,7 +390,15 @@
                       services.xserver = { inherit videoDrivers; };
                       programs.nova = {
                         enable = true;
-                        features = pkgs.lib.mapAttrs (_: _: { enable = true; }) features.manifests;
+                        # Every feature on, each with modes in its last mode
+                        # (none defaults to it).
+                        features = pkgs.lib.mapAttrs (
+                          _: manifest:
+                          {
+                            enable = true;
+                          }
+                          // pkgs.lib.optionalAttrs (manifest ? modes) { mode = pkgs.lib.last manifest.modes; }
+                        ) features.manifests;
                         # A stand-in, so the check doesn't build the Nova
                         # Files app (GPUI) just to list it.
                         novaFilesPackage = pkgs.runCommand "nova-files-stand-in" { } "mkdir $out";
@@ -399,12 +412,16 @@
                   selection = builtins.fromTOML config.environment.etc."xdg/nova/features.toml".text;
                 in
                 assert pkgs.lib.all (features.isOn selection) (builtins.attrValues features.manifests);
-                assert config.xdg.mime.defaultApplications."inode/directory" == "nova-files.desktop";
-                # Apps' Open and Save dialogs go to Nova Files, and niri
-                # keeps its own portals for the rest (the option keeps
-                # portals.conf's "a;b" text).
-                assert config.xdg.portal.config.niri."org.freedesktop.impl.portal.FileChooser" == "nova;gtk";
-                assert config.xdg.portal.config.niri.default == "gnome;gtk";
+                assert pkgs.lib.all (manifest: features.modeOf selection manifest == pkgs.lib.last manifest.modes) (
+                  builtins.filter (manifest: manifest ? modes) (builtins.attrValues features.manifests)
+                );
+                # Nova Files installs through its own module, in the mode
+                # picked, as the picker on niri without losing niri's other
+                # portal lines.
+                assert config.programs.nova-files.enable && config.programs.nova-files.mode == "full";
+                assert
+                  config.xdg.portal.config.niri ? "org.freedesktop.impl.portal.FileChooser"
+                  && config.xdg.portal.config.niri.default == "gnome;gtk";
                 pkgs.lib.concatLines (map (package: package.name) config.environment.systemPackages);
             in
             pkgs.writeText "nova-nix-modules" (

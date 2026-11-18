@@ -3,6 +3,7 @@ import QtTest
 import "../text/bytes.js" as Bytes
 import "../text/duration.js" as Duration
 import "../text/files.js" as Files
+import "../daemon/protocol.js" as Protocol
 
 // How Nova writes a span of time (an uptime, a countdown, how long ago, a
 // recording's length), a size in bytes and a file's URL.
@@ -53,5 +54,15 @@ TestCase {
     function test_paths_become_escaped_file_urls() {
         compare(Files.fileUrl("/opt/My App/icon#1.png"), "file:///opt/My%20App/icon%231.png");
         compare(Files.fileUrl("/home/me/shots#1/a b?.png"), "file:///home/me/shots%231/a%20b%3F.png");
+    }
+
+    // Names that aren't UTF-8 show a replacement character per run of raw
+    // bytes.
+    function test_raw_bytes_show_as_one_replacement_character() {
+        const eAcute = String.fromCodePoint(Protocol.RAW_BYTE_BASE + 0xE9);
+        const grave = String.fromCodePoint(Protocol.RAW_BYTE_BASE + 0xE8);
+        compare(Files.shown(`caf${eAcute}.md`), "caf\uFFFD.md");
+        compare(Files.shown(`${eAcute}${grave}t${eAcute}`), "\uFFFDt\uFFFD");
+        compare(Files.shown("café ü"), "café ü");
     }
 }

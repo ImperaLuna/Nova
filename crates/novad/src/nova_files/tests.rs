@@ -1,11 +1,16 @@
-//! The client against the stand-in for Nova Files (`stand_in`).
+//! The client, and the launcher's Files mode, against the stand-in for Nova
+//! Files (`stand_in`).
 
-use super::stand_in::{StandIn, client};
+use super::stand_in::{StandIn, client, nova_files};
 use super::{NovaFiles, STAGES_WAIT};
+use crate::launcher::providers::{Provider, Run};
 use crate::lock;
+use crate::logger::Logger;
 use crate::session_bus::TestBus;
+use nova_protocol::LogLevel;
 use nova_test_support::TempDir;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -77,6 +82,128 @@ fn without_nova_files_on_the_bus_a_search_fails() {
 
 #[test]
 fn a_feature_that_cannot_connect_says_so() {
-    let unreachable = NovaFiles { client: Err("no bus".into()) };
+    let dir = TempDir::new("nova-files-unreachable");
+    let unreachable =
+        NovaFiles { client: Err("no bus".into()), mime: super::stand_in::mime(&dir), home: None, own_windows: true };
     assert_eq!(unreachable.search("kit", 30).unwrap_err(), "Nova Files isn't reachable: no bus");
+}
+
+/// Runs `id` as the launcher does, Shift+Enter when `other_way`.
+fn run(provider: &dyn Provider, dir: &TempDir, id: &str, other_way: bool) -> Result<(), String> {
+    let logger = Logger::open(&dir.join("run-logs"), LogLevel::Debug, false, Arc::default()).unwrap();
+    let how =
+        Run { output: None, new_window: other_way, compositor: None, tray: None, logger: &logger, underway: &|| {} };
+    provider.run(id, &how)
+}
+
+#[test]
+fn the_launchers_files_mode_finds_opens_and_shows_files_through_nova_files() {
+    let dir = TempDir::new("nova-files-launcher");
+    let home = dir.join("home");
+    // What the stand-in finds for `kit`, under a dot folder in Home: a
+    // folder named like a file, and a file.
+    let root = home.join(".notes");
+    std::fs::create_dir_all(root.join("kitchen.txt")).unwrap();
+    std::fs::write(root.join("kitcen notes.md"), b"x").unwrap();
+    let bus = TestBus::start(&dir.join("bus"));
+    let stand_in = StandIn::serve(&bus.address, &root.display().to_string());
+    let files = nova_files(&bus.address, &dir, Some(home.clone()), false);
+    assert!(files.own_mode());
+
+    let found = Provider::search(&files, "kit").unwrap();
+    let names: Vec<String> = found.iter().map(|item| item.name.iter().map(|run| run.text.as_str()).collect()).collect();
+    assert_eq!(names, ["kitchen.txt", "kitcen notes.md"]);
+    let folder = &found[0];
+    assert_eq!(folder.id, root.join("kitchen.txt").display().to_string());
+    assert_eq!(folder.name[0], nova_protocol::TextRun { text: "kit".into(), matched: true });
+    assert_eq!(folder.description.as_deref(), Some("~/.notes"));
+    let file = folder.file.as_ref().unwrap();
+    assert!(file.dir && file.hidden, "a folder, inside a dot folder");
+    assert_eq!(file.mime, crate::mime::DIRECTORY);
+    assert_eq!(file.completion, "~/.notes/kitchen.txt/");
+    assert!(!found[1].file.as_ref().unwrap().dir);
+
+    // Gone since it was found: left out.
+    std::fs::remove_file(root.join("kitcen notes.md")).unwrap();
+    assert_eq!(Provider::search(&files, "kit").unwrap().len(), 1);
+
+    run(&files, &dir, &found[1].id, false).unwrap();
+    run(&files, &dir, &found[1].id, true).unwrap();
+    assert!(run(&files, &dir, "relative/path", false).is_err(), "only paths Nova Files found run");
+    assert!(run(&files, &dir, "/home/me/../../etc/shadow", false).is_err());
+    let asked = lock(&stand_in.asked);
+    assert_eq!(asked.opened, [found[1].id.clone()]);
+    assert_eq!(asked.shown, [found[1].id.clone()]);
+    assert!(asked.folders_elsewhere.is_empty() && asked.items_elsewhere.is_empty());
+}
+
+/// In the launcher mode Nova Files has no windows to show: folders open,
+/// and Shift+Enter shows items, in the user's file manager; files still
+/// open in their default app through Nova Files.
+#[test]
+fn in_the_launcher_mode_folders_open_in_the_users_file_manager() {
+    let dir = TempDir::new("nova-files-launcher-mode");
+    let root = dir.join("my files");
+    std::fs::create_dir_all(root.join("kitchen.txt")).unwrap();
+    std::fs::write(root.join("kitcen notes.md"), b"x").unwrap();
+    let bus = TestBus::start(&dir.join("bus"));
+    let stand_in = StandIn::serve(&bus.address, &root.display().to_string());
+    let files = nova_files(&bus.address, &dir, None, true);
+    let found = Provider::search(&files, "kit").unwrap();
+    let (folder, file) = (&found[0].id, &found[1].id);
+
+    run(&files, &dir, folder, false).unwrap();
+    run(&files, &dir, file, false).unwrap();
+    run(&files, &dir, file, true).unwrap();
+    let asked = lock(&stand_in.asked);
+    let uri = |path: &str| super::client::file_uri(std::path::Path::new(path));
+    assert_eq!(asked.folders_elsewhere, [uri(folder)]);
+    assert!(asked.folders_elsewhere[0].ends_with("/my%20files/kitchen.txt"), "{:?}", asked.folders_elsewhere);
+    assert_eq!(asked.opened, *std::slice::from_ref(file));
+    assert_eq!(asked.items_elsewhere, [uri(file)]);
+    assert!(asked.shown.is_empty(), "no Nova Files window");
+}
+
+/// Switching between a mode with windows and the launcher mode restarts
+/// the module, so it routes folders the new way; other changes keep it.
+#[test]
+fn a_change_to_or_from_the_launcher_mode_restarts_the_module() {
+    use crate::modules::{Module, Reconfigure};
+    let dir = TempDir::new("nova-files-reconfigure");
+    let state = |mode: &str| nova_protocol::FeatureState {
+        id: super::ID.into(),
+        status: nova_protocol::FeatureStatus::Ready,
+        missing: vec![],
+        slots: vec![],
+        mode: Some(mode.to_string()),
+    };
+    let with_windows =
+        NovaFiles { client: Err("no bus".into()), mime: super::stand_in::mime(&dir), home: None, own_windows: true };
+    assert_eq!(with_windows.reconfigure(&(), &(), &[state("full")]), Reconfigure::InPlace);
+    assert_eq!(with_windows.reconfigure(&(), &(), &[state(super::LAUNCHER_MODE)]), Reconfigure::Restart);
+}
+
+#[test]
+fn only_the_launcher_mode_goes_without_nova_files_windows() {
+    let state = |mode: Option<&str>| nova_protocol::FeatureState {
+        id: super::ID.into(),
+        status: nova_protocol::FeatureStatus::Ready,
+        missing: vec![],
+        slots: vec![],
+        mode: mode.map(str::to_string),
+    };
+    assert!(super::own_windows(&[state(Some("basic"))]));
+    assert!(super::own_windows(&[state(Some("full"))]));
+    assert!(super::own_windows(&[state(None)]));
+    assert!(!super::own_windows(&[state(Some(super::LAUNCHER_MODE))]));
+}
+
+#[test]
+fn a_search_nova_files_cannot_run_answers_with_why() {
+    let fixture = Fixture::new("launcher-failed");
+    let files = nova_files(&fixture.bus.address, &fixture._dir, None, false);
+    let found = Provider::search(&files, "broken").unwrap();
+    assert_eq!(found.len(), 1);
+    assert!(found[0].name[0].text.contains("index-failed"));
+    assert!(found[0].id.is_empty() && found[0].file.is_none(), "nothing to run");
 }

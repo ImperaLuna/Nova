@@ -276,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn ties_keep_every_type_for_magic_to_decide() {
+    fn ties_keep_every_type_in_order() {
         let globs = globs("50:video/mp4:*.mp4\n50:audio/mp4:*.mp4\n50:video/mp4:*.MP4:cs\n");
         assert_eq!(find(&globs, "clip.mp4"), ["video/mp4", "audio/mp4"]);
     }

@@ -1,8 +1,7 @@
 .pragma library
 
 // Sizes in bytes as people read them, shared by every list that shows one
-// (quick settings' resources and network pages, Nova Files' Size column
-// and drives).
+// (quick settings' resources and network pages).
 
 // A size in bytes, short: "9.4G", "780M", "42K". One decimal under 10.
 function shortBytes(bytes) {

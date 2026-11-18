@@ -195,9 +195,9 @@ impl<'a> Connection<'a> {
             Command::OpenLog => {
                 done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().open_log()))
             }
-            // A provider's own mode (files) may read the disk, so it's
-            // answered off the connection's thread: a slow drive must not
-            // hold up other requests. The mixed providers answer from memory.
+            // A provider's own mode (files) waits on another app (Nova
+            // Files), so it's answered off the connection's thread: a slow
+            // answer must not hold up other requests. The mixed providers answer from memory.
             Command::LauncherSearch { query, mode } => {
                 let providers = match self.launcher_providers() {
                     Ok(providers) => providers,
@@ -208,14 +208,6 @@ impl<'a> Connection<'a> {
                 }
                 let (query, mode, logger) = (query.clone(), mode.clone(), Arc::clone(&self.daemon.logger));
                 return Answer::later(move || value(providers.search(&query, mode.as_deref(), &logger)));
-            }
-            // Only Nova Files cares, by building its index of file names;
-            // without it there's nothing to do.
-            Command::LauncherShown { shown } => {
-                if let Ok(files) = self.files() {
-                    files.launcher_shown(self.id, *shown);
-                }
-                done(Ok(()))
             }
             Command::AppIcon { icon_name, program, name } => {
                 let apps = Arc::clone(&lock(&self.daemon.settings).context.apps);
@@ -297,147 +289,6 @@ impl<'a> Connection<'a> {
                 let address = address.clone();
                 return self.bluetooth_later(move |bluetooth| bluetooth.forget(&address));
             }
-            Command::ShowFolder { folder, select } => done(self.files().and_then(|files| files.show(folder, select))),
-            // Answered here, in order with the connection's other requests,
-            // so a close or a hang-up never overtakes the open it follows.
-            Command::FilesOpen { view, path, sort, hidden, filter } => {
-                done(self.files().and_then(|files| files.open(self.id, *view, path, *sort, *hidden, filter.as_ref())))
-            }
-            Command::FilesClose { view } => done(self.files().map(|files| files.close(self.id, *view))),
-            // Queued here, so a cancel never overtakes the ask it follows;
-            // the thumbnail comes as an event, worked out off this thread.
-            Command::FilesThumbnail { path } => done(self.files().and_then(|files| files.thumbnail(self.id, path))),
-            Command::FilesThumbnailCancel { path } => {
-                done(self.files().map(|files| files.cancel_thumbnail(self.id, path)))
-            }
-            Command::FilesTransfer { job, mode, sources, folder } => {
-                done(self.files().and_then(|files| files.transfer(self.id, *job, *mode, sources, folder)))
-            }
-            Command::FilesTransferCancel { job } => {
-                done(self.files().map(|files| files.cancel_transfer(self.id, *job)))
-            }
-            Command::FilesTransferAnswer { job, clash, answer, all } => {
-                done(self.files().and_then(|files| files.answer_clash(self.id, *job, *clash, *answer, *all)))
-            }
-            Command::FilesPick { picker, paths, filter, replace } => {
-                let (client, picker, paths, filter, replace) = (self.id, *picker, paths.clone(), *filter, *replace);
-                return self.files_later(move |files| files.pick(client, picker, &paths, filter, replace));
-            }
-            Command::FilesPickCancel { picker } => done(self.files().map(|files| files.cancel_pick(self.id, *picker))),
-            Command::AttachFiles { attached, pickers } => {
-                done(self.files().map(|files| files.attach(self.id, *attached, *pickers)))
-            }
-            Command::FilesLaunch { path, app } => {
-                let (path, app) = (path.clone(), app.clone());
-                return self.files_later(move |files| files.launch(&path, app.as_deref()));
-            }
-            // Answered off the connection's thread: the files found are
-            // looked at, and a slow drive must not hold up its other requests.
-            Command::FilesSearch { query, within } => {
-                let (query, within) = (query.clone(), within.clone());
-                return match self.files() {
-                    Ok(files) => {
-                        let searcher = files.searcher();
-                        Answer::later(move || value(searcher.search(&query, within.as_deref())))
-                    }
-                    Err(e) => Answer::Now(Outcome::Error(e)),
-                };
-            }
-            // Off the connection's thread too: it reads the file, and may
-            // draw it.
-            Command::FilesPreview { path } => {
-                let path = path.clone();
-                return self.files_later(move |files| files.previews().preview(&path));
-            }
-            Command::FilesOpenWith { path } => {
-                let path = path.clone();
-                return self.opener_later(move |opener| opener.choices(&path));
-            }
-            Command::FilesSetDefault { path, app } => {
-                let (path, app) = (path.clone(), app.clone());
-                return self.opener_later(move |opener| opener.set_default(&path, &app));
-            }
-            Command::FilesMount { drive } => {
-                let drive = drive.clone();
-                return self.files_later(move |files| files.mount(&drive));
-            }
-            Command::FilesEject { drive } => {
-                let drive = drive.clone();
-                return self.files_later(move |files| files.eject(&drive));
-            }
-            Command::FilesTree { folder, opened, closed, hidden } => {
-                let (folder, opened, closed, hidden) = (folder.clone(), opened.clone(), closed.clone(), *hidden);
-                return self.files_later(move |files| {
-                    files.tree(&crate::files::tree::Request {
-                        folder: &folder,
-                        opened: &opened,
-                        closed: &closed,
-                        hidden,
-                    })
-                });
-            }
-            Command::FilesPlaces => return self.files_later(|files| Ok(files.places())),
-            Command::FilesPin { path, pinned } => {
-                let (path, pinned) = (path.clone(), *pinned);
-                return self.files_later(move |files| files.pin(&path, pinned));
-            }
-            Command::FilesRecent => return self.files_later(|files| files.recent()),
-            Command::FilesDrop { sources, folder, copy } => {
-                let (sources, folder, copy) = (sources.clone(), folder.clone(), *copy);
-                return self.files_later(move |_| crate::files::drop_mode(&sources, &folder, copy));
-            }
-            Command::FilesTrash { paths, continues } => {
-                let (paths, continues) = (paths.clone(), *continues);
-                return self.files_later(move |files| files.move_to_trash(&paths, continues));
-            }
-            Command::FilesUndo { job } => {
-                let (client, job) = (self.id, *job);
-                return self.files_later(move |files| files.undo(client, job));
-            }
-            Command::FilesRedo { job } => {
-                let (client, job) = (self.id, *job);
-                return self.files_later(move |files| files.redo(client, job));
-            }
-            Command::FilesDelete { paths } => {
-                let paths = paths.clone();
-                return self.files_later(move |_| crate::files::Trash::delete(&paths));
-            }
-            Command::FilesTrashList => return self.files_later(|files| Ok(files.trash().list())),
-            Command::FilesGamesList => return self.files_later(|files| Ok(files.games())),
-            Command::FilesRestore { ids } => {
-                let ids = ids.clone();
-                return self.files_later(move |files| files.trash().restore(&ids));
-            }
-            Command::FilesTrashDelete { ids } => {
-                let ids = ids.clone();
-                return self.files_later(move |files| files.trash().erase(&ids));
-            }
-            Command::FilesEmptyTrash => return self.files_later(|files| files.trash().empty()),
-            Command::FilesNewFolder { folder } => {
-                let folder = folder.clone();
-                return self.files_later(move |files| files.new_folder(&folder));
-            }
-            Command::FilesRename { path, name } => {
-                let (path, name) = (path.clone(), name.clone());
-                return self.files_later(move |files| files.rename(&path, &name));
-            }
-            Command::FilesDetails { path } => {
-                let path = path.clone();
-                return self.files_later(move |files| files.details(&path));
-            }
-            Command::FilesProperties { path } => {
-                let path = path.clone();
-                return self.files_later(move |files| files.properties(&path));
-            }
-            Command::FilesSetAccess { path, access } => {
-                let (path, access) = (path.clone(), *access);
-                return self.files_later(move |files| files.set_access(&path, access));
-            }
-            // Answered here, in order with a cancel that follows it.
-            Command::FilesMeasure { job, paths } => {
-                done(self.files().and_then(|files| files.measure(self.id, *job, paths)))
-            }
-            Command::FilesMeasureCancel { job } => done(self.files().map(|files| files.cancel_measure(self.id, *job))),
             Command::BluetoothAnswer { id, answer } => {
                 done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
             }
@@ -472,10 +323,6 @@ impl<'a> Connection<'a> {
     }
 
     fn network(&self) -> Result<Arc<crate::network::Network>, String> {
-        self.daemon.module()
-    }
-
-    fn files(&self) -> Result<Arc<crate::files::Files>, String> {
         self.daemon.module()
     }
 
@@ -777,33 +624,6 @@ impl<'a> Connection<'a> {
         }
     }
 
-    /// Runs `work` with Nova Files' opener on its own thread: it reads the
-    /// file and may wait for an app to start.
-    fn opener_later<T: serde::Serialize>(
-        &self,
-        work: impl FnOnce(&crate::apps::opening::Opener) -> Result<T, String> + Send + 'static,
-    ) -> Answer {
-        match self.files() {
-            Ok(files) => {
-                let opener = files.opener();
-                Answer::later(move || value(work(&opener)))
-            }
-            Err(e) => Answer::Now(Outcome::Error(e)),
-        }
-    }
-
-    /// Runs `work` with Nova Files on its own thread: it reads folders and
-    /// moves or deletes files.
-    fn files_later<T: serde::Serialize>(
-        &self,
-        work: impl FnOnce(&crate::files::Files) -> Result<T, String> + Send + 'static,
-    ) -> Answer {
-        match self.files() {
-            Ok(files) => Answer::later(move || value(work(&files))),
-            Err(e) => Answer::Now(Outcome::Error(e)),
-        }
-    }
-
     fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
         match self.media() {
             Ok(media) => Answer::later(move || work(&media)),
@@ -956,8 +776,7 @@ impl<'a> Connection<'a> {
                         | Topic::Media
                         | Topic::Peripherals
                         | Topic::Network
-                        | Topic::Bluetooth
-                        | Topic::Files => settings.modules.send_state(topic, self.id),
+                        | Topic::Bluetooth => settings.modules.send_state(topic, self.id),
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         Topic::Logs | Topic::Toggle | Topic::Volume => {}
                     }
@@ -998,7 +817,6 @@ impl<'a> Connection<'a> {
             | Command::WatchResources { .. }
             | Command::EndApp { .. }
             | Command::LauncherSearch { .. }
-            | Command::LauncherShown { .. }
             | Command::AppIcon { .. }
             | Command::LauncherRun { .. }
             | Command::PinApp { .. }
@@ -1029,43 +847,7 @@ impl<'a> Connection<'a> {
             | Command::BluetoothConnect { .. }
             | Command::BluetoothDisconnect { .. }
             | Command::BluetoothForget { .. }
-            | Command::BluetoothAnswer { .. }
-            | Command::ShowFolder { .. }
-            | Command::FilesOpen { .. }
-            | Command::FilesClose { .. }
-            | Command::FilesTransfer { .. }
-            | Command::FilesDrop { .. }
-            | Command::FilesTransferCancel { .. }
-            | Command::FilesTransferAnswer { .. }
-            | Command::AttachFiles { .. }
-            | Command::FilesPick { .. }
-            | Command::FilesPickCancel { .. }
-            | Command::FilesLaunch { .. }
-            | Command::FilesOpenWith { .. }
-            | Command::FilesSetDefault { .. }
-            | Command::FilesSearch { .. }
-            | Command::FilesPreview { .. }
-            | Command::FilesTrash { .. }
-            | Command::FilesUndo { .. }
-            | Command::FilesRedo { .. }
-            | Command::FilesDelete { .. }
-            | Command::FilesTrashList
-            | Command::FilesGamesList
-            | Command::FilesRestore { .. }
-            | Command::FilesTrashDelete { .. }
-            | Command::FilesEmptyTrash
-            | Command::FilesMount { .. }
-            | Command::FilesEject { .. }
-            | Command::FilesProperties { .. }
-            | Command::FilesMeasure { .. }
-            | Command::FilesMeasureCancel { .. }
-            | Command::FilesSetAccess { .. }
-            | Command::FilesNewFolder { .. }
-            | Command::FilesRename { .. }
-            | Command::FilesDetails { .. }
-            | Command::FilesThumbnail { .. }
-            | Command::FilesThumbnailCancel { .. } => {}
-            Command::FilesTree { .. } | Command::FilesPlaces | Command::FilesPin { .. } | Command::FilesRecent => {}
+            | Command::BluetoothAnswer { .. } => {}
         }
     }
 

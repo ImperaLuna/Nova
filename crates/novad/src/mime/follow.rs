@@ -125,7 +125,8 @@ mod tests {
     }
 
     fn type_of(mime: &Mime, file: &std::path::Path) -> String {
-        mime.current().type_of(file).unwrap()
+        let name = file.file_name().unwrap().to_string_lossy();
+        mime.current().type_by_name(&name, &std::fs::metadata(file).unwrap()).to_string()
     }
 
     /// Like `update-mime-database`: the new file written beside the old,

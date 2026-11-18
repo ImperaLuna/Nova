@@ -326,17 +326,6 @@ impl State {
         &self.apps
     }
 
-    /// Every installed app that opens some type of file, listed in the
-    /// launcher or not.
-    pub fn openers(&self) -> impl Iterator<Item = &Entry> {
-        self.apps.values().chain(self.unlisted.values()).filter(|entry| entry.opens_types())
-    }
-
-    /// The installed app `id`, listed in the launcher or not.
-    pub fn any_entry(&self, id: &str) -> Option<&Entry> {
-        self.apps.get(id).or_else(|| self.unlisted.get(id))
-    }
-
     /// The installed app `id`, as the UI sees it.
     pub fn app(&self, id: &str) -> Option<App> {
         self.apps.get(id).map(|entry| self.app_of(entry))

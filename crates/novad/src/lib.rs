@@ -33,7 +33,6 @@ mod compositor;
 mod config;
 mod egl;
 mod features;
-mod files;
 mod host;
 mod hub;
 mod icons;
@@ -49,7 +48,6 @@ mod notifications;
 mod notify;
 mod nova_files;
 mod peripherals;
-mod portal_config;
 mod power;
 mod procfs;
 mod recording;
@@ -324,7 +322,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     let runtime_dir = socket.parent().unwrap_or(Path::new(".")).to_path_buf();
     let icons = Arc::new(icons::Icons::for_session());
     logger.info(LOG_SOURCE, &format!("icons from the {} icon theme", icons.theme()));
-    // How Quickshell runs, for the UI and for modules with windows of their own.
+    // How Quickshell runs, for the UI.
     let ui_settings = UiSettings {
         quickshell: args.quickshell.clone().unwrap_or_else(|| supervisor::default_quickshell(&path_var)),
         ui_dir: args.ui.clone(),
@@ -336,7 +334,6 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         icon_theme: icons.theme().to_string(),
     };
     let env = modules::Env {
-        ui: (!args.no_ui).then_some(&ui_settings),
         args: &args,
         runtime_dir: &runtime_dir,
         path_var: &path_var,
@@ -448,17 +445,6 @@ pub(crate) fn session_path() -> String {
         .map(|joined| joined.to_string_lossy().into_owned())
         .unwrap_or_else(|_| path.to_string_lossy().into_owned())
 }
-
-/// Makes the app `app` (a desktop file id) the default for `mime` in this
-/// user's own `mimeapps.list` under `config_home`, keeping the rest of it,
-/// as Nova Files' "Open with" does. For `nova setup`. Returns the file
-/// written.
-pub fn set_default_app(config_home: &Path, mime: &str, app: &str) -> Result<PathBuf, String> {
-    let places = apps::associations::Places::new(Some(config_home.to_owned()), &[], &[], &apps::current_desktops());
-    apps::associations::set_default(&places, mime, app)
-}
-
-pub use portal_config::prefer_nova_file_chooser;
 
 /// The spec's default for an unset `XDG_DATA_DIRS`.
 const DEFAULT_DATA_DIRS: &str = "/usr/local/share:/usr/share";
