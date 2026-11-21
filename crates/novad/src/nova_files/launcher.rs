@@ -1,6 +1,7 @@
 //! The launcher's Files mode (`launcher.providers` view `files`), answered
-//! by the Nova Files app: a query is a name search there, and each path it
-//! finds becomes an item with its type (for the icon), its folder spelled
+//! by the Nova Files app: a query is a name search there, or, when it's a
+//! path being typed (from `~` or `/`), what Nova Files completes it to from
+//! that path's folder. Each path becomes an item with its type (for the icon), its folder spelled
 //! from `~`, and whether it's hidden. Running an item asks Nova Files to
 //! open it; Shift+Enter asks it to show the item in its folder (the user's
 //! own file manager does both for folders in the `launcher` mode, see
@@ -10,9 +11,10 @@
 //! since Nova Files indexed it is left out. When Nova Files can't search,
 //! the answer is one item saying why.
 //!
-//! Typed paths (`~/Doc…`) aren't completed: that waits on Nova Files
-//! offering it (FIL-104). Each item still carries the path Tab would
-//! complete to, so the launcher's side is ready.
+//! Each item carries the path Tab completes to. For a typed path that's
+//! spelled the way it was typed (`~/Doc` gives `~/Documents/`, a typed
+//! `/home/me/Doc` gives `/home/me/Documents/`), so the launcher can show the
+//! rest of it after what's typed.
 
 use super::NovaFiles;
 use crate::launcher::MAX_MATCHES;
@@ -23,6 +25,7 @@ use std::path::{Component, Path};
 
 /// How a typed path names Home.
 const HOME_PREFIX: char = '~';
+const ROOT: char = '/';
 const SEPARATOR: char = '/';
 /// The type of a link whose target is gone.
 const BROKEN_LINK_MIME: &str = "inode/symlink";
@@ -36,13 +39,18 @@ impl Provider for NovaFiles {
 
     fn search(&self, query: &str) -> Result<Vec<LauncherItem>, String> {
         let limit = u32::try_from(MAX_MATCHES).unwrap_or(u32::MAX);
-        let paths = match NovaFiles::search(self, query, limit) {
+        let typed_path = query.starts_with(HOME_PREFIX) || query.starts_with(ROOT);
+        let found = if typed_path { self.complete(query, limit) } else { NovaFiles::search(self, query, limit) };
+        let paths = match found {
             Ok(paths) => paths,
             Err(e) => return Ok(vec![unanswered(e)]),
         };
         let mime = self.mime.current();
         let home = self.home.as_deref();
-        Ok(paths.iter().filter_map(|path| item(path, query, &mime, home)).take(MAX_MATCHES).collect())
+        let items = paths.iter().filter_map(|path| {
+            if typed_path { completed(path, query, &mime, home) } else { item(path, query, &mime, home) }
+        });
+        Ok(items.take(MAX_MATCHES).collect())
     }
 
     fn run(&self, id: &str, how: &Run) -> Result<(), String> {
@@ -87,6 +95,24 @@ fn item(path: &Path, query: &str, mime: &MimeDb, home: Option<&Path>) -> Option<
             completion,
         }),
     })
+}
+
+/// The launcher item for `path`, which typed path `typed` completes to:
+/// its name marked where it starts as typed, and its completion spelled
+/// from what's typed up to the last `/` (`~` alone is Home's `~/`).
+fn completed(path: &Path, typed: &str, mime: &MimeDb, home: Option<&Path>) -> Option<LauncherItem> {
+    let (folder, start) = match typed.rsplit_once(SEPARATOR) {
+        Some((folder, start)) => (format!("{folder}{SEPARATOR}"), start),
+        None => (format!("{typed}{SEPARATOR}"), ""),
+    };
+    let mut item = item(path, start, mime, home)?;
+    if let Some(file) = &mut item.file {
+        file.completion = format!("{folder}{}", wire_text(path.file_name()?));
+        if file.dir {
+            file.completion.push(SEPARATOR);
+        }
+    }
+    Some(item)
 }
 
 /// A dot file, hidden by default as on every Linux desktop.

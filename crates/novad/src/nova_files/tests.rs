@@ -207,3 +207,36 @@ fn a_search_nova_files_cannot_run_answers_with_why() {
     assert!(found[0].name[0].text.contains("index-failed"));
     assert!(found[0].id.is_empty() && found[0].file.is_none(), "nothing to run");
 }
+
+/// A typed path is completed by Nova Files from its folder, not searched
+/// for, and each item's completion keeps the spelling that was typed.
+#[test]
+fn a_typed_path_completes_through_nova_files_in_its_own_spelling() {
+    let dir = TempDir::new("nova-files-typed");
+    let home = dir.join("home");
+    let root = home.join(".notes");
+    std::fs::create_dir_all(root.join("kitchen.txt")).unwrap();
+    std::fs::write(root.join("kitcen notes.md"), b"x").unwrap();
+    let bus = TestBus::start(&dir.join("bus"));
+    let stand_in = StandIn::serve(&bus.address, &root.display().to_string());
+    let files = nova_files(&bus.address, &dir, Some(home.clone()), false);
+
+    let found = Provider::search(&files, "~/.notes/Kit").unwrap();
+    let completions: Vec<&str> = found.iter().map(|item| item.file.as_ref().unwrap().completion.as_str()).collect();
+    assert_eq!(completions, ["~/.notes/kitchen.txt/", "~/.notes/kitcen notes.md"]);
+    assert_eq!(found[0].id, root.join("kitchen.txt").display().to_string());
+    assert_eq!(found[0].name[0], nova_protocol::TextRun { text: "kit".into(), matched: true });
+    assert_eq!(found[0].description.as_deref(), Some("~/.notes"));
+
+    let typed = format!("{}/kit", root.display());
+    let found = Provider::search(&files, &typed).unwrap();
+    assert_eq!(found[0].file.as_ref().unwrap().completion, format!("{}/kitchen.txt/", root.display()));
+
+    let failed = Provider::search(&files, "~nobody/kit").unwrap();
+    assert!(failed[0].id.is_empty() && failed[0].file.is_none(), "one item saying why");
+    assert!(Provider::search(&files, "~/Nowhere").unwrap().is_empty());
+
+    let asked = lock(&stand_in.asked);
+    assert!(asked.searches.is_empty(), "typed paths aren't name searches");
+    assert_eq!(asked.completions[0].0, "~/.notes/Kit");
+}

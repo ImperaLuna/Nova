@@ -24,6 +24,7 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Default)]
 pub struct Asked {
     pub searches: Vec<(u64, String, u32)>,
+    pub completions: Vec<(String, u32)>,
     pub cancelled: Vec<u64>,
     pub opened: Vec<String>,
     pub shown: Vec<String>,
@@ -107,6 +108,22 @@ impl Search1 {
             "broken" => Self::failed(&to_caller, id, "index-failed".into()).await.unwrap(),
             _ => Self::found(&to_caller, id, vec![], true).await.unwrap(),
         }
+    }
+
+    /// A typed path ending in `kit`, case aside, completes to the folder `kitchen.txt`
+    /// and the file `kitcen notes.md`, `~nobody/…` isn't a path it takes,
+    /// and anything else completes to nothing.
+    fn complete(&self, typed: String, limit: u32) -> zbus::fdo::Result<Vec<(String, bool)>> {
+        lock(&self.asked).completions.push((typed.clone(), limit));
+        if typed.starts_with("~nobody") {
+            return Err(zbus::fdo::Error::InvalidArgs(format!("not a path from / or ~: {typed}")));
+        }
+        let entry = |name: &str, folder: bool| (format!("{}/{name}", self.root), folder);
+        Ok(if typed.to_lowercase().ends_with("kit") {
+            vec![entry("kitchen.txt", true), entry("kitcen notes.md", false)]
+        } else {
+            vec![]
+        })
     }
 
     fn cancel(&self, id: u64) {

@@ -7,7 +7,9 @@
 //! a few idle minutes. `Search` returns at once and its stages come as
 //! `Found` signals sent only to the caller, until one is `done`; a search
 //! waits [`STAGES_WAIT`] for that, then answers with the stages it has.
-//! Starting a search cancels the one before if it's still going. `Open`
+//! Starting a search cancels the one before if it's still going.
+//! `Complete` answers at once with the entries a typed path (`~/Doc`) can
+//! complete to, read from its folder as it is now. `Open`
 //! opens a file in its default app or a folder in a Nova Files window, and
 //! `ShowInFolder` opens a window on the folder that holds a path.
 //!
@@ -67,6 +69,12 @@ impl NovaFiles {
     /// per stage.
     pub fn search(&self, query: &str, limit: u32) -> Result<Vec<PathBuf>, String> {
         self.client()?.search(query, limit, STAGES_WAIT)
+    }
+
+    /// The paths `typed` (a path as typed, from `~` or `/`) completes to,
+    /// at most `limit`.
+    pub fn complete(&self, typed: &str, limit: u32) -> Result<Vec<PathBuf>, String> {
+        self.client()?.complete(typed, limit)
     }
 
     /// Opens `path`: a file in its default app, a folder in Nova Files or,

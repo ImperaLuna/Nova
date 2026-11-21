@@ -29,6 +29,7 @@ pub const APP_ID: &str = "io.github.ImperaLuna.NovaFiles";
 pub const PATH: &str = "/io/github/ImperaLuna/NovaFiles";
 pub const INTERFACE: &str = "io.github.ImperaLuna.NovaFiles.Search1";
 const SEARCH: &str = "Search";
+const COMPLETE: &str = "Complete";
 const CANCEL: &str = "Cancel";
 const OPEN: &str = "Open";
 const SHOW_IN_FOLDER: &str = "ShowInFolder";
@@ -127,6 +128,19 @@ impl Client {
                 Err(RecvTimeoutError::Disconnected) => return Err("the signals stopped".into()),
             }
         }
+    }
+
+    /// The entries of the folder `typed` (a path as typed, from `~` or `/`)
+    /// names whose names start with its last part, case aside: folders
+    /// first, then by name, at most `limit`.
+    pub fn complete(&self, typed: &str, limit: u32) -> Result<Vec<PathBuf>, String> {
+        let reply =
+            zbus::block_on(self.connection.call_method(Some(APP_ID), PATH, Some(INTERFACE), COMPLETE, &(typed, limit)))
+                .map_err(|e| e.to_string())?;
+        // Each entry comes with whether it's a folder; the launcher looks
+        // at the file itself for that, as it does for its type.
+        let entries: Vec<(String, bool)> = reply.body().deserialize().map_err(|e| e.to_string())?;
+        Ok(entries.into_iter().map(|(path, _folder)| PathBuf::from(path)).collect())
     }
 
     /// Opens `path` in Nova Files' way: a file in its default app, a
