@@ -5,10 +5,10 @@
 //! stay in the core.
 
 use crate::Daemon;
+use nova_carrier::Outcome;
 use nova_hub::ClientId;
 use nova_media::Sources;
 use nova_media_api::Command;
-use nova_protocol::Outcome;
 use nova_socket::{Answer, Caller, done, value};
 use std::path::Path;
 use std::sync::Arc;
@@ -101,7 +101,7 @@ impl nova_modules::Module for Media {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_media_api::TOPIC);
+    const TOPIC: Option<nova_carrier::Topic> = Some(nova_media_api::TOPIC);
     type Sources = Sources;
     type Config = ();
 

@@ -174,7 +174,7 @@ fn a_swapped_link_on_the_way_is_followed() {
     assert_eq!(client.next_event("theme")["mode"], "dark");
     // After the read novad makes once its watches are in has settled, so
     // only a watch on the swapped link can see the change.
-    std::thread::sleep(crate::settings::SETTLE * 3);
+    std::thread::sleep(nova_settings::SETTLE * 3);
     // Swapped in one step, the way NixOS's activation does it.
     std::os::unix::fs::symlink(novad.dir.join("store/gen2"), novad.dir.join("etc/static.new")).unwrap();
     std::fs::rename(novad.dir.join("etc/static.new"), novad.dir.join("etc/static")).unwrap();

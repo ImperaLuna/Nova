@@ -3,11 +3,12 @@
 //! feature's core to novad's `Module` trait and `Daemon`, and all of the
 //! tray's work and state stay in the core. A click on an item, or a pick
 //! from its menu, also focuses its app's window, which the launcher and the
-//! compositor do: novad joins them here until the launcher has moved too.
+//! compositor do: novad joins them here, since one feature's core never
+//! uses another's.
 
 use crate::Daemon;
+use nova_carrier::Outcome;
 use nova_hub::ClientId;
-use nova_protocol::Outcome;
 use nova_socket::{Answer, Caller, done};
 use nova_tray::Sources;
 use nova_tray_api::Command;
@@ -115,7 +116,7 @@ impl nova_modules::Module for Tray {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_tray_api::TOPIC);
+    const TOPIC: Option<nova_carrier::Topic> = Some(nova_tray_api::TOPIC);
     type Sources = Sources;
     type Config = ();
 

@@ -55,7 +55,7 @@ fn sent_by_the_ui(daemon: &Daemon, caller: &Caller) -> Result<(), String> {
 impl nova_modules::Module for SessionLock {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_lock_api::TOPIC);
+    const TOPIC: Option<nova_carrier::Topic> = Some(nova_lock_api::TOPIC);
     type Sources = PathBuf;
     type Config = ();
 

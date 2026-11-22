@@ -12,16 +12,11 @@
 //! novad -> ui   {"v":2,"event":"features","data":{"features":[...]}}
 //! ```
 
+use nova_carrier::Topic;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-// The envelope and the log feed are the framework's (`nova-carrier`), which
-// carries these messages without knowing them; re-exported so clients name
-// them from here as before.
-pub use nova_carrier::envelope::REQUEST_MAX_BYTES;
-pub use nova_carrier::log::{LogEntry, LogLevel, Logs, UI_LOG_SOURCE};
-pub use nova_carrier::{Envelope, Outcome, PROTOCOL_VERSION, Response, encode};
 // The shared lookups' own types are the framework's (IMP-374), re-exported
 // so clients name them from here as before.
 pub use nova_apps::{APP_ICON_MAX_CHARS, App};
@@ -39,7 +34,7 @@ pub enum Event {
     Features { features: Vec<FeatureState> },
     /// Log entries from novad and the UI. Topic [`topics::LOGS`]. The first
     /// event after subscribing has `backlog: true` and holds recent entries.
-    Logs(Logs),
+    Logs(nova_carrier::log::Logs),
     /// The active theme's colors. Topic [`topics::THEME`], sent right after
     /// subscribing.
     Theme(Theme),
@@ -63,16 +58,11 @@ pub enum Event {
     Host(Host),
 }
 
-/// A group of events a client can subscribe to, by its wire name: the
-/// framework's [`nova_carrier::Topic`]. Each owner declares its own as a
-/// constant; the ones still shared are in [`topics`], a moved feature's in
-/// its api crate (`nova_resources_api::TOPIC`). novad's wiring lists them
-/// all, in the order `ui/daemon/protocol.js` names them.
-pub use nova_carrier::Topic;
-
-/// The topics of the events in [`Event`].
+/// The topics of the events in [`Event`]. A moved feature's topic is in its
+/// api crate (`nova_resources_api::TOPIC`); novad's wiring lists them all,
+/// in the order `ui/daemon/protocol.js` names them.
 pub mod topics {
-    use super::Topic;
+    use nova_carrier::Topic;
 
     pub const FEATURES: Topic = Topic::named("features");
     /// The framework's log feed (`nova_carrier::log`).
@@ -337,6 +327,8 @@ impl nova_carrier::Published for Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nova_carrier::log::{LogEntry, LogLevel, Logs, UI_LOG_SOURCE};
+    use nova_carrier::{Envelope, Outcome, Response, encode};
     use nova_media_api::Command as MediaCommand;
     use nova_notifications_api::Command as NotificationCommand;
     use serde_json::json;

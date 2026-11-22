@@ -5,8 +5,9 @@
 //! Hyprland sessions.
 
 use super::*;
+use nova_carrier::log::{LogEntry, UI_LOG_SOURCE};
 use nova_icons::Icons;
-use nova_protocol::{FeatureStatus, LogEntry, UI_LOG_SOURCE};
+use nova_protocol::FeatureStatus;
 use nova_session_bus::Bus;
 use nova_test_support::{TempDir, wait_until, write_program};
 use serde_json::{Value, json};

@@ -7,7 +7,8 @@
 //! A feature that moves its topic into its api crate replaces the shared
 //! constant here with its own, in the same place, so nothing else moves.
 
-use nova_protocol::{Topic, topics};
+use nova_carrier::Topic;
+use nova_protocol::topics;
 use std::sync::LazyLock;
 
 /// The topics, in protocol.js's order.

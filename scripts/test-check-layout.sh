@@ -106,6 +106,13 @@ crate "$ws" features/media/core media-core none "media-api notifications-core" \
   'media-api = { path = "../api" }' 'notifications-core = { path = "../../notifications/core" }'
 expect_fail "a core using another feature's core" F4 "$ws"
 
+ws=$(planted core-tests-use-other-core)
+crate "$ws" features/notifications/core notifications-core none none
+crate "$ws" features/media/core media-core none "media-api notifications-api" \
+  'media-api = { path = "../api" }' 'notifications-api = { path = "../../notifications/api" }' \
+  '[dev-dependencies]' 'notifications-core = { path = "../../notifications/core" }'
+expect_fail "a core's tests using another feature's core" T1 "$ws"
+
 ws=$(planted core-uses-framework)
 crate "$ws" features/media/core media-core none "stage media-api" \
   'media-api = { path = "../api" }' 'stage = { path = "../../../framework/stage" }'

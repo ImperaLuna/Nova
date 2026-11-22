@@ -62,7 +62,7 @@ fn later(network: Result<Arc<Network>, String>, work: impl FnOnce(&Network) -> O
 impl nova_modules::Module for Network {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_network_api::TOPIC);
+    const TOPIC: Option<nova_carrier::Topic> = Some(nova_network_api::TOPIC);
     type Sources = Sources;
     type Config = ();
 

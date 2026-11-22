@@ -70,7 +70,7 @@ fn later(
 impl nova_modules::Module for Bluetooth {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_bluetooth_api::TOPIC);
+    const TOPIC: Option<nova_carrier::Topic> = Some(nova_bluetooth_api::TOPIC);
     type Sources = Sources;
     type Config = ();
 

@@ -20,7 +20,7 @@ pub struct Peripherals(Arc<nova_peripherals::Peripherals>);
 impl nova_modules::Module for Peripherals {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_peripherals_api::TOPIC);
+    const TOPIC: Option<nova_carrier::Topic> = Some(nova_peripherals_api::TOPIC);
     type Sources = Sources;
     type Config = ();
 

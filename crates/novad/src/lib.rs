@@ -55,10 +55,11 @@ mod wallpaper;
 mod x11_tray;
 
 use nova_base::lock;
+use nova_carrier::log::LogLevel;
 use nova_hub::Hub;
 use nova_log::Logger;
 use nova_process::{notify, procfs};
-use nova_protocol::{LogLevel, Status, UiState, UiStatus};
+use nova_protocol::{Status, UiState, UiStatus};
 use settings::{Settings, Sources};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -231,7 +232,7 @@ impl Daemon {
     fn watch_settings(self: &Arc<Self>) -> Option<nova_inotify::Stopper> {
         let daemon = Arc::clone(self);
         let files = [vec![self.sources.config.clone()], self.sources.selection.clone()].concat();
-        settings::watch(files, Arc::clone(&self.logger), move || daemon.reload())
+        nova_settings::watch(files, Arc::clone(&self.logger), move || daemon.reload())
     }
 
     /// Stops the UI and exits novad. Exit code 0, so systemd leaves it off.

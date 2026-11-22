@@ -4,7 +4,8 @@
 //! that do decode must be exactly what a client meant to send.
 
 use nova_ai_usage_api::{AiProvider, UsageLimit, UsageWindow};
-use nova_protocol::{Command, PROTOCOL_VERSION, Request, Step, decode_request, encode, topics};
+use nova_carrier::{PROTOCOL_VERSION, encode};
+use nova_protocol::{Command, Request, Step, decode_request, topics};
 use proptest::prelude::*;
 use serde_json::{Map, Value, json};
 

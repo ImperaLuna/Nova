@@ -16,11 +16,12 @@ use crate::{
     resources, screenshot, session_lock, tray, wallpaper, x11_tray,
 };
 use nova_apps::AppIndex;
+use nova_carrier::Topic;
 use nova_compositor::Compositor;
 use nova_hub::{ClientId, Hub};
 use nova_icons::Icons;
 use nova_log::Logger;
-use nova_protocol::{FeatureState, Topic};
+use nova_protocol::FeatureState;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
