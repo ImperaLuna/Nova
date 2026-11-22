@@ -62,6 +62,7 @@ enum IpcCommand {
     Recording(nova_recording_api::Command),
     Resources(nova_resources_api::Command),
     Screenshot(nova_screenshot_api::Command),
+    Sound(nova_sound_api::Command),
     Tray(nova_tray_api::Command),
     VolumeOsd(nova_volume_osd_api::Command),
     Wallpaper(nova_wallpaper_api::Command),
@@ -98,6 +99,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
         serde_json::from_value(request).map(IpcCommand::Resources)
     } else if tagged_names_of::<nova_screenshot_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Screenshot)
+    } else if tagged_names_of::<nova_sound_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Sound)
     } else if tagged_names_of::<nova_tray_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Tray)
     } else if tagged_names_of::<nova_volume_osd_api::Command>("cmd").contains(&name) {

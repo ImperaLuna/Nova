@@ -4,7 +4,8 @@
 use super::*;
 use crate::fake_pulse::{FakePulse, recorded, recording};
 use crate::server::Listing;
-use pulseaudio::protocol::{ChannelVolume, SinkInputInfo};
+use nova_sound_api::Kind;
+use pulseaudio::protocol::{ChannelVolume, SinkInputInfo, Volume};
 
 /// Writes what the sound server running now lists as a recording, to the
 /// file `NOVA_SOUND_RECORD` names:
@@ -75,6 +76,17 @@ impl Fixture {
     /// The next sound event.
     fn next(&self) -> Value {
         nova_hub::next_named(&self.ui, EVENT, WAIT)
+    }
+
+    /// Sound events until one `done` accepts, which it returns: a command
+    /// that tells the server two things may come back as one event or two.
+    fn until(&self, done: impl Fn(&Value) -> bool) -> Value {
+        loop {
+            let sound = self.next();
+            if done(&sound) {
+                return sound;
+            }
+        }
     }
 
     fn nothing_comes(&self) {
@@ -224,4 +236,111 @@ fn once_stopped_it_publishes_nothing_and_hangs_up() {
     });
     server.change(|listing| listing.sinks[0].muted = true);
     fixture.nothing_comes();
+    // Nor does it change anything any more.
+    let mute = Command::SetSoundMuted { of: Kind::Output, id: 53, muted: true };
+    assert!(sound.change(&mute).is_err());
+}
+
+fn close(value: &Value, expected: f64) -> bool {
+    value.as_f64().is_some_and(|value| (value - expected).abs() < 0.001)
+}
+
+#[test]
+fn a_volume_set_by_hand_unmutes_and_comes_back_as_an_event() {
+    let fixture = Fixture::new("volume");
+    let _server = fixture.server();
+    let sound = fixture.sound();
+    assert_eq!(fixture.next()["inputs"][0]["muted"], true);
+    sound.change(&Command::SetSoundVolume { of: Kind::Input, id: 60, volume: 0.25 }).unwrap();
+    fixture.until(|sound| close(&sound["inputs"][0]["volume"], 0.25) && sound["inputs"][0]["muted"] == false);
+    sound.change(&Command::SetSoundVolume { of: Kind::Output, id: 53, volume: 1.0 }).unwrap();
+    fixture.until(|sound| close(&sound["outputs"][0]["volume"], 1.0));
+    sound.change(&Command::SetSoundMuted { of: Kind::Output, id: 53, muted: true }).unwrap();
+    assert_eq!(fixture.next()["outputs"][0]["muted"], true);
+}
+
+#[test]
+fn an_apps_volume_and_mute_reach_all_its_streams() {
+    let fixture = Fixture::new("app");
+    let server = fixture.server();
+    let sound = fixture.sound();
+    fixture.next();
+    let tunes = |server: &FakePulse| -> Vec<(f32, bool)> {
+        let streams = server.listing().sink_inputs;
+        streams.iter().filter(|stream| stream.index != 89).map(|s| (reading::level(&s.cvolume), s.muted)).collect()
+    };
+    assert_eq!(tunes(&server).len(), 2);
+    assert!(tunes(&server).iter().any(|(_, muted)| *muted), "one of the recorded streams is muted");
+    sound.change(&Command::SetSoundVolume { of: Kind::App, id: 66, volume: 0.5 }).unwrap();
+    fixture.until(|sound| close(&sound["apps"][0]["volume"], 0.5));
+    for (volume, muted) in tunes(&server) {
+        assert!((volume - 0.5).abs() < 0.001 && !muted, "{volume} {muted}");
+    }
+    sound.change(&Command::SetSoundMuted { of: Kind::App, id: 66, muted: true }).unwrap();
+    fixture.until(|sound| sound["apps"][0]["muted"] == true);
+    assert!(tunes(&server).iter().all(|(_, muted)| *muted));
+    // The other app was left alone.
+    let chimes = server.listing().sink_inputs.into_iter().find(|stream| stream.index == 89).unwrap();
+    assert!((reading::level(&chimes.cvolume) - 1.0).abs() < 0.001 && !chimes.muted);
+}
+
+#[test]
+fn another_output_becomes_the_one_in_use() {
+    let fixture = Fixture::new("use");
+    let server = fixture.server();
+    let sound = fixture.sound();
+    fixture.next();
+    // A second output appears, as when a headset is plugged in.
+    server.change(|listing| {
+        let mut headset = listing.sinks[0].clone();
+        headset.index = 200;
+        headset.name = c"headset".into();
+        listing.sinks.push(headset);
+    });
+    let current = |sound: &Value| -> Vec<bool> {
+        sound["outputs"].as_array().unwrap().iter().map(|output| output["current"] == true).collect()
+    };
+    assert_eq!(current(&fixture.next()), [true, false]);
+    sound.change(&Command::UseSoundOutput { id: 200 }).unwrap();
+    assert_eq!(current(&fixture.next()), [false, true]);
+}
+
+#[test]
+fn what_cant_be_done_is_refused_with_the_reason() {
+    let fixture = Fixture::new("refused");
+    let server = fixture.server();
+    let sound = fixture.sound();
+    assert_eq!(sound.change(&Command::UseSoundOutput { id: 53 }), Err(NO_SERVER.into()), "nothing is listed yet");
+    fixture.next();
+    let refused = |command: Command| sound.change(&command).unwrap_err();
+    assert_eq!(refused(Command::SetSoundMuted { of: Kind::Output, id: 7, muted: true }), "there is no output 7");
+    assert_eq!(refused(Command::SetSoundMuted { of: Kind::App, id: 7, muted: true }), "no app plays as 7");
+    // The speakers' monitor is a source, but not an input.
+    let monitor = recorded(NULL_DEVICES).sources.into_iter().find(|source| source.monitor_of_sink_index.is_some());
+    let monitor = monitor.unwrap().index;
+    assert_eq!(refused(Command::UseSoundInput { id: monitor }), format!("there is no input {monitor}"));
+    for volume in [-0.1, 1.5, f32::NAN] {
+        let reason = refused(Command::SetSoundVolume { of: Kind::Output, id: 53, volume });
+        assert!(reason.starts_with("a volume is 0 to 1"), "{reason}");
+    }
+    // An output that went since the last listing: the server says no, and
+    // the next command still goes through.
+    server.change_quietly(|listing| listing.sinks.clear());
+    let reason = refused(Command::SetSoundMuted { of: Kind::Output, id: 53, muted: true });
+    assert!(reason.starts_with("the sound server said"), "{reason}");
+    sound.change(&Command::SetSoundMuted { of: Kind::Input, id: 60, muted: false }).unwrap();
+    fixture.until(|sound| sound["inputs"][0]["muted"] == false);
+}
+
+#[test]
+fn a_volume_keeps_the_balance_between_channels() {
+    let mut channels = ChannelVolume::empty();
+    channels.push(Volume::from_u32_clamped(Volume::NORM.as_u32() / 2));
+    channels.push(Volume::NORM);
+    let moved = reading::at_level(&channels, 0.375);
+    let norm = Volume::NORM.as_u32();
+    assert_eq!(moved.channels(), [Volume::from_u32_clamped(norm / 4), Volume::from_u32_clamped(norm / 2)]);
+    // From silence there is no balance to keep.
+    let moved = reading::at_level(&ChannelVolume::muted(2), 0.5);
+    assert_eq!(moved.channels(), [Volume::from_u32_clamped(norm / 2); 2]);
 }

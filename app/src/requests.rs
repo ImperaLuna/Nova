@@ -35,6 +35,7 @@ pub fn router() -> Router<Daemon> {
         .route::<nova_recording_api::Command>(crate::recording::answer, |_, _, _| {})
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
         .route::<nova_screenshot_api::Command>(crate::screenshot::answer, |_, _, _| {})
+        .route::<nova_sound_api::Command>(crate::sound::answer, |_, _, _| {})
         .route::<nova_tray_api::Command>(crate::tray::answer, |_, _, _| {})
         .route::<nova_volume_osd_api::Command>(
             |daemon, caller, nova_volume_osd_api::Command::Volume { key }| Connection::new(daemon, caller).volume(*key),

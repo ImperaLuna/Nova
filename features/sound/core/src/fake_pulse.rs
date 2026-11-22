@@ -118,6 +118,17 @@ impl FakePulse {
         fake.tell_followers();
     }
 
+    /// Changes what it lists without a word, so what a client last read
+    /// is out of date.
+    pub fn change_quietly(&self, change: impl FnOnce(&mut Listing)) {
+        change(&mut lock(&self.state).listing);
+    }
+
+    /// What it lists now.
+    pub fn listing(&self) -> Listing {
+        lock(&self.state).listing.clone()
+    }
+
     /// Tells its followers something changed, `times` over, as a dragged
     /// slider does.
     pub fn say_changed(&self, times: usize) {
@@ -166,6 +177,57 @@ impl Drop for FakePulse {
 }
 
 impl Fake {
+    /// Does what `command` asks of the listing, as the real server would:
+    /// whether what it names was there, or None for another kind of
+    /// command.
+    fn change(&mut self, command: &Command) -> Option<bool> {
+        let listing = &mut self.listing;
+        let found = match command {
+            Command::SetSinkVolume(set) => listing
+                .sinks
+                .iter_mut()
+                .find(|sink| Some(sink.index) == set.device_index)
+                .map(|sink| sink.cvolume = set.volume),
+            Command::SetSourceVolume(set) => listing
+                .sources
+                .iter_mut()
+                .find(|source| Some(source.index) == set.device_index)
+                .map(|source| source.cvolume = set.volume),
+            Command::SetSinkInputVolume(set) => listing
+                .sink_inputs
+                .iter_mut()
+                .find(|stream| stream.index == set.index)
+                .map(|stream| stream.cvolume = set.volume),
+            Command::SetSinkMute(set) => listing
+                .sinks
+                .iter_mut()
+                .find(|sink| Some(sink.index) == set.device_index)
+                .map(|sink| sink.muted = set.mute),
+            Command::SetSourceMute(set) => listing
+                .sources
+                .iter_mut()
+                .find(|source| Some(source.index) == set.device_index)
+                .map(|source| source.muted = set.mute),
+            Command::SetSinkInputMute(set) => listing
+                .sink_inputs
+                .iter_mut()
+                .find(|stream| stream.index == set.index)
+                .map(|stream| stream.muted = set.mute),
+            Command::SetDefaultSink(name) => listing
+                .sinks
+                .iter()
+                .any(|sink| &sink.name == name)
+                .then(|| listing.server.default_sink_name = Some(name.clone())),
+            Command::SetDefaultSource(name) => listing
+                .sources
+                .iter()
+                .any(|source| &source.name == name)
+                .then(|| listing.server.default_source_name = Some(name.clone())),
+            _ => return None,
+        };
+        Some(found.is_some())
+    }
+
     fn tell_followers(&mut self) {
         let event = Command::SubscribeEvent(SubscriptionEvent {
             event_facility: SubscriptionEventFacility::Server,
@@ -205,7 +267,14 @@ fn serve(stream: UnixStream, state: &Mutex<Fake>) {
             Command::GetSourceInfoList => reply(to, request, &fake.listing.sources),
             Command::GetSinkInputInfoList => reply(to, request, &fake.listing.sink_inputs),
             Command::GetSourceOutputInfoList => reply(to, request, &fake.listing.source_outputs),
-            other => panic!("the fake server doesn't answer {other:?}"),
+            other => match fake.change(&other) {
+                Some(true) => {
+                    fake.tell_followers();
+                    protocol::write_ack_message(to, request)
+                }
+                Some(false) => protocol::write_error(to, request, &PulseError::NoEntity),
+                None => panic!("the fake server doesn't answer {other:?}"),
+            },
         };
         if sent.is_err() {
             return;

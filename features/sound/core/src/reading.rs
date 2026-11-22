@@ -159,6 +159,15 @@ fn apps(streams: &[SinkInputInfo]) -> Vec<App> {
     apps.into_iter().map(|(app, loudest)| App { volume: loudest.unwrap_or(FULL), ..app }).collect()
 }
 
+/// The ids of the streams that make up the app `id` names in `streams`.
+pub fn app_streams(streams: &[SinkInputInfo], id: u32) -> Vec<u32> {
+    let name_of = |stream: &SinkInputInfo| stream_name(&stream.props, &stream.name);
+    let Some(app) = streams.iter().find(|stream| stream.index == id).map(name_of) else {
+        return Vec::new();
+    };
+    streams.iter().filter(|stream| name_of(stream) == app).map(|stream| stream.index).collect()
+}
+
 /// The app a stream belongs to, as people know it; else what the stream
 /// calls itself.
 fn stream_name(props: &Props, name: &CStr) -> String {
@@ -178,6 +187,19 @@ pub fn level(channels: &ChannelVolume) -> f32 {
     }
     let sum: f64 = channels.iter().map(|volume| f64::from(volume.as_u32())).sum();
     (sum / channels.len() as f64 / f64::from(Volume::NORM.as_u32())) as f32
+}
+
+/// `channels` moved to read `volume` ([`level`]), each keeping its share of
+/// the whole, so a balance set elsewhere stays.
+pub fn at_level(channels: &ChannelVolume, volume: f32) -> ChannelVolume {
+    let norm = f64::from(Volume::NORM.as_u32());
+    let now = f64::from(level(channels));
+    let mut moved = ChannelVolume::empty();
+    for channel in channels.channels() {
+        let share = if now > 0.0 { f64::from(channel.as_u32()) / norm / now } else { 1.0 };
+        moved.push(Volume::from_u32_clamped((share * f64::from(volume) * norm).round() as u32));
+    }
+    moved
 }
 
 /// The text of the property `key`: the server ends each with a NUL.

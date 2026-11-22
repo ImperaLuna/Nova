@@ -4,13 +4,13 @@
 //! or loads a library and novad's static build stays.
 //!
 //! A [`Link`] asks and waits for the answer, one request at a time
-//! ([`Link::listing`]), or follows the server's changes after
+//! ([`Link::listing`], [`Link::tell`]), or follows the server's changes after
 //! [`Link::follow`] ([`Link::next_change`]). The service keeps one of each,
 //! so an answer and a change never arrive mixed on one socket.
 
 use pulseaudio::protocol::{
-    self, AuthParams, AuthReply, Command, CommandReply, Prop, Props, ServerInfo, SetClientNameReply, SinkInfoList,
-    SinkInputInfoList, SourceInfoList, SourceOutputInfoList, SubscriptionMask,
+    self, AuthParams, AuthReply, Command, CommandReply, Prop, Props, ProtocolError, ServerInfo, SetClientNameReply,
+    SinkInfoList, SinkInputInfoList, SourceInfoList, SourceOutputInfoList, SubscriptionMask,
 };
 use std::ffi::CString;
 use std::io::BufReader;
@@ -78,6 +78,15 @@ pub struct Listing {
     pub source_outputs: SourceOutputInfoList,
 }
 
+/// Why the server didn't do what it was told.
+#[derive(Debug)]
+pub enum Failed {
+    /// It said no, as for a device that just went. The connection is fine.
+    Refused(String),
+    /// The connection is no good any more.
+    Broken(String),
+}
+
 /// A connection the server accepted.
 pub struct Link {
     reader: BufReader<UnixStream>,
@@ -123,6 +132,16 @@ impl Link {
             sink_inputs: self.ask(&Command::GetSinkInputInfoList)?,
             source_outputs: self.ask(&Command::GetSourceOutputInfoList)?,
         })
+    }
+
+    /// Has the server do `command`, one that it answers with a plain yes.
+    pub fn tell(&mut self, command: &Command) -> Result<(), Failed> {
+        let request = self.send(command).map_err(Failed::Broken)?;
+        match protocol::read_ack_message(&mut self.reader) {
+            Ok(answered) => same_request(request, answered).map_err(Failed::Broken),
+            Err(ProtocolError::ServerError(error)) => Err(Failed::Refused(format!("the sound server said: {error}"))),
+            Err(e) => Err(Failed::Broken(e.to_string())),
+        }
     }
 
     /// Asks the server to say when anything [`Listing`] holds changes. From
