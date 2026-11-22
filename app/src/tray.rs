@@ -69,7 +69,15 @@ fn activate_item(daemon: &Daemon, address: &str) -> Answer {
             // tell whether one is open, so nothing starts either way.
             let open = ids.is_empty() || compositor.focus_app(&ids, None).unwrap_or(true);
             tray.activate(&address)?;
-            let shown = |wait| nova_launcher::focus_shown(&app, &ids, compositor, None, wait, &logger);
+            let shown = |wait| {
+                nova_launcher::focus_shown(
+                    nova_launcher::AppWindows { id: &app, ids: &ids },
+                    compositor,
+                    None,
+                    wait,
+                    &logger,
+                )
+            };
             if open || shown(nova_launcher::SHOWN_WINDOW_WAIT) {
                 return Ok(());
             }
@@ -104,7 +112,13 @@ fn menu_picked(daemon: &Daemon, address: &str) -> Answer {
     if compositor.app_workspace(&ids).is_ok_and(|workspace| workspace.is_none()) {
         let logger = Arc::clone(&daemon.logger);
         std::thread::spawn(move || {
-            nova_launcher::focus_shown(&app, &ids, &compositor, None, nova_launcher::SHOWN_WINDOW_WAIT, &logger)
+            nova_launcher::focus_shown(
+                nova_launcher::AppWindows { id: &app, ids: &ids },
+                &compositor,
+                None,
+                nova_launcher::SHOWN_WINDOW_WAIT,
+                &logger,
+            )
         });
     }
     Answer::Now(Outcome::Result(serde_json::Value::Null))

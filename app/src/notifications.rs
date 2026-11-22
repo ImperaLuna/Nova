@@ -78,8 +78,7 @@ fn open(daemon: &Daemon, id: u32, output: Option<String>) -> Answer {
     let logger = Arc::clone(&daemon.logger);
     Answer::later(move || {
         nova_launcher::focus_shown(
-            &app,
-            &ids,
+            nova_launcher::AppWindows { id: &app, ids: &ids },
             &compositor,
             output.as_deref(),
             nova_launcher::SHOWN_WINDOW_WAIT,
