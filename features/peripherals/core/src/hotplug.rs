@@ -5,8 +5,57 @@
 //! udev nor netlink. A USB bus that appears later (a new controller) is
 //! watched from then on.
 
+use nova_base::lock;
 use nova_inotify::{self as inotify, Inotify};
 use std::path::Path;
+use std::sync::{Condvar, Mutex};
+use std::time::{Duration, Instant};
+
+/// Wakes a thread that reads devices again on a timer, and soon after they
+/// come or go, until stopped.
+#[derive(Default)]
+pub struct Waker {
+    wakes: Mutex<Wakes>,
+    condvar: Condvar,
+}
+
+#[derive(Default)]
+struct Wakes {
+    stopped: bool,
+    /// When a device last came or went, until they are read again.
+    plugged: Option<Instant>,
+}
+
+impl Waker {
+    /// A device came or went.
+    pub fn plugged(&self) {
+        lock(&self.wakes).plugged = Some(Instant::now());
+        self.condvar.notify_all();
+    }
+
+    pub fn stop(&self) {
+        lock(&self.wakes).stopped = true;
+        self.condvar.notify_all();
+    }
+
+    /// Waits until `next`, or until `settle` after a device last came or
+    /// went if that's sooner. False once stopped.
+    pub fn wait(&self, next: Instant, settle: Duration) -> bool {
+        let mut wakes = lock(&self.wakes);
+        loop {
+            if wakes.stopped {
+                return false;
+            }
+            let due = wakes.plugged.map_or(next, |plugged| next.min(plugged + settle));
+            let now = Instant::now();
+            if now >= due {
+                wakes.plugged = None;
+                return true;
+            }
+            wakes = self.condvar.wait_timeout(wakes, due - now).unwrap_or_else(std::sync::PoisonError::into_inner).0;
+        }
+    }
+}
 
 /// Calls `changed` on a thread of its own whenever a USB device is plugged
 /// in or out under `dir` (`/dev/bus/usb`), until the returned stopper is

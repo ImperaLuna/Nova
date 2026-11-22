@@ -340,12 +340,11 @@ impl State {
             Event::WindowFocusChanged { id } => self.focused_window = id,
             Event::WindowLayoutsChanged { changes } => {
                 for (id, layout) in changes {
-                    if let Some(window) = self.windows.get_mut(&id) {
-                        window.layout = Some(layout);
-                        let output = window.workspace_id.and_then(|id| self.workspaces.get(&id)?.output.clone());
-                        if let Some(output) = output {
-                            *self.moved.entry(output).or_default() += 1;
-                        }
+                    let Some(window) = self.windows.get_mut(&id) else { continue };
+                    window.layout = Some(layout);
+                    let output = window.workspace_id.and_then(|id| self.workspaces.get(&id)?.output.clone());
+                    if let Some(output) = output {
+                        *self.moved.entry(output).or_default() += 1;
                     }
                 }
                 self.outputs_known = false;

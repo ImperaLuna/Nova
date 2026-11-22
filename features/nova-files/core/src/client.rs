@@ -115,10 +115,7 @@ impl Client {
                 Ok(Stage::Found { paths: found, done }) => {
                     paths.extend(found);
                     if done {
-                        let mut going = lock(&self.going);
-                        if *going == Some(id) {
-                            *going = None;
-                        }
+                        self.finished(id);
                         return Ok(paths);
                     }
                 }
@@ -128,6 +125,14 @@ impl Client {
                 Err(RecvTimeoutError::Timeout) => return Ok(paths),
                 Err(RecvTimeoutError::Disconnected) => return Err("the signals stopped".into()),
             }
+        }
+    }
+
+    /// Forgets search `id` as the one going, unless a newer one is.
+    fn finished(&self, id: u64) {
+        let mut going = lock(&self.going);
+        if *going == Some(id) {
+            *going = None;
         }
     }
 
