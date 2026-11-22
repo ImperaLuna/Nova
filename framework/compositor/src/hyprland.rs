@@ -18,7 +18,7 @@
 //! one this Hyprland speaks ([`Dialect`]).
 
 use super::Backend;
-use nova_protocol::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
+use crate::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -69,7 +69,7 @@ const DEVICES: &str = "j/devices";
 
 /// A Lua dispatcher that does nothing: only a Hyprland that speaks Lua
 /// answers it with `ok` (others say "Invalid dispatcher").
-pub(crate) const LUA_PROBE: &str = "dispatch hl.dsp.no_op()";
+pub const LUA_PROBE: &str = "dispatch hl.dsp.no_op()";
 /// Hyprland's answer to a dispatcher that ran.
 const DISPATCHED: &str = "ok";
 

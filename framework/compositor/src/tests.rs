@@ -6,8 +6,6 @@
 //! answers from a newer Hyprland, taken on a real desktop.
 
 use super::*;
-use nova_protocol::{FocusedWindow, Output};
-use std::path::Path;
 
 const NIRI_HANDLED: &str = r#"{"Ok":"Handled"}"#;
 
@@ -25,7 +23,7 @@ struct RecordedStep {
 
 impl Recording {
     fn load(compositor: &str) -> Self {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/compositor/recorded").join(compositor);
+        let dir = recorded_dir().join(compositor);
         let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap();
         Self { events: read("events.txt"), steps: serde_json::from_str(&read("steps.json")).unwrap(), dir }
     }
@@ -269,7 +267,7 @@ fn hyprland_0_57_without_a_special_workspace_id_still_loads() {
 
 /// Hyprland 0.57 as it answers from `recorded/<dir>/`.
 fn hyprland_0_57(dir: &str) -> hyprland::State {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/compositor/recorded").join(dir);
+    let dir = recorded_dir().join(dir);
     let mut ask = |request: &str| {
         let query = request.strip_prefix("j/").unwrap();
         Ok(std::fs::read_to_string(dir.join(format!("{query}.json"))).unwrap())

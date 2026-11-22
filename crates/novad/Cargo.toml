@@ -26,6 +26,7 @@
 # - nova-apps
 # - nova-base
 # - nova-carrier
+# - nova-compositor
 # - nova-features
 # - nova-host
 # - nova-hub
@@ -66,6 +67,7 @@ nova-log.workspace = true
 nova-socket.workspace = true
 nova-modules.workspace = true
 nova-settings.workspace = true
+nova-compositor.workspace = true
 nova-host.workspace = true
 nova-theme.workspace = true
 nova-apps.workspace = true
@@ -101,6 +103,7 @@ nova-session-bus = { workspace = true, features = ["test-support"] }
 nova-hub = { workspace = true, features = ["test-support"] }
 nova-socket = { workspace = true, features = ["test-support"] }
 nova-apps = { workspace = true, features = ["test-support"] }
+nova-compositor = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true
