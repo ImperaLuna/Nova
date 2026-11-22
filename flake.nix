@@ -54,6 +54,8 @@
             ./Cargo.lock
             ./deny.toml
             ./rustfmt.toml
+            # Clippy's limits and test exemptions.
+            ./clippy.toml
             ./features
             # The crate folder kinds (AGENTS.md, Layout).
             ./framework
