@@ -174,6 +174,17 @@ impl<S: 'static> Router<S> {
         self
     }
 
+    /// Lists the names, in [`Router::names`] and an unknown name's error, in
+    /// the order `position` gives them (a stable sort), whatever order the
+    /// routes were added in. Call it once every route is added.
+    pub fn listed_by(mut self, position: impl Fn(&str) -> usize) -> Self {
+        let mut names = self.names.to_vec();
+        names.sort_by_key(|name| position(name));
+        // Once, at start: the list lives as long as the app.
+        self.names = Box::leak(names.into_boxed_slice());
+        self
+    }
+
     /// Every command name a route takes.
     pub fn names(&self) -> &'static [&'static str] {
         self.names
@@ -222,6 +233,13 @@ mod tests {
     #[test]
     fn each_type_brings_its_names() {
         assert_eq!(router().names(), ["hello", "wave", "bye"]);
+    }
+
+    #[test]
+    fn names_can_be_listed_in_another_order() {
+        let order = ["bye", "wave"];
+        let listed = router().listed_by(|name| order.iter().position(|each| *each == name).unwrap_or(usize::MAX));
+        assert_eq!(listed.names(), ["bye", "wave", "hello"]);
     }
 
     #[test]

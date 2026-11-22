@@ -24,6 +24,22 @@ pub fn router() -> Router<Daemon> {
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).follow_up(command),
         )
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
+        .listed_by(protocol_js_position)
+}
+
+/// The UI's protocol file. It is generated from these routes, so it names
+/// every command, and its order stays put as features move theirs out of
+/// `nova_protocol::Command` (`protocol_js`).
+const PROTOCOL_JS: &str = include_str!("../../../ui/daemon/protocol.js");
+
+/// Where protocol.js names the command `name`, so an unknown command's
+/// error lists the names in one fixed order, whatever order the routes
+/// were added in.
+fn protocol_js_position(name: &str) -> usize {
+    PROTOCOL_JS
+        .lines()
+        .position(|line| line.strip_prefix("var CMD_").and_then(|rest| rest.split('"').nth(1)) == Some(name))
+        .unwrap_or(usize::MAX)
 }
 
 /// A shared command, read with its `subscribe` topics checked against the
@@ -753,8 +769,6 @@ impl<'a> Connection<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     /// Each topic is answered on subscribe by `follow_up` itself or by
     /// exactly one module, and every module's topic is one novad serves.
     #[test]
@@ -773,8 +787,7 @@ mod tests {
     /// already stops the router being built.)
     #[test]
     fn every_command_has_one_route() {
-        let protocol_js = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ui/daemon/protocol.js");
-        let js = std::fs::read_to_string(protocol_js).unwrap();
+        let js = super::PROTOCOL_JS;
         let mut named: Vec<&str> =
             js.lines().filter_map(|line| line.strip_prefix("var CMD_")?.split('"').nth(1)).collect();
         let mut routed = super::router().names().to_vec();

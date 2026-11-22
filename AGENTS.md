@@ -159,7 +159,8 @@ assertions). The feature is `<id>` (its folder name), its crates
      `[dependencies]`, in alphabetical order.
    - `crates/novad/src/requests.rs` `router()`: one
      `.route::<nova_<id>_api::Command>(crate::<id>::answer, |_, _, _| {})`
-     after the `Shared` route, the feature routes sorted by feature id. Its
+     after the `Shared` route, the feature routes sorted by feature id (the
+     router lists names in protocol.js's order, so errors don't move). Its
      arms leave `answer` and `follow_up`, and its `fn <id>()` lookup goes.
      A module's topic needs no line in `follow_up`: its catch-all asks the
      modules (`Module::TOPIC`), and `each_topic_has_one_owner` checks it.

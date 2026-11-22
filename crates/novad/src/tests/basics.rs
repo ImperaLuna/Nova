@@ -56,20 +56,23 @@ fn bad_requests_get_an_error_when_they_have_an_id() {
     assert!(reply["error"].as_str().unwrap().starts_with("bad request"));
 }
 
-/// The router's error for a command nobody serves is the one serde gives
-/// for an unknown variant, word for word, listing every command of every
-/// route: the shared ones first, then each feature's own (`watch_resources`).
+/// The router's error for a command nobody serves is the one decoding the
+/// whole command list gives, word for word: every command, in the order
+/// protocol.js names them, however many routes serve them.
 #[test]
 fn an_unknown_command_gets_the_decoders_error() {
     let novad = TestDaemon::start("unknown", None);
     let mut client = novad.connect();
-    let request = json!({"v": 2, "id": 5, "cmd": "reboot"});
-    client.send(&request);
-    let decoded = nova_protocol::decode_request(&request.to_string()).unwrap_err();
-    let shared = decoded.strip_suffix('`').unwrap();
-    let error = client.next()["error"].as_str().unwrap().to_owned();
-    assert!(error.starts_with(&format!("bad request: {shared}`, `")), "{error}");
-    assert!(error.ends_with("`watch_resources`, `end_app`"), "{error}");
+    client.send(&json!({"v": 2, "id": 5, "cmd": "reboot"}));
+    let protocol_js =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ui/daemon/protocol.js"));
+    let named: Vec<String> = protocol_js
+        .unwrap()
+        .lines()
+        .filter_map(|line| Some(format!("`{}`", line.strip_prefix("var CMD_")?.split('"').nth(1)?)))
+        .collect();
+    let decoded = format!("unknown variant `reboot`, expected one of {}", named.join(", "));
+    assert_eq!(client.next()["error"], format!("bad request: {decoded}"));
 }
 
 /// A topic novad doesn't serve makes `subscribe` a bad request, with the
