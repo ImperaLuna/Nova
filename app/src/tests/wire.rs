@@ -47,6 +47,7 @@ fn wire_format() {
         peripherals_lines(),
         network_lines(),
         bluetooth_lines(),
+        sound_lines(),
     ];
     let all: String = lines.into_iter().flatten().map(Result::unwrap).collect();
     assert!(all.lines().all(|l| l.starts_with(r#"{"v":2,"#)));
@@ -118,6 +119,7 @@ fn own_lines() -> Vec<serde_json::Result<String>> {
                     nova_peripherals_api::TOPIC,
                     nova_network_api::TOPIC,
                     nova_bluetooth_api::TOPIC,
+                    nova_sound_api::TOPIC,
                 ]
                 .map(|topic| topic.name().to_string())
                 .to_vec(),
@@ -285,6 +287,11 @@ fn recording_lines() -> Vec<serde_json::Result<String>> {
         encode(nova_carrier::Request { id: None, command: nova_recording_api::Command::OpenLog }),
         encode(nova_host_info::Event::Host(host())),
     ]
+}
+
+/// The sound feature's own messages (`nova-sound-api`).
+fn sound_lines() -> Vec<serde_json::Result<String>> {
+    vec![encode(nova_sound_api::Event::Sound(sound()))]
 }
 
 /// The resources feature's own messages (`nova-resources-api`), and what follows them.
