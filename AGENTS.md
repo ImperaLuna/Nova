@@ -149,6 +149,7 @@ these rules and names the one a change breaks:
 | U2 | in `framework-ui/` uses only other `framework-ui` crates and listed framework crates, never a feature | let the feature's ui plug in |
 | U3 | `app-ui` uses only ui and api crates, `framework-ui` and listed framework crates | send novad a message |
 | S1 | workspace root has the same `[workspace.package]` and `[workspace.lints]` as the other | make the change in both |
+| S2 | has `publish.workspace = true` (no Nova crate is published) | add the line |
 | T1 | in a feature has no dev-dependency on another feature's `core` or `ui`, unless `DEV_EXCEPTIONS` lists the pair | use a fake from the framework, or list the pair with its reason |
 | D1 | `Cargo.toml` has both allowed lists | add them |
 | D2 | depends only on crates its allowed lists name | add it to the list and say why in the PR |

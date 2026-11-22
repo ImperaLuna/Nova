@@ -22,7 +22,7 @@ crate() {
     allowed_header outside "$outside"
     echo "#"
     allowed_header workspace "$inside"
-    printf '\n[package]\nname = "%s"\nversion = "0.1.0"\nedition = "2024"\n\n[dependencies]\n' "$name"
+    printf '\n[package]\nname = "%s"\nversion = "0.1.0"\nedition = "2024"\npublish = false\n\n[dependencies]\n' "$name"
     printf '%s\n' "$@"
   } >"$workspace/$folder/Cargo.toml"
 }
@@ -228,6 +228,10 @@ expect_fail "the UI program using a core" U3 "$ws"
 ws=$(planted lints-differ)
 sed -i 's|^unwrap_used = "deny"|unwrap_used = "warn"|' "$ws/app-ui/Cargo.toml"
 expect_fail "the UI side's lints differing from the daemon side's" S1 "$ws"
+
+ws=$(planted publishable)
+sed -i '/^publish = false$/d' "$ws/framework/carrier/Cargo.toml"
+expect_fail "a crate that can be published" S2 "$ws"
 
 ws=$(planted no-manifest)
 rm "$ws/features/media/feature.toml"

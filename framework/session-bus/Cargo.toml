@@ -11,6 +11,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [features]
 # A private test bus and connecting to a bus by address, for novad's tests.

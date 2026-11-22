@@ -22,6 +22,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [features]
 # The tray items novad's tests put up (`test_items`).

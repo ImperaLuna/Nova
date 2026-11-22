@@ -43,10 +43,11 @@ allow = [
 
 [bans]
 multiple-versions = "allow"
-# No ban on wildcard versions: the UI side uses the daemon side's api and
-# -info crates by path, which cargo-deny counts as wildcards unless every
-# crate on the way is `publish = false`. The daemon side's deny.toml has
-# none either.
+# A version of "*" takes whatever is newest. The daemon side's api and -info
+# crates come in by path, which is fine: every Nova crate is
+# `publish = false`, and that is how cargo-deny tells them apart.
+wildcards = "deny"
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"
