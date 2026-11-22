@@ -105,7 +105,7 @@ fn groups(features: &Path, current: &str) -> Vec<Group> {
             "PROVIDER",
             &[nova_launcher_api::PROVIDER_APPS, nova_nova_files_api::PROVIDER_FILES],
         ),
-        Group::new("Power menu actions (PowerAction).", "POWER", names_of::<PowerAction>()),
+        Group::new("Power menu actions (PowerAction).", "POWER", names_of::<nova_power_api::PowerAction>()),
         Group::new("What the capture toolbar takes (CaptureMode).", "CAPTURE", names_of::<CaptureMode>()),
         Group::new("The screenshot card's buttons (ScreenshotAction).", "SHOT", names_of::<ScreenshotAction>()),
         Group::new(

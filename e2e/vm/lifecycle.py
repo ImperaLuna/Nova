@@ -191,7 +191,7 @@ FOOT_UNIT = "app-nova-foot-"
 POWER_OPENED = "nova: power menu opened"
 POWER_CLOSED = "nova: power menu closed"
 KEY_L = "38:1 38:0"
-# novad's sleep inhibitor (crates/novad/src/logind.rs) as `systemd-inhibit
+# novad's sleep inhibitor (features/power/core/src/logind.rs) as `systemd-inhibit
 # --list` shows it: who, what, why and mode.
 NOVA_INHIBITOR = "Nova.*sleep.*Locking the screen before sleep.*delay"
 # The panels `nova toggle` opens, with what each logs once open and once

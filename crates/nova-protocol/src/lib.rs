@@ -396,15 +396,6 @@ pub enum Command {
     /// The UI unlocked the session after the user's password checked out
     /// (feature `lock`). Unlocking is the UI's alone: this only tells novad.
     ReportUnlocked,
-    /// Replies with a [`PowerMenu`]: what the power menu can do now, a
-    /// [`PowerOption`] per [`PowerAction`], and when the system booted
-    /// (feature `power`). Asked each time the menu opens.
-    PowerOptions,
-    /// Runs a power menu action (feature `power`). The menu asks the user
-    /// to confirm the ones that end the session first.
-    Power {
-        action: PowerAction,
-    },
     /// Changes the default output's volume and shows the capsule, even at
     /// either end or without an output (`nova volume`). Fails when no UI is
     /// connected to do it.
@@ -458,44 +449,6 @@ pub enum Command {
     /// Opens novad's log (feature `recording`: the recording card's Open log,
     /// after a recording didn't start).
     OpenLog,
-}
-
-/// What the power menu does, in the order it lists them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PowerAction {
-    Lock,
-    LogOut,
-    Suspend,
-    Reboot,
-    PowerOff,
-}
-
-impl PowerAction {
-    pub const ALL: [PowerAction; 5] =
-        [PowerAction::Lock, PowerAction::LogOut, PowerAction::Suspend, PowerAction::Reboot, PowerAction::PowerOff];
-}
-
-/// Whether a power action can run now, and why not when it can't.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PowerOption {
-    pub action: PowerAction,
-    pub available: bool,
-    /// For people, shown under the dimmed action.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
-/// What `power_options` returns.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PowerMenu {
-    pub options: Vec<PowerOption>,
-    /// When the system booted, in Unix seconds, for the menu's uptime; left
-    /// out when novad can't tell.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub booted_at: Option<u64>,
 }
 
 /// What `status` returns.
@@ -581,6 +534,7 @@ mod tests {
     /// accept with `cargo insta review`, then run `just protocol-js`.
     #[test]
     fn wire_format() {
+        use nova_power_api::{PowerAction, PowerMenu, PowerOption};
         let lines = [
             encode(Event::Hello { daemon: "0.1.0".into() }),
             encode(Event::Features {
@@ -679,7 +633,8 @@ mod tests {
             encode(Request { id: Some(20), command: Command::ReportLocked }),
             encode(Request { id: Some(17), command: Command::ReportUnlocked }),
             encode(Event::Lock { locked: false }),
-            encode(Request { id: Some(18), command: Command::PowerOptions }),
+            // The power feature's own messages (`nova-power-api`), still on this one wire.
+            encode(nova_carrier::Request { id: Some(18), command: nova_power_api::Command::PowerOptions }),
             encode(Response {
                 id: 18,
                 outcome: Outcome::Result(
@@ -697,7 +652,10 @@ mod tests {
                     .unwrap(),
                 ),
             }),
-            encode(Request { id: Some(19), command: Command::Power { action: PowerAction::PowerOff } }),
+            encode(nova_carrier::Request {
+                id: Some(19),
+                command: nova_power_api::Command::Power { action: PowerAction::PowerOff },
+            }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Power } }),
             encode(Request { id: Some(21), command: Command::Volume { key: VolumeKey::Up } }),
             encode(Event::Volume { key: VolumeKey::Down }),
@@ -1612,15 +1570,6 @@ mod tests {
         assert!(decode_request(r#"{"v":2,"id":1,"cmd":"ping"}"#).is_ok());
         assert!(decode_request(r#"{"v":2,"id":1,"cmd":"ping","extra":true}"#).is_err());
         assert!(decode_request(r#"{"v":2,"cmd":"ping","args":{"x":1}}"#).is_err());
-    }
-
-    #[test]
-    fn power_menu_rejects_unknown_fields() {
-        let menu = r#"{"options":[{"action":"lock","available":true}],"booted_at":1}"#;
-        assert!(serde_json::from_str::<PowerMenu>(menu).is_ok());
-        assert!(serde_json::from_str::<PowerMenu>(r#"{"options":[],"extra":1}"#).is_err());
-        let option = r#"{"options":[{"action":"lock","available":true,"extra":1}]}"#;
-        assert!(serde_json::from_str::<PowerMenu>(option).is_err());
     }
 
     #[test]

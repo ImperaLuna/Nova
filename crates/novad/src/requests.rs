@@ -6,13 +6,9 @@
 
 use crate::hub::ClientId;
 use crate::{Daemon, lock};
-use nova_protocol::{
-    Capability, CaptureMode, Command, Event, Outcome, Panel, PowerAction, PowerMenu, VolumeKey, topics,
-};
+use nova_protocol::{CaptureMode, Command, Event, Outcome, Panel, VolumeKey, topics};
 use nova_socket::{Answer, Caller, Router, done, value};
 use std::sync::Arc;
-
-const LOG_SOURCE: &str = "server";
 
 /// The routes of every message novad serves. A moved feature adds its
 /// route in its place in the list below (by its feature name), and its
@@ -29,6 +25,7 @@ pub fn router() -> Router<Daemon> {
         .route::<nova_media_api::Command>(crate::media::answer, |_, _, _| {})
         .route::<nova_network_api::Command>(crate::network::answer, |_, _, _| {})
         .route::<nova_notifications_api::Command>(crate::notifications::answer, |_, _, _| {})
+        .route::<nova_power_api::Command>(crate::power::answer, |_, _, _| {})
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
         .route::<nova_tray_api::Command>(crate::tray::answer, |_, _, _| {})
         .route::<nova_wallpaper_api::Command>(crate::wallpaper::answer, |_, _, _| {})
@@ -113,8 +110,6 @@ impl<'a> Connection<'a> {
             Command::ReportUnlocked => {
                 done(self.sent_by_the_ui().map(|()| self.session_lock().unlocked(&self.daemon.hub)))
             }
-            Command::PowerOptions => return self.power_options(),
-            Command::Power { action } => return self.power(*action),
             Command::Screenshot { mode } => return self.screenshot(*mode),
             Command::SaveCapture { output, rect } => return self.save_capture(output.clone(), *rect),
             // Even with the feature off, so a reload can't strand the picker.
@@ -176,58 +171,6 @@ impl<'a> Connection<'a> {
             true => Ok(()),
             false => Err(crate::features::not_ready(id)),
         }
-    }
-
-    fn power_options(&self) -> Answer {
-        if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
-            return Answer::Now(Outcome::Error(e));
-        }
-        let lock = self.require_feature(crate::session_lock::FEATURE_ID);
-        let log_out = match &self.daemon.compositor {
-            Some(compositor) if compositor.can(Capability::LogOut) => Ok(()),
-            _ => Err("Not on this compositor".into()),
-        };
-        let logger = Arc::clone(&self.daemon.logger);
-        Answer::later(move || {
-            let menu = PowerMenu {
-                options: crate::power::options(lock, log_out, &logger),
-                booted_at: crate::procfs::boot_time(),
-            };
-            value(Ok(menu))
-        })
-    }
-
-    /// Runs a power menu action. The menu asks over the UI's own
-    /// connection, which can't report the lock screen covering the screens
-    /// while this waits, so locking here doesn't wait for it.
-    fn power(&self, action: PowerAction) -> Answer {
-        if let Err(e) = self.require_feature(crate::power::FEATURE_ID) {
-            return Answer::Now(Outcome::Error(e));
-        }
-        self.daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
-        match action {
-            PowerAction::Lock => Answer::Now(done(
-                self.require_feature(crate::session_lock::FEATURE_ID)
-                    .and_then(|()| self.session_lock().request(&self.daemon.hub)),
-            )),
-            PowerAction::LogOut => {
-                Answer::Now(done(self.compositor().and_then(crate::compositor::Compositor::log_out)))
-            }
-            PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff => self.power_logind(action),
-        }
-    }
-
-    /// Suspend, restart or shut down through logind; answers with logind's
-    /// own result. A suspend locks the screen first through novad's sleep
-    /// inhibitor ([`crate::logind`]), as one from anywhere else does.
-    fn power_logind(&self, action: PowerAction) -> Answer {
-        let logger = Arc::clone(&self.daemon.logger);
-        Answer::later(move || {
-            done(
-                crate::power::run_logind(action)
-                    .inspect_err(|e| logger.warn(LOG_SOURCE, &format!("{action:?} failed: {e}"))),
-            )
-        })
     }
 
     /// Opens the region picker on every screen (or closes it), or saves the
@@ -351,8 +294,6 @@ impl<'a> Connection<'a> {
             | Command::Lock
             | Command::ReportLocked
             | Command::ReportUnlocked
-            | Command::PowerOptions
-            | Command::Power { .. }
             | Command::Screenshot { .. }
             | Command::SaveCapture { .. }
             | Command::CancelCapture

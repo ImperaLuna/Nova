@@ -16,6 +16,7 @@
 # - nova-notifications-api
 # - nova-paths
 # - nova-peripherals-api
+# - nova-power-api
 # - nova-protocol
 # - nova-quickshell
 # - nova-network-api
@@ -46,6 +47,7 @@ nova-media-api.workspace = true
 nova-network-api.workspace = true
 nova-notifications-api.workspace = true
 nova-peripherals-api.workspace = true
+nova-power-api.workspace = true
 nova-resources-api.workspace = true
 nova-tray-api.workspace = true
 nova-wallpaper-api.workspace = true

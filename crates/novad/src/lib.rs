@@ -32,7 +32,6 @@ mod config;
 mod egl;
 mod features;
 mod launcher;
-mod logind;
 mod media;
 mod modules;
 mod network;
@@ -431,7 +430,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     // Not for a daemon without its UI (tests, a UI run by hand): logind's
     // locks and the sleep inhibitor are the whole machine's.
     if daemon.ui.is_some() {
-        logind::follow(&daemon);
+        power::follow_logind(&daemon);
     }
     Ok((listener, daemon, watching))
 }
