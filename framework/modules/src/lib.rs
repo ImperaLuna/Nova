@@ -20,6 +20,12 @@ use std::sync::Arc;
 
 const LOG_SOURCE: &str = "features";
 
+/// The error for a request that needs feature `id` while it's not ready
+/// (off, missing what it needs, or stopped by a reload).
+pub fn not_ready(id: &str) -> String {
+    format!("the {id} feature isn't ready (see `nova status`)")
+}
+
 /// What the app gives its modules and runs them by.
 pub trait App: Sized + 'static {
     /// What modules find their sources from, on this machine.

@@ -788,6 +788,7 @@ dependencies = [
  "nova-resources-api",
  "nova-test-support",
  "nova-tray-api",
+ "nova-wallpaper-api",
  "novad",
  "serde",
  "serde_json",
@@ -943,6 +944,7 @@ dependencies = [
  "nova-resources-api",
  "nova-theme",
  "nova-tray-api",
+ "nova-wallpaper-api",
  "proptest",
  "serde",
  "serde_json",
@@ -1058,6 +1060,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-wallpaper"
+version = "0.1.0"
+dependencies = [
+ "imagesize",
+ "libc",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-inotify",
+ "nova-log",
+ "nova-modules",
+ "nova-paths",
+ "nova-process",
+ "nova-settings",
+ "nova-test-support",
+ "nova-wallpaper-api",
+ "png",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nova-wallpaper-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "nova-watch"
 version = "0.1.0"
 dependencies = [
@@ -1090,7 +1121,6 @@ dependencies = [
  "clap",
  "flate2",
  "futures-core",
- "imagesize",
  "jiff",
  "libc",
  "lzma-rust2",
@@ -1122,6 +1152,8 @@ dependencies = [
  "nova-theme",
  "nova-tray",
  "nova-tray-api",
+ "nova-wallpaper",
+ "nova-wallpaper-api",
  "nova-x11-tray",
  "pbkdf2",
  "png",
