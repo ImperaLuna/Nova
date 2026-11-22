@@ -68,7 +68,7 @@ impl Fixture {
     }
 
     fn sound(&self) -> Arc<Sound> {
-        let sources = Sources { socket: Some(self.socket()), cookies: Vec::new() };
+        let sources = Sources { socket: Some(self.socket()) };
         Sound::start(sources, Arc::clone(&self.hub), Arc::clone(&self.logger))
     }
 

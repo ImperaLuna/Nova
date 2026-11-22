@@ -13,17 +13,15 @@ use pulseaudio::protocol::{
     SinkInputInfoList, SourceInfoList, SourceOutputInfoList, SubscriptionMask,
 };
 use std::ffi::CString;
-use std::io::{BufReader, Read};
+use std::io::BufReader;
 use std::os::unix::net::UnixStream;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// How long the server gets to take a request or answer one.
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(5);
 /// The name the server lists Nova's connections under.
 const CLIENT_NAME: &str = "Nova";
-/// The most a cookie file is read: PulseAudio's are 256 bytes.
-const COOKIE_MAX_BYTES: u64 = 256;
 /// What the server names its socket's folder and file.
 const SOCKET_IN_RUNTIME_DIR: &str = "pulse/native";
 /// `PULSE_SERVER`'s prefix for a Unix socket.
@@ -34,16 +32,12 @@ const UNIX_PREFIX: &str = "unix:";
 pub struct Sources {
     /// The server's socket, when the environment says where one would be.
     pub socket: Option<PathBuf>,
-    /// The files a cookie is looked for in, in order. PipeWire asks for
-    /// none; PulseAudio wants the one it wrote.
-    pub cookies: Vec<PathBuf>,
 }
 
 impl Sources {
     /// Where libpulse would look: `PULSE_SERVER` when it's set (nowhere
     /// when it names no Unix socket: the apps' server isn't a local one
-    /// then), else `PULSE_RUNTIME_PATH`, else `XDG_RUNTIME_DIR`; the cookie
-    /// from `PULSE_COOKIE`, else the home folder.
+    /// then), else `PULSE_RUNTIME_PATH`, else `XDG_RUNTIME_DIR`.
     pub fn system() -> Self {
         let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty()).map(PathBuf::from);
         let socket = match std::env::var("PULSE_SERVER").ok().filter(|server| !server.is_empty()) {
@@ -52,13 +46,7 @@ impl Sources {
                 .map(|dir| dir.join("native"))
                 .or_else(|| var("XDG_RUNTIME_DIR").map(|dir| dir.join(SOCKET_IN_RUNTIME_DIR))),
         };
-        let config = var("XDG_CONFIG_HOME").or_else(|| var("HOME").map(|home| home.join(".config")));
-        let cookies = [
-            var("PULSE_COOKIE"),
-            config.map(|config| config.join("pulse/cookie")),
-            var("HOME").map(|home| home.join(".pulse-cookie")),
-        ];
-        Self { socket, cookies: cookies.into_iter().flatten().collect() }
+        Self { socket }
     }
 }
 
@@ -96,7 +84,9 @@ pub struct Link {
 }
 
 impl Link {
-    /// Connects and introduces Nova. Each request and answer has
+    /// Connects and introduces Nova, without a cookie: on its own Unix
+    /// socket PulseAudio takes the user it runs as by the socket's
+    /// credentials, and PipeWire asks for none. So no secret is read. Each request and answer has
     /// [`ANSWER_TIMEOUT`]; connecting to a local socket answers at once.
     pub fn connect(sources: &Sources) -> Result<Self, String> {
         let socket = sources.socket.as_deref().ok_or("nothing says where the sound server's socket is")?;
@@ -110,7 +100,7 @@ impl Link {
             version: protocol::MAX_VERSION,
             supports_shm: false,
             supports_memfd: false,
-            cookie: cookie(&sources.cookies),
+            cookie: Vec::new(),
         };
         let reply: AuthReply = link.ask(&Command::Auth(auth))?;
         link.version = reply.version.min(protocol::MAX_VERSION);
@@ -191,8 +181,7 @@ fn same_request(request: u32, answered: u32) -> Result<(), String> {
     }
 }
 
-/// A command's name for an error, without its arguments: `Auth`'s hold the
-/// cookie.
+/// A command's name for an error, without its arguments.
 fn name(command: &Command) -> &'static str {
     match command {
         Command::Auth(_) => "auth",
@@ -205,17 +194,6 @@ fn name(command: &Command) -> &'static str {
         Command::GetSourceOutputInfoList => "list recording apps",
         _ => "request",
     }
-}
-
-/// The first cookie found, or none: PipeWire takes any.
-fn cookie(files: &[PathBuf]) -> Vec<u8> {
-    files.iter().find_map(|file| read_cookie(file)).unwrap_or_default()
-}
-
-fn read_cookie(file: &Path) -> Option<Vec<u8>> {
-    let mut cookie = Vec::new();
-    std::fs::File::open(file).ok()?.take(COOKIE_MAX_BYTES).read_to_end(&mut cookie).ok()?;
-    Some(cookie)
 }
 
 #[cfg(test)]
