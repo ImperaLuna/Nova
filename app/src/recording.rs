@@ -112,7 +112,7 @@ impl nova_modules::Module for Recordings {
         ctx: &crate::modules::Context,
         (): &(),
         config: &RecordingConfig,
-        features: &[nova_protocol::FeatureState],
+        features: &[nova_daemon_info::FeatureState],
     ) -> Arc<Self> {
         let recordings = Arc::new(nova_recording::Recordings::new(
             ctx.path_var.clone(),
@@ -132,7 +132,7 @@ impl nova_modules::Module for Recordings {
         &self,
         _: &RecordingConfig,
         _: &RecordingConfig,
-        features: &[nova_protocol::FeatureState],
+        features: &[nova_daemon_info::FeatureState],
     ) -> nova_modules::Reconfigure {
         self.allow(crate::features::is_ready(features, FEATURE_ID));
         nova_modules::Reconfigure::InPlace

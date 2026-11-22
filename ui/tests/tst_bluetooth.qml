@@ -5,7 +5,7 @@ import "../theme"
 import "../quick_settings/bluetooth.js" as Bluetooth
 
 // The Bluetooth tile and page, driven with bluetooth events in the shape
-// novad sends (crates/nova-protocol's wire format snapshot). The root is an
+// novad sends (novad's wire format snapshot). The root is an
 // Item: a TestCase root gets no mouse events.
 Item {
     id: stage

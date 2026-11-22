@@ -6,8 +6,8 @@
 
 use super::*;
 use nova_carrier::log::{LogEntry, UI_LOG_SOURCE};
+use nova_daemon_info::FeatureStatus;
 use nova_icons::Icons;
-use nova_protocol::FeatureStatus;
 use nova_session_bus::Bus;
 use nova_test_support::{TempDir, wait_until, write_program};
 use serde_json::{Value, json};
@@ -327,5 +327,6 @@ mod fake_compositor;
 mod live_config;
 mod services;
 mod usage;
+mod wire;
 
 use fake_compositor::{FakeCompositor, focused_output, follow_to_the_end, workspace_id};

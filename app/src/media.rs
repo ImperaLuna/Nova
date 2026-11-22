@@ -115,7 +115,7 @@ impl nova_modules::Module for Media {
         ctx: &crate::modules::Context,
         sources: &Sources,
         (): &(),
-        _: &[nova_protocol::FeatureState],
+        _: &[nova_daemon_info::FeatureState],
     ) -> Arc<Self> {
         let core = nova_media::Media::start(
             sources.clone(),

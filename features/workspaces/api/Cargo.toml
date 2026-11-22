@@ -1,0 +1,20 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates:
+# - nova-desktop-info
+
+[package]
+name = "nova-workspaces-api"
+description = "The workspaces feature's messages: focus_workspace and step_workspace"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-desktop-info.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

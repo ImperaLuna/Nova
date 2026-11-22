@@ -31,12 +31,12 @@ rules_doc="AGENTS.md (Layout)"
 # framework/. A framework crate goes on a list only when every crate of that
 # kind may use it: a daemon-side part (the socket server) never on the ui
 # list, a screen-side part (the stage, theme tokens) never on the core list.
-# The light -info crates hold wire types only; nova-desktop-info also uses
-# nova-carrier, for the topic constant it keeps beside its types.
-FRAMEWORK_FOR_API=(app-info carrier desktop-info host-info theme-info)
-FRAMEWORK_FOR_CORE=(app-info apps base carrier compositor desktop-info host-info hub icons inotify log mime modules paths process session-bus settings socket theme-info watch)
+# The light -info crates hold wire types only (rule I1), so every kind but
+# ui may use them.
+FRAMEWORK_FOR_API=(app-info carrier daemon-info desktop-info host-info theme-info)
+FRAMEWORK_FOR_CORE=(app-info apps base carrier compositor daemon-info desktop-info host-info hub icons inotify log mime modules paths process session-bus settings socket theme-info watch)
 FRAMEWORK_FOR_UI=()
-FRAMEWORK_FOR_FRONT=(app-info base carrier desktop-info host-info paths theme-info)
+FRAMEWORK_FOR_FRONT=(app-info base carrier daemon-info desktop-info host-info paths theme-info)
 
 # The dev-dependencies a feature's crate may have on another feature's core
 # or ui (rule T1), as "<crate> <dependency>", each with its reason. Every
@@ -110,7 +110,14 @@ rule_break() {
   fi
   case ${from[0]} in
     framework)
-      [[ ${to[0]} == framework ]] && return
+      if [[ ${to[0]} == framework ]]; then
+        # An -info crate's event and topic need nova-carrier; its types may
+        # carry another -info crate's.
+        if [[ ${from[1]} == *-info && ${to[1]} != carrier && ${to[1]} != *-info ]]; then
+          echo "rule I1: an -info crate holds wire types only, so it uses only nova-carrier and other -info crates. Move the code to the crate that builds the types."
+        fi
+        return
+      fi
       echo "rule W1: the framework never uses a feature, a front or the app. Have the feature plug in instead (a module, a port or a message type)."
       ;;
     front)
@@ -195,16 +202,20 @@ expect_rule features/media/core framework/server F2
 expect_rule features/media/api framework/server F1
 expect_rule features/media/core fronts/cli F4
 expect_rule features/media/core app F4
-expect_rule features/media/core crates/nova-protocol M1
+expect_rule features/media/core crates/nova-features M1
 expect_rule framework/server features/media/api W1
 expect_rule framework/server fronts/cli W1
-expect_rule framework/server crates/nova-protocol M1
+expect_rule framework/server crates/nova-features M1
 expect_rule framework/server framework/paths ""
+expect_rule framework/theme-info framework/carrier ""
+expect_rule framework/daemon-info framework/desktop-info ""
+expect_rule framework/theme-info framework/paths I1
+expect_rule framework/theme-info features/media/api W1
 expect_rule fronts/cli features/media/api ""
 expect_rule fronts/cli features/media/core W2
 expect_rule fronts/cli framework/server W2
-expect_rule crates/nova-protocol features/media/core ""
-expect_rule crates/nova-protocol framework/server ""
+expect_rule crates/nova-features features/media/core ""
+expect_rule crates/nova-features framework/server ""
 expect_rule app features/media/core ""
 expect_rule tools/thing framework/server C1
 expect_rule features/media framework/server C1

@@ -69,7 +69,7 @@ impl nova_modules::Module for SessionLock {
         ctx: &crate::modules::Context,
         runtime_dir: &PathBuf,
         (): &(),
-        _: &[nova_protocol::FeatureState],
+        _: &[nova_daemon_info::FeatureState],
     ) -> Arc<Self> {
         Arc::new(Self(nova_lock::SessionLock::open(runtime_dir, Arc::clone(&ctx.hub), &ctx.logger)))
     }

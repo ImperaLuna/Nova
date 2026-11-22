@@ -25,7 +25,7 @@ impl nova_modules::Module for X11Tray {
 
     fn config(_: &crate::config::Config) {}
 
-    fn start(ctx: &crate::modules::Context, bus: &Bus, (): &(), _: &[nova_protocol::FeatureState]) -> Arc<Self> {
+    fn start(ctx: &crate::modules::Context, bus: &Bus, (): &(), _: &[nova_daemon_info::FeatureState]) -> Arc<Self> {
         Arc::new(Self(nova_x11_tray::X11Tray::start(bus.clone(), &ctx.path_var, Arc::clone(&ctx.logger))))
     }
 

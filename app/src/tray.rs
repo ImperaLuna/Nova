@@ -130,7 +130,7 @@ impl nova_modules::Module for Tray {
         ctx: &crate::modules::Context,
         sources: &Sources,
         (): &(),
-        _: &[nova_protocol::FeatureState],
+        _: &[nova_daemon_info::FeatureState],
     ) -> Arc<Self> {
         Arc::new(Self(nova_tray::Tray::start(
             sources.clone(),

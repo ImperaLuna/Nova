@@ -5,11 +5,11 @@
 //! launcher's `Provider` port, and all of the feature's work and state stay
 //! in the core.
 
+use nova_daemon_info::FeatureState;
 use nova_launcher::providers::{Provider, Run};
 use nova_launcher_api::LauncherItem;
 use nova_nova_files::ID;
 pub use nova_nova_files::Sources;
-use nova_protocol::FeatureState;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -73,9 +73,9 @@ fn own_windows(features: &[FeatureState]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nova_daemon_info::FeatureStatus;
     use nova_modules::{Module, Reconfigure};
     use nova_nova_files::LAUNCHER_MODE;
-    use nova_protocol::FeatureStatus;
     use nova_test_support::TempDir;
 
     fn state(mode: Option<&str>) -> FeatureState {

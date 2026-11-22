@@ -3,8 +3,26 @@
 //! theme files (`nova-theme`). A [`Color`] checks its `#RRGGBB` form when
 //! it is read, which is part of the wire format.
 
+use nova_carrier::{Published, Topic};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+
+/// The topic a client subscribes to for [`Event::Theme`].
+pub const TOPIC: Topic = Topic::named("theme");
+
+/// Pushed by novad on [`TOPIC`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "event", content = "data", rename_all = "snake_case")]
+pub enum Event {
+    /// The active theme's colors, sent right after subscribing.
+    Theme(Theme),
+}
+
+impl Published for Event {
+    fn topic(&self) -> Option<Topic> {
+        Some(TOPIC)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Theme {

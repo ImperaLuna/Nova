@@ -109,7 +109,7 @@ impl nova_modules::Module for Notifications {
         ctx: &crate::modules::Context,
         sources: &Sources,
         (): &(),
-        _: &[nova_protocol::FeatureState],
+        _: &[nova_daemon_info::FeatureState],
     ) -> Arc<Self> {
         let core = nova_notifications::Notifications::start(
             sources.clone(),

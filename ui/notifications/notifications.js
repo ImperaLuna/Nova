@@ -2,7 +2,7 @@
 
 // Notifications' logic without QML, so ui/tests can check it: the quick
 // settings list's groups, the unread count and how long a pop-up stays.
-// Notifications are a notifications event's items (nova-protocol's
+// Notifications are a notifications event's items (nova-notifications-api's
 // Notification).
 
 // `items` (newest first) grouped by app, the group with the newest first:

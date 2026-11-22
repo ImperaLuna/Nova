@@ -4,9 +4,9 @@
 //! that do decode must be exactly what a client meant to send.
 
 use nova_ai_usage_api::{AiProvider, UsageLimit, UsageWindow};
-use nova_carrier::{PROTOCOL_VERSION, encode};
+use nova_carrier::{PROTOCOL_VERSION, Request, encode};
+use nova_daemon_info::{Command, topics};
 use nova_desktop_info::Step;
-use nova_protocol::{Command, Request, decode_request, topics};
 use proptest::prelude::*;
 use serde_json::{Map, Value, json};
 
@@ -56,7 +56,7 @@ const NAMES: &[&str] = &[
 
 fn topic() -> impl Strategy<Value = String> {
     proptest::sample::select(
-        &[topics::FEATURES, topics::LOGS, topics::THEME, nova_ai_usage_api::TOPIC, topics::COMPOSITOR][..],
+        &[topics::FEATURES, topics::LOGS, nova_theme_info::TOPIC, nova_ai_usage_api::TOPIC, nova_desktop_info::TOPIC][..],
     )
     .prop_map(|topic| topic.name().to_string())
 }
@@ -77,10 +77,18 @@ fn command() -> impl Strategy<Value = Command> {
         Just(Command::Status),
         Just(Command::Quit),
         proptest::collection::vec(topic(), 0..6).prop_map(|topics| Command::Subscribe { topics }),
+    ]
+}
+
+/// The workspaces feature's commands (`nova-workspaces-api`).
+fn workspaces_request() -> impl Strategy<Value = Request<nova_workspaces_api::Command>> {
+    use nova_workspaces_api::Command;
+    let command = prop_oneof![
         any::<i64>().prop_map(|id| Command::FocusWorkspace { id }),
         (any::<String>(), prop_oneof![Just(Step::Next), Just(Step::Previous)])
             .prop_map(|(output, step)| Command::StepWorkspace { output, step }),
-    ]
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| Request { id, command })
 }
 
 /// The AI usage feature's commands, which it owns (`nova-ai-usage-api`).
@@ -264,7 +272,12 @@ fn pairing_answer() -> impl Strategy<Value = nova_bluetooth_api::PairingAnswer> 
     prop_oneof![Just(PairingAnswer::Accept), Just(PairingAnswer::Reject), ".*".prop_map(PairingAnswer::Code)]
 }
 
-fn request() -> impl Strategy<Value = Request> {
+/// One request line, read as one of novad's own commands.
+fn decode_request(line: &str) -> Result<Request<Command>, String> {
+    nova_carrier::decode_request(line)
+}
+
+fn request() -> impl Strategy<Value = Request<Command>> {
     (proptest::option::of(any::<u64>()), command()).prop_map(|(id, command)| Request { id, command })
 }
 
@@ -330,6 +343,12 @@ proptest! {
     fn every_request_round_trips(request in request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_workspaces_request_round_trips(request in workspaces_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
     }
 
     #[test]

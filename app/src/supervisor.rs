@@ -12,9 +12,9 @@
 use nova_base::backoff::Backoff;
 use nova_base::lock;
 use nova_carrier::log::UI_LOG_SOURCE;
+use nova_daemon_info::{Crash, UiState, UiStatus};
 use nova_log::Logger;
 use nova_process::child::{describe_exit, stdout_within};
-use nova_protocol::{Crash, UiState, UiStatus};
 use std::io::{BufRead, BufReader, Read};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};

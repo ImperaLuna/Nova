@@ -19,12 +19,14 @@
 # Allowed workspace crates:
 # - nova-ai-usage
 # - nova-ai-usage-api
+# - nova-bar-api
 # - nova-apps
 # - nova-base
 # - nova-bluetooth
 # - nova-bluetooth-api
 # - nova-carrier
 # - nova-compositor
+# - nova-daemon-info
 # - nova-desktop-info
 # - nova-features
 # - nova-host
@@ -52,7 +54,6 @@
 # - nova-power
 # - nova-power-api
 # - nova-process
-# - nova-protocol
 # - nova-quickshell
 # - nova-recording
 # - nova-recording-api
@@ -67,8 +68,10 @@
 # - nova-theme-info
 # - nova-tray
 # - nova-tray-api
+# - nova-volume-osd-api
 # - nova-wallpaper
 # - nova-wallpaper-api
+# - nova-workspaces-api
 # - nova-x11-tray
 
 [package]
@@ -82,7 +85,7 @@ license.workspace = true
 [dependencies]
 nova-desktop-info.workspace = true
 nova-host-info.workspace = true
-nova-protocol.workspace = true
+nova-daemon-info.workspace = true
 nova-features.workspace = true
 nova-paths.workspace = true
 nova-quickshell.workspace = true
@@ -98,6 +101,7 @@ nova-modules.workspace = true
 nova-settings.workspace = true
 nova-ai-usage.workspace = true
 nova-ai-usage-api.workspace = true
+nova-bar-api.workspace = true
 nova-bluetooth.workspace = true
 nova-bluetooth-api.workspace = true
 nova-launcher.workspace = true
@@ -125,8 +129,10 @@ nova-screenshot-api.workspace = true
 nova-theme-info.workspace = true
 nova-tray.workspace = true
 nova-tray-api.workspace = true
+nova-volume-osd-api.workspace = true
 nova-wallpaper.workspace = true
 nova-wallpaper-api.workspace = true
+nova-workspaces-api.workspace = true
 nova-x11-tray.workspace = true
 nova-compositor.workspace = true
 nova-host.workspace = true
@@ -161,6 +167,10 @@ nova-apps = { workspace = true, features = ["test-support"] }
 nova-compositor = { workspace = true, features = ["test-support"] }
 nova-launcher = { workspace = true, features = ["test-support"] }
 nova-tray = { workspace = true, features = ["test-support"] }
+# The wire format tests: the snapshot's apps, and the property tests.
+nova-app-info.workspace = true
+insta.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true

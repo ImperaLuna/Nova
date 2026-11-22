@@ -108,7 +108,7 @@ impl nova_modules::Module for Screenshots {
         ctx: &crate::modules::Context,
         runtime_dir: &PathBuf,
         (): &(),
-        _: &[nova_protocol::FeatureState],
+        _: &[nova_daemon_info::FeatureState],
     ) -> Arc<Self> {
         Arc::new(Self(Arc::new(nova_screenshot::Screenshots::new(
             runtime_dir,

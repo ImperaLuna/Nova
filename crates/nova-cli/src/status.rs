@@ -2,8 +2,8 @@
 
 use crate::client::Client;
 use crate::lifecycle::RESTART_COMMAND;
+use nova_daemon_info::{FeatureStatus, Status, UiState};
 use nova_desktop_info::Desktop;
-use nova_protocol::{FeatureStatus, Status, UiState};
 use std::path::Path;
 
 const KIB_PER_MB: u64 = 1024;
@@ -11,7 +11,7 @@ const KIB_PER_MB: u64 = 1024;
 pub fn show(socket: &Path, json: bool) -> Result<(), String> {
     let mut client = Client::reach(socket).map_err(|unreachable| unreachable.advice())?;
     if json {
-        println!("{}", client.request(nova_protocol::Command::Status)?);
+        println!("{}", client.request(nova_daemon_info::Command::Status)?);
     } else {
         print!("{}", describe(&client.status()?));
     }
@@ -163,8 +163,8 @@ fn ago(time: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nova_daemon_info::{Crash, FeatureState, UiStatus};
     use nova_desktop_info::{FocusedWindow, Output, Workspace};
-    use nova_protocol::{Crash, FeatureState, UiStatus};
 
     #[test]
     fn the_desktop_lists_workspaces_per_output() {

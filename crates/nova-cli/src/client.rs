@@ -5,7 +5,7 @@
 
 use crate::lifecycle::RESTART_COMMAND;
 use nova_carrier::{Envelope, Outcome, Response, Topic, encode};
-use nova_protocol::{Command, Event, Status};
+use nova_daemon_info::{Command, Event, Status};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -69,7 +69,7 @@ impl Client {
         let writer = stream.try_clone().map_err(|e| e.to_string())?;
         let mut client = Self { reader: BufReader::new(stream), writer, next_id: 1, daemon_version: String::new() };
         match client.next_message()? {
-            Message::Event(Sent::Shared(Event::Hello { daemon })) => client.daemon_version = daemon,
+            Message::Event(Sent::Daemon(Event::Hello { daemon })) => client.daemon_version = daemon,
             _ => return Err("novad didn't say hello; is it a different version?".into()),
         }
         Ok(client)
@@ -155,13 +155,18 @@ impl Client {
 
 const HUNG_UP: &str = "novad closed the connection";
 
-/// An event novad sends: a shared one, or a moved feature's own (its api
-/// crate's `Event`, one variant per feature, sorted by feature id).
+/// An event novad sends: one of novad's own, an -info crate's, or a
+/// feature's (its api crate's `Event`, one variant per feature, sorted by
+/// feature id).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Sent {
-    Shared(Event),
+    Daemon(Event),
+    Compositor(nova_desktop_info::Event),
+    Host(nova_host_info::Event),
+    Theme(nova_theme_info::Event),
     AiUsage(nova_ai_usage_api::Event),
+    Bar(nova_bar_api::Event),
     Bluetooth(nova_bluetooth_api::Event),
     Launcher(nova_launcher_api::Event),
     Lock(nova_lock_api::Event),
@@ -173,6 +178,7 @@ pub enum Sent {
     Resources(nova_resources_api::Event),
     Screenshot(nova_screenshot_api::Event),
     Tray(nova_tray_api::Event),
+    VolumeOsd(nova_volume_osd_api::Event),
 }
 
 enum Message {

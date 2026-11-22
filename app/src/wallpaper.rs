@@ -79,7 +79,7 @@ impl nova_modules::Module for Wallpaper {
         ctx: &crate::modules::Context,
         sources: &Sources,
         _: &WallpaperConfig,
-        _: &[nova_protocol::FeatureState],
+        _: &[nova_daemon_info::FeatureState],
     ) -> Arc<Self> {
         let compositor = ctx.compositor.as_ref();
         let wallpaper = nova_wallpaper::Wallpaper::start(
@@ -104,7 +104,7 @@ impl nova_modules::Module for Wallpaper {
         &self,
         _: &WallpaperConfig,
         config: &WallpaperConfig,
-        features: &[nova_protocol::FeatureState],
+        features: &[nova_daemon_info::FeatureState],
     ) -> nova_modules::Reconfigure {
         let ready = |id| crate::features::is_ready(features, id);
         self.configure(ready(FEATURE_ID), ready(ENGINE_FEATURE_ID), config);

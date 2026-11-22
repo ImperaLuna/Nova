@@ -1,29 +1,28 @@
-//! Every topic novad serves, by its owner's constant: the shared ones in
-//! `nova_protocol::topics`, a moved feature's in its api crate. A client may
-//! subscribe only to these (`subscribe`'s names are checked against
-//! [`TOPICS`] as the request is read), and `ui/daemon/protocol.js` names
-//! them in this order.
+//! Every topic novad serves, by its owner's constant: novad's own in
+//! `nova_daemon_info::topics`, each other one in the -info or api crate of
+//! the event it carries. A client may subscribe only to these
+//! (`subscribe`'s names are checked against [`TOPICS`] as the request is
+//! read), and `ui/daemon/protocol.js` names them in this order.
 //!
-//! A feature that moves its topic into its api crate replaces the shared
-//! constant here with its own, in the same place, so nothing else moves.
+//! A new topic goes at the end, where protocol.js adds it.
 
 use nova_carrier::Topic;
-use nova_protocol::topics;
+use nova_daemon_info::topics;
 use std::sync::LazyLock;
 
 /// The topics, in protocol.js's order.
 pub const TOPICS: &[Topic] = &[
     topics::FEATURES,
     topics::LOGS,
-    topics::THEME,
+    nova_theme_info::TOPIC,
     nova_ai_usage_api::TOPIC,
-    topics::COMPOSITOR,
-    topics::TOGGLE,
+    nova_desktop_info::TOPIC,
+    nova_bar_api::TOPIC,
     nova_lock_api::TOPIC,
-    topics::VOLUME,
+    nova_volume_osd_api::TOPIC,
     nova_screenshot_api::TOPIC,
     nova_recording_api::TOPIC,
-    topics::HOST,
+    nova_host_info::TOPIC,
     nova_resources_api::TOPIC,
     nova_launcher_api::TOPIC,
     nova_tray_api::TOPIC,

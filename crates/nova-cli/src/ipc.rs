@@ -1,7 +1,7 @@
 //! `nova ipc`: one raw request to novad, its result printed as JSON, for
 //! scripts. The command and its arguments are checked against the types
-//! novad reads (`nova-protocol`'s, or a moved feature's api crate's) before
-//! anything is sent. `subscribe` instead prints the
+//! novad reads (novad's own in `nova-daemon-info`, or a feature's api
+//! crate's) before anything is sent. `subscribe` instead prints the
 //! events of its topics, one JSON object per line, until the command is
 //! interrupted (watching a topic from a shell, like
 //! `scripts/desktop/isolated-novad` does); novad going away is an error, so
@@ -9,7 +9,7 @@
 
 use crate::client::Client;
 use nova_carrier::names::tagged_names_of;
-use nova_protocol::Command;
+use nova_daemon_info::Command;
 use serde::Serialize;
 use std::io::Write;
 use std::path::Path;
@@ -26,7 +26,7 @@ pub struct IpcArgs {
 pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
     let command = parse(&args.command, args.args.as_deref())?;
     let mut client = Client::reach(socket).map_err(|unreachable| unreachable.advice())?;
-    let follows = matches!(command, IpcCommand::Shared(Command::Subscribe { .. }));
+    let follows = matches!(command, IpcCommand::Daemon(Command::Subscribe { .. }));
     let result = client.request(command)?;
     if !follows {
         println!("{result}");
@@ -44,13 +44,14 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
     Err("novad closed the connection".into())
 }
 
-/// A command `nova ipc` sends: a shared one, or a moved feature's own (its
-/// api crate's `Command`, one variant per feature, sorted by feature id).
+/// A command `nova ipc` sends: one of novad's own, or a feature's (its api
+/// crate's `Command`, one variant per feature, sorted by feature id).
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 enum IpcCommand {
-    Shared(Command),
+    Daemon(Command),
     AiUsage(nova_ai_usage_api::Command),
+    Bar(nova_bar_api::Command),
     Bluetooth(nova_bluetooth_api::Command),
     Launcher(nova_launcher_api::Command),
     Lock(nova_lock_api::Command),
@@ -62,7 +63,9 @@ enum IpcCommand {
     Resources(nova_resources_api::Command),
     Screenshot(nova_screenshot_api::Command),
     Tray(nova_tray_api::Command),
+    VolumeOsd(nova_volume_osd_api::Command),
     Wallpaper(nova_wallpaper_api::Command),
+    Workspaces(nova_workspaces_api::Command),
 }
 
 /// The command `name` with `args`, as novad would read it off the socket.
@@ -73,6 +76,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
     }
     let read = if tagged_names_of::<nova_ai_usage_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::AiUsage)
+    } else if tagged_names_of::<nova_bar_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Bar)
     } else if tagged_names_of::<nova_bluetooth_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Bluetooth)
     } else if tagged_names_of::<nova_launcher_api::Command>("cmd").contains(&name) {
@@ -95,10 +100,14 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
         serde_json::from_value(request).map(IpcCommand::Screenshot)
     } else if tagged_names_of::<nova_tray_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Tray)
+    } else if tagged_names_of::<nova_volume_osd_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::VolumeOsd)
     } else if tagged_names_of::<nova_wallpaper_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Wallpaper)
+    } else if tagged_names_of::<nova_workspaces_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Workspaces)
     } else {
-        serde_json::from_value(request).map(IpcCommand::Shared)
+        serde_json::from_value(request).map(IpcCommand::Daemon)
     };
     read.map_err(|e| format!("novad has no such request: {e}"))
 }
@@ -109,10 +118,10 @@ mod tests {
 
     #[test]
     fn commands_are_checked_before_sending() {
-        assert_eq!(parse("status", None), Ok(IpcCommand::Shared(Command::Status)));
+        assert_eq!(parse("status", None), Ok(IpcCommand::Daemon(Command::Status)));
         assert_eq!(
             parse("focus_workspace", Some(r#"{"id": 3}"#)),
-            Ok(IpcCommand::Shared(Command::FocusWorkspace { id: 3 }))
+            Ok(IpcCommand::Workspaces(nova_workspaces_api::Command::FocusWorkspace { id: 3 }))
         );
         assert_eq!(
             parse("watch_resources", Some(r#"{"watching": true}"#)),

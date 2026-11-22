@@ -17,7 +17,7 @@
 //! - `modules/mod.rs`: one line in the `modules!` registry; `requests.rs`:
 //!   its route; `topics.rs`: its topic.
 //! - `config.rs`: its `[<id>]` options in config.toml, if any.
-//! - The wire format snapshot in `nova-protocol`.
+//! - The wire format snapshot (`tests/wire.rs`).
 //! - `just protocol-js` (regenerates the names in `ui/daemon/protocol.js`) and
 //!   `Daemon.qml` (subscribe, keep the event's data).
 //! - A QML service singleton beside the feature's components
@@ -56,10 +56,10 @@ mod x11_tray;
 
 use nova_base::lock;
 use nova_carrier::log::LogLevel;
+use nova_daemon_info::{Status, UiState, UiStatus};
 use nova_hub::Hub;
 use nova_log::Logger;
 use nova_process::{notify, procfs};
-use nova_protocol::{Status, UiState, UiStatus};
 use settings::{Settings, Sources};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -155,7 +155,7 @@ pub struct Daemon {
 }
 
 impl nova_socket::Service for Daemon {
-    type Hello = nova_protocol::Event;
+    type Hello = nova_daemon_info::Event;
 
     fn hub(&self) -> &Hub {
         &self.hub
@@ -170,7 +170,7 @@ impl nova_socket::Service for Daemon {
     }
 
     fn hello(&self) -> Self::Hello {
-        nova_protocol::Event::Hello { daemon: env!("CARGO_PKG_VERSION").into() }
+        nova_daemon_info::Event::Hello { daemon: env!("CARGO_PKG_VERSION").into() }
     }
 
     fn client_gone(&self, client: nova_hub::ClientId) {
