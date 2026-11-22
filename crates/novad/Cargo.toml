@@ -40,6 +40,8 @@
 # - nova-notifications
 # - nova-notifications-api
 # - nova-paths
+# - nova-peripherals
+# - nova-peripherals-api
 # - nova-process
 # - nova-protocol
 # - nova-quickshell
@@ -88,6 +90,8 @@ nova-network.workspace = true
 nova-network-api.workspace = true
 nova-notifications.workspace = true
 nova-notifications-api.workspace = true
+nova-peripherals.workspace = true
+nova-peripherals-api.workspace = true
 nova-resources.workspace = true
 nova-resources-api.workspace = true
 nova-tray.workspace = true

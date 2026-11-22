@@ -38,6 +38,7 @@ fn events() -> Vec<&'static str> {
         tagged_names_of::<nova_media_api::Event>("event"),
         tagged_names_of::<nova_network_api::Event>("event"),
         tagged_names_of::<nova_notifications_api::Event>("event"),
+        tagged_names_of::<nova_peripherals_api::Event>("event"),
         tagged_names_of::<nova_resources_api::Event>("event"),
         tagged_names_of::<nova_tray_api::Event>("event"),
     ]

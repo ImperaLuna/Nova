@@ -262,7 +262,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
         },
         // No UPower, hidraw nodes, HeadsetControl or USB devices
         // either: the peripherals' own tests give it theirs.
-        peripherals: peripherals::Sources {
+        peripherals: nova_peripherals::Sources {
             upower: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
             sys_root: dir.join("sys"),
             dev: dir.join("dev"),

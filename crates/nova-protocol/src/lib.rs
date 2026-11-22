@@ -28,9 +28,6 @@ pub use nova_apps::{APP_ICON_MAX_CHARS, App};
 pub use nova_compositor::{Capability, Desktop, FocusedWindow, Output, Step, Workspace, WorkspaceId};
 pub use nova_host::{Host, OperatingSystem};
 pub use nova_theme::{Color, Palette, Theme, ThemeMode};
-// A device's kind and charge are the peripherals feature's (`nova-peripherals-api`),
-// re-exported until the rest of its messages move (IMP-377).
-pub use nova_peripherals_api::{Battery, BatteryLevel, PeripheralKind};
 
 /// Pushed by the daemon whenever its state changes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -91,10 +88,6 @@ pub enum Event {
     /// The machine and its user, for the quick settings header. Topic
     /// [`topics::HOST`], sent right after subscribing.
     Host(Host),
-    /// Wireless devices and their batteries (feature `peripherals`). Topic
-    /// [`topics::PERIPHERALS`], sent right after subscribing and whenever a
-    /// device comes, goes or changes.
-    Peripherals(Peripherals),
     /// Bluetooth: the radio, the devices and the pairing waiting for the
     /// user (feature `bluetooth`). Topic [`topics::BLUETOOTH`], sent right
     /// after subscribing and whenever any of it changes.
@@ -124,7 +117,6 @@ pub mod topics {
     pub const SCREENSHOT: Topic = Topic::named("screenshot");
     pub const RECORDING: Topic = Topic::named("recording");
     pub const HOST: Topic = Topic::named("host");
-    pub const PERIPHERALS: Topic = Topic::named("peripherals");
     pub const BLUETOOTH: Topic = Topic::named("bluetooth");
 }
 
@@ -144,7 +136,6 @@ impl Event {
             Event::Capture { .. } | Event::CaptureEnded | Event::ScreenshotSaved(_) => Some(topics::SCREENSHOT),
             Event::PickRecording | Event::Recording(_) | Event::RecordingSaved(_) => Some(topics::RECORDING),
             Event::Host(_) => Some(topics::HOST),
-            Event::Peripherals(_) => Some(topics::PERIPHERALS),
             Event::Bluetooth(_) => Some(topics::BLUETOOTH),
         }
     }
@@ -252,61 +243,6 @@ impl FromStr for Panel {
             format!("unknown panel {text:?} (known: {})", known.join(", "))
         })
     }
-}
-
-/// The devices with a battery (feature `peripherals`): mice, keyboards,
-/// headsets and the like that are connected and on right now and report
-/// one, each listed once however many sources report it. One that's off or
-/// out of reach (a headset whose dongle stays plugged in) isn't listed.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Peripherals {
-    pub devices: Vec<Peripheral>,
-}
-
-/// One device and its battery. Text is plain and capped in length.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Peripheral {
-    /// Stable while the device stays, like `upower/mouse_hidpp_battery_0`
-    /// or `headsetcontrol/1038:2253`.
-    pub id: String,
-    /// Its model, like `PRO X Wireless`.
-    pub name: String,
-    pub kind: PeripheralKind,
-    /// How it's connected, when novad can tell.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub link: Option<PeripheralLink>,
-    /// Its charge, when it has said yet.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub battery: Option<Battery>,
-    pub charging: bool,
-    /// Where the reading comes from.
-    pub source: PeripheralSource,
-}
-
-/// How a device is connected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeripheralLink {
-    /// Through its own USB receiver (2.4 GHz).
-    Dongle,
-    Bluetooth,
-    /// By its cable.
-    Wired,
-}
-
-/// Where novad read a device: UPower (the kernel's drivers and BlueZ),
-/// HID++ (Logitech devices on a receiver the kernel doesn't drive),
-/// Keychron (keyboards on firmware that reports the battery over raw HID)
-/// or HeadsetControl (headsets the kernel doesn't know the battery of).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeripheralSource {
-    Upower,
-    Hidpp,
-    Keychron,
-    Headsetcontrol,
 }
 
 /// Bluetooth as the quick settings page shows it (feature `bluetooth`).
@@ -857,7 +793,7 @@ mod tests {
                         nova_tray_api::TOPIC,
                         nova_notifications_api::TOPIC,
                         nova_media_api::TOPIC,
-                        topics::PERIPHERALS,
+                        nova_peripherals_api::TOPIC,
                         nova_network_api::TOPIC,
                         topics::BLUETOOTH,
                     ]
@@ -1194,8 +1130,9 @@ mod tests {
                 command: MediaCommand::MediaWindow { player: "org.mpris.MediaPlayer2.spotify".into() },
             }),
             encode(Response { id: 49, outcome: Outcome::Result(json!("3")) }),
-            encode(Event::Peripherals(peripherals())),
-            encode(Event::Peripherals(Peripherals { devices: vec![] })),
+            // The peripherals feature's own messages (`nova-peripherals-api`), still on this one wire.
+            encode(nova_peripherals_api::Event::Peripherals(peripherals())),
+            encode(nova_peripherals_api::Event::Peripherals(nova_peripherals_api::Peripherals { devices: vec![] })),
             // The network feature's own messages (`nova-network-api`), still on this one wire.
             encode(nova_network_api::Event::Network(network())),
             encode(nova_network_api::Event::Network(nova_network_api::Network {
@@ -1471,49 +1408,6 @@ mod tests {
         }
     }
 
-    fn peripherals() -> Peripherals {
-        Peripherals {
-            devices: vec![
-                Peripheral {
-                    id: "upower/mouse_hidpp_battery_0".into(),
-                    name: "PRO X Wireless".into(),
-                    kind: PeripheralKind::Mouse,
-                    link: Some(PeripheralLink::Dongle),
-                    battery: Some(Battery::Percent(72)),
-                    charging: false,
-                    source: PeripheralSource::Upower,
-                },
-                Peripheral {
-                    id: "upower/keyboard_dev_AA_BB_CC_DD_EE_FF".into(),
-                    name: "K380".into(),
-                    kind: PeripheralKind::Keyboard,
-                    link: Some(PeripheralLink::Bluetooth),
-                    battery: Some(Battery::Level(BatteryLevel::High)),
-                    charging: false,
-                    source: PeripheralSource::Upower,
-                },
-                Peripheral {
-                    id: "keychron/model-3".into(),
-                    name: "Keychron K2 HE".into(),
-                    kind: PeripheralKind::Keyboard,
-                    link: Some(PeripheralLink::Dongle),
-                    battery: Some(Battery::Percent(78)),
-                    charging: false,
-                    source: PeripheralSource::Keychron,
-                },
-                Peripheral {
-                    id: "headsetcontrol/1038:2253".into(),
-                    name: "SteelSeries Arctis Nova 5X".into(),
-                    kind: PeripheralKind::Headset,
-                    link: Some(PeripheralLink::Dongle),
-                    battery: Some(Battery::Percent(30)),
-                    charging: true,
-                    source: PeripheralSource::Headsetcontrol,
-                },
-            ],
-        }
-    }
-
     fn media() -> nova_media_api::Media {
         use nova_media_api::{Media, MediaPlayer, PlaybackStatus};
         let spotify = MediaPlayer {
@@ -1594,10 +1488,57 @@ mod tests {
         }
     }
 
+    fn peripherals() -> nova_peripherals_api::Peripherals {
+        use nova_peripherals_api::{
+            Battery, BatteryLevel, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource, Peripherals,
+        };
+        Peripherals {
+            devices: vec![
+                Peripheral {
+                    id: "upower/mouse_hidpp_battery_0".into(),
+                    name: "PRO X Wireless".into(),
+                    kind: PeripheralKind::Mouse,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(72)),
+                    charging: false,
+                    source: PeripheralSource::Upower,
+                },
+                Peripheral {
+                    id: "upower/keyboard_dev_AA_BB_CC_DD_EE_FF".into(),
+                    name: "K380".into(),
+                    kind: PeripheralKind::Keyboard,
+                    link: Some(PeripheralLink::Bluetooth),
+                    battery: Some(Battery::Level(BatteryLevel::High)),
+                    charging: false,
+                    source: PeripheralSource::Upower,
+                },
+                Peripheral {
+                    id: "keychron/model-3".into(),
+                    name: "Keychron K2 HE".into(),
+                    kind: PeripheralKind::Keyboard,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(78)),
+                    charging: false,
+                    source: PeripheralSource::Keychron,
+                },
+                Peripheral {
+                    id: "headsetcontrol/1038:2253".into(),
+                    name: "SteelSeries Arctis Nova 5X".into(),
+                    kind: PeripheralKind::Headset,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(30)),
+                    charging: true,
+                    source: PeripheralSource::Headsetcontrol,
+                },
+            ],
+        }
+    }
+
     fn notifications() -> nova_notifications_api::NotificationList {
         use nova_notifications_api::{
             Notification, NotificationAction, NotificationApp, NotificationDevice, NotificationList, Urgency,
         };
+        use nova_peripherals_api::{Battery, BatteryLevel, PeripheralKind};
         NotificationList {
             items: vec![
                 Notification {
@@ -1767,7 +1708,6 @@ mod tests {
         assert_eq!(Event::CaptureEnded.topic(), Some(topics::SCREENSHOT));
         assert_eq!(Event::Recording(None).topic(), Some(topics::RECORDING));
         assert_eq!(Event::Host(host()).topic(), Some(topics::HOST));
-        assert_eq!(Event::Peripherals(peripherals()).topic(), Some(topics::PERIPHERALS));
         assert_eq!(Event::Bluetooth(bluetooth()).topic(), Some(topics::BLUETOOTH));
     }
 
@@ -1785,20 +1725,6 @@ mod tests {
         assert_eq!(answer(json!({"code": "0000"})), Some(PairingAnswer::Code("0000".into())));
         assert_eq!(answer(json!({"code": "0000", "extra": 1})), None);
         assert_eq!(answer(json!("maybe")), None);
-    }
-
-    #[test]
-    fn peripherals_reject_unknown_fields() {
-        let list = serde_json::to_value(peripherals()).unwrap();
-        assert!(serde_json::from_value::<Peripherals>(list.clone()).is_ok());
-        for pointer in ["", "/devices/0"] {
-            let mut extra = list.clone();
-            extra.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
-            assert!(serde_json::from_value::<Peripherals>(extra).is_err(), "{pointer}");
-        }
-        let mut odd = list.clone();
-        odd["devices"][0]["battery"] = json!({"percent": 30, "level": "low"});
-        assert!(serde_json::from_value::<Peripherals>(odd).is_err());
     }
 
     #[test]
