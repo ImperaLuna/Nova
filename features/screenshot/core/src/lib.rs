@@ -14,7 +14,8 @@
 //! folder, delete); novad remembers the last [`KEEP_SAVED`], and only acts
 //! on those, so a client can't point it at other files.
 //!
-//! Its messages are `nova-screenshot-api`'s. [`place`], [`time_stamp`] and
+//! Its messages are `nova-screenshot-api`'s, and its `[screenshot]`
+//! settings are [`ScreenshotConfig`]. [`place`], [`time_stamp`] and
 //! [`act_on`] are recordings' too, which reach them through the app.
 
 use nova_base::lock;
@@ -22,6 +23,7 @@ use nova_hub::{ClientId, Hub};
 use nova_log::Logger;
 use nova_process::child;
 use nova_screenshot_api::{CaptureFrame, Event, PixelRect, SavedScreenshot, ScreenshotAction};
+use serde::Deserialize;
 use std::collections::VecDeque;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
@@ -31,6 +33,28 @@ use std::time::Duration;
 
 /// The feature's id in `features/`.
 pub const FEATURE_ID: &str = "screenshot";
+
+/// `[screenshot]` in config.toml.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct ScreenshotConfig {
+    /// Where screenshots are saved: an absolute path, or one starting with
+    /// `~/`. By default `Screenshots` in the user's pictures folder.
+    #[serde(default)]
+    pub folder: Option<String>,
+}
+
+impl ScreenshotConfig {
+    /// The folder screenshots go in (see [`nova_settings::folder`]).
+    pub fn folder(&self) -> Result<PathBuf, String> {
+        nova_settings::folder("screenshot", self.folder.as_deref(), || {
+            nova_paths::user_dir("PICTURES", "Pictures").join(DEFAULT_FOLDER)
+        })
+    }
+}
+
+/// The screenshot folder's name inside the pictures folder.
+const DEFAULT_FOLDER: &str = "Screenshots";
 const LOG_SOURCE: &str = "screenshot";
 
 /// Captures outputs (wlr-screencopy).

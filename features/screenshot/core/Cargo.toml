@@ -2,14 +2,17 @@
 # - jiff
 # - libc
 # - png
+# - serde
 #
 # Allowed workspace crates:
 # - nova-apps
 # - nova-base
 # - nova-hub
 # - nova-log
+# - nova-paths
 # - nova-process
 # - nova-screenshot-api
+# - nova-settings
 
 [package]
 name = "nova-screenshot"
@@ -25,10 +28,13 @@ nova-apps.workspace = true
 nova-base.workspace = true
 nova-hub.workspace = true
 nova-log.workspace = true
+nova-paths.workspace = true
 nova-process.workspace = true
+nova-settings.workspace = true
 jiff.workspace = true
 libc.workspace = true
 png.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 nova-carrier.workspace = true
