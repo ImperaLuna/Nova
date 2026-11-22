@@ -25,6 +25,7 @@
 # - nova-bluetooth-api
 # - nova-carrier
 # - nova-compositor
+# - nova-desktop-info
 # - nova-features
 # - nova-host
 # - nova-hub
@@ -77,6 +78,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+nova-desktop-info.workspace = true
 nova-protocol.workspace = true
 nova-features.workspace = true
 nova-paths.workspace = true

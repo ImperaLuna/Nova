@@ -850,6 +850,7 @@ dependencies = [
  "nova-app-info",
  "nova-bluetooth-api",
  "nova-carrier",
+ "nova-desktop-info",
  "nova-features",
  "nova-launcher-api",
  "nova-lock-api",
@@ -879,11 +880,20 @@ version = "0.1.0"
 dependencies = [
  "nova-base",
  "nova-carrier",
+ "nova-desktop-info",
  "nova-hub",
  "nova-log",
  "nova-test-support",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "nova-desktop-info"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
 ]
 
 [[package]]
@@ -1210,6 +1220,7 @@ dependencies = [
  "nova-bluetooth-api",
  "nova-carrier",
  "nova-compositor",
+ "nova-desktop-info",
  "nova-host",
  "nova-launcher-api",
  "nova-lock-api",
@@ -1472,6 +1483,7 @@ dependencies = [
  "nova-bluetooth-api",
  "nova-carrier",
  "nova-compositor",
+ "nova-desktop-info",
  "nova-features",
  "nova-host",
  "nova-hub",

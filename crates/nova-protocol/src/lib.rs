@@ -19,7 +19,7 @@ use std::str::FromStr;
 
 // The shared lookups' own types are the framework's (IMP-374), re-exported
 // so clients name them from here as before.
-pub use nova_compositor::{Capability, Desktop, FocusedWindow, Output, Step, Workspace, WorkspaceId};
+use nova_desktop_info::{Desktop, Step, WorkspaceId};
 pub use nova_host::{Host, OperatingSystem};
 pub use nova_theme::{Color, Palette, Theme, ThemeMode};
 
@@ -68,7 +68,7 @@ pub mod topics {
     pub const LOGS: Topic = nova_carrier::log::TOPIC;
     pub const THEME: Topic = Topic::named("theme");
     /// The compositor adapters' (`nova_compositor`).
-    pub const COMPOSITOR: Topic = nova_compositor::TOPIC;
+    pub const COMPOSITOR: Topic = nova_desktop_info::TOPIC;
     pub const TOGGLE: Topic = Topic::named("toggle");
     pub const VOLUME: Topic = Topic::named("volume");
     pub const HOST: Topic = Topic::named("host");
@@ -329,6 +329,7 @@ mod tests {
     use nova_app_info::App;
     use nova_carrier::log::{LogEntry, LogLevel, Logs, UI_LOG_SOURCE};
     use nova_carrier::{Envelope, Outcome, Response, encode};
+    use nova_desktop_info::{Capability, FocusedWindow, Output, Workspace};
     use nova_media_api::Command as MediaCommand;
     use nova_notifications_api::Command as NotificationCommand;
     use serde_json::json;

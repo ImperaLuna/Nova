@@ -4,7 +4,7 @@
 #
 # Allowed workspace crates:
 # - nova-carrier
-# - nova-compositor
+# - nova-desktop-info
 # - nova-host
 # - nova-screenshot-api
 # - nova-theme
@@ -19,7 +19,7 @@ license.workspace = true
 
 [dependencies]
 nova-carrier.workspace = true
-nova-compositor.workspace = true
+nova-desktop-info.workspace = true
 nova-host.workspace = true
 nova-screenshot-api.workspace = true
 nova-theme.workspace = true
@@ -29,7 +29,6 @@ serde_json.workspace = true
 [dev-dependencies]
 # The wire format snapshot keeps the moved features' messages (IMP-368).
 nova-ai-usage-api.workspace = true
-nova-app-info.workspace = true
 nova-bluetooth-api.workspace = true
 nova-launcher-api.workspace = true
 nova-lock-api.workspace = true
@@ -44,6 +43,9 @@ nova-resources-api.workspace = true
 nova-screenshot-api.workspace = true
 nova-tray-api.workspace = true
 nova-wallpaper-api.workspace = true
+# The snapshot's apps, and the framework's own compositor event.
+nova-app-info.workspace = true
+nova-compositor.workspace = true
 insta.workspace = true
 proptest.workspace = true
 

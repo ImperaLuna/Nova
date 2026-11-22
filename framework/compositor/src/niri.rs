@@ -17,7 +17,7 @@
 //! newer niri releases add, are ignored, so those releases keep working.
 
 use super::Backend;
-use crate::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
+use nova_desktop_info::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap, HashSet};

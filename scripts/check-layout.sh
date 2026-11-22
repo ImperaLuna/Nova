@@ -31,10 +31,10 @@ rules_doc="AGENTS.md (Layout)"
 # framework/. A framework crate goes on a list only when every crate of that
 # kind may use it: a daemon-side part (the socket server) never on the ui
 # list, a screen-side part (the stage, theme tokens) never on the core list.
-FRAMEWORK_FOR_API=(app-info carrier)
-FRAMEWORK_FOR_CORE=(app-info apps base carrier compositor hub icons inotify log mime modules paths process session-bus settings socket watch)
+FRAMEWORK_FOR_API=(app-info carrier desktop-info)
+FRAMEWORK_FOR_CORE=(app-info apps base carrier compositor desktop-info hub icons inotify log mime modules paths process session-bus settings socket watch)
 FRAMEWORK_FOR_UI=()
-FRAMEWORK_FOR_FRONT=(app-info base carrier paths)
+FRAMEWORK_FOR_FRONT=(app-info base carrier desktop-info paths)
 
 # The dev-dependencies a feature's crate may have on another feature's core
 # or ui (rule T1), as "<crate> <dependency>", each with its reason. Every

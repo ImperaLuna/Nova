@@ -5,7 +5,8 @@
 
 use nova_ai_usage_api::{AiProvider, UsageLimit, UsageWindow};
 use nova_carrier::{PROTOCOL_VERSION, encode};
-use nova_protocol::{Command, Request, Step, decode_request, topics};
+use nova_desktop_info::Step;
+use nova_protocol::{Command, Request, decode_request, topics};
 use proptest::prelude::*;
 use serde_json::{Map, Value, json};
 

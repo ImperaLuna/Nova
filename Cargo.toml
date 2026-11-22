@@ -66,6 +66,7 @@ nova-apps = { path = "framework/apps" }
 nova-theme = { path = "framework/theme" }
 nova-host = { path = "framework/host" }
 nova-compositor = { path = "framework/compositor" }
+nova-desktop-info = { path = "framework/desktop-info" }
 nova-test-support = { path = "framework/test-support" }
 nova-ai-usage-api = { path = "features/ai-usage/api" }
 nova-ai-usage = { path = "features/ai-usage/core" }

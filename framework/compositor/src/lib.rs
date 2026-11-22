@@ -7,17 +7,16 @@
 //! what a compositor can't do instead of asking which compositor it is.
 //! novad picks the backend from the variables the compositor sets.
 
-mod desktop;
 mod hyprland;
 #[cfg(any(test, feature = "test-support"))]
 pub use hyprland::LUA_PROBE as HYPRLAND_LUA_PROBE;
 mod niri;
 
-pub use desktop::{Capability, Desktop, FocusedWindow, Output, Step, Workspace, WorkspaceId};
+use nova_desktop_info::{Capability, Desktop, EVENT, Output, Step, TOPIC, Workspace, WorkspaceId};
 
 use nova_base::backoff::Backoff;
 use nova_base::lock;
-use nova_carrier::topic::{Single, Topic};
+use nova_carrier::topic::Single;
 use nova_hub::{ClientId, Hub};
 use nova_log::Logger;
 use std::ffi::OsString;
@@ -25,10 +24,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// The topic the desktop is published on.
-pub const TOPIC: Topic = Topic::named("compositor");
-/// The name of the event that carries it.
-pub const EVENT: &str = "compositor";
 const LOG_SOURCE: &str = "compositor";
 /// How long to wait before following the compositor again after a failure,
 /// doubling up to `MAX_RETRY` while it keeps failing.
