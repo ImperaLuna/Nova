@@ -89,6 +89,7 @@ pub(crate) struct Options {
     blur: bool,
     blur_shape: bool,
     clip_fix: bool,
+    tint: f32,
     pub(crate) capsule_hz: Option<f32>,
     pub(crate) layer: Layer,
     pub(crate) toggles: u32,
@@ -107,6 +108,7 @@ const HELP: &str = "nova-proto [switches]
   --spring K,Z            spring stiffness and damping ratio (default 260,0.82)
   --blur                  ask the compositor for blur (ext-background-effect)
   --blur-shape            with --blur, blur only the drawn shape (patched build)
+  --tint OPACITY          glass tint opacity (default 0.55, Tokens.qml)
   --clip-fix              give edge children the panel's corner radii by hand
   --capsule-hz HZ         cap the capsule's animation rate (default: screen rate)
   --layer top|overlay     layer-shell layer (default overlay, above the live bar)
@@ -125,6 +127,7 @@ fn parse_options() -> Options {
         blur: false,
         blur_shape: false,
         clip_fix: false,
+        tint: GLASS_OPACITY,
         capsule_hz: None,
         layer: Layer::Overlay,
         toggles: 0,
@@ -157,6 +160,7 @@ fn parse_options() -> Options {
             "--blur" => options.blur = true,
             "--blur-shape" => options.blur_shape = true,
             "--clip-fix" => options.clip_fix = true,
+            "--tint" => options.tint = value().parse().expect("--tint OPACITY"),
             "--capsule-hz" => options.capsule_hz = Some(value().parse().expect("--capsule-hz HZ")),
             "--layer" => {
                 options.layer = match value().as_str() {
@@ -592,7 +596,7 @@ impl Render for Stage {
                 .w(shape.size.width)
                 .h(shape.size.height)
                 .rounded(px(radius))
-                .bg(color(GLASS_TINT, GLASS_OPACITY))
+                .bg(color(GLASS_TINT, self.options.tint))
                 .border_1()
                 .border_color(color(FG, 0.10))
                 .shadow(vec![BoxShadow {
