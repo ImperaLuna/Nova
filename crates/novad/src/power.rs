@@ -10,8 +10,7 @@ use nova_protocol::{Capability, Outcome};
 use nova_socket::{Answer, Caller, done, value};
 use std::sync::Arc;
 
-/// The feature's id in `features/`.
-pub const FEATURE_ID: &str = "power";
+pub use nova_power::FEATURE_ID;
 const LOG_SOURCE: &str = "server";
 
 /// The answer to one of the feature's commands, the route
