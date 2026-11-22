@@ -76,7 +76,8 @@ it is in `crates/`.
   crates may use. `features/<id>/core/`: its work, the part that talks to
   the system and draws nothing. `features/<id>/ui/`: reserved for the GPUI
   ports. They sit beside the feature's `feature.toml`.
-- `fronts/<name>/`: other ways in (the `nova` command, the socket).
+- `fronts/<name>/`: other ways in, the clients and outside interfaces (the
+  `nova` command). The socket server itself is part of the framework.
 - `app/`: wiring only. It starts everything and lists the features.
 - `crates/`: the old layout, emptied by the move. Add no new crate here.
 
@@ -116,7 +117,8 @@ or a list is a layout change: say so in the PR.
 - One source of truth. A value used in more than one place (a color, size,
   duration, timeout, socket path, command name, event name) is defined once
   and referenced everywhere else: design values in `theme/Tokens.qml`, wire
-  names in `nova-protocol`, Rust constants in the crate that owns them.
+  names in `nova-protocol` (the envelope and the log feed in
+  `nova-carrier`), Rust constants in the crate that owns them.
   Never copy a literal into a second file. The wire names in
   `ui/daemon/protocol.js` are generated from `nova-protocol`: change the
   Rust types, then run `just protocol-js`.

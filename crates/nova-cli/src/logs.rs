@@ -119,7 +119,7 @@ impl Printer {
         client.request(Command::Subscribe { topics: vec![Topic::Logs] })?;
         client.follow()?;
         while let Some(event) = client.next_event()? {
-            let Event::Logs { backlog, entries } = event else { continue };
+            let Event::Logs(nova_protocol::Logs { backlog, entries }) = event else { continue };
             let kept: Vec<&LogEntry> = entries.iter().filter(|entry| self.filter.keeps(entry)).collect();
             let skip = if backlog { kept.len().saturating_sub(history) } else { 0 };
             for entry in &kept[skip..] {

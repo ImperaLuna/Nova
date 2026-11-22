@@ -5,9 +5,9 @@
 //! one file. Crashes also get their own file under `crashes/`, which
 //! restarts never touch.
 
-use crate::hub::{ClientId, Hub};
-use crate::lock;
-use nova_protocol::{Event, LogEntry, LogLevel, Topic};
+use nova_base::lock;
+use nova_carrier::log::{LogEntry, LogLevel, Logs};
+use nova_hub::{ClientId, Hub};
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -96,15 +96,15 @@ impl Logger {
         }
         // Published under the lock so subscribers never miss or repeat an
         // entry between their backlog and the live feed.
-        self.hub.publish(&Event::Logs { backlog: false, entries });
+        self.hub.publish(&Logs { backlog: false, entries }.event());
     }
 
     /// Subscribes `client` to logs and sends it the recent entries first.
     pub fn subscribe(&self, client: ClientId) {
         let state = lock(&self.state);
-        let backlog = Event::Logs { backlog: true, entries: state.recent.iter().cloned().collect() };
-        self.hub.send_to(client, &backlog);
-        self.hub.subscribe(client, Topic::Logs);
+        let backlog = Logs { backlog: true, entries: state.recent.iter().cloned().collect() };
+        self.hub.send_to(client, &backlog.event());
+        self.hub.subscribe(client, nova_carrier::log::TOPIC);
     }
 
     /// Saves the latest entries to `crashes/<time>.log` and returns its path.
@@ -266,7 +266,7 @@ fn next_secret(lower: &str, from: usize) -> Option<(usize, usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nova_protocol::UI_LOG_SOURCE;
+    use nova_carrier::log::UI_LOG_SOURCE;
 
     fn temp_dir(name: &str) -> nova_test_support::TempDir {
         nova_test_support::TempDir::new(&format!("logger-{name}"))

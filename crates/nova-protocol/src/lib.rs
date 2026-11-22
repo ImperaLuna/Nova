@@ -16,11 +16,15 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
+// The envelope and the log feed are the framework's (`nova-carrier`), which
+// carries these messages without knowing them; re-exported so clients name
+// them from here as before.
+pub use nova_carrier::envelope::REQUEST_MAX_BYTES;
+pub use nova_carrier::log::{LogEntry, LogLevel, Logs, UI_LOG_SOURCE};
+pub use nova_carrier::{Envelope, Outcome, PROTOCOL_VERSION, Response, encode};
+
 #[cfg(test)]
 mod js;
-
-/// Bumped on any incompatible change to the messages below.
-pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Pushed by the daemon whenever its state changes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -32,11 +36,7 @@ pub enum Event {
     Features { features: Vec<FeatureState> },
     /// Log entries from novad and the UI. Topic [`Topic::Logs`]. The first
     /// event after subscribing has `backlog: true` and holds recent entries.
-    Logs {
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        backlog: bool,
-        entries: Vec<LogEntry>,
-    },
+    Logs(Logs),
     /// The active theme's colors. Topic [`Topic::Theme`], sent right after
     /// subscribing.
     Theme(Theme),
@@ -163,7 +163,7 @@ impl Event {
         match self {
             Event::Hello { .. } => None,
             Event::Features { .. } => Some(Topic::Features),
-            Event::Logs { .. } => Some(Topic::Logs),
+            Event::Logs(_) => Some(Topic::Logs),
             Event::Theme(_) => Some(Topic::Theme),
             Event::AiUsage(_) => Some(Topic::AiUsage),
             Event::Compositor(_) => Some(Topic::Compositor),
@@ -1119,10 +1119,6 @@ pub const LAUNCHER_SEARCH_MAX_CHARS: usize = PATH_MAX_BYTES;
 /// The longest path, in bytes: Linux's own limit.
 pub const PATH_MAX_BYTES: usize = 4096;
 
-/// The longest request line novad reads: a longer one closes the
-/// connection, so a client splits a long list across requests.
-pub const REQUEST_MAX_BYTES: u64 = 64 * 1024;
-
 /// Where the characters that stand for raw bytes start ([`path_to_wire`]):
 /// byte `b` (0x80 to 0xFF) is `RAW_BYTE_BASE + b`, in the Private Use Area.
 pub const RAW_BYTE_BASE: u32 = 0xF700;
@@ -2054,148 +2050,27 @@ pub struct Crash {
     pub log: String,
 }
 
-/// One log line. On disk it's [`LogEntry::to_line`]; on the wire it's JSON.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LogEntry {
-    /// RFC 3339, UTC, millisecond precision.
-    pub time: String,
-    pub level: LogLevel,
-    /// `ui` for the UI's output, else the novad module that wrote it.
-    pub source: String,
-    pub message: String,
-}
-
-/// Source tag of lines the UI printed.
-pub const UI_LOG_SOURCE: &str = "ui";
-
-impl LogEntry {
-    /// `2026-10-22T13:45:09.123Z  WARN ui: message`, no newline.
-    pub fn to_line(&self) -> String {
-        format!("{} {:>5} {}: {}", self.time, self.level, self.source, self.message)
-    }
-
-    /// The inverse of [`LogEntry::to_line`]. `None` for lines in another format.
-    pub fn parse_line(line: &str) -> Option<Self> {
-        let (time, rest) = line.split_once(' ')?;
-        let rest = rest.trim_start();
-        let (level, rest) = rest.split_once(' ')?;
-        let (source, message) = rest.split_once(": ")?;
-        Some(Self { time: time.into(), level: level.parse().ok()?, source: source.into(), message: message.into() })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum LogLevel {
-    Debug,
-    Info,
-    Warn,
-    Error,
-}
-
-impl LogLevel {
-    pub const ALL: [LogLevel; 4] = [LogLevel::Debug, LogLevel::Info, LogLevel::Warn, LogLevel::Error];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            LogLevel::Debug => "DEBUG",
-            LogLevel::Info => "INFO",
-            LogLevel::Warn => "WARN",
-            LogLevel::Error => "ERROR",
-        }
-    }
-}
-
-impl fmt::Display for LogLevel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad(self.name())
-    }
-}
-
-impl FromStr for LogLevel {
-    type Err = String;
-
-    fn from_str(text: &str) -> Result<Self, Self::Err> {
-        Self::ALL
-            .into_iter()
-            .find(|level| level.name().eq_ignore_ascii_case(text))
-            .ok_or_else(|| format!("unknown log level {text:?} (known: debug, info, warn, error)"))
-    }
-}
-
-/// A message with the protocol version, flattened around its body.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Envelope<T> {
-    pub v: u32,
-    #[serde(flatten)]
-    pub body: T,
-}
-
-impl<T> Envelope<T> {
-    pub fn new(body: T) -> Self {
-        Self { v: PROTOCOL_VERSION, body }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Request {
-    /// Present when the sender wants a [`Response`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<u64>,
-    #[serde(flatten)]
-    pub command: Command,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Response {
-    pub id: u64,
-    #[serde(flatten)]
-    pub outcome: Outcome,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Outcome {
-    Result(serde_json::Value),
-    Error(String),
-}
-
-/// Encodes a message as one line, newline included.
-/// A request line exactly as it may arrive: no other fields. `Envelope` and
-/// `Request` flatten their bodies, and serde can't reject unknown fields
-/// through `flatten`, so incoming lines are checked against this first.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RequestLine {
-    v: u32,
-    #[serde(default)]
-    id: Option<u64>,
-    cmd: String,
-    #[serde(default)]
-    args: Option<serde_json::Value>,
-}
+/// A request for one of the commands above.
+pub type Request = nova_carrier::Request<Command>;
 
 /// Reads one request line from a client. Anything on the socket is
 /// untrusted: unknown fields, unknown commands, bad arguments and other
 /// protocol versions are all errors.
 pub fn decode_request(line: &str) -> Result<Request, String> {
-    let RequestLine { v, id, cmd, args } = serde_json::from_str(line).map_err(|e| e.to_string())?;
-    if v != PROTOCOL_VERSION {
-        return Err(format!("protocol version {v} isn't supported; this daemon speaks {PROTOCOL_VERSION}"));
-    }
-    let mut tagged = serde_json::Map::new();
-    tagged.insert("cmd".into(), cmd.into());
-    if let Some(args) = args {
-        tagged.insert("args".into(), args);
-    }
-    let command = serde_json::from_value(tagged.into()).map_err(|e| e.to_string())?;
-    Ok(Request { id, command })
+    nova_carrier::decode_request(line)
 }
 
-pub fn encode<T: Serialize>(body: T) -> serde_json::Result<String> {
-    let mut line = serde_json::to_string(&Envelope::new(body))?;
-    line.push('\n');
-    Ok(line)
+impl From<Topic> for nova_carrier::Topic {
+    /// The topic by its wire name, which serde gives.
+    fn from(topic: Topic) -> Self {
+        nova_carrier::Topic::named(nova_carrier::names::names_of::<Topic>()[topic as usize])
+    }
+}
+
+impl nova_carrier::Published for Event {
+    fn topic(&self) -> Option<nova_carrier::Topic> {
+        Event::topic(self).map(Into::into)
+    }
 }
 
 #[cfg(test)]
@@ -2272,8 +2147,8 @@ mod tests {
             encode(Event::Theme(theme())),
             encode(Request { id: Some(10), command: Command::Status }),
             encode(Request { id: Some(11), command: Command::Quit }),
-            encode(Event::Logs { backlog: true, entries: vec![log_entry()] }),
-            encode(Event::Logs { backlog: false, entries: vec![log_entry()] }),
+            encode(Event::Logs(Logs { backlog: true, entries: vec![log_entry()] })),
+            encode(Event::Logs(Logs { backlog: false, entries: vec![log_entry()] })),
             encode(Response { id: 10, outcome: Outcome::Result(serde_json::to_value(status()).unwrap()) }),
             encode(Response { id: 7, outcome: Outcome::Result(json!("pong")) }),
             encode(Event::AiUsage(ai_usage())),
@@ -3085,28 +2960,30 @@ mod tests {
         }
     }
 
+    /// The framework's log feed and this crate's `logs` event and topic
+    /// are one thing on the wire.
     #[test]
-    fn log_lines_round_trip() {
-        let entry = log_entry();
-        let line = entry.to_line();
-        assert_eq!(line, "2026-10-22T13:45:09.123Z  WARN ui: Binding loop detected: x: y");
-        assert_eq!(LogEntry::parse_line(&line), Some(entry));
-        assert_eq!(LogEntry::parse_line("not a log line"), None);
+    fn the_log_feed_is_the_logs_event() {
+        let logs = Logs { backlog: true, entries: vec![log_entry()] };
+        assert_eq!(encode(logs.event()).unwrap(), encode(Event::Logs(logs)).unwrap());
+        assert_eq!(nova_carrier::Topic::from(Topic::Logs), nova_carrier::log::TOPIC);
     }
 
+    /// Every topic's framework name is its wire name.
     #[test]
-    fn log_levels_parse_any_case_and_order_by_severity() {
-        assert_eq!("WARN".parse::<LogLevel>(), Ok(LogLevel::Warn));
-        assert_eq!("error".parse::<LogLevel>(), Ok(LogLevel::Error));
-        assert!("loud".parse::<LogLevel>().is_err());
-        assert!(LogLevel::Debug < LogLevel::Info && LogLevel::Warn < LogLevel::Error);
+    fn topics_keep_their_wire_names() {
+        for (index, name) in nova_carrier::names::names_of::<Topic>().iter().enumerate() {
+            let topic: Topic = serde_json::from_value(json!(name)).unwrap();
+            assert_eq!(topic as usize, index);
+            assert_eq!(nova_carrier::Topic::from(topic).name(), *name);
+        }
     }
 
     #[test]
     fn only_hello_has_no_topic() {
         assert_eq!(Event::Hello { daemon: "x".into() }.topic(), None);
         assert_eq!(Event::Features { features: vec![] }.topic(), Some(Topic::Features));
-        assert_eq!(Event::Logs { backlog: false, entries: vec![] }.topic(), Some(Topic::Logs));
+        assert_eq!(Event::Logs(Logs { backlog: false, entries: vec![] }).topic(), Some(Topic::Logs));
         assert_eq!(Event::Theme(theme()).topic(), Some(Topic::Theme));
         assert_eq!(Event::AiUsage(ai_usage()).topic(), Some(Topic::AiUsage));
         assert_eq!(Event::Compositor(desktop()).topic(), Some(Topic::Compositor));

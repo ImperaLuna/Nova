@@ -10,8 +10,8 @@
 //! is watched in its folder, and what to watch is worked out again after
 //! each change.
 
-use crate::inotify::{self, Inotify};
-use crate::logger::Logger;
+use nova_inotify::{self as inotify, Inotify};
+use nova_log::Logger;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};

@@ -1,9 +1,13 @@
 //! Fans events out to connected clients by topic. Each client has one ordered
 //! queue, drained by its own writer thread, so a slow client never blocks
 //! novad and replies and events reach it in the order they were sent.
+//!
+//! An event is anything [`Published`]: the hub reads only its topic, so a
+//! feature's events and topics are its own types.
 
-use crate::lock;
-use nova_protocol::{Event, Topic, encode};
+use nova_base::lock;
+use nova_carrier::{Published, Topic, encode};
+use serde::Serialize;
 use std::collections::HashSet;
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
@@ -121,7 +125,8 @@ impl Hub {
         lock(&self.clients).list.retain(|client| client.id != id);
     }
 
-    pub fn subscribe(&self, id: ClientId, topic: Topic) {
+    pub fn subscribe(&self, id: ClientId, topic: impl Into<Topic>) {
+        let topic = topic.into();
         if let Some(client) = lock(&self.clients).list.iter_mut().find(|client| client.id == id) {
             client.topics.insert(topic);
         }
@@ -129,7 +134,7 @@ impl Hub {
 
     /// Sends `event` to every client subscribed to its topic. Returns how
     /// many it was queued for.
-    pub fn publish(&self, event: &Event) -> usize {
+    pub fn publish(&self, event: &impl Published) -> usize {
         let Some(topic) = event.topic() else { return 0 };
         let Some(line) = Self::encode(event) else { return 0 };
         // A failed push means the client is gone or being disconnected; its
@@ -144,14 +149,14 @@ impl Hub {
 
     /// Sends `event` to one client, whatever it subscribed to. Returns
     /// whether it was queued: not for a client that's gone.
-    pub fn send_to(&self, id: ClientId, event: &Event) -> bool {
+    pub fn send_to(&self, id: ClientId, event: &impl Serialize) -> bool {
         Self::encode(event).is_some_and(|line| self.send_line_to(id, line))
     }
 
     /// `event` as the line [`Hub::send_line_to`] sends, so a big event can
     /// be encoded before taking a lock it's sent under. `None` when it
     /// can't be (reported).
-    pub fn encode(event: &Event) -> Option<String> {
+    pub fn encode(event: &impl Serialize) -> Option<String> {
         // Not logged through the logger: it publishes through this hub.
         encode(event).map_err(|e| eprintln!("novad: can't encode an event: {e}")).ok()
     }
@@ -170,7 +175,7 @@ impl Hub {
 /// The next event in a client's queue, as JSON, waiting up to `wait`; flush
 /// markers are skipped. For tests that read a service's events the way a
 /// connection would.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn next_event(queue: &Receiver<Outgoing>, wait: std::time::Duration) -> serde_json::Value {
     let deadline = std::time::Instant::now() + wait;
     loop {
@@ -186,7 +191,7 @@ pub fn next_event(queue: &Receiver<Outgoing>, wait: std::time::Duration) -> serd
 }
 
 /// What a client was sent, as a JSON event, or None for a flush marker.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn sent_event(sent: Outgoing) -> Option<serde_json::Value> {
     match sent {
         Outgoing::Line(line) => Some(serde_json::from_str(&line).unwrap()),
@@ -196,14 +201,14 @@ fn sent_event(sent: Outgoing) -> Option<serde_json::Value> {
 
 /// The data of the next event called `name` in a client's queue, skipping
 /// others, like [`next_event`].
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn next_named(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Duration) -> serde_json::Value {
     named_within(queue, name, wait).unwrap_or_else(|| panic!("no {name} event in time"))
 }
 
 /// The data of the next event called `name` within `wait`, skipping others,
 /// or None if none comes.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn named_within(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Duration) -> Option<serde_json::Value> {
     let deadline = std::time::Instant::now() + wait;
     loop {
@@ -221,7 +226,7 @@ pub fn named_within(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Dur
 
 /// The names of the events a client's queue holds now, in order, taking
 /// them all off: for checking several events didn't come, in one pass.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn queued_names(queue: &Receiver<Outgoing>) -> Vec<String> {
     queue
         .try_iter()

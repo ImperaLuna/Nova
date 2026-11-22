@@ -48,6 +48,10 @@ nova-features = { path = "crates/nova-features" }
 nova-quickshell = { path = "crates/nova-quickshell" }
 novad = { path = "crates/novad" }
 nova-base = { path = "framework/base" }
+nova-carrier = { path = "framework/carrier" }
+nova-hub = { path = "framework/hub" }
+nova-log = { path = "framework/log" }
+nova-watch = { path = "framework/watch" }
 nova-inotify = { path = "framework/inotify" }
 nova-paths = { path = "framework/paths" }
 nova-process = { path = "framework/process" }

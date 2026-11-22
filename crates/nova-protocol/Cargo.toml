@@ -2,7 +2,8 @@
 # - serde
 # - serde_json
 #
-# Allowed workspace crates: none
+# Allowed workspace crates:
+# - nova-carrier
 
 [package]
 name = "nova-protocol"
@@ -13,6 +14,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+nova-carrier.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

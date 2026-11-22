@@ -1,0 +1,20 @@
+# Allowed outside crates:
+# - serde
+# - serde_json
+#
+# Allowed workspace crates: none
+
+[package]
+name = "nova-carrier"
+description = "What carries Nova's messages without knowing them: the envelope, wire names, topics and the log feed"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
