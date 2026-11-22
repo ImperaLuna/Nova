@@ -21,8 +21,10 @@ use gpui::{
 };
 use gpui_platform::application;
 
-#[cfg(feature = "shader")]
+#[cfg(feature = "patched")]
 mod capsule;
+#[cfg(feature = "patched")]
+mod lock;
 
 // ---- Nova's tokens (ui/theme/Tokens.qml, themes/carbonfox.toml) ----------
 
@@ -59,14 +61,14 @@ const STAGE_HEIGHT: f32 = BAR_MARGIN + LAUNCHER_HEIGHT + SHADOW_BLUR + SHADOW_OF
 const PILL_FADE_OUT: f32 = 0.3;
 const PANEL_FADE_IN_FROM: f32 = 0.55;
 
-const FG: u32 = 0xFFF6EB;
-const GLASS_TINT: u32 = 0x0A0807;
+pub(crate) const FG: u32 = 0xFFF6EB;
+pub(crate) const GLASS_TINT: u32 = 0x0A0807;
 const PRIMARY: u32 = 0xFD7014;
 const ON_ACCENT: u32 = 0x1D1D1D;
 const GLASS_OPACITY: f32 = 0.55;
-const FG_DIM_OPACITY: f32 = 0.66;
+pub(crate) const FG_DIM_OPACITY: f32 = 0.66;
 
-fn color(rgb: u32, alpha: f32) -> Hsla {
+pub(crate) fn color(rgb: u32, alpha: f32) -> Hsla {
     let a = (alpha.clamp(0.0, 1.0) * 255.0).round() as u32;
     Rgba::from(rgba((rgb << 8) | a)).into()
 }
@@ -90,10 +92,11 @@ pub(crate) struct Options {
     pub(crate) every: Duration,
     stiffness: f32,
     damping: f32,
-    font: String,
+    pub(crate) font: String,
     pub(crate) only_screen: Option<usize>,
     start_open: bool,
     capsule: bool,
+    lock: bool,
 }
 
 const HELP: &str = "nova-proto [switches]
@@ -106,7 +109,9 @@ const HELP: &str = "nova-proto [switches]
   --screen I              only the I-th screen (0-based)
   --font NAME             UI font (default: fontconfig's sans-serif)
   --open                  start with the panel open
-  --capsule               the liquid volume capsule instead (shader build only)";
+  --capsule               the liquid volume capsule instead (patched build only)
+  --lock                  lock the session with GPUI lock surfaces (patched build;
+                          headless test compositor only)";
 
 fn parse_options() -> Options {
     let mut options = Options {
@@ -121,6 +126,7 @@ fn parse_options() -> Options {
         only_screen: None,
         start_open: false,
         capsule: false,
+        lock: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -152,6 +158,7 @@ fn parse_options() -> Options {
             "--font" => options.font = value(),
             "--open" => options.start_open = true,
             "--capsule" => options.capsule = true,
+            "--lock" => options.lock = true,
             "-h" | "--help" => {
                 println!("{HELP}");
                 std::process::exit(0);
@@ -324,7 +331,7 @@ fn utc_offset_secs() -> i64 {
         .unwrap_or(0)
 }
 
-fn day_and_time(offset: i64) -> (String, String) {
+pub(crate) fn day_and_time(offset: i64) -> (String, String) {
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64 + offset;
     let days = secs.div_euclid(86_400);
     let of_day = secs.rem_euclid(86_400);
@@ -627,11 +634,15 @@ fn main() {
     let options = parse_options();
     let offset = utc_offset_secs();
     application().run(move |cx: &mut App| {
-        if options.capsule {
-            #[cfg(feature = "shader")]
-            capsule::open(cx, &options);
-            #[cfg(not(feature = "shader"))]
-            panic!("--capsule needs the shader build (scripts/build-shader.sh)");
+        if options.capsule || options.lock {
+            #[cfg(feature = "patched")]
+            if options.capsule {
+                capsule::open(cx, &options);
+            } else {
+                lock::open(cx, &options, offset);
+            }
+            #[cfg(not(feature = "patched"))]
+            panic!("--capsule and --lock need the patched build (scripts/build-patched.sh)");
             #[allow(unreachable_code)]
             return;
         }

@@ -1,6 +1,6 @@
 //! Step 4: Nova's liquid volume capsule drawn by the fork's custom shader
 //! patch (fork-patch/custom-shader.patch). Built only with `--features
-//! shader` against the patched fork (scripts/build-shader.sh). The capsule
+//! patched` against the patched fork (scripts/build-patched.sh). The capsule
 //! sits at the right edge of every screen; with `--toggles N` its level
 //! changes N times, `--every` ms apart, and it quits after.
 

@@ -16,9 +16,10 @@ gpui = { git = "https://github.com/ImperaLuna/zed", rev = "939cf372f290301dbfbb7
 gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "939cf372f290301dbfbb783fe91fee4d08cf88de", features = ["wayland", "x11"] }
 
 [features]
-# Step 4: the liquid capsule through the fork's custom shader patch. Needs
-# the patched fork: build with scripts/build-shader.sh.
-shader = []
+# Steps 4 and 5: the liquid capsule (custom shader patch) and the lock
+# screen (session lock patch). Needs the patched fork: build with
+# scripts/build-patched.sh.
+patched = []
 
 [profile.release]
 debug = "line-tables-only"
