@@ -50,6 +50,7 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
 #[serde(untagged)]
 enum IpcCommand {
     Shared(Command),
+    Network(nova_network_api::Command),
     Notifications(nova_notifications_api::Command),
     Resources(nova_resources_api::Command),
 }
@@ -60,7 +61,9 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
     if let Some(args) = args {
         request["args"] = serde_json::from_str(args).map_err(|e| format!("the arguments aren't JSON: {e}"))?;
     }
-    let read = if tagged_names_of::<nova_notifications_api::Command>("cmd").contains(&name) {
+    let read = if tagged_names_of::<nova_network_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Network)
+    } else if tagged_names_of::<nova_notifications_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Notifications)
     } else if tagged_names_of::<nova_resources_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Resources)
@@ -85,6 +88,11 @@ mod tests {
             parse("watch_resources", Some(r#"{"watching": true}"#)),
             Ok(IpcCommand::Resources(nova_resources_api::Command::WatchResources { watching: true }))
         );
+        assert_eq!(
+            parse("set_wifi", Some(r#"{"enabled": true}"#)),
+            Ok(IpcCommand::Network(nova_network_api::Command::SetWifi { enabled: true }))
+        );
+        assert!(parse("forget_wifi", Some(r#"{"ssid": "x", "extra": 1}"#)).is_err());
         assert_eq!(
             parse("dismiss_notification", Some(r#"{"id": 7}"#)),
             Ok(IpcCommand::Notifications(nova_notifications_api::Command::DismissNotification { id: 7 }))

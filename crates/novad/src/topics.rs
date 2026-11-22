@@ -29,7 +29,7 @@ pub const TOPICS: &[Topic] = &[
     nova_notifications_api::TOPIC,
     topics::MEDIA,
     topics::PERIPHERALS,
-    topics::NETWORK,
+    nova_network_api::TOPIC,
     topics::BLUETOOTH,
 ];
 
