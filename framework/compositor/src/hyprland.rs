@@ -18,7 +18,7 @@
 //! one this Hyprland speaks ([`Dialect`]).
 
 use super::Backend;
-use crate::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
+use nova_desktop_info::{Capability, Desktop, FocusedWindow, Output, Workspace as NovaWorkspace, WorkspaceId};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};

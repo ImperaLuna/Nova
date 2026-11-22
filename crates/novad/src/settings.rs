@@ -13,10 +13,12 @@ use crate::features;
 use crate::modules::{self, Context, Running};
 use nova_compositor::Compositor;
 use nova_features::{Manifest, Selection};
+use nova_host_info::Host;
 use nova_hub::Hub;
 use nova_icons::Icons;
 use nova_log::Logger;
-use nova_protocol::{Event, FeatureState, Host, Theme};
+use nova_protocol::{Event, FeatureState};
+use nova_theme_info::Theme;
 use std::path::PathBuf;
 use std::sync::Arc;
 

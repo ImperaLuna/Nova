@@ -1,7 +1,15 @@
 //! What the compositor shows, as the `compositor` event carries it to the
-//! UI: the same [`Desktop`] whichever compositor it is.
+//! UI: the same [`Desktop`] whichever compositor it is. Plain data, so api
+//! crates and fronts can name it without the adapters that build it
+//! (`nova-compositor`).
 
+use nova_carrier::Topic;
 use serde::{Deserialize, Serialize};
+
+/// The topic the desktop is published on.
+pub const TOPIC: Topic = Topic::named("compositor");
+/// The name of the event that carries it.
+pub const EVENT: &str = "compositor";
 
 /// What the compositor shows, the same shape whichever compositor it is.
 /// The UI shows only what `capabilities` lists.

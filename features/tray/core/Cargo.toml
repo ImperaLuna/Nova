@@ -5,6 +5,7 @@
 # - zbus
 #
 # Allowed workspace crates:
+# - nova-app-info
 # - nova-apps
 # - nova-base
 # - nova-carrier
@@ -28,6 +29,7 @@ test-support = []
 
 [dependencies]
 nova-tray-api.workspace = true
+nova-app-info.workspace = true
 nova-apps.workspace = true
 nova-base.workspace = true
 nova-carrier.workspace = true

@@ -6,6 +6,7 @@
 //! answers from a newer Hyprland, taken on a real desktop.
 
 use super::*;
+use nova_desktop_info::FocusedWindow;
 
 const NIRI_HANDLED: &str = r#"{"Ok":"Handled"}"#;
 

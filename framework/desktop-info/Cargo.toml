@@ -1,0 +1,20 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates:
+# - nova-carrier
+
+[package]
+name = "nova-desktop-info"
+description = "What the compositor shows, as the socket carries it: outputs, workspaces, the focused window"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-carrier.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

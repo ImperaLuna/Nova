@@ -4,39 +4,8 @@
 //! user. All of it comes from files, the user database and the config, read
 //! when a client subscribes and again when the config's name changes.
 
+use nova_host_info::{Host, OperatingSystem};
 use nova_icons::Icons;
-use serde::{Deserialize, Serialize};
-
-/// The machine and its user, as the quick settings header shows them.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Host {
-    /// The machine's host name.
-    pub host: String,
-    /// What to call the user: config.toml's `[quick-settings] name` ("" for
-    /// none), else their login name.
-    pub user: String,
-    /// When the machine booted, in seconds since the Unix epoch.
-    pub booted_at: i64,
-    pub os: OperatingSystem,
-}
-
-/// The distribution, from os-release.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OperatingSystem {
-    /// `ID`, like `nixos` or `arch`; `linux` when unset.
-    pub id: String,
-    /// `ID_LIKE`: the distributions it derives from, closest first.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub id_like: Vec<String>,
-    /// `NAME`, like `NixOS`.
-    pub name: String,
-    /// `LOGO`: the icon theme's file for the logo it names, when set and
-    /// the theme has it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub logo: Option<String>,
-}
 
 /// os-release's two homes: the first is the admin's, the second the
 /// distribution's fallback (os-release(5)).

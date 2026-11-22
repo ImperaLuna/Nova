@@ -17,12 +17,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-// The shared lookups' own types are the framework's (IMP-374), re-exported
-// so clients name them from here as before.
-pub use nova_apps::{APP_ICON_MAX_CHARS, App};
-pub use nova_compositor::{Capability, Desktop, FocusedWindow, Output, Step, Workspace, WorkspaceId};
-pub use nova_host::{Host, OperatingSystem};
-pub use nova_theme::{Color, Palette, Theme, ThemeMode};
+use nova_desktop_info::{Desktop, Step, WorkspaceId};
+use nova_host_info::Host;
+use nova_theme_info::Theme;
 
 /// Pushed by the daemon whenever its state changes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -69,7 +66,7 @@ pub mod topics {
     pub const LOGS: Topic = nova_carrier::log::TOPIC;
     pub const THEME: Topic = Topic::named("theme");
     /// The compositor adapters' (`nova_compositor`).
-    pub const COMPOSITOR: Topic = nova_compositor::TOPIC;
+    pub const COMPOSITOR: Topic = nova_desktop_info::TOPIC;
     pub const TOGGLE: Topic = Topic::named("toggle");
     pub const VOLUME: Topic = Topic::named("volume");
     pub const HOST: Topic = Topic::named("host");
@@ -327,10 +324,14 @@ impl nova_carrier::Published for Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nova_app_info::App;
     use nova_carrier::log::{LogEntry, LogLevel, Logs, UI_LOG_SOURCE};
     use nova_carrier::{Envelope, Outcome, Response, encode};
+    use nova_desktop_info::{Capability, FocusedWindow, Output, Workspace};
+    use nova_host_info::OperatingSystem;
     use nova_media_api::Command as MediaCommand;
     use nova_notifications_api::Command as NotificationCommand;
+    use nova_theme_info::{Color, Palette, ThemeMode};
     use serde_json::json;
 
     /// Every message shape on the wire. A change here changes the protocol:

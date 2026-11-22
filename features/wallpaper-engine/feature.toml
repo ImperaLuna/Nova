@@ -3,6 +3,9 @@ name = "Dynamic wallpapers"
 description = "Lets [wallpaper] and `nova wallpaper` take a video, a Wallpaper Engine project folder or a Steam Workshop ID, drawn by linux-wallpaperengine. Off unless you turn it on: a moving wallpaper costs a few hundred MB and some GPU."
 default = false
 daemon = "wallpaper-engine"
+# No crates of its own: the wallpaper feature's core (features/wallpaper)
+# plays these too, and answers for this id while it is ready
+# (`nova_wallpaper::ENGINE_FEATURE_ID`).
 
 # linux-wallpaperengine plays Wallpaper Engine's scenes and videos (web
 # wallpapers too, where it was built with them). Workshop items need

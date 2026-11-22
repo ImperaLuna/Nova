@@ -12,7 +12,7 @@ pub mod autostart;
 pub mod providers;
 mod rank;
 
-use nova_apps::App;
+use nova_app_info::App;
 use nova_apps::AppIndex;
 use nova_apps::desktop_entry::Entry;
 pub use nova_apps::launch::Runner;

@@ -5,6 +5,7 @@
 # Allowed workspace crates:
 # - nova-base
 # - nova-carrier
+# - nova-desktop-info
 # - nova-hub
 # - nova-log
 
@@ -23,6 +24,7 @@ test-support = []
 [dependencies]
 nova-base.workspace = true
 nova-carrier.workspace = true
+nova-desktop-info.workspace = true
 nova-hub.workspace = true
 nova-log.workspace = true
 serde.workspace = true

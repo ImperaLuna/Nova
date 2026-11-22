@@ -2,7 +2,8 @@
 
 use crate::client::Client;
 use crate::lifecycle::RESTART_COMMAND;
-use nova_protocol::{Desktop, FeatureStatus, Status, UiState};
+use nova_desktop_info::Desktop;
+use nova_protocol::{FeatureStatus, Status, UiState};
 use std::path::Path;
 
 const KIB_PER_MB: u64 = 1024;
@@ -162,7 +163,8 @@ fn ago(time: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nova_protocol::{Crash, FeatureState, FocusedWindow, Output, UiStatus, Workspace};
+    use nova_desktop_info::{FocusedWindow, Output, Workspace};
+    use nova_protocol::{Crash, FeatureState, UiStatus};
 
     #[test]
     fn the_desktop_lists_workspaces_per_output() {

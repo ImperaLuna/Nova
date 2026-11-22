@@ -1,8 +1,8 @@
 # Allowed outside crates:
 # - libc
-# - serde
 #
 # Allowed workspace crates:
+# - nova-app-info
 # - nova-base
 # - nova-carrier
 # - nova-icons
@@ -25,6 +25,7 @@ license.workspace = true
 test-support = []
 
 [dependencies]
+nova-app-info.workspace = true
 nova-base.workspace = true
 nova-carrier.workspace = true
 nova-icons.workspace = true
@@ -34,7 +35,6 @@ nova-paths.workspace = true
 nova-process.workspace = true
 nova-watch.workspace = true
 libc.workspace = true
-serde.workspace = true
 
 [dev-dependencies]
 nova-test-support.workspace = true

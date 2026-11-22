@@ -10,6 +10,7 @@
 # - nova-ai-usage-api
 # - nova-bluetooth-api
 # - nova-carrier
+# - nova-desktop-info
 # - nova-features
 # - nova-launcher-api
 # - nova-lock-api
@@ -41,6 +42,7 @@ name = "nova"
 path = "src/main.rs"
 
 [dependencies]
+nova-desktop-info.workspace = true
 nova-protocol.workspace = true
 nova-carrier.workspace = true
 nova-ai-usage-api.workspace = true
@@ -70,6 +72,8 @@ novad.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+# login_apps tests build the apps novad sends.
+nova-app-info.workspace = true
 nova-test-support.workspace = true
 
 [lints]

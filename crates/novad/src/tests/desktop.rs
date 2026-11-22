@@ -94,7 +94,7 @@ fn hyprland_lua_dispatchers_quote_what_they_name() {
     // A named workspace goes by its name, which the user chose.
     let dir = nova_test_support::TempDir::new("lua-quoting-hyprland");
     let (fake, backend) = FakeCompositor::hyprland_lua(dir.path());
-    let named = nova_protocol::Workspace {
+    let named = nova_desktop_info::Workspace {
         id: -1337,
         name: "my \"web\" \\ 2\n".into(),
         active: false,
@@ -107,7 +107,7 @@ fn hyprland_lua_dispatchers_quote_what_they_name() {
         active_window: None,
     };
     backend.focus_workspace(&named).unwrap();
-    let output = nova_protocol::Output { name: "DP-2".into(), focused: false, workspaces: Vec::new(), layout: 0 };
+    let output = nova_desktop_info::Output { name: "DP-2".into(), focused: false, workspaces: Vec::new(), layout: 0 };
     backend.focus_output(&output).unwrap();
     assert_eq!(
         fake.actions(),
@@ -124,7 +124,7 @@ fn hyprland_focuses_an_output_without_its_workspaces() {
     // hide (or, by the one under it, cover the new window with).
     let dir = nova_test_support::TempDir::new("focus-output-hyprland");
     let (fake, backend) = FakeCompositor::hyprland(dir.path());
-    let output = nova_protocol::Output { name: "DP-2".into(), focused: false, workspaces: Vec::new(), layout: 0 };
+    let output = nova_desktop_info::Output { name: "DP-2".into(), focused: false, workspaces: Vec::new(), layout: 0 };
     backend.focus_output(&output).unwrap();
     assert_eq!(fake.actions(), ["dispatch focusmonitor DP-2"]);
 }

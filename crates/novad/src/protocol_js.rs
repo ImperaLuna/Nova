@@ -20,6 +20,7 @@
 use nova_carrier::PROTOCOL_VERSION;
 use nova_carrier::envelope::REQUEST_MAX_BYTES;
 use nova_carrier::names::{names_of, tagged_names_of};
+use nova_desktop_info::{Capability, Step};
 use nova_protocol::*;
 use std::path::Path;
 

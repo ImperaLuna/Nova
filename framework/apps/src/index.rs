@@ -9,7 +9,8 @@
 
 use super::desktop_entry::{Context, Entry, Locale};
 use super::{program_name, scan};
-use crate::{APP_ICON_MAX_CHARS, App};
+use crate::APP_ICON_MAX_CHARS;
+use nova_app_info::App;
 use nova_base::lock;
 use nova_icons::Icons;
 use nova_inotify::{self as inotify, Inotify};

@@ -6,8 +6,8 @@
 
 use crate::Daemon;
 use nova_carrier::Outcome;
+use nova_desktop_info::Capability;
 use nova_power_api::{Command, PowerAction, PowerMenu};
-use nova_protocol::Capability;
 use nova_socket::{Answer, Caller, done, value};
 use std::sync::Arc;
 

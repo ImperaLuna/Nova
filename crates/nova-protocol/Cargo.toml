@@ -3,12 +3,11 @@
 # - serde_json
 #
 # Allowed workspace crates:
-# - nova-apps
 # - nova-carrier
-# - nova-compositor
-# - nova-host
+# - nova-desktop-info
+# - nova-host-info
 # - nova-screenshot-api
-# - nova-theme
+# - nova-theme-info
 
 [package]
 name = "nova-protocol"
@@ -19,12 +18,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-nova-apps.workspace = true
 nova-carrier.workspace = true
-nova-compositor.workspace = true
-nova-host.workspace = true
+nova-desktop-info.workspace = true
+nova-host-info.workspace = true
 nova-screenshot-api.workspace = true
-nova-theme.workspace = true
+nova-theme-info.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
@@ -45,6 +43,9 @@ nova-resources-api.workspace = true
 nova-screenshot-api.workspace = true
 nova-tray-api.workspace = true
 nova-wallpaper-api.workspace = true
+# The snapshot's apps, and the framework's own compositor event.
+nova-app-info.workspace = true
+nova-compositor.workspace = true
 insta.workspace = true
 proptest.workspace = true
 
