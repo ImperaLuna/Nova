@@ -1,145 +1,53 @@
-//! Whether the session is locked (feature `lock`).
-//!
-//! The UI draws the lock screen and checks the password; novad only keeps
-//! the state, so a UI that crashes while locked gets `locked: true` again when
-//! its restart subscribes, and locks the screen again. The state is also kept
-//! in a file beside the socket, so a novad that restarts while locked (and
-//! its UI with it) locks again too: the compositor keeps the screens covered
-//! meanwhile. The socket's folder is in the runtime directory, which logging
-//! out or rebooting empties, so the next session doesn't start locked. Only the UI unlocks (after the password checks out) and
-//! reports it here, so nothing on the socket can unlock the screen.
+//! Runs the lock feature (`nova-lock`, in `features/lock`) in novad: its
+//! kept module and the answers to its commands. Wiring only: it adapts the
+//! feature's core to novad's `Module` trait and `Daemon`, and all of the
+//! feature's work and state stay in the core.
 
-use crate::hub::{ClientId, Hub};
-use crate::lock;
-use crate::logger::Logger;
-use nova_protocol::Event;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex};
-use std::time::Duration;
+use crate::Daemon;
+use crate::hub::ClientId;
+use nova_lock_api::Command;
+use nova_socket::{Answer, Caller, done};
+use std::path::PathBuf;
+use std::sync::Arc;
 
-/// The feature's id in `features/`.
-pub const FEATURE_ID: &str = "lock";
-const LOG_SOURCE: &str = "lock";
-/// How long the UI and the compositor get to cover the screens before
-/// `nova lock` gives up.
-const COVER_TIMEOUT: Duration = Duration::from_secs(5);
-/// There while the session is locked, beside the socket.
-const LOCKED_FILE: &str = "locked";
+pub use nova_lock::FEATURE_ID;
 
-pub struct SessionLock {
-    state: Mutex<State>,
-    covered: Condvar,
-    file: PathBuf,
-    /// For new subscribers' state ([`crate::modules::Module::send_state`]).
-    hub: Arc<Hub>,
-    logger: Arc<Logger>,
+/// The feature's core, as novad's module.
+pub struct SessionLock(nova_lock::SessionLock);
+
+impl std::ops::Deref for SessionLock {
+    type Target = nova_lock::SessionLock;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
-#[derive(Default)]
-struct State {
-    locked: bool,
-    // The compositor has covered the screens for this lock.
-    secured: bool,
+/// The answer to one of the feature's commands from `caller`, the route
+/// `requests::router` gives them.
+pub fn answer(daemon: &Daemon, caller: &Caller, command: &Command) -> Answer {
+    let session_lock = daemon.session_lock();
+    Answer::Now(match command {
+        Command::Lock => done(match daemon.feature_ready(FEATURE_ID) {
+            true => session_lock.lock(&daemon.hub),
+            false => Err(crate::features::not_ready(FEATURE_ID)),
+        }),
+        Command::ReportLocked => done(sent_by_the_ui(daemon, caller).map(|()| session_lock.secured())),
+        // Even with the feature off: the screen was locked while it was on.
+        Command::ReportUnlocked => done(sent_by_the_ui(daemon, caller).map(|()| session_lock.unlocked(&daemon.hub))),
+    })
 }
 
-impl SessionLock {
-    /// Locked if the last novad of this session was, as its file in
-    /// `runtime_dir` (the socket's folder) says.
-    pub fn open(runtime_dir: &Path, hub: Arc<Hub>, logger: &Arc<Logger>) -> Self {
-        let file = runtime_dir.join(LOCKED_FILE);
-        let locked = file.exists();
-        if locked {
-            logger.info(LOG_SOURCE, "the session was locked when novad last stopped; locking again");
-        }
-        Self {
-            state: Mutex::new(State { locked, secured: false }),
-            covered: Condvar::new(),
-            file,
-            hub,
-            logger: Arc::clone(logger),
-        }
-    }
-
-    /// Tells the UI to lock the screen, and waits until the compositor has
-    /// covered it, so a caller (an idle daemon before sleep) can count on it.
-    /// Fails when no UI listens or the screens aren't covered in time; the
-    /// session stays locked then, for a UI that's only slow.
-    pub fn lock(&self, hub: &Hub) -> Result<(), String> {
-        self.request(hub)?;
-        self.wait_covered()
-    }
-
-    /// Tells the UI to lock the screen, without waiting for it. Fails when
-    /// no UI listens.
-    pub fn request(&self, hub: &Hub) -> Result<(), String> {
-        // The state and its event change together, so a subscriber's
-        // snapshot never misses a lock.
-        let mut state = lock(&self.state);
-        if state.locked && state.secured {
-            return Ok(());
-        }
-        if hub.publish(&Event::Lock { locked: true }) == 0 {
-            return Err("the UI isn't connected to novad, so nothing can lock the screen".into());
-        }
-        if !state.locked {
-            state.locked = true;
-            self.save(true);
-        }
-        Ok(())
-    }
-
-    /// Waits until the compositor has covered the screens for the lock
-    /// asked for, at most COVER_TIMEOUT.
-    pub fn wait_covered(&self) -> Result<(), String> {
-        let state = lock(&self.state);
-        let (state, wait) = self
-            .covered
-            .wait_timeout_while(state, COVER_TIMEOUT, |state| state.locked && !state.secured)
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match (state.secured, wait.timed_out()) {
-            (true, _) => Ok(()),
-            (false, true) => Err(format!("the screens weren't covered within {} s", COVER_TIMEOUT.as_secs())),
-            (false, false) => Err("the screen was unlocked before it was covered".into()),
-        }
-    }
-
-    /// The compositor covered the screens with the UI's lock screen.
-    pub fn secured(&self) {
-        let mut state = lock(&self.state);
-        if state.locked {
-            state.secured = true;
-            self.covered.notify_all();
-        }
-    }
-
-    /// The UI unlocked the screen.
-    pub fn unlocked(&self, hub: &Hub) {
-        let mut state = lock(&self.state);
-        if state.locked {
-            *state = State::default();
-            self.save(false);
-            self.covered.notify_all();
-            hub.publish(&Event::Lock { locked: false });
-        }
-    }
-
-    /// Sends a new subscriber the current state. Under the same lock as
-    /// changes, so it's never older than an event the subscriber got first.
-    /// It leaves `secured` alone: a UI that restarts while locked leaves the
-    /// compositor's lock in place, so the screens stay covered meanwhile.
-    pub fn send_state(&self, hub: &Hub, id: ClientId) {
-        let state = lock(&self.state);
-        hub.send_to(id, &Event::Lock { locked: state.locked });
-    }
-
-    fn save(&self, locked: bool) {
-        let saved = match locked {
-            true => std::fs::write(&self.file, ""),
-            false => std::fs::remove_file(&self.file),
-        };
-        if let Err(e) = saved {
-            self.logger.warn(LOG_SOURCE, &format!("couldn't save the lock state in {}: {e}", self.file.display()));
-        }
+/// Lock reports are the UI's alone: from anyone else, `report_unlocked`
+/// would leave a UI that restarts with no lock screen to unlock. When
+/// novad runs no UI (`--no-ui`: tests, or a UI run by hand), it can't
+/// tell which client is the UI and takes them from any.
+fn sent_by_the_ui(daemon: &Daemon, caller: &Caller) -> Result<(), String> {
+    let Some(ui) = &daemon.ui else { return Ok(()) };
+    match ui.status().pid {
+        // The connecting process, from the kernel (SO_PEERCRED).
+        Some(pid) if caller.peer_pid() == Some(pid) => Ok(()),
+        _ => Err("only the UI novad runs can report the lock screen's state".into()),
     }
 }
 
@@ -147,7 +55,7 @@ impl SessionLock {
 impl crate::modules::Module for SessionLock {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::LOCK);
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_lock_api::TOPIC);
     type Sources = PathBuf;
     type Config = ();
 
@@ -163,32 +71,12 @@ impl crate::modules::Module for SessionLock {
         (): &(),
         _: &[nova_protocol::FeatureState],
     ) -> Arc<Self> {
-        Arc::new(Self::open(runtime_dir, Arc::clone(&ctx.hub), &ctx.logger))
+        Arc::new(Self(nova_lock::SessionLock::open(runtime_dir, Arc::clone(&ctx.hub), &ctx.logger)))
     }
 
     fn send_state(&self, client: ClientId) {
-        Self::send_state(self, &self.hub, client);
+        self.0.send_state(client);
     }
 
     fn stop(&self) {}
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nova_protocol::LogLevel;
-
-    #[test]
-    fn a_restarted_novad_locks_again_until_unlocked() {
-        let dir = nova_test_support::TempDir::new("session-lock");
-        let hub = Arc::new(Hub::default());
-        let logger = Arc::new(Logger::open(&dir.join("logs"), LogLevel::Info, false, Arc::clone(&hub)).unwrap());
-        assert!(!lock(&SessionLock::open(&dir, Arc::new(Hub::default()), &logger).state).locked);
-
-        std::fs::write(dir.join(LOCKED_FILE), "").unwrap();
-        let restarted = SessionLock::open(&dir, Arc::new(Hub::default()), &logger);
-        assert!(lock(&restarted.state).locked);
-        restarted.unlocked(&hub);
-        assert!(!SessionLock::open(&dir, Arc::new(Hub::default()), &logger).state.lock().unwrap().locked);
-    }
 }

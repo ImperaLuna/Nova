@@ -781,6 +781,7 @@ dependencies = [
  "jiff",
  "nova-carrier",
  "nova-features",
+ "nova-lock-api",
  "nova-paths",
  "nova-power-api",
  "nova-protocol",
@@ -853,6 +854,27 @@ dependencies = [
  "libc",
  "nova-base",
  "nova-test-support",
+]
+
+[[package]]
+name = "nova-lock"
+version = "0.1.0"
+dependencies = [
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-lock-api",
+ "nova-log",
+ "nova-test-support",
+]
+
+[[package]]
+name = "nova-lock-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -934,6 +956,7 @@ dependencies = [
  "nova-carrier",
  "nova-compositor",
  "nova-host",
+ "nova-lock-api",
  "nova-power-api",
  "nova-resources-api",
  "nova-theme",
@@ -1055,6 +1078,8 @@ dependencies = [
  "nova-hub",
  "nova-icons",
  "nova-inotify",
+ "nova-lock",
+ "nova-lock-api",
  "nova-log",
  "nova-mime",
  "nova-modules",

@@ -32,6 +32,8 @@
 # - nova-hub
 # - nova-icons
 # - nova-inotify
+# - nova-lock
+# - nova-lock-api
 # - nova-log
 # - nova-mime
 # - nova-modules
@@ -71,6 +73,8 @@ nova-log.workspace = true
 nova-socket.workspace = true
 nova-modules.workspace = true
 nova-settings.workspace = true
+nova-lock.workspace = true
+nova-lock-api.workspace = true
 nova-power.workspace = true
 nova-power-api.workspace = true
 nova-resources.workspace = true

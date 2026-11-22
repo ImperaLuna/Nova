@@ -58,11 +58,6 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<String>,
     },
-    /// Whether the session is locked (feature `lock`). Topic [`topics::LOCK`],
-    /// sent right after subscribing and whenever it changes. The UI locks
-    /// when `locked` turns true, but only ever unlocks itself, after the
-    /// user's password checks out: `locked: false` just follows that.
-    Lock { locked: bool },
     /// Change the default output's volume as `nova volume` asks, and show
     /// the volume capsule. Topic [`topics::VOLUME`].
     Volume { key: VolumeKey },
@@ -149,7 +144,6 @@ pub mod topics {
     /// The compositor adapters' (`nova_compositor`).
     pub const COMPOSITOR: Topic = nova_compositor::TOPIC;
     pub const TOGGLE: Topic = Topic::named("toggle");
-    pub const LOCK: Topic = Topic::named("lock");
     pub const VOLUME: Topic = Topic::named("volume");
     pub const SCREENSHOT: Topic = Topic::named("screenshot");
     pub const RECORDING: Topic = Topic::named("recording");
@@ -175,7 +169,6 @@ impl Event {
             Event::AiUsage(_) => Some(topics::AI_USAGE),
             Event::Compositor(_) => Some(topics::COMPOSITOR),
             Event::Toggle { .. } => Some(topics::TOGGLE),
-            Event::Lock { .. } => Some(topics::LOCK),
             Event::Volume { .. } => Some(topics::VOLUME),
             Event::Capture { .. } | Event::CaptureEnded | Event::ScreenshotSaved(_) => Some(topics::SCREENSHOT),
             Event::PickRecording | Event::Recording(_) | Event::RecordingSaved(_) => Some(topics::RECORDING),
@@ -1308,17 +1301,6 @@ pub enum Command {
     Toggle {
         panel: Panel,
     },
-    /// Locks the session (`nova lock`, feature `lock`) and answers once the
-    /// compositor has covered the screens. Fails when the feature isn't
-    /// ready, no UI is connected to show the lock screen, or the screens
-    /// aren't covered in time.
-    Lock,
-    /// The compositor covered the screens with the UI's lock screen
-    /// (feature `lock`).
-    ReportLocked,
-    /// The UI unlocked the session after the user's password checked out
-    /// (feature `lock`). Unlocking is the UI's alone: this only tells novad.
-    ReportUnlocked,
     /// Changes the default output's volume and shows the capsule, even at
     /// either end or without an output (`nova volume`). Fails when no UI is
     /// connected to do it.
@@ -1765,7 +1747,7 @@ mod tests {
                         topics::AI_USAGE,
                         topics::COMPOSITOR,
                         topics::TOGGLE,
-                        topics::LOCK,
+                        nova_lock_api::TOPIC,
                         topics::VOLUME,
                         topics::SCREENSHOT,
                         topics::RECORDING,
@@ -1806,11 +1788,12 @@ mod tests {
             encode(Request { id: Some(15), command: Command::Toggle { panel: Panel::AiUsage } }),
             encode(Event::Toggle { panel: Panel::AiUsage, output: Some("DP-1".into()) }),
             encode(Event::Toggle { panel: Panel::AiUsage, output: None }),
-            encode(Request { id: Some(16), command: Command::Lock }),
-            encode(Event::Lock { locked: true }),
-            encode(Request { id: Some(20), command: Command::ReportLocked }),
-            encode(Request { id: Some(17), command: Command::ReportUnlocked }),
-            encode(Event::Lock { locked: false }),
+            // The lock feature's own messages (`nova-lock-api`), still on this one wire.
+            encode(nova_carrier::Request { id: Some(16), command: nova_lock_api::Command::Lock }),
+            encode(nova_lock_api::Event::Lock { locked: true }),
+            encode(nova_carrier::Request { id: Some(20), command: nova_lock_api::Command::ReportLocked }),
+            encode(nova_carrier::Request { id: Some(17), command: nova_lock_api::Command::ReportUnlocked }),
+            encode(nova_lock_api::Event::Lock { locked: false }),
             // The power feature's own messages (`nova-power-api`), still on this one wire.
             encode(nova_carrier::Request { id: Some(18), command: nova_power_api::Command::PowerOptions }),
             encode(Response {
@@ -2636,7 +2619,6 @@ mod tests {
         assert_eq!(Event::AiUsage(ai_usage()).topic(), Some(topics::AI_USAGE));
         assert_eq!(Event::Compositor(desktop()).topic(), Some(topics::COMPOSITOR));
         assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(topics::TOGGLE));
-        assert_eq!(Event::Lock { locked: true }.topic(), Some(topics::LOCK));
         assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(topics::VOLUME));
         assert_eq!(Event::CaptureEnded.topic(), Some(topics::SCREENSHOT));
         assert_eq!(Event::Recording(None).topic(), Some(topics::RECORDING));

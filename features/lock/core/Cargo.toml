@@ -1,0 +1,28 @@
+# Allowed outside crates: none
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-hub
+# - nova-lock-api
+# - nova-log
+
+[package]
+name = "nova-lock"
+description = "Whether the session is locked: the state the UI's lock screen follows, kept across UI and novad restarts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-lock-api.workspace = true
+nova-base.workspace = true
+nova-hub.workspace = true
+nova-log.workspace = true
+
+[dev-dependencies]
+nova-carrier.workspace = true
+nova-test-support.workspace = true
+
+[lints]
+workspace = true
