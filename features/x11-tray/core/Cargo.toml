@@ -1,0 +1,33 @@
+# Allowed outside crates:
+# - zbus
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-log
+# - nova-process
+# - nova-session-bus
+
+[package]
+name = "nova-x11-tray"
+description = "Old X11 tray icons: runs Plasma's xembedsniproxy, which puts XEmbed icons up as tray items, and runs it again when it exits"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-base.workspace = true
+nova-log.workspace = true
+nova-process.workspace = true
+nova-session-bus.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+nova-carrier.workspace = true
+nova-hub.workspace = true
+nova-session-bus = { workspace = true, features = ["test-support"] }
+nova-test-support.workspace = true
+libc.workspace = true
+
+[lints]
+workspace = true

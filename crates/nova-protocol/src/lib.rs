@@ -1185,23 +1185,6 @@ pub enum Command {
         app: String,
         muted: bool,
     },
-    /// Shows `path` as the wallpaper on every output, or only on `output`
-    /// (`nova wallpaper`): an absolute path to an image (feature
-    /// `wallpaper`), or to a video or a Wallpaper Engine project folder, or
-    /// a Steam Workshop ID (feature `wallpaper-engine`). Remembered across
-    /// restarts until config.toml's `[wallpaper]` changes. Fails when it
-    /// can't be shown.
-    SetWallpaper {
-        path: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        output: Option<String>,
-    },
-    /// Replies with the [`Wallpapers`] shown now (feature `wallpaper` or
-    /// `wallpaper-engine`).
-    Wallpapers,
-    /// Replies with the [`WallpaperFolder`]: the images in the wallpaper
-    /// folder, for the carousel (feature `wallpaper`).
-    WallpaperFolder,
     /// Plays or pauses the media player `player` (a [`MediaPlayer::id`]),
     /// or skips a track (feature `media`).
     MediaControl {
@@ -1269,38 +1252,6 @@ pub struct TextMark {
     pub start: u32,
     pub length: u32,
 }
-
-/// Whether a `set_wallpaper` path is a Steam Workshop ID: only digits.
-pub fn is_workshop_id(text: &str) -> bool {
-    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
-}
-
-/// What `wallpapers` returns: the wallpaper every output shows, and the
-/// outputs that show one of their own. Absolute paths or Workshop IDs;
-/// empty when none is set.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Wallpapers {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub outputs: std::collections::BTreeMap<String, String>,
-}
-
-/// What `wallpaper_folder` returns: the wallpaper folder (config.toml's
-/// `[wallpaper] folder`) and the images in it, sorted by name, at most
-/// [`WALLPAPER_FOLDER_MAX_IMAGES`]. Absolute paths; no images when the folder
-/// doesn't exist.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WallpaperFolder {
-    pub folder: String,
-    pub images: Vec<String>,
-}
-
-/// The most images `wallpaper_folder` lists: a carousel with more is no use,
-/// and a reply's size is capped.
-pub const WALLPAPER_FOLDER_MAX_IMAGES: usize = 1000;
 
 /// What `status` returns.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1672,33 +1623,37 @@ mod tests {
                 id: Some(43),
                 command: Command::MuteNotificationApp { app: "Discord".into(), muted: true },
             }),
-            encode(Request {
+            // The wallpaper feature's own messages (`nova-wallpaper-api`), still on this one wire.
+            encode(nova_carrier::Request {
                 id: Some(50),
-                command: Command::SetWallpaper { path: "/home/luna/Pictures/dusk.jpg".into(), output: None },
+                command: nova_wallpaper_api::Command::SetWallpaper {
+                    path: "/home/luna/Pictures/dusk.jpg".into(),
+                    output: None,
+                },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(51),
-                command: Command::SetWallpaper {
+                command: nova_wallpaper_api::Command::SetWallpaper {
                     path: "/home/luna/Pictures/tide.jpg".into(),
                     output: Some("DP-2".into()),
                 },
             }),
-            encode(Request { id: Some(52), command: Command::Wallpapers }),
+            encode(nova_carrier::Request { id: Some(52), command: nova_wallpaper_api::Command::Wallpapers }),
             encode(Response {
                 id: 52,
                 outcome: Outcome::Result(
-                    serde_json::to_value(Wallpapers {
+                    serde_json::to_value(nova_wallpaper_api::Wallpapers {
                         path: Some("/home/luna/Pictures/dusk.jpg".into()),
                         outputs: [("DP-2".into(), "/home/luna/Pictures/tide.jpg".into())].into(),
                     })
                     .unwrap(),
                 ),
             }),
-            encode(Request { id: Some(53), command: Command::WallpaperFolder }),
+            encode(nova_carrier::Request { id: Some(53), command: nova_wallpaper_api::Command::WallpaperFolder }),
             encode(Response {
                 id: 53,
                 outcome: Outcome::Result(
-                    serde_json::to_value(WallpaperFolder {
+                    serde_json::to_value(nova_wallpaper_api::WallpaperFolder {
                         folder: "/home/luna/Pictures/Wallpapers".into(),
                         images: vec![
                             "/home/luna/Pictures/Wallpapers/dusk.jpg".into(),

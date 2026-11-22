@@ -9,8 +9,7 @@
 //! What a setting is gets looked up afresh each time, since the files can
 //! change.
 
-use crate::config;
-use nova_protocol::is_workshop_id;
+use nova_wallpaper_api::is_workshop_id;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io::Read;
@@ -87,7 +86,7 @@ impl Source {
         if is_workshop_id(text) {
             return Ok(Self(text.to_owned()));
         }
-        let path = config::user_path(setting, text)?;
+        let path = nova_settings::user_path(setting, text)?;
         path.to_str().map(|path| Self(path.to_owned())).ok_or_else(|| format!("{setting} {text:?} isn't valid UTF-8"))
     }
 
