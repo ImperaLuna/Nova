@@ -36,4 +36,4 @@ pub use icon::{Glyph, Icon, IconAssets};
 pub use shape::{Shape, region, set_blur_region};
 pub use style::{LookStyled, Touching};
 pub use theme::{Theme, mix};
-pub use window::{APP_ID, IGNORE_RESERVED_SPACE, NAMESPACE, ShellWindow};
+pub use window::{APP_ID, IGNORE_RESERVED_SPACE, NAMESPACE, NAMESPACE_PREFIX, ShellWindow};

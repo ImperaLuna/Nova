@@ -14,9 +14,12 @@ use gpui::{
     point, px,
 };
 
-/// What compositor rules name Nova's surfaces by (a blur or animation rule
-/// for a layer's namespace).
-pub const NAMESPACE: &str = "nova";
+/// What every Nova surface's namespace starts with. Compositor rules match
+/// on it (`packaging/compositor/niri.kdl` turns on blur of the windows
+/// behind for `^nova-`), so a surface that names itself keeps the prefix.
+pub const NAMESPACE_PREFIX: &str = "nova-";
+/// The namespace of a surface that did not name itself.
+pub const NAMESPACE: &str = "nova-shell";
 /// The app id of Nova's windows.
 pub const APP_ID: &str = "nova";
 /// An exclusive zone that keeps a surface where it is anchored whatever
@@ -104,6 +107,7 @@ mod tests {
             panic!("a shell window is a layer surface, not {:?}", options.kind);
         };
         assert_eq!(layer.namespace, NAMESPACE);
+        assert!(NAMESPACE.starts_with(NAMESPACE_PREFIX));
         assert_eq!(layer.exclusive_zone, Some(IGNORE_RESERVED_SPACE));
         assert_eq!(layer.keyboard_interactivity, KeyboardInteractivity::None);
     }
