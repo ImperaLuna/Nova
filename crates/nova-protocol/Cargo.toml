@@ -28,6 +28,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 # The wire format snapshot keeps the moved features' messages (IMP-368).
+nova-network-api.workspace = true
 nova-resources-api.workspace = true
 nova-wallpaper-api.workspace = true
 insta.workspace = true

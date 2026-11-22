@@ -5,7 +5,7 @@ import "../theme"
 import "../quick_settings/network.js" as Network
 
 // The network tile and page, driven with novad's network event for the
-// recording of RyzenShine (crates/novad/src/network/recorded, as
+// recording of RyzenShine (features/network/core/src/recorded, as
 // ryzenshine_reads_as_its_cable_and_wifi reads it) and the states a
 // connect goes through. The root is an Item: a TestCase root gets no mouse
 // events.

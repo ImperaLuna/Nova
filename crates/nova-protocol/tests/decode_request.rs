@@ -97,6 +97,23 @@ fn resources_request() -> impl Strategy<Value = nova_carrier::Request<nova_resou
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
+/// The network feature's commands, which it owns (`nova-network-api`).
+fn network_request() -> impl Strategy<Value = nova_carrier::Request<nova_network_api::Command>> {
+    use nova_network_api::{Command, LinkKind, WifiPassword};
+    let command = prop_oneof![
+        any::<bool>().prop_map(|enabled| Command::SetWifi { enabled }),
+        Just(Command::ScanWifi),
+        (".*", proptest::option::of(".*"))
+            .prop_map(|(ssid, password)| Command::ConnectWifi { ssid, password: password.map(WifiPassword::new) }),
+        Just(Command::DisconnectWifi),
+        ".*".prop_map(|ssid| Command::ForgetWifi { ssid }),
+        prop_oneof![Just(LinkKind::Wired), Just(LinkKind::Wifi), Just(LinkKind::Other)]
+            .prop_map(|kind| Command::PreferNetwork { kind }),
+        any::<bool>().prop_map(|watching| Command::WatchNetworkTraffic { watching }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
 /// The wallpaper feature's commands, which it owns (`nova-wallpaper-api`).
 fn wallpaper_request() -> impl Strategy<Value = nova_carrier::Request<nova_wallpaper_api::Command>> {
     use nova_wallpaper_api::Command;
@@ -178,6 +195,12 @@ proptest! {
     fn every_request_round_trips(request in request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_network_request_round_trips(request in network_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
     }
 
     #[test]

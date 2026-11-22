@@ -30,16 +30,16 @@ mod manager;
 mod tests;
 mod traffic;
 
-use crate::hub::{ClientId, Hub};
-use crate::lock;
-use crate::logger::Logger;
-use crate::session_bus::{Bus, Stop};
 use futures_core::Stream;
 use manager::{ACTIVE, ACTIVE_STATE_ACTIVATED, NM, Reading};
-use nova_protocol::{
+use nova_base::lock;
+use nova_hub::{ClientId, Hub};
+use nova_log::Logger;
+use nova_network_api::{
     AttemptOutcome, Event, LinkKind, LinkState, Network as NetworkEvent, Wifi, WifiAttempt, WifiNetwork, WifiPassword,
     WiredLink,
 };
+use nova_session_bus::{Bus, Stop};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::future::poll_fn;
@@ -275,7 +275,7 @@ impl Network {
             return Err("only a wired or a Wi-Fi link can be preferred".into());
         }
         let mut state = lock(&self.shared.state);
-        crate::state_file::save(&self.shared.prefer_file, &Saved { prefer: Some(kind) })
+        nova_base::state_file::save(&self.shared.prefer_file, &Saved { prefer: Some(kind) })
             .map_err(|e| format!("can't save the preferred link: {e}"))?;
         state.prefer = Some(kind);
         state.preferred_on = None;
@@ -686,41 +686,5 @@ fn load_prefer(path: &Path, logger: &Logger) -> Option<LinkKind> {
             logger.warn(LOG_SOURCE, &format!("the saved preferred link doesn't parse: {e}"));
             None
         }
-    }
-}
-
-/// No options.
-impl crate::modules::Module for Network {
-    type App = crate::modules::Novad;
-    const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::NETWORK);
-    type Sources = Sources;
-    type Config = ();
-
-    fn sources(env: &crate::modules::Env) -> Sources {
-        Sources::system(&env.args.state_dir)
-    }
-
-    fn config(_: &crate::config::Config) {}
-
-    fn start(
-        ctx: &crate::modules::Context,
-        sources: &Sources,
-        (): &(),
-        _: &[nova_protocol::FeatureState],
-    ) -> Arc<Self> {
-        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
-    }
-
-    fn send_state(&self, client: ClientId) {
-        Self::send_state(self, client);
-    }
-
-    fn client_gone(&self, client: ClientId) {
-        self.watch_traffic(client, false);
-    }
-
-    fn stop(&self) {
-        Self::stop(self);
     }
 }
