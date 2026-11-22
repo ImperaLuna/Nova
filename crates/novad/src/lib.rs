@@ -32,10 +32,8 @@ mod config;
 mod egl;
 mod features;
 mod host;
-mod hub;
 mod icons;
 mod launcher;
-mod logger;
 mod logind;
 mod media;
 mod mime;
@@ -58,7 +56,6 @@ mod theme;
 mod tray;
 mod wallpaper;
 mod wallpaper_folder;
-mod watch_points;
 mod x11_tray;
 
 // The shared helpers, moved to framework crates (IMP-371), keep their old
@@ -68,6 +65,11 @@ use nova_base::{backoff, reply_slot, state_file};
 use nova_inotify as inotify;
 use nova_process::{child, procfs};
 use nova_session_bus as session_bus;
+// The hub, the logger and the folder follower moved to the framework too
+// (IMP-372).
+use nova_hub as hub;
+use nova_log as logger;
+use nova_watch as watch_points;
 
 use hub::Hub;
 use logger::Logger;

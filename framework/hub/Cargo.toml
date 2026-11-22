@@ -1,0 +1,28 @@
+# Allowed outside crates:
+# - serde
+# - serde_json
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-carrier
+
+[package]
+name = "nova-hub"
+description = "Fans events out to connected clients by topic, one ordered queue per client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# Reading a client's queue the way its connection would, for novad's tests.
+test-support = []
+
+[dependencies]
+nova-base.workspace = true
+nova-carrier.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

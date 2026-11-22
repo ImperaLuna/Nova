@@ -1,0 +1,20 @@
+# Allowed outside crates: none
+#
+# Allowed workspace crates:
+# - nova-inotify
+# - nova-log
+
+[package]
+name = "nova-watch"
+description = "Following folders that may not exist yet or sit behind links that get swapped"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-inotify.workspace = true
+nova-log.workspace = true
+
+[lints]
+workspace = true

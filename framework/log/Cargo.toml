@@ -1,0 +1,29 @@
+# Allowed outside crates:
+# - jiff
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-carrier
+# - nova-hub
+# - nova-paths
+
+[package]
+name = "nova-log"
+description = "novad's log: one rotated file for novad and the UI, crash snapshots and the live feed"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-base.workspace = true
+nova-carrier.workspace = true
+nova-hub.workspace = true
+nova-paths.workspace = true
+jiff.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+
+[lints]
+workspace = true

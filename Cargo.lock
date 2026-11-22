@@ -747,6 +747,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-carrier"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-cli"
 version = "0.1.0"
 dependencies = [
@@ -776,11 +784,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-hub"
+version = "0.1.0"
+dependencies = [
+ "nova-base",
+ "nova-carrier",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-inotify"
 version = "0.1.0"
 dependencies = [
  "libc",
  "nova-base",
+ "nova-test-support",
+]
+
+[[package]]
+name = "nova-log"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-paths",
  "nova-test-support",
 ]
 
@@ -804,6 +834,7 @@ name = "nova-protocol"
 version = "0.1.0"
 dependencies = [
  "insta",
+ "nova-carrier",
  "proptest",
  "serde",
  "serde_json",
@@ -830,6 +861,14 @@ name = "nova-test-support"
 version = "0.1.0"
 
 [[package]]
+name = "nova-watch"
+version = "0.1.0"
+dependencies = [
+ "nova-inotify",
+ "nova-log",
+]
+
+[[package]]
 name = "novad"
 version = "0.1.0"
 dependencies = [
@@ -845,14 +884,18 @@ dependencies = [
  "lzma-rust2",
  "md-5",
  "nova-base",
+ "nova-carrier",
  "nova-features",
+ "nova-hub",
  "nova-inotify",
+ "nova-log",
  "nova-paths",
  "nova-process",
  "nova-protocol",
  "nova-quickshell",
  "nova-session-bus",
  "nova-test-support",
+ "nova-watch",
  "pbkdf2",
  "png",
  "ruzstd",

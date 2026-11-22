@@ -29,10 +29,10 @@ rules_doc="AGENTS.md (Layout)"
 # framework/. A framework crate goes on a list only when every crate of that
 # kind may use it: a daemon-side part (the socket server) never on the ui
 # list, a screen-side part (the stage, theme tokens) never on the core list.
-FRAMEWORK_FOR_API=()
-FRAMEWORK_FOR_CORE=(base inotify paths process session-bus)
+FRAMEWORK_FOR_API=(carrier)
+FRAMEWORK_FOR_CORE=(base carrier hub inotify log paths process session-bus watch)
 FRAMEWORK_FOR_UI=()
-FRAMEWORK_FOR_FRONT=(base paths)
+FRAMEWORK_FOR_FRONT=(base carrier paths)
 
 # layer_of <crate folder relative to the root>: prints the crate's kind and
 # its parts ("feature <name> <half>", "framework <name>", ...).

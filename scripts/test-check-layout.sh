@@ -53,15 +53,15 @@ EOF
   crate "$workspace" crates/old old none "paths media-core" \
     'paths = { path = "../../framework/paths" }' 'media-core = { path = "../../features/media/core" }'
   crate "$workspace" framework/paths paths none none
-  crate "$workspace" framework/hub hub none paths 'paths = { path = "../paths" }'
+  crate "$workspace" framework/stage stage none paths 'paths = { path = "../paths" }'
   crate "$workspace" features/notifications/api notifications-api none none
   crate "$workspace" features/media/api media-api none notifications-api \
     'notifications-api = { path = "../../notifications/api" }'
   crate "$workspace" features/media/core media-core none "media-api notifications-api" \
     'media-api = { path = "../api" }' 'notifications-api = { path = "../../notifications/api" }'
   crate "$workspace" fronts/cli cli none media-api 'media-api = { path = "../../features/media/api" }'
-  crate "$workspace" app app none "cli hub media-core old" \
-    'cli = { path = "../fronts/cli" }' 'hub = { path = "../framework/hub" }' \
+  crate "$workspace" app app none "cli stage media-core old" \
+    'cli = { path = "../fronts/cli" }' 'stage = { path = "../framework/stage" }' \
     'media-core = { path = "../features/media/core" }' 'old = { path = "../crates/old" }'
 }
 
@@ -96,7 +96,7 @@ planted() {
 expect_pass "the good workspace" "$(planted good)"
 
 ws=$(planted framework-uses-feature)
-crate "$ws" framework/hub hub none "paths media-api" \
+crate "$ws" framework/stage stage none "paths media-api" \
   'paths = { path = "../paths" }' 'media-api = { path = "../../features/media/api" }'
 expect_fail "the framework using a feature's api" W1 "$ws"
 
@@ -107,8 +107,8 @@ crate "$ws" features/media/core media-core none "media-api notifications-core" \
 expect_fail "a core using another feature's core" F4 "$ws"
 
 ws=$(planted core-uses-framework)
-crate "$ws" features/media/core media-core none "hub media-api" \
-  'media-api = { path = "../api" }' 'hub = { path = "../../../framework/hub" }'
+crate "$ws" features/media/core media-core none "stage media-api" \
+  'media-api = { path = "../api" }' 'stage = { path = "../../../framework/stage" }'
 expect_fail "a core using a framework crate not on its list" F2 "$ws"
 
 ws=$(planted front-uses-core)
@@ -139,14 +139,14 @@ sed -i 's/^# - notifications-api/#  - notifications-api/' "$ws/features/media/ap
 expect_fail "a malformed line in an allowed list" D1 "$ws"
 
 ws=$(planted lists-and-layout)
-crate "$ws" framework/hub hub none "paths media-api" \
+crate "$ws" framework/stage stage none "paths media-api" \
   'paths = { path = "../paths" }' 'media-api = { path = "../../features/media/api" }'
-sed -i '/^# Allowed outside crates/d' "$ws/framework/hub/Cargo.toml"
+sed -i '/^# Allowed outside crates/d' "$ws/framework/stage/Cargo.toml"
 expect_fail "a broken allowed list hiding a layout break" W1 "$ws"
 
 ws=$(planted nested-framework)
-sed -i 's|^members = \[|members = ["framework/hub/extra", |' "$ws/Cargo.toml"
-crate "$ws" framework/hub/extra extra none none
+sed -i 's|^members = \[|members = ["framework/stage/extra", |' "$ws/Cargo.toml"
+crate "$ws" framework/stage/extra extra none none
 expect_fail "a framework crate nested a level too deep" C1 "$ws"
 
 ws=$(planted outside-layout)
