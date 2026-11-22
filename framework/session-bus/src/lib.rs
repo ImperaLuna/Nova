@@ -162,7 +162,7 @@ mod tests {
                 let _ = ended.send(());
             });
         }
-        std::thread::sleep(Duration::from_millis(100));
+        nova_test_support::settle(Duration::from_millis(100));
         stop.stop();
         for _ in 0..2 {
             ends.recv_timeout(Duration::from_secs(5)).unwrap();

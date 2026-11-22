@@ -113,7 +113,7 @@ fn resources_are_sent_while_watched() {
 
     drop(watcher);
     // Looks already sent when it hung up arrive first; then nothing.
-    std::thread::sleep(nova_resources::LIVE_INTERVAL);
+    nova_test_support::settle(nova_resources::LIVE_INTERVAL);
     listener.writer.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
     while listener.lines.next().is_some_and(|line| line.is_ok()) {}
     listener.writer.set_read_timeout(Some(nova_resources::LIVE_INTERVAL * 2)).unwrap();

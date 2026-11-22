@@ -773,7 +773,7 @@ mod tests {
             scope.spawn(|| recordings.start("DP-1", None, RecordAudio::default(), &folder).unwrap());
         });
         assert_eq!(fixture.next_event()["data"]["output"], "DP-1");
-        std::thread::sleep(Duration::from_millis(300));
+        nova_test_support::settle(Duration::from_millis(300));
         assert!(lock(&fixture.recordings.state).active.is_some(), "the recorder stopped with its thread");
         let file = fixture.folder().join(&fixture.files()[0]);
         assert_eq!(std::fs::read_to_string(file).unwrap(), "frames\n", "it was told to finish");
@@ -856,7 +856,7 @@ mod tests {
         fixture.recordings.pause(true).unwrap();
         let paused = fixture.next_event();
         assert_eq!(paused["data"]["paused"], true, "{paused}");
-        std::thread::sleep(Duration::from_millis(300));
+        nova_test_support::settle(Duration::from_millis(300));
         fixture.recordings.pause(false).unwrap();
         let resumed = fixture.next_event();
         assert_eq!(resumed["data"]["paused"], false);

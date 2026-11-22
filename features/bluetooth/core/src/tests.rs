@@ -832,7 +832,7 @@ fn turning_on_lifts_the_software_block() {
     let rfkill = fixture.rfkill();
     let kernel = std::thread::spawn(move || {
         wait_until(WAIT, "the unblock event", || std::fs::read(&rfkill.device).is_ok_and(|event| !event.is_empty()));
-        std::thread::sleep(POWER_RETRY * 3);
+        nova_test_support::settle(POWER_RETRY * 3);
         std::fs::write(rfkill.class.join("rfkill0/soft"), "0\n").unwrap();
     });
     bluetooth.power(true).unwrap();
