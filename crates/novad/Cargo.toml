@@ -35,6 +35,8 @@
 # - nova-launcher-api
 # - nova-log
 # - nova-mime
+# - nova-media
+# - nova-media-api
 # - nova-modules
 # - nova-network
 # - nova-network-api
@@ -81,6 +83,8 @@ nova-modules.workspace = true
 nova-settings.workspace = true
 nova-launcher.workspace = true
 nova-launcher-api.workspace = true
+nova-media.workspace = true
+nova-media-api.workspace = true
 nova-network.workspace = true
 nova-network-api.workspace = true
 nova-notifications.workspace = true

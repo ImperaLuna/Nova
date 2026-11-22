@@ -5,7 +5,7 @@
 //! integer), so each value is read loosely, and a missing or odd one is its
 //! default. Text is cut to [`MAX_TEXT_CHARS`].
 
-use nova_protocol::PlaybackStatus;
+use nova_media_api::PlaybackStatus;
 use std::collections::HashMap;
 use zbus::Connection;
 use zbus::wire::{OwnedObjectPath, OwnedVariant, Variant};

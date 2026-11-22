@@ -6,8 +6,7 @@
 //! other kind (`http://`, `data:`) means no cover. A download that fails
 //! isn't tried again for that URL.
 
-use crate::lock;
-use nova_notifications::image;
+use nova_base::{lock, state_file};
 use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 use std::os::unix::fs::DirBuilderExt;
@@ -97,7 +96,7 @@ impl Covers {
             .create(&self.folder)
             .map_err(|e| format!("can't make {}: {e}", self.folder.display()))?;
         let path = self.folder.join(format!("{:016x}.{extension}", hash(url)));
-        crate::state_file::write(&path, &bytes).map_err(|e| format!("can't write {}: {e}", path.display()))?;
+        state_file::write(&path, &bytes).map_err(|e| format!("can't write {}: {e}", path.display()))?;
         Ok(path)
     }
 
@@ -119,7 +118,7 @@ impl Covers {
 /// The file a `file://` cover names, after the checks a notification's
 /// picture gets, and more: no `..` in it, a regular file, not too big.
 fn local(url: &str) -> Result<PathBuf, String> {
-    let path = image::file(url).ok_or_else(|| format!("{url} isn't a file path"))?;
+    let path = nova_paths::reference::file(url).ok_or_else(|| format!("{url} isn't a file path"))?;
     if path.components().any(|component| component == Component::ParentDir) {
         return Err(format!("{} has .. in it", path.display()));
     }
