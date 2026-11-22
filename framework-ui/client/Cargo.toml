@@ -1,0 +1,32 @@
+# Allowed outside crates:
+# - futures
+# - gpui
+# - serde
+# - serde_json
+#
+# Allowed workspace crates:
+# - nova-carrier
+# - nova-daemon-info
+
+[package]
+name = "nova-ui-client"
+description = "The UI's connection to novad: subscribes to topics, sends commands, reconnects, and keeps live state for GPUI views"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+workspace = "../../app-ui"
+
+[dependencies]
+futures.workspace = true
+gpui.workspace = true
+nova-carrier.workspace = true
+nova-daemon-info.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+
+[lints]
+workspace = true
