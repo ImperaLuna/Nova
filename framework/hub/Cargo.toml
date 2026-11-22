@@ -13,6 +13,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [features]
 # Reading a client's queue the way its connection would, for novad's tests.

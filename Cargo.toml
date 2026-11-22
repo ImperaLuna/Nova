@@ -7,6 +7,9 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 rust-version = "1.88"
+# Nova is not on crates.io. cargo-deny also needs it to tell a path
+# dependency from a wildcard version (app-ui/deny.toml).
+publish = false
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

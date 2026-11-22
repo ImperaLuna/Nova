@@ -29,6 +29,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 gpui.workspace = true
@@ -49,6 +50,9 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 rust-version = "1.88"
+# Nova is not on crates.io. cargo-deny also needs it to tell a path
+# dependency from a wildcard version (app-ui/deny.toml).
+publish = false
 
 [workspace.dependencies]
 # GPUI comes from Zed's repo through ImperaLuna/zed, the fork Nova Files
