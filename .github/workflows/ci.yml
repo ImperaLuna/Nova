@@ -16,6 +16,12 @@ name: CI
 # (IMP-228). So does a PR with another PR stacked on it: the stack's top PR
 # holds every commit below it, so its VM run covers the whole stack (IMP-326).
 #
+# A PR that changes only the UI side's crates (app-ui/, framework-ui/,
+# features/<id>/ui/: the GPUI port, which has no UI test suite) skips the VM
+# tests and the QML checks, which run the Quickshell UI it can't touch
+# (IMP-393). The flake keeps those crates out of every daemon build, so the
+# daemon's other checks come from the store.
+#
 # `closed` starts a run with every job skipped, only so the concurrency group
 # below cancels the branch's queued or running run once its PR merges or
 # closes, rather than spend a runner on code that has landed (IMP-326).
@@ -38,9 +44,17 @@ concurrency:
 jobs:
   fast:
     name: fast checks
+    needs: shape
     if: github.event.action != 'closed'
     runs-on: [self-hosted, nova]
     timeout-minutes: 30
+    env:
+      UI_ONLY: ${{ needs.shape.outputs.ui_only }}
+      # Never in this job: the VM tests.
+      VM_CHECKS: e2e-niri e2e-hyprland
+      # The checks that run or read the Quickshell UI, skipped on a PR that
+      # changes only the UI side's crates.
+      QML_CHECKS: qmllint qmlformat qml-tests shaders e2e-headless quickshell-version
     steps:
       - uses: actions/checkout@v7
         with:
@@ -51,14 +65,21 @@ jobs:
       - name: flake checks but the VM tests
         run: |
           checks=.#checks.x86_64-linux
-          names=$(nix eval --raw "$checks" --apply 'c: builtins.concatStringsSep " " (builtins.filter (n: n != "e2e-niri" && n != "e2e-hyprland") (builtins.attrNames c))')
+          skipped=" $VM_CHECKS "
+          if [[ $UI_ONLY == true ]]; then
+            echo "::notice::Only UI crates changed: skipping the QML checks ($QML_CHECKS)."
+            skipped+="$QML_CHECKS "
+          fi
+          names=$(nix eval --raw "$checks" --apply 'c: builtins.concatStringsSep " " (builtins.attrNames c)')
           targets=()
-          for name in $names; do targets+=("$checks.$name"); done
+          for name in $names; do
+            [[ $skipped == *" $name "* ]] || targets+=("$checks.$name")
+          done
           nix build -L --no-link --keep-going "${targets[@]}"
       # The headless e2e's logs and screenshot. --max-jobs 0 skips building
       # it again when the test itself failed.
       - name: e2e results
-        if: always()
+        if: always() && env.UI_ONLY != 'true'
         run: |
           mkdir -p e2e/out
           if out=$(nix build --max-jobs 0 --no-link --print-out-paths .#checks.x86_64-linux.e2e-headless.run); then
@@ -73,10 +94,12 @@ jobs:
           path: e2e/out
           if-no-files-found: ignore
 
-  # How many open PRs are stacked on this one (use its branch as their base).
-  # On GitHub's runners, so it never waits behind the self-hosted queue.
-  stack:
-    name: stacked PRs
+  # What the PR is, for the jobs that depend on it: how many open PRs are
+  # stacked on it (use its branch as their base), and whether it changes
+  # only the UI side's crates. On GitHub's runners, so it never waits behind
+  # the self-hosted queue.
+  shape:
+    name: PR shape
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -84,6 +107,7 @@ jobs:
       pull-requests: read
     outputs:
       above: ${{ steps.count.outputs.above }}
+      ui_only: ${{ steps.files.outputs.ui_only }}
     steps:
       - id: count
         env:
@@ -101,15 +125,37 @@ jobs:
           fi
           echo "PRs stacked on $BRANCH: $above"
           echo "above=$above" >>"$GITHUB_OUTPUT"
+      # Every file the PR changes against its base, a renamed file under
+      # both names: the whole PR, not its last push. Anything outside the
+      # UI crates' folders (the flake, CI, a script, a daemon crate) makes
+      # it an ordinary PR. From the API, so nothing the PR's code does can
+      # change the answer. A run started by hand tests everything.
+      - id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          UI_FOLDERS: ^(app-ui|framework-ui|features/[^/]+/ui)/
+        run: |
+          ui_only=false
+          if [[ -n $PR ]]; then
+            files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
+              --jq '.[] | .filename, (.previous_filename // empty)')
+            if [[ -n $files ]] && ! grep -qvE "$UI_FOLDERS" <<<"$files"; then
+              ui_only=true
+            fi
+          fi
+          echo "Only UI crates changed: $ui_only"
+          echo "ui_only=$ui_only" >>"$GITHUB_OUTPUT"
 
   vm:
     name: VM tests
-    needs: stack
-    # Not on a draft, and not under another PR of a stack; a run started by
-    # hand always tests.
+    needs: shape
+    # Not on a draft, not under another PR of a stack, and not when only UI
+    # crates changed; a run started by hand always tests.
     if: >-
       github.event_name != 'pull_request' ||
-      (!github.event.pull_request.draft && needs.stack.outputs.above == '0')
+      (!github.event.pull_request.draft && needs.shape.outputs.above == '0' &&
+      needs.shape.outputs.ui_only != 'true')
     runs-on: [self-hosted, nova]
     timeout-minutes: 45
     steps:
@@ -163,10 +209,11 @@ jobs:
           if-no-files-found: ignore
 
   # The status the ruleset requires. Green when fast passed and the VM tests
-  # passed, or were skipped on a draft or under a stacked PR.
+  # passed, or were skipped on a draft, under a stacked PR or on a PR that
+  # changes only UI crates.
   checks:
     name: checks
-    needs: [fast, stack, vm]
+    needs: [fast, shape, vm]
     # Not on a run a newer push cancelled (that head no longer matters), nor
     # on a closed PR.
     if: ${{ !cancelled() && github.event.action != 'closed' }}
@@ -178,8 +225,9 @@ jobs:
           FAST: ${{ needs.fast.result }}
           VM: ${{ needs.vm.result }}
           DRAFT: ${{ github.event.pull_request.draft == true }}
-          STACK: ${{ needs.stack.result }}
-          ABOVE: ${{ needs.stack.outputs.above }}
+          SHAPE: ${{ needs.shape.result }}
+          ABOVE: ${{ needs.shape.outputs.above }}
+          UI_ONLY: ${{ needs.shape.outputs.ui_only }}
         run: |
           echo "fast checks: $FAST, VM tests: $VM, PRs stacked on this one: $ABOVE"
           [[ $FAST == success ]] || exit 1
@@ -189,8 +237,12 @@ jobs:
             echo "::notice::Draft PR: VM tests run once it's marked ready."
             exit 0
           fi
-          if [[ $STACK == success && $ABOVE != 0 ]]; then
+          if [[ $SHAPE == success && $ABOVE != 0 ]]; then
             echo "::notice::$ABOVE PR(s) stacked on this one: the VM tests run on the stack's top PR."
+            exit 0
+          fi
+          if [[ $SHAPE == success && $UI_ONLY == true ]]; then
+            echo "::notice::Only UI crates changed: the VM tests don't cover them."
             exit 0
           fi
           exit 1
