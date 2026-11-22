@@ -162,6 +162,7 @@ pub enum Sent {
     Shared(Event),
     Launcher(nova_launcher_api::Event),
     Network(nova_network_api::Event),
+    Notifications(nova_notifications_api::Event),
     Resources(nova_resources_api::Event),
     Tray(nova_tray_api::Event),
 }
