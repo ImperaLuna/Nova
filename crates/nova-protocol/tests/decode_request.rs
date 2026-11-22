@@ -159,6 +159,17 @@ fn tray_request() -> impl Strategy<Value = nova_carrier::Request<nova_tray_api::
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
+/// The wallpaper feature's commands, which it owns (`nova-wallpaper-api`).
+fn wallpaper_request() -> impl Strategy<Value = nova_carrier::Request<nova_wallpaper_api::Command>> {
+    use nova_wallpaper_api::Command;
+    let command = prop_oneof![
+        (".*", proptest::option::of(".*")).prop_map(|(path, output)| Command::SetWallpaper { path, output }),
+        Just(Command::Wallpapers),
+        Just(Command::WallpaperFolder),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
 fn pairing_answer() -> impl Strategy<Value = PairingAnswer> {
     prop_oneof![Just(PairingAnswer::Accept), Just(PairingAnswer::Reject), ".*".prop_map(PairingAnswer::Code)]
 }
@@ -287,6 +298,12 @@ proptest! {
         let mut extra = fields;
         extra.insert(key, value);
         prop_assert!(decode(&Value::Object(extra).to_string()).is_err());
+    }
+
+    #[test]
+    fn every_wallpaper_request_round_trips(request in wallpaper_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
     }
 
     #[test]

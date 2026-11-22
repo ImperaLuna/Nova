@@ -6,7 +6,7 @@
 //! not its subfolders or hidden files, and only images both awww and the UI
 //! can draw, told by their header rather than their name.
 
-use nova_protocol::{WALLPAPER_FOLDER_MAX_IMAGES, WallpaperFolder};
+use nova_wallpaper_api::{WALLPAPER_FOLDER_MAX_IMAGES, WallpaperFolder};
 use std::path::{Path, PathBuf};
 
 /// The images in `folder`, sorted by name; none when it doesn't exist yet.

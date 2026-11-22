@@ -52,7 +52,6 @@ mod supervisor;
 mod topics;
 mod tray;
 mod wallpaper;
-mod wallpaper_folder;
 mod x11_tray;
 
 // The shared helpers, moved to framework crates (IMP-371), keep their old
