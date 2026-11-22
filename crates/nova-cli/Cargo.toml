@@ -14,8 +14,10 @@
 # - nova-power-api
 # - nova-protocol
 # - nova-quickshell
+# - nova-network-api
 # - nova-resources-api
 # - nova-screenshot-api
+# - nova-tray-api
 # - novad
 
 [package]
@@ -34,9 +36,11 @@ path = "src/main.rs"
 nova-protocol.workspace = true
 nova-carrier.workspace = true
 nova-lock-api.workspace = true
+nova-network-api.workspace = true
 nova-power-api.workspace = true
 nova-resources-api.workspace = true
 nova-screenshot-api.workspace = true
+nova-tray-api.workspace = true
 serde.workspace = true
 nova-features.workspace = true
 nova-paths.workspace = true

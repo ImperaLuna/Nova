@@ -6,7 +6,7 @@
 //! Nothing here follows changes or decides anything: [`read`] gives a
 //! [`Reading`], and the service turns it into the event.
 
-use nova_protocol::{LinkKind, LinkState, WifiBand, WifiSecurity};
+use nova_network_api::{LinkKind, LinkState, WifiBand, WifiSecurity};
 use std::collections::HashMap;
 use zbus::Connection;
 use zbus::wire::{OwnedObjectPath, OwnedVariant};

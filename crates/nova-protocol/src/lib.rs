@@ -79,9 +79,6 @@ pub enum Event {
     /// (feature `launcher`). Topic [`topics::LAUNCHER`], sent right after
     /// subscribing and whenever any of it changes.
     Launcher(Launcher),
-    /// The apps in the system tray (feature `tray`). Topic [`topics::TRAY`],
-    /// sent right after subscribing and whenever one comes or goes.
-    Tray(Tray),
     /// The notifications kept for the quick settings list, do not disturb
     /// and the muted apps (feature `notifications`). Topic
     /// [`topics::NOTIFICATIONS`], sent right after subscribing and whenever
@@ -100,14 +97,6 @@ pub enum Event {
     /// [`topics::PERIPHERALS`], sent right after subscribing and whenever a
     /// device comes, goes or changes.
     Peripherals(Peripherals),
-    /// Wired and Wi-Fi links from NetworkManager (feature `network`). Topic
-    /// [`topics::NETWORK`], sent right after subscribing and whenever a link,
-    /// a network in reach or a connection attempt changes.
-    Network(Network),
-    /// The traffic over the machine's network links, every
-    /// [`NETWORK_TRAFFIC_INTERVAL_SECS`] while some connection watches it
-    /// (`watch_network_traffic`, feature `network`). Topic [`topics::NETWORK`].
-    NetworkTraffic(NetworkTraffic),
     /// Bluetooth: the radio, the devices and the pairing waiting for the
     /// user (feature `bluetooth`). Topic [`topics::BLUETOOTH`], sent right
     /// after subscribing and whenever any of it changes.
@@ -137,11 +126,9 @@ pub mod topics {
     pub const RECORDING: Topic = Topic::named("recording");
     pub const HOST: Topic = Topic::named("host");
     pub const LAUNCHER: Topic = Topic::named("launcher");
-    pub const TRAY: Topic = Topic::named("tray");
     pub const NOTIFICATIONS: Topic = Topic::named("notifications");
     pub const MEDIA: Topic = Topic::named("media");
     pub const PERIPHERALS: Topic = Topic::named("peripherals");
-    pub const NETWORK: Topic = Topic::named("network");
     pub const BLUETOOTH: Topic = Topic::named("bluetooth");
 }
 
@@ -161,11 +148,9 @@ impl Event {
             Event::PickRecording | Event::Recording(_) | Event::RecordingSaved(_) => Some(topics::RECORDING),
             Event::Host(_) => Some(topics::HOST),
             Event::Launcher(_) => Some(topics::LAUNCHER),
-            Event::Tray(_) => Some(topics::TRAY),
             Event::Notifications(_) | Event::NotificationPopup(_) => Some(topics::NOTIFICATIONS),
             Event::Media(_) => Some(topics::MEDIA),
             Event::Peripherals(_) => Some(topics::PERIPHERALS),
-            Event::Network(_) | Event::NetworkTraffic(_) => Some(topics::NETWORK),
             Event::Bluetooth(_) => Some(topics::BLUETOOTH),
         }
     }
@@ -351,39 +336,6 @@ pub struct Launcher {
     pub recent: Vec<String>,
 }
 
-/// The system tray (feature `tray`): the StatusNotifierItems apps
-/// registered with novad's watcher, in the order they did.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Tray {
-    pub items: Vec<TrayItem>,
-    /// The apps the user hid from the bar's tray (`hide_tray_app`), by an
-    /// item's app id, or its own `id` when it has no app. Quick settings
-    /// still lists them, to bring them back.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub hidden: Vec<String>,
-}
-
-/// One app's tray icon. The UI draws it through Quickshell's tray host and
-/// finds it there by `id` and `title`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TrayItem {
-    /// Where it lives on the session bus: `<bus name>/<object path>`, as
-    /// the watcher lists it.
-    pub address: String,
-    /// The item's own `Id`, like `discord_status_icon_1`.
-    pub id: String,
-    /// The item's own `Title`, empty for Electron apps.
-    pub title: String,
-    /// The installed app it belongs to, found from the process that owns
-    /// it, when there is one (and the `launcher` feature is on).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub app: Option<App>,
-    /// It has no `Activate` (libayatana's items, like Spotify's): a click
-    /// on it shows its menu, as one on an item that says `ItemIsMenu` does.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub menu_only: bool,
-}
-
 /// The media players (feature `media`): every MPRIS player on the session
 /// bus, in the order they came, and the one the bar shows.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -549,216 +501,6 @@ pub enum PeripheralSource {
     Keychron,
     Headsetcontrol,
 }
-
-/// The machine's network links as NetworkManager has them (feature
-/// `network`). While NetworkManager doesn't run, `running` is false and the
-/// rest is empty.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Network {
-    pub running: bool,
-    /// The kind of link traffic goes over now (NetworkManager's primary
-    /// connection), `None` while offline.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub primary: Option<LinkKind>,
-    /// Which link should carry traffic while both a cable and Wi-Fi are
-    /// connected: the user's pick (`prefer_network`), else, while both are
-    /// connected, the one that does.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefer: Option<LinkKind>,
-    /// Every Ethernet port NetworkManager manages.
-    pub wired: Vec<WiredLink>,
-    /// The first Wi-Fi card NetworkManager manages, `None` without one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wifi: Option<Wifi>,
-}
-
-/// What a network link is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LinkKind {
-    Wired,
-    Wifi,
-    /// Anything else NetworkManager connects through (a phone over USB, a
-    /// mobile broadband modem, a VPN it routes everything over).
-    Other,
-}
-
-/// Where a link is in connecting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LinkState {
-    /// It can't connect now: no cable in the port, or Wi-Fi turned off.
-    Unavailable,
-    Disconnected,
-    Connecting,
-    Connected,
-}
-
-/// One Ethernet port.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WiredLink {
-    /// The kernel's name for it, like `enp5s0`.
-    pub interface: String,
-    pub state: LinkState,
-    /// The connection profile in use, like `Wired connection 1`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub connection: Option<String>,
-    /// The link speed the cable negotiated, while connected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub speed_mbps: Option<u32>,
-}
-
-/// The Wi-Fi card and the networks in its reach.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Wifi {
-    pub interface: String,
-    /// Wi-Fi's switch (`set_wifi`).
-    pub enabled: bool,
-    /// Turned off by a hardware switch or an airplane mode key: `set_wifi`
-    /// can't turn it on.
-    pub blocked: bool,
-    pub state: LinkState,
-    /// The network it's on, or connecting to.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub network: Option<String>,
-    /// The speed it's talking to the access point at, while connected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub speed_mbps: Option<u32>,
-    /// A scan was asked for (`scan_wifi`) and hasn't finished.
-    pub scanning: bool,
-    /// The networks in reach, each name once, the one it's on first, then
-    /// the strongest. Networks that hide their name aren't listed.
-    pub networks: Vec<WifiNetwork>,
-    /// How the last `connect_wifi` went, until the next one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub attempt: Option<WifiAttempt>,
-}
-
-/// A Wi-Fi network in reach, from its strongest access point.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WifiNetwork {
-    /// Its name (SSID), as text: bytes that aren't UTF-8 are replaced.
-    pub ssid: String,
-    /// Signal strength, 0 to 100.
-    pub strength: u8,
-    pub security: WifiSecurity,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub band: Option<WifiBand>,
-    /// NetworkManager has a profile for it, so it connects without asking
-    /// for a password.
-    pub saved: bool,
-    /// The card is on it now.
-    pub connected: bool,
-}
-
-/// How a Wi-Fi network is secured, its best method when it offers several.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WifiSecurity {
-    /// No password (including Enhanced Open, which encrypts without one).
-    Open,
-    /// The old WEP: Nova doesn't connect to these.
-    Wep,
-    Wpa,
-    Wpa2,
-    Wpa3,
-    /// 802.1X (work and school networks, like eduroam): set up in the
-    /// system's network settings, Nova doesn't connect to these.
-    Enterprise,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WifiBand {
-    #[serde(rename = "2.4ghz")]
-    Ghz2_4,
-    #[serde(rename = "5ghz")]
-    Ghz5,
-    #[serde(rename = "6ghz")]
-    Ghz6,
-}
-
-/// How a `connect_wifi` is going.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WifiAttempt {
-    pub ssid: String,
-    pub outcome: AttemptOutcome,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AttemptOutcome {
-    Connecting,
-    Connected,
-    /// The network turned the password down, or none was given for a
-    /// network that needs one: ask for it.
-    WrongPassword,
-    /// It failed some other way (out of reach, no address).
-    Failed,
-}
-
-/// How often traffic is sampled while watched, and the step of its history.
-pub const NETWORK_TRAFFIC_INTERVAL_SECS: u64 = 1;
-/// How far back a traffic history goes.
-pub const NETWORK_TRAFFIC_HISTORY_SECS: u64 = 60;
-
-/// Bytes over the machine's wired and Wi-Fi links together (not over
-/// loopback, bridges or tunnels, whose traffic also crosses one of those).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NetworkTraffic {
-    /// Bytes per second down and up, one per
-    /// [`NETWORK_TRAFFIC_INTERVAL_SECS`], oldest first, up to
-    /// [`NETWORK_TRAFFIC_HISTORY_SECS`] back; the last is now.
-    pub down: Vec<u64>,
-    pub up: Vec<u64>,
-    /// Bytes since local midnight, counted while novad ran.
-    pub today_down: u64,
-    pub today_up: u64,
-}
-
-/// A Wi-Fi password, on its way from the UI to NetworkManager. It never
-/// shows in a log: its `Debug` hides it, and it has no `Display`. It's
-/// serialized only to send it (the `nova` CLI, tests).
-#[derive(Clone, PartialEq, Eq, Deserialize)]
-#[serde(transparent)]
-pub struct WifiPassword(String);
-
-impl WifiPassword {
-    pub fn new(password: impl Into<String>) -> Self {
-        Self(password.into())
-    }
-
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for WifiPassword {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("WifiPassword(<redacted>)")
-    }
-}
-
-impl Serialize for WifiPassword {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0)
-    }
-}
-
-/// The longest network name a command takes, in bytes (802.11's limit).
-pub const WIFI_SSID_MAX_BYTES: usize = 32;
-/// The longest password a command takes, in bytes: WPA's passphrases stop
-/// at 63 (64 as hex), WPA3's have no limit of their own.
-pub const WIFI_PASSWORD_MAX_BYTES: usize = 128;
-/// The shortest WPA passphrase, in bytes (WPA3's SAE takes shorter ones, but
-/// a shorter one is never a WPA2 key, and networks offering both are common).
-pub const WPA_PASSWORD_MIN_BYTES: usize = 8;
 
 /// Bluetooth as the quick settings page shows it (feature `bluetooth`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1317,25 +1059,6 @@ pub enum Command {
         id: String,
         pinned: bool,
     },
-    /// Hides a tray app from the bar, or shows it again (feature `tray`):
-    /// `id` is the item's app id, or its own id when it has none (see
-    /// [`Tray::hidden`]). Remembered across restarts.
-    HideTrayApp {
-        id: String,
-        hidden: bool,
-    },
-    /// The tray item at `address` (as [`TrayItem::address`]) was clicked
-    /// (feature `tray`): it's asked to show its window, which then takes
-    /// focus.
-    ActivateTrayItem {
-        address: String,
-    },
-    /// An entry of the menu of the tray item at `address` was picked
-    /// (feature `tray`): a window its app shows next takes focus, as it
-    /// gets none from a menu either.
-    TrayMenuPicked {
-        address: String,
-    },
     /// The notification `id` was clicked on `output` (feature
     /// `notifications`): the app hears of it and its window takes focus, or,
     /// when it can't hear of it, the app opens (as with `launch_app`). It
@@ -1420,46 +1143,6 @@ pub enum Command {
     /// (feature `media`), for the panel's "Go to" row.
     MediaWindow {
         player: String,
-    },
-    /// Turns Wi-Fi on or off (feature `network`).
-    SetWifi {
-        enabled: bool,
-    },
-    /// Asks the Wi-Fi card to look for networks now (feature `network`),
-    /// when the network page opens. `scanning` says when it's done.
-    ScanWifi,
-    /// Connects the Wi-Fi card to `ssid` (feature `network`): with its
-    /// saved profile, else a new one, with `password` for one that needs
-    /// it. Answers once NetworkManager has started; how it ends comes as
-    /// the [`Wifi::attempt`]. A password for a saved network replaces the
-    /// saved one. A new network it never got onto isn't kept.
-    ConnectWifi {
-        ssid: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        password: Option<WifiPassword>,
-    },
-    /// Disconnects the Wi-Fi card from the network it's on (feature
-    /// `network`). That network doesn't connect by itself again until it's
-    /// picked or the machine restarts; others still do.
-    DisconnectWifi,
-    /// Forgets the saved profiles of the Wi-Fi network `ssid` (feature
-    /// `network`), which disconnects from it first if it's on it.
-    ForgetWifi {
-        ssid: String,
-    },
-    /// Which link carries traffic while both a cable and Wi-Fi are
-    /// connected (feature `network`); the other stays connected as a
-    /// backup. Remembered across restarts. NetworkManager's saved profiles
-    /// aren't changed: novad lowers the link's route metric while it's
-    /// connected.
-    PreferNetwork {
-        kind: LinkKind,
-    },
-    /// Starts or stops this connection watching network traffic (feature
-    /// `network`): while any does, novad sends `network_traffic` every
-    /// second. A connection that closes stops watching.
-    WatchNetworkTraffic {
-        watching: bool,
     },
     /// Turns Bluetooth on or off (feature `bluetooth`). On also lifts a
     /// software block (rfkill); a hardware switch is refused.
@@ -1670,11 +1353,11 @@ mod tests {
                         topics::HOST,
                         nova_resources_api::TOPIC,
                         topics::LAUNCHER,
-                        topics::TRAY,
+                        nova_tray_api::TOPIC,
                         topics::NOTIFICATIONS,
                         topics::MEDIA,
                         topics::PERIPHERALS,
-                        topics::NETWORK,
+                        nova_network_api::TOPIC,
                         topics::BLUETOOTH,
                     ]
                     .map(|topic| topic.name().to_string())
@@ -1884,17 +1567,21 @@ mod tests {
                 },
             }),
             encode(Request { id: Some(26), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
-            encode(Request { id: Some(27), command: Command::HideTrayApp { id: "steam".into(), hidden: true } }),
-            encode(Request {
+            // The tray feature's own messages (`nova-tray-api`), still on this one wire.
+            encode(nova_carrier::Request {
+                id: Some(27),
+                command: nova_tray_api::Command::HideTrayApp { id: "steam".into(), hidden: true },
+            }),
+            encode(nova_carrier::Request {
                 id: Some(28),
-                command: Command::ActivateTrayItem { address: ":1.42/StatusNotifierItem".into() },
+                command: nova_tray_api::Command::ActivateTrayItem { address: ":1.42/StatusNotifierItem".into() },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(29),
-                command: Command::TrayMenuPicked { address: ":1.42/StatusNotifierItem".into() },
+                command: nova_tray_api::Command::TrayMenuPicked { address: ":1.42/StatusNotifierItem".into() },
             }),
-            encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
-            encode(Event::Tray(tray())),
+            encode(nova_carrier::Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
+            encode(nova_tray_api::Event::Tray(tray())),
             encode(Event::Notifications(notifications())),
             encode(Event::NotificationPopup(notifications().items[0].clone())),
             encode(Request { id: Some(40), command: Command::NotificationAction { id: 7, action: "open".into() } }),
@@ -1990,23 +1677,45 @@ mod tests {
             encode(Response { id: 49, outcome: Outcome::Result(json!("3")) }),
             encode(Event::Peripherals(peripherals())),
             encode(Event::Peripherals(Peripherals { devices: vec![] })),
-            encode(Event::Network(network())),
-            encode(Event::Network(Network { running: false, primary: None, prefer: None, wired: vec![], wifi: None })),
-            encode(Request { id: Some(50), command: Command::SetWifi { enabled: false } }),
-            encode(Request { id: Some(51), command: Command::ScanWifi }),
-            encode(Request {
+            // The network feature's own messages (`nova-network-api`), still on this one wire.
+            encode(nova_network_api::Event::Network(network())),
+            encode(nova_network_api::Event::Network(nova_network_api::Network {
+                running: false,
+                primary: None,
+                prefer: None,
+                wired: vec![],
+                wifi: None,
+            })),
+            encode(nova_carrier::Request {
+                id: Some(50),
+                command: nova_network_api::Command::SetWifi { enabled: false },
+            }),
+            encode(nova_carrier::Request { id: Some(51), command: nova_network_api::Command::ScanWifi }),
+            encode(nova_carrier::Request {
                 id: Some(52),
-                command: Command::ConnectWifi {
+                command: nova_network_api::Command::ConnectWifi {
                     ssid: "Home".into(),
-                    password: Some(WifiPassword::new("correct horse")),
+                    password: Some(nova_network_api::WifiPassword::new("correct horse")),
                 },
             }),
-            encode(Request { id: Some(53), command: Command::ConnectWifi { ssid: "Cafe".into(), password: None } }),
-            encode(Request { id: Some(54), command: Command::PreferNetwork { kind: LinkKind::Wired } }),
-            encode(Request { id: Some(56), command: Command::DisconnectWifi }),
-            encode(Request { id: Some(57), command: Command::ForgetWifi { ssid: "Cafe".into() } }),
-            encode(Request { id: Some(55), command: Command::WatchNetworkTraffic { watching: true } }),
-            encode(Event::NetworkTraffic(NetworkTraffic {
+            encode(nova_carrier::Request {
+                id: Some(53),
+                command: nova_network_api::Command::ConnectWifi { ssid: "Cafe".into(), password: None },
+            }),
+            encode(nova_carrier::Request {
+                id: Some(54),
+                command: nova_network_api::Command::PreferNetwork { kind: nova_network_api::LinkKind::Wired },
+            }),
+            encode(nova_carrier::Request { id: Some(56), command: nova_network_api::Command::DisconnectWifi }),
+            encode(nova_carrier::Request {
+                id: Some(57),
+                command: nova_network_api::Command::ForgetWifi { ssid: "Cafe".into() },
+            }),
+            encode(nova_carrier::Request {
+                id: Some(55),
+                command: nova_network_api::Command::WatchNetworkTraffic { watching: true },
+            }),
+            encode(nova_network_api::Event::NetworkTraffic(nova_network_api::NetworkTraffic {
                 down: vec![0, 1_250_000, 3_400_000],
                 up: vec![0, 42_000, 61_000],
                 today_down: 4_200_000_000,
@@ -2157,7 +1866,11 @@ mod tests {
         }
     }
 
-    fn network() -> Network {
+    fn network() -> nova_network_api::Network {
+        use nova_network_api::{
+            AttemptOutcome, LinkKind, LinkState, Network, Wifi, WifiAttempt, WifiBand, WifiNetwork, WifiSecurity,
+            WiredLink,
+        };
         Network {
             running: true,
             primary: Some(LinkKind::Wifi),
@@ -2236,23 +1949,6 @@ mod tests {
                 incoming: false,
             }),
         }
-    }
-
-    #[test]
-    fn network_rejects_unknown_fields() {
-        let network = serde_json::to_value(network()).unwrap();
-        assert!(serde_json::from_value::<Network>(network.clone()).is_ok());
-        let mut extra = network.clone();
-        extra["wifi"]["networks"][0]["bssid"] = json!("02:00:00:00:00:08");
-        assert!(serde_json::from_value::<Network>(extra).is_err());
-    }
-
-    #[test]
-    fn wifi_passwords_stay_out_of_debug_output() {
-        let command = Command::ConnectWifi { ssid: "Home".into(), password: Some(WifiPassword::new("hunter22")) };
-        assert!(!format!("{command:?}").contains("hunter22"));
-        let line = encode(Request { id: None, command }).unwrap();
-        assert!(line.contains(r#""password":"hunter22""#), "{line}");
     }
 
     fn peripherals() -> Peripherals {
@@ -2349,7 +2045,8 @@ mod tests {
         Media { players: vec![spotify, firefox], shown: Some("org.mpris.MediaPlayer2.spotify".into()) }
     }
 
-    fn tray() -> Tray {
+    fn tray() -> nova_tray_api::Tray {
+        use nova_tray_api::{Tray, TrayItem};
         Tray {
             items: vec![
                 TrayItem {
@@ -2546,14 +2243,10 @@ mod tests {
         assert_eq!(Event::Recording(None).topic(), Some(topics::RECORDING));
         assert_eq!(Event::Host(host()).topic(), Some(topics::HOST));
         assert_eq!(Event::Launcher(launcher()).topic(), Some(topics::LAUNCHER));
-        assert_eq!(Event::Tray(tray()).topic(), Some(topics::TRAY));
         assert_eq!(Event::Notifications(notifications()).topic(), Some(topics::NOTIFICATIONS));
         assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(topics::NOTIFICATIONS));
         assert_eq!(Event::Media(media()).topic(), Some(topics::MEDIA));
         assert_eq!(Event::Peripherals(peripherals()).topic(), Some(topics::PERIPHERALS));
-        assert_eq!(Event::Network(network()).topic(), Some(topics::NETWORK));
-        let traffic = NetworkTraffic { down: vec![], up: vec![], today_down: 0, today_up: 0 };
-        assert_eq!(Event::NetworkTraffic(traffic).topic(), Some(topics::NETWORK));
         assert_eq!(Event::Bluetooth(bluetooth()).topic(), Some(topics::BLUETOOTH));
     }
 

@@ -104,6 +104,23 @@ fn lock_request() -> impl Strategy<Value = nova_carrier::Request<nova_lock_api::
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
+/// The network feature's commands, which it owns (`nova-network-api`).
+fn network_request() -> impl Strategy<Value = nova_carrier::Request<nova_network_api::Command>> {
+    use nova_network_api::{Command, LinkKind, WifiPassword};
+    let command = prop_oneof![
+        any::<bool>().prop_map(|enabled| Command::SetWifi { enabled }),
+        Just(Command::ScanWifi),
+        (".*", proptest::option::of(".*"))
+            .prop_map(|(ssid, password)| Command::ConnectWifi { ssid, password: password.map(WifiPassword::new) }),
+        Just(Command::DisconnectWifi),
+        ".*".prop_map(|ssid| Command::ForgetWifi { ssid }),
+        prop_oneof![Just(LinkKind::Wired), Just(LinkKind::Wifi), Just(LinkKind::Other)]
+            .prop_map(|kind| Command::PreferNetwork { kind }),
+        any::<bool>().prop_map(|watching| Command::WatchNetworkTraffic { watching }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
 /// The power feature's commands, which it owns (`nova-power-api`).
 fn power_request() -> impl Strategy<Value = nova_carrier::Request<nova_power_api::Command>> {
     use nova_power_api::{Command, PowerAction};
@@ -127,6 +144,17 @@ fn screenshot_request() -> impl Strategy<Value = nova_carrier::Request<nova_scre
         }),
         Just(Command::CancelCapture),
         (any::<u64>(), action).prop_map(|(id, action)| Command::ScreenshotAction { id, action }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
+/// The tray feature's commands, which it owns (`nova-tray-api`).
+fn tray_request() -> impl Strategy<Value = nova_carrier::Request<nova_tray_api::Command>> {
+    use nova_tray_api::Command;
+    let command = prop_oneof![
+        (".*", any::<bool>()).prop_map(|(id, hidden)| Command::HideTrayApp { id, hidden }),
+        ".*".prop_map(|address| Command::ActivateTrayItem { address }),
+        ".*".prop_map(|address| Command::TrayMenuPicked { address }),
     ];
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
@@ -204,6 +232,12 @@ proptest! {
     }
 
     #[test]
+    fn every_network_request_round_trips(request in network_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
     fn every_resources_request_round_trips(request in resources_request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
@@ -226,6 +260,12 @@ proptest! {
 
     #[test]
     fn every_power_request_round_trips(request in power_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_tray_request_round_trips(request in tray_request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
     }

@@ -1,0 +1,50 @@
+# Allowed outside crates:
+# - futures-core
+# - serde
+# - serde_json
+# - zbus
+#
+# Allowed workspace crates:
+# - nova-apps
+# - nova-base
+# - nova-carrier
+# - nova-hub
+# - nova-log
+# - nova-process
+# - nova-session-bus
+# - nova-tray-api
+
+[package]
+name = "nova-tray"
+description = "The system tray's watcher: the StatusNotifierItems apps put up, which app each belongs to, and the apps hidden from the bar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# The tray items novad's tests put up (`test_items`).
+test-support = []
+
+[dependencies]
+nova-tray-api.workspace = true
+nova-apps.workspace = true
+nova-base.workspace = true
+nova-carrier.workspace = true
+nova-hub.workspace = true
+nova-log.workspace = true
+nova-process.workspace = true
+nova-session-bus.workspace = true
+futures-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+nova-apps = { workspace = true, features = ["test-support"] }
+nova-hub = { workspace = true, features = ["test-support"] }
+nova-session-bus = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true

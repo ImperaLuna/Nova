@@ -22,9 +22,11 @@ pub fn router() -> Router<Daemon> {
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).follow_up(command),
         )
         .route::<nova_lock_api::Command>(crate::session_lock::answer, |_, _, _| {})
+        .route::<nova_network_api::Command>(crate::network::answer, |_, _, _| {})
         .route::<nova_power_api::Command>(crate::power::answer, |_, _, _| {})
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
         .route::<nova_screenshot_api::Command>(crate::screenshot::answer, |_, _, _| {})
+        .route::<nova_tray_api::Command>(crate::tray::answer, |_, _, _| {})
         .listed_by(protocol_js_position)
 }
 
@@ -135,9 +137,6 @@ impl<'a> Connection<'a> {
                 return self.launcher_run(provider, id, output.clone(), *new_window);
             }
             Command::PinApp { id, pinned } => done(self.launcher().and_then(|launcher| launcher.pin(id, *pinned))),
-            Command::HideTrayApp { id, hidden } => done(self.tray().and_then(|tray| tray.hide(id, *hidden))),
-            Command::ActivateTrayItem { address } => return self.activate_tray_item(address),
-            Command::TrayMenuPicked { address } => return self.tray_menu_picked(address),
             Command::OpenNotification { id, output } => return self.open_notification(*id, output.clone()),
             Command::NotificationAction { id, action } => {
                 done(self.notifications().and_then(|notifications| notifications.action(*id, Some(action))))
@@ -170,24 +169,6 @@ impl<'a> Connection<'a> {
             }
             Command::MediaFocus { player } => return self.media_focus(player),
             Command::MediaWindow { player } => return self.media_window(player),
-            Command::SetWifi { enabled } => {
-                let enabled = *enabled;
-                return self.network_later(move |network| done(network.set_wifi(enabled)));
-            }
-            Command::ScanWifi => return self.network_later(|network| done(network.scan())),
-            Command::ConnectWifi { ssid, password } => {
-                let (ssid, password) = (ssid.clone(), password.clone());
-                return self.network_later(move |network| done(network.connect(&ssid, password.as_ref())));
-            }
-            Command::DisconnectWifi => return self.network_later(|network| done(network.disconnect())),
-            Command::ForgetWifi { ssid } => {
-                let ssid = ssid.clone();
-                return self.network_later(move |network| done(network.forget(&ssid)));
-            }
-            Command::PreferNetwork { kind } => done(self.network().and_then(|network| network.prefer(*kind))),
-            Command::WatchNetworkTraffic { watching } => {
-                done(self.network().map(|network| network.watch_traffic(self.id, *watching)))
-            }
             Command::WatchBluetooth { watching } => {
                 done(self.bluetooth().map(|bluetooth| bluetooth.watch(self.id, *watching)))
             }
@@ -224,19 +205,11 @@ impl<'a> Connection<'a> {
         self.daemon.module()
     }
 
-    fn tray(&self) -> Result<Arc<crate::tray::Tray>, String> {
-        self.daemon.module()
-    }
-
     fn notifications(&self) -> Result<Arc<crate::notifications::Notifications>, String> {
         self.daemon.module()
     }
 
     fn media(&self) -> Result<Arc<crate::media::Media>, String> {
-        self.daemon.module()
-    }
-
-    fn network(&self) -> Result<Arc<crate::network::Network>, String> {
         self.daemon.module()
     }
 
@@ -248,14 +221,6 @@ impl<'a> Connection<'a> {
 
     fn wallpaper(&self) -> Arc<crate::wallpaper::Wallpaper> {
         Arc::clone(&self.daemon.kept.wallpaper)
-    }
-
-    /// Runs `work` on its own thread: NetworkManager may take a while.
-    fn network_later(&self, work: impl FnOnce(&crate::network::Network) -> Outcome + Send + 'static) -> Answer {
-        match self.network() {
-            Ok(network) => Answer::later(move || work(&network)),
-            Err(e) => Answer::Now(Outcome::Error(e)),
-        }
     }
 
     fn bluetooth(&self) -> Result<Arc<crate::bluetooth::Bluetooth>, String> {
@@ -294,7 +259,7 @@ impl<'a> Connection<'a> {
             Err(e) => return Answer::Now(Outcome::Error(e)),
         };
         let compositor = self.daemon.compositor.clone();
-        let tray = self.tray().ok();
+        let tray = self.daemon.module::<crate::tray::Tray>().ok();
         let logger = Arc::clone(&self.daemon.logger);
         let id = id.to_owned();
         Answer::later(move || {
@@ -350,77 +315,6 @@ impl<'a> Connection<'a> {
             );
             done(Ok(()))
         })
-    }
-
-    /// A click on the tray item at `address`: focuses the window its app
-    /// has open, then asks the item to show (or hide) its window
-    /// (`Activate`). Apps get no activation token from a tray click, so niri
-    /// wouldn't move focus to it themselves. An app with no window open is
-    /// focused once its window shows, or else started again and focused once
-    /// its window shows, as the launcher does: Claude Desktop ignores
-    /// `Activate` but shows its window when started again. An open window
-    /// means nothing starts, so an icon that hides its app on a click still
-    /// can.
-    fn activate_tray_item(&self, address: &str) -> Answer {
-        let tray = match self.tray() {
-            Ok(tray) => tray,
-            Err(e) => return Answer::Now(Outcome::Error(e)),
-        };
-        let launcher = self.launcher().ok();
-        let compositor = self.daemon.compositor.clone();
-        let logger = Arc::clone(&self.daemon.logger);
-        let address = address.to_owned();
-        Answer::later(move || {
-            done(tray.app_at(&address).and_then(|app| {
-                let found = app
-                    .zip(launcher.as_ref())
-                    .and_then(|(app, launcher)| Some((launcher, launcher.window_ids(&app)?, app)));
-                let (Some((launcher, ids, app)), Some(compositor)) = (found, compositor.as_deref()) else {
-                    return tray.activate(&address);
-                };
-                // A terminal app's window can't be told apart; an error can't
-                // tell whether one is open, so nothing starts either way.
-                let open = ids.is_empty() || compositor.focus_app(&ids, None).unwrap_or(true);
-                tray.activate(&address)?;
-                let shown = |wait| crate::launcher::focus_shown(&app, &ids, compositor, None, wait, &logger);
-                if open || shown(crate::launcher::SHOWN_WINDOW_WAIT) {
-                    return Ok(());
-                }
-                launcher.start_app(&app)?;
-                shown(crate::launcher::STARTED_WINDOW_WAIT);
-                Ok(())
-            }))
-        })
-    }
-
-    /// An entry of the menu of the tray item at `address` is about to run:
-    /// when its app has no window open now, one that shows within a while
-    /// takes focus (the menu's "Show" entry), as the app gets no activation
-    /// token from a menu either. An open window is left be: the entry may
-    /// be anything, like pausing a song. Answers once it has looked, so the
-    /// UI runs the entry after, and a window it shows can't be taken for
-    /// one that was open.
-    fn tray_menu_picked(&self, address: &str) -> Answer {
-        let found = self.tray().and_then(|tray| tray.app_at(address)).map(|app| {
-            let launcher = self.launcher().ok()?;
-            let app = app?;
-            Some((launcher.window_ids(&app)?, app))
-        });
-        let (ids, app) = match found {
-            Ok(Some(found)) => found,
-            Ok(None) => return Answer::Now(Outcome::Result(serde_json::Value::Null)),
-            Err(e) => return Answer::Now(Outcome::Error(e)),
-        };
-        let Some(compositor) = self.daemon.compositor.clone() else {
-            return Answer::Now(Outcome::Result(serde_json::Value::Null));
-        };
-        if compositor.app_workspace(&ids).is_ok_and(|workspace| workspace.is_none()) {
-            let logger = Arc::clone(&self.daemon.logger);
-            std::thread::spawn(move || {
-                crate::launcher::focus_shown(&app, &ids, &compositor, None, crate::launcher::SHOWN_WINDOW_WAIT, &logger)
-            });
-        }
-        Answer::Now(Outcome::Result(serde_json::Value::Null))
     }
 
     /// Runs `work` with the media service on its own thread: it waits on a
@@ -589,9 +483,6 @@ impl<'a> Connection<'a> {
             | Command::AppIcon { .. }
             | Command::LauncherRun { .. }
             | Command::PinApp { .. }
-            | Command::HideTrayApp { .. }
-            | Command::ActivateTrayItem { .. }
-            | Command::TrayMenuPicked { .. }
             | Command::NotificationAction { .. }
             | Command::DismissNotification { .. }
             | Command::ClearNotifications { .. }
@@ -604,13 +495,6 @@ impl<'a> Connection<'a> {
             | Command::MediaShow { .. }
             | Command::MediaFocus { .. }
             | Command::MediaWindow { .. }
-            | Command::SetWifi { .. }
-            | Command::ScanWifi
-            | Command::ConnectWifi { .. }
-            | Command::DisconnectWifi
-            | Command::ForgetWifi { .. }
-            | Command::PreferNetwork { .. }
-            | Command::WatchNetworkTraffic { .. }
             | Command::BluetoothPower { .. }
             | Command::WatchBluetooth { .. }
             | Command::BluetoothConnect { .. }
