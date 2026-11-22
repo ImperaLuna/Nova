@@ -8,6 +8,7 @@
 #
 # Allowed workspace crates:
 # - nova-ai-usage-api
+# - nova-bluetooth-api
 # - nova-carrier
 # - nova-features
 # - nova-launcher-api
@@ -41,6 +42,7 @@ path = "src/main.rs"
 nova-protocol.workspace = true
 nova-carrier.workspace = true
 nova-ai-usage-api.workspace = true
+nova-bluetooth-api.workspace = true
 nova-launcher-api.workspace = true
 nova-lock-api.workspace = true
 nova-media-api.workspace = true

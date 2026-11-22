@@ -798,6 +798,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-bluetooth"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "nova-base",
+ "nova-bluetooth-api",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "nova-session-bus",
+ "nova-test-support",
+ "serde",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
+name = "nova-bluetooth-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-carrier"
 version = "0.1.0"
 dependencies = [
@@ -814,6 +840,7 @@ dependencies = [
  "insta",
  "jiff",
  "nova-ai-usage-api",
+ "nova-bluetooth-api",
  "nova-carrier",
  "nova-features",
  "nova-launcher-api",
@@ -1169,6 +1196,7 @@ dependencies = [
  "insta",
  "nova-ai-usage-api",
  "nova-apps",
+ "nova-bluetooth-api",
  "nova-carrier",
  "nova-compositor",
  "nova-host",
@@ -1365,6 +1393,8 @@ dependencies = [
  "nova-ai-usage-api",
  "nova-apps",
  "nova-base",
+ "nova-bluetooth",
+ "nova-bluetooth-api",
  "nova-carrier",
  "nova-compositor",
  "nova-features",
