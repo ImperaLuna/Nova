@@ -56,7 +56,7 @@ mod x11_tray;
 
 use nova_base::lock;
 use nova_carrier::log::LogLevel;
-use nova_daemon_info::{Status, UiState, UiStatus};
+use nova_daemon_info::{Status, UiProgram, UiState, UiStatus};
 use nova_hub::Hub;
 use nova_log::Logger;
 use nova_process::{notify, procfs};
@@ -66,7 +66,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use supervisor::{Supervisor, UiSettings};
+use supervisor::{Program, Supervisor, UiSettings};
 
 /// The daemon's process name in ps and btop. It renames itself to this, and
 /// whatever starts it passes it as `argv[0]` (`nova`, the systemd unit).
@@ -99,11 +99,16 @@ pub struct Args {
     /// The UI's QML folder.
     #[arg(long, default_value_os_t = nova_paths::installed_or_checkout("ui"))]
     ui: PathBuf,
-    /// The Quickshell binary. By default the `nova-ui` launcher the package
-    /// was built with or that's on PATH, else `quickshell`. Not its `qs` alias: on Nix, `qs` drops
-    /// the `nova-ui` name novad gives the UI process.
+    /// The Quickshell binary. By default the `nova-quickshell` launcher the
+    /// package was built with or that's on PATH, else `quickshell`. Not its
+    /// `qs` alias: on Nix, `qs` drops the `NovaUI` name novad gives the UI
+    /// process.
     #[arg(long)]
     quickshell: Option<PathBuf>,
+    /// The GPUI program, which runs in place of Quickshell when
+    /// features.toml says `ui = "gpui"`. By default `nova-ui` on PATH.
+    #[arg(long)]
+    gpui_ui: Option<PathBuf>,
     /// Don't run the UI (tests, or running it by hand).
     #[arg(long)]
     no_ui: bool,
@@ -180,7 +185,14 @@ impl nova_socket::Service for Daemon {
 
 impl Daemon {
     fn status(&self) -> Status {
-        let disabled = UiStatus { state: UiState::Disabled, pid: None, pss_kib: None, restarts: 0, last_crash: None };
+        let disabled = UiStatus {
+            program: lock(&self.settings).ui_program(),
+            state: UiState::Disabled,
+            pid: None,
+            pss_kib: None,
+            restarts: 0,
+            last_crash: None,
+        };
         Status {
             daemon: env!("CARGO_PKG_VERSION").into(),
             pid: std::process::id(),
@@ -325,9 +337,23 @@ impl Drop for InProcess {
 /// settings watcher.
 type Started = (std::os::unix::net::UnixListener, Arc<Daemon>, Option<nova_inotify::Stopper>);
 
-/// How Quickshell runs, for the UI.
-fn ui_settings(args: &Args, socket: &Path, path_var: &str, icons: &nova_icons::Icons) -> UiSettings {
+/// The program `picked` names, or Quickshell with a warning when the GPUI
+/// program can't be found.
+fn ui_program(picked: UiProgram, args: &Args, path_var: &str, logger: &Logger) -> Program {
+    let (program, problem) = Program::pick(picked, args.gpui_ui.as_deref(), path_var);
+    if let Some(problem) = problem {
+        logger.warn(
+            LOG_SOURCE,
+            &format!("features.toml picks the {} UI, but {problem}: running Quickshell instead", picked.name()),
+        );
+    }
+    program
+}
+
+/// How the UI runs.
+fn ui_settings(program: Program, args: &Args, socket: &Path, path_var: &str, icons: &nova_icons::Icons) -> UiSettings {
     UiSettings {
+        program,
         quickshell: args.quickshell.clone().unwrap_or_else(|| supervisor::default_quickshell(path_var)),
         ui_dir: args.ui.clone(),
         socket: socket.to_path_buf(),
@@ -362,7 +388,6 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     let runtime_dir = socket.parent().unwrap_or(Path::new(".")).to_path_buf();
     let icons = Arc::new(nova_icons::Icons::for_session());
     logger.info(LOG_SOURCE, &format!("icons from the {} icon theme", icons.theme()));
-    let ui_settings = ui_settings(&args, &socket, &path_var, &icons);
     let env = modules::Env {
         args: &args,
         runtime_dir: &runtime_dir,
@@ -383,6 +408,8 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     // Before the modules: the wallpaper follows its outputs.
     let compositor = follow_compositor(&hub, &logger);
     let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
+    let program = ui_program(settings.ui_program(), &args, &path_var, &logger);
+    let ui_settings = ui_settings(program, &args, &socket, &path_var, &sources.icons);
     if args.autostart {
         nova_launcher::autostart::start(
             &socket.with_file_name(autostart_marker()),

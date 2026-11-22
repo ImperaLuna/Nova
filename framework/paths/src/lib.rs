@@ -148,7 +148,8 @@ pub fn find_program(program: &str, path_var: &str) -> Option<PathBuf> {
     std::env::split_paths(path_var).map(|dir| dir.join(program)).find(|path| is_executable(path))
 }
 
-fn is_executable(path: &Path) -> bool {
+/// Whether `path` is a file with an executable bit.
+pub fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
 }

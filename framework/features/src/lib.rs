@@ -41,7 +41,7 @@
 pub mod gpus;
 
 pub use nova_daemon_info::Slot;
-use nova_daemon_info::{FeatureState, FeatureStatus};
+use nova_daemon_info::{FeatureState, FeatureStatus, UiProgram};
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -332,10 +332,16 @@ pub fn load_all(root: &Path) -> Result<Vec<Manifest>, Error> {
 }
 
 /// The user's choices from `features.toml`: `enabled = [...]`, `disabled =
-/// [...]`, and a mode for a feature that has modes under `[modes]`.
+/// [...]`, a mode for a feature that has modes under `[modes]`, and the
+/// program that draws them all (`ui = "gpui"`; Quickshell unless set).
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Selection {
+    /// The UI program's name ([`UiProgram::name`]). Kept as written, so a
+    /// name this novad doesn't know is a warning ([`Selection::unknown_ui`])
+    /// rather than a file that doesn't load.
+    #[serde(default)]
+    pub ui: Option<String>,
     #[serde(default)]
     pub enabled: Vec<String>,
     #[serde(default)]
@@ -348,6 +354,16 @@ pub struct Selection {
 impl Selection {
     pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(text)
+    }
+
+    /// The program that draws the UI: the one `ui` names, else Quickshell.
+    pub fn ui_program(&self) -> UiProgram {
+        self.ui.as_deref().and_then(UiProgram::named).unwrap_or_default()
+    }
+
+    /// `ui`, when it names no program, for `nova doctor` and the log.
+    pub fn unknown_ui(&self) -> Option<&str> {
+        self.ui.as_deref().filter(|name| UiProgram::named(name).is_none())
     }
 
     pub fn is_on(&self, manifest: &Manifest) -> bool {
@@ -402,6 +418,19 @@ mod tests {
         [check]
         binaries = ["gpu-screen-recorder|wf-recorder"]
     "#;
+
+    #[test]
+    fn the_ui_is_quickshell_unless_a_known_program_is_picked() {
+        let ui = |text: &str| {
+            let selection = Selection::parse(text).unwrap();
+            (selection.ui_program(), selection.unknown_ui().map(str::to_owned))
+        };
+        assert_eq!(ui(""), (UiProgram::Quickshell, None));
+        assert_eq!(ui("ui = \"quickshell\""), (UiProgram::Quickshell, None));
+        assert_eq!(ui("ui = \"gpui\"\ndisabled = [\"bar\"]"), (UiProgram::Gpui, None));
+        // A name from a newer Nova (or a typo) still loads the file.
+        assert_eq!(ui("ui = \"GPUI\""), (UiProgram::Quickshell, Some("GPUI".into())));
+    }
 
     #[test]
     fn every_manifest_in_the_repo_is_valid() {

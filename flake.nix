@@ -153,14 +153,14 @@
       novaFor =
         pkgs:
         let
-          nova-ui = pkgs.callPackage ./packaging/nix/nova-ui.nix { };
+          nova-quickshell = pkgs.callPackage ./packaging/nix/nova-quickshell.nix { };
           inherit (rustFor pkgs) craneLib common cargoArtifacts;
         in
         rec {
-          inherit nova-ui;
+          inherit nova-quickshell;
           # Compiled in, so `nova` finds its UI with or without systemd. The
           # tests check builds with it too, so it reuses this build's crates.
-          novaEnv.NOVA_UI_LAUNCHER = pkgs.lib.getExe nova-ui;
+          novaEnv.NOVA_QUICKSHELL_LAUNCHER = pkgs.lib.getExe nova-quickshell;
           # From the Rust sources alone, so a UI edit doesn't recompile it. The
           # `tests` check runs `cargo test`, so the VM tests, which need this
           # build, don't wait for it.
@@ -202,7 +202,7 @@
       # The release archive install.sh fetches on other distros:
       # nova-<cpu>-linux.tar.gz with bin/nova (static, musl) and share/nova,
       # laid out like the prefix it unpacks into. Built without
-      # NOVA_UI_LAUNCHER: there novad runs the distro's Quickshell from PATH.
+      # NOVA_QUICKSHELL_LAUNCHER: there novad runs the distro's Quickshell from PATH.
       # Tests ran in the regular build; this one skips them.
       distFor =
         pkgs:
@@ -259,7 +259,7 @@
       packages = forAllSystems (pkgs: {
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 
-        inherit (novaFor pkgs) nova nova-ui;
+        inherit (novaFor pkgs) nova nova-quickshell;
         # What the `nova-files` feature installs.
         nova-files = nova-files.packages.${pkgs.stdenv.hostPlatform.system}.default;
         # .github/workflows/release.yml attaches this to a GitHub release.
@@ -613,7 +613,7 @@
                       pkgs.jq
                       pkgs.dbus
                       (import ./e2e/player.nix { inherit pkgs; })
-                      self.packages.${pkgs.stdenv.hostPlatform.system}.nova-ui
+                      self.packages.${pkgs.stdenv.hostPlatform.system}.nova-quickshell
                     ];
                     FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
                   }
@@ -679,8 +679,8 @@
             pkgs.rustfmt
             pkgs.rust-analyzer
             pkgs.quickshell
-            # So dev runs show the UI as nova-ui too; the daemon finds it on PATH.
-            self.packages.${pkgs.stdenv.hostPlatform.system}.nova-ui
+            # So dev runs show the UI as NovaUI too; the daemon finds it on PATH.
+            self.packages.${pkgs.stdenv.hostPlatform.system}.nova-quickshell
             pkgs.qt6.qtdeclarative # qmllint, qmlls, qmlformat, qmltestrunner
             pkgs.qt6.qtshadertools # qsb, for scripts/shaders.sh
             pkgs.sway # headless compositor for e2e

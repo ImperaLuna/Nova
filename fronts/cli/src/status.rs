@@ -1,7 +1,7 @@
 //! `nova status` and `nova version`.
 
 use crate::client::{Client, RESTART_COMMAND};
-use nova_daemon_info::{FeatureStatus, Status, UiState};
+use nova_daemon_info::{FeatureStatus, Status, UiProgram, UiState};
 use nova_desktop_info::Desktop;
 use std::path::Path;
 
@@ -47,6 +47,10 @@ fn describe(status: &Status) -> String {
     };
     if let Some(kib) = ui.pss_kib {
         line += &format!(", {}", megabytes(kib));
+    }
+    // Only when it isn't the default: which program runs.
+    if ui.program == UiProgram::Gpui {
+        line += ", GPUI";
     }
     if ui.restarts > 0 {
         line += &format!(", restarted {} time{}", ui.restarts, if ui.restarts == 1 { "" } else { "s" });
@@ -246,6 +250,7 @@ mod tests {
             pss_kib: Some(10 * 1024),
             quickshell: Some("0.3.2".into()),
             ui: UiStatus {
+                program: UiProgram::Quickshell,
                 state: UiState::Running,
                 pid: Some(11),
                 pss_kib: Some(180 * 1024),
@@ -285,6 +290,12 @@ mod tests {
         assert!(text.contains("features   bar on, nova-files on (full), recording missing wf-recorder"), "{text}");
         assert!(!text.contains("warning"), "a supported Quickshell gets no row: {text}");
         assert!(text.contains("compositor none followed"), "{text}");
+
+        assert!(!text.contains("GPUI"), "the default UI program isn't named: {text}");
+
+        let on_gpui = Status { ui: UiStatus { program: UiProgram::Gpui, ..status.ui.clone() }, ..status.clone() };
+        let text = describe(&on_gpui);
+        assert!(text.contains("UI         running, pid 11, 180 MB, GPUI, restarted 2 times"), "{text}");
 
         let untested = Status { quickshell: Some("0.1.0".into()), ..status };
         let text = describe(&untested);

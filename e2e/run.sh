@@ -14,7 +14,7 @@
 # The budget is a target, not a hard limit: going over prints a warning
 # (a GitHub annotation in CI). Set NOVA_PSS_STRICT=1 to fail instead.
 #
-# Needs: sway, grim, jq, quickshell (or the nova-ui launcher), and a built
+# Needs: sway, grim, jq, quickshell (or the nova-quickshell launcher), and a built
 # nova binary; awww, or the wallpaper carousel never loads and goes
 # unchecked; dbus-daemon and nova-test-player for the media check (cargo
 # build). Logs land in e2e/out; the UI's lines are in e2e/out/ui.log.
@@ -151,9 +151,9 @@ if ((monitors > 1)); then
 fi
 
 # ps and btop show the UI as NovaUI: argv[0] always, the process name when
-# the nova-ui launcher is installed (the dev shell has it). The daemon is Nova.
+# the nova-quickshell launcher is installed (the dev shell has it). The daemon is Nova.
 [[ $(tr '\0' '\n' <"/proc/$ui/cmdline" | head -n1) == NovaUI ]] || fail "the UI's argv[0] isn't NovaUI"
-if command -v nova-ui >/dev/null; then
+if command -v nova-quickshell >/dev/null; then
   [[ $(<"/proc/$ui/comm") == NovaUI ]] || fail "the UI's process name isn't NovaUI"
 fi
 # grep reads all of tr's output (no -q): stopping at the first match would

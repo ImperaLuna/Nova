@@ -204,16 +204,7 @@ fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
     let scripts = nova_test_support::TempDir::new("ui");
     let fake_ui = write_program(&scripts, "quickshell", "echo '  WARN qml: about to fail'\nexit 3");
 
-    let settings = UiSettings {
-        quickshell: fake_ui,
-        ui_dir: PathBuf::from("ui"),
-        socket: PathBuf::from("unused.sock"),
-        path_var: std::env::var("PATH").unwrap_or_default(),
-        wayland_socket: None,
-        egl_vendor: None,
-        render_loop: None,
-        icon_theme: "hicolor".into(),
-    };
+    let settings = ui_settings(Program::Quickshell, fake_ui);
     let novad = TestDaemon::start("crash", Some(settings));
     let mut client = novad.connect();
     let status = wait_for_status(&mut client, |status| status.ui.restarts >= 1);
@@ -227,6 +218,26 @@ fn a_crashing_ui_is_logged_snapshotted_and_restarted() {
     assert!(full_log.iter().any(|entry| entry.message.contains("failed to load")));
 }
 
+/// The GPUI program gets what Quickshell gets: the socket, its lines in the
+/// log, a crash snapshot and a restart.
+#[test]
+fn the_gpui_program_is_supervised_like_quickshell() {
+    let scripts = nova_test_support::TempDir::new("gpui-ui");
+    let fake_ui = write_program(&scripts, "nova-ui", "echo \"novad is at $NOVA_SOCKET\"\nexit 3");
+
+    let settings = ui_settings(Program::Gpui(fake_ui), PathBuf::from("no-quickshell"));
+    let novad = TestDaemon::start("gpui-crash", Some(settings));
+    let mut client = novad.connect();
+    let status = wait_for_status(&mut client, |status| status.ui.restarts >= 1);
+    assert_eq!(status.ui.program, UiProgram::Gpui);
+    assert_eq!(status.quickshell, None);
+
+    let crash_entries = read_entries(&PathBuf::from(&status.ui.last_crash.unwrap().log));
+    let ui_line = crash_entries.iter().find(|entry| entry.source == UI_LOG_SOURCE).unwrap();
+    assert_eq!(ui_line.message, "novad is at unused.sock");
+    assert!(crash_entries.iter().any(|entry| entry.message.contains("exit code 3")));
+}
+
 #[test]
 fn a_quickshell_outside_the_tested_range_is_warned_about() {
     let scripts = nova_test_support::TempDir::new("old-quickshell");
@@ -234,16 +245,7 @@ fn a_quickshell_outside_the_tested_range_is_warned_about() {
     let script = "case \"$1\" in --version) echo 'Quickshell 0.1.0 (revision test)' ;; *) exec sleep 60 ;; esac";
     write_program(&scripts, "quickshell", script);
 
-    let settings = UiSettings {
-        quickshell: fake_ui,
-        ui_dir: PathBuf::from("ui"),
-        socket: PathBuf::from("unused.sock"),
-        path_var: std::env::var("PATH").unwrap_or_default(),
-        wayland_socket: None,
-        egl_vendor: None,
-        render_loop: None,
-        icon_theme: "hicolor".into(),
-    };
+    let settings = ui_settings(Program::Quickshell, fake_ui);
     let novad = TestDaemon::start("quickshell-range", Some(settings));
     let status = wait_for_status(&mut novad.connect(), |status| status.ui.pid.is_some());
     assert_eq!(status.quickshell.as_deref(), Some("0.1.0"));
@@ -260,16 +262,7 @@ fn a_quickshell_outside_the_tested_range_is_warned_about() {
 fn the_ui_runs_only_while_a_feature_with_a_ui_is_on() {
     let scripts = nova_test_support::TempDir::new("ui-on-demand");
     let fake_ui = write_program(&scripts, "quickshell", "exec sleep 60");
-    let settings = UiSettings {
-        quickshell: fake_ui,
-        ui_dir: PathBuf::from("ui"),
-        socket: PathBuf::from("unused.sock"),
-        path_var: std::env::var("PATH").unwrap_or_default(),
-        wayland_socket: None,
-        egl_vendor: None,
-        render_loop: None,
-        icon_theme: "hicolor".into(),
-    };
+    let settings = ui_settings(Program::Quickshell, fake_ui);
     let ids: Vec<String> = nova_features::load_all(&repo_features()).unwrap().into_iter().map(|m| m.id).collect();
     let selection = |on: &[&str]| {
         let off: Vec<String> = ids.iter().filter(|id| !on.contains(&id.as_str())).map(|id| format!("{id:?}")).collect();
