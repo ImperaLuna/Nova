@@ -51,6 +51,7 @@
 # - nova-theme
 # - nova-tray
 # - nova-tray-api
+# - nova-x11-tray
 
 [package]
 name = "novad"
@@ -83,6 +84,7 @@ nova-resources.workspace = true
 nova-resources-api.workspace = true
 nova-tray.workspace = true
 nova-tray-api.workspace = true
+nova-x11-tray.workspace = true
 nova-compositor.workspace = true
 nova-host.workspace = true
 nova-theme.workspace = true
