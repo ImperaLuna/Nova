@@ -1,0 +1,18 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates: none
+
+[package]
+name = "nova-peripherals-api"
+description = "The peripherals feature's messages: what a device is and its charge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[lints]
+workspace = true

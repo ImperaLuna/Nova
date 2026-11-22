@@ -241,7 +241,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             state_file: dir.join("tray.json"),
             proc_root: crate::procfs::PROC.into(),
         },
-        notifications: notifications::Sources {
+        notifications: nova_notifications::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
             state_file: dir.join("notifications.json"),
             images: dir.join("notifications"),

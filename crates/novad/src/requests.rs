@@ -26,6 +26,7 @@ pub fn router() -> Router<Daemon> {
         .route::<nova_ai_usage_api::Command>(crate::ai_usage::answer, |_, _, _| {})
         .route::<nova_launcher_api::Command>(crate::launcher::answer, |_, _, _| {})
         .route::<nova_network_api::Command>(crate::network::answer, |_, _, _| {})
+        .route::<nova_notifications_api::Command>(crate::notifications::answer, |_, _, _| {})
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
         .route::<nova_tray_api::Command>(crate::tray::answer, |_, _, _| {})
         .route::<nova_wallpaper_api::Command>(crate::wallpaper::answer, |_, _, _| {})
@@ -133,23 +134,6 @@ impl<'a> Connection<'a> {
             Command::OpenLog => {
                 done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().open_log()))
             }
-            Command::OpenNotification { id, output } => return self.open_notification(*id, output.clone()),
-            Command::NotificationAction { id, action } => {
-                done(self.notifications().and_then(|notifications| notifications.action(*id, Some(action))))
-            }
-            Command::DismissNotification { id } => {
-                done(self.notifications().map(|notifications| notifications.dismiss(*id)))
-            }
-            Command::ClearNotifications { app } => {
-                done(self.notifications().map(|notifications| notifications.clear(app.as_deref())))
-            }
-            Command::ReadNotifications => done(self.notifications().map(|notifications| notifications.read(None))),
-            Command::SetDoNotDisturb { on } => {
-                done(self.notifications().map(|notifications| notifications.set_do_not_disturb(*on)))
-            }
-            Command::MuteNotificationApp { app, muted } => {
-                done(self.notifications().and_then(|notifications| notifications.mute(app, *muted)))
-            }
             Command::MediaShow { player } => done(self.media().and_then(|media| media.show(player))),
             Command::MediaControl { player, action } => {
                 let (player, action) = (player.clone(), *action);
@@ -188,14 +172,6 @@ impl<'a> Connection<'a> {
     }
 
     // The modules, or why there's none (`Daemon::module`).
-
-    fn launcher(&self) -> Result<Arc<crate::launcher::Launcher>, String> {
-        self.daemon.module()
-    }
-
-    fn notifications(&self) -> Result<Arc<crate::notifications::Notifications>, String> {
-        self.daemon.module()
-    }
 
     fn media(&self) -> Result<Arc<crate::media::Media>, String> {
         self.daemon.module()
@@ -292,38 +268,6 @@ impl<'a> Connection<'a> {
                 crate::power::run_logind(action)
                     .inspect_err(|e| logger.warn(LOG_SOURCE, &format!("{action:?} failed: {e}"))),
             )
-        })
-    }
-
-    /// A click on the notification `id`, on `output`. Its app hears of it
-    /// and shows its window, which takes focus once it shows: niri gives
-    /// it none, as the app gets no activation token from the click. Nothing
-    /// starts when none shows: the app took the click. An app that can't
-    /// hear of it (gone, or does nothing on a click) is opened instead, as
-    /// the launcher does.
-    fn open_notification(&self, id: u32, output: Option<String>) -> Answer {
-        let clicked = match self.notifications().and_then(|notifications| notifications.click(id)) {
-            Ok(clicked) => clicked,
-            Err(e) => return Answer::Now(Outcome::Error(e)),
-        };
-        let (Some(app), Ok(launcher)) = (clicked.app_id, self.launcher()) else { return Answer::Now(done(Ok(()))) };
-        if !clicked.heard {
-            return crate::launcher::run(self.daemon, nova_launcher_api::PROVIDER_APPS, &app, output, false);
-        }
-        let (Some(ids), Some(compositor)) = (launcher.window_ids(&app), self.daemon.compositor.clone()) else {
-            return Answer::Now(done(Ok(())));
-        };
-        let logger = Arc::clone(&self.daemon.logger);
-        Answer::later(move || {
-            crate::launcher::focus_shown(
-                &app,
-                &ids,
-                &compositor,
-                output.as_deref(),
-                crate::launcher::SHOWN_WINDOW_WAIT,
-                &logger,
-            );
-            done(Ok(()))
         })
     }
 
@@ -515,13 +459,6 @@ impl<'a> Connection<'a> {
             | Command::RecordingAction { .. }
             | Command::OpenLog
             | Command::Volume { .. }
-            | Command::NotificationAction { .. }
-            | Command::DismissNotification { .. }
-            | Command::ClearNotifications { .. }
-            | Command::ReadNotifications
-            | Command::OpenNotification { .. }
-            | Command::SetDoNotDisturb { .. }
-            | Command::MuteNotificationApp { .. }
             | Command::MediaControl { .. }
             | Command::MediaSeek { .. }
             | Command::MediaShow { .. }

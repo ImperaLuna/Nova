@@ -1,0 +1,25 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates:
+# - nova-carrier
+# - nova-peripherals-api
+
+[package]
+name = "nova-notifications-api"
+description = "The notifications feature's messages, and the port other features post Nova's own notifications through"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-carrier.workspace = true
+nova-peripherals-api.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

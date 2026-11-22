@@ -18,24 +18,25 @@
 //! Anything on the session bus can send one, so what apps send is checked
 //! and cut down: text is made plain (`text`), pictures are checked and
 //! written out as PNGs (`image`), and lists are capped. App icons given by
-//! name are looked up as files (`crate::icons`), so the UI only loads images.
+//! name are looked up as files (`nova_icons`), so the UI only loads images.
 
-pub(crate) mod image;
+pub mod image;
 #[cfg(test)]
 mod tests;
 mod text;
 
-use crate::apps::AppIndex;
-use crate::hub::{ClientId, Hub};
-use crate::icons::Icons;
-use crate::logger::Logger;
-use crate::session_bus::{self, Bus, Stop};
-use crate::{lock, state_file};
 use futures_core::Stream;
-use nova_protocol::{
-    Event, LogLevel, MAX_NOTIFICATIONS, Notification, NotificationAction, NotificationApp, NotificationDevice,
-    NotificationList, Urgency,
+use nova_apps::AppIndex;
+use nova_base::{lock, state_file};
+use nova_carrier::log::LogLevel;
+use nova_hub::{ClientId, Hub};
+use nova_icons::Icons;
+use nova_log::Logger;
+use nova_notifications_api::{
+    Event, MAX_NOTIFICATIONS, Notification, NotificationAction, NotificationApp, NotificationDevice, NotificationList,
+    Own, Post, Urgency,
 };
+use nova_session_bus::{self as session_bus, Bus, Stop};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::poll_fn;
 use std::path::{Path, PathBuf};
@@ -110,20 +111,6 @@ impl Sources {
             icons,
         }
     }
-}
-
-/// A notification of Nova's own (a device's low battery), sent with
-/// [`Notifications::send_own`].
-#[derive(Debug, Clone, PartialEq)]
-pub struct Own {
-    /// Who it reads as from, on its app line.
-    pub app: String,
-    pub summary: String,
-    pub body: String,
-    pub critical: bool,
-    /// The id of an earlier one it takes the place of, or 0.
-    pub replaces: u32,
-    pub device: Option<NotificationDevice>,
 }
 
 /// What a click on a notification ([`Notifications::click`]) did.
@@ -411,6 +398,17 @@ impl Notifications {
         for id in gone {
             self.shared.signal("NotificationClosed", &(id, why as u32));
         }
+    }
+}
+
+/// The port other features post Nova's own notifications through.
+impl Post for Notifications {
+    fn post(&self, own: Own) -> u32 {
+        self.send_own(own)
+    }
+
+    fn listed(&self, matches: &dyn Fn(&Notification) -> bool) -> Option<u32> {
+        Notifications::listed(self, matches)
     }
 }
 
@@ -931,38 +929,4 @@ impl Server {
 
     #[zbus(signal)]
     async fn action_invoked(emitter: &SignalEmitter<'_>, id: u32, action_key: &str) -> zbus::Result<()>;
-}
-
-/// Started before the UI, which settings start ahead of, so notifications
-/// sent while it starts are kept. No options.
-impl crate::modules::Module for Notifications {
-    type App = crate::modules::Novad;
-    const ID: &'static str = FEATURE_ID;
-    const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::NOTIFICATIONS);
-    type Sources = Sources;
-    type Config = ();
-
-    fn sources(env: &crate::modules::Env) -> Sources {
-        Sources::new(&env.args.state_dir, Arc::clone(env.icons))
-    }
-
-    fn config(_: &crate::config::Config) {}
-
-    fn start(
-        ctx: &crate::modules::Context,
-        sources: &Sources,
-        (): &(),
-        _: &[nova_protocol::FeatureState],
-    ) -> Arc<Self> {
-        Self::start(sources.clone(), Arc::clone(&ctx.apps), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
-    }
-
-    fn send_state(&self, client: ClientId) {
-        Self::send_state(self, client);
-    }
-
-    fn stop(&self) {
-        Self::stop(self);
-    }
 }
