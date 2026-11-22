@@ -1,0 +1,43 @@
+# Allowed outside crates:
+# - futures-core
+# - jiff
+# - serde
+# - serde_json
+# - zbus
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-hub
+# - nova-log
+# - nova-network-api
+# - nova-session-bus
+
+[package]
+name = "nova-network"
+description = "Wired and Wi-Fi from NetworkManager: the links, the networks in reach, connecting, the preferred link and the traffic"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-network-api.workspace = true
+nova-base.workspace = true
+nova-hub.workspace = true
+nova-log.workspace = true
+nova-session-bus.workspace = true
+futures-core.workspace = true
+jiff.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+nova-carrier.workspace = true
+nova-test-support.workspace = true
+nova-base = { workspace = true, features = ["test-support"] }
+nova-hub = { workspace = true, features = ["test-support"] }
+nova-session-bus = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true
