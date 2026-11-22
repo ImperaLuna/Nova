@@ -34,10 +34,11 @@
 # - nova-launcher
 # - nova-launcher-api
 # - nova-log
-# - nova-mime
 # - nova-modules
 # - nova-network
 # - nova-network-api
+# - nova-nova-files
+# - nova-nova-files-api
 # - nova-paths
 # - nova-process
 # - nova-protocol
@@ -81,6 +82,8 @@ nova-launcher.workspace = true
 nova-launcher-api.workspace = true
 nova-network.workspace = true
 nova-network-api.workspace = true
+nova-nova-files.workspace = true
+nova-nova-files-api.workspace = true
 nova-resources.workspace = true
 nova-resources-api.workspace = true
 nova-tray.workspace = true
@@ -92,7 +95,6 @@ nova-compositor.workspace = true
 nova-host.workspace = true
 nova-theme.workspace = true
 nova-apps.workspace = true
-nova-mime.workspace = true
 nova-icons.workspace = true
 serde_json.workspace = true
 clap.workspace = true

@@ -1,5 +1,5 @@
 //! The launcher's Files mode (`launcher.providers` view `files`), answered
-//! by the Nova Files app: a query is a name search there, or, when it's a
+//! by the Nova Files app (novad's wiring makes these the provider's answers): a query is a name search there, or, when it's a
 //! path being typed (from `~` or `/`), what Nova Files completes it to from
 //! that path's folder. Each path becomes an item with its type (for the icon), its folder spelled
 //! from `~`, and whether it's hidden. Running an item asks Nova Files to
@@ -17,9 +17,8 @@
 //! rest of it after what's typed.
 
 use super::NovaFiles;
-use crate::mime::{DIRECTORY, MimeDb};
-use nova_launcher::providers::{Provider, Run};
 use nova_launcher_api::{LauncherFile, LauncherItem, MAX_MATCHES, TextMark, TextRun, wire_path, wire_text};
+use nova_mime::{DIRECTORY, MimeDb};
 use std::path::{Component, Path};
 
 /// How a typed path names Home.
@@ -31,12 +30,9 @@ const BROKEN_LINK_MIME: &str = "inode/symlink";
 /// The icon of the item saying Nova Files couldn't search.
 const UNANSWERED_ICON: &str = "dialog-error";
 
-impl Provider for NovaFiles {
-    fn own_mode(&self) -> bool {
-        true
-    }
-
-    fn search(&self, query: &str) -> Result<Vec<LauncherItem>, String> {
+impl NovaFiles {
+    /// What the Files mode finds for `query` (never blank), best first.
+    pub fn items(&self, query: &str) -> Result<Vec<LauncherItem>, String> {
         let limit = u32::try_from(MAX_MATCHES).unwrap_or(u32::MAX);
         let typed_path = query.starts_with(HOME_PREFIX) || query.starts_with(ROOT);
         let found = if typed_path { self.complete(query, limit) } else { NovaFiles::search(self, query, limit) };
@@ -52,7 +48,9 @@ impl Provider for NovaFiles {
         Ok(items.take(MAX_MATCHES).collect())
     }
 
-    fn run(&self, id: &str, how: &Run) -> Result<(), String> {
+    /// Opens the item `id` it found, or shows it in its folder when
+    /// `new_window` (Shift+Enter).
+    pub fn run_item(&self, id: &str, new_window: bool) -> Result<(), String> {
         let path = wire_path(id);
         // What Nova Files finds is absolute and plain; anything else wasn't
         // found by it.
@@ -60,7 +58,7 @@ impl Provider for NovaFiles {
         if !path.is_absolute() || !plain {
             return Err(format!("{id} isn't a path Nova Files found"));
         }
-        if how.new_window { self.show_in_folder(&path) } else { self.open(&path) }
+        if new_window { self.show_in_folder(&path) } else { self.open(&path) }
     }
 }
 

@@ -1,0 +1,14 @@
+# Allowed outside crates: none
+#
+# Allowed workspace crates: none
+
+[package]
+name = "nova-nova-files-api"
+description = "The Nova Files feature's messages: the launcher provider view it answers for"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
