@@ -103,14 +103,15 @@ these rules and names the one a change breaks:
 | F2 | `core` uses only listed framework crates and api crates, never a `ui` | send an event |
 | F3 | `ui` uses only listed framework crates and api crates, never a `core` | send a message |
 | F4 | in a feature never uses another feature's `core` or `ui`, a front or the app | use its api, or a port in the framework |
+| T1 | in a feature has no dev-dependency on another feature's `core` or `ui`, unless `DEV_EXCEPTIONS` lists the pair | use a fake from the framework, or list the pair with its reason |
 | D1 | `Cargo.toml` has both allowed lists | add them |
 | D2 | depends only on crates its allowed lists name | add it to the list and say why in the PR |
 
 The framework crates each half may use are listed at the top of the
 script. A framework crate joins a list only when every crate of that kind
 may use it: a daemon-side part never on the `ui` list, a screen-side part
-never on the `core` list. Dev-dependencies aren't checked. Changing a rule
-or a list is a layout change: say so in the PR.
+never on the `core` list. Dev-dependencies are checked for T1 only.
+Changing a rule or a list is a layout change: say so in the PR.
 
 ### Moving a feature out of novad
 

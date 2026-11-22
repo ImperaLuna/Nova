@@ -13,7 +13,9 @@
 #     may use under its "# Allowed outside crates:" and "# Allowed workspace
 #     crates:" lines, one "# - name" line each, or "none" on the header line,
 #     so adding a dependency is a visible line in a PR.
-# Dev-dependencies are not checked. Before reading the workspace, the script
+# Dev-dependencies are checked for one rule only (T1): a feature's tests never
+# use another feature's core or ui unless DEV_EXCEPTIONS lists the pair with
+# its reason. Before reading the workspace, the script
 # tests its own rules on known bad cases (expect_rule at the bottom of the
 # rules), so a broken rule can't pass silently.
 #
@@ -33,6 +35,16 @@ FRAMEWORK_FOR_API=(apps carrier)
 FRAMEWORK_FOR_CORE=(apps base carrier compositor hub icons inotify log mime modules paths process session-bus settings socket watch)
 FRAMEWORK_FOR_UI=()
 FRAMEWORK_FOR_FRONT=(base carrier paths)
+
+# The dev-dependencies a feature's crate may have on another feature's core
+# or ui (rule T1), as "<crate> <dependency>", each with its reason. Every
+# entry is a test that a fake from the framework could replace.
+DEV_EXCEPTIONS=(
+  # Peripherals' low battery alert tests post to a real notification server.
+  "nova-peripherals nova-notifications"
+  # Recording's tests fill its SavedFiles port the way the app does.
+  "nova-recording nova-screenshot"
+)
 
 # layer_of <crate folder relative to the root>: prints the crate's kind and
 # its parts ("feature <name> <half>", "framework <name>", ...).
@@ -146,6 +158,17 @@ rule_break() {
   esac
 }
 
+# dev_rule_break <from folder> <to folder>: prints the rule a dev-dependency
+# from the first crate on the second breaks, if any (before DEV_EXCEPTIONS).
+dev_rule_break() {
+  local -a from to
+  read -r -a from <<<"$(layer_of "$1")"
+  read -r -a to <<<"$(layer_of "$2")"
+  if [[ ${from[0]} == feature && ${to[0]} == feature && ${to[1]} != "${from[1]}" && ${to[2]} != api ]]; then
+    echo "rule T1: a feature's tests never use another feature's ${to[2]}. Use a fake from the framework, or list the pair in DEV_EXCEPTIONS in scripts/check-layout.sh with its reason."
+  fi
+}
+
 # expect_rule <from folder> <to folder> <rule id, or nothing for allowed>
 expect_rule() {
   local got
@@ -187,6 +210,25 @@ expect_rule fronts/cli/nested framework/server C1
 expect_rule framework/server/extra framework/paths C1
 expect_rule features/media/sub/core framework/server C1
 expect_rule features/media/tests framework/server C1
+
+# expect_dev_rule <from folder> <to folder> <rule id, or nothing for allowed>
+expect_dev_rule() {
+  local got
+  got=$(dev_rule_break "$1" "$2")
+  got=${got%%:*}
+  got=${got#rule }
+  if [[ $got != "$3" ]]; then
+    echo "$0: $1 dev-using $2 should give '${3:-allowed}', got '${got:-allowed}'." >&2
+    exit 1
+  fi
+}
+
+expect_dev_rule features/media/core features/notifications/core T1
+expect_dev_rule features/media/core features/notifications/ui T1
+expect_dev_rule features/media/core features/notifications/api ""
+expect_dev_rule features/media/core features/media/api ""
+expect_dev_rule features/media/core framework/hub ""
+expect_dev_rule crates/novad features/media/core ""
 
 # allowed_list <Cargo.toml> <outside|workspace>: the names listed under that
 # header, MISSING without the header, or BAD <text> for a list on its line.
@@ -286,5 +328,32 @@ while IFS=$'\t' read -r name manifest deps; do
   done
 done < <(jq -r '.packages[] | [.name, .manifest_path,
   ([.dependencies[] | select(.kind != "dev") | .name] | unique | join(" "))] | @tsv' <<<"$metadata")
+
+declare -A dev_exception=()
+for pair in "${DEV_EXCEPTIONS[@]}"; do
+  dev_exception[$pair]=1
+done
+declare -A dev_exception_used=()
+while IFS=$'\t' read -r name deps; do
+  for dep in $deps; do
+    [[ -n ${folder_of[$dep]:-} ]] || continue
+    broken=$(dev_rule_break "${folder_of[$name]}" "${folder_of[$dep]}")
+    [[ -n $broken ]] || continue
+    if [[ -n ${dev_exception["$name $dep"]:-} ]]; then
+      dev_exception_used["$name $dep"]=1
+      continue
+    fi
+    echo "$name (${folder_of[$name]}) dev-depends on $dep (${folder_of[$dep]}): $broken See $rules_doc."
+    status=1
+  done
+done < <(jq -r '.packages[] | [.name,
+  ([.dependencies[] | select(.kind == "dev") | .name] | unique | join(" "))] | @tsv' <<<"$metadata")
+# An entry whose crate is in this workspace but no longer needs it is stale.
+for pair in "${DEV_EXCEPTIONS[@]}"; do
+  if [[ -n ${folder_of[${pair%% *}]:-} && -z ${dev_exception_used[$pair]:-} ]]; then
+    echo "DEV_EXCEPTIONS lists '$pair', which no longer breaks rule T1 (scripts/check-layout.sh). Remove the entry."
+    status=1
+  fi
+done
 
 exit "$status"
