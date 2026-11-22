@@ -314,7 +314,8 @@ impl Sampler {
         let processes = usage::processes(&self.sources.proc_root);
         let used = self.process_ticks.since_last(&processes);
         let proc_root = &self.sources.proc_root;
-        apps::top(&processes, &used, total_ticks, page_size(), Me::current(), TOP_APPS, |pid| {
+        let look = apps::Look { processes: &processes, used: &used, total_ticks };
+        apps::top(look, page_size(), Me::current(), TOP_APPS, |pid| {
             procfs::pss_kib(proc_root, pid).map(|kib| kib * 1024)
         })
     }

@@ -87,6 +87,10 @@ struct Search1 {
 impl Search1 {
     /// `kit` finds two stages, `slow` one that's never done, `broken`
     /// fails, and anything else finds nothing.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Search's three arguments, plus the header and emitter zbus hands in"
+    )]
     async fn search(
         &self,
         #[zbus(header)] header: Header<'_>,

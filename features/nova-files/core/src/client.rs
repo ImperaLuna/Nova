@@ -89,23 +89,24 @@ impl Client {
         let (sender, stages) = mpsc::channel();
         // Waiting before the call, so no stage comes too early to be heard.
         lock(&self.waiting).insert(id, sender);
-        let found = self.run_search(id, query, limit, wait, &stages);
+        let found = self.run_search((id, query, limit), wait, &stages);
         lock(&self.waiting).remove(&id);
         found
     }
 
+    /// Calls Search with `call`, its arguments (id, query, limit), and
+    /// gathers what it finds in `stages` until it's done or `wait` passes.
     fn run_search(
         &self,
-        id: u64,
-        query: &str,
-        limit: u32,
+        call: (u64, &str, u32),
         wait: Duration,
         stages: &mpsc::Receiver<Stage>,
     ) -> Result<Vec<PathBuf>, String> {
+        let id = call.0;
         if let Some(older) = lock(&self.going).replace(id) {
             self.cancel(older);
         }
-        zbus::block_on(self.connection.call_method(Some(APP_ID), PATH, Some(INTERFACE), SEARCH, &(id, query, limit)))
+        zbus::block_on(self.connection.call_method(Some(APP_ID), PATH, Some(INTERFACE), SEARCH, &call))
             .map_err(|e| e.to_string())?;
         let deadline = Instant::now() + wait;
         let mut paths = Vec::new();
