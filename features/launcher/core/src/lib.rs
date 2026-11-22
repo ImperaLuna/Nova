@@ -355,7 +355,9 @@ pub fn focus_open(
         logger.warn(LOG_SOURCE, &e);
         false
     });
-    let shown = |wait| compositor.is_none_or(|compositor| focus_shown(id, ids, compositor, output, wait, logger));
+    let shown = |wait| {
+        compositor.is_none_or(|compositor| focus_shown(AppWindows { id, ids }, compositor, output, wait, logger))
+    };
     if activated {
         underway();
         if shown(SHOWN_WINDOW_WAIT) {
@@ -368,21 +370,27 @@ pub fn focus_open(
     Ok(true)
 }
 
-/// Focuses the window of app `id` (with one of the app ids `ids`) that it
-/// was just asked to show (by its tray icon, its menu, a click on its
-/// notification, or starting it again while it runs), once it shows: niri
-/// gives it no focus, as none of those hands the app an activation token.
+/// An app, and the app ids its windows may have.
+#[derive(Debug, Clone, Copy)]
+pub struct AppWindows<'a> {
+    pub id: &'a str,
+    pub ids: &'a [String],
+}
+
+/// Focuses the window of `app` that it was just asked to show (by its tray
+/// icon, its menu, a click on its notification, or starting it again while
+/// it runs), once it shows: niri gives it no focus, as none of those hands the app an activation token.
 /// Gives up (logged) after `wait`.
 /// `false` when no window showed; `true` also when that can't be told (an
 /// app in a terminal, the compositor failing).
 pub fn focus_shown(
-    id: &str,
-    ids: &[String],
+    app: AppWindows,
     compositor: &Compositor,
     output: Option<&str>,
     wait: Duration,
     logger: &Logger,
 ) -> bool {
+    let AppWindows { id, ids } = app;
     if ids.is_empty() {
         return true;
     }

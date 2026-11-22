@@ -1,6 +1,9 @@
 # Clippy settings for every crate, the same as Nova Files' clippy.toml
 # (AGENTS.md, Rules and their checks).
 
+# Size limits.
+too-many-arguments-threshold = 5
+
 disallowed-methods = [
     { path = "std::thread::sleep", reason = "event-driven, no polling: wait on a channel or event with a timeout" },
 ]

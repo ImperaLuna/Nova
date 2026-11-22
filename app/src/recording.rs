@@ -85,9 +85,8 @@ impl SavedFiles for ScreenshotFiles {
         action: ScreenshotAction,
         path_var: &str,
         logger: &Arc<nova_log::Logger>,
-        log_source: &str,
     ) -> Result<(), String> {
-        nova_screenshot::act_on(path, action, path_var, logger, log_source)
+        nova_screenshot::act_on(path, action, path_var, logger, nova_recording::LOG_SOURCE)
     }
 }
 

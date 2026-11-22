@@ -186,6 +186,25 @@ impl Places {
     }
 }
 
+/// What each step of the drive loop works with: where things are, the
+/// log, and whether novad is stopping (checked before each change).
+#[derive(Clone, Copy)]
+struct Drive<'a> {
+    places: &'a Places,
+    logger: &'a Arc<Logger>,
+    stopped: &'a dyn Fn() -> bool,
+}
+
+/// A program the drive loop runs: its name, and where the state keeps it.
+#[derive(Clone, Copy)]
+struct Program {
+    name: &'static str,
+    running: fn(&mut State) -> &mut Running,
+}
+
+const AWWW_DAEMON: Program = Program { name: DAEMON, running: |state| &mut state.daemon };
+const ENGINE: Program = Program { name: engine::PROGRAM, running: |state| &mut state.engine };
+
 pub struct Wallpaper {
     shared: Arc<Shared>,
     places: Arc<Places>,
@@ -490,14 +509,8 @@ impl Plan {
     /// Looks up what each wallpaper in `choice` is (logging why one can't be
     /// shown), and makes the projects for videos. Checks `stopped` before
     /// each change to the state folder.
-    fn new(
-        choice: &Choice,
-        outputs: &Outputs,
-        (images_ready, engine_ready): (bool, bool),
-        places: &Places,
-        logger: &Logger,
-        stopped: &dyn Fn() -> bool,
-    ) -> Self {
+    fn new(choice: &Choice, outputs: &Outputs, (images_ready, engine_ready): (bool, bool), drive: Drive) -> Self {
+        let Drive { places, logger, stopped } = drive;
         let steam_roots = places.steam_roots();
         let mut kinds: BTreeMap<&Source, Option<Kind>> = BTreeMap::new();
         for source in choice.all() {
@@ -645,6 +658,8 @@ impl Shared {
             sizes: BTreeMap::new(),
         };
         let mut engine = EngineRun::default();
+        let stopped = || lock(&self.state).stopped;
+        let drive = Drive { places, logger, stopped: &stopped };
         loop {
             let mut state = lock(&self.state);
             let idle = |state: &mut State| {
@@ -673,8 +688,7 @@ impl Shared {
             if !state.changed && !state.daemon.crashed && !state.engine.crashed && !due {
                 let written = std::mem::take(&mut state.frame_written);
                 drop(state);
-                let stopped = || lock(&self.state).stopped;
-                keep_stills(&mut engine, written, &awww.sizes, places, logger, &stopped);
+                keep_stills(&mut engine, written, &awww.sizes, drive);
                 continue;
             }
             if std::mem::take(&mut state.daemon.crashed) {
@@ -706,23 +720,16 @@ impl Shared {
             let choice = if images_ready || engine_ready { state.current().clone() } else { Choice::default() };
             let outputs = state.outputs.clone();
             drop(state);
-            let stopped = || lock(&self.state).stopped;
-            let plan = Plan::new(&choice, &outputs, (images_ready, engine_ready), places, logger, &stopped);
-            self.drive_awww(&plan.images, &outputs, &mut awww, places, logger);
-            self.drive_engine(&plan.screens, &mut engine, awww.starts, places, logger);
+            let plan = Plan::new(&choice, &outputs, (images_ready, engine_ready), drive);
+            self.drive_awww(&plan.images, &outputs, &mut awww, drive);
+            self.drive_engine(&plan.screens, &mut engine, awww.starts, drive);
         }
     }
 
     /// Runs awww's daemon while it has images to show, and sends the ones
     /// it doesn't show yet.
-    fn drive_awww(
-        self: &Arc<Self>,
-        images: &Choice<Picture>,
-        outputs: &Outputs,
-        awww: &mut Awww,
-        places: &Places,
-        logger: &Arc<Logger>,
-    ) {
+    fn drive_awww(self: &Arc<Self>, images: &Choice<Picture>, outputs: &Outputs, awww: &mut Awww, drive: Drive) {
+        let Drive { places, logger, .. } = drive;
         let mut state = lock(&self.state);
         if state.stopped {
             return;
@@ -760,7 +767,7 @@ impl Shared {
             command.args(["--namespace", NAMESPACE, "--no-cache", "--quiet"]).env("PATH", &places.path_var);
             // Spawned under the lock, so `stop` sees the pid or stops the
             // thread before the spawn.
-            if let Err(e) = self.spawn(&mut state, command, |state| &mut state.daemon, DAEMON, logger) {
+            if let Err(e) = self.spawn(&mut state, command, AWWW_DAEMON, logger) {
                 logger.warn(LOG_SOURCE, &format!("can't start {DAEMON}: {e}"));
                 awww.start_at = Some(Instant::now() + awww.restarts.after_exit());
                 return;
@@ -798,8 +805,7 @@ impl Shared {
                 })
                 .collect(),
         };
-        let stopped = || lock(&self.state).stopped;
-        if show(&images, outputs, &mut awww.shown, &places.path_var, logger, &stopped) {
+        if show(&images, outputs, &mut awww.shown, drive) {
             awww.resend.reset();
             awww.resend_at = None;
         } else {
@@ -814,9 +820,9 @@ impl Shared {
         screens: &BTreeMap<String, PathBuf>,
         engine: &mut EngineRun,
         awww_starts: u64,
-        places: &Places,
-        logger: &Arc<Logger>,
+        drive: Drive,
     ) {
+        let Drive { places, logger, .. } = drive;
         let mut state = lock(&self.state);
         if state.stopped {
             return;
@@ -855,8 +861,7 @@ impl Shared {
         }
         let started = engine::assets(&places.steam_roots(), &places.engine).and_then(|assets| {
             let command = engine::command(screens, &assets, &frame, &places.path_var);
-            self.spawn(&mut state, command, |state| &mut state.engine, engine::PROGRAM, logger)
-                .map_err(|e| e.to_string())
+            self.spawn(&mut state, command, ENGINE, logger).map_err(|e| e.to_string())
         });
         match started {
             Ok(()) => {
@@ -889,16 +894,16 @@ impl Shared {
         Ok(stopper)
     }
 
-    /// Starts `command` as the program `running` picks out of the state,
-    /// and notes when it exits: a crash unless it was asked to end.
+    /// Starts `command` as `program`, and notes in the state when it exits:
+    /// a crash unless it was asked to end.
     fn spawn(
         self: &Arc<Self>,
         state: &mut State,
         mut command: Command,
-        running: fn(&mut State) -> &mut Running,
-        name: &'static str,
+        program: Program,
         logger: &Arc<Logger>,
     ) -> std::io::Result<()> {
+        let Program { name, running } = program;
         let shared = Arc::clone(self);
         let exit_logger = Arc::clone(logger);
         // This thread, the spawning one, runs until `stop`.
@@ -959,14 +964,9 @@ impl Shared {
 /// Sends `wanted`'s images that awww doesn't show yet.
 /// Whether every image it sent was shown.
 /// Checks `stopped` before each `awww img`.
-fn show(
-    wanted: &Choice<PathBuf>,
-    outputs: &Outputs,
-    shown: &mut Shown,
-    path_var: &str,
-    logger: &Logger,
-    stopped: &dyn Fn() -> bool,
-) -> bool {
+fn show(wanted: &Choice<PathBuf>, outputs: &Outputs, shown: &mut Shown, drive: Drive) -> bool {
+    let Drive { logger, stopped, .. } = drive;
+    let path_var = drive.places.path_var.as_str();
     match outputs {
         Outputs::Unknown => true,
         Outputs::Known(names) => {
@@ -1048,14 +1048,8 @@ fn sizes(answer: &str) -> BTreeMap<String, (u32, u32)> {
 /// Cuts the engine's frame into stills for next time, once it's been
 /// `written`. Given up on once it's waited long enough, or when it can't be
 /// cut up. Checks `stopped` before each change to the state folder.
-fn keep_stills(
-    engine: &mut EngineRun,
-    written: bool,
-    sizes: &BTreeMap<String, (u32, u32)>,
-    places: &Places,
-    logger: &Logger,
-    stopped: &dyn Fn() -> bool,
-) {
+fn keep_stills(engine: &mut EngineRun, written: bool, sizes: &BTreeMap<String, (u32, u32)>, drive: Drive) {
+    let Drive { places, logger, stopped } = drive;
     let Some(frame) = engine.frame.as_ref() else {
         return;
     };

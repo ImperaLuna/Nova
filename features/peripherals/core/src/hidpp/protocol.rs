@@ -47,9 +47,19 @@ pub enum Length {
     Long,
 }
 
-/// A request to `device`: function `function` of the feature at
-/// `feature`, with `params`, `length` long if `reports` allows.
-pub fn request(reports: Reports, length: Length, device: u8, feature: u8, function: u8, params: &[u8]) -> Vec<u8> {
+/// What a request asks: function `function` of the feature at `feature` on
+/// `device`, with `params`.
+#[derive(Debug, Clone, Copy)]
+pub struct Call<'a> {
+    pub device: u8,
+    pub feature: u8,
+    pub function: u8,
+    pub params: &'a [u8],
+}
+
+/// The request for `call`, `length` long if `reports` allows.
+pub fn request(reports: Reports, length: Length, call: Call) -> Vec<u8> {
+    let Call { device, feature, function, params } = call;
     let fits = params.len() <= SHORT_BYTES - HEADER_BYTES;
     let short = reports.short && fits && (length == Length::Short || !reports.long);
     let (id, bytes) = if short { (SHORT, SHORT_BYTES) } else { (LONG, LONG_BYTES) };
@@ -127,18 +137,27 @@ mod tests {
 
     #[test]
     fn requests_are_as_long_as_asked_when_the_node_takes_it() {
-        assert_eq!(request(BOTH, Length::Short, 1, 0, 1, &[0, 0, 0x5a]), [0x10, 1, 0, 0x1b, 0, 0, 0x5a]);
-        let long = request(BOTH, Length::Long, 2, 4, 0, &[0x10, 0x04]);
+        assert_eq!(
+            request(BOTH, Length::Short, Call { device: 1, feature: 0, function: 1, params: &[0, 0, 0x5a] }),
+            [0x10, 1, 0, 0x1b, 0, 0, 0x5a]
+        );
+        let long = request(BOTH, Length::Long, Call { device: 2, feature: 4, function: 0, params: &[0x10, 0x04] });
         assert_eq!((long.len(), &long[..6]), (20, &[0x11, 2, 4, 0x0b, 0x10, 0x04][..]));
         let long_only = Reports { short: false, long: true };
-        assert_eq!(request(long_only, Length::Short, 1, 0, 1, &[]).len(), 20);
+        assert_eq!(
+            request(long_only, Length::Short, Call { device: 1, feature: 0, function: 1, params: &[] }).len(),
+            20
+        );
         let short_only = Reports { short: true, long: false };
-        assert_eq!(request(short_only, Length::Long, 1, 0, 1, &[]).len(), 7);
+        assert_eq!(
+            request(short_only, Length::Long, Call { device: 1, feature: 0, function: 1, params: &[] }).len(),
+            7
+        );
     }
 
     #[test]
     fn replies_and_errors_are_matched_to_their_request() {
-        let ping = request(BOTH, Length::Short, 1, 0, 1, &[0, 0, 0x5a]);
+        let ping = request(BOTH, Length::Short, Call { device: 1, feature: 0, function: 1, params: &[0, 0, 0x5a] });
         let mut reply = vec![0x11, 1, 0, 0x1b, 4, 2, 0x5a];
         reply.resize(20, 0);
         assert_eq!(answer(&ping, &reply).map(|answer| matches!(answer, Answer::Reply(_))), Some(true));
