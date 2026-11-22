@@ -7,7 +7,7 @@
 use crate::Daemon;
 use nova_bar_api::Panel;
 use nova_base::lock;
-use nova_carrier::Outcome;
+use nova_carrier::{Outcome, Topic};
 use nova_daemon_info::{Command, Event, topics};
 use nova_hub::ClientId;
 use nova_socket::{Answer, Caller, Router, done, value};
@@ -168,32 +168,7 @@ impl<'a> Connection<'a> {
             Command::Subscribe { topics: names } => {
                 // The names were checked as the request was read (`Own`).
                 for topic in names.iter().filter_map(|name| crate::topics::named::<serde_json::Error>(name).ok()) {
-                    if topic == topics::LOGS {
-                        self.daemon.logger.subscribe(self.id);
-                        continue;
-                    }
-                    // Subscribed and sent the current state under the
-                    // settings lock, so a reload's event can't come first.
-                    let settings = lock(&self.daemon.settings);
-                    self.daemon.hub.subscribe(self.id, topic);
-                    match topic {
-                        topics::FEATURES => self.send(Event::Features { features: settings.features.clone() }),
-                        nova_theme_info::TOPIC => self.send(nova_theme_info::Event::Theme(settings.theme.clone())),
-                        // Sent once the compositor has said what it shows.
-                        nova_desktop_info::TOPIC => {
-                            if let Some(compositor) = &self.daemon.compositor {
-                                compositor.subscribe(self.id);
-                            }
-                        }
-                        // Facts about the machine, there whatever the features.
-                        nova_host_info::TOPIC => self.send(nova_host_info::Event::Host(settings.host())),
-                        // Only ever sent as `nova toggle` or `nova volume` asks.
-                        nova_bar_api::TOPIC | nova_volume_osd_api::TOPIC => {}
-                        // A module's (`Module::TOPIC`, checked by
-                        // `each_topic_has_one_owner`): without its feature
-                        // there is nothing to send until a reload turns it on.
-                        _ => settings.modules.send_state(topic, self.id),
-                    }
+                    self.subscribe(topic);
                 }
             }
             Command::Quit => {
@@ -201,6 +176,36 @@ impl<'a> Connection<'a> {
                 self.daemon.quit();
             }
             Command::Ping | Command::ListFeatures | Command::Status => {}
+        }
+    }
+
+    /// Subscribes the client to `topic` and sends what it shows now.
+    fn subscribe(&self, topic: Topic) {
+        if topic == topics::LOGS {
+            self.daemon.logger.subscribe(self.id);
+            return;
+        }
+        // Subscribed and sent the current state under the settings lock, so a
+        // reload's event can't come first.
+        let settings = lock(&self.daemon.settings);
+        self.daemon.hub.subscribe(self.id, topic);
+        match topic {
+            topics::FEATURES => self.send(Event::Features { features: settings.features.clone() }),
+            nova_theme_info::TOPIC => self.send(nova_theme_info::Event::Theme(settings.theme.clone())),
+            // Sent once the compositor has said what it shows.
+            nova_desktop_info::TOPIC => {
+                if let Some(compositor) = &self.daemon.compositor {
+                    compositor.subscribe(self.id);
+                }
+            }
+            // Facts about the machine, there whatever the features.
+            nova_host_info::TOPIC => self.send(nova_host_info::Event::Host(settings.host())),
+            // Only ever sent as `nova toggle` or `nova volume` asks.
+            nova_bar_api::TOPIC | nova_volume_osd_api::TOPIC => {}
+            // A module's (`Module::TOPIC`, checked by
+            // `each_topic_has_one_owner`): without its feature
+            // there is nothing to send until a reload turns it on.
+            _ => settings.modules.send_state(topic, self.id),
         }
     }
 

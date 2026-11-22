@@ -21,7 +21,8 @@
 pub mod channel;
 pub mod descriptor;
 
-use super::{Found, LOG_SOURCE, Report, Running, Source, UsbId, hotplug};
+use super::hotplug::{self, Waker};
+use super::{Found, LOG_SOURCE, Report, Running, Source, UsbId};
 use channel::Channel;
 use nova_base::lock;
 use nova_carrier::log::LogLevel;
@@ -31,7 +32,7 @@ use nova_peripherals_api::PeripheralLink;
 use std::collections::{BTreeMap, HashMap};
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -96,19 +97,6 @@ pub struct Hidraw<P> {
     pub protocol: P,
 }
 
-/// What wakes the finder.
-#[derive(Default)]
-struct Wakes {
-    stopped: bool,
-    plugged: Option<Instant>,
-}
-
-#[derive(Default)]
-struct Waker {
-    wakes: Mutex<Wakes>,
-    condvar: Condvar,
-}
-
 /// The devices every node's reader has found, by node, and when it last
 /// said so.
 struct Devices {
@@ -171,8 +159,7 @@ struct Finding {
 
 impl Running for Finding {
     fn stop(&self) {
-        lock(&self.waker.wakes).stopped = true;
-        self.waker.condvar.notify_all();
+        self.waker.stop();
         if let Some(hotplug) = &self.hotplug {
             hotplug.stop();
         }
@@ -187,10 +174,7 @@ impl<P: Protocol> Source for Hidraw<P> {
         let hotplug = hotplug::watch_entries(
             &self.dev,
             NODE_PREFIX,
-            move || {
-                lock(&plugged.wakes).plugged = Some(Instant::now());
-                plugged.condvar.notify_all();
-            },
+            move || plugged.plugged(),
             move |e| failed.logger().warn(LOG_SOURCE, &format!("stopped following hidraw nodes: {e}")),
         )
         .map_err(|e| {
@@ -223,27 +207,11 @@ impl<P: Protocol> Hidraw<P> {
         let mut problems: HashMap<String, String> = HashMap::new();
         let mut next_look = Instant::now();
         loop {
-            {
-                let mut wakes = lock(&waker.wakes);
-                loop {
-                    if wakes.stopped {
-                        for reader in readers.values() {
-                            reader.stop.stop();
-                        }
-                        return;
-                    }
-                    let due = wakes.plugged.map_or(next_look, |plugged| next_look.min(plugged + HOTPLUG_SETTLE));
-                    let now = Instant::now();
-                    if now >= due {
-                        break;
-                    }
-                    wakes = waker
-                        .condvar
-                        .wait_timeout(wakes, due - now)
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .0;
+            if !waker.wait(next_look, HOTPLUG_SETTLE) {
+                for reader in readers.values() {
+                    reader.stop.stop();
                 }
-                wakes.plugged = None;
+                return;
             }
             next_look = Instant::now() + LOOK_AGAIN;
             let nodes = self.nodes();

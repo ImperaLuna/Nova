@@ -322,36 +322,40 @@ impl Shared {
                 if self.stop.poll(cx).is_ready() {
                     return Poll::Ready(None);
                 }
-                for stream in [&mut owners, &mut signals] {
-                    if let Poll::Ready(message) = Pin::new(stream).poll_next(cx) {
-                        return Poll::Ready(Some(message));
-                    }
-                }
-                Poll::Pending
+                let ready =
+                    [&mut owners, &mut signals].into_iter().find_map(|stream| match Pin::new(stream).poll_next(cx) {
+                        Poll::Ready(message) => Some(message),
+                        Poll::Pending => None,
+                    });
+                ready.map_or(Poll::Pending, |message| Poll::Ready(Some(message)))
             })
             .await;
             let Some(Some(message)) = next else { return Ok(()) };
-            let message = message?;
-            let header = message.header();
-            let mut state = lock(&self.state);
-            if header.interface().is_some_and(|interface| interface.as_str() == ACTIVE)
-                && header.member().is_some_and(|member| member.as_str() == "StateChanged")
-                && let (Some(path), Ok((active_state, reason))) =
-                    (header.path(), message.body().deserialize::<(u32, u32)>())
-            {
-                if state.transitions.len() == MAX_TRANSITIONS {
-                    state.transitions.pop_front();
-                }
-                state.transitions.push_back((path.to_owned().into(), active_state, reason));
-                // The outcome shows at once, without waiting for a read.
-                if let Some(attempt) = state.attempt.as_mut().filter(|attempt| attempt.active.as_str() == path.as_str())
-                {
-                    attempt.last = Some((active_state, reason));
-                    self.publish(&mut state);
-                }
-            }
-            self.mark_stale(&mut state);
+            self.heard(&message?);
         }
+    }
+
+    /// Takes a signal from NetworkManager: a connection's new state is
+    /// kept, and everything is read again once signals settle.
+    fn heard(&self, message: &zbus::Message) {
+        let header = message.header();
+        let mut state = lock(&self.state);
+        if header.interface().is_some_and(|interface| interface.as_str() == ACTIVE)
+            && header.member().is_some_and(|member| member.as_str() == "StateChanged")
+            && let (Some(path), Ok((active_state, reason))) =
+                (header.path(), message.body().deserialize::<(u32, u32)>())
+        {
+            if state.transitions.len() == MAX_TRANSITIONS {
+                state.transitions.pop_front();
+            }
+            state.transitions.push_back((path.to_owned().into(), active_state, reason));
+            // The outcome shows at once, without waiting for a read.
+            if let Some(attempt) = state.attempt.as_mut().filter(|attempt| attempt.active.as_str() == path.as_str()) {
+                attempt.last = Some((active_state, reason));
+                self.publish(&mut state);
+            }
+        }
+        self.mark_stale(&mut state);
     }
 
     /// Reads NetworkManager again once signals settle, until stopped.

@@ -10,8 +10,8 @@
 //! the output is read whatever the exit status. Unknown fields are ignored:
 //! newer releases add some.
 
-use super::{Found, LOG_SOURCE, Report, Running, Source, UsbId, hotplug, name};
-use nova_base::lock;
+use super::hotplug::{self, Waker};
+use super::{Found, LOG_SOURCE, Report, Running, Source, UsbId, name};
 use nova_carrier::log::LogLevel;
 use nova_inotify as inotify;
 use nova_peripherals_api::{Battery, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource};
@@ -19,7 +19,7 @@ use nova_process::child;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const BINARY: &str = "headsetcontrol";
@@ -47,20 +47,6 @@ pub struct HeadsetControl {
     pub usb_devices: PathBuf,
 }
 
-/// What wakes the reader.
-#[derive(Default)]
-struct Wakes {
-    stopped: bool,
-    /// When a USB device last came or went, until headsets are read.
-    plugged: Option<Instant>,
-}
-
-#[derive(Default)]
-struct Waker {
-    wakes: Mutex<Wakes>,
-    condvar: Condvar,
-}
-
 struct Reading {
     waker: Arc<Waker>,
     hotplug: Option<inotify::Stopper>,
@@ -68,8 +54,7 @@ struct Reading {
 
 impl Running for Reading {
     fn stop(&self) {
-        lock(&self.waker.wakes).stopped = true;
-        self.waker.condvar.notify_all();
+        self.waker.stop();
         if let Some(hotplug) = &self.hotplug {
             hotplug.stop();
         }
@@ -83,10 +68,7 @@ impl Source for HeadsetControl {
         let failed = report.clone();
         let hotplug = hotplug::watch(
             &self.usb_devices,
-            move || {
-                lock(&plugged.wakes).plugged = Some(Instant::now());
-                plugged.condvar.notify_all();
-            },
+            move || plugged.plugged(),
             move |e| failed.logger().warn(LOG_SOURCE, &format!("stopped following USB devices: {e}")),
         )
         .map_err(|e| {
@@ -107,24 +89,8 @@ impl HeadsetControl {
         let mut runs = Runs::default();
         let mut next_poll = Instant::now();
         loop {
-            {
-                let mut wakes = lock(&waker.wakes);
-                loop {
-                    if wakes.stopped {
-                        return;
-                    }
-                    let due = wakes.plugged.map_or(next_poll, |plugged| next_poll.min(plugged + HOTPLUG_SETTLE));
-                    let now = Instant::now();
-                    if now >= due {
-                        break;
-                    }
-                    wakes = waker
-                        .condvar
-                        .wait_timeout(wakes, due - now)
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .0;
-                }
-                wakes.plugged = None;
+            if !waker.wait(next_poll, HOTPLUG_SETTLE) {
+                return;
             }
             next_poll = Instant::now() + POLL;
             let found = runs.read(&self.path_var, report);

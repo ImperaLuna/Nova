@@ -1240,13 +1240,13 @@ mod tests {
         /// the order of the images may vary.
         fn shows(&self, expected: &[(&str, &str)]) {
             wait_until(WAIT, &format!("outputs to show {expected:?}"), || {
-                let mut last = BTreeMap::new();
-                for (outputs, image) in self.sent() {
-                    for output in outputs.split(',') {
-                        last.insert(output.to_owned(), image.clone());
-                    }
-                }
-                expected.iter().all(|(output, image)| last.get(*output).map(String::as_str) == Some(*image))
+                let sent = self.sent();
+                // Later images win.
+                let last: BTreeMap<&str, &str> = sent
+                    .iter()
+                    .flat_map(|(outputs, image)| outputs.split(',').map(move |output| (output, image.as_str())))
+                    .collect();
+                expected.iter().all(|(output, image)| last.get(*output) == Some(image))
             });
         }
 

@@ -358,25 +358,7 @@ impl Usage {
             match result {
                 Ok((limits, plan)) => {
                     last_problem = None;
-                    match provider {
-                        AiProvider::Claude => {
-                            let _ = self.update(|state| {
-                                state.claude_problem = None;
-                                // The status line reported while this request was out: its numbers are newer.
-                                if state.claude_reported.is_none_or(|reported| reported < asked) {
-                                    state.saved.claude = Some(limits);
-                                    state.saved.claude_plan = plan;
-                                }
-                            });
-                            // A cleared problem shows even when the numbers didn't change.
-                            let _ = self.wake.send(Wake::Changed);
-                        }
-                        AiProvider::Codex => {
-                            // As of the request: a log line written meanwhile is newer.
-                            self.offer_codex(CodexUsage { plan, limits, logged_at: asked_at });
-                            let _ = self.wake.send(Wake::Changed);
-                        }
-                    }
+                    self.answered(provider, limits, plan, (asked, asked_at));
                 }
                 Err(problem) => {
                     let hint = problem.hint(provider);
@@ -402,6 +384,34 @@ impl Usage {
                 }
             }
         }
+    }
+
+    /// Takes `provider`'s endpoint's answer to the request made at `asked`
+    /// (as an instant and as a time).
+    fn answered(
+        &self,
+        provider: AiProvider,
+        limits: Vec<UsageLimit>,
+        plan: Option<String>,
+        asked: (Instant, Timestamp),
+    ) {
+        let (asked, asked_at) = asked;
+        match provider {
+            AiProvider::Claude => {
+                let _ = self.update(|state| {
+                    state.claude_problem = None;
+                    // The status line reported while this request was out: its numbers are newer.
+                    if state.claude_reported.is_none_or(|reported| reported < asked) {
+                        state.saved.claude = Some(limits);
+                        state.saved.claude_plan = plan;
+                    }
+                });
+            }
+            // As of the request: a log line written meanwhile is newer.
+            AiProvider::Codex => self.offer_codex(CodexUsage { plan, limits, logged_at: asked_at }),
+        }
+        // A cleared problem shows even when the numbers didn't change.
+        let _ = self.wake.send(Wake::Changed);
     }
 
     /// Applies `change` to the state, then saves and publishes what it
@@ -544,51 +554,7 @@ impl Usage {
         }
         let wake = self.wake.clone();
         let logger = Arc::clone(&self.logger);
-        std::thread::spawn(move || {
-            loop {
-                let changes = match watcher.read() {
-                    Ok(Some(changes)) => changes,
-                    Ok(None) => return,
-                    Err(e) => {
-                        logger.warn(LOG_SOURCE, &format!("stopped watching Codex's logs: {e}"));
-                        return;
-                    }
-                };
-                if changes.overflowed {
-                    // Some changes were dropped: watch everything again and rescan.
-                    if let Err(e) = watch_codex_home(&mut watcher, &home, &sessions) {
-                        logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", home.display()));
-                    }
-                    if wake.send(Wake::CodexRescan).is_err() {
-                        return;
-                    }
-                    continue;
-                }
-                for change in changes.found {
-                    // Any kind of entry: a symlinked home is repointed by
-                    // renaming a new link over it.
-                    let message = if change.path == home {
-                        // The sessions folder may have come with it.
-                        if let Err(e) = watch_codex_home(&mut watcher, &home, &sessions) {
-                            logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", home.display()));
-                        }
-                        Wake::CodexRescan
-                    } else if (change.is_dir && change.path.starts_with(&sessions)) || change.path == sessions {
-                        if let Err(e) = watcher.watch_tree(&change.path) {
-                            logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", change.path.display()));
-                        }
-                        Wake::CodexRescan
-                    } else if change.path.starts_with(&sessions) && codex::is_log(&change.path) {
-                        Wake::CodexLog(change.path)
-                    } else {
-                        continue;
-                    };
-                    if wake.send(message).is_err() {
-                        return;
-                    }
-                }
-            }
-        });
+        std::thread::spawn(move || follow_codex(&mut watcher, &CodexHome { home, sessions }, &wake, &logger));
     }
 
     fn publish(&self) {
@@ -605,6 +571,74 @@ impl Usage {
 }
 
 /// Watches Codex's home and every sessions folder, once they exist.
+/// Where Codex keeps its logs: its home, and the sessions folder in it.
+struct CodexHome {
+    home: PathBuf,
+    sessions: PathBuf,
+}
+
+/// Turns `watcher`'s changes into wakes until the watcher or the feature stops.
+fn follow_codex(watcher: &mut inotify::Inotify, codex: &CodexHome, wake: &mpsc::Sender<Wake>, logger: &Logger) {
+    loop {
+        let changes = match watcher.read() {
+            Ok(Some(changes)) => changes,
+            Ok(None) => return,
+            Err(e) => {
+                logger.warn(LOG_SOURCE, &format!("stopped watching Codex's logs: {e}"));
+                return;
+            }
+        };
+        if changes.overflowed {
+            // Some changes were dropped: watch everything again and rescan.
+            rewatch_codex_home(watcher, codex, logger);
+            if wake.send(Wake::CodexRescan).is_err() {
+                return;
+            }
+            continue;
+        }
+        for change in changes.found {
+            let Some(message) = codex_wake(watcher, codex, change, logger) else { continue };
+            if wake.send(message).is_err() {
+                return;
+            }
+        }
+    }
+}
+
+/// The wake for one change under Codex's home, if it's one that matters;
+/// a new folder under sessions is watched too.
+fn codex_wake(
+    watcher: &mut inotify::Inotify,
+    codex: &CodexHome,
+    change: inotify::Change,
+    logger: &Logger,
+) -> Option<Wake> {
+    let CodexHome { home, sessions } = codex;
+    // Any kind of entry: a symlinked home is repointed by renaming a new
+    // link over it.
+    if change.path == *home {
+        // The sessions folder may have come with it.
+        rewatch_codex_home(watcher, codex, logger);
+        Some(Wake::CodexRescan)
+    } else if (change.is_dir && change.path.starts_with(sessions)) || change.path == *sessions {
+        if let Err(e) = watcher.watch_tree(&change.path) {
+            logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", change.path.display()));
+        }
+        Some(Wake::CodexRescan)
+    } else if change.path.starts_with(sessions) && codex::is_log(&change.path) {
+        Some(Wake::CodexLog(change.path))
+    } else {
+        None
+    }
+}
+
+/// Watches Codex's home and sessions again, saying so when it can't.
+fn rewatch_codex_home(watcher: &mut inotify::Inotify, codex: &CodexHome, logger: &Logger) {
+    if let Err(e) = watch_codex_home(watcher, &codex.home, &codex.sessions) {
+        logger.warn(LOG_SOURCE, &format!("can't watch {}: {e}", codex.home.display()));
+    }
+}
+
 fn watch_codex_home(watcher: &mut inotify::Inotify, home: &Path, sessions: &Path) -> std::io::Result<()> {
     if !home.is_dir() {
         return Ok(());

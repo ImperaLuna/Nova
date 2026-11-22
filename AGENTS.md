@@ -233,6 +233,7 @@ same lints and limits, so both repos read the same.
 | Rule | Enforced by |
 |---|---|
 | An exception is `#[expect]` with a reason, never `#[allow]` | Clippy `allow_attributes`, `allow_attributes_without_reason` |
+| Shallow code: blocks nest at most 5 deep | Clippy `excessive_nesting` (`clippy.toml`) |
 
 ## State, threads and files
 

@@ -190,32 +190,39 @@ impl FakeHidraw {
         node.ends.push(served.try_clone()?);
         let nodes = Arc::clone(&self.nodes);
         let path = path.to_owned();
-        std::thread::spawn(move || {
-            let mut request = [0u8; 64];
-            while let Ok(read) = served.read(&mut request) {
-                if read == 0 {
-                    return;
-                }
-                let request = &request[..read];
-                let replies = {
-                    let mut nodes = lock(&nodes);
-                    let Some(node) = nodes.get_mut(&path) else { return };
-                    node.requests.push(request.to_vec());
-                    match (node.answers.get(request), node.unrecorded) {
-                        (Some(replies), _) => replies.clone(),
-                        (None, Unrecorded::HidppNoDevice) => vec![no_device(request)],
-                        (None, Unrecorded::Silent) => Vec::new(),
-                    }
-                };
-                for reply in replies {
-                    if served.write_all(&reply).is_err() {
-                        return;
-                    }
-                }
-            }
-        });
+        std::thread::spawn(move || serve(&mut served, &nodes, &path));
         Ok(ours)
     }
+}
+
+/// Answers what node `path`'s reader sends through `served`, as recorded,
+/// until either end hangs up.
+fn serve(served: &mut std::fs::File, nodes: &Mutex<HashMap<PathBuf, Node>>, path: &Path) {
+    let mut request = [0u8; 64];
+    while let Ok(read) = served.read(&mut request) {
+        if read == 0 {
+            return;
+        }
+        let Some(replies) = answers(nodes, path, &request[..read]) else { return };
+        for reply in replies {
+            if served.write_all(&reply).is_err() {
+                return;
+            }
+        }
+    }
+}
+
+/// Node `path`'s replies to `request`, noting it was asked; none once the
+/// node is gone.
+fn answers(nodes: &Mutex<HashMap<PathBuf, Node>>, path: &Path, request: &[u8]) -> Option<Vec<Vec<u8>>> {
+    let mut nodes = lock(nodes);
+    let node = nodes.get_mut(path)?;
+    node.requests.push(request.to_vec());
+    Some(match (node.answers.get(request), node.unrecorded) {
+        (Some(replies), _) => replies.clone(),
+        (None, Unrecorded::HidppNoDevice) => vec![no_device(request)],
+        (None, Unrecorded::Silent) => Vec::new(),
+    })
 }
 
 /// A receiver's answer to a request for an empty slot.

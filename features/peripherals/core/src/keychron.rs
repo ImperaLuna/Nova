@@ -124,57 +124,40 @@ impl Protocol for Keychron {
         }
         // What's shown, and when the keyboard was last heard.
         let mut heard: Option<(Smoothed, Instant)> = None;
-        // Whether the node is the keyboard's own, on its cable.
-        let mut wired = false;
-        let mut can_ask = true;
-        let mut unanswered = 0;
-        let mut answered = 0;
-        // When the last request went, while its answer may still come.
-        let mut asked: Option<Instant> = None;
-        let mut next_ask = Some(Instant::now());
+        let mut asking = Asking::new(Instant::now());
         loop {
             let now = Instant::now();
-            if asked.is_some_and(|at| at + ANSWER_TIMEOUT <= now) {
-                asked = None;
-                answered = 0;
+            if asking.asked.is_some_and(|at| at + ANSWER_TIMEOUT <= now) {
+                asking.asked = None;
+                asking.answered = 0;
             }
-            if next_ask.is_some_and(|at| at <= now) {
+            if asking.next_ask.is_some_and(|at| at <= now) {
                 match channel.send(&request()) {
-                    Ok(true) => asked = Some(now),
+                    Ok(true) => asking.asked = Some(now),
                     Ok(false) => return None,
                     // It can still be listened to.
                     Err(e) => {
                         let problem = format!("{}: can't ask for the battery ({e}); only listening", node.name);
                         listing.logger().log(LogLevel::Debug, LOG_SOURCE, &problem);
-                        can_ask = false;
+                        asking.can_ask = false;
                     }
                 }
-                unanswered += 1;
-                next_ask = (can_ask && (wired || unanswered < MAX_UNANSWERED)).then_some(now + ASK);
+                asking.unanswered += 1;
+                asking.next_ask =
+                    (asking.can_ask && (asking.wired || asking.unanswered < MAX_UNANSWERED)).then_some(now + ASK);
             }
             if heard.as_ref().is_some_and(|(_, at)| *at + SILENCE <= now) {
                 heard = None;
                 listing.set(Vec::new());
             }
             let expires = heard.as_ref().map(|(_, at)| *at + SILENCE);
-            let answer_due = asked.map(|at| at + ANSWER_TIMEOUT);
-            let until = [next_ask, expires, answer_due].into_iter().flatten().min().unwrap_or(now + IDLE_WAIT);
+            let answer_due = asking.asked.map(|at| at + ANSWER_TIMEOUT);
+            let until = [asking.next_ask, expires, answer_due].into_iter().flatten().min().unwrap_or(now + IDLE_WAIT);
             match channel.receive(until) {
                 Ok(Received::Report(report)) => {
                     let Some(reading) = Reading::parse(&report) else { continue };
                     let now = Instant::now();
-                    if asked.take().is_some_and(|at| now.duration_since(at) <= ANSWER_TIMEOUT) {
-                        unanswered = 0;
-                        answered += 1;
-                        if answered >= CONFIRMATIONS {
-                            wired = true;
-                        } else if can_ask {
-                            // Asked again at once, to be sure.
-                            next_ask = Some(now);
-                        }
-                    } else {
-                        answered = 0;
-                    }
+                    asking.heard(now);
                     let smoothed = match heard.take() {
                         Some((mut smoothed, _)) => {
                             smoothed.add(reading, now);
@@ -183,16 +166,53 @@ impl Protocol for Keychron {
                         None => Smoothed::new(reading, now),
                     };
                     // Unchanged lists aren't sent on.
-                    listing.set(vec![found(node, smoothed.shown(), wired)]);
+                    listing.set(vec![found(node, smoothed.shown(), asking.wired)]);
                     heard = Some((smoothed, now));
-                    if wired && can_ask {
-                        next_ask = Some(now + ASK);
+                    if asking.wired && asking.can_ask {
+                        asking.next_ask = Some(now + ASK);
                     }
                 }
                 Ok(Received::TimedOut) => {}
                 Ok(Received::Stopped) => return None,
                 Err(e) => return Some(e.to_string()),
             }
+        }
+    }
+}
+
+/// Asking a keyboard for its battery, and whether it answers: a node that
+/// answers is the keyboard's own, on its cable.
+struct Asking {
+    /// Whether the node is the keyboard's own, on its cable.
+    wired: bool,
+    can_ask: bool,
+    unanswered: u32,
+    answered: u32,
+    /// When the last request went, while its answer may still come.
+    asked: Option<Instant>,
+    next_ask: Option<Instant>,
+}
+
+impl Asking {
+    /// Asks first at `now`.
+    fn new(now: Instant) -> Self {
+        Self { wired: false, can_ask: true, unanswered: 0, answered: 0, asked: None, next_ask: Some(now) }
+    }
+
+    /// A report came at `now`: an answer, if a request was out and still
+    /// in time.
+    fn heard(&mut self, now: Instant) {
+        if !self.asked.take().is_some_and(|at| now.duration_since(at) <= ANSWER_TIMEOUT) {
+            self.answered = 0;
+            return;
+        }
+        self.unanswered = 0;
+        self.answered += 1;
+        if self.answered >= CONFIRMATIONS {
+            self.wired = true;
+        } else if self.can_ask {
+            // Asked again at once, to be sure.
+            self.next_ask = Some(now);
         }
     }
 }
