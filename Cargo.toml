@@ -72,6 +72,8 @@ nova-power-api = { path = "features/power/api" }
 nova-power = { path = "features/power/core" }
 nova-resources-api = { path = "features/resources/api" }
 nova-resources = { path = "features/resources/core" }
+nova-tray-api = { path = "features/tray/api" }
+nova-tray = { path = "features/tray/core" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

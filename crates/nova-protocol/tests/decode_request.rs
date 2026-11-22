@@ -124,6 +124,17 @@ fn power_request() -> impl Strategy<Value = nova_carrier::Request<nova_power_api
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
+/// The tray feature's commands, which it owns (`nova-tray-api`).
+fn tray_request() -> impl Strategy<Value = nova_carrier::Request<nova_tray_api::Command>> {
+    use nova_tray_api::Command;
+    let command = prop_oneof![
+        (".*", any::<bool>()).prop_map(|(id, hidden)| Command::HideTrayApp { id, hidden }),
+        ".*".prop_map(|address| Command::ActivateTrayItem { address }),
+        ".*".prop_map(|address| Command::TrayMenuPicked { address }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
 fn pairing_answer() -> impl Strategy<Value = PairingAnswer> {
     prop_oneof![Just(PairingAnswer::Accept), Just(PairingAnswer::Reject), ".*".prop_map(PairingAnswer::Code)]
 }
@@ -210,6 +221,12 @@ proptest! {
 
     #[test]
     fn every_power_request_round_trips(request in power_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_tray_request_round_trips(request in tray_request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
     }

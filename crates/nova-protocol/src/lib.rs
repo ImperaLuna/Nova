@@ -95,9 +95,6 @@ pub enum Event {
     /// (feature `launcher`). Topic [`topics::LAUNCHER`], sent right after
     /// subscribing and whenever any of it changes.
     Launcher(Launcher),
-    /// The apps in the system tray (feature `tray`). Topic [`topics::TRAY`],
-    /// sent right after subscribing and whenever one comes or goes.
-    Tray(Tray),
     /// The notifications kept for the quick settings list, do not disturb
     /// and the muted apps (feature `notifications`). Topic
     /// [`topics::NOTIFICATIONS`], sent right after subscribing and whenever
@@ -147,7 +144,6 @@ pub mod topics {
     pub const RECORDING: Topic = Topic::named("recording");
     pub const HOST: Topic = Topic::named("host");
     pub const LAUNCHER: Topic = Topic::named("launcher");
-    pub const TRAY: Topic = Topic::named("tray");
     pub const NOTIFICATIONS: Topic = Topic::named("notifications");
     pub const MEDIA: Topic = Topic::named("media");
     pub const PERIPHERALS: Topic = Topic::named("peripherals");
@@ -172,7 +168,6 @@ impl Event {
             Event::PickRecording | Event::Recording(_) | Event::RecordingSaved(_) => Some(topics::RECORDING),
             Event::Host(_) => Some(topics::HOST),
             Event::Launcher(_) => Some(topics::LAUNCHER),
-            Event::Tray(_) => Some(topics::TRAY),
             Event::Notifications(_) | Event::NotificationPopup(_) => Some(topics::NOTIFICATIONS),
             Event::Media(_) => Some(topics::MEDIA),
             Event::Peripherals(_) => Some(topics::PERIPHERALS),
@@ -359,39 +354,6 @@ pub struct Launcher {
     pub pinned: Vec<String>,
     /// The ids of the apps launched lately, the latest first.
     pub recent: Vec<String>,
-}
-
-/// The system tray (feature `tray`): the StatusNotifierItems apps
-/// registered with novad's watcher, in the order they did.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Tray {
-    pub items: Vec<TrayItem>,
-    /// The apps the user hid from the bar's tray (`hide_tray_app`), by an
-    /// item's app id, or its own `id` when it has no app. Quick settings
-    /// still lists them, to bring them back.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub hidden: Vec<String>,
-}
-
-/// One app's tray icon. The UI draws it through Quickshell's tray host and
-/// finds it there by `id` and `title`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TrayItem {
-    /// Where it lives on the session bus: `<bus name>/<object path>`, as
-    /// the watcher lists it.
-    pub address: String,
-    /// The item's own `Id`, like `discord_status_icon_1`.
-    pub id: String,
-    /// The item's own `Title`, empty for Electron apps.
-    pub title: String,
-    /// The installed app it belongs to, found from the process that owns
-    /// it, when there is one (and the `launcher` feature is on).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub app: Option<App>,
-    /// It has no `Activate` (libayatana's items, like Spotify's): a click
-    /// on it shows its menu, as one on an item that says `ItemIsMenu` does.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub menu_only: bool,
 }
 
 /// The media players (feature `media`): every MPRIS player on the session
@@ -1200,25 +1162,6 @@ pub enum Command {
         id: String,
         pinned: bool,
     },
-    /// Hides a tray app from the bar, or shows it again (feature `tray`):
-    /// `id` is the item's app id, or its own id when it has none (see
-    /// [`Tray::hidden`]). Remembered across restarts.
-    HideTrayApp {
-        id: String,
-        hidden: bool,
-    },
-    /// The tray item at `address` (as [`TrayItem::address`]) was clicked
-    /// (feature `tray`): it's asked to show its window, which then takes
-    /// focus.
-    ActivateTrayItem {
-        address: String,
-    },
-    /// An entry of the menu of the tray item at `address` was picked
-    /// (feature `tray`): a window its app shows next takes focus, as it
-    /// gets none from a menu either.
-    TrayMenuPicked {
-        address: String,
-    },
     /// The notification `id` was clicked on `output` (feature
     /// `notifications`): the app hears of it and its window takes focus, or,
     /// when it can't hear of it, the app opens (as with `launch_app`). It
@@ -1512,7 +1455,7 @@ mod tests {
                         topics::HOST,
                         nova_resources_api::TOPIC,
                         topics::LAUNCHER,
-                        topics::TRAY,
+                        nova_tray_api::TOPIC,
                         topics::NOTIFICATIONS,
                         topics::MEDIA,
                         topics::PERIPHERALS,
@@ -1718,17 +1661,21 @@ mod tests {
                 },
             }),
             encode(Request { id: Some(26), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
-            encode(Request { id: Some(27), command: Command::HideTrayApp { id: "steam".into(), hidden: true } }),
-            encode(Request {
+            // The tray feature's own messages (`nova-tray-api`), still on this one wire.
+            encode(nova_carrier::Request {
+                id: Some(27),
+                command: nova_tray_api::Command::HideTrayApp { id: "steam".into(), hidden: true },
+            }),
+            encode(nova_carrier::Request {
                 id: Some(28),
-                command: Command::ActivateTrayItem { address: ":1.42/StatusNotifierItem".into() },
+                command: nova_tray_api::Command::ActivateTrayItem { address: ":1.42/StatusNotifierItem".into() },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(29),
-                command: Command::TrayMenuPicked { address: ":1.42/StatusNotifierItem".into() },
+                command: nova_tray_api::Command::TrayMenuPicked { address: ":1.42/StatusNotifierItem".into() },
             }),
-            encode(Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
-            encode(Event::Tray(tray())),
+            encode(nova_carrier::Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
+            encode(nova_tray_api::Event::Tray(tray())),
             encode(Event::Notifications(notifications())),
             encode(Event::NotificationPopup(notifications().items[0].clone())),
             encode(Request { id: Some(40), command: Command::NotificationAction { id: 7, action: "open".into() } }),
@@ -2192,7 +2139,8 @@ mod tests {
         Media { players: vec![spotify, firefox], shown: Some("org.mpris.MediaPlayer2.spotify".into()) }
     }
 
-    fn tray() -> Tray {
+    fn tray() -> nova_tray_api::Tray {
+        use nova_tray_api::{Tray, TrayItem};
         Tray {
             items: vec![
                 TrayItem {
@@ -2391,7 +2339,6 @@ mod tests {
         assert_eq!(Event::Recording(None).topic(), Some(topics::RECORDING));
         assert_eq!(Event::Host(host()).topic(), Some(topics::HOST));
         assert_eq!(Event::Launcher(launcher()).topic(), Some(topics::LAUNCHER));
-        assert_eq!(Event::Tray(tray()).topic(), Some(topics::TRAY));
         assert_eq!(Event::Notifications(notifications()).topic(), Some(topics::NOTIFICATIONS));
         assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(topics::NOTIFICATIONS));
         assert_eq!(Event::Media(media()).topic(), Some(topics::MEDIA));

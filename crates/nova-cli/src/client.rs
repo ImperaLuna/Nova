@@ -162,6 +162,7 @@ pub enum Sent {
     Shared(Event),
     Network(nova_network_api::Event),
     Resources(nova_resources_api::Event),
+    Tray(nova_tray_api::Event),
 }
 
 enum Message {
