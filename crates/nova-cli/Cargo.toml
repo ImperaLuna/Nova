@@ -2,14 +2,17 @@
 # - clap
 # - clap_complete
 # - jiff
+# - serde
 # - serde_json
 # - shlex
 #
 # Allowed workspace crates:
+# - nova-carrier
 # - nova-features
 # - nova-paths
 # - nova-protocol
 # - nova-quickshell
+# - nova-resources-api
 # - novad
 
 [package]
@@ -26,6 +29,9 @@ path = "src/main.rs"
 
 [dependencies]
 nova-protocol.workspace = true
+nova-carrier.workspace = true
+nova-resources-api.workspace = true
+serde.workspace = true
 nova-features.workspace = true
 nova-paths.workspace = true
 nova-quickshell.workspace = true

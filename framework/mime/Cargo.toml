@@ -1,0 +1,29 @@
+# Allowed outside crates: none
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-carrier
+# - nova-inotify
+# - nova-log
+# - nova-watch
+
+[package]
+name = "nova-mime"
+description = "What type of file something is, by the freedesktop.org shared MIME database, kept current as packages change it"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-base.workspace = true
+nova-carrier.workspace = true
+nova-inotify.workspace = true
+nova-log.workspace = true
+nova-watch.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+
+[lints]
+workspace = true

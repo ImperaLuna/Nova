@@ -168,6 +168,11 @@ assertions). The feature is `<id>` (its folder name), its crates
      shared one in its place, never moved or appended.
    - `crates/novad/src/protocol_js.rs` `events()`: the api's `Event` after
      the shared one, sorted by feature id.
+   - `crates/nova-cli`: the api's `Command` as a variant of `ipc.rs`'s
+     `IpcCommand` (with its branch in `parse`), and its `Event` as a variant
+     of `client.rs`'s `Sent`, both after `Shared`, sorted by feature id; the
+     crate on both allowed lists. A CLI command that sent or read the moved
+     messages matches the new variant.
    - `crates/nova-protocol`: the wire format snapshot keeps its lines, now
      built from the api's types (a dev-dependency, alphabetical);
      `tests/decode_request.rs` gets a strategy and round trip for the

@@ -6,7 +6,7 @@
 
 [package]
 name = "nova-process"
-description = "Running child programs with deadlines, and reading process facts from /proc"
+description = "Running child programs with deadlines, reading process facts from /proc and telling systemd novad is up"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,6 +15,9 @@ license.workspace = true
 [dependencies]
 nova-base.workspace = true
 libc.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
 
 [lints]
 workspace = true

@@ -26,23 +26,18 @@
 //!   commands, and the component that loads when the feature is ready.
 
 mod ai_usage;
-mod apps;
 mod bluetooth;
 pub mod checks;
 mod compositor;
 mod config;
 mod egl;
 mod features;
-mod host;
-mod icons;
 mod launcher;
 mod logind;
 mod media;
-mod mime;
 mod modules;
 mod network;
 mod notifications;
-mod notify;
 mod nova_files;
 mod peripherals;
 mod power;
@@ -56,7 +51,6 @@ mod screenshot;
 mod session_lock;
 mod settings;
 mod supervisor;
-mod theme;
 mod topics;
 mod tray;
 mod wallpaper;
@@ -68,14 +62,21 @@ mod x11_tray;
 pub use nova_base::lock;
 use nova_base::{backoff, reply_slot, state_file};
 use nova_inotify as inotify;
-use nova_process::{child, procfs};
+use nova_process::{child, notify, procfs};
 use nova_session_bus as session_bus;
 // The hub, the logger and the folder follower moved to the framework too
 // (IMP-372).
 use nova_hub as hub;
 use nova_log as logger;
 use nova_socket as server;
-use nova_watch as watch_points;
+// The shared lookups moved to framework crates too, the data folders they
+// search to nova-paths (IMP-374).
+use nova_apps as apps;
+use nova_host as host;
+use nova_icons as icons;
+use nova_mime as mime;
+use nova_paths::{data_dirs, package_prefixes};
+use nova_theme as theme;
 
 use hub::Hub;
 use logger::Logger;
@@ -480,51 +481,6 @@ pub(crate) fn session_path() -> String {
     std::env::join_paths(dirs)
         .map(|joined| joined.to_string_lossy().into_owned())
         .unwrap_or_else(|_| path.to_string_lossy().into_owned())
-}
-
-/// The spec's default for an unset `XDG_DATA_DIRS`.
-const DEFAULT_DATA_DIRS: &str = "/usr/local/share:/usr/share";
-
-/// The XDG data folders (the user's first), in the order they're searched
-/// for apps and icons, plus the folders packages install into, which a
-/// systemd user service's `XDG_DATA_DIRS` often lacks.
-pub(crate) fn data_dirs() -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    dirs.extend(nova_paths::data_home());
-    let system = nova_paths::path_var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
-    dirs.extend(std::env::split_paths(&system));
-    // Where packages install, last so the session's own order wins.
-    dirs.extend(package_prefixes().into_iter().map(|prefix| prefix.join("share")));
-    let mut seen = std::collections::BTreeSet::new();
-    dirs.retain(|dir| dir.is_absolute() && seen.insert(dir.clone()));
-    dirs
-}
-
-/// Where package managers install, each with `bin/` and `share/` below it,
-/// in the order they're searched after the session's own: the user's Nix
-/// profiles, the system's (NixOS), Flatpak's exports, then the usual.
-pub(crate) fn package_prefixes() -> Vec<PathBuf> {
-    let home = nova_paths::home();
-    let mut prefixes = Vec::new();
-    prefixes
-        .extend(home.iter().flat_map(|home| [home.join(".nix-profile"), home.join(".local/share/flatpak/exports")]));
-    prefixes.extend(
-        std::env::var_os("USER")
-            .filter(|user| !user.is_empty())
-            .map(|user| Path::new("/etc/profiles/per-user").join(user)),
-    );
-    prefixes.extend(
-        [
-            "/nix/var/nix/profiles/default",
-            "/run/current-system/sw",
-            "/var/lib/flatpak/exports",
-            "/usr/local",
-            "/usr",
-            "/",
-        ]
-        .map(PathBuf::from),
-    );
-    prefixes
 }
 
 fn autostart_marker() -> String {

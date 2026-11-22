@@ -30,7 +30,7 @@ rules_doc="AGENTS.md (Layout)"
 # kind may use it: a daemon-side part (the socket server) never on the ui
 # list, a screen-side part (the stage, theme tokens) never on the core list.
 FRAMEWORK_FOR_API=(carrier)
-FRAMEWORK_FOR_CORE=(base carrier hub inotify log modules paths process session-bus settings socket watch)
+FRAMEWORK_FOR_CORE=(apps base carrier hub icons inotify log mime modules paths process session-bus settings socket watch)
 FRAMEWORK_FOR_UI=()
 FRAMEWORK_FOR_FRONT=(base carrier paths)
 

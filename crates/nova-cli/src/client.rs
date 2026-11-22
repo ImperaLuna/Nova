@@ -4,7 +4,8 @@
 //! subscribe`) waits forever.
 
 use crate::lifecycle::RESTART_COMMAND;
-use nova_protocol::{Command, Envelope, Event, Outcome, Request, Response, Status, Topic, encode};
+use nova_protocol::{Command, Envelope, Event, Outcome, Response, Status, Topic, encode};
+use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -67,7 +68,7 @@ impl Client {
         let writer = stream.try_clone().map_err(|e| e.to_string())?;
         let mut client = Self { reader: BufReader::new(stream), writer, next_id: 1, daemon_version: String::new() };
         match client.next_message()? {
-            Message::Event(Event::Hello { daemon }) => client.daemon_version = daemon,
+            Message::Event(Sent::Shared(Event::Hello { daemon })) => client.daemon_version = daemon,
             _ => return Err("novad didn't say hello; is it a different version?".into()),
         }
         Ok(client)
@@ -79,14 +80,14 @@ impl Client {
     }
 
     /// Sends `command` and returns its result. Events that arrive first are dropped.
-    pub fn request(&mut self, command: Command) -> Result<serde_json::Value, String> {
+    pub fn request(&mut self, command: impl Serialize) -> Result<serde_json::Value, String> {
         self.request_seeing_events(command, |_| {})
     }
 
     /// Subscribes to `topics` and returns what novad sends for them now. It
     /// sends that after its reply, and a topic whose feature is off sends
     /// nothing, so an empty subscribe after it marks where the state ends.
-    pub fn current(&mut self, topics: Vec<Topic>) -> Result<Vec<Event>, String> {
+    pub fn current(&mut self, topics: Vec<Topic>) -> Result<Vec<Sent>, String> {
         self.request(Command::Subscribe { topics: topics.iter().map(|topic| topic.name().to_string()).collect() })?;
         let mut events = Vec::new();
         self.request_seeing_events(Command::Subscribe { topics: vec![] }, |event| events.push(event))?;
@@ -97,12 +98,12 @@ impl Client {
     /// first to `event`.
     fn request_seeing_events(
         &mut self,
-        command: Command,
-        mut event: impl FnMut(Event),
+        command: impl Serialize,
+        mut event: impl FnMut(Sent),
     ) -> Result<serde_json::Value, String> {
         let id = self.next_id;
         self.next_id += 1;
-        let line = encode(Request { id: Some(id), command }).map_err(|e| e.to_string())?;
+        let line = encode(nova_carrier::Request { id: Some(id), command }).map_err(|e| e.to_string())?;
         self.writer.write_all(line.as_bytes()).map_err(|e| format!("can't send to novad: {e}"))?;
         loop {
             match self.next_message()? {
@@ -125,7 +126,7 @@ impl Client {
     }
 
     /// The next event; replies are skipped. `None` when novad hangs up.
-    pub fn next_event(&mut self) -> Result<Option<Event>, String> {
+    pub fn next_event(&mut self) -> Result<Option<Sent>, String> {
         loop {
             match self.next_message() {
                 Ok(Message::Event(event)) => return Ok(Some(event)),
@@ -142,7 +143,7 @@ impl Client {
         if read == 0 {
             return Err(HUNG_UP.into());
         }
-        if let Ok(event) = serde_json::from_str::<Envelope<Event>>(&line) {
+        if let Ok(event) = serde_json::from_str::<Envelope<Sent>>(&line) {
             return Ok(Message::Event(event.body));
         }
         let reply = serde_json::from_str::<Envelope<Response>>(&line)
@@ -153,8 +154,17 @@ impl Client {
 
 const HUNG_UP: &str = "novad closed the connection";
 
+/// An event novad sends: a shared one, or a moved feature's own (its api
+/// crate's `Event`, one variant per feature, sorted by feature id).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Sent {
+    Shared(Event),
+    Resources(nova_resources_api::Event),
+}
+
 enum Message {
-    Event(Event),
+    Event(Sent),
     Reply(Response),
 }
 
@@ -182,6 +192,18 @@ mod tests {
             let _ = reader.read_line(&mut request);
         });
         socket
+    }
+
+    /// A moved feature's events read like the shared ones (`nova ipc
+    /// subscribe` prints them as novad sent them).
+    #[test]
+    fn feature_events_are_read() {
+        let line = r#"{"v":2,"event":"resources","data":{"cpu":1.0,"memory_used":1,"memory_total":2,"history":[],"history_size":36,"apps":[]}}"#;
+        let sent = serde_json::from_str::<Envelope<Sent>>(line).unwrap().body;
+        assert!(matches!(sent, Sent::Resources(nova_resources_api::Event::Resources(_))), "{sent:?}");
+        let value: serde_json::Value = serde_json::from_str(line).unwrap();
+        let expected = serde_json::json!({"event": "resources", "data": value["data"]});
+        assert_eq!(serde_json::to_value(&sent).unwrap(), expected);
     }
 
     #[test]

@@ -53,12 +53,17 @@ nova-hub = { path = "framework/hub" }
 nova-log = { path = "framework/log" }
 nova-modules = { path = "framework/modules" }
 nova-watch = { path = "framework/watch" }
+nova-icons = { path = "framework/icons" }
 nova-inotify = { path = "framework/inotify" }
 nova-paths = { path = "framework/paths" }
 nova-process = { path = "framework/process" }
 nova-session-bus = { path = "framework/session-bus" }
 nova-settings = { path = "framework/settings" }
 nova-socket = { path = "framework/socket" }
+nova-mime = { path = "framework/mime" }
+nova-apps = { path = "framework/apps" }
+nova-theme = { path = "framework/theme" }
+nova-host = { path = "framework/host" }
 nova-test-support = { path = "framework/test-support" }
 nova-resources-api = { path = "features/resources/api" }
 nova-resources = { path = "features/resources/core" }

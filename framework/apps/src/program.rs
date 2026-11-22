@@ -3,10 +3,16 @@
 //! about the app they run. The tray and app streams' icons look apps up by
 //! these names (`AppIndex::find_app`).
 
+/// Plasma's bridge that puts old X11 (XEmbed) tray icons up as items, all
+/// from its own process: its items are named by their own id only. Defined
+/// here, where it says nothing about an app; the tray tells its items
+/// apart by it.
+pub const XEMBED_TRAY_BRIDGE: &str = "xembedsniproxy";
+
 /// Program names that say nothing about the app: shared runtimes and
 /// sandbox helpers that run many apps, and the bridge for old X11 tray
 /// icons.
-const GENERIC_PROGRAMS: &[&str] = &["electron", "xdg-dbus-proxy", "bwrap", "python", "java", crate::tray::BRIDGE];
+const GENERIC_PROGRAMS: &[&str] = &["electron", "xdg-dbus-proxy", "bwrap", "python", "java", XEMBED_TRAY_BRIDGE];
 
 /// The app a program path or name stands for, unless it's a shared
 /// runtime (whatever its version: `python3.14`). Nix wraps programs as

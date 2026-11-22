@@ -1,6 +1,6 @@
 //! The app index: every installed app's desktop entry, read when it starts
 //! following them and again when apps are installed or removed, with each
-//! app's icon file looked up as the entries are read (`crate::icons`).
+//! app's icon file looked up as the entries are read (`nova_icons`).
 //! novad has one for its whole life; it follows the apps while any module
 //! that names them runs (`Module::NEEDS_APPS`), so the tray, notifications
 //! and media keep their app names with the launcher off, and forgets them
@@ -9,12 +9,12 @@
 
 use super::desktop_entry::{Context, Entry, Locale};
 use super::{program_name, scan};
-use crate::icons::Icons;
-use crate::inotify::{self, Inotify};
-use crate::lock;
-use crate::logger::Logger;
-use crate::watch_points::{self, Reporting};
-use nova_protocol::{APP_ICON_MAX_CHARS, App};
+use crate::{APP_ICON_MAX_CHARS, App};
+use nova_base::lock;
+use nova_icons::Icons;
+use nova_inotify::{self as inotify, Inotify};
+use nova_log::Logger;
+use nova_watch::{self as watch_points, Reporting};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -39,7 +39,7 @@ pub struct Sources {
 
 impl Sources {
     pub fn system(icons: Arc<Icons>) -> Self {
-        Self { data_dirs: crate::data_dirs(), icons }
+        Self { data_dirs: nova_paths::data_dirs(), icons }
     }
 }
 
@@ -293,7 +293,7 @@ impl AppIndex {
         // Each problem once, not on every rescan.
         if !state.scanned {
             for problem in problems {
-                self.logger.log(nova_protocol::LogLevel::Debug, LOG_SOURCE, &problem);
+                self.logger.log(nova_carrier::log::LogLevel::Debug, LOG_SOURCE, &problem);
             }
         }
         state.apps = apps;
@@ -354,13 +354,13 @@ impl State {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl AppIndex {
     /// An index of the apps under `share` (its `applications` folder),
     /// following them; without `share`, one that knows no apps.
     pub fn of(share: Option<&std::path::Path>, logger: &Arc<Logger>) -> Arc<Self> {
         let data_dirs: Vec<PathBuf> = share.into_iter().map(std::path::Path::to_owned).collect();
-        let icons = Arc::new(Icons::new(crate::icons::HICOLOR.into(), &data_dirs, None));
+        let icons = Arc::new(Icons::new(nova_icons::HICOLOR.into(), &data_dirs, None));
         let index = Self::new(Sources { data_dirs, icons }, "", Arc::clone(logger));
         if share.is_some() {
             index.follow();

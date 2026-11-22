@@ -4,8 +4,39 @@
 //! user. All of it comes from files, the user database and the config, read
 //! when a client subscribes and again when the config's name changes.
 
-use crate::icons::Icons;
-use nova_protocol::{Host, OperatingSystem};
+use nova_icons::Icons;
+use serde::{Deserialize, Serialize};
+
+/// The machine and its user, as the quick settings header shows them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Host {
+    /// The machine's host name.
+    pub host: String,
+    /// What to call the user: config.toml's `[quick-settings] name` ("" for
+    /// none), else their login name.
+    pub user: String,
+    /// When the machine booted, in seconds since the Unix epoch.
+    pub booted_at: i64,
+    pub os: OperatingSystem,
+}
+
+/// The distribution, from os-release.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperatingSystem {
+    /// `ID`, like `nixos` or `arch`; `linux` when unset.
+    pub id: String,
+    /// `ID_LIKE`: the distributions it derives from, closest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub id_like: Vec<String>,
+    /// `NAME`, like `NixOS`.
+    pub name: String,
+    /// `LOGO`: the icon theme's file for the logo it names, when set and
+    /// the theme has it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
+}
 
 /// os-release's two homes: the first is the admin's, the second the
 /// distribution's fallback (os-release(5)).
@@ -24,7 +55,7 @@ pub fn read(name: Option<&str>, icons: &Icons) -> Host {
     Host {
         host: std::fs::read_to_string(HOSTNAME).map(|name| name.trim().to_string()).unwrap_or_default(),
         user: name.map_or_else(user_name, |name| name.trim().to_string()),
-        booted_at: crate::procfs::boot_time().and_then(|booted| i64::try_from(booted).ok()).unwrap_or(0),
+        booted_at: nova_process::procfs::boot_time().and_then(|booted| i64::try_from(booted).ok()).unwrap_or(0),
         os,
     }
 }
@@ -81,7 +112,7 @@ fn login_name() -> Option<String> {
 }
 
 /// The user this process runs as.
-pub(crate) fn current_uid() -> libc::uid_t {
+fn current_uid() -> libc::uid_t {
     // SAFETY: getuid can't fail.
     unsafe { libc::getuid() }
 }
@@ -91,7 +122,7 @@ pub(crate) fn current_uid() -> libc::uid_t {
 const ENTRY_BUFFER_BYTES: usize = 16 * 1024;
 
 /// User `uid`'s login name, from the user database.
-pub(crate) fn user_name_of(uid: libc::uid_t) -> Option<String> {
+fn user_name_of(uid: libc::uid_t) -> Option<String> {
     // SAFETY: getpwuid_r writes only within `entry` and `buffer` (the sizes
     // passed), and sets `found` to `entry` or null.
     database_name(
@@ -154,7 +185,7 @@ mod tests {
 
     #[test]
     fn reads_this_machine() {
-        let icons = Icons::new(crate::icons::HICOLOR.into(), &[], None);
+        let icons = Icons::new(nova_icons::HICOLOR.into(), &[], None);
         let host = read(None, &icons);
         assert!(host.booted_at > 0, "/proc/stat has btime");
         assert!(!host.user.is_empty(), "every user has a login name");

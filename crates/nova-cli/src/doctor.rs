@@ -110,7 +110,7 @@ fn reach(socket: &Path) -> Daemon {
             let tray = events
                 .into_iter()
                 .find_map(|event| match event {
-                    Event::Tray(tray) => Some(tray.items),
+                    crate::client::Sent::Shared(Event::Tray(tray)) => Some(tray.items),
                     _ => None,
                 })
                 .unwrap_or_default();

@@ -14,11 +14,10 @@
 mod ini;
 mod theme;
 
-#[cfg(test)]
 pub use theme::HICOLOR;
 pub use theme::QUICKSHELL_VAR;
 
-use crate::lock;
+use nova_base::lock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -59,7 +58,7 @@ struct Kept {
 impl Icons {
     /// For the session novad runs in.
     pub fn for_session() -> Self {
-        let (data_dirs, home) = (crate::data_dirs(), nova_paths::home());
+        let (data_dirs, home) = (nova_paths::data_dirs(), nova_paths::home());
         let config_home = nova_paths::config_home();
         let theme = theme::current_name(
             |name| std::env::var(name).ok(),
