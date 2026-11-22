@@ -16,13 +16,11 @@ mod replay;
 use args::Args;
 use gpui::App;
 use gpui_platform::application;
+use nova_daemon_info::SOCKET_VAR;
 use nova_ui_client::Daemon;
 use nova_ui_client::fake::FakeDaemon;
 use std::path::PathBuf;
 use std::process::ExitCode;
-
-/// The variable novad hands its socket in (`app/src/supervisor.rs`).
-const SOCKET_VAR: &str = "NOVA_SOCKET";
 
 fn main() -> ExitCode {
     let args = match Args::parse(std::env::args().skip(1)) {
