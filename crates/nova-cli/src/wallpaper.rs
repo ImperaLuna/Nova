@@ -6,7 +6,7 @@
 //! quiet; novad's reason goes to stderr when it didn't.
 
 use crate::client::Client;
-use nova_protocol::{Command, Wallpapers};
+use nova_wallpaper_api::{Command, Wallpapers};
 use std::path::{Path, PathBuf};
 
 #[derive(clap::Args)]
@@ -39,7 +39,7 @@ pub fn run(args: &WallpaperArgs, socket: &Path) -> Result<(), String> {
 /// `file` as a Workshop ID: only digits, and no file of that name here.
 fn workshop_id(file: &Path) -> Option<&str> {
     let text = file.to_str()?;
-    (nova_protocol::is_workshop_id(text) && !file.exists()).then_some(text)
+    (nova_wallpaper_api::is_workshop_id(text) && !file.exists()).then_some(text)
 }
 
 /// The whole path to `file`: novad may run in another folder. Symlinks

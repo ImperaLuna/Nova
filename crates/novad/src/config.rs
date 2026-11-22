@@ -27,8 +27,9 @@
 //! ```
 
 use crate::theme::ThemeChoice;
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+// `[wallpaper]` is the wallpaper feature's (`nova-wallpaper`).
+pub use nova_wallpaper::WallpaperConfig;
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -51,39 +52,6 @@ pub struct Config {
     /// loads.
     #[serde(default, rename = "files")]
     _files: Option<serde::de::IgnoredAny>,
-}
-
-/// `[wallpaper]`: the wallpaper on every output, and ones for single
-/// outputs by name. Absolute paths (or ones starting with `~/`) to an
-/// image, or to a video or Wallpaper Engine project folder, or Workshop IDs
-/// (those three need the `wallpaper-engine` feature). Nothing set means
-/// Nova leaves the wallpaper alone. `folder` is where the carousel finds
-/// images to pick from.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WallpaperConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub outputs: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub folder: Option<String>,
-}
-
-impl WallpaperConfig {
-    /// The folder the carousel lists (see [`folder`]): by default
-    /// `Wallpapers` in the user's pictures folder.
-    pub fn folder(&self) -> Result<PathBuf, String> {
-        folder("wallpaper", self.folder.as_deref(), || {
-            nova_paths::user_dir("PICTURES", "Pictures").join(DEFAULT_WALLPAPER_FOLDER)
-        })
-    }
-
-    /// The images it sets, without the folder, which only lists images to
-    /// pick from: changing that doesn't undo a pick.
-    pub fn images(&self) -> Self {
-        Self { folder: None, ..self.clone() }
-    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -149,21 +117,9 @@ impl RecordingConfig {
 const DEFAULT_SCREENSHOT_FOLDER: &str = "Screenshots";
 /// The recording folder's name inside the videos folder.
 const DEFAULT_RECORDING_FOLDER: &str = "Recordings";
-/// The wallpaper folder's name inside the pictures folder.
-const DEFAULT_WALLPAPER_FOLDER: &str = "Wallpapers";
 
-/// `[section] folder`, or `default` when it isn't set. One that isn't
-/// absolute (or under `~/`) is an error, so a typo doesn't scatter files in
-/// novad's folder.
-fn folder(section: &str, configured: Option<&str>, default: impl FnOnce() -> PathBuf) -> Result<PathBuf, String> {
-    match configured {
-        Some(folder) => user_path(&format!("[{section}] folder"), folder),
-        None => Ok(default()),
-    }
-}
-
-// Reading the file and its paths is the framework's (IMP-372).
-pub use nova_settings::user_path;
+// Reading the file and its folders is the framework's (IMP-372).
+use nova_settings::folder;
 
 /// The settings in `path`; a missing file means all defaults.
 pub fn read(path: &Path) -> Result<Config, String> {
