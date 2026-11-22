@@ -48,6 +48,9 @@ const MAX_RETRY: Duration = Duration::from_secs(30);
 
 /// What a command is answered while the server isn't there.
 const NO_SERVER: &str = "there is no sound server";
+/// What a command is answered when the server it was meant for went and
+/// another answers now: its ids may name other things there.
+const SERVER_CAME_BACK: &str = "the sound server restarted, look at the sound again";
 /// Why following ended when nothing else says.
 const CLOSED: &str = "the connection closed";
 
@@ -68,8 +71,10 @@ struct State {
     stopped: bool,
     /// What clients were last told, and a new one is.
     reading: Reading,
-    /// What the server last listed, which commands' ids name things in.
-    listing: Option<Listing>,
+    /// What the server last listed, which commands' ids name things in,
+    /// and the connection that listed it: a server that came back may give
+    /// the same ids to other things.
+    listing: Option<(Listing, u64)>,
     /// The connections now, counted so one that already went can't end
     /// the next.
     connection: u64,
@@ -101,6 +106,7 @@ impl Sound {
     pub fn stop(&self) {
         let mut state = lock(&self.state);
         state.stopped = true;
+        state.listing = None;
         end_wait(&mut state);
         drop(state);
         self.wake.notify_all();
@@ -115,8 +121,8 @@ impl Sound {
     /// Does `command`. What it changed is published when the server says
     /// so, not when this returns.
     pub fn change(&self, command: &Command) -> Result<(), String> {
-        let requests = match &lock(&self.state).listing {
-            Some(listing) => changes::requests(listing, command)?,
+        let (requests, listed_by) = match &lock(&self.state).listing {
+            Some((listing, connection)) => (changes::requests(listing, command)?, *connection),
             None => return Err(NO_SERVER.into()),
         };
         let mut asking = lock(&self.asking);
@@ -124,7 +130,13 @@ impl Sound {
             return Err(NO_SERVER.into());
         };
         let connection = *connection;
+        if connection != listed_by {
+            return Err(SERVER_CAME_BACK.into());
+        }
         for request in &requests {
+            if lock(&self.state).stopped {
+                return Err(NO_SERVER.into());
+            }
             match link.tell(request) {
                 Ok(()) => {}
                 Err(Failed::Refused(reason)) => return Err(reason),
@@ -255,7 +267,7 @@ impl Sound {
                 named = true;
                 answered();
             }
-            if !self.tell(Some(listing)) {
+            if !self.tell(Some((listing, connection))) {
                 return "stopped".into();
             }
         }
@@ -264,8 +276,8 @@ impl Sound {
     /// Keeps `listing` (none without a server) and publishes what clients
     /// see of it when that differs from the last time. False once the
     /// feature stopped: nothing is published then.
-    fn tell(&self, listing: Option<Listing>) -> bool {
-        let reading = listing.as_ref().map(reading::sound).unwrap_or_default();
+    fn tell(&self, listing: Option<(Listing, u64)>) -> bool {
+        let reading = listing.as_ref().map(|(listing, _)| reading::sound(listing)).unwrap_or_default();
         let mut state = lock(&self.state);
         if state.stopped {
             return false;

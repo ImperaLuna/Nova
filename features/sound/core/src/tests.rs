@@ -236,6 +236,9 @@ fn once_stopped_it_publishes_nothing_and_hangs_up() {
     });
     server.change(|listing| listing.sinks[0].muted = true);
     fixture.nothing_comes();
+    // Nor does it change anything any more.
+    let mute = Command::SetSoundMuted { of: Kind::Output, id: 53, muted: true };
+    assert!(sound.change(&mute).is_err());
 }
 
 fn close(value: &Value, expected: f64) -> bool {
