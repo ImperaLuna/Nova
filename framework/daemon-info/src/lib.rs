@@ -149,6 +149,9 @@ pub struct Status {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UiStatus {
+    /// The program novad runs as the UI.
+    #[serde(default)]
+    pub program: UiProgram,
     pub state: UiState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
@@ -160,6 +163,35 @@ pub struct UiStatus {
     pub last_crash: Option<Crash>,
 }
 
+/// A program that draws Nova's UI. `features.toml` picks one by its wire
+/// name (`ui = "gpui"`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiProgram {
+    /// The QML shell under `ui/`, run by Quickshell.
+    #[default]
+    Quickshell,
+    /// `nova-ui`, the GPUI program.
+    Gpui,
+}
+
+impl UiProgram {
+    pub const ALL: [Self; 2] = [Self::Quickshell, Self::Gpui];
+
+    /// Its name on the wire and in `features.toml`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Quickshell => "quickshell",
+            Self::Gpui => "gpui",
+        }
+    }
+
+    /// The program `name` names, if any.
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|program| program.name() == name)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UiState {
@@ -168,7 +200,7 @@ pub enum UiState {
     Restarting,
     /// novad was started with `--no-ui`.
     Disabled,
-    /// No feature with a UI is on, so novad doesn't run Quickshell.
+    /// No feature with a UI is on, so novad doesn't run the UI.
     NotNeeded,
 }
 

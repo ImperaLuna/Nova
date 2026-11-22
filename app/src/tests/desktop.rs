@@ -224,16 +224,7 @@ fn lock_reaches_the_ui_and_a_restarted_ui_locks_again() {
 fn only_the_supervised_ui_reports_the_lock_screen() {
     let scripts = nova_test_support::TempDir::new("lock-ui");
     let fake_ui = write_program(&scripts, "quickshell", "exec sleep 30");
-    let settings = UiSettings {
-        quickshell: fake_ui,
-        ui_dir: PathBuf::from("ui"),
-        socket: PathBuf::from("unused.sock"),
-        path_var: std::env::var("PATH").unwrap_or_default(),
-        wayland_socket: None,
-        egl_vendor: None,
-        render_loop: None,
-        icon_theme: "hicolor".into(),
-    };
+    let settings = ui_settings(Program::Quickshell, fake_ui);
     let novad = TestDaemon::start("lock-reports", Some(settings));
     let mut other = novad.connect();
     for report in ["report_locked", "report_unlocked"] {

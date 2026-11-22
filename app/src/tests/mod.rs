@@ -27,6 +27,23 @@ struct TestDaemon {
     daemon: Arc<Daemon>,
 }
 
+/// How a test's novad runs `program` as its UI, with `quickshell` as its
+/// Quickshell. Tests get no Wayland session, so the supervisor never takes
+/// the compositor for gone.
+fn ui_settings(program: Program, quickshell: PathBuf) -> UiSettings {
+    UiSettings {
+        program,
+        quickshell,
+        ui_dir: PathBuf::from("ui"),
+        socket: PathBuf::from("unused.sock"),
+        path_var: std::env::var("PATH").unwrap_or_default(),
+        wayland_socket: None,
+        egl_vendor: None,
+        render_loop: None,
+        icon_theme: "hicolor".into(),
+    }
+}
+
 /// `features.toml` with features off. The features with a watcher of their own, off unless a test is about
 /// them: each watcher is an inotify instance, and the tests running at once
 /// would pass the usual limit of 128.

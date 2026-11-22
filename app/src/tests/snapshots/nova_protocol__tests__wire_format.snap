@@ -1,5 +1,5 @@
 ---
-source: crates/nova-protocol/src/lib.rs
+source: app/src/tests/wire.rs
 expression: all
 ---
 {"v":2,"event":"hello","data":{"daemon":"0.1.0"}}
@@ -12,7 +12,7 @@ expression: all
 {"v":2,"id":11,"cmd":"quit"}
 {"v":2,"event":"logs","data":{"backlog":true,"entries":[{"time":"2026-10-22T13:45:09.123Z","level":"warn","source":"ui","message":"Binding loop detected: x: y"}]}}
 {"v":2,"event":"logs","data":{"entries":[{"time":"2026-10-22T13:45:09.123Z","level":"warn","source":"ui","message":"Binding loop detected: x: y"}]}}
-{"v":2,"id":10,"result":{"daemon":"0.1.0","features":[{"id":"bar","status":"ready"}],"log_dir":"/home/me/.local/state/nova","pid":100,"pss_kib":4096,"quickshell":"0.3.2","ui":{"last_crash":{"log":"/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log","time":"2026-10-22T13:40:00.000Z"},"pid":101,"pss_kib":180000,"restarts":1,"state":"running"},"uptime_secs":42}}
+{"v":2,"id":10,"result":{"daemon":"0.1.0","features":[{"id":"bar","status":"ready"}],"log_dir":"/home/me/.local/state/nova","pid":100,"pss_kib":4096,"quickshell":"0.3.2","ui":{"last_crash":{"log":"/home/me/.local/state/nova/crashes/2026-10-22T13-40-00.000Z.log","time":"2026-10-22T13:40:00.000Z"},"pid":101,"program":"quickshell","pss_kib":180000,"restarts":1,"state":"running"},"uptime_secs":42}}
 {"v":2,"id":7,"result":"pong"}
 {"v":2,"event":"ai_usage","data":{"shown":"claude","providers":[{"provider":"claude","state":"ready","limits":[{"window":"session","percent":42,"resets_at":"2026-10-23T11:00:00Z"},{"window":"weekly","percent":61}]},{"provider":"codex","state":"unavailable","hint":"No Codex sessions yet."}]}}
 {"v":2,"id":12,"cmd":"show_ai_usage","args":{"provider":"codex"}}

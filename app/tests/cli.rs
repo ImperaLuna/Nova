@@ -3,7 +3,7 @@
 
 #![expect(clippy::unwrap_used, reason = "test setup should fail loudly")]
 
-use nova_daemon_info::{Status, UiState};
+use nova_daemon_info::{Status, UiProgram, UiState};
 use nova_test_support::TempDir;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -32,12 +32,16 @@ impl Novad {
 
     /// With `selection` as the user's features.toml.
     fn start_with(name: &str, selection: &str) -> Self {
-        let dir = TempDir::new(name);
+        Self::start_in(TempDir::new(name), selection, &["--no-ui".into()])
+    }
+
+    /// In `dir`, with `selection` as the user's features.toml and `ui` as
+    /// the arguments that say how the UI runs.
+    fn start_in(dir: TempDir, selection: &str, ui: &[std::ffi::OsString]) -> Self {
         std::fs::write(dir.join("features.toml"), selection).unwrap();
         let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
-        let args: Vec<std::ffi::OsString> = vec![
+        let mut args: Vec<std::ffi::OsString> = vec![
             "nova daemon".into(),
-            "--no-ui".into(),
             "--log-dir".into(),
             dir.join("logs").into(),
             "--features-dir".into(),
@@ -55,6 +59,7 @@ impl Novad {
             "--claude-desktop-config".into(),
             dir.join("claude-desktop/config.json").into(),
         ];
+        args.extend_from_slice(ui);
         let running =
             novad::spawn(<DaemonArgs as clap::Parser>::parse_from(args).args, dir.join("novad.sock")).unwrap();
         Self { _running: running, dir }
@@ -87,6 +92,56 @@ fn status_json_is_novads_answer() {
     let status: Status = serde_json::from_str(&stdout(&novad.run(&["status", "--json"]))).unwrap();
     assert_eq!(status.ui.state, UiState::Disabled);
     assert!(status.features.iter().any(|f| f.id == "bar"));
+}
+
+/// A novad that runs stand-ins as its UI: `quickshell` always, and
+/// `nova-ui` when `with_gpui_ui`, both waiting to be stopped.
+fn novad_with_stand_in_uis(name: &str, selection: &str, with_gpui_ui: bool) -> Novad {
+    let dir = TempDir::new(name);
+    let version = "case \"$1\" in --version) echo 'Quickshell 0.3.2 (revision test)' ;; *) exec sleep 60 ;; esac";
+    let quickshell = nova_test_support::write_program(dir.path(), "quickshell", version);
+    let gpui_ui = dir.join("nova-ui");
+    if with_gpui_ui {
+        nova_test_support::write_program(dir.path(), "nova-ui", "exec sleep 60");
+    }
+    let ui = ["--quickshell".into(), quickshell.into(), "--gpui-ui".into(), gpui_ui.into()];
+    Novad::start_in(dir, selection, &ui)
+}
+
+fn status_once_the_ui_runs(novad: &Novad) -> Status {
+    nova_test_support::eventually(Duration::from_secs(5), "the UI to run", || {
+        let status: Status = serde_json::from_str(&stdout(&novad.run(&["status", "--json"]))).unwrap();
+        (status.ui.state == UiState::Running).then_some(status)
+    })
+}
+
+#[test]
+fn features_toml_picks_the_gpui_program() {
+    let novad = novad_with_stand_in_uis("ui-gpui", "ui = \"gpui\"", true);
+    let status = status_once_the_ui_runs(&novad);
+    assert_eq!((status.ui.program, status.quickshell), (UiProgram::Gpui, None));
+    assert!(stdout(&novad.run(&["status"])).contains(", GPUI"));
+}
+
+/// A setting never leaves the session without a shell: Quickshell runs
+/// when `ui` is unset, names no program, or names one that isn't installed.
+#[test]
+fn quickshell_runs_unless_the_gpui_program_is_picked_and_there() {
+    let warned = |novad: &Novad, what: &str| {
+        let log = std::fs::read_to_string(nova_paths::log_file(&novad.dir.join("logs"))).unwrap();
+        assert!(log.lines().any(|line| line.contains("WARN") && line.contains(what)), "{what}: {log}");
+    };
+    let unset = novad_with_stand_in_uis("ui-unset", "", true);
+    assert_eq!(status_once_the_ui_runs(&unset).ui.program, UiProgram::Quickshell);
+
+    let unknown = novad_with_stand_in_uis("ui-unknown", "ui = \"qtquick\"", true);
+    assert_eq!(status_once_the_ui_runs(&unknown).ui.program, UiProgram::Quickshell);
+    warned(&unknown, "there is no \"qtquick\" UI");
+
+    let missing = novad_with_stand_in_uis("ui-missing", "ui = \"gpui\"", false);
+    let status = status_once_the_ui_runs(&missing);
+    assert_eq!((status.ui.program, status.quickshell.as_deref()), (UiProgram::Quickshell, Some("0.3.2")));
+    warned(&missing, "running Quickshell instead");
 }
 
 #[test]
