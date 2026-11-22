@@ -640,7 +640,7 @@ fn quick_updates_are_saved_at_most_once_a_second_ending_with_the_last() {
         if let Ok(meta) = std::fs::metadata(&file) {
             writes.insert((meta.ino(), meta.mtime_nsec()));
         }
-        std::thread::sleep(Duration::from_millis(50));
+        nova_test_support::settle(Duration::from_millis(50));
     }
     let last = format!("step {updates}");
     wait_until(2 * SAVE_EVERY + WAIT, "the last change to be saved", || saved(&last));

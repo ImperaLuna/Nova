@@ -20,5 +20,8 @@ test-support = []
 nova-base.workspace = true
 zbus.workspace = true
 
+[dev-dependencies]
+nova-test-support.workspace = true
+
 [lints]
 workspace = true

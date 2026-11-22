@@ -363,7 +363,7 @@ fn an_attempt_ends_when_networkmanager_goes() {
 fn networkmanager_starting_later_is_read() {
     let fixture = Fixture::new("later");
     let network = fixture.start();
-    std::thread::sleep(SETTLE * 2);
+    nova_test_support::settle(SETTLE * 2);
     let _nm = fixture.nm();
     assert_eq!(fixture.until("running", |event| event["running"] == true)["primary"], "wifi");
     network.stop();

@@ -143,7 +143,7 @@ fn claude_limits_come_from_anthropic_with_claude_codes_sign_in() {
 
     // Opening the panel right after the first answer doesn't ask again.
     client.request(2, "refresh_ai_usage", None);
-    std::thread::sleep(Duration::from_millis(300));
+    nova_test_support::settle(Duration::from_millis(300));
     assert_eq!(requests.lock().unwrap().len(), 1);
 }
 
@@ -200,16 +200,14 @@ fn a_status_line_report_beats_an_older_endpoint_answer() {
         std::fs::write(root.join("../config/config.toml"), CLAUDE_ENDPOINT_ON).unwrap();
     });
     let mut client = novad.connect();
-    while requests.lock().unwrap().is_empty() {
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    nova_test_support::wait_until(Duration::from_secs(5), "the request", || !requests.lock().unwrap().is_empty());
     // While the request is out, the status line reports newer numbers.
     let reply =
         client.request(2, "report_claude_usage", Some(json!({"limits": [{"window": "session", "percent": 50}]})));
     assert_eq!(reply["result"], Value::Null);
     open_gate.send(()).unwrap();
     // The answer is dropped: a later subscriber still sees the report.
-    std::thread::sleep(Duration::from_millis(300));
+    nova_test_support::settle(Duration::from_millis(300));
     let usage = novad.connect().subscribe_usage();
     assert_eq!(provider(&usage, "claude")["limits"][0]["percent"], 50, "{usage}");
 }
@@ -230,7 +228,7 @@ fn busy_codex_sessions_are_still_read() {
         let mut file = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
         for _ in 0..80 {
             writeln!(file, "{}", codex_line(2, 2)).unwrap();
-            std::thread::sleep(Duration::from_millis(100));
+            nova_test_support::settle(Duration::from_millis(100));
         }
         still_writing.store(false, std::sync::atomic::Ordering::SeqCst);
     });
@@ -248,7 +246,7 @@ fn claudes_endpoint_is_never_asked_unless_turned_on() {
     assert_eq!(claude["state"], "unavailable");
     assert!(claude["hint"].as_str().unwrap().contains("doesn't document"), "{claude}");
     client.request(2, "refresh_ai_usage", None);
-    std::thread::sleep(Duration::from_millis(300));
+    nova_test_support::settle(Duration::from_millis(300));
     assert!(requests.lock().unwrap().is_empty());
 }
 
@@ -333,7 +331,7 @@ fn codex_endpoint_numbers_outlast_a_rescan_without_limits() {
     }
     std::fs::write(codex_day(&root_dir).join("rollout-a.jsonl"), "").unwrap();
     // Give the watcher time to rescan.
-    std::thread::sleep(Duration::from_millis(300));
+    nova_test_support::settle(Duration::from_millis(300));
     let codex = provider(&novad.connect().subscribe_usage(), "codex").clone();
     assert_eq!((codex["state"].as_str(), &codex["limits"][0]["percent"]), (Some("ready"), &json!(6)), "{codex}");
 }
@@ -348,7 +346,7 @@ fn codexs_endpoint_is_never_asked_unless_turned_on() {
     let mut client = novad.connect();
     assert_eq!(provider(&client.subscribe_usage(), "codex")["limits"][0]["percent"], 1);
     client.request(2, "refresh_ai_usage", None);
-    std::thread::sleep(Duration::from_millis(300));
+    nova_test_support::settle(Duration::from_millis(300));
     assert!(requests.lock().unwrap().is_empty());
 }
 
@@ -376,7 +374,7 @@ fn codex_appears_later(name: &str, home_exists: bool) {
     assert_eq!(provider(&client.subscribe_usage(), "codex")["state"], "unavailable");
     let day = codex_day(&root_dir);
     // Give the watcher a moment to watch the new folders before writing.
-    std::thread::sleep(Duration::from_millis(200));
+    nova_test_support::settle(Duration::from_millis(200));
     std::fs::write(day.join("rollout-a.jsonl"), codex_line(7, 8) + "\n").unwrap();
     loop {
         let usage = client.next_usage();
@@ -405,7 +403,7 @@ fn a_replaced_codex_home_is_followed() {
     std::fs::rename(&restored, root_dir.join("codex")).unwrap();
     while provider(&client.next_usage(), "codex")["limits"][0]["percent"] != 9 {}
     // And it's watched: new lines in the new home arrive too.
-    std::thread::sleep(Duration::from_millis(200));
+    nova_test_support::settle(Duration::from_millis(200));
     let mut file = std::fs::OpenOptions::new()
         .append(true)
         .open(root_dir.join("codex/sessions/2026/10/23/rollout-b.jsonl"))
