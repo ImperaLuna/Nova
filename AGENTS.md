@@ -74,6 +74,14 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   name or a missing `nova-ui` runs Quickshell with a warning. The GPUI side
   has no UI test suite: a change to it is shown with screenshots or a
   recording.
+- A feature's ui reads novad through `nova-ui-client`
+  (`framework-ui/client`, whose `lib.rs` shows each call), with its api
+  crate's types: `Live::follow` for a topic's latest state as an entity its
+  views observe, `Daemon::on_event` for events that are no state,
+  `Daemon::call` and `Daemon::send` for commands. It never opens the socket
+  itself. The client reconnects on its own and a `Live` keeps its last
+  state while novad is away; state that must not outlive a connection (an
+  open picker) is cleared by observing `Daemon::connection`.
 
 ## Layout
 
@@ -402,7 +410,14 @@ cores and a few GB of disk. Without a compositor `nova-ui` starts and prints
 its start line but opens no window; anything on screen is shown on the
 desktop, off the maintainer's screen like any other test run. To run it
 under a checkout's novad, pass `nova daemon --gpui-ui <path to nova-ui>`
-with `ui = "gpui"` in the features.toml it reads. CI builds and checks it
+with `ui = "gpui"` in the features.toml it reads. By hand, as a second
+client of a running novad, set `NOVA_SOCKET` to novad's socket. `nova-ui
+--probe` opens a plain window showing the connection, the feature count and
+the `sound` topic, to see the socket client work on its own. `nova-ui
+--replay <folder>` talks to a fake novad that replays the folder's
+recordings where the real one can't run: a recording is `<topic>.jsonl`,
+what `nova ipc subscribe '{"topics": ["<topic>"]}'` printed on a real
+desktop, kept in the feature's `ui/recorded/`. CI builds and checks it
 in the flake checks named `ui-*`, and a PR that changes files only under
 `app-ui/`, `framework-ui/` or `features/<id>/ui/` skips the QML checks.
 
