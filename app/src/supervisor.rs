@@ -28,13 +28,13 @@ use std::time::{Duration, Instant};
 /// launcher) the name of the file the kernel runs.
 pub const UI_PROCESS_NAME: &str = "NovaUI";
 /// The launcher that runs Quickshell as [`UI_PROCESS_NAME`]
-/// (packaging/nix/nova-ui.nix).
-const UI_LAUNCHER: &str = "nova-ui";
+/// (packaging/nix/nova-quickshell.nix).
+const QUICKSHELL_LAUNCHER: &str = "nova-quickshell";
 /// The launcher's absolute path, when a package built novad with it
-/// (`NOVA_UI_LAUNCHER` at build time). Then novad finds its UI however it was
-/// started, without relying on the caller's `PATH`.
-const PACKAGED_UI_LAUNCHER: Option<&str> = option_env!("NOVA_UI_LAUNCHER");
-/// Quickshell itself, when no `nova-ui` launcher is installed.
+/// (`NOVA_QUICKSHELL_LAUNCHER` at build time). Then novad finds its UI
+/// however it was started, without relying on the caller's `PATH`.
+const PACKAGED_QUICKSHELL_LAUNCHER: Option<&str> = option_env!("NOVA_QUICKSHELL_LAUNCHER");
+/// Quickshell itself, when no `nova-quickshell` launcher is installed.
 const QUICKSHELL: &str = "quickshell";
 /// Qt's Wayland plugin marks a window unexposed when a frame callback is
 /// this many ms late (default 100), and redraws all of it when the late
@@ -323,15 +323,15 @@ fn qml_debug_port(env: impl Fn(&str) -> Option<String>) -> Option<u16> {
     env(QML_DEBUG_PORT_VAR)?.trim().parse().ok()
 }
 
-/// The packaged `nova-ui` launcher, else `nova-ui` or a `NovaUI` link to
+/// The packaged `nova-quickshell` launcher, else `nova-quickshell` or a `NovaUI` link to
 /// Quickshell (`nova setup` makes one in `~/.local/bin`) if one is on
 /// `path_var`, else `quickshell`. Either way the command line says `NovaUI`;
 /// only the launcher and the link also give the process that name (btop's
 /// Program column).
 pub fn default_quickshell(path_var: &str) -> PathBuf {
     let on_path =
-        || [UI_LAUNCHER, UI_PROCESS_NAME].into_iter().find_map(|name| nova_paths::find_program(name, path_var));
-    PACKAGED_UI_LAUNCHER.map(PathBuf::from).or_else(on_path).unwrap_or_else(|| PathBuf::from(QUICKSHELL))
+        || [QUICKSHELL_LAUNCHER, UI_PROCESS_NAME].into_iter().find_map(|name| nova_paths::find_program(name, path_var));
+    PACKAGED_QUICKSHELL_LAUNCHER.map(PathBuf::from).or_else(on_path).unwrap_or_else(|| PathBuf::from(QUICKSHELL))
 }
 
 /// Quickshell running the shell at `path` (a folder holding `shell.qml`, or
@@ -447,10 +447,10 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 
-    /// `nova setup`'s `NovaUI` link is found, after a `nova-ui` launcher.
+    /// `nova setup`'s `NovaUI` link is found, after a `nova-quickshell` launcher.
     #[test]
     fn a_novaui_link_on_path_is_the_ui() {
-        if PACKAGED_UI_LAUNCHER.is_some() {
+        if PACKAGED_QUICKSHELL_LAUNCHER.is_some() {
             return; // The packaged launcher always wins.
         }
         let dir = nova_test_support::TempDir::new("ui-link");
@@ -458,8 +458,8 @@ mod tests {
         assert_eq!(default_quickshell(&path_var), PathBuf::from(QUICKSHELL));
         nova_test_support::write_program(dir.path(), UI_PROCESS_NAME, "exit 0");
         assert_eq!(default_quickshell(&path_var), dir.join(UI_PROCESS_NAME));
-        nova_test_support::write_program(dir.path(), UI_LAUNCHER, "exit 0");
-        assert_eq!(default_quickshell(&path_var), dir.join(UI_LAUNCHER));
+        nova_test_support::write_program(dir.path(), QUICKSHELL_LAUNCHER, "exit 0");
+        assert_eq!(default_quickshell(&path_var), dir.join(QUICKSHELL_LAUNCHER));
     }
 
     #[test]

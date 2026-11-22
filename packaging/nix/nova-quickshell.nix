@@ -1,4 +1,4 @@
-# `nova-ui`: runs Quickshell as NovaUI (novad's UI_PROCESS_NAME), so ps and
+# `nova-quickshell`: runs Quickshell as NovaUI (novad's UI_PROCESS_NAME), so ps and
 # btop show the UI as Nova's in both the command line and the process name.
 #
 # The kernel names a process after the file it executes, and nixpkgs runs
@@ -34,7 +34,7 @@ let
   });
 in
 stdenv.mkDerivation {
-  pname = "nova-ui";
+  pname = "nova-quickshell";
   inherit (patched) version;
   dontUnpack = true;
   nativeBuildInputs = [
@@ -49,13 +49,13 @@ stdenv.mkDerivation {
     runHook preInstall
     mkdir -p $out/libexec/nova $out/bin
     ln -s ${patched}/bin/.quickshell-wrapped $out/libexec/nova/NovaUI
-    makeBinaryWrapper $out/libexec/nova/NovaUI $out/bin/nova-ui --inherit-argv0 \
+    makeBinaryWrapper $out/libexec/nova/NovaUI $out/bin/nova-quickshell --inherit-argv0 \
       --prefix XDG_DATA_DIRS : ${patched}/share "''${qtWrapperArgs[@]}"
     runHook postInstall
   '';
   meta = {
     description = "Quickshell, run under the name NovaUI";
     inherit (patched.meta) license platforms;
-    mainProgram = "nova-ui";
+    mainProgram = "nova-quickshell";
   };
 }
