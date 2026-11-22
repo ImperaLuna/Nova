@@ -56,6 +56,7 @@ nova-inotify = { path = "framework/inotify" }
 nova-paths = { path = "framework/paths" }
 nova-process = { path = "framework/process" }
 nova-session-bus = { path = "framework/session-bus" }
+nova-socket = { path = "framework/socket" }
 nova-test-support = { path = "framework/test-support" }
 
 [workspace.lints.clippy]

@@ -1,140 +1,38 @@
-//! The socket: accepts clients, answers their requests and feeds them the
-//! events they subscribed to.
+//! What novad answers on the socket: the route for every command in
+//! `nova_protocol::Command`, the one shared list of them, which the feature
+//! moves take apart (IMP-368): a feature that owns its commands adds its own
+//! route in [`router`]. The socket itself is `nova-socket`'s.
 
-use crate::hub::{ClientId, ClientQueue, Outgoing, Written};
+use crate::hub::ClientId;
 use crate::{Daemon, lock};
 use nova_protocol::{
-    Capability, CaptureMode, Command, Event, Outcome, Panel, PowerAction, PowerMenu, Response, Topic, VolumeKey, encode,
+    Capability, CaptureMode, Command, Event, Outcome, Panel, PowerAction, PowerMenu, Topic, VolumeKey,
 };
-use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use nova_socket::{Answer, Caller, Router, done, value};
 use std::sync::{Arc, mpsc};
-use std::time::Duration;
-
-/// Any local process can connect: longer request lines close the connection.
-pub const MAX_REQUEST_BYTES: u64 = nova_protocol::REQUEST_MAX_BYTES;
-/// How long a write may make no progress before the client counts as stalled
-/// and is disconnected. Only a client that stops reading with its socket
-/// buffer full gets there; the UI reconnects on its own.
-pub const WRITE_TIMEOUT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(10) };
-const SOCKET_DIR_MODE: u32 = 0o700;
-/// A request's answer, worked out off the connection's thread.
-type SlowWork = Box<dyn FnOnce() -> Outcome + Send>;
 
 const LOG_SOURCE: &str = "server";
 
-pub fn bind(socket: &Path) -> std::io::Result<UnixListener> {
-    if let Some(dir) = socket.parent() {
-        std::fs::DirBuilder::new().recursive(true).mode(SOCKET_DIR_MODE).create(dir)?;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(SOCKET_DIR_MODE))?;
-    }
-    if UnixStream::connect(socket).is_ok() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::AddrInUse,
-            format!("another novad is already listening on {}", socket.display()),
-        ));
-    }
-    // A socket file left by a previous run would make bind fail.
-    match std::fs::remove_file(socket) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-        _ => {}
-    }
-    UnixListener::bind(socket)
+/// The routes of every message novad serves.
+pub fn router() -> Router<Daemon> {
+    Router::new().route::<Command>(
+        |daemon, caller, command| Connection::new(daemon, caller).answer(command),
+        |daemon, caller, command| Connection::new(daemon, caller).follow_up(command),
+    )
 }
 
-/// Accepts clients until `stopped` is set; the connection after that (one
-/// made to wake it) ends the loop.
-pub fn serve(listener: UnixListener, daemon: Arc<Daemon>, stopped: &AtomicBool) {
-    for stream in listener.incoming() {
-        if stopped.load(Ordering::SeqCst) {
-            return;
-        }
-        match stream {
-            Ok(stream) => {
-                let daemon = Arc::clone(&daemon);
-                std::thread::spawn(move || {
-                    if let Err(e) = Connection::open(stream, &daemon).and_then(|c| c.run()) {
-                        daemon.logger.warn(LOG_SOURCE, &format!("client error: {e}"));
-                    }
-                });
-            }
-            Err(e) => daemon.logger.warn(LOG_SOURCE, &format!("accept failed: {e}")),
-        }
-    }
-}
-
+/// A request from the client `caller`.
 struct Connection<'a> {
     daemon: &'a Daemon,
+    caller: &'a Caller,
     id: ClientId,
-    queue: ClientQueue,
-    reader: BufReader<UnixStream>,
     // The connecting process, from the kernel (SO_PEERCRED).
     peer_pid: Option<u32>,
 }
 
 impl<'a> Connection<'a> {
-    fn open(stream: UnixStream, daemon: &'a Daemon) -> std::io::Result<Self> {
-        let writer = stream.try_clone()?;
-        writer.set_write_timeout(Some(WRITE_TIMEOUT))?;
-        let (queue, outgoing) = ClientQueue::new(&stream)?;
-        let logger = Arc::clone(&daemon.logger);
-        let written = queue.written();
-        std::thread::spawn(move || write_all_queued(writer, outgoing, &written, &logger));
-        let id = daemon.hub.register(queue.clone());
-        let peer_pid = peer_pid(&stream);
-        let connection = Self { daemon, id, queue, reader: BufReader::new(stream), peer_pid };
-        connection.send(Event::Hello { daemon: env!("CARGO_PKG_VERSION").into() });
-        Ok(connection)
-    }
-
-    fn run(mut self) -> std::io::Result<()> {
-        let mut line = Vec::new();
-        loop {
-            line.clear();
-            let read = (&mut self.reader).take(MAX_REQUEST_BYTES + 1).read_until(b'\n', &mut line)?;
-            if read == 0 {
-                return Ok(());
-            }
-            if line.last() != Some(&b'\n') && read as u64 > MAX_REQUEST_BYTES {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("request over {MAX_REQUEST_BYTES} bytes, closing"),
-                ));
-            }
-            let text = String::from_utf8_lossy(&line);
-            if !text.trim().is_empty() {
-                self.handle(text.trim());
-            }
-        }
-    }
-
-    fn handle(&self, line: &str) {
-        let request = match nova_protocol::decode_request(line) {
-            Ok(request) => request,
-            Err(e) => {
-                self.daemon.logger.warn(LOG_SOURCE, &format!("ignoring bad request: {e}"));
-                if let Some(id) = request_id(line) {
-                    self.send(Response { id, outcome: Outcome::Error(format!("bad request: {e}")) });
-                }
-                return;
-            }
-        };
-        // Answered even without an id: some commands act as they answer.
-        match self.answer(&request.command) {
-            Answer::Now(outcome) => {
-                if let Some(id) = request.id {
-                    self.send(Response { id, outcome });
-                }
-            }
-            // Asking logind can take seconds; answering on its own thread
-            // keeps this connection reading, so the UI's lock reports and
-            // other requests aren't stuck behind it.
-            Answer::Later(work) => self.answer_later(request.id, work),
-        }
-        self.follow_up(request.command);
+    fn new(daemon: &'a Daemon, caller: &'a Caller) -> Self {
+        Self { daemon, caller, id: caller.id(), peer_pid: caller.peer_pid() }
     }
 
     /// The answer to `command`, at once or as work for another thread: the
@@ -378,22 +276,6 @@ impl<'a> Connection<'a> {
             true => Ok(()),
             false => Err(crate::features::not_ready(id)),
         }
-    }
-
-    /// Runs `work` on its own thread and sends its answer when it's done.
-    fn answer_later(&self, id: Option<u64>, work: SlowWork) {
-        let queue = self.queue.clone();
-        let logger = Arc::clone(&self.daemon.logger);
-        std::thread::spawn(move || {
-            let outcome = work();
-            let Some(id) = id else { return };
-            match encode(Response { id, outcome }) {
-                Ok(line) => {
-                    queue.push(Outgoing::Line(line));
-                }
-                Err(e) => logger.error(LOG_SOURCE, &format!("can't encode a message: {e}")),
-            }
-        });
     }
 
     fn power_options(&self) -> Answer {
@@ -852,100 +734,32 @@ impl<'a> Connection<'a> {
     }
 
     fn send(&self, message: impl serde::Serialize) {
-        match encode(message) {
-            Ok(line) => {
-                self.queue.push(Outgoing::Line(line));
-            }
-            Err(e) => self.daemon.logger.error(LOG_SOURCE, &format!("can't encode a message: {e}")),
-        }
+        self.caller.send(message);
     }
 
     /// Waits until everything queued so far is written.
     fn flush(&self) {
-        let (done, flushed) = mpsc::sync_channel(1);
-        if self.queue.push(Outgoing::Flushed(done)) {
-            let _ = flushed.recv();
-        }
+        self.caller.flush();
     }
 }
 
-impl Drop for Connection<'_> {
-    fn drop(&mut self) {
-        self.daemon.hub.unregister(self.id);
-        lock(&self.daemon.settings).modules.client_gone(self.id);
-    }
-}
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
 
-/// Writes a client's queue in order until it closes. A write that fails or
-/// stalls past [`WRITE_TIMEOUT`] hangs up on the client: the reader side ends
-/// too, so the connection unregisters, and dropping the queue answers any
-/// `flush` waiting on it.
-fn write_all_queued(
-    mut writer: UnixStream,
-    outgoing: mpsc::Receiver<Outgoing>,
-    written: &Written,
-    logger: &crate::logger::Logger,
-) {
-    for message in outgoing {
-        match message {
-            Outgoing::Line(line) => {
-                written.line(line.len());
-                if let Err(e) = writer.write_all(line.as_bytes()) {
-                    if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) {
-                        logger.warn(
-                            LOG_SOURCE,
-                            &format!("a client read nothing for {} s, disconnecting it", WRITE_TIMEOUT.as_secs_f32()),
-                        );
-                    }
-                    let _ = writer.shutdown(std::net::Shutdown::Both);
-                    return;
-                }
-            }
-            Outgoing::Flushed(done) => {
-                let _ = done.send(());
-            }
-        }
-    }
-}
-
-/// The `id` of a request that didn't parse, so the error can be answered.
-fn request_id(line: &str) -> Option<u64> {
-    serde_json::from_str::<serde_json::Value>(line).ok()?.get("id")?.as_u64()
-}
-
-/// The pid of the process at the other end of `stream`.
-fn peer_pid(stream: &UnixStream) -> Option<u32> {
-    use std::os::fd::AsRawFd;
-    let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
-    let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-    // SAFETY: `cred` and `len` are valid for the size passed.
-    let got = unsafe {
-        libc::getsockopt(stream.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, (&raw mut cred).cast(), &mut len)
-    };
-    (got == 0).then(|| u32::try_from(cred.pid).ok()).flatten()
-}
-
-/// A request's answer, now or from work on another thread.
-enum Answer {
-    Now(Outcome),
-    Later(SlowWork),
-}
-
-impl Answer {
-    fn later(work: impl FnOnce() -> Outcome + Send + 'static) -> Self {
-        Self::Later(Box::new(work))
-    }
-}
-
-/// An answer that's `null`, or its error.
-fn done(result: Result<(), String>) -> Outcome {
-    value(result)
-}
-
-/// An answer with `result`'s value, or its error.
-fn value(result: Result<impl serde::Serialize, String>) -> Outcome {
-    match result.and_then(|value| serde_json::to_value(value).map_err(|e| e.to_string())) {
-        Ok(value) => Outcome::Result(value),
-        Err(e) => Outcome::Error(e),
+    /// Every command the UI's protocol file names has exactly one route, and
+    /// no route takes a command the file lacks. (A name two routes claim
+    /// already stops the router being built.)
+    #[test]
+    fn every_command_has_one_route() {
+        let protocol_js = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ui/daemon/protocol.js");
+        let js = std::fs::read_to_string(protocol_js).unwrap();
+        let mut named: Vec<&str> =
+            js.lines().filter_map(|line| line.strip_prefix("var CMD_")?.split('"').nth(1)).collect();
+        let mut routed = super::router().names().to_vec();
+        assert!(!named.is_empty(), "protocol.js names no commands");
+        named.sort_unstable();
+        routed.sort_unstable();
+        assert_eq!(routed, named);
     }
 }

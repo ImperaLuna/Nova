@@ -132,6 +132,7 @@ impl TestDaemon {
             kept: settings.modules.kept(),
             settings: Mutex::new(settings),
             compositor,
+            router: crate::requests::router(),
         });
         let running = InProcess::serve(listener, Arc::clone(&daemon), daemon.watch_settings());
         Self { _running: running, dir: temp, socket, daemon }
