@@ -19,7 +19,7 @@
 
 use super::{names_match, same_kind};
 use nova_notifications_api::{Notification, NotificationDevice, Own};
-use nova_protocol::{Battery, BatteryLevel, Peripheral, PeripheralKind, PeripheralLink};
+use nova_peripherals_api::{Battery, BatteryLevel, Peripheral, PeripheralKind, PeripheralLink};
 use std::collections::HashMap;
 
 /// The percents alerted at, highest first; the last one is critical.
@@ -178,7 +178,7 @@ fn own(device: &Peripheral, battery: Battery, step: u8, replaces: u32) -> Own {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nova_protocol::PeripheralSource;
+    use nova_peripherals_api::PeripheralSource;
 
     fn mouse(battery: Battery, charging: bool) -> Peripheral {
         Peripheral {

@@ -22,11 +22,12 @@ pub mod channel;
 pub mod descriptor;
 
 use super::{Found, LOG_SOURCE, Report, Running, Source, UsbId, hotplug};
-use crate::inotify::Stopper;
-use crate::lock;
-use crate::logger::Logger;
 use channel::Channel;
-use nova_protocol::{LogLevel, PeripheralLink};
+use nova_base::lock;
+use nova_carrier::log::LogLevel;
+use nova_inotify::Stopper;
+use nova_log::Logger;
+use nova_peripherals_api::PeripheralLink;
 use std::collections::{BTreeMap, HashMap};
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};

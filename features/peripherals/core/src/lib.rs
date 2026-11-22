@@ -27,7 +27,8 @@
 //! last one sent.
 //!
 //! When a device's battery runs low, `alerts` says so with a notification
-//! (feature `notifications`), at 20%, 10% and 5%.
+//! (feature `notifications`, through its api's `Post` port), at 20%, 10%
+//! and 5%.
 //!
 //! Only devices that are connected and on now are listed: one that's off
 //! (a headset whose dongle stays plugged in) or not present leaves the
@@ -49,14 +50,14 @@ mod sysfs;
 mod tests;
 mod upower;
 
-use crate::hub::{ClientId, Hub};
-use crate::lock;
-use crate::logger::Logger;
-use crate::session_bus::Bus;
-use nova_notifications::Notifications;
-use nova_protocol::{
+use nova_base::lock;
+use nova_hub::{ClientId, Hub};
+use nova_log::Logger;
+use nova_notifications_api::Post;
+use nova_peripherals_api::{
     Event, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource, Peripherals as PeripheralsEvent,
 };
+use nova_session_bus::Bus;
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -226,7 +227,7 @@ struct Shared {
     hub: Arc<Hub>,
     logger: Arc<Logger>,
     /// Where low battery alerts go, while notifications are on.
-    notifications: Mutex<Weak<Notifications>>,
+    notifications: Mutex<Option<Weak<dyn Post>>>,
 }
 
 struct State {
@@ -255,7 +256,7 @@ impl Peripherals {
             wake: Condvar::new(),
             hub,
             logger,
-            notifications: Mutex::new(Weak::new()),
+            notifications: Mutex::new(None),
         });
         // Clients that heard an earlier run's list (the feature was off a
         // while) start from nothing again, even if nothing is found now.
@@ -311,9 +312,12 @@ impl Peripherals {
 
     /// Where low battery alerts go from now on: nowhere while
     /// notifications are off.
-    pub fn set_notifications(&self, notifications: Option<&Arc<Notifications>>) {
-        let notifications = notifications.map(Arc::downgrade).unwrap_or_default();
-        let changed = !lock(&self.shared.notifications).ptr_eq(&notifications);
+    pub fn set_notifications(&self, notifications: Option<&Arc<dyn Post>>) {
+        let notifications = notifications.map(Arc::downgrade);
+        let changed = match (&*lock(&self.shared.notifications), &notifications) {
+            (Some(was), Some(now)) => !was.ptr_eq(now),
+            (was, now) => was.is_some() != now.is_some(),
+        };
         *lock(&self.shared.notifications) = notifications;
         // Devices already low are alerted now, not at their next change.
         if changed {
@@ -359,14 +363,14 @@ impl Shared {
             }
             // Only while notifications are on: alerts nobody can see aren't
             // counted as said. Also when only that changed (`set_notifications`).
-            let Some(notifications) = lock(&self.notifications).upgrade() else { continue };
+            let Some(notifications) = lock(&self.notifications).as_ref().and_then(Weak::upgrade) else { continue };
             let State { alerts, sent, .. } = &mut *state;
             let alerts = alerts.update(&sent.devices);
             if !alerts.is_empty() {
                 let held = state.alerts.notifications();
                 // Sent unlocked: the notification server takes locks of its own.
                 drop(state);
-                let sent = self.alert(&notifications, alerts, held);
+                let sent = self.alert(&*notifications, alerts, held);
                 state = lock(&self.state);
                 for (id, notification) in sent {
                     state.alerts.sent(&id, notification);
@@ -377,12 +381,7 @@ impl Shared {
 
     /// Sends `alerts` and says which notification each became. `held` are
     /// the notifications devices known now sent.
-    fn alert(
-        &self,
-        notifications: &Notifications,
-        alerts: Vec<alerts::Alert>,
-        mut held: Vec<u32>,
-    ) -> Vec<(String, u32)> {
+    fn alert(&self, notifications: &dyn Post, alerts: Vec<alerts::Alert>, mut held: Vec<u32>) -> Vec<(String, u32)> {
         alerts
             .into_iter()
             // Stopped meanwhile: no more.
@@ -391,11 +390,11 @@ impl Shared {
                 // After a restart nothing says which row is the device's;
                 // one another device of its name holds isn't.
                 if alert.own.replaces == 0 {
-                    let row = notifications.listed(|row| !held.contains(&row.id) && alerts::row_of(row, &alert.own));
+                    let row = notifications.listed(&|row| !held.contains(&row.id) && alerts::row_of(row, &alert.own));
                     alert.own.replaces = row.unwrap_or(0);
                 }
                 self.logger.info(LOG_SOURCE, &format!("{}: {}", alert.own.summary, alert.own.body));
-                let id = notifications.send_own(alert.own);
+                let id = notifications.post(alert.own);
                 held.push(id);
                 (alert.id, id)
             })
@@ -457,43 +456,4 @@ fn merge(found: &[(PeripheralSource, Vec<Found>)]) -> PeripheralsEvent {
 fn name(text: &str) -> Option<String> {
     let trimmed = text.trim();
     (!trimmed.is_empty()).then(|| trimmed.chars().filter(|c| !c.is_control()).take(MAX_NAME_CHARS).collect())
-}
-
-/// No options. Its low battery alerts go to whatever notification server
-/// is up.
-impl crate::modules::Module for Peripherals {
-    type App = crate::modules::Novad;
-    const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::PERIPHERALS);
-    type Sources = Sources;
-    type Config = ();
-
-    fn sources(env: &crate::modules::Env) -> Sources {
-        Sources::system(env.path_var)
-    }
-
-    fn config(_: &crate::config::Config) {}
-
-    fn start(
-        ctx: &crate::modules::Context,
-        sources: &Sources,
-        (): &(),
-        _: &[nova_protocol::FeatureState],
-    ) -> Arc<Self> {
-        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
-    }
-
-    fn linked(&self, running: &crate::modules::Running) {
-        self.set_notifications(
-            running.get::<crate::notifications::Notifications>().as_ref().map(|running| running.core()),
-        );
-    }
-
-    fn send_state(&self, client: ClientId) {
-        Self::send_state(self, client);
-    }
-
-    fn stop(&self) {
-        Self::stop(self);
-    }
 }

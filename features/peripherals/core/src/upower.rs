@@ -10,9 +10,10 @@
 //! `DisplayDevice` that sums them up.
 
 use super::{Found, LOG_SOURCE, Report, Running, Source, name, sysfs};
-use crate::session_bus::{Bus, Stop};
 use futures_core::Stream;
-use nova_protocol::{Battery, BatteryLevel, LogLevel, Peripheral, PeripheralKind, PeripheralSource};
+use nova_carrier::log::LogLevel;
+use nova_peripherals_api::{Battery, BatteryLevel, Peripheral, PeripheralKind, PeripheralSource};
+use nova_session_bus::{Bus, Stop};
 use std::collections::HashMap;
 use std::future::poll_fn;
 use std::path::{Path, PathBuf};
