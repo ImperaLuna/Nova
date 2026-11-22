@@ -18,30 +18,31 @@ mod claude_api;
 mod claude_desktop;
 mod codex;
 mod codex_api;
+mod config;
 mod endpoint;
 
 pub use claude::limits_from_statusline;
+pub use config::AiUsageConfig;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub use claude_desktop::{entry_name as claude_desktop_entry, write_unsealed_config as write_claude_desktop_config};
 
 /// The desktop app's sign-in under `config_home`.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn claude_desktop_in(config_home: &Path) -> claude_desktop::Desktop {
     claude_desktop::Desktop::at(claude_desktop::config_in(config_home))
 }
 
-use crate::backoff::Backoff;
-use crate::config::AiUsageConfig;
-use crate::hub::Hub;
-use crate::inotify;
-use crate::lock;
-use crate::logger::Logger;
-use crate::state_file;
 use codex::CodexUsage;
 use endpoint::Problem;
 use jiff::Timestamp;
-use nova_protocol::{AiProvider, AiUsage, Event, ProviderUsage, UsageLimit, UsageState};
+use nova_ai_usage_api::{AiProvider, AiUsage, Event, ProviderUsage, UsageLimit, UsageState};
+use nova_base::backoff::Backoff;
+use nova_base::{lock, state_file};
+use nova_hub::{ClientId, Hub};
+use nova_inotify as inotify;
+use nova_log::Logger;
+use nova_modules::not_ready;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -295,6 +296,12 @@ impl Usage {
         Event::AiUsage(snapshot(&lock(&self.state), Timestamp::now()))
     }
 
+    /// Sends [`event`](Self::event) to `client` alone, as a new subscriber
+    /// gets it.
+    pub fn send_state(&self, client: ClientId) {
+        self.hub.send_to(client, &self.event());
+    }
+
     pub fn show(&self, provider: AiProvider) -> Result<(), String> {
         self.update(|state| state.saved.shown = Some(provider))
     }
@@ -405,7 +412,7 @@ impl Usage {
             // the order they were made.
             let mut state = lock(&self.state);
             if self.stopped() {
-                return Err(crate::features::not_ready(FEATURE_ID));
+                return Err(not_ready(FEATURE_ID));
             }
             let before = state.saved.clone();
             change(&mut state);
@@ -702,45 +709,4 @@ fn display_plan(plan: &str) -> Option<String> {
 /// Whole percent, clamped to 0..=100.
 fn round_percent(used: f64) -> u8 {
     used.round().clamp(0.0, 100.0) as u8
-}
-
-impl crate::modules::Module for Usage {
-    type App = crate::modules::Novad;
-    const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::AI_USAGE);
-    type Sources = Paths;
-    type Config = AiUsageConfig;
-
-    fn sources(env: &crate::modules::Env) -> Paths {
-        let args = env.args;
-        Paths::new(
-            &args.state_dir,
-            args.codex_home.clone(),
-            args.claude_credentials.clone(),
-            args.claude_desktop_config.clone(),
-        )
-    }
-
-    fn config(config: &crate::config::Config) -> AiUsageConfig {
-        config.ai_usage.clone()
-    }
-
-    /// Before the features are published, so the UI that loads the feature
-    /// on that event gets its numbers.
-    fn start(
-        ctx: &crate::modules::Context,
-        paths: &Paths,
-        config: &AiUsageConfig,
-        _: &[nova_protocol::FeatureState],
-    ) -> Arc<Self> {
-        Self::start(paths.clone(), config, Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
-    }
-
-    fn send_state(&self, client: crate::hub::ClientId) {
-        self.hub.send_to(client, &self.event());
-    }
-
-    fn stop(&self) {
-        Self::stop(self);
-    }
 }

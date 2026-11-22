@@ -43,9 +43,6 @@ pub enum Event {
     /// The active theme's colors. Topic [`topics::THEME`], sent right after
     /// subscribing.
     Theme(Theme),
-    /// Plan usage of AI coding tools. Topic [`topics::AI_USAGE`], sent right
-    /// after subscribing and whenever a number changes.
-    AiUsage(AiUsage),
     /// The compositor's workspaces, outputs, focused window and keyboard
     /// layout. Topic [`topics::COMPOSITOR`], sent right after subscribing and
     /// whenever any of it changes. Never sent when novad doesn't know the
@@ -112,7 +109,6 @@ pub mod topics {
     /// The framework's log feed (`nova_carrier::log`).
     pub const LOGS: Topic = nova_carrier::log::TOPIC;
     pub const THEME: Topic = Topic::named("theme");
-    pub const AI_USAGE: Topic = Topic::named("ai_usage");
     /// The compositor adapters' (`nova_compositor`).
     pub const COMPOSITOR: Topic = nova_compositor::TOPIC;
     pub const TOGGLE: Topic = Topic::named("toggle");
@@ -133,7 +129,6 @@ impl Event {
             Event::Features { .. } => Some(topics::FEATURES),
             Event::Logs(_) => Some(topics::LOGS),
             Event::Theme(_) => Some(topics::THEME),
-            Event::AiUsage(_) => Some(topics::AI_USAGE),
             Event::Compositor(_) => Some(topics::COMPOSITOR),
             Event::Toggle { .. } => Some(topics::TOGGLE),
             Event::Lock { .. } => Some(topics::LOCK),
@@ -188,71 +183,6 @@ pub enum FeatureStatus {
     MissingDeps,
     /// Turned off. The UI doesn't load it.
     Off,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AiUsage {
-    /// The provider the bar shows.
-    pub shown: AiProvider,
-    /// Every provider, in display order.
-    pub providers: Vec<ProviderUsage>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AiProvider {
-    Claude,
-    Codex,
-}
-
-impl AiProvider {
-    pub const ALL: [AiProvider; 2] = [AiProvider::Claude, AiProvider::Codex];
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProviderUsage {
-    pub provider: AiProvider,
-    pub state: UsageState,
-    /// The subscription's display name, like `Plus`, when the source says.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan: Option<String>,
-    /// The windows the plan has right now, session first. Plans differ:
-    /// some have only a weekly limit.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub limits: Vec<UsageLimit>,
-    /// Why there are no numbers and how to get them, when unavailable.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hint: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UsageState {
-    /// novad is still reading the source.
-    Loading,
-    Ready,
-    /// No numbers; `hint` says why.
-    Unavailable,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct UsageLimit {
-    pub window: UsageWindow,
-    /// 0 to 100.
-    pub percent: u8,
-    /// When the window starts over, RFC 3339 UTC. Absent once it has, until
-    /// the tool is used again.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resets_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UsageWindow {
-    /// The rolling 5-hour limit.
-    Session,
-    Weekly,
 }
 
 /// A panel `nova toggle` opens or closes. Each belongs to the feature of the
@@ -564,19 +494,6 @@ pub enum Command {
     Status,
     /// Stops the UI and exits novad.
     Quit,
-    /// Picks the provider the bar shows (feature `ai-usage`). Remembered
-    /// across restarts.
-    ShowAiUsage {
-        provider: AiProvider,
-    },
-    /// Asks for fresh numbers now, when the panel opens (feature
-    /// `ai-usage`). Asking again within a minute does nothing.
-    RefreshAiUsage,
-    /// Claude's limits, read from Claude Code's status line by
-    /// `nova claude-statusline` (feature `ai-usage`).
-    ReportClaudeUsage {
-        limits: Vec<UsageLimit>,
-    },
     /// Shows a workspace (capability `focus_workspace`), focusing its output.
     FocusWorkspace {
         id: WorkspaceId,
@@ -817,7 +734,7 @@ mod tests {
                         topics::FEATURES,
                         topics::LOGS,
                         topics::THEME,
-                        topics::AI_USAGE,
+                        nova_ai_usage_api::TOPIC,
                         topics::COMPOSITOR,
                         topics::TOGGLE,
                         topics::LOCK,
@@ -845,12 +762,18 @@ mod tests {
             encode(Event::Logs(Logs { backlog: false, entries: vec![log_entry()] })),
             encode(Response { id: 10, outcome: Outcome::Result(serde_json::to_value(status()).unwrap()) }),
             encode(Response { id: 7, outcome: Outcome::Result(json!("pong")) }),
-            encode(Event::AiUsage(ai_usage())),
-            encode(Request { id: Some(12), command: Command::ShowAiUsage { provider: AiProvider::Codex } }),
-            encode(Request { id: None, command: Command::RefreshAiUsage }),
-            encode(Request {
+            // The AI usage feature's own messages (`nova-ai-usage-api`), still on this one wire.
+            encode(nova_ai_usage_api::Event::AiUsage(ai_usage())),
+            encode(nova_carrier::Request {
+                id: Some(12),
+                command: nova_ai_usage_api::Command::ShowAiUsage { provider: nova_ai_usage_api::AiProvider::Codex },
+            }),
+            encode(nova_carrier::Request { id: None, command: nova_ai_usage_api::Command::RefreshAiUsage }),
+            encode(nova_carrier::Request {
                 id: Some(13),
-                command: Command::ReportClaudeUsage { limits: ai_usage().providers[0].limits.clone() },
+                command: nova_ai_usage_api::Command::ReportClaudeUsage {
+                    limits: ai_usage().providers[0].limits.clone(),
+                },
             }),
             encode(Event::Compositor(desktop())),
             encode(Request { id: Some(14), command: Command::FocusWorkspace { id: -1337 } }),
@@ -1277,7 +1200,8 @@ mod tests {
         }
     }
 
-    fn ai_usage() -> AiUsage {
+    fn ai_usage() -> nova_ai_usage_api::AiUsage {
+        use nova_ai_usage_api::{AiProvider, AiUsage, ProviderUsage, UsageLimit, UsageState, UsageWindow};
         AiUsage {
             shown: AiProvider::Claude,
             providers: vec![
@@ -1735,7 +1659,6 @@ mod tests {
         assert_eq!(Event::Features { features: vec![] }.topic(), Some(topics::FEATURES));
         assert_eq!(Event::Logs(Logs { backlog: false, entries: vec![] }).topic(), Some(topics::LOGS));
         assert_eq!(Event::Theme(theme()).topic(), Some(topics::THEME));
-        assert_eq!(Event::AiUsage(ai_usage()).topic(), Some(topics::AI_USAGE));
         assert_eq!(Event::Compositor(desktop()).topic(), Some(topics::COMPOSITOR));
         assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(topics::TOGGLE));
         assert_eq!(Event::Lock { locked: true }.topic(), Some(topics::LOCK));

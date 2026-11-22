@@ -1,0 +1,20 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates:
+# - nova-carrier
+
+[package]
+name = "nova-ai-usage-api"
+description = "The AI usage feature's messages: show_ai_usage, refresh_ai_usage, report_claude_usage and the ai_usage event"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-carrier.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

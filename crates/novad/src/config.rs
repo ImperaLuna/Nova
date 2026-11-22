@@ -27,7 +27,9 @@
 //! ```
 
 use crate::theme::ThemeChoice;
-// `[wallpaper]` is the wallpaper feature's (`nova-wallpaper`).
+// `[ai-usage]` and `[wallpaper]` are their features' (`nova-ai-usage`,
+// `nova-wallpaper`).
+pub use nova_ai_usage::AiUsageConfig;
 pub use nova_wallpaper::WallpaperConfig;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -61,20 +63,6 @@ pub struct QuickSettingsConfig {
     /// for no name.
     #[serde(default)]
     pub name: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct AiUsageConfig {
-    /// Ask Anthropic for Claude's limits with Claude Code's sign-in. Off
-    /// unless the user turns it on: Anthropic doesn't document that use.
-    #[serde(default)]
-    pub claude_usage_endpoint: bool,
-    /// Ask OpenAI for Codex's limits with Codex's sign-in, so they stay
-    /// current between Codex turns. Off unless the user turns it on: OpenAI
-    /// doesn't document that use.
-    #[serde(default)]
-    pub codex_usage_endpoint: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]

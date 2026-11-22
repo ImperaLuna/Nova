@@ -738,6 +738,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-ai-usage"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "base64",
+ "cbc",
+ "jiff",
+ "libc",
+ "nova-ai-usage-api",
+ "nova-base",
+ "nova-hub",
+ "nova-inotify",
+ "nova-log",
+ "nova-modules",
+ "nova-paths",
+ "nova-session-bus",
+ "nova-test-support",
+ "pbkdf2",
+ "serde",
+ "serde_json",
+ "sha1",
+ "ureq",
+ "zbus",
+]
+
+[[package]]
+name = "nova-ai-usage-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
 name = "nova-apps"
 version = "0.1.0"
 dependencies = [
@@ -779,6 +813,7 @@ dependencies = [
  "clap_complete",
  "insta",
  "jiff",
+ "nova-ai-usage-api",
  "nova-carrier",
  "nova-features",
  "nova-launcher-api",
@@ -1091,6 +1126,7 @@ name = "nova-protocol"
 version = "0.1.0"
 dependencies = [
  "insta",
+ "nova-ai-usage-api",
  "nova-apps",
  "nova-carrier",
  "nova-compositor",
@@ -1275,9 +1311,6 @@ dependencies = [
 name = "novad"
 version = "0.1.0"
 dependencies = [
- "aes",
- "base64",
- "cbc",
  "clap",
  "flate2",
  "futures-core",
@@ -1285,6 +1318,8 @@ dependencies = [
  "libc",
  "lzma-rust2",
  "md-5",
+ "nova-ai-usage",
+ "nova-ai-usage-api",
  "nova-apps",
  "nova-base",
  "nova-carrier",
@@ -1325,12 +1360,10 @@ dependencies = [
  "nova-wallpaper",
  "nova-wallpaper-api",
  "nova-x11-tray",
- "pbkdf2",
  "png",
  "ruzstd",
  "serde",
  "serde_json",
- "sha1",
  "tar",
  "toml",
  "ureq",

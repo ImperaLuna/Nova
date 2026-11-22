@@ -50,6 +50,7 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
 #[serde(untagged)]
 enum IpcCommand {
     Shared(Command),
+    AiUsage(nova_ai_usage_api::Command),
     Launcher(nova_launcher_api::Command),
     Media(nova_media_api::Command),
     Network(nova_network_api::Command),
@@ -66,7 +67,9 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
     if let Some(args) = args {
         request["args"] = serde_json::from_str(args).map_err(|e| format!("the arguments aren't JSON: {e}"))?;
     }
-    let read = if tagged_names_of::<nova_launcher_api::Command>("cmd").contains(&name) {
+    let read = if tagged_names_of::<nova_ai_usage_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::AiUsage)
+    } else if tagged_names_of::<nova_launcher_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Launcher)
     } else if tagged_names_of::<nova_media_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Media)
@@ -120,6 +123,10 @@ mod tests {
         assert_eq!(
             parse("power", Some(r#"{"action": "suspend"}"#)),
             Ok(IpcCommand::Power(nova_power_api::Command::Power { action: nova_power_api::PowerAction::Suspend }))
+        );
+        assert_eq!(
+            parse("refresh_ai_usage", None),
+            Ok(IpcCommand::AiUsage(nova_ai_usage_api::Command::RefreshAiUsage))
         );
         assert_eq!(parse("wallpapers", None), Ok(IpcCommand::Wallpaper(nova_wallpaper_api::Command::Wallpapers)));
         assert!(parse("focus_workspace", Some(r#"{"id": 3, "extra": 1}"#)).is_err());
