@@ -1,5 +1,5 @@
 //! Locks the screen when logind asks, and before the machine sleeps (part of
-//! the `lock` feature).
+//! the `lock` feature, which the app reaches through [`LockScreen`]).
 //!
 //! On the system bus (systemd-logind, or elogind without systemd), novad
 //! follows two of logind's signals:
@@ -8,7 +8,7 @@
 //! - `PrepareForSleep`, for a suspend from anywhere (the power menu, the lid,
 //!   `systemctl suspend`). novad holds a `sleep` delay inhibitor, so logind
 //!   waits with the suspend until novad lets go of it: once the lock screen
-//!   covers the screens, or after `session_lock`'s cover timeout (logind's
+//!   covers the screens, or after the lock screen's cover timeout (logind's
 //!   own `InhibitDelayMaxSec`, 5 s by default, may end the wait sooner). After
 //!   the wake-up it takes a new one for the next sleep.
 //!
@@ -19,10 +19,10 @@
 //! service usually doesn't have it, so otherwise it's the session logind
 //! counts as our user's display (the graphical one).
 
-use crate::backoff::Backoff;
-use crate::session_lock::FEATURE_ID;
-use crate::{Daemon, lock};
 use futures_core::Stream;
+use nova_base::backoff::Backoff;
+use nova_base::lock;
+use nova_log::Logger;
 use std::future::poll_fn;
 use std::pin::{Pin, pin};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -62,24 +62,42 @@ enum Follower {
     Lock,
 }
 
+/// The lock screen, as following logind needs it (feature `lock`): a port
+/// the app fills, so this feature doesn't use the lock feature's code.
+pub trait LockScreen: Send + Sync + 'static {
+    /// Whether the lock feature is ready; nothing locks while it isn't.
+    fn ready(&self) -> bool;
+    /// Asks for the lock screen, without waiting for it to cover the screens.
+    fn request(&self) -> Result<(), String>;
+    /// Waits until the lock screen covers the screens, or its timeout passes.
+    fn wait_covered(&self) -> Result<(), String>;
+}
+
+/// What following logind locks with and logs to.
+struct Locking {
+    screen: Arc<dyn LockScreen>,
+    logger: Arc<Logger>,
+}
+
 /// Follows logind for as long as novad runs.
-pub fn follow(daemon: &Arc<Daemon>) {
+pub fn follow(screen: Arc<dyn LockScreen>, logger: Arc<Logger>) {
+    let locking = Arc::new(Locking { screen, logger });
     for follower in [Follower::Sleep, Follower::Lock] {
-        let daemon = Arc::clone(daemon);
-        std::thread::spawn(move || keep_following(&daemon, follower));
+        let locking = Arc::clone(&locking);
+        std::thread::spawn(move || keep_following(&locking, follower));
     }
 }
 
 /// Follows logind for `follower`, starting over after a failure.
-fn keep_following(daemon: &Daemon, follower: Follower) {
+fn keep_following(locking: &Locking, follower: Follower) {
     let mut retry = Backoff::new(FIRST_RETRY, MAX_RETRY);
     let mut last_error = String::new();
     loop {
         let mut followed = false;
         let result = zbus::block_on(async {
             match follower {
-                Follower::Sleep => follow_sleeps(daemon, &mut followed).await,
-                Follower::Lock => follow_locks(daemon, &mut followed).await,
+                Follower::Sleep => follow_sleeps(locking, &mut followed).await,
+                Follower::Lock => follow_locks(locking, &mut followed).await,
             }
         });
         if followed {
@@ -98,7 +116,7 @@ fn keep_following(daemon: &Daemon, follower: Follower) {
                 Follower::Lock => "lock on `loginctl lock-session`",
             };
             let message = format!("can't {what}, trying again in {}s: {error}", wait.as_secs());
-            daemon.logger.warn(LOG_SOURCE, &message);
+            locking.logger.warn(LOG_SOURCE, &message);
             last_error = error;
         }
         std::thread::sleep(wait);
@@ -108,7 +126,7 @@ fn keep_following(daemon: &Daemon, follower: Follower) {
 /// Holds the sleep inhibitor and locks before each sleep, until the
 /// connection closes (`Ok`) or fails. Sets `followed` once it holds the
 /// inhibitor.
-async fn follow_sleeps(daemon: &Daemon, followed: &mut bool) -> zbus::Result<()> {
+async fn follow_sleeps(locking: &Locking, followed: &mut bool) -> zbus::Result<()> {
     let (bus, mut sleeps, inhibitor) = within("connecting", async {
         let bus = Connection::system().await?;
         // Subscribed before the inhibitor is taken, so no sleep comes between.
@@ -123,7 +141,7 @@ async fn follow_sleeps(daemon: &Daemon, followed: &mut bool) -> zbus::Result<()>
         let starting: bool = message?.body().deserialize()?;
         if starting {
             if let Some(inhibitor) = inhibitor.take() {
-                release_once_locked(daemon, inhibitor);
+                release_once_locked(locking, inhibitor);
             }
         } else if inhibitor.is_none() {
             inhibitor = Some(within("taking a new inhibitor", inhibit_sleep(&bus)).await?);
@@ -134,7 +152,7 @@ async fn follow_sleeps(daemon: &Daemon, followed: &mut bool) -> zbus::Result<()>
 
 /// Locks on each `Lock` logind sends our session, until the connection
 /// closes (`Ok`) or fails. Sets `followed` once subscribed.
-async fn follow_locks(daemon: &Daemon, followed: &mut bool) -> zbus::Result<()> {
+async fn follow_locks(locking: &Locking, followed: &mut bool) -> zbus::Result<()> {
     let (session, mut locks) = within("connecting", async {
         let bus = Connection::system().await?;
         let session = our_session(&bus).await?;
@@ -142,11 +160,11 @@ async fn follow_locks(daemon: &Daemon, followed: &mut bool) -> zbus::Result<()> 
         Ok((session, locks))
     })
     .await?;
-    daemon.logger.info(LOG_SOURCE, &format!("following logind for session {}", session.as_str()));
+    locking.logger.info(LOG_SOURCE, &format!("following logind for session {}", session.as_str()));
     *followed = true;
     while let Some(message) = next(&mut locks).await {
         message?;
-        lock_for(daemon, "logind asked");
+        lock_for(locking, "logind asked");
     }
     Ok(())
 }
@@ -227,15 +245,15 @@ async fn inhibit_sleep(bus: &Connection) -> zbus::Result<OwnedFd> {
 
 /// Locks the screen, when the lock feature is ready, and says whether a lock
 /// was asked for. `why` goes to the log.
-fn lock_for(daemon: &Daemon, why: &str) -> bool {
-    if !daemon.feature_ready(FEATURE_ID) {
+fn lock_for(locking: &Locking, why: &str) -> bool {
+    if !locking.screen.ready() {
         return false;
     }
-    daemon.logger.info(LOG_SOURCE, &format!("{why}: locking the screen"));
-    match daemon.session_lock().request(&daemon.hub) {
+    locking.logger.info(LOG_SOURCE, &format!("{why}: locking the screen"));
+    match locking.screen.request() {
         Ok(()) => true,
         Err(e) => {
-            daemon.logger.warn(LOG_SOURCE, &format!("couldn't lock the screen: {e}"));
+            locking.logger.warn(LOG_SOURCE, &format!("couldn't lock the screen: {e}"));
             false
         }
     }
@@ -244,12 +262,12 @@ fn lock_for(daemon: &Daemon, why: &str) -> bool {
 /// Locks for a sleep that's starting, and lets it go on (closes `inhibitor`)
 /// once the screens are covered. On its own thread, so logind's signals keep
 /// being read meanwhile.
-fn release_once_locked(daemon: &Daemon, inhibitor: OwnedFd) {
-    if !lock_for(daemon, "the machine is going to sleep") {
+fn release_once_locked(locking: &Locking, inhibitor: OwnedFd) {
+    if !lock_for(locking, "the machine is going to sleep") {
         return drop(inhibitor);
     }
-    let session_lock = daemon.session_lock();
-    let logger = Arc::clone(&daemon.logger);
+    let session_lock = Arc::clone(&locking.screen);
+    let logger = Arc::clone(&locking.logger);
     std::thread::spawn(move || {
         if let Err(e) = session_lock.wait_covered() {
             logger.warn(LOG_SOURCE, &format!("sleeping though the screen may not be locked: {e}"));

@@ -89,7 +89,7 @@ fn groups(features: &Path, current: &str) -> Vec<Group> {
         Group::new("The volume keys a volume event carries (VolumeKey).", "VOLUME", names_of::<VolumeKey>()),
         Group { comment: "Feature ids (features/<id>/feature.toml).", prefix: "FEATURE", names: feature_ids(features) },
         Group::new("Launcher providers built into novad (PROVIDER_*).", "PROVIDER", &[PROVIDER_APPS, PROVIDER_FILES]),
-        Group::new("Power menu actions (PowerAction).", "POWER", names_of::<PowerAction>()),
+        Group::new("Power menu actions (PowerAction).", "POWER", names_of::<nova_power_api::PowerAction>()),
         Group::new("What the capture toolbar takes (CaptureMode).", "CAPTURE", names_of::<CaptureMode>()),
         Group::new("The screenshot card's buttons (ScreenshotAction).", "SHOT", names_of::<ScreenshotAction>()),
         Group::new("How much a notification matters (Urgency).", "URGENCY", names_of::<Urgency>()),

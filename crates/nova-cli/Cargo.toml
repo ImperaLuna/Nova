@@ -10,6 +10,7 @@
 # - nova-carrier
 # - nova-features
 # - nova-paths
+# - nova-power-api
 # - nova-protocol
 # - nova-quickshell
 # - nova-resources-api
@@ -30,6 +31,7 @@ path = "src/main.rs"
 [dependencies]
 nova-protocol.workspace = true
 nova-carrier.workspace = true
+nova-power-api.workspace = true
 nova-resources-api.workspace = true
 serde.workspace = true
 nova-features.workspace = true

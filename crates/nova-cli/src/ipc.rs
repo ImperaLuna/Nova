@@ -50,6 +50,7 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
 #[serde(untagged)]
 enum IpcCommand {
     Shared(Command),
+    Power(nova_power_api::Command),
     Resources(nova_resources_api::Command),
 }
 
@@ -59,7 +60,9 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
     if let Some(args) = args {
         request["args"] = serde_json::from_str(args).map_err(|e| format!("the arguments aren't JSON: {e}"))?;
     }
-    let read = if tagged_names_of::<nova_resources_api::Command>("cmd").contains(&name) {
+    let read = if tagged_names_of::<nova_power_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Power)
+    } else if tagged_names_of::<nova_resources_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Resources)
     } else {
         serde_json::from_value(request).map(IpcCommand::Shared)
@@ -83,6 +86,10 @@ mod tests {
             Ok(IpcCommand::Resources(nova_resources_api::Command::WatchResources { watching: true }))
         );
         assert!(parse("end_app", Some(r#"{"key": "x", "extra": 1}"#)).is_err());
+        assert_eq!(
+            parse("power", Some(r#"{"action": "suspend"}"#)),
+            Ok(IpcCommand::Power(nova_power_api::Command::Power { action: nova_power_api::PowerAction::Suspend }))
+        );
         assert!(parse("focus_workspace", Some(r#"{"id": 3, "extra": 1}"#)).is_err());
         assert!(parse("focus_workspace", None).is_err());
         assert!(parse("make_coffee", None).unwrap_err().contains("no such request"));

@@ -1,0 +1,33 @@
+# Allowed outside crates:
+# - futures-core
+# - libc
+# - zbus
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-log
+# - nova-power-api
+
+[package]
+name = "nova-power"
+description = "The power menu's actions through logind, and locking the screen when logind asks and before sleep"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-power-api.workspace = true
+nova-base.workspace = true
+nova-log.workspace = true
+futures-core.workspace = true
+libc.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+nova-carrier.workspace = true
+nova-hub.workspace = true
+nova-test-support.workspace = true
+
+[lints]
+workspace = true

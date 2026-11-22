@@ -97,6 +97,16 @@ fn resources_request() -> impl Strategy<Value = nova_carrier::Request<nova_resou
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
+/// The power feature's commands, which it owns (`nova-power-api`).
+fn power_request() -> impl Strategy<Value = nova_carrier::Request<nova_power_api::Command>> {
+    use nova_power_api::{Command, PowerAction};
+    let command = prop_oneof![
+        Just(Command::PowerOptions),
+        proptest::sample::select(&PowerAction::ALL[..]).prop_map(|action| Command::Power { action }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
 fn pairing_answer() -> impl Strategy<Value = PairingAnswer> {
     prop_oneof![Just(PairingAnswer::Accept), Just(PairingAnswer::Reject), ".*".prop_map(PairingAnswer::Code)]
 }
@@ -173,6 +183,31 @@ proptest! {
     fn every_resources_request_round_trips(request in resources_request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_power_request_round_trips(request in power_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn bad_power_requests_are_refused(request in power_request(), key in any::<String>(), value in json()) {
+        prop_assume!(!LINE_FIELDS.contains(&key.as_str()));
+        let decode = |line: &str| nova_carrier::decode_request::<nova_power_api::Command>(line);
+        let fields: Map<String, Value> = serde_json::from_str(&encode(&request).unwrap()).unwrap();
+        if let Some(Value::Object(args)) = fields.get("args")
+            && !args.contains_key(&key)
+        {
+            let mut args = args.clone();
+            args.insert(key.clone(), value.clone());
+            let mut extra = fields.clone();
+            extra.insert("args".into(), Value::Object(args));
+            prop_assert!(decode(&Value::Object(extra).to_string()).is_err());
+        }
+        let mut extra = fields;
+        extra.insert(key, value);
+        prop_assert!(decode(&Value::Object(extra).to_string()).is_err());
     }
 
     #[test]
