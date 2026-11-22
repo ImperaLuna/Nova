@@ -21,6 +21,9 @@ use gpui::{
 };
 use gpui_platform::application;
 
+#[cfg(feature = "shader")]
+mod capsule;
+
 // ---- Nova's tokens (ui/theme/Tokens.qml, themes/carbonfox.toml) ----------
 
 const BAR_HEIGHT: f32 = 36.0;
@@ -79,17 +82,18 @@ enum Motion {
 }
 
 #[derive(Clone)]
-struct Options {
+pub(crate) struct Options {
     motion: Motion,
     blur: bool,
-    layer: Layer,
-    toggles: u32,
-    every: Duration,
+    pub(crate) layer: Layer,
+    pub(crate) toggles: u32,
+    pub(crate) every: Duration,
     stiffness: f32,
     damping: f32,
     font: String,
-    only_screen: Option<usize>,
+    pub(crate) only_screen: Option<usize>,
     start_open: bool,
+    capsule: bool,
 }
 
 const HELP: &str = "nova-proto [switches]
@@ -101,7 +105,8 @@ const HELP: &str = "nova-proto [switches]
   --every MS              time between automatic toggles (default 700)
   --screen I              only the I-th screen (0-based)
   --font NAME             UI font (default: fontconfig's sans-serif)
-  --open                  start with the panel open";
+  --open                  start with the panel open
+  --capsule               the liquid volume capsule instead (shader build only)";
 
 fn parse_options() -> Options {
     let mut options = Options {
@@ -115,6 +120,7 @@ fn parse_options() -> Options {
         font: String::new(),
         only_screen: None,
         start_open: false,
+        capsule: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -145,6 +151,7 @@ fn parse_options() -> Options {
             "--screen" => options.only_screen = Some(value().parse().expect("index")),
             "--font" => options.font = value(),
             "--open" => options.start_open = true,
+            "--capsule" => options.capsule = true,
             "-h" | "--help" => {
                 println!("{HELP}");
                 std::process::exit(0);
@@ -252,7 +259,7 @@ impl Morph {
 // ---- Frame timing ---------------------------------------------------------
 
 #[derive(Default)]
-struct FrameStats {
+pub(crate) struct FrameStats {
     previous: Option<Instant>,
     frames: u32,
     late: u32,
@@ -263,7 +270,7 @@ struct FrameStats {
 }
 
 impl FrameStats {
-    fn frame(&mut self, refresh: Duration) {
+    pub(crate) fn frame(&mut self, refresh: Duration) {
         let now = Instant::now();
         if let Some(previous) = self.previous {
             let gap = now - previous;
@@ -276,7 +283,7 @@ impl FrameStats {
         self.previous = Some(now);
     }
 
-    fn settled(&mut self, screen: &str, refresh: Duration) {
+    pub(crate) fn settled(&mut self, screen: &str, refresh: Duration) {
         self.total_frames += u64::from(self.frames);
         self.total_late += u64::from(self.late);
         self.motions += 1;
@@ -620,6 +627,14 @@ fn main() {
     let options = parse_options();
     let offset = utc_offset_secs();
     application().run(move |cx: &mut App| {
+        if options.capsule {
+            #[cfg(feature = "shader")]
+            capsule::open(cx, &options);
+            #[cfg(not(feature = "shader"))]
+            panic!("--capsule needs the shader build (scripts/build-shader.sh)");
+            #[allow(unreachable_code)]
+            return;
+        }
         let displays = cx.displays();
         let toggles_left = Rc::new(Cell::new(0));
         for (index, display) in displays.iter().enumerate() {
