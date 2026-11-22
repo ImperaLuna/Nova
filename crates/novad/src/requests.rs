@@ -10,8 +10,6 @@ use nova_protocol::{CaptureMode, Command, Event, Outcome, Panel, VolumeKey, topi
 use nova_socket::{Answer, Caller, Router, done, value};
 use std::sync::Arc;
 
-const LOG_SOURCE: &str = "server";
-
 /// The routes of every message novad serves. A moved feature adds its
 /// route in its place in the list below (by its feature name), and its
 /// commands leave `nova_protocol::Command`.
