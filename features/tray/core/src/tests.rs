@@ -3,10 +3,9 @@
 //! connection) and libayatana (a bus name of its own) do.
 
 use super::*;
-use crate::apps::AppIndex;
-use crate::hub::{ClientQueue, Outgoing};
-use crate::session_bus::TestBus;
-use nova_protocol::topics;
+use crate::test_items::{Item, MenuOnlyItem, register, serve_item};
+use nova_hub::{ClientQueue, Outgoing};
+use nova_session_bus::TestBus;
 use nova_test_support::{TempDir, eventually, wait_until};
 use serde_json::{Value, json};
 use std::os::unix::net::UnixStream;
@@ -37,7 +36,7 @@ impl Fixture {
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let id = hub.register(queue);
-        hub.subscribe(id, topics::TRAY);
+        hub.subscribe(id, nova_tray_api::TOPIC);
         Self { dir, bus, hub, logger, ui, _ui_stream: ui_stream }
     }
 
@@ -58,7 +57,7 @@ impl Fixture {
 
     /// The next tray event's items.
     fn next_items(&self) -> Value {
-        crate::hub::next_named(&self.ui, "tray", WAIT)["items"].clone()
+        nova_hub::next_named(&self.ui, "tray", WAIT)["items"].clone()
     }
 
     /// Makes our process look, to the tray, like it runs in `unit`.
@@ -66,31 +65,6 @@ impl Fixture {
         let process = self.dir.join("proc").join(std::process::id().to_string());
         std::fs::create_dir_all(&process).unwrap();
         std::fs::write(process.join("cgroup"), format!("0::/user.slice/app.slice/{unit}\n")).unwrap();
-    }
-}
-
-/// An app's tray item, with the two properties the tray reads.
-pub struct Item {
-    pub id: String,
-    pub title: String,
-    /// Counts `Activate` calls.
-    pub activated: Arc<std::sync::atomic::AtomicUsize>,
-}
-
-#[interface(name = "org.kde.StatusNotifierItem")]
-impl Item {
-    #[zbus(property)]
-    fn id(&self) -> String {
-        self.id.clone()
-    }
-
-    #[zbus(property)]
-    fn title(&self) -> String {
-        self.title.clone()
-    }
-
-    fn activate(&self, _x: i32, _y: i32) {
-        self.activated.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -112,29 +86,6 @@ fn put_up_counting(
     let connection = fixture.connect();
     serve_item(&connection, name, path, service, Item { id: id.into(), title: format!("{id} title"), activated });
     connection
-}
-
-/// Serves `item` at `path` on `connection`, owning `name` first if given,
-/// and registers `service` with the watcher.
-pub fn serve_item(
-    connection: &Connection,
-    name: Option<&str>,
-    path: &str,
-    service: &str,
-    item: impl zbus::object_server::Interface,
-) {
-    zbus::block_on(async {
-        connection.object_server().at(path, item).await.unwrap();
-        if let Some(name) = name {
-            connection.request_name(name).await.unwrap();
-        }
-        register(connection, service).await.unwrap();
-    });
-}
-
-async fn register(connection: &Connection, service: &str) -> zbus::Result<zbus::Message> {
-    let method = "RegisterStatusNotifierItem";
-    connection.call_method(Some(WATCHER_NAME), WATCHER_PATH, Some(WATCHER_NAME), method, &(service,)).await
 }
 
 fn watcher_property<T: TryFrom<OwnedVariant>>(connection: &Connection, name: &str) -> T
@@ -266,27 +217,6 @@ fn hidden_apps_are_remembered_across_restarts() {
     tray.hide("steam", false).unwrap();
     assert!(event(&fixture).get("hidden").is_none());
     tray.stop();
-}
-
-/// A libayatana item, like Spotify's: no `Activate`, only a menu.
-pub struct MenuOnlyItem {
-    pub id: String,
-    pub title: String,
-}
-
-#[interface(name = "org.kde.StatusNotifierItem")]
-impl MenuOnlyItem {
-    #[zbus(property)]
-    fn id(&self) -> String {
-        self.id.clone()
-    }
-
-    #[zbus(property)]
-    fn title(&self) -> String {
-        self.title.clone()
-    }
-
-    fn secondary_activate(&self, _x: i32, _y: i32) {}
 }
 
 #[test]

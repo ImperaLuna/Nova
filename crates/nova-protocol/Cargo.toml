@@ -32,6 +32,7 @@ nova-lock-api.workspace = true
 nova-network-api.workspace = true
 nova-power-api.workspace = true
 nova-resources-api.workspace = true
+nova-tray-api.workspace = true
 insta.workspace = true
 proptest.workspace = true
 
