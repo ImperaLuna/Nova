@@ -33,9 +33,13 @@ pub const END: &str = "// END GENERATED";
 fn events() -> Vec<&'static str> {
     [
         tagged_names_of::<Event>("event"),
+        tagged_names_of::<nova_ai_usage_api::Event>("event"),
         tagged_names_of::<nova_launcher_api::Event>("event"),
         tagged_names_of::<nova_lock_api::Event>("event"),
+        tagged_names_of::<nova_media_api::Event>("event"),
         tagged_names_of::<nova_network_api::Event>("event"),
+        tagged_names_of::<nova_notifications_api::Event>("event"),
+        tagged_names_of::<nova_peripherals_api::Event>("event"),
         tagged_names_of::<nova_resources_api::Event>("event"),
         tagged_names_of::<nova_screenshot_api::Event>("event"),
         tagged_names_of::<nova_tray_api::Event>("event"),
@@ -100,7 +104,7 @@ fn groups(features: &Path, current: &str) -> Vec<Group> {
         Group::new(
             "Launcher providers built into novad (PROVIDER_*).",
             "PROVIDER",
-            &[nova_launcher_api::PROVIDER_APPS, nova_launcher_api::PROVIDER_FILES],
+            &[nova_launcher_api::PROVIDER_APPS, nova_nova_files_api::PROVIDER_FILES],
         ),
         Group::new("Power menu actions (PowerAction).", "POWER", names_of::<nova_power_api::PowerAction>()),
         Group::new(
@@ -113,9 +117,21 @@ fn groups(features: &Path, current: &str) -> Vec<Group> {
             "SHOT",
             names_of::<nova_screenshot_api::ScreenshotAction>(),
         ),
-        Group::new("How much a notification matters (Urgency).", "URGENCY", names_of::<Urgency>()),
-        Group::new("The now-playing panel's buttons (MediaAction).", "MEDIA", names_of::<MediaAction>()),
-        Group::new("What a media player is doing (PlaybackStatus).", "PLAYBACK", names_of::<PlaybackStatus>()),
+        Group::new(
+            "How much a notification matters (Urgency).",
+            "URGENCY",
+            names_of::<nova_notifications_api::Urgency>(),
+        ),
+        Group::new(
+            "The now-playing panel's buttons (MediaAction).",
+            "MEDIA",
+            names_of::<nova_media_api::MediaAction>(),
+        ),
+        Group::new(
+            "What a media player is doing (PlaybackStatus).",
+            "PLAYBACK",
+            names_of::<nova_media_api::PlaybackStatus>(),
+        ),
     ]
 }
 
@@ -128,7 +144,11 @@ fn limits() -> [(&'static str, u64, &'static str); 7] {
             size(nova_launcher_api::LAUNCHER_SEARCH_MAX_CHARS),
             "novad refuses longer launcher_search queries.",
         ),
-        ("MEDIA_PLAYER_MAX_BYTES", size(MEDIA_PLAYER_MAX_BYTES), "novad refuses longer media player ids."),
+        (
+            "MEDIA_PLAYER_MAX_BYTES",
+            size(nova_media_api::MEDIA_PLAYER_MAX_BYTES),
+            "novad refuses longer media player ids.",
+        ),
         (
             "WIFI_PASSWORD_MAX_BYTES",
             size(nova_network_api::WIFI_PASSWORD_MAX_BYTES),
@@ -262,7 +282,7 @@ fn providers_are_manifest_views() {
                 .is_ok_and(|manifest| manifest.contains(&format!("view = \"{provider}\"")))
         })
     };
-    for provider in [nova_launcher_api::PROVIDER_APPS, nova_launcher_api::PROVIDER_FILES] {
+    for provider in [nova_launcher_api::PROVIDER_APPS, nova_nova_files_api::PROVIDER_FILES] {
         assert!(slotted(provider), "no feature.toml slots in the {provider:?} provider");
     }
 }

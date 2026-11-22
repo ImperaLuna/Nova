@@ -6,7 +6,8 @@
 //! or the feature is off, the limits are dropped without a word. A status
 //! line command the user already had can run after it, on the same input.
 
-use nova_protocol::{Command, Request, encode};
+use nova_ai_usage_api::Command;
+use nova_protocol::encode;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -56,7 +57,7 @@ pub fn run(args: &StatuslineArgs, socket: &Path) -> Result<std::process::ExitCod
 /// Gives up after `SOCKET_TIMEOUT` in all: connecting can block too, when a
 /// stuck novad has stopped accepting.
 fn report(socket: &Path, command: Command) {
-    let Ok(line) = encode(Request { id: None, command }) else { return };
+    let Ok(line) = encode(nova_carrier::Request { id: None, command }) else { return };
     let socket = socket.to_owned();
     let (done, finished) = mpsc::channel();
     std::thread::spawn(move || {

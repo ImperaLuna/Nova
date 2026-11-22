@@ -1,0 +1,23 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates:
+# - nova-carrier
+
+[package]
+name = "nova-peripherals-api"
+description = "The peripherals feature's messages: the devices with a battery and their charge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-carrier.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

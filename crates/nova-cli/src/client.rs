@@ -160,9 +160,13 @@ const HUNG_UP: &str = "novad closed the connection";
 #[serde(untagged)]
 pub enum Sent {
     Shared(Event),
+    AiUsage(nova_ai_usage_api::Event),
     Launcher(nova_launcher_api::Event),
     Lock(nova_lock_api::Event),
+    Media(nova_media_api::Event),
     Network(nova_network_api::Event),
+    Notifications(nova_notifications_api::Event),
+    Peripherals(nova_peripherals_api::Event),
     Resources(nova_resources_api::Event),
     Screenshot(nova_screenshot_api::Event),
     Tray(nova_tray_api::Event),
