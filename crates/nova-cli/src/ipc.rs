@@ -129,6 +129,7 @@ mod tests {
             Ok(IpcCommand::Notifications(nova_notifications_api::Command::DismissNotification { id: 7 }))
         );
         assert!(parse("end_app", Some(r#"{"key": "x", "extra": 1}"#)).is_err());
+        assert_eq!(parse("lock", None), Ok(IpcCommand::Lock(nova_lock_api::Command::Lock)));
         assert_eq!(
             parse("cancel_capture", None),
             Ok(IpcCommand::Screenshot(nova_screenshot_api::Command::CancelCapture))
