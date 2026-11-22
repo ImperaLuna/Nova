@@ -3,13 +3,30 @@
 //! crates and fronts can name it without the adapters that build it
 //! (`nova-compositor`).
 
-use nova_carrier::Topic;
+use nova_carrier::{Published, Topic};
 use serde::{Deserialize, Serialize};
 
 /// The topic the desktop is published on.
 pub const TOPIC: Topic = Topic::named("compositor");
 /// The name of the event that carries it.
 pub const EVENT: &str = "compositor";
+
+/// Pushed by novad on [`TOPIC`]. The compositor adapters publish it without
+/// a copy (`nova_compositor::event`), the same on the wire.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "event", content = "data", rename_all = "snake_case")]
+pub enum Event {
+    /// The compositor's workspaces, outputs, focused window and keyboard
+    /// layout, sent right after subscribing and whenever any of it changes.
+    /// Never sent when novad doesn't know the compositor.
+    Compositor(Desktop),
+}
+
+impl Published for Event {
+    fn topic(&self) -> Option<Topic> {
+        Some(TOPIC)
+    }
+}
 
 /// What the compositor shows, the same shape whichever compositor it is.
 /// The UI shows only what `capabilities` lists.

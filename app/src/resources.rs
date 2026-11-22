@@ -54,7 +54,7 @@ impl nova_modules::Module for Resources {
         ctx: &crate::modules::Context,
         sources: &Sources,
         (): &(),
-        _: &[nova_protocol::FeatureState],
+        _: &[nova_daemon_info::FeatureState],
     ) -> Arc<Self> {
         Arc::new(Self(nova_resources::Resources::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))))
     }

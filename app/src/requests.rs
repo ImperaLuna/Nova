@@ -1,26 +1,30 @@
 //! What novad answers on the socket: one route per message type in
-//! [`router`]. `nova_protocol::Command` is the shared list the feature moves
-//! take apart (IMP-368); a feature that owns its commands (its api crate's
-//! `Command`) has its own route, which calls into its module. The socket
-//! itself is `nova-socket`'s.
+//! [`router`]. novad's own commands (`nova_daemon_info::Command`) and the
+//! ones it answers without a module (workspaces, `nova toggle`, `nova
+//! volume`) are answered here; every other feature's route calls into its
+//! module. The socket itself is `nova-socket`'s.
 
 use crate::Daemon;
+use nova_bar_api::Panel;
 use nova_base::lock;
 use nova_carrier::Outcome;
+use nova_daemon_info::{Command, Event, topics};
 use nova_hub::ClientId;
-use nova_protocol::{Command, Event, Panel, VolumeKey, topics};
 use nova_socket::{Answer, Caller, Router, done, value};
 
-/// The routes of every message novad serves. A moved feature adds its
-/// route in its place in the list below (by its feature name), and its
-/// commands leave `nova_protocol::Command`.
+/// The routes of every message novad serves: novad's own first, then each
+/// feature's, by its feature name.
 pub fn router() -> Router<Daemon> {
     Router::new()
-        .route::<Shared>(
-            |daemon, caller, Shared(command)| Connection::new(daemon, caller).answer(command),
-            |daemon, caller, Shared(command)| Connection::new(daemon, caller).follow_up(command),
+        .route::<Own>(
+            |daemon, caller, Own(command)| Connection::new(daemon, caller).answer(command),
+            |daemon, caller, Own(command)| Connection::new(daemon, caller).follow_up(command),
         )
         .route::<nova_ai_usage_api::Command>(crate::ai_usage::answer, |_, _, _| {})
+        .route::<nova_bar_api::Command>(
+            |daemon, caller, nova_bar_api::Command::Toggle { panel }| Connection::new(daemon, caller).toggle(*panel),
+            |_, _, _| {},
+        )
         .route::<nova_bluetooth_api::Command>(crate::bluetooth::answer, |_, _, _| {})
         .route::<nova_launcher_api::Command>(crate::launcher::answer, |_, _, _| {})
         .route::<nova_lock_api::Command>(crate::session_lock::answer, |_, _, _| {})
@@ -32,13 +36,20 @@ pub fn router() -> Router<Daemon> {
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
         .route::<nova_screenshot_api::Command>(crate::screenshot::answer, |_, _, _| {})
         .route::<nova_tray_api::Command>(crate::tray::answer, |_, _, _| {})
+        .route::<nova_volume_osd_api::Command>(
+            |daemon, caller, nova_volume_osd_api::Command::Volume { key }| Connection::new(daemon, caller).volume(*key),
+            |_, _, _| {},
+        )
         .route::<nova_wallpaper_api::Command>(crate::wallpaper::answer, |_, _, _| {})
+        .route::<nova_workspaces_api::Command>(
+            |daemon, caller, command| Connection::new(daemon, caller).workspaces(command),
+            |_, _, _| {},
+        )
         .listed_by(protocol_js_position)
 }
 
 /// The UI's protocol file. It is generated from these routes, so it names
-/// every command, and its order stays put as features move theirs out of
-/// `nova_protocol::Command` (`protocol_js`).
+/// every command, and its order stays put as routes change (`protocol_js`).
 const PROTOCOL_JS: &str = include_str!("../../ui/daemon/protocol.js");
 
 /// Where protocol.js names the command `name`, so an unknown command's
@@ -51,12 +62,12 @@ fn protocol_js_position(name: &str) -> usize {
         .unwrap_or(usize::MAX)
 }
 
-/// A shared command, read with its `subscribe` topics checked against the
-/// ones novad serves ([`crate::topics`]): an unknown one makes the request
-/// bad, as an unknown variant of a topic enum would.
-struct Shared(Command);
+/// One of novad's own commands, read with its `subscribe` topics checked
+/// against the ones novad serves ([`crate::topics`]): an unknown one makes
+/// the request bad, as an unknown variant of a topic enum would.
+struct Own(Command);
 
-impl<'de> serde::Deserialize<'de> for Shared {
+impl<'de> serde::Deserialize<'de> for Own {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let command = Command::deserialize(deserializer)?;
         if let Command::Subscribe { topics } = &command {
@@ -71,8 +82,15 @@ impl<'de> serde::Deserialize<'de> for Shared {
 /// The topics `follow_up` answers itself on subscribe; every other one in
 /// [`crate::topics::TOPICS`] is a module's.
 #[cfg(test)]
-const ANSWERED_HERE: &[nova_carrier::Topic] =
-    &[topics::FEATURES, topics::LOGS, topics::THEME, topics::COMPOSITOR, topics::HOST, topics::TOGGLE, topics::VOLUME];
+const ANSWERED_HERE: &[nova_carrier::Topic] = &[
+    topics::FEATURES,
+    topics::LOGS,
+    nova_theme_info::TOPIC,
+    nova_desktop_info::TOPIC,
+    nova_host_info::TOPIC,
+    nova_bar_api::TOPIC,
+    nova_volume_osd_api::TOPIC,
+];
 
 /// A request from the client `caller`.
 struct Connection<'a> {
@@ -86,25 +104,27 @@ impl<'a> Connection<'a> {
         Self { daemon, caller, id: caller.id() }
     }
 
-    /// The answer to `command`, at once or as work for another thread: the
-    /// requests that wait on logind, the compositor, an app starting or a
-    /// screen capture. Their quick checks run here, at once.
+    /// The answer to `command`.
     fn answer(&self, command: &Command) -> Answer {
         let outcome = match command {
             Command::Ping => Outcome::Result("pong".into()),
             Command::ListFeatures => value(Ok(&lock(&self.daemon.settings).features)),
             Command::Status => value(Ok(self.daemon.status())),
             Command::Subscribe { .. } | Command::Quit => done(Ok(())),
-            Command::FocusWorkspace { id } => {
-                done(self.compositor().and_then(|compositor| compositor.focus_workspace(*id)))
-            }
-            Command::StepWorkspace { output, step } => {
-                done(self.compositor().and_then(|compositor| compositor.step_workspace(output, *step)))
-            }
-            Command::Toggle { panel } => self.toggle(*panel),
-            Command::Volume { key } => self.volume(*key),
         };
         Answer::Now(outcome)
+    }
+
+    /// Asks the compositor to show a workspace.
+    fn workspaces(&self, command: &nova_workspaces_api::Command) -> Answer {
+        use nova_workspaces_api::Command;
+        let compositor = self.compositor();
+        Answer::Now(done(match command {
+            Command::FocusWorkspace { id } => compositor.and_then(|compositor| compositor.focus_workspace(*id)),
+            Command::StepWorkspace { output, step } => {
+                compositor.and_then(|compositor| compositor.step_workspace(output, *step))
+            }
+        }))
     }
 
     fn compositor(&self) -> Result<&nova_compositor::Compositor, String> {
@@ -121,32 +141,32 @@ impl<'a> Connection<'a> {
 
     /// Tells the UI to open or close `panel` on the focused output. The UI
     /// knows which screen has it open, so it decides which.
-    fn toggle(&self, panel: Panel) -> Outcome {
+    fn toggle(&self, panel: Panel) -> Answer {
         if let Err(e) = self.require_feature(panel.name()) {
-            return Outcome::Error(e);
+            return Answer::Now(Outcome::Error(e));
         }
         let output = self.daemon.compositor.as_ref().and_then(|compositor| compositor.focused_output());
-        match self.daemon.hub.publish(&Event::Toggle { panel, output }) {
+        Answer::Now(match self.daemon.hub.publish(&nova_bar_api::Event::Toggle { panel, output }) {
             0 => Outcome::Error("the UI isn't connected to novad, so there's nothing to toggle".into()),
             _ => Outcome::Result(serde_json::Value::Null),
-        }
+        })
     }
 
     /// Passes a volume key to the UI, which owns audio (PipeWire through
     /// Quickshell) and the capsule. The keys change the volume while the UI
     /// runs, whichever features draw it (the capsule, quick settings).
-    fn volume(&self, key: VolumeKey) -> Outcome {
-        match self.daemon.hub.publish(&Event::Volume { key }) {
+    fn volume(&self, key: nova_volume_osd_api::VolumeKey) -> Answer {
+        Answer::Now(match self.daemon.hub.publish(&nova_volume_osd_api::Event::Volume { key }) {
             0 => Outcome::Error("the UI isn't connected to novad, so nothing can change the volume".into()),
             _ => Outcome::Result(serde_json::Value::Null),
-        }
+        })
     }
 
     /// Work done after the reply is queued.
     fn follow_up(&self, command: Command) {
         match command {
             Command::Subscribe { topics: names } => {
-                // The names were checked as the request was read (`Shared`).
+                // The names were checked as the request was read (`Own`).
                 for topic in names.iter().filter_map(|name| crate::topics::named::<serde_json::Error>(name).ok()) {
                     if topic == topics::LOGS {
                         self.daemon.logger.subscribe(self.id);
@@ -158,17 +178,17 @@ impl<'a> Connection<'a> {
                     self.daemon.hub.subscribe(self.id, topic);
                     match topic {
                         topics::FEATURES => self.send(Event::Features { features: settings.features.clone() }),
-                        topics::THEME => self.send(Event::Theme(settings.theme.clone())),
+                        nova_theme_info::TOPIC => self.send(nova_theme_info::Event::Theme(settings.theme.clone())),
                         // Sent once the compositor has said what it shows.
-                        topics::COMPOSITOR => {
+                        nova_desktop_info::TOPIC => {
                             if let Some(compositor) = &self.daemon.compositor {
                                 compositor.subscribe(self.id);
                             }
                         }
                         // Facts about the machine, there whatever the features.
-                        topics::HOST => self.send(Event::Host(settings.host())),
+                        nova_host_info::TOPIC => self.send(nova_host_info::Event::Host(settings.host())),
                         // Only ever sent as `nova toggle` or `nova volume` asks.
-                        topics::TOGGLE | topics::VOLUME => {}
+                        nova_bar_api::TOPIC | nova_volume_osd_api::TOPIC => {}
                         // A module's (`Module::TOPIC`, checked by
                         // `each_topic_has_one_owner`): without its feature
                         // there is nothing to send until a reload turns it on.
@@ -180,13 +200,7 @@ impl<'a> Connection<'a> {
                 self.flush();
                 self.daemon.quit();
             }
-            Command::Ping
-            | Command::ListFeatures
-            | Command::Status
-            | Command::FocusWorkspace { .. }
-            | Command::StepWorkspace { .. }
-            | Command::Toggle { .. }
-            | Command::Volume { .. } => {}
+            Command::Ping | Command::ListFeatures | Command::Status => {}
         }
     }
 

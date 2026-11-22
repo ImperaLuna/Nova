@@ -4,7 +4,7 @@
 
 use crate::client::Client;
 use crate::{status, systemd};
-use nova_protocol::Command;
+use nova_daemon_info::Command;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Stdio;

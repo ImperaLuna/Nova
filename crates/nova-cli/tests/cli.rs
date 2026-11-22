@@ -1,7 +1,7 @@
 //! Integration tests: the real `nova` binary against a real daemon (in this
 //! process, without the UI) over a real socket.
 
-use nova_protocol::{Status, UiState};
+use nova_daemon_info::{Status, UiState};
 use nova_test_support::TempDir;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

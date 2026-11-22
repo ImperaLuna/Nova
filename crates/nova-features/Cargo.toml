@@ -3,8 +3,8 @@
 # - toml
 #
 # Allowed workspace crates:
+# - nova-daemon-info
 # - nova-paths
-# - nova-protocol
 
 [package]
 name = "nova-features"
@@ -15,8 +15,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+nova-daemon-info.workspace = true
 nova-paths.workspace = true
-nova-protocol.workspace = true
 serde.workspace = true
 toml.workspace = true
 

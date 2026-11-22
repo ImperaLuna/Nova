@@ -12,12 +12,12 @@ use crate::config::{self, Config};
 use crate::features;
 use crate::modules::{self, Context, Running};
 use nova_compositor::Compositor;
+use nova_daemon_info::{Event, FeatureState};
 use nova_features::{Manifest, Selection};
 use nova_host_info::Host;
 use nova_hub::Hub;
 use nova_icons::Icons;
 use nova_log::Logger;
-use nova_protocol::{Event, FeatureState};
 use nova_theme_info::Theme;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -63,7 +63,7 @@ impl Settings {
         warn_unknown_modes(&sources.manifests, &selection, logger);
         let features = features::states(&sources.manifests, &selection, &sources.path_var);
         let theme = resolve_theme(sources, &config, logger);
-        hub.publish(&Event::Theme(theme.clone()));
+        hub.publish(&nova_theme_info::Event::Theme(theme.clone()));
         let context = Context {
             hub: Arc::clone(hub),
             logger: Arc::clone(logger),
@@ -94,12 +94,15 @@ impl Settings {
         if self.config.theme != config.theme {
             let theme = resolve_theme(sources, &config, logger);
             if theme != self.theme {
-                hub.publish(&Event::Theme(theme.clone()));
+                hub.publish(&nova_theme_info::Event::Theme(theme.clone()));
             }
             self.theme = theme;
         }
         if self.config.quick_settings != config.quick_settings {
-            hub.publish(&Event::Host(nova_host::read(config.quick_settings.name.as_deref(), &sources.icons)));
+            hub.publish(&nova_host_info::Event::Host(nova_host::read(
+                config.quick_settings.name.as_deref(),
+                &sources.icons,
+            )));
         }
         self.modules.apply(&self.context, &sources.modules, &config, &features);
         publish_features(&self.features, &features, hub, logger);

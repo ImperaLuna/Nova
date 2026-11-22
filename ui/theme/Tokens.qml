@@ -11,7 +11,7 @@ import QtQuick
 QtObject {
     id: root
 
-    // Theme colors, one per token in nova-protocol's Palette. A novad test
+    // Theme colors, one per token in nova-theme-info's Palette. A novad test
     // checks every token has a property here.
 
     // Backgrounds

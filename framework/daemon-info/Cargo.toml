@@ -1,0 +1,22 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates:
+# - nova-carrier
+# - nova-desktop-info
+
+[package]
+name = "nova-daemon-info"
+description = "novad's own messages: hello, the feature list, the log feed, status and the connection's commands"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-carrier.workspace = true
+nova-desktop-info.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

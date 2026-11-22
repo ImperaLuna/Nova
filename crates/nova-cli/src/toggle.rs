@@ -8,8 +8,9 @@
 
 use crate::client::Client;
 use clap::builder::{PossibleValuesParser, TypedValueParser};
-use nova_protocol::{Command, Panel, VolumeKey};
+use nova_bar_api::Panel;
 use nova_screenshot_api::CaptureMode;
+use nova_volume_osd_api::VolumeKey;
 use std::path::Path;
 
 #[derive(clap::Args)]
@@ -19,14 +20,14 @@ pub struct ToggleArgs {
     panel: Panel,
 }
 
-/// Accepts exactly the panels nova-protocol knows, and lists them in help.
+/// Accepts exactly the panels `nova-bar-api` lists, and lists them in help.
 fn panel_names() -> impl TypedValueParser<Value = Panel> {
     PossibleValuesParser::new(Panel::ALL.map(Panel::name))
         .map(|name| name.parse().expect("PossibleValuesParser only passes listed names"))
 }
 
 pub fn run(args: &ToggleArgs, socket: &Path) -> Result<(), String> {
-    Client::connect(socket)?.request(Command::Toggle { panel: args.panel })?;
+    Client::connect(socket)?.request(nova_bar_api::Command::Toggle { panel: args.panel })?;
     Ok(())
 }
 
@@ -57,7 +58,7 @@ pub fn volume(args: &VolumeArgs, socket: &Path) -> Result<(), String> {
         VolumeArg::Down => VolumeKey::Down,
         VolumeArg::Mute => VolumeKey::Mute,
     };
-    Client::connect(socket)?.request(Command::Volume { key })?;
+    Client::connect(socket)?.request(nova_volume_osd_api::Command::Volume { key })?;
     Ok(())
 }
 

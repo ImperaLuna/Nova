@@ -62,7 +62,7 @@ lint-nix:
 protocol-js:
     NOVA_WRITE_PROTOCOL_JS=1 cargo test -p novad protocol_js::protocol_js_is_current
 
-# Review changed insta snapshots (crates/*/src/snapshots)
+# Review changed insta snapshots (each crate's snapshots folders)
 snapshots:
     cargo insta review
 

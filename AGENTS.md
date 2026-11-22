@@ -71,11 +71,12 @@ folders one feature at a time (IMP-368, the novad move); until then most of
 it is in `crates/`.
 
 - `framework/<name>/`: the shared part every feature plugs into. It never
-  names a feature. A lookup's wire types sit in their own light `-info`
-  crate (`app-info`, `desktop-info`, `host-info`, `theme-info`: plain
-  serde structs, nothing beyond serde, `nova-base` and the topic's
-  `nova-carrier`), so api crates and fronts carry them without the
-  lookup's code.
+  names a feature. Wire types that aren't a feature's sit in their own
+  light `-info` crate (`app-info`, `daemon-info` for novad's own messages,
+  `desktop-info`, `host-info`, `theme-info`: plain serde types, with their
+  `Event` and `TOPIC` where they have one), so api crates and fronts carry
+  them without the code that builds them. An `-info` crate uses only
+  `nova-carrier` and other `-info` crates (rule I1).
 - `features/<id>/api/`: the feature's own messages and types, what other
   crates may use. `features/<id>/core/`: its work, the part that talks to
   the system and draws nothing. `features/<id>/ui/`: reserved for the GPUI
@@ -103,6 +104,7 @@ these rules and names the one a change breaks:
 | M1 | outside `crates/` and `app/` never uses one in `crates/` | move what it needs out of `crates/` first |
 | W1 | in `framework/` uses only other framework crates | let the feature plug in (a module, a port, a message type) |
 | W2 | in `fronts/` uses only listed framework crates and api crates | send a message |
+| I1 | named `framework/<name>-info` uses only `nova-carrier` and other `-info` crates | move the code to the crate that builds the types |
 | F1 | `api` uses only listed framework crates and api crates | move the code to `core` |
 | F2 | `core` uses only listed framework crates and api crates, never a `ui` | send an event |
 | F3 | `ui` uses only listed framework crates and api crates, never a `core` | send a message |
@@ -127,19 +129,16 @@ and every test keeps its expectations (a test that moves keeps its
 assertions). The feature is `<id>` (its folder name), its crates
 `nova-<id>-api` and `nova-<id>` (`_` for `-` in Rust paths).
 
-1. **The api crate**, `features/<id>/api`: the feature's messages, moved
-   from `nova-protocol` as they are (doc comments too). Its own `Command`
+1. **The api crate**, `features/<id>/api`: the feature's messages, with
+   their doc comments. Its own `Command`
    enum (`#[serde(tag = "cmd", content = "args", rename_all = "snake_case",
    deny_unknown_fields)]`), its own `Event` enum (`tag = "event", content =
    "data"`) implementing `nova_carrier::Published`, its topics as `pub const
-   TOPIC: Topic = Topic::named("<wire name>")` (the name `nova-protocol`'s
-   `topics` constant had), and the types those carry. It uses only
+   TOPIC: Topic = Topic::named("<wire name>")`, and the types those carry. It uses only
    `nova-carrier`, the light type crates whose types its messages carry
    (`FRAMEWORK_FOR_API`, like `nova-app-info`'s `App`; never the lookup
    crates themselves), and other api
-   crates. Done when the variants, the topic
-   constant and the types are gone from `nova-protocol`, with nothing left
-   pointing at them.
+   crates. Done when no other crate defines them.
 2. **The core crate**, `features/<id>/core`: novad's module folder (or
    file) moved with `git mv`, `mod.rs` becoming `lib.rs`. `crate::` paths
    to shared helpers become the framework crates that hold them
@@ -167,25 +166,25 @@ assertions). The feature is `<id>` (its folder name), its crates
      `[dependencies]`, in alphabetical order.
    - `app/src/requests.rs` `router()`: one
      `.route::<nova_<id>_api::Command>(crate::<id>::answer, |_, _, _| {})`
-     after the `Shared` route, the feature routes sorted by feature id (the
+     after novad's own (`Own`) route, the feature routes sorted by feature id (the
      router lists names in protocol.js's order, so errors don't move). Its
      arms leave `answer` and `follow_up`, and its `fn <id>()` lookup goes.
      A module's topic needs no line in `follow_up`: its catch-all asks the
      modules (`Module::TOPIC`), and `each_topic_has_one_owner` checks it.
-   - `app/src/topics.rs` `TOPICS`: the api's constant replaces the
-     shared one in its place, never moved or appended.
+   - `app/src/topics.rs` `TOPICS`: the api's constant, at the end for a
+     new topic (protocol.js adds a new name at the end of its group).
    - `app/src/protocol_js.rs` `events()`: the api's `Event` after
-     the shared one, sorted by feature id.
+     novad's own and the `-info` crates', sorted by feature id.
    - `crates/nova-cli`: the api's `Command` as a variant of `ipc.rs`'s
      `IpcCommand` (with its branch in `parse`), and its `Event` as a variant
-     of `client.rs`'s `Sent`, both after `Shared`, sorted by feature id; the
+     of `client.rs`'s `Sent`, both after novad's own (`Daemon`) and the
+     `-info` crates', sorted by feature id; the
      crate on both allowed lists. A CLI command that sent or read the moved
      messages matches the new variant.
-   - `crates/nova-protocol`: the wire format snapshot keeps its lines, now
-     built from the api's types (a dev-dependency, alphabetical);
-     `tests/decode_request.rs` gets a strategy and round trip for the
-     feature's commands.
-   Done when `rg 'nova_protocol::.*<moved name>'` finds nothing and
+   - `app/src/tests/wire.rs`: the wire format snapshot gets the feature's
+     lines, built from the api's types; `app/tests/decode_request.rs` gets
+     a strategy and round trip for the feature's commands.
+   Done when
    `cargo test -p novad requests::tests::every_command_has_one_route`
    passes.
 5. **Check.** `just check` (layout, clippy, every test), and
@@ -199,8 +198,8 @@ assertions). The feature is `<id>` (its folder name), its crates
 - One source of truth. A value used in more than one place (a color, size,
   duration, timeout, socket path, command name, event name) is defined once
   and referenced everywhere else: design values in `theme/Tokens.qml`, wire
-  names in the feature's api crate, or `nova-protocol` until it moves (the
-  envelope and the log feed in `nova-carrier`), Rust constants in the crate
+  names in the api or `-info` crate of their message (the envelope and the
+  log feed in `nova-carrier`), Rust constants in the crate
   that owns them. Never copy a literal into a second file. The wire names in
   `ui/daemon/protocol.js` are generated from the types novad serves: change
   the Rust types, then run `just protocol-js`.

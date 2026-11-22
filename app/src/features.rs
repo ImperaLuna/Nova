@@ -1,8 +1,8 @@
 //! Which features the UI may load: on in the user's selection and with all
 //! their binaries present.
 
+use nova_daemon_info::{FeatureState, FeatureStatus};
 use nova_features::{Manifest, Selection};
-use nova_protocol::{FeatureState, FeatureStatus};
 use std::path::PathBuf;
 
 /// The user's choices in the first of `paths` that exists (`features.toml`,

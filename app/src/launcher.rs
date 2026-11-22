@@ -11,11 +11,11 @@ use crate::nova_files::NovaFiles;
 use crate::tray::Tray;
 use nova_base::lock;
 use nova_carrier::Outcome;
+use nova_daemon_info::{FeatureState, FeatureStatus};
 use nova_launcher::providers::{HOST, Host, Provider, Run, Slotted};
 use nova_launcher_api::{Command, PROVIDER_APPS};
 use nova_modules::{Has, Module};
 use nova_nova_files_api::PROVIDER_FILES;
-use nova_protocol::{FeatureState, FeatureStatus};
 use nova_socket::{Answer, Caller, done, value};
 use std::sync::{Arc, mpsc};
 
@@ -171,7 +171,7 @@ impl nova_modules::Module for Launcher {
 
     fn config(_: &crate::config::Config) {}
 
-    fn start(ctx: &crate::modules::Context, paths: &Paths, (): &(), _: &[nova_protocol::FeatureState]) -> Arc<Self> {
+    fn start(ctx: &crate::modules::Context, paths: &Paths, (): &(), _: &[nova_daemon_info::FeatureState]) -> Arc<Self> {
         Arc::new(Self(nova_launcher::Launcher::start(
             paths.clone(),
             Arc::clone(&ctx.apps),
@@ -194,8 +194,8 @@ impl nova_modules::Module for Launcher {
 mod tests {
     use super::*;
     use nova_carrier::log::LogLevel;
+    use nova_daemon_info::Slot;
     use nova_launcher_api::{LauncherItem, TextRun};
-    use nova_protocol::Slot;
     use nova_test_support::TempDir;
 
     /// A provider that finds `query` back as one item.

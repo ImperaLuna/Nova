@@ -43,7 +43,6 @@ tar = { version = "0.4", default-features = false }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 ruzstd = "0.9"
 lzma-rust2 = { version = "0.23", default-features = false, features = ["std", "xz"] }
-nova-protocol = { path = "crates/nova-protocol" }
 nova-features = { path = "crates/nova-features" }
 novad = { path = "app" }
 nova-base = { path = "framework/base" }
@@ -69,9 +68,11 @@ nova-host = { path = "framework/host" }
 nova-host-info = { path = "framework/host-info" }
 nova-compositor = { path = "framework/compositor" }
 nova-desktop-info = { path = "framework/desktop-info" }
+nova-daemon-info = { path = "framework/daemon-info" }
 nova-test-support = { path = "framework/test-support" }
 nova-ai-usage-api = { path = "features/ai-usage/api" }
 nova-ai-usage = { path = "features/ai-usage/core" }
+nova-bar-api = { path = "features/bar/api" }
 nova-bluetooth-api = { path = "features/bluetooth/api" }
 nova-bluetooth = { path = "features/bluetooth/core" }
 nova-launcher-api = { path = "features/launcher/api" }
@@ -98,8 +99,10 @@ nova-screenshot-api = { path = "features/screenshot/api" }
 nova-screenshot = { path = "features/screenshot/core" }
 nova-tray-api = { path = "features/tray/api" }
 nova-tray = { path = "features/tray/core" }
+nova-volume-osd-api = { path = "features/volume-osd/api" }
 nova-wallpaper-api = { path = "features/wallpaper/api" }
 nova-wallpaper = { path = "features/wallpaper/core" }
+nova-workspaces-api = { path = "features/workspaces/api" }
 nova-x11-tray = { path = "features/x11-tray/core" }
 
 [workspace.lints.clippy]

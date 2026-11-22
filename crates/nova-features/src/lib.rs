@@ -40,8 +40,8 @@
 
 pub mod gpus;
 
-pub use nova_protocol::Slot;
-use nova_protocol::{FeatureState, FeatureStatus};
+pub use nova_daemon_info::Slot;
+use nova_daemon_info::{FeatureState, FeatureStatus};
 
 use serde::Deserialize;
 use std::collections::BTreeMap;

@@ -2,7 +2,26 @@
 //! ([`Host`]): plain data, so api crates and fronts can name it without the
 //! code that reads it (`nova-host`).
 
+use nova_carrier::{Published, Topic};
 use serde::{Deserialize, Serialize};
+
+/// The topic a client subscribes to for [`Event::Host`].
+pub const TOPIC: Topic = Topic::named("host");
+
+/// Pushed by novad on [`TOPIC`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "event", content = "data", rename_all = "snake_case")]
+pub enum Event {
+    /// The machine and its user, for the quick settings header, sent right
+    /// after subscribing.
+    Host(Host),
+}
+
+impl Published for Event {
+    fn topic(&self) -> Option<Topic> {
+        Some(TOPIC)
+    }
+}
 
 /// The machine and its user, as the quick settings header shows them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

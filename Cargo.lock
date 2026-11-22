@@ -796,6 +796,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-bar-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
 name = "nova-base"
 version = "0.1.0"
 dependencies = [
@@ -848,10 +856,13 @@ dependencies = [
  "jiff",
  "nova-ai-usage-api",
  "nova-app-info",
+ "nova-bar-api",
  "nova-bluetooth-api",
  "nova-carrier",
+ "nova-daemon-info",
  "nova-desktop-info",
  "nova-features",
+ "nova-host-info",
  "nova-launcher-api",
  "nova-lock-api",
  "nova-media-api",
@@ -860,14 +871,16 @@ dependencies = [
  "nova-paths",
  "nova-peripherals-api",
  "nova-power-api",
- "nova-protocol",
  "nova-quickshell",
  "nova-recording-api",
  "nova-resources-api",
  "nova-screenshot-api",
  "nova-test-support",
+ "nova-theme-info",
  "nova-tray-api",
+ "nova-volume-osd-api",
  "nova-wallpaper-api",
+ "nova-workspaces-api",
  "novad",
  "serde",
  "serde_json",
@@ -889,6 +902,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-daemon-info"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "nova-desktop-info",
+ "serde",
+]
+
+[[package]]
 name = "nova-desktop-info"
 version = "0.1.0"
 dependencies = [
@@ -900,8 +922,8 @@ dependencies = [
 name = "nova-features"
 version = "0.1.0"
 dependencies = [
+ "nova-daemon-info",
  "nova-paths",
- "nova-protocol",
  "nova-test-support",
  "serde",
  "toml",
@@ -921,6 +943,7 @@ dependencies = [
 name = "nova-host-info"
 version = "0.1.0"
 dependencies = [
+ "nova-carrier",
  "serde",
 ]
 
@@ -1218,37 +1241,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nova-protocol"
-version = "0.1.0"
-dependencies = [
- "insta",
- "nova-ai-usage-api",
- "nova-app-info",
- "nova-bluetooth-api",
- "nova-carrier",
- "nova-compositor",
- "nova-desktop-info",
- "nova-host-info",
- "nova-launcher-api",
- "nova-lock-api",
- "nova-media-api",
- "nova-network-api",
- "nova-notifications-api",
- "nova-nova-files-api",
- "nova-peripherals-api",
- "nova-power-api",
- "nova-recording-api",
- "nova-resources-api",
- "nova-screenshot-api",
- "nova-theme-info",
- "nova-tray-api",
- "nova-wallpaper-api",
- "proptest",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "nova-quickshell"
 version = "0.1.0"
 dependencies = [
@@ -1395,6 +1387,7 @@ dependencies = [
 name = "nova-theme-info"
 version = "0.1.0"
 dependencies = [
+ "nova-carrier",
  "serde",
 ]
 
@@ -1423,6 +1416,14 @@ name = "nova-tray-api"
 version = "0.1.0"
 dependencies = [
  "nova-app-info",
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-volume-osd-api"
+version = "0.1.0"
+dependencies = [
  "nova-carrier",
  "serde",
 ]
@@ -1465,6 +1466,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-workspaces-api"
+version = "0.1.0"
+dependencies = [
+ "nova-desktop-info",
+ "serde",
+]
+
+[[package]]
 name = "nova-x11-tray"
 version = "0.1.0"
 dependencies = [
@@ -1486,18 +1495,22 @@ dependencies = [
  "clap",
  "flate2",
  "futures-core",
+ "insta",
  "jiff",
  "libc",
  "lzma-rust2",
  "md-5",
  "nova-ai-usage",
  "nova-ai-usage-api",
+ "nova-app-info",
  "nova-apps",
+ "nova-bar-api",
  "nova-base",
  "nova-bluetooth",
  "nova-bluetooth-api",
  "nova-carrier",
  "nova-compositor",
+ "nova-daemon-info",
  "nova-desktop-info",
  "nova-features",
  "nova-host",
@@ -1525,7 +1538,6 @@ dependencies = [
  "nova-power",
  "nova-power-api",
  "nova-process",
- "nova-protocol",
  "nova-quickshell",
  "nova-recording",
  "nova-recording-api",
@@ -1541,10 +1553,13 @@ dependencies = [
  "nova-theme-info",
  "nova-tray",
  "nova-tray-api",
+ "nova-volume-osd-api",
  "nova-wallpaper",
  "nova-wallpaper-api",
+ "nova-workspaces-api",
  "nova-x11-tray",
  "png",
+ "proptest",
  "ruzstd",
  "serde",
  "serde_json",
