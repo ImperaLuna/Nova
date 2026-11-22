@@ -31,6 +31,7 @@ serde_json.workspace = true
 [dev-dependencies]
 # The wire format snapshot keeps the moved features' messages (IMP-368).
 nova-ai-usage-api.workspace = true
+nova-bluetooth-api.workspace = true
 nova-launcher-api.workspace = true
 nova-lock-api.workspace = true
 nova-media-api.workspace = true

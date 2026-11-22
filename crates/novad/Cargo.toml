@@ -21,6 +21,8 @@
 # - nova-ai-usage-api
 # - nova-apps
 # - nova-base
+# - nova-bluetooth
+# - nova-bluetooth-api
 # - nova-carrier
 # - nova-compositor
 # - nova-features
@@ -89,6 +91,8 @@ nova-modules.workspace = true
 nova-settings.workspace = true
 nova-ai-usage.workspace = true
 nova-ai-usage-api.workspace = true
+nova-bluetooth.workspace = true
+nova-bluetooth-api.workspace = true
 nova-launcher.workspace = true
 nova-launcher-api.workspace = true
 nova-lock.workspace = true

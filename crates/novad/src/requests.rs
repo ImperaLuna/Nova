@@ -20,6 +20,7 @@ pub fn router() -> Router<Daemon> {
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).follow_up(command),
         )
         .route::<nova_ai_usage_api::Command>(crate::ai_usage::answer, |_, _, _| {})
+        .route::<nova_bluetooth_api::Command>(crate::bluetooth::answer, |_, _, _| {})
         .route::<nova_launcher_api::Command>(crate::launcher::answer, |_, _, _| {})
         .route::<nova_lock_api::Command>(crate::session_lock::answer, |_, _, _| {})
         .route::<nova_media_api::Command>(crate::media::answer, |_, _, _| {})
@@ -113,28 +114,6 @@ impl<'a> Connection<'a> {
             Command::OpenLog => {
                 done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().open_log()))
             }
-            Command::WatchBluetooth { watching } => {
-                done(self.bluetooth().map(|bluetooth| bluetooth.watch(self.id, *watching)))
-            }
-            Command::BluetoothPower { on } => {
-                let on = *on;
-                return self.bluetooth_later(move |bluetooth| bluetooth.power(on));
-            }
-            Command::BluetoothConnect { address } => {
-                let address = address.clone();
-                return self.bluetooth_later(move |bluetooth| bluetooth.connect(&address));
-            }
-            Command::BluetoothDisconnect { address } => {
-                let address = address.clone();
-                return self.bluetooth_later(move |bluetooth| bluetooth.disconnect(&address));
-            }
-            Command::BluetoothForget { address } => {
-                let address = address.clone();
-                return self.bluetooth_later(move |bluetooth| bluetooth.forget(&address));
-            }
-            Command::BluetoothAnswer { id, answer } => {
-                done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
-            }
         };
         Answer::Now(outcome)
     }
@@ -143,10 +122,6 @@ impl<'a> Connection<'a> {
 
     fn recordings(&self) -> Arc<crate::recording::Recordings> {
         Arc::clone(&self.daemon.kept.recordings)
-    }
-
-    fn bluetooth(&self) -> Result<Arc<crate::bluetooth::Bluetooth>, String> {
-        self.daemon.module()
     }
 
     fn compositor(&self) -> Result<&crate::compositor::Compositor, String> {
@@ -158,18 +133,6 @@ impl<'a> Connection<'a> {
         match self.daemon.feature_ready(id) {
             true => Ok(()),
             false => Err(crate::features::not_ready(id)),
-        }
-    }
-
-    /// Runs `work` with Bluetooth on its own thread: BlueZ, the device and
-    /// the user's answer to pairing take their time.
-    fn bluetooth_later(
-        &self,
-        work: impl FnOnce(&crate::bluetooth::Bluetooth) -> Result<(), String> + Send + 'static,
-    ) -> Answer {
-        match self.bluetooth() {
-            Ok(bluetooth) => Answer::later(move || done(work(&bluetooth))),
-            Err(e) => Answer::Now(Outcome::Error(e)),
         }
     }
 
@@ -261,13 +224,7 @@ impl<'a> Connection<'a> {
             | Command::PauseRecording { .. }
             | Command::RecordingAction { .. }
             | Command::OpenLog
-            | Command::Volume { .. }
-            | Command::BluetoothPower { .. }
-            | Command::WatchBluetooth { .. }
-            | Command::BluetoothConnect { .. }
-            | Command::BluetoothDisconnect { .. }
-            | Command::BluetoothForget { .. }
-            | Command::BluetoothAnswer { .. } => {}
+            | Command::Volume { .. } => {}
         }
     }
 

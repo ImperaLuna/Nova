@@ -4,7 +4,7 @@
 //! that do decode must be exactly what a client meant to send.
 
 use nova_ai_usage_api::{AiProvider, UsageLimit, UsageWindow};
-use nova_protocol::{Command, PROTOCOL_VERSION, PairingAnswer, Request, Step, decode_request, encode, topics};
+use nova_protocol::{Command, PROTOCOL_VERSION, Request, Step, decode_request, encode, topics};
 use proptest::prelude::*;
 use serde_json::{Map, Value, json};
 
@@ -78,8 +78,6 @@ fn command() -> impl Strategy<Value = Command> {
         any::<i64>().prop_map(|id| Command::FocusWorkspace { id }),
         (any::<String>(), prop_oneof![Just(Step::Next), Just(Step::Previous)])
             .prop_map(|(output, step)| Command::StepWorkspace { output, step }),
-        ".*".prop_map(|address| Command::BluetoothConnect { address }),
-        (any::<u64>(), pairing_answer()).prop_map(|(id, answer)| Command::BluetoothAnswer { id, answer }),
     ]
 }
 
@@ -171,6 +169,20 @@ fn network_request() -> impl Strategy<Value = nova_carrier::Request<nova_network
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
+/// The Bluetooth feature's commands, which it owns (`nova-bluetooth-api`).
+fn bluetooth_request() -> impl Strategy<Value = nova_carrier::Request<nova_bluetooth_api::Command>> {
+    use nova_bluetooth_api::Command;
+    let command = prop_oneof![
+        any::<bool>().prop_map(|on| Command::BluetoothPower { on }),
+        any::<bool>().prop_map(|watching| Command::WatchBluetooth { watching }),
+        ".*".prop_map(|address| Command::BluetoothConnect { address }),
+        ".*".prop_map(|address| Command::BluetoothDisconnect { address }),
+        ".*".prop_map(|address| Command::BluetoothForget { address }),
+        (any::<u64>(), pairing_answer()).prop_map(|(id, answer)| Command::BluetoothAnswer { id, answer }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
 /// The power feature's commands, which it owns (`nova-power-api`).
 fn power_request() -> impl Strategy<Value = nova_carrier::Request<nova_power_api::Command>> {
     use nova_power_api::{Command, PowerAction};
@@ -220,7 +232,8 @@ fn wallpaper_request() -> impl Strategy<Value = nova_carrier::Request<nova_wallp
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
-fn pairing_answer() -> impl Strategy<Value = PairingAnswer> {
+fn pairing_answer() -> impl Strategy<Value = nova_bluetooth_api::PairingAnswer> {
+    use nova_bluetooth_api::PairingAnswer;
     prop_oneof![Just(PairingAnswer::Accept), Just(PairingAnswer::Reject), ".*".prop_map(PairingAnswer::Code)]
 }
 
@@ -294,6 +307,12 @@ proptest! {
 
     #[test]
     fn every_ai_usage_request_round_trips(request in ai_usage_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_bluetooth_request_round_trips(request in bluetooth_request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
     }

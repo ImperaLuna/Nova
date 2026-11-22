@@ -10,10 +10,10 @@
 //! blocked.
 
 use super::*;
-use crate::hub::{ClientQueue, Outgoing};
-use crate::session_bus::TestBus;
 use bluez::MEDIA_TRANSPORT;
-use nova_protocol::{LogLevel, topics};
+use nova_carrier::log::LogLevel;
+use nova_hub::{ClientQueue, Outgoing};
+use nova_session_bus::TestBus;
 use nova_test_support::{TempDir, wait_until};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -559,7 +559,7 @@ impl Fixture {
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let client = hub.register(queue);
-        hub.subscribe(client, topics::BLUETOOTH);
+        hub.subscribe(client, nova_bluetooth_api::TOPIC);
         let fixture = Self { dir, bus, hub, logger, ui, client, _ui_stream: ui_stream };
         fixture.switch(false, false);
         std::fs::create_dir_all(fixture.dir.join("dev")).unwrap();
@@ -609,7 +609,7 @@ impl Fixture {
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
             assert!(!left.is_zero(), "no Bluetooth event with {what}");
-            let event = crate::hub::next_named(&self.ui, "bluetooth", left);
+            let event = nova_hub::next_named(&self.ui, "bluetooth", left);
             if check(&event) {
                 return event;
             }

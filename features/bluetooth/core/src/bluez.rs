@@ -8,7 +8,7 @@
 //! Also the words a failed BlueZ call becomes for the user.
 
 use super::MAX_NAME_CHARS;
-use nova_protocol::{BluetoothDevice, BluetoothKind, BluetoothStatus};
+use nova_bluetooth_api::{BluetoothDevice, BluetoothKind, BluetoothStatus};
 use std::collections::{BTreeMap, HashMap};
 use zbus::wire::{OwnedObjectPath, OwnedVariant};
 

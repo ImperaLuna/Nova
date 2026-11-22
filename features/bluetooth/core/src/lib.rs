@@ -27,16 +27,16 @@ mod rfkill;
 #[cfg(test)]
 mod tests;
 
-use crate::hub::{ClientId, Hub};
-use crate::lock;
-use crate::logger::Logger;
-use crate::session_bus::{Bus, Stop};
 use agent::{AGENT_PATH, Agent, CAPABILITY, Reply, Slot};
 use bluez::{ADAPTER, AGENT_MANAGER, BLUEZ, BLUEZ_PATH, DEVICE, Interfaces, Objects, Properties};
 use futures_core::Stream;
-use nova_protocol::{
+use nova_base::lock;
+use nova_bluetooth_api::{
     Bluetooth as BluetoothEvent, BluetoothRadio, BluetoothStatus, Event, PairingAnswer, PairingAsk, PairingRequest,
 };
+use nova_hub::{ClientId, Hub};
+use nova_log::Logger;
+use nova_session_bus::{Bus, Stop};
 use std::collections::{BTreeSet, HashMap};
 use std::future::poll_fn;
 use std::pin::Pin;
@@ -705,7 +705,7 @@ impl Shared {
                     drop(state);
                     // BlueZ also stops it when our connection goes.
                     if let Err(e) = zbus::block_on(call(&calls, &path, ADAPTER, "StopDiscovery")) {
-                        self.logger.log(nova_protocol::LogLevel::Debug, LOG_SOURCE, &format!("stop scanning: {e}"));
+                        self.logger.log(nova_carrier::log::LogLevel::Debug, LOG_SOURCE, &format!("stop scanning: {e}"));
                     }
                     state = lock(&self.state);
                 }
@@ -904,40 +904,4 @@ async fn name_owner(connection: &Connection) -> Option<String> {
     let reply =
         connection.call_method(Some(DBUS_NAME), DBUS_PATH, Some(DBUS_NAME), "GetNameOwner", &(BLUEZ,)).await.ok()?;
     reply.body().deserialize().ok()
-}
-
-/// No options.
-impl crate::modules::Module for Bluetooth {
-    type App = crate::modules::Novad;
-    const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::BLUETOOTH);
-    type Sources = Sources;
-    type Config = ();
-
-    fn sources(_: &crate::modules::Env) -> Sources {
-        Sources::system()
-    }
-
-    fn config(_: &crate::config::Config) {}
-
-    fn start(
-        ctx: &crate::modules::Context,
-        sources: &Sources,
-        (): &(),
-        _: &[nova_protocol::FeatureState],
-    ) -> Arc<Self> {
-        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
-    }
-
-    fn send_state(&self, client: ClientId) {
-        Self::send_state(self, client);
-    }
-
-    fn client_gone(&self, client: ClientId) {
-        self.watch(client, false);
-    }
-
-    fn stop(&self) {
-        Self::stop(self);
-    }
 }
