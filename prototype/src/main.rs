@@ -650,6 +650,9 @@ fn main() {
                         size: Size::new(px(width), px(STAGE_HEIGHT)),
                     })),
                     app_id: Some("nova-proto".into()),
+                    // A shell surface never has keyboard focus, so GPUI would
+                    // treat it as an inactive window and cap it at 30 fps.
+                    inactive_frame_interval: None,
                     window_background: if options.blur {
                         WindowBackgroundAppearance::Blurred
                     } else {
