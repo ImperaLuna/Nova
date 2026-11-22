@@ -233,6 +233,7 @@ same lints and limits, so both repos read the same.
 | Rule | Enforced by |
 |---|---|
 | An exception is `#[expect]` with a reason, never `#[allow]` | Clippy `allow_attributes`, `allow_attributes_without_reason` |
+| Small functions: at most 80 lines | Clippy `too_many_lines` (`clippy.toml`) |
 
 ## State, threads and files
 

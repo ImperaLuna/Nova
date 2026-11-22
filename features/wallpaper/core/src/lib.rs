@@ -486,6 +486,52 @@ struct Plan {
     screens: BTreeMap<String, PathBuf>,
 }
 
+/// The engine's project for each dynamic wallpaper in `kinds`, making the
+/// ones for videos, and forgetting the videos' and stills' files no
+/// wallpaper uses any more. Checks `stopped` before each change to the
+/// state folder.
+fn projects<'c>(
+    kinds: &BTreeMap<&'c Source, Option<Kind>>,
+    places: &Places,
+    logger: &Logger,
+    stopped: &dyn Fn() -> bool,
+) -> BTreeMap<&'c Source, PathBuf> {
+    let mut projects: BTreeMap<&Source, PathBuf> = BTreeMap::new();
+    for (source, kind) in kinds {
+        let project = match kind {
+            Some(Kind::Project { folder, .. }) => Some(folder.clone()),
+            Some(Kind::Video(video)) if !stopped() => engine::video_project(video, &places.engine)
+                .map_err(|e| logger.warn(LOG_SOURCE, &format!("can't show {source}: {e}")))
+                .ok(),
+            _ => None,
+        };
+        if let Some(project) = project {
+            projects.insert(source, project);
+        }
+    }
+    let videos = kinds
+        .iter()
+        .filter(|(_, kind)| matches!(kind, Some(Kind::Video(_))))
+        .filter_map(|(source, _)| projects.get(source).cloned())
+        .collect();
+    let used: Vec<&Path> = projects.values().map(PathBuf::as_path).collect();
+    if !stopped()
+        && let Err(e) = engine::forget_videos(&places.engine, &videos)
+    {
+        logger.warn(LOG_SOURCE, &e);
+    }
+    // Kept while a wallpaper can't be looked up (a library not mounted yet,
+    // say): it may be one of them.
+    let dynamic = kinds.values().filter(|kind| kind.as_ref().is_none_or(Kind::is_dynamic)).count();
+    if used.len() == dynamic
+        && !stopped()
+        && let Err(e) = engine::forget_stills(&places.engine, &used)
+    {
+        logger.warn(LOG_SOURCE, &e);
+    }
+    projects
+}
+
 impl Plan {
     /// Looks up what each wallpaper in `choice` is (logging why one can't be
     /// shown), and makes the projects for videos. Checks `stopped` before
@@ -513,41 +559,7 @@ impl Plan {
                 }
             });
         }
-        let mut projects: BTreeMap<&Source, PathBuf> = BTreeMap::new();
-        if engine_ready {
-            for (source, kind) in &kinds {
-                let project = match kind {
-                    Some(Kind::Project { folder, .. }) => Some(folder.clone()),
-                    Some(Kind::Video(video)) if !stopped() => engine::video_project(video, &places.engine)
-                        .map_err(|e| logger.warn(LOG_SOURCE, &format!("can't show {source}: {e}")))
-                        .ok(),
-                    _ => None,
-                };
-                if let Some(project) = project {
-                    projects.insert(source, project);
-                }
-            }
-            let videos = kinds
-                .iter()
-                .filter(|(_, kind)| matches!(kind, Some(Kind::Video(_))))
-                .filter_map(|(source, _)| projects.get(source).cloned())
-                .collect();
-            let used: Vec<&Path> = projects.values().map(PathBuf::as_path).collect();
-            if !stopped()
-                && let Err(e) = engine::forget_videos(&places.engine, &videos)
-            {
-                logger.warn(LOG_SOURCE, &e);
-            }
-            // Kept while a wallpaper can't be looked up (a library not
-            // mounted yet, say): it may be one of them.
-            let dynamic = kinds.values().filter(|kind| kind.as_ref().is_none_or(Kind::is_dynamic)).count();
-            if used.len() == dynamic
-                && !stopped()
-                && let Err(e) = engine::forget_stills(&places.engine, &used)
-            {
-                logger.warn(LOG_SOURCE, &e);
-            }
-        }
+        let projects = if engine_ready { projects(&kinds, places, logger, stopped) } else { BTreeMap::new() };
         let image = |source: &Source| match kinds.get(source)?.as_ref()? {
             _ if !images_ready => None,
             Kind::Image(path) => Some(Picture::Image(path.clone())),

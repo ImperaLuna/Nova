@@ -70,23 +70,30 @@ impl Source for UPower {
     }
 }
 
-/// Follows UPower's devices on its bus until `stop` or the bus goes.
-async fn follow(upower: &UPower, report: &Report, stop: &Stop) -> zbus::Result<()> {
-    let connection = upower.bus.builder().method_timeout(CALL_TIMEOUT).build().await?;
+/// The streams of UPower's signals: its owner changing, devices coming
+/// and going, and devices' properties changing.
+async fn subscribe(connection: &Connection) -> zbus::Result<(MessageStream, MessageStream, MessageStream)> {
     let signal = |interface: &'static str, member: &'static str| {
         MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(interface).member(member)
     };
-    // Followed before the devices are listed, so none that comes or changes
-    // in between is missed.
     let owner_rule = signal(DBUS_NAME, "NameOwnerChanged").sender(DBUS_NAME).arg(0, UPOWER).build()?;
-    let mut owners = MessageStream::for_match_rule(owner_rule, &connection, None).await?;
+    let owners = MessageStream::for_match_rule(owner_rule, connection, None).await?;
     // DeviceAdded and DeviceRemoved in one stream, so a device unplugged
     // and plugged back in while a call waits is handled in that order.
     let devices_rule =
         MatchRule::builder().msg_type(zbus::message::Type::Signal).interface(UPOWER).path(UPOWER_PATH).build()?;
-    let mut comings = MessageStream::for_match_rule(devices_rule, &connection, None).await?;
+    let comings = MessageStream::for_match_rule(devices_rule, connection, None).await?;
     let changed_rule = signal(PROPERTIES, "PropertiesChanged").path_namespace(DEVICES_PATH).build()?;
-    let mut changes = MessageStream::for_match_rule(changed_rule, &connection, None).await?;
+    let changes = MessageStream::for_match_rule(changed_rule, connection, None).await?;
+    Ok((owners, comings, changes))
+}
+
+/// Follows UPower's devices on its bus until `stop` or the bus goes.
+async fn follow(upower: &UPower, report: &Report, stop: &Stop) -> zbus::Result<()> {
+    let connection = upower.bus.builder().method_timeout(CALL_TIMEOUT).build().await?;
+    // Followed before the devices are listed, so none that comes or changes
+    // in between is missed.
+    let (mut owners, mut comings, mut changes) = subscribe(&connection).await?;
 
     // upowerd starts on demand (D-Bus activation), and Nova may be its
     // only client: ask for it, or it may never run.

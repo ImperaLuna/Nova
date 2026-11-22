@@ -259,13 +259,7 @@ impl FakeNm {
             (SETTINGS_CONNECTION, "Update2") => {
                 let (settings, _flags, _args): (Settings, u32, HashMap<String, OwnedVariant>) =
                     body.deserialize().map_err(|e| e.to_string())?;
-                let psk = settings
-                    .get("802-11-wireless-security")
-                    .and_then(|security| security.get("psk"))
-                    .and_then(|psk| String::try_from(psk.try_clone().ok()?).ok())
-                    .ok_or("no password")?;
-                lock(&self.state).saved_passwords.insert(path.into(), psk);
-                Ok(Reply::Dict)
+                self.save_password(path, &settings)
             }
             (SETTINGS_CONNECTION, "Delete") => {
                 let removed = lock(&self.state).profiles.remove(path);
@@ -301,33 +295,51 @@ impl FakeNm {
                 );
                 Ok(Reply::Empty)
             }
-            (DEVICE, "GetAppliedConnection") => {
-                let active = self.property(path, DEVICE, "ActiveConnection");
-                let profile = self.property(active.as_str().unwrap(), ACTIVE, "Connection");
-                let mut settings = lock(&self.state).profiles[profile.as_str().unwrap()].clone();
-                if let Some(metrics) = lock(&self.state).metrics.get(path) {
-                    for (family, metric) in ["ipv4", "ipv6"].into_iter().zip(metrics) {
-                        settings[family]["route-metric"] = json!({"type": "x", "data": metric});
-                    }
-                }
-                Ok(Reply::Applied(settings_variant(&settings), 1))
-            }
+            (DEVICE, "GetAppliedConnection") => Ok(self.applied(path)),
             (DEVICE, "Reapply") => {
                 let (settings, _version, _flags): (Settings, u64, u32) =
                     body.deserialize().map_err(|e| e.to_string())?;
-                let metrics = ["ipv4", "ipv6"].map(|family| {
-                    settings[family]["route-metric"]
-                        .try_clone()
-                        .ok()
-                        .and_then(|value| i64::try_from(value).ok())
-                        .unwrap()
-                });
-                lock(&self.state).metrics.insert(path.into(), metrics);
-                self.choose_primary();
+                self.reapply(path, &settings);
                 Ok(Reply::Empty)
             }
             _ => Err(format!("the fake doesn't do {interface}.{method}")),
         }
+    }
+
+    /// `Update2` on the profile at `path`: keeps the Wi-Fi password in
+    /// `settings`.
+    fn save_password(&self, path: &str, settings: &Settings) -> Result<Reply, String> {
+        let psk = settings
+            .get("802-11-wireless-security")
+            .and_then(|security| security.get("psk"))
+            .and_then(|psk| String::try_from(psk.try_clone().ok()?).ok())
+            .ok_or("no password")?;
+        lock(&self.state).saved_passwords.insert(path.into(), psk);
+        Ok(Reply::Dict)
+    }
+
+    /// `GetAppliedConnection` on the device at `path`: its profile, with the
+    /// route metrics last reapplied.
+    fn applied(&self, path: &str) -> Reply {
+        let active = self.property(path, DEVICE, "ActiveConnection");
+        let profile = self.property(active.as_str().unwrap(), ACTIVE, "Connection");
+        let mut settings = lock(&self.state).profiles[profile.as_str().unwrap()].clone();
+        if let Some(metrics) = lock(&self.state).metrics.get(path) {
+            for (family, metric) in ["ipv4", "ipv6"].into_iter().zip(metrics) {
+                settings[family]["route-metric"] = json!({"type": "x", "data": metric});
+            }
+        }
+        Reply::Applied(settings_variant(&settings), 1)
+    }
+
+    /// `Reapply` on the device at `path`: takes `settings`' route metrics,
+    /// which can change which device is primary.
+    fn reapply(&self, path: &str, settings: &Settings) {
+        let metrics = ["ipv4", "ipv6"].map(|family| {
+            settings[family]["route-metric"].try_clone().ok().and_then(|value| i64::try_from(value).ok()).unwrap()
+        });
+        lock(&self.state).metrics.insert(path.into(), metrics);
+        self.choose_primary();
     }
 
     fn add_profile(&self, settings: &Settings) -> String {
