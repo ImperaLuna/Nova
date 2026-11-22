@@ -49,6 +49,8 @@
 # - nova-settings
 # - nova-socket
 # - nova-theme
+# - nova-tray
+# - nova-tray-api
 
 [package]
 name = "novad"
@@ -79,6 +81,8 @@ nova-network.workspace = true
 nova-network-api.workspace = true
 nova-resources.workspace = true
 nova-resources-api.workspace = true
+nova-tray.workspace = true
+nova-tray-api.workspace = true
 nova-compositor.workspace = true
 nova-host.workspace = true
 nova-theme.workspace = true
@@ -116,6 +120,7 @@ nova-hub = { workspace = true, features = ["test-support"] }
 nova-socket = { workspace = true, features = ["test-support"] }
 nova-apps = { workspace = true, features = ["test-support"] }
 nova-compositor = { workspace = true, features = ["test-support"] }
+nova-tray = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

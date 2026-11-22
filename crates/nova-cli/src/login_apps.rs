@@ -4,7 +4,7 @@
 //! so the doctor points such apps at `~/.config/autostart` (IMP-107). Only
 //! the main config file is read, not the files it includes.
 
-use nova_protocol::TrayItem;
+use nova_tray_api::TrayItem;
 use std::path::Path;
 
 /// The folder the doctor sends login apps to.
