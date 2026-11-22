@@ -1,0 +1,20 @@
+# Allowed outside crates:
+# - libc
+#
+# Allowed workspace crates:
+# - nova-base
+
+[package]
+name = "nova-process"
+description = "Running child programs with deadlines, and reading process facts from /proc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-base.workspace = true
+libc.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,27 @@
+# Allowed outside crates:
+# - serde
+# - serde_json
+#
+# Allowed workspace crates: none
+
+[package]
+name = "nova-base"
+description = "The smallest shared pieces: locking, retry waits, reply slots and state files"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# Values only novad's tests use (the shortest restart wait).
+test-support = []
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+
+[lints]
+workspace = true

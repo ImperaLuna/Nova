@@ -27,7 +27,7 @@ impl Default for Restarts {
 
 impl Restarts {
     /// The shortest wait, for tests that wait past one.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub const FIRST: Duration = FIRST_RESTART;
 
     /// The program was (re)started now.
@@ -58,6 +58,10 @@ impl Backoff {
     }
 
     /// How long to wait before this try; the next wait doubles.
+    #[expect(
+        clippy::should_implement_trait,
+        reason = "one wait per try, never iterated; the name is what novad always called it"
+    )]
     pub fn next(&mut self) -> Duration {
         self.next_at_least(Duration::ZERO)
     }

@@ -25,10 +25,8 @@
 
 mod ai_usage;
 mod apps;
-mod backoff;
 mod bluetooth;
 pub mod checks;
-mod child;
 mod compositor;
 mod config;
 mod egl;
@@ -36,7 +34,6 @@ mod features;
 mod host;
 mod hub;
 mod icons;
-mod inotify;
 mod launcher;
 mod logger;
 mod logind;
@@ -49,17 +46,13 @@ mod notify;
 mod nova_files;
 mod peripherals;
 mod power;
-mod procfs;
 mod recording;
 mod render_loop;
-mod reply_slot;
 mod resources;
 mod screenshot;
 mod server;
-mod session_bus;
 mod session_lock;
 mod settings;
-mod state_file;
 mod supervisor;
 mod theme;
 mod tray;
@@ -68,6 +61,14 @@ mod wallpaper_folder;
 mod watch_points;
 mod x11_tray;
 
+// The shared helpers, moved to framework crates (IMP-371), keep their old
+// paths inside novad so its modules name them as before.
+pub use nova_base::lock;
+use nova_base::{backoff, reply_slot, state_file};
+use nova_inotify as inotify;
+use nova_process::{child, procfs};
+use nova_session_bus as session_bus;
+
 use hub::Hub;
 use logger::Logger;
 use nova_protocol::{LogLevel, Status, UiState, UiStatus};
@@ -75,7 +76,7 @@ use settings::{Settings, Sources};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use supervisor::{Supervisor, UiSettings};
 
@@ -520,12 +521,6 @@ fn wayland_socket() -> Option<PathBuf> {
         return Some(display);
     }
     Some(PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR")?).join(display))
-}
-
-/// Locks `mutex` even if another thread panicked while holding it: novad's
-/// state stays usable, and the panic is already logged.
-pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Claude's limits from a Claude Code status line input, for

@@ -527,6 +527,7 @@
                   ./e2e
                   ./packaging
                   ./crates/novad/src
+                  ./framework
                 ];
               }
             }/. src

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "framework/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -45,10 +45,14 @@ ruzstd = "0.9"
 lzma-rust2 = { version = "0.23", default-features = false, features = ["std", "xz"] }
 nova-protocol = { path = "crates/nova-protocol" }
 nova-features = { path = "crates/nova-features" }
-nova-paths = { path = "crates/nova-paths" }
 nova-quickshell = { path = "crates/nova-quickshell" }
-nova-test-support = { path = "crates/nova-test-support" }
 novad = { path = "crates/novad" }
+nova-base = { path = "framework/base" }
+nova-inotify = { path = "framework/inotify" }
+nova-paths = { path = "framework/paths" }
+nova-process = { path = "framework/process" }
+nova-session-bus = { path = "framework/session-bus" }
+nova-test-support = { path = "framework/test-support" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

@@ -107,8 +107,8 @@ crate "$ws" features/media/core media-core none "media-api notifications-core" \
 expect_fail "a core using another feature's core" F4 "$ws"
 
 ws=$(planted core-uses-framework)
-crate "$ws" features/media/core media-core none "media-api paths" \
-  'media-api = { path = "../api" }' 'paths = { path = "../../../framework/paths" }'
+crate "$ws" features/media/core media-core none "hub media-api" \
+  'media-api = { path = "../api" }' 'hub = { path = "../../../framework/hub" }'
 expect_fail "a core using a framework crate not on its list" F2 "$ws"
 
 ws=$(planted front-uses-core)

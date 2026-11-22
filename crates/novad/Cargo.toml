@@ -23,10 +23,14 @@
 # - zip
 #
 # Allowed workspace crates:
+# - nova-base
 # - nova-features
+# - nova-inotify
 # - nova-paths
+# - nova-process
 # - nova-protocol
 # - nova-quickshell
+# - nova-session-bus
 
 [package]
 name = "novad"
@@ -41,6 +45,10 @@ nova-protocol.workspace = true
 nova-features.workspace = true
 nova-paths.workspace = true
 nova-quickshell.workspace = true
+nova-base.workspace = true
+nova-inotify.workspace = true
+nova-process.workspace = true
+nova-session-bus.workspace = true
 serde_json.workspace = true
 clap.workspace = true
 futures-core.workspace = true
@@ -66,6 +74,8 @@ lzma-rust2.workspace = true
 
 [dev-dependencies]
 nova-test-support.workspace = true
+nova-base = { workspace = true, features = ["test-support"] }
+nova-session-bus = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

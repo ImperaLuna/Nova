@@ -1,0 +1,24 @@
+# Allowed outside crates:
+# - zbus
+#
+# Allowed workspace crates:
+# - nova-base
+
+[package]
+name = "nova-session-bus"
+description = "What novad's D-Bus services share: the bus, claiming a name, a stop flag"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# A private test bus and connecting to a bus by address, for novad's tests.
+test-support = []
+
+[dependencies]
+nova-base.workspace = true
+zbus.workspace = true
+
+[lints]
+workspace = true
