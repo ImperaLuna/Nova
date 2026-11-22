@@ -27,7 +27,7 @@ pub const TOPICS: &[Topic] = &[
     nova_launcher_api::TOPIC,
     nova_tray_api::TOPIC,
     nova_notifications_api::TOPIC,
-    topics::MEDIA,
+    nova_media_api::TOPIC,
     topics::PERIPHERALS,
     nova_network_api::TOPIC,
     nova_bluetooth_api::TOPIC,

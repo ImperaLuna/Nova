@@ -16,7 +16,8 @@
 //!
 //! The app a player belongs to is looked up in the app index by its
 //! `DesktopEntry`, then by the process that owns it on the bus, as the
-//! tray does (`tray::candidates`): never by its bus name, since browsers
+//! tray does (the [`ProcessNames`] port novad fills with the tray's
+//! lookup): never by its bus name, since browsers
 //! name theirs `org.mpris.MediaPlayer2.firefox.instance_NNN`. A player's own
 //! desktop entry can be wrong: Zen's says `zen`, its app is
 //! `zen-beta.desktop`, and its process is `zen-beta`.
@@ -26,16 +27,15 @@ mod player;
 #[cfg(test)]
 mod tests;
 
-use crate::apps::AppIndex;
-use crate::hub::{ClientId, Hub};
-use crate::lock;
-use crate::logger::Logger;
-use crate::session_bus::{Bus, Stop};
 use cover::Covers;
 use futures_core::Stream;
-use nova_protocol::{
-    Event, LogLevel, MEDIA_PLAYER_MAX_BYTES, Media as MediaEvent, MediaAction, MediaPlayer, PlaybackStatus,
-};
+use nova_apps::AppIndex;
+use nova_base::lock;
+use nova_carrier::log::LogLevel;
+use nova_hub::{ClientId, Hub};
+use nova_log::Logger;
+use nova_media_api::{Event, MEDIA_PLAYER_MAX_BYTES, Media as MediaEvent, MediaAction, MediaPlayer, PlaybackStatus};
+use nova_session_bus::{Bus, Stop};
 use player::{PATH, PLAYER_INTERFACE, ROOT_INTERFACE, Read};
 use std::future::poll_fn;
 use std::path::{Path, PathBuf};
@@ -67,14 +67,21 @@ pub struct Sources {
     pub covers: PathBuf,
     /// Where a player's process is looked up (`/proc`, or a copy in tests).
     pub proc: PathBuf,
+    /// The names a player's process goes by.
+    pub process_names: ProcessNames,
 }
 
 impl Sources {
     /// Covers go in `runtime_dir/media`, beside novad's socket.
-    pub fn new(runtime_dir: &Path) -> Self {
-        Self { bus: Bus::Session, covers: runtime_dir.join("media"), proc: PathBuf::from("/proc") }
+    pub fn new(runtime_dir: &Path, process_names: ProcessNames) -> Self {
+        Self { bus: Bus::Session, covers: runtime_dir.join("media"), proc: PathBuf::from("/proc"), process_names }
     }
 }
+
+/// The names the process `pid` (read from `proc`, normally `/proc`) goes
+/// by, to find its app with: a port novad fills with the tray's lookup,
+/// which finds a tray icon's app the same way.
+pub type ProcessNames = fn(proc: &Path, pid: Option<u32>) -> Vec<String>;
 
 pub struct Media {
     shared: Arc<Shared>,
@@ -90,6 +97,7 @@ struct Shared {
     connection: Mutex<Option<Connection>>,
     covers: Covers,
     proc: PathBuf,
+    process_names: ProcessNames,
     stop: Stop,
 }
 
@@ -141,6 +149,7 @@ impl Media {
             connection: Mutex::new(None),
             covers: Covers::new(sources.covers),
             proc: sources.proc,
+            process_names: sources.process_names,
             stop: Stop::default(),
         });
         let (ready, started) = std::sync::mpsc::channel();
@@ -534,7 +543,7 @@ impl Shared {
         if let Err(e) = &pid {
             self.logger.log(LogLevel::Debug, LOG_SOURCE, &format!("can't tell which process {id} is in: {e}"));
         }
-        crate::tray::candidates(&self.proc, pid.ok(), "")
+        (self.process_names)(&self.proc, pid.ok())
     }
 
     /// Downloads player `id`'s cover at `url`, and publishes it unless the
@@ -689,37 +698,4 @@ fn is_player(name: &str) -> bool {
 
 fn now_ms() -> i64 {
     jiff::Timestamp::now().as_millisecond()
-}
-
-/// No options.
-impl crate::modules::Module for Media {
-    type App = crate::modules::Novad;
-    const ID: &'static str = FEATURE_ID;
-    const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::MEDIA);
-    type Sources = Sources;
-    type Config = ();
-
-    fn sources(env: &crate::modules::Env) -> Sources {
-        Sources::new(env.runtime_dir)
-    }
-
-    fn config(_: &crate::config::Config) {}
-
-    fn start(
-        ctx: &crate::modules::Context,
-        sources: &Sources,
-        (): &(),
-        _: &[nova_protocol::FeatureState],
-    ) -> Arc<Self> {
-        Self::start(sources.clone(), Arc::clone(&ctx.apps), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
-    }
-
-    fn send_state(&self, client: ClientId) {
-        Self::send_state(self, client);
-    }
-
-    fn stop(&self) {
-        Self::stop(self);
-    }
 }

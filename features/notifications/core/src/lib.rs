@@ -20,7 +20,7 @@
 //! written out as PNGs (`image`), and lists are capped. App icons given by
 //! name are looked up as files (`nova_icons`), so the UI only loads images.
 
-pub mod image;
+mod image;
 #[cfg(test)]
 mod tests;
 mod text;
@@ -582,7 +582,7 @@ impl Shared {
         ["image-path", "image_path"]
             .into_iter()
             .find_map(|key| take_str(hints, key))
-            .and_then(|reference| image::file(&reference))
+            .and_then(|reference| nova_paths::reference::file(&reference))
             .map(|path| path.display().to_string())
     }
 
@@ -794,7 +794,7 @@ fn remember_app(saved: &mut Saved, notification: &Notification) {
 /// name looked up in `icons`.
 fn icon(reference: &str, icons: &Icons) -> Option<String> {
     let reference = reference.trim();
-    if let Some(path) = image::file(reference) {
+    if let Some(path) = nova_paths::reference::file(reference) {
         return Some(path.display().to_string());
     }
     is_name(reference).then(|| icons.find(reference)).flatten()

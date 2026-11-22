@@ -52,6 +52,7 @@ enum IpcCommand {
     Shared(Command),
     Bluetooth(nova_bluetooth_api::Command),
     Launcher(nova_launcher_api::Command),
+    Media(nova_media_api::Command),
     Network(nova_network_api::Command),
     Notifications(nova_notifications_api::Command),
     Resources(nova_resources_api::Command),
@@ -69,6 +70,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
         serde_json::from_value(request).map(IpcCommand::Bluetooth)
     } else if tagged_names_of::<nova_launcher_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Launcher)
+    } else if tagged_names_of::<nova_media_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Media)
     } else if tagged_names_of::<nova_network_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Network)
     } else if tagged_names_of::<nova_notifications_api::Command>("cmd").contains(&name) {
@@ -103,6 +106,10 @@ mod tests {
         assert_eq!(
             parse("bluetooth_power", Some(r#"{"on": true}"#)),
             Ok(IpcCommand::Bluetooth(nova_bluetooth_api::Command::BluetoothPower { on: true }))
+        );
+        assert_eq!(
+            parse("media_show", Some(r#"{"player": "org.mpris.MediaPlayer2.mpv"}"#)),
+            Ok(IpcCommand::Media(nova_media_api::Command::MediaShow { player: "org.mpris.MediaPlayer2.mpv".into() }))
         );
         assert_eq!(
             parse("set_wifi", Some(r#"{"enabled": true}"#)),
