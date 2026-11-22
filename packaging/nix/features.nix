@@ -1,6 +1,6 @@
 # Nova's features as the Nix modules see them, from the same manifests
 # (features/<id>/feature.toml) that `nova setup` and novad read. Picking a
-# variant and deciding what's on follow nova-features (crates/nova-features)
+# variant and deciding what's on follow nova-features (framework/features)
 # exactly, so the packages Nix installs are the ones novad checks for.
 { lib }:
 let
