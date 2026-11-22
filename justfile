@@ -7,11 +7,11 @@ default:
     @just --list
 
 # Everything CI runs, except e2e
-check: fmt-check layout test-layout lint lint-nix lint-traps deny test lint-qml test-qml test-install test-vm-failures test-stack shaders-check
+check: fmt-check layout test-layout lint lint-nix lint-traps file-length deny test lint-qml test-qml test-install test-vm-failures test-stack shaders-check
 
 # What scripts/stack.sh restack runs on each branch of a stack before pushing it:
 # `check` without the slow advisory fetch and the script tests
-check-branch: fmt-check layout lint lint-nix test lint-qml test-qml shaders-check
+check-branch: fmt-check layout lint lint-nix file-length test lint-qml test-qml shaders-check
 
 # Rust unit tests
 test:
@@ -33,6 +33,10 @@ test-layout:
 # Test and script patterns that flaked before (scripts/lint-traps.sh)
 lint-traps:
     scripts/lint-traps.sh
+
+# No Rust file in a crate over 800 lines (scripts/check-file-length.sh)
+file-length:
+    scripts/check-file-length.sh
 
 # Clippy with warnings as errors
 lint:

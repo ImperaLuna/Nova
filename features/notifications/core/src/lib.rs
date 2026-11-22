@@ -20,7 +20,9 @@
 //! written out as PNGs (`image`), and lists are capped. App icons given by
 //! name are looked up as files (`nova_icons`), so the UI only loads images.
 
+mod bus;
 mod image;
+mod sent;
 #[cfg(test)]
 mod tests;
 mod text;
@@ -212,7 +214,7 @@ impl Notifications {
         let (ready, started) = std::sync::mpsc::channel();
         let serving = Arc::clone(&shared);
         std::thread::spawn(move || {
-            if let Err(e) = zbus::block_on(serve(&serving, &ready)) {
+            if let Err(e) = zbus::block_on(bus::serve(&serving, &ready)) {
                 serving.logger.warn(LOG_SOURCE, &format!("notifications won't show: {e}"));
             }
             let _ = ready.send(());
@@ -419,8 +421,8 @@ impl Shared {
     fn notify(&self, sent: Sent, sender: Option<String>, device: Option<NotificationDevice>) -> (u32, Vec<u32>) {
         let now = jiff::Timestamp::now().as_second();
         let mut sent = sent;
-        let transient = take_bool(&mut sent.hints, "transient");
-        let resident = take_bool(&mut sent.hints, "resident");
+        let transient = sent::take_bool(&mut sent.hints, "transient");
+        let resident = sent::take_bool(&mut sent.hints, "resident");
         let mut state = lock(&self.state);
         if self.stop.stopped() {
             return (0, Vec::new());
@@ -490,100 +492,6 @@ impl Shared {
             self.hub.publish(&Event::NotificationPopup(notification));
         }
         (id, gone)
-    }
-
-    /// What `sent` becomes as notification `id`, its text and pictures checked.
-    fn read(&self, id: u32, mut sent: Sent, now: i64) -> Notification {
-        let desktop_entry = take_str(&mut sent.hints, "desktop-entry")
-            .map(|entry| entry.strip_suffix(".desktop").unwrap_or(&entry).to_string())
-            .filter(|entry| is_name(entry));
-        // Like GNOME: the installed app the sender names is shown as its
-        // desktop entry says (the user may have changed its name or icon
-        // there), and what the sender calls itself only when none is. Right
-        // after novad starts, it waits for the apps to be read, or a muted
-        // app would get past its mute under the sender's name.
-        let installed =
-            desktop_entry.as_deref().and_then(|entry| self.apps.app_once_scanned(&format!("{entry}.desktop")));
-        let (installed_name, installed_icon) = installed.map_or((None, None), |app| (Some(app.name), app.icon));
-        let app = [installed_name.as_deref(), Some(sent.app_name.as_str()), desktop_entry.as_deref()]
-            .into_iter()
-            .flatten()
-            .map(|name| text::cut(name.trim(), MAX_LABEL_CHARS))
-            .find(|name| !name.is_empty())
-            .unwrap_or_else(|| "Unknown app".into());
-        let icons = &self.sources.icons;
-        let icon = installed_icon
-            .or_else(|| icon(&sent.app_icon, icons))
-            .or_else(|| desktop_entry.as_deref().and_then(|entry| icons.find(entry)));
-        let urgency = match take(&mut sent.hints, "urgency").as_deref() {
-            Some(Variant::U8(0)) => Urgency::Low,
-            Some(Variant::U8(2)) => Urgency::Critical,
-            _ => Urgency::Normal,
-        };
-        let progress = match take(&mut sent.hints, "value").as_deref() {
-            Some(Variant::I32(value)) => Some((*value).clamp(0, 100) as u8),
-            Some(Variant::U32(value)) => Some((*value).min(100) as u8),
-            _ => None,
-        };
-        let image = self.image(id, &mut sent.hints);
-        let mut actions = Vec::new();
-        let mut has_default = false;
-        for [key, label] in sent.actions.as_chunks::<2>().0 {
-            let label = text::cut(label.trim(), MAX_LABEL_CHARS);
-            if key == "default" {
-                has_default = true;
-            } else if !key.is_empty()
-                && key.len() <= MAX_NAME_LEN
-                && !label.is_empty()
-                && actions.len() < MAX_ACTIONS
-                && !actions.iter().any(|known: &NotificationAction| &known.key == key)
-            {
-                actions.push(NotificationAction { key: key.clone(), label });
-            }
-        }
-        // Critical ones stay until they're closed, whatever the app asked.
-        let timeout_ms = match (urgency, sent.expire_timeout) {
-            (Urgency::Critical, _) => Some(0),
-            (_, timeout) => u32::try_from(timeout).ok(),
-        };
-        Notification {
-            id,
-            app,
-            icon,
-            app_id: desktop_entry.map(|entry| format!("{entry}.desktop")),
-            summary: text::cut(sent.summary.replace(['\n', '\r'], " ").trim(), MAX_SUMMARY_CHARS),
-            body: text::plain(&sent.body, MAX_BODY_CHARS),
-            image,
-            actions,
-            has_default,
-            urgency,
-            progress,
-            timeout_ms,
-            time: now,
-            unread: false,
-            live: true,
-            device: None,
-        }
-    }
-
-    /// The picture in `hints`: pixels, written out, or a file.
-    fn image(&self, id: u32, hints: &mut HashMap<String, OwnedVariant>) -> Option<String> {
-        // Older senders use the spec's earlier names.
-        for key in ["image-data", "image_data", "icon_data"] {
-            let Some(raw) = hints.remove(key) else { continue };
-            let saved = image::Raw::try_from(raw).map_err(|e| format!("not a picture: {e}")).and_then(|raw| {
-                image::save(raw, &self.sources.images, id, self.revision.fetch_add(1, Ordering::Relaxed))
-            });
-            match saved {
-                Ok(path) => return Some(path.display().to_string()),
-                Err(e) => self.logger.log(LogLevel::Debug, LOG_SOURCE, &format!("skipped {key}: {e}")),
-            }
-        }
-        ["image-path", "image_path"]
-            .into_iter()
-            .find_map(|key| take_str(hints, key))
-            .and_then(|reference| nova_paths::reference::file(&reference))
-            .map(|path| path.display().to_string())
     }
 
     /// Takes the notifications `matches` picks off the list and pop-ups,
@@ -728,7 +636,7 @@ fn load(sources: &Sources, logger: &Logger) -> Saved {
     saved.apps.truncate(MAX_APPS);
     saved.muted.truncate(MAX_MUTED);
     // Kept before icons were files, by name.
-    let file = |icon: &mut Option<String>| *icon = icon.take().and_then(|icon| self::icon(&icon, &sources.icons));
+    let file = |icon: &mut Option<String>| *icon = icon.take().and_then(|icon| sent::icon(&icon, &sources.icons));
     for app in &mut saved.apps {
         file(&mut app.icon);
     }
@@ -788,145 +696,4 @@ fn remember_app(saved: &mut Saved, notification: &Notification) {
     {
         saved.apps.remove(at);
     }
-}
-
-/// The file for an app icon as `Notify` gives it: a file, or a theme icon
-/// name looked up in `icons`.
-fn icon(reference: &str, icons: &Icons) -> Option<String> {
-    let reference = reference.trim();
-    if let Some(path) = nova_paths::reference::file(reference) {
-        return Some(path.display().to_string());
-    }
-    is_name(reference).then(|| icons.find(reference)).flatten()
-}
-
-/// A desktop entry id or icon name: short, and nothing that reads as a path.
-fn is_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= MAX_NAME_LEN
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '+'))
-        && !name.starts_with('.')
-}
-
-fn take(hints: &mut HashMap<String, OwnedVariant>, key: &str) -> Option<OwnedVariant> {
-    hints.remove(key)
-}
-
-fn take_bool(hints: &mut HashMap<String, OwnedVariant>, key: &str) -> bool {
-    matches!(take(hints, key).as_deref(), Some(Variant::Bool(true)))
-}
-
-fn take_str(hints: &mut HashMap<String, OwnedVariant>, key: &str) -> Option<String> {
-    match take(hints, key).as_deref() {
-        Some(Variant::Str(text)) => Some(text.as_str().to_string()),
-        _ => None,
-    }
-}
-
-/// Connects to the bus, serves the server and claims its name, until `stop`
-/// or the bus goes. Sends on `ready` once apps can send notifications.
-async fn serve(shared: &Arc<Shared>, ready: &std::sync::mpsc::Sender<()>) -> zbus::Result<()> {
-    let server = Server { shared: Arc::clone(shared) };
-    let connection = shared.sources.bus.builder().method_timeout(CALL_TIMEOUT).serve_at(PATH, server).build().await?;
-    // Queued behind another server (mako, dunst, another shell's), novad
-    // takes over when it quits.
-    match session_bus::claim(&connection, BUS_NAME).await? {
-        RequestNameReply::InQueue => shared.logger.warn(
-            LOG_SOURCE,
-            &format!("another program owns {BUS_NAME}; its notifications show instead until it quits"),
-        ),
-        _ => shared.logger.info(LOG_SOURCE, &format!("showing notifications as {BUS_NAME}")),
-    }
-    // Apps that quit leave the bus; their notifications can't hear clicks.
-    let rule = MatchRule::builder()
-        .msg_type(zbus::message::Type::Signal)
-        .sender("org.freedesktop.DBus")
-        .interface("org.freedesktop.DBus")
-        .member("NameOwnerChanged")
-        .build()?;
-    let mut owners = MessageStream::for_match_rule(rule, &connection, None).await?;
-    *lock(&shared.connection) = Some(connection.clone());
-    let _ = ready.send(());
-    let result = loop {
-        let next = poll_fn(|cx| match shared.stop.poll(cx) {
-            Poll::Ready(()) => Poll::Ready(None),
-            Poll::Pending => Pin::new(&mut owners).poll_next(cx).map(Some),
-        });
-        // Stopped, or the bus went.
-        let Some(Some(message)) = next.await else { break Ok(()) };
-        let changed = message.and_then(|message| message.body().deserialize::<(String, String, String)>());
-        match changed {
-            Ok((name, _, owner)) if owner.is_empty() => shared.sender_gone(&name),
-            Ok(_) => {}
-            Err(e) => break Err(e),
-        }
-    };
-    *lock(&shared.connection) = None;
-    result
-}
-
-/// The server apps see on the bus.
-struct Server {
-    shared: Arc<Shared>,
-}
-
-#[interface(name = "org.freedesktop.Notifications")]
-impl Server {
-    #[expect(clippy::too_many_arguments, reason = "the spec's signature")]
-    async fn notify(
-        &self,
-        app_name: String,
-        replaces_id: u32,
-        app_icon: String,
-        summary: String,
-        body: String,
-        actions: Vec<String>,
-        hints: HashMap<String, OwnedVariant>,
-        expire_timeout: i32,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> zbus::fdo::Result<u32> {
-        let sent = Sent { app_name, replaces_id, app_icon, summary, body, actions, hints, expire_timeout };
-        let (id, gone) = self.shared.notify(sent, header.sender().map(|sender| sender.to_string()), None);
-        for old in gone {
-            Self::notification_closed(&emitter, old, Closed::Other as u32).await?;
-        }
-        Ok(id)
-    }
-
-    async fn close_notification(
-        &self,
-        id: u32,
-        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
-    ) -> zbus::fdo::Result<()> {
-        // It stays listed, and its pop-up runs its time: chat apps close
-        // the last message's notification as they send the next one (a
-        // web notification's tag), which would otherwise take it away.
-        let closed = {
-            let mut state = lock(&self.shared.state);
-            let live = find(&state, id).is_some_and(|kept| kept.live);
-            if live {
-                self.shared.retire(&mut state, id, false);
-            }
-            live
-        };
-        if closed {
-            Self::notification_closed(&emitter, id, Closed::ByApp as u32).await?;
-        }
-        Ok(())
-    }
-
-    fn get_capabilities(&self) -> Vec<&'static str> {
-        vec!["actions", "body", "body-markup", "icon-static", "persistence"]
-    }
-
-    fn get_server_information(&self) -> (&'static str, &'static str, &'static str, &'static str) {
-        ("Nova", "Nova", env!("CARGO_PKG_VERSION"), "1.2")
-    }
-
-    #[zbus(signal)]
-    async fn notification_closed(emitter: &SignalEmitter<'_>, id: u32, reason: u32) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn action_invoked(emitter: &SignalEmitter<'_>, id: u32, action_key: &str) -> zbus::Result<()>;
 }
