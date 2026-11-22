@@ -4,9 +4,16 @@
 # folder kinds are in AGENTS.md ("Layout"); the rule ids printed here are the
 # ones in its table.
 #
-# Two checks:
-#   - The layout: a crate's folder decides what it may use (layer_of below),
-#     so a new crate can't opt out.
+# The repo holds two cargo workspaces, one per side: the daemon side's at
+# the root (app, framework, fronts, each feature's api and core) and the UI
+# side's at app-ui/ (app-ui, framework-ui, each feature's ui), the only one
+# whose crates may use GPUI. The script reads both.
+#
+# Three checks:
+#   - The layout: a crate's folder decides what it may use (layer_of below)
+#     and which workspace it belongs to, so a new crate can't opt out.
+#   - The two workspaces' shared tables ([workspace.package] and
+#     [workspace.lints.*]) are the same, so one lint set holds everywhere.
 #   - Allowed lists: each Cargo.toml lists the outside and workspace crates it
 #     may use under its "# Allowed outside crates:" and "# Allowed workspace
 #     crates:" lines, one "# - name" line each, or "none" on the header line,
@@ -29,12 +36,16 @@ rules_doc="AGENTS.md (Layout)"
 # framework/. A framework crate goes on a list only when every crate of that
 # kind may use it: a daemon-side part (the socket server) never on the ui
 # list, a screen-side part (the stage, theme tokens) never on the core list.
-# The light -info crates hold wire types only (rule I1), so every kind but
-# ui may use them.
+# The light -info crates hold wire types only (rule I1), so every kind may
+# use them. The ui list is what the whole UI side may use from framework/:
+# a feature's ui, framework-ui/ and app-ui/. Its own shared parts are
+# framework-ui/, which only the UI side may use.
 FRAMEWORK_FOR_API=(app-info carrier daemon-info desktop-info host-info theme-info)
 FRAMEWORK_FOR_CORE=(app-info apps base carrier compositor daemon-info desktop-info host-info hub icons inotify log mime modules paths process session-bus settings socket theme-info watch)
-FRAMEWORK_FOR_UI=()
+FRAMEWORK_FOR_UI=(app-info carrier daemon-info desktop-info host-info theme-info)
 FRAMEWORK_FOR_FRONT=(app-info base carrier daemon-info desktop-info host-info paths quickshell theme-info)
+# The UI side's workspace root, relative to the repo's.
+UI_WORKSPACE=app-ui
 
 # The dev-dependencies a feature's crate may have on another feature's core
 # or ui (rule T1), as "<crate> <dependency>", each with its reason. Every
@@ -47,7 +58,7 @@ DEV_EXCEPTIONS=(
 )
 
 # layer_of <crate folder relative to the root>: prints the crate's kind and
-# its parts ("feature <name> <half>", "framework <name>", ...).
+# its parts ("feature <name> <half>", "framework <name>", "app-ui", ...).
 layer_of() {
   # A case pattern's * also matches /, so each kind is matched with its
   # exact depth: framework/a/b is outside the layout, not "framework a/b".
@@ -55,8 +66,10 @@ layer_of() {
   IFS=/ read -r -a parts <<<"$1"
   case ${#parts[@]}:${parts[0]} in
     1:app) echo app ;;
+    1:app-ui) echo app-ui ;;
     2:fronts) echo front ;;
     2:framework) echo "framework ${parts[1]}" ;;
+    2:framework-ui) echo "framework-ui ${parts[1]}" ;;
     3:features)
       case ${parts[2]} in
         api | core | ui) echo "feature ${parts[1]} ${parts[2]}" ;;
@@ -64,6 +77,19 @@ layer_of() {
       esac
       ;;
     *) echo "unknown $1" ;;
+  esac
+}
+
+# side_of <crate folder>: "ui" for a crate of the UI side's workspace (the
+# ones that may use GPUI), "daemon" for one of the root's, nothing for a
+# folder outside the layout.
+side_of() {
+  local -a layer
+  read -r -a layer <<<"$(layer_of "$1")"
+  case ${layer[0]}:${layer[2]:-} in
+    app-ui:* | framework-ui:* | feature:ui) echo ui ;;
+    unknown:*) ;;
+    *) echo daemon ;;
   esac
 }
 
@@ -95,13 +121,31 @@ rule_break() {
   read -r -a from <<<"$(layer_of "$1")"
   read -r -a to <<<"$(layer_of "$2")"
   if [[ ${from[0]} == unknown || ${to[0]} == unknown ]]; then
-    echo "rule C1: every crate sits in app/, framework/<name>/, features/<name>/{api,core,ui}/, or fronts/<name>/."
+    echo "rule C1: every crate sits in app/, app-ui/, framework/<name>/, framework-ui/<name>/, features/<name>/{api,core,ui}/, or fronts/<name>/."
+    return
+  fi
+  local ui_side="rule U1: the daemon side (app, framework, fronts, a feature's api and core) never uses a UI crate (app-ui, framework-ui, a feature's ui). Send an event instead."
+  # Between two features' crates the F rules below say it more exactly.
+  if [[ $(side_of "$1") == daemon && $(side_of "$2") == ui && ${from[0]}:${to[0]} != feature:feature ]]; then
+    echo "$ui_side"
     return
   fi
   case ${from[0]} in
     app) return ;;
-  esac
-  case ${from[0]} in
+    app-ui)
+      case ${to[0]}:${to[2]:-} in
+        framework-ui:* | feature:api | feature:ui) return ;;
+        framework:*) in_list "${to[1]}" "${FRAMEWORK_FOR_UI[@]}" && return ;;
+      esac
+      echo "rule U3: the UI program uses only ui and api crates, framework-ui and $(framework_names "${FRAMEWORK_FOR_UI[@]}") (the list in scripts/check-layout.sh). Send novad a message instead."
+      ;;
+    framework-ui)
+      case ${to[0]} in
+        framework-ui) return ;;
+        framework) in_list "${to[1]}" "${FRAMEWORK_FOR_UI[@]}" && return ;;
+      esac
+      echo "rule U2: a framework-ui crate uses only other framework-ui crates and $(framework_names "${FRAMEWORK_FOR_UI[@]}") (the list in scripts/check-layout.sh), and never names a feature. Let the feature's ui plug in instead."
+      ;;
     framework)
       if [[ ${to[0]} == framework ]]; then
         # An -info crate's event and topic need nova-carrier; its types may
@@ -141,6 +185,10 @@ rule_break() {
           esac
           echo "rule $rule: a feature's $half may use $(framework_names "${framework_ok[@]}") from the framework. A framework crate joins that list in scripts/check-layout.sh only when every $half may use it."
           ;;
+        framework-ui)
+          # A ui's; an api or core using one was rule U1 above.
+          return
+          ;;
         feature)
           if [[ ${to[1]} != "${from[1]}" && ${to[2]} != api ]]; then
             echo "rule F4: a feature never uses another feature's ${to[2]}. Use its api, or a port in the framework."
@@ -154,7 +202,7 @@ rule_break() {
             echo "rule F3: a feature's ui never uses a core crate. Send a message instead."
           fi
           ;;
-        *) echo "rule F4: a feature uses only the framework and api crates, never a front or the app." ;;
+        *) echo "rule F4: a feature uses only the framework and api crates, never a front, the app or the UI program." ;;
       esac
       ;;
   esac
@@ -214,6 +262,36 @@ expect_rule fronts/cli/nested framework/server C1
 expect_rule framework/server/extra framework/paths C1
 expect_rule features/media/sub/core framework/server C1
 expect_rule features/media/tests framework/server C1
+expect_rule app-ui features/media/ui ""
+expect_rule app-ui features/media/api ""
+expect_rule app-ui framework-ui/stage ""
+expect_rule app-ui framework/carrier ""
+expect_rule app-ui framework/server U3
+expect_rule app-ui features/media/core U3
+expect_rule app-ui fronts/cli U3
+expect_rule app-ui app U3
+expect_rule app-ui/nested framework/carrier C1
+expect_rule framework-ui/stage framework-ui/look ""
+expect_rule framework-ui/stage framework/theme-info ""
+expect_rule framework-ui/stage framework/server U2
+expect_rule framework-ui/stage features/media/api U2
+expect_rule framework-ui/stage features/media/ui U2
+expect_rule framework-ui/stage app-ui U2
+expect_rule framework-ui/stage/extra framework/carrier C1
+expect_rule features/media/ui framework-ui/stage ""
+expect_rule features/media/ui framework/carrier ""
+expect_rule features/media/ui framework/server F3
+expect_rule features/media/ui app-ui F4
+expect_rule features/media/core framework-ui/stage U1
+expect_rule features/media/api framework-ui/stage U1
+expect_rule features/media/api features/media/ui F1
+expect_rule framework/server framework-ui/stage U1
+expect_rule framework/server app-ui U1
+expect_rule fronts/cli framework-ui/stage U1
+expect_rule fronts/cli features/media/ui U1
+expect_rule app features/media/ui U1
+expect_rule app framework-ui/stage U1
+expect_rule app app-ui U1
 
 # expect_dev_rule <from folder> <to folder> <rule id, or nothing for allowed>
 expect_dev_rule() {
@@ -251,14 +329,33 @@ allowed_list() {
   ' "$1" | tr '\n' ' '
 }
 
+# shared_table <Cargo.toml> <table>: the table's lines and those of its
+# sub-tables, without comments and blank lines.
+shared_table() {
+  awk -v table="$2" '
+    /^\[/ { inside = ($0 == "[" table "]" || index($0, "[" table ".") == 1) }
+    inside && !/^[[:space:]]*(#|$)/
+  ' "$1"
+}
+
 cd "$root"
-metadata=$(cargo metadata --no-deps --offline --format-version 1)
+# Both workspaces' crates as one list, each with the side whose workspace
+# lists it. A workspace without a UI side (a throwaway one in the tests)
+# has only the root's.
+metadata=$(cargo metadata --no-deps --offline --format-version 1 | jq '[.packages[] | .side = "daemon"]')
+if [[ -f $UI_WORKSPACE/Cargo.toml ]]; then
+  ui_metadata=$(cargo metadata --no-deps --offline --format-version 1 --manifest-path "$UI_WORKSPACE/Cargo.toml")
+  metadata=$(jq --argjson ui "$ui_metadata" '. + [$ui.packages[] | .side = "ui"]' <<<"$metadata")
+fi
+metadata=$(jq '{packages: .}' <<<"$metadata")
 workspace_names=$(jq -r '.packages[].name' <<<"$metadata")
 declare -A folder_of=()
-while IFS=$'\t' read -r name manifest; do
+declare -A member_side=()
+while IFS=$'\t' read -r name manifest side; do
   folder=${manifest%/Cargo.toml}
   folder_of[$name]=${folder#"$root"/}
-done < <(jq -r '.packages[] | [.name, .manifest_path] | @tsv' <<<"$metadata")
+  member_side[${folder#"$root"/}]=$side
+done < <(jq -r '.packages[] | [.name, .manifest_path, .side] | @tsv' <<<"$metadata")
 
 if ((${#folder_of[@]} == 0)); then
   echo "$0: cargo metadata listed no crates in $root." >&2
@@ -267,29 +364,44 @@ fi
 
 status=0
 
-# Every crate in a layout folder is a workspace member: cargo metadata never
-# lists one that isn't, so none of the checks below would see it. A glob in
-# `members` that matches no folder is an error to cargo, so the first crate
-# of a kind adds its kind's glob. Test fixtures (under a tests/ folder) are not
-# workspace crates.
-declare -A is_member=()
-for folder in "${folder_of[@]}"; do
-  is_member[$folder]=1
-done
+# The lint set and the package fields are one for both workspaces: cargo
+# can't share a table between two, so the UI side's root keeps a copy.
+if [[ -f $UI_WORKSPACE/Cargo.toml ]]; then
+  for table in workspace.package workspace.lints; do
+    if ! diff <(shared_table Cargo.toml "$table") <(shared_table "$UI_WORKSPACE/Cargo.toml" "$table") >/dev/null; then
+      echo "$UI_WORKSPACE/Cargo.toml: rule S1: its [$table] differs from Cargo.toml's. Make the same change in both."
+      status=1
+    fi
+  done
+fi
+
+# Every crate in a layout folder is a member of its side's workspace: cargo
+# metadata never lists one that isn't, so none of the checks below would see
+# it. A glob in `members` that matches no folder is an error to cargo, so
+# the first crate of a kind adds its kind's glob. Test fixtures (under a
+# tests/ folder) are not workspace crates.
 while IFS= read -r manifest; do
   folder=${manifest#./}
   folder=${folder%/Cargo.toml}
-  if [[ -z ${is_member[$folder]:-} ]]; then
+  side=$(side_of "$folder")
+  [[ ${member_side[$folder]:-} == "${side:-daemon}" ]] && continue
+  if [[ $side == ui ]]; then
+    echo "$folder: not a member of the UI side's workspace (rule C2). Add its folder, or its kind's glob, to members in $UI_WORKSPACE/Cargo.toml, and name that workspace in its [package] (workspace = \"<path to $UI_WORKSPACE>\")."
+  else
     echo "$folder: not a workspace member (rule C2). Add its folder, or its kind's glob, to members in Cargo.toml."
-    status=1
   fi
-done < <(find app framework features fronts \( -name target -o -name tests \) -prune -o -name Cargo.toml -print 2>/dev/null | sort)
+  status=1
+done < <(find app "$UI_WORKSPACE" framework framework-ui features fronts \( -name target -o -name tests \) -prune -o -name Cargo.toml -print 2>/dev/null | sort)
 
 for name in "${!folder_of[@]}"; do
   folder=${folder_of[$name]}
   read -r -a layer <<<"$(layer_of "$folder")"
   if [[ ${layer[0]} == unknown ]]; then
-    echo "$name ($folder): rule C1: every crate sits in app/, framework/<name>/, features/<name>/{api,core,ui}/, or fronts/<name>/. See $rules_doc."
+    echo "$name ($folder): rule C1: every crate sits in app/, app-ui/, framework/<name>/, framework-ui/<name>/, features/<name>/{api,core,ui}/, or fronts/<name>/. See $rules_doc."
+    status=1
+  elif [[ ${member_side[$folder]} != "$(side_of "$folder")" ]]; then
+    # Reached through a members line that names the folder itself.
+    echo "$name ($folder): rule C2: it belongs to the $(side_of "$folder") side's workspace, not the ${member_side[$folder]} side's. See $rules_doc."
     status=1
   elif [[ ${layer[0]} == feature && ! -f features/${layer[1]}/feature.toml ]]; then
     echo "$name ($folder): rule C3: a feature's crates sit beside its features/${layer[1]}/feature.toml. Name the folder after the feature's id."
@@ -321,6 +433,10 @@ while IFS=$'\t' read -r name manifest deps; do
     else
       allowed=$outside
       kind=outside
+      if [[ $dep == gpui || $dep == gpui_* ]] && [[ $(side_of "${folder_of[$name]}") != ui ]]; then
+        echo "$name (${folder_of[$name]}) depends on $dep: rule U1: only the UI side (app-ui, framework-ui, a feature's ui) uses GPUI. See $rules_doc."
+        status=1
+      fi
     fi
     # A broken list was reported above; its names can't be trusted.
     ((lists_ok)) || continue

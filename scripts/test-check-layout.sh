@@ -27,6 +27,14 @@ crate() {
   } >"$workspace/$folder/Cargo.toml"
 }
 
+# ui_crate <workspace> <folder> ...: a crate of the UI side, written like
+# `crate` does and naming the UI side's workspace (app-ui/) as its own.
+ui_crate() {
+  crate "$@"
+  local up=${2//[^\/]/}
+  sed -i "s|^edition = .*|&\nworkspace = \"${up//\//../}../app-ui\"|" "$1/$2/Cargo.toml"
+}
+
 # allowed_header <outside|workspace> <names, or none>
 allowed_header() {
   if [[ $2 == none ]]; then
@@ -40,16 +48,35 @@ allowed_header() {
   done
 }
 
-# good <workspace>: a small workspace with every folder kind, in the layout.
+# The tables both workspaces carry (rule S1).
+shared_tables='
+[workspace.package]
+edition = "2024"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"'
+
+# good <workspace>: a small repo with every folder kind, in the layout: the
+# daemon side's workspace at its root and the UI side's at app-ui/.
 good() {
   local workspace=$1
   mkdir -p "$workspace/features/media" "$workspace/features/notifications"
   touch "$workspace/features/media/feature.toml" "$workspace/features/notifications/feature.toml"
-  cat >"$workspace/Cargo.toml" <<'EOF'
+  cat >"$workspace/Cargo.toml" <<EOF
 [workspace]
 resolver = "3"
 members = ["app", "framework/*", "features/*/api", "features/*/core", "fronts/*"]
+$shared_tables
 EOF
+  crate "$workspace" framework/carrier carrier none none
+  ui_crate "$workspace" framework-ui/look look none carrier 'carrier = { path = "../../framework/carrier" }'
+  ui_crate "$workspace" features/media/ui media-ui none "media-api look" \
+    'media-api = { path = "../api" }' 'look = { path = "../../../framework-ui/look" }'
+  # The UI program is its workspace's root. The members are named one by
+  # one, so a case can add a crate that no workspace lists.
+  crate "$workspace" app-ui nova-ui gpui "media-ui look" 'gpui = "1"' \
+    'media-ui = { path = "../features/media/ui" }' 'look = { path = "../framework-ui/look" }' \
+    '' '[workspace]' 'resolver = "3"' 'members = [".", "../framework-ui/look", "../features/media/ui"]' "$shared_tables"
   crate "$workspace" framework/paths paths none none
   crate "$workspace" framework/stage stage none paths 'paths = { path = "../paths" }'
   crate "$workspace" features/notifications/api notifications-api none none
@@ -160,9 +187,47 @@ crate "$ws" tools/thing thing none none
 expect_fail "a crate outside the layout folders" C1 "$ws"
 
 ws=$(planted not-member)
-mkdir -p "$ws/features/media/ui"
-crate "$ws" features/media/ui media-ui none none
-expect_fail "a crate in a layout folder but not in members" C2 "$ws"
+crate "$ws" features/notifications/ui notifications-ui none none
+expect_fail "a crate in a layout folder but in no workspace's members" C2 "$ws"
+
+ws=$(planted ui-in-the-daemon-workspace)
+sed -i 's|^members = \["app", |members = ["features/notifications/ui", "app", |' "$ws/Cargo.toml"
+crate "$ws" features/notifications/ui notifications-ui none none
+expect_fail "a ui crate in the daemon side's workspace" C2 "$ws"
+
+# A daemon-side crate using a UI crate (rule U1) never gets this far: cargo
+# takes a path dependency under the root for a member of the root's
+# workspace and refuses the one that names app-ui's.
+ws=$(planted core-uses-gpui)
+crate "$ws" features/media/core media-core gpui "media-api notifications-api" 'gpui = "1"' \
+  'media-api = { path = "../api" }' 'notifications-api = { path = "../../notifications/api" }'
+expect_fail "a core using GPUI" U1 "$ws"
+
+ws=$(planted ui-uses-core)
+ui_crate "$ws" features/media/ui media-ui none "media-api look media-core" \
+  'media-api = { path = "../api" }' 'look = { path = "../../../framework-ui/look" }' \
+  'media-core = { path = "../core" }'
+expect_fail "a ui using its feature's core" F3 "$ws"
+
+ws=$(planted ui-uses-framework)
+ui_crate "$ws" features/media/ui media-ui none "media-api look paths" \
+  'media-api = { path = "../api" }' 'look = { path = "../../../framework-ui/look" }' \
+  'paths = { path = "../../../framework/paths" }'
+expect_fail "a ui using a framework crate not on its list" F3 "$ws"
+
+ws=$(planted framework-ui-uses-feature)
+ui_crate "$ws" framework-ui/look look none "carrier media-api" \
+  'carrier = { path = "../../framework/carrier" }' 'media-api = { path = "../../features/media/api" }'
+expect_fail "a framework-ui crate naming a feature" U2 "$ws"
+
+ws=$(planted ui-program-uses-core)
+sed -i 's|^media-ui = .*|&\nmedia-core = { path = "../features/media/core" }|; s|^# - look$|&\n# - media-core|' \
+  "$ws/app-ui/Cargo.toml"
+expect_fail "the UI program using a core" U3 "$ws"
+
+ws=$(planted lints-differ)
+sed -i 's|^unwrap_used = "deny"|unwrap_used = "warn"|' "$ws/app-ui/Cargo.toml"
+expect_fail "the UI side's lints differing from the daemon side's" S1 "$ws"
 
 ws=$(planted no-manifest)
 rm "$ws/features/media/feature.toml"

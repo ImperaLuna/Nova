@@ -35,6 +35,9 @@ in
     programs.nova = {
       # Inside a NixOS configuration, the GPU it drives.
       gpu = lib.mkIf (osConfig != null) (lib.mkDefault (features.gpuOf osConfig));
+      # The UI program Nova's NixOS module picks, when it's in use too: this
+      # module's features.toml is read before the system's.
+      ui = lib.mkIf (osConfig.programs.nova.enable or false) (lib.mkDefault osConfig.programs.nova.ui);
       # Nova Files installed by the system runs in the system's mode, which
       # novad has to know to route folders.
       features.nova-files.mode = lib.mkIf novaFilesBySystem (
@@ -45,13 +48,15 @@ in
     home.packages = [
       cfg.package
     ]
+    # novad finds `nova-ui` on PATH.
+    ++ lib.optional (cfg.ui == "gpui") cfg.uiPackage
     ++ features.packagesFor pkgs cfg.gpu on
     # The Nova Files app, unless the system installs it; the session bus
     # finds its D-Bus service in the profile's share/dbus-1/services.
     ++ lib.optional (novaFilesOn && !novaFilesBySystem) cfg.novaFilesPackage;
     xdg = {
       configFile = {
-        "nova/features.toml".text = features.selectionFile cfg.features;
+        "nova/features.toml".text = features.selectionFile cfg.ui cfg.features;
         # The package's own unit, linked where systemd looks, and wanted by
         # graphical-session.target (which niri, and Hyprland through uwsm,
         # start).
