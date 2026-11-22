@@ -1,5 +1,5 @@
-//! The user's settings files: reading one ([`read_toml`]), paths in them
-//! ([`user_path`]), and following them so edits apply without a restart
+//! The user's settings files: reading one ([`read_toml`]), paths and
+//! folders in them ([`user_path`], [`folder`]), and following them so edits apply without a restart
 //! ([`watch`]). What the settings say is the app's.
 
 use nova_inotify::{self as inotify, Inotify};
@@ -36,6 +36,16 @@ pub fn user_path(setting: &str, path: &str) -> Result<PathBuf, String> {
     match resolved.is_absolute() {
         true => Ok(resolved),
         false => Err(format!("{setting} {path:?} isn't an absolute path or one under ~/")),
+    }
+}
+
+/// `[section] folder`, or `default` when it isn't set. One that isn't
+/// absolute (or under `~/`) is an error, so a typo doesn't scatter files in
+/// the app's folder.
+pub fn folder(section: &str, configured: Option<&str>, default: impl FnOnce() -> PathBuf) -> Result<PathBuf, String> {
+    match configured {
+        Some(folder) => user_path(&format!("[{section}] folder"), folder),
+        None => Ok(default()),
     }
 }
 

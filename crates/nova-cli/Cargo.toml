@@ -16,6 +16,7 @@
 # - nova-network-api
 # - nova-resources-api
 # - nova-tray-api
+# - nova-wallpaper-api
 # - novad
 
 [package]
@@ -37,6 +38,7 @@ nova-launcher-api.workspace = true
 nova-network-api.workspace = true
 nova-resources-api.workspace = true
 nova-tray-api.workspace = true
+nova-wallpaper-api.workspace = true
 serde.workspace = true
 nova-features.workspace = true
 nova-paths.workspace = true

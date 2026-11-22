@@ -25,15 +25,23 @@
 //!
 //! One thread owns both programs and sends the images; everything else
 //! changes what it wants under the lock and wakes it.
+//!
+//! `folder` lists the wallpaper folder for the carousel.
 
+mod config;
 mod engine;
+pub mod folder;
 mod source;
 
-use crate::backoff::{Backoff, Restarts};
-use crate::config::WallpaperConfig;
-use crate::logger::Logger;
-use crate::{child, inotify, lock, state_file};
-use nova_protocol::{LogLevel, Wallpapers};
+pub use config::WallpaperConfig;
+use nova_base::backoff::{Backoff, Restarts};
+use nova_base::{lock, state_file};
+use nova_carrier::log::LogLevel;
+use nova_inotify as inotify;
+use nova_log::Logger;
+use nova_modules::not_ready;
+use nova_process::child;
+use nova_wallpaper_api::Wallpapers;
 use serde::{Deserialize, Serialize};
 use source::{Kind, Source};
 use std::collections::{BTreeMap, BTreeSet};
@@ -333,7 +341,7 @@ impl Wallpaper {
         let mut state = lock(&self.shared.state);
         match kind.is_dynamic() {
             true if !state.engine_ready => return Err(engine_not_ready()),
-            false if !state.images_ready => return Err(crate::features::not_ready(FEATURE_ID)),
+            false if !state.images_ready => return Err(not_ready(FEATURE_ID)),
             _ => {}
         }
         if kind.is_dynamic() && output.is_none() && state.outputs == Outputs::Unfollowed {
@@ -368,12 +376,12 @@ impl Wallpaper {
         let state = lock(&self.shared.state);
         match state.images_ready || state.engine_ready {
             true => Ok(state.current().wire()),
-            false => Err(crate::features::not_ready(FEATURE_ID)),
+            false => Err(not_ready(FEATURE_ID)),
         }
     }
 
     /// Ends the programs and the thread, for a novad that ends without
-    /// exiting the process ([`crate::InProcess`]).
+    /// exiting the process (novad's `InProcess`).
     pub fn stop(&self) {
         let mut state = lock(&self.shared.state);
         state.stopped = true;
@@ -1109,76 +1117,10 @@ fn awww(path_var: &str) -> Command {
     command
 }
 
-/// Where the wallpaper service keeps its state, and the home its paths start from.
-#[derive(Clone)]
-pub struct Sources {
-    pub state_dir: PathBuf,
-    pub home: Option<PathBuf>,
-}
-
-/// Kept for novad's life, told which wallpaper features are ready and what
-/// `[wallpaper]` says on every change, and about the outputs whenever they
-/// change.
-impl crate::modules::Module for Wallpaper {
-    type App = crate::modules::Novad;
-    const ID: &'static str = FEATURE_ID;
-    type Sources = Sources;
-    type Config = WallpaperConfig;
-
-    fn sources(env: &crate::modules::Env) -> Sources {
-        Sources { state_dir: env.args.state_dir.clone(), home: env.home.clone() }
-    }
-
-    fn config(config: &crate::config::Config) -> WallpaperConfig {
-        config.wallpaper.clone()
-    }
-
-    fn start(
-        ctx: &crate::modules::Context,
-        sources: &Sources,
-        _: &WallpaperConfig,
-        _: &[nova_protocol::FeatureState],
-    ) -> Arc<Self> {
-        let compositor = ctx.compositor.as_ref();
-        let wallpaper = Self::start(
-            &sources.state_dir,
-            sources.home.clone(),
-            ctx.path_var.clone(),
-            compositor.is_some(),
-            Arc::clone(&ctx.logger),
-        );
-        if let Some(compositor) = compositor {
-            let told = Arc::downgrade(&wallpaper);
-            compositor.on_outputs(move |names| {
-                if let Some(wallpaper) = told.upgrade() {
-                    wallpaper.outputs(names);
-                }
-            });
-        }
-        wallpaper
-    }
-
-    fn reconfigure(
-        &self,
-        _: &WallpaperConfig,
-        config: &WallpaperConfig,
-        features: &[nova_protocol::FeatureState],
-    ) -> crate::modules::Reconfigure {
-        let ready = |id| crate::features::is_ready(features, id);
-        self.configure(ready(FEATURE_ID), ready(ENGINE_FEATURE_ID), config);
-        crate::modules::Reconfigure::InPlace
-    }
-
-    fn stop(&self) {
-        Self::stop(self);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hub::Hub;
-    use nova_protocol::LogLevel;
+    use nova_hub::Hub;
     use nova_test_support::{TempDir, eventually, wait_until};
 
     const WAIT: Duration = Duration::from_secs(10);
