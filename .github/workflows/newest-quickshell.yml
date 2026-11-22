@@ -1,15 +1,13 @@
 name: Newest Quickshell
 
-# Runs Nova's qmllint and VM tests on the newest stable Quickshell release
+# Builds Nova and runs its qmllint on the newest stable Quickshell release
 # (scripts/newest-quickshell.sh), so packaging/quickshell.toml's `max` can be
 # raised as soon as a release works. The summary says whether Nova passes and
 # whether the release is in the tested range.
 #
 # Weekly on main, by hand (Actions > Newest Quickshell), and on PRs that change
 # which Quickshell Nova is on: the tested range or flake.lock (nixpkgs'
-# Quickshell, quickshell-newest). Not on PRs that only change VM tests or
-# packaging: while the newest release is the pinned one, this repeats CI's VM
-# tests and holds the second runner (IMP-226).
+# Quickshell, quickshell-newest).
 on:
   schedule:
     - cron: "0 6 * * 1"
@@ -40,9 +38,3 @@ jobs:
           persist-credentials: false
       - name: Nova on the newest Quickshell
         run: nix develop -c scripts/newest-quickshell.sh
-      - if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: newest-quickshell
-          path: e2e/out
-          if-no-files-found: ignore

@@ -1,0 +1,83 @@
+# nova-ui
+#
+# The program that draws Nova's UI with GPUI. Wiring only: it starts GPUI
+# and, as the ports land, the socket client, the stage and each feature's ui
+# crate.
+#
+# This manifest is also the root of the UI side's cargo workspace, apart
+# from the daemon's (the repo root's): GPUI brings hundreds of crates, some
+# in two versions, that novad's Cargo.lock, cargo-deny rules and static
+# build never see this way. Its members are the crates that may use GPUI
+# (AGENTS.md, Layout): this one, `framework-ui/<name>` and
+# `features/<id>/ui`. Each of those names this workspace in its
+# `[package]` (`workspace = "../../app-ui"`, one more `../` for a feature),
+# since cargo would otherwise look for one from the repo root down.
+# `[workspace.package]` and `[workspace.lints]` are copies of the root's,
+# which `scripts/check-layout.sh` holds equal.
+#
+# Allowed outside crates:
+# - gpui
+# - gpui_platform
+#
+# Allowed workspace crates: none
+
+[package]
+name = "nova-ui"
+description = "Nova's UI, drawn with GPUI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+
+[lints]
+workspace = true
+
+[workspace]
+resolver = "3"
+# A glob that matches nothing is an error to cargo, so the first
+# `framework-ui/<name>` crate adds "../framework-ui/*" and the first
+# `features/<id>/ui` crate adds "../features/*/ui".
+members = ["."]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+
+[workspace.dependencies]
+# GPUI comes from Zed's repo through ImperaLuna/zed, the fork Nova Files
+# pins too (its Cargo.toml lists the fixes on top of Zed's release). The
+# crates.io release (0.2.2) draws through blade, which turns on ray tracing
+# and makes NVIDIA's driver load CUDA. `version` picks Zed's real gpui: the
+# repo also holds a test fixture crate named gpui. Move both pins together,
+# and the hashes in packaging/nix/nova-ui.nix with them.
+gpui = { git = "https://github.com/ImperaLuna/zed", rev = "915fb0d79b03de29a8a15beb0fef11e0e465d8ec", version = "0.2.2" }
+# The platform half of GPUI (windows, input, the renderer). Wayland is off
+# by default; without it the program runs but never opens a window.
+gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "915fb0d79b03de29a8a15beb0fef11e0e465d8ec", version = "0.1.0", features = ["wayland"] }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# Restriction picks, the same as Nova Files' (AGENTS.md, Rules and their
+# checks). clippy.toml exempts tests where noted there.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+too_many_lines = "deny"
+
+# The checks build like dev but without debug info, which swells target/
+# and the link (Nova Files' profile of the same name).
+[profile.ci]
+inherits = "dev"
+debug = false
+incremental = false

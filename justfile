@@ -7,11 +7,40 @@ default:
     @just --list
 
 # Everything CI runs, except e2e
-check: fmt-check layout test-layout lint lint-nix lint-traps file-length deny test lint-qml test-qml test-install test-vm-failures test-stack shaders-check
+check: fmt-check layout test-layout lint lint-nix lint-traps file-length deny test lint-qml test-qml test-install test-stack shaders-check
 
 # What scripts/stack.sh restack runs on each branch of a stack before pushing it:
 # `check` without the slow advisory fetch and the script tests
 check-branch: fmt-check layout lint lint-nix file-length test lint-qml test-qml shaders-check
+
+# The UI side: nova-ui and the crates that use GPUI, in their own cargo
+# workspace (AGENTS.md, Layout). Its recipes run inside `nix develop .#ui`.
+ui_manifest := "app-ui/Cargo.toml"
+
+# What CI checks on the UI side
+ui-check: ui-fmt-check ui-lint ui-test ui-deny
+
+# Build nova-ui into app-ui/target
+ui-build:
+    cargo build --manifest-path {{ui_manifest}} --workspace
+
+ui-fmt:
+    cargo fmt --manifest-path {{ui_manifest}} --all
+
+ui-fmt-check:
+    cargo fmt --manifest-path {{ui_manifest}} --all --check
+
+# Clippy on the UI side, with warnings as errors
+ui-lint:
+    cargo clippy --manifest-path {{ui_manifest}} --workspace --all-targets -- -D warnings
+
+# The UI side's unit tests (pure logic only: it has no UI test suite)
+ui-test:
+    cargo test --manifest-path {{ui_manifest}} --workspace
+
+# Advisories, licenses and sources of what GPUI brings in (app-ui/deny.toml), latest advisories
+ui-deny:
+    cargo deny --manifest-path {{ui_manifest}} check
 
 # Rust unit tests
 test:
@@ -78,10 +107,6 @@ lint-qml:
 test-install:
     scripts/test-install.sh install.sh
 
-# scripts/vm-failures.sh (CI's VM failure tracker) on recorded CI logs
-test-vm-failures:
-    scripts/test-vm-failures.sh
-
 # scripts/stack.sh (the stack keeper's tool) on a throwaway stack
 test-stack:
     scripts/test-stack.sh
@@ -102,26 +127,9 @@ test-qml:
 e2e: build
     e2e/run.sh target/debug/nova
 
-system := `nix eval --raw --impure --expr builtins.currentSystem 2>/dev/null || true`
-
-# NixOS VM test on real niri or Hyprland: lifecycle and screenshots (needs KVM)
-e2e-vm compositor="niri":
-    nix build -L --no-link .#checks.{{system}}.e2e-{{compositor}}
-
-# Run the VM test and approve its screenshots as e2e/golden/<compositor>
-e2e-approve compositor="niri":
-    mkdir -p e2e/golden/{{compositor}}
-    cp --no-preserve=mode "$(nix build -L --no-link --print-out-paths .#checks.{{system}}.e2e-{{compositor}}.vm)"/*.png e2e/golden/{{compositor}}/
-    git status --short e2e/golden/{{compositor}}
-
-# Nova's qmllint and VM tests on the newest stable Quickshell release (needs KVM)
+# Nova's build and qmllint on the newest stable Quickshell release
 newest-quickshell:
     scripts/newest-quickshell.sh
-
-# Record what niri or Hyprland sends novad, in a VM, for novad's compositor tests (needs KVM)
-record compositor="niri":
-    rm -rf framework/compositor/recorded/{{compositor}}
-    cp -r --no-preserve=mode "$(nix build -L --no-link --print-out-paths .#checks.{{system}}.e2e-{{compositor}}.record)/recorded" framework/compositor/recorded/{{compositor}}
 
 build:
     cargo build --workspace

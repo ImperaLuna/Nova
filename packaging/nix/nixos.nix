@@ -76,8 +76,10 @@ in
       systemPackages = [
         cfg.package
       ]
+      # novad finds `nova-ui` on PATH.
+      ++ lib.optional (cfg.ui == "gpui") cfg.uiPackage
       ++ features.packagesFor pkgs cfg.gpu on;
-      etc."xdg/nova/features.toml".text = features.selectionFile cfg.features;
+      etc."xdg/nova/features.toml".text = features.selectionFile cfg.ui cfg.features;
     };
 
     xdg.portal.config = lib.mkIf (novaFilesOn && config.programs.nova-files.filePicker.enable) (

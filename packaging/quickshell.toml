@@ -5,8 +5,8 @@
 # `min` is the oldest tested release, `max` the newest. An `x` in `max`
 # matches any number there, so "0.3.x" takes every 0.3 patch release.
 # Raise `max` once Nova has been tested on a newer release: the "Newest
-# Quickshell" workflow (scripts/newest-quickshell.sh) runs Nova's qmllint and
-# VM tests on the newest one and says when it passes outside this range.
+# Quickshell" workflow (scripts/newest-quickshell.sh) builds Nova and runs its
+# qmllint on the newest one and says when it passes outside this range.
 #
 # `[packages]` is what `nova setup` installs on other distros while any
 # feature with a UI is on (Nix's flake brings Quickshell itself). Fedora's
