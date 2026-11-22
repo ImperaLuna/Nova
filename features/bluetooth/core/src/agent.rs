@@ -11,7 +11,7 @@
 //! the service stopping end it as well.
 
 use super::Shared;
-use nova_protocol::{BLUETOOTH_PIN_MAX_BYTES, PairingAnswer, PairingAsk};
+use nova_bluetooth_api::{BLUETOOTH_PIN_MAX_BYTES, PairingAnswer, PairingAsk};
 use std::sync::Arc;
 use std::time::Duration;
 use zbus::interface;
@@ -36,7 +36,7 @@ pub enum Reply {
 }
 
 /// Where a question's reply lands, for the agent call waiting on it.
-pub type Slot = crate::reply_slot::Slot<Reply>;
+pub type Slot = nova_base::reply_slot::Slot<Reply>;
 
 /// Whether `answer` answers `ask`. Turning down works for every question
 /// that waits for one.

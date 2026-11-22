@@ -23,6 +23,7 @@ pub fn router() -> Router<Daemon> {
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).answer(command),
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).follow_up(command),
         )
+        .route::<nova_bluetooth_api::Command>(crate::bluetooth::answer, |_, _, _| {})
         .route::<nova_network_api::Command>(crate::network::answer, |_, _, _| {})
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
         .listed_by(protocol_js_position)
@@ -191,28 +192,6 @@ impl<'a> Connection<'a> {
             }
             Command::MediaFocus { player } => return self.media_focus(player),
             Command::MediaWindow { player } => return self.media_window(player),
-            Command::WatchBluetooth { watching } => {
-                done(self.bluetooth().map(|bluetooth| bluetooth.watch(self.id, *watching)))
-            }
-            Command::BluetoothPower { on } => {
-                let on = *on;
-                return self.bluetooth_later(move |bluetooth| bluetooth.power(on));
-            }
-            Command::BluetoothConnect { address } => {
-                let address = address.clone();
-                return self.bluetooth_later(move |bluetooth| bluetooth.connect(&address));
-            }
-            Command::BluetoothDisconnect { address } => {
-                let address = address.clone();
-                return self.bluetooth_later(move |bluetooth| bluetooth.disconnect(&address));
-            }
-            Command::BluetoothForget { address } => {
-                let address = address.clone();
-                return self.bluetooth_later(move |bluetooth| bluetooth.forget(&address));
-            }
-            Command::BluetoothAnswer { id, answer } => {
-                done(self.bluetooth().and_then(|bluetooth| bluetooth.answer(*id, answer.clone())))
-            }
         };
         Answer::Now(outcome)
     }
@@ -255,10 +234,6 @@ impl<'a> Connection<'a> {
 
     fn wallpaper(&self) -> Arc<crate::wallpaper::Wallpaper> {
         Arc::clone(&self.daemon.kept.wallpaper)
-    }
-
-    fn bluetooth(&self) -> Result<Arc<crate::bluetooth::Bluetooth>, String> {
-        self.daemon.module()
     }
 
     fn compositor(&self) -> Result<&crate::compositor::Compositor, String> {
@@ -501,18 +476,6 @@ impl<'a> Connection<'a> {
         }
     }
 
-    /// Runs `work` with Bluetooth on its own thread: BlueZ, the device and
-    /// the user's answer to pairing take their time.
-    fn bluetooth_later(
-        &self,
-        work: impl FnOnce(&crate::bluetooth::Bluetooth) -> Result<(), String> + Send + 'static,
-    ) -> Answer {
-        match self.bluetooth() {
-            Ok(bluetooth) => Answer::later(move || done(work(&bluetooth))),
-            Err(e) => Answer::Now(Outcome::Error(e)),
-        }
-    }
-
     fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
         match self.media() {
             Ok(media) => Answer::later(move || work(&media)),
@@ -711,13 +674,7 @@ impl<'a> Connection<'a> {
             | Command::MediaSeek { .. }
             | Command::MediaShow { .. }
             | Command::MediaFocus { .. }
-            | Command::MediaWindow { .. }
-            | Command::BluetoothPower { .. }
-            | Command::WatchBluetooth { .. }
-            | Command::BluetoothConnect { .. }
-            | Command::BluetoothDisconnect { .. }
-            | Command::BluetoothForget { .. }
-            | Command::BluetoothAnswer { .. } => {}
+            | Command::MediaWindow { .. } => {}
         }
     }
 

@@ -50,6 +50,7 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
 #[serde(untagged)]
 enum IpcCommand {
     Shared(Command),
+    Bluetooth(nova_bluetooth_api::Command),
     Network(nova_network_api::Command),
     Resources(nova_resources_api::Command),
 }
@@ -60,7 +61,9 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
     if let Some(args) = args {
         request["args"] = serde_json::from_str(args).map_err(|e| format!("the arguments aren't JSON: {e}"))?;
     }
-    let read = if tagged_names_of::<nova_network_api::Command>("cmd").contains(&name) {
+    let read = if tagged_names_of::<nova_bluetooth_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Bluetooth)
+    } else if tagged_names_of::<nova_network_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Network)
     } else if tagged_names_of::<nova_resources_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Resources)
@@ -84,6 +87,10 @@ mod tests {
         assert_eq!(
             parse("watch_resources", Some(r#"{"watching": true}"#)),
             Ok(IpcCommand::Resources(nova_resources_api::Command::WatchResources { watching: true }))
+        );
+        assert_eq!(
+            parse("bluetooth_power", Some(r#"{"on": true}"#)),
+            Ok(IpcCommand::Bluetooth(nova_bluetooth_api::Command::BluetoothPower { on: true }))
         );
         assert_eq!(
             parse("set_wifi", Some(r#"{"enabled": true}"#)),

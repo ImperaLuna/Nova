@@ -160,6 +160,7 @@ const HUNG_UP: &str = "novad closed the connection";
 #[serde(untagged)]
 pub enum Sent {
     Shared(Event),
+    Bluetooth(nova_bluetooth_api::Event),
     Network(nova_network_api::Event),
     Resources(nova_resources_api::Event),
 }

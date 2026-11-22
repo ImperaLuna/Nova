@@ -7,6 +7,7 @@
 # - shlex
 #
 # Allowed workspace crates:
+# - nova-bluetooth-api
 # - nova-carrier
 # - nova-features
 # - nova-paths
@@ -31,6 +32,7 @@ path = "src/main.rs"
 [dependencies]
 nova-protocol.workspace = true
 nova-carrier.workspace = true
+nova-bluetooth-api.workspace = true
 nova-network-api.workspace = true
 nova-resources-api.workspace = true
 serde.workspace = true

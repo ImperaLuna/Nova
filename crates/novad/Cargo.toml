@@ -25,6 +25,8 @@
 # Allowed workspace crates:
 # - nova-apps
 # - nova-base
+# - nova-bluetooth
+# - nova-bluetooth-api
 # - nova-carrier
 # - nova-compositor
 # - nova-features
@@ -71,6 +73,8 @@ nova-log.workspace = true
 nova-socket.workspace = true
 nova-modules.workspace = true
 nova-settings.workspace = true
+nova-bluetooth.workspace = true
+nova-bluetooth-api.workspace = true
 nova-network.workspace = true
 nova-network-api.workspace = true
 nova-resources.workspace = true
