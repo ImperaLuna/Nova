@@ -4,7 +4,7 @@
 
 use super::round_percent;
 use jiff::Timestamp;
-use nova_protocol::{UsageLimit, UsageWindow};
+use nova_ai_usage_api::{UsageLimit, UsageWindow};
 use serde_json::Value;
 
 /// The limits in a status line input, none when it has no `rate_limits`

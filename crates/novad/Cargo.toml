@@ -1,7 +1,4 @@
 # Allowed outside crates:
-# - aes
-# - base64
-# - cbc
 # - clap
 # - flate2
 # - futures-core
@@ -9,12 +6,10 @@
 # - libc
 # - lzma-rust2
 # - md-5
-# - pbkdf2
 # - png
 # - ruzstd
 # - serde
 # - serde_json
-# - sha1
 # - tar
 # - toml
 # - ureq
@@ -22,6 +17,8 @@
 # - zip
 #
 # Allowed workspace crates:
+# - nova-ai-usage
+# - nova-ai-usage-api
 # - nova-apps
 # - nova-base
 # - nova-bluetooth
@@ -85,6 +82,8 @@ nova-log.workspace = true
 nova-socket.workspace = true
 nova-modules.workspace = true
 nova-settings.workspace = true
+nova-ai-usage.workspace = true
+nova-ai-usage-api.workspace = true
 nova-bluetooth.workspace = true
 nova-bluetooth-api.workspace = true
 nova-launcher.workspace = true
@@ -120,12 +119,7 @@ serde.workspace = true
 toml.workspace = true
 ureq.workspace = true
 zbus.workspace = true
-aes.workspace = true
-cbc.workspace = true
-pbkdf2.workspace = true
-sha1.workspace = true
 md-5.workspace = true
-base64.workspace = true
 zip.workspace = true
 tar.workspace = true
 flate2.workspace = true
@@ -133,6 +127,7 @@ ruzstd.workspace = true
 lzma-rust2.workspace = true
 
 [dev-dependencies]
+nova-ai-usage = { workspace = true, features = ["test-support"] }
 nova-test-support.workspace = true
 nova-base = { workspace = true, features = ["test-support"] }
 nova-session-bus = { workspace = true, features = ["test-support"] }

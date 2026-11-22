@@ -6,7 +6,7 @@
 
 use super::{display_plan, round_percent};
 use jiff::Timestamp;
-use nova_protocol::{UsageLimit, UsageWindow};
+use nova_ai_usage_api::{UsageLimit, UsageWindow};
 use serde_json::Value;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};

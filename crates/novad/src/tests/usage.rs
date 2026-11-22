@@ -433,14 +433,14 @@ fn claude_reports_and_the_bar_choice_survive_a_restart() {
     assert_eq!(client.next_usage()["shown"], "codex");
 
     // A second novad on the same files starts where the first left off.
-    let again = ai_usage::Usage::start(
+    let again = nova_ai_usage::Usage::start(
         ai_usage_paths(&novad.dir.join("ai-usage")),
         &config::AiUsageConfig::default(),
         Arc::new(Hub::default()),
         Arc::clone(&novad.daemon.logger),
     );
-    let nova_protocol::Event::AiUsage(usage) = again.event() else { panic!("not an ai_usage event") };
-    assert_eq!(usage.shown, nova_protocol::AiProvider::Codex);
+    let nova_ai_usage_api::Event::AiUsage(usage) = again.event();
+    assert_eq!(usage.shown, nova_ai_usage_api::AiProvider::Codex);
     assert_eq!(usage.providers[0].limits[0].percent, 42);
     let saved = std::fs::metadata(ai_usage_paths(&novad.dir.join("ai-usage")).state_file).unwrap();
     assert_eq!(std::os::unix::fs::PermissionsExt::mode(&saved.permissions()) & 0o777, 0o600);
