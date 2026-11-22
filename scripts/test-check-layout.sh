@@ -48,10 +48,8 @@ good() {
   cat >"$workspace/Cargo.toml" <<'EOF'
 [workspace]
 resolver = "3"
-members = ["app", "crates/*", "framework/*", "features/*/api", "features/*/core", "fronts/*"]
+members = ["app", "framework/*", "features/*/api", "features/*/core", "fronts/*"]
 EOF
-  crate "$workspace" crates/old old none "paths media-core" \
-    'paths = { path = "../../framework/paths" }' 'media-core = { path = "../../features/media/core" }'
   crate "$workspace" framework/paths paths none none
   crate "$workspace" framework/stage stage none paths 'paths = { path = "../paths" }'
   crate "$workspace" features/notifications/api notifications-api none none
@@ -60,9 +58,9 @@ EOF
   crate "$workspace" features/media/core media-core none "media-api notifications-api" \
     'media-api = { path = "../api" }' 'notifications-api = { path = "../../notifications/api" }'
   crate "$workspace" fronts/cli cli none media-api 'media-api = { path = "../../features/media/api" }'
-  crate "$workspace" app app none "cli stage media-core old" \
+  crate "$workspace" app app none "cli stage media-core" \
     'cli = { path = "../fronts/cli" }' 'stage = { path = "../framework/stage" }' \
-    'media-core = { path = "../features/media/core" }' 'old = { path = "../crates/old" }'
+    'media-core = { path = "../features/media/core" }'
 }
 
 # expect_pass <what> <workspace>
@@ -122,9 +120,9 @@ ws=$(planted front-uses-core)
 crate "$ws" fronts/cli cli none media-core 'media-core = { path = "../../features/media/core" }'
 expect_fail "a front using a feature's core" W2 "$ws"
 
-ws=$(planted new-uses-old)
-crate "$ws" features/media/api media-api none old 'old = { path = "../../../crates/old" }'
-expect_fail "an api crate using a crate in crates/" M1 "$ws"
+ws=$(planted front-uses-app)
+crate "$ws" fronts/cli cli none app 'app = { path = "../../app" }'
+expect_fail "a front using the app" W2 "$ws"
 
 ws=$(planted not-allowed)
 crate "$ws" features/media/api media-api none none \

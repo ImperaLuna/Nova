@@ -32,7 +32,7 @@ impl Novad {
     fn start_with(name: &str, selection: &str) -> Self {
         let dir = TempDir::new(name);
         std::fs::write(dir.join("features.toml"), selection).unwrap();
-        let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
         let args: Vec<std::ffi::OsString> = vec![
             "nova daemon".into(),
             "--no-ui".into(),
@@ -151,7 +151,7 @@ fn doctor_fails_on_what_is_missing() {
     let output = novad
         .nova(&["doctor"])
         // A checkout's layout, where the themes are found.
-        .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
+        .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join(".."))
         .env("PATH", "")
         .env("XDG_CONFIG_HOME", &config)
         .env("NOVA_FEATURES_DIR", &features)
@@ -304,7 +304,7 @@ struct DaemonProcess {
 impl DaemonProcess {
     fn start(name: &str) -> Self {
         let dir = TempDir::new(name);
-        let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
         let child = Command::new(env!("CARGO_BIN_EXE_nova"))
             .arg("daemon")
             .arg("--no-ui")

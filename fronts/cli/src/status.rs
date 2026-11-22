@@ -1,7 +1,6 @@
 //! `nova status` and `nova version`.
 
-use crate::client::Client;
-use crate::lifecycle::RESTART_COMMAND;
+use crate::client::{Client, RESTART_COMMAND};
 use nova_daemon_info::{FeatureStatus, Status, UiState};
 use nova_desktop_info::Desktop;
 use std::path::Path;

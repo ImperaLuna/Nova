@@ -1,23 +1,20 @@
 //! `nova`: Nova's one binary. Its commands start, stop and inspect Nova by
 //! talking to the daemon, which is this same binary run as `nova daemon`;
-//! the daemon's logic lives in the novad crate.
+//! the daemon's logic lives in this crate's library. This file is the one
+//! command-line parser: the commands that only talk to the socket are the
+//! `nova-cli` front's (`fronts/cli`), the rest are the modules here.
 
-mod client;
 mod config;
 mod doctor;
 mod host;
-mod ipc;
 mod lifecycle;
 mod login_apps;
-mod logs;
 mod setup;
-mod status;
 mod statusline;
 mod systemd;
-mod toggle;
-mod wallpaper;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
+use nova_cli::{ipc, logs, status, toggle, wallpaper};
 use std::path::PathBuf;
 use std::process::ExitCode;
 

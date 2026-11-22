@@ -66,9 +66,7 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 
 ## Layout
 
-A crate's folder decides what it may use. The Rust code is moving into these
-folders one feature at a time (IMP-368, the novad move); until then most of
-it is in `crates/`.
+A crate's folder decides what it may use.
 
 - `framework/<name>/`: the shared part every feature plugs into. It never
   names a feature. Wire types that aren't a feature's sit in their own
@@ -81,10 +79,13 @@ it is in `crates/`.
   crates may use. `features/<id>/core/`: its work, the part that talks to
   the system and draws nothing. `features/<id>/ui/`: reserved for the GPUI
   ports. They sit beside the feature's `feature.toml`.
-- `fronts/<name>/`: other ways in, the clients and outside interfaces (the
-  `nova` command). The socket server itself is part of the framework.
-- `app/`: wiring only. It starts everything and lists the features.
-- `crates/`: the old layout, emptied by the move. Add no new crate here.
+- `fronts/<name>/`: other ways in, the clients and outside interfaces
+  (`fronts/cli`: the `nova` command's socket commands). The socket server
+  itself is part of the framework.
+- `app/`: wiring only. It starts everything and lists the features. The
+  `nova` binary (`app/src/bin/nova`) parses the command line and keeps the
+  commands that run Nova itself (start, restart, quit, setup, doctor,
+  config, claude-statusline, daemon).
 
 A glob in the workspace's `members` that matches nothing is an error to
 cargo, so the first crate of a kind adds its glob. Each `Cargo.toml` opens
@@ -101,7 +102,6 @@ these rules and names the one a change breaks:
 | C1 | sits in one of the folders above | move it there |
 | C2 | in those folders is a workspace member | add its folder or kind's glob to `members` |
 | C3 | under `features/<id>/` has a `feature.toml` beside it | name the folder after the feature's id |
-| M1 | outside `crates/` and `app/` never uses one in `crates/` | move what it needs out of `crates/` first |
 | W1 | in `framework/` uses only other framework crates | let the feature plug in (a module, a port, a message type) |
 | W2 | in `fronts/` uses only listed framework crates and api crates | send a message |
 | I1 | named `framework/<name>-info` uses only `nova-carrier` and other `-info` crates | move the code to the crate that builds the types |
@@ -175,7 +175,7 @@ assertions). The feature is `<id>` (its folder name), its crates
      new topic (protocol.js adds a new name at the end of its group).
    - `app/src/protocol_js.rs` `events()`: the api's `Event` after
      novad's own and the `-info` crates', sorted by feature id.
-   - `crates/nova-cli`: the api's `Command` as a variant of `ipc.rs`'s
+   - `fronts/cli`: the api's `Command` as a variant of `ipc.rs`'s
      `IpcCommand` (with its branch in `parse`), and its `Event` as a variant
      of `client.rs`'s `Sent`, both after novad's own (`Daemon`) and the
      `-info` crates', sorted by feature id; the

@@ -33,15 +33,15 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const UNIT_TEMPLATE: &str = include_str!("../../../packaging/systemd/nova.service.in");
+const UNIT_TEMPLATE: &str = include_str!("../../../../packaging/systemd/nova.service.in");
 const UNIT_NOVA_PLACEHOLDER: &str = "@nova@";
 /// Orders login apps after novad (IMP-107), as `<units>/app-.service.d/nova.conf`.
-const APP_DROP_IN: &str = include_str!("../../../packaging/systemd/app-.service.d/nova.conf");
+const APP_DROP_IN: &str = include_str!("../../../../packaging/systemd/app-.service.d/nova.conf");
 const APP_DROP_IN_PATH: &str = "app-.service.d/nova.conf";
-const NIRI_RULES: &str = include_str!("../../../packaging/compositor/niri.kdl");
+const NIRI_RULES: &str = include_str!("../../../../packaging/compositor/niri.kdl");
 /// Where the niri rules go, in Nova's config folder.
 const NIRI_RULES_FILE: &str = "niri.kdl";
-const HYPRLAND_RULES: &str = include_str!("../../../packaging/compositor/hyprland.conf");
+const HYPRLAND_RULES: &str = include_str!("../../../../packaging/compositor/hyprland.conf");
 /// Where the Hyprland rules go, in Nova's config folder.
 const HYPRLAND_RULES_FILE: &str = "hyprland.conf";
 /// Fedora's Quickshell, until a Fedora release ships it.
@@ -508,7 +508,7 @@ mod tests {
     use super::*;
 
     fn manifests() -> Vec<Manifest> {
-        nova_features::load_all(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features")).unwrap()
+        nova_features::load_all(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../features")).unwrap()
     }
 
     fn paths(home: &Path) -> Paths {
@@ -749,7 +749,7 @@ mod tests {
         let home = Home::new("defaults");
         let config = home.0.join("config.toml");
         std::fs::write(&config, default_config()).unwrap();
-        let themes = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../themes");
+        let themes = Path::new(env!("CARGO_MANIFEST_DIR")).join("../themes");
         assert_eq!(checks::read_config(&config, &themes), Ok(vec![]));
         let selection = home.0.join("features.toml");
         std::fs::write(&selection, default_selection(&manifests())).unwrap();

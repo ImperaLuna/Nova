@@ -3,7 +3,6 @@
 //! what you run then); only following events (`nova logs`, `nova ipc
 //! subscribe`) waits forever.
 
-use crate::lifecycle::RESTART_COMMAND;
 use nova_carrier::{Envelope, Outcome, Response, Topic, encode};
 use nova_daemon_info::{Command, Event, Status};
 use serde::{Deserialize, Serialize};
@@ -11,6 +10,9 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
+
+/// What to run to restart Nova, for hints.
+pub const RESTART_COMMAND: &str = "nova restart";
 
 /// How long novad may take to say hello or answer a request.
 pub const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
