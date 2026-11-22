@@ -415,8 +415,12 @@ fn launching_a_tray_only_app_activates_its_item_then_starts_it_when_no_window_sh
     // Its icon's id names it; the recording has no window of it.
     let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let app = bus.connect();
-    let item = tray::tests::Item { id: "nova-third".into(), title: "Third".into(), activated: Arc::clone(&activated) };
-    tray::tests::serve_item(&app, None, "/StatusNotifierItem", "/StatusNotifierItem", item);
+    let item = nova_tray::test_items::Item {
+        id: "nova-third".into(),
+        title: "Third".into(),
+        activated: Arc::clone(&activated),
+    };
+    nova_tray::test_items::serve_item(&app, None, "/StatusNotifierItem", "/StatusNotifierItem", item);
     client.request(4, "subscribe", Some(json!({"topics": ["tray"]})));
     while client.next_event("tray")["items"][0]["app"]["id"] != "third.desktop" {}
     let output = focused_output(&desktop);
@@ -474,9 +478,12 @@ fn a_tray_click_focuses_the_open_window_of_its_app() {
     client.subscribe_launcher(1);
     let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let app = bus.connect();
-    let item =
-        tray::tests::Item { id: "nova-second".into(), title: "Second".into(), activated: Arc::clone(&activated) };
-    tray::tests::serve_item(&app, None, "/StatusNotifierItem", "/StatusNotifierItem", item);
+    let item = nova_tray::test_items::Item {
+        id: "nova-second".into(),
+        title: "Second".into(),
+        activated: Arc::clone(&activated),
+    };
+    nova_tray::test_items::serve_item(&app, None, "/StatusNotifierItem", "/StatusNotifierItem", item);
     client.request(2, "subscribe", Some(json!({"topics": ["tray"]})));
     let address = loop {
         let tray = client.next_event("tray");
@@ -522,8 +529,12 @@ fn a_tray_click_starts_its_app_when_no_window_shows() {
     // Its icon's id names it; the recording has no window of it.
     let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let app = bus.connect();
-    let item = tray::tests::Item { id: "nova-third".into(), title: "Third".into(), activated: Arc::clone(&activated) };
-    tray::tests::serve_item(&app, None, "/StatusNotifierItem", "/StatusNotifierItem", item);
+    let item = nova_tray::test_items::Item {
+        id: "nova-third".into(),
+        title: "Third".into(),
+        activated: Arc::clone(&activated),
+    };
+    nova_tray::test_items::serve_item(&app, None, "/StatusNotifierItem", "/StatusNotifierItem", item);
     client.request(2, "subscribe", Some(json!({"topics": ["tray"]})));
     let address = loop {
         let tray = client.next_event("tray");
@@ -565,8 +576,8 @@ fn launching_an_app_whose_tray_icon_has_only_a_menu_starts_it_again_and_focuses_
     client.subscribe_launcher(1);
     // Like Spotify's: libayatana's icons have only a menu, no Activate.
     let app = bus.connect();
-    let item = tray::tests::MenuOnlyItem { id: "nova-third".into(), title: "Third".into() };
-    tray::tests::serve_item(
+    let item = nova_tray::test_items::MenuOnlyItem { id: "nova-third".into(), title: "Third".into() };
+    nova_tray::test_items::serve_item(
         &app,
         None,
         "/org/ayatana/NotificationItem/third",
@@ -625,8 +636,8 @@ fn a_window_shown_from_a_tray_menu_takes_focus() {
     let app = bus.connect();
     for name in ["second", "third"] {
         let path = format!("/org/ayatana/NotificationItem/{name}");
-        let item = tray::tests::MenuOnlyItem { id: format!("nova-{name}"), title: name.into() };
-        tray::tests::serve_item(&app, None, &path, &path, item);
+        let item = nova_tray::test_items::MenuOnlyItem { id: format!("nova-{name}"), title: name.into() };
+        nova_tray::test_items::serve_item(&app, None, &path, &path, item);
     }
     client.request(2, "subscribe", Some(json!({"topics": ["tray"]})));
     let address = |items: &Value, app: &str| {

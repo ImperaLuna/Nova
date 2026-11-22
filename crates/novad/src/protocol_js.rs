@@ -36,6 +36,7 @@ fn events() -> Vec<&'static str> {
         tagged_names_of::<nova_launcher_api::Event>("event"),
         tagged_names_of::<nova_network_api::Event>("event"),
         tagged_names_of::<nova_resources_api::Event>("event"),
+        tagged_names_of::<nova_tray_api::Event>("event"),
     ]
     .concat()
 }
