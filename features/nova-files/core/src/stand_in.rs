@@ -7,10 +7,10 @@
 
 use super::NovaFiles;
 use super::client::{APP_ID, Client, PATH};
-use crate::lock;
-use crate::logger::Logger;
-use crate::mime::Mime;
-use nova_protocol::LogLevel;
+use nova_base::lock;
+use nova_carrier::log::LogLevel;
+use nova_log::Logger;
+use nova_mime::Mime;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -62,7 +62,7 @@ impl StandIn {
 
 /// A client of the bus at `address`.
 pub fn client(address: &str) -> Client {
-    Client::connect(&crate::session_bus::Bus::Address(address.to_string()), TIMEOUT).unwrap()
+    Client::connect(&nova_session_bus::Bus::Address(address.to_string()), TIMEOUT).unwrap()
 }
 
 /// The feature's module on the bus at `address`, with Home at `home`, in a

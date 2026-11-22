@@ -960,14 +960,14 @@ mod tests {
                 id: Some(91),
                 command: nova_launcher_api::Command::LauncherSearch {
                     query: "~/Doc".into(),
-                    mode: Some(nova_launcher_api::PROVIDER_FILES.into()),
+                    mode: Some(nova_nova_files_api::PROVIDER_FILES.into()),
                 },
             }),
             encode(Response {
                 id: 91,
                 outcome: Outcome::Result(
                     serde_json::to_value(vec![nova_launcher_api::LauncherItem {
-                        provider: nova_launcher_api::PROVIDER_FILES.into(),
+                        provider: nova_nova_files_api::PROVIDER_FILES.into(),
                         id: "/home/me/Documents".into(),
                         name: vec![
                             nova_launcher_api::TextRun { text: "Doc".into(), matched: true },

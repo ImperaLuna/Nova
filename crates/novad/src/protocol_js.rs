@@ -102,7 +102,7 @@ fn groups(features: &Path, current: &str) -> Vec<Group> {
         Group::new(
             "Launcher providers built into novad (PROVIDER_*).",
             "PROVIDER",
-            &[nova_launcher_api::PROVIDER_APPS, nova_launcher_api::PROVIDER_FILES],
+            &[nova_launcher_api::PROVIDER_APPS, nova_nova_files_api::PROVIDER_FILES],
         ),
         Group::new("Power menu actions (PowerAction).", "POWER", names_of::<PowerAction>()),
         Group::new("What the capture toolbar takes (CaptureMode).", "CAPTURE", names_of::<CaptureMode>()),
@@ -272,7 +272,7 @@ fn providers_are_manifest_views() {
                 .is_ok_and(|manifest| manifest.contains(&format!("view = \"{provider}\"")))
         })
     };
-    for provider in [nova_launcher_api::PROVIDER_APPS, nova_launcher_api::PROVIDER_FILES] {
+    for provider in [nova_launcher_api::PROVIDER_APPS, nova_nova_files_api::PROVIDER_FILES] {
         assert!(slotted(provider), "no feature.toml slots in the {provider:?} provider");
     }
 }

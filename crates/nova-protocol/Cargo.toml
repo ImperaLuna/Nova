@@ -33,6 +33,7 @@ nova-launcher-api.workspace = true
 nova-media-api.workspace = true
 nova-network-api.workspace = true
 nova-notifications-api.workspace = true
+nova-nova-files-api.workspace = true
 nova-peripherals-api.workspace = true
 nova-resources-api.workspace = true
 nova-tray-api.workspace = true
