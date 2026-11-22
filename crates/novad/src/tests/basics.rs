@@ -56,6 +56,18 @@ fn bad_requests_get_an_error_when_they_have_an_id() {
     assert!(reply["error"].as_str().unwrap().starts_with("bad request"));
 }
 
+/// The router's error for a command nobody serves is the one decoding the
+/// whole command list gives, word for word.
+#[test]
+fn an_unknown_command_gets_the_decoders_error() {
+    let novad = TestDaemon::start("unknown", None);
+    let mut client = novad.connect();
+    let request = json!({"v": 2, "id": 5, "cmd": "reboot"});
+    client.send(&request);
+    let decoded = nova_protocol::decode_request(&request.to_string()).unwrap_err();
+    assert_eq!(client.next()["error"], format!("bad request: {decoded}"));
+}
+
 #[test]
 fn unknown_fields_and_other_versions_are_refused() {
     let novad = TestDaemon::start("strict", None);

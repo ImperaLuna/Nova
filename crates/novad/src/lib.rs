@@ -46,9 +46,9 @@ mod peripherals;
 mod power;
 mod recording;
 mod render_loop;
+mod requests;
 mod resources;
 mod screenshot;
-mod server;
 mod session_lock;
 mod settings;
 mod supervisor;
@@ -69,6 +69,7 @@ use nova_session_bus as session_bus;
 // (IMP-372).
 use nova_hub as hub;
 use nova_log as logger;
+use nova_socket as server;
 use nova_watch as watch_points;
 
 use hub::Hub;
@@ -164,6 +165,32 @@ pub struct Daemon {
     /// The modules kept for novad's life, reached without the settings
     /// lock: a reload holds it while modules start, which may take seconds.
     kept: modules::Kept,
+    /// Where each request goes.
+    router: server::Router<Daemon>,
+}
+
+impl server::Service for Daemon {
+    type Hello = nova_protocol::Event;
+
+    fn hub(&self) -> &Hub {
+        &self.hub
+    }
+
+    fn logger(&self) -> &Arc<Logger> {
+        &self.logger
+    }
+
+    fn router(&self) -> &server::Router<Self> {
+        &self.router
+    }
+
+    fn hello(&self) -> Self::Hello {
+        nova_protocol::Event::Hello { daemon: env!("CARGO_PKG_VERSION").into() }
+    }
+
+    fn client_gone(&self, client: hub::ClientId) {
+        lock(&self.settings).modules.client_gone(client);
+    }
 }
 
 impl Daemon {
@@ -393,6 +420,7 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         kept: settings.modules.kept(),
         settings: Mutex::new(settings),
         compositor,
+        router: requests::router(),
     });
     // Watched for as long as novad runs.
     let watching = daemon.watch_settings();

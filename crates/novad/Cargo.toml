@@ -34,6 +34,7 @@
 # - nova-protocol
 # - nova-quickshell
 # - nova-session-bus
+# - nova-socket
 # - nova-watch
 
 [package]
@@ -57,6 +58,7 @@ nova-carrier.workspace = true
 nova-hub.workspace = true
 nova-log.workspace = true
 nova-watch.workspace = true
+nova-socket.workspace = true
 serde_json.workspace = true
 clap.workspace = true
 futures-core.workspace = true
@@ -85,6 +87,7 @@ nova-test-support.workspace = true
 nova-base = { workspace = true, features = ["test-support"] }
 nova-session-bus = { workspace = true, features = ["test-support"] }
 nova-hub = { workspace = true, features = ["test-support"] }
+nova-socket = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

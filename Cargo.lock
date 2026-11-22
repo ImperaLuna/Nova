@@ -857,6 +857,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-socket"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-test-support"
 version = "0.1.0"
 
@@ -894,6 +906,7 @@ dependencies = [
  "nova-protocol",
  "nova-quickshell",
  "nova-session-bus",
+ "nova-socket",
  "nova-test-support",
  "nova-watch",
  "pbkdf2",
