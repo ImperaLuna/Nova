@@ -822,6 +822,7 @@ dependencies = [
  "nova-notifications-api",
  "nova-paths",
  "nova-peripherals-api",
+ "nova-power-api",
  "nova-protocol",
  "nova-quickshell",
  "nova-resources-api",
@@ -1108,6 +1109,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-power"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "libc",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "nova-power-api",
+ "nova-test-support",
+ "zbus",
+]
+
+[[package]]
+name = "nova-power-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-process"
 version = "0.1.0"
 dependencies = [
@@ -1132,6 +1156,7 @@ dependencies = [
  "nova-notifications-api",
  "nova-nova-files-api",
  "nova-peripherals-api",
+ "nova-power-api",
  "nova-resources-api",
  "nova-theme",
  "nova-tray-api",
@@ -1339,6 +1364,8 @@ dependencies = [
  "nova-paths",
  "nova-peripherals",
  "nova-peripherals-api",
+ "nova-power",
+ "nova-power-api",
  "nova-process",
  "nova-protocol",
  "nova-quickshell",

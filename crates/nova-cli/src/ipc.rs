@@ -55,6 +55,7 @@ enum IpcCommand {
     Media(nova_media_api::Command),
     Network(nova_network_api::Command),
     Notifications(nova_notifications_api::Command),
+    Power(nova_power_api::Command),
     Resources(nova_resources_api::Command),
     Tray(nova_tray_api::Command),
     Wallpaper(nova_wallpaper_api::Command),
@@ -76,6 +77,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
         serde_json::from_value(request).map(IpcCommand::Network)
     } else if tagged_names_of::<nova_notifications_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Notifications)
+    } else if tagged_names_of::<nova_power_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Power)
     } else if tagged_names_of::<nova_resources_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Resources)
     } else if tagged_names_of::<nova_tray_api::Command>("cmd").contains(&name) {
@@ -117,6 +120,10 @@ mod tests {
             Ok(IpcCommand::Notifications(nova_notifications_api::Command::DismissNotification { id: 7 }))
         );
         assert!(parse("end_app", Some(r#"{"key": "x", "extra": 1}"#)).is_err());
+        assert_eq!(
+            parse("power", Some(r#"{"action": "suspend"}"#)),
+            Ok(IpcCommand::Power(nova_power_api::Command::Power { action: nova_power_api::PowerAction::Suspend }))
+        );
         assert_eq!(
             parse("refresh_ai_usage", None),
             Ok(IpcCommand::AiUsage(nova_ai_usage_api::Command::RefreshAiUsage))

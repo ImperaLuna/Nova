@@ -1,0 +1,21 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates: none
+
+[package]
+name = "nova-power-api"
+description = "The power feature's messages: power_options, power and the power menu's types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

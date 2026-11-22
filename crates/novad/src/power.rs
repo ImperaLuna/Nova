@@ -1,146 +1,106 @@
-//! The power menu's actions (feature `power`): lock, suspend, log out,
-//! restart and shut down, and whether each can run now.
-//!
-//! Lock goes to the lock screen ([`crate::session_lock`]) and log out to the
-//! compositor, which quits. Suspend, restart and shut down ask logind over
-//! the system bus (systemd-logind, or elogind without systemd), the same
-//! calls `loginctl` makes, so they need no root: logind and polkit allow them
-//! for the active session. logind's `Can*` answers decide which ones the
-//! menu dims.
+//! Runs the power feature (`nova-power`, in `features/power`) in novad: the
+//! answers to its commands and following logind for the lock screen.
+//! Wiring only: it adapts the feature's core to novad's `Daemon`. The
+//! feature keeps no state, so it has no module; its commands answer while
+//! its feature is ready.
 
-use crate::logger::Logger;
-use crate::logind::{MANAGER as LOGIND_MANAGER, PATH as LOGIND_PATH, SERVICE as LOGIND_SERVICE};
-use nova_protocol::{PowerAction, PowerOption};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, mpsc};
-use std::time::Duration;
+use crate::{Daemon, features, session_lock};
+use nova_power_api::{Command, PowerAction, PowerMenu};
+use nova_protocol::{Capability, Outcome};
+use nova_socket::{Answer, Caller, done, value};
+use std::sync::Arc;
 
-/// The feature's id in `features/`.
-pub const FEATURE_ID: &str = "power";
-const LOG_SOURCE: &str = "power";
+pub use nova_power::FEATURE_ID;
+const LOG_SOURCE: &str = "server";
 
-/// How long logind gets to connect and answer one call.
-const LOGIND_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// The logind methods behind an action, `None` for actions logind doesn't run.
-fn logind_methods(action: PowerAction) -> Option<(&'static str, &'static str)> {
-    match action {
-        PowerAction::Suspend => Some(("CanSuspend", "Suspend")),
-        PowerAction::Reboot => Some(("CanReboot", "Reboot")),
-        PowerAction::PowerOff => Some(("CanPowerOff", "PowerOff")),
-        PowerAction::Lock | PowerAction::LogOut => None,
+/// The answer to one of the feature's commands, the route
+/// `requests::router` gives them.
+pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
+    match command {
+        Command::PowerOptions => options(daemon),
+        Command::Power { action } => power(daemon, *action),
     }
 }
 
-/// What logind's `Can*` answer means for the menu, in a few words that fit
-/// under its row; why logind couldn't answer goes to the log. "challenge"
-/// means polkit would ask for a password first; the action stays, and polkit
-/// says no if no agent asks.
-fn from_can(action: PowerAction, answer: Result<String, String>, logger: &Logger) -> PowerOption {
-    let (available, reason) = match answer.as_deref() {
-        Ok("yes" | "challenge") => (true, None),
-        Ok("no") => (false, Some("Not allowed".to_string())),
-        Ok("na") => (false, Some("Turned off".to_string())),
-        Ok(other) => (false, Some(format!("logind says {other:?}"))),
-        Err(e) => {
-            logger.warn(LOG_SOURCE, &format!("couldn't ask logind whether it can {action:?}: {e}"));
-            (false, Some("Couldn't ask logind".to_string()))
-        }
+/// An error saying the feature `id` isn't ready, when it isn't.
+fn require_feature(daemon: &Daemon, id: &str) -> Result<(), String> {
+    match daemon.feature_ready(id) {
+        true => Ok(()),
+        false => Err(features::not_ready(id)),
+    }
+}
+
+fn options(daemon: &Daemon) -> Answer {
+    if let Err(e) = require_feature(daemon, FEATURE_ID) {
+        return Answer::Now(Outcome::Error(e));
+    }
+    let lock = require_feature(daemon, session_lock::FEATURE_ID);
+    let log_out = match &daemon.compositor {
+        Some(compositor) if compositor.can(Capability::LogOut) => Ok(()),
+        _ => Err("Not on this compositor".into()),
     };
-    PowerOption { action, available, reason }
+    let logger = Arc::clone(&daemon.logger);
+    Answer::later(move || {
+        let menu =
+            PowerMenu { options: nova_power::options(lock, log_out, &logger), booted_at: crate::procfs::boot_time() };
+        value(Ok(menu))
+    })
 }
 
-/// Every action, in the menu's order. `lock` and `log_out` say whether the
-/// lock screen and the compositor can do theirs; logind answers the rest.
-pub fn options(lock: Result<(), String>, log_out: Result<(), String>, logger: &Logger) -> Vec<PowerOption> {
-    PowerAction::ALL
-        .into_iter()
-        .map(|action| {
-            let local = match action {
-                PowerAction::Lock => Some(&lock),
-                PowerAction::LogOut => Some(&log_out),
-                _ => None,
-            };
-            match (local, logind_methods(action)) {
-                (Some(Ok(())), _) => PowerOption { action, available: true, reason: None },
-                (Some(Err(reason)), _) => PowerOption { action, available: false, reason: Some(reason.clone()) },
-                (None, Some((can, _))) => from_can(action, ask_logind(can, None), logger),
-                (None, None) => unreachable!("every action is local or logind's"),
-            }
-        })
-        .collect()
+/// Runs a power menu action. The menu asks over the UI's own
+/// connection, which can't report the lock screen covering the screens
+/// while this waits, so locking here doesn't wait for it.
+fn power(daemon: &Daemon, action: PowerAction) -> Answer {
+    if let Err(e) = require_feature(daemon, FEATURE_ID) {
+        return Answer::Now(Outcome::Error(e));
+    }
+    daemon.logger.info(LOG_SOURCE, &format!("power menu: {action:?}"));
+    match action {
+        PowerAction::Lock => Answer::Now(done(
+            require_feature(daemon, session_lock::FEATURE_ID).and_then(|()| daemon.session_lock().request(&daemon.hub)),
+        )),
+        PowerAction::LogOut => Answer::Now(done(
+            daemon
+                .compositor
+                .as_deref()
+                .ok_or_else(|| "novad doesn't know this compositor".to_string())
+                .and_then(crate::compositor::Compositor::log_out),
+        )),
+        PowerAction::Suspend | PowerAction::Reboot | PowerAction::PowerOff => logind(daemon, action),
+    }
 }
 
-/// Runs a logind action (suspend, restart, shut down).
-pub fn run_logind(action: PowerAction) -> Result<(), String> {
-    let (_, method) = logind_methods(action).ok_or_else(|| format!("logind doesn't {action:?}"))?;
-    // false: no polkit prompt; the menu has already asked the user.
-    ask_logind(method, Some(false)).map(drop)
+/// Suspend, restart or shut down through logind; answers with logind's
+/// own result. A suspend locks the screen first through novad's sleep
+/// inhibitor ([`nova_power::logind`]), as one from anywhere else does.
+fn logind(daemon: &Daemon, action: PowerAction) -> Answer {
+    let logger = Arc::clone(&daemon.logger);
+    Answer::later(move || {
+        done(
+            nova_power::run_logind(action).inspect_err(|e| logger.warn(LOG_SOURCE, &format!("{action:?} failed: {e}"))),
+        )
+    })
 }
 
-/// Calls `method` on logind's manager, with `interactive` as its one
-/// argument when it takes one, on its own thread so the deadline holds even
-/// while connecting. Returns a `Can*` method's answer, or "" for the others.
-fn ask_logind(method: &'static str, interactive: Option<bool>) -> Result<String, String> {
-    let (done, answer) = mpsc::sync_channel(1);
-    // Set once the caller stops waiting, so a slow connection can't still
-    // suspend or shut down after the menu was told it failed.
-    let abandoned = Arc::new(AtomicBool::new(false));
-    let too_late = Arc::clone(&abandoned);
-    std::thread::spawn(move || {
-        let result = zbus::block_on(async {
-            let bus = zbus::Connection::system().await?;
-            if too_late.load(Ordering::SeqCst) {
-                return Err(zbus::Error::Failure(format!("gave up on {method} before calling it")));
-            }
-            let reply = match interactive {
-                Some(interactive) => {
-                    let body = (interactive,);
-                    bus.call_method(Some(LOGIND_SERVICE), LOGIND_PATH, Some(LOGIND_MANAGER), method, &body).await?
-                }
-                None => bus.call_method(Some(LOGIND_SERVICE), LOGIND_PATH, Some(LOGIND_MANAGER), method, &()).await?,
-            };
-            match interactive {
-                Some(_) => Ok(String::new()),
-                None => reply.body().deserialize::<String>(),
-            }
-        });
-        let _ = done.send(result.map_err(|e| e.to_string()));
-    });
-    answer.recv_timeout(LOGIND_TIMEOUT).map_err(|_| {
-        abandoned.store(true, Ordering::SeqCst);
-        format!("logind didn't answer {method} within {} s", LOGIND_TIMEOUT.as_secs())
-    })?
+/// Locks the screen when logind asks, and before the machine sleeps, for
+/// as long as novad runs.
+pub fn follow_logind(daemon: &Arc<Daemon>) {
+    nova_power::follow(Arc::new(LockScreen(Arc::clone(daemon))), Arc::clone(&daemon.logger));
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::hub::Hub;
-    use nova_protocol::LogLevel;
-    use std::sync::Arc;
+/// novad's lock screen, as the feature's [`nova_power::LockScreen`] port.
+struct LockScreen(Arc<Daemon>);
 
-    #[test]
-    fn logind_answers_dim_what_cant_run() {
-        let dir = nova_test_support::TempDir::new("power");
-        let logger = Logger::open(&dir, LogLevel::Info, false, Arc::new(Hub::default())).unwrap();
-        let option = |answer: Result<&str, &str>| {
-            from_can(PowerAction::Suspend, answer.map(str::to_string).map_err(str::to_string), &logger)
-        };
-        assert!(option(Ok("yes")).available);
-        assert!(option(Ok("challenge")).available, "polkit may still allow it");
-        for answer in [Ok("no"), Ok("na"), Ok("later"), Err("no system bus")] {
-            let dimmed = option(answer);
-            assert!(!dimmed.available, "{answer:?}");
-            assert!(dimmed.reason.is_some_and(|reason| !reason.is_empty()), "{answer:?} says why");
-        }
+impl nova_power::LockScreen for LockScreen {
+    fn ready(&self) -> bool {
+        self.0.feature_ready(session_lock::FEATURE_ID)
     }
 
-    #[test]
-    fn only_suspend_restart_and_shut_down_are_loginds() {
-        for action in PowerAction::ALL {
-            let local = matches!(action, PowerAction::Lock | PowerAction::LogOut);
-            assert_eq!(logind_methods(action).is_none(), local, "{action:?}");
-        }
+    fn request(&self) -> Result<(), String> {
+        self.0.session_lock().request(&self.0.hub)
+    }
+
+    fn wait_covered(&self) -> Result<(), String> {
+        self.0.session_lock().wait_covered()
     }
 }
