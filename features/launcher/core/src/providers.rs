@@ -163,7 +163,7 @@ impl Provider for Launcher {
             // A new window is asked for: no open one, nor the tray's.
             let (ids, tray) = if how.new_window { (&[][..], None) } else { (ids, how.tray) };
             let start = || self.start_app(id);
-            super::focus_open(id, ids, how.compositor, tray, how.output, start, how.underway, how.logger)
+            super::focus_open(id, ids, &Run { tray, ..*how }, start)
         })
     }
 }

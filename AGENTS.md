@@ -225,6 +225,15 @@ assertions). The feature is `<id>` (its folder name), its crates
   in one place with a comment linking the issue and how to remove it.
 - Leave code cleaner than you found it, but keep refactors in their own commit.
 
+## Rules and their checks
+
+The rules above that a check enforces, and the check. Nova Files uses the
+same lints and limits, so both repos read the same.
+
+| Rule | Enforced by |
+|---|---|
+| An exception is `#[expect]` with a reason, never `#[allow]` | Clippy `allow_attributes`, `allow_attributes_without_reason` |
+
 ## State, threads and files
 
 - A state change and what follows from it (saving it to disk, the snapshot
