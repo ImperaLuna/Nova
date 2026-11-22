@@ -10,9 +10,9 @@
 
 use super::descriptor::Reports;
 use super::protocol::{self, Answer, Length};
-use crate::peripherals::hidraw::channel::{Channel, Received};
-use crate::peripherals::name;
-use nova_protocol::{Battery, BatteryLevel, PeripheralKind};
+use crate::hidraw::channel::{Channel, Received};
+use crate::name;
+use nova_peripherals_api::{Battery, BatteryLevel, PeripheralKind};
 use std::time::{Duration, Instant};
 
 /// How long a device or its receiver may take to answer: a paired device

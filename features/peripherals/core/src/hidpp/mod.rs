@@ -25,7 +25,8 @@ use super::hidraw::channel::Channel;
 use super::hidraw::{Listing, Node, Protocol};
 use super::{Found, LOG_SOURCE, UsbId};
 use device::{Conversation, Failure, Info, Ping};
-use nova_protocol::{LogLevel, Peripheral, PeripheralLink, PeripheralSource};
+use nova_carrier::log::LogLevel;
+use nova_peripherals_api::{Peripheral, PeripheralLink, PeripheralSource};
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 

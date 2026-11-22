@@ -11,10 +11,11 @@
 //! newer releases add some.
 
 use super::{Found, LOG_SOURCE, Report, Running, Source, UsbId, hotplug, name};
-use crate::child;
-use crate::inotify;
-use crate::lock;
-use nova_protocol::{Battery, LogLevel, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource};
+use nova_base::lock;
+use nova_carrier::log::LogLevel;
+use nova_inotify as inotify;
+use nova_peripherals_api::{Battery, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource};
+use nova_process::child;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::process::Command;
