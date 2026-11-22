@@ -3,10 +3,10 @@
 
 use super::stand_in::{StandIn, client, nova_files};
 use super::{NovaFiles, STAGES_WAIT};
-use crate::launcher::providers::{Provider, Run};
 use crate::lock;
 use crate::logger::Logger;
 use crate::session_bus::TestBus;
+use nova_launcher::providers::{Provider, Run};
 use nova_protocol::LogLevel;
 use nova_test_support::TempDir;
 use std::path::PathBuf;
@@ -115,7 +115,7 @@ fn the_launchers_files_mode_finds_opens_and_shows_files_through_nova_files() {
     assert_eq!(names, ["kitchen.txt", "kitcen notes.md"]);
     let folder = &found[0];
     assert_eq!(folder.id, root.join("kitchen.txt").display().to_string());
-    assert_eq!(folder.name[0], nova_protocol::TextRun { text: "kit".into(), matched: true });
+    assert_eq!(folder.name[0], nova_launcher_api::TextRun { text: "kit".into(), matched: true });
     assert_eq!(folder.description.as_deref(), Some("~/.notes"));
     let file = folder.file.as_ref().unwrap();
     assert!(file.dir && file.hidden, "a folder, inside a dot folder");
@@ -225,7 +225,7 @@ fn a_typed_path_completes_through_nova_files_in_its_own_spelling() {
     let completions: Vec<&str> = found.iter().map(|item| item.file.as_ref().unwrap().completion.as_str()).collect();
     assert_eq!(completions, ["~/.notes/kitchen.txt/", "~/.notes/kitcen notes.md"]);
     assert_eq!(found[0].id, root.join("kitchen.txt").display().to_string());
-    assert_eq!(found[0].name[0], nova_protocol::TextRun { text: "kit".into(), matched: true });
+    assert_eq!(found[0].name[0], nova_launcher_api::TextRun { text: "kit".into(), matched: true });
     assert_eq!(found[0].description.as_deref(), Some("~/.notes"));
 
     let typed = format!("{}/kit", root.display());

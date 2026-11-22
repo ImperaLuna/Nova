@@ -1,21 +1,27 @@
-//! The launcher (feature `launcher`): searching the installed apps (from
-//! the shared app index, `crate::apps`), starting them, and the user's
-//! pinned and recent ones, which survive restarts. It publishes the apps
-//! again each time the index reads them.
+//! The launcher (feature `launcher`, its messages in `nova-launcher-api`):
+//! searching the installed apps (from the shared app index, `nova-apps`),
+//! starting them, and the user's pinned and recent ones, which survive
+//! restarts. It publishes the apps again each time the index reads them.
+//!
+//! novad runs it as a module (its wiring adapts [`Launcher`] to novad's
+//! `Module` trait), routes the feature's commands to it, and fills its
+//! ports: the apps in the tray ([`TrayApps`]) and the other features'
+//! providers (`providers`).
 
 pub mod autostart;
 pub mod providers;
 mod rank;
 
-use crate::apps::AppIndex;
-use crate::apps::desktop_entry::Entry;
-pub use crate::apps::launch::Runner;
-use crate::compositor::Compositor;
-use crate::hub::Hub;
-use crate::logger::Logger;
-use crate::tray::Tray;
-use crate::{lock, state_file};
-use nova_protocol::{App, Event, LauncherItem};
+use nova_apps::App;
+use nova_apps::AppIndex;
+use nova_apps::desktop_entry::Entry;
+pub use nova_apps::launch::Runner;
+use nova_base::{lock, state_file};
+use nova_compositor::Compositor;
+use nova_hub::Hub;
+pub use nova_launcher_api::MAX_MATCHES;
+use nova_launcher_api::{Event, LauncherItem};
+use nova_log::Logger;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -25,8 +31,6 @@ use std::time::Duration;
 
 pub const FEATURE_ID: &str = "launcher";
 const LOG_SOURCE: &str = "launcher";
-/// Matches a provider returns for a search, at most.
-pub const MAX_MATCHES: usize = 50;
 /// Apps that can be pinned at once.
 const MAX_PINNED: usize = 32;
 /// Recent apps sent, the latest first.
@@ -37,12 +41,25 @@ const MAX_REMEMBERED: usize = 200;
 /// How long novad waits to focus the window an app was just asked to show
 /// (from its tray icon or menu, or a click on its notification), and how
 /// often it looks.
-pub const SHOWN_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_secs(1) } else { Duration::from_secs(3) };
+pub const SHOWN_WINDOW_WAIT: Duration =
+    if cfg!(any(test, feature = "test-support")) { Duration::from_secs(1) } else { Duration::from_secs(3) };
 const TRAY_WINDOW_RETRY: Duration = Duration::from_millis(100);
 /// How long it waits for the window of an app in the tray that it started
 /// again: the new process first starts up, then hands over to the running
 /// one.
-pub const STARTED_WINDOW_WAIT: Duration = if cfg!(test) { Duration::from_secs(2) } else { Duration::from_secs(10) };
+pub const STARTED_WINDOW_WAIT: Duration =
+    if cfg!(any(test, feature = "test-support")) { Duration::from_secs(2) } else { Duration::from_secs(10) };
+
+/// The apps in the system tray (feature `tray`), as [`focus_open`] uses
+/// them: a port novad's wiring fills with the tray's module, so the
+/// launcher never names the tray's code.
+pub trait TrayApps: Send + Sync {
+    /// Whether an icon in the tray belongs to the app `app_id`.
+    fn in_tray(&self, app_id: &str) -> bool;
+    /// Asks the app `app_id`'s tray icon to show its window (`Activate`):
+    /// `false` when it has no icon that can.
+    fn activate_in_tray(&self, app_id: &str) -> Result<bool, String>;
+}
 
 /// Where the module keeps things, and how it starts apps.
 #[derive(Clone)]
@@ -73,7 +90,7 @@ pub struct Launcher {
 struct State {
     saved: Saved,
     /// The last event published, so an unchanged list isn't sent again.
-    sent: Option<nova_protocol::Launcher>,
+    sent: Option<nova_launcher_api::Launcher>,
 }
 
 /// What survives a restart.
@@ -138,7 +155,7 @@ impl Launcher {
 
     /// Sends a new subscriber, client `id`, the apps as they are, under the lock that publishing
     /// takes, so a newer state published meanwhile can't arrive before it.
-    pub fn send_state(&self, id: crate::hub::ClientId) {
+    pub fn send_state(&self, id: nova_hub::ClientId) {
         let state = lock(&self.state);
         self.hub.send_to(id, &Event::Launcher(snapshot(&state, &self.apps.read())));
     }
@@ -152,7 +169,7 @@ impl Launcher {
         }
         let state = lock(&self.state);
         let apps = self.apps.read();
-        let mut found: Vec<(u32, &Entry, Vec<nova_protocol::TextRun>)> = apps
+        let mut found: Vec<(u32, &Entry, Vec<nova_launcher_api::TextRun>)> = apps
             .entries()
             .values()
             .filter_map(|entry| {
@@ -173,7 +190,7 @@ impl Launcher {
             .map(|(_, entry, name)| {
                 let app = apps.app_of(entry);
                 LauncherItem {
-                    provider: nova_protocol::PROVIDER_APPS.to_string(),
+                    provider: nova_launcher_api::PROVIDER_APPS.to_string(),
                     id: app.id,
                     name,
                     description: app.description,
@@ -190,7 +207,7 @@ impl Launcher {
     pub fn launch(&self, id: &str, focus: impl FnOnce(&[String]) -> Result<bool, String>) -> Result<(), String> {
         let ids = self.window_ids(id).ok_or_else(|| format!("no app {id:?}"))?;
         if self.stopped() {
-            return Err(crate::features::not_ready(FEATURE_ID));
+            return Err(nova_modules::not_ready(FEATURE_ID));
         }
         let focused = focus(&ids).unwrap_or_else(|e| {
             self.logger.warn(LOG_SOURCE, &format!("the compositor can't help with {id}, so starting it: {e}"));
@@ -222,9 +239,9 @@ impl Launcher {
     pub fn start_app(&self, id: &str) -> Result<(), String> {
         let entry = self.apps.entry(id).ok_or_else(|| format!("no app {id:?}"))?;
         if self.stopped() {
-            return Err(crate::features::not_ready(FEATURE_ID));
+            return Err(nova_modules::not_ready(FEATURE_ID));
         }
-        crate::apps::launch::launch(&entry, &self.paths.runner, &self.path_var, &self.logger)
+        nova_apps::launch::launch(&entry, &self.paths.runner, &self.path_var, &self.logger)
             .inspect_err(|e| self.logger.warn(LOG_SOURCE, &format!("can't launch {id}: {e}")))
     }
 
@@ -262,7 +279,7 @@ impl Launcher {
     fn update(&self, change: impl FnOnce(&mut Saved) -> Result<(), String>) -> Result<(), String> {
         let mut state = lock(&self.state);
         if self.stopped() {
-            return Err(crate::features::not_ready(FEATURE_ID));
+            return Err(nova_modules::not_ready(FEATURE_ID));
         }
         let before = state.saved.clone();
         change(&mut state.saved)?;
@@ -288,7 +305,7 @@ impl Launcher {
 
 /// The event for `state` and `apps`: apps by name, and the pinned and
 /// recent ones that are installed (recent leaves the pinned ones out).
-fn snapshot(state: &State, apps: &crate::apps::State) -> nova_protocol::Launcher {
+fn snapshot(state: &State, apps: &nova_apps::State) -> nova_launcher_api::Launcher {
     let installed = apps.entries();
     let mut listed: Vec<App> = installed.values().map(|entry| apps.app_of(entry)).collect();
     listed.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
@@ -303,7 +320,7 @@ fn snapshot(state: &State, apps: &crate::apps::State) -> nova_protocol::Launcher
         .collect();
     launched.sort_by(|a, b| b.1.last.cmp(&a.1.last).then_with(|| a.0.cmp(b.0)));
     let recent = launched.into_iter().take(MAX_RECENT).map(|(id, _)| id.clone()).collect();
-    nova_protocol::Launcher { apps: listed, pinned, recent }
+    nova_launcher_api::Launcher { apps: listed, pinned, recent }
 }
 /// The focus step of [`Launcher::launch`] for app `id`, whose windows may
 /// have the app ids `ids` (none, and no `tray`, when a new window is asked
@@ -322,7 +339,7 @@ pub fn focus_open(
     id: &str,
     ids: &[String],
     compositor: Option<&Compositor>,
-    tray: Option<&Tray>,
+    tray: Option<&dyn TrayApps>,
     output: Option<&str>,
     start: impl FnOnce() -> Result<(), String>,
     underway: &dyn Fn(),
@@ -336,8 +353,8 @@ pub fn focus_open(
             compositor.focus_output(output)?;
         }
     }
-    let Some(tray) = tray.filter(|tray| tray.has_app(id)) else { return Ok(false) };
-    let activated = tray.activate_app(id).unwrap_or_else(|e| {
+    let Some(tray) = tray.filter(|tray| tray.in_tray(id)) else { return Ok(false) };
+    let activated = tray.activate_in_tray(id).unwrap_or_else(|e| {
         logger.warn(LOG_SOURCE, &e);
         false
     });
@@ -386,33 +403,5 @@ pub fn focus_shown(
                 return true;
             }
         }
-    }
-}
-
-/// It has no options: it only starts and stops with its feature.
-impl crate::modules::Module for Launcher {
-    type App = crate::modules::Novad;
-    const ID: &'static str = FEATURE_ID;
-    const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::LAUNCHER);
-    type Sources = Paths;
-    type Config = ();
-
-    fn sources(env: &crate::modules::Env) -> Paths {
-        Paths::new(&env.args.state_dir, env.path_var)
-    }
-
-    fn config(_: &crate::config::Config) {}
-
-    fn start(ctx: &crate::modules::Context, paths: &Paths, (): &(), _: &[nova_protocol::FeatureState]) -> Arc<Self> {
-        Self::start(paths.clone(), Arc::clone(&ctx.apps), &ctx.path_var, Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
-    }
-
-    fn send_state(&self, client: crate::hub::ClientId) {
-        Self::send_state(self, client);
-    }
-
-    fn stop(&self) {
-        Self::stop(self);
     }
 }

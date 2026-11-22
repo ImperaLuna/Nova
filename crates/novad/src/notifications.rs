@@ -35,10 +35,10 @@ impl std::ops::Deref for Notifications {
 
 /// The answer to one of the feature's commands from `caller`, the route
 /// `requests::router` gives them.
-pub fn answer(daemon: &Daemon, caller: &Caller, command: &Command) -> Answer {
+pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
     let notifications = daemon.module::<Notifications>();
     Answer::Now(match command {
-        Command::OpenNotification { id, output } => return open(daemon, caller, *id, output.clone()),
+        Command::OpenNotification { id, output } => return open(daemon, *id, output.clone()),
         Command::NotificationAction { id, action } => {
             done(notifications.and_then(|notifications| notifications.action(*id, Some(action))))
         }
@@ -61,7 +61,7 @@ pub fn answer(daemon: &Daemon, caller: &Caller, command: &Command) -> Answer {
 /// as the app gets no activation token from the click. Nothing starts when
 /// none shows: the app took the click. An app that can't hear of it (gone,
 /// or does nothing on a click) is opened instead, as the launcher does.
-fn open(daemon: &Daemon, caller: &Caller, id: u32, output: Option<String>) -> Answer {
+fn open(daemon: &Daemon, id: u32, output: Option<String>) -> Answer {
     let clicked = match daemon.module::<Notifications>().and_then(|notifications| notifications.click(id)) {
         Ok(clicked) => clicked,
         Err(e) => return Answer::Now(Outcome::Error(e)),
@@ -70,7 +70,7 @@ fn open(daemon: &Daemon, caller: &Caller, id: u32, output: Option<String>) -> An
         return Answer::Now(done(Ok(())));
     };
     if !clicked.heard {
-        return crate::requests::launcher_run(daemon, caller, nova_protocol::PROVIDER_APPS, &app, output, false);
+        return crate::launcher::run(daemon, nova_launcher_api::PROVIDER_APPS, &app, output, false);
     }
     let (Some(ids), Some(compositor)) = (launcher.window_ids(&app), daemon.compositor.clone()) else {
         return Answer::Now(done(Ok(())));
