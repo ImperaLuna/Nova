@@ -61,10 +61,6 @@ pub enum Event {
     /// The machine and its user, for the quick settings header. Topic
     /// [`topics::HOST`], sent right after subscribing.
     Host(Host),
-    /// Bluetooth: the radio, the devices and the pairing waiting for the
-    /// user (feature `bluetooth`). Topic [`topics::BLUETOOTH`], sent right
-    /// after subscribing and whenever any of it changes.
-    Bluetooth(Bluetooth),
 }
 
 /// A group of events a client can subscribe to, by its wire name: the
@@ -87,7 +83,6 @@ pub mod topics {
     pub const TOGGLE: Topic = Topic::named("toggle");
     pub const VOLUME: Topic = Topic::named("volume");
     pub const HOST: Topic = Topic::named("host");
-    pub const BLUETOOTH: Topic = Topic::named("bluetooth");
 }
 
 impl Event {
@@ -103,7 +98,6 @@ impl Event {
             Event::Toggle { .. } => Some(topics::TOGGLE),
             Event::Volume { .. } => Some(topics::VOLUME),
             Event::Host(_) => Some(topics::HOST),
-            Event::Bluetooth(_) => Some(topics::BLUETOOTH),
         }
     }
 }
@@ -212,126 +206,6 @@ impl FromStr for Panel {
     }
 }
 
-/// Bluetooth as the quick settings page shows it (feature `bluetooth`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Bluetooth {
-    pub radio: BluetoothRadio,
-    /// Looking for new devices now (`watch_bluetooth`).
-    pub scanning: bool,
-    /// Connected devices first, then paired ones, then the new ones nearby,
-    /// each group by name. Only while the radio is on.
-    pub devices: Vec<BluetoothDevice>,
-    /// What pairing asks of the user now, if anything.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pairing: Option<PairingRequest>,
-}
-
-/// Whether Bluetooth can be used.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BluetoothRadio {
-    /// No adapter, or BlueZ isn't running.
-    Missing,
-    /// Off, or blocked in software: `bluetooth_power` turns it on either way.
-    Off,
-    /// Off by a hardware switch or key, which only the user can turn on.
-    SwitchedOff,
-    On,
-}
-
-/// A device the adapter knows. Text is plain and capped in length.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BluetoothDevice {
-    /// Its address, like `9C:2A:70:11:22:33`: the id the commands take.
-    pub address: String,
-    pub name: String,
-    pub kind: BluetoothKind,
-    pub status: BluetoothStatus,
-    /// 0 to 100, when the device reports its battery.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub battery: Option<u8>,
-    /// Why the last connect, pair or disconnect failed, in words for the
-    /// user. Cleared by the next one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-/// What a Bluetooth device is, for its icon.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BluetoothKind {
-    Headphones,
-    Headset,
-    Speaker,
-    Keyboard,
-    Mouse,
-    Gamepad,
-    Tablet,
-    Phone,
-    Computer,
-    Other,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BluetoothStatus {
-    /// Seen while scanning, never paired.
-    Nearby,
-    Pairing,
-    /// Paired and not connected.
-    Paired,
-    Connecting,
-    Connected,
-    Disconnecting,
-}
-
-/// A question pairing asks the user, answered with `bluetooth_answer`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PairingRequest {
-    /// Names it in `bluetooth_answer`.
-    pub id: u64,
-    /// The device's address; it's in `devices`.
-    pub address: String,
-    pub ask: PairingAsk,
-    /// The device started it (a phone pairing with this computer), not
-    /// `bluetooth_connect`.
-    pub incoming: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum PairingAsk {
-    /// Does the device show this code? `accept` or `reject`.
-    Confirm { code: String },
-    /// Type the PIN the device came with (old devices): answer a `code`.
-    EnterPin,
-    /// Type the six-digit code the device shows: answer a `code`.
-    EnterPasskey,
-    /// Type this PIN on the device. Needs no answer.
-    ShowPin { pin: String },
-    /// Type this code on the device; `typed` digits are in so far. Needs no
-    /// answer.
-    ShowPasskey { code: String, typed: u8 },
-    /// May this device pair (or use a service)? `accept` or `reject`.
-    Authorize,
-}
-
-/// The user's answer to a [`PairingRequest`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum PairingAnswer {
-    Accept,
-    Reject,
-    /// The PIN or passkey typed.
-    Code(String),
-}
-
-/// The longest PIN a `bluetooth_answer` takes, in bytes (BlueZ's limit).
-pub const BLUETOOTH_PIN_MAX_BYTES: usize = 16;
-
 /// A volume key `nova volume` stands for. The UI steps by its own
 /// `Tokens.volumeStep` and stops at 100%.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -385,36 +259,6 @@ pub enum Command {
     /// connected to do it.
     Volume {
         key: VolumeKey,
-    },
-    /// Turns Bluetooth on or off (feature `bluetooth`). On also lifts a
-    /// software block (rfkill); a hardware switch is refused.
-    BluetoothPower {
-        on: bool,
-    },
-    /// Starts or stops this connection looking for new devices, while the
-    /// Bluetooth page shows (feature `bluetooth`). Scanning runs while any
-    /// connection watches, for at most two minutes from the last start.
-    WatchBluetooth {
-        watching: bool,
-    },
-    /// Connects the device at `address` (feature `bluetooth`). A new one is
-    /// paired and trusted first, so it reconnects by itself later; pairing
-    /// may ask the user (`Bluetooth::pairing`). Answers once it's connected,
-    /// or with why it failed.
-    BluetoothConnect {
-        address: String,
-    },
-    BluetoothDisconnect {
-        address: String,
-    },
-    /// Removes the device's pairing.
-    BluetoothForget {
-        address: String,
-    },
-    /// Answers the pairing request `id`.
-    BluetoothAnswer {
-        id: u64,
-        answer: PairingAnswer,
     },
 }
 
@@ -562,7 +406,7 @@ mod tests {
                         nova_media_api::TOPIC,
                         nova_peripherals_api::TOPIC,
                         nova_network_api::TOPIC,
-                        topics::BLUETOOTH,
+                        nova_bluetooth_api::TOPIC,
                     ]
                     .map(|topic| topic.name().to_string())
                     .to_vec(),
@@ -963,25 +807,41 @@ mod tests {
                 today_down: 4_200_000_000,
                 today_up: 310_000_000,
             })),
-            encode(Event::Bluetooth(bluetooth())),
-            encode(Request { id: Some(60), command: Command::BluetoothPower { on: true } }),
-            encode(Request { id: Some(61), command: Command::WatchBluetooth { watching: true } }),
-            encode(Request {
+            // The Bluetooth feature's own messages (`nova-bluetooth-api`), still on this one wire.
+            encode(nova_bluetooth_api::Event::Bluetooth(bluetooth())),
+            encode(nova_carrier::Request {
+                id: Some(60),
+                command: nova_bluetooth_api::Command::BluetoothPower { on: true },
+            }),
+            encode(nova_carrier::Request {
+                id: Some(61),
+                command: nova_bluetooth_api::Command::WatchBluetooth { watching: true },
+            }),
+            encode(nova_carrier::Request {
                 id: Some(62),
-                command: Command::BluetoothConnect { address: "9C:2A:70:11:22:33".into() },
+                command: nova_bluetooth_api::Command::BluetoothConnect { address: "9C:2A:70:11:22:33".into() },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(63),
-                command: Command::BluetoothDisconnect { address: "00:1B:66:AA:BB:CC".into() },
+                command: nova_bluetooth_api::Command::BluetoothDisconnect { address: "00:1B:66:AA:BB:CC".into() },
             }),
-            encode(Request { id: Some(64), command: Command::BluetoothForget { address: "00:1B:66:AA:BB:CC".into() } }),
-            encode(Request {
+            encode(nova_carrier::Request {
+                id: Some(64),
+                command: nova_bluetooth_api::Command::BluetoothForget { address: "00:1B:66:AA:BB:CC".into() },
+            }),
+            encode(nova_carrier::Request {
                 id: Some(65),
-                command: Command::BluetoothAnswer { id: 3, answer: PairingAnswer::Accept },
+                command: nova_bluetooth_api::Command::BluetoothAnswer {
+                    id: 3,
+                    answer: nova_bluetooth_api::PairingAnswer::Accept,
+                },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(66),
-                command: Command::BluetoothAnswer { id: 4, answer: PairingAnswer::Code("0000".into()) },
+                command: nova_bluetooth_api::Command::BluetoothAnswer {
+                    id: 4,
+                    answer: nova_bluetooth_api::PairingAnswer::Code("0000".into()),
+                },
             }),
             encode(Response { id: 8, outcome: Outcome::Error("bad request".into()) }),
         ];
@@ -1155,7 +1015,10 @@ mod tests {
         }
     }
 
-    fn bluetooth() -> Bluetooth {
+    fn bluetooth() -> nova_bluetooth_api::Bluetooth {
+        use nova_bluetooth_api::{
+            Bluetooth, BluetoothDevice, BluetoothKind, BluetoothRadio, BluetoothStatus, PairingAsk, PairingRequest,
+        };
         Bluetooth {
             radio: BluetoothRadio::On,
             scanning: true,
@@ -1491,23 +1354,6 @@ mod tests {
         assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(topics::TOGGLE));
         assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(topics::VOLUME));
         assert_eq!(Event::Host(host()).topic(), Some(topics::HOST));
-        assert_eq!(Event::Bluetooth(bluetooth()).topic(), Some(topics::BLUETOOTH));
-    }
-
-    #[test]
-    fn bluetooth_rejects_unknown_fields() {
-        let state = serde_json::to_value(bluetooth()).unwrap();
-        assert!(serde_json::from_value::<Bluetooth>(state.clone()).is_ok());
-        for pointer in ["", "/devices/0", "/pairing", "/pairing/ask"] {
-            let mut extra = state.clone();
-            extra.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
-            assert!(serde_json::from_value::<Bluetooth>(extra).is_err(), "{pointer}");
-        }
-        let answer = |value| serde_json::from_value::<PairingAnswer>(value).ok();
-        assert_eq!(answer(json!("accept")), Some(PairingAnswer::Accept));
-        assert_eq!(answer(json!({"code": "0000"})), Some(PairingAnswer::Code("0000".into())));
-        assert_eq!(answer(json!({"code": "0000", "extra": 1})), None);
-        assert_eq!(answer(json!("maybe")), None);
     }
 
     #[test]

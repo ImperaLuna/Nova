@@ -34,6 +34,7 @@ fn events() -> Vec<&'static str> {
     [
         tagged_names_of::<Event>("event"),
         tagged_names_of::<nova_ai_usage_api::Event>("event"),
+        tagged_names_of::<nova_bluetooth_api::Event>("event"),
         tagged_names_of::<nova_launcher_api::Event>("event"),
         tagged_names_of::<nova_lock_api::Event>("event"),
         tagged_names_of::<nova_media_api::Event>("event"),

@@ -1,0 +1,40 @@
+# Allowed outside crates:
+# - futures-core
+# - zbus
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-bluetooth-api
+# - nova-carrier
+# - nova-hub
+# - nova-log
+# - nova-session-bus
+
+[package]
+name = "nova-bluetooth"
+description = "Bluetooth through BlueZ: the radio, the devices, connecting and pairing them, and the pairing agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-bluetooth-api.workspace = true
+nova-base.workspace = true
+nova-carrier.workspace = true
+nova-hub.workspace = true
+nova-log.workspace = true
+nova-session-bus.workspace = true
+futures-core.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+nova-base = { workspace = true, features = ["test-support"] }
+nova-hub = { workspace = true, features = ["test-support"] }
+nova-session-bus = { workspace = true, features = ["test-support"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
