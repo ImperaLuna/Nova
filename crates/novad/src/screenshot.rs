@@ -459,6 +459,7 @@ fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
 
 /// Kept for novad's life, so a reload can't strand the region picker.
 impl crate::modules::Module for Screenshots {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Screenshot);
     type Sources = PathBuf;

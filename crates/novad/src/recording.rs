@@ -563,6 +563,7 @@ fn millis(duration: Duration) -> u64 {
 /// Kept for novad's life, so a reload can't leave a recording running:
 /// turning the feature off stops it.
 impl crate::modules::Module for Recordings {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Recording);
     type Sources = ();

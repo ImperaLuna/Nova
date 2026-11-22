@@ -97,6 +97,7 @@ impl NovaFiles {
 }
 
 impl crate::modules::Module for NovaFiles {
+    type App = crate::modules::Novad;
     const ID: &'static str = ID;
     type Sources = Sources;
     type Config = ();

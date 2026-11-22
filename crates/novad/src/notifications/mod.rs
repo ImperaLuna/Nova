@@ -936,6 +936,7 @@ impl Server {
 /// Started before the UI, which settings start ahead of, so notifications
 /// sent while it starts are kept. No options.
 impl crate::modules::Module for Notifications {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Notifications);

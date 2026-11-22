@@ -162,27 +162,12 @@ fn folder(section: &str, configured: Option<&str>, default: impl FnOnce() -> Pat
     }
 }
 
-/// `path` from config.toml as an absolute path, `~/` meaning the home
-/// folder. `setting` names it in the error for one that isn't absolute.
-pub fn user_path(setting: &str, path: &str) -> Result<PathBuf, String> {
-    let resolved = match path.strip_prefix("~/") {
-        Some(rest) => nova_paths::home().ok_or("HOME isn't set, so ~ means nothing")?.join(rest),
-        None => PathBuf::from(path),
-    };
-    match resolved.is_absolute() {
-        true => Ok(resolved),
-        false => Err(format!("{setting} {path:?} isn't an absolute path or one under ~/")),
-    }
-}
+// Reading the file and its paths is the framework's (IMP-372).
+pub use nova_settings::user_path;
 
 /// The settings in `path`; a missing file means all defaults.
 pub fn read(path: &Path) -> Result<Config, String> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Config::default()),
-        Err(e) => return Err(format!("can't read {}: {e}", path.display())),
-    };
-    toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+    nova_settings::read_toml(path)
 }
 
 #[cfg(test)]

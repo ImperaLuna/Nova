@@ -1120,6 +1120,7 @@ pub struct Sources {
 /// `[wallpaper]` says on every change, and about the outputs whenever they
 /// change.
 impl crate::modules::Module for Wallpaper {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     type Sources = Sources;
     type Config = WallpaperConfig;

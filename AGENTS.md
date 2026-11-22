@@ -27,7 +27,7 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - A feature is `features/<id>/feature.toml`, the single source of truth for
   its packages. Its daemon side is a novad module: an `impl Module` in its
   own folder plus one line in the `modules!` registry
-  (`crates/novad/src/modules/`); apps come from the shared app index in
+  (`crates/novad/src/modules/`; the trait and the macro are `nova-modules`); apps come from the shared app index in
   `Context`, never from another module. A feature
   that is off or missing dependencies is never loaded by the UI. Its `nix`
   list is what the flake's modules (`programs.nova`, packaging/nix) install

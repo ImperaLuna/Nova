@@ -1,0 +1,18 @@
+# Allowed outside crates: none
+#
+# Allowed workspace crates:
+# - nova-log
+
+[package]
+name = "nova-modules"
+description = "The daemon side of a feature as one Module trait, and the registry that runs them by the settings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-log.workspace = true
+
+[lints]
+workspace = true

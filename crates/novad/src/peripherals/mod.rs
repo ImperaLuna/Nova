@@ -462,6 +462,7 @@ fn name(text: &str) -> Option<String> {
 /// No options. Its low battery alerts go to whatever notification server
 /// is up.
 impl crate::modules::Module for Peripherals {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Peripherals);
     type Sources = Sources;

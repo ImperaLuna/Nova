@@ -691,6 +691,7 @@ fn load_prefer(path: &Path, logger: &Logger) -> Option<LinkKind> {
 
 /// No options.
 impl crate::modules::Module for Network {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Network);
     type Sources = Sources;

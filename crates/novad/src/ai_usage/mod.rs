@@ -705,6 +705,7 @@ fn round_percent(used: f64) -> u8 {
 }
 
 impl crate::modules::Module for Usage {
+    type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::AiUsage);
     type Sources = Paths;
