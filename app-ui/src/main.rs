@@ -3,11 +3,11 @@
 //! the socket (`NOVA_SOCKET`) and restarts it when it exits
 //! (`app/src/supervisor.rs`).
 //!
-//! It connects to novad and draws nothing yet. The look kit, the stage and
-//! each feature's ui crate plug in here as the GPUI ports land (IMP-368).
-//! Until a feature shows novad's state, `--probe` opens a window that does
-//! ([`probe`]), and `--replay` runs against recordings where the real novad
-//! can't ([`replay`]).
+//! It starts GPUI with the look kit's icons as its assets, connects to novad
+//! and draws nothing yet. The stage and each feature's ui crate plug in here
+//! as the GPUI ports land (IMP-368). Until a feature shows novad's state,
+//! `--probe` opens a window that does ([`probe`]), and `--replay` runs
+//! against recordings where the real novad can't ([`replay`]).
 
 mod args;
 mod probe;
@@ -17,6 +17,7 @@ use args::Args;
 use gpui::App;
 use gpui_platform::application;
 use nova_daemon_info::SOCKET_VAR;
+use nova_look::IconAssets;
 use nova_ui_client::Daemon;
 use nova_ui_client::fake::FakeDaemon;
 use std::path::PathBuf;
@@ -40,7 +41,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    application().run(move |cx: &mut App| {
+    application().with_assets(IconAssets).run(move |cx: &mut App| {
         Daemon::connect(socket, cx);
         if args.probe {
             probe::open(cx);

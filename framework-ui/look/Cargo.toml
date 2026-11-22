@@ -1,0 +1,35 @@
+# nova-look
+#
+# Nova's look, for everything the GPUI program draws: the design tokens, the
+# theme's colors, text, line icons, glass, motion, and the one function that
+# builds a shell window's options.
+#
+# Allowed outside crates:
+# - gpui
+# - serde
+# - toml
+#
+# Allowed workspace crates:
+# - nova-theme-info
+
+[package]
+name = "nova-look"
+description = "Nova's look for the GPUI program: tokens, theme colors, text, icons, glass and motion"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+workspace = "../../app-ui"
+
+[dependencies]
+gpui.workspace = true
+nova-theme-info.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# The sample (examples/sample.rs) starts GPUI the way nova-ui does.
+gpui_platform.workspace = true

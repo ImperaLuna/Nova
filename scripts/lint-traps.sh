@@ -9,6 +9,10 @@
 #     (a watcher starting, an index built). Count the one event that mustn't
 #     with `hub::count_named`. This catches the common forms, not every
 #     way to write it.
+#   - a GPUI window opened with options of its own (`WindowOptions { ... }`
+#     outside the look kit): GPUI draws a window without focus at 30 frames
+#     a second at most, and a shell window never has focus. Build them with
+#     `nova_look::ShellWindow`, which turns the cap off (IMP-395).
 # Usage: scripts/lint-traps.sh [root]
 set -euo pipefail
 
@@ -31,6 +35,15 @@ fi
 
 report "a novad test asserting that no event came at all" "use hub::count_named for the event that mustn't come" \
   "$(grep -rnE 'try_recv\(\)\.is_err\(\)|try_iter\(\)\.any\(' app/src framework features || true)"
+
+# The places that may build them: the look kit's own, and the probe, an
+# app's window with a title bar that goes with the first ported feature.
+window_options_home=(framework-ui/look/src/window.rs app-ui/src/probe.rs)
+mapfile -t ui_sources < <(find app-ui framework-ui features -name target -prune -o -name '*.rs' -path '*/src/*' -print 2>/dev/null | grep -E '^(app-ui|framework-ui|features/[^/]+/ui)/' | grep -vxF "${window_options_home[@]/#/-e}" || true)
+if ((${#ui_sources[@]})); then
+  report "a GPUI window with options of its own" "open it with nova_look::ShellWindow::options()" \
+    "$(grep -HnE 'WindowOptions[[:space:]]*\{' "${ui_sources[@]}" || true)"
+fi
 
 if ((failed)); then exit 1; fi
 echo "lint-traps: nothing found"

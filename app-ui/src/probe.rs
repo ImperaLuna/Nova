@@ -29,6 +29,8 @@ const BAD: u32 = 0xee5396;
 
 /// Opens the probe window. Without a compositor there is none to open.
 pub fn open(cx: &mut App) {
+    // An app's window with a title bar, not a surface of the shell: the one
+    // window `nova_look::ShellWindow` doesn't build (scripts/lint-traps.sh).
     let bounds = Bounds::centered(None, size(px(WINDOW_WIDTH), px(WINDOW_HEIGHT)), cx);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
