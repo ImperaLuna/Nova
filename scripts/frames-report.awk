@@ -1,6 +1,6 @@
 # Missed vblanks per surface, from the UI's `nova-frame:` lines
 # (ui/stage/FrameLog.qml, NOVA_FRAME_LOG=1) in any log on stdin or in the
-# files named. `just frames` runs it on a live desktop; the VM tests print it.
+# files named. `just frames` runs it on a live desktop.
 #
 # A frame that comes more than LATE vblanks after the one before missed a
 # vblank: the screen showed the old frame again. The log splits into bursts

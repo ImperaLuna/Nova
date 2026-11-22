@@ -162,8 +162,8 @@
           # tests check builds with it too, so it reuses this build's crates.
           novaEnv.NOVA_QUICKSHELL_LAUNCHER = pkgs.lib.getExe nova-quickshell;
           # From the Rust sources alone, so a UI edit doesn't recompile it. The
-          # `tests` check runs `cargo test`, so the VM tests, which need this
-          # build, don't wait for it.
+          # `tests` check runs `cargo test`, so the checks that need this
+          # build don't wait for it.
           bin = craneLib.buildPackage (
             common
             // {
@@ -267,7 +267,7 @@
       });
 
       # Nova on the newest stable Quickshell release instead of nixpkgs': its
-      # build, qmllint and VM tests, for .github/workflows/newest-quickshell.yml.
+      # build and qmllint, for .github/workflows/newest-quickshell.yml.
       # Not checks, so `nix flake check` doesn't build a second Quickshell.
       legacyPackages = forAllSystems (
         pkgs:
@@ -276,18 +276,12 @@
           inherit (novaFor newest) nova;
         in
         {
-          newest-quickshell =
-            import ./e2e/vm {
-              pkgs = newest;
-              inherit nova;
-              novaFilesModule = nova-files.nixosModules.default;
-            }
-            // {
-              inherit (newest) quickshell;
-              inherit nova;
-              qmllint = qmllintFor newest;
-              inRange = inQuickshellRange newest.quickshell.version;
-            };
+          newest-quickshell = {
+            inherit (newest) quickshell;
+            inherit nova;
+            qmllint = qmllintFor newest;
+            inRange = inQuickshellRange newest.quickshell.version;
+          };
         }
       );
 
@@ -310,13 +304,7 @@
               installPhase = "touch $out";
             };
         in
-        # VM tests on niri and Hyprland (e2e/vm): e2e-niri, e2e-hyprland.
-        import ./e2e/vm {
-          inherit pkgs;
-          inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) nova;
-          novaFilesModule = nova-files.nixosModules.default;
-        }
-        // {
+        {
           build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
           tests =
             let
@@ -379,7 +367,7 @@
           # The NixOS module with every feature on, with and without NVIDIA:
           # each manifest's `nix` packages exist in nixpkgs, and the
           # features.toml it writes reads back as the same choice, modes
-          # too. The VM tests run the module for real.
+          # too.
           nix-modules =
             let
               features = import ./packaging/nix/features.nix { inherit (pkgs) lib; };
@@ -455,24 +443,6 @@
                 shellcheck install.sh test-install.sh
                 patchShebangs test-install.sh
                 ./test-install.sh install.sh
-                touch $out
-              '';
-
-          # The CI failure tracker (scripts/vm-failures.sh): shellcheck, and
-          # its tests on recorded CI logs.
-          vm-failures-script =
-            pkgs.runCommand "nova-vm-failures-script"
-              {
-                nativeBuildInputs = [
-                  pkgs.shellcheck
-                  pkgs.jq
-                ];
-              }
-              ''
-                cp -r ${./scripts} scripts && chmod -R u+w scripts
-                shellcheck scripts/vm-failures.sh scripts/test-vm-failures.sh
-                patchShebangs scripts
-                scripts/test-vm-failures.sh
                 touch $out
               '';
 

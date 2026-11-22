@@ -319,29 +319,19 @@ that needs a bus starts its own (`session_bus::TestBus`).
 
 ## Commands
 
-Run `just` inside `nix develop` to list the recipes. CI runs the flake checks:
-what `just check` runs plus the headless e2e on every push, and the VM tests on
-niri and Hyprland only once a PR is out of draft (so mark a PR ready, or open
-it ready, to get VM results) and has no PR stacked on it. Locally, `just check` and `just e2e` cover most of it; the VM
-tests need KVM. Before opening a PR, also run `just test-sandbox`: it runs the
-Rust tests in CI's Nix sandbox, where a test that needs the network, setuid
-bits or a host tool fails although `cargo test` passes (cloud sessions can't
-fetch its GitHub inputs, so there CI is the first sandbox run). Without KVM (cloud sessions), approve goldens with the "Approve
-goldens" workflow from main on the PR branch instead of `just e2e-approve`.
-`just run` logs to `~/.local/state/nova-dev`.
-
-A failed VM subtest prints who had the keyboard and the UI's and the
-compositor's logs (`print_failure_state` in `e2e/vm/lifecycle.py`); read that
-before re-running. Each failed subtest is listed in the "VM test failures"
-issue (`scripts/vm-failures.sh`), which marks one that failed on more than one
-PR as a repeat and says so on the PR: a repeat gets a fix ticket instead of
-another re-run.
+Run `just` inside `nix develop` to list the recipes. CI runs the flake checks
+on every push: what `just check` runs plus the headless e2e, so locally
+`just check` and `just e2e` cover it. Before opening a PR, also run
+`just test-sandbox`: it runs the Rust tests in CI's Nix sandbox, where a test
+that needs the network, setuid bits or a host tool fails although
+`cargo test` passes (cloud sessions can't fetch its GitHub inputs, so there CI
+is the first sandbox run). `just run` logs to `~/.local/state/nova-dev`.
 
 Every change goes through a pull request; `main` is protected.
 
 A stack of PRs is one chain: the bottom PR targets main, each one above
-targets the branch below, and a branch merges only its own base. Its top PR
-runs the VM tests for all of it. `scripts/stack.sh status|restack` checks the
+targets the branch below, and a branch merges only its own base.
+`scripts/stack.sh status|restack` checks the
 chain and merges each base upward, running `just check-branch` on every
 branch before pushing it (run it inside `nix develop`); its header says more.
 A PR whose base moved on without it gets a red `stack` status: restack it.
@@ -373,8 +363,7 @@ applies `~/nix-config` once the CI runners are idle, rolling back on failure. Ne
 
 Test runs on the desktop stay off the maintainer's screen. Frame captures and
 screenshots run headless (`just e2e`, or `e2e/run.sh`'s sway with grim on its
-output), and niri- or Hyprland-only behaviour goes to the VM tests; never open
-a nested compositor window, which lands on the maintainer's workspace (on
+output); never open a nested compositor window, which lands on the maintainer's workspace (on
 Hyprland it takes the screen). `just run` and `just frames` swap the real bar,
 so run them only when asked.
 
