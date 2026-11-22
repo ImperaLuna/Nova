@@ -10,9 +10,9 @@
 //! name is claimed, once a session. Either way an app that looks for a tray
 //! only at startup (Electron) finds one (IMP-107).
 
-use crate::apps::desktop_entry::{self, Context, Entry, Locale, Skipped};
-use crate::apps::launch::{self, Runner};
-use crate::logger::Logger;
+use nova_apps::desktop_entry::{self, Context, Entry, Locale, Skipped};
+use nova_apps::launch::{self, Runner};
+use nova_log::Logger;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -63,7 +63,7 @@ pub fn entries(dirs: &[PathBuf], context: &Context) -> (Vec<Entry>, Vec<String>)
     let mut apps = Vec::new();
     let mut problems = Vec::new();
     for (id, file) in files {
-        let text = match crate::apps::scan::read_entry(&file) {
+        let text = match nova_apps::scan::read_entry(&file) {
             Ok(text) => text,
             Err(e) => {
                 problems.push(format!("can't read {}: {e}", file.display()));
@@ -102,7 +102,7 @@ pub fn start(marker: &Path, path_var: String, logger: Arc<Logger>) {
             Err(e) => logger.warn(LOG_SOURCE, &format!("can't write {}: {e}", marker.display())),
         }
         let locale = Locale::from_env();
-        let desktops = crate::apps::current_desktops();
+        let desktops = nova_apps::current_desktops();
         let context = Context { locale: &locale, desktops: &desktops, path_var: &path_var, autostart: true };
         let (apps, problems) = entries(&dirs(), &context);
         for problem in problems {
@@ -124,7 +124,7 @@ fn systemd_starts_them(path_var: &str, logger: &Logger) -> bool {
     let Some(systemctl) = nova_paths::find_program("systemctl", path_var) else { return false };
     let mut command = std::process::Command::new(systemctl);
     command.args(["--user", "show", "--property=ActiveState", "--value", SYSTEMD_TARGET]);
-    match crate::supervisor::stdout_within(command, SYSTEMCTL_TIMEOUT) {
+    match nova_process::child::stdout_within(command, SYSTEMCTL_TIMEOUT) {
         Ok(state) => matches!(String::from_utf8_lossy(&state).trim(), "active" | "activating" | "reloading"),
         Err(e) => {
             logger.warn(LOG_SOURCE, &format!("can't ask systemd about {SYSTEMD_TARGET}: {e}"));

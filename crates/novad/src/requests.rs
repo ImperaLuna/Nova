@@ -8,7 +8,7 @@ use crate::hub::ClientId;
 use crate::{Daemon, lock};
 use nova_protocol::{CaptureMode, Command, Event, Outcome, Panel, VolumeKey, topics};
 use nova_socket::{Answer, Caller, Router, done, value};
-use std::sync::{Arc, mpsc};
+use std::sync::Arc;
 
 const LOG_SOURCE: &str = "server";
 
@@ -21,6 +21,7 @@ pub fn router() -> Router<Daemon> {
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).answer(command),
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).follow_up(command),
         )
+        .route::<nova_launcher_api::Command>(crate::launcher::answer, |_, _, _| {})
         .route::<nova_lock_api::Command>(crate::session_lock::answer, |_, _, _| {})
         .route::<nova_network_api::Command>(crate::network::answer, |_, _, _| {})
         .route::<nova_power_api::Command>(crate::power::answer, |_, _, _| {})
@@ -123,28 +124,6 @@ impl<'a> Connection<'a> {
             Command::OpenLog => {
                 done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().open_log()))
             }
-            // A provider's own mode (files) waits on another app (Nova
-            // Files), so it's answered off the connection's thread: a slow
-            // answer must not hold up other requests. The mixed providers answer from memory.
-            Command::LauncherSearch { query, mode } => {
-                let providers = match self.launcher_providers() {
-                    Ok(providers) => providers,
-                    Err(e) => return Answer::Now(Outcome::Error(e)),
-                };
-                if mode.is_none() {
-                    return Answer::Now(value(providers.search(query, None, &self.daemon.logger)));
-                }
-                let (query, mode, logger) = (query.clone(), mode.clone(), Arc::clone(&self.daemon.logger));
-                return Answer::later(move || value(providers.search(&query, mode.as_deref(), &logger)));
-            }
-            Command::AppIcon { icon_name, program, name } => {
-                let apps = Arc::clone(&lock(&self.daemon.settings).context.apps);
-                value(apps.app_icon(&self.daemon.sources.icons, icon_name, program, name))
-            }
-            Command::LauncherRun { provider, id, output, new_window } => {
-                return self.launcher_run(provider, id, output.clone(), *new_window);
-            }
-            Command::PinApp { id, pinned } => done(self.launcher().and_then(|launcher| launcher.pin(id, *pinned))),
             Command::OpenNotification { id, output } => return self.open_notification(*id, output.clone()),
             Command::NotificationAction { id, action } => {
                 done(self.notifications().and_then(|notifications| notifications.action(*id, Some(action))))
@@ -243,52 +222,6 @@ impl<'a> Connection<'a> {
         }
     }
 
-    /// The ready features' launcher providers, while the launcher runs.
-    fn launcher_providers(&self) -> Result<crate::launcher::providers::Host, String> {
-        self.launcher()?;
-        let settings = lock(&self.daemon.settings);
-        Ok(crate::launcher::providers::Host::new(&settings.features, |view| {
-            crate::launcher::providers::find(view, &settings.modules)
-        }))
-    }
-
-    /// Runs what the launcher's provider `provider` found as `id`, like an
-    /// app it focuses or starts (see `launcher::providers`). Answers once it
-    /// is underway: the launcher waits for the answer to close, and an app
-    /// in the tray may take seconds to show its window. A failure after
-    /// that is only logged.
-    fn launcher_run(&self, provider: &str, id: &str, output: Option<String>, new_window: bool) -> Answer {
-        let provider = match self.launcher_providers().and_then(|providers| providers.provider(provider)) {
-            Ok(provider) => provider,
-            Err(e) => return Answer::Now(Outcome::Error(e)),
-        };
-        let compositor = self.daemon.compositor.clone();
-        let tray = self.daemon.module::<crate::tray::Tray>().ok();
-        let logger = Arc::clone(&self.daemon.logger);
-        let id = id.to_owned();
-        Answer::later(move || {
-            let (answer, answered) = mpsc::channel();
-            std::thread::spawn(move || {
-                let early = answer.clone();
-                let underway = move || {
-                    let _ = early.send(Ok(()));
-                };
-                let how = crate::launcher::providers::Run {
-                    output: output.as_deref(),
-                    new_window,
-                    compositor: compositor.as_deref(),
-                    tray: tray.as_deref(),
-                    logger: &logger,
-                    underway: &underway,
-                };
-                // Unheard once it was underway; starting the app logs its
-                // own failures.
-                let _ = answer.send(provider.run(&id, &how));
-            });
-            done(answered.recv().unwrap_or_else(|_| Err("the launch stopped without an answer".into())))
-        })
-    }
-
     /// A click on the notification `id`, on `output`. Its app hears of it
     /// and shows its window, which takes focus once it shows: niri gives
     /// it none, as the app gets no activation token from the click. Nothing
@@ -302,7 +235,7 @@ impl<'a> Connection<'a> {
         };
         let (Some(app), Ok(launcher)) = (clicked.app_id, self.launcher()) else { return Answer::Now(done(Ok(()))) };
         if !clicked.heard {
-            return self.launcher_run(nova_protocol::PROVIDER_APPS, &app, output, false);
+            return crate::launcher::run(self.daemon, nova_launcher_api::PROVIDER_APPS, &app, output, false);
         }
         let (Some(ids), Some(compositor)) = (launcher.window_ids(&app), self.daemon.compositor.clone()) else {
             return Answer::Now(done(Ok(())));
@@ -507,10 +440,6 @@ impl<'a> Connection<'a> {
             | Command::RecordingAction { .. }
             | Command::OpenLog
             | Command::Volume { .. }
-            | Command::LauncherSearch { .. }
-            | Command::AppIcon { .. }
-            | Command::LauncherRun { .. }
-            | Command::PinApp { .. }
             | Command::NotificationAction { .. }
             | Command::DismissNotification { .. }
             | Command::ClearNotifications { .. }

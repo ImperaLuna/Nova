@@ -211,6 +211,26 @@ impl ErrorOutput {
     }
 }
 
+/// What `command` prints when it succeeds within `timeout`. One that takes
+/// longer, printing or exiting, is killed and reaped.
+pub fn stdout_within(command: Command, timeout: Duration) -> std::io::Result<Vec<u8>> {
+    let output = output_within(command, timeout)?;
+    match output.status.success() {
+        true => Ok(output.stdout),
+        false => Err(std::io::Error::other(describe_exit(output.status))),
+    }
+}
+
+/// How `status` ended, for an error message.
+pub fn describe_exit(status: ExitStatus) -> String {
+    use std::os::unix::process::ExitStatusExt;
+    match (status.code(), status.signal()) {
+        (Some(code), _) => format!("exit code {code}"),
+        (None, Some(signal)) => format!("killed by signal {signal}"),
+        (None, None) => "unknown exit".into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3,8 +3,8 @@
 //! then the generic name, keywords and program, then the comment. Apps the
 //! user opens often climb a little; ties go to the shorter name.
 
-use crate::apps::desktop_entry::Entry;
-use nova_protocol::TextRun;
+use nova_apps::desktop_entry::Entry;
+use nova_launcher_api::TextRun;
 
 /// What a match in the name is worth, by where it starts.
 const NAME_START: u32 = 1000;
