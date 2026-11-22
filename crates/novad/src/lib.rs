@@ -232,7 +232,7 @@ impl Daemon {
     fn watch_settings(self: &Arc<Self>) -> Option<nova_inotify::Stopper> {
         let daemon = Arc::clone(self);
         let files = [vec![self.sources.config.clone()], self.sources.selection.clone()].concat();
-        settings::watch(files, Arc::clone(&self.logger), move || daemon.reload())
+        nova_settings::watch(files, Arc::clone(&self.logger), move || daemon.reload())
     }
 
     /// Stops the UI and exits novad. Exit code 0, so systemd leaves it off.

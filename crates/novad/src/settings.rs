@@ -21,10 +21,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 const LOG_SOURCE: &str = "settings";
-// Following the files moved to the framework (IMP-372).
-#[cfg(test)]
-pub(crate) use nova_settings::SETTLE;
-pub use nova_settings::watch;
 
 /// Where the settings come from, fixed for novad's life.
 pub struct Sources {
