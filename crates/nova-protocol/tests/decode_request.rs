@@ -100,6 +100,20 @@ fn launcher_request() -> impl Strategy<Value = nova_carrier::Request<nova_launch
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
+/// The media feature's commands, which it owns (`nova-media-api`).
+fn media_request() -> impl Strategy<Value = nova_carrier::Request<nova_media_api::Command>> {
+    use nova_media_api::{Command, MediaAction};
+    let action = prop_oneof![Just(MediaAction::PlayPause), Just(MediaAction::Next), Just(MediaAction::Previous)];
+    let command = prop_oneof![
+        (".*", action).prop_map(|(player, action)| Command::MediaControl { player, action }),
+        (".*", any::<i64>()).prop_map(|(player, position_us)| Command::MediaSeek { player, position_us }),
+        ".*".prop_map(|player| Command::MediaShow { player }),
+        ".*".prop_map(|player| Command::MediaFocus { player }),
+        ".*".prop_map(|player| Command::MediaWindow { player }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
 /// The notifications feature's commands, which it owns (`nova-notifications-api`).
 fn notifications_request() -> impl Strategy<Value = nova_carrier::Request<nova_notifications_api::Command>> {
     use nova_notifications_api::Command;
@@ -248,6 +262,12 @@ proptest! {
 
     #[test]
     fn every_launcher_request_round_trips(request in launcher_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_media_request_round_trips(request in media_request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
     }

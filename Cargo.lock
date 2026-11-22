@@ -782,6 +782,7 @@ dependencies = [
  "nova-carrier",
  "nova-features",
  "nova-launcher-api",
+ "nova-media-api",
  "nova-network-api",
  "nova-notifications-api",
  "nova-paths",
@@ -903,6 +904,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-media"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "jiff",
+ "nova-apps",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "nova-media-api",
+ "nova-paths",
+ "nova-session-bus",
+ "nova-test-support",
+ "serde",
+ "serde_json",
+ "ureq",
+ "zbus",
+]
+
+[[package]]
+name = "nova-media-api"
+version = "0.1.0"
+dependencies = [
+ "nova-apps",
+ "nova-carrier",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-mime"
 version = "0.1.0"
 dependencies = [
@@ -961,6 +993,7 @@ dependencies = [
  "nova-icons",
  "nova-log",
  "nova-notifications-api",
+ "nova-paths",
  "nova-session-bus",
  "nova-test-support",
  "png",
@@ -1035,6 +1068,7 @@ dependencies = [
  "nova-compositor",
  "nova-host",
  "nova-launcher-api",
+ "nova-media-api",
  "nova-network-api",
  "nova-notifications-api",
  "nova-peripherals-api",
@@ -1235,6 +1269,8 @@ dependencies = [
  "nova-launcher",
  "nova-launcher-api",
  "nova-log",
+ "nova-media",
+ "nova-media-api",
  "nova-mime",
  "nova-modules",
  "nova-network",

@@ -10,6 +10,7 @@
 # - nova-carrier
 # - nova-features
 # - nova-launcher-api
+# - nova-media-api
 # - nova-notifications-api
 # - nova-paths
 # - nova-power-api
@@ -37,6 +38,7 @@ path = "src/main.rs"
 nova-protocol.workspace = true
 nova-carrier.workspace = true
 nova-launcher-api.workspace = true
+nova-media-api.workspace = true
 nova-network-api.workspace = true
 nova-notifications-api.workspace = true
 nova-power-api.workspace = true
