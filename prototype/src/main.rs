@@ -630,6 +630,119 @@ impl Render for Stage {
     }
 }
 
+/// Opens the stage on one screen. Returns its window, or None if it failed.
+fn open_stage(
+    cx: &mut App,
+    display: &Rc<dyn gpui::PlatformDisplay>,
+    index: usize,
+    options: &Options,
+    offset: i64,
+    toggles_left: &Rc<Cell<u32>>,
+) -> Option<gpui::AnyWindowHandle> {
+    let bounds = display.bounds();
+    let width = f32::from(bounds.size.width);
+    let refresh = display
+        .refresh_interval()
+        .unwrap_or(Duration::from_secs_f64(1.0 / 60.0));
+    let screen = format!("{index}:{}x{}", width, f32::from(bounds.size.height));
+    eprintln!(
+        "screen {screen} id={:?} refresh={:.2}ms font={}",
+        display.id(),
+        refresh.as_secs_f64() * 1000.0,
+        options.font
+    );
+    toggles_left.set(toggles_left.get() + options.toggles);
+    let options = options.clone();
+    let toggles_left = toggles_left.clone();
+    let window = cx.open_window(
+        WindowOptions {
+            titlebar: None,
+            display_id: Some(display.id()),
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: Size::new(px(width), px(STAGE_HEIGHT)),
+            })),
+            app_id: Some("nova-proto".into()),
+            // A shell surface never has keyboard focus, so GPUI would
+            // treat it as an inactive window and cap it at 30 fps.
+            inactive_frame_interval: None,
+            window_background: if options.blur {
+                WindowBackgroundAppearance::Blurred
+            } else {
+                WindowBackgroundAppearance::Transparent
+            },
+            kind: WindowKind::LayerShell(LayerShellOptions {
+                namespace: "nova-proto".into(),
+                layer: options.layer,
+                anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
+                exclusive_zone: None,
+                keyboard_interactivity: KeyboardInteractivity::None,
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        move |_window, cx| {
+            cx.new(|cx| {
+                // The clock changes once a minute; nothing else runs
+                // while idle.
+                cx.spawn(async move |this, cx| {
+                    loop {
+                        cx.background_executor().timer(Duration::from_secs(20)).await;
+                        if this.update(cx, |_: &mut Stage, cx| cx.notify()).is_err() {
+                            break;
+                        }
+                    }
+                })
+                .detach();
+                if options.toggles > 0 {
+                    let every = options.every;
+                    let count = options.toggles;
+                    let left = toggles_left.clone();
+                    cx.spawn(async move |this, cx| {
+                        // Let the first frame and the GPU settle.
+                        cx.background_executor().timer(Duration::from_secs(2)).await;
+                        for _ in 0..count {
+                            cx.background_executor().timer(every).await;
+                            if this.update(cx, |this: &mut Stage, cx| this.toggle(cx)).is_err() {
+                                return;
+                            }
+                            left.set(left.get() - 1);
+                        }
+                        // Wait for the last motion, then quit when
+                        // every screen is done.
+                        cx.background_executor().timer(Duration::from_secs(1)).await;
+                        if left.get() == 0 {
+                            let _ = cx.update(|cx| cx.quit());
+                        }
+                    })
+                    .detach();
+                }
+                let start_open = options.start_open;
+                Stage {
+                    options,
+                    screen,
+                    width,
+                    morph: Morph {
+                        open: start_open,
+                        t: if start_open { 1.0 } else { 0.0 },
+                        velocity: 0.0,
+                        from: 0.0,
+                        started: Instant::now(),
+                        last_step: None,
+                    },
+                    stats: FrameStats::default(),
+                    refresh,
+                    offset,
+                    region: None,
+                }
+            })
+        },
+    )
+    .map_err(|error| eprintln!("screen {index}: could not open the stage: {error:#}"))
+    .ok()?;
+    Some(window.into())
+}
+
 fn main() {
     let options = parse_options();
     let offset = utc_offset_secs();
@@ -646,112 +759,55 @@ fn main() {
             #[allow(unreachable_code)]
             return;
         }
-        let displays = cx.displays();
         let toggles_left = Rc::new(Cell::new(0));
-        for (index, display) in displays.iter().enumerate() {
+        let mut stages: Vec<(gpui::DisplayId, gpui::AnyWindowHandle)> = Vec::new();
+        for (index, display) in cx.displays().iter().enumerate() {
             if options.only_screen.is_some_and(|only| only != index) {
                 continue;
             }
-            let bounds = display.bounds();
-            let width = f32::from(bounds.size.width);
-            let refresh = display
-                .refresh_interval()
-                .unwrap_or(Duration::from_secs_f64(1.0 / 60.0));
-            let screen = format!("{index}:{}x{}", width, f32::from(bounds.size.height));
-            eprintln!(
-                "screen {screen} id={:?} refresh={:.2}ms font={}",
-                display.id(),
-                refresh.as_secs_f64() * 1000.0,
-                options.font
-            );
-            toggles_left.set(toggles_left.get() + options.toggles);
+            if let Some(window) = open_stage(cx, display, index, &options, offset, &toggles_left) {
+                stages.push((display.id(), window));
+            }
+        }
+        // Step 6: screens come and go. GPUI has no event for it, so look
+        // once a second, open a stage on a new screen and close the stage of
+        // one that left.
+        if options.only_screen.is_none() {
             let options = options.clone();
-            let toggles_left = toggles_left.clone();
-            cx.open_window(
-                WindowOptions {
-                    titlebar: None,
-                    display_id: Some(display.id()),
-                    window_bounds: Some(WindowBounds::Windowed(Bounds {
-                        origin: point(px(0.0), px(0.0)),
-                        size: Size::new(px(width), px(STAGE_HEIGHT)),
-                    })),
-                    app_id: Some("nova-proto".into()),
-                    // A shell surface never has keyboard focus, so GPUI would
-                    // treat it as an inactive window and cap it at 30 fps.
-                    inactive_frame_interval: None,
-                    window_background: if options.blur {
-                        WindowBackgroundAppearance::Blurred
-                    } else {
-                        WindowBackgroundAppearance::Transparent
-                    },
-                    kind: WindowKind::LayerShell(LayerShellOptions {
-                        namespace: "nova-proto".into(),
-                        layer: options.layer,
-                        anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
-                        exclusive_zone: None,
-                        keyboard_interactivity: KeyboardInteractivity::None,
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-                move |_window, cx| {
-                    cx.new(|cx| {
-                        // The clock changes once a minute; nothing else runs
-                        // while idle.
-                        cx.spawn(async move |this, cx| {
-                            loop {
-                                cx.background_executor().timer(Duration::from_secs(20)).await;
-                                if this.update(cx, |_: &mut Stage, cx| cx.notify()).is_err() {
-                                    break;
-                                }
+            cx.spawn(async move |cx| {
+                loop {
+                    cx.background_executor().timer(Duration::from_secs(1)).await;
+                    let alive = cx.update(|cx| {
+                        let displays = cx.displays();
+                        let ids: Vec<_> = displays.iter().map(|d| d.id()).collect();
+                        stages.retain(|(id, window)| {
+                            if ids.contains(id) {
+                                return true;
                             }
-                        })
-                        .detach();
-                        if options.toggles > 0 {
-                            let every = options.every;
-                            let count = options.toggles;
-                            let left = toggles_left.clone();
-                            cx.spawn(async move |this, cx| {
-                                // Let the first frame and the GPU settle.
-                                cx.background_executor().timer(Duration::from_secs(2)).await;
-                                for _ in 0..count {
-                                    cx.background_executor().timer(every).await;
-                                    if this.update(cx, |this: &mut Stage, cx| this.toggle(cx)).is_err() {
-                                        return;
-                                    }
-                                    left.set(left.get() - 1);
-                                }
-                                // Wait for the last motion, then quit when
-                                // every screen is done.
-                                cx.background_executor().timer(Duration::from_secs(1)).await;
-                                if left.get() == 0 {
-                                    let _ = cx.update(|cx| cx.quit());
-                                }
-                            })
-                            .detach();
+                            eprintln!("screen left: {id:?}, closing its stage");
+                            window.update(cx, |_, window, _| window.remove_window()).ok();
+                            false
+                        });
+                        for (index, display) in displays.iter().enumerate() {
+                            if stages.iter().any(|(id, _)| *id == display.id()) {
+                                continue;
+                            }
+                            eprintln!("screen came: {:?}", display.id());
+                            if let Some(window) =
+                                open_stage(cx, display, index, &options, offset, &toggles_left)
+                            {
+                                stages.push((display.id(), window));
+                            }
                         }
-                        let start_open = options.start_open;
-                        Stage {
-                            options,
-                            screen,
-                            width,
-                            morph: Morph {
-                                open: start_open,
-                                t: if start_open { 1.0 } else { 0.0 },
-                                velocity: 0.0,
-                                from: 0.0,
-                                started: Instant::now(),
-                                last_step: None,
-                            },
-                            stats: FrameStats::default(),
-                            refresh,
-                            offset,
-                            region: None,
-                        }
-                    })
-                },
-            )
-            .expect("open the stage window");
+                        true
+                    });
+                    if !alive {
+                        break;
+                    }
+                }
+            })
+            .detach();
         }
     });
 }
+
