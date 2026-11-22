@@ -64,8 +64,7 @@ fn an_unknown_command_gets_the_decoders_error() {
     let novad = TestDaemon::start("unknown", None);
     let mut client = novad.connect();
     client.send(&json!({"v": 2, "id": 5, "cmd": "reboot"}));
-    let protocol_js =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ui/daemon/protocol.js"));
+    let protocol_js = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../ui/daemon/protocol.js"));
     let named: Vec<String> = protocol_js
         .unwrap()
         .lines()

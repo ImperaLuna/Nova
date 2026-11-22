@@ -2,7 +2,7 @@ import QtQuick
 import QtTest
 import "../ai_usage/usage.js" as Usage
 
-// Events in the shape novad sends (see the ai_usage tests in crates/novad).
+// Events in the shape novad sends (see the ai_usage tests in app/).
 TestCase {
     name: "AiUsage"
 

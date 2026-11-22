@@ -303,7 +303,7 @@ fn test_icons(dir: &Path) -> Arc<Icons> {
 }
 
 fn repo_features() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../features")
 }
 
 /// The usage endpoints are `claude_usage_url` and `codex_usage_url`; nothing

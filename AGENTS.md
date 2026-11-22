@@ -27,7 +27,7 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
 - A feature is `features/<id>/feature.toml`, the single source of truth for
   its packages. Its daemon side is a novad module: an `impl Module` in its
   own folder plus one line in the `modules!` registry
-  (`crates/novad/src/modules/`; the trait and the macro are `nova-modules`); apps come from the shared app index in
+  (`app/src/modules/`; the trait and the macro are `nova-modules`); apps come from the shared app index in
   `Context`, never from another module. A feature
   that is off or missing dependencies is never loaded by the UI. Its `nix`
   list is what the flake's modules (`programs.nova`, packaging/nix) install
@@ -121,7 +121,7 @@ Changing a rule or a list is a layout change: say so in the PR.
 
 The steps the novad move's feature tickets follow (IMP-368).
 `features/resources` is the worked example: read its two crates and
-`crates/novad/src/resources.rs` first. A move is not a rewrite: no
+`app/src/resources.rs` first. A move is not a rewrite: no
 behaviour changes, `ui/daemon/protocol.js` stays byte for byte the same,
 and every test keeps its expectations (a test that moves keeps its
 assertions). The feature is `<id>` (its folder name), its crates
@@ -146,10 +146,10 @@ assertions). The feature is `<id>` (its folder name), its crates
    (`nova_base::lock`, `nova_hub`, `nova_log`, `nova_process::procfs`, ...).
    All of the feature's work and state live here. What the core may use is
    `FRAMEWORK_FOR_CORE` in `scripts/check-layout.sh`; a shared helper still
-   in `crates/novad` (apps, icons, the compositor) waits for its own ticket
+   in `app/` (apps, icons, the compositor) waits for its own ticket
    (ask the overseeing thread) rather than being copied. Done when the
-   folder in `crates/novad/src` is gone and the core builds alone.
-3. **The wiring**, `crates/novad/src/<id>.rs`, under novad's old `mod <id>;`
+   folder in `app/src` is gone and the core builds alone.
+3. **The wiring**, `app/src/<id>.rs`, under novad's old `mod <id>;`
    line: a newtype over the core that implements `Module` (its `ID`,
    `Sources`, `Config`, `start` building the core from `Context`, and
    `TOPIC` as the api's constant whenever the feature has a topic, even
@@ -163,18 +163,18 @@ assertions). The feature is `<id>` (its folder name), its crates
    - `Cargo.toml` `[workspace.dependencies]`: the two crates in the feature
      block at its end, sorted by feature id (`nova-<id>-api`, then
      `nova-<id>`). `members` already has the globs.
-   - `crates/novad/Cargo.toml`: both crates in the allowed list and in
+   - `app/Cargo.toml`: both crates in the allowed list and in
      `[dependencies]`, in alphabetical order.
-   - `crates/novad/src/requests.rs` `router()`: one
+   - `app/src/requests.rs` `router()`: one
      `.route::<nova_<id>_api::Command>(crate::<id>::answer, |_, _, _| {})`
      after the `Shared` route, the feature routes sorted by feature id (the
      router lists names in protocol.js's order, so errors don't move). Its
      arms leave `answer` and `follow_up`, and its `fn <id>()` lookup goes.
      A module's topic needs no line in `follow_up`: its catch-all asks the
      modules (`Module::TOPIC`), and `each_topic_has_one_owner` checks it.
-   - `crates/novad/src/topics.rs` `TOPICS`: the api's constant replaces the
+   - `app/src/topics.rs` `TOPICS`: the api's constant replaces the
      shared one in its place, never moved or appended.
-   - `crates/novad/src/protocol_js.rs` `events()`: the api's `Event` after
+   - `app/src/protocol_js.rs` `events()`: the api's `Event` after
      the shared one, sorted by feature id.
    - `crates/nova-cli`: the api's `Command` as a variant of `ipc.rs`'s
      `IpcCommand` (with its branch in `parse`), and its `Event` as a variant

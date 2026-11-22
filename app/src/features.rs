@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn the_ui_runs_only_while_a_feature_that_draws_is_ready() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
         let manifests = nova_features::load_all(&root).unwrap();
         let ids = |selection: &str| states(&manifests, &Selection::parse(selection).unwrap(), "/nonexistent");
         assert!(needs_ui(&manifests, &ids("")), "the defaults draw the bar");
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn states_follow_selection_and_path() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
         let manifests = nova_features::load_all(&root).unwrap();
         let on = Selection::parse("enabled = [\"recording\"]").unwrap();
         let states = states(&manifests, &on, "/nonexistent");
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn states_carry_the_slots() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
         let manifests = nova_features::load_all(&root).unwrap();
         let states = states(&manifests, &Selection::default(), "/nonexistent");
         let bar = states.iter().find(|s| s.id == "bar").unwrap();
@@ -105,7 +105,7 @@ mod tests {
     /// and has none while it's off.
     #[test]
     fn states_carry_the_mode_while_on() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
         let manifests = nova_features::load_all(&root).unwrap();
         let mode = |selection: &str| {
             let states = states(&manifests, &Selection::parse(selection).unwrap(), "/nonexistent");

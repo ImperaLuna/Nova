@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "framework/*", "features/*/api", "features/*/core"]
+members = ["app", "crates/*", "framework/*", "features/*/api", "features/*/core"]
 
 [workspace.package]
 version = "0.1.0"
@@ -45,8 +45,7 @@ ruzstd = "0.9"
 lzma-rust2 = { version = "0.23", default-features = false, features = ["std", "xz"] }
 nova-protocol = { path = "crates/nova-protocol" }
 nova-features = { path = "crates/nova-features" }
-nova-quickshell = { path = "crates/nova-quickshell" }
-novad = { path = "crates/novad" }
+novad = { path = "app" }
 nova-base = { path = "framework/base" }
 nova-carrier = { path = "framework/carrier" }
 nova-hub = { path = "framework/hub" }
@@ -56,6 +55,7 @@ nova-watch = { path = "framework/watch" }
 nova-icons = { path = "framework/icons" }
 nova-inotify = { path = "framework/inotify" }
 nova-paths = { path = "framework/paths" }
+nova-quickshell = { path = "framework/quickshell" }
 nova-process = { path = "framework/process" }
 nova-session-bus = { path = "framework/session-bus" }
 nova-settings = { path = "framework/settings" }

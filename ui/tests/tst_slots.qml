@@ -4,7 +4,7 @@ import "../slots/slots.js" as Slots
 import "../slots"
 
 // Which views fill a host, from the features event's list (the shape
-// crates/novad sends), and the view registry.
+// app/ sends), and the view registry.
 TestCase {
     name: "Slots"
 
