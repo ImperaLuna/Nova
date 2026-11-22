@@ -16,8 +16,8 @@
 use super::manager::{
     ACCESS_POINT, ACTIVE, DEVICE, NM, NM_PATH, NO_OBJECT, PROPERTIES, SETTINGS, SETTINGS_CONNECTION, WIRELESS,
 };
-use crate::lock;
 use futures_core::Stream;
+use nova_base::lock;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::future::poll_fn;

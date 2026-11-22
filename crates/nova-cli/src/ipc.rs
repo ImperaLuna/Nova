@@ -51,6 +51,7 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
 enum IpcCommand {
     Shared(Command),
     Lock(nova_lock_api::Command),
+    Network(nova_network_api::Command),
     Power(nova_power_api::Command),
     Resources(nova_resources_api::Command),
 }
@@ -63,6 +64,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
     }
     let read = if tagged_names_of::<nova_lock_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Lock)
+    } else if tagged_names_of::<nova_network_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Network)
     } else if tagged_names_of::<nova_power_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Power)
     } else if tagged_names_of::<nova_resources_api::Command>("cmd").contains(&name) {
@@ -88,6 +91,11 @@ mod tests {
             parse("watch_resources", Some(r#"{"watching": true}"#)),
             Ok(IpcCommand::Resources(nova_resources_api::Command::WatchResources { watching: true }))
         );
+        assert_eq!(
+            parse("set_wifi", Some(r#"{"enabled": true}"#)),
+            Ok(IpcCommand::Network(nova_network_api::Command::SetWifi { enabled: true }))
+        );
+        assert!(parse("forget_wifi", Some(r#"{"ssid": "x", "extra": 1}"#)).is_err());
         assert!(parse("end_app", Some(r#"{"key": "x", "extra": 1}"#)).is_err());
         assert_eq!(parse("lock", None), Ok(IpcCommand::Lock(nova_lock_api::Command::Lock)));
         assert_eq!(

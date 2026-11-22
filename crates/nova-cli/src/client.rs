@@ -161,6 +161,7 @@ const HUNG_UP: &str = "novad closed the connection";
 pub enum Sent {
     Shared(Event),
     Lock(nova_lock_api::Event),
+    Network(nova_network_api::Event),
     Resources(nova_resources_api::Event),
 }
 
@@ -205,6 +206,9 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(line).unwrap();
         let expected = serde_json::json!({"event": "resources", "data": value["data"]});
         assert_eq!(serde_json::to_value(&sent).unwrap(), expected);
+        let line = r#"{"v":2,"event":"network_traffic","data":{"down":[1],"up":[2],"today_down":3,"today_up":4}}"#;
+        let sent = serde_json::from_str::<Envelope<Sent>>(line).unwrap().body;
+        assert!(matches!(sent, Sent::Network(nova_network_api::Event::NetworkTraffic(_))), "{sent:?}");
     }
 
     #[test]
