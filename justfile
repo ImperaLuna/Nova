@@ -116,8 +116,8 @@ newest-quickshell:
 
 # Record what niri or Hyprland sends novad, in a VM, for novad's compositor tests (needs KVM)
 record compositor="niri":
-    rm -rf crates/novad/src/compositor/recorded/{{compositor}}
-    cp -r --no-preserve=mode "$(nix build -L --no-link --print-out-paths .#checks.{{system}}.e2e-{{compositor}}.record)/recorded" crates/novad/src/compositor/recorded/{{compositor}}
+    rm -rf framework/compositor/recorded/{{compositor}}
+    cp -r --no-preserve=mode "$(nix build -L --no-link --print-out-paths .#checks.{{system}}.e2e-{{compositor}}.record)/recorded" framework/compositor/recorded/{{compositor}}
 
 build:
     cargo build --workspace

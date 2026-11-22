@@ -1,0 +1,35 @@
+# Allowed outside crates:
+# - serde
+# - serde_json
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-carrier
+# - nova-hub
+# - nova-log
+
+[package]
+name = "nova-compositor"
+description = "The compositor's outputs, workspaces, focused window and keyboard layout, the same on niri and Hyprland, and its workspace actions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# The recorded sessions and the Hyprland probe, for novad's tests that replay them.
+test-support = []
+
+[dependencies]
+nova-base.workspace = true
+nova-carrier.workspace = true
+nova-hub.workspace = true
+nova-log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+
+[lints]
+workspace = true

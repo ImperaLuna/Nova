@@ -7,21 +7,28 @@
 //! what a compositor can't do instead of asking which compositor it is.
 //! novad picks the backend from the variables the compositor sets.
 
+mod desktop;
 mod hyprland;
-#[cfg(test)]
-pub(crate) use hyprland::LUA_PROBE as HYPRLAND_LUA_PROBE;
+#[cfg(any(test, feature = "test-support"))]
+pub use hyprland::LUA_PROBE as HYPRLAND_LUA_PROBE;
 mod niri;
 
-use crate::backoff::Backoff;
-use crate::hub::{ClientId, Hub};
-use crate::lock;
-use crate::logger::Logger;
-use nova_protocol::{Capability, Desktop, Event, Output, Step, Workspace, WorkspaceId, topics};
+pub use desktop::{Capability, Desktop, FocusedWindow, Output, Step, Workspace, WorkspaceId};
+
+use nova_base::backoff::Backoff;
+use nova_base::lock;
+use nova_carrier::topic::{Single, Topic};
+use nova_hub::{ClientId, Hub};
+use nova_log::Logger;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// The topic the desktop is published on.
+pub const TOPIC: Topic = Topic::named("compositor");
+/// The name of the event that carries it.
+pub const EVENT: &str = "compositor";
 const LOG_SOURCE: &str = "compositor";
 /// How long to wait before following the compositor again after a failure,
 /// doubling up to `MAX_RETRY` while it keeps failing.
@@ -148,9 +155,9 @@ impl Compositor {
     /// Subscribes `client` and sends it the current desktop, if known.
     pub fn subscribe(&self, client: ClientId) {
         let desktop = lock(&self.desktop);
-        self.hub.subscribe(client, topics::COMPOSITOR);
+        self.hub.subscribe(client, TOPIC);
         if let Some(desktop) = &*desktop {
-            self.hub.send_to(client, &Event::Compositor(desktop.clone()));
+            self.hub.send_to(client, &event(desktop));
         }
     }
 
@@ -227,7 +234,7 @@ impl Compositor {
         if current.as_ref() == Some(&desktop) {
             return;
         }
-        self.hub.publish(&Event::Compositor(desktop.clone()));
+        self.hub.publish(&event(&desktop));
         if current.as_ref().is_none_or(|current| !output_names(current).eq(output_names(&desktop))) {
             let names: Vec<String> = output_names(&desktop).cloned().collect();
             for listener in lock(&self.output_listeners).iter() {
@@ -236,6 +243,11 @@ impl Compositor {
         }
         *current = Some(desktop);
     }
+}
+
+/// The `compositor` event for `desktop`.
+pub fn event(desktop: &Desktop) -> Single<'_, Desktop> {
+    Single::new(EVENT, TOPIC, desktop)
 }
 
 /// The names of `desktop`'s outputs, sorted.
@@ -271,6 +283,12 @@ fn neighbour(desktop: &Desktop, output: &str, step: Step) -> Result<Option<Works
         Step::Previous => active.checked_sub(1),
     };
     Ok(target.and_then(|index| workspaces.get(index)).map(|workspace| (*workspace).clone()))
+}
+
+/// The recorded compositor sessions the tests replay (`just record`).
+#[cfg(any(test, feature = "test-support"))]
+pub fn recorded_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("recorded")
 }
 
 #[cfg(test)]

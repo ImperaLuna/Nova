@@ -793,6 +793,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-compositor"
+version = "0.1.0"
+dependencies = [
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "nova-test-support",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-features"
 version = "0.1.0"
 dependencies = [
@@ -895,6 +908,7 @@ dependencies = [
  "insta",
  "nova-apps",
  "nova-carrier",
+ "nova-compositor",
  "nova-host",
  "nova-resources-api",
  "nova-theme",
@@ -1010,6 +1024,7 @@ dependencies = [
  "nova-apps",
  "nova-base",
  "nova-carrier",
+ "nova-compositor",
  "nova-features",
  "nova-host",
  "nova-hub",
