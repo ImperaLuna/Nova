@@ -50,6 +50,7 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
 #[serde(untagged)]
 enum IpcCommand {
     Shared(Command),
+    Launcher(nova_launcher_api::Command),
     Network(nova_network_api::Command),
     Resources(nova_resources_api::Command),
     Tray(nova_tray_api::Command),
@@ -62,7 +63,9 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
     if let Some(args) = args {
         request["args"] = serde_json::from_str(args).map_err(|e| format!("the arguments aren't JSON: {e}"))?;
     }
-    let read = if tagged_names_of::<nova_network_api::Command>("cmd").contains(&name) {
+    let read = if tagged_names_of::<nova_launcher_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Launcher)
+    } else if tagged_names_of::<nova_network_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Network)
     } else if tagged_names_of::<nova_resources_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Resources)

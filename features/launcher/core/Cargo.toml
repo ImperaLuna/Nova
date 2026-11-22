@@ -1,0 +1,48 @@
+# Allowed outside crates:
+# - jiff
+# - serde
+# - serde_json
+#
+# Allowed workspace crates:
+# - nova-apps
+# - nova-base
+# - nova-compositor
+# - nova-hub
+# - nova-launcher-api
+# - nova-log
+# - nova-modules
+# - nova-paths
+# - nova-process
+
+[package]
+name = "nova-launcher"
+description = "The launcher: searching and starting the installed apps, the pinned and recent ones, its providers and the login apps"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# Shorter waits for a window to show, for novad's tests.
+test-support = []
+
+[dependencies]
+nova-launcher-api.workspace = true
+nova-apps.workspace = true
+nova-base.workspace = true
+nova-compositor.workspace = true
+nova-hub.workspace = true
+nova-log.workspace = true
+nova-modules.workspace = true
+nova-paths.workspace = true
+nova-process.workspace = true
+jiff.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+nova-carrier.workspace = true
+nova-test-support.workspace = true
+
+[lints]
+workspace = true

@@ -31,6 +31,8 @@
 # - nova-hub
 # - nova-icons
 # - nova-inotify
+# - nova-launcher
+# - nova-launcher-api
 # - nova-log
 # - nova-mime
 # - nova-modules
@@ -75,6 +77,8 @@ nova-log.workspace = true
 nova-socket.workspace = true
 nova-modules.workspace = true
 nova-settings.workspace = true
+nova-launcher.workspace = true
+nova-launcher-api.workspace = true
 nova-network.workspace = true
 nova-network-api.workspace = true
 nova-resources.workspace = true
@@ -120,6 +124,7 @@ nova-hub = { workspace = true, features = ["test-support"] }
 nova-socket = { workspace = true, features = ["test-support"] }
 nova-apps = { workspace = true, features = ["test-support"] }
 nova-compositor = { workspace = true, features = ["test-support"] }
+nova-launcher = { workspace = true, features = ["test-support"] }
 nova-tray = { workspace = true, features = ["test-support"] }
 
 [lints]
