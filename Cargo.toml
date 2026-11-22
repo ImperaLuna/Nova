@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "framework/*"]
+members = ["crates/*", "framework/*", "features/*/api", "features/*/core"]
 
 [workspace.package]
 version = "0.1.0"
@@ -60,6 +60,8 @@ nova-session-bus = { path = "framework/session-bus" }
 nova-settings = { path = "framework/settings" }
 nova-socket = { path = "framework/socket" }
 nova-test-support = { path = "framework/test-support" }
+nova-resources-api = { path = "features/resources/api" }
+nova-resources = { path = "features/resources/core" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

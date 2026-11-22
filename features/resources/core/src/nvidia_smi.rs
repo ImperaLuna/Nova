@@ -44,7 +44,7 @@ impl NvidiaSmi {
         // full one.
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                *crate::lock(&shared) = parse(&line);
+                *nova_base::lock(&shared) = parse(&line);
             }
         });
         Ok(Self { child: Some(child), latest })
@@ -52,7 +52,7 @@ impl NvidiaSmi {
 
     /// The share it last printed, if it printed one.
     pub fn latest(&self) -> Option<f32> {
-        *crate::lock(&self.latest)
+        *nova_base::lock(&self.latest)
     }
 }
 

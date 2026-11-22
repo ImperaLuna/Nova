@@ -56,8 +56,9 @@ fn bad_requests_get_an_error_when_they_have_an_id() {
     assert!(reply["error"].as_str().unwrap().starts_with("bad request"));
 }
 
-/// The router's error for a command nobody serves is the one decoding the
-/// whole command list gives, word for word.
+/// The router's error for a command nobody serves is the one serde gives
+/// for an unknown variant, word for word, listing every command of every
+/// route: the shared ones first, then each feature's own (`watch_resources`).
 #[test]
 fn an_unknown_command_gets_the_decoders_error() {
     let novad = TestDaemon::start("unknown", None);
@@ -65,7 +66,22 @@ fn an_unknown_command_gets_the_decoders_error() {
     let request = json!({"v": 2, "id": 5, "cmd": "reboot"});
     client.send(&request);
     let decoded = nova_protocol::decode_request(&request.to_string()).unwrap_err();
-    assert_eq!(client.next()["error"], format!("bad request: {decoded}"));
+    let shared = decoded.strip_suffix('`').unwrap();
+    let error = client.next()["error"].as_str().unwrap().to_owned();
+    assert!(error.starts_with(&format!("bad request: {shared}`, `")), "{error}");
+    assert!(error.ends_with("`watch_resources`, `end_app`"), "{error}");
+}
+
+/// A topic novad doesn't serve makes `subscribe` a bad request, with the
+/// error serde gives for an unknown variant, so nothing is subscribed.
+#[test]
+fn an_unknown_topic_is_a_bad_request() {
+    let novad = TestDaemon::start("unknown-topic", None);
+    let mut client = novad.connect();
+    client.send(&json!({"v": 2, "id": 6, "cmd": "subscribe", "args": {"topics": ["features", "weather"]}}));
+    let error = client.next()["error"].as_str().unwrap().to_owned();
+    assert!(error.starts_with("bad request: unknown variant `weather`, expected one of `features`, `logs`"), "{error}");
+    assert!(error.contains("`host`, `resources`, `launcher`"), "{error}");
 }
 
 #[test]

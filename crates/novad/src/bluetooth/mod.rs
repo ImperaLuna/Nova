@@ -910,7 +910,7 @@ async fn name_owner(connection: &Connection) -> Option<String> {
 impl crate::modules::Module for Bluetooth {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Bluetooth);
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::BLUETOOTH);
     type Sources = Sources;
     type Config = ();
 

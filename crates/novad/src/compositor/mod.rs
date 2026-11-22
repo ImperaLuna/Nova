@@ -16,7 +16,7 @@ use crate::backoff::Backoff;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
-use nova_protocol::{Capability, Desktop, Event, Output, Step, Topic, Workspace, WorkspaceId};
+use nova_protocol::{Capability, Desktop, Event, Output, Step, Workspace, WorkspaceId, topics};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -148,7 +148,7 @@ impl Compositor {
     /// Subscribes `client` and sends it the current desktop, if known.
     pub fn subscribe(&self, client: ClientId) {
         let desktop = lock(&self.desktop);
-        self.hub.subscribe(client, Topic::Compositor);
+        self.hub.subscribe(client, topics::COMPOSITOR);
         if let Some(desktop) = &*desktop {
             self.hub.send_to(client, &Event::Compositor(desktop.clone()));
         }

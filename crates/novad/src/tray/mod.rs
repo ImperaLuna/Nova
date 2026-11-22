@@ -702,7 +702,7 @@ impl crate::modules::Module for Tray {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Tray);
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::TRAY);
     type Sources = Sources;
     type Config = ();
 

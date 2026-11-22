@@ -394,7 +394,7 @@ impl crate::modules::Module for Launcher {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Launcher);
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::LAUNCHER);
     type Sources = Paths;
     type Config = ();
 

@@ -1,24 +1,46 @@
-//! What novad answers on the socket: the route for every command in
-//! `nova_protocol::Command`, the one shared list of them, which the feature
-//! moves take apart (IMP-368): a feature that owns its commands adds its own
-//! route in [`router`]. The socket itself is `nova-socket`'s.
+//! What novad answers on the socket: one route per message type in
+//! [`router`]. `nova_protocol::Command` is the shared list the feature moves
+//! take apart (IMP-368); a feature that owns its commands (its api crate's
+//! `Command`) has its own route, which calls into its module. The socket
+//! itself is `nova-socket`'s.
 
 use crate::hub::ClientId;
 use crate::{Daemon, lock};
 use nova_protocol::{
-    Capability, CaptureMode, Command, Event, Outcome, Panel, PowerAction, PowerMenu, Topic, VolumeKey,
+    Capability, CaptureMode, Command, Event, Outcome, Panel, PowerAction, PowerMenu, VolumeKey, topics,
 };
 use nova_socket::{Answer, Caller, Router, done, value};
 use std::sync::{Arc, mpsc};
 
 const LOG_SOURCE: &str = "server";
 
-/// The routes of every message novad serves.
+/// The routes of every message novad serves. A moved feature adds its
+/// route in its place in the list below (by its feature name), and its
+/// commands leave `nova_protocol::Command`.
 pub fn router() -> Router<Daemon> {
-    Router::new().route::<Command>(
-        |daemon, caller, command| Connection::new(daemon, caller).answer(command),
-        |daemon, caller, command| Connection::new(daemon, caller).follow_up(command),
-    )
+    Router::new()
+        .route::<Shared>(
+            |daemon, caller, Shared(command)| Connection::new(daemon, caller).answer(command),
+            |daemon, caller, Shared(command)| Connection::new(daemon, caller).follow_up(command),
+        )
+        .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
+}
+
+/// A shared command, read with its `subscribe` topics checked against the
+/// ones novad serves ([`crate::topics`]): an unknown one makes the request
+/// bad, as an unknown variant of a topic enum would.
+struct Shared(Command);
+
+impl<'de> serde::Deserialize<'de> for Shared {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let command = Command::deserialize(deserializer)?;
+        if let Command::Subscribe { topics } = &command {
+            for name in topics {
+                crate::topics::named::<D::Error>(name)?;
+            }
+        }
+        Ok(Self(command))
+    }
 }
 
 /// A request from the client `caller`.
@@ -66,10 +88,6 @@ impl<'a> Connection<'a> {
             Command::ReportUnlocked => {
                 done(self.sent_by_the_ui().map(|()| self.session_lock().unlocked(&self.daemon.hub)))
             }
-            Command::WatchResources { watching } => {
-                done(self.resources().map(|resources| resources.watch(self.id, *watching)))
-            }
-            Command::EndApp { key } => done(self.resources().and_then(|resources| resources.end_app(key))),
             Command::PowerOptions => return self.power_options(),
             Command::Power { action } => return self.power(*action),
             Command::Screenshot { mode } => return self.screenshot(*mode),
@@ -197,10 +215,6 @@ impl<'a> Connection<'a> {
     // The modules, or why there's none (`Daemon::module`).
 
     fn ai_usage(&self) -> Result<Arc<crate::ai_usage::Usage>, String> {
-        self.daemon.module()
-    }
-
-    fn resources(&self) -> Result<Arc<crate::resources::Resources>, String> {
         self.daemon.module()
     }
 
@@ -623,9 +637,10 @@ impl<'a> Connection<'a> {
     /// Work done after the reply is queued.
     fn follow_up(&self, command: Command) {
         match command {
-            Command::Subscribe { topics } => {
-                for topic in topics {
-                    if topic == Topic::Logs {
+            Command::Subscribe { topics: names } => {
+                // The names were checked as the request was read (`Shared`).
+                for topic in names.iter().filter_map(|name| crate::topics::named::<serde_json::Error>(name).ok()) {
+                    if topic == topics::LOGS {
                         self.daemon.logger.subscribe(self.id);
                         continue;
                     }
@@ -634,33 +649,23 @@ impl<'a> Connection<'a> {
                     let settings = lock(&self.daemon.settings);
                     self.daemon.hub.subscribe(self.id, topic);
                     match topic {
-                        Topic::Features => self.send(Event::Features { features: settings.features.clone() }),
-                        Topic::Theme => self.send(Event::Theme(settings.theme.clone())),
+                        topics::FEATURES => self.send(Event::Features { features: settings.features.clone() }),
+                        topics::THEME => self.send(Event::Theme(settings.theme.clone())),
                         // Sent once the compositor has said what it shows.
-                        Topic::Compositor => {
+                        topics::COMPOSITOR => {
                             if let Some(compositor) = &self.daemon.compositor {
                                 compositor.subscribe(self.id);
                             }
                         }
                         // Facts about the machine, there whatever the features.
-                        Topic::Host => self.send(Event::Host(settings.host())),
+                        topics::HOST => self.send(Event::Host(settings.host())),
                         // Sent while some connection watches them.
-                        Topic::Resources => {}
+                        nova_resources_api::TOPIC => {}
+                        // Only ever sent as `nova toggle` or `nova volume` asks.
+                        topics::TOGGLE | topics::VOLUME => {}
                         // A module's: without its feature there is nothing to
                         // send until a reload turns it on.
-                        Topic::AiUsage
-                        | Topic::Lock
-                        | Topic::Screenshot
-                        | Topic::Recording
-                        | Topic::Launcher
-                        | Topic::Tray
-                        | Topic::Notifications
-                        | Topic::Media
-                        | Topic::Peripherals
-                        | Topic::Network
-                        | Topic::Bluetooth => settings.modules.send_state(topic, self.id),
-                        // Only ever sent as `nova toggle` or `nova volume` asks.
-                        Topic::Logs | Topic::Toggle | Topic::Volume => {}
+                        _ => settings.modules.send_state(topic, self.id),
                     }
                 }
             }
@@ -696,8 +701,6 @@ impl<'a> Connection<'a> {
             | Command::RecordingAction { .. }
             | Command::OpenLog
             | Command::Volume { .. }
-            | Command::WatchResources { .. }
-            | Command::EndApp { .. }
             | Command::LauncherSearch { .. }
             | Command::AppIcon { .. }
             | Command::LauncherRun { .. }

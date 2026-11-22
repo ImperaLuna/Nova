@@ -1,0 +1,23 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates:
+# - nova-carrier
+
+[package]
+name = "nova-resources-api"
+description = "The resources feature's messages: watch_resources, end_app and the resources event"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-carrier.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

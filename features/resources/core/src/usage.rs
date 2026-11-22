@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn reads_this_machine() {
-        let proc_root = Path::new(crate::procfs::PROC);
+        let proc_root = Path::new(nova_process::procfs::PROC);
         assert!(CpuTimes::read(proc_root).is_some_and(|times| times.total > 0));
         assert!(read_memory(proc_root).is_some_and(|(used, total)| used <= total && total > 0));
         let me = std::process::id();

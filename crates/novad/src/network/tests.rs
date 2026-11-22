@@ -12,7 +12,7 @@ use super::fake_nm::FakeNm;
 use super::*;
 use crate::hub::{ClientQueue, Outgoing};
 use crate::session_bus::TestBus;
-use nova_protocol::{LogLevel, Topic};
+use nova_protocol::{LogLevel, topics};
 use nova_test_support::TempDir;
 use serde_json::{Value, json};
 use std::os::unix::net::UnixStream;
@@ -46,7 +46,7 @@ impl Fixture {
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let client = hub.register(queue);
-        hub.subscribe(client, Topic::Network);
+        hub.subscribe(client, topics::NETWORK);
         Self { dir, bus, hub, logger, ui, client, _ui_stream: ui_stream }
     }
 

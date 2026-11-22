@@ -87,7 +87,7 @@ impl Client {
     /// sends that after its reply, and a topic whose feature is off sends
     /// nothing, so an empty subscribe after it marks where the state ends.
     pub fn current(&mut self, topics: Vec<Topic>) -> Result<Vec<Event>, String> {
-        self.request(Command::Subscribe { topics })?;
+        self.request(Command::Subscribe { topics: topics.iter().map(|topic| topic.name().to_string()).collect() })?;
         let mut events = Vec::new();
         self.request_seeing_events(Command::Subscribe { topics: vec![] }, |event| events.push(event))?;
         Ok(events)

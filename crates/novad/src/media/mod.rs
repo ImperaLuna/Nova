@@ -696,7 +696,7 @@ impl crate::modules::Module for Media {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Media);
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::MEDIA);
     type Sources = Sources;
     type Config = ();
 

@@ -461,7 +461,7 @@ fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
 impl crate::modules::Module for Screenshots {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Screenshot);
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::SCREENSHOT);
     type Sources = PathBuf;
     type Config = ();
 
@@ -492,7 +492,7 @@ impl crate::modules::Module for Screenshots {
 mod tests {
     use super::*;
     use crate::hub::{ClientQueue, Outgoing};
-    use nova_protocol::{LogLevel, Topic};
+    use nova_protocol::{LogLevel, topics};
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::UnixStream;
     use std::sync::mpsc::Receiver;
@@ -539,7 +539,7 @@ mod tests {
             let (ui_stream, other_end) = UnixStream::pair().unwrap();
             let (queue, ui) = ClientQueue::new(&other_end).unwrap();
             let id = hub.register(queue);
-            hub.subscribe(id, Topic::Screenshot);
+            hub.subscribe(id, topics::SCREENSHOT);
             let path_var = nova_test_support::fake_path(&bin, &["cp", "cat", "sleep"]);
             let screenshots = Screenshots::new(&dir.join("runtime"), path_var, Arc::clone(&hub), logger);
             Self { dir, screenshots, hub, ui, _ui_stream: ui_stream }

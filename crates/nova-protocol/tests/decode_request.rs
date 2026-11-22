@@ -4,8 +4,8 @@
 //! that do decode must be exactly what a client meant to send.
 
 use nova_protocol::{
-    AiProvider, Command, PROTOCOL_VERSION, PairingAnswer, Request, Step, Topic, UsageLimit, UsageWindow,
-    decode_request, encode,
+    AiProvider, Command, PROTOCOL_VERSION, PairingAnswer, Request, Step, UsageLimit, UsageWindow, decode_request,
+    encode, topics,
 };
 use proptest::prelude::*;
 use serde_json::{Map, Value, json};
@@ -54,14 +54,9 @@ const NAMES: &[&str] = &[
     "code",
 ];
 
-fn topic() -> impl Strategy<Value = Topic> {
-    prop_oneof![
-        Just(Topic::Features),
-        Just(Topic::Logs),
-        Just(Topic::Theme),
-        Just(Topic::AiUsage),
-        Just(Topic::Compositor),
-    ]
+fn topic() -> impl Strategy<Value = String> {
+    proptest::sample::select(&[topics::FEATURES, topics::LOGS, topics::THEME, topics::AI_USAGE, topics::COMPOSITOR][..])
+        .prop_map(|topic| topic.name().to_string())
 }
 
 fn usage_limit() -> impl Strategy<Value = UsageLimit> {
@@ -87,11 +82,19 @@ fn command() -> impl Strategy<Value = Command> {
         any::<i64>().prop_map(|id| Command::FocusWorkspace { id }),
         (any::<String>(), prop_oneof![Just(Step::Next), Just(Step::Previous)])
             .prop_map(|(output, step)| Command::StepWorkspace { output, step }),
-        any::<bool>().prop_map(|watching| Command::WatchResources { watching }),
-        ".*".prop_map(|key| Command::EndApp { key }),
         ".*".prop_map(|address| Command::BluetoothConnect { address }),
         (any::<u64>(), pairing_answer()).prop_map(|(id, answer)| Command::BluetoothAnswer { id, answer }),
     ]
+}
+
+/// The resources feature's commands, which it owns (`nova-resources-api`).
+fn resources_request() -> impl Strategy<Value = nova_carrier::Request<nova_resources_api::Command>> {
+    use nova_resources_api::Command;
+    let command = prop_oneof![
+        any::<bool>().prop_map(|watching| Command::WatchResources { watching }),
+        ".*".prop_map(|key| Command::EndApp { key }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
 fn pairing_answer() -> impl Strategy<Value = PairingAnswer> {
@@ -164,6 +167,12 @@ proptest! {
     fn every_request_round_trips(request in request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_resources_request_round_trips(request in resources_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
     }
 
     #[test]

@@ -565,7 +565,7 @@ fn millis(duration: Duration) -> u64 {
 impl crate::modules::Module for Recordings {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Recording);
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::RECORDING);
     type Sources = ();
     type Config = crate::config::RecordingConfig;
 
@@ -613,7 +613,7 @@ impl crate::modules::Module for Recordings {
 mod tests {
     use super::*;
     use crate::hub::{ClientQueue, Outgoing};
-    use nova_protocol::{LogLevel, Topic};
+    use nova_protocol::{LogLevel, topics};
     use std::os::unix::net::UnixStream;
     use std::sync::mpsc::Receiver;
 
@@ -651,7 +651,7 @@ mod tests {
             let (ui_stream, other_end) = UnixStream::pair().unwrap();
             let (queue, ui) = ClientQueue::new(&other_end).unwrap();
             let id = hub.register(queue);
-            hub.subscribe(id, Topic::Recording);
+            hub.subscribe(id, topics::RECORDING);
             let path_var = nova_test_support::fake_path(&bin, &["sleep"]);
             let recordings = Recordings::new(path_var, hub, logger);
             recordings.allow(true);

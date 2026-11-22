@@ -842,6 +842,7 @@ version = "0.1.0"
 dependencies = [
  "insta",
  "nova-carrier",
+ "nova-resources-api",
  "proptest",
  "serde",
  "serde_json",
@@ -853,6 +854,30 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "toml",
+]
+
+[[package]]
+name = "nova-resources"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "nova-paths",
+ "nova-process",
+ "nova-resources-api",
+ "nova-test-support",
+]
+
+[[package]]
+name = "nova-resources-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -927,6 +952,8 @@ dependencies = [
  "nova-process",
  "nova-protocol",
  "nova-quickshell",
+ "nova-resources",
+ "nova-resources-api",
  "nova-session-bus",
  "nova-settings",
  "nova-socket",

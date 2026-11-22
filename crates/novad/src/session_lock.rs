@@ -147,7 +147,7 @@ impl SessionLock {
 impl crate::modules::Module for SessionLock {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Lock);
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::LOCK);
     type Sources = PathBuf;
     type Config = ();
 

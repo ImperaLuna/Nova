@@ -1,4 +1,5 @@
-//! What the machine is busy with (feature `resources`): CPU, memory,
+//! What the machine is busy with (feature `resources`, its messages in
+//! `nova-resources-api`): CPU, memory,
 //! GPU, the CPU's temperature and the apps using the most memory, for the quick
 //! settings sidebar's resources card and page.
 //!
@@ -8,6 +9,9 @@
 //! rest (every process, sensors, NVML or `nvidia-smi`) is read only while some
 //! connection watches (`watch_resources`), every [`LIVE_INTERVAL`], and
 //! each look is published then. A connection that closes stops watching.
+//!
+//! novad runs it as a module (its wiring adapts [`Resources`] to novad's
+//! `Module` trait) and routes the feature's commands to it.
 
 mod apps;
 mod nvidia;
@@ -15,11 +19,12 @@ mod nvidia_smi;
 mod sensors;
 mod usage;
 
-use crate::hub::{ClientId, Hub};
-use crate::lock;
-use crate::logger::Logger;
 use apps::Me;
-use nova_protocol::{Event, RESOURCE_HISTORY_INTERVAL_SECS, ResourceSample, Resources as Reading};
+use nova_base::lock;
+use nova_hub::{ClientId, Hub};
+use nova_log::Logger;
+use nova_process::procfs;
+use nova_resources_api::{AppUsage, Event, RESOURCE_HISTORY_INTERVAL_SECS, ResourceSample, Resources as Reading};
 use sensors::{GpuBusy, Temperature};
 use std::collections::{BTreeSet, VecDeque};
 use std::path::PathBuf;
@@ -31,7 +36,7 @@ pub const FEATURE_ID: &str = "resources";
 const LOG_SOURCE: &str = "resources";
 
 /// How often a watched look is taken and published.
-pub(crate) const LIVE_INTERVAL: Duration = Duration::from_secs(2);
+pub const LIVE_INTERVAL: Duration = Duration::from_secs(2);
 /// The first look after watching starts, soon enough to show at once but
 /// far enough from the baseline for CPU shares to mean something.
 const FIRST_LOOK: Duration = Duration::from_millis(250);
@@ -57,7 +62,7 @@ pub struct Sources {
 impl Sources {
     pub fn system(path_var: &str) -> Self {
         Self {
-            proc_root: crate::procfs::PROC.into(),
+            proc_root: procfs::PROC.into(),
             sys_root: "/sys".into(),
             nvml: nvidia::library_paths(),
             path_var: path_var.into(),
@@ -305,12 +310,12 @@ impl Sampler {
 
     /// The apps using the most memory, with their CPU use since the last
     /// look, `total_ticks` being all CPUs' time over it.
-    fn top_apps(&mut self, total_ticks: u64) -> Vec<nova_protocol::AppUsage> {
+    fn top_apps(&mut self, total_ticks: u64) -> Vec<AppUsage> {
         let processes = usage::processes(&self.sources.proc_root);
         let used = self.process_ticks.since_last(&processes);
         let proc_root = &self.sources.proc_root;
         apps::top(&processes, &used, total_ticks, page_size(), Me::current(), TOP_APPS, |pid| {
-            crate::procfs::pss_kib(proc_root, pid).map(|kib| kib * 1024)
+            procfs::pss_kib(proc_root, pid).map(|kib| kib * 1024)
         })
     }
 }
@@ -321,41 +326,10 @@ fn page_size() -> u64 {
     u64::try_from(size).unwrap_or(4096)
 }
 
-/// It has no options: it only starts and stops with its feature.
-impl crate::modules::Module for Resources {
-    type App = crate::modules::Novad;
-    const ID: &'static str = FEATURE_ID;
-    type Sources = Sources;
-    type Config = ();
-
-    fn sources(env: &crate::modules::Env) -> Sources {
-        Sources::system(env.path_var)
-    }
-
-    fn config(_: &crate::config::Config) {}
-
-    fn start(
-        ctx: &crate::modules::Context,
-        sources: &Sources,
-        (): &(),
-        _: &[nova_protocol::FeatureState],
-    ) -> Arc<Self> {
-        Self::start(sources.clone(), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
-    }
-
-    fn client_gone(&self, client: ClientId) {
-        self.watch(client, false);
-    }
-
-    fn stop(&self) {
-        Self::stop(self);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nova_protocol::LogLevel;
+    use nova_carrier::log::LogLevel;
 
     fn logger(name: &str) -> Arc<Logger> {
         let dir = nova_test_support::TempDir::new(&format!("resources-{name}"));

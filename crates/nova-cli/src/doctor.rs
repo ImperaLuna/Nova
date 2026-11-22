@@ -10,7 +10,7 @@ use crate::host::{Distro, Host};
 use crate::lifecycle::RESTART_COMMAND;
 use crate::login_apps::{self, AUTOSTART_DIR, StartupCommand};
 use nova_features::Gpu;
-use nova_protocol::{Event, FeatureState, FeatureStatus, Topic, TrayItem};
+use nova_protocol::{Event, FeatureState, FeatureStatus, TrayItem, topics};
 use nova_quickshell::Range;
 use novad::checks;
 use std::fmt;
@@ -106,7 +106,7 @@ fn reach(socket: &Path) -> Daemon {
         Err(Unreachable::NoAnswer(problem)) => Daemon::NoAnswer(problem),
         Ok(mut client) => {
             // Only for a warning: a novad too old to answer is still running.
-            let events = client.current(vec![Topic::Tray]).unwrap_or_default();
+            let events = client.current(vec![topics::TRAY]).unwrap_or_default();
             let tray = events
                 .into_iter()
                 .find_map(|event| match event {

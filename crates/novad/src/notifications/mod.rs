@@ -939,7 +939,7 @@ impl crate::modules::Module for Notifications {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::Topic::Notifications);
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::NOTIFICATIONS);
     type Sources = Sources;
     type Config = ();
 
