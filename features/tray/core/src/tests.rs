@@ -71,21 +71,19 @@ impl Fixture {
 /// Puts up an item at `path` on a new connection, owning `name` first if
 /// given, and registers `service` with the watcher.
 fn put_up(fixture: &Fixture, name: Option<&str>, path: &str, service: &str, id: &str) -> Connection {
-    put_up_counting(fixture, name, path, service, id, Arc::default())
+    put_up_item(fixture, name, path, service, item(id, Arc::default()))
 }
 
-/// Like `put_up`, counting the item's `Activate` calls in `activated`.
-fn put_up_counting(
-    fixture: &Fixture,
-    name: Option<&str>,
-    path: &str,
-    service: &str,
-    id: &str,
-    activated: Arc<std::sync::atomic::AtomicUsize>,
-) -> Connection {
+/// Like `put_up`, with `item`.
+fn put_up_item(fixture: &Fixture, name: Option<&str>, path: &str, service: &str, item: Item) -> Connection {
     let connection = fixture.connect();
-    serve_item(&connection, name, path, service, Item { id: id.into(), title: format!("{id} title"), activated });
+    serve_item(&connection, name, path, service, item);
     connection
+}
+
+/// The item `id`, counting its `Activate` calls in `activated`.
+fn item(id: &str, activated: Arc<std::sync::atomic::AtomicUsize>) -> Item {
+    Item { id: id.into(), title: format!("{id} title"), activated }
 }
 
 fn watcher_property<T: TryFrom<OwnedVariant>>(connection: &Connection, name: &str) -> T
@@ -116,7 +114,8 @@ fn an_electron_item_shows_with_its_app_and_goes_with_it() {
 
     let activated = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let item_id = "chrome_status_icon_1";
-    let app = put_up_counting(&fixture, None, "/StatusNotifierItem", "/StatusNotifierItem", item_id, activated.clone());
+    let app =
+        put_up_item(&fixture, None, "/StatusNotifierItem", "/StatusNotifierItem", item(item_id, activated.clone()));
     let address = format!("{}/StatusNotifierItem", app.unique_name().unwrap());
     let items = fixture.next_items();
     assert_eq!(items[0]["address"], json!(address));

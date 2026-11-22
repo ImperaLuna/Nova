@@ -9,7 +9,7 @@
 //! devices) or else BATTERY_STATUS (`0x1000`).
 
 use super::descriptor::Reports;
-use super::protocol::{self, Answer, Length};
+use super::protocol::{self, Answer, Call, Length};
 use crate::hidraw::channel::{Channel, Received};
 use crate::name;
 use nova_peripherals_api::{Battery, BatteryLevel, PeripheralKind};
@@ -136,18 +136,11 @@ impl Conversation {
 
     /// Function `function` of the feature at `feature` on `device`.
     fn call(&mut self, device: u8, feature: u8, function: u8, params: &[u8]) -> Result<Vec<u8>, Failure> {
-        self.call_as(Length::Long, device, feature, function, params)
+        self.call_as(Length::Long, Call { device, feature, function, params })
     }
 
-    fn call_as(
-        &mut self,
-        length: Length,
-        device: u8,
-        feature: u8,
-        function: u8,
-        params: &[u8],
-    ) -> Result<Vec<u8>, Failure> {
-        self.send(protocol::request(self.reports, length, device, feature, function, params))
+    fn call_as(&mut self, length: Length, call: Call) -> Result<Vec<u8>, Failure> {
+        self.send(protocol::request(self.reports, length, call))
     }
 
     /// Sends `request` and waits for its answer.
@@ -174,7 +167,9 @@ impl Conversation {
     /// answers so for an empty slot, or a device asleep); no answer at all
     /// fails, as it may only have been lost over the air.
     pub fn ping(&mut self, device: u8) -> Result<Ping, Failure> {
-        match self.call_as(Length::Short, device, ROOT, ROOT_PING, &[0, 0, PING_MARK]) {
+        match self
+            .call_as(Length::Short, Call { device, feature: ROOT, function: ROOT_PING, params: &[0, 0, PING_MARK] })
+        {
             Ok(_) => Ok(Ping::There),
             Err(Failure::Error(protocol::ERROR_INVALID_COMMAND)) if device == protocol::OWN_INDEX => Ok(Ping::Receiver),
             Err(Failure::Error(_)) => Ok(Ping::Gone),

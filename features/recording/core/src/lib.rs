@@ -33,7 +33,8 @@ use std::time::{Duration, Instant};
 
 /// The feature's id in `features/`.
 pub const FEATURE_ID: &str = "recording";
-const LOG_SOURCE: &str = "recording";
+/// This feature's name in the log, which [`SavedFiles::act_on`] logs under.
+pub const LOG_SOURCE: &str = "recording";
 
 /// Records on the GPU (NVENC, VA-API) and can pause.
 const GPU_SCREEN_RECORDER: &str = "gpu-screen-recorder";
@@ -103,16 +104,10 @@ pub trait SavedFiles: Send + Sync + 'static {
     /// Moves the finished `temporary` file to `<stem>.<extension>`, or
     /// `<stem> (2).<extension>` and so on: never over an existing file.
     fn place(&self, temporary: &Path, stem: &Path, extension: &str) -> Result<PathBuf, String>;
-    /// Opens a saved file, its folder, or deletes it; `log_source` names
-    /// this feature in the log.
-    fn act_on(
-        &self,
-        path: &Path,
-        action: ScreenshotAction,
-        path_var: &str,
-        logger: &Arc<Logger>,
-        log_source: &str,
-    ) -> Result<(), String>;
+    /// Opens a saved file, its folder, or deletes it, logging under
+    /// [`LOG_SOURCE`].
+    fn act_on(&self, path: &Path, action: ScreenshotAction, path_var: &str, logger: &Arc<Logger>)
+    -> Result<(), String>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -410,7 +405,7 @@ impl Recordings {
             .position(|saved| saved.id == id)
             .ok_or_else(|| format!("no recording {id} (it's from before novad started, or deleted)"))?;
         let path = PathBuf::from(&state.saved[index].path);
-        self.files.act_on(&path, action, &self.path_var, &self.logger, LOG_SOURCE)?;
+        self.files.act_on(&path, action, &self.path_var, &self.logger)?;
         if action == ScreenshotAction::Delete {
             state.saved.remove(index);
         }
@@ -638,9 +633,8 @@ mod tests {
             action: ScreenshotAction,
             path_var: &str,
             logger: &Arc<Logger>,
-            log_source: &str,
         ) -> Result<(), String> {
-            nova_screenshot::act_on(path, action, path_var, logger, log_source)
+            nova_screenshot::act_on(path, action, path_var, logger, LOG_SOURCE)
         }
     }
     use std::os::unix::net::UnixStream;
