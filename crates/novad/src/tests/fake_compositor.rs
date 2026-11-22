@@ -13,7 +13,7 @@ pub(super) struct FakeCompositor {
 
 impl FakeCompositor {
     pub(super) fn recorded(compositor: &str, file: &str) -> String {
-        let dir = compositor::recorded_dir().join(compositor);
+        let dir = nova_compositor::recorded_dir().join(compositor);
         std::fs::read_to_string(dir.join(file)).unwrap()
     }
 
@@ -53,7 +53,7 @@ impl FakeCompositor {
         });
     }
 
-    pub(super) fn niri(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
+    pub(super) fn niri(dir: &Path) -> (Self, Box<dyn nova_compositor::Backend>) {
         let steps: Vec<Value> = serde_json::from_str(&Self::recorded("niri", "steps.json")).unwrap();
         let windows = Self::recorded("niri", &format!("{:02}/windows.json", steps.len() - 1));
         let fake =
@@ -70,13 +70,13 @@ impl FakeCompositor {
             r#""Outputs""# => outputs.clone(),
             _ => "{\"Ok\":\"Handled\"}\n".into(),
         });
-        let backend = compositor::detect(|name| (name == "NIRI_SOCKET").then(|| socket.clone().into())).unwrap();
+        let backend = nova_compositor::detect(|name| (name == "NIRI_SOCKET").then(|| socket.clone().into())).unwrap();
         (fake, backend)
     }
 
     /// Hyprland on a `hyprland.conf`, as the recording's was: it knows no
     /// Lua dispatchers.
-    pub(super) fn hyprland(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
+    pub(super) fn hyprland(dir: &Path) -> (Self, Box<dyn nova_compositor::Backend>) {
         Self::hyprland_on(
             dir,
             |dispatcher| {
@@ -91,7 +91,7 @@ impl FakeCompositor {
     /// (`scripts/record-hyprland-dispatch.py`): a dispatcher is `userdata`.
     /// One that built runs and gets the answer `hl.dsp.no_op()` got; one that
     /// didn't gets its error.
-    pub(super) fn hyprland_lua(dir: &Path) -> (Self, Box<dyn compositor::Backend>) {
+    pub(super) fn hyprland_lua(dir: &Path) -> (Self, Box<dyn nova_compositor::Backend>) {
         let recorded: Value = serde_json::from_str(&Self::recorded("hyprland-0.57", "dispatch.json")).unwrap();
         Self::hyprland_on(dir, move |dispatcher| {
             if let Some(answer) = recorded["dispatched"][dispatcher].as_str() {
@@ -112,7 +112,7 @@ impl FakeCompositor {
     fn hyprland_on(
         dir: &Path,
         dispatched: impl Fn(&str) -> String + Send + Sync + 'static,
-    ) -> (Self, Box<dyn compositor::Backend>) {
+    ) -> (Self, Box<dyn nova_compositor::Backend>) {
         const INSTANCE: &str = "recorded";
         let fake = Self { requests: Arc::default(), windows: Arc::default() };
         let instance = dir.join("hypr").join(INSTANCE);
@@ -128,7 +128,7 @@ impl FakeCompositor {
             request.strip_prefix("dispatch ").map_or_else(|| "ok".into(), &dispatched)
         });
         let runtime_dir = dir.to_owned();
-        let backend = compositor::detect(|name| match name {
+        let backend = nova_compositor::detect(|name| match name {
             "HYPRLAND_INSTANCE_SIGNATURE" => Some(INSTANCE.into()),
             "XDG_RUNTIME_DIR" => Some(runtime_dir.clone().into()),
             _ => None,
@@ -147,7 +147,7 @@ impl FakeCompositor {
 
     /// The requests that weren't queries or the event stream.
     pub(super) fn actions(&self) -> Vec<String> {
-        let queries = [r#""EventStream""#, r#""Windows""#, r#""Outputs""#, compositor::HYPRLAND_LUA_PROBE];
+        let queries = [r#""EventStream""#, r#""Windows""#, r#""Outputs""#, nova_compositor::HYPRLAND_LUA_PROBE];
         lock(&self.requests)
             .iter()
             .filter(|r| !r.starts_with("j/") && !queries.contains(&r.as_str()))

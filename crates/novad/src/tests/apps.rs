@@ -264,7 +264,7 @@ fn a_launched_app_outlives_the_request_that_started_it() {
 /// and whether the app ran anyway, then the same asking for a new window.
 fn focus_the_recorded_window(
     name: &str,
-    fake: fn(&Path) -> (FakeCompositor, Box<dyn compositor::Backend>),
+    fake: fn(&Path) -> (FakeCompositor, Box<dyn nova_compositor::Backend>),
 ) -> (Vec<String>, Value, bool) {
     let mut compositor = None;
     let novad = TestDaemon::with_launcher_following(name, |dir| {
@@ -398,7 +398,7 @@ fn launching_a_tray_only_app_activates_its_item_then_starts_it_when_no_window_sh
         None,
         |dir| {
             std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
-            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+            bus = Some(nova_session_bus::TestBus::start(&dir.join("bus")));
         },
         |dir| {
             let (fake, backend) = FakeCompositor::niri(dir);
@@ -429,7 +429,7 @@ fn launching_a_tray_only_app_activates_its_item_then_starts_it_when_no_window_sh
     let asked = std::time::Instant::now();
     assert_eq!(client.request(5, "launcher_run", Some(launch))["result"], Value::Null);
     assert!(
-        asked.elapsed() < crate::launcher::SHOWN_WINDOW_WAIT,
+        asked.elapsed() < nova_launcher::SHOWN_WINDOW_WAIT,
         "answered once the icon was asked, not after waiting for a window: the launcher closes on the answer"
     );
     assert_eq!(activated.load(std::sync::atomic::Ordering::SeqCst), 1, "the tray icon is asked to show its window");
@@ -461,7 +461,7 @@ fn a_tray_click_focuses_the_open_window_of_its_app() {
         None,
         |dir| {
             std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
-            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+            bus = Some(nova_session_bus::TestBus::start(&dir.join("bus")));
         },
         |dir| {
             let (fake, backend) = FakeCompositor::niri(dir);
@@ -512,7 +512,7 @@ fn a_tray_click_starts_its_app_when_no_window_shows() {
         None,
         |dir| {
             std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
-            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+            bus = Some(nova_session_bus::TestBus::start(&dir.join("bus")));
         },
         |dir| {
             let (fake, backend) = FakeCompositor::niri(dir);
@@ -560,7 +560,7 @@ fn launching_an_app_whose_tray_icon_has_only_a_menu_starts_it_again_and_focuses_
         None,
         |dir| {
             std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
-            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+            bus = Some(nova_session_bus::TestBus::start(&dir.join("bus")));
         },
         |dir| {
             let (fake, backend) = FakeCompositor::niri(dir);
@@ -603,7 +603,7 @@ fn launching_an_app_whose_tray_icon_has_only_a_menu_starts_it_again_and_focuses_
     assert!(marker.exists(), "its icon can't show its window, so the app is started again");
     let focused = json!({"Action": {"FocusWindow": {"id": 9}}});
     // The launcher heard back once the app was started; focusing follows.
-    let deadline = std::time::Instant::now() + crate::launcher::STARTED_WINDOW_WAIT;
+    let deadline = std::time::Instant::now() + nova_launcher::STARTED_WINDOW_WAIT;
     while compositor.actions().is_empty() && std::time::Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -619,7 +619,7 @@ fn a_window_shown_from_a_tray_menu_takes_focus() {
         None,
         |dir| {
             std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
-            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+            bus = Some(nova_session_bus::TestBus::start(&dir.join("bus")));
         },
         |dir| {
             let (fake, backend) = FakeCompositor::niri(dir);
@@ -695,7 +695,7 @@ fn a_notification_click_focuses_the_window_its_app_shows_or_opens_an_app_that_ha
         None,
         |dir| {
             std::fs::write(dir.join("config/features.toml"), AI_USAGE_OFF).unwrap();
-            bus = Some(session_bus::TestBus::start(&dir.join("bus")));
+            bus = Some(nova_session_bus::TestBus::start(&dir.join("bus")));
         },
         |dir| {
             let (fake, backend) = FakeCompositor::niri(dir);

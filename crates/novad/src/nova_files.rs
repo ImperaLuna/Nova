@@ -31,7 +31,7 @@ impl Provider for NovaFiles {
     }
 }
 
-impl crate::modules::Module for NovaFiles {
+impl nova_modules::Module for NovaFiles {
     type App = crate::modules::Novad;
     const ID: &'static str = ID;
     type Sources = Sources;
@@ -39,7 +39,7 @@ impl crate::modules::Module for NovaFiles {
 
     fn sources(env: &crate::modules::Env) -> Sources {
         let home = env.home.clone().filter(|home| home != Path::new("/"));
-        Sources { bus: crate::session_bus::Bus::Session, data_dirs: crate::data_dirs(), home }
+        Sources { bus: nova_session_bus::Bus::Session, data_dirs: nova_paths::data_dirs(), home }
     }
 
     fn config(_: &crate::config::Config) {}
@@ -50,11 +50,11 @@ impl crate::modules::Module for NovaFiles {
 
     /// A mode change that adds or drops Nova Files' windows restarts the
     /// module, which reads the mode when it starts.
-    fn reconfigure(&self, _: &(), _: &(), features: &[FeatureState]) -> crate::modules::Reconfigure {
+    fn reconfigure(&self, _: &(), _: &(), features: &[FeatureState]) -> nova_modules::Reconfigure {
         if own_windows(features) == self.0.own_windows() {
-            crate::modules::Reconfigure::InPlace
+            nova_modules::Reconfigure::InPlace
         } else {
-            crate::modules::Reconfigure::Restart
+            nova_modules::Reconfigure::Restart
         }
     }
 
@@ -73,7 +73,7 @@ fn own_windows(features: &[FeatureState]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::{Module, Reconfigure};
+    use nova_modules::{Module, Reconfigure};
     use nova_nova_files::LAUNCHER_MODE;
     use nova_protocol::FeatureStatus;
     use nova_test_support::TempDir;
@@ -93,16 +93,16 @@ mod tests {
     #[test]
     fn a_change_to_or_from_the_launcher_mode_restarts_the_module() {
         let dir = TempDir::new("nova-files-reconfigure");
-        let logger = crate::logger::Logger::open(
+        let logger = nova_log::Logger::open(
             &dir.join("logs"),
             nova_protocol::LogLevel::Debug,
             false,
-            Arc::new(crate::Hub::default()),
+            Arc::new(nova_hub::Hub::default()),
         )
         .unwrap();
         // No bus there: it can't reach Nova Files, which a mode change doesn't need.
         let sources = Sources {
-            bus: crate::session_bus::Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
+            bus: nova_session_bus::Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
             data_dirs: vec![],
             home: None,
         };

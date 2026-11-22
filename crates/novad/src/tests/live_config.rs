@@ -73,8 +73,8 @@ fn broken_files_at_start_mean_defaults() {
     });
     let mut client = novad.connect();
     client.request(1, "subscribe", Some(json!({"topics": ["theme", "features"]})));
-    assert_eq!(client.next_event("theme")["id"], theme::DEFAULT_THEME_ID);
-    assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "ready");
+    assert_eq!(client.next_event("theme")["id"], nova_theme::DEFAULT_THEME_ID);
+    assert_eq!(feature_status(&client.next_event("features"), nova_ai_usage::FEATURE_ID), "ready");
     let log = read_entries(&nova_paths::log_file(&novad.dir.join("logs")));
     let errors = log.iter().filter(|entry| {
         entry.level == LogLevel::Error && entry.message.starts_with("broken settings, using the defaults: ")
@@ -87,11 +87,11 @@ fn turning_a_feature_off_and_on_stops_and_starts_it() {
     let novad = TestDaemon::with_ai_usage("reload-feature", |_| {});
     let mut client = novad.connect();
     client.request(1, "subscribe", Some(json!({"topics": ["features", "ai_usage"]})));
-    assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "ready");
+    assert_eq!(feature_status(&client.next_event("features"), nova_ai_usage::FEATURE_ID), "ready");
     client.next_usage();
 
     save_by_rename(&novad.features_file(), WATCHERS_OFF);
-    assert_eq!(feature_status(&client.next_event("features"), ai_usage::FEATURE_ID), "off");
+    assert_eq!(feature_status(&client.next_event("features"), nova_ai_usage::FEATURE_ID), "off");
     let reply = client.request(2, "show_ai_usage", Some(json!({"provider": "codex"})));
     assert_eq!(reply["error"], "the ai-usage feature isn't ready (see `nova status`)");
 
@@ -108,7 +108,7 @@ fn turning_a_feature_off_and_on_stops_and_starts_it() {
             _ => {}
         }
     }
-    assert_eq!(feature_status(&features.unwrap(), ai_usage::FEATURE_ID), "ready");
+    assert_eq!(feature_status(&features.unwrap(), nova_ai_usage::FEATURE_ID), "ready");
     assert_eq!(usage.unwrap()["shown"], "claude", "the restarted feature publishes again");
     let reply = client.request(3, "show_ai_usage", Some(json!({"provider": "codex"})));
     assert_eq!(reply["result"], Value::Null);

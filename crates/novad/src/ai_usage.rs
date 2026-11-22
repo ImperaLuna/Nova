@@ -4,15 +4,13 @@
 //! all of the feature's work and state stay in the core.
 
 use crate::Daemon;
-use crate::hub::ClientId;
 use nova_ai_usage::{AiUsageConfig, Paths};
 use nova_ai_usage_api::Command;
+use nova_hub::ClientId;
 use nova_socket::{Answer, Caller, done};
 use std::sync::Arc;
 
-pub use nova_ai_usage::{FEATURE_ID, limits_from_statusline};
-#[cfg(test)]
-pub use nova_ai_usage::{claude_desktop_entry, claude_desktop_in, write_claude_desktop_config};
+use nova_ai_usage::FEATURE_ID;
 
 /// The feature's core, as novad's module.
 pub struct Usage(Arc<nova_ai_usage::Usage>);
@@ -36,7 +34,7 @@ pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
     })
 }
 
-impl crate::modules::Module for Usage {
+impl nova_modules::Module for Usage {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_ai_usage_api::TOPIC);

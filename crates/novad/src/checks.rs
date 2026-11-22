@@ -6,11 +6,11 @@
 use std::ffi::OsString;
 use std::path::Path;
 
-pub use crate::child::output_within;
 pub use crate::features::{read_selection, states as feature_states};
-pub use crate::host::os_release_field;
 pub use crate::supervisor::{UI_PROCESS_NAME, default_quickshell, read_quickshell_version};
-pub use crate::theme::{DEFAULT_THEME_ID, default_dir as default_themes_dir};
+pub use nova_host::os_release_field;
+pub use nova_process::child::output_within;
+pub use nova_theme::{DEFAULT_THEME_ID, default_dir as default_themes_dir};
 
 /// The `PATH` novad looks for binaries in (feature checks, Quickshell).
 pub fn session_path() -> String {
@@ -22,10 +22,10 @@ pub fn session_path() -> String {
 /// the default theme for those). A missing file is fine.
 pub fn read_config(path: &Path, themes_dir: &Path) -> Result<Vec<String>, String> {
     let config = crate::config::read(path)?;
-    Ok(crate::theme::resolve(themes_dir, &config.theme).1)
+    Ok(nova_theme::resolve(themes_dir, &config.theme).1)
 }
 
 /// The compositor novad would follow with this environment, by name.
 pub fn compositor(env: impl Fn(&str) -> Option<OsString>) -> Option<&'static str> {
-    crate::compositor::detect(env).map(|backend| backend.name())
+    nova_compositor::detect(env).map(|backend| backend.name())
 }

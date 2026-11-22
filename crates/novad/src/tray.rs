@@ -6,14 +6,14 @@
 //! compositor do: novad joins them here until the launcher has moved too.
 
 use crate::Daemon;
-use crate::hub::ClientId;
+use nova_hub::ClientId;
 use nova_protocol::Outcome;
 use nova_socket::{Answer, Caller, done};
-pub use nova_tray::Sources;
+use nova_tray::Sources;
 use nova_tray_api::Command;
 use std::sync::Arc;
 
-pub use nova_tray::{FEATURE_ID, candidates};
+use nova_tray::FEATURE_ID;
 
 /// The feature's core, as novad's module.
 pub struct Tray(Arc<nova_tray::Tray>);
@@ -68,12 +68,12 @@ fn activate_item(daemon: &Daemon, address: &str) -> Answer {
             // tell whether one is open, so nothing starts either way.
             let open = ids.is_empty() || compositor.focus_app(&ids, None).unwrap_or(true);
             tray.activate(&address)?;
-            let shown = |wait| crate::launcher::focus_shown(&app, &ids, compositor, None, wait, &logger);
-            if open || shown(crate::launcher::SHOWN_WINDOW_WAIT) {
+            let shown = |wait| nova_launcher::focus_shown(&app, &ids, compositor, None, wait, &logger);
+            if open || shown(nova_launcher::SHOWN_WINDOW_WAIT) {
                 return Ok(());
             }
             launcher.start_app(&app)?;
-            shown(crate::launcher::STARTED_WINDOW_WAIT);
+            shown(nova_launcher::STARTED_WINDOW_WAIT);
             Ok(())
         }))
     })
@@ -103,7 +103,7 @@ fn menu_picked(daemon: &Daemon, address: &str) -> Answer {
     if compositor.app_workspace(&ids).is_ok_and(|workspace| workspace.is_none()) {
         let logger = Arc::clone(&daemon.logger);
         std::thread::spawn(move || {
-            crate::launcher::focus_shown(&app, &ids, &compositor, None, crate::launcher::SHOWN_WINDOW_WAIT, &logger)
+            nova_launcher::focus_shown(&app, &ids, &compositor, None, nova_launcher::SHOWN_WINDOW_WAIT, &logger)
         });
     }
     Answer::Now(Outcome::Result(serde_json::Value::Null))
@@ -111,7 +111,7 @@ fn menu_picked(daemon: &Daemon, address: &str) -> Answer {
 
 /// Started before the UI, which settings start ahead of, so apps it
 /// autostarts find the watcher. No options.
-impl crate::modules::Module for Tray {
+impl nova_modules::Module for Tray {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;

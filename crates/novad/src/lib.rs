@@ -54,29 +54,10 @@ mod tray;
 mod wallpaper;
 mod x11_tray;
 
-// The shared helpers, moved to framework crates (IMP-371), keep their old
-// paths inside novad so its modules name them as before.
-use nova_base::backoff;
-pub use nova_base::lock;
-use nova_inotify as inotify;
-use nova_process::{child, notify, procfs};
-use nova_session_bus as session_bus;
-// The hub, the logger and the folder follower moved to the framework too
-// (IMP-372).
-use nova_hub as hub;
-use nova_log as logger;
-use nova_socket as server;
-// The shared lookups moved to framework crates too, the data folders they
-// search to nova-paths (IMP-374).
-use nova_apps as apps;
-use nova_compositor as compositor;
-use nova_host as host;
-use nova_icons as icons;
-use nova_paths::{data_dirs, package_prefixes};
-use nova_theme as theme;
-
-use hub::Hub;
-use logger::Logger;
+use nova_base::lock;
+use nova_hub::Hub;
+use nova_log::Logger;
+use nova_process::{notify, procfs};
 use nova_protocol::{LogLevel, Status, UiState, UiStatus};
 use settings::{Settings, Sources};
 use std::io::IsTerminal;
@@ -109,7 +90,7 @@ pub struct Args {
     #[arg(long)]
     selection: Option<PathBuf>,
     /// Folder of theme files (`<id>.toml`).
-    #[arg(long, default_value_os_t = theme::default_dir())]
+    #[arg(long, default_value_os_t = nova_theme::default_dir())]
     themes_dir: PathBuf,
     /// The user's settings (see `config`). Reloaded when it changes.
     #[arg(long, default_value_os_t = nova_paths::config_dir().join("config.toml"))]
@@ -164,15 +145,15 @@ pub struct Daemon {
     /// so a new subscriber's snapshot and later events arrive in order.
     settings: Mutex<Settings>,
     /// Following the compositor, when it's one novad knows.
-    compositor: Option<Arc<compositor::Compositor>>,
+    compositor: Option<Arc<nova_compositor::Compositor>>,
     /// The modules kept for novad's life, reached without the settings
     /// lock: a reload holds it while modules start, which may take seconds.
     kept: modules::Kept,
     /// Where each request goes.
-    router: server::Router<Daemon>,
+    router: nova_socket::Router<Daemon>,
 }
 
-impl server::Service for Daemon {
+impl nova_socket::Service for Daemon {
     type Hello = nova_protocol::Event;
 
     fn hub(&self) -> &Hub {
@@ -183,7 +164,7 @@ impl server::Service for Daemon {
         &self.logger
     }
 
-    fn router(&self) -> &server::Router<Self> {
+    fn router(&self) -> &nova_socket::Router<Self> {
         &self.router
     }
 
@@ -191,7 +172,7 @@ impl server::Service for Daemon {
         nova_protocol::Event::Hello { daemon: env!("CARGO_PKG_VERSION").into() }
     }
 
-    fn client_gone(&self, client: hub::ClientId) {
+    fn client_gone(&self, client: nova_hub::ClientId) {
         lock(&self.settings).modules.client_gone(client);
     }
 }
@@ -239,15 +220,15 @@ impl Daemon {
     /// The module `M`, or the error that its feature isn't ready. Taken out
     /// of the settings lock: acting may take a while, and a reload may stop
     /// it meanwhile (it then says its feature isn't ready).
-    fn module<M: modules::Module>(&self) -> Result<Arc<M>, String>
+    fn module<M: nova_modules::Module>(&self) -> Result<Arc<M>, String>
     where
-        modules::Running: modules::Has<M>,
+        modules::Running: nova_modules::Has<M>,
     {
-        lock(&self.settings).modules.get::<M>().ok_or_else(|| features::not_ready(M::ID))
+        lock(&self.settings).modules.get::<M>().ok_or_else(|| nova_modules::not_ready(M::ID))
     }
 
     /// Starts watching the settings files, reloading when they change.
-    fn watch_settings(self: &Arc<Self>) -> Option<inotify::Stopper> {
+    fn watch_settings(self: &Arc<Self>) -> Option<nova_inotify::Stopper> {
         let daemon = Arc::clone(self);
         let files = [vec![self.sources.config.clone()], self.sources.selection.clone()].concat();
         settings::watch(files, Arc::clone(&self.logger), move || daemon.reload())
@@ -280,7 +261,7 @@ pub fn run(args: Args, socket: PathBuf) -> Result<(), Box<dyn std::error::Error>
     if let Err(e) = notify::ready(notify_socket.as_deref()) {
         daemon.logger.warn(LOG_SOURCE, &format!("can't tell systemd novad is ready: {e}"));
     }
-    server::serve(listener, daemon, &AtomicBool::new(false));
+    nova_socket::serve(listener, daemon, &AtomicBool::new(false));
     Ok(())
 }
 
@@ -301,19 +282,19 @@ pub struct InProcess {
     daemon: Arc<Daemon>,
     stopped: Arc<AtomicBool>,
     serving: Option<std::thread::JoinHandle<()>>,
-    watching: Option<inotify::Stopper>,
+    watching: Option<nova_inotify::Stopper>,
 }
 
 impl InProcess {
     fn serve(
         listener: std::os::unix::net::UnixListener,
         daemon: Arc<Daemon>,
-        watching: Option<inotify::Stopper>,
+        watching: Option<nova_inotify::Stopper>,
     ) -> Self {
         let stopped = Arc::new(AtomicBool::new(false));
         let serving = {
             let (daemon, stopped) = (Arc::clone(&daemon), Arc::clone(&stopped));
-            std::thread::spawn(move || server::serve(listener, daemon, &stopped))
+            std::thread::spawn(move || nova_socket::serve(listener, daemon, &stopped))
         };
         Self { daemon, stopped, serving: Some(serving), watching }
     }
@@ -341,19 +322,19 @@ impl Drop for InProcess {
 
 /// A started novad before it serves: its bound socket, itself, and its
 /// settings watcher.
-type Started = (std::os::unix::net::UnixListener, Arc<Daemon>, Option<inotify::Stopper>);
+type Started = (std::os::unix::net::UnixListener, Arc<Daemon>, Option<nova_inotify::Stopper>);
 
 fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Error>> {
     // The socket first: a second daemon is refused before it can rotate the
     // running one's log.
-    let listener = server::bind(&socket)?;
+    let listener = nova_socket::bind(&socket)?;
     let hub = Arc::new(Hub::default());
     let logger = Arc::new(Logger::open(&args.log_dir, log_level(), std::io::stderr().is_terminal(), Arc::clone(&hub))?);
     logger.info(LOG_SOURCE, &format!("novad {} starting (pid {})", env!("CARGO_PKG_VERSION"), std::process::id()));
 
     let path_var = session_path();
     let runtime_dir = socket.parent().unwrap_or(Path::new(".")).to_path_buf();
-    let icons = Arc::new(icons::Icons::for_session());
+    let icons = Arc::new(nova_icons::Icons::for_session());
     logger.info(LOG_SOURCE, &format!("icons from the {} icon theme", icons.theme()));
     // How Quickshell runs, for the UI.
     let ui_settings = UiSettings {
@@ -384,8 +365,8 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
         icons,
     };
     // Before the modules: the wallpaper follows its outputs.
-    let compositor = match compositor::detect(|name| std::env::var_os(name)) {
-        Some(backend) => Some(compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger))),
+    let compositor = match nova_compositor::detect(|name| std::env::var_os(name)) {
+        Some(backend) => Some(nova_compositor::Compositor::start(backend, Arc::clone(&hub), Arc::clone(&logger))),
         None => {
             logger.warn(
                 LOG_SOURCE,
@@ -396,7 +377,11 @@ fn start(args: Args, socket: PathBuf) -> Result<Started, Box<dyn std::error::Err
     };
     let settings = Settings::load(&sources, &hub, &logger, compositor.clone());
     if args.autostart {
-        launcher::autostart::start(&socket.with_file_name(autostart_marker()), path_var.clone(), Arc::clone(&logger));
+        nova_launcher::autostart::start(
+            &socket.with_file_name(autostart_marker()),
+            path_var.clone(),
+            Arc::clone(&logger),
+        );
     }
 
     logger.info(LOG_SOURCE, &format!("listening on {}", socket.display()));
@@ -469,7 +454,7 @@ pub(crate) fn session_path() -> String {
     let extra = home
         .iter()
         .map(|home| home.join(".local/bin"))
-        .chain(package_prefixes().into_iter().map(|prefix| prefix.join("bin")));
+        .chain(nova_paths::package_prefixes().into_iter().map(|prefix| prefix.join("bin")));
     for dir in extra {
         if !dirs.contains(&dir) {
             dirs.push(dir);
@@ -513,7 +498,7 @@ fn wayland_socket() -> Option<PathBuf> {
 
 /// Claude's limits from a Claude Code status line input, for
 /// `nova claude-statusline`.
-pub use ai_usage::limits_from_statusline as claude_limits_from_statusline;
+pub use nova_ai_usage::limits_from_statusline as claude_limits_from_statusline;
 
 #[cfg(test)]
 mod tests;

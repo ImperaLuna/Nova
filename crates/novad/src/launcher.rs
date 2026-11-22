@@ -6,17 +6,19 @@
 //! the feature's work and state stay in the core.
 
 use crate::Daemon;
-use crate::modules::{Has, Module, Running};
+use crate::modules::Running;
 use crate::nova_files::NovaFiles;
-use crate::{lock, tray::Tray};
+use crate::tray::Tray;
+use nova_base::lock;
 use nova_launcher::providers::{HOST, Host, Provider, Run, Slotted};
 use nova_launcher_api::{Command, PROVIDER_APPS};
+use nova_modules::{Has, Module};
 use nova_nova_files_api::PROVIDER_FILES;
 use nova_protocol::{FeatureState, FeatureStatus, Outcome};
 use nova_socket::{Answer, Caller, done, value};
 use std::sync::{Arc, mpsc};
 
-pub use nova_launcher::{FEATURE_ID, Paths, SHOWN_WINDOW_WAIT, STARTED_WINDOW_WAIT, autostart, focus_shown};
+use nova_launcher::{FEATURE_ID, Paths};
 
 /// The feature's core, as novad's module.
 pub struct Launcher(Arc<nova_launcher::Launcher>);
@@ -154,7 +156,7 @@ fn find(view: &str, modules: &Running) -> Option<Arc<dyn Provider>> {
 }
 
 /// It has no options: it only starts and stops with its feature.
-impl crate::modules::Module for Launcher {
+impl nova_modules::Module for Launcher {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
@@ -178,7 +180,7 @@ impl crate::modules::Module for Launcher {
         )))
     }
 
-    fn send_state(&self, client: crate::hub::ClientId) {
+    fn send_state(&self, client: nova_hub::ClientId) {
         self.0.send_state(client);
     }
 
@@ -235,7 +237,7 @@ mod tests {
         let host = Host::new(slotted(&features), |_| Some(Arc::new(Echo) as Arc<dyn Provider>));
         let dir = TempDir::new("providers-order");
         let logger =
-            crate::logger::Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::new(crate::Hub::default()))
+            nova_log::Logger::open(&dir.join("logs"), LogLevel::Debug, false, Arc::new(nova_hub::Hub::default()))
                 .unwrap();
         let items = host.search("fi", None, &logger).unwrap();
         let found: Vec<(&str, &str)> = items.iter().map(|item| (item.provider.as_str(), item.id.as_str())).collect();

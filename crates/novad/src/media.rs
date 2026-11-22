@@ -5,7 +5,7 @@
 //! stay in the core.
 
 use crate::Daemon;
-use crate::hub::ClientId;
+use nova_hub::ClientId;
 use nova_media::Sources;
 use nova_media_api::Command;
 use nova_protocol::Outcome;
@@ -93,11 +93,11 @@ fn window(daemon: &Daemon, player: &str) -> Answer {
 /// The port: a player's process is looked up as the tray looks up a tray
 /// icon's, with no icon id.
 pub fn process_names(proc: &Path, pid: Option<u32>) -> Vec<String> {
-    crate::tray::candidates(proc, pid, "")
+    nova_tray::candidates(proc, pid, "")
 }
 
 /// No options.
-impl crate::modules::Module for Media {
+impl nova_modules::Module for Media {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;

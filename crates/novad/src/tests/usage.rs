@@ -157,10 +157,10 @@ fn claude_limits_use_the_desktop_apps_sign_in_when_claude_code_has_none() {
         std::fs::write(root.join("claude/.credentials.json"), empty).unwrap();
         let expires = jiff::Timestamp::now().as_millisecond() + 3_600_000;
         let cache = json!({
-            ai_usage::claude_desktop_entry("user:inference user:profile"):
+            nova_ai_usage::claude_desktop_entry("user:inference user:profile"):
                 {"token": "app-token", "expiresAt": expires, "subscriptionType": "pro"}
         });
-        ai_usage::write_claude_desktop_config(&root.join("claude-desktop"), &cache);
+        nova_ai_usage::write_claude_desktop_config(&root.join("claude-desktop"), &cache);
         std::fs::write(root.join("../config/config.toml"), CLAUDE_ENDPOINT_ON).unwrap();
     });
     let claude = provider(&novad.connect().subscribe_usage(), "claude").clone();
@@ -435,7 +435,7 @@ fn claude_reports_and_the_bar_choice_survive_a_restart() {
     // A second novad on the same files starts where the first left off.
     let again = nova_ai_usage::Usage::start(
         ai_usage_paths(&novad.dir.join("ai-usage")),
-        &config::AiUsageConfig::default(),
+        &nova_ai_usage::AiUsageConfig::default(),
         Arc::new(Hub::default()),
         Arc::clone(&novad.daemon.logger),
     );

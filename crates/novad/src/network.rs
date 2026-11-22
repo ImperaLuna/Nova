@@ -4,13 +4,13 @@
 //! all of the feature's work and state stay in the core.
 
 use crate::Daemon;
-use crate::hub::ClientId;
 use nova_carrier::Outcome;
+use nova_hub::ClientId;
 use nova_network_api::Command;
 use nova_socket::{Answer, Caller, done};
 use std::sync::Arc;
 
-pub use nova_network::{FEATURE_ID, Sources};
+use nova_network::{FEATURE_ID, Sources};
 
 /// The feature's core, as novad's module.
 pub struct Network(Arc<nova_network::Network>);
@@ -59,7 +59,7 @@ fn later(network: Result<Arc<Network>, String>, work: impl FnOnce(&Network) -> O
 }
 
 /// No options.
-impl crate::modules::Module for Network {
+impl nova_modules::Module for Network {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_network_api::TOPIC);

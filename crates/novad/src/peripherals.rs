@@ -5,19 +5,19 @@
 //! all of the feature's work and state stay in the core. It takes no
 //! commands.
 
-use crate::hub::ClientId;
+use nova_hub::ClientId;
 use nova_notifications_api::Post;
 use nova_peripherals::Sources;
 use std::sync::Arc;
 
-pub use nova_peripherals::FEATURE_ID;
+use nova_peripherals::FEATURE_ID;
 
 /// The feature's core, as novad's module.
 pub struct Peripherals(Arc<nova_peripherals::Peripherals>);
 
 /// No options. Its low battery alerts go to whatever notification server
 /// is up.
-impl crate::modules::Module for Peripherals {
+impl nova_modules::Module for Peripherals {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const TOPIC: Option<nova_protocol::Topic> = Some(nova_peripherals_api::TOPIC);

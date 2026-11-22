@@ -4,8 +4,9 @@
 //! `Command`) has its own route, which calls into its module. The socket
 //! itself is `nova-socket`'s.
 
-use crate::hub::ClientId;
-use crate::{Daemon, lock};
+use crate::Daemon;
+use nova_base::lock;
+use nova_hub::ClientId;
 use nova_protocol::{Command, Event, Outcome, Panel, VolumeKey, topics};
 use nova_socket::{Answer, Caller, Router, done, value};
 
@@ -105,7 +106,7 @@ impl<'a> Connection<'a> {
         Answer::Now(outcome)
     }
 
-    fn compositor(&self) -> Result<&crate::compositor::Compositor, String> {
+    fn compositor(&self) -> Result<&nova_compositor::Compositor, String> {
         self.daemon.compositor.as_deref().ok_or_else(|| "novad doesn't know this compositor".into())
     }
 
@@ -113,7 +114,7 @@ impl<'a> Connection<'a> {
     fn require_feature(&self, id: &str) -> Result<(), String> {
         match self.daemon.feature_ready(id) {
             true => Ok(()),
-            false => Err(crate::features::not_ready(id)),
+            false => Err(nova_modules::not_ready(id)),
         }
     }
 

@@ -1,25 +1,25 @@
 //! novad's modules: every feature's daemon side behind the framework's
-//! [`Module`] trait (`nova-modules`, which runs them by the settings),
-//! listed once in the registry below. The kept ones (a recording to stop,
-//! the lock screen, the region picker, the wallpaper) hold state across
-//! their feature turning off and on, so they run for novad's whole life
-//! ([`Kept`]).
+//! [`Module`](nova_modules::Module) trait (`nova-modules`, which runs them
+//! by the settings), listed once in the registry below. The kept ones (a
+//! recording to stop, the lock screen, the region picker, the wallpaper)
+//! hold state across their feature turning off and on, so they run for
+//! novad's whole life ([`Kept`]).
 //!
 //! The [`Context`] is what modules share: the hub, the logger, the
 //! compositor, and the app index, which follows the apps while any module
-//! that names them runs ([`Module::NEEDS_APPS`]).
+//! that names them runs
+//! ([`Module::NEEDS_APPS`](nova_modules::Module::NEEDS_APPS)).
 
-use crate::apps::{self, AppIndex};
-use crate::compositor::Compositor;
 use crate::config::Config;
-use crate::hub::{ClientId, Hub};
-use crate::icons::Icons;
-use crate::logger::Logger;
 use crate::{
     ai_usage, bluetooth, features, launcher, media, network, notifications, nova_files, peripherals, recording,
     resources, screenshot, session_lock, tray, wallpaper, x11_tray,
 };
-pub use nova_modules::{Has, Module, Reconfigure};
+use nova_apps::AppIndex;
+use nova_compositor::Compositor;
+use nova_hub::{ClientId, Hub};
+use nova_icons::Icons;
+use nova_log::Logger;
 use nova_protocol::{FeatureState, Topic};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -59,10 +59,10 @@ impl nova_modules::App for Novad {
     type Topic = Topic;
     type Client = ClientId;
     type Running = Running;
-    type AppSources = apps::Sources;
+    type AppSources = nova_apps::Sources;
 
-    fn app_sources(env: &Env) -> apps::Sources {
-        apps::Sources::system(Arc::clone(env.icons))
+    fn app_sources(env: &Env) -> nova_apps::Sources {
+        nova_apps::Sources::system(Arc::clone(env.icons))
     }
 
     fn is_ready(features: &[FeatureState], id: &str) -> bool {

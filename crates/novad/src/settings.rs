@@ -8,14 +8,14 @@
 //! version after that, so a half-finished edit never blanks the UI. Either
 //! way the problem is logged.
 
-use crate::compositor::Compositor;
 use crate::config::{self, Config};
-use crate::hub::Hub;
-use crate::icons::Icons;
-use crate::logger::Logger;
+use crate::features;
 use crate::modules::{self, Context, Running};
-use crate::{apps, features, host, theme};
+use nova_compositor::Compositor;
 use nova_features::{Manifest, Selection};
+use nova_hub::Hub;
+use nova_icons::Icons;
+use nova_log::Logger;
 use nova_protocol::{Event, FeatureState, Host, Theme};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -72,7 +72,7 @@ impl Settings {
             path_var: sources.path_var.clone(),
             icons: Arc::clone(&sources.icons),
             compositor,
-            apps: apps::AppIndex::new(sources.modules.apps.clone(), &sources.path_var, Arc::clone(logger)),
+            apps: nova_apps::AppIndex::new(sources.modules.apps.clone(), &sources.path_var, Arc::clone(logger)),
         };
         let modules = Running::start(&context, &sources.modules, &config, &features);
         publish_features(&[], &features, hub, logger);
@@ -101,7 +101,7 @@ impl Settings {
             self.theme = theme;
         }
         if self.config.quick_settings != config.quick_settings {
-            hub.publish(&Event::Host(host::read(config.quick_settings.name.as_deref(), &sources.icons)));
+            hub.publish(&Event::Host(nova_host::read(config.quick_settings.name.as_deref(), &sources.icons)));
         }
         self.modules.apply(&self.context, &sources.modules, &config, &features);
         publish_features(&self.features, &features, hub, logger);
@@ -120,7 +120,7 @@ impl Settings {
     /// The quick settings header's facts, with the config's name for the
     /// user if it has one.
     pub fn host(&self) -> Host {
-        host::read(self.config.quick_settings.name.as_deref(), &self.context.icons)
+        nova_host::read(self.config.quick_settings.name.as_deref(), &self.context.icons)
     }
 
     /// Where screenshots are saved, from `config.toml`.
@@ -134,14 +134,14 @@ impl Settings {
     }
 
     /// The wallpapers set in `config.toml`.
-    pub fn wallpaper_config(&self) -> &config::WallpaperConfig {
+    pub fn wallpaper_config(&self) -> &nova_wallpaper::WallpaperConfig {
         &self.config.wallpaper
     }
 }
 
 /// The theme `config` picks, its problems logged.
 fn resolve_theme(sources: &Sources, config: &Config, logger: &Logger) -> Theme {
-    let (theme, problems) = theme::resolve(&sources.themes_dir, &config.theme);
+    let (theme, problems) = nova_theme::resolve(&sources.themes_dir, &config.theme);
     for problem in problems {
         logger.warn("theme", &problem);
     }

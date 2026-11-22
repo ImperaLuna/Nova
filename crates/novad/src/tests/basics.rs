@@ -32,7 +32,7 @@ fn subscribing_to_the_theme_sends_its_colors() {
     client.request(1, "subscribe", Some(json!({"topics": ["theme"]})));
     let event = client.next();
     assert_eq!(event["event"], "theme");
-    assert_eq!(event["data"]["id"], theme::DEFAULT_THEME_ID);
+    assert_eq!(event["data"]["id"], nova_theme::DEFAULT_THEME_ID);
     assert_eq!(event["data"]["mode"], "dark");
     assert_eq!(event["data"]["colors"]["primary"], "#FD7014");
 }
@@ -102,7 +102,7 @@ fn unknown_fields_and_other_versions_are_refused() {
 fn oversized_requests_close_the_connection() {
     let novad = TestDaemon::start("oversized", None);
     let mut client = novad.connect();
-    let huge = "x".repeat(usize::try_from(server::MAX_REQUEST_BYTES).unwrap() + 10);
+    let huge = "x".repeat(usize::try_from(nova_socket::MAX_REQUEST_BYTES).unwrap() + 10);
     // novad may hang up before it has read the whole line, and a write it
     // stops reading mustn't hang the test.
     client.writer.set_write_timeout(Some(Duration::from_secs(10))).unwrap();
@@ -124,11 +124,11 @@ fn a_client_that_stops_reading_is_disconnected() {
     let mut stalled = novad.connect();
     stalled.request(1, "subscribe", Some(json!({"topics": ["logs"]})));
     // Far more entries than the socket buffer and the queue hold together.
-    for entry in 0..crate::hub::MAX_QUEUED_MESSAGES * 8 {
+    for entry in 0..nova_hub::MAX_QUEUED_MESSAGES * 8 {
         novad.daemon.logger.info("test", &format!("entry {entry}"));
     }
     let delivered = stalled.lines.by_ref().map_while(Result::ok).count();
-    assert!(delivered < crate::hub::MAX_QUEUED_MESSAGES * 8, "the stalled client was never cut off");
+    assert!(delivered < nova_hub::MAX_QUEUED_MESSAGES * 8, "the stalled client was never cut off");
     let mut other = novad.connect();
     assert_eq!(other.request(1, "ping", None)["result"], "pong");
 }
@@ -140,12 +140,12 @@ fn a_client_that_stalls_with_its_socket_full_is_disconnected() {
     stalled.request(1, "subscribe", Some(json!({"topics": ["logs"]})));
     // Fills the socket buffer many times over but not the queue, so only the
     // write deadline can cut the client off.
-    let entries = crate::hub::MAX_QUEUED_MESSAGES / 2;
+    let entries = nova_hub::MAX_QUEUED_MESSAGES / 2;
     let padding = "x".repeat(1024);
     for entry in 0..entries {
         novad.daemon.logger.info("test", &format!("entry {entry} {padding}"));
     }
-    std::thread::sleep(server::WRITE_TIMEOUT * 3);
+    std::thread::sleep(nova_socket::WRITE_TIMEOUT * 3);
     // Without the deadline everything arrives and the connection stays open.
     stalled.writer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
     let delivered = stalled.lines.by_ref().map_while(Result::ok).count();
@@ -157,7 +157,7 @@ fn a_client_that_stalls_with_its_socket_full_is_disconnected() {
 #[test]
 fn a_second_novad_on_the_same_socket_is_refused() {
     let novad = TestDaemon::start("twice", None);
-    let error = server::bind(&novad.socket).unwrap_err();
+    let error = nova_socket::bind(&novad.socket).unwrap_err();
     assert_eq!(error.kind(), std::io::ErrorKind::AddrInUse);
 }
 
