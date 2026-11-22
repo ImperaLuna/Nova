@@ -144,7 +144,7 @@ fn a_client_that_stalls_with_its_socket_full_is_disconnected() {
     for entry in 0..entries {
         novad.daemon.logger.info("test", &format!("entry {entry} {padding}"));
     }
-    std::thread::sleep(nova_socket::WRITE_TIMEOUT * 3);
+    nova_test_support::settle(nova_socket::WRITE_TIMEOUT * 3);
     // Without the deadline everything arrives and the connection stays open.
     stalled.writer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
     let delivered = stalled.lines.by_ref().map_while(Result::ok).count();
@@ -304,12 +304,10 @@ fn the_ui_runs_only_while_a_feature_with_a_ui_is_on() {
 }
 
 fn wait_for_status(client: &mut Client, done: impl Fn(&Status) -> bool) -> Status {
-    for attempt in 0..100 {
+    let mut attempt = 0;
+    nova_test_support::eventually(Duration::from_secs(5), "the status", || {
+        attempt += 1;
         let status: Status = serde_json::from_value(client.request(attempt, "status", None)["result"].clone()).unwrap();
-        if done(&status) {
-            return status;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    panic!("status never got there");
+        done(&status).then_some(status)
+    })
 }

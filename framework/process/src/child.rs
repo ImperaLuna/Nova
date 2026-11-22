@@ -9,13 +9,12 @@
 use nova_base::lock;
 use std::collections::VecDeque;
 use std::io::Read;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, ChildStderr, Command, ExitStatus, Output, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-/// How often a running child is checked on until it exits.
-const EXIT_POLL: Duration = Duration::from_millis(10);
 /// The most of a child's error output kept for its error message.
 const MAX_ERROR_BYTES: usize = 4096;
 /// How long error output is read for once the child has exited: a process
@@ -23,18 +22,45 @@ const MAX_ERROR_BYTES: usize = 4096;
 pub const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// `child`'s exit status if it exits within `timeout`, else `None` with the
-/// child still running (and unreaped).
+/// child still running (and unreaped). Waits on the child's pidfd, which
+/// becomes readable when it exits.
 pub fn wait_within(child: &mut Child, timeout: Duration) -> std::io::Result<Option<ExitStatus>> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        if let Some(status) = child.try_wait()? {
-            return Ok(Some(status));
-        }
-        if Instant::now() >= deadline {
-            return Ok(None);
-        }
-        std::thread::sleep(EXIT_POLL);
+    if let Some(status) = child.try_wait()? {
+        return Ok(Some(status));
     }
+    let exited = pidfd(child)?;
+    let deadline = Instant::now() + timeout;
+    let mut poll = libc::pollfd { fd: exited.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        // Rounded up, so it never wakes just short of the deadline.
+        let millis = libc::c_int::try_from(left.as_micros().div_ceil(1000)).unwrap_or(libc::c_int::MAX);
+        // SAFETY: `poll` is one valid pollfd for the whole call.
+        let ready = unsafe { libc::poll(&mut poll, 1, millis) };
+        if ready < 0 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(error);
+        }
+        if ready > 0 || left.is_zero() {
+            return child.try_wait();
+        }
+    }
+}
+
+/// A pidfd for `child`, readable once it exits.
+fn pidfd(child: &Child) -> std::io::Result<OwnedFd> {
+    let pid = libc::pid_t::try_from(child.id()).map_err(std::io::Error::other)?;
+    // SAFETY: pidfd_open takes a pid and flags, and no pointers.
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let fd = libc::c_int::try_from(fd).map_err(std::io::Error::other)?;
+    // SAFETY: the kernel just opened `fd` for us, and nothing else owns it.
+    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 
 /// Runs `command` to the end and returns its exit status, its output and
@@ -243,6 +269,15 @@ mod tests {
         kill_and_reap(&mut child);
         let mut quick = Command::new("true").spawn().unwrap();
         assert!(wait_within(&mut quick, Duration::from_secs(5)).unwrap().is_some_and(|status| status.success()));
+    }
+
+    #[test]
+    fn waiting_ends_when_the_child_exits_not_at_the_deadline() {
+        let timeout = Duration::from_secs(30);
+        let mut child = Command::new("sleep").arg("0.1").spawn().unwrap();
+        let started = Instant::now();
+        assert!(wait_within(&mut child, timeout).unwrap().is_some_and(|status| status.success()));
+        assert!(started.elapsed() < timeout / 2, "woken by the exit: {:?}", started.elapsed());
     }
 
     #[test]

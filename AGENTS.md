@@ -234,6 +234,7 @@ same lints and limits, so both repos read the same.
 |---|---|
 | An exception is `#[expect]` with a reason, never `#[allow]` | Clippy `allow_attributes`, `allow_attributes_without_reason` |
 | Small functions: at most 80 lines | Clippy `too_many_lines` (`clippy.toml`) |
+| No polling: a wait is on a channel or event, with a timeout | Clippy `disallowed-methods` (`std::thread::sleep`); retries against what sends no event wait in `nova_base::backoff::wait_out`, tests in `nova_test_support::settle` |
 
 ## State, threads and files
 

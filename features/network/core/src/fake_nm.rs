@@ -407,7 +407,7 @@ impl FakeNm {
         let device = device.to_owned();
         // After the reply, as NetworkManager's own state changes come.
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            nova_test_support::settle(std::time::Duration::from_millis(50));
             let fake = FakeNm { connection, state };
             if works {
                 fake.connected(&finishing, &device, &ssid);

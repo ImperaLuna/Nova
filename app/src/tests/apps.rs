@@ -187,10 +187,7 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     );
     let event = client.launcher_until(|event| !event["recent"].as_array().unwrap().is_empty());
     assert_eq!(event["recent"], json!(["touch.desktop"]));
-    let ran = (0..100).any(|_| {
-        std::thread::sleep(Duration::from_millis(50));
-        marker.exists()
-    });
+    let ran = nova_test_support::holds_within(Duration::from_secs(5), || marker.exists());
     assert!(ran, "the app didn't run");
     assert!(novad.dir.join(";").exists(), "`;` reached touch as a file name, not a shell");
 
@@ -209,8 +206,7 @@ fn launching_runs_the_app_without_a_shell_and_makes_it_recent() {
     client.launcher_until(|event| event["recent"] == json!(["other.desktop", "touch.desktop"]));
     // Another session, away from novad's terminal (an app touching it would
     // be stopped as a background job): stat's 6th field, after the name.
-    let copied = (0..100).find_map(|_| {
-        std::thread::sleep(Duration::from_millis(50));
+    let copied = nova_test_support::found_within(Duration::from_secs(5), || {
         std::fs::read_to_string(&stat).ok().filter(|text| text.ends_with('\n'))
     });
     let copied = copied.expect("the app didn't run");
@@ -240,13 +236,12 @@ fn a_launched_app_outlives_the_request_that_started_it() {
         client.request(2, "launcher_run", Some(json!({"provider": "apps", "id": "doomed.desktop"})))["result"],
         Value::Null
     );
-    let pid = (0..100).find_map(|_| {
-        std::thread::sleep(Duration::from_millis(50));
+    let pid = nova_test_support::found_within(Duration::from_secs(5), || {
         std::fs::read_to_string(&pid_file).ok().and_then(|text| text.trim().parse::<i32>().ok())
     });
     let pid = pid.expect("the app didn't run");
     drop(client);
-    std::thread::sleep(Duration::from_millis(500));
+    nova_test_support::settle(Duration::from_millis(500));
     let status = std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
     let field = |name: &str| {
         status.lines().find_map(|line| line.strip_prefix(name)).map(str::trim).unwrap_or_default().to_owned()
@@ -287,10 +282,7 @@ fn focus_the_recorded_window(
 
     let fresh = json!({"provider": "apps", "id": "second.desktop", "output": output, "new_window": true});
     assert_eq!(client.request(3, "launcher_run", Some(fresh))["result"], Value::Null);
-    let ran = (0..100).any(|_| {
-        std::thread::sleep(Duration::from_millis(50));
-        marker.exists()
-    });
+    let ran = nova_test_support::holds_within(Duration::from_secs(5), || marker.exists());
     assert_eq!(compositor.actions(), actions, "a new window leaves the open one alone");
     let shown =
         desktop["outputs"].as_array().unwrap().iter().find(|o| o["name"] == output.as_str()).unwrap()["workspaces"]
@@ -446,10 +438,7 @@ fn launching_a_tray_only_app_activates_its_item_then_starts_it_when_no_window_sh
 
 /// Whether the app that touches `marker` ran, waiting up to 5 s for it.
 fn ran(marker: &std::path::Path) -> bool {
-    (0..100).any(|_| {
-        std::thread::sleep(Duration::from_millis(50));
-        marker.exists()
-    })
+    nova_test_support::holds_within(Duration::from_secs(5), || marker.exists())
 }
 
 #[test]
@@ -603,10 +592,7 @@ fn launching_an_app_whose_tray_icon_has_only_a_menu_starts_it_again_and_focuses_
     assert!(marker.exists(), "its icon can't show its window, so the app is started again");
     let focused = json!({"Action": {"FocusWindow": {"id": 9}}});
     // The launcher heard back once the app was started; focusing follows.
-    let deadline = std::time::Instant::now() + nova_launcher::STARTED_WINDOW_WAIT;
-    while compositor.actions().is_empty() && std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    nova_test_support::holds_within(nova_launcher::STARTED_WINDOW_WAIT, || !compositor.actions().is_empty());
     assert_eq!(compositor.actions(), [focused.to_string()], "the window it shows takes focus");
 }
 
@@ -665,7 +651,7 @@ fn a_window_shown_from_a_tray_menu_takes_focus() {
     // Any entry of an app with a window open, like pausing a song, leaves it be.
     let picked = client.request(4, "tray_menu_picked", Some(json!({"address": second})));
     assert_eq!(picked["result"], Value::Null, "{picked}");
-    std::thread::sleep(Duration::from_millis(500));
+    nova_test_support::settle(Duration::from_millis(500));
     assert_eq!(compositor.actions(), [focused.to_string()], "no other window took focus");
 }
 

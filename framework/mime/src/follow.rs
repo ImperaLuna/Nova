@@ -174,7 +174,7 @@ mod tests {
         std::fs::write(&file, b"x").unwrap();
         mime.stop();
         rewrite(&dir.join("mime"), "globs2", "50:image/x-other:*.png\n");
-        std::thread::sleep(watch_points::SETTLE * 2);
+        nova_test_support::settle(watch_points::SETTLE * 2);
         assert_eq!(type_of(&mime, &file), "image/png");
     }
 }

@@ -194,7 +194,7 @@ mod tests {
         assert_ne!(first, second);
         x11.stop();
         wait_until(Duration::from_secs(5), "stopping to end it", || !alive(second));
-        std::thread::sleep(Restarts::FIRST + Duration::from_millis(200));
+        nova_test_support::settle(Restarts::FIRST + Duration::from_millis(200));
         assert_eq!(fixture.runs(2).len(), 2, "nothing starts after stop");
     }
 
@@ -204,7 +204,7 @@ mod tests {
         let other = fixture.bus.connect();
         zbus::block_on(other.request_name(BUS_NAME)).unwrap();
         let x11 = fixture.start();
-        std::thread::sleep(Duration::from_millis(500));
+        nova_test_support::settle(Duration::from_millis(500));
         assert!(!fixture.dir.join("runs").exists(), "the other copy keeps the X11 tray");
         x11.stop();
     }
