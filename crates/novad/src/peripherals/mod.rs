@@ -52,8 +52,8 @@ mod upower;
 use crate::hub::{ClientId, Hub};
 use crate::lock;
 use crate::logger::Logger;
-use crate::notifications::Notifications;
 use crate::session_bus::Bus;
+use nova_notifications::Notifications;
 use nova_protocol::{
     Event, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource, Peripherals as PeripheralsEvent,
 };
@@ -484,7 +484,9 @@ impl crate::modules::Module for Peripherals {
     }
 
     fn linked(&self, running: &crate::modules::Running) {
-        self.set_notifications(running.get::<Notifications>().as_ref());
+        self.set_notifications(
+            running.get::<crate::notifications::Notifications>().as_ref().map(|running| running.core()),
+        );
     }
 
     fn send_state(&self, client: ClientId) {

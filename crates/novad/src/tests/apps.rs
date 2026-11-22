@@ -676,9 +676,9 @@ fn notify(connection: &zbus::Connection, app: &str, entry: &str) -> u32 {
     let sent = (app, 0u32, "", "Mara", "hi", vec!["default", "Open", "reply", "Reply"], hints, -1i32);
     let path = "/org/freedesktop/Notifications";
     let reply = zbus::block_on(connection.call_method(
-        Some(notifications::BUS_NAME),
+        Some(nova_notifications::BUS_NAME),
         path,
-        Some(notifications::BUS_NAME),
+        Some(nova_notifications::BUS_NAME),
         "Notify",
         &sent,
     ))

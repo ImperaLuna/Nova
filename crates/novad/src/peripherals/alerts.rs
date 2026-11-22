@@ -18,10 +18,8 @@
 //! ([`row_of`]).
 
 use super::{names_match, same_kind};
-use crate::notifications::Own;
-use nova_protocol::{
-    Battery, BatteryLevel, Notification, NotificationDevice, Peripheral, PeripheralKind, PeripheralLink,
-};
+use nova_notifications_api::{Notification, NotificationDevice, Own};
+use nova_protocol::{Battery, BatteryLevel, Peripheral, PeripheralKind, PeripheralLink};
 use std::collections::HashMap;
 
 /// The percents alerted at, highest first; the last one is critical.

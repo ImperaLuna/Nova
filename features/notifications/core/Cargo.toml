@@ -1,0 +1,50 @@
+# Allowed outside crates:
+# - futures-core
+# - jiff
+# - png
+# - serde
+# - serde_json
+# - zbus
+#
+# Allowed workspace crates:
+# - nova-apps
+# - nova-base
+# - nova-carrier
+# - nova-hub
+# - nova-icons
+# - nova-log
+# - nova-notifications-api
+# - nova-session-bus
+
+[package]
+name = "nova-notifications"
+description = "The session's notification server: keeps apps' notifications for the list and the pop-ups, with do not disturb and muted apps"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-notifications-api.workspace = true
+nova-apps.workspace = true
+nova-base.workspace = true
+nova-carrier.workspace = true
+nova-hub.workspace = true
+nova-icons.workspace = true
+nova-log.workspace = true
+nova-session-bus.workspace = true
+futures-core.workspace = true
+jiff.workspace = true
+png.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+nova-apps = { workspace = true, features = ["test-support"] }
+nova-hub = { workspace = true, features = ["test-support"] }
+nova-session-bus = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true
