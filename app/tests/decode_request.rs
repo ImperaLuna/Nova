@@ -3,6 +3,8 @@
 //! and hostile input must only ever give an error, and the valid requests
 //! that do decode must be exactly what a client meant to send.
 
+#![expect(clippy::unwrap_used, clippy::expect_used, reason = "test setup should fail loudly")]
+
 use nova_ai_usage_api::{AiProvider, UsageLimit, UsageWindow};
 use nova_carrier::{PROTOCOL_VERSION, Request, encode};
 use nova_daemon_info::{Command, topics};

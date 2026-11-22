@@ -70,6 +70,7 @@ fn read_theme(dir: &Path, id: &str) -> Result<(String, ThemeFile), String> {
     Ok((id.into(), file))
 }
 
+#[expect(clippy::expect_used, reason = "the file is compiled in and the_built_in_fallback_parses parses it")]
 fn default_theme_file() -> ThemeFile {
     toml::from_str(DEFAULT_THEME_FILE).expect("themes/carbonfox.toml is valid (the tests load it)")
 }

@@ -22,6 +22,7 @@
 mod app;
 pub use app::candidates;
 #[cfg(any(test, feature = "test-support"))]
+#[expect(clippy::unwrap_used, reason = "test helpers fail the test that calls them, loudly")]
 pub mod test_items;
 #[cfg(test)]
 mod tests;

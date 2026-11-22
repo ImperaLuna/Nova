@@ -176,6 +176,7 @@ impl Hub {
 /// markers are skipped. For tests that read a service's events the way a
 /// connection would.
 #[cfg(any(test, feature = "test-support"))]
+#[expect(clippy::panic, reason = "a test helper fails the test that calls it, loudly")]
 pub fn next_event(queue: &Receiver<Outgoing>, wait: std::time::Duration) -> serde_json::Value {
     let deadline = std::time::Instant::now() + wait;
     loop {
@@ -192,6 +193,7 @@ pub fn next_event(queue: &Receiver<Outgoing>, wait: std::time::Duration) -> serd
 
 /// What a client was sent, as a JSON event, or None for a flush marker.
 #[cfg(any(test, feature = "test-support"))]
+#[expect(clippy::unwrap_used, reason = "a test helper fails the test that calls it, loudly")]
 fn sent_event(sent: Outgoing) -> Option<serde_json::Value> {
     match sent {
         Outgoing::Line(line) => Some(serde_json::from_str(&line).unwrap()),
@@ -202,6 +204,7 @@ fn sent_event(sent: Outgoing) -> Option<serde_json::Value> {
 /// The data of the next event called `name` in a client's queue, skipping
 /// others, like [`next_event`].
 #[cfg(any(test, feature = "test-support"))]
+#[expect(clippy::panic, reason = "a test helper fails the test that calls it, loudly")]
 pub fn next_named(queue: &Receiver<Outgoing>, name: &str, wait: std::time::Duration) -> serde_json::Value {
     named_within(queue, name, wait).unwrap_or_else(|| panic!("no {name} event in time"))
 }
