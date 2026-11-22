@@ -1,3 +1,33 @@
+# Allowed outside crates:
+# - aes
+# - base64
+# - cbc
+# - clap
+# - flate2
+# - futures-core
+# - imagesize
+# - jiff
+# - libc
+# - lzma-rust2
+# - md-5
+# - pbkdf2
+# - png
+# - ruzstd
+# - serde
+# - serde_json
+# - sha1
+# - tar
+# - toml
+# - ureq
+# - zbus
+# - zip
+#
+# Allowed workspace crates:
+# - nova-features
+# - nova-paths
+# - nova-protocol
+# - nova-quickshell
+
 [package]
 name = "novad"
 description = "Nova's background daemon"

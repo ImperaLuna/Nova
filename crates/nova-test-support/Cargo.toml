@@ -1,3 +1,7 @@
+# Allowed outside crates: none
+#
+# Allowed workspace crates: none
+
 [package]
 name = "nova-test-support"
 description = "Helpers Nova's tests share: temporary folders, fake programs, waiting for a condition"
