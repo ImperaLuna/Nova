@@ -108,3 +108,11 @@ nova-x11-tray = { path = "features/x11-tray/core" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+
+# Restriction picks, the same as Nova Files' (AGENTS.md, Rules and their
+# checks). clippy.toml exempts tests.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"

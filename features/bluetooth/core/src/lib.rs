@@ -600,10 +600,29 @@ impl Shared {
         lock(&self.state).calls.clone().ok_or_else(not_followed)
     }
 
-    /// Puts `ask` to the user about the device at `path`. `wait`: the agent
-    /// waits for the answer in the returned slot, until
-    /// [`agent::ANSWER_TIMEOUT`]. `None` for a device BlueZ hasn't listed.
-    fn ask(&self, path: &str, ask: PairingAsk, wait: bool) -> Option<(u64, Option<Arc<Slot>>)> {
+    /// Puts `ask` to the user about the device at `path`: the agent waits
+    /// for the answer in the returned slot, until [`agent::ANSWER_TIMEOUT`].
+    /// `None` for a device BlueZ hasn't listed.
+    fn ask(&self, path: &str, ask: PairingAsk) -> Option<(u64, Arc<Slot>)> {
+        let slot = Arc::new(Slot::default());
+        let id = self.pose(path, ask, Some(Arc::clone(&slot)))?;
+        let timeout = Arc::clone(&slot);
+        std::thread::spawn(move || {
+            std::thread::sleep(agent::ANSWER_TIMEOUT);
+            timeout.resolve(Reply::TimedOut);
+        });
+        Some((id, slot))
+    }
+
+    /// Shows `ask` (a code to compare or type) about the device at `path`,
+    /// with no answer to wait for.
+    fn show(&self, path: &str, ask: PairingAsk) {
+        self.pose(path, ask, None);
+    }
+
+    /// Makes `ask` the question shown, answered in `slot` if it waits for
+    /// one; its id, or `None` for a device BlueZ hasn't listed.
+    fn pose(&self, path: &str, ask: PairingAsk, slot: Option<Arc<Slot>>) -> Option<u64> {
         let mut state = lock(&self.state);
         let address = state.objects.address(path)?.to_uppercase();
         // BlueZ asks one thing at a time: an older question is over.
@@ -613,17 +632,9 @@ impl Shared {
         state.last_request += 1;
         let id = state.last_request;
         let incoming = state.busy.get(&address) != Some(&BluetoothStatus::Pairing);
-        let slot = wait.then(|| Arc::new(Slot::default()));
-        state.pairing = Some(Asked { request: PairingRequest { id, address, ask, incoming }, slot: slot.clone() });
+        state.pairing = Some(Asked { request: PairingRequest { id, address, ask, incoming }, slot });
         self.publish(&mut state);
-        if let Some(slot) = &slot {
-            let slot = Arc::clone(slot);
-            std::thread::spawn(move || {
-                std::thread::sleep(agent::ANSWER_TIMEOUT);
-                slot.resolve(Reply::TimedOut);
-            });
-        }
-        Some((id, slot))
+        Some(id)
     }
 
     /// Question `id` has its reply: it's no longer shown.
