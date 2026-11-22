@@ -96,15 +96,37 @@ pub fn fake_path(bin: &Path, tools: &[&str]) -> String {
 
 /// Checks `check` until it gives a value or `timeout` passes, then panics
 /// with `what` (what the test was waiting for).
-pub fn eventually<T>(timeout: Duration, what: &str, mut check: impl FnMut() -> Option<T>) -> T {
+pub fn eventually<T>(timeout: Duration, what: &str, check: impl FnMut() -> Option<T>) -> T {
+    found_within(timeout, check).unwrap_or_else(|| panic!("waited {} s for: {what}", timeout.as_secs_f32()))
+}
+
+/// What `check` gives once it gives something, or `None` once `timeout`
+/// passes without.
+pub fn found_within<T>(timeout: Duration, mut check: impl FnMut() -> Option<T>) -> Option<T> {
     let deadline = Instant::now() + timeout;
     loop {
         if let Some(value) = check() {
-            return value;
+            return Some(value);
         }
-        assert!(Instant::now() < deadline, "waited {} s for: {what}", timeout.as_secs_f32());
-        std::thread::sleep(POLL);
+        if Instant::now() >= deadline {
+            return None;
+        }
+        settle(POLL);
     }
+}
+
+/// Whether `check` comes true within `timeout`. A `false` took the whole
+/// `timeout`, so it also says nothing happened in that time.
+pub fn holds_within(timeout: Duration, mut check: impl FnMut() -> bool) -> bool {
+    found_within(timeout, || check().then_some(())).is_some()
+}
+
+/// Waits out `time`, for a test that checks nothing happens within it, or
+/// that paces what it does. The one place tests wait on the clock: a wait
+/// for something to happen is [`eventually`], [`found_within`] or
+/// [`holds_within`].
+pub fn settle(time: Duration) {
+    std::thread::sleep(time);
 }
 
 /// Waits until `check` is true, like [`eventually`].

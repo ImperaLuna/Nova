@@ -333,7 +333,7 @@ mod tests {
         // Without an overflow, `read` would wait forever once the queue is empty.
         let stopper = watcher.stopper();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(5));
+            nova_test_support::settle(std::time::Duration::from_secs(5));
             stopper.stop();
         });
         let overflowed = std::iter::from_fn(|| watcher.read().unwrap()).any(|changes| changes.overflowed);

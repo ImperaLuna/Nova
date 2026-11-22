@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// `nova daemon`'s arguments, parsed on their own.
 #[derive(clap::Parser)]
@@ -336,14 +336,9 @@ impl DaemonProcess {
     }
 
     fn connect(&self) -> UnixStream {
-        let started = Instant::now();
-        loop {
-            if let Ok(stream) = UnixStream::connect(self.socket()) {
-                return stream;
-            }
-            assert!(started.elapsed() < Duration::from_secs(10), "the daemon never listened");
-            std::thread::sleep(Duration::from_millis(50));
-        }
+        nova_test_support::eventually(Duration::from_secs(10), "the daemon to listen", || {
+            UnixStream::connect(self.socket()).ok()
+        })
     }
 
     /// Waits for the daemon to exit on its own and checks it cleaned up.
