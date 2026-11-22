@@ -49,11 +49,9 @@ pub fn needs_ui(manifests: &[Manifest], features: &[FeatureState]) -> bool {
     manifests.iter().any(|manifest| manifest.has_ui() && is_ready(features, &manifest.id))
 }
 
-/// The error for a request that needs feature `id` while it's not ready
-/// (off, missing what it needs, or stopped by a reload).
-pub fn not_ready(id: &str) -> String {
-    format!("the {id} feature isn't ready (see `nova status`)")
-}
+// The error for a request that needs a feature that isn't ready is the
+// framework's, so a feature's core gives the same one.
+pub use nova_modules::not_ready;
 
 #[cfg(test)]
 mod tests {
