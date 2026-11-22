@@ -10,6 +10,7 @@
 # - nova-carrier
 # - nova-features
 # - nova-launcher-api
+# - nova-notifications-api
 # - nova-paths
 # - nova-power-api
 # - nova-protocol
@@ -37,6 +38,7 @@ nova-protocol.workspace = true
 nova-carrier.workspace = true
 nova-launcher-api.workspace = true
 nova-network-api.workspace = true
+nova-notifications-api.workspace = true
 nova-power-api.workspace = true
 nova-resources-api.workspace = true
 nova-tray-api.workspace = true

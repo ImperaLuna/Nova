@@ -38,6 +38,8 @@
 # - nova-modules
 # - nova-network
 # - nova-network-api
+# - nova-notifications
+# - nova-notifications-api
 # - nova-paths
 # - nova-power
 # - nova-power-api
@@ -83,6 +85,8 @@ nova-launcher.workspace = true
 nova-launcher-api.workspace = true
 nova-network.workspace = true
 nova-network-api.workspace = true
+nova-notifications.workspace = true
+nova-notifications-api.workspace = true
 nova-power.workspace = true
 nova-power-api.workspace = true
 nova-resources.workspace = true

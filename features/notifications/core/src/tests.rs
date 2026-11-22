@@ -2,10 +2,9 @@
 //! test, with apps that send notifications the way libnotify does.
 
 use super::*;
-use crate::hub::{ClientQueue, Outgoing};
-use crate::session_bus::TestBus;
 use futures_core::Stream;
-use nova_protocol::topics;
+use nova_hub::{ClientQueue, Outgoing};
+use nova_session_bus::TestBus;
 use nova_test_support::{TempDir, wait_until};
 use serde_json::{Value, json};
 use std::future::poll_fn;
@@ -36,7 +35,7 @@ impl Fixture {
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let id = hub.register(queue);
-        hub.subscribe(id, topics::NOTIFICATIONS);
+        hub.subscribe(id, nova_notifications_api::TOPIC);
         Self { dir, bus, hub, logger, ui, client: id, _ui_stream: ui_stream }
     }
 
@@ -58,7 +57,7 @@ impl Fixture {
             bus: Bus::Address(self.bus.address.clone()),
             state_file: self.dir.join("notifications.json"),
             images: self.dir.join("images"),
-            icons: Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[self.dir.join("share")], None)),
+            icons: Arc::new(Icons::new(nova_icons::HICOLOR.into(), &[self.dir.join("share")], None)),
         };
         let apps = apps.unwrap_or_else(|| AppIndex::of(None, &self.logger));
         Notifications::start(sources, apps, Arc::clone(&self.hub), Arc::clone(&self.logger))
@@ -101,7 +100,7 @@ impl Fixture {
 
     /// The next event called `name`, skipping others.
     fn next(&self, name: &str) -> Value {
-        crate::hub::next_named(&self.ui, name, WAIT)
+        nova_hub::next_named(&self.ui, name, WAIT)
     }
 
     /// Who owns the server's name on the bus, if anyone.

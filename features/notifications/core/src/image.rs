@@ -2,7 +2,7 @@
 //! `image-data` hint, written out as a PNG the UI can load; or a file, by
 //! path or `file://` URI, which the UI loads as it is.
 
-use crate::state_file;
+use nova_base::state_file;
 use std::path::{Path, PathBuf};
 
 /// The pixels in an `image-data` hint: width, height, row stride, whether

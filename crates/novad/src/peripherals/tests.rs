@@ -22,9 +22,9 @@
 use super::*;
 use crate::hub::{ClientQueue, Outgoing};
 use crate::icons::Icons;
-use crate::notifications::{self, Notifications};
 use crate::session_bus::TestBus;
 use fake_hidraw::FakeHidraw;
+use nova_notifications::{self as notifications, Notifications};
 use nova_protocol::{LogLevel, topics};
 use nova_test_support::{TempDir, wait_until, write_program};
 use serde::Deserialize;
@@ -144,7 +144,7 @@ impl Fixture {
             Arc::clone(&self.hub),
             Arc::clone(&self.logger),
         );
-        self.hub.subscribe(self.client, topics::NOTIFICATIONS);
+        self.hub.subscribe(self.client, nova_notifications_api::TOPIC);
         peripherals.set_notifications(Some(&server));
         server
     }

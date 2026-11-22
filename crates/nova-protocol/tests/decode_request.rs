@@ -100,6 +100,21 @@ fn launcher_request() -> impl Strategy<Value = nova_carrier::Request<nova_launch
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
+/// The notifications feature's commands, which it owns (`nova-notifications-api`).
+fn notifications_request() -> impl Strategy<Value = nova_carrier::Request<nova_notifications_api::Command>> {
+    use nova_notifications_api::Command;
+    let command = prop_oneof![
+        (any::<u32>(), proptest::option::of(".*")).prop_map(|(id, output)| Command::OpenNotification { id, output }),
+        (any::<u32>(), ".*").prop_map(|(id, action)| Command::NotificationAction { id, action }),
+        any::<u32>().prop_map(|id| Command::DismissNotification { id }),
+        proptest::option::of(".*").prop_map(|app| Command::ClearNotifications { app }),
+        Just(Command::ReadNotifications),
+        any::<bool>().prop_map(|on| Command::SetDoNotDisturb { on }),
+        (".*", any::<bool>()).prop_map(|(app, muted)| Command::MuteNotificationApp { app, muted }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
 /// The resources feature's commands, which it owns (`nova-resources-api`).
 fn resources_request() -> impl Strategy<Value = nova_carrier::Request<nova_resources_api::Command>> {
     use nova_resources_api::Command;
@@ -239,6 +254,12 @@ proptest! {
 
     #[test]
     fn every_network_request_round_trips(request in network_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_notifications_request_round_trips(request in notifications_request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
     }
