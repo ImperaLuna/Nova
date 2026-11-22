@@ -1,0 +1,35 @@
+# Allowed outside crates:
+# - futures-core
+# - zbus
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-launcher-api
+# - nova-log
+# - nova-mime
+# - nova-session-bus
+
+[package]
+name = "nova-nova-files"
+description = "The launcher's Files mode through the Nova Files app: finding, opening and showing files over D-Bus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-launcher-api.workspace = true
+nova-base.workspace = true
+nova-log.workspace = true
+nova-mime.workspace = true
+nova-session-bus.workspace = true
+futures-core.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+nova-carrier.workspace = true
+nova-session-bus = { workspace = true, features = ["test-support"] }
+nova-test-support.workspace = true
+
+[lints]
+workspace = true

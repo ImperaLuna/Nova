@@ -3,14 +3,10 @@
 
 use super::stand_in::{StandIn, client, nova_files};
 use super::{NovaFiles, STAGES_WAIT};
-use crate::lock;
-use crate::logger::Logger;
-use crate::session_bus::TestBus;
-use nova_launcher::providers::{Provider, Run};
-use nova_protocol::LogLevel;
+use nova_base::lock;
+use nova_session_bus::TestBus;
 use nova_test_support::TempDir;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -89,11 +85,8 @@ fn a_feature_that_cannot_connect_says_so() {
 }
 
 /// Runs `id` as the launcher does, Shift+Enter when `other_way`.
-fn run(provider: &dyn Provider, dir: &TempDir, id: &str, other_way: bool) -> Result<(), String> {
-    let logger = Logger::open(&dir.join("run-logs"), LogLevel::Debug, false, Arc::default()).unwrap();
-    let how =
-        Run { output: None, new_window: other_way, compositor: None, tray: None, logger: &logger, underway: &|| {} };
-    provider.run(id, &how)
+fn run(files: &NovaFiles, id: &str, other_way: bool) -> Result<(), String> {
+    files.run_item(id, other_way)
 }
 
 #[test]
@@ -108,9 +101,8 @@ fn the_launchers_files_mode_finds_opens_and_shows_files_through_nova_files() {
     let bus = TestBus::start(&dir.join("bus"));
     let stand_in = StandIn::serve(&bus.address, &root.display().to_string());
     let files = nova_files(&bus.address, &dir, Some(home.clone()), false);
-    assert!(files.own_mode());
 
-    let found = Provider::search(&files, "kit").unwrap();
+    let found = files.items("kit").unwrap();
     let names: Vec<String> = found.iter().map(|item| item.name.iter().map(|run| run.text.as_str()).collect()).collect();
     assert_eq!(names, ["kitchen.txt", "kitcen notes.md"]);
     let folder = &found[0];
@@ -119,18 +111,18 @@ fn the_launchers_files_mode_finds_opens_and_shows_files_through_nova_files() {
     assert_eq!(folder.description.as_deref(), Some("~/.notes"));
     let file = folder.file.as_ref().unwrap();
     assert!(file.dir && file.hidden, "a folder, inside a dot folder");
-    assert_eq!(file.mime, crate::mime::DIRECTORY);
+    assert_eq!(file.mime, nova_mime::DIRECTORY);
     assert_eq!(file.completion, "~/.notes/kitchen.txt/");
     assert!(!found[1].file.as_ref().unwrap().dir);
 
     // Gone since it was found: left out.
     std::fs::remove_file(root.join("kitcen notes.md")).unwrap();
-    assert_eq!(Provider::search(&files, "kit").unwrap().len(), 1);
+    assert_eq!(files.items("kit").unwrap().len(), 1);
 
-    run(&files, &dir, &found[1].id, false).unwrap();
-    run(&files, &dir, &found[1].id, true).unwrap();
-    assert!(run(&files, &dir, "relative/path", false).is_err(), "only paths Nova Files found run");
-    assert!(run(&files, &dir, "/home/me/../../etc/shadow", false).is_err());
+    run(&files, &found[1].id, false).unwrap();
+    run(&files, &found[1].id, true).unwrap();
+    assert!(run(&files, "relative/path", false).is_err(), "only paths Nova Files found run");
+    assert!(run(&files, "/home/me/../../etc/shadow", false).is_err());
     let asked = lock(&stand_in.asked);
     assert_eq!(asked.opened, [found[1].id.clone()]);
     assert_eq!(asked.shown, [found[1].id.clone()]);
@@ -149,12 +141,12 @@ fn in_the_launcher_mode_folders_open_in_the_users_file_manager() {
     let bus = TestBus::start(&dir.join("bus"));
     let stand_in = StandIn::serve(&bus.address, &root.display().to_string());
     let files = nova_files(&bus.address, &dir, None, true);
-    let found = Provider::search(&files, "kit").unwrap();
+    let found = files.items("kit").unwrap();
     let (folder, file) = (&found[0].id, &found[1].id);
 
-    run(&files, &dir, folder, false).unwrap();
-    run(&files, &dir, file, false).unwrap();
-    run(&files, &dir, file, true).unwrap();
+    run(&files, folder, false).unwrap();
+    run(&files, file, false).unwrap();
+    run(&files, file, true).unwrap();
     let asked = lock(&stand_in.asked);
     let uri = |path: &str| super::client::file_uri(std::path::Path::new(path));
     assert_eq!(asked.folders_elsewhere, [uri(folder)]);
@@ -164,45 +156,11 @@ fn in_the_launcher_mode_folders_open_in_the_users_file_manager() {
     assert!(asked.shown.is_empty(), "no Nova Files window");
 }
 
-/// Switching between a mode with windows and the launcher mode restarts
-/// the module, so it routes folders the new way; other changes keep it.
-#[test]
-fn a_change_to_or_from_the_launcher_mode_restarts_the_module() {
-    use crate::modules::{Module, Reconfigure};
-    let dir = TempDir::new("nova-files-reconfigure");
-    let state = |mode: &str| nova_protocol::FeatureState {
-        id: super::ID.into(),
-        status: nova_protocol::FeatureStatus::Ready,
-        missing: vec![],
-        slots: vec![],
-        mode: Some(mode.to_string()),
-    };
-    let with_windows =
-        NovaFiles { client: Err("no bus".into()), mime: super::stand_in::mime(&dir), home: None, own_windows: true };
-    assert_eq!(with_windows.reconfigure(&(), &(), &[state("full")]), Reconfigure::InPlace);
-    assert_eq!(with_windows.reconfigure(&(), &(), &[state(super::LAUNCHER_MODE)]), Reconfigure::Restart);
-}
-
-#[test]
-fn only_the_launcher_mode_goes_without_nova_files_windows() {
-    let state = |mode: Option<&str>| nova_protocol::FeatureState {
-        id: super::ID.into(),
-        status: nova_protocol::FeatureStatus::Ready,
-        missing: vec![],
-        slots: vec![],
-        mode: mode.map(str::to_string),
-    };
-    assert!(super::own_windows(&[state(Some("basic"))]));
-    assert!(super::own_windows(&[state(Some("full"))]));
-    assert!(super::own_windows(&[state(None)]));
-    assert!(!super::own_windows(&[state(Some(super::LAUNCHER_MODE))]));
-}
-
 #[test]
 fn a_search_nova_files_cannot_run_answers_with_why() {
     let fixture = Fixture::new("launcher-failed");
     let files = nova_files(&fixture.bus.address, &fixture._dir, None, false);
-    let found = Provider::search(&files, "broken").unwrap();
+    let found = files.items("broken").unwrap();
     assert_eq!(found.len(), 1);
     assert!(found[0].name[0].text.contains("index-failed"));
     assert!(found[0].id.is_empty() && found[0].file.is_none(), "nothing to run");
@@ -221,7 +179,7 @@ fn a_typed_path_completes_through_nova_files_in_its_own_spelling() {
     let stand_in = StandIn::serve(&bus.address, &root.display().to_string());
     let files = nova_files(&bus.address, &dir, Some(home.clone()), false);
 
-    let found = Provider::search(&files, "~/.notes/Kit").unwrap();
+    let found = files.items("~/.notes/Kit").unwrap();
     let completions: Vec<&str> = found.iter().map(|item| item.file.as_ref().unwrap().completion.as_str()).collect();
     assert_eq!(completions, ["~/.notes/kitchen.txt/", "~/.notes/kitcen notes.md"]);
     assert_eq!(found[0].id, root.join("kitchen.txt").display().to_string());
@@ -229,12 +187,12 @@ fn a_typed_path_completes_through_nova_files_in_its_own_spelling() {
     assert_eq!(found[0].description.as_deref(), Some("~/.notes"));
 
     let typed = format!("{}/kit", root.display());
-    let found = Provider::search(&files, &typed).unwrap();
+    let found = files.items(&typed).unwrap();
     assert_eq!(found[0].file.as_ref().unwrap().completion, format!("{}/kitchen.txt/", root.display()));
 
-    let failed = Provider::search(&files, "~nobody/kit").unwrap();
+    let failed = files.items("~nobody/kit").unwrap();
     assert!(failed[0].id.is_empty() && failed[0].file.is_none(), "one item saying why");
-    assert!(Provider::search(&files, "~/Nowhere").unwrap().is_empty());
+    assert!(files.items("~/Nowhere").unwrap().is_empty());
 
     let asked = lock(&stand_in.asked);
     assert!(asked.searches.is_empty(), "typed paths aren't name searches");
