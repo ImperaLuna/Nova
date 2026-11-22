@@ -6,9 +6,7 @@
 #
 # Two checks:
 #   - The layout: a crate's folder decides what it may use (layer_of below),
-#     so a new crate can't opt out. crates/ is the old layout, emptied by the
-#     novad move (IMP-368); its crates may use anything, but nothing in the
-#     new folders may use them.
+#     so a new crate can't opt out.
 #   - Allowed lists: each Cargo.toml lists the outside and workspace crates it
 #     may use under its "# Allowed outside crates:" and "# Allowed workspace
 #     crates:" lines, one "# - name" line each, or "none" on the header line,
@@ -36,7 +34,7 @@ rules_doc="AGENTS.md (Layout)"
 FRAMEWORK_FOR_API=(app-info carrier daemon-info desktop-info host-info theme-info)
 FRAMEWORK_FOR_CORE=(app-info apps base carrier compositor daemon-info desktop-info host-info hub icons inotify log mime modules paths process session-bus settings socket theme-info watch)
 FRAMEWORK_FOR_UI=()
-FRAMEWORK_FOR_FRONT=(app-info base carrier daemon-info desktop-info host-info paths theme-info)
+FRAMEWORK_FOR_FRONT=(app-info base carrier daemon-info desktop-info host-info paths quickshell theme-info)
 
 # The dev-dependencies a feature's crate may have on another feature's core
 # or ui (rule T1), as "<crate> <dependency>", each with its reason. Every
@@ -57,7 +55,6 @@ layer_of() {
   IFS=/ read -r -a parts <<<"$1"
   case ${#parts[@]}:${parts[0]} in
     1:app) echo app ;;
-    2:crates) echo old ;;
     2:fronts) echo front ;;
     2:framework) echo "framework ${parts[1]}" ;;
     3:features)
@@ -98,16 +95,12 @@ rule_break() {
   read -r -a from <<<"$(layer_of "$1")"
   read -r -a to <<<"$(layer_of "$2")"
   if [[ ${from[0]} == unknown || ${to[0]} == unknown ]]; then
-    echo "rule C1: every crate sits in app/, framework/<name>/, features/<name>/{api,core,ui}/, fronts/<name>/ or the old crates/."
+    echo "rule C1: every crate sits in app/, framework/<name>/, features/<name>/{api,core,ui}/, or fronts/<name>/."
     return
   fi
   case ${from[0]} in
-    app | old) return ;;
+    app) return ;;
   esac
-  if [[ ${to[0]} == old ]]; then
-    echo "rule M1: only crates/ and app/ use a crate still in crates/. Move what it needs into framework/ (or its feature) first."
-    return
-  fi
   case ${from[0]} in
     framework)
       if [[ ${to[0]} == framework ]]; then
@@ -202,10 +195,8 @@ expect_rule features/media/core framework/server F2
 expect_rule features/media/api framework/server F1
 expect_rule features/media/core fronts/cli F4
 expect_rule features/media/core app F4
-expect_rule features/media/core crates/nova-cli M1
 expect_rule framework/server features/media/api W1
 expect_rule framework/server fronts/cli W1
-expect_rule framework/server crates/nova-cli M1
 expect_rule framework/server framework/paths ""
 expect_rule framework/theme-info framework/carrier ""
 expect_rule framework/daemon-info framework/desktop-info ""
@@ -214,8 +205,8 @@ expect_rule framework/theme-info features/media/api W1
 expect_rule fronts/cli features/media/api ""
 expect_rule fronts/cli features/media/core W2
 expect_rule fronts/cli framework/server W2
-expect_rule crates/nova-cli features/media/core ""
-expect_rule crates/nova-cli framework/server ""
+expect_rule fronts/cli app W2
+expect_rule crates/nova-cli framework/server C1
 expect_rule app features/media/core ""
 expect_rule tools/thing framework/server C1
 expect_rule features/media framework/server C1
@@ -292,13 +283,13 @@ while IFS= read -r manifest; do
     echo "$folder: not a workspace member (rule C2). Add its folder, or its kind's glob, to members in Cargo.toml."
     status=1
   fi
-done < <(find app crates framework features fronts \( -name target -o -name tests \) -prune -o -name Cargo.toml -print 2>/dev/null | sort)
+done < <(find app framework features fronts \( -name target -o -name tests \) -prune -o -name Cargo.toml -print 2>/dev/null | sort)
 
 for name in "${!folder_of[@]}"; do
   folder=${folder_of[$name]}
   read -r -a layer <<<"$(layer_of "$folder")"
   if [[ ${layer[0]} == unknown ]]; then
-    echo "$name ($folder): rule C1: every crate sits in app/, framework/<name>/, features/<name>/{api,core,ui}/, fronts/<name>/ or the old crates/. See $rules_doc."
+    echo "$name ($folder): rule C1: every crate sits in app/, framework/<name>/, features/<name>/{api,core,ui}/, or fronts/<name>/. See $rules_doc."
     status=1
   elif [[ ${layer[0]} == feature && ! -f features/${layer[1]}/feature.toml ]]; then
     echo "$name ($folder): rule C3: a feature's crates sit beside its features/${layer[1]}/feature.toml. Name the folder after the feature's id."

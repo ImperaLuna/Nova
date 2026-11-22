@@ -2,8 +2,9 @@
 //! when it's installed and the daemon is the one on the default socket (the
 //! unit's), otherwise by running novad directly.
 
-use crate::client::Client;
-use crate::{status, systemd};
+use crate::systemd;
+use nova_cli::client::{Client, RESTART_COMMAND};
+use nova_cli::status;
 use nova_daemon_info::Command;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -17,8 +18,6 @@ const WAIT_STEP: Duration = Duration::from_millis(100);
 const DAEMON_COMMAND: &str = "daemon";
 /// novad's option to start the login apps, which systemd starts otherwise.
 const AUTOSTART_OPTION: &str = "--autostart";
-/// What to run to restart Nova, for hints.
-pub const RESTART_COMMAND: &str = "nova restart";
 
 /// `nova`: starts Nova, or shows its status when it already runs.
 pub fn start(socket: &Path) -> Result<(), String> {

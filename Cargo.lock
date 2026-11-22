@@ -851,17 +851,13 @@ name = "nova-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "clap_complete",
- "insta",
  "jiff",
  "nova-ai-usage-api",
- "nova-app-info",
  "nova-bar-api",
  "nova-bluetooth-api",
  "nova-carrier",
  "nova-daemon-info",
  "nova-desktop-info",
- "nova-features",
  "nova-host-info",
  "nova-launcher-api",
  "nova-lock-api",
@@ -881,10 +877,8 @@ dependencies = [
  "nova-volume-osd-api",
  "nova-wallpaper-api",
  "nova-workspaces-api",
- "novad",
  "serde",
  "serde_json",
- "shlex",
 ]
 
 [[package]]
@@ -1493,6 +1487,7 @@ name = "novad"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "clap_complete",
  "flate2",
  "futures-core",
  "insta",
@@ -1509,6 +1504,7 @@ dependencies = [
  "nova-bluetooth",
  "nova-bluetooth-api",
  "nova-carrier",
+ "nova-cli",
  "nova-compositor",
  "nova-daemon-info",
  "nova-desktop-info",
@@ -1563,6 +1559,7 @@ dependencies = [
  "ruzstd",
  "serde",
  "serde_json",
+ "shlex",
  "tar",
  "toml",
  "ureq",

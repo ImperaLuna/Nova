@@ -5,10 +5,9 @@
 //! Facts are gathered first (`Facts::gather`), then each check turns its
 //! facts into a line, so the checks are tested on made-up facts.
 
-use crate::client::{Client, Unreachable};
 use crate::host::{Distro, Host};
-use crate::lifecycle::RESTART_COMMAND;
 use crate::login_apps::{self, AUTOSTART_DIR, StartupCommand};
+use nova_cli::client::{Client, RESTART_COMMAND, Unreachable};
 use nova_daemon_info::{FeatureState, FeatureStatus};
 use nova_features::Gpu;
 use nova_quickshell::Range;
@@ -48,7 +47,7 @@ impl fmt::Display for Line {
             Level::Warn => "warn",
             Level::Fail => "FAIL",
         };
-        write!(f, "{level:<6}{:<12}{}", self.check, crate::status::printable(&self.detail))
+        write!(f, "{level:<6}{:<12}{}", self.check, nova_cli::status::printable(&self.detail))
     }
 }
 
@@ -111,7 +110,7 @@ fn reach(socket: &Path) -> Daemon {
             let tray = events
                 .into_iter()
                 .find_map(|event| match event {
-                    crate::client::Sent::Tray(nova_tray_api::Event::Tray(tray)) => Some(tray.items),
+                    nova_cli::client::Sent::Tray(nova_tray_api::Event::Tray(tray)) => Some(tray.items),
                     _ => None,
                 })
                 .unwrap_or_default();
@@ -539,7 +538,7 @@ mod tests {
         let root = FakeRoot::new("doctor-settings", "ID=arch\n", &[], false);
         let config = root.0.join("config.toml");
         std::fs::write(&config, "[theme]\nname = \"nope\"\n").unwrap();
-        let themes = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../themes");
+        let themes = Path::new(env!("CARGO_MANIFEST_DIR")).join("../themes");
         let problems = checks::read_config(&config, &themes).unwrap();
         assert!(problems.iter().any(|problem| problem.contains("nope")), "{problems:?}");
         assert_eq!(config_line(&config, &themes).level, Level::Warn);
@@ -549,7 +548,7 @@ mod tests {
 
         let selection = root.0.join("features.toml");
         std::fs::write(&selection, "enabled = [\"recording\"]\n").unwrap();
-        let manifests = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let manifests = Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
         let states = features(&manifests, std::slice::from_ref(&selection), "/nonexistent").unwrap();
         let recording = states.iter().find(|state| state.id == "recording").unwrap();
         assert_eq!(recording.status, FeatureStatus::MissingDeps);

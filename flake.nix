@@ -54,13 +54,11 @@
             ./Cargo.lock
             ./deny.toml
             ./rustfmt.toml
-            ./crates
             ./features
-            # The novad move's folder kinds (AGENTS.md, Layout); each appears
-            # with its first crate.
-            (lib.fileset.maybeMissing ./framework)
-            (lib.fileset.maybeMissing ./fronts)
-            (lib.fileset.maybeMissing ./app)
+            # The crate folder kinds (AGENTS.md, Layout).
+            ./framework
+            ./fronts
+            ./app
             ./packaging
             ./themes
             ./ui/theme/Tokens.qml

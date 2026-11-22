@@ -32,7 +32,7 @@ topics=("$@")
 
 checkout=$("$(dirname "$0")/worktree" "$branch" | tail -n 1)
 echo "building $branch..." >&2
-in_dev_shell "$checkout" cargo build --quiet -p nova-cli --target-dir "$checkout/target"
+in_dev_shell "$checkout" cargo build --quiet -p novad --bin nova --target-dir "$checkout/target"
 nova=$checkout/target/debug/nova
 
 run_dir=$(mktemp -d "${XDG_RUNTIME_DIR:?}/nova-isolated.XXXXXX")
