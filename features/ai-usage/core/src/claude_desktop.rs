@@ -213,6 +213,7 @@ pub fn seal(prefix: &[u8], password: &[u8], plain: &Value) -> String {
 /// The app's config under `config_home` with `cache` sealed as it is
 /// without a keyring, so reading it never asks one.
 #[cfg(any(test, feature = "test-support"))]
+#[expect(clippy::unwrap_used, reason = "a test helper fails the test that calls it, loudly")]
 pub fn write_unsealed_config(config_home: &Path, cache: &Value) {
     let path = config_in(config_home);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();

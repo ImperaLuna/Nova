@@ -233,8 +233,9 @@ same lints and limits, so both repos read the same.
 | Rule | Enforced by |
 |---|---|
 | An exception is `#[expect]` with a reason, never `#[allow]` | Clippy `allow_attributes`, `allow_attributes_without_reason` |
-| Shallow code: blocks nest at most 5 deep | Clippy `excessive_nesting` (`clippy.toml`) |
+| No `unwrap`, `expect`, `panic`, `todo` or `unimplemented` outside tests | Clippy restriction lints; `clippy.toml` exempts tests |
 | Small functions: at most 5 arguments | Clippy `too_many_arguments` (`clippy.toml`) |
+| Shallow code: blocks nest at most 5 deep | Clippy `excessive_nesting` (`clippy.toml`) |
 | No polling: a wait is on a channel or event, with a timeout | Clippy `disallowed-methods` (`std::thread::sleep`); retries against what sends no event wait in `nova_base::backoff::wait_out`, tests in `nova_test_support::settle` |
 
 ## State, threads and files

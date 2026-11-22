@@ -3,6 +3,8 @@
 //! put on a `PATH`, and waiting until something happens. Small helpers, not
 //! a fixture framework: each test still builds its own real setup.
 
+#![expect(clippy::panic, clippy::unwrap_used, reason = "test helpers fail the test that calls them, loudly")]
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};

@@ -22,8 +22,7 @@ pub struct ToggleArgs {
 
 /// Accepts exactly the panels `nova-bar-api` lists, and lists them in help.
 fn panel_names() -> impl TypedValueParser<Value = Panel> {
-    PossibleValuesParser::new(Panel::ALL.map(Panel::name))
-        .map(|name| name.parse().expect("PossibleValuesParser only passes listed names"))
+    PossibleValuesParser::new(Panel::ALL.map(Panel::name)).try_map(|name| name.parse::<Panel>())
 }
 
 pub fn run(args: &ToggleArgs, socket: &Path) -> Result<(), String> {

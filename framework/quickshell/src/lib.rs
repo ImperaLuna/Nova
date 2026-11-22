@@ -57,6 +57,7 @@ pub struct Range {
 
 impl Range {
     /// The range Nova is built with.
+    #[expect(clippy::expect_used, reason = "the file is compiled in and this crate's tests parse it")]
     pub fn supported() -> Self {
         // A test reads this same file, so a bad edit fails the build's tests.
         Self::parse(RANGE_FILE).expect("packaging/quickshell.toml is checked by this crate's tests")

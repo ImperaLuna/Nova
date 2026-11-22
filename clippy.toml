@@ -1,6 +1,11 @@
 # Clippy settings for every crate, the same as Nova Files' clippy.toml
 # (AGENTS.md, Rules and their checks).
 
+# Tests may unwrap, expect and panic.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+
 # Size limits.
 too-many-arguments-threshold = 5
 excessive-nesting-threshold = 5

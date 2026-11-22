@@ -1,6 +1,8 @@
 //! Integration tests: the real `nova` binary against a real daemon (in this
 //! process, without the UI) over a real socket.
 
+#![expect(clippy::unwrap_used, reason = "test setup should fail loudly")]
+
 use nova_daemon_info::{Status, UiState};
 use nova_test_support::TempDir;
 use std::io::{BufRead, BufReader, Write};
