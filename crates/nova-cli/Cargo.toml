@@ -10,6 +10,7 @@
 # - nova-ai-usage-api
 # - nova-carrier
 # - nova-features
+# - nova-launcher-api
 # - nova-paths
 # - nova-protocol
 # - nova-quickshell
@@ -35,6 +36,7 @@ path = "src/main.rs"
 nova-protocol.workspace = true
 nova-carrier.workspace = true
 nova-ai-usage-api.workspace = true
+nova-launcher-api.workspace = true
 nova-network-api.workspace = true
 nova-resources-api.workspace = true
 nova-tray-api.workspace = true

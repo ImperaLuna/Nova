@@ -12,11 +12,12 @@
 use crate::backoff::Backoff;
 use crate::logger::Logger;
 use crate::{child, lock};
+use nova_process::child::{describe_exit, stdout_within};
 use nova_protocol::{Crash, UI_LOG_SOURCE, UiState, UiStatus};
 use std::io::{BufRead, BufReader, Read};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
@@ -381,15 +382,6 @@ pub fn forward_lines(stream: impl Read + Send + 'static, logger: Arc<Logger>, so
     })
 }
 
-fn describe_exit(status: ExitStatus) -> String {
-    use std::os::unix::process::ExitStatusExt;
-    match (status.code(), status.signal()) {
-        (Some(code), _) => format!("exit code {code}"),
-        (None, Some(signal)) => format!("killed by signal {signal}"),
-        (None, None) => "unknown exit".into(),
-    }
-}
-
 fn quickshell_version(settings: &UiSettings, logger: &Logger) -> Option<String> {
     match read_quickshell_version(&settings.quickshell, &settings.path_var) {
         Ok(version) => {
@@ -418,16 +410,6 @@ pub fn read_quickshell_version(quickshell: &Path, path_var: &str) -> Result<Stri
         .nth(1)
         .map(str::to_owned)
         .ok_or_else(|| format!("{} --version gave no version", quickshell.display()))
-}
-
-/// What `command` prints when it succeeds within `timeout`. One that takes
-/// longer, printing or exiting, is killed and reaped.
-pub(crate) fn stdout_within(command: Command, timeout: Duration) -> std::io::Result<Vec<u8>> {
-    let output = child::output_within(command, timeout)?;
-    match output.status.success() {
-        true => Ok(output.stdout),
-        false => Err(std::io::Error::other(describe_exit(output.status))),
-    }
 }
 
 #[cfg(test)]

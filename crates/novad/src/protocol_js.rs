@@ -34,6 +34,7 @@ fn events() -> Vec<&'static str> {
     [
         tagged_names_of::<Event>("event"),
         tagged_names_of::<nova_ai_usage_api::Event>("event"),
+        tagged_names_of::<nova_launcher_api::Event>("event"),
         tagged_names_of::<nova_network_api::Event>("event"),
         tagged_names_of::<nova_resources_api::Event>("event"),
         tagged_names_of::<nova_tray_api::Event>("event"),
@@ -95,7 +96,11 @@ fn groups(features: &Path, current: &str) -> Vec<Group> {
         Group::new("step_workspace's directions (Step).", "STEP", names_of::<Step>()),
         Group::new("The volume keys a volume event carries (VolumeKey).", "VOLUME", names_of::<VolumeKey>()),
         Group { comment: "Feature ids (features/<id>/feature.toml).", prefix: "FEATURE", names: feature_ids(features) },
-        Group::new("Launcher providers built into novad (PROVIDER_*).", "PROVIDER", &[PROVIDER_APPS, PROVIDER_FILES]),
+        Group::new(
+            "Launcher providers built into novad (PROVIDER_*).",
+            "PROVIDER",
+            &[nova_launcher_api::PROVIDER_APPS, nova_launcher_api::PROVIDER_FILES],
+        ),
         Group::new("Power menu actions (PowerAction).", "POWER", names_of::<PowerAction>()),
         Group::new("What the capture toolbar takes (CaptureMode).", "CAPTURE", names_of::<CaptureMode>()),
         Group::new("The screenshot card's buttons (ScreenshotAction).", "SHOT", names_of::<ScreenshotAction>()),
@@ -109,7 +114,11 @@ fn groups(features: &Path, current: &str) -> Vec<Group> {
 fn limits() -> [(&'static str, u64, &'static str); 7] {
     let size = |limit: usize| u64::try_from(limit).unwrap();
     [
-        ("LAUNCHER_SEARCH_MAX_CHARS", size(LAUNCHER_SEARCH_MAX_CHARS), "novad refuses longer launcher_search queries."),
+        (
+            "LAUNCHER_SEARCH_MAX_CHARS",
+            size(nova_launcher_api::LAUNCHER_SEARCH_MAX_CHARS),
+            "novad refuses longer launcher_search queries.",
+        ),
         ("MEDIA_PLAYER_MAX_BYTES", size(MEDIA_PLAYER_MAX_BYTES), "novad refuses longer media player ids."),
         (
             "WIFI_PASSWORD_MAX_BYTES",
@@ -123,7 +132,7 @@ fn limits() -> [(&'static str, u64, &'static str); 7] {
         ),
         (
             "RAW_BYTE_BASE",
-            u64::from(RAW_BYTE_BASE),
+            u64::from(nova_launcher_api::RAW_BYTE_BASE),
             "Paths on the wire: this plus a byte (0x80 to 0xFF) stands for that byte of a name that isn't UTF-8.",
         ),
         ("REQUEST_MAX_BYTES", REQUEST_MAX_BYTES, "novad closes the connection on a longer request line."),
@@ -244,7 +253,7 @@ fn providers_are_manifest_views() {
                 .is_ok_and(|manifest| manifest.contains(&format!("view = \"{provider}\"")))
         })
     };
-    for provider in [PROVIDER_APPS, PROVIDER_FILES] {
+    for provider in [nova_launcher_api::PROVIDER_APPS, nova_launcher_api::PROVIDER_FILES] {
         assert!(slotted(provider), "no feature.toml slots in the {provider:?} provider");
     }
 }
