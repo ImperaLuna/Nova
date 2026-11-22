@@ -12,7 +12,7 @@
 //!
 //! Each item is published as an [`Event::Tray`] once its id and title are
 //! read, with the desktop app it belongs to (see `app`, found in the app
-//! index, `crate::apps`), for the launcher
+//! index, `nova_apps`), for the launcher
 //! to reopen an app that only sits in the tray. Items go when the bus name
 //! they're on goes. The tray takes at most [`MAX_ITEMS`] items, and checks
 //! what apps send it, since anything on the session bus can register:
@@ -21,16 +21,19 @@
 
 mod app;
 pub use app::candidates;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_items;
 #[cfg(test)]
-pub mod tests;
+mod tests;
 
-use crate::apps::AppIndex;
-use crate::hub::{ClientId, Hub};
-use crate::logger::Logger;
-use crate::session_bus::{self, Bus, Stop};
-use crate::{lock, state_file};
 use futures_core::Stream;
-use nova_protocol::{App, Event, LogLevel, Tray as TrayEvent, TrayItem};
+use nova_apps::{App, AppIndex};
+use nova_base::{lock, state_file};
+use nova_carrier::log::LogLevel;
+use nova_hub::{ClientId, Hub};
+use nova_log::Logger;
+use nova_session_bus::{self as session_bus, Bus, Stop};
+use nova_tray_api::{Event, Tray as TrayEvent, TrayItem};
 use std::future::poll_fn;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -87,7 +90,7 @@ impl Sources {
         Self {
             bus: Bus::Session,
             state_file: state_dir.join("tray.json"),
-            proc_root: PathBuf::from(crate::procfs::PROC),
+            proc_root: PathBuf::from(nova_process::procfs::PROC),
         }
     }
 }
@@ -694,38 +697,4 @@ impl Watcher {
 
     #[zbus(signal)]
     async fn status_notifier_host_registered(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-}
-
-/// Started before the UI, which settings start ahead of, so apps it
-/// autostarts find the watcher. No options.
-impl crate::modules::Module for Tray {
-    type App = crate::modules::Novad;
-    const ID: &'static str = FEATURE_ID;
-    const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_protocol::topics::TRAY);
-    type Sources = Sources;
-    type Config = ();
-
-    fn sources(env: &crate::modules::Env) -> Sources {
-        Sources::new(&env.args.state_dir)
-    }
-
-    fn config(_: &crate::config::Config) {}
-
-    fn start(
-        ctx: &crate::modules::Context,
-        sources: &Sources,
-        (): &(),
-        _: &[nova_protocol::FeatureState],
-    ) -> Arc<Self> {
-        Self::start(sources.clone(), Arc::clone(&ctx.apps), Arc::clone(&ctx.hub), Arc::clone(&ctx.logger))
-    }
-
-    fn send_state(&self, client: ClientId) {
-        Self::send_state(self, client);
-    }
-
-    fn stop(&self) {
-        Self::stop(self);
-    }
 }

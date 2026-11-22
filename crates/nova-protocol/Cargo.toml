@@ -33,6 +33,7 @@ serde_json.workspace = true
 nova-network-api.workspace = true
 nova-notifications-api.workspace = true
 nova-resources-api.workspace = true
+nova-tray-api.workspace = true
 insta.workspace = true
 proptest.workspace = true
 
