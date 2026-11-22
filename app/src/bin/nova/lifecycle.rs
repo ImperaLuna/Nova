@@ -101,7 +101,7 @@ fn wait_until(what: &str, done: impl Fn() -> bool) -> Result<(), String> {
         if done() {
             return Ok(());
         }
-        std::thread::sleep(WAIT_STEP);
+        nova_base::backoff::wait_out(WAIT_STEP);
     }
     Err(format!(
         "gave up waiting for {what} after {} s. Run `nova logs --no-follow`, or `nova daemon` in a terminal to see why.",

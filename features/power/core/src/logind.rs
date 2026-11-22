@@ -26,6 +26,7 @@ use nova_log::Logger;
 use std::future::poll_fn;
 use std::pin::{Pin, pin};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
 use std::time::Duration;
@@ -119,7 +120,7 @@ fn keep_following(locking: &Locking, follower: Follower) {
             locking.logger.warn(LOG_SOURCE, &message);
             last_error = error;
         }
-        std::thread::sleep(wait);
+        nova_base::backoff::wait_out(wait);
     }
 }
 
@@ -178,13 +179,25 @@ async fn next(stream: &mut MessageStream) -> Option<zbus::Result<Message>> {
 /// stalled bus or logind ends this connection and the retry starts over.
 /// The wait for signals itself has no deadline.
 async fn within<T>(step: &str, future: impl Future<Output = zbus::Result<T>>) -> zbus::Result<T> {
+    within_for(step, SETUP_TIMEOUT, future).await
+}
+
+/// [`within`], with its timeout.
+async fn within_for<T>(
+    step: &str,
+    timeout: Duration,
+    future: impl Future<Output = zbus::Result<T>>,
+) -> zbus::Result<T> {
     let expired = Arc::new(Deadline::default());
     let timer = Arc::clone(&expired);
+    // Dropped once this returns, which ends the timer's wait early.
+    let (_finished, done) = mpsc::channel::<()>();
     std::thread::spawn(move || {
-        std::thread::sleep(SETUP_TIMEOUT);
-        timer.passed.store(true, Ordering::SeqCst);
-        if let Some(waker) = lock(&timer.waker).take() {
-            waker.wake();
+        if done.recv_timeout(timeout) == Err(RecvTimeoutError::Timeout) {
+            timer.passed.store(true, Ordering::SeqCst);
+            if let Some(waker) = lock(&timer.waker).take() {
+                waker.wake();
+            }
         }
     });
     let mut future = pin!(future);
@@ -197,7 +210,7 @@ async fn within<T>(step: &str, future: impl Future<Output = zbus::Result<T>>) ->
         match expired.passed.load(Ordering::SeqCst) {
             true => Poll::Ready(Err(zbus::Error::Failure(format!(
                 "logind didn't answer within {} s while {step}",
-                SETUP_TIMEOUT.as_secs()
+                timeout.as_secs()
             )))),
             false => Poll::Pending,
         }
@@ -274,4 +287,30 @@ fn release_once_locked(locking: &Locking, inhibitor: OwnedFd) {
         }
         drop(inhibitor);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    const LONG: Duration = Duration::from_secs(30);
+
+    #[test]
+    fn a_step_that_finishes_in_time_gives_its_result_at_once() {
+        let started = Instant::now();
+        let quick = async { Ok(7) };
+        assert_eq!(zbus::block_on(within_for("testing", LONG, quick)).unwrap(), 7);
+        assert!(started.elapsed() < LONG, "ended with the step, not the timeout");
+    }
+
+    #[test]
+    fn a_step_that_never_finishes_fails_at_the_timeout() {
+        let timeout = Duration::from_millis(50);
+        let started = Instant::now();
+        let stalled = std::future::pending::<zbus::Result<()>>();
+        let error = zbus::block_on(within_for("connecting", timeout, stalled)).unwrap_err();
+        assert!(error.to_string().contains("while connecting"), "{error}");
+        assert!(started.elapsed() >= timeout);
+    }
 }
