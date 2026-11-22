@@ -142,7 +142,7 @@ pub fn tray_apps<'a>(commands: &'a [StartupCommand], tray: &'a [TrayItem]) -> Ve
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nova_protocol::App;
+    use nova_app_info::App;
 
     fn programs(commands: Vec<StartupCommand>) -> Vec<(String, &'static str)> {
         commands.into_iter().map(|command| (command.program, command.source)).collect()

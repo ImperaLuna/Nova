@@ -6,7 +6,7 @@
 //! publishes an [`Event`] on [`TOPIC`] whenever a player comes, goes or
 //! changes. The work is `nova-media` (`features/media/core`).
 
-use nova_apps::App;
+use nova_app_info::App;
 use nova_carrier::{Published, Topic};
 use serde::{Deserialize, Serialize};
 

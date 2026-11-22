@@ -8,7 +8,7 @@
 //! socket (the launcher's Files mode) are wire text ([`wire_text`]). The
 //! work is `nova-launcher` (`features/launcher/core`).
 
-use nova_apps::App;
+use nova_app_info::App;
 use nova_carrier::{Published, Topic};
 use serde::{Deserialize, Serialize};
 

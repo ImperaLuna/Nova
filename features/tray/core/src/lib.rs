@@ -27,7 +27,8 @@ pub mod test_items;
 mod tests;
 
 use futures_core::Stream;
-use nova_apps::{App, AppIndex};
+use nova_app_info::App;
+use nova_apps::AppIndex;
 use nova_base::{lock, state_file};
 use nova_carrier::log::LogLevel;
 use nova_hub::{ClientId, Hub};

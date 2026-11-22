@@ -71,7 +71,10 @@ folders one feature at a time (IMP-368, the novad move); until then most of
 it is in `crates/`.
 
 - `framework/<name>/`: the shared part every feature plugs into. It never
-  names a feature.
+  names a feature. A lookup's wire types (`App`) sit in their own light
+  crate (`framework/app-info`: plain serde structs, nothing beyond serde
+  and `nova-base`), so api crates and fronts can carry them without the
+  lookup's code.
 - `features/<id>/api/`: the feature's own messages and types, what other
   crates may use. `features/<id>/core/`: its work, the part that talks to
   the system and draws nothing. `features/<id>/ui/`: reserved for the GPUI
@@ -130,8 +133,8 @@ assertions). The feature is `<id>` (its folder name), its crates
    "data"`) implementing `nova_carrier::Published`, its topics as `pub const
    TOPIC: Topic = Topic::named("<wire name>")` (the name `nova-protocol`'s
    `topics` constant had), and the types those carry. It uses only
-   `nova-carrier`, the framework lookup crates whose types its messages
-   carry (`FRAMEWORK_FOR_API`, like `nova-apps`' `App`), and other api
+   `nova-carrier`, the light type crates whose types its messages carry
+   (`FRAMEWORK_FOR_API`, like `nova-app-info`'s `App`), and other api
    crates. Done when the variants, the topic
    constant and the types are gone from `nova-protocol`, with nothing left
    pointing at them.

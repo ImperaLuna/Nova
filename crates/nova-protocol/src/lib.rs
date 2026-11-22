@@ -19,7 +19,6 @@ use std::str::FromStr;
 
 // The shared lookups' own types are the framework's (IMP-374), re-exported
 // so clients name them from here as before.
-pub use nova_apps::{APP_ICON_MAX_CHARS, App};
 pub use nova_compositor::{Capability, Desktop, FocusedWindow, Output, Step, Workspace, WorkspaceId};
 pub use nova_host::{Host, OperatingSystem};
 pub use nova_theme::{Color, Palette, Theme, ThemeMode};
@@ -327,6 +326,7 @@ impl nova_carrier::Published for Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nova_app_info::App;
     use nova_carrier::log::{LogEntry, LogLevel, Logs, UI_LOG_SOURCE};
     use nova_carrier::{Envelope, Outcome, Response, encode};
     use nova_media_api::Command as MediaCommand;

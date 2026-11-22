@@ -6,7 +6,7 @@
 //! after subscribing and whenever an item comes or goes. The work is
 //! `nova-tray` (`features/tray/core`).
 
-use nova_apps::App;
+use nova_app_info::App;
 use nova_carrier::{Published, Topic};
 use serde::{Deserialize, Serialize};
 

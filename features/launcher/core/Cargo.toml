@@ -4,6 +4,7 @@
 # - serde_json
 #
 # Allowed workspace crates:
+# - nova-app-info
 # - nova-apps
 # - nova-base
 # - nova-compositor
@@ -28,6 +29,7 @@ test-support = []
 
 [dependencies]
 nova-launcher-api.workspace = true
+nova-app-info.workspace = true
 nova-apps.workspace = true
 nova-base.workspace = true
 nova-compositor.workspace = true

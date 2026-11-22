@@ -2,7 +2,7 @@
 # - serde
 #
 # Allowed workspace crates:
-# - nova-apps
+# - nova-app-info
 # - nova-carrier
 
 [package]
@@ -14,7 +14,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-nova-apps.workspace = true
+nova-app-info.workspace = true
 nova-carrier.workspace = true
 serde.workspace = true
 

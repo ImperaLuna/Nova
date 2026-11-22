@@ -70,6 +70,8 @@ novad.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+# login_apps tests build the apps novad sends.
+nova-app-info.workspace = true
 nova-test-support.workspace = true
 
 [lints]
