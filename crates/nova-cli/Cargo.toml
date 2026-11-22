@@ -14,6 +14,7 @@
 # - nova-quickshell
 # - nova-network-api
 # - nova-resources-api
+# - nova-tray-api
 # - novad
 
 [package]
@@ -33,6 +34,7 @@ nova-protocol.workspace = true
 nova-carrier.workspace = true
 nova-network-api.workspace = true
 nova-resources-api.workspace = true
+nova-tray-api.workspace = true
 serde.workspace = true
 nova-features.workspace = true
 nova-paths.workspace = true
