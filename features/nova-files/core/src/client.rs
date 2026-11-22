@@ -8,9 +8,9 @@
 //! `org.freedesktop.FileManager1`, which takes `file://` URIs: Nautilus,
 //! Dolphin, Thunar and others serve it.
 
-use crate::lock;
-use crate::session_bus::{Bus, Stop};
 use futures_core::Stream;
+use nova_base::lock;
+use nova_session_bus::{Bus, Stop};
 use std::collections::HashMap;
 use std::future::poll_fn;
 use std::path::{Path, PathBuf};

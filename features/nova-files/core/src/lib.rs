@@ -1,6 +1,9 @@
-//! The standalone Nova Files app (feature `nova-files`): it answers the
-//! launcher's Files mode (`launcher.rs`), finding files by name and opening
-//! them or showing them in their folder.
+//! The standalone Nova Files app (feature `nova-files`, its provider view
+//! in `nova-nova-files-api`): it answers the launcher's Files mode
+//! (`launcher.rs`), finding files by name and opening them or showing them
+//! in their folder. novad's wiring runs it as a module and plugs it into
+//! the launcher as that view's provider, so neither feature names the
+//! other's code.
 //!
 //! Nova Files serves `io.github.ImperaLuna.NovaFiles.Search1` at its app id,
 //! which the bus starts it for (D-Bus activation) and which it leaves after
@@ -20,15 +23,15 @@
 //!
 //! One connection, kept while the feature runs, with one thread reading the
 //! signals and handing each stage to the search it belongs to. The shared
-//! MIME database (`crate::mime`) types what's found, for its icon.
+//! MIME database (`nova-mime`) types what's found, for its icon.
 
 mod client;
 mod launcher;
 
-use crate::mime::Mime;
-use crate::session_bus::Bus;
 use client::Client;
-use nova_protocol::FeatureState;
+use nova_log::Logger;
+use nova_mime::Mime;
+use nova_session_bus::Bus;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -91,55 +94,39 @@ impl NovaFiles {
         if self.own_windows { client.show_in_folder(path) } else { client.show_item_elsewhere(path) }
     }
 
-    fn client(&self) -> Result<&Client, String> {
-        self.client.as_ref().map_err(|e| format!("Nova Files isn't reachable: {e}"))
-    }
-}
-
-impl crate::modules::Module for NovaFiles {
-    type App = crate::modules::Novad;
-    const ID: &'static str = ID;
-    type Sources = Sources;
-    type Config = ();
-
-    fn sources(env: &crate::modules::Env) -> Sources {
-        let home = env.home.clone().filter(|home| home != Path::new("/"));
-        Sources { bus: Bus::Session, data_dirs: crate::data_dirs(), home }
-    }
-
-    fn config(_: &crate::config::Config) {}
-
-    fn start(ctx: &crate::modules::Context, sources: &Sources, _: &(), features: &[FeatureState]) -> Arc<Self> {
+    /// Connects to Nova Files on `sources`' bus, in a mode with its own
+    /// windows when `own_windows` (see [`windows_in`]). One it can't reach
+    /// is logged, and every search then says so.
+    pub fn start(sources: &Sources, own_windows: bool, logger: Arc<Logger>) -> Self {
         let client = Client::connect(&sources.bus, CALL_TIMEOUT);
         if let Err(e) = &client {
-            ctx.logger.warn(LOG_SOURCE, &format!("can't reach Nova Files, so the launcher finds no files: {e}"));
+            logger.warn(LOG_SOURCE, &format!("can't reach Nova Files, so the launcher finds no files: {e}"));
         }
-        let mime = Mime::follow(sources.data_dirs.clone(), Arc::clone(&ctx.logger));
-        Arc::new(Self { client, mime, home: sources.home.clone(), own_windows: own_windows(features) })
+        let mime = Mime::follow(sources.data_dirs.clone(), logger);
+        Self { client, mime, home: sources.home.clone(), own_windows }
     }
 
-    /// A mode change that adds or drops Nova Files' windows restarts the
-    /// module, which reads the mode when it starts.
-    fn reconfigure(&self, _: &(), _: &(), features: &[FeatureState]) -> crate::modules::Reconfigure {
-        if own_windows(features) == self.own_windows {
-            crate::modules::Reconfigure::InPlace
-        } else {
-            crate::modules::Reconfigure::Restart
-        }
+    /// Whether folders open in its own windows: what it started with.
+    pub fn own_windows(&self) -> bool {
+        self.own_windows
     }
 
-    fn stop(&self) {
+    /// Stops reading signals and following the MIME database.
+    pub fn stop(&self) {
         if let Ok(client) = &self.client {
             client.stop();
         }
         self.mime.stop();
     }
+
+    fn client(&self) -> Result<&Client, String> {
+        self.client.as_ref().map_err(|e| format!("Nova Files isn't reachable: {e}"))
+    }
 }
 
-/// Whether Nova Files opens its own windows in the mode `features` give
-/// it.
-fn own_windows(features: &[FeatureState]) -> bool {
-    let mode = features.iter().find(|feature| feature.id == ID).and_then(|feature| feature.mode.as_deref());
+/// Whether Nova Files opens its own windows in `mode`, the feature's mode:
+/// every mode but [`LAUNCHER_MODE`].
+pub fn windows_in(mode: Option<&str>) -> bool {
     mode != Some(LAUNCHER_MODE)
 }
 

@@ -72,7 +72,6 @@ use nova_apps as apps;
 use nova_compositor as compositor;
 use nova_host as host;
 use nova_icons as icons;
-use nova_mime as mime;
 use nova_paths::{data_dirs, package_prefixes};
 use nova_theme as theme;
 

@@ -1049,6 +1049,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-nova-files"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "nova-base",
+ "nova-carrier",
+ "nova-launcher-api",
+ "nova-log",
+ "nova-mime",
+ "nova-session-bus",
+ "nova-test-support",
+ "zbus",
+]
+
+[[package]]
+name = "nova-nova-files-api"
+version = "0.1.0"
+
+[[package]]
 name = "nova-paths"
 version = "0.1.0"
 dependencies = [
@@ -1135,6 +1154,7 @@ dependencies = [
  "nova-media-api",
  "nova-network-api",
  "nova-notifications-api",
+ "nova-nova-files-api",
  "nova-peripherals-api",
  "nova-power-api",
  "nova-resources-api",
@@ -1334,12 +1354,13 @@ dependencies = [
  "nova-log",
  "nova-media",
  "nova-media-api",
- "nova-mime",
  "nova-modules",
  "nova-network",
  "nova-network-api",
  "nova-notifications",
  "nova-notifications-api",
+ "nova-nova-files",
+ "nova-nova-files-api",
  "nova-paths",
  "nova-peripherals",
  "nova-peripherals-api",
