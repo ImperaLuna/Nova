@@ -13,6 +13,7 @@
 # - nova-paths
 # - nova-protocol
 # - nova-quickshell
+# - nova-network-api
 # - nova-resources-api
 # - novad
 
@@ -32,6 +33,7 @@ path = "src/main.rs"
 nova-protocol.workspace = true
 nova-carrier.workspace = true
 nova-launcher-api.workspace = true
+nova-network-api.workspace = true
 nova-resources-api.workspace = true
 serde.workspace = true
 nova-features.workspace = true

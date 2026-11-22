@@ -11,10 +11,10 @@
 //! Today's totals are saved to the state folder now and then and when the
 //! service stops, and start again at local midnight.
 
-use crate::hub::{ClientId, Hub};
-use crate::lock;
-use crate::logger::Logger;
-use nova_protocol::{Event, NETWORK_TRAFFIC_HISTORY_SECS, NETWORK_TRAFFIC_INTERVAL_SECS, NetworkTraffic};
+use nova_base::lock;
+use nova_hub::{ClientId, Hub};
+use nova_log::Logger;
+use nova_network_api::{Event, NETWORK_TRAFFIC_HISTORY_SECS, NETWORK_TRAFFIC_INTERVAL_SECS, NetworkTraffic};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -209,7 +209,7 @@ impl Shared {
         if state.today == state.saved {
             return;
         }
-        match crate::state_file::save(&self.paths.totals, &state.today) {
+        match nova_base::state_file::save(&self.paths.totals, &state.today) {
             Ok(()) => state.saved = state.today.clone(),
             Err(e) => self.logger.warn(LOG_SOURCE, &format!("can't save today's traffic: {e}")),
         }

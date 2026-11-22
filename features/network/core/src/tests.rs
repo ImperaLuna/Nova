@@ -10,9 +10,9 @@
 
 use super::fake_nm::FakeNm;
 use super::*;
-use crate::hub::{ClientQueue, Outgoing};
-use crate::session_bus::TestBus;
-use nova_protocol::{LogLevel, topics};
+use nova_carrier::log::LogLevel;
+use nova_hub::{ClientQueue, Outgoing};
+use nova_session_bus::TestBus;
 use nova_test_support::TempDir;
 use serde_json::{Value, json};
 use std::os::unix::net::UnixStream;
@@ -24,7 +24,7 @@ const WAIT: Duration = Duration::from_secs(15);
 const WIRED_DEVICE: &str = "/org/freedesktop/NetworkManager/Devices/2";
 
 fn recorded(name: &str) -> String {
-    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/network/recorded").join(name)).unwrap()
+    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/recorded").join(name)).unwrap()
 }
 
 struct Fixture {
@@ -46,7 +46,7 @@ impl Fixture {
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let client = hub.register(queue);
-        hub.subscribe(client, topics::NETWORK);
+        hub.subscribe(client, nova_network_api::TOPIC);
         Self { dir, bus, hub, logger, ui, client, _ui_stream: ui_stream }
     }
 
@@ -79,7 +79,7 @@ impl Fixture {
     }
 
     fn next(&self) -> Value {
-        crate::hub::next_named(&self.ui, "network", WAIT)
+        nova_hub::next_named(&self.ui, "network", WAIT)
     }
 
     /// The next network event that `wanted` holds for, skipping others.
@@ -88,7 +88,7 @@ impl Fixture {
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
             assert!(!left.is_zero(), "no network event with {what}");
-            let event = crate::hub::next_named(&self.ui, "network", left);
+            let event = nova_hub::next_named(&self.ui, "network", left);
             if wanted(&event) {
                 return event;
             }
@@ -99,8 +99,8 @@ impl Fixture {
     fn counters(&self, link: &str, down: u64, up: u64) {
         let statistics = self.dir.join("sys/class/net").join(link).join("statistics");
         std::fs::create_dir_all(&statistics).unwrap();
-        crate::state_file::write(&statistics.join("rx_bytes"), down.to_string().as_bytes()).unwrap();
-        crate::state_file::write(&statistics.join("tx_bytes"), up.to_string().as_bytes()).unwrap();
+        nova_base::state_file::write(&statistics.join("rx_bytes"), down.to_string().as_bytes()).unwrap();
+        nova_base::state_file::write(&statistics.join("tx_bytes"), up.to_string().as_bytes()).unwrap();
     }
 }
 
@@ -383,13 +383,13 @@ fn traffic_is_counted_over_the_links_while_watched() {
     // A look once the links are known sets where counting starts: the
     // second event is one (the first may be what was there before them).
     for _ in 0..2 {
-        crate::hub::next_named(&fixture.ui, "network_traffic", WAIT);
+        nova_hub::next_named(&fixture.ui, "network_traffic", WAIT);
     }
     fixture.counters("enp5s0", 3_000, 200);
     fixture.counters("wlp6s0", 9_000, 900);
     let deadline = Instant::now() + WAIT;
     let traffic = loop {
-        let traffic = crate::hub::next_named(&fixture.ui, "network_traffic", WAIT);
+        let traffic = nova_hub::next_named(&fixture.ui, "network_traffic", WAIT);
         if traffic["today_down"] != 0 || Instant::now() > deadline {
             break traffic;
         }

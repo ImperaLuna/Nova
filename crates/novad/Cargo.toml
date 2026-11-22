@@ -37,6 +37,8 @@
 # - nova-log
 # - nova-mime
 # - nova-modules
+# - nova-network
+# - nova-network-api
 # - nova-paths
 # - nova-process
 # - nova-protocol
@@ -73,6 +75,8 @@ nova-modules.workspace = true
 nova-settings.workspace = true
 nova-launcher.workspace = true
 nova-launcher-api.workspace = true
+nova-network.workspace = true
+nova-network-api.workspace = true
 nova-resources.workspace = true
 nova-resources-api.workspace = true
 nova-compositor.workspace = true
