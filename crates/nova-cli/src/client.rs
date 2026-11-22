@@ -168,6 +168,7 @@ pub enum Sent {
     Network(nova_network_api::Event),
     Notifications(nova_notifications_api::Event),
     Peripherals(nova_peripherals_api::Event),
+    Recording(nova_recording_api::Event),
     Resources(nova_resources_api::Event),
     Screenshot(nova_screenshot_api::Event),
     Tray(nova_tray_api::Event),

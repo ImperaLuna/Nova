@@ -8,7 +8,6 @@ use crate::hub::ClientId;
 use crate::{Daemon, lock};
 use nova_protocol::{Command, Event, Outcome, Panel, VolumeKey, topics};
 use nova_socket::{Answer, Caller, Router, done, value};
-use std::sync::Arc;
 
 /// The routes of every message novad serves. A moved feature adds its
 /// route in its place in the list below (by its feature name), and its
@@ -27,6 +26,7 @@ pub fn router() -> Router<Daemon> {
         .route::<nova_network_api::Command>(crate::network::answer, |_, _, _| {})
         .route::<nova_notifications_api::Command>(crate::notifications::answer, |_, _, _| {})
         .route::<nova_power_api::Command>(crate::power::answer, |_, _, _| {})
+        .route::<nova_recording_api::Command>(crate::recording::answer, |_, _, _| {})
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
         .route::<nova_screenshot_api::Command>(crate::screenshot::answer, |_, _, _| {})
         .route::<nova_tray_api::Command>(crate::tray::answer, |_, _, _| {})
@@ -101,27 +101,8 @@ impl<'a> Connection<'a> {
             }
             Command::Toggle { panel } => self.toggle(*panel),
             Command::Volume { key } => self.volume(*key),
-            Command::Record => {
-                done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().record()))
-            }
-            Command::StartRecording { output, region, audio } => {
-                return self.start_recording(output.clone(), *region, *audio);
-            }
-            // Even with the feature off, so a reload can't leave one running.
-            Command::StopRecording => done(self.recordings().stop()),
-            Command::PauseRecording { paused } => done(self.recordings().pause(*paused)),
-            Command::RecordingAction { id, action } => done(self.recordings().act(*id, *action)),
-            Command::OpenLog => {
-                done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().open_log()))
-            }
         };
         Answer::Now(outcome)
-    }
-
-    // Kept for novad's life, whatever the settings.
-
-    fn recordings(&self) -> Arc<crate::recording::Recordings> {
-        Arc::clone(&self.daemon.kept.recordings)
     }
 
     fn compositor(&self) -> Result<&crate::compositor::Compositor, String> {
@@ -134,21 +115,6 @@ impl<'a> Connection<'a> {
             true => Ok(()),
             false => Err(crate::features::not_ready(id)),
         }
-    }
-
-    /// Starts the recording the UI's picker asked for.
-    fn start_recording(
-        &self,
-        output: String,
-        region: Option<nova_protocol::LayoutRect>,
-        audio: nova_protocol::RecordAudio,
-    ) -> Answer {
-        if let Err(e) = self.require_feature(crate::recording::FEATURE_ID) {
-            return Answer::Now(Outcome::Error(e));
-        }
-        let recordings = self.recordings();
-        let folder = lock(&self.daemon.settings).recording_folder();
-        Answer::later(move || done(folder.and_then(|folder| recordings.start(&output, region, audio, &folder))))
     }
 
     /// Tells the UI to open or close `panel` on the focused output. The UI
@@ -218,12 +184,6 @@ impl<'a> Connection<'a> {
             | Command::FocusWorkspace { .. }
             | Command::StepWorkspace { .. }
             | Command::Toggle { .. }
-            | Command::Record
-            | Command::StartRecording { .. }
-            | Command::StopRecording
-            | Command::PauseRecording { .. }
-            | Command::RecordingAction { .. }
-            | Command::OpenLog
             | Command::Volume { .. } => {}
         }
     }

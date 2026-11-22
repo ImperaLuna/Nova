@@ -27,13 +27,15 @@
 //! ```
 
 use crate::theme::ThemeChoice;
-// `[ai-usage]`, `[screenshot]` and `[wallpaper]` are their features'
-// (`nova-ai-usage`, `nova-screenshot`, `nova-wallpaper`).
+// `[ai-usage]`, `[recording]`, `[screenshot]` and `[wallpaper]` are their
+// features' (`nova-ai-usage`, `nova-recording`, `nova-screenshot`,
+// `nova-wallpaper`).
 pub use nova_ai_usage::AiUsageConfig;
+pub use nova_recording::RecordingConfig;
 pub use nova_screenshot::ScreenshotConfig;
 pub use nova_wallpaper::WallpaperConfig;
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -66,30 +68,6 @@ pub struct QuickSettingsConfig {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct RecordingConfig {
-    /// Where recordings are saved: an absolute path, or one starting with
-    /// `~/`. By default `Recordings` in the user's videos folder.
-    #[serde(default)]
-    pub folder: Option<String>,
-}
-
-impl RecordingConfig {
-    /// The folder recordings go in (see [`folder`]).
-    pub fn folder(&self) -> Result<PathBuf, String> {
-        folder("recording", self.folder.as_deref(), || {
-            nova_paths::user_dir("VIDEOS", "Videos").join(DEFAULT_RECORDING_FOLDER)
-        })
-    }
-}
-
-/// The recording folder's name inside the videos folder.
-const DEFAULT_RECORDING_FOLDER: &str = "Recordings";
-
-// Reading the file and its folders is the framework's (IMP-372).
-use nova_settings::folder;
-
 /// The settings in `path`; a missing file means all defaults.
 pub fn read(path: &Path) -> Result<Config, String> {
     nova_settings::read_toml(path)
@@ -98,6 +76,7 @@ pub fn read(path: &Path) -> Result<Config, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn the_endpoints_are_off_unless_turned_on() {

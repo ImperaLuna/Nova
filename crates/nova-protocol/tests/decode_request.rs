@@ -135,6 +135,31 @@ fn notifications_request() -> impl Strategy<Value = nova_carrier::Request<nova_n
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
+/// The recording feature's commands, which it owns (`nova-recording-api`).
+fn recording_request() -> impl Strategy<Value = nova_carrier::Request<nova_recording_api::Command>> {
+    use nova_recording_api::{Command, LayoutRect, RecordAudio, ScreenshotAction};
+    let action =
+        prop_oneof![Just(ScreenshotAction::Open), Just(ScreenshotAction::Folder), Just(ScreenshotAction::Delete)];
+    let region = proptest::option::of(
+        (any::<i32>(), any::<i32>(), any::<u32>(), any::<u32>()).prop_map(|(x, y, width, height)| LayoutRect {
+            x,
+            y,
+            width,
+            height,
+        }),
+    );
+    let audio = (any::<bool>(), any::<bool>()).prop_map(|(desktop, mic)| RecordAudio { desktop, mic });
+    let command = prop_oneof![
+        Just(Command::Record),
+        (".*", region, audio).prop_map(|(output, region, audio)| Command::StartRecording { output, region, audio }),
+        Just(Command::StopRecording),
+        any::<bool>().prop_map(|paused| Command::PauseRecording { paused }),
+        (any::<u64>(), action).prop_map(|(id, action)| Command::RecordingAction { id, action }),
+        Just(Command::OpenLog),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
 /// The resources feature's commands, which it owns (`nova-resources-api`).
 fn resources_request() -> impl Strategy<Value = nova_carrier::Request<nova_resources_api::Command>> {
     use nova_resources_api::Command;
@@ -339,6 +364,31 @@ proptest! {
     fn every_notifications_request_round_trips(request in notifications_request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_recording_request_round_trips(request in recording_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn bad_recording_requests_are_refused(request in recording_request(), key in any::<String>(), value in json()) {
+        prop_assume!(!LINE_FIELDS.contains(&key.as_str()));
+        let decode = |line: &str| nova_carrier::decode_request::<nova_recording_api::Command>(line);
+        let fields: Map<String, Value> = serde_json::from_str(&encode(&request).unwrap()).unwrap();
+        if let Some(Value::Object(args)) = fields.get("args")
+            && !args.contains_key(&key)
+        {
+            let mut args = args.clone();
+            args.insert(key.clone(), value.clone());
+            let mut extra = fields.clone();
+            extra.insert("args".into(), Value::Object(args));
+            prop_assert!(decode(&Value::Object(extra).to_string()).is_err());
+        }
+        let mut extra = fields;
+        extra.insert(key, value);
+        prop_assert!(decode(&Value::Object(extra).to_string()).is_err());
     }
 
     #[test]

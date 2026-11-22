@@ -1,0 +1,25 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates:
+# - nova-carrier
+# - nova-screenshot-api
+
+[package]
+name = "nova-recording-api"
+description = "The recording feature's messages: record, start_recording, stop_recording, pause_recording, recording_action, open_log and their events"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-carrier.workspace = true
+nova-screenshot-api.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

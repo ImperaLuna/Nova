@@ -21,7 +21,7 @@ pub const TOPICS: &[Topic] = &[
     nova_lock_api::TOPIC,
     topics::VOLUME,
     nova_screenshot_api::TOPIC,
-    topics::RECORDING,
+    nova_recording_api::TOPIC,
     topics::HOST,
     nova_resources_api::TOPIC,
     nova_launcher_api::TOPIC,
