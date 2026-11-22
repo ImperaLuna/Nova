@@ -3,9 +3,8 @@
 //! do, and say when something changed with `PropertiesChanged`.
 
 use super::*;
-use crate::hub::{ClientQueue, Outgoing};
-use crate::session_bus::TestBus;
-use nova_protocol::topics;
+use nova_hub::{ClientQueue, Outgoing};
+use nova_session_bus::TestBus;
 use nova_test_support::{TempDir, wait_until};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -13,6 +12,23 @@ use std::os::unix::net::UnixStream;
 use std::sync::mpsc::Receiver;
 use zbus::interface;
 use zbus::wire::{ObjectPath, OwnedVariant, Variant};
+
+/// The port, for players whose process says nothing: the fake players run
+/// in the test's own process, which no copy of `/proc` has.
+fn no_names(_: &Path, _: Option<u32>) -> Vec<String> {
+    Vec::new()
+}
+
+/// The port, with what the tray's lookup finds for Zen started from a
+/// terminal (`.zen-beta-wrapped`, in kitty's unit): novad's
+/// `media_finds_the_process_names_the_tray_does` checks it does. The fake
+/// players run in this process.
+fn zen_from_a_terminal(_: &Path, pid: Option<u32>) -> Vec<String> {
+    match pid == Some(std::process::id()) {
+        true => vec!["zen-beta".into(), "kitty".into()],
+        false => Vec::new(),
+    }
+}
 
 /// How long a test waits for something the bus should do at once. Longer
 /// than a read may take (two calls, each up to its timeout).
@@ -38,7 +54,7 @@ impl Fixture {
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let id = hub.register(queue);
-        hub.subscribe(id, topics::MEDIA);
+        hub.subscribe(id, nova_media_api::TOPIC);
         Self { dir, bus, hub, logger, ui, _ui_stream: ui_stream }
     }
 
@@ -48,12 +64,12 @@ impl Fixture {
 
     fn sources(&self) -> Sources {
         let bus = Bus::Address(self.bus.address.clone());
-        Sources { bus, covers: self.dir.join("media"), proc: self.dir.join("proc") }
+        Sources { bus, covers: self.dir.join("media"), proc: self.dir.join("proc"), process_names: no_names }
     }
 
     /// The next media event.
     fn next(&self) -> Value {
-        crate::hub::next_named(&self.ui, "media", WAIT)
+        nova_hub::next_named(&self.ui, "media", WAIT)
     }
 
     /// Media events until one `done` accepts, which it returns.
@@ -369,15 +385,10 @@ fn a_player_is_found_by_its_process_when_its_desktop_entry_is_wrong() {
          Categories=Network;WebBrowser;\n",
     )
     .unwrap();
-    // The fake players run in this process: it looks like Zen's.
-    let process = fixture.dir.join("proc").join(std::process::id().to_string());
-    std::fs::create_dir_all(&process).unwrap();
-    std::fs::write(process.join("comm"), ".zen-beta-wrappe\n").unwrap();
-    // Started from a terminal: its unit is the terminal's.
-    std::fs::write(process.join("cgroup"), "0::/user.slice/app.slice/app-kitty-4242.scope\n").unwrap();
     let apps = AppIndex::of(Some(&share), &fixture.logger);
     wait_until(WAIT, "the index to find zen-beta.desktop", || apps.find_app(&["zen-beta".into()]).is_some());
-    let media = Media::start(fixture.sources(), apps, Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
+    let sources = Sources { process_names: zen_from_a_terminal, ..fixture.sources() };
+    let media = Media::start(sources, apps, Arc::clone(&fixture.hub), Arc::clone(&fixture.logger));
 
     let _zen = fixture.play(FIREFOX, Track { desktop_entry: "zen", ..Track::playing("A video") });
     let event = fixture.until(|event| event["shown"] == FIREFOX);

@@ -1,0 +1,49 @@
+# Allowed outside crates:
+# - futures-core
+# - jiff
+# - serde
+# - ureq
+# - zbus
+#
+# Allowed workspace crates:
+# - nova-apps
+# - nova-base
+# - nova-carrier
+# - nova-hub
+# - nova-log
+# - nova-media-api
+# - nova-paths
+# - nova-session-bus
+
+[package]
+name = "nova-media"
+description = "Now playing: follows the MPRIS players on the session bus, picks the one the bar shows, and controls them"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-media-api.workspace = true
+nova-apps.workspace = true
+nova-base.workspace = true
+nova-carrier.workspace = true
+nova-hub.workspace = true
+nova-log.workspace = true
+nova-paths.workspace = true
+nova-session-bus.workspace = true
+futures-core.workspace = true
+jiff.workspace = true
+serde.workspace = true
+ureq.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+serde_json.workspace = true
+nova-apps = { workspace = true, features = ["test-support"] }
+nova-hub = { workspace = true, features = ["test-support"] }
+nova-session-bus = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true

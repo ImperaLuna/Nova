@@ -254,10 +254,11 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             home: None,
         },
         // No bus either: the media's own tests give it one.
-        media: media::Sources {
+        media: nova_media::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
             covers: dir.join("media"),
             proc: dir.join("proc"),
+            process_names: crate::media::process_names,
         },
         // No UPower, hidraw nodes, HeadsetControl or USB devices
         // either: the peripherals' own tests give it theirs.

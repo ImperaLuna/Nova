@@ -52,6 +52,7 @@ enum IpcCommand {
     Shared(Command),
     AiUsage(nova_ai_usage_api::Command),
     Launcher(nova_launcher_api::Command),
+    Media(nova_media_api::Command),
     Network(nova_network_api::Command),
     Notifications(nova_notifications_api::Command),
     Resources(nova_resources_api::Command),
@@ -69,6 +70,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
         serde_json::from_value(request).map(IpcCommand::AiUsage)
     } else if tagged_names_of::<nova_launcher_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Launcher)
+    } else if tagged_names_of::<nova_media_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Media)
     } else if tagged_names_of::<nova_network_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Network)
     } else if tagged_names_of::<nova_notifications_api::Command>("cmd").contains(&name) {
@@ -99,6 +102,10 @@ mod tests {
         assert_eq!(
             parse("watch_resources", Some(r#"{"watching": true}"#)),
             Ok(IpcCommand::Resources(nova_resources_api::Command::WatchResources { watching: true }))
+        );
+        assert_eq!(
+            parse("media_show", Some(r#"{"player": "org.mpris.MediaPlayer2.mpv"}"#)),
+            Ok(IpcCommand::Media(nova_media_api::Command::MediaShow { player: "org.mpris.MediaPlayer2.mpv".into() }))
         );
         assert_eq!(
             parse("set_wifi", Some(r#"{"enabled": true}"#)),
