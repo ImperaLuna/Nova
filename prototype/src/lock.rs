@@ -1,5 +1,5 @@
 //! Step 5: the lock screen as GPUI session lock surfaces, through the fork
-//! patch in fork-patch/session-lock.patch (WindowKind::SessionLock). One
+//! patch in fork-patch/2-session-lock.patch (WindowKind::SessionLock). One
 //! lock surface per screen; the first one locks the session and closing the
 //! last one unlocks it. Typing fills the field with dots and Enter unlocks:
 //! the prototype checks no password. In Nova the check would be PAM called
@@ -12,9 +12,8 @@
 use std::time::Duration;
 
 use gpui::{
-    App, Bounds, Context, FocusHandle, IntoElement, KeyDownEvent, Render, Size, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point, prelude::*,
-    px,
+    App, Bounds, Context, FocusHandle, IntoElement, KeyDownEvent, Render, Size, Window, WindowBackgroundAppearance,
+    WindowBounds, WindowKind, WindowOptions, div, point, prelude::*, px,
 };
 
 use crate::{FG, FG_DIM_OPACITY, GLASS_TINT, Options, color, day_and_time};
@@ -69,12 +68,7 @@ impl Render for Lock {
             .gap(px(LOCK_GAP))
             .text_color(color(FG, 1.0))
             .child(div().text_size(px(FONT_SIZE_HERO)).child(time))
-            .child(
-                div()
-                    .text_size(px(FONT_SIZE_HEADING))
-                    .text_color(color(FG, FG_DIM_OPACITY))
-                    .child(day),
-            )
+            .child(div().text_size(px(FONT_SIZE_HEADING)).text_color(color(FG, FG_DIM_OPACITY)).child(day))
             .child(
                 div()
                     .w(px(LOCK_FIELD_WIDTH))
@@ -87,13 +81,11 @@ impl Render for Lock {
                     .items_center()
                     .justify_center()
                     .gap(px(LOCK_DOT_GAP))
-                    .children((0..self.typed.min(24)).map(|_| {
-                        div()
-                            .w(px(LOCK_DOT))
-                            .h(px(LOCK_DOT))
-                            .rounded(px(LOCK_DOT / 2.0))
-                            .bg(color(FG, 1.0))
-                    })),
+                    .children(
+                        (0..self.typed.min(24)).map(|_| {
+                            div().w(px(LOCK_DOT)).h(px(LOCK_DOT)).rounded(px(LOCK_DOT / 2.0)).bg(color(FG, 1.0))
+                        }),
+                    ),
             )
     }
 }
@@ -116,14 +108,7 @@ pub fn open(cx: &mut App, options: &Options, offset: i64) {
                 kind: WindowKind::SessionLock,
                 ..Default::default()
             },
-            move |_, cx| {
-                cx.new(|cx| Lock {
-                    focus: cx.focus_handle(),
-                    typed: 0,
-                    offset,
-                    font,
-                })
-            },
+            move |_, cx| cx.new(|cx| Lock { focus: cx.focus_handle(), typed: 0, offset, font }),
         )
         .expect("open a lock surface");
     }
@@ -141,9 +126,7 @@ pub fn open(cx: &mut App, options: &Options, offset: i64) {
 /// Closes every lock surface (the last one unlocks the session), then quits.
 fn unlock(cx: &mut App) {
     for window in cx.windows() {
-        window
-            .update(cx, |_, window, _| window.remove_window())
-            .ok();
+        window.update(cx, |_, window, _| window.remove_window()).ok();
     }
     cx.spawn(async move |cx| {
         cx.background_executor().timer(Duration::from_millis(300)).await;

@@ -15,9 +15,9 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gpui::{
-    App, Bounds, BoxShadow, Context, Hsla, IntoElement, MouseButton, Pixels, Render, Rgba, Size,
-    Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div,
-    layer_shell::*, point, prelude::*, px, rgba,
+    App, Bounds, BoxShadow, Context, Hsla, IntoElement, MouseButton, Pixels, Render, Rgba, Size, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, layer_shell::*, point, prelude::*, px,
+    rgba,
 };
 use gpui_platform::application;
 
@@ -87,6 +87,9 @@ enum Motion {
 pub(crate) struct Options {
     motion: Motion,
     blur: bool,
+    blur_shape: bool,
+    clip_fix: bool,
+    pub(crate) capsule_hz: Option<f32>,
     pub(crate) layer: Layer,
     pub(crate) toggles: u32,
     pub(crate) every: Duration,
@@ -103,6 +106,9 @@ const HELP: &str = "nova-proto [switches]
   --motion curve|spring   panel motion (default curve, Nova's 250 ms curve)
   --spring K,Z            spring stiffness and damping ratio (default 260,0.82)
   --blur                  ask the compositor for blur (ext-background-effect)
+  --blur-shape            with --blur, blur only the drawn shape (patched build)
+  --clip-fix              give edge children the panel's corner radii by hand
+  --capsule-hz HZ         cap the capsule's animation rate (default: screen rate)
   --layer top|overlay     layer-shell layer (default overlay, above the live bar)
   --toggles N             open/close N times on every screen by itself, then quit
   --every MS              time between automatic toggles (default 700)
@@ -117,6 +123,9 @@ fn parse_options() -> Options {
     let mut options = Options {
         motion: Motion::Curve,
         blur: false,
+        blur_shape: false,
+        clip_fix: false,
+        capsule_hz: None,
         layer: Layer::Overlay,
         toggles: 0,
         every: Duration::from_millis(700),
@@ -146,6 +155,9 @@ fn parse_options() -> Options {
                 options.motion = Motion::Spring;
             }
             "--blur" => options.blur = true,
+            "--blur-shape" => options.blur_shape = true,
+            "--clip-fix" => options.clip_fix = true,
+            "--capsule-hz" => options.capsule_hz = Some(value().parse().expect("--capsule-hz HZ")),
             "--layer" => {
                 options.layer = match value().as_str() {
                     "top" => Layer::Top,
@@ -345,10 +357,7 @@ pub(crate) fn day_and_time(offset: i64) -> (String, String) {
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
     let day = doy - (153 * mp + 2) / 5 + 1;
-    (
-        format!("{weekday} {day}"),
-        format!("{:02}:{:02}", of_day / 3600, (of_day / 60) % 60),
-    )
+    (format!("{weekday} {day}"), format!("{:02}:{:02}", of_day / 3600, (of_day / 60) % 60))
 }
 
 // ---- The stage ------------------------------------------------------------
@@ -370,7 +379,12 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
 
 fn pill_width() -> f32 {
     // Search button, three workspace numbers, the day and the time.
-    PAD / 2.0 + PILL_BUTTON_SIZE + GAP + 3.0 * WORKSPACE_SIZE + 2.0 * WORKSPACE_GAP + GAP * 2.0
+    PAD / 2.0
+        + PILL_BUTTON_SIZE
+        + GAP
+        + 3.0 * WORKSPACE_SIZE
+        + 2.0 * WORKSPACE_GAP
+        + GAP * 2.0
         + 40.0
         + GAP
         + 34.0
@@ -382,10 +396,7 @@ fn rounded_region(b: Bounds<Pixels>, radius: f32) -> Vec<Bounds<Pixels>> {
     let (x, y) = (f32::from(b.origin.x), f32::from(b.origin.y));
     let (w, h) = (f32::from(b.size.width), f32::from(b.size.height));
     let r = radius.min(w / 2.0).min(h / 2.0);
-    let rect = |x: f32, y: f32, w: f32, h: f32| Bounds {
-        origin: point(px(x), px(y)),
-        size: Size::new(px(w), px(h)),
-    };
+    let rect = |x: f32, y: f32, w: f32, h: f32| Bounds { origin: point(px(x), px(y)), size: Size::new(px(w), px(h)) };
     let mut out = vec![rect(x, y + r, w, h - 2.0 * r)];
     const SLICES: usize = 6;
     let slice = r / SLICES as f32;
@@ -413,13 +424,7 @@ impl Stage {
         let (w, h) = (lerp(pw, LAUNCHER_WIDTH, t), lerp(BAR_HEIGHT, LAUNCHER_HEIGHT, t));
         let x = (self.width - w) / 2.0;
         let radius = lerp(BAR_HEIGHT / 2.0, RADIUS_PANEL, t.clamp(0.0, 1.0));
-        (
-            Bounds {
-                origin: point(px(x), px(BAR_MARGIN)),
-                size: Size::new(px(w.max(1.0)), px(h.max(1.0))),
-            },
-            radius,
-        )
+        (Bounds { origin: point(px(x), px(BAR_MARGIN)), size: Size::new(px(w.max(1.0)), px(h.max(1.0))) }, radius)
     }
 
     fn pill_content(&self) -> impl IntoElement {
@@ -457,14 +462,7 @@ impl Stage {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .child(
-                        div()
-                            .w(px(11.0))
-                            .h(px(11.0))
-                            .rounded(px(6.0))
-                            .border_2()
-                            .border_color(color(FG, 0.9)),
-                    ),
+                    .child(div().w(px(11.0)).h(px(11.0)).rounded(px(6.0)).border_2().border_color(color(FG, 0.9))),
             )
             .child(
                 div()
@@ -508,18 +506,9 @@ impl Stage {
                         .text_color(color(FG, 1.0))
                         .child(name[..1].to_string()),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .child(div().text_size(px(FONT_SIZE)).child(name.to_string()))
-                        .child(
-                            div()
-                                .text_size(px(FONT_SIZE_SMALL))
-                                .text_color(color(FG, FG_DIM_OPACITY))
-                                .child(about.to_string()),
-                        ),
-                )
+                .child(div().flex().flex_col().child(div().text_size(px(FONT_SIZE)).child(name.to_string())).child(
+                    div().text_size(px(FONT_SIZE_SMALL)).text_color(color(FG, FG_DIM_OPACITY)).child(about.to_string()),
+                ))
         };
         div()
             .w(px(LAUNCHER_WIDTH))
@@ -556,7 +545,14 @@ impl Stage {
             // A full-width footer that touches the bottom corners: if
             // clipping were square, its corners would poke out of the panel.
             .child(div().flex_grow(1.0))
-            .child(div().h(px(34.0)).bg(color(PRIMARY, 0.22)))
+            .child(
+                div()
+                    .h(px(34.0))
+                    .bg(color(PRIMARY, 0.22))
+                    // The workaround for square clipping: the child repeats
+                    // the panel's bottom corners itself.
+                    .when(self.options.clip_fix, |footer| footer.rounded_b(px(RADIUS_PANEL))),
+            )
     }
 }
 
@@ -573,7 +569,12 @@ impl Render for Stage {
 
         let (shape, radius) = self.shape();
         if self.region != Some((shape, radius)) {
-            window.set_input_region(Some(&rounded_region(shape, radius)));
+            let region = rounded_region(shape, radius);
+            window.set_input_region(Some(&region));
+            #[cfg(feature = "patched")]
+            if self.options.blur && self.options.blur_shape {
+                window.set_blur_region(Some(&region));
+            }
             self.region = Some((shape, radius));
         }
 
@@ -602,10 +603,7 @@ impl Render for Stage {
                     inset: false,
                 }])
                 .overflow_hidden()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _, cx| this.toggle(cx)),
-                )
+                .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.toggle(cx)))
                 .when(pill_opacity > 0.0, |d| {
                     d.child(
                         div()
@@ -641,9 +639,7 @@ fn open_stage(
 ) -> Option<gpui::AnyWindowHandle> {
     let bounds = display.bounds();
     let width = f32::from(bounds.size.width);
-    let refresh = display
-        .refresh_interval()
-        .unwrap_or(Duration::from_secs_f64(1.0 / 60.0));
+    let refresh = display.refresh_interval().unwrap_or(Duration::from_secs_f64(1.0 / 60.0));
     let screen = format!("{index}:{}x{}", width, f32::from(bounds.size.height));
     eprintln!(
         "screen {screen} id={:?} refresh={:.2}ms font={}",
@@ -654,97 +650,102 @@ fn open_stage(
     toggles_left.set(toggles_left.get() + options.toggles);
     let options = options.clone();
     let toggles_left = toggles_left.clone();
-    let window = cx.open_window(
-        WindowOptions {
-            titlebar: None,
-            display_id: Some(display.id()),
-            window_bounds: Some(WindowBounds::Windowed(Bounds {
-                origin: point(px(0.0), px(0.0)),
-                size: Size::new(px(width), px(STAGE_HEIGHT)),
-            })),
-            app_id: Some("nova-proto".into()),
-            // A shell surface never has keyboard focus, so GPUI would
-            // treat it as an inactive window and cap it at 30 fps.
-            inactive_frame_interval: None,
-            window_background: if options.blur {
-                WindowBackgroundAppearance::Blurred
-            } else {
-                WindowBackgroundAppearance::Transparent
-            },
-            kind: WindowKind::LayerShell(LayerShellOptions {
-                namespace: "nova-proto".into(),
-                layer: options.layer,
-                anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
-                exclusive_zone: None,
-                keyboard_interactivity: KeyboardInteractivity::None,
+    let window = cx
+        .open_window(
+            WindowOptions {
+                titlebar: None,
+                display_id: Some(display.id()),
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: Size::new(px(width), px(STAGE_HEIGHT)),
+                })),
+                app_id: Some("nova-proto".into()),
+                // A shell surface never has keyboard focus, so GPUI would
+                // treat it as an inactive window and cap it at 30 fps.
+                inactive_frame_interval: None,
+                window_background: if options.blur {
+                    WindowBackgroundAppearance::Blurred
+                } else {
+                    WindowBackgroundAppearance::Transparent
+                },
+                kind: WindowKind::LayerShell(LayerShellOptions {
+                    namespace: "nova-proto".into(),
+                    layer: options.layer,
+                    anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
+                    // -1: ignore other surfaces' reserved space, so the stage
+                    // sits at the very top like the real bar, not below it.
+                    exclusive_zone: Some(px(-1.0)),
+                    keyboard_interactivity: KeyboardInteractivity::None,
+                    ..Default::default()
+                }),
                 ..Default::default()
-            }),
-            ..Default::default()
-        },
-        move |_window, cx| {
-            cx.new(|cx| {
-                // The clock changes once a minute; nothing else runs
-                // while idle.
-                cx.spawn(async move |this, cx| {
-                    loop {
-                        cx.background_executor().timer(Duration::from_secs(20)).await;
-                        if this.update(cx, |_: &mut Stage, cx| cx.notify()).is_err() {
-                            break;
-                        }
-                    }
-                })
-                .detach();
-                if options.toggles > 0 {
-                    let every = options.every;
-                    let count = options.toggles;
-                    let left = toggles_left.clone();
+            },
+            move |_window, cx| {
+                cx.new(|cx| {
+                    // The clock changes once a minute; nothing else runs
+                    // while idle.
                     cx.spawn(async move |this, cx| {
-                        // Let the first frame and the GPU settle.
-                        cx.background_executor().timer(Duration::from_secs(2)).await;
-                        for _ in 0..count {
-                            cx.background_executor().timer(every).await;
-                            if this.update(cx, |this: &mut Stage, cx| this.toggle(cx)).is_err() {
-                                return;
+                        loop {
+                            cx.background_executor().timer(Duration::from_secs(20)).await;
+                            if this.update(cx, |_: &mut Stage, cx| cx.notify()).is_err() {
+                                break;
                             }
-                            left.set(left.get() - 1);
-                        }
-                        // Wait for the last motion, then quit when
-                        // every screen is done.
-                        cx.background_executor().timer(Duration::from_secs(1)).await;
-                        if left.get() == 0 {
-                            let _ = cx.update(|cx| cx.quit());
                         }
                     })
                     .detach();
-                }
-                let start_open = options.start_open;
-                Stage {
-                    options,
-                    screen,
-                    width,
-                    morph: Morph {
-                        open: start_open,
-                        t: if start_open { 1.0 } else { 0.0 },
-                        velocity: 0.0,
-                        from: 0.0,
-                        started: Instant::now(),
-                        last_step: None,
-                    },
-                    stats: FrameStats::default(),
-                    refresh,
-                    offset,
-                    region: None,
-                }
-            })
-        },
-    )
-    .map_err(|error| eprintln!("screen {index}: could not open the stage: {error:#}"))
-    .ok()?;
+                    if options.toggles > 0 {
+                        let every = options.every;
+                        let count = options.toggles;
+                        let left = toggles_left.clone();
+                        cx.spawn(async move |this, cx| {
+                            // Let the first frame and the GPU settle.
+                            cx.background_executor().timer(Duration::from_secs(2)).await;
+                            for _ in 0..count {
+                                cx.background_executor().timer(every).await;
+                                if this.update(cx, |this: &mut Stage, cx| this.toggle(cx)).is_err() {
+                                    return;
+                                }
+                                left.set(left.get() - 1);
+                            }
+                            // Wait for the last motion, then quit when
+                            // every screen is done.
+                            cx.background_executor().timer(Duration::from_secs(1)).await;
+                            if left.get() == 0 {
+                                let _ = cx.update(|cx| cx.quit());
+                            }
+                        })
+                        .detach();
+                    }
+                    let start_open = options.start_open;
+                    Stage {
+                        options,
+                        screen,
+                        width,
+                        morph: Morph {
+                            open: start_open,
+                            t: if start_open { 1.0 } else { 0.0 },
+                            velocity: 0.0,
+                            from: 0.0,
+                            started: Instant::now(),
+                            last_step: None,
+                        },
+                        stats: FrameStats::default(),
+                        refresh,
+                        offset,
+                        region: None,
+                    }
+                })
+            },
+        )
+        .map_err(|error| eprintln!("screen {index}: could not open the stage: {error:#}"))
+        .ok()?;
     Some(window.into())
 }
 
 fn main() {
     let options = parse_options();
+    #[cfg(not(feature = "patched"))]
+    assert!(!options.blur_shape, "--blur-shape needs the patched build (scripts/build-patched.sh)");
     let offset = utc_offset_secs();
     application().run(move |cx: &mut App| {
         if options.capsule || options.lock {
@@ -793,9 +794,7 @@ fn main() {
                                 continue;
                             }
                             eprintln!("screen came: {:?}", display.id());
-                            if let Some(window) =
-                                open_stage(cx, display, index, &options, offset, &toggles_left)
-                            {
+                            if let Some(window) = open_stage(cx, display, index, &options, offset, &toggles_left) {
                                 stages.push((display.id(), window));
                             }
                         }
@@ -810,4 +809,3 @@ fn main() {
         }
     });
 }
-

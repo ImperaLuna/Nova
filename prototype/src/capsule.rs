@@ -1,5 +1,5 @@
 //! Step 4: Nova's liquid volume capsule drawn by the fork's custom shader
-//! patch (fork-patch/custom-shader.patch). Built only with `--features
+//! patch (fork-patch/1-custom-shader.patch). Built only with `--features
 //! patched` against the patched fork (scripts/build-patched.sh). The capsule
 //! sits at the right edge of every screen; with `--toggles N` its level
 //! changes N times, `--every` ms apart, and it quits after.
@@ -7,8 +7,8 @@
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, Bounds, Context, IntoElement, Render, Size, Window, WindowBackgroundAppearance,
-    WindowBounds, WindowKind, WindowOptions, canvas, div, layer_shell::*, point, prelude::*, px,
+    App, Bounds, Context, IntoElement, Render, Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
+    WindowOptions, canvas, div, layer_shell::*, point, prelude::*, px,
 };
 
 use crate::{FrameStats, Options};
@@ -29,17 +29,13 @@ const FIZZ: f32 = 0.3;
 const FIZZ_PACE: f32 = 2.0;
 
 fn rgba(rgb: u32, a: f32) -> [f32; 4] {
-    [
-        ((rgb >> 16) & 0xff) as f32 / 255.0,
-        ((rgb >> 8) & 0xff) as f32 / 255.0,
-        (rgb & 0xff) as f32 / 255.0,
-        a,
-    ]
+    [((rgb >> 16) & 0xff) as f32 / 255.0, ((rgb >> 8) & 0xff) as f32 / 255.0, (rgb & 0xff) as f32 / 255.0, a]
 }
 
 struct Capsule {
     screen: String,
     refresh: Duration,
+    capped: bool,
     stats: FrameStats,
     level: f32,
     level_target: f32,
@@ -61,9 +57,7 @@ impl Capsule {
         let a = -SPRING_LEVEL * (self.level - self.level_target) - c * self.level_speed;
         self.level_speed += a * dt;
         self.level = (self.level + self.level_speed * dt).clamp(0.0, 1.0);
-        self.slosh = (self.slosh * (-dt / SLOSH_DECAY).exp()
-            + self.level_speed.abs() * SLOSH_GAIN * dt)
-            .min(SLOSH_MAX);
+        self.slosh = (self.slosh * (-dt / SLOSH_DECAY).exp() + self.level_speed.abs() * SLOSH_GAIN * dt).min(SLOSH_MAX);
         self.rise += dt * (1.0 + FIZZ_PACE * FIZZ);
     }
 
@@ -101,8 +95,11 @@ impl Render for Capsule {
             self.stats.settled(&self.screen, self.refresh);
             self.last_report = Instant::now();
         }
-        // It moves all the time while shown, like Nova's (the swell).
-        window.request_animation_frame();
+        // It moves all the time while shown, like Nova's (the swell). With
+        // --capsule-hz a timer drives the frames instead of the screen.
+        if !self.capped {
+            window.request_animation_frame();
+        }
         let params = self.params(window.scale_factor());
         div().size_full().child(
             canvas(
@@ -123,9 +120,11 @@ pub fn open(cx: &mut App, options: &Options) {
         if options.only_screen.is_some_and(|only| only != index) {
             continue;
         }
-        let refresh = display
-            .refresh_interval()
-            .unwrap_or(Duration::from_secs_f64(1.0 / 60.0));
+        let capsule_hz = options.capsule_hz;
+        let refresh = match capsule_hz {
+            Some(hz) => Duration::from_secs_f32(1.0 / hz),
+            None => display.refresh_interval().unwrap_or(Duration::from_secs_f64(1.0 / 60.0)),
+        };
         let screen = format!("{index}:capsule");
         let toggles = options.toggles;
         let every = options.every;
@@ -151,15 +150,23 @@ pub fn open(cx: &mut App, options: &Options) {
             },
             move |_, cx| {
                 cx.new(|cx| {
+                    if capsule_hz.is_some() {
+                        cx.spawn(async move |this, cx| {
+                            loop {
+                                cx.background_executor().timer(refresh).await;
+                                if this.update(cx, |_: &mut Capsule, cx| cx.notify()).is_err() {
+                                    return;
+                                }
+                            }
+                        })
+                        .detach();
+                    }
                     if toggles > 0 {
                         cx.spawn(async move |this, cx| {
                             for i in 0..toggles {
                                 cx.background_executor().timer(every).await;
                                 let target = if i % 2 == 0 { 0.8 } else { 0.3 };
-                                if this
-                                    .update(cx, |this: &mut Capsule, _| this.level_target = target)
-                                    .is_err()
-                                {
+                                if this.update(cx, |this: &mut Capsule, _| this.level_target = target).is_err() {
                                     return;
                                 }
                             }
@@ -171,6 +178,7 @@ pub fn open(cx: &mut App, options: &Options) {
                     Capsule {
                         screen,
                         refresh,
+                        capped: capsule_hz.is_some(),
                         stats: FrameStats::default(),
                         level: 0.55,
                         level_target: 0.55,
