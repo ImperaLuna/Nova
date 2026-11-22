@@ -53,6 +53,7 @@ enum IpcCommand {
     AiUsage(nova_ai_usage_api::Command),
     Bluetooth(nova_bluetooth_api::Command),
     Launcher(nova_launcher_api::Command),
+    Lock(nova_lock_api::Command),
     Media(nova_media_api::Command),
     Network(nova_network_api::Command),
     Notifications(nova_notifications_api::Command),
@@ -74,6 +75,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
         serde_json::from_value(request).map(IpcCommand::Bluetooth)
     } else if tagged_names_of::<nova_launcher_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Launcher)
+    } else if tagged_names_of::<nova_lock_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Lock)
     } else if tagged_names_of::<nova_media_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Media)
     } else if tagged_names_of::<nova_network_api::Command>("cmd").contains(&name) {
@@ -127,6 +130,7 @@ mod tests {
             Ok(IpcCommand::Notifications(nova_notifications_api::Command::DismissNotification { id: 7 }))
         );
         assert!(parse("end_app", Some(r#"{"key": "x", "extra": 1}"#)).is_err());
+        assert_eq!(parse("lock", None), Ok(IpcCommand::Lock(nova_lock_api::Command::Lock)));
         assert_eq!(
             parse("power", Some(r#"{"action": "suspend"}"#)),
             Ok(IpcCommand::Power(nova_power_api::Command::Power { action: nova_power_api::PowerAction::Suspend }))

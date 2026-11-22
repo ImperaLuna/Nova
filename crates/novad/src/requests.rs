@@ -22,6 +22,7 @@ pub fn router() -> Router<Daemon> {
         .route::<nova_ai_usage_api::Command>(crate::ai_usage::answer, |_, _, _| {})
         .route::<nova_bluetooth_api::Command>(crate::bluetooth::answer, |_, _, _| {})
         .route::<nova_launcher_api::Command>(crate::launcher::answer, |_, _, _| {})
+        .route::<nova_lock_api::Command>(crate::session_lock::answer, |_, _, _| {})
         .route::<nova_media_api::Command>(crate::media::answer, |_, _, _| {})
         .route::<nova_network_api::Command>(crate::network::answer, |_, _, _| {})
         .route::<nova_notifications_api::Command>(crate::notifications::answer, |_, _, _| {})
@@ -75,13 +76,11 @@ struct Connection<'a> {
     daemon: &'a Daemon,
     caller: &'a Caller,
     id: ClientId,
-    // The connecting process, from the kernel (SO_PEERCRED).
-    peer_pid: Option<u32>,
 }
 
 impl<'a> Connection<'a> {
     fn new(daemon: &'a Daemon, caller: &'a Caller) -> Self {
-        Self { daemon, caller, id: caller.id(), peer_pid: caller.peer_pid() }
+        Self { daemon, caller, id: caller.id() }
     }
 
     /// The answer to `command`, at once or as work for another thread: the
@@ -101,15 +100,6 @@ impl<'a> Connection<'a> {
             }
             Command::Toggle { panel } => self.toggle(*panel),
             Command::Volume { key } => self.volume(*key),
-            Command::Lock => done(
-                self.require_feature(crate::session_lock::FEATURE_ID)
-                    .and_then(|()| self.session_lock().lock(&self.daemon.hub)),
-            ),
-            Command::ReportLocked => done(self.sent_by_the_ui().map(|()| self.session_lock().secured())),
-            // Even with the feature off: the screen was locked while it was on.
-            Command::ReportUnlocked => {
-                done(self.sent_by_the_ui().map(|()| self.session_lock().unlocked(&self.daemon.hub)))
-            }
             Command::Screenshot { mode } => return self.screenshot(*mode),
             Command::SaveCapture { output, rect } => return self.save_capture(output.clone(), *rect),
             // Even with the feature off, so a reload can't strand the picker.
@@ -137,10 +127,6 @@ impl<'a> Connection<'a> {
 
     // Kept for novad's life, whatever the settings.
 
-    fn session_lock(&self) -> Arc<crate::session_lock::SessionLock> {
-        self.daemon.session_lock()
-    }
-
     fn screenshots(&self) -> Arc<crate::screenshot::Screenshots> {
         Arc::clone(&self.daemon.kept.screenshots)
     }
@@ -151,18 +137,6 @@ impl<'a> Connection<'a> {
 
     fn compositor(&self) -> Result<&crate::compositor::Compositor, String> {
         self.daemon.compositor.as_deref().ok_or_else(|| "novad doesn't know this compositor".into())
-    }
-
-    /// Lock reports are the UI's alone: from anyone else, `report_unlocked`
-    /// would leave a UI that restarts with no lock screen to unlock. When
-    /// novad runs no UI (`--no-ui`: tests, or a UI run by hand), it can't
-    /// tell which client is the UI and takes them from any.
-    fn sent_by_the_ui(&self) -> Result<(), String> {
-        let Some(ui) = &self.daemon.ui else { return Ok(()) };
-        match ui.status().pid {
-            Some(pid) if self.peer_pid == Some(pid) => Ok(()),
-            _ => Err("only the UI novad runs can report the lock screen's state".into()),
-        }
     }
 
     /// An error saying the feature `id` isn't ready, when it isn't.
@@ -291,9 +265,6 @@ impl<'a> Connection<'a> {
             | Command::FocusWorkspace { .. }
             | Command::StepWorkspace { .. }
             | Command::Toggle { .. }
-            | Command::Lock
-            | Command::ReportLocked
-            | Command::ReportUnlocked
             | Command::Screenshot { .. }
             | Command::SaveCapture { .. }
             | Command::CancelCapture

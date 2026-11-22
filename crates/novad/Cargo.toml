@@ -32,6 +32,8 @@
 # - nova-inotify
 # - nova-launcher
 # - nova-launcher-api
+# - nova-lock
+# - nova-lock-api
 # - nova-log
 # - nova-media
 # - nova-media-api
@@ -91,6 +93,8 @@ nova-bluetooth.workspace = true
 nova-bluetooth-api.workspace = true
 nova-launcher.workspace = true
 nova-launcher-api.workspace = true
+nova-lock.workspace = true
+nova-lock-api.workspace = true
 nova-media.workspace = true
 nova-media-api.workspace = true
 nova-network.workspace = true

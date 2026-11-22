@@ -72,6 +72,8 @@ nova-bluetooth-api = { path = "features/bluetooth/api" }
 nova-bluetooth = { path = "features/bluetooth/core" }
 nova-launcher-api = { path = "features/launcher/api" }
 nova-launcher = { path = "features/launcher/core" }
+nova-lock-api = { path = "features/lock/api" }
+nova-lock = { path = "features/lock/core" }
 nova-media-api = { path = "features/media/api" }
 nova-media = { path = "features/media/core" }
 nova-network-api = { path = "features/network/api" }

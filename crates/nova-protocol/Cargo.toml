@@ -31,6 +31,7 @@ serde_json.workspace = true
 nova-ai-usage-api.workspace = true
 nova-bluetooth-api.workspace = true
 nova-launcher-api.workspace = true
+nova-lock-api.workspace = true
 nova-media-api.workspace = true
 nova-network-api.workspace = true
 nova-notifications-api.workspace = true

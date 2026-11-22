@@ -844,6 +844,7 @@ dependencies = [
  "nova-carrier",
  "nova-features",
  "nova-launcher-api",
+ "nova-lock-api",
  "nova-media-api",
  "nova-network-api",
  "nova-notifications-api",
@@ -949,6 +950,27 @@ name = "nova-launcher-api"
 version = "0.1.0"
 dependencies = [
  "nova-apps",
+ "nova-carrier",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nova-lock"
+version = "0.1.0"
+dependencies = [
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-lock-api",
+ "nova-log",
+ "nova-test-support",
+]
+
+[[package]]
+name = "nova-lock-api"
+version = "0.1.0"
+dependencies = [
  "nova-carrier",
  "serde",
  "serde_json",
@@ -1179,6 +1201,7 @@ dependencies = [
  "nova-compositor",
  "nova-host",
  "nova-launcher-api",
+ "nova-lock-api",
  "nova-media-api",
  "nova-network-api",
  "nova-notifications-api",
@@ -1381,6 +1404,8 @@ dependencies = [
  "nova-inotify",
  "nova-launcher",
  "nova-launcher-api",
+ "nova-lock",
+ "nova-lock-api",
  "nova-log",
  "nova-media",
  "nova-media-api",
