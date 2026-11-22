@@ -82,6 +82,8 @@
             ./themes
             ./ui/theme/Tokens.qml
             ./ui/theme/icons.js
+            # The slot hosts, which nova-stage's test holds equal to its own.
+            ./ui/slots/slots.js
           ];
         };
 
