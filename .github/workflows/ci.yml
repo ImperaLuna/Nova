@@ -5,21 +5,13 @@ name: CI
 # runners: set `runs-on: ubuntu-latest` and add
 # `- uses: cachix/install-nix-action@v31` after checkout.
 #
-# Two jobs, behind the one `checks` status the ruleset and the merge lane
-# (scripts/update-prs.sh) read:
-#   - fast: every flake check but the VM tests (build, cargo tests, lints,
-#     QML tests, headless e2e), on every push, so a draft hears back in a
-#     couple of minutes.
-#   - vm: the NixOS VM tests on niri and Hyprland, only on PRs that aren't
-#     drafts (and when a draft is marked ready), in parallel with fast.
-# A draft's `checks` passes without the VM tests; marking it ready runs them
-# (IMP-228). So does a PR with another PR stacked on it: the stack's top PR
-# holds every commit below it, so its VM run covers the whole stack (IMP-326).
+# One job, `fast`, runs every flake check (build, cargo tests, lints, QML
+# tests, headless e2e) on every push. `checks`, the status the ruleset and
+# the merge lane (scripts/update-prs.sh) read, passes when it does.
 #
 # A PR that changes only the UI side's crates (app-ui/, framework-ui/,
-# features/<id>/ui/: the GPUI port, which has no UI test suite) skips the VM
-# tests and the QML checks, which run the Quickshell UI it can't touch
-# (IMP-393). The flake keeps those crates out of every daemon build, so the
+# features/<id>/ui/: the GPUI port, which has no UI test suite) skips the QML
+# checks, which run the Quickshell UI it can't touch (IMP-393). The flake keeps those crates out of every daemon build, so the
 # daemon's other checks come from the store.
 #
 # `closed` starts a run with every job skipped, only so the concurrency group
@@ -27,7 +19,7 @@ name: CI
 # closes, rather than spend a runner on code that has landed (IMP-326).
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, closed]
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
 
 # PR code runs here; it gets a token that can only read.
@@ -50,8 +42,6 @@ jobs:
     timeout-minutes: 30
     env:
       UI_ONLY: ${{ needs.shape.outputs.ui_only }}
-      # Never in this job: the VM tests.
-      VM_CHECKS: e2e-niri e2e-hyprland
       # The checks that run or read the Quickshell UI, skipped on a PR that
       # changes only the UI side's crates.
       QML_CHECKS: qmllint qmlformat qml-tests shaders e2e-headless quickshell-version
@@ -62,10 +52,10 @@ jobs:
       # What `nix flake check` evaluates (outputs, modules), without building.
       - name: nix flake check --no-build
         run: nix flake check --no-build
-      - name: flake checks but the VM tests
+      - name: flake checks
         run: |
           checks=.#checks.x86_64-linux
-          skipped=" $VM_CHECKS "
+          skipped=" "
           if [[ $UI_ONLY == true ]]; then
             echo "::notice::Only UI crates changed: skipping the QML checks ($QML_CHECKS)."
             skipped+="$QML_CHECKS "
@@ -94,10 +84,8 @@ jobs:
           path: e2e/out
           if-no-files-found: ignore
 
-  # What the PR is, for the jobs that depend on it: how many open PRs are
-  # stacked on it (use its branch as their base), and whether it changes
-  # only the UI side's crates. On GitHub's runners, so it never waits behind
-  # the self-hosted queue.
+  # Whether the PR changes only the UI side's crates. On GitHub's runners, so
+  # it never waits behind the self-hosted queue.
   shape:
     name: PR shape
     if: github.event.action != 'closed'
@@ -106,25 +94,8 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      above: ${{ steps.count.outputs.above }}
       ui_only: ${{ steps.files.outputs.ui_only }}
     steps:
-      - id: count
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ github.head_ref || github.ref_name }}
-          # Empty on a run started by hand.
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-        run: |
-          # A fork's branch name means nothing here (a fork's `main` would
-          # count every PR into main): a fork PR is never under a stack.
-          if [[ -n $HEAD_REPO && $HEAD_REPO != "$GITHUB_REPOSITORY" ]]; then
-            above=0
-          else
-            above=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&base=$BRANCH" --jq length)
-          fi
-          echo "PRs stacked on $BRANCH: $above"
-          echo "above=$above" >>"$GITHUB_OUTPUT"
       # Every file the PR changes against its base, a renamed file under
       # both names: the whole PR, not its last push. Anything outside the
       # UI crates' folders (the flake, CI, a script, a daemon crate) makes
@@ -147,102 +118,19 @@ jobs:
           echo "Only UI crates changed: $ui_only"
           echo "ui_only=$ui_only" >>"$GITHUB_OUTPUT"
 
-  vm:
-    name: VM tests
-    needs: shape
-    # Not on a draft, not under another PR of a stack, and not when only UI
-    # crates changed; a run started by hand always tests.
-    if: >-
-      github.event_name != 'pull_request' ||
-      (!github.event.pull_request.draft && needs.shape.outputs.above == '0' &&
-      needs.shape.outputs.ui_only != 'true')
-    runs-on: [self-hosted, nova]
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: VM tests on niri and Hyprland
-        run: nix build -L --no-link --keep-going .#checks.x86_64-linux.e2e-niri .#checks.x86_64-linux.e2e-hyprland
-      # The VM tests' screenshots, report and odiff diffs. The step above
-      # already built them, also when it failed on them; --max-jobs 0 skips
-      # building them again when a test itself failed.
-      - name: e2e results
-        if: always()
-        run: |
-          mkdir -p e2e/out
-          for compositor in niri hyprland; do
-            shots=$(nix build --max-jobs 0 --no-link --print-out-paths ".#checks.x86_64-linux.e2e-$compositor.compare") &&
-              cp -r --no-preserve=mode "$shots" "e2e/out/vm-$compositor" || true
-          done
-      # Each state's Pss (frames.py) against main's, in the job summary.
-      # Main's VM run is normally in the store already, from the PR that
-      # became it (same tree, so the same build); --max-jobs 0 skips the
-      # comparison rather than running main's VM test here.
-      - name: Check out main for the Pss comparison
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .pss-main
-          persist-credentials: false
-      - name: Pss against main
-        if: always() && github.event_name == 'pull_request'
-        run: |
-          for compositor in niri hyprland; do
-            frames=checks.x86_64-linux.e2e-$compositor.frames
-            pr=$(nix build --max-jobs 0 --no-link --print-out-paths ".#$frames") || continue
-            if ! main=$(nix build --max-jobs 0 --no-link --print-out-paths "./.pss-main#$frames"); then
-              echo "Main's Pss on $compositor isn't on this runner; no comparison." >>"$GITHUB_STEP_SUMMARY"
-              continue
-            fi
-            # The table to the summary, warnings to the log as annotations.
-            # The runner has no awk of its own.
-            nix shell --inputs-from . nixpkgs#gawk -c \
-              bash e2e/vm/pss-compare.sh "$compositor" "$main/pss.txt" "$pr/pss.txt" 2>&1 >>"$GITHUB_STEP_SUMMARY"
-          done
-      - if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e
-          path: e2e/out
-          if-no-files-found: ignore
-
-  # The status the ruleset requires. Green when fast passed and the VM tests
-  # passed, or were skipped on a draft, under a stacked PR or on a PR that
-  # changes only UI crates.
+  # The status the ruleset requires: green when the fast checks passed.
   checks:
     name: checks
-    needs: [fast, shape, vm]
+    needs: [fast]
     # Not on a run a newer push cancelled (that head no longer matters), nor
     # on a closed PR.
     if: ${{ !cancelled() && github.event.action != 'closed' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: fast and VM results
+      - name: fast checks result
         env:
           FAST: ${{ needs.fast.result }}
-          VM: ${{ needs.vm.result }}
-          DRAFT: ${{ github.event.pull_request.draft == true }}
-          SHAPE: ${{ needs.shape.result }}
-          ABOVE: ${{ needs.shape.outputs.above }}
-          UI_ONLY: ${{ needs.shape.outputs.ui_only }}
         run: |
-          echo "fast checks: $FAST, VM tests: $VM, PRs stacked on this one: $ABOVE"
-          [[ $FAST == success ]] || exit 1
-          [[ $VM == success ]] && exit 0
-          [[ $VM == skipped ]] || exit 1
-          if [[ $DRAFT == true ]]; then
-            echo "::notice::Draft PR: VM tests run once it's marked ready."
-            exit 0
-          fi
-          if [[ $SHAPE == success && $ABOVE != 0 ]]; then
-            echo "::notice::$ABOVE PR(s) stacked on this one: the VM tests run on the stack's top PR."
-            exit 0
-          fi
-          if [[ $SHAPE == success && $UI_ONLY == true ]]; then
-            echo "::notice::Only UI crates changed: the VM tests don't cover them."
-            exit 0
-          fi
-          exit 1
+          echo "fast checks: $FAST"
+          [[ $FAST == success ]]

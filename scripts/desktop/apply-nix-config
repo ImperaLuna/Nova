@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Applies ~/nix-config's working tree on this desktop (RyzenShine), the way
 # a local session may: waits until neither CI runner has a job (they build
-# through the same nix daemon, and a switch mid-job has failed VM tests),
+# through the same nix daemon, and a switch mid-job has failed CI jobs),
 # starts nixos-apply (polkit lets the user start it without sudo) and shows
 # its log as it goes. If the switch fails after the system changed, it
 # rolls back with nixos-rollback.

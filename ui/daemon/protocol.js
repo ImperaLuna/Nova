@@ -95,6 +95,10 @@ var CMD_BLUETOOTH_CONNECT = "bluetooth_connect";
 var CMD_BLUETOOTH_DISCONNECT = "bluetooth_disconnect";
 var CMD_BLUETOOTH_FORGET = "bluetooth_forget";
 var CMD_BLUETOOTH_ANSWER = "bluetooth_answer";
+var CMD_SET_SOUND_VOLUME = "set_sound_volume";
+var CMD_SET_SOUND_MUTED = "set_sound_muted";
+var CMD_USE_SOUND_OUTPUT = "use_sound_output";
+var CMD_USE_SOUND_INPUT = "use_sound_input";
 
 // Events novad sends (Event). Each topic's events carry the topic's name.
 var EVENT_HELLO = "hello";

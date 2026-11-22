@@ -291,7 +291,20 @@ fn recording_lines() -> Vec<serde_json::Result<String>> {
 
 /// The sound feature's own messages (`nova-sound-api`).
 fn sound_lines() -> Vec<serde_json::Result<String>> {
-    vec![encode(nova_sound_api::Event::Sound(sound()))]
+    use nova_sound_api::{Command, Kind};
+    vec![
+        encode(nova_sound_api::Event::Sound(sound())),
+        encode(nova_carrier::Request {
+            id: Some(24),
+            command: Command::SetSoundVolume { of: Kind::Output, id: 52, volume: 0.4 },
+        }),
+        encode(nova_carrier::Request {
+            id: Some(25),
+            command: Command::SetSoundMuted { of: Kind::App, id: 77, muted: true },
+        }),
+        encode(nova_carrier::Request { id: Some(26), command: Command::UseSoundOutput { id: 61 } }),
+        encode(nova_carrier::Request { id: Some(27), command: Command::UseSoundInput { id: 53 } }),
+    ]
 }
 
 /// The resources feature's own messages (`nova-resources-api`), and what follows them.

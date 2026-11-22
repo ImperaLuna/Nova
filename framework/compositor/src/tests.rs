@@ -1,5 +1,6 @@
-//! The backends against what real niri and Hyprland sent, recorded in a VM
-//! by `e2e/vm/record.py` (`just record`): `recorded/<compositor>/events.txt`
+//! The backends against what real niri and Hyprland sent, recorded in a NixOS
+//! VM (by `e2e/vm/record.py`, removed with the VM tests in IMP-422; it is in
+//! git history): `recorded/<compositor>/events.txt`
 //! is the event stream, `steps.json` says how far into it each step of the
 //! script had got, and `<step>/` holds the compositor's answers to its
 //! queries at that point. `recorded/hyprland-<version>/` holds one set of

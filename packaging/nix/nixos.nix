@@ -90,6 +90,15 @@ in
       )
     );
 
+    warnings =
+      lib.optional
+        (
+          lib.elem "sound" on
+          && !(config.services.pipewire.enable && config.services.pipewire.pulse.enable)
+          && !config.services.pulseaudio.enable
+        )
+        "programs.nova: the sound feature reads volume and devices from a PulseAudio socket, and none is set up. Set services.pipewire.enable and services.pipewire.pulse.enable, or turn the feature off (programs.nova.features.sound.enable = false).";
+
     systemd.packages = [ cfg.package ];
     # NixOS ignores [Install] in packaged units; this is the unit's WantedBy=.
     systemd.user.services.nova.wantedBy = [ "graphical-session.target" ];
@@ -100,6 +109,13 @@ in
       # and Nova's own rules let novad open Logitech's and Keychron's hidraw
       # nodes.
       upower.enable = lib.mkIf (lib.elem "peripherals" on) (lib.mkDefault true);
+
+      # Sound: novad follows PipeWire through the PulseAudio socket
+      # pipewire-pulse serves (pure Rust, so its static build stays), and
+      # apps written for PulseAudio play through it too.
+      pipewire.pulse.enable = lib.mkIf (lib.elem "sound" on && config.services.pipewire.enable) (
+        lib.mkDefault true
+      );
       udev.packages = lib.mkIf (lib.elem "peripherals" on) [
         pkgs.headsetcontrol
         cfg.package
