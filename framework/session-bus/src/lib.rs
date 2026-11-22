@@ -3,7 +3,7 @@
 //! services), how they claim their names, and a stop flag that ends a
 //! service's loop on the bus.
 
-use crate::lock;
+use nova_base::lock;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll, Waker};
@@ -18,7 +18,7 @@ pub enum Bus {
     /// The system's, for system services like UPower.
     System,
     /// A bus at this address, for tests.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     Address(String),
 }
 
@@ -27,7 +27,7 @@ impl Bus {
         match self {
             Bus::Session => connection::Builder::session(),
             Bus::System => connection::Builder::system(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             Bus::Address(address) => connection::Builder::address(address.as_str()),
         }
     }
@@ -74,10 +74,10 @@ impl Stop {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub use test_bus::TestBus;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 mod test_bus {
     use std::io::{BufRead, BufReader};
     use std::path::Path;

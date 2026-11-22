@@ -738,6 +738,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-base"
+version = "0.1.0"
+dependencies = [
+ "nova-test-support",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-cli"
 version = "0.1.0"
 dependencies = [
@@ -767,10 +776,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-inotify"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nova-base",
+ "nova-test-support",
+]
+
+[[package]]
 name = "nova-paths"
 version = "0.1.0"
 dependencies = [
  "nova-test-support",
+]
+
+[[package]]
+name = "nova-process"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nova-base",
 ]
 
 [[package]]
@@ -792,6 +818,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-session-bus"
+version = "0.1.0"
+dependencies = [
+ "nova-base",
+ "zbus",
+]
+
+[[package]]
 name = "nova-test-support"
 version = "0.1.0"
 
@@ -810,10 +844,14 @@ dependencies = [
  "libc",
  "lzma-rust2",
  "md-5",
+ "nova-base",
  "nova-features",
+ "nova-inotify",
  "nova-paths",
+ "nova-process",
  "nova-protocol",
  "nova-quickshell",
+ "nova-session-bus",
  "nova-test-support",
  "pbkdf2",
  "png",

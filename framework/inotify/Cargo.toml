@@ -1,0 +1,23 @@
+# Allowed outside crates:
+# - libc
+#
+# Allowed workspace crates:
+# - nova-base
+
+[package]
+name = "nova-inotify"
+description = "A thin wrapper over Linux inotify, shared between threads"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-base.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+
+[lints]
+workspace = true

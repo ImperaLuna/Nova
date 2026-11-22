@@ -29,11 +29,10 @@ rules_doc="AGENTS.md (Layout)"
 # framework/. A framework crate goes on a list only when every crate of that
 # kind may use it: a daemon-side part (the socket server) never on the ui
 # list, a screen-side part (the stage, theme tokens) never on the core list.
-# Empty until the novad move adds the first framework crates (IMP-371).
 FRAMEWORK_FOR_API=()
-FRAMEWORK_FOR_CORE=()
+FRAMEWORK_FOR_CORE=(base inotify paths process session-bus)
 FRAMEWORK_FOR_UI=()
-FRAMEWORK_FOR_FRONT=()
+FRAMEWORK_FOR_FRONT=(base paths)
 
 # layer_of <crate folder relative to the root>: prints the crate's kind and
 # its parts ("feature <name> <half>", "framework <name>", ...).

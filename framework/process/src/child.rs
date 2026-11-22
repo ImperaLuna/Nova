@@ -6,7 +6,7 @@
 //! decides what a slow child means for it (killed, left to finish, or
 //! logged); the UI's supervision stays in `supervisor` and `recording`.
 
-use crate::lock;
+use nova_base::lock;
 use std::collections::VecDeque;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
