@@ -31,7 +31,12 @@ pub const END: &str = "// END GENERATED";
 /// The names of every event type novad sends: the shared `Event`, then each
 /// moved feature's, by feature name.
 fn events() -> Vec<&'static str> {
-    [tagged_names_of::<Event>("event"), tagged_names_of::<nova_resources_api::Event>("event")].concat()
+    [
+        tagged_names_of::<Event>("event"),
+        tagged_names_of::<nova_notifications_api::Event>("event"),
+        tagged_names_of::<nova_resources_api::Event>("event"),
+    ]
+    .concat()
 }
 
 /// One group of `var <PREFIX>_<NAME> = "<name>";` lines.
@@ -92,7 +97,11 @@ fn groups(features: &Path, current: &str) -> Vec<Group> {
         Group::new("Power menu actions (PowerAction).", "POWER", names_of::<PowerAction>()),
         Group::new("What the capture toolbar takes (CaptureMode).", "CAPTURE", names_of::<CaptureMode>()),
         Group::new("The screenshot card's buttons (ScreenshotAction).", "SHOT", names_of::<ScreenshotAction>()),
-        Group::new("How much a notification matters (Urgency).", "URGENCY", names_of::<Urgency>()),
+        Group::new(
+            "How much a notification matters (Urgency).",
+            "URGENCY",
+            names_of::<nova_notifications_api::Urgency>(),
+        ),
         Group::new("The now-playing panel's buttons (MediaAction).", "MEDIA", names_of::<MediaAction>()),
         Group::new("What a media player is doing (PlaybackStatus).", "PLAYBACK", names_of::<PlaybackStatus>()),
     ]

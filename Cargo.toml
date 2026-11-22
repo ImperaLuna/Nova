@@ -66,6 +66,9 @@ nova-theme = { path = "framework/theme" }
 nova-host = { path = "framework/host" }
 nova-compositor = { path = "framework/compositor" }
 nova-test-support = { path = "framework/test-support" }
+nova-notifications-api = { path = "features/notifications/api" }
+nova-notifications = { path = "features/notifications/core" }
+nova-peripherals-api = { path = "features/peripherals/api" }
 nova-resources-api = { path = "features/resources/api" }
 nova-resources = { path = "features/resources/core" }
 

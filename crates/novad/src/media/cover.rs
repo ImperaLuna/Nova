@@ -7,7 +7,7 @@
 //! isn't tried again for that URL.
 
 use crate::lock;
-use crate::notifications::image;
+use nova_notifications::image;
 use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 use std::os::unix::fs::DirBuilderExt;

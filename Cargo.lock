@@ -781,6 +781,7 @@ dependencies = [
  "jiff",
  "nova-carrier",
  "nova-features",
+ "nova-notifications-api",
  "nova-paths",
  "nova-protocol",
  "nova-quickshell",
@@ -886,10 +887,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-notifications"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "jiff",
+ "nova-apps",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-icons",
+ "nova-log",
+ "nova-notifications-api",
+ "nova-session-bus",
+ "nova-test-support",
+ "png",
+ "serde",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
+name = "nova-notifications-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "nova-peripherals-api",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-paths"
 version = "0.1.0"
 dependencies = [
  "nova-test-support",
+]
+
+[[package]]
+name = "nova-peripherals-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -910,6 +949,8 @@ dependencies = [
  "nova-carrier",
  "nova-compositor",
  "nova-host",
+ "nova-notifications-api",
+ "nova-peripherals-api",
  "nova-resources-api",
  "nova-theme",
  "proptest",
@@ -1033,6 +1074,8 @@ dependencies = [
  "nova-log",
  "nova-mime",
  "nova-modules",
+ "nova-notifications",
+ "nova-notifications-api",
  "nova-paths",
  "nova-process",
  "nova-protocol",

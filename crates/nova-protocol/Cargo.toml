@@ -7,6 +7,7 @@
 # - nova-carrier
 # - nova-compositor
 # - nova-host
+# - nova-peripherals-api
 # - nova-theme
 
 [package]
@@ -22,12 +23,14 @@ nova-apps.workspace = true
 nova-carrier.workspace = true
 nova-compositor.workspace = true
 nova-host.workspace = true
+nova-peripherals-api.workspace = true
 nova-theme.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 # The wire format snapshot keeps the moved features' messages (IMP-368).
+nova-notifications-api.workspace = true
 nova-resources-api.workspace = true
 insta.workspace = true
 proptest.workspace = true
