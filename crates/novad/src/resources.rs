@@ -39,6 +39,8 @@ pub fn answer(daemon: &Daemon, caller: &Caller, command: &Command) -> Answer {
 impl crate::modules::Module for Resources {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
+    // It sends nothing on subscribe: readings come while some client watches.
+    const TOPIC: Option<nova_protocol::Topic> = Some(nova_resources_api::TOPIC);
     type Sources = Sources;
     type Config = ();
 

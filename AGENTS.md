@@ -143,9 +143,10 @@ assertions). The feature is `<id>` (its folder name), its crates
    folder in `crates/novad/src` is gone and the core builds alone.
 3. **The wiring**, `crates/novad/src/<id>.rs`, under novad's old `mod <id>;`
    line: a newtype over the core that implements `Module` (its `ID`,
-   `Sources`, `Config`, `TOPIC` as the api's constant, `start` building the
-   core from `Context`), and `pub fn answer(daemon, caller, command) ->
-   Answer` for the api's `Command`. It only adapts the core to novad's
+   `Sources`, `Config`, `start` building the core from `Context`, and
+   `TOPIC` as the api's constant whenever the feature has a topic, even
+   with no state to send on subscribe), and `pub fn answer(daemon, caller,
+   command) -> Answer` for the api's `Command`. It only adapts the core to novad's
    `App`, `Context` and `Daemon`, so IMP-381 can turn novad into `app`
    without moving logic again. The registry line in `modules/mod.rs` keeps
    its place.
@@ -160,8 +161,8 @@ assertions). The feature is `<id>` (its folder name), its crates
      `.route::<nova_<id>_api::Command>(crate::<id>::answer, |_, _, _| {})`
      after the `Shared` route, the feature routes sorted by feature id. Its
      arms leave `answer` and `follow_up`, and its `fn <id>()` lookup goes.
-     A topic with state to send on subscribe needs no line: `follow_up`'s
-     catch-all asks the modules (`Module::TOPIC`).
+     A module's topic needs no line in `follow_up`: its catch-all asks the
+     modules (`Module::TOPIC`), and `each_topic_has_one_owner` checks it.
    - `crates/novad/src/topics.rs` `TOPICS`: the api's constant replaces the
      shared one in its place, never moved or appended.
    - `crates/novad/src/protocol_js.rs` `events()`: the api's `Event` after

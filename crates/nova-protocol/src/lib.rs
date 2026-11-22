@@ -1985,7 +1985,8 @@ pub type Request = nova_carrier::Request<Command>;
 
 /// Reads one request line from a client. Anything on the socket is
 /// untrusted: unknown fields, unknown commands, bad arguments and other
-/// protocol versions are all errors.
+/// protocol versions are all errors. `subscribe`'s topic names are checked
+/// by novad, which knows every feature's topics (its `topics` list).
 pub fn decode_request(line: &str) -> Result<Request, String> {
     nova_carrier::decode_request(line)
 }

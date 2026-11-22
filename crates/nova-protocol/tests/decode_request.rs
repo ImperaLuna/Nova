@@ -176,6 +176,44 @@ proptest! {
     }
 
     #[test]
+    fn bad_resources_requests_are_refused(
+        request in resources_request(),
+        key in any::<String>(),
+        value in json(),
+        v in any::<u32>(),
+        cut in any::<proptest::sample::Index>(),
+    ) {
+        let decode = |line: &str| nova_carrier::decode_request::<nova_resources_api::Command>(line);
+        let fields: Map<String, Value> = serde_json::from_str(&encode(&request).unwrap()).unwrap();
+        if !LINE_FIELDS.contains(&key.as_str()) {
+            let mut extra = fields.clone();
+            extra.insert(key.clone(), value.clone());
+            prop_assert!(decode(&Value::Object(extra).to_string()).is_err());
+        }
+        if let Some(Value::Object(args)) = fields.get("args")
+            && !args.contains_key(&key)
+        {
+            let mut args = args.clone();
+            args.insert(key, value);
+            let mut extra = fields.clone();
+            extra.insert("args".into(), Value::Object(args));
+            prop_assert!(decode(&Value::Object(extra).to_string()).is_err());
+        }
+        if v != PROTOCOL_VERSION {
+            let mut other = fields;
+            other.insert("v".into(), v.into());
+            prop_assert!(decode(&Value::Object(other).to_string()).is_err());
+        }
+        let line = encode(&request).unwrap();
+        let line = line.trim_end();
+        let mut end = cut.index(line.len());
+        while !line.is_char_boundary(end) {
+            end -= 1;
+        }
+        prop_assert!(decode(&line[..end]).is_err());
+    }
+
+    #[test]
     fn extra_fields_are_refused(request in request(), key in any::<String>(), value in json()) {
         prop_assume!(!LINE_FIELDS.contains(&key.as_str()));
         let mut fields: Map<String, Value> = serde_json::from_str(&encode(&request).unwrap()).unwrap();

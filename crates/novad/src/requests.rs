@@ -43,6 +43,12 @@ impl<'de> serde::Deserialize<'de> for Shared {
     }
 }
 
+/// The topics `follow_up` answers itself on subscribe; every other one in
+/// [`crate::topics::TOPICS`] is a module's.
+#[cfg(test)]
+const ANSWERED_HERE: &[nova_protocol::Topic] =
+    &[topics::FEATURES, topics::LOGS, topics::THEME, topics::COMPOSITOR, topics::HOST, topics::TOGGLE, topics::VOLUME];
+
 /// A request from the client `caller`.
 struct Connection<'a> {
     daemon: &'a Daemon,
@@ -659,12 +665,11 @@ impl<'a> Connection<'a> {
                         }
                         // Facts about the machine, there whatever the features.
                         topics::HOST => self.send(Event::Host(settings.host())),
-                        // Sent while some connection watches them.
-                        nova_resources_api::TOPIC => {}
                         // Only ever sent as `nova toggle` or `nova volume` asks.
                         topics::TOGGLE | topics::VOLUME => {}
-                        // A module's: without its feature there is nothing to
-                        // send until a reload turns it on.
+                        // A module's (`Module::TOPIC`, checked by
+                        // `each_topic_has_one_owner`): without its feature
+                        // there is nothing to send until a reload turns it on.
                         _ => settings.modules.send_state(topic, self.id),
                     }
                 }
@@ -749,6 +754,19 @@ impl<'a> Connection<'a> {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    /// Each topic is answered on subscribe by `follow_up` itself or by
+    /// exactly one module, and every module's topic is one novad serves.
+    #[test]
+    fn each_topic_has_one_owner() {
+        let modules: Vec<_> = crate::modules::Running::TOPICS.iter().flatten().copied().collect();
+        for topic in crate::topics::TOPICS {
+            let owners = modules.iter().filter(|module| *module == topic).count()
+                + usize::from(super::ANSWERED_HERE.contains(topic));
+            assert_eq!(owners, 1, "{topic:?} has {owners} owners");
+        }
+        assert!(modules.iter().all(|topic| crate::topics::TOPICS.contains(topic)));
+    }
 
     /// Every command the UI's protocol file names has exactly one route, and
     /// no route takes a command the file lacks. (A name two routes claim
