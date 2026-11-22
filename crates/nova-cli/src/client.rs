@@ -161,6 +161,7 @@ const HUNG_UP: &str = "novad closed the connection";
 pub enum Sent {
     Shared(Event),
     Bluetooth(nova_bluetooth_api::Event),
+    Launcher(nova_launcher_api::Event),
     Network(nova_network_api::Event),
     Resources(nova_resources_api::Event),
     Tray(nova_tray_api::Event),

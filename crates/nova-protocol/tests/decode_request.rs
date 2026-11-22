@@ -84,6 +84,19 @@ fn command() -> impl Strategy<Value = Command> {
     ]
 }
 
+/// The launcher feature's commands, which it owns (`nova-launcher-api`).
+fn launcher_request() -> impl Strategy<Value = nova_carrier::Request<nova_launcher_api::Command>> {
+    use nova_launcher_api::Command;
+    let command = prop_oneof![
+        (".*", proptest::option::of(".*")).prop_map(|(query, mode)| Command::LauncherSearch { query, mode }),
+        (".*", ".*", ".*").prop_map(|(icon_name, program, name)| Command::AppIcon { icon_name, program, name }),
+        (".*", ".*", proptest::option::of(".*"), any::<bool>())
+            .prop_map(|(provider, id, output, new_window)| Command::LauncherRun { provider, id, output, new_window }),
+        (".*", any::<bool>()).prop_map(|(id, pinned)| Command::PinApp { id, pinned }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
 /// The resources feature's commands, which it owns (`nova-resources-api`).
 fn resources_request() -> impl Strategy<Value = nova_carrier::Request<nova_resources_api::Command>> {
     use nova_resources_api::Command;
@@ -222,6 +235,12 @@ proptest! {
 
     #[test]
     fn every_bluetooth_request_round_trips(request in bluetooth_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn every_launcher_request_round_trips(request in launcher_request()) {
         let line = encode(&request).unwrap();
         prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
     }

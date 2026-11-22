@@ -51,6 +51,7 @@ pub fn run(args: &IpcArgs, socket: &Path) -> Result<(), String> {
 enum IpcCommand {
     Shared(Command),
     Bluetooth(nova_bluetooth_api::Command),
+    Launcher(nova_launcher_api::Command),
     Network(nova_network_api::Command),
     Resources(nova_resources_api::Command),
     Tray(nova_tray_api::Command),
@@ -65,6 +66,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
     }
     let read = if tagged_names_of::<nova_bluetooth_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Bluetooth)
+    } else if tagged_names_of::<nova_launcher_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Launcher)
     } else if tagged_names_of::<nova_network_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Network)
     } else if tagged_names_of::<nova_resources_api::Command>("cmd").contains(&name) {

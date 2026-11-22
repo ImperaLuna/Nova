@@ -129,7 +129,9 @@ assertions). The feature is `<id>` (its folder name), its crates
    "data"`) implementing `nova_carrier::Published`, its topics as `pub const
    TOPIC: Topic = Topic::named("<wire name>")` (the name `nova-protocol`'s
    `topics` constant had), and the types those carry. It uses only
-   `nova-carrier` and other api crates. Done when the variants, the topic
+   `nova-carrier`, the framework lookup crates whose types its messages
+   carry (`FRAMEWORK_FOR_API`, like `nova-apps`' `App`), and other api
+   crates. Done when the variants, the topic
    constant and the types are gone from `nova-protocol`, with nothing left
    pointing at them.
 2. **The core crate**, `features/<id>/core`: novad's module folder (or

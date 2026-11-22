@@ -68,6 +68,8 @@ nova-compositor = { path = "framework/compositor" }
 nova-test-support = { path = "framework/test-support" }
 nova-bluetooth-api = { path = "features/bluetooth/api" }
 nova-bluetooth = { path = "features/bluetooth/core" }
+nova-launcher-api = { path = "features/launcher/api" }
+nova-launcher = { path = "features/launcher/core" }
 nova-network-api = { path = "features/network/api" }
 nova-network = { path = "features/network/core" }
 nova-resources-api = { path = "features/resources/api" }
