@@ -4,7 +4,7 @@
 //! copy of an entry replaces the system's.
 
 use super::desktop_entry::{self, Context, Entry, Skipped};
-use crate::watch_points::WatchPoints;
+use nova_watch::WatchPoints;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -81,7 +81,7 @@ fn without_copies(apps: BTreeMap<String, Entry>) -> (BTreeMap<String, Entry>, Ve
     (kept.into_values().map(|entry| (entry.id.clone(), entry)).collect(), copies)
 }
 
-pub(crate) fn read_entry(file: &Path) -> std::io::Result<String> {
+pub fn read_entry(file: &Path) -> std::io::Result<String> {
     use std::io::Read;
     let mut text = String::new();
     std::fs::File::open(file)?.take(MAX_ENTRY_BYTES).read_to_string(&mut text)?;
@@ -135,7 +135,7 @@ pub fn watch_points(data_dirs: &[PathBuf]) -> WatchPoints {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::apps::desktop_entry::Locale;
+    use crate::desktop_entry::Locale;
     use std::os::unix::fs::symlink;
 
     fn temp(name: &str) -> nova_test_support::TempDir {

@@ -1,0 +1,23 @@
+# Allowed outside crates: none
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-paths
+
+[package]
+name = "nova-icons"
+description = "App icons as files, looked up in the user's icon theme the way the freedesktop.org spec says"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-base.workspace = true
+nova-paths.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+
+[lints]
+workspace = true

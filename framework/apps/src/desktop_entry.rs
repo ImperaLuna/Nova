@@ -165,7 +165,7 @@ fn group(text: &str) -> HashMap<&str, &str> {
 /// `key` or `key[locale]` to its raw value; reading stops at the group
 /// after it. Other files in the same format (thumbnailers) read theirs
 /// with it too.
-pub(crate) fn keys_of<'a>(text: &'a str, header: &str) -> HashMap<&'a str, &'a str> {
+pub fn keys_of<'a>(text: &'a str, header: &str) -> HashMap<&'a str, &'a str> {
     let mut keys = HashMap::new();
     let mut inside = false;
     for line in text.lines() {
@@ -265,7 +265,7 @@ pub fn parse(id: &str, file: &Path, text: &str, context: &Context) -> Result<Ent
 }
 
 /// A string value with its escapes (`\s`, `\n`, `\t`, `\r`, `\\`) undone.
-pub(crate) fn unescape(value: &str) -> String {
+pub fn unescape(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     let mut chars = value.chars();
     while let Some(c) = chars.next() {
@@ -291,7 +291,7 @@ pub(crate) fn unescape(value: &str) -> String {
 }
 
 /// A list value (`a;b;c;`), each item unescaped, empty ones dropped.
-pub(crate) fn list(value: &str) -> Vec<String> {
+pub fn list(value: &str) -> Vec<String> {
     let mut items = Vec::new();
     let mut item = String::new();
     let mut chars = value.chars();
@@ -317,7 +317,7 @@ pub(crate) fn list(value: &str) -> Vec<String> {
 /// arguments, each with whether it was quoted, where field codes don't
 /// apply: split at spaces outside double quotes, with `\"`, `` \` ``, `\$`
 /// and `\\` inside them. Thumbnailers' `Exec` lines split the same way.
-pub(crate) fn exec_words(line: &str) -> Result<Vec<(String, bool)>, String> {
+pub fn exec_words(line: &str) -> Result<Vec<(String, bool)>, String> {
     let mut words: Vec<(String, bool)> = Vec::new();
     let mut chars = line.chars();
     let mut word: Option<(String, bool)> = None;

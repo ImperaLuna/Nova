@@ -23,12 +23,16 @@
 # - zip
 #
 # Allowed workspace crates:
+# - nova-apps
 # - nova-base
 # - nova-carrier
 # - nova-features
+# - nova-host
 # - nova-hub
+# - nova-icons
 # - nova-inotify
 # - nova-log
+# - nova-mime
 # - nova-modules
 # - nova-paths
 # - nova-process
@@ -37,7 +41,7 @@
 # - nova-session-bus
 # - nova-settings
 # - nova-socket
-# - nova-watch
+# - nova-theme
 
 [package]
 name = "novad"
@@ -59,10 +63,14 @@ nova-session-bus.workspace = true
 nova-carrier.workspace = true
 nova-hub.workspace = true
 nova-log.workspace = true
-nova-watch.workspace = true
 nova-socket.workspace = true
 nova-modules.workspace = true
 nova-settings.workspace = true
+nova-host.workspace = true
+nova-theme.workspace = true
+nova-apps.workspace = true
+nova-mime.workspace = true
+nova-icons.workspace = true
 serde_json.workspace = true
 clap.workspace = true
 futures-core.workspace = true
@@ -92,6 +100,7 @@ nova-base = { workspace = true, features = ["test-support"] }
 nova-session-bus = { workspace = true, features = ["test-support"] }
 nova-hub = { workspace = true, features = ["test-support"] }
 nova-socket = { workspace = true, features = ["test-support"] }
+nova-apps = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true
