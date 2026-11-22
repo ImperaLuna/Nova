@@ -23,6 +23,7 @@ pub fn router() -> Router<Daemon> {
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).answer(command),
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).follow_up(command),
         )
+        .route::<nova_ai_usage_api::Command>(crate::ai_usage::answer, |_, _, _| {})
         .route::<nova_network_api::Command>(crate::network::answer, |_, _, _| {})
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
         .route::<nova_tray_api::Command>(crate::tray::answer, |_, _, _| {})
@@ -91,11 +92,6 @@ impl<'a> Connection<'a> {
             Command::ListFeatures => value(Ok(&lock(&self.daemon.settings).features)),
             Command::Status => value(Ok(self.daemon.status())),
             Command::Subscribe { .. } | Command::Quit => done(Ok(())),
-            Command::RefreshAiUsage => done(self.ai_usage().map(|usage| usage.refresh())),
-            Command::ShowAiUsage { provider } => done(self.ai_usage().and_then(|usage| usage.show(*provider))),
-            Command::ReportClaudeUsage { limits } => {
-                done(self.ai_usage().and_then(|usage| usage.report_claude(limits.clone())))
-            }
             Command::FocusWorkspace { id } => {
                 done(self.compositor().and_then(|compositor| compositor.focus_workspace(*id)))
             }
@@ -213,10 +209,6 @@ impl<'a> Connection<'a> {
     }
 
     // The modules, or why there's none (`Daemon::module`).
-
-    fn ai_usage(&self) -> Result<Arc<crate::ai_usage::Usage>, String> {
-        self.daemon.module()
-    }
 
     fn launcher(&self) -> Result<Arc<crate::launcher::Launcher>, String> {
         self.daemon.module()
@@ -571,9 +563,6 @@ impl<'a> Connection<'a> {
             Command::Ping
             | Command::ListFeatures
             | Command::Status
-            | Command::ShowAiUsage { .. }
-            | Command::RefreshAiUsage
-            | Command::ReportClaudeUsage { .. }
             | Command::FocusWorkspace { .. }
             | Command::StepWorkspace { .. }
             | Command::Toggle { .. }

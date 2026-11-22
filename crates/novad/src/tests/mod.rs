@@ -303,8 +303,8 @@ fn repo_features() -> PathBuf {
 
 /// The usage endpoints are `claude_usage_url` and `codex_usage_url`; nothing
 /// listens there unless a test starts a fake one.
-fn ai_usage_paths(root: &Path) -> ai_usage::Paths {
-    ai_usage::Paths {
+fn ai_usage_paths(root: &Path) -> nova_ai_usage::Paths {
+    nova_ai_usage::Paths {
         codex_home: Some(root.join("codex")),
         state_file: root.join("state/ai-usage.json"),
         claude_credentials: Some(root.join("claude/.credentials.json")),
