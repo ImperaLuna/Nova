@@ -31,6 +31,7 @@ serde_json.workspace = true
 [dev-dependencies]
 # The wire format snapshot keeps the moved features' messages (IMP-368).
 nova-launcher-api.workspace = true
+nova-media-api.workspace = true
 nova-network-api.workspace = true
 nova-notifications-api.workspace = true
 nova-resources-api.workspace = true

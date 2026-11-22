@@ -6,6 +6,8 @@
 //! `ui/daemon/Daemon.qml` derives the socket path on its own (QML can't call
 //! Rust); keep it in step with [`socket`].
 
+pub mod reference;
+
 use std::path::{Path, PathBuf};
 
 /// `$XDG_RUNTIME_DIR/nova/novad.sock`, or `/tmp/nova-<uid>/nova/novad.sock`
