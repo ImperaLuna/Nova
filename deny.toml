@@ -27,6 +27,9 @@ skip = [
     { crate = "miniz_oxide@0.8", reason = "png 0.18 and its flate2 pin different miniz_oxide versions" },
     # ring (ureq's rustls) is still on getrandom 0.2; zip 9 needs 0.4.
     { crate = "getrandom@0.2", reason = "ring 0.17 and zip 9 pin different getrandom majors" },
+    # pulseaudio 0.3's derive macros (enum-primitive-derive, thiserror 1)
+    # are still on syn 2; the rest of the tree is on syn 3. Build time only.
+    { crate = "syn@2", reason = "pulseaudio 0.3's derive macros are on syn 2, everything else on syn 3" },
 ]
 
 [sources]

@@ -24,6 +24,7 @@
 # - nova-recording-api
 # - nova-resources-api
 # - nova-screenshot-api
+# - nova-sound-api
 # - nova-theme-info
 # - nova-tray-api
 # - nova-volume-osd-api
@@ -58,6 +59,7 @@ nova-quickshell.workspace = true
 nova-recording-api.workspace = true
 nova-resources-api.workspace = true
 nova-screenshot-api.workspace = true
+nova-sound-api.workspace = true
 nova-theme-info.workspace = true
 nova-tray-api.workspace = true
 nova-volume-osd-api.workspace = true

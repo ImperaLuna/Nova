@@ -254,6 +254,8 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             data_dirs: vec![],
             home: None,
         },
+        // No sound server: the sound's own tests give it one.
+        sound: nova_sound::Sources::default(),
         // No bus either: the media's own tests give it one.
         media: nova_media::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),

@@ -106,6 +106,29 @@ pub(super) fn resources() -> nova_resources_api::Resources {
     }
 }
 
+pub(super) fn sound() -> nova_sound_api::Sound {
+    use nova_sound_api::{App, Device, DeviceKind, Link, Sound};
+    let device = |id, name: &str, kind, link, current| Device {
+        id,
+        name: name.into(),
+        kind,
+        link,
+        volume: 0.4,
+        muted: false,
+        current,
+    };
+    Sound {
+        available: true,
+        outputs: vec![
+            device(52, "Arctis Nova 7", DeviceKind::Headphones, Some(Link::Usb), true),
+            device(61, "ALC1220 Analog", DeviceKind::Speakers, None, false),
+        ],
+        inputs: vec![device(53, "Arctis Nova 7", DeviceKind::Headphones, Some(Link::Usb), true)],
+        apps: vec![App { id: 77, name: "Firefox".into(), volume: 1.0, muted: true }],
+        recorders: vec!["Discord".into()],
+    }
+}
+
 pub(super) fn launcher() -> nova_launcher_api::Launcher {
     nova_launcher_api::Launcher {
         apps: vec![
