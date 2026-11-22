@@ -398,7 +398,7 @@ pub fn focus_shown(
     loop {
         match compositor.focus_app(ids, output) {
             Ok(true) => return true,
-            Ok(false) if std::time::Instant::now() < deadline => std::thread::sleep(TRAY_WINDOW_RETRY),
+            Ok(false) if std::time::Instant::now() < deadline => nova_base::backoff::wait_out(TRAY_WINDOW_RETRY),
             Ok(false) => {
                 logger.info(LOG_SOURCE, &format!("{id}'s window didn't show"));
                 return false;

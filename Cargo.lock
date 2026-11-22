@@ -1332,6 +1332,7 @@ name = "nova-session-bus"
 version = "0.1.0"
 dependencies = [
  "nova-base",
+ "nova-test-support",
  "zbus",
 ]
 
