@@ -45,13 +45,15 @@ in
     home.packages = [
       cfg.package
     ]
+    # novad finds `nova-ui` on PATH.
+    ++ lib.optional (cfg.ui == "gpui") cfg.uiPackage
     ++ features.packagesFor pkgs cfg.gpu on
     # The Nova Files app, unless the system installs it; the session bus
     # finds its D-Bus service in the profile's share/dbus-1/services.
     ++ lib.optional (novaFilesOn && !novaFilesBySystem) cfg.novaFilesPackage;
     xdg = {
       configFile = {
-        "nova/features.toml".text = features.selectionFile cfg.features;
+        "nova/features.toml".text = features.selectionFile cfg.ui cfg.features;
         # The package's own unit, linked where systemd looks, and wanted by
         # graphical-session.target (which niri, and Hyprland through uwsm,
         # start).

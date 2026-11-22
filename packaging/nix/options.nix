@@ -37,6 +37,27 @@ in
       description = "The Nova Files app, which the `nova-files` feature installs (on NixOS through `programs.nova-files.package`).";
     };
 
+    ui = lib.mkOption {
+      type = lib.types.enum [
+        "quickshell"
+        "gpui"
+      ];
+      default = "quickshell";
+      description = ''
+        The program that draws Nova's UI: the QML shell on Quickshell, or
+        `nova-ui`, the GPUI program the UI is being ported to (unfinished:
+        it shows only what has been ported). Picking `gpui` installs it.
+        Applies when Nova restarts.
+      '';
+    };
+
+    uiPackage = lib.mkOption {
+      type = lib.types.package;
+      default = packages.${pkgs.stdenv.hostPlatform.system}.nova-ui;
+      defaultText = lib.literalExpression "nova.packages.\${system}.nova-ui";
+      description = "The GPUI program, installed while `programs.nova.ui` is `gpui`.";
+    };
+
     featuresFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;

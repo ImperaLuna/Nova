@@ -43,8 +43,46 @@
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      # Rust sources only, so UI edits don't rebuild the daemon. Tokens.qml and
-      # protocol.js are the exceptions: Rust tests check they match novad.
+      # The UI side's crates, the ones that may use GPUI (AGENTS.md, Layout):
+      # the nova-ui program, the shared UI parts and each feature's ui. The
+      # daemon's sources below leave them out, so a change to them alone
+      # rebuilds nothing of the daemon's and leaves its VM tests as built.
+      uiCrates =
+        lib:
+        lib.fileset.unions (
+          [
+            ./app-ui
+            (lib.fileset.maybeMissing ./framework-ui)
+          ]
+          ++ map (id: lib.fileset.maybeMissing (./features + "/${id}/ui")) (
+            builtins.attrNames (builtins.readDir ./features)
+          )
+        );
+
+      # ./features without the ui crates: the manifests, and the daemon
+      # side's crates.
+      daemonFeatures = lib: lib.fileset.difference ./features (uiCrates lib);
+
+      # What the UI side builds from: its crates, and the daemon side's that
+      # they use by path (api and -info crates), with the root manifest
+      # those inherit from.
+      uiSrc =
+        lib:
+        lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [
+            ./Cargo.toml
+            ./rustfmt.toml
+            ./clippy.toml
+            ./features
+            ./framework
+            (uiCrates lib)
+          ];
+        };
+
+      # The daemon side's Rust sources only, so UI edits don't rebuild the
+      # daemon. Tokens.qml and protocol.js are the exceptions: Rust tests
+      # check they match novad.
       rustSrc =
         lib:
         lib.fileset.toSource {
@@ -56,7 +94,7 @@
             ./rustfmt.toml
             # Clippy's limits and test exemptions.
             ./clippy.toml
-            ./features
+            (daemonFeatures lib)
             # The crate folder kinds (AGENTS.md, Layout).
             ./framework
             ./fronts
@@ -133,7 +171,7 @@
           root = ./.;
           fileset = lib.fileset.unions [
             ./e2e/run.sh
-            ./features
+            (daemonFeatures lib)
             ./ui
           ];
         };
@@ -141,9 +179,14 @@
       # share/nova under `prefix`: what nova finds next to its binary
       # (nova-paths). Copied in after the Rust build, so UI edits don't
       # recompile nova.
-      installShare = prefix: ''
+      installShare = lib: prefix: ''
         mkdir -p ${prefix}/share/nova
-        cp -r --no-preserve=mode ${./features} ${prefix}/share/nova/features
+        cp -r --no-preserve=mode ${
+          lib.fileset.toSource {
+            root = ./features;
+            fileset = daemonFeatures lib;
+          }
+        } ${prefix}/share/nova/features
         cp -r --no-preserve=mode ${./themes} ${prefix}/share/nova/themes
         cp -r --no-preserve=mode ${./ui} ${prefix}/share/nova/ui
       '';
@@ -188,7 +231,7 @@
                 ''
                   install -Dm755 -t $out/bin ${bin}/bin/*
                 ''
-                + installShare "$out"
+                + installShare pkgs.lib "$out"
                 + ''
                   install -Dm644 ${./packaging/systemd/nova.service.in} $out/lib/systemd/user/nova.service
                   substituteInPlace $out/lib/systemd/user/nova.service \
@@ -197,6 +240,16 @@
                   install -Dm644 -t $out/lib/udev/rules.d ${./features/peripherals/udev}/*.rules
                 ''
               );
+        };
+
+      # The UI side on pkgs: the nova-ui program and its checks, built from
+      # its own workspace (app-ui/) and lock.
+      uiFor =
+        pkgs:
+        import ./packaging/nix/nova-ui.nix {
+          inherit pkgs version advisory-db;
+          craneLib = crane.mkLib pkgs;
+          src = uiSrc pkgs.lib;
         };
 
       # The release archive install.sh fetches on other distros:
@@ -224,7 +277,7 @@
             # Store files are read-only; an upgrade has to replace share/nova.
             chmod -R u+w tree
           ''
-          + installShare "tree"
+          + installShare pkgs.lib "tree"
           + ''
             tar -C tree --sort=name --owner=0 --group=0 --numeric-owner --mtime=@1 -c bin share \
               | gzip -n > $out/${name}.tar.gz
@@ -260,6 +313,8 @@
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
 
         inherit (novaFor pkgs) nova nova-quickshell;
+        # The GPUI program novad runs when features.toml says `ui = "gpui"`.
+        inherit (uiFor pkgs) nova-ui;
         # What the `nova-files` feature installs.
         nova-files = nova-files.packages.${pkgs.stdenv.hostPlatform.system}.default;
         # .github/workflows/release.yml attaches this to a GitHub release.
@@ -318,6 +373,14 @@
         }
         // {
           build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
+          # The UI side: nova-ui builds, and its clippy, rustfmt and
+          # cargo-deny pass (packaging/nix/nova-ui.nix).
+          inherit ((uiFor pkgs).checks)
+            ui-build
+            ui-clippy
+            ui-rustfmt
+            ui-cargo-deny
+            ;
           tests =
             let
               inherit (rustFor pkgs) craneLib common cargoArtifacts;
@@ -379,7 +442,7 @@
           # The NixOS module with every feature on, with and without NVIDIA:
           # each manifest's `nix` packages exist in nixpkgs, and the
           # features.toml it writes reads back as the same choice, modes
-          # too. The VM tests run the module for real.
+          # and the UI program too. The VM tests run the module for real.
           nix-modules =
             let
               features = import ./packaging/nix/features.nix { inherit (pkgs) lib; };
@@ -395,6 +458,8 @@
                       services.xserver = { inherit videoDrivers; };
                       programs.nova = {
                         enable = true;
+                        # The GPUI program as the UI, which installs it.
+                        ui = "gpui";
                         # Every feature on, each with modes in its last mode
                         # (none defaults to it).
                         features = pkgs.lib.mapAttrs (
@@ -417,6 +482,8 @@
                   selection = builtins.fromTOML config.environment.etc."xdg/nova/features.toml".text;
                 in
                 assert pkgs.lib.all (features.isOn selection) (builtins.attrValues features.manifests);
+                assert selection.ui == "gpui";
+                assert pkgs.lib.elem config.programs.nova.uiPackage config.environment.systemPackages;
                 assert pkgs.lib.all (manifest: features.modeOf selection manifest == pkgs.lib.last manifest.modes) (
                   builtins.filter (manifest: manifest ? modes) (builtins.attrValues features.manifests)
                 );
@@ -508,6 +575,8 @@
               }
               ''
                 cp -r ${src}/. src && chmod -R u+w src
+                # Both sides: the UI side's crates are in the layout too.
+                cp -r --no-preserve=mode ${uiSrc pkgs.lib}/. src
                 cp ${./scripts/check-layout.sh} check-layout.sh && cp ${./scripts/test-check-layout.sh} test-check-layout.sh
                 shellcheck check-layout.sh test-check-layout.sh
                 patchShebangs check-layout.sh test-check-layout.sh
@@ -671,6 +740,11 @@
       );
 
       devShells = forAllSystems (pkgs: {
+        # For the UI side (`nix develop .#ui`): what GPUI needs to build and
+        # run, which the default shell leaves out so its Quickshell runs
+        # with the session's own libraries.
+        ui = (uiFor pkgs).devShell;
+
         default = pkgs.mkShell {
           packages = [
             pkgs.cargo

@@ -1,0 +1,59 @@
+# cargo-deny for the UI side's workspace (app-ui/): known vulnerabilities,
+# licenses and sources of what GPUI brings in. The daemon side has its own,
+# stricter file at the repo root; its ban on two versions of one crate can't
+# hold here, where GPUI's tree decides. The lists follow Nova Files'
+# deny.toml, which pins the same GPUI.
+#
+# `nix flake check` runs it offline against the advisory database pinned in
+# flake.lock (check ui-cargo-deny); `just ui-deny` against the latest one.
+
+[graph]
+# Nova only runs on Linux, so Windows- and macOS-only crates don't count.
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+
+[advisories]
+# Yanked crates need the live crates.io index, which the offline check
+# can't reach.
+yanked = "allow"
+# Unmaintained only fails for crates Nova depends on directly; the ones deep
+# in GPUI's tree are its to replace. Vulnerabilities always fail.
+unmaintained = "workspace"
+
+[licenses]
+confidence-threshold = 0.9
+unused-allowed-license = "allow"
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "NCSA",
+    "CDLA-Permissive-2.0",
+    # File-level copyleft: changes to those files stay open; Nova's code doesn't.
+    "MPL-2.0",
+    # BSD-style license of the Rust bzip2 port under GPUI's archive code.
+    "bzip2-1.0.6",
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = [
+    # GPUI and its platform crates come from a fork of Zed (app-ui/Cargo.toml).
+    "https://github.com/ImperaLuna/zed",
+    # Git dependencies GPUI pulls in on Linux with Wayland.
+    "https://github.com/gfx-rs/wgpu",
+    "https://github.com/zed-industries/font-kit",
+    "https://github.com/zed-industries/oo7",
+]
