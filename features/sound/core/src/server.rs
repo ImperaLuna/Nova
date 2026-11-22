@@ -40,15 +40,18 @@ pub struct Sources {
 }
 
 impl Sources {
-    /// Where libpulse would look: `PULSE_SERVER` when it names a Unix
-    /// socket, else `PULSE_RUNTIME_PATH`, else `XDG_RUNTIME_DIR`; the
-    /// cookie from `PULSE_COOKIE`, else the home folder.
+    /// Where libpulse would look: `PULSE_SERVER` when it's set (nowhere
+    /// when it names no Unix socket: the apps' server isn't a local one
+    /// then), else `PULSE_RUNTIME_PATH`, else `XDG_RUNTIME_DIR`; the cookie
+    /// from `PULSE_COOKIE`, else the home folder.
     pub fn system() -> Self {
         let var = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty()).map(PathBuf::from);
-        let named = std::env::var("PULSE_SERVER").ok().and_then(|server| socket_named(&server));
-        let socket = named
-            .or_else(|| var("PULSE_RUNTIME_PATH").map(|dir| dir.join("native")))
-            .or_else(|| var("XDG_RUNTIME_DIR").map(|dir| dir.join(SOCKET_IN_RUNTIME_DIR)));
+        let socket = match std::env::var("PULSE_SERVER").ok().filter(|server| !server.is_empty()) {
+            Some(server) => socket_named(&server),
+            None => var("PULSE_RUNTIME_PATH")
+                .map(|dir| dir.join("native"))
+                .or_else(|| var("XDG_RUNTIME_DIR").map(|dir| dir.join(SOCKET_IN_RUNTIME_DIR))),
+        };
         let config = var("XDG_CONFIG_HOME").or_else(|| var("HOME").map(|home| home.join(".config")));
         let cookies = [
             var("PULSE_COOKIE"),
@@ -59,11 +62,19 @@ impl Sources {
     }
 }
 
-/// The Unix socket a `PULSE_SERVER` value names, if it names one: a path,
-/// with or without `unix:`. A network server isn't followed.
-fn socket_named(server: &str) -> Option<PathBuf> {
-    let path = server.strip_prefix(UNIX_PREFIX).unwrap_or(server);
-    path.starts_with('/').then(|| PathBuf::from(path))
+/// The first Unix socket a `PULSE_SERVER` value names, if it names one.
+/// It lists servers apart by spaces, each a path with or without `unix:`,
+/// or another kind (`tcp:`), and each may open with `{machine id}`. A
+/// network server isn't followed.
+fn socket_named(servers: &str) -> Option<PathBuf> {
+    servers.split_whitespace().find_map(|server| {
+        let server = match server.strip_prefix('{') {
+            Some(rest) => rest.split_once('}')?.1,
+            None => server,
+        };
+        let path = server.strip_prefix(UNIX_PREFIX).unwrap_or(server);
+        path.starts_with('/').then(|| PathBuf::from(path))
+    })
 }
 
 /// Everything the server lists, as it answered.
@@ -85,7 +96,8 @@ pub struct Link {
 }
 
 impl Link {
-    /// Connects and introduces Nova. Every step has [`ANSWER_TIMEOUT`].
+    /// Connects and introduces Nova. Each request and answer has
+    /// [`ANSWER_TIMEOUT`]; connecting to a local socket answers at once.
     pub fn connect(sources: &Sources) -> Result<Self, String> {
         let socket = sources.socket.as_deref().ok_or("nothing says where the sound server's socket is")?;
         let stream = UnixStream::connect(socket).map_err(|e| format!("can't connect to {}: {e}", socket.display()))?;
@@ -214,6 +226,11 @@ mod tests {
     fn pulse_server_names_a_unix_socket_or_nothing() {
         assert_eq!(socket_named("unix:/run/user/1000/pulse/native"), Some("/run/user/1000/pulse/native".into()));
         assert_eq!(socket_named("/tmp/pulse/native"), Some("/tmp/pulse/native".into()));
+        assert_eq!(
+            socket_named("{4fd0}unix:/run/pulse/native tcp:sound.example:4713"),
+            Some("/run/pulse/native".into())
+        );
+        assert_eq!(socket_named("tcp:sound.example:4713 /tmp/native"), Some("/tmp/native".into()));
         assert_eq!(socket_named("tcp:sound.example:4713"), None);
         assert_eq!(socket_named(""), None);
     }

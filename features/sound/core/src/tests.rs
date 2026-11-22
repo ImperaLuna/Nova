@@ -3,6 +3,8 @@
 
 use super::*;
 use crate::fake_pulse::{FakePulse, recorded, recording};
+use crate::server::Listing;
+use pulseaudio::protocol::{ChannelVolume, SinkInputInfo};
 
 /// Writes what the sound server running now lists as a recording, to the
 /// file `NOVA_SOUND_RECORD` names:
@@ -127,6 +129,39 @@ fn a_change_is_published_whoever_made_it() {
     // The output going leaves none in use.
     server.change(|listing| listing.sinks.clear());
     assert_eq!(fixture.next()["outputs"], json!([]));
+}
+
+#[test]
+fn an_app_playing_untouched_reads_as_full_volume() {
+    let fixture = Fixture::new("untouched");
+    let server = fixture.server();
+    let _sound = fixture.sound();
+    fixture.next();
+    // Chimes turned all the way down reads as that.
+    fn chimes(listing: &mut Listing) -> &mut SinkInputInfo {
+        listing.sink_inputs.iter_mut().find(|stream| stream.index == 89).unwrap()
+    }
+    server.change(|listing| chimes(listing).cvolume = ChannelVolume::muted(2));
+    assert_eq!(fixture.next()["apps"][1]["volume"], 0.0);
+    // Without a volume of its own, like passed-through surround sound, it
+    // plays as it is whatever the number says.
+    server.change(|listing| chimes(listing).has_volume = false);
+    assert_eq!(fixture.next()["apps"][1]["volume"], 1.0);
+}
+
+#[test]
+fn a_server_that_lists_nothing_is_tried_again_ever_later() {
+    let fixture = Fixture::new("broken");
+    let server = fixture.server();
+    server.refuse_listings();
+    let _sound = fixture.sound();
+    // The second try comes a second after the first, the third two
+    // seconds later: three inside the time two fixed waits would take
+    // means the waits didn't grow.
+    wait_until(WAIT, "it tries again", || server.listings() >= 2);
+    nova_test_support::settle(FIRST_RETRY + FIRST_RETRY / 5);
+    assert_eq!(server.listings(), 2);
+    fixture.nothing_comes();
 }
 
 #[test]

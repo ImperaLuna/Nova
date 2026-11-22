@@ -6,7 +6,7 @@
 
 [package]
 name = "nova-sound-api"
-description = "The sound feature's messages: the sound event with outputs, inputs and apps, and the commands that change their volume"
+description = "The sound feature's messages: the sound event with outputs, inputs, apps and who records"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

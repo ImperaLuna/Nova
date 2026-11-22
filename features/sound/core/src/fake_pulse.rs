@@ -7,8 +7,8 @@
 use crate::server::Listing;
 use nova_base::lock;
 use pulseaudio::protocol::{
-    self, AuthReply, Command, CommandReply, SetClientNameReply, SubscriptionEvent, SubscriptionEventFacility,
-    SubscriptionEventType,
+    self, AuthReply, Command, CommandReply, PulseError, SetClientNameReply, SubscriptionEvent,
+    SubscriptionEventFacility, SubscriptionEventType,
 };
 use std::io::{BufReader, Cursor};
 use std::net::Shutdown;
@@ -76,6 +76,8 @@ struct Fake {
     followers: Vec<UnixStream>,
     /// How many listings were asked for (their first request).
     listings: usize,
+    /// Listings are answered with an error.
+    refusing: bool,
     gone: bool,
 }
 
@@ -88,6 +90,7 @@ impl FakePulse {
             connections: Vec::new(),
             followers: Vec::new(),
             listings: 0,
+            refusing: false,
             gone: false,
         }));
         let serving = Arc::clone(&state);
@@ -122,6 +125,12 @@ impl FakePulse {
         for _ in 0..times {
             fake.tell_followers();
         }
+    }
+
+    /// Answers every listing with an error from here on, as a server
+    /// that takes connections but can't list does.
+    pub fn refuse_listings(&self) {
+        lock(&self.state).refusing = true;
     }
 
     /// How many listings were asked for so far.
@@ -183,7 +192,10 @@ fn serve(stream: UnixStream, state: &Mutex<Fake>) {
             }
             Command::GetServerInfo => {
                 fake.listings += 1;
-                reply(to, request, &fake.listing.server)
+                match fake.refusing {
+                    true => protocol::write_error(to, request, &PulseError::Internal),
+                    false => reply(to, request, &fake.listing.server),
+                }
             }
             Command::GetSinkInfoList => reply(to, request, &fake.listing.sinks),
             Command::GetSourceInfoList => reply(to, request, &fake.listing.sources),

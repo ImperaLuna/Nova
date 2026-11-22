@@ -62,8 +62,9 @@ struct State {
     connection: u64,
     /// The server changed something since the last listing was asked for.
     changed: bool,
-    /// The connection that went, by its count.
-    gone: Option<u64>,
+    /// The newest connection that went, by its count: never lowered, so
+    /// an older one going late can't hide it.
+    gone: u64,
     /// The socket that waits for changes, to end its wait with.
     waiting: Option<UnixStream>,
 }
@@ -102,11 +103,13 @@ impl Sound {
                 return;
             }
             let reason = match self.connect() {
-                Ok((asking, connection)) => {
+                // A server that answered is one worth trying again soon,
+                // and news when it goes; one that connects but never
+                // lists keeps the longer waits and is said once.
+                Ok((asking, connection)) => self.follow(asking, connection, || {
                     retry.reset();
                     said = None;
-                    self.follow(asking, connection)
-                }
+                }),
                 Err(reason) => reason,
             };
             if !self.tell(Reading::default()) {
@@ -150,7 +153,7 @@ impl Sound {
             let mut state = lock(&self.state);
             match change {
                 Ok(()) => state.changed = true,
-                Err(_) => state.gone = Some(connection),
+                Err(_) => state.gone = state.gone.max(connection),
             }
             drop(state);
             self.wake.notify_all();
@@ -162,14 +165,15 @@ impl Sound {
 
     /// Reads the listing whenever something changed and publishes what
     /// differs, until `connection` goes or the feature stops. Returns why.
-    fn follow(&self, mut asking: Link, connection: u64) -> String {
+    /// `answered` runs once, after the first listing.
+    fn follow(&self, mut asking: Link, connection: u64, mut answered: impl FnMut()) -> String {
         let mut named = false;
         loop {
             let mut state = lock(&self.state);
-            while !state.stopped && !state.changed && state.gone != Some(connection) {
+            while !state.stopped && !state.changed && state.gone < connection {
                 state = self.wake.wait(state).unwrap_or_else(PoisonError::into_inner);
             }
-            if state.stopped || state.gone == Some(connection) {
+            if state.stopped || state.gone >= connection {
                 end_wait(&mut state);
                 return "the connection closed".into();
             }
@@ -186,6 +190,7 @@ impl Sound {
                 let server = listing.server.server_name.as_deref().map(|name| name.to_string_lossy());
                 self.logger.info(LOG_SOURCE, &format!("following {}", server.as_deref().unwrap_or("the server")));
                 named = true;
+                answered();
             }
             if !self.tell(reading::sound(&listing)) {
                 return "stopped".into();

@@ -34,6 +34,9 @@ const HEAD_WORN: &[&str] = &["headphone", "headset"];
 /// What a monitor's or TV's sound calls itself, in lower case.
 const DISPLAY_PORTS: &[&str] = &["hdmi", "displayport"];
 
+/// The volume of what plays untouched: 100%.
+const FULL: f32 = 1.0;
+
 /// What a client sees of `listing`.
 pub fn sound(listing: &Listing) -> Sound {
     let default_output = listing.server.default_sink_name.as_deref();
@@ -135,21 +138,25 @@ impl Named<'_> {
 /// One entry per app, in the order their first streams come: an app often
 /// plays more than one (a browser's tabs).
 fn apps(streams: &[SinkInputInfo]) -> Vec<App> {
-    let mut apps: Vec<App> = Vec::new();
+    // Each with its loudest stream that has a volume, if any has.
+    let mut apps: Vec<(App, Option<f32>)> = Vec::new();
     for stream in streams {
         let name = stream_name(&stream.props, &stream.name);
         // A stream without a volume of its own (one passed through
-        // untouched) would read 0 and pull the app's slider back.
-        let volume = if stream.has_volume { level(&stream.cvolume) } else { 0.0 };
-        match apps.iter_mut().find(|app| app.name == name) {
-            Some(app) => {
-                app.volume = app.volume.max(volume);
+        // untouched) plays as it is: it doesn't pull the app's slider.
+        let volume = stream.has_volume.then(|| level(&stream.cvolume));
+        match apps.iter_mut().find(|(app, _)| app.name == name) {
+            Some((app, loudest)) => {
+                *loudest = match (*loudest, volume) {
+                    (Some(one), Some(other)) => Some(one.max(other)),
+                    (one, other) => one.or(other),
+                };
                 app.muted = app.muted && stream.muted;
             }
-            None => apps.push(App { id: stream.index, name, volume, muted: stream.muted }),
+            None => apps.push((App { id: stream.index, name, volume: 0.0, muted: stream.muted }, volume)),
         }
     }
-    apps
+    apps.into_iter().map(|(app, loudest)| App { volume: loudest.unwrap_or(FULL), ..app }).collect()
 }
 
 /// The app a stream belongs to, as people know it; else what the stream
