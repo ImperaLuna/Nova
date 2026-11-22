@@ -27,9 +27,10 @@
 //! ```
 
 use crate::theme::ThemeChoice;
-// `[ai-usage]` and `[wallpaper]` are their features' (`nova-ai-usage`,
-// `nova-wallpaper`).
+// `[ai-usage]`, `[screenshot]` and `[wallpaper]` are their features'
+// (`nova-ai-usage`, `nova-screenshot`, `nova-wallpaper`).
 pub use nova_ai_usage::AiUsageConfig;
+pub use nova_screenshot::ScreenshotConfig;
 pub use nova_wallpaper::WallpaperConfig;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -67,24 +68,6 @@ pub struct QuickSettingsConfig {
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct ScreenshotConfig {
-    /// Where screenshots are saved: an absolute path, or one starting with
-    /// `~/`. By default `Screenshots` in the user's pictures folder.
-    #[serde(default)]
-    pub folder: Option<String>,
-}
-
-impl ScreenshotConfig {
-    /// The folder screenshots go in (see [`folder`]).
-    pub fn folder(&self) -> Result<PathBuf, String> {
-        folder("screenshot", self.folder.as_deref(), || {
-            nova_paths::user_dir("PICTURES", "Pictures").join(DEFAULT_SCREENSHOT_FOLDER)
-        })
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct RecordingConfig {
     /// Where recordings are saved: an absolute path, or one starting with
     /// `~/`. By default `Recordings` in the user's videos folder.
@@ -101,8 +84,6 @@ impl RecordingConfig {
     }
 }
 
-/// The screenshot folder's name inside the pictures folder.
-const DEFAULT_SCREENSHOT_FOLDER: &str = "Screenshots";
 /// The recording folder's name inside the videos folder.
 const DEFAULT_RECORDING_FOLDER: &str = "Recordings";
 

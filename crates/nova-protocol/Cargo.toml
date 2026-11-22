@@ -7,6 +7,7 @@
 # - nova-carrier
 # - nova-compositor
 # - nova-host
+# - nova-screenshot-api
 # - nova-theme
 
 [package]
@@ -22,6 +23,7 @@ nova-apps.workspace = true
 nova-carrier.workspace = true
 nova-compositor.workspace = true
 nova-host.workspace = true
+nova-screenshot-api.workspace = true
 nova-theme.workspace = true
 serde.workspace = true
 serde_json.workspace = true

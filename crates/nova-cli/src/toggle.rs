@@ -8,7 +8,8 @@
 
 use crate::client::Client;
 use clap::builder::{PossibleValuesParser, TypedValueParser};
-use nova_protocol::{CaptureMode, Command, Panel, VolumeKey};
+use nova_protocol::{Command, Panel, VolumeKey};
+use nova_screenshot_api::CaptureMode;
 use std::path::Path;
 
 #[derive(clap::Args)]
@@ -79,7 +80,7 @@ pub fn screenshot(args: &ScreenshotArgs, socket: &Path) -> Result<(), String> {
         ScreenshotArg::Region => CaptureMode::Region,
         ScreenshotArg::Screen => CaptureMode::Screen,
     };
-    Client::connect(socket)?.request(Command::Screenshot { mode })?;
+    Client::connect(socket)?.request(nova_screenshot_api::Command::Screenshot { mode })?;
     Ok(())
 }
 

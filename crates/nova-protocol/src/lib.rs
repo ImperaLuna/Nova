@@ -58,17 +58,6 @@ pub enum Event {
     /// Change the default output's volume as `nova volume` asks, and show
     /// the volume capsule. Topic [`topics::VOLUME`].
     Volume { key: VolumeKey },
-    /// The screens are frozen for a region screenshot (feature `screenshot`):
-    /// each frame is what one output showed, for the UI to draw under the
-    /// region picker. Topic [`topics::SCREENSHOT`].
-    Capture { frames: Vec<CaptureFrame> },
-    /// The region picker closes: the shot was taken or cancelled. Topic
-    /// [`topics::SCREENSHOT`].
-    CaptureEnded,
-    /// A screenshot was saved, and copied when it could be (feature
-    /// `screenshot`). `id` names it in `screenshot_action`. Topic
-    /// [`topics::SCREENSHOT`].
-    ScreenshotSaved(SavedScreenshot),
     /// `nova record` while nothing is being recorded (feature `recording`):
     /// the UI opens the region picker to pick what to record, or closes it
     /// when it's open. Topic [`topics::RECORDING`].
@@ -104,7 +93,6 @@ pub mod topics {
     pub const COMPOSITOR: Topic = nova_compositor::TOPIC;
     pub const TOGGLE: Topic = Topic::named("toggle");
     pub const VOLUME: Topic = Topic::named("volume");
-    pub const SCREENSHOT: Topic = Topic::named("screenshot");
     pub const RECORDING: Topic = Topic::named("recording");
     pub const HOST: Topic = Topic::named("host");
 }
@@ -121,7 +109,6 @@ impl Event {
             Event::Compositor(_) => Some(topics::COMPOSITOR),
             Event::Toggle { .. } => Some(topics::TOGGLE),
             Event::Volume { .. } => Some(topics::VOLUME),
-            Event::Capture { .. } | Event::CaptureEnded | Event::ScreenshotSaved(_) => Some(topics::SCREENSHOT),
             Event::PickRecording | Event::Recording(_) | Event::RecordingSaved(_) => Some(topics::RECORDING),
             Event::Host(_) => Some(topics::HOST),
         }
@@ -245,58 +232,6 @@ pub enum VolumeKey {
     Mute,
 }
 
-/// What `nova screenshot` takes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CaptureMode {
-    /// Freezes every screen and lets the user drag out a region.
-    Region,
-    /// The whole focused screen, right away.
-    Screen,
-}
-
-/// One frozen screen, as `grim` saved it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CaptureFrame {
-    /// The output's connector name (`DP-1`), as Quickshell's `screen.name`.
-    pub output: String,
-    /// A PNG in novad's private runtime folder, gone once the picker closes.
-    pub path: String,
-}
-
-/// A rectangle in an image's pixels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PixelRect {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SavedScreenshot {
-    pub id: u64,
-    /// Where it was saved.
-    pub path: String,
-    pub width: u32,
-    pub height: u32,
-    /// It's on the clipboard too (wl-copy worked).
-    pub copied: bool,
-}
-
-/// What the screenshot or recording card does with a saved file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ScreenshotAction {
-    /// Opens it in the default app (image viewer, video player).
-    Open,
-    /// Opens the folder it's in.
-    Folder,
-    /// Deletes the file.
-    Delete,
-}
-
 /// A rectangle in the compositor's layout, in logical pixels: where
 /// outputs sit side by side (`screen.x` and `screen.y` in Quickshell).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -384,26 +319,6 @@ pub enum Command {
     Volume {
         key: VolumeKey,
     },
-    /// Takes a screenshot (`nova screenshot`, feature `screenshot`). `region`
-    /// freezes the screens and answers once the picker can show; asked again
-    /// while it shows, it closes it. `screen` saves the focused screen.
-    Screenshot {
-        mode: CaptureMode,
-    },
-    /// Saves `rect` of `output`'s frozen frame, in that frame's pixels, and
-    /// closes the picker (the UI).
-    SaveCapture {
-        output: String,
-        rect: PixelRect,
-    },
-    /// Closes the region picker without a screenshot (the UI).
-    CancelCapture,
-    /// Opens, shows the folder of or deletes a screenshot saved since novad
-    /// started (the screenshot card).
-    ScreenshotAction {
-        id: u64,
-        action: ScreenshotAction,
-    },
     /// `nova record` (feature `recording`): stops the recording, or when
     /// nothing is being recorded asks the UI to open the region picker for
     /// one (`pick_recording`). Fails when no UI is connected for that.
@@ -426,7 +341,7 @@ pub enum Command {
     /// started (the recording card).
     RecordingAction {
         id: u64,
-        action: ScreenshotAction,
+        action: nova_screenshot_api::ScreenshotAction,
     },
     /// Opens novad's log (feature `recording`: the recording card's Open log,
     /// after a recording didn't start).
@@ -517,6 +432,7 @@ mod tests {
     #[test]
     fn wire_format() {
         use nova_power_api::{PowerAction, PowerMenu, PowerOption};
+        use nova_screenshot_api::{CaptureFrame, CaptureMode, PixelRect, SavedScreenshot, ScreenshotAction};
         let lines = [
             encode(Event::Hello { daemon: "0.1.0".into() }),
             encode(Event::Features {
@@ -565,7 +481,7 @@ mod tests {
                         topics::TOGGLE,
                         nova_lock_api::TOPIC,
                         topics::VOLUME,
-                        topics::SCREENSHOT,
+                        nova_screenshot_api::TOPIC,
                         topics::RECORDING,
                         topics::HOST,
                         nova_resources_api::TOPIC,
@@ -643,41 +559,48 @@ mod tests {
             encode(Request { id: Some(21), command: Command::Volume { key: VolumeKey::Up } }),
             encode(Event::Volume { key: VolumeKey::Down }),
             encode(Event::Volume { key: VolumeKey::Mute }),
-            encode(Request { id: Some(30), command: Command::Screenshot { mode: CaptureMode::Region } }),
-            encode(Request { id: Some(31), command: Command::Screenshot { mode: CaptureMode::Screen } }),
-            encode(Event::Capture {
+            // The screenshot feature's own messages (`nova-screenshot-api`), still on this one wire.
+            encode(nova_carrier::Request {
+                id: Some(30),
+                command: nova_screenshot_api::Command::Screenshot { mode: CaptureMode::Region },
+            }),
+            encode(nova_carrier::Request {
+                id: Some(31),
+                command: nova_screenshot_api::Command::Screenshot { mode: CaptureMode::Screen },
+            }),
+            encode(nova_screenshot_api::Event::Capture {
                 frames: vec![CaptureFrame {
                     output: "DP-1".into(),
                     path: "/run/user/1000/nova/capture/DP-1.ppm".into(),
                 }],
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(32),
-                command: Command::SaveCapture {
+                command: nova_screenshot_api::Command::SaveCapture {
                     output: "DP-1".into(),
                     rect: PixelRect { x: 1460, y: 150, width: 960, height: 560 },
                 },
             }),
-            encode(Request { id: Some(33), command: Command::CancelCapture }),
-            encode(Event::CaptureEnded),
-            encode(Event::ScreenshotSaved(SavedScreenshot {
+            encode(nova_carrier::Request { id: Some(33), command: nova_screenshot_api::Command::CancelCapture }),
+            encode(nova_screenshot_api::Event::CaptureEnded),
+            encode(nova_screenshot_api::Event::ScreenshotSaved(SavedScreenshot {
                 id: 1,
                 path: "/home/me/Pictures/Screenshots/Screenshot 2026-10-25 15-03-41.png".into(),
                 width: 960,
                 height: 560,
                 copied: true,
             })),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(34),
-                command: Command::ScreenshotAction { id: 1, action: ScreenshotAction::Open },
+                command: nova_screenshot_api::Command::ScreenshotAction { id: 1, action: ScreenshotAction::Open },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: None,
-                command: Command::ScreenshotAction { id: 1, action: ScreenshotAction::Folder },
+                command: nova_screenshot_api::Command::ScreenshotAction { id: 1, action: ScreenshotAction::Folder },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: None,
-                command: Command::ScreenshotAction { id: 1, action: ScreenshotAction::Delete },
+                command: nova_screenshot_api::Command::ScreenshotAction { id: 1, action: ScreenshotAction::Delete },
             }),
             encode(Request { id: Some(35), command: Command::Record }),
             encode(Event::PickRecording),
@@ -1508,7 +1431,6 @@ mod tests {
         assert_eq!(Event::Compositor(desktop()).topic(), Some(topics::COMPOSITOR));
         assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(topics::TOGGLE));
         assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(topics::VOLUME));
-        assert_eq!(Event::CaptureEnded.topic(), Some(topics::SCREENSHOT));
         assert_eq!(Event::Recording(None).topic(), Some(topics::RECORDING));
         assert_eq!(Event::Host(host()).topic(), Some(topics::HOST));
     }

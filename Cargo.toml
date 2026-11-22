@@ -88,6 +88,8 @@ nova-power-api = { path = "features/power/api" }
 nova-power = { path = "features/power/core" }
 nova-resources-api = { path = "features/resources/api" }
 nova-resources = { path = "features/resources/core" }
+nova-screenshot-api = { path = "features/screenshot/api" }
+nova-screenshot = { path = "features/screenshot/core" }
 nova-tray-api = { path = "features/tray/api" }
 nova-tray = { path = "features/tray/core" }
 nova-wallpaper-api = { path = "features/wallpaper/api" }

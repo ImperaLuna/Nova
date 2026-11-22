@@ -193,6 +193,23 @@ fn power_request() -> impl Strategy<Value = nova_carrier::Request<nova_power_api
     (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
 }
 
+/// The screenshot feature's commands, which it owns (`nova-screenshot-api`).
+fn screenshot_request() -> impl Strategy<Value = nova_carrier::Request<nova_screenshot_api::Command>> {
+    use nova_screenshot_api::{CaptureMode, Command, PixelRect, ScreenshotAction};
+    let action =
+        prop_oneof![Just(ScreenshotAction::Open), Just(ScreenshotAction::Folder), Just(ScreenshotAction::Delete)];
+    let command = prop_oneof![
+        prop_oneof![Just(CaptureMode::Region), Just(CaptureMode::Screen)].prop_map(|mode| Command::Screenshot { mode }),
+        (any::<String>(), any::<[u32; 4]>()).prop_map(|(output, [x, y, width, height])| Command::SaveCapture {
+            output,
+            rect: PixelRect { x, y, width, height }
+        }),
+        Just(Command::CancelCapture),
+        (any::<u64>(), action).prop_map(|(id, action)| Command::ScreenshotAction { id, action }),
+    ];
+    (proptest::option::of(any::<u64>()), command).prop_map(|(id, command)| nova_carrier::Request { id, command })
+}
+
 /// The tray feature's commands, which it owns (`nova-tray-api`).
 fn tray_request() -> impl Strategy<Value = nova_carrier::Request<nova_tray_api::Command>> {
     use nova_tray_api::Command;
@@ -418,6 +435,31 @@ proptest! {
             end -= 1;
         }
         prop_assert!(decode(&line[..end]).is_err());
+    }
+
+    #[test]
+    fn every_screenshot_request_round_trips(request in screenshot_request()) {
+        let line = encode(&request).unwrap();
+        prop_assert_eq!(nova_carrier::decode_request(&line), Ok(request));
+    }
+
+    #[test]
+    fn bad_screenshot_requests_are_refused(request in screenshot_request(), key in any::<String>(), value in json()) {
+        prop_assume!(!LINE_FIELDS.contains(&key.as_str()));
+        let decode = |line: &str| nova_carrier::decode_request::<nova_screenshot_api::Command>(line);
+        let fields: Map<String, Value> = serde_json::from_str(&encode(&request).unwrap()).unwrap();
+        if let Some(Value::Object(args)) = fields.get("args")
+            && !args.contains_key(&key)
+        {
+            let mut args = args.clone();
+            args.insert(key.clone(), value.clone());
+            let mut extra = fields.clone();
+            extra.insert("args".into(), Value::Object(args));
+            prop_assert!(decode(&Value::Object(extra).to_string()).is_err());
+        }
+        let mut extra = fields;
+        extra.insert(key, value);
+        prop_assert!(decode(&Value::Object(extra).to_string()).is_err());
     }
 
     #[test]

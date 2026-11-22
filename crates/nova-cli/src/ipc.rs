@@ -59,6 +59,7 @@ enum IpcCommand {
     Notifications(nova_notifications_api::Command),
     Power(nova_power_api::Command),
     Resources(nova_resources_api::Command),
+    Screenshot(nova_screenshot_api::Command),
     Tray(nova_tray_api::Command),
     Wallpaper(nova_wallpaper_api::Command),
 }
@@ -87,6 +88,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
         serde_json::from_value(request).map(IpcCommand::Power)
     } else if tagged_names_of::<nova_resources_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Resources)
+    } else if tagged_names_of::<nova_screenshot_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Screenshot)
     } else if tagged_names_of::<nova_tray_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Tray)
     } else if tagged_names_of::<nova_wallpaper_api::Command>("cmd").contains(&name) {
@@ -130,6 +133,11 @@ mod tests {
             Ok(IpcCommand::Notifications(nova_notifications_api::Command::DismissNotification { id: 7 }))
         );
         assert!(parse("end_app", Some(r#"{"key": "x", "extra": 1}"#)).is_err());
+        assert_eq!(parse("lock", None), Ok(IpcCommand::Lock(nova_lock_api::Command::Lock)));
+        assert_eq!(
+            parse("cancel_capture", None),
+            Ok(IpcCommand::Screenshot(nova_screenshot_api::Command::CancelCapture))
+        );
         assert_eq!(parse("lock", None), Ok(IpcCommand::Lock(nova_lock_api::Command::Lock)));
         assert_eq!(
             parse("power", Some(r#"{"action": "suspend"}"#)),

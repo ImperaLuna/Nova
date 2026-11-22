@@ -6,7 +6,7 @@
 
 use crate::hub::ClientId;
 use crate::{Daemon, lock};
-use nova_protocol::{CaptureMode, Command, Event, Outcome, Panel, VolumeKey, topics};
+use nova_protocol::{Command, Event, Outcome, Panel, VolumeKey, topics};
 use nova_socket::{Answer, Caller, Router, done, value};
 use std::sync::Arc;
 
@@ -28,6 +28,7 @@ pub fn router() -> Router<Daemon> {
         .route::<nova_notifications_api::Command>(crate::notifications::answer, |_, _, _| {})
         .route::<nova_power_api::Command>(crate::power::answer, |_, _, _| {})
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
+        .route::<nova_screenshot_api::Command>(crate::screenshot::answer, |_, _, _| {})
         .route::<nova_tray_api::Command>(crate::tray::answer, |_, _, _| {})
         .route::<nova_wallpaper_api::Command>(crate::wallpaper::answer, |_, _, _| {})
         .listed_by(protocol_js_position)
@@ -100,14 +101,6 @@ impl<'a> Connection<'a> {
             }
             Command::Toggle { panel } => self.toggle(*panel),
             Command::Volume { key } => self.volume(*key),
-            Command::Screenshot { mode } => return self.screenshot(*mode),
-            Command::SaveCapture { output, rect } => return self.save_capture(output.clone(), *rect),
-            // Even with the feature off, so a reload can't strand the picker.
-            Command::CancelCapture => {
-                self.screenshots().cancel();
-                done(Ok(()))
-            }
-            Command::ScreenshotAction { id, action } => done(self.screenshots().act(*id, *action)),
             Command::Record => {
                 done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().record()))
             }
@@ -127,10 +120,6 @@ impl<'a> Connection<'a> {
 
     // Kept for novad's life, whatever the settings.
 
-    fn screenshots(&self) -> Arc<crate::screenshot::Screenshots> {
-        Arc::clone(&self.daemon.kept.screenshots)
-    }
-
     fn recordings(&self) -> Arc<crate::recording::Recordings> {
         Arc::clone(&self.daemon.kept.recordings)
     }
@@ -145,42 +134,6 @@ impl<'a> Connection<'a> {
             true => Ok(()),
             false => Err(crate::features::not_ready(id)),
         }
-    }
-
-    /// Opens the region picker on every screen (or closes it), or saves the
-    /// focused screen.
-    fn screenshot(&self, mode: CaptureMode) -> Answer {
-        if let Err(e) = self.require_feature(crate::screenshot::FEATURE_ID) {
-            return Answer::Now(Outcome::Error(e));
-        }
-        let screenshots = self.screenshots();
-        let compositor = self.daemon.compositor.clone();
-        let folder = lock(&self.daemon.settings).screenshot_folder();
-        Answer::later(move || {
-            done(match mode {
-                CaptureMode::Region => match compositor.and_then(|compositor| compositor.desktop()) {
-                    Some(desktop) => {
-                        let outputs: Vec<String> = desktop.outputs.into_iter().map(|output| output.name).collect();
-                        screenshots.pick_region(&outputs)
-                    }
-                    None => Err("novad doesn't know this compositor's screens yet".into()),
-                },
-                CaptureMode::Screen => {
-                    let output = compositor.and_then(|compositor| compositor.focused_output());
-                    folder.and_then(|folder| screenshots.take_screen(output.as_deref(), &folder))
-                }
-            })
-        })
-    }
-
-    /// Saves the region the user picked.
-    fn save_capture(&self, output: String, rect: nova_protocol::PixelRect) -> Answer {
-        if let Err(e) = self.require_feature(crate::screenshot::FEATURE_ID) {
-            return Answer::Now(Outcome::Error(e));
-        }
-        let screenshots = self.screenshots();
-        let folder = lock(&self.daemon.settings).screenshot_folder();
-        Answer::later(move || done(folder.and_then(|folder| screenshots.save_region(&output, rect, &folder))))
     }
 
     /// Starts the recording the UI's picker asked for.
@@ -265,10 +218,6 @@ impl<'a> Connection<'a> {
             | Command::FocusWorkspace { .. }
             | Command::StepWorkspace { .. }
             | Command::Toggle { .. }
-            | Command::Screenshot { .. }
-            | Command::SaveCapture { .. }
-            | Command::CancelCapture
-            | Command::ScreenshotAction { .. }
             | Command::Record
             | Command::StartRecording { .. }
             | Command::StopRecording

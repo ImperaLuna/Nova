@@ -16,9 +16,10 @@
 
 use crate::hub::Hub;
 use crate::logger::Logger;
-use crate::screenshot;
 use crate::{child, lock};
-use nova_protocol::{ActiveRecording, Event, LayoutRect, RecordAudio, SavedRecording, ScreenshotAction};
+use nova_protocol::{ActiveRecording, Event, LayoutRect, RecordAudio, SavedRecording};
+use nova_screenshot as screenshot;
+use nova_screenshot_api::ScreenshotAction;
 use std::collections::VecDeque;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
