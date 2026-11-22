@@ -78,6 +78,7 @@ impl Stop {
 pub use test_bus::TestBus;
 
 #[cfg(any(test, feature = "test-support"))]
+#[expect(clippy::unwrap_used, clippy::expect_used, reason = "test helpers fail the test that calls them, loudly")]
 mod test_bus {
     use std::io::{BufRead, BufReader};
     use std::path::Path;

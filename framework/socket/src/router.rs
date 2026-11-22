@@ -148,6 +148,7 @@ impl<S: 'static> Router<S> {
     ///
     /// Panics when a name of `C` already has a route: a message has one
     /// owner, and the app's router is built in its tests.
+    #[expect(clippy::panic, reason = "two owners of one command is a build mistake the app's router test catches")]
     pub fn route<C: DeserializeOwned + 'static>(
         mut self,
         answer: impl Fn(&S, &Caller, &C) -> Answer + Send + Sync + 'static,

@@ -45,6 +45,10 @@ pub fn tagged_names_of<'de, T: Deserialize<'de>>(tag: &'static str) -> &'static 
     caught::<T>(T::deserialize(message).err())
 }
 
+#[expect(
+    clippy::panic,
+    reason = "only a type without a derived enum Deserialize gets here, which the tests of each caller catch"
+)]
 fn caught<T>(error: Option<Variants>) -> &'static [&'static str] {
     match error {
         Some(Variants(Some(names))) => names,

@@ -86,10 +86,9 @@ pub enum AgentError {
 impl Agent {
     /// Asks the user `ask` about the device at `device`, and waits.
     async fn ask(&self, device: &OwnedObjectPath, ask: PairingAsk) -> Result<PairingAnswer, AgentError> {
-        let Some((id, slot)) = self.shared.ask(device.as_str(), ask, true) else {
+        let Some((id, slot)) = self.shared.ask(device.as_str(), ask) else {
             return Err(AgentError::Rejected("not a device novad knows".into()));
         };
-        let slot = slot.expect("a question that waits has a slot");
         let reply = slot.wait().await;
         self.shared.asked(id);
         match reply {
@@ -120,7 +119,7 @@ impl Agent {
     }
 
     fn display_pin_code(&self, device: OwnedObjectPath, pincode: String) {
-        self.shared.ask(device.as_str(), PairingAsk::ShowPin { pin: pincode }, false);
+        self.shared.show(device.as_str(), PairingAsk::ShowPin { pin: pincode });
     }
 
     async fn request_passkey(&self, device: OwnedObjectPath) -> Result<u32, AgentError> {
@@ -132,7 +131,7 @@ impl Agent {
 
     fn display_passkey(&self, device: OwnedObjectPath, passkey: u32, entered: u16) {
         let typed = u8::try_from(entered).unwrap_or(u8::MAX).min(PASSKEY_DIGITS as u8);
-        self.shared.ask(device.as_str(), PairingAsk::ShowPasskey { code: code(passkey), typed }, false);
+        self.shared.show(device.as_str(), PairingAsk::ShowPasskey { code: code(passkey), typed });
     }
 
     async fn request_confirmation(&self, device: OwnedObjectPath, passkey: u32) -> Result<(), AgentError> {
