@@ -28,6 +28,9 @@ pub use nova_apps::{APP_ICON_MAX_CHARS, App};
 pub use nova_compositor::{Capability, Desktop, FocusedWindow, Output, Step, Workspace, WorkspaceId};
 pub use nova_host::{Host, OperatingSystem};
 pub use nova_theme::{Color, Palette, Theme, ThemeMode};
+// A device's kind and charge are the peripherals feature's (`nova-peripherals-api`),
+// re-exported until the rest of its messages move (IMP-377).
+pub use nova_peripherals_api::{Battery, BatteryLevel, PeripheralKind};
 
 /// Pushed by the daemon whenever its state changes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -91,16 +94,6 @@ pub enum Event {
     /// The machine and its user, for the quick settings header. Topic
     /// [`topics::HOST`], sent right after subscribing.
     Host(Host),
-    /// The notifications kept for the quick settings list, do not disturb
-    /// and the muted apps (feature `notifications`). Topic
-    /// [`topics::NOTIFICATIONS`], sent right after subscribing and whenever
-    /// any of it changes.
-    Notifications(NotificationList),
-    /// A notification to pop up: a new one, or one an app replaced while
-    /// it may still show (feature `notifications`). Never for a muted app,
-    /// nor during do not disturb unless it's critical. Topic
-    /// [`topics::NOTIFICATIONS`].
-    NotificationPopup(Notification),
     /// The media players on the session bus and the one the bar shows
     /// (feature `media`). Topic [`topics::MEDIA`], sent right after
     /// subscribing and whenever a player comes, goes or changes.
@@ -135,7 +128,6 @@ pub mod topics {
     pub const SCREENSHOT: Topic = Topic::named("screenshot");
     pub const RECORDING: Topic = Topic::named("recording");
     pub const HOST: Topic = Topic::named("host");
-    pub const NOTIFICATIONS: Topic = Topic::named("notifications");
     pub const MEDIA: Topic = Topic::named("media");
     pub const PERIPHERALS: Topic = Topic::named("peripherals");
 }
@@ -157,7 +149,6 @@ impl Event {
             Event::Capture { .. } | Event::CaptureEnded | Event::ScreenshotSaved(_) => Some(topics::SCREENSHOT),
             Event::PickRecording | Event::Recording(_) | Event::RecordingSaved(_) => Some(topics::RECORDING),
             Event::Host(_) => Some(topics::HOST),
-            Event::Notifications(_) | Event::NotificationPopup(_) => Some(topics::NOTIFICATIONS),
             Event::Media(_) => Some(topics::MEDIA),
             Event::Peripherals(_) => Some(topics::PERIPHERALS),
         }
@@ -437,24 +428,6 @@ pub struct Peripheral {
     pub source: PeripheralSource,
 }
 
-/// What a device is, for its icon.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeripheralKind {
-    Mouse,
-    Keyboard,
-    Touchpad,
-    GamingInput,
-    Pen,
-    Tablet,
-    Headset,
-    Headphones,
-    Speakers,
-    RemoteControl,
-    Wearable,
-    Other,
-}
-
 /// How a device is connected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -464,26 +437,6 @@ pub enum PeripheralLink {
     Bluetooth,
     /// By its cable.
     Wired,
-}
-
-/// A device's charge: a percentage, or only a rough level for devices that
-/// report no more.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Battery {
-    /// 0 to 100.
-    Percent(u8),
-    Level(BatteryLevel),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BatteryLevel {
-    Critical,
-    Low,
-    Normal,
-    High,
-    Full,
 }
 
 /// Where novad read a device: UPower (the kernel's drivers and BlueZ),
@@ -502,126 +455,6 @@ pub enum PeripheralSource {
 /// The longest player id a media command takes, in bytes: a bus name is at
 /// most 255.
 pub const MEDIA_PLAYER_MAX_BYTES: usize = 255;
-
-/// What the notifications list holds (feature `notifications`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NotificationList {
-    /// The newest first, at most [`MAX_NOTIFICATIONS`].
-    pub items: Vec<Notification>,
-    /// No pop-ups, except critical ones.
-    pub do_not_disturb: bool,
-    /// Apps, by [`Notification::app`], whose notifications are hidden: not
-    /// in `items`, never popping up, never unread. Those from before the
-    /// app was muted come back once it's unmuted; those it sends meanwhile
-    /// aren't kept.
-    pub muted: Vec<String>,
-    /// Every app that sent one lately or is muted, the latest first, for
-    /// the settings page's per-app switches.
-    pub apps: Vec<NotificationApp>,
-    /// Transient notifications still open: they pop up but aren't listed,
-    /// and their pop-ups go once they leave this.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub transient: Vec<Notification>,
-}
-
-/// How many notifications are kept; the oldest go first.
-pub const MAX_NOTIFICATIONS: usize = 100;
-
-/// An app on the notification settings page.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NotificationApp {
-    /// As [`Notification::app`].
-    pub name: String,
-    /// As [`Notification::icon`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,
-    /// As [`Notification::app_id`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub app_id: Option<String>,
-}
-
-/// One notification an app sent (org.freedesktop.Notifications).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Notification {
-    /// novad's id for it, the one the app knows it by.
-    pub id: u32,
-    /// The app's name as it gave it, or its desktop entry's id.
-    pub app: String,
-    /// The app's icon: an absolute path to an image, the file it gave or
-    /// the icon theme's for the name it gave.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,
-    /// The app's desktop file id (`discord.desktop`), when it said which.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub app_id: Option<String>,
-    /// One line, plain text.
-    pub summary: String,
-    /// Plain text: any markup is taken out.
-    pub body: String,
-    /// A picture that goes with it (a sender's photo), as an absolute path.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub image: Option<String>,
-    /// Its buttons, in the app's order. Clicking the notification itself
-    /// is `has_default`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub actions: Vec<NotificationAction>,
-    /// The app does something when it's clicked (its default action).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub has_default: bool,
-    pub urgency: Urgency,
-    /// How far along something it reports is, 0 to 100.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub progress: Option<u8>,
-    /// How long it may show as a pop-up, as the app asked: `None` for the
-    /// UI's default, 0 for until it's closed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout_ms: Option<u32>,
-    /// When it came, or was last replaced, in seconds since the Unix epoch.
-    pub time: i64,
-    /// Not seen in the list yet (`read_notifications`).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub unread: bool,
-    /// The app that sent it is still there to hear about clicks: false for
-    /// those kept from before novad started.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub live: bool,
-    /// The device a low battery alert of Nova's own is about, for its
-    /// icon: never set on an app's notification.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub device: Option<NotificationDevice>,
-}
-
-/// The device a low battery alert is about: what it is and its charge
-/// when the alert was sent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NotificationDevice {
-    pub kind: PeripheralKind,
-    pub battery: Battery,
-}
-
-/// One of a notification's buttons.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NotificationAction {
-    /// What `notification_action` sends back.
-    pub key: String,
-    pub label: String,
-}
-
-/// How much a notification matters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Urgency {
-    Low,
-    #[default]
-    Normal,
-    /// Pops up even during do not disturb, and stays until it's closed.
-    Critical,
-}
 
 /// A volume key `nova volume` stands for. The UI steps by its own
 /// `Tokens.volumeStep` and stops at 100%.
@@ -855,47 +688,6 @@ pub enum Command {
     /// Opens novad's log (feature `recording`: the recording card's Open log,
     /// after a recording didn't start).
     OpenLog,
-    /// The notification `id` was clicked on `output` (feature
-    /// `notifications`): the app hears of it and its window takes focus, or,
-    /// when it can't hear of it, the app opens (as with `launch_app`). It
-    /// stays on the list, read.
-    OpenNotification {
-        id: u32,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        output: Option<String>,
-    },
-    /// The button `action` of notification `id` was clicked (feature
-    /// `notifications`): the app hears of it, nothing takes focus, and it
-    /// stays on the list, read.
-    NotificationAction {
-        id: u32,
-        action: String,
-    },
-    /// Closes the notification `id` and takes it off the list (feature
-    /// `notifications`).
-    DismissNotification {
-        id: u32,
-    },
-    /// Takes every notification off the list, or only `app`'s (feature
-    /// `notifications`).
-    ClearNotifications {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        app: Option<String>,
-    },
-    /// The list was seen: no notification is unread any more (feature
-    /// `notifications`).
-    ReadNotifications,
-    /// Turns do not disturb on or off (feature `notifications`).
-    /// Remembered across restarts.
-    SetDoNotDisturb {
-        on: bool,
-    },
-    /// Mutes or unmutes `app`'s notifications (feature `notifications`).
-    /// Remembered across restarts.
-    MuteNotificationApp {
-        app: String,
-        muted: bool,
-    },
     /// Plays or pauses the media player `player` (a [`MediaPlayer::id`]),
     /// or skips a track (feature `media`).
     MediaControl {
@@ -1038,6 +830,7 @@ impl nova_carrier::Published for Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nova_notifications_api::Command as NotificationCommand;
     use serde_json::json;
 
     /// Every message shape on the wire. A change here changes the protocol:
@@ -1098,7 +891,7 @@ mod tests {
                         nova_resources_api::TOPIC,
                         nova_launcher_api::TOPIC,
                         nova_tray_api::TOPIC,
-                        topics::NOTIFICATIONS,
+                        nova_notifications_api::TOPIC,
                         topics::MEDIA,
                         topics::PERIPHERALS,
                         nova_network_api::TOPIC,
@@ -1323,18 +1116,28 @@ mod tests {
             }),
             encode(nova_carrier::Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
             encode(nova_tray_api::Event::Tray(tray())),
-            encode(Event::Notifications(notifications())),
-            encode(Event::NotificationPopup(notifications().items[0].clone())),
-            encode(Request { id: Some(40), command: Command::NotificationAction { id: 7, action: "open".into() } }),
-            encode(Request { id: None, command: Command::OpenNotification { id: 7, output: Some("DP-1".into()) } }),
-            encode(Request { id: Some(41), command: Command::DismissNotification { id: 7 } }),
-            encode(Request { id: None, command: Command::ClearNotifications { app: Some("Discord".into()) } }),
-            encode(Request { id: None, command: Command::ClearNotifications { app: None } }),
-            encode(Request { id: None, command: Command::ReadNotifications }),
-            encode(Request { id: Some(42), command: Command::SetDoNotDisturb { on: true } }),
-            encode(Request {
+            // The notifications feature's own messages (`nova-notifications-api`), still on this one wire.
+            encode(nova_notifications_api::Event::Notifications(notifications())),
+            encode(nova_notifications_api::Event::NotificationPopup(notifications().items[0].clone())),
+            encode(nova_carrier::Request {
+                id: Some(40),
+                command: NotificationCommand::NotificationAction { id: 7, action: "open".into() },
+            }),
+            encode(nova_carrier::Request {
+                id: None,
+                command: NotificationCommand::OpenNotification { id: 7, output: Some("DP-1".into()) },
+            }),
+            encode(nova_carrier::Request { id: Some(41), command: NotificationCommand::DismissNotification { id: 7 } }),
+            encode(nova_carrier::Request {
+                id: None,
+                command: NotificationCommand::ClearNotifications { app: Some("Discord".into()) },
+            }),
+            encode(nova_carrier::Request { id: None, command: NotificationCommand::ClearNotifications { app: None } }),
+            encode(nova_carrier::Request { id: None, command: NotificationCommand::ReadNotifications }),
+            encode(nova_carrier::Request { id: Some(42), command: NotificationCommand::SetDoNotDisturb { on: true } }),
+            encode(nova_carrier::Request {
                 id: Some(43),
-                command: Command::MuteNotificationApp { app: "Discord".into(), muted: true },
+                command: NotificationCommand::MuteNotificationApp { app: "Discord".into(), muted: true },
             }),
             // The wallpaper feature's own messages (`nova-wallpaper-api`), still on this one wire.
             encode(nova_carrier::Request {
@@ -1837,7 +1640,10 @@ mod tests {
         }
     }
 
-    fn notifications() -> NotificationList {
+    fn notifications() -> nova_notifications_api::NotificationList {
+        use nova_notifications_api::{
+            Notification, NotificationAction, NotificationApp, NotificationDevice, NotificationList, Urgency,
+        };
         NotificationList {
             items: vec![
                 Notification {
@@ -2008,8 +1814,6 @@ mod tests {
         assert_eq!(Event::CaptureEnded.topic(), Some(topics::SCREENSHOT));
         assert_eq!(Event::Recording(None).topic(), Some(topics::RECORDING));
         assert_eq!(Event::Host(host()).topic(), Some(topics::HOST));
-        assert_eq!(Event::Notifications(notifications()).topic(), Some(topics::NOTIFICATIONS));
-        assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(topics::NOTIFICATIONS));
         assert_eq!(Event::Media(media()).topic(), Some(topics::MEDIA));
         assert_eq!(Event::Peripherals(peripherals()).topic(), Some(topics::PERIPHERALS));
     }
@@ -2104,17 +1908,6 @@ mod tests {
         assert!(serde_json::from_value::<Host>(host.clone()).is_ok());
         for pointer in ["", "/os"] {
             assert!(serde_json::from_value::<Host>(with_extra(host.clone(), pointer)).is_err(), "{pointer}");
-        }
-    }
-
-    #[test]
-    fn notifications_reject_unknown_fields() {
-        let list = serde_json::to_value(notifications()).unwrap();
-        assert!(serde_json::from_value::<NotificationList>(list.clone()).is_ok());
-        for pointer in ["", "/items/0", "/items/0/actions/0", "/apps/0"] {
-            let mut extra = list.clone();
-            extra.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
-            assert!(serde_json::from_value::<NotificationList>(extra).is_err(), "{pointer}");
         }
     }
 

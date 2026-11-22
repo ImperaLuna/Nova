@@ -11,6 +11,7 @@
 # - nova-carrier
 # - nova-features
 # - nova-launcher-api
+# - nova-notifications-api
 # - nova-paths
 # - nova-protocol
 # - nova-quickshell
@@ -38,6 +39,7 @@ nova-carrier.workspace = true
 nova-bluetooth-api.workspace = true
 nova-launcher-api.workspace = true
 nova-network-api.workspace = true
+nova-notifications-api.workspace = true
 nova-resources-api.workspace = true
 nova-tray-api.workspace = true
 nova-wallpaper-api.workspace = true
