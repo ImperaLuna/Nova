@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Records how the running Hyprland describes the desktop right now (the
 # questions novad asks: monitors, workspaces, windows, focus, keyboards),
-# into crates/novad/src/compositor/recorded/<name>/, for novad's tests.
+# into framework/compositor/recorded/<name>/, for novad's tests.
 #
 # Set the desktop up first (say, a window in a special workspace shown on
 # one screen), then, inside that Hyprland session:
@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-RECORDED = ROOT / "crates/novad/src/compositor/recorded"
+RECORDED = ROOT / "framework/compositor/recorded"
 QUERIES = ["monitors", "workspaces", "clients", "activewindow", "activeworkspace", "devices", "version"]
 
 

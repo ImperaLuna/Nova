@@ -26,7 +26,6 @@
 mod ai_usage;
 mod bluetooth;
 pub mod checks;
-mod compositor;
 mod config;
 mod egl;
 mod features;
@@ -67,6 +66,7 @@ use nova_socket as server;
 // The shared lookups moved to framework crates too, the data folders they
 // search to nova-paths (IMP-374).
 use nova_apps as apps;
+use nova_compositor as compositor;
 use nova_host as host;
 use nova_icons as icons;
 use nova_mime as mime;

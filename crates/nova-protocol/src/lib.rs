@@ -25,6 +25,7 @@ pub use nova_carrier::{Envelope, Outcome, PROTOCOL_VERSION, Response, encode};
 // The shared lookups' own types are the framework's (IMP-374), re-exported
 // so clients name them from here as before.
 pub use nova_apps::{APP_ICON_MAX_CHARS, App};
+pub use nova_compositor::{Capability, Desktop, FocusedWindow, Output, Step, Workspace, WorkspaceId};
 pub use nova_host::{Host, OperatingSystem};
 pub use nova_theme::{Color, Palette, Theme, ThemeMode};
 
@@ -297,117 +298,6 @@ pub enum UsageWindow {
     /// The rolling 5-hour limit.
     Session,
     Weekly,
-}
-
-/// What the compositor shows, the same shape whichever compositor it is.
-/// The UI shows only what `capabilities` lists.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Desktop {
-    /// The compositor's name, for people (`nova status`). The UI checks
-    /// `capabilities`, never this.
-    pub compositor: String,
-    pub capabilities: Vec<Capability>,
-    /// Sorted by name.
-    pub outputs: Vec<Output>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub focused_window: Option<FocusedWindow>,
-    /// The active keyboard layout's name, like `English (US)`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub keyboard_layout: Option<String>,
-}
-
-/// What a compositor can report or do. Something it can't is left out, and
-/// the UI hides what depends on it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Capability {
-    /// `outputs` lists each output's workspaces.
-    Workspaces,
-    /// `focus_workspace` and `step_workspace` work.
-    FocusWorkspace,
-    /// `focused_window` is reported.
-    FocusedWindow,
-    /// `keyboard_layout` is reported.
-    KeyboardLayout,
-    /// The power menu's log out works: it quits the compositor.
-    LogOut,
-    /// Workspaces report `fullscreen`.
-    Fullscreen,
-    /// Outputs list the compositor's special workspaces (`special`), and
-    /// `focus_workspace` shows or hides one.
-    SpecialWorkspaces,
-}
-
-/// A monitor, by its connector name (`DP-1`), as Quickshell's `screen.name`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Output {
-    pub name: String,
-    /// Has the keyboard focus.
-    pub focused: bool,
-    /// In the compositor's order.
-    pub workspaces: Vec<Workspace>,
-    /// Goes up whenever windows on it move or change size, for the UI to
-    /// notice (glass copies the screen again); the number itself means
-    /// nothing. Hyprland reports no resizes.
-    #[serde(default)]
-    pub layout: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Workspace {
-    /// What `focus_workspace` takes.
-    pub id: WorkspaceId,
-    /// Its name, or its number when it has none.
-    pub name: String,
-    /// Shown on its output.
-    pub active: bool,
-    /// Shown on the focused output.
-    pub focused: bool,
-    /// A window on it wants attention.
-    pub urgent: bool,
-    /// No windows on it.
-    pub empty: bool,
-    /// A window on it fills the whole output, over the bar's space: one in
-    /// fullscreen (or niri's maximize to edges).
-    pub fullscreen: bool,
-    /// A special workspace (Hyprland's scratchpad): one that shows over an
-    /// output's workspace and hides again. Every output lists them, first;
-    /// it's `active` on the output showing it, and the workspace under it
-    /// isn't.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub special: bool,
-    /// A special workspace showing on another output.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub shown_elsewhere: bool,
-    /// The window focus goes to on it (`FocusedWindow::id`), known even
-    /// while a Nova panel holds the keyboard and no window is focused. Only
-    /// niri sends it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub active_window: Option<String>,
-}
-
-/// The compositor's own workspace id. Hyprland's named workspaces have
-/// negative ids.
-pub type WorkspaceId = i64;
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FocusedWindow {
-    /// The compositor's own name for the window, to tell one from another
-    /// (a title can change, and two windows can share an app id). Empty
-    /// from a novad from before it was sent.
-    #[serde(default)]
-    pub id: String,
-    /// The Wayland app id (Hyprland calls it the class), empty when unset.
-    pub app_id: String,
-    pub title: String,
-}
-
-/// Which way `step_workspace` goes in an output's workspace list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Step {
-    Next,
-    Previous,
 }
 
 /// A panel `nova toggle` opens or closes. Each belongs to the feature of the
@@ -2835,6 +2725,15 @@ mod tests {
         let logs = Logs { backlog: true, entries: vec![log_entry()] };
         assert_eq!(encode(logs.event()).unwrap(), encode(Event::Logs(logs)).unwrap());
         assert_eq!(nova_carrier::Topic::from(Topic::Logs), nova_carrier::log::TOPIC);
+    }
+
+    /// The framework's compositor event and this crate's `compositor` event
+    /// and topic are one thing on the wire.
+    #[test]
+    fn the_desktop_is_the_compositor_event() {
+        let desktop = desktop();
+        assert_eq!(encode(nova_compositor::event(&desktop)).unwrap(), encode(Event::Compositor(desktop)).unwrap());
+        assert_eq!(nova_carrier::Topic::from(Topic::Compositor), nova_compositor::TOPIC);
     }
 
     /// Every topic's framework name is its wire name.

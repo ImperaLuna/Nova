@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Records how the running Hyprland (Lua config) answers the dispatchers
 # novad's tests send, into
-# crates/novad/src/compositor/recorded/hyprland-<version>/dispatch.json.
+# framework/compositor/recorded/hyprland-<version>/dispatch.json.
 #
 # Nothing is dispatched but `hl.dsp.no_op()`, which does nothing. Every other
 # dispatcher is only built, in `repl return type(<dispatcher>)`: Hyprland
@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-RECORDED = ROOT / "crates/novad/src/compositor/recorded"
+RECORDED = ROOT / "framework/compositor/recorded"
 # The one dispatcher run for real: novad's question whether Hyprland speaks Lua.
 PROBE = "hl.dsp.no_op()"
 

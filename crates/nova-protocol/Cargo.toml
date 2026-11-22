@@ -5,6 +5,7 @@
 # Allowed workspace crates:
 # - nova-apps
 # - nova-carrier
+# - nova-compositor
 # - nova-host
 # - nova-theme
 
@@ -19,6 +20,7 @@ license.workspace = true
 [dependencies]
 nova-apps.workspace = true
 nova-carrier.workspace = true
+nova-compositor.workspace = true
 nova-host.workspace = true
 nova-theme.workspace = true
 serde.workspace = true

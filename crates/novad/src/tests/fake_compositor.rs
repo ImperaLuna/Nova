@@ -3,7 +3,7 @@
 use super::*;
 
 /// A compositor's sockets in a test's folder, serving what the real one sent
-/// in `compositor/recorded/<name>`: its whole event stream at once and, for
+/// in `framework/compositor/recorded/<name>`: its whole event stream at once and, for
 /// Hyprland, its answers at the end of the recording. Every request is kept.
 pub(super) struct FakeCompositor {
     requests: Arc<Mutex<Vec<String>>>,
@@ -13,7 +13,7 @@ pub(super) struct FakeCompositor {
 
 impl FakeCompositor {
     pub(super) fn recorded(compositor: &str, file: &str) -> String {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/compositor/recorded").join(compositor);
+        let dir = compositor::recorded_dir().join(compositor);
         std::fs::read_to_string(dir.join(file)).unwrap()
     }
 

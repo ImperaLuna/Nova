@@ -64,6 +64,7 @@ nova-mime = { path = "framework/mime" }
 nova-apps = { path = "framework/apps" }
 nova-theme = { path = "framework/theme" }
 nova-host = { path = "framework/host" }
+nova-compositor = { path = "framework/compositor" }
 nova-test-support = { path = "framework/test-support" }
 
 [workspace.lints.clippy]

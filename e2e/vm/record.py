@@ -1,12 +1,12 @@
 # Records what a real compositor tells novad, for the compositor tests in
-# crates/novad/src/compositor: the raw event stream while a script of
+# framework/compositor: the raw event stream while a script of
 # workspace, window and layout changes runs, and the compositor's own view of
 # its state after each step. default.nix defines USER, UID, IPC_ENV and the
 # compositor's commands (STEPS, QUERIES, STREAM, COMPOSITOR_LOG) above this
 # script.
 #
 # Build `.#checks.<system>.e2e-<compositor>.record` and copy its output into
-# crates/novad/src/compositor/recorded/<compositor>; `just record` does both.
+# framework/compositor/recorded/<compositor>; `just record` does both.
 import datetime as dt
 import json
 import shlex
