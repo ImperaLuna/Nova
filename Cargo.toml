@@ -43,6 +43,9 @@ tar = { version = "0.4", default-features = false }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 ruzstd = "0.9"
 lzma-rust2 = { version = "0.23", default-features = false, features = ["std", "xz"] }
+# PulseAudio's protocol in plain Rust, for sound through PipeWire's pulse socket: no libpipewire or
+# libpulse, so the static musl build stays. Only its `protocol` module is used.
+pulseaudio = "0.3"
 nova-features = { path = "framework/features" }
 novad = { path = "app" }
 nova-cli = { path = "fronts/cli" }
@@ -98,6 +101,8 @@ nova-resources-api = { path = "features/resources/api" }
 nova-resources = { path = "features/resources/core" }
 nova-screenshot-api = { path = "features/screenshot/api" }
 nova-screenshot = { path = "features/screenshot/core" }
+nova-sound-api = { path = "features/sound/api" }
+nova-sound = { path = "features/sound/core" }
 nova-tray-api = { path = "features/tray/api" }
 nova-tray = { path = "features/tray/core" }
 nova-volume-osd-api = { path = "features/volume-osd/api" }

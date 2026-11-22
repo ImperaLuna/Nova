@@ -51,6 +51,7 @@ fn events() -> Vec<&'static str> {
         tagged_names_of::<nova_recording_api::Event>("event"),
         tagged_names_of::<nova_resources_api::Event>("event"),
         tagged_names_of::<nova_screenshot_api::Event>("event"),
+        tagged_names_of::<nova_sound_api::Event>("event"),
         tagged_names_of::<nova_tray_api::Event>("event"),
         tagged_names_of::<nova_volume_osd_api::Event>("event"),
     ]

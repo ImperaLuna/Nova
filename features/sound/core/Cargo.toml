@@ -1,0 +1,32 @@
+# Allowed outside crates:
+# - pulseaudio
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-hub
+# - nova-log
+# - nova-sound-api
+
+[package]
+name = "nova-sound"
+description = "Sound from PipeWire through its PulseAudio socket: outputs, inputs and apps, their volume and mute, and who records"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-sound-api.workspace = true
+nova-base.workspace = true
+nova-hub.workspace = true
+nova-log.workspace = true
+pulseaudio.workspace = true
+
+[dev-dependencies]
+nova-carrier.workspace = true
+nova-test-support.workspace = true
+nova-hub = { workspace = true, features = ["test-support"] }
+serde_json.workspace = true
+
+[lints]
+workspace = true
