@@ -1,3 +1,9 @@
+# Allowed outside crates:
+# - serde
+# - serde_json
+#
+# Allowed workspace crates: none
+
 [package]
 name = "nova-protocol"
 description = "Messages exchanged between novad and the Quickshell UI"

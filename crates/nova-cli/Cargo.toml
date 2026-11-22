@@ -1,3 +1,17 @@
+# Allowed outside crates:
+# - clap
+# - clap_complete
+# - jiff
+# - serde_json
+# - shlex
+#
+# Allowed workspace crates:
+# - nova-features
+# - nova-paths
+# - nova-protocol
+# - nova-quickshell
+# - novad
+
 [package]
 name = "nova-cli"
 description = "The nova command, and the daemon it runs as `nova daemon`"

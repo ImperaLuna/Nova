@@ -1,3 +1,11 @@
+# Allowed outside crates:
+# - serde
+# - toml
+#
+# Allowed workspace crates:
+# - nova-paths
+# - nova-protocol
+
 [package]
 name = "nova-features"
 description = "Feature manifests: parsing, validation and package selection"

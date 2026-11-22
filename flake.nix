@@ -56,6 +56,11 @@
             ./rustfmt.toml
             ./crates
             ./features
+            # The novad move's folder kinds (AGENTS.md, Layout); each appears
+            # with its first crate.
+            (lib.fileset.maybeMissing ./framework)
+            (lib.fileset.maybeMissing ./fronts)
+            (lib.fileset.maybeMissing ./app)
             ./packaging
             ./themes
             ./ui/theme/Tokens.qml
@@ -487,6 +492,28 @@
                 shellcheck stack.sh test-stack.sh
                 patchShebangs stack.sh test-stack.sh
                 ./test-stack.sh
+                touch $out
+              '';
+
+          # The workspace layout (scripts/check-layout.sh): shellcheck, its
+          # tests on throwaway workspaces, then the workspace itself.
+          layout =
+            pkgs.runCommand "nova-layout"
+              {
+                nativeBuildInputs = [
+                  pkgs.shellcheck
+                  pkgs.cargo
+                  pkgs.jq
+                ];
+              }
+              ''
+                cp -r ${src}/. src && chmod -R u+w src
+                cp ${./scripts/check-layout.sh} check-layout.sh && cp ${./scripts/test-check-layout.sh} test-check-layout.sh
+                shellcheck check-layout.sh test-check-layout.sh
+                patchShebangs check-layout.sh test-check-layout.sh
+                export HOME=$TMPDIR
+                ./test-check-layout.sh
+                ./check-layout.sh src
                 touch $out
               '';
 

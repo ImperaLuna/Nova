@@ -64,6 +64,53 @@ it). Don't add a `CLAUDE.md` or `CLAUDE.local.md`: Claude Code then skips
   Quickshell" workflow, `just newest-quickshell`). Check Quickshell
   APIs in `docs/quickshell` (`just docs`), not from memory.
 
+## Layout
+
+A crate's folder decides what it may use. The Rust code is moving into these
+folders one feature at a time (IMP-368, the novad move); until then most of
+it is in `crates/`.
+
+- `framework/<name>/`: the shared part every feature plugs into. It never
+  names a feature.
+- `features/<id>/api/`: the feature's own messages and types, what other
+  crates may use. `features/<id>/core/`: its work, the part that talks to
+  the system and draws nothing. `features/<id>/ui/`: reserved for the GPUI
+  ports. They sit beside the feature's `feature.toml`.
+- `fronts/<name>/`: other ways in (the `nova` command, the socket).
+- `app/`: wiring only. It starts everything and lists the features.
+- `crates/`: the old layout, emptied by the move. Add no new crate here.
+
+A glob in the workspace's `members` that matches nothing is an error to
+cargo, so the first crate of a kind adds its glob. Each `Cargo.toml` opens
+with the outside and workspace crates it may use (`# Allowed outside
+crates:`, `# Allowed workspace crates:`, one `# - name` line each, or `none`
+on the header line); a new dependency goes on that list, with its reason in
+the PR.
+
+`just layout` (`scripts/check-layout.sh`, in `just check` and CI) enforces
+these rules and names the one a change breaks:
+
+| Rule | A crate | What to do instead |
+|---|---|---|
+| C1 | sits in one of the folders above | move it there |
+| C2 | in those folders is a workspace member | add its folder or kind's glob to `members` |
+| C3 | under `features/<id>/` has a `feature.toml` beside it | name the folder after the feature's id |
+| M1 | outside `crates/` and `app/` never uses one in `crates/` | move what it needs out of `crates/` first |
+| W1 | in `framework/` uses only other framework crates | let the feature plug in (a module, a port, a message type) |
+| W2 | in `fronts/` uses only listed framework crates and api crates | send a message |
+| F1 | `api` uses only listed framework crates and api crates | move the code to `core` |
+| F2 | `core` uses only listed framework crates and api crates, never a `ui` | send an event |
+| F3 | `ui` uses only listed framework crates and api crates, never a `core` | send a message |
+| F4 | in a feature never uses another feature's `core` or `ui`, a front or the app | use its api, or a port in the framework |
+| D1 | `Cargo.toml` has both allowed lists | add them |
+| D2 | depends only on crates its allowed lists name | add it to the list and say why in the PR |
+
+The framework crates each half may use are listed at the top of the
+script. A framework crate joins a list only when every crate of that kind
+may use it: a daemon-side part never on the `ui` list, a screen-side part
+never on the `core` list. Dev-dependencies aren't checked. Changing a rule
+or a list is a layout change: say so in the PR.
+
 ## Engineering principles
 
 - One source of truth. A value used in more than one place (a color, size,

@@ -1,3 +1,9 @@
+# Allowed outside crates:
+# - serde
+# - toml
+#
+# Allowed workspace crates: none
+
 [package]
 name = "nova-quickshell"
 description = "The Quickshell versions Nova is tested with"
