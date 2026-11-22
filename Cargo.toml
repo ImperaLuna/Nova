@@ -74,6 +74,7 @@ nova-tray-api = { path = "features/tray/api" }
 nova-tray = { path = "features/tray/core" }
 nova-wallpaper-api = { path = "features/wallpaper/api" }
 nova-wallpaper = { path = "features/wallpaper/core" }
+nova-x11-tray = { path = "features/x11-tray/core" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
