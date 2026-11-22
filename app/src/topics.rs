@@ -31,6 +31,7 @@ pub const TOPICS: &[Topic] = &[
     nova_peripherals_api::TOPIC,
     nova_network_api::TOPIC,
     nova_bluetooth_api::TOPIC,
+    nova_sound_api::TOPIC,
 ];
 
 /// Their wire names, for serde's "unknown variant" error.

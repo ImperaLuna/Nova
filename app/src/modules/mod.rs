@@ -13,7 +13,7 @@
 use crate::config::Config;
 use crate::{
     ai_usage, bluetooth, features, launcher, media, network, notifications, nova_files, peripherals, recording,
-    resources, screenshot, session_lock, tray, wallpaper, x11_tray,
+    resources, screenshot, session_lock, sound, tray, wallpaper, x11_tray,
 };
 use nova_apps::AppIndex;
 use nova_carrier::Topic;
@@ -97,6 +97,7 @@ nova_modules::modules! {
         bluetooth: bluetooth::Bluetooth,
         x11_tray: x11_tray::X11Tray,
         nova_files: nova_files::NovaFiles,
+        sound: sound::Sound,
     ],
     kept: [
         session_lock: session_lock::SessionLock,
