@@ -2,3 +2,7 @@
 # (AGENTS.md, Rules and their checks).
 
 excessive-nesting-threshold = 5
+
+disallowed-methods = [
+    { path = "std::thread::sleep", reason = "event-driven, no polling: wait on a channel or event with a timeout" },
+]

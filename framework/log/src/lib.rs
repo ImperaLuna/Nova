@@ -307,7 +307,7 @@ mod tests {
         for _ in 0..KEPT_CRASHES + 3 {
             log.save_crash().unwrap();
             // Snapshot names have millisecond precision.
-            std::thread::sleep(std::time::Duration::from_millis(2));
+            nova_test_support::settle(std::time::Duration::from_millis(2));
         }
         assert_eq!(std::fs::read_dir(nova_paths::crash_dir(&dir)).unwrap().count(), KEPT_CRASHES);
     }

@@ -935,7 +935,7 @@ impl Shared {
                     return Ok(found);
                 }
                 answered = Some(found);
-                std::thread::sleep(READY_POLL);
+                nova_base::backoff::wait_out(READY_POLL);
                 continue;
             }
             if lock(&self.state).daemon.pid.is_none() {
@@ -951,7 +951,7 @@ impl Shared {
                     Err(e) => e.to_string(),
                 });
             }
-            std::thread::sleep(READY_POLL);
+            nova_base::backoff::wait_out(READY_POLL);
         }
     }
 }
@@ -1315,7 +1315,7 @@ mod tests {
         let wallpaper = fixture.start();
         wallpaper.outputs(outputs(&["DP-1", "DP-2"]));
         wallpaper.configure(true, false, &WallpaperConfig::default());
-        std::thread::sleep(Duration::from_millis(300));
+        nova_test_support::settle(Duration::from_millis(300));
         assert!(!fixture.dir.join("runs").exists(), "a wallpaper tool of the user's keeps the screen");
         wallpaper.set(&fixture.image("dusk.png"), None).unwrap();
         fixture.runs(1);
@@ -1330,7 +1330,7 @@ mod tests {
         let fixture = Fixture::new("changes");
         let wallpaper = fixture.start();
         wallpaper.configure(true, false, &fixture.config("dusk.png"));
-        std::thread::sleep(Duration::from_millis(300));
+        nova_test_support::settle(Duration::from_millis(300));
         assert!(fixture.sent().is_empty(), "nothing before the outputs are known");
         wallpaper.outputs(outputs(&["DP-1", "DP-2"]));
         let (dusk, tide) = (fixture.image("dusk.png"), fixture.image("tide.png"));
@@ -1434,7 +1434,7 @@ mod tests {
         wallpaper.outputs(outputs(&["DP-1"]));
         wallpaper.configure(true, false, &fixture.config("dusk.png"));
         fixture.runs(1);
-        std::thread::sleep(Duration::from_millis(300));
+        nova_test_support::settle(Duration::from_millis(300));
         std::fs::remove_file(fixture.dir.join("fail")).unwrap();
         // Nothing else changes: it's sent again on its own.
         fixture.shows(&[("DP-1", &fixture.image("dusk.png"))]);
@@ -1469,7 +1469,7 @@ mod tests {
         wallpaper.configure(false, false, &fixture.config("dusk.png"));
         wait_until(WAIT, "the daemon to stop", || !alive(pid));
         assert!(wallpaper.set(&fixture.image("tide.png"), None).unwrap_err().contains("isn't ready"));
-        std::thread::sleep(Restarts::FIRST + Duration::from_millis(200));
+        nova_test_support::settle(Restarts::FIRST + Duration::from_millis(200));
         assert_eq!(fixture.runs(1).len(), 1, "not started again while off");
         wallpaper.stop();
     }
@@ -1513,7 +1513,7 @@ mod tests {
         // No dynamic wallpaper left: it ends, and isn't started again.
         wallpaper.set(&fixture.image("dusk.png"), None).unwrap();
         wait_until(WAIT, "the engine to end", || !alive(second));
-        std::thread::sleep(Restarts::FIRST + Duration::from_millis(200));
+        nova_test_support::settle(Restarts::FIRST + Duration::from_millis(200));
         assert_eq!(fixture.engine_runs().len(), 2, "asked to end isn't a crash");
         assert_eq!(fixture.runs(1).len(), 1, "awww ran all along");
         wallpaper.stop();
@@ -1661,7 +1661,7 @@ mod tests {
         assert!(refused.contains(ENGINE_FEATURE_ID), "{refused}");
         let missing = wallpaper.set("1", None).unwrap_err();
         assert!(missing.contains("isn't downloaded"), "{missing}");
-        std::thread::sleep(Duration::from_millis(300));
+        nova_test_support::settle(Duration::from_millis(300));
         assert!(fixture.engine_runs().is_empty());
         // Only dynamic ones, with the still images off.
         wallpaper.configure(false, true, &WallpaperConfig::default());
