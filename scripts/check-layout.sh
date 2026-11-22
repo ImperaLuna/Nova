@@ -202,10 +202,10 @@ expect_rule features/media/core framework/server F2
 expect_rule features/media/api framework/server F1
 expect_rule features/media/core fronts/cli F4
 expect_rule features/media/core app F4
-expect_rule features/media/core crates/nova-features M1
+expect_rule features/media/core crates/nova-cli M1
 expect_rule framework/server features/media/api W1
 expect_rule framework/server fronts/cli W1
-expect_rule framework/server crates/nova-features M1
+expect_rule framework/server crates/nova-cli M1
 expect_rule framework/server framework/paths ""
 expect_rule framework/theme-info framework/carrier ""
 expect_rule framework/daemon-info framework/desktop-info ""
@@ -214,8 +214,8 @@ expect_rule framework/theme-info features/media/api W1
 expect_rule fronts/cli features/media/api ""
 expect_rule fronts/cli features/media/core W2
 expect_rule fronts/cli framework/server W2
-expect_rule crates/nova-features features/media/core ""
-expect_rule crates/nova-features framework/server ""
+expect_rule crates/nova-cli features/media/core ""
+expect_rule crates/nova-cli framework/server ""
 expect_rule app features/media/core ""
 expect_rule tools/thing framework/server C1
 expect_rule features/media framework/server C1
