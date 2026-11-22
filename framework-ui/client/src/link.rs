@@ -12,7 +12,7 @@
 //! What arrives goes to the link's sink as an [`Incoming`], in the order
 //! novad sent it; [`crate::Daemon`] is the sink that carries it to GPUI.
 
-use nova_carrier::{Envelope, Outcome, PROTOCOL_VERSION, Request, Response, Topic, encode};
+use nova_carrier::{Envelope, PROTOCOL_VERSION, Request, Topic, encode};
 use nova_daemon_info::{Command, Event};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -58,6 +58,8 @@ pub enum Refusal {
     NotConnected,
     /// The connection ended before novad answered.
     WentAway,
+    /// novad took too long to answer.
+    TimedOut,
     /// novad answered with this error.
     Daemon(String),
     /// The request couldn't be written as JSON, or the result wasn't the
@@ -70,6 +72,7 @@ impl fmt::Display for Refusal {
         match self {
             Self::NotConnected => write!(f, "not connected to novad"),
             Self::WentAway => write!(f, "novad went away"),
+            Self::TimedOut => write!(f, "novad didn't answer in time"),
             Self::Daemon(error) => write!(f, "novad: {error}"),
             Self::Unreadable(problem) => write!(f, "{problem}"),
         }
@@ -98,8 +101,9 @@ struct State {
     /// The connection requests are written to, once novad said hello.
     writer: Option<UnixStream>,
     next_id: u64,
-    /// The topics asked for, subscribed to on every connection.
-    topics: Vec<Topic>,
+    /// The topics asked for, each with how many asked, subscribed to on
+    /// every connection.
+    topics: Vec<(Topic, usize)>,
     /// The requests novad hasn't answered yet, by id.
     pending: HashMap<u64, Reply>,
     /// Why the last try found a novad it couldn't talk to, so the same
@@ -127,10 +131,22 @@ impl Link {
     /// so one that this novad doesn't know costs only itself.
     pub fn subscribe(&self, topic: Topic) {
         let mut state = self.shared.lock();
-        if !state.topics.contains(&topic) {
-            state.topics.push(topic);
+        match state.topics.iter_mut().find(|(each, _)| *each == topic) {
+            Some((_, askers)) => *askers += 1,
+            None => state.topics.push((topic, 1)),
         }
         state.subscribe(topic);
+    }
+
+    /// Takes back one [`Link::subscribe`] of `topic`. Once nobody asks for
+    /// it, later connections leave it out. novad has no way to stop a topic
+    /// on a connection that has it, so until then its events still arrive.
+    pub fn unsubscribe(&self, topic: Topic) {
+        let mut state = self.shared.lock();
+        if let Some((_, askers)) = state.topics.iter_mut().find(|(each, _)| *each == topic) {
+            *askers = askers.saturating_sub(1);
+        }
+        state.topics.retain(|(_, askers)| *askers > 0);
     }
 
     /// Sends `command` to novad. `reply` gets its result, or why there is
@@ -266,7 +282,7 @@ impl Shared {
         // Told before the subscriptions are written, and under the lock, so
         // the sink hears of the connection before anything sent on it.
         (self.sink)(Incoming::Connected { daemon });
-        for topic in state.topics.clone() {
+        for (topic, _) in state.topics.clone() {
             state.subscribe(topic);
         }
         Ok(reader)
@@ -289,17 +305,12 @@ impl Shared {
         if line.is_empty() {
             return;
         }
-        match serde_json::from_str::<Envelope<Line>>(line) {
-            Ok(Envelope { body: Line::Event { event, data }, .. }) => {
-                (self.sink)(Incoming::Event { name: event, data });
-            }
-            Ok(Envelope { body: Line::Reply(Response { id, outcome }), .. }) => {
+        match serde_json::from_str::<Line>(line).map_err(|e| e.to_string()).and_then(Line::read) {
+            Ok(Message::Event { name, data }) => (self.sink)(Incoming::Event { name, data }),
+            Ok(Message::Answer { id, result }) => {
                 let reply = self.lock().pending.remove(&id);
                 if let Some(reply) = reply {
-                    reply(match outcome {
-                        Outcome::Result(result) => Ok(result),
-                        Outcome::Error(error) => Err(Refusal::Daemon(error)),
-                    });
+                    reply(result);
                 }
             }
             Err(e) => crate::log::warn(&format!("ignoring a line from novad: {e}")),
@@ -320,16 +331,51 @@ impl Shared {
     }
 }
 
-/// A line novad sends after its hello.
+/// A line novad sends after its hello, exactly as it may arrive: no other
+/// fields, as novad reads its requests (`nova_carrier::envelope`).
 #[derive(Deserialize)]
-#[serde(untagged)]
-enum Line {
-    Event {
-        event: String,
-        #[serde(default)]
-        data: Value,
-    },
-    Reply(Response),
+#[serde(deny_unknown_fields)]
+struct Line {
+    v: u32,
+    #[serde(default)]
+    id: Option<u64>,
+    #[serde(default, deserialize_with = "present")]
+    result: Option<Value>,
+    #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
+    event: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    data: Option<Value>,
+}
+
+/// A field that is there, also when it holds `null` (a result often does).
+fn present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(deserializer).map(Some)
+}
+
+/// What a line says.
+enum Message {
+    Event { name: String, data: Value },
+    Answer { id: u64, result: Result<Value, Refusal> },
+}
+
+impl Line {
+    /// An event, or a request's answer with its result or its error;
+    /// anything else is no message.
+    fn read(self) -> Result<Message, String> {
+        if self.v != PROTOCOL_VERSION {
+            return Err(format!("protocol version {}, this UI speaks {PROTOCOL_VERSION}", self.v));
+        }
+        match (self.event, self.id, self.result, self.error, self.data) {
+            (Some(name), None, None, None, data) => Ok(Message::Event { name, data: data.unwrap_or(Value::Null) }),
+            (None, Some(id), Some(result), None, None) => Ok(Message::Answer { id, result: Ok(result) }),
+            (None, Some(id), None, Some(error), None) => {
+                Ok(Message::Answer { id, result: Err(Refusal::Daemon(error)) })
+            }
+            _ => Err("neither an event nor an answer".into()),
+        }
+    }
 }
 
 /// Reads one line of at most `limit` bytes into `line`, replacing what it

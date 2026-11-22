@@ -4,8 +4,8 @@
 
 use crate::link::{Incoming, Link, Refusal};
 use crate::routes::Routes;
-use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
+use futures::{FutureExt, StreamExt};
 use gpui::{App, AppContext, Context, Entity, Global, SharedString, Subscription, Task};
 use nova_carrier::Topic;
 use serde::Serialize;
@@ -13,12 +13,17 @@ use serde::de::DeserializeOwned;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::Duration;
+
+/// How long novad may take to answer a [`Daemon::call`]. Its slowest
+/// answers wait on another service (logind) for seconds.
+pub const REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The one connection to novad, a GPUI global set by [`Daemon::connect`].
 /// Without it (a view shown on its own) nothing arrives and every command
 /// is refused.
 pub struct Daemon {
-    link: Link,
+    link: Rc<Link>,
     /// The way onto GPUI's thread that novad's lines take, for answers.
     crossing: mpsc::UnboundedSender<Crossing>,
     connection: Entity<Connection>,
@@ -80,7 +85,7 @@ impl Daemon {
         })
         .detach();
         let connection = cx.new(|_| Connection { status: Status::Connecting });
-        cx.set_global(Self { link, crossing, connection, routes: Rc::default() });
+        cx.set_global(Self { link: Rc::new(link), crossing, connection, routes: Rc::default() });
     }
 
     /// Whether novad is there. `None` when the app never connected.
@@ -103,17 +108,21 @@ impl Daemon {
         let Some(daemon) = cx.try_global::<Self>() else { return Subscription::new(|| {}) };
         let id = daemon.routes.borrow_mut().add(handler);
         daemon.link.subscribe(topic);
-        let routes = Rc::downgrade(&daemon.routes);
+        let (routes, link) = (Rc::downgrade(&daemon.routes), Rc::downgrade(&daemon.link));
         Subscription::new(move || {
             if let Some(routes) = routes.upgrade() {
                 routes.borrow_mut().remove(id);
+            }
+            if let Some(link) = link.upgrade() {
+                link.unsubscribe(topic);
             }
         })
     }
 
     /// Sends `command` (a feature's `Command`, or novad's own) and gives
     /// its result as `R`. The result arrives after every event novad sent
-    /// before it.
+    /// before it, or as [`Refusal::TimedOut`] when novad takes longer than
+    /// [`REPLY_TIMEOUT`].
     pub fn call<R: DeserializeOwned + 'static>(command: impl Serialize, cx: &App) -> Task<Result<R, Refusal>> {
         let (sender, answer) = oneshot::channel();
         if let Some(daemon) = cx.try_global::<Self>() {
@@ -126,8 +135,12 @@ impl Daemon {
                 let _ = crossing.unbounded_send(Crossing::Answer(hand_over));
             });
         }
-        cx.spawn(async move |_| {
-            let result = answer.await.unwrap_or(Err(Refusal::NotConnected))?;
+        cx.spawn(async move |cx| {
+            let mut too_late = cx.background_executor().timer(REPLY_TIMEOUT).fuse();
+            let result = futures::select_biased! {
+                result = answer.fuse() => result.unwrap_or(Err(Refusal::NotConnected)),
+                () = too_late => Err(Refusal::TimedOut),
+            }?;
             serde_json::from_value(result).map_err(|e| Refusal::Unreadable(format!("novad sent an odd result: {e}")))
         })
     }

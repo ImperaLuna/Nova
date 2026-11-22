@@ -191,3 +191,53 @@ fn a_line_over_the_limit_is_an_error() {
     assert!(read_line(&mut lines, 8, &mut line).is_err());
     assert!(!read_line(&mut "".as_bytes(), 8, &mut line).unwrap());
 }
+
+/// A topic nobody asks for any more is left out of the next connection.
+#[test]
+fn a_topic_nobody_asks_for_is_dropped_on_the_next_connection() {
+    let dir = TempDir::new("client-unsubscribe");
+    let (link, incoming) = link(&socket(&dir));
+    link.subscribe(TIDE);
+    link.subscribe(TIDE);
+    link.subscribe(WEATHER);
+    link.unsubscribe(WEATHER);
+    link.unsubscribe(TIDE);
+    let _novad = FakeDaemon::start(&socket(&dir), recorded()).unwrap();
+    assert_eq!(next(&incoming), connected());
+    // The tide still has one asker; the weather has none.
+    assert_eq!(next(&incoming), event("tide", json!({"high": true})));
+    assert!(incoming.recv_timeout(Duration::from_millis(100)).is_err());
+}
+
+/// Lines with fields novad never sends, or that are neither an event nor an
+/// answer, are no messages.
+#[test]
+fn odd_lines_are_ignored() {
+    use std::io::{BufRead, BufReader, Write};
+    let dir = TempDir::new("client-odd");
+    let listener = std::os::unix::net::UnixListener::bind(socket(&dir)).unwrap();
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let lines = [
+            r#"{"v":2,"event":"hello","data":{"daemon":"odd"}}"#,
+            r#"{"v":2,"id":1,"result":"pong","event":"tide"}"#,
+            r#"{"v":2,"id":1,"result":"pong","extra":true}"#,
+            r#"{"v":2,"id":1}"#,
+            r#"{"v":3,"id":1,"result":"pong"}"#,
+            r#"{"v":2,"event":"tide","data":null,"more":1}"#,
+            r#"{"v":2,"event":"tide"}"#,
+            r#"{"v":2,"id":1,"result":null}"#,
+        ];
+        // Sent once the request has arrived, so its id is waited for.
+        let mut request = String::new();
+        stream.write_all(format!("{}\n", lines[0]).as_bytes()).unwrap();
+        BufReader::new(stream.try_clone().unwrap()).read_line(&mut request).unwrap();
+        stream.write_all(format!("{}\n", lines[1..].join("\n")).as_bytes()).unwrap();
+        let _ = BufReader::new(stream).read_line(&mut request);
+    });
+    let (link, incoming) = link(&socket(&dir));
+    assert_eq!(next(&incoming), Incoming::Connected { daemon: "odd".into() });
+    assert_eq!(answer(&link, Command::Ping), Ok(Value::Null));
+    assert_eq!(next(&incoming), event("tide", Value::Null));
+    assert!(incoming.try_recv().is_err());
+}
