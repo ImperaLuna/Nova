@@ -20,9 +20,11 @@
 # - gpui_platform
 #
 # Allowed workspace crates:
+# - nova-bar-api
 # - nova-daemon-info
 # - nova-look
-# - nova-sound-api
+# - nova-stage
+# - nova-theme-info
 # - nova-ui-client
 
 [package]
@@ -37,9 +39,11 @@ publish.workspace = true
 [dependencies]
 gpui.workspace = true
 gpui_platform.workspace = true
+nova-bar-api.workspace = true
 nova-daemon-info.workspace = true
 nova-look.workspace = true
-nova-sound-api.workspace = true
+nova-stage.workspace = true
+nova-theme-info.workspace = true
 nova-ui-client.workspace = true
 
 [lints]
@@ -67,10 +71,10 @@ publish = false
 # and makes NVIDIA's driver load CUDA. `version` picks Zed's real gpui: the
 # repo also holds a test fixture crate named gpui. Move both pins together,
 # and the hashes in packaging/nix/nova-ui.nix with them.
-gpui = { git = "https://github.com/ImperaLuna/zed", rev = "915fb0d79b03de29a8a15beb0fef11e0e465d8ec", version = "0.2.2" }
+gpui = { git = "https://github.com/ImperaLuna/zed", rev = "4cc99ed469e7cc566898de34cbf4e4c993ba2d64", version = "0.2.2" }
 # The platform half of GPUI (windows, input, the renderer). Wayland is off
 # by default; without it the program runs but never opens a window.
-gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "915fb0d79b03de29a8a15beb0fef11e0e465d8ec", version = "0.1.0", features = ["wayland"] }
+gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "4cc99ed469e7cc566898de34cbf4e4c993ba2d64", version = "0.1.0", features = ["wayland"] }
 # The versions GPUI's own tree already holds.
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -79,10 +83,12 @@ toml = "0.8"
 
 # The UI side's shared parts (framework-ui/).
 nova-look = { path = "../framework-ui/look" }
+nova-stage = { path = "../framework-ui/stage" }
 nova-ui-client = { path = "../framework-ui/client" }
 
 # The daemon side's crates the UI side may use, by path: api and -info crates.
 nova-carrier = { path = "../framework/carrier" }
+nova-bar-api = { path = "../features/bar/api" }
 nova-daemon-info = { path = "../framework/daemon-info" }
 nova-sound-api = { path = "../features/sound/api" }
 nova-test-support = { path = "../framework/test-support" }
