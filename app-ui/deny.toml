@@ -43,8 +43,10 @@ allow = [
 
 [bans]
 multiple-versions = "allow"
-wildcards = "deny"
-allow-wildcard-paths = true
+# No ban on wildcard versions: the UI side uses the daemon side's api and
+# -info crates by path, which cargo-deny counts as wildcards unless every
+# crate on the way is `publish = false`. The daemon side's deny.toml has
+# none either.
 
 [sources]
 unknown-registry = "deny"

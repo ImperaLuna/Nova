@@ -152,6 +152,35 @@ may use it: a daemon-side part never on the `ui` list (which holds for
 `framework-ui/`, not on a list. Dev-dependencies are checked for T1 only.
 Changing a rule or a list is a layout change: say so in the PR.
 
+### Drawing with the look kit
+
+`framework-ui/look` (`nova-look`) is the GPUI side's look. Its `lib.rs`
+lists the pieces, and `examples/sample.rs` draws a pill and a panel with all
+of them (`cargo run --manifest-path app-ui/Cargo.toml -p nova-look --example
+sample`). Every ui crate draws with it:
+
+- Sizes, opacities and timings are `nova_look::tokens`. A value only one
+  feature uses is a constant in that ui crate's own `tokens` module. No
+  literal in a view.
+- Colors are `Theme::of(cx)`, read while rendering and never kept, so a
+  theme change redraws everything with no code in the view.
+- The shared tokens and the icon glyphs also live in `ui/theme/Tokens.qml`
+  and `ui/theme/icons.js` until the Quickshell shell is removed. nova-look's
+  tests hold the two equal: change a value in both.
+- A window opens with `ShellWindow::options()` and nothing else: GPUI draws
+  a window without focus at 30 frames a second at most, and a shell window
+  never has focus. `just lint-traps` fails on `WindowOptions {` elsewhere.
+- Glass is `Glass::new(radius).build(cx)`. The window's owner passes the
+  shapes it draws to `set_blur_region` and to GPUI's `set_input_region`
+  each frame they change, and leaves `tokens::SHADOW_ROOM` free around
+  glass. A window draws at most 32 glasses with a shadow.
+- GPUI clips children to a rounded parent's box, not its corners: content
+  that reaches the edge rounds itself with `fit_corners`.
+- Motion is `motion::ease`, `Eased` and `Spring`. Ask for the next frame
+  only while a value hasn't settled.
+- An icon is `Icon::new(Glyph::NAME)`; a new glyph joins the list in
+  `icon.rs` (and `icons.js`, while it exists).
+
 ### Moving a feature out of novad
 
 The steps the novad move's feature tickets follow (IMP-368).
@@ -230,7 +259,8 @@ assertions). The feature is `<id>` (its folder name), its crates
 
 - One source of truth. A value used in more than one place (a color, size,
   duration, timeout, socket path, command name, event name) is defined once
-  and referenced everywhere else: design values in `theme/Tokens.qml`, wire
+  and referenced everywhere else: design values in `theme/Tokens.qml` (the
+  GPUI side: `nova_look::tokens`), wire
   names in the api or `-info` crate of their message (the envelope and the
   log feed in `nova-carrier`), Rust constants in the crate
   that owns them. Never copy a literal into a second file. The wire names in
