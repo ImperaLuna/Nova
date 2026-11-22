@@ -280,7 +280,7 @@ fn neighbour(desktop: &Desktop, output: &str, step: Step) -> Result<Option<Works
     Ok(target.and_then(|index| workspaces.get(index)).map(|workspace| (*workspace).clone()))
 }
 
-/// The recorded compositor sessions the tests replay (`just record`).
+/// The recorded compositor sessions the tests replay (see `src/tests.rs`).
 #[cfg(any(test, feature = "test-support"))]
 pub fn recorded_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("recorded")

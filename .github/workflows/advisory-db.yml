@@ -6,7 +6,7 @@ name: Bump advisory-db
 # a red bump PR means a dependency has a new advisory. Also by hand: Actions >
 # Bump advisory-db.
 #
-# Two jobs, like approve-goldens: `update` runs `nix flake update` with a
+# Two jobs: `update` runs `nix flake update` with a
 # read-only token on the self-hosted runner; `pr` holds the write token, runs
 # no repo code and only takes flake.lock, on a fresh GitHub-hosted machine.
 # It pushes and opens the PR with the PUSH_TOKEN secret, so CI starts on the
