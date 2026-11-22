@@ -738,6 +738,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-apps"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nova-base",
+ "nova-carrier",
+ "nova-icons",
+ "nova-inotify",
+ "nova-log",
+ "nova-paths",
+ "nova-process",
+ "nova-test-support",
+ "nova-watch",
+ "serde",
+]
+
+[[package]]
 name = "nova-base"
 version = "0.1.0"
 dependencies = [
@@ -784,6 +801,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-host"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nova-icons",
+ "nova-process",
+ "serde",
+]
+
+[[package]]
 name = "nova-hub"
 version = "0.1.0"
 dependencies = [
@@ -791,6 +818,15 @@ dependencies = [
  "nova-carrier",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "nova-icons"
+version = "0.1.0"
+dependencies = [
+ "nova-base",
+ "nova-paths",
+ "nova-test-support",
 ]
 
 [[package]]
@@ -815,6 +851,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-mime"
+version = "0.1.0"
+dependencies = [
+ "nova-base",
+ "nova-carrier",
+ "nova-inotify",
+ "nova-log",
+ "nova-test-support",
+ "nova-watch",
+]
+
+[[package]]
 name = "nova-modules"
 version = "0.1.0"
 dependencies = [
@@ -834,6 +882,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "nova-base",
+ "nova-test-support",
 ]
 
 [[package]]
@@ -841,7 +890,10 @@ name = "nova-protocol"
 version = "0.1.0"
 dependencies = [
  "insta",
+ "nova-apps",
  "nova-carrier",
+ "nova-host",
+ "nova-theme",
  "proptest",
  "serde",
  "serde_json",
@@ -894,6 +946,17 @@ name = "nova-test-support"
 version = "0.1.0"
 
 [[package]]
+name = "nova-theme"
+version = "0.1.0"
+dependencies = [
+ "nova-paths",
+ "nova-test-support",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "nova-watch"
 version = "0.1.0"
 dependencies = [
@@ -916,12 +979,16 @@ dependencies = [
  "libc",
  "lzma-rust2",
  "md-5",
+ "nova-apps",
  "nova-base",
  "nova-carrier",
  "nova-features",
+ "nova-host",
  "nova-hub",
+ "nova-icons",
  "nova-inotify",
  "nova-log",
+ "nova-mime",
  "nova-modules",
  "nova-paths",
  "nova-process",
@@ -931,7 +998,7 @@ dependencies = [
  "nova-settings",
  "nova-socket",
  "nova-test-support",
- "nova-watch",
+ "nova-theme",
  "pbkdf2",
  "png",
  "ruzstd",

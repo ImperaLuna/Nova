@@ -2,7 +2,7 @@
 //! folder listing and opening files. It's read as the files module starts
 //! and again, on a thread of its own, once `update-mime-database` rewrites
 //! a `mime/` folder (a package that brings new types) or a rebuild swaps a
-//! link on the way to one ([`crate::watch_points`]). Only each folder's own
+//! link on the way to one ([`nova_watch`]). Only each folder's own
 //! files are watched: the database is those, the per-type XML below is
 //! what they're built from.
 //!
@@ -10,11 +10,11 @@
 //! only once it's whole, so nobody sees half a database.
 
 use super::MimeDb;
-use crate::inotify::{self, Inotify};
-use crate::lock;
-use crate::logger::Logger;
-use crate::watch_points::{self, Reporting, WatchPoints};
-use nova_protocol::LogLevel;
+use nova_base::lock;
+use nova_carrier::log::LogLevel;
+use nova_inotify::{self as inotify, Inotify};
+use nova_log::Logger;
+use nova_watch::{self as watch_points, Reporting, WatchPoints};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 

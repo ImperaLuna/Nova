@@ -10,10 +10,10 @@
 //! shows it by name. Without one it's forked twice, so it ends up a child of
 //! init, in a session of its own. Either way nothing it prints reaches novad.
 
-use crate::apps::desktop_entry::Entry;
-use crate::child;
-use crate::logger::Logger;
+use crate::desktop_entry::Entry;
+use nova_log::Logger;
 use nova_paths::find_program;
+use nova_process::child;
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::process::CommandExt;
@@ -32,7 +32,7 @@ const TERMINAL_EXEC: &str = "xdg-terminal-exec";
 const TERMINAL_VAR: &str = "TERMINAL";
 /// What systemd sets for novad itself, which an app mustn't take for its own.
 const SERVICE_VARS: [&str; 7] = [
-    crate::notify::SOCKET_VAR,
+    nova_process::notify::SOCKET_VAR,
     "INVOCATION_ID",
     "JOURNAL_STREAM",
     "MANAGERPID",
@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn a_service_that_fails_to_start_says_so() {
         let dir = nova_test_support::TempDir::new("launch-fail");
-        let logger = Arc::new(Logger::open(&dir, nova_protocol::LogLevel::Info, false, Arc::default()).unwrap());
+        let logger = Arc::new(Logger::open(&dir, nova_carrier::log::LogLevel::Info, false, Arc::default()).unwrap());
         let entry = Entry {
             id: "true.desktop".into(),
             name: "True".into(),

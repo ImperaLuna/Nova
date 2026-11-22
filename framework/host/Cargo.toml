@@ -1,0 +1,24 @@
+# Allowed outside crates:
+# - libc
+# - serde
+#
+# Allowed workspace crates:
+# - nova-icons
+# - nova-process
+
+[package]
+name = "nova-host"
+description = "The machine and its user, as the quick settings header shows them: host name, boot time, distribution and login name"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-icons.workspace = true
+nova-process.workspace = true
+libc.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

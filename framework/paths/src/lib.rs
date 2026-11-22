@@ -1,6 +1,7 @@
 //! Where Nova keeps things, and where it finds the user's folders and
 //! programs. novad and the `nova` CLI both resolve paths here, so the two
-//! always agree.
+//! always agree. The XDG data folders apps, icons and file types are
+//! looked up in ([`data_dirs`]) are here too.
 //!
 //! `ui/daemon/Daemon.qml` derives the socket path on its own (QML can't call
 //! Rust); keep it in step with [`socket`].
@@ -148,6 +149,51 @@ pub fn find_program(program: &str, path_var: &str) -> Option<PathBuf> {
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+}
+
+/// The spec's default for an unset `XDG_DATA_DIRS`.
+const DEFAULT_DATA_DIRS: &str = "/usr/local/share:/usr/share";
+
+/// The XDG data folders (the user's first), in the order they're searched
+/// for apps and icons, plus the folders packages install into, which a
+/// systemd user service's `XDG_DATA_DIRS` often lacks.
+pub fn data_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    dirs.extend(data_home());
+    let system = path_var("XDG_DATA_DIRS").unwrap_or_else(|| DEFAULT_DATA_DIRS.into());
+    dirs.extend(std::env::split_paths(&system));
+    // Where packages install, last so the session's own order wins.
+    dirs.extend(package_prefixes().into_iter().map(|prefix| prefix.join("share")));
+    let mut seen = std::collections::BTreeSet::new();
+    dirs.retain(|dir| dir.is_absolute() && seen.insert(dir.clone()));
+    dirs
+}
+
+/// Where package managers install, each with `bin/` and `share/` below it,
+/// in the order they're searched after the session's own: the user's Nix
+/// profiles, the system's (NixOS), Flatpak's exports, then the usual.
+pub fn package_prefixes() -> Vec<PathBuf> {
+    let home = home();
+    let mut prefixes = Vec::new();
+    prefixes
+        .extend(home.iter().flat_map(|home| [home.join(".nix-profile"), home.join(".local/share/flatpak/exports")]));
+    prefixes.extend(
+        std::env::var_os("USER")
+            .filter(|user| !user.is_empty())
+            .map(|user| Path::new("/etc/profiles/per-user").join(user)),
+    );
+    prefixes.extend(
+        [
+            "/nix/var/nix/profiles/default",
+            "/run/current-system/sw",
+            "/var/lib/flatpak/exports",
+            "/usr/local",
+            "/usr",
+            "/",
+        ]
+        .map(PathBuf::from),
+    );
+    prefixes
 }
 
 #[cfg(test)]

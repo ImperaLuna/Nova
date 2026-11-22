@@ -1,0 +1,43 @@
+# Allowed outside crates:
+# - libc
+# - serde
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-carrier
+# - nova-icons
+# - nova-inotify
+# - nova-log
+# - nova-paths
+# - nova-process
+# - nova-watch
+
+[package]
+name = "nova-apps"
+description = "The installed apps: their desktop entries, the index that follows installs, and starting them"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# An index of the apps in one folder (`AppIndex::of`), for novad's tests.
+test-support = []
+
+[dependencies]
+nova-base.workspace = true
+nova-carrier.workspace = true
+nova-icons.workspace = true
+nova-inotify.workspace = true
+nova-log.workspace = true
+nova-paths.workspace = true
+nova-process.workspace = true
+nova-watch.workspace = true
+libc.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+
+[lints]
+workspace = true
