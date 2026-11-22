@@ -17,6 +17,8 @@
 //! `protocol_js_is_current` fails when the file is stale;
 //! `just protocol-js` rewrites it.
 
+use nova_carrier::PROTOCOL_VERSION;
+use nova_carrier::envelope::REQUEST_MAX_BYTES;
 use nova_carrier::names::{names_of, tagged_names_of};
 use nova_protocol::*;
 use std::path::Path;

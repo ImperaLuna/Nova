@@ -37,7 +37,7 @@ pub fn answer(daemon: &Daemon, _: &Caller, command: &Command) -> Answer {
 impl nova_modules::Module for Usage {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_ai_usage_api::TOPIC);
+    const TOPIC: Option<nova_carrier::Topic> = Some(nova_ai_usage_api::TOPIC);
     type Sources = Paths;
     type Config = AiUsageConfig;
 

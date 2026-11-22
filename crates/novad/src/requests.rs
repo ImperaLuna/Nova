@@ -6,8 +6,9 @@
 
 use crate::Daemon;
 use nova_base::lock;
+use nova_carrier::Outcome;
 use nova_hub::ClientId;
-use nova_protocol::{Command, Event, Outcome, Panel, VolumeKey, topics};
+use nova_protocol::{Command, Event, Panel, VolumeKey, topics};
 use nova_socket::{Answer, Caller, Router, done, value};
 
 /// The routes of every message novad serves. A moved feature adds its
@@ -70,7 +71,7 @@ impl<'de> serde::Deserialize<'de> for Shared {
 /// The topics `follow_up` answers itself on subscribe; every other one in
 /// [`crate::topics::TOPICS`] is a module's.
 #[cfg(test)]
-const ANSWERED_HERE: &[nova_protocol::Topic] =
+const ANSWERED_HERE: &[nova_carrier::Topic] =
     &[topics::FEATURES, topics::LOGS, topics::THEME, topics::COMPOSITOR, topics::HOST, topics::TOGGLE, topics::VOLUME];
 
 /// A request from the client `caller`.

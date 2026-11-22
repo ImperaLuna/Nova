@@ -95,7 +95,7 @@ mod tests {
         let dir = TempDir::new("nova-files-reconfigure");
         let logger = nova_log::Logger::open(
             &dir.join("logs"),
-            nova_protocol::LogLevel::Debug,
+            nova_carrier::log::LogLevel::Debug,
             false,
             Arc::new(nova_hub::Hub::default()),
         )

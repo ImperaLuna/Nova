@@ -4,7 +4,8 @@
 //! subscribe`) waits forever.
 
 use crate::lifecycle::RESTART_COMMAND;
-use nova_protocol::{Command, Envelope, Event, Outcome, Response, Status, Topic, encode};
+use nova_carrier::{Envelope, Outcome, Response, Topic, encode};
+use nova_protocol::{Command, Event, Status};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

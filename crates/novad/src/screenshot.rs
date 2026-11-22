@@ -6,8 +6,8 @@
 
 use crate::Daemon;
 use nova_base::lock;
+use nova_carrier::Outcome;
 use nova_hub::ClientId;
-use nova_protocol::Outcome;
 use nova_screenshot_api::{CaptureMode, Command, PixelRect};
 use nova_socket::{Answer, Caller, done};
 use std::path::PathBuf;
@@ -94,7 +94,7 @@ fn save_capture(daemon: &Daemon, output: String, rect: PixelRect) -> Answer {
 impl nova_modules::Module for Screenshots {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_screenshot_api::TOPIC);
+    const TOPIC: Option<nova_carrier::Topic> = Some(nova_screenshot_api::TOPIC);
     type Sources = PathBuf;
     type Config = ();
 

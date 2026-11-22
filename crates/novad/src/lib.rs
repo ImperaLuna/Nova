@@ -55,10 +55,11 @@ mod wallpaper;
 mod x11_tray;
 
 use nova_base::lock;
+use nova_carrier::log::LogLevel;
 use nova_hub::Hub;
 use nova_log::Logger;
 use nova_process::{notify, procfs};
-use nova_protocol::{LogLevel, Status, UiState, UiStatus};
+use nova_protocol::{Status, UiState, UiStatus};
 use settings::{Settings, Sources};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};

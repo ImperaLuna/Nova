@@ -7,7 +7,7 @@
 //! line command the user already had can run after it, on the same input.
 
 use nova_ai_usage_api::Command;
-use nova_protocol::encode;
+use nova_carrier::encode;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;

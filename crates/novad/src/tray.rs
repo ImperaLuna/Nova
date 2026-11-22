@@ -6,8 +6,8 @@
 //! compositor do: novad joins them here until the launcher has moved too.
 
 use crate::Daemon;
+use nova_carrier::Outcome;
 use nova_hub::ClientId;
-use nova_protocol::Outcome;
 use nova_socket::{Answer, Caller, done};
 use nova_tray::Sources;
 use nova_tray_api::Command;
@@ -115,7 +115,7 @@ impl nova_modules::Module for Tray {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_tray_api::TOPIC);
+    const TOPIC: Option<nova_carrier::Topic> = Some(nova_tray_api::TOPIC);
     type Sources = Sources;
     type Config = ();
 

@@ -10,11 +10,12 @@ use crate::modules::Running;
 use crate::nova_files::NovaFiles;
 use crate::tray::Tray;
 use nova_base::lock;
+use nova_carrier::Outcome;
 use nova_launcher::providers::{HOST, Host, Provider, Run, Slotted};
 use nova_launcher_api::{Command, PROVIDER_APPS};
 use nova_modules::{Has, Module};
 use nova_nova_files_api::PROVIDER_FILES;
-use nova_protocol::{FeatureState, FeatureStatus, Outcome};
+use nova_protocol::{FeatureState, FeatureStatus};
 use nova_socket::{Answer, Caller, done, value};
 use std::sync::{Arc, mpsc};
 
@@ -160,7 +161,7 @@ impl nova_modules::Module for Launcher {
     type App = crate::modules::Novad;
     const ID: &'static str = FEATURE_ID;
     const NEEDS_APPS: bool = true;
-    const TOPIC: Option<nova_protocol::Topic> = Some(nova_launcher_api::TOPIC);
+    const TOPIC: Option<nova_carrier::Topic> = Some(nova_launcher_api::TOPIC);
     type Sources = Paths;
     type Config = ();
 
@@ -192,8 +193,9 @@ impl nova_modules::Module for Launcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nova_carrier::log::LogLevel;
     use nova_launcher_api::{LauncherItem, TextRun};
-    use nova_protocol::{LogLevel, Slot};
+    use nova_protocol::Slot;
     use nova_test_support::TempDir;
 
     /// A provider that finds `query` back as one item.
