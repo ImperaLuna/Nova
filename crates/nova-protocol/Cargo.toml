@@ -7,7 +7,6 @@
 # - nova-carrier
 # - nova-compositor
 # - nova-host
-# - nova-peripherals-api
 # - nova-theme
 
 [package]
@@ -23,7 +22,6 @@ nova-apps.workspace = true
 nova-carrier.workspace = true
 nova-compositor.workspace = true
 nova-host.workspace = true
-nova-peripherals-api.workspace = true
 nova-theme.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -35,6 +33,7 @@ nova-launcher-api.workspace = true
 nova-media-api.workspace = true
 nova-network-api.workspace = true
 nova-notifications-api.workspace = true
+nova-peripherals-api.workspace = true
 nova-resources-api.workspace = true
 nova-tray-api.workspace = true
 nova-wallpaper-api.workspace = true

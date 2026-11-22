@@ -5,7 +5,7 @@
 //! udev nor netlink. A USB bus that appears later (a new controller) is
 //! watched from then on.
 
-use crate::inotify::{self, Inotify};
+use nova_inotify::{self as inotify, Inotify};
 use std::path::Path;
 
 /// Calls `changed` on a thread of its own whenever a USB device is plugged

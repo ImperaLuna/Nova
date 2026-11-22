@@ -165,6 +165,7 @@ pub enum Sent {
     Media(nova_media_api::Event),
     Network(nova_network_api::Event),
     Notifications(nova_notifications_api::Event),
+    Peripherals(nova_peripherals_api::Event),
     Resources(nova_resources_api::Event),
     Tray(nova_tray_api::Event),
 }
