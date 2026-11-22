@@ -1,8 +1,8 @@
 # nova-ui
 #
 # The program that draws Nova's UI with GPUI. Wiring only: it starts GPUI
-# and, as the ports land, the socket client, the stage and each feature's ui
-# crate.
+# with the look kit's icons and, as the ports land, the socket client, the
+# stage and each feature's ui crate.
 #
 # This manifest is also the root of the UI side's cargo workspace, apart
 # from the daemon's (the repo root's): GPUI brings hundreds of crates, some
@@ -19,7 +19,8 @@
 # - gpui
 # - gpui_platform
 #
-# Allowed workspace crates: none
+# Allowed workspace crates:
+# - nova-look
 
 [package]
 name = "nova-ui"
@@ -32,6 +33,7 @@ license.workspace = true
 [dependencies]
 gpui.workspace = true
 gpui_platform.workspace = true
+nova-look.workspace = true
 
 [lints]
 workspace = true
@@ -39,9 +41,8 @@ workspace = true
 [workspace]
 resolver = "3"
 # A glob that matches nothing is an error to cargo, so the first
-# `framework-ui/<name>` crate adds "../framework-ui/*" and the first
 # `features/<id>/ui` crate adds "../features/*/ui".
-members = ["."]
+members = [".", "../framework-ui/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -60,6 +61,15 @@ gpui = { git = "https://github.com/ImperaLuna/zed", rev = "915fb0d79b03de29a8a15
 # The platform half of GPUI (windows, input, the renderer). Wayland is off
 # by default; without it the program runs but never opens a window.
 gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "915fb0d79b03de29a8a15beb0fef11e0e465d8ec", version = "0.1.0", features = ["wayland"] }
+# The same versions as the daemon side's (the root Cargo.toml).
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# The UI side's shared parts (framework-ui/).
+nova-look = { path = "../framework-ui/look" }
+
+# The daemon side's crates the UI side may use: api and -info crates.
+nova-theme-info = { path = "../framework/theme-info" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

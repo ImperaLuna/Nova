@@ -65,7 +65,7 @@
 
       # What the UI side builds from: its crates, and the daemon side's that
       # they use by path (api and -info crates), with the root manifest
-      # those inherit from.
+      # those inherit from, and the few other files its crates read.
       uiSrc =
         lib:
         lib.fileset.toSource {
@@ -77,6 +77,11 @@
             ./features
             ./framework
             (uiCrates lib)
+            # The look kit compiles in the fallback theme, and its tests
+            # hold its tokens and glyphs equal to the Quickshell shell's.
+            ./themes
+            ./ui/theme/Tokens.qml
+            ./ui/theme/icons.js
           ];
         };
 
@@ -361,11 +366,12 @@
         in
         {
           build = self.packages.${pkgs.stdenv.hostPlatform.system}.nova;
-          # The UI side: nova-ui builds, and its clippy, rustfmt and
-          # cargo-deny pass (packaging/nix/nova-ui.nix).
+          # The UI side: nova-ui builds, and its clippy, unit tests, rustfmt
+          # and cargo-deny pass (packaging/nix/nova-ui.nix).
           inherit ((uiFor pkgs).checks)
             ui-build
             ui-clippy
+            ui-tests
             ui-rustfmt
             ui-cargo-deny
             ;
@@ -568,6 +574,8 @@
                   ./app/src
                   ./framework
                   ./features
+                  ./app-ui
+                  (pkgs.lib.fileset.maybeMissing ./framework-ui)
                 ];
               }
             }/. src

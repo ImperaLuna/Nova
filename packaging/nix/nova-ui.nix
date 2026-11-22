@@ -118,6 +118,15 @@ in
       }
     );
 
+    # The UI side's unit tests (pure logic only: it has no UI test suite).
+    ui-tests = craneLib.cargoTest (
+      ci
+      // {
+        cargoArtifacts = ciArtifacts;
+        cargoTestExtraArgs = "--workspace";
+      }
+    );
+
     ui-rustfmt = craneLib.cargoFmt {
       inherit (common)
         pname

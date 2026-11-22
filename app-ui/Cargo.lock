@@ -2857,11 +2857,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-carrier"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nova-look"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui_platform",
+ "nova-theme-info",
+ "serde",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "nova-theme-info"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
 name = "nova-ui"
 version = "0.1.0"
 dependencies = [
  "gpui",
  "gpui_platform",
+ "nova-look",
 ]
 
 [[package]]
