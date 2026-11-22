@@ -912,8 +912,15 @@ name = "nova-host"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "nova-host-info",
  "nova-icons",
  "nova-process",
+]
+
+[[package]]
+name = "nova-host-info"
+version = "0.1.0"
+dependencies = [
  "serde",
 ]
 
@@ -1221,7 +1228,7 @@ dependencies = [
  "nova-carrier",
  "nova-compositor",
  "nova-desktop-info",
- "nova-host",
+ "nova-host-info",
  "nova-launcher-api",
  "nova-lock-api",
  "nova-media-api",
@@ -1233,7 +1240,7 @@ dependencies = [
  "nova-recording-api",
  "nova-resources-api",
  "nova-screenshot-api",
- "nova-theme",
+ "nova-theme-info",
  "nova-tray-api",
  "nova-wallpaper-api",
  "proptest",
@@ -1378,9 +1385,17 @@ version = "0.1.0"
 dependencies = [
  "nova-paths",
  "nova-test-support",
+ "nova-theme-info",
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "nova-theme-info"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -1486,6 +1501,7 @@ dependencies = [
  "nova-desktop-info",
  "nova-features",
  "nova-host",
+ "nova-host-info",
  "nova-hub",
  "nova-icons",
  "nova-inotify",
@@ -1522,6 +1538,7 @@ dependencies = [
  "nova-socket",
  "nova-test-support",
  "nova-theme",
+ "nova-theme-info",
  "nova-tray",
  "nova-tray-api",
  "nova-wallpaper",

@@ -17,11 +17,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-// The shared lookups' own types are the framework's (IMP-374), re-exported
-// so clients name them from here as before.
 use nova_desktop_info::{Desktop, Step, WorkspaceId};
-pub use nova_host::{Host, OperatingSystem};
-pub use nova_theme::{Color, Palette, Theme, ThemeMode};
+use nova_host_info::Host;
+use nova_theme_info::Theme;
 
 /// Pushed by the daemon whenever its state changes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -330,8 +328,10 @@ mod tests {
     use nova_carrier::log::{LogEntry, LogLevel, Logs, UI_LOG_SOURCE};
     use nova_carrier::{Envelope, Outcome, Response, encode};
     use nova_desktop_info::{Capability, FocusedWindow, Output, Workspace};
+    use nova_host_info::OperatingSystem;
     use nova_media_api::Command as MediaCommand;
     use nova_notifications_api::Command as NotificationCommand;
+    use nova_theme_info::{Color, Palette, ThemeMode};
     use serde_json::json;
 
     /// Every message shape on the wire. A change here changes the protocol:

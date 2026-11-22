@@ -64,7 +64,9 @@ nova-mime = { path = "framework/mime" }
 nova-app-info = { path = "framework/app-info" }
 nova-apps = { path = "framework/apps" }
 nova-theme = { path = "framework/theme" }
+nova-theme-info = { path = "framework/theme-info" }
 nova-host = { path = "framework/host" }
+nova-host-info = { path = "framework/host-info" }
 nova-compositor = { path = "framework/compositor" }
 nova-desktop-info = { path = "framework/desktop-info" }
 nova-test-support = { path = "framework/test-support" }

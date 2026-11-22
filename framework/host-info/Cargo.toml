@@ -1,0 +1,18 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates: none
+
+[package]
+name = "nova-host-info"
+description = "The machine and its user as the socket carries them: host name, boot time, distribution and what to call the user"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[lints]
+workspace = true

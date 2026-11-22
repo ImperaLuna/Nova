@@ -5,9 +5,9 @@
 # Allowed workspace crates:
 # - nova-carrier
 # - nova-desktop-info
-# - nova-host
+# - nova-host-info
 # - nova-screenshot-api
-# - nova-theme
+# - nova-theme-info
 
 [package]
 name = "nova-protocol"
@@ -20,9 +20,9 @@ license.workspace = true
 [dependencies]
 nova-carrier.workspace = true
 nova-desktop-info.workspace = true
-nova-host.workspace = true
+nova-host-info.workspace = true
 nova-screenshot-api.workspace = true
-nova-theme.workspace = true
+nova-theme-info.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

@@ -4,6 +4,7 @@
 #
 # Allowed workspace crates:
 # - nova-paths
+# - nova-theme-info
 
 [package]
 name = "nova-theme"
@@ -15,6 +16,7 @@ license.workspace = true
 
 [dependencies]
 nova-paths.workspace = true
+nova-theme-info.workspace = true
 serde.workspace = true
 toml.workspace = true
 
