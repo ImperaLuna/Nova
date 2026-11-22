@@ -11,8 +11,9 @@
 use crate::config::{self, Config};
 use crate::features;
 use crate::modules::{self, Context, Running};
+use nova_cli::client::RESTART_COMMAND;
 use nova_compositor::Compositor;
-use nova_daemon_info::{Event, FeatureState};
+use nova_daemon_info::{Event, FeatureState, UiProgram};
 use nova_features::{Manifest, Selection};
 use nova_host_info::Host;
 use nova_hub::Hub;
@@ -61,6 +62,7 @@ impl Settings {
         let config = logged(config::read(&sources.config), fallback, logger).unwrap_or_default();
         let selection = logged(features::read_selection(&sources.selection), fallback, logger).unwrap_or_default();
         warn_unknown_modes(&sources.manifests, &selection, logger);
+        warn_unknown_ui(&selection, logger);
         let features = features::states(&sources.manifests, &selection, &sources.path_var);
         let theme = resolve_theme(sources, &config, logger);
         hub.publish(&nova_theme_info::Event::Theme(theme.clone()));
@@ -90,6 +92,11 @@ impl Settings {
         }
         logger.info(LOG_SOURCE, "settings changed, applying them");
         warn_unknown_modes(&sources.manifests, &selection, logger);
+        if selection.ui != self.selection.ui {
+            warn_unknown_ui(&selection, logger);
+            // The supervisor keeps the program it started with.
+            logger.info(LOG_SOURCE, &format!("the UI program changed (features.toml): `{RESTART_COMMAND}` applies it"));
+        }
         let features = features::states(&sources.manifests, &selection, &sources.path_var);
         if self.config.theme != config.theme {
             let theme = resolve_theme(sources, &config, logger);
@@ -109,6 +116,12 @@ impl Settings {
         self.config = config;
         self.selection = selection;
         self.features = features;
+    }
+
+    /// The UI program `features.toml` picks; Quickshell unless it names
+    /// another one novad knows.
+    pub fn ui_program(&self) -> UiProgram {
+        self.selection.ui_program()
     }
 
     /// Stops every module, for a novad that ends without exiting the
@@ -169,6 +182,18 @@ fn publish_features(before: &[FeatureState], features: &[FeatureState], hub: &Hu
 fn warn_unknown_modes(manifests: &[Manifest], selection: &Selection, logger: &Logger) {
     for (id, mode) in selection.unknown_modes(manifests) {
         logger.warn("features", &format!("{id} has no mode \"{mode}\" (features.toml), so it runs in its default"));
+    }
+}
+
+/// Warns of a `ui` in `features.toml` that names no UI program, so
+/// Quickshell runs.
+fn warn_unknown_ui(selection: &Selection, logger: &Logger) {
+    if let Some(name) = selection.unknown_ui() {
+        let known = UiProgram::ALL.map(UiProgram::name).join(", ");
+        logger.warn(
+            "features",
+            &format!("there is no \"{name}\" UI (features.toml; known: {known}), so Quickshell runs"),
+        );
     }
 }
 

@@ -1,8 +1,11 @@
-//! Runs the Quickshell UI as a child of novad and restarts it when it exits.
+//! Runs the UI as a child of novad and restarts it when it exits. The UI is
+//! one of two programs ([`Program`]): the QML shell under Quickshell, or
+//! `nova-ui`, the GPUI program, when `features.toml` picks it
+//! ([`Program::pick`]). Both get the same treatment below.
 //!
 //! It runs only while some feature with a UI is on ([`Supervisor::want`]):
 //! with every such feature off, novad keeps serving `nova` commands without
-//! Quickshell, and turning one on starts it again.
+//! a UI, and turning one on starts it again.
 //!
 //! The UI's stdout and stderr go into novad's log with source `ui`. When it
 //! exits on its own, the lines before the exit are saved as a crash snapshot
@@ -12,7 +15,7 @@
 use nova_base::backoff::Backoff;
 use nova_base::lock;
 use nova_carrier::log::UI_LOG_SOURCE;
-use nova_daemon_info::{Crash, UiState, UiStatus};
+use nova_daemon_info::{Crash, UiProgram, UiState, UiStatus};
 use nova_log::Logger;
 use nova_process::child::{describe_exit, stdout_within};
 use std::io::{BufRead, BufReader, Read};
@@ -36,6 +39,10 @@ const QUICKSHELL_LAUNCHER: &str = "nova-quickshell";
 const PACKAGED_QUICKSHELL_LAUNCHER: Option<&str> = option_env!("NOVA_QUICKSHELL_LAUNCHER");
 /// Quickshell itself, when no `nova-quickshell` launcher is installed.
 const QUICKSHELL: &str = "quickshell";
+/// Tells the UI where novad listens.
+const SOCKET_VAR: &str = "NOVA_SOCKET";
+/// The GPUI program, looked up on the session's `PATH`.
+const GPUI_UI: &str = "nova-ui";
 /// Qt's Wayland plugin marks a window unexposed when a frame callback is
 /// this many ms late (default 100), and redraws all of it when the late
 /// callback comes. Compositors send callbacks to a covered surface only now
@@ -69,13 +76,54 @@ const SESSION_CHECK: Duration = Duration::from_secs(5);
 /// How long `quickshell --version` may take; novad's start waits for it.
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The program novad runs as the UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Program {
+    /// Quickshell ([`UiSettings::quickshell`]) on the QML shell
+    /// ([`UiSettings::ui_dir`]).
+    Quickshell,
+    /// `nova-ui`, the GPUI program, at this path.
+    Gpui(PathBuf),
+}
+
+impl Program {
+    /// The program `picked` names (`features.toml`'s `ui`). The GPUI
+    /// program is `gpui_ui` when novad was given one, else `nova-ui` on
+    /// `path_var`. When it isn't there, Quickshell runs instead and the
+    /// second value says why, so a setting never leaves the session without
+    /// a shell.
+    pub fn pick(picked: UiProgram, gpui_ui: Option<&Path>, path_var: &str) -> (Self, Option<String>) {
+        if picked == UiProgram::Quickshell {
+            return (Self::Quickshell, None);
+        }
+        let found = match gpui_ui {
+            Some(path) => path.is_file().then(|| path.to_path_buf()),
+            None => nova_paths::find_program(GPUI_UI, path_var),
+        };
+        match (found, gpui_ui) {
+            (Some(path), _) => (Self::Gpui(path), None),
+            (None, Some(path)) => (Self::Quickshell, Some(format!("{} isn't a file", path.display()))),
+            (None, None) => (Self::Quickshell, Some(format!("{GPUI_UI} isn't on PATH"))),
+        }
+    }
+
+    const fn kind(&self) -> UiProgram {
+        match self {
+            Self::Quickshell => UiProgram::Quickshell,
+            Self::Gpui(_) => UiProgram::Gpui,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct UiSettings {
+    /// Which program runs.
+    pub program: Program,
     /// The Quickshell binary.
     pub quickshell: PathBuf,
     /// The UI's QML folder, the one holding `shell.qml`.
     pub ui_dir: PathBuf,
-    /// Passed to the UI as `NOVA_SOCKET`.
+    /// Passed to the UI as [`SOCKET_VAR`].
     pub socket: PathBuf,
     /// `PATH` for the UI and its children.
     pub path_var: String,
@@ -93,11 +141,22 @@ pub struct UiSettings {
     pub icon_theme: String,
 }
 
+impl UiSettings {
+    /// The file novad runs as the UI.
+    fn program_path(&self) -> &Path {
+        match &self.program {
+            Program::Quickshell => &self.quickshell,
+            Program::Gpui(program) => program,
+        }
+    }
+}
+
 pub struct Supervisor {
     record: Mutex<Record>,
     /// Signalled when `wanted` or `quitting` changes.
     changed: Condvar,
     quitting: AtomicBool,
+    program: UiProgram,
     quickshell_version: Option<String>,
 }
 
@@ -117,13 +176,13 @@ impl Supervisor {
     /// Starts the UI on a thread of its own that lives as long as novad,
     /// running it while `wanted` (see [`Self::want`]).
     pub fn start(settings: UiSettings, wanted: bool, logger: Arc<Logger>) -> Arc<Self> {
-        let quickshell_version = quickshell_version(&settings, &logger);
-        if let Some(vendor) = &settings.egl_vendor {
-            logger.info(LOG_SOURCE, &format!("the UI loads only NVIDIA's EGL ({})", vendor.display()));
-        }
-        if let Some(render_loop) = settings.render_loop {
-            logger.info(LOG_SOURCE, &format!("the UI uses Qt's {render_loop} render loop"));
-        }
+        let quickshell_version = match &settings.program {
+            Program::Quickshell => announce_quickshell(&settings, &logger),
+            Program::Gpui(program) => {
+                logger.info(LOG_SOURCE, &format!("the UI is the GPUI program, {}", program.display()));
+                None
+            }
+        };
         if !wanted {
             logger.info(LOG_SOURCE, NOT_NEEDED);
         }
@@ -131,6 +190,7 @@ impl Supervisor {
             record: Mutex::new(Record { wanted, ..Record::default() }),
             changed: Condvar::new(),
             quitting: AtomicBool::new(false),
+            program: settings.program.kind(),
             quickshell_version,
         });
         let worker = Arc::clone(&supervisor);
@@ -146,6 +206,7 @@ impl Supervisor {
             (None, false) => UiState::NotNeeded,
         };
         UiStatus {
+            program: self.program,
             state,
             pid: record.pid,
             pss_kib: record
@@ -248,10 +309,14 @@ impl Supervisor {
                     record.pid = Some(child.id());
                     child
                 }
-                Err(e) => return format!("couldn't start {}: {e}", settings.quickshell.display()),
+                Err(e) => return format!("couldn't start {}: {e}", settings.program_path().display()),
             }
         };
-        logger.info(LOG_SOURCE, &format!("UI started (pid {}) from {}", child.id(), settings.ui_dir.display()));
+        let source = match &settings.program {
+            Program::Quickshell => &settings.ui_dir,
+            Program::Gpui(program) => program,
+        };
+        logger.info(LOG_SOURCE, &format!("UI started (pid {}) from {}", child.id(), source.display()));
         let readers = [
             child.stdout.take().map(|out| forward_lines(out, Arc::clone(logger), UI_LOG_SOURCE)),
             child.stderr.take().map(|err| forward_lines(err, Arc::clone(logger), UI_LOG_SOURCE)),
@@ -346,7 +411,7 @@ pub fn quickshell_command(settings: &UiSettings, path: &Path, process_name: &str
         .arg("--no-color")
         .arg("--path")
         .arg(path)
-        .env("NOVA_SOCKET", &settings.socket)
+        .env(SOCKET_VAR, &settings.socket)
         .env("PATH", &settings.path_var)
         .env(FRAME_CALLBACK_TIMEOUT.0, FRAME_CALLBACK_TIMEOUT.1)
         .env(SIMPLE_ANIMATION_DRIVER.0, SIMPLE_ANIMATION_DRIVER.1)
@@ -360,19 +425,34 @@ pub fn quickshell_command(settings: &UiSettings, path: &Path, process_name: &str
     command
 }
 
+/// The GPUI program at `program` as [`UI_PROCESS_NAME`], connected to novad.
+/// It draws through Vulkan and has no Qt, so none of Quickshell's settings
+/// apply.
+fn gpui_command(settings: &UiSettings, program: &Path) -> Command {
+    let mut command = Command::new(program);
+    command.arg0(UI_PROCESS_NAME).env(SOCKET_VAR, &settings.socket).env("PATH", &settings.path_var);
+    command
+}
+
 fn spawn(settings: &UiSettings) -> std::io::Result<Child> {
-    let mut command = quickshell_command(settings, &settings.ui_dir, UI_PROCESS_NAME);
+    let mut command = match &settings.program {
+        Program::Quickshell => {
+            let mut command = quickshell_command(settings, &settings.ui_dir, UI_PROCESS_NAME);
+            if let Some(port) = qml_debug_port(|name| std::env::var(name).ok()) {
+                command.arg("--debug").arg(port.to_string());
+            }
+            command
+        }
+        Program::Gpui(program) => gpui_command(settings, program),
+    };
     command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    if let Some(port) = qml_debug_port(|name| std::env::var(name).ok()) {
-        command.arg("--debug").arg(port.to_string());
-    }
     // A crashed novad never leaves an orphaned bar behind. This runs on the
     // supervisor thread, which lives as long as novad.
     nova_process::child::die_with_novad(&mut command, libc::SIGTERM);
     command.spawn()
 }
 
-/// Logs each line a Quickshell process writes to `stream`, as from
+/// Logs each line a UI process writes to `stream`, as from
 /// `source`, until it closes.
 pub fn forward_lines(stream: impl Read + Send + 'static, logger: Arc<Logger>, source: &'static str) -> JoinHandle<()> {
     std::thread::spawn(move || {
@@ -385,7 +465,15 @@ pub fn forward_lines(stream: impl Read + Send + 'static, logger: Arc<Logger>, so
     })
 }
 
-fn quickshell_version(settings: &UiSettings, logger: &Logger) -> Option<String> {
+/// Logs how Quickshell runs: its version (returned, with a warning outside
+/// the tested range), and the EGL and render loop picked for it.
+fn announce_quickshell(settings: &UiSettings, logger: &Logger) -> Option<String> {
+    if let Some(vendor) = &settings.egl_vendor {
+        logger.info(LOG_SOURCE, &format!("the UI loads only NVIDIA's EGL ({})", vendor.display()));
+    }
+    if let Some(render_loop) = settings.render_loop {
+        logger.info(LOG_SOURCE, &format!("the UI uses Qt's {render_loop} render loop"));
+    }
     match read_quickshell_version(&settings.quickshell, &settings.path_var) {
         Ok(version) => {
             logger.info(LOG_SOURCE, &format!("Quickshell {version}"));
@@ -460,6 +548,29 @@ mod tests {
         assert_eq!(default_quickshell(&path_var), dir.join(UI_PROCESS_NAME));
         nova_test_support::write_program(dir.path(), QUICKSHELL_LAUNCHER, "exit 0");
         assert_eq!(default_quickshell(&path_var), dir.join(QUICKSHELL_LAUNCHER));
+    }
+
+    #[test]
+    fn the_gpui_program_runs_only_when_picked_and_found() {
+        let dir = nova_test_support::TempDir::new("gpui-pick");
+        let path_var = dir.path_var();
+        let pick = |picked, gpui_ui: Option<&Path>| Program::pick(picked, gpui_ui, &path_var);
+
+        // Not there: Quickshell runs, and the caller hears why.
+        let (program, problem) = pick(UiProgram::Gpui, None);
+        assert_eq!((program, problem.as_deref()), (Program::Quickshell, Some("nova-ui isn't on PATH")));
+        let missing = dir.join("elsewhere");
+        let (program, problem) = pick(UiProgram::Gpui, Some(&missing));
+        assert_eq!(program, Program::Quickshell);
+        assert!(problem.is_some_and(|problem| problem.contains("elsewhere")));
+
+        let on_path = nova_test_support::write_program(dir.path(), GPUI_UI, "exit 0");
+        assert_eq!(pick(UiProgram::Gpui, None), (Program::Gpui(on_path.clone()), None));
+        // The one novad was given wins over PATH's.
+        let given = nova_test_support::write_program(dir.path(), "given", "exit 0");
+        assert_eq!(pick(UiProgram::Gpui, Some(&given)), (Program::Gpui(given), None));
+        // Installed but not picked: nothing changes.
+        assert_eq!(pick(UiProgram::Quickshell, Some(&on_path)), (Program::Quickshell, None));
     }
 
     #[test]

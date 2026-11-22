@@ -7,7 +7,9 @@ use nova_app_info::App;
 use nova_bar_api::Panel;
 use nova_carrier::log::{LogEntry, LogLevel, Logs, UI_LOG_SOURCE};
 use nova_carrier::{Envelope, Outcome, Published, Request, Response, encode};
-use nova_daemon_info::{Command, Crash, Event, FeatureState, FeatureStatus, Slot, Status, UiState, UiStatus, topics};
+use nova_daemon_info::{
+    Command, Crash, Event, FeatureState, FeatureStatus, Slot, Status, UiProgram, UiState, UiStatus, topics,
+};
 use nova_desktop_info::{Capability, FocusedWindow, Output, Workspace};
 use nova_desktop_info::{Desktop, Step};
 use nova_host_info::Host;
