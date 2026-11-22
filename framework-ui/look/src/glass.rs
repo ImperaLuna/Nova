@@ -16,7 +16,10 @@
 //! caller sizes and places it and adds its content, which lies on top and
 //! is laid out in the glass's full box (the edge is drawn over it, it takes
 //! no room). The shadow reaches `SHADOW_ROOM` past the glass on every
-//! side: the window must be that much bigger, and no parent may clip there.
+//! side: the window must be that much bigger, and nothing may clip there.
+//! That includes the glass itself: `overflow_hidden` on it cuts its own
+//! shadow off, so content that must be clipped to the glass (a panel while
+//! it grows) goes in a child that hides its overflow.
 //!
 //! GPUI clips a rounded element's children to its box, not its corners. So
 //! content that touches the glass's edge rounds its own corners to match,
@@ -83,10 +86,8 @@ impl Glass {
             ))
         };
         let glass = div().rounded(radius).bg(theme.glass_tint.alpha(tint_opacity));
-        let glass = match shadow > 0.0 {
-            true => glass.child(shadow_under(radius, theme.shadow().opacity(shadow))),
-            false => glass,
-        };
+        let glass =
+            if shadow > 0.0 { glass.child(shadow_under(radius, theme.shadow().opacity(shadow))) } else { glass };
         glass
             // The outline, then the light line just inside it.
             .child(

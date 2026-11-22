@@ -173,7 +173,9 @@ sample`). Every ui crate draws with it:
 - Glass is `Glass::new(radius).build(cx)`. The window's owner passes the
   shapes it draws to `set_blur_region` and to GPUI's `set_input_region`
   each frame they change, and leaves `tokens::SHADOW_ROOM` free around
-  glass. A window draws at most 32 glasses with a shadow.
+  glass. Nothing clips there, the glass included: content that must be
+  clipped to it goes in a child with `overflow_hidden`. A window draws at
+  most 32 glasses with a shadow.
 - GPUI clips children to a rounded parent's box, not its corners: content
   that reaches the edge rounds itself with `fit_corners`.
 - Motion is `motion::ease`, `Eased` and `Spring`. Ask for the next frame
