@@ -43,9 +43,6 @@ pub enum Event {
     /// The active theme's colors. Topic [`topics::THEME`], sent right after
     /// subscribing.
     Theme(Theme),
-    /// Plan usage of AI coding tools. Topic [`topics::AI_USAGE`], sent right
-    /// after subscribing and whenever a number changes.
-    AiUsage(AiUsage),
     /// The compositor's workspaces, outputs, focused window and keyboard
     /// layout. Topic [`topics::COMPOSITOR`], sent right after subscribing and
     /// whenever any of it changes. Never sent when novad doesn't know the
@@ -86,24 +83,6 @@ pub enum Event {
     /// The machine and its user, for the quick settings header. Topic
     /// [`topics::HOST`], sent right after subscribing.
     Host(Host),
-    /// The notifications kept for the quick settings list, do not disturb
-    /// and the muted apps (feature `notifications`). Topic
-    /// [`topics::NOTIFICATIONS`], sent right after subscribing and whenever
-    /// any of it changes.
-    Notifications(NotificationList),
-    /// A notification to pop up: a new one, or one an app replaced while
-    /// it may still show (feature `notifications`). Never for a muted app,
-    /// nor during do not disturb unless it's critical. Topic
-    /// [`topics::NOTIFICATIONS`].
-    NotificationPopup(Notification),
-    /// The media players on the session bus and the one the bar shows
-    /// (feature `media`). Topic [`topics::MEDIA`], sent right after
-    /// subscribing and whenever a player comes, goes or changes.
-    Media(Media),
-    /// Wireless devices and their batteries (feature `peripherals`). Topic
-    /// [`topics::PERIPHERALS`], sent right after subscribing and whenever a
-    /// device comes, goes or changes.
-    Peripherals(Peripherals),
     /// Bluetooth: the radio, the devices and the pairing waiting for the
     /// user (feature `bluetooth`). Topic [`topics::BLUETOOTH`], sent right
     /// after subscribing and whenever any of it changes.
@@ -125,7 +104,6 @@ pub mod topics {
     /// The framework's log feed (`nova_carrier::log`).
     pub const LOGS: Topic = nova_carrier::log::TOPIC;
     pub const THEME: Topic = Topic::named("theme");
-    pub const AI_USAGE: Topic = Topic::named("ai_usage");
     /// The compositor adapters' (`nova_compositor`).
     pub const COMPOSITOR: Topic = nova_compositor::TOPIC;
     pub const TOGGLE: Topic = Topic::named("toggle");
@@ -133,9 +111,6 @@ pub mod topics {
     pub const SCREENSHOT: Topic = Topic::named("screenshot");
     pub const RECORDING: Topic = Topic::named("recording");
     pub const HOST: Topic = Topic::named("host");
-    pub const NOTIFICATIONS: Topic = Topic::named("notifications");
-    pub const MEDIA: Topic = Topic::named("media");
-    pub const PERIPHERALS: Topic = Topic::named("peripherals");
     pub const BLUETOOTH: Topic = Topic::named("bluetooth");
 }
 
@@ -148,16 +123,12 @@ impl Event {
             Event::Features { .. } => Some(topics::FEATURES),
             Event::Logs(_) => Some(topics::LOGS),
             Event::Theme(_) => Some(topics::THEME),
-            Event::AiUsage(_) => Some(topics::AI_USAGE),
             Event::Compositor(_) => Some(topics::COMPOSITOR),
             Event::Toggle { .. } => Some(topics::TOGGLE),
             Event::Volume { .. } => Some(topics::VOLUME),
             Event::Capture { .. } | Event::CaptureEnded | Event::ScreenshotSaved(_) => Some(topics::SCREENSHOT),
             Event::PickRecording | Event::Recording(_) | Event::RecordingSaved(_) => Some(topics::RECORDING),
             Event::Host(_) => Some(topics::HOST),
-            Event::Notifications(_) | Event::NotificationPopup(_) => Some(topics::NOTIFICATIONS),
-            Event::Media(_) => Some(topics::MEDIA),
-            Event::Peripherals(_) => Some(topics::PERIPHERALS),
             Event::Bluetooth(_) => Some(topics::BLUETOOTH),
         }
     }
@@ -205,71 +176,6 @@ pub enum FeatureStatus {
     MissingDeps,
     /// Turned off. The UI doesn't load it.
     Off,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AiUsage {
-    /// The provider the bar shows.
-    pub shown: AiProvider,
-    /// Every provider, in display order.
-    pub providers: Vec<ProviderUsage>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AiProvider {
-    Claude,
-    Codex,
-}
-
-impl AiProvider {
-    pub const ALL: [AiProvider; 2] = [AiProvider::Claude, AiProvider::Codex];
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProviderUsage {
-    pub provider: AiProvider,
-    pub state: UsageState,
-    /// The subscription's display name, like `Plus`, when the source says.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan: Option<String>,
-    /// The windows the plan has right now, session first. Plans differ:
-    /// some have only a weekly limit.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub limits: Vec<UsageLimit>,
-    /// Why there are no numbers and how to get them, when unavailable.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hint: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UsageState {
-    /// novad is still reading the source.
-    Loading,
-    Ready,
-    /// No numbers; `hint` says why.
-    Unavailable,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct UsageLimit {
-    pub window: UsageWindow,
-    /// 0 to 100.
-    pub percent: u8,
-    /// When the window starts over, RFC 3339 UTC. Absent once it has, until
-    /// the tool is used again.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resets_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UsageWindow {
-    /// The rolling 5-hour limit.
-    Session,
-    Weekly,
 }
 
 /// A panel `nova toggle` opens or closes. Each belongs to the feature of the
@@ -330,172 +236,6 @@ impl FromStr for Panel {
             format!("unknown panel {text:?} (known: {})", known.join(", "))
         })
     }
-}
-
-/// The media players (feature `media`): every MPRIS player on the session
-/// bus, in the order they came, and the one the bar shows.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Media {
-    pub players: Vec<MediaPlayer>,
-    /// The [`MediaPlayer::id`] the bar shows: the one that started playing
-    /// last, else the one paused last, unless the user picked another
-    /// (`media_show`). `None` when no player plays or is paused.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shown: Option<String>,
-}
-
-/// One MPRIS player and what it plays. Text is plain and capped in length.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MediaPlayer {
-    /// Its bus name, like `org.mpris.MediaPlayer2.spotify`, which the media
-    /// commands take.
-    pub id: String,
-    /// The installed app it belongs to, from its desktop entry, when novad
-    /// found one (and the `launcher` feature is on).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub app: Option<App>,
-    /// Its app is a web browser (`WebBrowser` in its entry's categories),
-    /// which puts the channel or site where the artist goes.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub browser: bool,
-    /// The player's own name for itself, like `Spotify`.
-    pub identity: String,
-    pub status: PlaybackStatus,
-    pub title: String,
-    /// The artists, joined with ", ".
-    pub artist: String,
-    pub album: String,
-    /// The cover as an image file novad checked or downloaded, when there
-    /// is one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cover: Option<String>,
-    /// The track's length, 0 when unknown.
-    pub length_us: i64,
-    /// Where it was at `position_at_ms` (milliseconds since 1970); it moves
-    /// on at `rate` while playing.
-    pub position_us: i64,
-    pub position_at_ms: i64,
-    pub rate: f64,
-    pub can_next: bool,
-    pub can_previous: bool,
-    pub can_play: bool,
-    pub can_pause: bool,
-    pub can_seek: bool,
-    /// MPRIS `Raise` brings its window forward.
-    pub can_raise: bool,
-}
-
-/// What a media player is doing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PlaybackStatus {
-    Playing,
-    Paused,
-    Stopped,
-}
-
-/// The now-playing panel's buttons (`media_control`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MediaAction {
-    PlayPause,
-    Next,
-    Previous,
-}
-
-/// The devices with a battery (feature `peripherals`): mice, keyboards,
-/// headsets and the like that are connected and on right now and report
-/// one, each listed once however many sources report it. One that's off or
-/// out of reach (a headset whose dongle stays plugged in) isn't listed.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Peripherals {
-    pub devices: Vec<Peripheral>,
-}
-
-/// One device and its battery. Text is plain and capped in length.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Peripheral {
-    /// Stable while the device stays, like `upower/mouse_hidpp_battery_0`
-    /// or `headsetcontrol/1038:2253`.
-    pub id: String,
-    /// Its model, like `PRO X Wireless`.
-    pub name: String,
-    pub kind: PeripheralKind,
-    /// How it's connected, when novad can tell.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub link: Option<PeripheralLink>,
-    /// Its charge, when it has said yet.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub battery: Option<Battery>,
-    pub charging: bool,
-    /// Where the reading comes from.
-    pub source: PeripheralSource,
-}
-
-/// What a device is, for its icon.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeripheralKind {
-    Mouse,
-    Keyboard,
-    Touchpad,
-    GamingInput,
-    Pen,
-    Tablet,
-    Headset,
-    Headphones,
-    Speakers,
-    RemoteControl,
-    Wearable,
-    Other,
-}
-
-/// How a device is connected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeripheralLink {
-    /// Through its own USB receiver (2.4 GHz).
-    Dongle,
-    Bluetooth,
-    /// By its cable.
-    Wired,
-}
-
-/// A device's charge: a percentage, or only a rough level for devices that
-/// report no more.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Battery {
-    /// 0 to 100.
-    Percent(u8),
-    Level(BatteryLevel),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BatteryLevel {
-    Critical,
-    Low,
-    Normal,
-    High,
-    Full,
-}
-
-/// Where novad read a device: UPower (the kernel's drivers and BlueZ),
-/// HID++ (Logitech devices on a receiver the kernel doesn't drive),
-/// Keychron (keyboards on firmware that reports the battery over raw HID)
-/// or HeadsetControl (headsets the kernel doesn't know the battery of).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeripheralSource {
-    Upower,
-    Hidpp,
-    Keychron,
-    Headsetcontrol,
 }
 
 /// Bluetooth as the quick settings page shows it (feature `bluetooth`).
@@ -617,130 +357,6 @@ pub enum PairingAnswer {
 
 /// The longest PIN a `bluetooth_answer` takes, in bytes (BlueZ's limit).
 pub const BLUETOOTH_PIN_MAX_BYTES: usize = 16;
-
-/// The longest player id a media command takes, in bytes: a bus name is at
-/// most 255.
-pub const MEDIA_PLAYER_MAX_BYTES: usize = 255;
-
-/// What the notifications list holds (feature `notifications`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NotificationList {
-    /// The newest first, at most [`MAX_NOTIFICATIONS`].
-    pub items: Vec<Notification>,
-    /// No pop-ups, except critical ones.
-    pub do_not_disturb: bool,
-    /// Apps, by [`Notification::app`], whose notifications are hidden: not
-    /// in `items`, never popping up, never unread. Those from before the
-    /// app was muted come back once it's unmuted; those it sends meanwhile
-    /// aren't kept.
-    pub muted: Vec<String>,
-    /// Every app that sent one lately or is muted, the latest first, for
-    /// the settings page's per-app switches.
-    pub apps: Vec<NotificationApp>,
-    /// Transient notifications still open: they pop up but aren't listed,
-    /// and their pop-ups go once they leave this.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub transient: Vec<Notification>,
-}
-
-/// How many notifications are kept; the oldest go first.
-pub const MAX_NOTIFICATIONS: usize = 100;
-
-/// An app on the notification settings page.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NotificationApp {
-    /// As [`Notification::app`].
-    pub name: String,
-    /// As [`Notification::icon`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,
-    /// As [`Notification::app_id`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub app_id: Option<String>,
-}
-
-/// One notification an app sent (org.freedesktop.Notifications).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Notification {
-    /// novad's id for it, the one the app knows it by.
-    pub id: u32,
-    /// The app's name as it gave it, or its desktop entry's id.
-    pub app: String,
-    /// The app's icon: an absolute path to an image, the file it gave or
-    /// the icon theme's for the name it gave.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,
-    /// The app's desktop file id (`discord.desktop`), when it said which.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub app_id: Option<String>,
-    /// One line, plain text.
-    pub summary: String,
-    /// Plain text: any markup is taken out.
-    pub body: String,
-    /// A picture that goes with it (a sender's photo), as an absolute path.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub image: Option<String>,
-    /// Its buttons, in the app's order. Clicking the notification itself
-    /// is `has_default`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub actions: Vec<NotificationAction>,
-    /// The app does something when it's clicked (its default action).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub has_default: bool,
-    pub urgency: Urgency,
-    /// How far along something it reports is, 0 to 100.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub progress: Option<u8>,
-    /// How long it may show as a pop-up, as the app asked: `None` for the
-    /// UI's default, 0 for until it's closed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout_ms: Option<u32>,
-    /// When it came, or was last replaced, in seconds since the Unix epoch.
-    pub time: i64,
-    /// Not seen in the list yet (`read_notifications`).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub unread: bool,
-    /// The app that sent it is still there to hear about clicks: false for
-    /// those kept from before novad started.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub live: bool,
-    /// The device a low battery alert of Nova's own is about, for its
-    /// icon: never set on an app's notification.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub device: Option<NotificationDevice>,
-}
-
-/// The device a low battery alert is about: what it is and its charge
-/// when the alert was sent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NotificationDevice {
-    pub kind: PeripheralKind,
-    pub battery: Battery,
-}
-
-/// One of a notification's buttons.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NotificationAction {
-    /// What `notification_action` sends back.
-    pub key: String,
-    pub label: String,
-}
-
-/// How much a notification matters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Urgency {
-    Low,
-    #[default]
-    Normal,
-    /// Pops up even during do not disturb, and stays until it's closed.
-    Critical,
-}
 
 /// A volume key `nova volume` stands for. The UI steps by its own
 /// `Tokens.volumeStep` and stops at 100%.
@@ -871,19 +487,6 @@ pub enum Command {
     Status,
     /// Stops the UI and exits novad.
     Quit,
-    /// Picks the provider the bar shows (feature `ai-usage`). Remembered
-    /// across restarts.
-    ShowAiUsage {
-        provider: AiProvider,
-    },
-    /// Asks for fresh numbers now, when the panel opens (feature
-    /// `ai-usage`). Asking again within a minute does nothing.
-    RefreshAiUsage,
-    /// Claude's limits, read from Claude Code's status line by
-    /// `nova claude-statusline` (feature `ai-usage`).
-    ReportClaudeUsage {
-        limits: Vec<UsageLimit>,
-    },
     /// Shows a workspace (capability `focus_workspace`), focusing its output.
     FocusWorkspace {
         id: WorkspaceId,
@@ -954,74 +557,6 @@ pub enum Command {
     /// Opens novad's log (feature `recording`: the recording card's Open log,
     /// after a recording didn't start).
     OpenLog,
-    /// The notification `id` was clicked on `output` (feature
-    /// `notifications`): the app hears of it and its window takes focus, or,
-    /// when it can't hear of it, the app opens (as with `launch_app`). It
-    /// stays on the list, read.
-    OpenNotification {
-        id: u32,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        output: Option<String>,
-    },
-    /// The button `action` of notification `id` was clicked (feature
-    /// `notifications`): the app hears of it, nothing takes focus, and it
-    /// stays on the list, read.
-    NotificationAction {
-        id: u32,
-        action: String,
-    },
-    /// Closes the notification `id` and takes it off the list (feature
-    /// `notifications`).
-    DismissNotification {
-        id: u32,
-    },
-    /// Takes every notification off the list, or only `app`'s (feature
-    /// `notifications`).
-    ClearNotifications {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        app: Option<String>,
-    },
-    /// The list was seen: no notification is unread any more (feature
-    /// `notifications`).
-    ReadNotifications,
-    /// Turns do not disturb on or off (feature `notifications`).
-    /// Remembered across restarts.
-    SetDoNotDisturb {
-        on: bool,
-    },
-    /// Mutes or unmutes `app`'s notifications (feature `notifications`).
-    /// Remembered across restarts.
-    MuteNotificationApp {
-        app: String,
-        muted: bool,
-    },
-    /// Plays or pauses the media player `player` (a [`MediaPlayer::id`]),
-    /// or skips a track (feature `media`).
-    MediaControl {
-        player: String,
-        action: MediaAction,
-    },
-    /// Moves the player to `position_us` into its track, kept within the
-    /// track (feature `media`). Only for a player that `can_seek`.
-    MediaSeek {
-        player: String,
-        position_us: i64,
-    },
-    /// Shows `player` in the bar instead of the one novad picked, until
-    /// another player starts playing (feature `media`).
-    MediaShow {
-        player: String,
-    },
-    /// Brings the player's window forward where it is (feature `media`).
-    /// Answers whether it found one to bring.
-    MediaFocus {
-        player: String,
-    },
-    /// The name of the workspace the player's window is on, or `null`
-    /// (feature `media`), for the panel's "Go to" row.
-    MediaWindow {
-        player: String,
-    },
     /// Turns Bluetooth on or off (feature `bluetooth`). On also lifts a
     /// software block (rfkill); a hardware switch is refused.
     BluetoothPower {
@@ -1129,6 +664,8 @@ impl nova_carrier::Published for Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nova_media_api::Command as MediaCommand;
+    use nova_notifications_api::Command as NotificationCommand;
     use serde_json::json;
 
     /// Every message shape on the wire. A change here changes the protocol:
@@ -1179,7 +716,7 @@ mod tests {
                         topics::FEATURES,
                         topics::LOGS,
                         topics::THEME,
-                        topics::AI_USAGE,
+                        nova_ai_usage_api::TOPIC,
                         topics::COMPOSITOR,
                         topics::TOGGLE,
                         nova_lock_api::TOPIC,
@@ -1190,9 +727,9 @@ mod tests {
                         nova_resources_api::TOPIC,
                         nova_launcher_api::TOPIC,
                         nova_tray_api::TOPIC,
-                        topics::NOTIFICATIONS,
-                        topics::MEDIA,
-                        topics::PERIPHERALS,
+                        nova_notifications_api::TOPIC,
+                        nova_media_api::TOPIC,
+                        nova_peripherals_api::TOPIC,
                         nova_network_api::TOPIC,
                         topics::BLUETOOTH,
                     ]
@@ -1207,12 +744,18 @@ mod tests {
             encode(Event::Logs(Logs { backlog: false, entries: vec![log_entry()] })),
             encode(Response { id: 10, outcome: Outcome::Result(serde_json::to_value(status()).unwrap()) }),
             encode(Response { id: 7, outcome: Outcome::Result(json!("pong")) }),
-            encode(Event::AiUsage(ai_usage())),
-            encode(Request { id: Some(12), command: Command::ShowAiUsage { provider: AiProvider::Codex } }),
-            encode(Request { id: None, command: Command::RefreshAiUsage }),
-            encode(Request {
+            // The AI usage feature's own messages (`nova-ai-usage-api`), still on this one wire.
+            encode(nova_ai_usage_api::Event::AiUsage(ai_usage())),
+            encode(nova_carrier::Request {
+                id: Some(12),
+                command: nova_ai_usage_api::Command::ShowAiUsage { provider: nova_ai_usage_api::AiProvider::Codex },
+            }),
+            encode(nova_carrier::Request { id: None, command: nova_ai_usage_api::Command::RefreshAiUsage }),
+            encode(nova_carrier::Request {
                 id: Some(13),
-                command: Command::ReportClaudeUsage { limits: ai_usage().providers[0].limits.clone() },
+                command: nova_ai_usage_api::Command::ReportClaudeUsage {
+                    limits: ai_usage().providers[0].limits.clone(),
+                },
             }),
             encode(Event::Compositor(desktop())),
             encode(Request { id: Some(14), command: Command::FocusWorkspace { id: -1337 } }),
@@ -1358,14 +901,14 @@ mod tests {
                 id: Some(91),
                 command: nova_launcher_api::Command::LauncherSearch {
                     query: "~/Doc".into(),
-                    mode: Some(nova_launcher_api::PROVIDER_FILES.into()),
+                    mode: Some(nova_nova_files_api::PROVIDER_FILES.into()),
                 },
             }),
             encode(Response {
                 id: 91,
                 outcome: Outcome::Result(
                     serde_json::to_value(vec![nova_launcher_api::LauncherItem {
-                        provider: nova_launcher_api::PROVIDER_FILES.into(),
+                        provider: nova_nova_files_api::PROVIDER_FILES.into(),
                         id: "/home/me/Documents".into(),
                         name: vec![
                             nova_launcher_api::TextRun { text: "Doc".into(), matched: true },
@@ -1420,18 +963,28 @@ mod tests {
             }),
             encode(nova_carrier::Request { id: None, command: Command::Toggle { panel: Panel::Launcher } }),
             encode(nova_tray_api::Event::Tray(tray())),
-            encode(Event::Notifications(notifications())),
-            encode(Event::NotificationPopup(notifications().items[0].clone())),
-            encode(Request { id: Some(40), command: Command::NotificationAction { id: 7, action: "open".into() } }),
-            encode(Request { id: None, command: Command::OpenNotification { id: 7, output: Some("DP-1".into()) } }),
-            encode(Request { id: Some(41), command: Command::DismissNotification { id: 7 } }),
-            encode(Request { id: None, command: Command::ClearNotifications { app: Some("Discord".into()) } }),
-            encode(Request { id: None, command: Command::ClearNotifications { app: None } }),
-            encode(Request { id: None, command: Command::ReadNotifications }),
-            encode(Request { id: Some(42), command: Command::SetDoNotDisturb { on: true } }),
-            encode(Request {
+            // The notifications feature's own messages (`nova-notifications-api`), still on this one wire.
+            encode(nova_notifications_api::Event::Notifications(notifications())),
+            encode(nova_notifications_api::Event::NotificationPopup(notifications().items[0].clone())),
+            encode(nova_carrier::Request {
+                id: Some(40),
+                command: NotificationCommand::NotificationAction { id: 7, action: "open".into() },
+            }),
+            encode(nova_carrier::Request {
+                id: None,
+                command: NotificationCommand::OpenNotification { id: 7, output: Some("DP-1".into()) },
+            }),
+            encode(nova_carrier::Request { id: Some(41), command: NotificationCommand::DismissNotification { id: 7 } }),
+            encode(nova_carrier::Request {
+                id: None,
+                command: NotificationCommand::ClearNotifications { app: Some("Discord".into()) },
+            }),
+            encode(nova_carrier::Request { id: None, command: NotificationCommand::ClearNotifications { app: None } }),
+            encode(nova_carrier::Request { id: None, command: NotificationCommand::ReadNotifications }),
+            encode(nova_carrier::Request { id: Some(42), command: NotificationCommand::SetDoNotDisturb { on: true } }),
+            encode(nova_carrier::Request {
                 id: Some(43),
-                command: Command::MuteNotificationApp { app: "Discord".into(), muted: true },
+                command: NotificationCommand::MuteNotificationApp { app: "Discord".into(), muted: true },
             }),
             // The wallpaper feature's own messages (`nova-wallpaper-api`), still on this one wire.
             encode(nova_carrier::Request {
@@ -1474,51 +1027,53 @@ mod tests {
                 ),
             }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::Wallpaper } }),
-            encode(Event::Media(media())),
-            encode(Request {
+            // The media feature's own messages (`nova-media-api`), still on this one wire.
+            encode(nova_media_api::Event::Media(media())),
+            encode(nova_carrier::Request {
                 id: Some(45),
-                command: Command::MediaControl {
+                command: MediaCommand::MediaControl {
                     player: "org.mpris.MediaPlayer2.spotify".into(),
-                    action: MediaAction::PlayPause,
+                    action: nova_media_api::MediaAction::PlayPause,
                 },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: None,
-                command: Command::MediaControl {
+                command: MediaCommand::MediaControl {
                     player: "org.mpris.MediaPlayer2.spotify".into(),
-                    action: MediaAction::Next,
+                    action: nova_media_api::MediaAction::Next,
                 },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: None,
-                command: Command::MediaControl {
+                command: MediaCommand::MediaControl {
                     player: "org.mpris.MediaPlayer2.spotify".into(),
-                    action: MediaAction::Previous,
+                    action: nova_media_api::MediaAction::Previous,
                 },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(46),
-                command: Command::MediaSeek {
+                command: MediaCommand::MediaSeek {
                     player: "org.mpris.MediaPlayer2.spotify".into(),
                     position_us: 84_000_000,
                 },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(47),
-                command: Command::MediaShow { player: "org.mpris.MediaPlayer2.firefox.instance_1_42".into() },
+                command: MediaCommand::MediaShow { player: "org.mpris.MediaPlayer2.firefox.instance_1_42".into() },
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(48),
-                command: Command::MediaFocus { player: "org.mpris.MediaPlayer2.spotify".into() },
+                command: MediaCommand::MediaFocus { player: "org.mpris.MediaPlayer2.spotify".into() },
             }),
             encode(Response { id: 48, outcome: Outcome::Result(json!(true)) }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(49),
-                command: Command::MediaWindow { player: "org.mpris.MediaPlayer2.spotify".into() },
+                command: MediaCommand::MediaWindow { player: "org.mpris.MediaPlayer2.spotify".into() },
             }),
             encode(Response { id: 49, outcome: Outcome::Result(json!("3")) }),
-            encode(Event::Peripherals(peripherals())),
-            encode(Event::Peripherals(Peripherals { devices: vec![] })),
+            // The peripherals feature's own messages (`nova-peripherals-api`), still on this one wire.
+            encode(nova_peripherals_api::Event::Peripherals(peripherals())),
+            encode(nova_peripherals_api::Event::Peripherals(nova_peripherals_api::Peripherals { devices: vec![] })),
             // The network feature's own messages (`nova-network-api`), still on this one wire.
             encode(nova_network_api::Event::Network(network())),
             encode(nova_network_api::Event::Network(nova_network_api::Network {
@@ -1628,7 +1183,8 @@ mod tests {
         }
     }
 
-    fn ai_usage() -> AiUsage {
+    fn ai_usage() -> nova_ai_usage_api::AiUsage {
+        use nova_ai_usage_api::{AiProvider, AiUsage, ProviderUsage, UsageLimit, UsageState, UsageWindow};
         AiUsage {
             shown: AiProvider::Claude,
             providers: vec![
@@ -1793,50 +1349,8 @@ mod tests {
         }
     }
 
-    fn peripherals() -> Peripherals {
-        Peripherals {
-            devices: vec![
-                Peripheral {
-                    id: "upower/mouse_hidpp_battery_0".into(),
-                    name: "PRO X Wireless".into(),
-                    kind: PeripheralKind::Mouse,
-                    link: Some(PeripheralLink::Dongle),
-                    battery: Some(Battery::Percent(72)),
-                    charging: false,
-                    source: PeripheralSource::Upower,
-                },
-                Peripheral {
-                    id: "upower/keyboard_dev_AA_BB_CC_DD_EE_FF".into(),
-                    name: "K380".into(),
-                    kind: PeripheralKind::Keyboard,
-                    link: Some(PeripheralLink::Bluetooth),
-                    battery: Some(Battery::Level(BatteryLevel::High)),
-                    charging: false,
-                    source: PeripheralSource::Upower,
-                },
-                Peripheral {
-                    id: "keychron/model-3".into(),
-                    name: "Keychron K2 HE".into(),
-                    kind: PeripheralKind::Keyboard,
-                    link: Some(PeripheralLink::Dongle),
-                    battery: Some(Battery::Percent(78)),
-                    charging: false,
-                    source: PeripheralSource::Keychron,
-                },
-                Peripheral {
-                    id: "headsetcontrol/1038:2253".into(),
-                    name: "SteelSeries Arctis Nova 5X".into(),
-                    kind: PeripheralKind::Headset,
-                    link: Some(PeripheralLink::Dongle),
-                    battery: Some(Battery::Percent(30)),
-                    charging: true,
-                    source: PeripheralSource::Headsetcontrol,
-                },
-            ],
-        }
-    }
-
-    fn media() -> Media {
+    fn media() -> nova_media_api::Media {
+        use nova_media_api::{Media, MediaPlayer, PlaybackStatus};
         let spotify = MediaPlayer {
             id: "org.mpris.MediaPlayer2.spotify".into(),
             app: Some(App {
@@ -1915,7 +1429,57 @@ mod tests {
         }
     }
 
-    fn notifications() -> NotificationList {
+    fn peripherals() -> nova_peripherals_api::Peripherals {
+        use nova_peripherals_api::{
+            Battery, BatteryLevel, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource, Peripherals,
+        };
+        Peripherals {
+            devices: vec![
+                Peripheral {
+                    id: "upower/mouse_hidpp_battery_0".into(),
+                    name: "PRO X Wireless".into(),
+                    kind: PeripheralKind::Mouse,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(72)),
+                    charging: false,
+                    source: PeripheralSource::Upower,
+                },
+                Peripheral {
+                    id: "upower/keyboard_dev_AA_BB_CC_DD_EE_FF".into(),
+                    name: "K380".into(),
+                    kind: PeripheralKind::Keyboard,
+                    link: Some(PeripheralLink::Bluetooth),
+                    battery: Some(Battery::Level(BatteryLevel::High)),
+                    charging: false,
+                    source: PeripheralSource::Upower,
+                },
+                Peripheral {
+                    id: "keychron/model-3".into(),
+                    name: "Keychron K2 HE".into(),
+                    kind: PeripheralKind::Keyboard,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(78)),
+                    charging: false,
+                    source: PeripheralSource::Keychron,
+                },
+                Peripheral {
+                    id: "headsetcontrol/1038:2253".into(),
+                    name: "SteelSeries Arctis Nova 5X".into(),
+                    kind: PeripheralKind::Headset,
+                    link: Some(PeripheralLink::Dongle),
+                    battery: Some(Battery::Percent(30)),
+                    charging: true,
+                    source: PeripheralSource::Headsetcontrol,
+                },
+            ],
+        }
+    }
+
+    fn notifications() -> nova_notifications_api::NotificationList {
+        use nova_notifications_api::{
+            Notification, NotificationAction, NotificationApp, NotificationDevice, NotificationList, Urgency,
+        };
+        use nova_peripherals_api::{Battery, BatteryLevel, PeripheralKind};
         NotificationList {
             items: vec![
                 Notification {
@@ -2078,17 +1642,12 @@ mod tests {
         assert_eq!(Event::Features { features: vec![] }.topic(), Some(topics::FEATURES));
         assert_eq!(Event::Logs(Logs { backlog: false, entries: vec![] }).topic(), Some(topics::LOGS));
         assert_eq!(Event::Theme(theme()).topic(), Some(topics::THEME));
-        assert_eq!(Event::AiUsage(ai_usage()).topic(), Some(topics::AI_USAGE));
         assert_eq!(Event::Compositor(desktop()).topic(), Some(topics::COMPOSITOR));
         assert_eq!(Event::Toggle { panel: Panel::AiUsage, output: None }.topic(), Some(topics::TOGGLE));
         assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(topics::VOLUME));
         assert_eq!(Event::CaptureEnded.topic(), Some(topics::SCREENSHOT));
         assert_eq!(Event::Recording(None).topic(), Some(topics::RECORDING));
         assert_eq!(Event::Host(host()).topic(), Some(topics::HOST));
-        assert_eq!(Event::Notifications(notifications()).topic(), Some(topics::NOTIFICATIONS));
-        assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(topics::NOTIFICATIONS));
-        assert_eq!(Event::Media(media()).topic(), Some(topics::MEDIA));
-        assert_eq!(Event::Peripherals(peripherals()).topic(), Some(topics::PERIPHERALS));
         assert_eq!(Event::Bluetooth(bluetooth()).topic(), Some(topics::BLUETOOTH));
     }
 
@@ -2106,35 +1665,6 @@ mod tests {
         assert_eq!(answer(json!({"code": "0000"})), Some(PairingAnswer::Code("0000".into())));
         assert_eq!(answer(json!({"code": "0000", "extra": 1})), None);
         assert_eq!(answer(json!("maybe")), None);
-    }
-
-    #[test]
-    fn peripherals_reject_unknown_fields() {
-        let list = serde_json::to_value(peripherals()).unwrap();
-        assert!(serde_json::from_value::<Peripherals>(list.clone()).is_ok());
-        for pointer in ["", "/devices/0"] {
-            let mut extra = list.clone();
-            extra.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
-            assert!(serde_json::from_value::<Peripherals>(extra).is_err(), "{pointer}");
-        }
-        let mut odd = list.clone();
-        odd["devices"][0]["battery"] = json!({"percent": 30, "level": "low"});
-        assert!(serde_json::from_value::<Peripherals>(odd).is_err());
-    }
-
-    #[test]
-    fn media_rejects_unknown_fields() {
-        let media = serde_json::to_value(media()).unwrap();
-        assert!(serde_json::from_value::<Media>(media.clone()).is_ok());
-        for pointer in ["", "/players/0"] {
-            let mut extra = media.clone();
-            extra.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
-            assert!(serde_json::from_value::<Media>(extra).is_err(), "{pointer}");
-        }
-        let seek = r#"{"v":2,"cmd":"media_seek","args":{"player":"org.mpris.MediaPlayer2.mpv","position_us":1,"x":1}}"#;
-        assert!(decode_request(seek).unwrap_err().contains("unknown field"));
-        let control = r#"{"v":2,"cmd":"media_control","args":{"player":"p","action":"shuffle"}}"#;
-        assert!(decode_request(control).is_err());
     }
 
     #[test]
@@ -2189,17 +1719,6 @@ mod tests {
         assert!(serde_json::from_value::<Host>(host.clone()).is_ok());
         for pointer in ["", "/os"] {
             assert!(serde_json::from_value::<Host>(with_extra(host.clone(), pointer)).is_err(), "{pointer}");
-        }
-    }
-
-    #[test]
-    fn notifications_reject_unknown_fields() {
-        let list = serde_json::to_value(notifications()).unwrap();
-        assert!(serde_json::from_value::<NotificationList>(list.clone()).is_ok());
-        for pointer in ["", "/items/0", "/items/0/actions/0", "/apps/0"] {
-            let mut extra = list.clone();
-            extra.pointer_mut(pointer).unwrap().as_object_mut().unwrap().insert("extra".into(), 1.into());
-            assert!(serde_json::from_value::<NotificationList>(extra).is_err(), "{pointer}");
         }
     }
 

@@ -10,8 +10,6 @@ use nova_protocol::{CaptureMode, Command, Event, Outcome, Panel, VolumeKey, topi
 use nova_socket::{Answer, Caller, Router, done, value};
 use std::sync::Arc;
 
-const LOG_SOURCE: &str = "server";
-
 /// The routes of every message novad serves. A moved feature adds its
 /// route in its place in the list below (by its feature name), and its
 /// commands leave `nova_protocol::Command`.
@@ -21,9 +19,12 @@ pub fn router() -> Router<Daemon> {
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).answer(command),
             |daemon, caller, Shared(command)| Connection::new(daemon, caller).follow_up(command),
         )
+        .route::<nova_ai_usage_api::Command>(crate::ai_usage::answer, |_, _, _| {})
         .route::<nova_launcher_api::Command>(crate::launcher::answer, |_, _, _| {})
         .route::<nova_lock_api::Command>(crate::session_lock::answer, |_, _, _| {})
+        .route::<nova_media_api::Command>(crate::media::answer, |_, _, _| {})
         .route::<nova_network_api::Command>(crate::network::answer, |_, _, _| {})
+        .route::<nova_notifications_api::Command>(crate::notifications::answer, |_, _, _| {})
         .route::<nova_power_api::Command>(crate::power::answer, |_, _, _| {})
         .route::<nova_resources_api::Command>(crate::resources::answer, |_, _, _| {})
         .route::<nova_tray_api::Command>(crate::tray::answer, |_, _, _| {})
@@ -90,11 +91,6 @@ impl<'a> Connection<'a> {
             Command::ListFeatures => value(Ok(&lock(&self.daemon.settings).features)),
             Command::Status => value(Ok(self.daemon.status())),
             Command::Subscribe { .. } | Command::Quit => done(Ok(())),
-            Command::RefreshAiUsage => done(self.ai_usage().map(|usage| usage.refresh())),
-            Command::ShowAiUsage { provider } => done(self.ai_usage().and_then(|usage| usage.show(*provider))),
-            Command::ReportClaudeUsage { limits } => {
-                done(self.ai_usage().and_then(|usage| usage.report_claude(limits.clone())))
-            }
             Command::FocusWorkspace { id } => {
                 done(self.compositor().and_then(|compositor| compositor.focus_workspace(*id)))
             }
@@ -124,34 +120,6 @@ impl<'a> Connection<'a> {
             Command::OpenLog => {
                 done(self.require_feature(crate::recording::FEATURE_ID).and_then(|()| self.recordings().open_log()))
             }
-            Command::OpenNotification { id, output } => return self.open_notification(*id, output.clone()),
-            Command::NotificationAction { id, action } => {
-                done(self.notifications().and_then(|notifications| notifications.action(*id, Some(action))))
-            }
-            Command::DismissNotification { id } => {
-                done(self.notifications().map(|notifications| notifications.dismiss(*id)))
-            }
-            Command::ClearNotifications { app } => {
-                done(self.notifications().map(|notifications| notifications.clear(app.as_deref())))
-            }
-            Command::ReadNotifications => done(self.notifications().map(|notifications| notifications.read(None))),
-            Command::SetDoNotDisturb { on } => {
-                done(self.notifications().map(|notifications| notifications.set_do_not_disturb(*on)))
-            }
-            Command::MuteNotificationApp { app, muted } => {
-                done(self.notifications().and_then(|notifications| notifications.mute(app, *muted)))
-            }
-            Command::MediaShow { player } => done(self.media().and_then(|media| media.show(player))),
-            Command::MediaControl { player, action } => {
-                let (player, action) = (player.clone(), *action);
-                return self.media_later(move |media| done(media.control(&player, action)));
-            }
-            Command::MediaSeek { player, position_us } => {
-                let (player, position_us) = (player.clone(), *position_us);
-                return self.media_later(move |media| done(media.seek(&player, position_us)));
-            }
-            Command::MediaFocus { player } => return self.media_focus(player),
-            Command::MediaWindow { player } => return self.media_window(player),
             Command::WatchBluetooth { watching } => {
                 done(self.bluetooth().map(|bluetooth| bluetooth.watch(self.id, *watching)))
             }
@@ -176,24 +144,6 @@ impl<'a> Connection<'a> {
             }
         };
         Answer::Now(outcome)
-    }
-
-    // The modules, or why there's none (`Daemon::module`).
-
-    fn ai_usage(&self) -> Result<Arc<crate::ai_usage::Usage>, String> {
-        self.daemon.module()
-    }
-
-    fn launcher(&self) -> Result<Arc<crate::launcher::Launcher>, String> {
-        self.daemon.module()
-    }
-
-    fn notifications(&self) -> Result<Arc<crate::notifications::Notifications>, String> {
-        self.daemon.module()
-    }
-
-    fn media(&self) -> Result<Arc<crate::media::Media>, String> {
-        self.daemon.module()
     }
 
     // Kept for novad's life, whatever the settings.
@@ -222,38 +172,6 @@ impl<'a> Connection<'a> {
         }
     }
 
-    /// A click on the notification `id`, on `output`. Its app hears of it
-    /// and shows its window, which takes focus once it shows: niri gives
-    /// it none, as the app gets no activation token from the click. Nothing
-    /// starts when none shows: the app took the click. An app that can't
-    /// hear of it (gone, or does nothing on a click) is opened instead, as
-    /// the launcher does.
-    fn open_notification(&self, id: u32, output: Option<String>) -> Answer {
-        let clicked = match self.notifications().and_then(|notifications| notifications.click(id)) {
-            Ok(clicked) => clicked,
-            Err(e) => return Answer::Now(Outcome::Error(e)),
-        };
-        let (Some(app), Ok(launcher)) = (clicked.app_id, self.launcher()) else { return Answer::Now(done(Ok(()))) };
-        if !clicked.heard {
-            return crate::launcher::run(self.daemon, nova_launcher_api::PROVIDER_APPS, &app, output, false);
-        }
-        let (Some(ids), Some(compositor)) = (launcher.window_ids(&app), self.daemon.compositor.clone()) else {
-            return Answer::Now(done(Ok(())));
-        };
-        let logger = Arc::clone(&self.daemon.logger);
-        Answer::later(move || {
-            crate::launcher::focus_shown(
-                &app,
-                &ids,
-                &compositor,
-                output.as_deref(),
-                crate::launcher::SHOWN_WINDOW_WAIT,
-                &logger,
-            );
-            done(Ok(()))
-        })
-    }
-
     /// Runs `work` with Bluetooth on its own thread: BlueZ, the device and
     /// the user's answer to pairing take their time.
     fn bluetooth_later(
@@ -264,48 +182,6 @@ impl<'a> Connection<'a> {
             Ok(bluetooth) => Answer::later(move || done(work(&bluetooth))),
             Err(e) => Answer::Now(Outcome::Error(e)),
         }
-    }
-
-    /// Runs `work` with the media service on its own thread: it waits on a
-    /// player, or the compositor, to answer.
-    fn media_later(&self, work: impl FnOnce(&crate::media::Media) -> Outcome + Send + 'static) -> Answer {
-        match self.media() {
-            Ok(media) => Answer::later(move || work(&media)),
-            Err(e) => Answer::Now(Outcome::Error(e)),
-        }
-    }
-
-    /// Brings `player`'s window forward: where it is, as the launcher does
-    /// (IMP-114), else by asking the player to raise itself. Answers whether
-    /// either worked.
-    fn media_focus(&self, player: &str) -> Answer {
-        let compositor = self.daemon.compositor.clone();
-        let logger = Arc::clone(&self.daemon.logger);
-        let player = player.to_owned();
-        self.media_later(move |media| {
-            value(media.window_ids(&player).and_then(|ids| {
-                let focused = match compositor.as_deref() {
-                    Some(compositor) if !ids.is_empty() => compositor.focus_app(&ids, None).unwrap_or_else(|e| {
-                        logger.warn(LOG_SOURCE, &format!("can't focus {player}'s window: {e}"));
-                        false
-                    }),
-                    _ => false,
-                };
-                if focused { Ok(true) } else { media.raise(&player) }
-            }))
-        })
-    }
-
-    /// The name of the workspace `player`'s window is on, or `null`.
-    fn media_window(&self, player: &str) -> Answer {
-        let compositor = self.daemon.compositor.clone();
-        let player = player.to_owned();
-        self.media_later(move |media| {
-            value(media.window_ids(&player).and_then(|ids| match compositor.as_deref() {
-                Some(compositor) if !ids.is_empty() => compositor.app_workspace(&ids),
-                _ => Ok(None),
-            }))
-        })
     }
 
     /// Opens the region picker on every screen (or closes it), or saves the
@@ -423,9 +299,6 @@ impl<'a> Connection<'a> {
             Command::Ping
             | Command::ListFeatures
             | Command::Status
-            | Command::ShowAiUsage { .. }
-            | Command::RefreshAiUsage
-            | Command::ReportClaudeUsage { .. }
             | Command::FocusWorkspace { .. }
             | Command::StepWorkspace { .. }
             | Command::Toggle { .. }
@@ -440,18 +313,6 @@ impl<'a> Connection<'a> {
             | Command::RecordingAction { .. }
             | Command::OpenLog
             | Command::Volume { .. }
-            | Command::NotificationAction { .. }
-            | Command::DismissNotification { .. }
-            | Command::ClearNotifications { .. }
-            | Command::ReadNotifications
-            | Command::OpenNotification { .. }
-            | Command::SetDoNotDisturb { .. }
-            | Command::MuteNotificationApp { .. }
-            | Command::MediaControl { .. }
-            | Command::MediaSeek { .. }
-            | Command::MediaShow { .. }
-            | Command::MediaFocus { .. }
-            | Command::MediaWindow { .. }
             | Command::BluetoothPower { .. }
             | Command::WatchBluetooth { .. }
             | Command::BluetoothConnect { .. }

@@ -241,7 +241,7 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             state_file: dir.join("tray.json"),
             proc_root: crate::procfs::PROC.into(),
         },
-        notifications: notifications::Sources {
+        notifications: nova_notifications::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("bus").display())),
             state_file: dir.join("notifications.json"),
             images: dir.join("notifications"),
@@ -254,14 +254,15 @@ fn test_modules(dir: &Path, icons: &Arc<Icons>) -> modules::Sources {
             home: None,
         },
         // No bus either: the media's own tests give it one.
-        media: media::Sources {
+        media: nova_media::Sources {
             bus: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
             covers: dir.join("media"),
             proc: dir.join("proc"),
+            process_names: crate::media::process_names,
         },
         // No UPower, hidraw nodes, HeadsetControl or USB devices
         // either: the peripherals' own tests give it theirs.
-        peripherals: peripherals::Sources {
+        peripherals: nova_peripherals::Sources {
             upower: Bus::Address(format!("unix:path={}", dir.join("no-bus").display())),
             sys_root: dir.join("sys"),
             dev: dir.join("dev"),
@@ -306,8 +307,8 @@ fn repo_features() -> PathBuf {
 
 /// The usage endpoints are `claude_usage_url` and `codex_usage_url`; nothing
 /// listens there unless a test starts a fake one.
-fn ai_usage_paths(root: &Path) -> ai_usage::Paths {
-    ai_usage::Paths {
+fn ai_usage_paths(root: &Path) -> nova_ai_usage::Paths {
+    nova_ai_usage::Paths {
         codex_home: Some(root.join("codex")),
         state_file: root.join("state/ai-usage.json"),
         claude_credentials: Some(root.join("claude/.credentials.json")),

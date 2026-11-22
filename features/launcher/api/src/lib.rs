@@ -24,7 +24,7 @@ pub enum Command {
     /// order, each one's best first. A query that starts with a provider's
     /// trigger goes to the providers with that trigger only, without it. A
     /// blank query finds nothing. With a `mode` (a provider's view id, like
-    /// [`PROVIDER_FILES`]) the launcher is in that provider's own mode, and
+    /// `files`) the launcher is in that provider's own mode, and
     /// it alone answers, given the whole query; without one, providers with
     /// a mode of their own don't answer.
     LauncherSearch {
@@ -50,7 +50,7 @@ pub enum Command {
     /// ([`PROVIDER_APPS`]) opens and counts towards the recent ones; when it
     /// already has a window, that window takes focus where it is, unless
     /// `new_window` (Shift+Enter) asks for another one. A file
-    /// ([`PROVIDER_FILES`]) opens in its default app and a folder in Nova
+    /// (`files`) opens in its default app and a folder in Nova
     /// Files; with `new_window`, Nova Files shows either in its folder,
     /// selected.
     LauncherRun {
@@ -168,11 +168,6 @@ fn raw_byte(character: char) -> Option<u8> {
 /// apps: the `launcher` feature's own.
 pub const PROVIDER_APPS: &str = "apps";
 
-/// The launcher provider that finds files (feature `nova-files`): the
-/// launcher's Files mode, which searches the names the Nova Files app
-/// indexes and opens or shows what it finds there.
-pub const PROVIDER_FILES: &str = "files";
-
 /// Something a launcher provider found for a search, best first within its
 /// provider.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -192,7 +187,7 @@ pub struct LauncherItem {
     /// Its icon: an absolute path to an image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    /// What it is when it's a file or folder ([`PROVIDER_FILES`]); then
+    /// What it is when it's a file or folder (`files`); then
     /// `id` is its absolute path, and `name` and `description` (its folder)
     /// are wire text ([`wire_text`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]

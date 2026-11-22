@@ -738,6 +738,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-ai-usage"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "base64",
+ "cbc",
+ "jiff",
+ "libc",
+ "nova-ai-usage-api",
+ "nova-base",
+ "nova-hub",
+ "nova-inotify",
+ "nova-log",
+ "nova-modules",
+ "nova-paths",
+ "nova-session-bus",
+ "nova-test-support",
+ "pbkdf2",
+ "serde",
+ "serde_json",
+ "sha1",
+ "ureq",
+ "zbus",
+]
+
+[[package]]
+name = "nova-ai-usage-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
 name = "nova-apps"
 version = "0.1.0"
 dependencies = [
@@ -779,12 +813,16 @@ dependencies = [
  "clap_complete",
  "insta",
  "jiff",
+ "nova-ai-usage-api",
  "nova-carrier",
  "nova-features",
  "nova-launcher-api",
  "nova-lock-api",
+ "nova-media-api",
  "nova-network-api",
+ "nova-notifications-api",
  "nova-paths",
+ "nova-peripherals-api",
  "nova-power-api",
  "nova-protocol",
  "nova-quickshell",
@@ -924,6 +962,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-media"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "jiff",
+ "nova-apps",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-log",
+ "nova-media-api",
+ "nova-paths",
+ "nova-session-bus",
+ "nova-test-support",
+ "serde",
+ "serde_json",
+ "ureq",
+ "zbus",
+]
+
+[[package]]
+name = "nova-media-api"
+version = "0.1.0"
+dependencies = [
+ "nova-apps",
+ "nova-carrier",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nova-mime"
 version = "0.1.0"
 dependencies = [
@@ -970,10 +1039,95 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-notifications"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "jiff",
+ "nova-apps",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-icons",
+ "nova-log",
+ "nova-notifications-api",
+ "nova-paths",
+ "nova-session-bus",
+ "nova-test-support",
+ "png",
+ "serde",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
+name = "nova-notifications-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "nova-peripherals-api",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nova-nova-files"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "nova-base",
+ "nova-carrier",
+ "nova-launcher-api",
+ "nova-log",
+ "nova-mime",
+ "nova-session-bus",
+ "nova-test-support",
+ "zbus",
+]
+
+[[package]]
+name = "nova-nova-files-api"
+version = "0.1.0"
+
+[[package]]
 name = "nova-paths"
 version = "0.1.0"
 dependencies = [
  "nova-test-support",
+]
+
+[[package]]
+name = "nova-peripherals"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "libc",
+ "nova-apps",
+ "nova-base",
+ "nova-carrier",
+ "nova-hub",
+ "nova-icons",
+ "nova-inotify",
+ "nova-log",
+ "nova-notifications",
+ "nova-notifications-api",
+ "nova-paths",
+ "nova-peripherals-api",
+ "nova-process",
+ "nova-session-bus",
+ "nova-test-support",
+ "serde",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
+name = "nova-peripherals-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1013,13 +1167,18 @@ name = "nova-protocol"
 version = "0.1.0"
 dependencies = [
  "insta",
+ "nova-ai-usage-api",
  "nova-apps",
  "nova-carrier",
  "nova-compositor",
  "nova-host",
  "nova-launcher-api",
  "nova-lock-api",
+ "nova-media-api",
  "nova-network-api",
+ "nova-notifications-api",
+ "nova-nova-files-api",
+ "nova-peripherals-api",
  "nova-power-api",
  "nova-resources-api",
  "nova-theme",
@@ -1195,9 +1354,6 @@ dependencies = [
 name = "novad"
 version = "0.1.0"
 dependencies = [
- "aes",
- "base64",
- "cbc",
  "clap",
  "flate2",
  "futures-core",
@@ -1205,6 +1361,8 @@ dependencies = [
  "libc",
  "lzma-rust2",
  "md-5",
+ "nova-ai-usage",
+ "nova-ai-usage-api",
  "nova-apps",
  "nova-base",
  "nova-carrier",
@@ -1219,11 +1377,18 @@ dependencies = [
  "nova-lock",
  "nova-lock-api",
  "nova-log",
- "nova-mime",
+ "nova-media",
+ "nova-media-api",
  "nova-modules",
  "nova-network",
  "nova-network-api",
+ "nova-notifications",
+ "nova-notifications-api",
+ "nova-nova-files",
+ "nova-nova-files-api",
  "nova-paths",
+ "nova-peripherals",
+ "nova-peripherals-api",
  "nova-power",
  "nova-power-api",
  "nova-process",
@@ -1241,12 +1406,10 @@ dependencies = [
  "nova-wallpaper",
  "nova-wallpaper-api",
  "nova-x11-tray",
- "pbkdf2",
  "png",
  "ruzstd",
  "serde",
  "serde_json",
- "sha1",
  "tar",
  "toml",
  "ureq",
