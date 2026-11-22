@@ -232,6 +232,7 @@ same lints and limits, so both repos read the same.
 
 | Rule | Enforced by |
 |---|---|
+| An exception is `#[expect]` with a reason, never `#[allow]` | Clippy `allow_attributes`, `allow_attributes_without_reason` |
 | No `unwrap`, `expect`, `panic`, `todo` or `unimplemented` outside tests | Clippy restriction lints; `clippy.toml` exempts tests |
 
 ## State, threads and files

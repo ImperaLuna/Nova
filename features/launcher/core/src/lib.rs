@@ -22,6 +22,7 @@ use nova_hub::Hub;
 pub use nova_launcher_api::MAX_MATCHES;
 use nova_launcher_api::{Event, LauncherItem};
 use nova_log::Logger;
+use providers::Run;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -323,28 +324,24 @@ fn snapshot(state: &State, apps: &nova_apps::State) -> nova_launcher_api::Launch
     nova_launcher_api::Launcher { apps: listed, pinned, recent }
 }
 /// The focus step of [`Launcher::launch`] for app `id`, whose windows may
-/// have the app ids `ids` (none, and no `tray`, when a new window is asked
-/// for): an open window takes focus where it is; a new one opens on
-/// `output` (the launcher's screen), which the compositor puts it on once
+/// have the app ids `ids` (none, and no `how.tray`, when a new window is
+/// asked for): an open window takes focus where it is; a new one opens on
+/// `how.output` (the launcher's screen), which the compositor puts it on once
 /// focused. An app that only sits in the tray shows its window from there,
 /// as starting it again may just quit (Discord). One whose icon can't show it (Claude
 /// Desktop ignores `Activate`, libayatana's icons have only a menu) is
 /// started again with `start`: a running app then shows its window, which
 /// gets no focus from the compositor either (the activation token went to
 /// the process that handed over), so it takes focus here once it shows.
-/// `underway` hears when only waiting for that window is left.
+/// `how.underway` hears when only waiting for that window is left.
 /// `true` when nothing (more) needs starting.
-#[allow(clippy::too_many_arguments)]
 pub fn focus_open(
     id: &str,
     ids: &[String],
-    compositor: Option<&Compositor>,
-    tray: Option<&dyn TrayApps>,
-    output: Option<&str>,
+    how: &Run,
     start: impl FnOnce() -> Result<(), String>,
-    underway: &dyn Fn(),
-    logger: &Logger,
 ) -> Result<bool, String> {
+    let Run { compositor, tray, output, underway, logger, .. } = *how;
     if let Some(compositor) = compositor {
         if !ids.is_empty() && compositor.focus_app(ids, output)? {
             return Ok(true);

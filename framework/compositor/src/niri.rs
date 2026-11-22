@@ -218,7 +218,7 @@ enum Event {
     },
     /// Everything else niri sends, now or in later releases.
     #[serde(untagged)]
-    Other(#[allow(dead_code)] serde_json::Value),
+    Other(serde::de::IgnoredAny),
 }
 
 #[derive(Debug, Clone, Deserialize)]
