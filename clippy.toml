@@ -5,3 +5,7 @@
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
+
+disallowed-methods = [
+    { path = "std::thread::sleep", reason = "event-driven, no polling: wait on a channel or event with a timeout" },
+]

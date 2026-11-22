@@ -261,7 +261,9 @@ impl Bluetooth {
                 Ok(()) => return Ok(()),
                 // Just unblocked: the adapter comes back on its own time.
                 // Or still busy ending a connect that was stopped.
-                Err(e) if (on || named(&e, "Busy")) && Instant::now() < deadline => std::thread::sleep(POWER_RETRY),
+                Err(e) if (on || named(&e, "Busy")) && Instant::now() < deadline => {
+                    nova_base::backoff::wait_out(POWER_RETRY)
+                }
                 Err(e) => return Err(bluez::failure(&e).unwrap_or_else(|| e.to_string())),
             }
         }
@@ -517,13 +519,17 @@ impl Shared {
         };
         let (shared, path) = (Arc::clone(shared), path.clone());
         std::thread::spawn(move || {
-            std::thread::sleep(shared.sources.connect_limit);
+            let running = |state: &State| {
+                state.connects.get(&key) == Some(&number) && state.busy.get(&key) == Some(&BluetoothStatus::Connecting)
+            };
+            // Every change to the state wakes it, so it ends with the connect.
             // Stopped under the lock: the connect can't end, and a retry
             // can't start, between the check and the stop.
-            let mut state = lock(&shared.state);
-            let running =
-                state.connects.get(&key) == Some(&number) && state.busy.get(&key) == Some(&BluetoothStatus::Connecting);
-            let Some(calls) = state.calls.clone().filter(|_| running) else { return };
+            let (mut state, _) = shared
+                .wake
+                .wait_timeout_while(lock(&shared.state), shared.sources.connect_limit, |state| running(state))
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(calls) = state.calls.clone().filter(|_| running(&state)) else { return };
             state.timed_out.insert(key.clone());
             shared.logger.info(LOG_SOURCE, &format!("{key}: connect took too long, stopping it"));
             if let Err(e) = zbus::block_on(call(&calls, &path, DEVICE, "Disconnect")) {
@@ -608,8 +614,9 @@ impl Shared {
         let id = self.pose(path, ask, Some(Arc::clone(&slot)))?;
         let timeout = Arc::clone(&slot);
         std::thread::spawn(move || {
-            std::thread::sleep(agent::ANSWER_TIMEOUT);
-            timeout.resolve(Reply::TimedOut);
+            if timeout.wait_for(agent::ANSWER_TIMEOUT).is_none() {
+                timeout.resolve(Reply::TimedOut);
+            }
         });
         Some((id, slot))
     }

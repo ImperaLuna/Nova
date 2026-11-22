@@ -1045,3 +1045,37 @@ fn a_device_without_music_isnt_asked_for_it() {
     bluetooth.connect(PHONE).unwrap();
     assert_eq!(connects(&bluez), [format!("Connect {}", device_path(PHONE))]);
 }
+
+/// A connect that ends within its limit is left alone: the limit's wait
+/// ends with it.
+#[test]
+fn a_connect_within_its_limit_is_left_alone() {
+    let fixture = Fixture::new("connect-in-time");
+    let bluez = fixture.bluez();
+    let limit = Duration::from_millis(300);
+    let bluetooth = fixture.start_with(limit);
+    fixture.until("the devices", |event| event["radio"] == "on");
+    bluetooth.connect(PHONE).unwrap();
+    nova_test_support::settle(limit * 2);
+    assert!(!bluez.calls().contains(&format!("Disconnect {}", device_path(PHONE))), "nothing stops it");
+    fixture.until("the phone connected", |event| status(event, PHONE).as_deref() == Some("connected"));
+}
+
+/// A pairing question nobody answers ends at the answer timeout (an
+/// answered one ends with its answer: `connect_buds`).
+#[test]
+fn an_unanswered_question_ends_at_the_answer_timeout() {
+    let fixture = Fixture::new("unanswered");
+    let _bluez = fixture.bluez();
+    let bluetooth = fixture.start();
+    fixture.until("the devices", |event| event["radio"] == "on");
+    let connecting = {
+        let bluetooth = Arc::clone(&bluetooth);
+        std::thread::spawn(move || bluetooth.connect(BUDS))
+    };
+    fixture.until("the question", |event| !event["pairing"].is_null());
+    let asked = Instant::now();
+    fixture.until("the question gone", |event| event["pairing"].is_null());
+    assert!(asked.elapsed() >= agent::ANSWER_TIMEOUT - Duration::from_millis(100), "{:?}", asked.elapsed());
+    let _ = connecting.join().unwrap();
+}
