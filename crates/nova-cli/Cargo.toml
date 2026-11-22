@@ -9,6 +9,7 @@
 # Allowed workspace crates:
 # - nova-carrier
 # - nova-features
+# - nova-launcher-api
 # - nova-lock-api
 # - nova-paths
 # - nova-power-api
@@ -36,6 +37,7 @@ path = "src/main.rs"
 [dependencies]
 nova-protocol.workspace = true
 nova-carrier.workspace = true
+nova-launcher-api.workspace = true
 nova-lock-api.workspace = true
 nova-network-api.workspace = true
 nova-power-api.workspace = true

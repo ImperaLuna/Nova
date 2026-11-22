@@ -75,10 +75,6 @@ pub enum Event {
     /// The machine and its user, for the quick settings header. Topic
     /// [`topics::HOST`], sent right after subscribing.
     Host(Host),
-    /// The apps the launcher can open, and the user's pinned and recent ones
-    /// (feature `launcher`). Topic [`topics::LAUNCHER`], sent right after
-    /// subscribing and whenever any of it changes.
-    Launcher(Launcher),
     /// The notifications kept for the quick settings list, do not disturb
     /// and the muted apps (feature `notifications`). Topic
     /// [`topics::NOTIFICATIONS`], sent right after subscribing and whenever
@@ -125,7 +121,6 @@ pub mod topics {
     pub const VOLUME: Topic = Topic::named("volume");
     pub const RECORDING: Topic = Topic::named("recording");
     pub const HOST: Topic = Topic::named("host");
-    pub const LAUNCHER: Topic = Topic::named("launcher");
     pub const NOTIFICATIONS: Topic = Topic::named("notifications");
     pub const MEDIA: Topic = Topic::named("media");
     pub const PERIPHERALS: Topic = Topic::named("peripherals");
@@ -147,7 +142,6 @@ impl Event {
             Event::Volume { .. } => Some(topics::VOLUME),
             Event::PickRecording | Event::Recording(_) | Event::RecordingSaved(_) => Some(topics::RECORDING),
             Event::Host(_) => Some(topics::HOST),
-            Event::Launcher(_) => Some(topics::LAUNCHER),
             Event::Notifications(_) | Event::NotificationPopup(_) => Some(topics::NOTIFICATIONS),
             Event::Media(_) => Some(topics::MEDIA),
             Event::Peripherals(_) => Some(topics::PERIPHERALS),
@@ -323,17 +317,6 @@ impl FromStr for Panel {
             format!("unknown panel {text:?} (known: {})", known.join(", "))
         })
     }
-}
-
-/// What the launcher shows (feature `launcher`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Launcher {
-    /// Every app it can open, sorted by name.
-    pub apps: Vec<App>,
-    /// The ids of the apps the user pinned, in the order they pinned them.
-    pub pinned: Vec<String>,
-    /// The ids of the apps launched lately, the latest first.
-    pub recent: Vec<String>,
 }
 
 /// The media players (feature `media`): every MPRIS player on the session
@@ -626,131 +609,6 @@ pub const BLUETOOTH_PIN_MAX_BYTES: usize = 16;
 /// most 255.
 pub const MEDIA_PLAYER_MAX_BYTES: usize = 255;
 
-/// The longest `launcher_search` query, in characters: anything on the
-/// socket is capped, and a path typed into the Files mode (each byte at
-/// most a character) is the longest anyone enters.
-pub const LAUNCHER_SEARCH_MAX_CHARS: usize = PATH_MAX_BYTES;
-
-/// The longest path, in bytes: Linux's own limit.
-pub const PATH_MAX_BYTES: usize = 4096;
-
-/// Where the characters that stand for raw bytes start ([`path_to_wire`]):
-/// byte `b` (0x80 to 0xFF) is `RAW_BYTE_BASE + b`, in the Private Use Area.
-pub const RAW_BYTE_BASE: u32 = 0xF700;
-
-/// A file name or path as wire text, losslessly. Linux
-/// names are bytes and needn't be UTF-8 (old archives, Windows drives), but
-/// JSON strings must be. Valid UTF-8 is sent as it is; every other byte,
-/// and each byte of a character that would read as one of these, becomes
-/// the character [`RAW_BYTE_BASE`] + byte. [`path_from_wire`] undoes it, so
-/// a name the listing sent names the same file when it comes back, and
-/// names that look alike stay apart. `/` and every ASCII byte are kept, so
-/// the UI joins paths and names as plain strings. Every path and name on
-/// the socket (the launcher's Files mode) is wire text.
-pub fn path_to_wire(bytes: &[u8]) -> String {
-    let mut text = String::with_capacity(bytes.len());
-    let raw = |text: &mut String, bytes: &[u8]| {
-        text.extend(bytes.iter().filter_map(|&byte| char::from_u32(RAW_BYTE_BASE + u32::from(byte))));
-    };
-    for chunk in bytes.utf8_chunks() {
-        for character in chunk.valid().chars() {
-            if raw_byte(character).is_some() {
-                raw(&mut text, character.encode_utf8(&mut [0; 4]).as_bytes());
-            } else {
-                text.push(character);
-            }
-        }
-        raw(&mut text, chunk.invalid());
-    }
-    text
-}
-
-/// The bytes of a name or path [`path_to_wire`] sent.
-pub fn path_from_wire(text: &str) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(text.len());
-    for character in text.chars() {
-        match raw_byte(character) {
-            Some(byte) => bytes.push(byte),
-            None => bytes.extend_from_slice(character.encode_utf8(&mut [0; 4]).as_bytes()),
-        }
-    }
-    bytes
-}
-
-/// A path or name as wire text ([`path_to_wire`]).
-pub fn wire_text(path: impl AsRef<std::ffi::OsStr>) -> String {
-    use std::os::unix::ffi::OsStrExt;
-    path_to_wire(path.as_ref().as_bytes())
-}
-
-/// The path wire text names ([`path_from_wire`]).
-pub fn wire_path(text: &str) -> std::path::PathBuf {
-    use std::os::unix::ffi::OsStringExt;
-    std::ffi::OsString::from_vec(path_from_wire(text)).into()
-}
-
-/// The byte `character` stands for on the wire, if it stands for one.
-fn raw_byte(character: char) -> Option<u8> {
-    u8::try_from(u32::from(character).checked_sub(RAW_BYTE_BASE)?).ok().filter(|byte| *byte >= 0x80)
-}
-
-/// The launcher provider (`launcher.providers` view) that finds installed
-/// apps: the `launcher` feature's own.
-pub const PROVIDER_APPS: &str = "apps";
-
-/// The launcher provider that finds files (feature `nova-files`): the
-/// launcher's Files mode, which searches the names the Nova Files app
-/// indexes and opens or shows what it finds there.
-pub const PROVIDER_FILES: &str = "files";
-
-/// Something a launcher provider found for a search, best first within its
-/// provider.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LauncherItem {
-    /// The provider that found it (its `launcher.providers` view id), which
-    /// runs it.
-    pub provider: String,
-    /// What it is to its provider, like an app's desktop file id.
-    pub id: String,
-    /// Its name in runs of text, `matched` on the ones the search matched,
-    /// which the launcher highlights. All of it, unmatched, when the search
-    /// matched something else, like a keyword.
-    pub name: Vec<TextRun>,
-    /// A dimmer line beside the name: what it is or does.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// Its icon: an absolute path to an image.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,
-    /// What it is when it's a file or folder ([`PROVIDER_FILES`]); then
-    /// `id` is its absolute path, and `name` and `description` (its folder)
-    /// are wire text ([`wire_text`]).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub file: Option<LauncherFile>,
-}
-
-/// A file or folder the launcher's Files mode found ([`LauncherItem::file`]).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LauncherFile {
-    /// A folder, or a link to one.
-    pub dir: bool,
-    /// Its type in the shared MIME database (`inode/directory` for a folder).
-    pub mime: String,
-    /// Hidden: its name starts with a dot, or a folder it's in does.
-    pub hidden: bool,
-    /// Its path as the search field spells it, `~/` for Home, a folder's
-    /// with a `/` at the end: what Tab completes the query to.
-    pub completion: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextRun {
-    pub text: String,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub matched: bool,
-}
-
 /// What the notifications list holds (feature `notifications`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1011,54 +869,6 @@ pub enum Command {
     /// Opens novad's log (feature `recording`: the recording card's Open log,
     /// after a recording didn't start).
     OpenLog,
-    /// Replies with what the launcher's providers find for `query`, as
-    /// [`LauncherItem`]s (feature `launcher`): the providers in their slot
-    /// order, each one's best first. A query that starts with a provider's
-    /// trigger goes to the providers with that trigger only, without it. A
-    /// blank query finds nothing. With a `mode` (a provider's view id, like
-    /// [`PROVIDER_FILES`]) the launcher is in that provider's own mode, and
-    /// it alone answers, given the whole query; without one, providers with
-    /// a mode of their own don't answer.
-    LauncherSearch {
-        query: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        mode: Option<String>,
-    },
-    /// Replies with an icon (an absolute path to an image) for an app
-    /// stream, as PipeWire names it (each may be ""): its installed app's
-    /// when one matches (feature `launcher`, matched like a tray icon's app,
-    /// Nix's `.<name>-wrapped` programs by their name), else the icon
-    /// theme's for the icon name it gives or its program, or null.
-    AppIcon {
-        /// `application.icon-name`, often its app's id.
-        icon_name: String,
-        /// `application.process.binary`, its program file.
-        program: String,
-        /// `application.name`.
-        name: String,
-    },
-    /// Runs what the launcher's provider `provider` found as `id` (feature
-    /// `launcher`), on `output` (the focused output when unset). An app
-    /// ([`PROVIDER_APPS`]) opens and counts towards the recent ones; when it
-    /// already has a window, that window takes focus where it is, unless
-    /// `new_window` (Shift+Enter) asks for another one. A file
-    /// ([`PROVIDER_FILES`]) opens in its default app and a folder in Nova
-    /// Files; with `new_window`, Nova Files shows either in its folder,
-    /// selected.
-    LauncherRun {
-        provider: String,
-        id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        output: Option<String>,
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        new_window: bool,
-    },
-    /// Pins an app to the launcher, at the end, or unpins it (feature
-    /// `launcher`). Remembered across restarts.
-    PinApp {
-        id: String,
-        pinned: bool,
-    },
     /// The notification `id` was clicked on `output` (feature
     /// `notifications`): the app hears of it and its window takes focus, or,
     /// when it can't hear of it, the app opens (as with `launch_app`). It
@@ -1157,15 +967,6 @@ pub enum Command {
         id: u64,
         answer: PairingAnswer,
     },
-}
-
-/// A stretch of text to highlight, in UTF-16 code units, what QML's
-/// strings count.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TextMark {
-    pub start: u32,
-    pub length: u32,
 }
 
 /// What `status` returns.
@@ -1303,7 +1104,7 @@ mod tests {
                         topics::RECORDING,
                         topics::HOST,
                         nova_resources_api::TOPIC,
-                        topics::LAUNCHER,
+                        nova_launcher_api::TOPIC,
                         nova_tray_api::TOPIC,
                         topics::NOTIFICATIONS,
                         topics::MEDIA,
@@ -1454,17 +1255,20 @@ mod tests {
                 command: nova_resources_api::Command::EndApp { key: "/usr/lib/firefox/firefox".into() },
             }),
             encode(Request { id: None, command: Command::Toggle { panel: Panel::QuickSettings } }),
-            encode(Event::Launcher(launcher())),
-            encode(Request { id: Some(24), command: Command::LauncherSearch { query: "fi".into(), mode: None } }),
+            encode(nova_launcher_api::Event::Launcher(launcher())),
+            encode(nova_carrier::Request {
+                id: Some(24),
+                command: nova_launcher_api::Command::LauncherSearch { query: "fi".into(), mode: None },
+            }),
             encode(Response {
                 id: 24,
                 outcome: Outcome::Result(
-                    serde_json::to_value(vec![LauncherItem {
-                        provider: PROVIDER_APPS.into(),
+                    serde_json::to_value(vec![nova_launcher_api::LauncherItem {
+                        provider: nova_launcher_api::PROVIDER_APPS.into(),
                         id: "org.mozilla.firefox.desktop".into(),
                         name: vec![
-                            TextRun { text: "Fi".into(), matched: true },
-                            TextRun { text: "refox".into(), matched: false },
+                            nova_launcher_api::TextRun { text: "Fi".into(), matched: true },
+                            nova_launcher_api::TextRun { text: "refox".into(), matched: false },
                         ],
                         description: Some("Web Browser".into()),
                         icon: None,
@@ -1473,23 +1277,26 @@ mod tests {
                     .unwrap(),
                 ),
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(91),
-                command: Command::LauncherSearch { query: "~/Doc".into(), mode: Some(PROVIDER_FILES.into()) },
+                command: nova_launcher_api::Command::LauncherSearch {
+                    query: "~/Doc".into(),
+                    mode: Some(nova_launcher_api::PROVIDER_FILES.into()),
+                },
             }),
             encode(Response {
                 id: 91,
                 outcome: Outcome::Result(
-                    serde_json::to_value(vec![LauncherItem {
-                        provider: PROVIDER_FILES.into(),
+                    serde_json::to_value(vec![nova_launcher_api::LauncherItem {
+                        provider: nova_launcher_api::PROVIDER_FILES.into(),
                         id: "/home/me/Documents".into(),
                         name: vec![
-                            TextRun { text: "Doc".into(), matched: true },
-                            TextRun { text: "uments".into(), matched: false },
+                            nova_launcher_api::TextRun { text: "Doc".into(), matched: true },
+                            nova_launcher_api::TextRun { text: "uments".into(), matched: false },
                         ],
                         description: Some("~".into()),
                         icon: None,
-                        file: Some(LauncherFile {
+                        file: Some(nova_launcher_api::LauncherFile {
                             dir: true,
                             mime: "inode/directory".into(),
                             hidden: false,
@@ -1499,25 +1306,28 @@ mod tests {
                     .unwrap(),
                 ),
             }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(44),
-                command: Command::AppIcon {
+                command: nova_launcher_api::Command::AppIcon {
                     icon_name: "".into(),
                     program: "/nix/store/x-zen/lib/zen/.zen-wrapped".into(),
                     name: "Zen".into(),
                 },
             }),
             encode(Response { id: 44, outcome: Outcome::Result(json!("zen-browser")) }),
-            encode(Request {
+            encode(nova_carrier::Request {
                 id: Some(25),
-                command: Command::LauncherRun {
-                    provider: PROVIDER_APPS.into(),
+                command: nova_launcher_api::Command::LauncherRun {
+                    provider: nova_launcher_api::PROVIDER_APPS.into(),
                     id: "foot.desktop".into(),
                     output: Some("DP-1".into()),
                     new_window: true,
                 },
             }),
-            encode(Request { id: Some(26), command: Command::PinApp { id: "foot.desktop".into(), pinned: true } }),
+            encode(nova_carrier::Request {
+                id: Some(26),
+                command: nova_launcher_api::Command::PinApp { id: "foot.desktop".into(), pinned: true },
+            }),
             // The tray feature's own messages (`nova-tray-api`), still on this one wire.
             encode(nova_carrier::Request {
                 id: Some(27),
@@ -1805,8 +1615,8 @@ mod tests {
         }
     }
 
-    fn launcher() -> Launcher {
-        Launcher {
+    fn launcher() -> nova_launcher_api::Launcher {
+        nova_launcher_api::Launcher {
             apps: vec![
                 App {
                     id: "org.mozilla.firefox.desktop".into(),
@@ -2197,7 +2007,6 @@ mod tests {
         assert_eq!(Event::Volume { key: VolumeKey::Up }.topic(), Some(topics::VOLUME));
         assert_eq!(Event::Recording(None).topic(), Some(topics::RECORDING));
         assert_eq!(Event::Host(host()).topic(), Some(topics::HOST));
-        assert_eq!(Event::Launcher(launcher()).topic(), Some(topics::LAUNCHER));
         assert_eq!(Event::Notifications(notifications()).topic(), Some(topics::NOTIFICATIONS));
         assert_eq!(Event::NotificationPopup(notifications().items[0].clone()).topic(), Some(topics::NOTIFICATIONS));
         assert_eq!(Event::Media(media()).topic(), Some(topics::MEDIA));
@@ -2330,30 +2139,5 @@ mod tests {
             let back: Envelope<Response> = serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();
             assert_eq!(back, msg);
         }
-    }
-
-    #[test]
-    fn utf8_paths_go_on_the_wire_as_they_are() {
-        for path in ["/home/me/Documents/notes.md", "/tmp/café/ü 1.png", "/", ""] {
-            assert_eq!(path_to_wire(path.as_bytes()), path);
-            assert_eq!(path_from_wire(path), path.as_bytes());
-        }
-    }
-
-    /// Latin-1 names, and real characters from the range raw bytes use,
-    /// come back as the bytes they were, and names that look alike stay
-    /// apart.
-    #[test]
-    fn other_names_come_back_byte_for_byte() {
-        let pua = format!("/x/{}.txt", char::from_u32(RAW_BYTE_BASE + 0xE9).unwrap());
-        let names: [&[u8]; 5] = [b"/x/caf\xe9.md", b"/x/caf\xe8.md", b"\xff\xfe/\x80", pua.as_bytes(), b"/x/\xe2\x82"];
-        let wire: Vec<String> = names.iter().map(|name| path_to_wire(name)).collect();
-        for (name, text) in names.iter().zip(&wire) {
-            assert_eq!(path_from_wire(text), *name, "{text:?}");
-            assert!(text.starts_with("/x/") == name.starts_with(b"/x/"), "ASCII is kept: {text:?}");
-        }
-        assert_eq!(wire[0], "/x/caf\u{f7e9}.md");
-        let unique: std::collections::HashSet<_> = wire.iter().collect();
-        assert_eq!(unique.len(), names.len());
     }
 }
