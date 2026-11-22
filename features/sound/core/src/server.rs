@@ -22,6 +22,9 @@ use std::time::Duration;
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(5);
 /// The name the server lists Nova's connections under.
 const CLIENT_NAME: &str = "Nova";
+/// How long the protocol says a cookie is. Servers refuse any other length,
+/// whatever the cookie holds.
+pub(crate) const COOKIE_LENGTH: usize = 256;
 /// What the server names its socket's folder and file.
 const SOCKET_IN_RUNTIME_DIR: &str = "pulse/native";
 /// `PULSE_SERVER`'s prefix for a Unix socket.
@@ -84,9 +87,10 @@ pub struct Link {
 }
 
 impl Link {
-    /// Connects and introduces Nova, without a cookie: on its own Unix
-    /// socket PulseAudio takes the user it runs as by the socket's
-    /// credentials, and PipeWire asks for none. So no secret is read. Each request and answer has
+    /// Connects and introduces Nova with an empty cookie of the length the
+    /// protocol fixes: on its own Unix socket PulseAudio takes the user it
+    /// runs as by the socket's credentials, and PipeWire checks only the
+    /// cookie's length. So no secret is read. Each request and answer has
     /// [`ANSWER_TIMEOUT`]; connecting to a local socket answers at once.
     pub fn connect(sources: &Sources) -> Result<Self, String> {
         let socket = sources.socket.as_deref().ok_or("nothing says where the sound server's socket is")?;
@@ -100,7 +104,7 @@ impl Link {
             version: protocol::MAX_VERSION,
             supports_shm: false,
             supports_memfd: false,
-            cookie: Vec::new(),
+            cookie: vec![0; COOKIE_LENGTH],
         };
         let reply: AuthReply = link.ask(&Command::Auth(auth))?;
         link.version = reply.version.min(protocol::MAX_VERSION);

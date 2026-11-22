@@ -184,6 +184,10 @@ fn serve(stream: UnixStream, state: &Mutex<Fake>) {
         let mut fake = lock(state);
         let to = reader.get_mut();
         let sent = match command {
+            // What `pipewire-pulse` 1.6.11 does with a cookie of another length.
+            Command::Auth(auth) if auth.cookie.len() != crate::server::COOKIE_LENGTH => {
+                protocol::write_error(to, request, &PulseError::Invalid)
+            }
             Command::Auth(_) => reply(to, request, &AuthReply { version: VERSION, use_memfd: false, use_shm: false }),
             Command::SetClientName(_) => reply(to, request, &SetClientNameReply { client_id: 1 }),
             Command::Subscribe(_) => {
