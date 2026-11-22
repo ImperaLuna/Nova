@@ -30,7 +30,7 @@ pub fn run(args: &ToggleArgs, socket: &Path) -> Result<(), String> {
 }
 
 pub fn lock(socket: &Path) -> Result<(), String> {
-    Client::connect(socket)?.request(Command::Lock)?;
+    Client::connect(socket)?.request(nova_lock_api::Command::Lock)?;
     Ok(())
 }
 
