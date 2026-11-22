@@ -526,7 +526,7 @@
                   ./scripts
                   ./e2e
                   ./packaging
-                  ./crates/novad/src
+                  ./app/src
                   ./framework
                   ./features
                 ];

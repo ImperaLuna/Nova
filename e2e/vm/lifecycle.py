@@ -185,7 +185,7 @@ LAUNCHER_OPENED = "nova: launcher opened"
 LAUNCHER_CLOSED = "nova: launcher closed"
 # Keys typed before this go to the window that had the keyboard.
 LAUNCHER_TYPING = "nova: launcher has the keyboard"
-# The systemd service novad starts an app as (crates/novad/src/launcher/launch.rs).
+# The systemd service novad starts an app as (framework/apps/src/launch.rs).
 FOOT_UNIT = "app-nova-foot-"
 # What the power menu logs (ui/power), and its key for Lock.
 POWER_OPENED = "nova: power menu opened"

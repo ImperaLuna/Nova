@@ -251,7 +251,7 @@ mod tests {
     /// Every provider view a manifest in the repo slots in has a provider.
     #[test]
     fn every_provider_in_the_repo_is_known() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
         let views: Vec<String> = nova_features::load_all(&root)
             .unwrap()
             .iter()

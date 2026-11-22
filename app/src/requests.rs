@@ -39,7 +39,7 @@ pub fn router() -> Router<Daemon> {
 /// The UI's protocol file. It is generated from these routes, so it names
 /// every command, and its order stays put as features move theirs out of
 /// `nova_protocol::Command` (`protocol_js`).
-const PROTOCOL_JS: &str = include_str!("../../../ui/daemon/protocol.js");
+const PROTOCOL_JS: &str = include_str!("../../ui/daemon/protocol.js");
 
 /// Where protocol.js names the command `name`, so an unknown command's
 /// error lists the names in one fixed order, whatever order the routes

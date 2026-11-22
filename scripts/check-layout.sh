@@ -31,6 +31,8 @@ rules_doc="AGENTS.md (Layout)"
 # framework/. A framework crate goes on a list only when every crate of that
 # kind may use it: a daemon-side part (the socket server) never on the ui
 # list, a screen-side part (the stage, theme tokens) never on the core list.
+# The light -info crates hold wire types only; nova-desktop-info also uses
+# nova-carrier, for the topic constant it keeps beside its types.
 FRAMEWORK_FOR_API=(app-info carrier desktop-info host-info theme-info)
 FRAMEWORK_FOR_CORE=(app-info apps base carrier compositor desktop-info host-info hub icons inotify log mime modules paths process session-bus settings socket theme-info watch)
 FRAMEWORK_FOR_UI=()
@@ -193,7 +195,7 @@ expect_rule features/media/core framework/server F2
 expect_rule features/media/api framework/server F1
 expect_rule features/media/core fronts/cli F4
 expect_rule features/media/core app F4
-expect_rule features/media/core crates/novad M1
+expect_rule features/media/core crates/nova-protocol M1
 expect_rule framework/server features/media/api W1
 expect_rule framework/server fronts/cli W1
 expect_rule framework/server crates/nova-protocol M1
@@ -201,8 +203,8 @@ expect_rule framework/server framework/paths ""
 expect_rule fronts/cli features/media/api ""
 expect_rule fronts/cli features/media/core W2
 expect_rule fronts/cli framework/server W2
-expect_rule crates/novad features/media/core ""
-expect_rule crates/novad framework/server ""
+expect_rule crates/nova-protocol features/media/core ""
+expect_rule crates/nova-protocol framework/server ""
 expect_rule app features/media/core ""
 expect_rule tools/thing framework/server C1
 expect_rule features/media framework/server C1
@@ -228,7 +230,7 @@ expect_dev_rule features/media/core features/notifications/ui T1
 expect_dev_rule features/media/core features/notifications/api ""
 expect_dev_rule features/media/core features/media/api ""
 expect_dev_rule features/media/core framework/hub ""
-expect_dev_rule crates/novad features/media/core ""
+expect_dev_rule app features/media/core ""
 
 # allowed_list <Cargo.toml> <outside|workspace>: the names listed under that
 # header, MISSING without the header, or BAD <text> for a list on its line.

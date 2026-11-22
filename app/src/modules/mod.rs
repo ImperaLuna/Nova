@@ -113,7 +113,7 @@ mod tests {
     /// Each module is a feature whose daemon side names it.
     #[test]
     fn every_module_is_a_daemon_feature() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
         let manifests = nova_features::load_all(&root).unwrap();
         for id in Running::IDS {
             let manifest = manifests.iter().find(|manifest| manifest.id == *id);

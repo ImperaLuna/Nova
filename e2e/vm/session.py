@@ -102,7 +102,7 @@ with subtest("nova toggle launcher opens the launcher, empty; typing finds foot,
     machine.succeed(as_user("nova toggle launcher"))
     # Opened over it, it holds the keyboard too, so Esc reaches it. It
     # sometimes never did while Qt's threaded render loop could stop drawing
-    # its surface (IMP-208, crates/novad/src/render_loop.rs); a failure here
+    # its surface (IMP-208, app/src/render_loop.rs); a failure here
     # prints who had the keyboard (print_failure_state).
     retry(lambda _last_try: ui_log_count(LAUNCHER_TYPING) > before, timeout=CLICK_EFFECT)
     assert_layers("overlay", "nova-panel", "nova-stage", "nova-click-catcher")

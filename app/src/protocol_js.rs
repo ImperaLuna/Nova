@@ -222,7 +222,7 @@ pub fn with_block(protocol_js: &str, block: &str) -> String {
 
 #[test]
 fn protocol_js_is_current() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let path = root.join("ui/daemon/protocol.js");
     let current = std::fs::read_to_string(&path).unwrap();
     let expected = with_block(&current, &generated(&root.join("features"), &current));
@@ -238,7 +238,7 @@ fn protocol_js_is_current() {
 /// generated one.
 #[test]
 fn protocol_js_declares_names_only_in_the_block() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let js = std::fs::read_to_string(root.join("ui/daemon/protocol.js")).unwrap();
     let outside = with_block(&js, "");
     let declared: Vec<&str> = outside.lines().filter(|line| line.starts_with("var ")).collect();
@@ -268,7 +268,7 @@ fn block_is_replaced_in_place() {
 
 #[test]
 fn names_are_unique() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let current = std::fs::read_to_string(root.join("ui/daemon/protocol.js")).unwrap();
     let block = generated(&root.join("features"), &current);
     let mut seen = std::collections::HashSet::new();
@@ -280,7 +280,7 @@ fn names_are_unique() {
 /// A launcher provider is a view some feature's manifest slots in.
 #[test]
 fn providers_are_manifest_views() {
-    let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+    let features = Path::new(env!("CARGO_MANIFEST_DIR")).join("../features");
     let slotted = |provider: &str| {
         std::fs::read_dir(&features).unwrap().flatten().any(|feature| {
             std::fs::read_to_string(feature.path().join("feature.toml"))
