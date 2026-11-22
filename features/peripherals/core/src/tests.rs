@@ -20,12 +20,12 @@
 //! UPower lists only the DisplayDevice, which the fake serves too).
 
 use super::*;
-use crate::hub::{ClientQueue, Outgoing};
-use crate::icons::Icons;
-use crate::session_bus::TestBus;
 use fake_hidraw::FakeHidraw;
+use nova_carrier::log::LogLevel;
+use nova_hub::{ClientQueue, Outgoing};
+use nova_icons::Icons;
 use nova_notifications::{self as notifications, Notifications};
-use nova_protocol::{LogLevel, topics};
+use nova_session_bus::TestBus;
 use nova_test_support::{TempDir, wait_until, write_program};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -45,7 +45,7 @@ const MOUSE: &str = "/org/freedesktop/UPower/devices/mouse_hidpp_battery_0";
 const DISPLAY_DEVICE: &str = "/org/freedesktop/UPower/devices/DisplayDevice";
 
 fn recorded(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/peripherals/recorded").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/recorded").join(name)
 }
 
 /// A `recorded/upower*.json`.
@@ -107,7 +107,7 @@ impl Fixture {
         let (ui_stream, other_end) = UnixStream::pair().unwrap();
         let (queue, ui) = ClientQueue::new(&other_end).unwrap();
         let id = hub.register(queue);
-        hub.subscribe(id, topics::PERIPHERALS);
+        hub.subscribe(id, nova_peripherals_api::TOPIC);
         for folder in ["sys", "bin", "usb/001"] {
             std::fs::create_dir_all(dir.join(folder)).unwrap();
         }
@@ -136,22 +136,23 @@ impl Fixture {
             bus: Bus::Address(self.bus.address.clone()),
             state_file: self.dir.join("notifications.json"),
             images: self.dir.join("images"),
-            icons: Arc::new(Icons::new(crate::icons::HICOLOR.into(), &[], None)),
+            icons: Arc::new(Icons::new(nova_icons::HICOLOR.into(), &[], None)),
         };
         let server = Notifications::start(
             sources,
-            crate::apps::AppIndex::of(None, &self.logger),
+            nova_apps::AppIndex::of(None, &self.logger),
             Arc::clone(&self.hub),
             Arc::clone(&self.logger),
         );
         self.hub.subscribe(self.client, nova_notifications_api::TOPIC);
-        peripherals.set_notifications(Some(&server));
+        let post: Arc<dyn Post> = server.clone();
+        peripherals.set_notifications(Some(&post));
         server
     }
 
     /// The next notification to pop up.
     fn popup(&self) -> Value {
-        crate::hub::next_named(&self.ui, "notification_popup", WAIT)
+        nova_hub::next_named(&self.ui, "notification_popup", WAIT)
     }
 
     /// Serves UPower with the devices of `recorded/<name>`, their `/sys`
@@ -205,7 +206,7 @@ impl Fixture {
 
     /// The devices of the next peripherals event.
     fn next(&self) -> Value {
-        crate::hub::next_named(&self.ui, "peripherals", WAIT)["devices"].clone()
+        nova_hub::next_named(&self.ui, "peripherals", WAIT)["devices"].clone()
     }
 }
 
@@ -527,7 +528,7 @@ fn without_upower_or_headsetcontrol_nothing_is_listed() {
     let (queue, sent) = ClientQueue::new(&other_end).unwrap();
     let id = fixture.hub.register(queue);
     peripherals.send_state(id);
-    assert_eq!(crate::hub::next_named(&sent, "peripherals", WAIT), json!({"devices": []}));
+    assert_eq!(nova_hub::next_named(&sent, "peripherals", WAIT), json!({"devices": []}));
     drop(client);
     peripherals.stop();
 }
@@ -862,7 +863,7 @@ fn a_battery_running_down_alerts_once_at_each_step() {
     let mut read = |change: &dyn Fn(&mut Props)| {
         upower.change(MOUSE, change);
         loop {
-            let event = crate::hub::next_event(&fixture.ui, WAIT);
+            let event = nova_hub::next_event(&fixture.ui, WAIT);
             match event["event"].as_str() {
                 Some("peripherals") => return,
                 Some("notification_popup") => popups.push_back(event["data"].clone()),
@@ -923,7 +924,8 @@ fn an_alert_after_a_restart_takes_the_devices_row() {
     let first = fixture.popup();
     peripherals.stop();
     let peripherals = fixture.start();
-    peripherals.set_notifications(Some(&server));
+    let post: Arc<dyn Post> = server.clone();
+    peripherals.set_notifications(Some(&post));
     let again = fixture.popup();
     peripherals.stop();
     server.stop();

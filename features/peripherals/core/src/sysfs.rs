@@ -14,7 +14,7 @@
 //! unless that's a receiver other devices share.
 
 use super::UsbId;
-use nova_protocol::PeripheralLink;
+use nova_peripherals_api::PeripheralLink;
 use std::path::Path;
 
 /// BlueZ's objects, as UPower names a battery BlueZ reads.

@@ -1,0 +1,55 @@
+# Allowed outside crates:
+# - futures-core
+# - libc
+# - serde
+# - serde_json
+# - zbus
+#
+# Allowed workspace crates:
+# - nova-base
+# - nova-carrier
+# - nova-hub
+# - nova-inotify
+# - nova-log
+# - nova-paths
+# - nova-notifications-api
+# - nova-peripherals-api
+# - nova-process
+# - nova-session-bus
+
+[package]
+name = "nova-peripherals"
+description = "The batteries of wireless mice, keyboards and headsets, from UPower, HID++, Keychron's raw HID and HeadsetControl, and their low battery alerts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-peripherals-api.workspace = true
+nova-notifications-api.workspace = true
+nova-base.workspace = true
+nova-carrier.workspace = true
+nova-hub.workspace = true
+nova-inotify.workspace = true
+nova-log.workspace = true
+nova-paths.workspace = true
+nova-process.workspace = true
+nova-session-bus.workspace = true
+futures-core.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zbus.workspace = true
+
+[dev-dependencies]
+nova-test-support.workspace = true
+# The low battery alert tests post to a real notification server.
+nova-notifications.workspace = true
+nova-apps = { workspace = true, features = ["test-support"] }
+nova-icons.workspace = true
+nova-hub = { workspace = true, features = ["test-support"] }
+nova-session-bus = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true

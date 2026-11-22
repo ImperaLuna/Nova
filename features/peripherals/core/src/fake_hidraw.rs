@@ -12,7 +12,7 @@
 //! `0x09`), or not at all, as a Keychron dongle.
 
 use super::hidraw::Opener;
-use crate::lock;
+use nova_base::lock;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
