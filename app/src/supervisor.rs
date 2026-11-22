@@ -15,7 +15,7 @@
 use nova_base::backoff::Backoff;
 use nova_base::lock;
 use nova_carrier::log::UI_LOG_SOURCE;
-use nova_daemon_info::{Crash, UiProgram, UiState, UiStatus};
+use nova_daemon_info::{Crash, SOCKET_VAR, UiProgram, UiState, UiStatus};
 use nova_log::Logger;
 use nova_process::child::{describe_exit, stdout_within};
 use std::io::{BufRead, BufReader, Read};
@@ -39,8 +39,6 @@ const QUICKSHELL_LAUNCHER: &str = "nova-quickshell";
 const PACKAGED_QUICKSHELL_LAUNCHER: Option<&str> = option_env!("NOVA_QUICKSHELL_LAUNCHER");
 /// Quickshell itself, when no `nova-quickshell` launcher is installed.
 const QUICKSHELL: &str = "quickshell";
-/// Tells the UI where novad listens.
-const SOCKET_VAR: &str = "NOVA_SOCKET";
 /// The GPUI program, looked up on the session's `PATH`.
 const GPUI_UI: &str = "nova-ui";
 /// Qt's Wayland plugin marks a window unexposed when a frame callback is

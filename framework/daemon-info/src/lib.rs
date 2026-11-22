@@ -20,6 +20,9 @@ use nova_carrier::{Published, Topic};
 use nova_desktop_info::Desktop;
 use serde::{Deserialize, Serialize};
 
+/// The environment variable novad gives the UI its socket's path in.
+pub const SOCKET_VAR: &str = "NOVA_SOCKET";
+
 /// novad's own events.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
