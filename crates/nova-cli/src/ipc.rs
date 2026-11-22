@@ -52,6 +52,7 @@ enum IpcCommand {
     Shared(Command),
     Network(nova_network_api::Command),
     Resources(nova_resources_api::Command),
+    Tray(nova_tray_api::Command),
     Wallpaper(nova_wallpaper_api::Command),
 }
 
@@ -65,6 +66,8 @@ fn parse(name: &str, args: Option<&str>) -> Result<IpcCommand, String> {
         serde_json::from_value(request).map(IpcCommand::Network)
     } else if tagged_names_of::<nova_resources_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Resources)
+    } else if tagged_names_of::<nova_tray_api::Command>("cmd").contains(&name) {
+        serde_json::from_value(request).map(IpcCommand::Tray)
     } else if tagged_names_of::<nova_wallpaper_api::Command>("cmd").contains(&name) {
         serde_json::from_value(request).map(IpcCommand::Wallpaper)
     } else {

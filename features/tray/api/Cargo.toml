@@ -1,0 +1,22 @@
+# Allowed outside crates:
+# - serde
+#
+# Allowed workspace crates:
+# - nova-apps
+# - nova-carrier
+
+[package]
+name = "nova-tray-api"
+description = "The tray feature's messages: hide_tray_app, activate_tray_item, tray_menu_picked and the tray event"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nova-apps.workspace = true
+nova-carrier.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true
