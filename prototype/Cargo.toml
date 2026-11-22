@@ -1,0 +1,19 @@
+# IMP-369 GPUI prototype: throwaway code that answers whether Nova's UI can
+# move to GPUI. Never merges, never joins Nova's workspace.
+[package]
+name = "nova-proto"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Its own workspace, so cargo doesn't try to join Nova's.
+[workspace]
+
+[dependencies]
+# The same pin as Nova Files (ImperaLuna/zed, nova/v1.29.2 plus fixes), so
+# both apps share one fork and RyzenShine's cargo cache already has it.
+gpui = { git = "https://github.com/ImperaLuna/zed", rev = "939cf372f290301dbfbb783fe91fee4d08cf88de", version = "0.2.2" }
+gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "939cf372f290301dbfbb783fe91fee4d08cf88de", features = ["wayland", "x11"] }
+
+[profile.release]
+debug = "line-tables-only"
