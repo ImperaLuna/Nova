@@ -44,6 +44,8 @@
 # - nova-nova-files
 # - nova-nova-files-api
 # - nova-paths
+# - nova-peripherals
+# - nova-peripherals-api
 # - nova-process
 # - nova-protocol
 # - nova-quickshell
@@ -92,6 +94,8 @@ nova-notifications.workspace = true
 nova-notifications-api.workspace = true
 nova-nova-files.workspace = true
 nova-nova-files-api.workspace = true
+nova-peripherals.workspace = true
+nova-peripherals-api.workspace = true
 nova-resources.workspace = true
 nova-resources-api.workspace = true
 nova-tray.workspace = true

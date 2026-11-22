@@ -28,7 +28,8 @@ use super::LOG_SOURCE;
 use super::hidraw::channel::{Channel, Received};
 use super::hidraw::descriptor::has_usage;
 use super::hidraw::{Listing, Node};
-use nova_protocol::{Battery, LogLevel, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource};
+use nova_carrier::log::LogLevel;
+use nova_peripherals_api::{Battery, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource};
 use std::time::{Duration, Instant};
 
 /// The vendor interface's collection.
@@ -179,7 +180,7 @@ fn without_maker_twice(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::peripherals::fake_hidraw::hex;
+    use crate::fake_hidraw::hex;
 
     #[test]
     fn the_status_answer_is_read_and_others_ignored() {

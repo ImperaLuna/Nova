@@ -3,7 +3,7 @@
 //! that stopping writes to, so a reader blocked on a quiet receiver ends
 //! at once; nothing is sent once stopped.
 
-use crate::inotify::Stopper;
+use nova_inotify::Stopper;
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::time::Instant;

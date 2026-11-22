@@ -45,7 +45,8 @@ use super::hidraw::channel::{Channel, Received};
 use super::hidraw::descriptor::has_usage;
 use super::hidraw::{Listing, Node, Protocol};
 use super::{Found, LOG_SOURCE, keychron_mouse};
-use nova_protocol::{Battery, LogLevel, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource};
+use nova_carrier::log::LogLevel;
+use nova_peripherals_api::{Battery, Peripheral, PeripheralKind, PeripheralLink, PeripheralSource};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -310,7 +311,7 @@ fn found(node: &Node, reading: Reading, wired: bool) -> Found {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::peripherals::fake_hidraw::hex;
+    use crate::fake_hidraw::hex;
 
     #[test]
     fn battery_reports_are_read_and_others_ignored() {

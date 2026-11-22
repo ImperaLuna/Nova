@@ -6,7 +6,7 @@
 //! mouse's and keyboard's input) don't.
 
 use super::protocol::{LONG, SHORT};
-use crate::peripherals::hidraw::descriptor::{REPORT_ID, USAGE_PAGE, items};
+use crate::hidraw::descriptor::{REPORT_ID, USAGE_PAGE, items};
 
 /// The vendor usage pages HID++ reports are on.
 const HIDPP_USAGE_PAGES: [u32; 2] = [0xFF00, 0xFF43];
@@ -46,7 +46,7 @@ pub fn reports(descriptor: &[u8]) -> Reports {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::peripherals::fake_hidraw::hex;
+    use crate::fake_hidraw::hex;
 
     #[test]
     fn hidpp_reports_are_found_on_the_vendor_page_only() {

@@ -77,6 +77,7 @@ nova-notifications = { path = "features/notifications/core" }
 nova-peripherals-api = { path = "features/peripherals/api" }
 nova-nova-files-api = { path = "features/nova-files/api" }
 nova-nova-files = { path = "features/nova-files/core" }
+nova-peripherals = { path = "features/peripherals/core" }
 nova-resources-api = { path = "features/resources/api" }
 nova-resources = { path = "features/resources/core" }
 nova-tray-api = { path = "features/tray/api" }

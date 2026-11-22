@@ -65,7 +65,7 @@ pub fn has_usage(descriptor: &[u8], page: u16, usage: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::peripherals::fake_hidraw::hex;
+    use crate::fake_hidraw::hex;
 
     #[test]
     fn items_are_read_in_order_and_long_ones_skipped() {
