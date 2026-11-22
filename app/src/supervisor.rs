@@ -97,12 +97,12 @@ impl Program {
             return (Self::Quickshell, None);
         }
         let found = match gpui_ui {
-            Some(path) => path.is_file().then(|| path.to_path_buf()),
+            Some(path) => nova_paths::is_executable(path).then(|| path.to_path_buf()),
             None => nova_paths::find_program(GPUI_UI, path_var),
         };
         match (found, gpui_ui) {
             (Some(path), _) => (Self::Gpui(path), None),
-            (None, Some(path)) => (Self::Quickshell, Some(format!("{} isn't a file", path.display()))),
+            (None, Some(path)) => (Self::Quickshell, Some(format!("{} isn't a program", path.display()))),
             (None, None) => (Self::Quickshell, Some(format!("{GPUI_UI} isn't on PATH"))),
         }
     }
@@ -563,6 +563,10 @@ mod tests {
         let (program, problem) = pick(UiProgram::Gpui, Some(&missing));
         assert_eq!(program, Program::Quickshell);
         assert!(problem.is_some_and(|problem| problem.contains("elsewhere")));
+        // A file that can't run is no better than a missing one.
+        let plain = dir.join("plain");
+        std::fs::write(&plain, "").unwrap();
+        assert_eq!(pick(UiProgram::Gpui, Some(&plain)).0, Program::Quickshell);
 
         let on_path = nova_test_support::write_program(dir.path(), GPUI_UI, "exit 0");
         assert_eq!(pick(UiProgram::Gpui, None), (Program::Gpui(on_path.clone()), None));
