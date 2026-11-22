@@ -60,6 +60,9 @@ tokens! {
     TRACK_OPACITY: ratio = 0.14, "track";
     METER_OPACITY: ratio = 0.85, "meter";
 
+    /// How much of glass is its tint; the rest is the compositor's blur of
+    /// what's behind.
+    GLASS_OPACITY: ratio = 0.55, "glassOpacity";
     // Glass's edge (`crate::glass`): a dark outline outside, a faint light
     // line inside it, and a highlight along the top that fades out before
     // the corners.
@@ -176,12 +179,6 @@ tokens! {
 
 /// The room a glass's shadow needs around it.
 pub const SHADOW_ROOM: Pixels = px(40.0);
-
-/// How much of glass is its tint; the rest is the compositor's blur of
-/// what's behind. Thinner than the Quickshell shell's fixed tint
-/// (`glassOpacity`, 0.55): the GPUI prototype's frost read best at this
-/// (IMP-369), with the compositor's blur settings left to the user.
-pub const GLASS_OPACITY: f32 = 0.25;
 
 /// The grid line icons are drawn on.
 pub const ICON_GRID: f32 = 24.0;
