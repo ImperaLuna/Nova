@@ -6,7 +6,9 @@
 //! serves ([`server`]), with two connections: one only waits for the
 //! server to say something changed, the other asks for the whole listing
 //! again each time, which [`reading`] turns into the feature's
-//! [`Sound`](Reading). Changes that come while a listing is read cost one
+//! [`Sound`](Reading), and carries the feature's commands ([`changes`]).
+//! A command's effect comes back like anyone else's change: as the
+//! server's word that something changed. Changes that come while a listing is read cost one
 //! more listing, however many they are. What clients get is published only
 //! when it differs from the last one.
 //!
@@ -17,6 +19,7 @@
 //! novad runs it as a module (its wiring adapts [`Sound`] to novad's
 //! `Module` trait).
 
+mod changes;
 #[cfg(test)]
 mod fake_pulse;
 mod reading;
@@ -28,9 +31,9 @@ use nova_base::backoff::{Backoff, wait_out};
 use nova_base::lock;
 use nova_hub::{ClientId, Hub};
 use nova_log::Logger;
-use nova_sound_api::{Event, Sound as Reading};
-use server::Link;
+use nova_sound_api::{Command, Event, Sound as Reading};
 pub use server::Sources;
+use server::{Failed, Link, Listing};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
@@ -43,9 +46,17 @@ const LOG_SOURCE: &str = "sound";
 const FIRST_RETRY: Duration = Duration::from_secs(1);
 const MAX_RETRY: Duration = Duration::from_secs(30);
 
+/// What a command is answered while the server isn't there.
+const NO_SERVER: &str = "there is no sound server";
+/// Why following ended when nothing else says.
+const CLOSED: &str = "the connection closed";
+
 pub struct Sound {
     sources: Sources,
     state: Mutex<State>,
+    /// The connection that asks, with its count, while there is one. Never
+    /// taken while `state` is held.
+    asking: Mutex<Option<(Link, u64)>>,
     /// Wakes the follower: something changed, the server went, or stop.
     wake: Condvar,
     hub: Arc<Hub>,
@@ -57,6 +68,8 @@ struct State {
     stopped: bool,
     /// What clients were last told, and a new one is.
     reading: Reading,
+    /// What the server last listed, which commands' ids name things in.
+    listing: Option<Listing>,
     /// The connections now, counted so one that already went can't end
     /// the next.
     connection: u64,
@@ -71,7 +84,14 @@ struct State {
 
 impl Sound {
     pub fn start(sources: Sources, hub: Arc<Hub>, logger: Arc<Logger>) -> Arc<Self> {
-        let sound = Arc::new(Self { sources, state: Mutex::new(State::default()), wake: Condvar::new(), hub, logger });
+        let sound = Arc::new(Self {
+            sources,
+            state: Mutex::new(State::default()),
+            asking: Mutex::new(None),
+            wake: Condvar::new(),
+            hub,
+            logger,
+        });
         let follower = Arc::clone(&sound);
         std::thread::spawn(move || follower.run());
         sound
@@ -92,6 +112,37 @@ impl Sound {
         self.hub.send_to(client, &Event::Sound(state.reading.clone()));
     }
 
+    /// Does `command`. What it changed is published when the server says
+    /// so, not when this returns.
+    pub fn change(&self, command: &Command) -> Result<(), String> {
+        let requests = match &lock(&self.state).listing {
+            Some(listing) => changes::requests(listing, command)?,
+            None => return Err(NO_SERVER.into()),
+        };
+        let mut asking = lock(&self.asking);
+        let Some((link, connection)) = asking.as_mut() else {
+            return Err(NO_SERVER.into());
+        };
+        let connection = *connection;
+        for request in &requests {
+            match link.tell(request) {
+                Ok(()) => {}
+                Err(Failed::Refused(reason)) => return Err(reason),
+                Err(Failed::Broken(reason)) => {
+                    *asking = None;
+                    drop(asking);
+                    // The follower finds out now, not at the next change.
+                    let mut state = lock(&self.state);
+                    state.gone = state.gone.max(connection);
+                    drop(state);
+                    self.wake.notify_all();
+                    return Err(format!("the sound server went away: {reason}"));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Connects, follows until the connection goes, and again, waiting
     /// longer each time the server isn't there.
     fn run(self: Arc<Self>) {
@@ -106,13 +157,13 @@ impl Sound {
                 // A server that answered is one worth trying again soon,
                 // and news when it goes; one that connects but never
                 // lists keeps the longer waits and is said once.
-                Ok((asking, connection)) => self.follow(asking, connection, || {
+                Ok(connection) => self.follow(connection, || {
                     retry.reset();
                     said = None;
                 }),
                 Err(reason) => reason,
             };
-            if !self.tell(Reading::default()) {
+            if !self.tell(None) {
                 return;
             }
             if said.as_deref() != Some(reason.as_str()) {
@@ -124,9 +175,9 @@ impl Sound {
     }
 
     /// Both connections: the one that asks, and the one that waits for
-    /// changes, on its own thread from here. Returns the first and this
-    /// connection's count.
-    fn connect(self: &Arc<Self>) -> Result<(Link, u64), String> {
+    /// changes, on its own thread from here. Returns this connection's
+    /// count.
+    fn connect(self: &Arc<Self>) -> Result<u64, String> {
         let asking = Link::connect(&self.sources)?;
         let mut waiting = Link::connect(&self.sources)?;
         waiting.follow()?;
@@ -141,9 +192,10 @@ impl Sound {
         // Following began before this listing, so nothing is missed.
         state.changed = true;
         drop(state);
+        *lock(&self.asking) = Some((asking, connection));
         let sound = Arc::clone(self);
         std::thread::spawn(move || sound.wait_for_changes(waiting, connection));
-        Ok((asking, connection))
+        Ok(connection)
     }
 
     /// Passes each change on to the follower, until the connection goes.
@@ -166,7 +218,18 @@ impl Sound {
     /// Reads the listing whenever something changed and publishes what
     /// differs, until `connection` goes or the feature stops. Returns why.
     /// `answered` runs once, after the first listing.
-    fn follow(&self, mut asking: Link, connection: u64, mut answered: impl FnMut()) -> String {
+    fn follow(&self, connection: u64, answered: impl FnMut()) -> String {
+        let reason = self.follow_until_gone(connection, answered);
+        let mut asking = lock(&self.asking);
+        if asking.as_ref().is_some_and(|(_, count)| *count == connection) {
+            *asking = None;
+        }
+        drop(asking);
+        end_wait(&mut lock(&self.state));
+        reason
+    }
+
+    fn follow_until_gone(&self, connection: u64, mut answered: impl FnMut()) -> String {
         let mut named = false;
         loop {
             let mut state = lock(&self.state);
@@ -174,17 +237,17 @@ impl Sound {
                 state = self.wake.wait(state).unwrap_or_else(PoisonError::into_inner);
             }
             if state.stopped || state.gone >= connection {
-                end_wait(&mut state);
-                return "the connection closed".into();
+                return CLOSED.into();
             }
             state.changed = false;
             drop(state);
-            let listing = match asking.listing() {
+            let listing = match lock(&self.asking).as_mut() {
+                Some((asking, count)) if *count == connection => asking.listing(),
+                _ => Err(CLOSED.into()),
+            };
+            let listing = match listing {
                 Ok(listing) => listing,
-                Err(reason) => {
-                    end_wait(&mut lock(&self.state));
-                    return reason;
-                }
+                Err(reason) => return reason,
             };
             if !named {
                 let server = listing.server.server_name.as_deref().map(|name| name.to_string_lossy());
@@ -192,19 +255,22 @@ impl Sound {
                 named = true;
                 answered();
             }
-            if !self.tell(reading::sound(&listing)) {
+            if !self.tell(Some(listing)) {
                 return "stopped".into();
             }
         }
     }
 
-    /// Publishes `reading` when it differs from the last one. False once
-    /// the feature stopped: nothing is published then.
-    fn tell(&self, reading: Reading) -> bool {
+    /// Keeps `listing` (none without a server) and publishes what clients
+    /// see of it when that differs from the last time. False once the
+    /// feature stopped: nothing is published then.
+    fn tell(&self, listing: Option<Listing>) -> bool {
+        let reading = listing.as_ref().map(reading::sound).unwrap_or_default();
         let mut state = lock(&self.state);
         if state.stopped {
             return false;
         }
+        state.listing = listing;
         if state.reading != reading {
             state.reading = reading;
             // Published under the state lock, so readings reach clients in

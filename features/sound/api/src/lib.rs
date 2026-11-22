@@ -4,14 +4,46 @@
 //! Sound page.
 //!
 //! novad publishes an [`Event`] on [`TOPIC`] whenever any of it changes,
-//! whoever changed it, and to a client right as it subscribes. The work is
-//! `nova-sound` (`features/sound/core`).
+//! whoever changed it, and to a client right as it subscribes. A client
+//! sends a [`Command`] to change a volume, mute or the device in use; the
+//! change comes back as the next event. The work is `nova-sound`
+//! (`features/sound/core`).
 
 use nova_carrier::{Published, Topic};
 use serde::{Deserialize, Serialize};
 
 /// The topic a client subscribes to for [`Event::Sound`].
 pub const TOPIC: Topic = Topic::named("sound");
+
+/// The loudest volume a [`Command`] sets: 100%. Another program can set
+/// more, and [`Sound`] then reports it.
+pub const VOLUME_MAX: f32 = 1.0;
+
+/// Sent by the UI. Arguments with unknown fields are refused.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "cmd", content = "args", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Command {
+    /// Sets the volume of an output, an input or an app (all its streams),
+    /// 0 to [`VOLUME_MAX`]. Setting it means wanting to hear it, so it
+    /// unmutes too.
+    SetSoundVolume { of: Kind, id: u32, volume: f32 },
+    /// Mutes or unmutes an output, an input or an app (all its streams).
+    SetSoundMuted { of: Kind, id: u32, muted: bool },
+    /// Makes an output the one in use.
+    UseSoundOutput { id: u32 },
+    /// Makes an input the one in use.
+    UseSoundInput { id: u32 },
+}
+
+/// What an id in a [`Command`] names: one of [`Sound::outputs`],
+/// [`Sound::inputs`] or [`Sound::apps`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    Output,
+    Input,
+    App,
+}
 
 /// Pushed by novad on [`TOPIC`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -33,7 +65,7 @@ impl Published for Event {
 #[serde(deny_unknown_fields)]
 pub struct Sound {
     /// Whether the sound server answers. While it doesn't, the lists are
-    /// empty.
+    /// empty and commands fail.
     pub available: bool,
     /// Where sound can play. The one with [`Device::current`] is in use;
     /// none is while there is no output.
@@ -52,8 +84,8 @@ pub struct Sound {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Device {
-    /// Tells it from the others. It changes when the device goes and comes
-    /// back.
+    /// What a [`Command`] names it by. It changes when the device goes
+    /// and comes back.
     pub id: u32,
     /// Its name as people know it.
     pub name: String,
@@ -99,7 +131,7 @@ pub enum Link {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct App {
-    /// Tells it from the others: its first stream's id.
+    /// What a [`Command`] names it by: its first stream's id.
     pub id: u32,
     pub name: String,
     /// Its loudest stream's volume. 1 is 100%.
