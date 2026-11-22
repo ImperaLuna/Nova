@@ -2857,11 +2857,64 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-carrier"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nova-daemon-info"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "nova-desktop-info",
+ "serde",
+]
+
+[[package]]
+name = "nova-desktop-info"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-sound-api"
+version = "0.1.0"
+dependencies = [
+ "nova-carrier",
+ "serde",
+]
+
+[[package]]
+name = "nova-test-support"
+version = "0.1.0"
+
+[[package]]
 name = "nova-ui"
 version = "0.1.0"
 dependencies = [
  "gpui",
  "gpui_platform",
+ "nova-daemon-info",
+ "nova-sound-api",
+ "nova-ui-client",
+]
+
+[[package]]
+name = "nova-ui-client"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gpui",
+ "nova-carrier",
+ "nova-daemon-info",
+ "nova-test-support",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

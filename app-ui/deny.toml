@@ -43,8 +43,10 @@ allow = [
 
 [bans]
 multiple-versions = "allow"
-wildcards = "deny"
-allow-wildcard-paths = true
+# Not denied, as on the daemon side: the UI crates use the daemon side's api
+# and -info crates by path, which count as wildcards, and the exemption for
+# paths (allow-wildcard-paths) only holds for crates marked unpublished.
+wildcards = "allow"
 
 [sources]
 unknown-registry = "deny"

@@ -1,8 +1,8 @@
 # nova-ui
 #
 # The program that draws Nova's UI with GPUI. Wiring only: it starts GPUI
-# and, as the ports land, the socket client, the stage and each feature's ui
-# crate.
+# and the socket client and, as the ports land, the stage and each feature's
+# ui crate.
 #
 # This manifest is also the root of the UI side's cargo workspace, apart
 # from the daemon's (the repo root's): GPUI brings hundreds of crates, some
@@ -19,7 +19,10 @@
 # - gpui
 # - gpui_platform
 #
-# Allowed workspace crates: none
+# Allowed workspace crates:
+# - nova-daemon-info
+# - nova-sound-api
+# - nova-ui-client
 
 [package]
 name = "nova-ui"
@@ -32,6 +35,9 @@ license.workspace = true
 [dependencies]
 gpui.workspace = true
 gpui_platform.workspace = true
+nova-daemon-info.workspace = true
+nova-sound-api.workspace = true
+nova-ui-client.workspace = true
 
 [lints]
 workspace = true
@@ -39,9 +45,8 @@ workspace = true
 [workspace]
 resolver = "3"
 # A glob that matches nothing is an error to cargo, so the first
-# `framework-ui/<name>` crate adds "../framework-ui/*" and the first
 # `features/<id>/ui` crate adds "../features/*/ui".
-members = ["."]
+members = [".", "../framework-ui/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -60,6 +65,19 @@ gpui = { git = "https://github.com/ImperaLuna/zed", rev = "915fb0d79b03de29a8a15
 # The platform half of GPUI (windows, input, the renderer). Wayland is off
 # by default; without it the program runs but never opens a window.
 gpui_platform = { git = "https://github.com/ImperaLuna/zed", rev = "915fb0d79b03de29a8a15beb0fef11e0e465d8ec", version = "0.1.0", features = ["wayland"] }
+# The versions GPUI's own tree already holds.
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# The UI side's shared parts (framework-ui/).
+nova-ui-client = { path = "../framework-ui/client" }
+
+# The daemon side's wire types, by path: -info crates and each feature's api.
+nova-carrier = { path = "../framework/carrier" }
+nova-daemon-info = { path = "../framework/daemon-info" }
+nova-sound-api = { path = "../features/sound/api" }
+nova-test-support = { path = "../framework/test-support" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
